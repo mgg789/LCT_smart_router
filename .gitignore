@@ -1,0 +1,10 @@
+# Ignore OS noise
+.DS_Store
+Thumbs.db
+
+# Future code artifacts
+node_modules/
+__pycache__/
+.venv/
+dist/
+.env
