@@ -1,0 +1,4 @@
+# LCT Smart Router — computational core (prototype, target home: apps/solver)
+ortools==9.15.*
+pytest>=8.0
+ruff>=0.8
