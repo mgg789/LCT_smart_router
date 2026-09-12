@@ -21,7 +21,7 @@ from core.solve import solve_task
 from core.types import solution_to_dict, solver_input_from_dict
 
 GOLDEN_DIR = Path(__file__).parent / "golden"
-SOLVE_KWARGS = dict(time_limit_ms=1500, solution_limit=100)
+SOLVE_KWARGS = {"time_limit_ms": 1500, "solution_limit": 100}
 
 
 def _solve():

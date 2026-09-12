@@ -20,7 +20,13 @@ import json
 
 from core import metrics as metrics_mod
 from core import model, reasons
-from core.types import PlanSolution, SolverInput, Unassigned, solver_input_from_dict, solution_to_dict
+from core.types import (
+    PlanSolution,
+    SolverInput,
+    Unassigned,
+    solution_to_dict,
+    solver_input_from_dict,
+)
 
 
 def solve_task(

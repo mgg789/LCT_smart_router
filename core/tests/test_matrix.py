@@ -3,8 +3,8 @@
 from core.matrix import (
     build_travel_minutes,
     builtin_hour_coefficient,
-    hour_coefficient,
     haversine_km,
+    hour_coefficient,
     travel_minutes,
 )
 from core.types import LatLon
