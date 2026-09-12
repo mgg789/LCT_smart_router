@@ -88,6 +88,7 @@ class SolveOutput:
     return_travel_min: dict[str, int]
     candidates: dict[str, CandidateInfo]
     solve_ms: int
+    warm_started: bool = False
 
 
 def _equipment_shortage(engineer: Engineer, required: dict[str, int]) -> bool:
@@ -160,8 +161,9 @@ def solve(
     input_data: SolverInput,
     time_limit_ms: int = 1500,
     solution_limit: int | None = None,
+    previous_routes: dict[str, list[str]] | None = None,
 ) -> SolveOutput:
-    """Build and solve the routing model for one static plan.
+    """Build and solve the routing model for one plan (build or replan).
 
     Args:
         input_data: parsed solver input (requests are re-sorted by id inside).
@@ -170,10 +172,17 @@ def solve(
         solution_limit: optional cap on accepted solutions; when set it is
             the deterministic stopping criterion (golden tests, demo replay)
             with the time limit kept as a safety net.
+        previous_routes: request ids per engineer from the plan being
+            re-planned (D-4). When given, the search warm-starts from that
+            plan via ``ReadAssignmentFromRoutes`` — new requests start
+            inactive and are inserted around the preserved routes. If the
+            previous routes are infeasible in the new model state, the
+            solver silently falls back to a cold start.
 
     Returns:
         :class:`SolveOutput` with assignments, routes, candidate lists and
-        the node-indexed matrix for downstream layers.
+        the node-indexed matrix for downstream layers; ``warm_started``
+        tells whether the previous plan was used as the search seed.
 
     Raises:
         RuntimeError: if the CP search returns no solution at all.
@@ -243,6 +252,22 @@ def solve(
         time_dim.CumulVar(routing.Start(v)).SetValue(engineer.shift_start_min * 60)
         time_dim.CumulVar(routing.End(v)).SetMax(engineer.shift_end_min * 60)
 
+    initial_assignment = None
+    warm_started = False
+    if previous_routes:
+        # ReadAssignmentFromRoutes speaks in internal manager indices, not
+        # node numbers (the multi-depot manager shifts regular nodes down).
+        seed_routes = [
+            [
+                mgr.NodeToIndex(nodes.request_pos[rid])
+                for rid in previous_routes.get(engineer.id, ())
+                if rid in nodes.request_pos
+            ]
+            for engineer in engineers
+        ]
+        initial_assignment = routing.ReadAssignmentFromRoutes(seed_routes, True)
+        warm_started = initial_assignment is not None  # None = seed infeasible → cold start
+
     search = pywrapcp.DefaultRoutingSearchParameters()
     search.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PARALLEL_CHEAPEST_INSERTION
     search.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
@@ -250,7 +275,10 @@ def solve(
     if solution_limit is not None:
         search.solution_limit = solution_limit
 
-    solution = routing.SolveWithParameters(search)
+    if initial_assignment is not None:
+        solution = routing.SolveFromAssignmentWithParameters(initial_assignment, search)
+    else:
+        solution = routing.SolveWithParameters(search)
     if solution is None:
         raise RuntimeError("OR-Tools returned no solution (infeasible or search failure)")
     solve_ms = round((time_mod.perf_counter() - wall_start) * 1000)
@@ -267,6 +295,7 @@ def solve(
         service_sec=service_sec,
         candidates=candidates,
         solve_ms=solve_ms,
+        warm_started=warm_started,
     )
     return output
 
@@ -283,6 +312,7 @@ def _extract(
     service_sec: dict[int, int],
     candidates: dict[str, CandidateInfo],
     solve_ms: int,
+    warm_started: bool = False,
 ) -> SolveOutput:
     """Walk the solved model and project it onto contract-shaped data."""
     engineers = input_data.engineers
@@ -347,4 +377,5 @@ def _extract(
         return_travel_min=return_travel_min,
         candidates=candidates,
         solve_ms=solve_ms,
+        warm_started=warm_started,
     )

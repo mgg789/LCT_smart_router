@@ -110,7 +110,11 @@
     },
     "balance_std_min": 195.0,
     "makespan_min": 511,
-    "wait_min_total": 105
+    "wait_min_total": 105,
+    "moves_vs_prev": {
+      "reassigned": 0,
+      "shifted": 0
+    }
   },
   "reasons": {
     "req_001": {

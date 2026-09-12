@@ -12,7 +12,10 @@ Definitions used across the product (documented in docs/solver.md):
 - ``workload_min`` is the occupied span (travel + wait + service) between a
   engineer's departure and return; idle engineers contribute 0;
 - ``balance_std_min`` is the population std-dev over ALL engineers, idle
-  included — the demo needs to show imbalance honestly.
+  included — the demo needs to show imbalance honestly;
+- ``moves_vs_prev`` (only when a previous plan is given): ``reassigned`` —
+  the engineer changed for a request present in both plans; ``shifted`` —
+  same engineer and the eta moved by at least :data:`SHIFTED_ETA_MIN`.
 """
 
 from __future__ import annotations
@@ -20,15 +23,20 @@ from __future__ import annotations
 import statistics
 
 from core.model import SolveOutput
-from core.types import Metrics, SolverInput
+from core.types import Metrics, PlanSolution, SolverInput
+
+# An eta drift below this threshold is plan noise, not a visible shift.
+SHIFTED_ETA_MIN = 5
 
 
-def compute_metrics(input_data: SolverInput, output: SolveOutput) -> Metrics:
+def compute_metrics(input_data: SolverInput, output: SolveOutput, previous: PlanSolution | None = None) -> Metrics:
     """Aggregate the solved routes into the plan metrics object.
 
     Args:
         input_data: parsed solver input (windows, shifts).
         output: raw solver output from :func:`core.model.solve`.
+        previous: plan being re-planned, when this call is a replan; powers
+            ``moves_vs_prev``.
 
     Returns:
         Populated :class:`core.types.Metrics`.
@@ -62,6 +70,18 @@ def compute_metrics(input_data: SolverInput, output: SolveOutput) -> Metrics:
         workload[engineer.id] = occupied
         makespan = max(makespan, max(0, span_end - engineer.shift_start_min) if output.routes.get(engineer.id) else 0)
 
+    moves = {"reassigned": 0, "shifted": 0}
+    if previous is not None:
+        prev_by_request = {a.request: a for a in previous.assignments}
+        for visit in output.assignments:
+            prev = prev_by_request.get(visit.request)
+            if prev is None:
+                continue
+            if prev.engineer != visit.engineer:
+                moves["reassigned"] += 1
+            elif abs(prev.eta_min - visit.eta_min) >= SHIFTED_ETA_MIN:
+                moves["shifted"] += 1
+
     return Metrics(
         requests_total=total,
         assigned=assigned,
@@ -75,4 +95,5 @@ def compute_metrics(input_data: SolverInput, output: SolveOutput) -> Metrics:
         balance_std_min=round(statistics.pstdev(list(workload.values())), 1) if workload else 0.0,
         makespan_min=makespan,
         wait_min_total=sum(v.wait_min for v in output.assignments),
+        moves_vs_prev=moves,
     )
