@@ -241,8 +241,10 @@ function renderMap() {
   const d = state.data;
   if (!state.map) {
     state.map = L.map("map", { zoomControl: true });
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-      attribution: "© OpenStreetMap, © CARTO", maxZoom: 19,
+    // OSM standard tiles: no key needed for a local dev tool. The product map
+    // (MapLibre + Yandex/CARTO keys, decision D-6) is a separate concern.
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "© OpenStreetMap contributors", maxZoom: 19,
     }).addTo(state.map);
     state.map.setView([55.755, 37.617], 11);
     state.routeLayer = L.layerGroup().addTo(state.map);
@@ -282,6 +284,9 @@ function renderMap() {
 }
 
 function onMapClick(e) {
+  // the add-form overlays the map container: ignore bubbled control clicks
+  const target = e.originalEvent && e.originalEvent.target;
+  if (target && target.closest && target.closest("#addform")) return;
   state.selected = null;
   document.getElementById("details").classList.add("hidden");
   const form = document.getElementById("addform");
@@ -480,6 +485,7 @@ function renderTimeline() {
 }
 
 document.getElementById("f-add").onclick = addRequest;
+document.getElementById("addform").addEventListener("click", e => e.stopPropagation());
 document.getElementById("f-cancel").onclick = () => {
   if (state.pending) { state.pending.marker.remove(); state.pending = null; }
   document.getElementById("addform").classList.add("hidden");
