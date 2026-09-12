@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LCT Studio — Golden City</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --ink: #1c1e21; --muted: #6b7280;
+    --line: #e5e7eb; --accent: #2563eb; --ok: #059669; --bad: #dc2626;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font: 13px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif;
+    color: var(--ink); background: var(--bg);
+    display: grid; grid-template-rows: auto 1fr 168px;
+  }
+  header {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    padding: 8px 14px; background: var(--panel); border-bottom: 1px solid var(--line);
+  }
+  header h1 { font-size: 15px; margin: 0 8px 0 0; font-weight: 650; }
+  .chip {
+    background: #eef2ff; color: #3730a3; border-radius: 999px;
+    padding: 2px 10px; font-size: 12px; white-space: nowrap;
+  }
+  .chip.warn { background: #fef3c7; color: #92400e; }
+  .chip.bad { background: #fee2e2; color: #991b1b; }
+  .chip.good { background: #d1fae5; color: #065f46; }
+  .spacer { flex: 1; }
+  button {
+    font: inherit; border: 1px solid var(--line); background: var(--panel);
+    border-radius: 8px; padding: 4px 10px; cursor: pointer;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { opacity: .92; color: #fff; }
+  main { display: grid; grid-template-columns: 1fr 320px; min-height: 0; }
+  #map { min-width: 0; }
+  aside {
+    background: var(--panel); border-left: 1px solid var(--line);
+    overflow-y: auto; padding: 10px 12px;
+  }
+  aside h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 14px 0 6px; }
+  aside h2:first-child { margin-top: 0; }
+  .eng { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+  .dot { width: 12px; height: 12px; border-radius: 4px; flex: none; }
+  .bar { flex: 1; height: 6px; background: var(--line); border-radius: 999px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; }
+  .mini { color: var(--muted); font-size: 11px; }
+  .reqline { cursor: pointer; padding: 6px 8px; border-radius: 8px; }
+  .reqline:hover { background: #f3f4f6; }
+  .factor { display: flex; gap: 8px; margin: 4px 0; align-items: baseline; }
+  .factor .mark { flex: none; width: 16px; text-align: center; }
+  .factor.ok .mark { color: var(--ok); }
+  .factor.no .mark { color: var(--bad); }
+  .factor .code { font-weight: 600; font-size: 12px; }
+  .factor .val { color: var(--muted); }
+  .alt { margin: 4px 0; color: var(--ink); }
+  .alt b { color: var(--accent); }
+  .hidden { display: none !important; }
+  #addform {
+    position: absolute; z-index: 1000; top: 12px; left: 12px; width: 264px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.12);
+  }
+  #addform label { display: block; margin: 8px 0 2px; font-size: 12px; color: var(--muted); }
+  #addform input, #addform select {
+    width: 100%; font: inherit; padding: 4px 6px;
+    border: 1px solid var(--line); border-radius: 6px;
+  }
+  #addform .row { display: flex; gap: 8px; }
+  #addform .actions { display: flex; gap: 8px; margin-top: 12px; }
+  #addform .coords { font-size: 11px; color: var(--muted); }
+  footer {
+    background: var(--panel); border-top: 1px solid var(--line);
+    overflow-y: auto; padding: 8px 14px;
+  }
+  .trow { display: flex; align-items: center; gap: 10px; margin: 5px 0; }
+  .tlabel { width: 210px; display: flex; align-items: center; gap: 6px; flex: none; }
+  .ttrack { position: relative; flex: 1; height: 20px; background: #f3f4f6; border-radius: 6px; }
+  .tblock {
+    position: absolute; top: 2px; bottom: 2px; border-radius: 4px;
+    color: #fff; font-size: 10px; line-height: 16px; padding: 0 4px;
+    overflow: hidden; white-space: nowrap; cursor: pointer;
+  }
+  .twait {
+    position: absolute; top: 6px; bottom: 6px; border-radius: 3px;
+    background: repeating-linear-gradient(45deg, #cbd5e1 0 4px, #e2e8f0 4px 8px);
+  }
+  .tblock.unassigned { background: #9ca3af; }
+  #details .head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  #details .head b { font-size: 14px; }
+  .badge {
+    font-size: 10px; border-radius: 4px; padding: 1px 6px;
+    background: #ede9fe; color: #5b21b6; white-space: nowrap;
+  }
+  .badge.vip { background: #fef3c7; color: #92400e; }
+  .flash { outline: 3px solid #fbbf24; outline-offset: 2px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>LCT Studio</h1>
+  <span class="chip" id="scenario"></span>
+  <span class="chip" id="version"></span>
+  <span class="chip" id="m-assigned"></span>
+  <span class="chip" id="m-sla"></span>
+  <span class="chip" id="m-travel"></span>
+  <span class="chip" id="m-solve"></span>
+  <span class="chip" id="diff-added" hidden></span>
+  <span class="chip" id="diff-cancelled" hidden></span>
+  <span class="chip warn" id="diff-reassigned" hidden></span>
+  <span class="chip warn" id="diff-shifted" hidden></span>
+  <span class="chip bad" id="m-unassigned" hidden></span>
+  <span class="spacer"></span>
+  <button data-weights="std">Цель: стандарт</button>
+  <button data-weights="sla">Цель: SLA</button>
+  <button data-weights="travel">Цель: пробег</button>
+  <button id="reset">Сброс дня</button>
+</header>
+<main>
+  <div id="map">
+    <div id="addform" class="hidden">
+      <b>Новая заявка</b>
+      <div class="coords" id="f-coords"></div>
+      <label>Тип работы</label>
+      <select id="f-worktype"></select>
+      <div class="row">
+        <div style="flex:1"><label>Окно с</label><input type="time" id="f-wstart" value="10:00"></div>
+        <div style="flex:1"><label>до</label><input type="time" id="f-wend" value="12:00"></div>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="f-strict"> жёсткое окно</label>
+        <label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="f-vip"> VIP</label>
+      </div>
+      <div class="actions">
+        <button class="primary" id="f-add">Добавить</button>
+        <button id="f-cancel">Отмена</button>
+      </div>
+    </div>
+  </div>
+  <aside>
+    <h2>Инженеры</h2>
+    <div id="legend"></div>
+    <div id="details" class="hidden"></div>
+  </aside>
+</main>
+<footer>
+  <h2 style="display:none"></h2>
+  <div id="timeline"></div>
+</footer>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+"use strict";
+
+const state = { data: null, map: null, pending: null, selected: null, routeLayer: null, markerLayer: null };
+
+function fmt(n) { return Math.round(n).toLocaleString("ru-RU"); }
+function toMin(hhmm) { const [h, m] = hhmm.split(":").map(Number); return h * 60 + m; }
+
+async function post(url, body) {
+  const resp = await fetch(url, body === undefined ? { method: "POST" } : {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!resp.ok) {
+    let detail = resp.statusText;
+    try { detail = (await resp.json()).detail || detail; } catch (e) {}
+    alert("Ошибка: " + detail);
+    return null;
+  }
+  return resp.json();
+}
+
+async function refresh() {
+  const resp = await fetch("/api/state");
+  state.data = await resp.json();
+  render();
+}
+
+function render() {
+  const d = state.data;
+  document.getElementById("scenario").textContent = `${d.scenario} · seed ${d.seed} · ${d.date}`;
+  document.getElementById("version").textContent = `версия плана ${d.version}`;
+  const m = d.metrics;
+  setChip("m-assigned", `назначено ${m.assigned}/${m.requests_total}`, "");
+  setChip("m-sla", `SLA ok ${m.sla_ok_pct}%`, m.sla_ok_pct >= 99.9 ? "good" : "warn");
+  setChip("m-travel", `в пути ${fmt(m.travel_min_total)} мин`, "");
+  setChip("m-solve", `решено за ${d.solve_ms} мс`, "");
+  setChip("m-unassigned", m.unassigned ? `не назначено: ${m.unassigned}` : "", m.unassigned ? "bad" : "");
+  showDiff("diff-added", d.last_event.added.length, `+${d.last_event.added.length} новая`, "good");
+  showDiff("diff-cancelled", d.last_event.cancelled.length, `−${d.last_event.cancelled.length} снята`, "");
+  showDiff("diff-reassigned", m.moves_vs_prev.reassigned, `передано ${m.moves_vs_prev.reassigned}`, "warn");
+  showDiff("diff-shifted", m.moves_vs_prev.shifted, `сдвинуто ${m.moves_vs_prev.shifted}`, "warn");
+  renderLegend();
+  renderMap();
+  renderTimeline();
+  if (state.selected) renderDetails(state.selected);
+}
+
+function setChip(id, text, cls) {
+  const el = document.getElementById(id);
+  el.textContent = text;
+  el.hidden = !text;
+  el.className = "chip" + (cls ? " " + cls : "");
+}
+function showDiff(id, count, text, cls) {
+  const el = document.getElementById(id);
+  el.hidden = !count;
+  if (count) { el.textContent = text; el.className = "chip" + (cls ? " " + cls : ""); }
+}
+
+function renderLegend() {
+  const host = document.getElementById("legend");
+  host.textContent = "";
+  const max = Math.max(...state.data.engineers.map(e => e.workload_min), 1);
+  for (const eng of state.data.engineers) {
+    const row = document.createElement("div");
+    row.className = "eng";
+    const dot = document.createElement("span"); dot.className = "dot"; dot.style.background = eng.color;
+    const name = document.createElement("span");
+    name.textContent = eng.id;
+    name.title = `навыки: ${eng.skills.join(", ") || "—"} · ${eng.vehicle_class}`;
+    const bar = document.createElement("span"); bar.className = "bar";
+    const fill = document.createElement("i"); fill.style.width = (100 * eng.workload_min / max) + "%"; fill.style.background = eng.color;
+    bar.appendChild(fill);
+    const val = document.createElement("span"); val.className = "mini"; val.textContent = fmt(eng.workload_min) + "м";
+    row.append(dot, name, bar, val);
+    host.appendChild(row);
+  }
+}
+
+function engineerColor(id) {
+  const eng = state.data.engineers.find(e => e.id === id);
+  return eng ? eng.color : "#9ca3af";
+}
+
+function renderMap() {
+  const d = state.data;
+  if (!state.map) {
+    state.map = L.map("map", { zoomControl: true });
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+      attribution: "© OpenStreetMap, © CARTO", maxZoom: 19,
+    }).addTo(state.map);
+    state.map.setView([55.755, 37.617], 11);
+    state.routeLayer = L.layerGroup().addTo(state.map);
+    state.markerLayer = L.layerGroup().addTo(state.map);
+    state.map.on("click", onMapClick);
+  }
+  state.routeLayer.clearLayers();
+  state.markerLayer.clearLayers();
+  const byId = Object.fromEntries(d.requests.map(r => [r.id, r]));
+
+  for (const eng of d.engineers) {
+    const stopIds = d.routes[eng.id] || [];
+    const line = [[eng.lat, eng.lon], ...stopIds.map(id => [byId[id].lat, byId[id].lon]), [eng.lat, eng.lon]];
+    L.polyline(line, { color: eng.color, weight: 3, opacity: 0.65 }).addTo(state.routeLayer);
+    const square = L.divIcon({ className: "", html:
+      `<div style="width:14px;height:14px;border-radius:4px;background:${eng.color};border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>`,
+      iconSize: [14, 14], iconAnchor: [7, 7] });
+    L.marker([eng.lat, eng.lon], { icon: square, zIndexOffset: 500 })
+      .bindTooltip(`${eng.id} — база`).addTo(state.markerLayer);
+  }
+
+  for (const req of d.requests) {
+    const isNew = d.last_event.added.includes(req.id);
+    const color = req.status === "assigned" ? engineerColor(req.engineer) : "#9ca3af";
+    const marker = L.circleMarker([req.lat, req.lon], {
+      radius: isNew ? 9 : 7, color: req.status === "unassigned" ? "#dc2626" : "#ffffff",
+      weight: req.status === "unassigned" || req.priority === "vip" ? 3 : 1.5,
+      fillColor: color, fillOpacity: 0.95,
+    });
+    const windowText = `${req.window[0]}–${req.window[1]}${req.window_strict ? " (жёст.)" : ""}`;
+    const etaText = req.status === "assigned"
+      ? `\nприезд ${req.eta}–${req.done_by} · ${req.engineer}` : "\nНЕ НАЗНАЧЕНА";
+    marker.bindTooltip(`${req.id}${etaText}\nокно ${windowText}`, { direction: "top" });
+    marker.on("click", () => selectRequest(req.id));
+    marker.addTo(state.markerLayer);
+  }
+}
+
+function onMapClick(e) {
+  state.selected = null;
+  document.getElementById("details").classList.add("hidden");
+  const form = document.getElementById("addform");
+  form.classList.remove("hidden");
+  document.getElementById("f-coords").textContent = `${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`;
+  if (state.pending) state.pending.remove();
+  state.pending = { lat: e.latlng.lat, lon: e.latlng.lng, marker: null };
+  state.pending.marker = L.circleMarker([e.latlng.lat, e.latlng.lng], {
+    radius: 9, color: "#2563eb", weight: 3, fill: false, dashArray: "4 3",
+  }).addTo(state.markerLayer);
+}
+
+function renderWorkTypes() {
+  const sel = document.getElementById("f-worktype");
+  sel.textContent = "";
+  for (const wt of state.data.work_types) {
+    const opt = document.createElement("option");
+    opt.value = wt.id;
+    opt.textContent = `${wt.name} · ${wt.base_duration_min} мин${wt.skills.length ? " · " + wt.skills.join("+") : ""}`;
+    sel.appendChild(opt);
+  }
+}
+
+async function addRequest() {
+  if (!state.pending) return;
+  const body = {
+    lat: state.pending.lat, lon: state.pending.lon,
+    work_type: document.getElementById("f-worktype").value,
+    window_start: document.getElementById("f-wstart").value || "10:00",
+    window_end: document.getElementById("f-wend").value || "12:00",
+    window_strict: document.getElementById("f-strict").checked,
+    priority: document.getElementById("f-vip").checked ? "vip" : "std",
+  };
+  const next = await post("/api/requests", body);
+  if (!next) return;
+  state.pending.marker.remove();
+  state.pending = null;
+  document.getElementById("addform").classList.add("hidden");
+  state.data = next;
+  state.selected = next.last_event.added[0] || null;
+  render();
+  if (state.selected) renderDetails(state.selected, true);
+}
+
+async function cancelRequest(id) {
+  const next = await post(`/api/requests/${id}/cancel`);
+  if (!next) return;
+  state.data = next;
+  state.selected = null;
+  document.getElementById("details").classList.add("hidden");
+  render();
+}
+
+function selectRequest(id) {
+  state.selected = id;
+  renderDetails(id, false);
+}
+
+function renderDetails(id, scroll) {
+  const d = state.data;
+  const req = d.requests.find(r => r.id === id);
+  const reasons = d.reasons[id] || {};
+  const host = document.getElementById("details");
+  host.classList.remove("hidden");
+  host.textContent = "";
+
+  const head = document.createElement("div"); head.className = "head";
+  const dot = document.createElement("span"); dot.className = "dot";
+  dot.style.background = req.status === "assigned" ? engineerColor(req.engineer) : "#9ca3af";
+  const title = document.createElement("b"); title.textContent = req.id;
+  const badge = document.createElement("span");
+  badge.className = "badge" + (req.priority === "vip" ? " vip" : "");
+  badge.textContent = (req.priority === "vip" ? "VIP · " : "") + `окно ${req.window[0]}–${req.window[1]}` +
+    (req.window_strict ? " жёст." : "") + ` · ${req.service_min} мин`;
+  head.append(dot, title, badge);
+  host.appendChild(head);
+
+  const sub = document.createElement("div"); sub.className = "mini";
+  sub.textContent = req.status === "assigned"
+    ? `инженер ${req.engineer}, приезд ${req.eta}–${req.done_by}, в пути ${req.travel_from_prev} мин, ожидание ${req.wait_min} мин`
+    : `навыки: ${req.required_skills.join(", ") || "—"}`;
+  host.appendChild(sub);
+
+  if (reasons.assignment) {
+    const h2 = document.createElement("h2"); h2.textContent = "Почему так";
+    host.appendChild(h2);
+    for (const f of reasons.assignment.factors || []) {
+      const row = document.createElement("div"); row.className = "factor " + (f.ok ? "ok" : "no");
+      const mark = document.createElement("span"); mark.className = "mark"; mark.textContent = f.ok ? "✓" : "✗";
+      const code = document.createElement("span"); code.className = "code"; code.textContent = f.code;
+      const val = document.createElement("span"); val.className = "val";
+      val.textContent = (f.value !== null && f.value !== undefined ? `= ${Array.isArray(f.value) ? f.value.join(",") : f.value}; ` : "") + f.detail;
+      row.append(mark, code, val);
+      host.appendChild(row);
+    }
+    for (const alt of reasons.assignment.alternatives || []) {
+      const row = document.createElement("div"); row.className = "alt";
+      row.textContent = alt.blocked
+        ? `${alt.engineer}: не подходит — ${alt.why_not}`
+        : `альтернатива: `;
+      if (!alt.blocked) {
+        const b = document.createElement("b"); b.textContent = alt.engineer;
+        row.textContent = "альтернатива: ";
+        row.appendChild(b);
+        row.append(document.createTextNode(` +${alt.cost_delta} мин в пути`));
+      }
+      host.appendChild(row);
+    }
+    if ((reasons.sequence || []).length) {
+      const h3 = document.createElement("h2"); h3.textContent = "Порядок визита";
+      host.appendChild(h3);
+      for (const s of reasons.sequence) {
+        const row = document.createElement("div"); row.className = "alt";
+        row.textContent = `переставить с ${s.swap_with}: ${s.why}`;
+        host.appendChild(row);
+      }
+    }
+  }
+  if (reasons.unassigned) {
+    const h2 = document.createElement("h2"); h2.textContent = "Почему не назначена";
+    host.appendChild(h2);
+    const row = document.createElement("div"); row.className = "factor no";
+    row.textContent = reasons.unassigned.why;
+    host.appendChild(row);
+    for (const b of reasons.unassigned.blocked_top || []) {
+      const r = document.createElement("div"); r.className = "alt";
+      r.textContent = `${b.engineer}: ${b.why_not}`;
+      host.appendChild(r);
+    }
+  }
+
+  const actions = document.createElement("div"); actions.className = "actions";
+  const cancelBtn = document.createElement("button");
+  cancelBtn.textContent = "Снять заявку";
+  cancelBtn.onclick = () => cancelRequest(req.id);
+  actions.appendChild(cancelBtn);
+  host.appendChild(actions);
+  if (scroll) host.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function renderTimeline() {
+  const d = state.data;
+  const t0 = toMin(d.shift[0]), t1 = toMin(d.shift[1]);
+  const pct = m => (100 * (m - t0) / (t1 - t0)).toFixed(3) + "%";
+  const host = document.getElementById("timeline");
+  host.textContent = "";
+
+  for (const eng of d.engineers) {
+    const row = document.createElement("div"); row.className = "trow";
+    const label = document.createElement("div"); label.className = "tlabel";
+    const dot = document.createElement("span"); dot.className = "dot"; dot.style.background = eng.color;
+    const name = document.createElement("span"); name.textContent = eng.id;
+    label.append(dot, name);
+    const track = document.createElement("div"); track.className = "ttrack";
+    for (const id of d.routes[eng.id] || []) {
+      const req = d.requests.find(r => r.id === id);
+      const eta = toMin(req.eta), done = toMin(req.done_by);
+      if (req.wait_min > 0) {
+        const wait = document.createElement("div"); wait.className = "twait";
+        wait.style.left = pct(eta - req.wait_min); wait.style.width = `calc(${pct(req.wait_min)} - 0px)`;
+        track.appendChild(wait);
+      }
+      const block = document.createElement("div"); block.className = "tblock";
+      block.style.left = pct(eta);
+      block.style.width = `calc(${pct(done)} - ${pct(eta)})`;
+      block.style.background = eng.color;
+      block.textContent = req.id.replace("req_", "#");
+      block.title = `${req.id} · ${req.eta}–${req.done_by} · окно ${req.window[0]}–${req.window[1]}`;
+      block.onclick = () => selectRequest(req.id);
+      if (state.selected === req.id) block.classList.add("flash");
+      track.appendChild(block);
+    }
+    row.append(label, track);
+    host.appendChild(row);
+  }
+
+  const unassigned = d.requests.filter(r => r.status !== "assigned");
+  if (unassigned.length) {
+    const row = document.createElement("div"); row.className = "trow";
+    const label = document.createElement("div"); label.className = "tlabel";
+    label.innerHTML = `<span class="mini">не назначены</span>`;
+    const track = document.createElement("div"); track.className = "ttrack";
+    for (const req of unassigned) {
+      const chip = document.createElement("div");
+      chip.className = "tblock unassigned";
+      chip.style.left = pct(toMin(req.window[0]));
+      chip.style.width = `calc(${pct(toMin(req.window[1]))} - ${pct(toMin(req.window[0]))})`;
+      chip.textContent = req.id.replace("req_", "#");
+      chip.title = `${req.id} · окно ${req.window[0]}–${req.window[1]} · ${d.reasons[req.id]?.unassigned?.why || ""}`;
+      chip.onclick = () => selectRequest(req.id);
+      track.appendChild(chip);
+    }
+    row.append(label, track);
+    host.appendChild(row);
+  }
+}
+
+document.getElementById("f-add").onclick = addRequest;
+document.getElementById("f-cancel").onclick = () => {
+  if (state.pending) { state.pending.marker.remove(); state.pending = null; }
+  document.getElementById("addform").classList.add("hidden");
+};
+document.getElementById("reset").onclick = async () => {
+  const next = await post("/api/reset");
+  if (!next) return;
+  state.data = next; state.selected = null;
+  document.getElementById("details").classList.add("hidden");
+  render();
+};
+document.querySelectorAll("[data-weights]").forEach(btn => {
+  btn.onclick = async () => {
+    const presets = {
+      std: { sla: 100000, balance: 500, travel: 1 },
+      sla: { sla: 1000000, balance: 500, travel: 1 },
+      travel: { sla: 10000, balance: 500, travel: 1 },
+    };
+    const next = await post("/api/weights", presets[btn.dataset.weights]);
+    if (!next) return;
+    state.data = next; render();
+  };
+});
+
+refresh().then(renderWorkTypes);
+</script>
+</body>
+</html>
