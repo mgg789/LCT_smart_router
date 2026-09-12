@@ -1,0 +1,790 @@
+{
+  "assignments": [
+    {
+      "request": "req_001",
+      "engineer": "eng_01",
+      "seq": 1,
+      "eta": "09:06",
+      "done_by": "09:57",
+      "travel_from_prev": 6,
+      "wait": 0
+    },
+    {
+      "request": "req_010",
+      "engineer": "eng_01",
+      "seq": 2,
+      "eta": "11:08",
+      "done_by": "12:05",
+      "travel_from_prev": 71,
+      "wait": 0
+    },
+    {
+      "request": "req_004",
+      "engineer": "eng_01",
+      "seq": 3,
+      "eta": "13:17",
+      "done_by": "14:39",
+      "travel_from_prev": 72,
+      "wait": 0
+    },
+    {
+      "request": "req_003",
+      "engineer": "eng_01",
+      "seq": 4,
+      "eta": "15:38",
+      "done_by": "16:31",
+      "travel_from_prev": 59,
+      "wait": 0
+    },
+    {
+      "request": "req_006",
+      "engineer": "eng_02",
+      "seq": 1,
+      "eta": "09:52",
+      "done_by": "10:17",
+      "travel_from_prev": 52,
+      "wait": 0
+    },
+    {
+      "request": "req_009",
+      "engineer": "eng_03",
+      "seq": 1,
+      "eta": "09:30",
+      "done_by": "09:48",
+      "travel_from_prev": 9,
+      "wait": 21
+    },
+    {
+      "request": "req_002",
+      "engineer": "eng_04",
+      "seq": 1,
+      "eta": "10:00",
+      "done_by": "10:29",
+      "travel_from_prev": 9,
+      "wait": 51
+    },
+    {
+      "request": "req_005",
+      "engineer": "eng_05",
+      "seq": 1,
+      "eta": "11:00",
+      "done_by": "12:49",
+      "travel_from_prev": 95,
+      "wait": 25
+    },
+    {
+      "request": "req_008",
+      "engineer": "eng_05",
+      "seq": 2,
+      "eta": "14:00",
+      "done_by": "14:53",
+      "travel_from_prev": 63,
+      "wait": 8
+    },
+    {
+      "request": "req_007",
+      "engineer": "eng_05",
+      "seq": 3,
+      "eta": "16:02",
+      "done_by": "16:40",
+      "travel_from_prev": 69,
+      "wait": 0
+    }
+  ],
+  "unassigned": [],
+  "metrics": {
+    "requests_total": 10,
+    "assigned": 10,
+    "unassigned": 0,
+    "sla_ok_pct": 100.0,
+    "sla_at_risk": 0,
+    "late_total_min": 0,
+    "travel_min_total": 642,
+    "travel_min_mean_per_eng": 128.4,
+    "workload_min": {
+      "eng_01": 511,
+      "eng_02": 129,
+      "eng_03": 57,
+      "eng_04": 98,
+      "eng_05": 467
+    },
+    "balance_std_min": 195.0,
+    "makespan_min": 511,
+    "wait_min_total": 105
+  },
+  "reasons": {
+    "req_001": {
+      "assignment": {
+        "chosen": "eng_01",
+        "factors": [
+          {
+            "code": "skill_match",
+            "ok": true,
+            "value": [
+              "fiber"
+            ],
+            "detail": "совпадение навыков: fiber"
+          },
+          {
+            "code": "equipment_ok",
+            "ok": true,
+            "value": [
+              "onr",
+              "router_wifi6"
+            ],
+            "detail": "оборудование в комплекте: onr, router_wifi6"
+          },
+          {
+            "code": "sla_margin",
+            "ok": true,
+            "value": 174,
+            "detail": "запас до конца окна 174 мин"
+          },
+          {
+            "code": "window_tight",
+            "ok": true,
+            "value": 180,
+            "detail": "окно 180 мин"
+          },
+          {
+            "code": "travel_delta",
+            "ok": true,
+            "value": 6,
+            "detail": "6 мин в пути от предыдущей точки"
+          },
+          {
+            "code": "load_balance",
+            "ok": false,
+            "value": 511,
+            "detail": "загрузка инженера 511 мин при средней 252"
+          }
+        ],
+        "alternatives": [
+          {
+            "engineer": "eng_04",
+            "blocked": false,
+            "cost_delta": 94,
+            "why_not": null
+          },
+          {
+            "engineer": "eng_02",
+            "blocked": true,
+            "cost_delta": null,
+            "why_not": "equipment_missing"
+          }
+        ]
+      },
+      "sequence": [
+        {
+          "swap_with": "req_010",
+          "cost_delta": -4,
+          "why": "перестановка изменит время в пути на -4 мин"
+        }
+      ]
+    },
+    "req_010": {
+      "assignment": {
+        "chosen": "eng_01",
+        "factors": [
+          {
+            "code": "skill_match",
+            "ok": true,
+            "value": [
+              "fiber"
+            ],
+            "detail": "совпадение навыков: fiber"
+          },
+          {
+            "code": "equipment_ok",
+            "ok": true,
+            "value": [
+              "onr",
+              "router_wifi6"
+            ],
+            "detail": "оборудование в комплекте: onr, router_wifi6"
+          },
+          {
+            "code": "sla_margin",
+            "ok": true,
+            "value": 22,
+            "detail": "запас до конца окна 22 мин"
+          },
+          {
+            "code": "window_tight",
+            "ok": false,
+            "value": 60,
+            "detail": "окно 60 мин"
+          },
+          {
+            "code": "travel_delta",
+            "ok": true,
+            "value": 71,
+            "detail": "71 мин в пути от предыдущей точки"
+          },
+          {
+            "code": "load_balance",
+            "ok": false,
+            "value": 511,
+            "detail": "загрузка инженера 511 мин при средней 252"
+          }
+        ],
+        "alternatives": [
+          {
+            "engineer": "eng_04",
+            "blocked": false,
+            "cost_delta": 234,
+            "why_not": null
+          },
+          {
+            "engineer": "eng_02",
+            "blocked": true,
+            "cost_delta": null,
+            "why_not": "equipment_missing"
+          }
+        ]
+      },
+      "sequence": [
+        {
+          "swap_with": "req_001",
+          "cost_delta": -4,
+          "why": "перестановка изменит время в пути на -4 мин"
+        },
+        {
+          "swap_with": "req_004",
+          "cost_delta": -24,
+          "why": "перестановка изменит время в пути на -24 мин"
+        }
+      ]
+    },
+    "req_004": {
+      "assignment": {
+        "chosen": "eng_01",
+        "factors": [
+          {
+            "code": "skill_match",
+            "ok": true,
+            "value": [
+              "network",
+              "splice"
+            ],
+            "detail": "совпадение навыков: network, splice"
+          },
+          {
+            "code": "equipment_ok",
+            "ok": true,
+            "value": [
+              "splice_kit"
+            ],
+            "detail": "оборудование в комплекте: splice_kit"
+          },
+          {
+            "code": "sla_margin",
+            "ok": true,
+            "value": 43,
+            "detail": "запас до конца окна 43 мин"
+          },
+          {
+            "code": "window_tight",
+            "ok": true,
+            "value": 240,
+            "detail": "окно 240 мин"
+          },
+          {
+            "code": "travel_delta",
+            "ok": true,
+            "value": 72,
+            "detail": "72 мин в пути от предыдущей точки"
+          },
+          {
+            "code": "load_balance",
+            "ok": false,
+            "value": 511,
+            "detail": "загрузка инженера 511 мин при средней 252"
+          }
+        ],
+        "alternatives": [
+          {
+            "engineer": "eng_03",
+            "blocked": false,
+            "cost_delta": 116,
+            "why_not": null
+          },
+          {
+            "engineer": "eng_02",
+            "blocked": true,
+            "cost_delta": null,
+            "why_not": "skill_missing"
+          }
+        ]
+      },
+      "sequence": [
+        {
+          "swap_with": "req_010",
+          "cost_delta": -24,
+          "why": "перестановка изменит время в пути на -24 мин"
+        },
+        {
+          "swap_with": "req_003",
+          "cost_delta": -28,
+          "why": "перестановка изменит время в пути на -28 мин"
+        }
+      ]
+    },
+    "req_003": {
+      "assignment": {
+        "chosen": "eng_01",
+        "factors": [
+          {
+            "code": "skill_match",
+            "ok": true,
+            "value": [
+              "fiber"
+            ],
+            "detail": "совпадение навыков: fiber"
+          },
+          {
+            "code": "equipment_ok",
+            "ok": true,
+            "value": [
+              "onr",
+              "router_wifi6"
+            ],
+            "detail": "оборудование в комплекте: onr, router_wifi6"
+          },
+          {
+            "code": "sla_margin",
+            "ok": true,
+            "value": 22,
+            "detail": "запас до конца окна 22 мин"
+          },
+          {
+            "code": "window_tight",
+            "ok": true,
+            "value": 180,
+            "detail": "окно 180 мин"
+          },
+          {
+            "code": "travel_delta",
+            "ok": true,
+            "value": 59,
+            "detail": "59 мин в пути от предыдущей точки"
+          },
+          {
+            "code": "load_balance",
+            "ok": false,
+            "value": 511,
+            "detail": "загрузка инженера 511 мин при средней 252"
+          }
+        ],
+        "alternatives": [
+          {
+            "engineer": "eng_04",
+            "blocked": false,
+            "cost_delta": 168,
+            "why_not": null
+          },
+          {
+            "engineer": "eng_02",
+            "blocked": true,
+            "cost_delta": null,
+            "why_not": "equipment_missing"
+          }
+        ]
+      },
+      "sequence": [
+        {
+          "swap_with": "req_004",
+          "cost_delta": -28,
+          "why": "перестановка изменит время в пути на -28 мин"
+        }
+      ]
+    },
+    "req_006": {
+      "assignment": {
+        "chosen": "eng_02",
+        "factors": [
+          {
+            "code": "skill_match",
+            "ok": true,
+            "value": [
+              "video"
+            ],
+            "detail": "совпадение навыков: video"
+          },
+          {
+            "code": "equipment_ok",
+            "ok": true,
+            "value": [
+              "stb"
+            ],
+            "detail": "оборудование в комплекте: stb"
+          },
+          {
+            "code": "sla_margin",
+            "ok": true,
+            "value": 98,
+            "detail": "запас до конца окна 98 мин"
+          },
+          {
+            "code": "window_tight",
+            "ok": true,
+            "value": 150,
+            "detail": "окно 150 мин"
+          },
+          {
+            "code": "travel_delta",
+            "ok": true,
+            "value": 52,
+            "detail": "52 мин в пути от предыдущей точки"
+          },
+          {
+            "code": "load_balance",
+            "ok": false,
+            "value": 129,
+            "detail": "загрузка инженера 129 мин при средней 252"
+          }
+        ],
+        "alternatives": [
+          {
+            "engineer": "eng_05",
+            "blocked": false,
+            "cost_delta": 58,
+            "why_not": null
+          },
+          {
+            "engineer": "eng_01",
+            "blocked": true,
+            "cost_delta": null,
+            "why_not": "skill_missing"
+          }
+        ]
+      },
+      "sequence": []
+    },
+    "req_009": {
+      "assignment": {
+        "chosen": "eng_03",
+        "factors": [
+          {
+            "code": "skill_match",
+            "ok": true,
+            "value": [],
+            "detail": "навыки не требуются"
+          },
+          {
+            "code": "equipment_ok",
+            "ok": true,
+            "value": [],
+            "detail": "оборудование не требуется"
+          },
+          {
+            "code": "sla_margin",
+            "ok": true,
+            "value": 450,
+            "detail": "запас до конца окна 450 мин"
+          },
+          {
+            "code": "window_tight",
+            "ok": true,
+            "value": 450,
+            "detail": "окно 450 мин"
+          },
+          {
+            "code": "travel_delta",
+            "ok": true,
+            "value": 9,
+            "detail": "9 мин в пути от предыдущей точки"
+          },
+          {
+            "code": "load_balance",
+            "ok": false,
+            "value": 57,
+            "detail": "загрузка инженера 57 мин при средней 252"
+          }
+        ],
+        "alternatives": [
+          {
+            "engineer": "eng_01",
+            "blocked": false,
+            "cost_delta": 61,
+            "why_not": null
+          },
+          {
+            "engineer": "eng_05",
+            "blocked": false,
+            "cost_delta": 66,
+            "why_not": null
+          }
+        ]
+      },
+      "sequence": []
+    },
+    "req_002": {
+      "assignment": {
+        "chosen": "eng_04",
+        "factors": [
+          {
+            "code": "skill_match",
+            "ok": true,
+            "value": [
+              "fiber"
+            ],
+            "detail": "совпадение навыков: fiber"
+          },
+          {
+            "code": "equipment_ok",
+            "ok": true,
+            "value": [
+              "router_wifi6"
+            ],
+            "detail": "оборудование в комплекте: router_wifi6"
+          },
+          {
+            "code": "sla_margin",
+            "ok": true,
+            "value": 150,
+            "detail": "запас до конца окна 150 мин"
+          },
+          {
+            "code": "window_tight",
+            "ok": true,
+            "value": 150,
+            "detail": "окно 150 мин"
+          },
+          {
+            "code": "travel_delta",
+            "ok": true,
+            "value": 9,
+            "detail": "9 мин в пути от предыдущей точки"
+          },
+          {
+            "code": "load_balance",
+            "ok": false,
+            "value": 98,
+            "detail": "загрузка инженера 98 мин при средней 252"
+          }
+        ],
+        "alternatives": [
+          {
+            "engineer": "eng_01",
+            "blocked": false,
+            "cost_delta": 74,
+            "why_not": null
+          },
+          {
+            "engineer": "eng_02",
+            "blocked": true,
+            "cost_delta": null,
+            "why_not": "equipment_missing"
+          }
+        ]
+      },
+      "sequence": []
+    },
+    "req_005": {
+      "assignment": {
+        "chosen": "eng_05",
+        "factors": [
+          {
+            "code": "skill_match",
+            "ok": true,
+            "value": [
+              "video"
+            ],
+            "detail": "совпадение навыков: video"
+          },
+          {
+            "code": "equipment_ok",
+            "ok": true,
+            "value": [
+              "thermal_camera"
+            ],
+            "detail": "оборудование в комплекте: thermal_camera"
+          },
+          {
+            "code": "sla_margin",
+            "ok": true,
+            "value": 240,
+            "detail": "запас до конца окна 240 мин"
+          },
+          {
+            "code": "window_tight",
+            "ok": true,
+            "value": 240,
+            "detail": "окно 240 мин"
+          },
+          {
+            "code": "travel_delta",
+            "ok": true,
+            "value": 95,
+            "detail": "95 мин в пути от предыдущей точки"
+          },
+          {
+            "code": "load_balance",
+            "ok": false,
+            "value": 467,
+            "detail": "загрузка инженера 467 мин при средней 252"
+          }
+        ],
+        "alternatives": [
+          {
+            "engineer": "eng_01",
+            "blocked": true,
+            "cost_delta": null,
+            "why_not": "skill_missing"
+          },
+          {
+            "engineer": "eng_02",
+            "blocked": true,
+            "cost_delta": null,
+            "why_not": "vehicle_class"
+          }
+        ]
+      },
+      "sequence": [
+        {
+          "swap_with": "req_008",
+          "cost_delta": 4,
+          "why": "перестановка изменит время в пути на 4 мин"
+        }
+      ]
+    },
+    "req_008": {
+      "assignment": {
+        "chosen": "eng_05",
+        "factors": [
+          {
+            "code": "skill_match",
+            "ok": true,
+            "value": [
+              "network"
+            ],
+            "detail": "совпадение навыков: network"
+          },
+          {
+            "code": "equipment_ok",
+            "ok": true,
+            "value": [],
+            "detail": "оборудование не требуется"
+          },
+          {
+            "code": "sla_margin",
+            "ok": true,
+            "value": 210,
+            "detail": "запас до конца окна 210 мин"
+          },
+          {
+            "code": "window_tight",
+            "ok": true,
+            "value": 210,
+            "detail": "окно 210 мин"
+          },
+          {
+            "code": "travel_delta",
+            "ok": true,
+            "value": 63,
+            "detail": "63 мин в пути от предыдущей точки"
+          },
+          {
+            "code": "load_balance",
+            "ok": false,
+            "value": 467,
+            "detail": "загрузка инженера 467 мин при средней 252"
+          }
+        ],
+        "alternatives": [
+          {
+            "engineer": "eng_01",
+            "blocked": false,
+            "cost_delta": 10,
+            "why_not": null
+          },
+          {
+            "engineer": "eng_04",
+            "blocked": false,
+            "cost_delta": 84,
+            "why_not": null
+          }
+        ]
+      },
+      "sequence": [
+        {
+          "swap_with": "req_005",
+          "cost_delta": 4,
+          "why": "перестановка изменит время в пути на 4 мин"
+        },
+        {
+          "swap_with": "req_007",
+          "cost_delta": 98,
+          "why": "перестановка изменит время в пути на 98 мин"
+        }
+      ]
+    },
+    "req_007": {
+      "assignment": {
+        "chosen": "eng_05",
+        "factors": [
+          {
+            "code": "skill_match",
+            "ok": true,
+            "value": [
+              "network"
+            ],
+            "detail": "совпадение навыков: network"
+          },
+          {
+            "code": "equipment_ok",
+            "ok": true,
+            "value": [],
+            "detail": "оборудование не требуется"
+          },
+          {
+            "code": "sla_margin",
+            "ok": true,
+            "value": 58,
+            "detail": "запас до конца окна 58 мин"
+          },
+          {
+            "code": "window_tight",
+            "ok": true,
+            "value": 210,
+            "detail": "окно 210 мин"
+          },
+          {
+            "code": "travel_delta",
+            "ok": true,
+            "value": 69,
+            "detail": "69 мин в пути от предыдущей точки"
+          },
+          {
+            "code": "load_balance",
+            "ok": false,
+            "value": 467,
+            "detail": "загрузка инженера 467 мин при средней 252"
+          }
+        ],
+        "alternatives": [
+          {
+            "engineer": "eng_01",
+            "blocked": false,
+            "cost_delta": 22,
+            "why_not": null
+          },
+          {
+            "engineer": "eng_04",
+            "blocked": false,
+            "cost_delta": 163,
+            "why_not": null
+          }
+        ]
+      },
+      "sequence": [
+        {
+          "swap_with": "req_008",
+          "cost_delta": 98,
+          "why": "перестановка изменит время в пути на 98 мин"
+        }
+      ]
+    }
+  }
+}
