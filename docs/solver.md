@@ -1,0 +1,141 @@
+# Solver — computation core
+
+> Status: day-0 prototype in `core/` (decision D-18 in `context/29`); moves
+> to `apps/solver` when the monorepo skeleton lands, contracts unchanged.
+> Docs live here per AGENTS.md §8 and travel with the code.
+
+## What it does
+
+Static daily plan: `SolverInput` JSON → `PlanSolution` JSON (both defined in
+`context/14` §3) on Google OR-Tools Routing (GLS). Covers case items 1–3 and
+5 of the Beeline Business ТЗ (qualification/availability distribution, time
+windows, transport+equipment verification, travel/SLA objective, structured
+reasons). Re-planning (case item 4), lunch breaks and the balance objective
+in the cost function are **not** in the prototype yet — see "Next steps".
+
+## Module layout (AGENTS.md §9.2)
+
+| Module | Responsibility |
+|---|---|
+| `core/types.py` | JSON contract layer: `SolverInput` / `PlanSolution` dataclasses, "HH:MM" ↔ minutes parsing |
+| `core/matrix.py` | travel-time matrix backend: offline haversine × road factor × hour coefficient (D-7); OSRM cache is a future drop-in (D-5 unchanged) |
+| `core/model.py` | compatibility prefilter + OR-Tools routing model + route extraction |
+| `core/reasons.py` | rule-based explanation factors (D-3, context/11 §3) |
+| `core/metrics.py` | plan metrics object (context/14 §4 subset) |
+| `core/gen.py` | seeded dataset generator: `mini` (5×10, feasible) and `full` (10×80 per context/14 §5.1) |
+| `core/solve.py` | `solve_task()` composition + CLI |
+
+## Model
+
+**Nodes/vehicles.** Each engineer is one vehicle with a private start and end
+depot ("engineer from home" = own depot, never shared). Request nodes are
+added in id-sorted order — determinism starts at node construction.
+
+**Time dimension.** Integer seconds inside the model (AGENTS.md §9.2), local
+city time, no timezone objects anywhere. Transit = travel + service at the
+origin node; slack = waiting, capped at 240 min (the context/27 §3 snippet's
+60 min would make requests with longer waits unassignable).
+
+**Windows.** Service must *start* inside the window; `done_by = eta + service`
+may run past the window close. Lower bound is always hard. Upper bound:
+hard for `window_strict` or `priority == "vip"`, otherwise soft with a
+per-minute penalty of `weights.sla` (linear; the context/04 §4 formula is
+quadratic — accepted simplification, listed below).
+
+**Shifts.** Departure fixed at `shift[0]`, return to end depot no later than
+`shift[1]` (end-node cumul upper bound).
+
+**Compatibility.** `prefilter()` assigns each request its candidate engineer
+list: skills ⊇ required, equipment counts covered, vehicle class allowed
+(`any` wildcard), window intersecting the shift. Candidates become
+`VehicleVar.SetValues([vehicles…] + [-1])` — the 9.15 SWIG wrapper rejects
+Python sequences in `SetAllowedVehiclesForIndex`, and `-1` preserves the
+drop option. The same candidate lists feed the reasons layer.
+
+**Objective (D-2 lexicographic via weights, context/04 §4).**
+
+| Term | Penalty | Mechanism |
+|---|---|---|
+| unassigned request | 1 000 000 | disjunction penalty; **0** when nobody can ever serve it (free drop, no phantom cost) |
+| late service start | `weights.sla` / minute | soft upper bound on the time cumul |
+| travel | 1 / minute | arc cost (seconds), `weights.travel` implied |
+
+The `balance` weight is not applied in the cost yet (balance is measured in
+metrics only); overload and quadratic lateness shaping are next steps.
+
+**Search.** `PARALLEL_CHEAPEST_INSERTION` + `GUIDED_LOCAL_SEARCH`, default
+budget 1500 ms wall clock (context/07 §5). `solution_limit` gives a
+deterministic stop for golden runs. Empirically plans repeat run-to-run even
+under the pure time limit, but only `solution_limit` is *guaranteed* — demos
+and tests must pin it.
+
+## Reasons (context/11 §3, D-3)
+
+Per request, structured JSON — never LLM, never hand-written:
+
+- `assignment.factors` in importance order: `skill_match`, `equipment_ok`,
+  `sla_margin`, `window_tight`, `travel_delta`, `load_balance` — each
+  `{code, ok, value, detail}`;
+- `assignment.alternatives` (up to 2): feasible engineers with travel-only
+  insertion `cost_delta`, or blocked ones with `why_not` codes
+  (`skill_missing` / `equipment_missing` / `vehicle_class` / `shift_window`);
+- `sequence`: adjacent-swap deltas for the visit (travel-only);
+- `unassigned.why`: `no_candidate: <label>` when prefilter found nobody,
+  `window_conflict: …` when candidates exist but insertion failed.
+
+Simplification: alternative/swap deltas ignore knock-on window effects.
+
+## Metrics (context/14 §4 subset)
+
+`requests_total, assigned, unassigned, sla_ok_pct, sla_at_risk,
+late_total_min, travel_min_total, travel_min_mean_per_eng, workload_min,
+balance_std_min, makespan_min, wait_min_total`.
+
+Definitions that matter: **unassigned counts against `sla_ok_pct`** (an
+unserved request is not OK); `travel_min_total` includes return legs to end
+depots; `workload_min` is the occupied span (travel + wait + service);
+`balance_std_min` is the population std-dev over all engineers, idle
+included.
+
+## Matrix caveats
+
+Haversine × 1.35 road factor ÷ 28 km/h, times one traffic coefficient for
+the whole matrix at the earliest shift-start hour (a pre-solve matrix cannot
+depend on solver decisions). Absolute minutes are a proxy: fine for fitting
+the model, swap to the OSRM cache backend (D-5) before trusting ETAs.
+
+## Golden gate
+
+`core/tests/golden/` holds the seed-42 mini input + reference plan.
+`test_golden.py` fails on: run-to-run drift, plan ≠ snapshot, or
+assigned < 10 / sla_ok_pct < 100. A PR that shifts the golden plan must
+regenerate the snapshot and explain the delta in the commit body
+(context/27 §10, determinism is sacred).
+
+## Run
+
+```bash
+python -m venv core/.venv
+core/.venv/Scripts/python -m pip install -r core/requirements.txt   # Windows
+core/.venv/Scripts/python -m core.gen --scenario full --seed 42 --out data/full.json
+core/.venv/Scripts/python -m core.solve --input data/full.json --output data/solution.json
+core/.venv/Scripts/python -m pytest core/tests -q
+```
+
+## Reference numbers (2026-09-13, this machine)
+
+- mini (5×10): 10/10 assigned, sla 100%, travel 642 min, ~180 ms;
+- full (10×80): 71/80 assigned, sla 88.8%, late 0 min, 1.5 s budget; the 9
+  unassigned are genuine capacity scarcity (3× CCTV against one qualifying
+  engineer, splice-pair overload, afternoon fiber demand) — demo material
+  for the reasons panel, not search failures.
+
+## Next steps (in order)
+
+1. Warm start + stability penalty + `fix` pinning → replanning (D-4);
+2. balance term in the objective (overload / imbalance penalties);
+3. quadratic lateness shaping; lunch breaks via `SetBreakIntervalsOfVehicle`
+   (context/21 §2, context/25 #8);
+4. OSRM matrix backend + cache (D-5), per-arc departure-hour coefficients;
+5. FastAPI wrapper on port 8100 (context/27 §1), then the move to
+   `apps/solver`.
