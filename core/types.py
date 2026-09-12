@@ -188,6 +188,9 @@ class Metrics:
     which assignment rows do not carry. ``workload_min`` counts the whole
     occupied span (travel + wait + service). ``balance_std_min`` is the
     population standard deviation over all engineers, idle ones included.
+    ``moves_vs_prev`` compares against the plan being re-planned:
+    ``reassigned`` — the engineer changed, ``shifted`` — same engineer but
+    the eta moved by at least 5 minutes; zeros when there is no previous plan.
     """
 
     requests_total: int
@@ -202,6 +205,7 @@ class Metrics:
     balance_std_min: float
     makespan_min: int
     wait_min_total: int
+    moves_vs_prev: dict[str, int] = field(default_factory=lambda: {"reassigned": 0, "shifted": 0})
 
 
 @dataclass(frozen=True)
@@ -331,6 +335,7 @@ def solution_to_dict(solution: PlanSolution) -> dict:
             "balance_std_min": round(solution.metrics.balance_std_min, 1),
             "makespan_min": solution.metrics.makespan_min,
             "wait_min_total": solution.metrics.wait_min_total,
+            "moves_vs_prev": dict(solution.metrics.moves_vs_prev),
         },
         "solve_ms": solution.solve_ms,
         "reasons": solution.reasons,

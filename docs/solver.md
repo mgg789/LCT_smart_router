@@ -24,6 +24,41 @@ in the cost function are **not** in the prototype yet — see "Next steps".
 | `core/metrics.py` | plan metrics object (context/14 §4 subset) |
 | `core/gen.py` | seeded dataset generator: `mini` (5×10, feasible) and `full` (10×80 per context/14 §5.1) |
 | `core/solve.py` | `solve_task()` composition + CLI |
+| `core/studio.py` + `core/studio.html` | local interactive playground: map UI to add/cancel requests and watch replans (dev tool, not the product API) |
+
+## Replanning (warm start, D-4)
+
+`solve_task(..., previous_plan=plan)` re-plans the day: the previous plan's
+routes seed the search via `ReadAssignmentFromRoutes` (new requests start
+inactive and are inserted around the preserved routes), and the metrics gain
+`moves_vs_prev`:
+
+- `reassigned` — the engineer changed for a request present in both plans;
+- `shifted` — same engineer, eta drifted ≥ 5 min (`SHIFTED_ETA_MIN`).
+
+`SolveOutput.warm_started` reports whether the seed was accepted; an
+infeasible seed (e.g. a request became unservable) silently falls back to a
+cold start. Gotcha: `ReadAssignmentFromRoutes` speaks in **internal manager
+indices**, not node numbers — the multi-depot manager shifts regular nodes
+down (`NodeToIndex` must be applied).
+
+**Not in yet** (documented next steps): the explicit stability penalty
+(`w_stab × moved + shifted`) and `fix` pinning — warm start alone keeps the
+plan recognizable but GLS still wanders within the budget.
+
+## Studio (local testing)
+
+```bash
+python -m core.studio --scenario full --seed 42 --port 8017
+# → http://127.0.0.1:8017
+```
+
+Single-page UI (Leaflet, OSM tiles — no keys): click the map to drop a new
+work order (work type, window, strict/VIP), cancel requests, what-if weight
+presets, day reset. Every mutation warm-starts the solver and the UI shows
+the diff chips, the Gantt timeline (wait hatched), engineer workload bars
+and the structured reasons panel per request. Tiles need internet; this is a
+dev tool — the product API is `apps/api` (context/09 §3).
 
 ## Model
 
@@ -132,7 +167,7 @@ core/.venv/Scripts/python -m pytest core/tests -q
 
 ## Next steps (in order)
 
-1. Warm start + stability penalty + `fix` pinning → replanning (D-4);
+1. Stability penalty (`w_stab`) + `fix` pinning on top of the warm start (D-4);
 2. balance term in the objective (overload / imbalance penalties);
 3. quadratic lateness shaping; lunch breaks via `SetBreakIntervalsOfVehicle`
    (context/21 §2, context/25 #8);

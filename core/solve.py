@@ -33,20 +33,35 @@ def solve_task(
     input_data: SolverInput,
     time_limit_ms: int = 1500,
     solution_limit: int | None = None,
+    previous_plan: PlanSolution | None = None,
 ) -> PlanSolution:
-    """Run the full static planning pipeline for one input.
+    """Run the full planning pipeline (static build or replan).
 
     Args:
         input_data: parsed solver input.
         time_limit_ms: wall-clock search budget passed to the model.
         solution_limit: deterministic stop (see :func:`core.model.solve`);
             ``None`` keeps the pure time budget.
+        previous_plan: plan being re-planned (D-4). When given, the search
+            warm-starts from its routes and the metrics carry
+            ``moves_vs_prev``; requests absent from the previous plan are
+            inserted around the preserved routes.
 
     Returns:
         Complete plan: assignments, unassigned with reasons, metrics and the
         structured reasons block.
     """
-    output = model.solve(input_data, time_limit_ms=time_limit_ms, solution_limit=solution_limit)
+    previous_routes: dict[str, list[str]] | None = None
+    if previous_plan is not None:
+        previous_routes = {}
+        for visit in sorted(previous_plan.assignments, key=lambda a: (a.engineer, a.seq)):
+            previous_routes.setdefault(visit.engineer, []).append(visit.request)
+    output = model.solve(
+        input_data,
+        time_limit_ms=time_limit_ms,
+        solution_limit=solution_limit,
+        previous_routes=previous_routes,
+    )
     unassigned = tuple(
         Unassigned(request=req_id, why=reasons.unassigned_why(req_id, output.candidates))
         for req_id in output.unassigned_ids
@@ -54,7 +69,7 @@ def solve_task(
     return PlanSolution(
         assignments=tuple(output.assignments),
         unassigned=unassigned,
-        metrics=metrics_mod.compute_metrics(input_data, output),
+        metrics=metrics_mod.compute_metrics(input_data, output, previous_plan),
         solve_ms=output.solve_ms,
         reasons=reasons.build_reasons(input_data, output),
     )
