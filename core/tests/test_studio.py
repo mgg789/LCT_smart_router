@@ -19,6 +19,8 @@ def test_state_and_index_page():
     page = client.get("/")
     assert page.status_code == 200
     assert "LCT Studio" in page.text
+    assert "maplibre-gl" in page.text  # product engine per D-16
+    assert "unpkg.com/leaflet" not in page.text.lower()  # no Leaflet runtime
 
     state = client.get("/api/state").json()
     assert state["version"] == 1

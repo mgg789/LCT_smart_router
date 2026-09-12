@@ -53,7 +53,8 @@ python -m core.studio --scenario full --seed 42 --port 8017
 # → http://127.0.0.1:8017
 ```
 
-Single-page UI (Leaflet, OSM tiles — no keys): click the map to drop a new
+Single-page UI (MapLibre GL — the product engine per D-16 — with keyless
+OSM raster tiles): click the map to drop a new
 work order (work type, window, strict/VIP), cancel requests, what-if weight
 presets, day reset. Every mutation warm-starts the solver and the UI shows
 the diff chips, the Gantt timeline (wait hatched), engineer workload bars

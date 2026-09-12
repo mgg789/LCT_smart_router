@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>LCT Studio — Golden City</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.css">
 <style>
   :root {
     --bg: #f6f7f9; --panel: #ffffff; --ink: #1c1e21; --muted: #6b7280;
@@ -99,6 +99,7 @@
   }
   .badge.vip { background: #fef3c7; color: #92400e; }
   .flash { outline: 3px solid #fbbf24; outline-offset: 2px; }
+  .maplibregl-popup-content { font: 12px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif; border-radius: 8px; }
 </style>
 </head>
 <body>
@@ -152,11 +153,11 @@
   <h2 style="display:none"></h2>
   <div id="timeline"></div>
 </footer>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/maplibre-gl@5.6.0/dist/maplibre-gl.js"></script>
 <script>
 "use strict";
 
-const state = { data: null, map: null, pending: null, selected: null, routeLayer: null, markerLayer: null };
+const state = { data: null, map: null, mapReady: false, pending: null, selected: null, baseMarkers: [] };
 
 function fmt(n) { return Math.round(n).toLocaleString("ru-RU"); }
 function toMin(hhmm) { const [h, m] = hhmm.split(":").map(Number); return h * 60 + m; }
@@ -237,66 +238,149 @@ function engineerColor(id) {
   return eng ? eng.color : "#9ca3af";
 }
 
-function renderMap() {
-  const d = state.data;
-  if (!state.map) {
-    state.map = L.map("map", { zoomControl: true });
-    // OSM standard tiles: no key needed for a local dev tool. The product map
-    // (MapLibre + Yandex/CARTO keys, decision D-6) is a separate concern.
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "© OpenStreetMap contributors", maxZoom: 19,
-    }).addTo(state.map);
-    state.map.setView([55.755, 37.617], 11);
-    state.routeLayer = L.layerGroup().addTo(state.map);
-    state.markerLayer = L.layerGroup().addTo(state.map);
-    state.map.on("click", onMapClick);
-  }
-  state.routeLayer.clearLayers();
-  state.markerLayer.clearLayers();
-  const byId = Object.fromEntries(d.requests.map(r => [r.id, r]));
-
-  for (const eng of d.engineers) {
-    const stopIds = d.routes[eng.id] || [];
-    const line = [[eng.lat, eng.lon], ...stopIds.map(id => [byId[id].lat, byId[id].lon]), [eng.lat, eng.lon]];
-    L.polyline(line, { color: eng.color, weight: 3, opacity: 0.65 }).addTo(state.routeLayer);
-    const square = L.divIcon({ className: "", html:
-      `<div style="width:14px;height:14px;border-radius:4px;background:${eng.color};border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>`,
-      iconSize: [14, 14], iconAnchor: [7, 7] });
-    L.marker([eng.lat, eng.lon], { icon: square, zIndexOffset: 500 })
-      .bindTooltip(`${eng.id} — база`).addTo(state.markerLayer);
-  }
-
-  for (const req of d.requests) {
-    const isNew = d.last_event.added.includes(req.id);
-    const color = req.status === "assigned" ? engineerColor(req.engineer) : "#9ca3af";
-    const marker = L.circleMarker([req.lat, req.lon], {
-      radius: isNew ? 9 : 7, color: req.status === "unassigned" ? "#dc2626" : "#ffffff",
-      weight: req.status === "unassigned" || req.priority === "vip" ? 3 : 1.5,
-      fillColor: color, fillOpacity: 0.95,
-    });
-    const windowText = `${req.window[0]}–${req.window[1]}${req.window_strict ? " (жёст.)" : ""}`;
-    const etaText = req.status === "assigned"
-      ? `\nприезд ${req.eta}–${req.done_by} · ${req.engineer}` : "\nНЕ НАЗНАЧЕНА";
-    marker.bindTooltip(`${req.id}${etaText}\nокно ${windowText}`, { direction: "top" });
-    marker.on("click", () => selectRequest(req.id));
-    marker.addTo(state.markerLayer);
-  }
+function emptyFC() {
+  return { type: "FeatureCollection", features: [] };
 }
 
-function onMapClick(e) {
-  // the add-form overlays the map container: ignore bubbled control clicks
-  const target = e.originalEvent && e.originalEvent.target;
-  if (target && target.closest && target.closest("#addform")) return;
+function initMap() {
+  // MapLibre GL (product engine, decision D-16) with keyless OSM raster tiles;
+  // [lng, lat] coordinate order differs from Leaflet's [lat, lng].
+  state.map = new maplibregl.Map({
+    container: "map",
+    style: {
+      version: 8,
+      sources: {
+        osm: {
+          type: "raster",
+          tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+          tileSize: 256,
+          attribution: "© OpenStreetMap contributors",
+        },
+      },
+      layers: [{ id: "osm", type: "raster", source: "osm" }],
+    },
+    center: [37.617, 55.755],
+    zoom: 10.4,
+  });
+  state.map.addControl(new maplibregl.NavigationControl());
+
+  state.map.on("load", () => {
+    state.map.addSource("routes", { type: "geojson", data: emptyFC() });
+    state.map.addSource("points", { type: "geojson", data: emptyFC() });
+    state.map.addSource("pending", { type: "geojson", data: emptyFC() });
+    state.map.addLayer({
+      id: "routes", type: "line", source: "routes",
+      paint: { "line-color": ["get", "color"], "line-width": 3, "line-opacity": 0.7 },
+    });
+    state.map.addLayer({
+      id: "req-points", type: "circle", source: "points",
+      paint: {
+        "circle-radius": ["case", ["get", "isNew"], 9.5, 7.5],
+        "circle-color": ["get", "color"],
+        "circle-stroke-width": ["case",
+          ["==", ["get", "status"], "unassigned"], 3,
+          ["==", ["get", "priority"], "vip"], 2.5,
+          ["get", "isNew"], 3, 1.5],
+        "circle-stroke-color": ["case",
+          ["==", ["get", "status"], "unassigned"], "#dc2626", "#ffffff"],
+      },
+    });
+    state.map.addLayer({
+      id: "req-selected", type: "circle", source: "points",
+      filter: ["==", ["get", "id"], ""],
+      paint: {
+        "circle-radius": 12, "circle-color": "rgba(0,0,0,0)",
+        "circle-stroke-color": "#f59e0b", "circle-stroke-width": 3,
+      },
+    });
+    state.map.addLayer({
+      id: "pending", type: "circle", source: "pending",
+      paint: {
+        "circle-radius": 10, "circle-color": "rgba(37,99,235,0.08)",
+        "circle-stroke-color": "#2563eb", "circle-stroke-width": 3,
+      },
+    });
+    state.mapReady = true;
+    if (state.data) renderMap();
+  });
+
+  const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12 });
+  state.map.on("mousemove", "req-points", (e) => {
+    const p = e.features[0].properties;
+    popup.setLngLat(e.lngLat).setHTML(
+      `<b>${p.id}</b>` + (p.status === "assigned"
+        ? `<br>приезд ${p.eta}–${p.doneBy} · ${p.engineer}`
+        : "<br>НЕ НАЗНАЧЕНА") +
+      `<br>окно ${p.windowOpen}–${p.windowClose}${p.strict ? " (жёст.)" : ""}`
+    ).addTo(state.map);
+  });
+  state.map.on("mouseleave", "req-points", () => popup.remove());
+  state.map.on("click", "req-points", (e) => selectRequest(e.features[0].properties.id));
+
+  state.map.on("click", (e) => {
+    // request points are handled by their layer handler
+    const hit = state.map.queryRenderedFeatures(e.point, { layers: ["req-points"] });
+    if (hit.length) return;
+    openAddForm(e.lngLat.lat, e.lngLat.lng);
+  });
+}
+
+function renderMap() {
+  const d = state.data;
+  if (!state.map) initMap();
+  if (!state.mapReady) return; // layers fill in on the map "load" event
+  const byId = Object.fromEntries(d.requests.map(r => [r.id, r]));
+
+  const routeFeatures = [];
+  for (const eng of d.engineers) {
+    const stopIds = d.routes[eng.id] || [];
+    const coords = [[eng.lon, eng.lat],
+      ...stopIds.map(id => [byId[id].lon, byId[id].lat]),
+      [eng.lon, eng.lat]];
+    routeFeatures.push({
+      type: "Feature", properties: { color: eng.color },
+      geometry: { type: "LineString", coordinates: coords },
+    });
+  }
+  state.map.getSource("routes").setData({ type: "FeatureCollection", features: routeFeatures });
+
+  const pointFeatures = d.requests.map(req => ({
+    type: "Feature",
+    properties: {
+      id: req.id, status: req.status, priority: req.priority,
+      color: req.status === "assigned" ? engineerColor(req.engineer) : "#9ca3af",
+      eta: req.eta || "", doneBy: req.done_by || "", engineer: req.engineer || "",
+      windowOpen: req.window[0], windowClose: req.window[1], strict: !!req.window_strict,
+      isNew: d.last_event.added.includes(req.id),
+    },
+    geometry: { type: "Point", coordinates: [req.lon, req.lat] },
+  }));
+  state.map.getSource("points").setData({ type: "FeatureCollection", features: pointFeatures });
+  state.map.setFilter("req-selected", ["==", ["get", "id"], state.selected || ""]);
+
+  state.map.getSource("pending").setData(state.pending
+    ? { type: "FeatureCollection", features: [{ type: "Feature", properties: {},
+        geometry: { type: "Point", coordinates: [state.pending.lon, state.pending.lat] } }] }
+    : emptyFC());
+
+  for (const marker of state.baseMarkers) marker.remove();
+  state.baseMarkers = d.engineers.map(eng => {
+    const el = document.createElement("div");
+    el.style.cssText = "width:14px;height:14px;border-radius:4px;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)";
+    el.style.background = eng.color;
+    el.title = `${eng.id} — база`;
+    return new maplibregl.Marker({ element: el }).setLngLat([eng.lon, eng.lat]).addTo(state.map);
+  });
+}
+
+function openAddForm(lat, lon) {
   state.selected = null;
   document.getElementById("details").classList.add("hidden");
   const form = document.getElementById("addform");
   form.classList.remove("hidden");
-  document.getElementById("f-coords").textContent = `${e.latlng.lat.toFixed(5)}, ${e.latlng.lng.toFixed(5)}`;
-  if (state.pending) state.pending.remove();
-  state.pending = { lat: e.latlng.lat, lon: e.latlng.lng, marker: null };
-  state.pending.marker = L.circleMarker([e.latlng.lat, e.latlng.lng], {
-    radius: 9, color: "#2563eb", weight: 3, fill: false, dashArray: "4 3",
-  }).addTo(state.markerLayer);
+  document.getElementById("f-coords").textContent = `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+  state.pending = { lat, lon };
+  renderMap();
 }
 
 function renderWorkTypes() {
@@ -322,7 +406,6 @@ async function addRequest() {
   };
   const next = await post("/api/requests", body);
   if (!next) return;
-  state.pending.marker.remove();
   state.pending = null;
   document.getElementById("addform").classList.add("hidden");
   state.data = next;
@@ -342,7 +425,7 @@ async function cancelRequest(id) {
 
 function selectRequest(id) {
   state.selected = id;
-  renderDetails(id, false);
+  render(); // redraws the selection ring, timeline flash and details panel
 }
 
 function renderDetails(id, scroll) {
@@ -485,10 +568,10 @@ function renderTimeline() {
 }
 
 document.getElementById("f-add").onclick = addRequest;
-document.getElementById("addform").addEventListener("click", e => e.stopPropagation());
 document.getElementById("f-cancel").onclick = () => {
-  if (state.pending) { state.pending.marker.remove(); state.pending = null; }
+  state.pending = null;
   document.getElementById("addform").classList.add("hidden");
+  renderMap();
 };
 document.getElementById("reset").onclick = async () => {
   const next = await post("/api/reset");
