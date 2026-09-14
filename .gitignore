@@ -8,3 +8,6 @@ __pycache__/
 .venv/
 dist/
 .env
+
+# ZCode local workspace state
+.zcode/
