@@ -82,19 +82,19 @@ structure — follow them strictly. Do not introduce a second way of doing the s
 
 ## 5. Branch Management
 
-1. `main` is always demo-ready ("**stage = main**"): it must build, pass `pnpm smoke`, and be
-   presentable at any moment.
-2. Branch naming: `feat/<area>-<slug>`, `fix/<area>-<slug>`, `chore/<slug>`, `docs/<slug>`,
-   `refactor/<area>-<slug>` (e.g. `feat/solver-breaks`, `fix/web-timeline-dnd`).
-3. Do feature work on a short-lived branch; merge to `main` only after the smoke gate is green.
-4. **Never force-push or rewrite history on `main`.** Never commit to `main` code that breaks the
-   build or smoke.
-5. Direct commits to `main` are allowed only for: docs, `context/` updates, and trivial fixes that
-   keep smoke green.
-6. Keep branches alive ≤ 1–2 days; rebase onto `main` before merging; merge with a clear merge
+1. **`dev` is the default working branch.** All work happens in `dev`: start every session with
+   `git checkout dev && git pull`, branch feature work off it, and merge back into it.
+2. **`main` is protected and stays clean.** It is the demo-ready mirror ("stage = main" as its
+   *state*): updated only by an explicit team-lead command via merge from `dev` when the smoke
+   gate is green. Never commit or push to `main` directly; never force-push or rewrite its
+   history. If you are not the team lead — your target is `dev`.
+3. Branch naming: `feat/<area>-<slug>`, `fix/<area>-<slug>`, `chore/<slug>`, `docs/<slug>`,
+   `refactor/<area>-<slug>` (e.g. `feat/solver-breaks`, `fix/web-timeline-dnd`). Branch off `dev`.
+4. Do feature work on a short-lived branch; merge to `dev` only after the smoke gate is green.
+5. Keep branches alive ≤ 1–2 days; rebase onto `dev` before merging; merge with a clear merge
    commit or fast-forward — no squash that hides checkpoints (the history is a demo artifact too).
-7. One branch = one logical task (one board card). Do not mix unrelated work.
-8. Contracts migration rule: if your branch requires a `packages/shared` change, coordinate first —
+6. One branch = one logical task (one board card). Do not mix unrelated work.
+7. Contracts migration rule: if your branch requires a `packages/shared` change, coordinate first —
    the contracts owner applies it and you rebase.
 
 ## 6. Commits
@@ -120,7 +120,7 @@ Conventional Commits, imperative mood, English:
    commit red code to a shared branch.
 2. A "meaningful checkpoint" = a working increment a teammate could build on: a model constraint +
    its test, an API endpoint + its test, a UI component + its usage, a data migration + seed update.
-3. Push the branch after every commit session; merge to `main` per §5.
+3. Push the branch after every commit session; merge to `dev` per §5.
 4. Commit messages explain **why**, not just what. If a commit changes the golden plan or metrics,
    state it in the body.
 5. Never commit: secrets, tokens, `.env`, build artifacts, node_modules, OneDrive temp files.
@@ -236,9 +236,10 @@ Conventional Commits, imperative mood, English:
 ## 15. Session Checklist
 
 **Start:** read this file if you haven't → `context/00-README.md` → your zone files
-(`context/28` §3) → pull latest `main` → board: pick/update your card → branch off `main`.
-**End:** smoke green → docs + context updated → commits pushed → board card moved with a summary
-comment → main merged (if the task is complete).
+(`context/28` §3) → `git checkout dev && git pull` → board: pick/update your card → branch off
+`dev`.
+**End:** smoke green → docs + context updated → commits pushed → feature branch merged into `dev`
+and pushed → board card moved with a summary comment.
 
 ## 16. Definition of Done
 
