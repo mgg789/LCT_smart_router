@@ -90,6 +90,10 @@ the official dataset has no engineer directory, no work durations, no priorities
 coordinates (`context/18` section 6.3). Deriving them by a documented rule is allowed by
 the case statement, but which values were derived has to stay visible.
 
+The importer is the concrete case: crews come from the `Бригада` column, their skills and
+transport are derived by a deterministic rule so that all three skills and all four
+transports occur, and every engineer it creates carries `origin = synthesized`.
+
 **Coordinates are the load-bearing gap.** `requests.lat` and `requests.lon` are nullable
 and `needs_geocoding` defaults to true. Invented coordinates are forbidden
 (AGENTS.md section 4.1), so a request without a point is excluded from the published

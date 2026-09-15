@@ -1,3 +1,4 @@
+import '../support/env';
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import { bigIntToSeconds, secondsToBigInt } from '../../src/common/time/bigint-boundary';

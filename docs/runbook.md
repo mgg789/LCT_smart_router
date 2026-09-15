@@ -62,7 +62,24 @@ pnpm --filter api build
 node apps/api/dist/src/main.js
 ```
 
-## 4. Data and restarts
+## 4. Loading the dataset
+
+The contour starts empty. To load one region of the organisers' data:
+
+```bash
+TOKEN=$(curl -s -X POST localhost:8000/api/v1/auth/dispatcher/password   -H 'content-type: application/json'   -d '{"email":"dispatcher@example.test","password":"<the one in .env>"}' | jq -r .token)
+
+curl -s -X POST localhost:8000/api/v1/dispatch/data/import   -H "authorization: Bearer $TOKEN" -H 'content-type: application/json'   -d '{"operationId":"'$(uuidgen)'","region":"east"}'
+```
+
+Regions: `east`, `southeast`, `south_central`. The files are mounted read-only into the
+container from `data/dataset`, so a geocode sidecar added later needs no rebuild.
+
+Expect every imported request to come back as awaiting coordinates: the dataset has
+addresses, not points, and none are invented. `GET /api/v1/dispatch/debug/snapshot` shows
+exactly how many are waiting and why.
+
+## 5. Data and restarts
 
 `docker compose down` keeps the named volume `postgres-data`, so an ordinary restart
 preserves business data, the working plan, the control mode and lunch facts
@@ -73,7 +90,7 @@ reset".** The product-level reset is a confirmed dispatcher action with its own 
 scope and post-conditions (`context/37` section 9.4); deleting the volume merely removes
 the database and tells nobody.
 
-## 5. Troubleshooting
+## 6. Troubleshooting
 
 **`api` container restarts immediately.** The environment failed validation. The first
 log line names every offending key. Check `.env` against `.env.example`.
@@ -94,7 +111,7 @@ published on `127.0.0.1` only.
 [architecture.md](./architecture.md) section 2 — several blocks are planned and not yet
 implemented, and section 5 lists the contracts that are still missing.
 
-## 6. Why the tests run serially
+## 7. Why the tests run serially
 
 `--test-concurrency=1` is deliberate. The System Layer has genuinely global singletons --
 the AUTO/MANUAL row and the pointer to the published snapshot -- and they are the subject
@@ -103,7 +120,12 @@ observe the others' publications, so a suite that is correct in isolation fails 
 Separate databases per file would allow parallelism; until that is worth the setup, serial
 execution is the honest option rather than weakening the assertions.
 
-## 7. Smoke gate
+A related trap when writing tests here: every timestamp is a whole second, so "the most
+recent row" is ambiguous whenever two rows are written in the same second. Identify a row
+by its own id or by a value that is unique to it, never by `orderBy: { createdAt: 'desc' }`.
+Two intermittent failures came from exactly that.
+
+## 8. Smoke gate
 
 `pnpm smoke` (AGENTS.md section 11.1) is not implemented yet: it needs the persistence,
 snapshot and router-gateway branches to exist before it can prove anything end to end.

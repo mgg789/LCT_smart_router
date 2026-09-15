@@ -14,11 +14,18 @@ import type { Priority, Skill } from '../../generated/prisma/client';
  * context/18 section 6.5; the durations are the midpoints of the ranges named there. They
  * are stored with `origin = synthesized` so that a derived value never looks like
  * something the customer supplied.
+ *
+ * `aliases` carry the exact wording used in the dataset. They exist so the importer maps
+ * by a declared string rather than by guessing at an unfamiliar one: an unmapped type
+ * fails its package instead of quietly becoming "some local work"
+ * (context/37 section 9.1).
  */
 export interface WorkTypeSpec {
   readonly code: string;
-  /** As it appears in the dataset and in the client-facing list. */
+  /** The name shown to a customer choosing from the list. */
   readonly title: string;
+  /** Exact spellings that appear in the official dataset. */
+  readonly aliases: readonly string[];
   readonly skill: Skill;
   readonly serviceDurationSec: number;
   readonly priority: Priority;
@@ -27,10 +34,11 @@ export interface WorkTypeSpec {
 const MINUTES = 60;
 
 export const WORK_TYPES: readonly WorkTypeSpec[] = [
-  // Emergency work: a failure of a service already in use.
+  // Emergency work: a service already in use has failed.
   {
     code: 'outage',
     title: 'Авария',
+    aliases: ['Авария'],
     skill: 'emergency',
     serviceDurationSec: 90 * MINUTES,
     priority: 'urgent',
@@ -38,6 +46,7 @@ export const WORK_TYPES: readonly WorkTypeSpec[] = [
   {
     code: 'no_link',
     title: 'Нет линка',
+    aliases: ['Нет линка'],
     skill: 'emergency',
     serviceDurationSec: 90 * MINUTES,
     priority: 'urgent',
@@ -45,6 +54,7 @@ export const WORK_TYPES: readonly WorkTypeSpec[] = [
   {
     code: 'disconnects',
     title: 'Разрывы',
+    aliases: ['Разрывы'],
     skill: 'emergency',
     serviceDurationSec: 60 * MINUTES,
     priority: 'normal',
@@ -52,6 +62,7 @@ export const WORK_TYPES: readonly WorkTypeSpec[] = [
   {
     code: 'low_speed',
     title: 'Низкая скорость',
+    aliases: ['Низкая скорость'],
     skill: 'emergency',
     serviceDurationSec: 60 * MINUTES,
     priority: 'normal',
@@ -59,6 +70,15 @@ export const WORK_TYPES: readonly WorkTypeSpec[] = [
   {
     code: 'port_errors',
     title: 'Рост ошибок на порту',
+    aliases: ['Рост ошибок на порту'],
+    skill: 'emergency',
+    serviceDurationSec: 60 * MINUTES,
+    priority: 'normal',
+  },
+  {
+    code: 'ip_169',
+    title: 'IP-адрес 169...',
+    aliases: ['IP-адрес 169...'],
     skill: 'emergency',
     serviceDurationSec: 60 * MINUTES,
     priority: 'normal',
@@ -68,6 +88,7 @@ export const WORK_TYPES: readonly WorkTypeSpec[] = [
   {
     code: 'connection_request',
     title: 'Заявка на подключение',
+    aliases: ['Заявка на подключение'],
     skill: 'connection',
     serviceDurationSec: 75 * MINUTES,
     priority: 'normal',
@@ -75,6 +96,7 @@ export const WORK_TYPES: readonly WorkTypeSpec[] = [
   {
     code: 'convergence',
     title: 'Конвергенция абонента',
+    aliases: ['Конвергенция абонента'],
     skill: 'connection',
     serviceDurationSec: 50 * MINUTES,
     priority: 'normal',
@@ -82,6 +104,7 @@ export const WORK_TYPES: readonly WorkTypeSpec[] = [
   {
     code: 'equipment_order',
     title: 'Дозаказ оборудования',
+    aliases: ['Дозаказ оборудования', 'Заказ подключения/Дозаказ оборудования'],
     skill: 'connection',
     serviceDurationSec: 45 * MINUTES,
     priority: 'normal',
@@ -89,6 +112,7 @@ export const WORK_TYPES: readonly WorkTypeSpec[] = [
   {
     code: 'router_replacement',
     title: 'Роутер. Замена',
+    aliases: ['Роутер. Замена', 'Роутер. Замена техническим специалистом'],
     skill: 'connection',
     serviceDurationSec: 35 * MINUTES,
     priority: 'normal',
@@ -96,6 +120,11 @@ export const WORK_TYPES: readonly WorkTypeSpec[] = [
   {
     code: 'stb_replacement',
     title: 'ТВ/TVE/ENT. Замена приставки',
+    aliases: [
+      'ТВ/TVE/ENT. Замена приставки',
+      'TVE/ENT. Замена приставки техником',
+      'ТВ. Замена приставки техником',
+    ],
     skill: 'connection',
     serviceDurationSec: 35 * MINUTES,
     priority: 'normal',
@@ -103,15 +132,17 @@ export const WORK_TYPES: readonly WorkTypeSpec[] = [
   {
     code: 'gigabit_switch',
     title: 'Переключение на Гбит/с',
+    aliases: ['Переключение на Гбит/с'],
     skill: 'connection',
     serviceDurationSec: 45 * MINUTES,
     priority: 'normal',
   },
 
-  // Local work: everything performed on site that is neither an outage nor a connection.
+  // Local work: performed on site, neither an outage nor a connection.
   {
     code: 'cable_work',
     title: 'Работа с кабелем',
+    aliases: ['Работа с кабелем'],
     skill: 'local',
     serviceDurationSec: 60 * MINUTES,
     priority: 'normal',
@@ -119,6 +150,7 @@ export const WORK_TYPES: readonly WorkTypeSpec[] = [
   {
     code: 'monitoring',
     title: 'Мониторинг',
+    aliases: ['Мониторинг'],
     skill: 'local',
     serviceDurationSec: 30 * MINUTES,
     priority: 'normal',
@@ -126,6 +158,7 @@ export const WORK_TYPES: readonly WorkTypeSpec[] = [
   {
     code: 'other_errors',
     title: 'TVE/ENT. Другие ошибки',
+    aliases: ['TVE/ENT. Другие ошибки'],
     skill: 'local',
     serviceDurationSec: 40 * MINUTES,
     priority: 'normal',
@@ -133,6 +166,7 @@ export const WORK_TYPES: readonly WorkTypeSpec[] = [
   {
     code: 'information',
     title: 'Информация',
+    aliases: ['Информация'],
     skill: 'local',
     serviceDurationSec: 30 * MINUTES,
     priority: 'normal',
@@ -141,8 +175,32 @@ export const WORK_TYPES: readonly WorkTypeSpec[] = [
 
 const BY_CODE = new Map(WORK_TYPES.map((type) => [type.code, type]));
 
+const BY_TITLE = new Map<string, WorkTypeSpec>();
+for (const type of WORK_TYPES) {
+  BY_TITLE.set(normalizeTitle(type.title), type);
+  for (const alias of type.aliases) {
+    BY_TITLE.set(normalizeTitle(alias), type);
+  }
+}
+
 export function findWorkType(code: string): WorkTypeSpec | undefined {
   return BY_CODE.get(code);
+}
+
+/**
+ * Resolves the wording used in the dataset.
+ *
+ * Returns `undefined` for anything not declared; the caller fails the package rather than
+ * picking the nearest familiar type, because a wrong skill silently sends the wrong
+ * engineer.
+ */
+export function findWorkTypeByTitle(title: string): WorkTypeSpec | undefined {
+  return BY_TITLE.get(normalizeTitle(title));
+}
+
+/** Collapses whitespace and case so a stray double space does not lose a mapping. */
+function normalizeTitle(title: string): string {
+  return title.trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
 export const WORK_TYPE_CODES = WORK_TYPES.map((type) => type.code);

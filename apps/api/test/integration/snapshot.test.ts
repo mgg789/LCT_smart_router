@@ -1,3 +1,4 @@
+import '../support/env';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
@@ -445,11 +446,15 @@ describe('snapshot publication', () => {
     const countAfter = await prisma.routingSnapshot.count();
     assert.ok(countAfter > countBefore, 'published snapshots are immutable and kept');
 
-    const pointer = await prisma.routingCurrent.findUniqueOrThrow({ where: { id: 'singleton' } });
-    const latest = await prisma.routingSnapshot.findFirstOrThrow({
-      orderBy: { createdAt: 'desc' },
+    // The pointer is checked against the published hash rather than against "the newest
+    // row": timestamps are whole seconds, and two snapshots written in the same second
+    // have no order between them.
+    const pointer = await prisma.routingCurrent.findUniqueOrThrow({
+      where: { id: 'singleton' },
+      include: { snapshot: true },
     });
-    assert.equal(pointer.snapshotId, latest.id);
+    const published = await snapshot();
+    assert.equal(pointer.snapshot.inputHash, published.inputHash);
     assert.ok(pointer.pointerVersion >= 1);
   });
 });
