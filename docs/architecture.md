@@ -30,10 +30,10 @@ service each.
 
 | Block | Module | State |
 |---|---|---|
-| `REST API` | `src/api`, `src/common` | Foundation in place: routing prefix, error envelope, validation pipe, request context |
-| `auth-engine` | `src/auth` | Planned — branch `feat/api-auth` |
+| `REST API` | `src/api`, `src/common` | Foundation plus the auth surface: routing prefix, error envelope, Zod validation, request context |
+| `auth-engine` | `src/auth` | Implemented: login codes, dispatcher password path, sessions, roles, integration keys, global guard |
 | `orchestrator backend` | `src/orchestrator` | Planned — branches `feat/api-requests`, `feat/api-engineers` |
-| `dataengine` | `src/persistence` | Planned — branch `feat/api-data-layer` |
+| `dataengine` | `src/persistence` | Implemented: schema, migrations, connection, transaction boundary, row locks, health probe |
 | `mount-data-eng` | `src/routing/mount-data-eng` | Planned — branch `feat/api-snapshot` |
 | `ROUTER-gateway` | `src/routing/router-gateway` | Planned — branch `feat/api-router-gateway` |
 | `AI-gateway` | — | Out of scope of this build; declared in `/health/services` as `not_configured` |
@@ -68,6 +68,12 @@ contract: `VERSION_CONFLICT`, `WORK_ALREADY_STARTED`, `MODE_MANUAL`, `SNAPSHOT_S
 travels with every log line and every error body, and is echoed in `x-request-id`. Logs are
 one JSON object per line; login codes, passwords and token values are never passed to the
 logger.
+
+**Access control** (`src/common/access`, `src/auth`). The guard is global and denies by
+default, so a new endpoint without a decorator is unreachable rather than public. It
+resolves either a session token or an integration key into one `Actor`, and a category is
+mapped onto the role whose UI actions it replaces. The decorators live in `common/access`
+because health has to declare itself public without depending on the auth module.
 
 **Health** (`src/common/health`). Three endpoints outside the `api/v1` prefix: `health/live`
 (process), `health/ready` (required dependencies only) and `health/services` (everything,

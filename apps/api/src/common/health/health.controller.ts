@@ -1,9 +1,15 @@
 import { Controller, Get, HttpStatus, Res } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
+import { Public } from '../access';
 import { HealthRegistry } from './health.registry';
 import type { ServiceHealth } from './health.types';
 
+/**
+ * Health is reachable without a session: an operator has to be able to see that the
+ * service is up before anyone can sign in, and a readiness probe has no credentials.
+ */
+@Public()
 @ApiTags('health')
 @Controller('health')
 export class HealthController {

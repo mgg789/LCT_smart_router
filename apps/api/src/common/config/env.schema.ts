@@ -31,6 +31,32 @@ export const envSchema = z.object({
    * owner; on a developer machine it is absent and the CLI falls back to DATABASE_URL.
    */
   MIGRATE_DATABASE_URL: z.string().min(1).optional(),
+
+  // --- auth-engine ---------------------------------------------------------
+  // There is exactly one dispatcher. Email and password come from the server
+  // configuration, and the password path deliberately does not depend on SMTP: access to
+  // the Dashboard must survive a broken mail contour (context/36 section 7.1).
+  DISPATCHER_EMAIL: z.email(),
+  DISPATCHER_PASSWORD: z.string().min(8),
+
+  /**
+   * Lifetimes, in seconds. The concept leaves these to the auth-engine and names no
+   * numbers, so these are implementation defaults, not agreed norms
+   * (context/36 section 11).
+   */
+  SESSION_TTL_SEC: z.coerce.number().int().positive().default(86_400),
+  LOGIN_CODE_TTL_SEC: z.coerce.number().int().positive().default(600),
+  LOGIN_CODE_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
+
+  /**
+   * Development escape hatch: returns the login code in the API response because there is
+   * no SMTP-gateway in this build to deliver it. Refused in production by
+   * `validateEnv` -- an exposed code is a full authentication bypass.
+   */
+  AUTH_DEV_EXPOSE_CODES: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -46,6 +72,12 @@ export function validateEnv(raw: Record<string, unknown>): Env {
       .map((issue) => `  ${issue.path.join('.') || '(root)'}: ${issue.message}`)
       .join('\n');
     throw new Error(`Invalid environment configuration:\n${issues}`);
+  }
+  if (parsed.data.NODE_ENV === 'production' && parsed.data.AUTH_DEV_EXPOSE_CODES) {
+    throw new Error(
+      'Invalid environment configuration: AUTH_DEV_EXPOSE_CODES must not be enabled in ' +
+        'production. Returning login codes over the API bypasses authentication entirely.',
+    );
   }
   return parsed.data;
 }

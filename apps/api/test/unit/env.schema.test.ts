@@ -5,6 +5,8 @@ import { validateEnv } from '../../src/common/config/env.schema';
 /** The keys with no sensible default; everything else may be omitted. */
 const REQUIRED = {
   DATABASE_URL: 'postgresql://user:pass@localhost:5432/db?schema=public',
+  DISPATCHER_EMAIL: 'dispatcher@example.test',
+  DISPATCHER_PASSWORD: 'long-enough-password',
 };
 
 describe('environment validation', () => {
@@ -27,5 +29,21 @@ describe('environment validation', () => {
 
   it('refuses to start without a database connection rather than defaulting to one', () => {
     assert.throws(() => validateEnv({}), /DATABASE_URL/);
+  });
+
+  it('refuses to start without dispatcher credentials', () => {
+    assert.throws(() => validateEnv({ DATABASE_URL: REQUIRED.DATABASE_URL }), /DISPATCHER_EMAIL/);
+  });
+
+  it('refuses to expose login codes in production', () => {
+    // An exposed code is a complete authentication bypass, so this is a hard stop rather
+    // than a warning.
+    assert.throws(
+      () => validateEnv({ ...REQUIRED, NODE_ENV: 'production', AUTH_DEV_EXPOSE_CODES: 'true' }),
+      /AUTH_DEV_EXPOSE_CODES/,
+    );
+    assert.doesNotThrow(() =>
+      validateEnv({ ...REQUIRED, NODE_ENV: 'production', AUTH_DEV_EXPOSE_CODES: 'false' }),
+    );
   });
 });

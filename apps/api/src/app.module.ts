@@ -1,4 +1,6 @@
 import { type MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
+import { ApiModule } from './api/api.module';
+import { AuthModule } from './auth';
 import { AppConfigModule } from './common/config';
 import { HealthModule } from './common/health';
 import { RequestContextMiddleware } from './common/logging';
@@ -13,7 +15,7 @@ import { PersistenceModule } from './persistence';
  * modules of this one application, not one service each.
  */
 @Module({
-  imports: [AppConfigModule, TimeModule, HealthModule, PersistenceModule],
+  imports: [AppConfigModule, TimeModule, HealthModule, PersistenceModule, AuthModule, ApiModule],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
