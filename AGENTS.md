@@ -1,6 +1,6 @@
 # AGENTS.md — LCT Smart Router
 
-Rules for any AI agent (Codex, Cursor, ZCode) and human contributor working in this repository.
+Rules for any AI agent (Claude Code, Codex, Cursor, ZCode) and human contributor working in this repository.
 Team language is Russian; **code, comments, identifiers, commits, PRs, and docs are written in English.**
 
 ## 0. Project Overview
