@@ -32,7 +32,7 @@ service each.
 |---|---|---|
 | `REST API` | `src/api`, `src/common` | Foundation plus the auth surface: routing prefix, error envelope, Zod validation, request context |
 | `auth-engine` | `src/auth` | Implemented: login codes, dispatcher password path, sessions, roles, integration keys, global guard |
-| `orchestrator backend` | `src/orchestrator` | Planned — branches `feat/api-requests`, `feat/api-engineers` |
+| `orchestrator backend` | `src/orchestrator`, `src/operations` | Operation envelope in place (idempotency, versions, journal); business scenarios planned |
 | `dataengine` | `src/persistence` | Implemented: schema, migrations, connection, transaction boundary, row locks, health probe |
 | `mount-data-eng` | `src/routing/mount-data-eng` | Planned — branch `feat/api-snapshot` |
 | `ROUTER-gateway` | `src/routing/router-gateway` | Planned — branch `feat/api-router-gateway` |
@@ -68,6 +68,20 @@ contract: `VERSION_CONFLICT`, `WORK_ALREADY_STARTED`, `MODE_MANUAL`, `SNAPSHOT_S
 travels with every log line and every error body, and is echoed in `x-request-id`. Logs are
 one JSON object per line; login codes, passwords and token values are never passed to the
 logger.
+
+**Canonical JSON** (`src/common/json`). One document must produce one byte sequence in
+both TypeScript and Python, because sys and Router hash the published snapshot
+independently. `JSON.stringify` and `json.dumps` agree on syntax but disagree on numbers,
+so the module fixes sorted keys, no whitespace, literal non-ASCII, integers without a
+decimal point and every other number at exactly seven decimal places. The rules are stated
+in the file and asserted by unit tests; Router Core has to reproduce them.
+
+**Operation envelope** (`src/operations`). The single entry point for every change: an
+`operationId` makes a retry return the first outcome instead of repeating the work, a
+fingerprint of the arguments makes reuse of an id detectable, `expectedVersion` turns a
+concurrent edit into a reported conflict instead of a silent overwrite, and the journal
+entry is written in the same transaction as the change so it cannot be missing for
+something that happened.
 
 **Access control** (`src/common/access`, `src/auth`). The guard is global and denies by
 default, so a new endpoint without a decorator is unreachable rather than public. It
