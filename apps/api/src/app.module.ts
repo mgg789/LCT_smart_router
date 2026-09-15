@@ -5,7 +5,9 @@ import { AppConfigModule } from './common/config';
 import { HealthModule } from './common/health';
 import { RequestContextMiddleware } from './common/logging';
 import { TimeModule } from './common/time';
+import { NotificationsModule } from './notifications';
 import { OperationsModule } from './operations';
+import { RequestsModule } from './orchestrator/requests';
 import { PersistenceModule } from './persistence';
 
 /**
@@ -23,6 +25,8 @@ import { PersistenceModule } from './persistence';
     PersistenceModule,
     AuthModule,
     OperationsModule,
+    NotificationsModule,
+    RequestsModule,
     ApiModule,
   ],
 })

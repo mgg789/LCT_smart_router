@@ -15,6 +15,7 @@
 | `routing_snapshots.payload` is `TEXT`, not `jsonb` | `jsonb` normalises whitespace and key order. sys and Router must hash an identical byte sequence, so the exact serialized document is stored (`context/43` section 5.2). |
 | `version` columns on mutable business rows | Optimistic concurrency. A write based on something the actor read carries the version it saw; a mismatch is a reported conflict, never a silent overwrite (`context/36` section 8). |
 | Rows are not deleted to express an outcome | Cancellation, revocation and completion are states with their own timestamps. History has to survive; `context/37` section 6. |
+| Tables **and columns** are snake_case | Router Core reads the published sector directly, from Python. An unquoted `SELECT inputHash` there folds to `inputhash` and fails, and requiring every cross-language query to quote a camelCase identifier is a trap. Prisma models keep their camelCase field names and carry `@map`. |
 
 ## 2. Areas of the model
 
@@ -122,6 +123,7 @@ privileges out of band, so a fresh database is correct after `migrate deploy` al
 | Area | State |
 |---|---|
 | Importer for `data/dataset/anonymized` | Planned, branch `feat/api-data-import` |
+| Engineers, working days, facts | Planned, branch `feat/api-engineers` |
 | Three data actions (append, reset to demo, full reset) | Planned, same branch |
 | Knowledge segments and pgvector | Out of scope of this build; the image supports the extension |
 | Retention periods per data class | Required by `context/37` section 6.3; the columns exist (`audit_log.retain_until`), the values are a deployment decision and are not invented here |
