@@ -1,0 +1,23 @@
+# Host artifacts must never reach the image: pnpm's node_modules is a tree of symlinks
+# into the local store, and copying it over the one installed inside the container
+# leaves dangling links that fail at build time.
+**/node_modules
+**/dist
+**/dist-test
+**/*.tsbuildinfo
+.pnpm-store
+
+.git
+.gitignore
+.gitattributes
+
+# Secrets and local state
+.env
+.env.*
+!.env.example
+
+# Not needed to build or run the service. The dataset is added back explicitly by the
+# branch that imports it.
+context/
+docs/
+data/

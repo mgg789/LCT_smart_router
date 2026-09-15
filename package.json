@@ -14,7 +14,11 @@
     "test": "pnpm --filter api test",
     "lint": "biome check .",
     "format": "biome format --write .",
-    "smoke": "pnpm --filter api smoke"
+    "smoke": "pnpm --filter api smoke",
+    "compose:up": "docker compose -f infra/docker-compose.yml up -d --build",
+    "compose:down": "docker compose -f infra/docker-compose.yml down",
+    "compose:logs": "docker compose -f infra/docker-compose.yml logs -f --tail=100",
+    "compose:ps": "docker compose -f infra/docker-compose.yml ps"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.13"
