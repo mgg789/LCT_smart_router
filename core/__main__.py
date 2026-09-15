@@ -48,6 +48,17 @@ def main() -> None:
     benchmark.add_argument("--skip-events", action="store_true")
     benchmark.add_argument("--event-budget-ms", type=int, default=1000)
     benchmark.add_argument("--output", type=Path)
+    prepare_2gis = commands.add_parser("prepare-2gis")
+    prepare_2gis.add_argument("--snapshot", type=Path, required=True)
+    prepare_2gis.add_argument("--config", type=Path, required=True)
+    prepare_2gis.add_argument("--output", type=Path, required=True)
+    prepare_2gis.add_argument("--departure-at", type=int)
+    prepare_2gis.add_argument(
+        "--profiles",
+        nargs="+",
+        choices=("car", "walk", "bike", "transit"),
+        default=("car", "walk", "bike", "transit"),
+    )
     args = parser.parse_args()
     if args.command == "export-map":
         from core.contracts import RouterResult
@@ -102,6 +113,19 @@ def main() -> None:
             args.output.write_text(payload + "\n", encoding="utf-8")
         else:
             print(payload)
+        return
+    if args.command == "prepare-2gis":
+        from core.runtime import parse_snapshot
+        from core.twogis import TwoGISConfig, TwoGISMatrixProvider
+
+        config = TwoGISConfig.model_validate_json(args.config.read_bytes())
+        snapshot = parse_snapshot(args.snapshot.read_bytes())
+        graph = TwoGISMatrixProvider(config).build_graph(
+            snapshot,
+            departure_at=args.departure_at,
+            profiles=tuple(args.profiles),
+        )
+        args.output.write_text(graph.model_dump_json(indent=2) + "\n", encoding="utf-8")
         return
     if args.graph:
         graph = RoadGraph.model_validate_json(args.graph.read_bytes())
