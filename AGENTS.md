@@ -26,7 +26,7 @@ Product strategy: **not** "many features" — a thought-through, coherent, beaut
 | `docs/mcp-kanban.md` | How to connect/use the kanban MCP |
 
 Stack (full rationale: `context/16`): pnpm monorepo — `apps/web` (React + TS + Vite + Tailwind +
-MapLibre + framer-motion), `apps/api` (Fastify or FastAPI), `apps/solver` (Python + OR-Tools),
+MapLibre + framer-motion), `apps/api` (NestJS + TypeScript, D-21), `apps/solver` (Python + OR-Tools),
 `packages/shared` (single source of contract types), PostgreSQL, docker-compose (`infra/`).
 
 ## 1. Sources of Truth (priority ladder)
