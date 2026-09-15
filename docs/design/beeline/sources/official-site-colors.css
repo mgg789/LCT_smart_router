@@ -1,0 +1,19 @@
+/* Evidence excerpt, not production CSS or an official brandbook.
+ * Source: https://moskva.beeline.ru/business/v3_commonStyles.29b04f11.css
+ * Retrieved: 2026-09-15
+ * Declarations extracted without changing values; formatting added locally.
+ */
+:root {
+  --white: #fff;
+  --black: #000;
+  --red: #ef2525;
+  --orange: #f6a000;
+  --yellowPrime: #fed305;
+  --yellow2: #fbb712;
+  --yellow3: #f0b900;
+  --yellow4: #ffe161;
+  --yellow5: #fee505;
+  --yellow6: #f2df8d;
+  --green: #22b26d;
+  --blue: #3f9fe4;
+}

@@ -1,0 +1,35 @@
+{
+  "retrieved_on": "2026-09-15",
+  "source_page": "https://moskva.beeline.ru/business/beeline-prodvizhenie/yellowbe/",
+  "status": "Official public platform documents and website observations; not a complete brandbook",
+  "files": [
+    {
+      "path": "sources/yellowbe-user-guide.pdf",
+      "source_url": "https://static.beeline.ru/upload/images/business/beeline-prodvizhenie/Rukovodstvo_polzovatelya_Yellowbe.pdf",
+      "bytes": 687892,
+      "sha256": "780df5dbecab096add021381ff741e0a9ffaa7ca2aa924b22debff8f53c0de26",
+      "transformation": "None; original bytes"
+    },
+    {
+      "path": "sources/yellowbe-functional-description.pdf",
+      "source_url": "https://static.beeline.ru/upload/images/business/beeline-prodvizhenie/Opisanie_funkcionalnyh_harakteristik_Yellowbe.pdf",
+      "bytes": 444665,
+      "sha256": "d463e7131f7d67c57ed550d382a044eea3e5b4b169f45396c80ddc5aa7a4efb8",
+      "transformation": "None; original bytes"
+    },
+    {
+      "path": "assets/beeline-symbol-official-site.png",
+      "source_url": "https://static.beeline.ru/upload/images/business/main/v3/Beeblik_2025.png",
+      "bytes": 4820,
+      "sha256": "b316a2d8e1a7762d0f2262f03074b7e39c1698f0d124bc1f78639bd7db7d3919",
+      "transformation": "None; original bytes"
+    },
+    {
+      "path": "sources/official-site-colors.css",
+      "source_url": "https://moskva.beeline.ru/business/v3_commonStyles.29b04f11.css",
+      "bytes": 505,
+      "sha256": "08170201bc469cea7a91d5b6bddf00dbcce0533da9f00baca5b0f33a16bf6e40",
+      "transformation": "Selected declarations; local formatting and provenance comment"
+    }
+  ]
+}

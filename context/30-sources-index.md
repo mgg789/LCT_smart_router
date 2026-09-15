@@ -95,6 +95,8 @@
 
 ## 10. UX-референсы (→ `10`)
 
+Beeline sources checked on 2026-09-15: [official Yellowbe page](https://moskva.beeline.ru/business/beeline-prodvizhenie/yellowbe/) and its two public PDF documents. The [local reference pack](../docs/design/beeline/README.md) contains unchanged PDFs, the official website symbol, extracted website colour declarations and a SHA-256 manifest. This is platform documentation and website evidence, not a complete current brandbook; Smart Router UI choices are labelled separately.
+
 Apple Human Interface Guidelines (developer.apple.com/design), Apple Maps, Linear (linear.app), Notion Calendar, Uber/Lyft dispatch-обзоры — визуальные паттерны, не факты.
 
 ---

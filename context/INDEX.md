@@ -63,11 +63,12 @@
 
 | Файл | О чём |
 |---|---|
-| [29-decision-log.md](./29-decision-log.md) | **Лог решений D-1…D-20 (ADR)**: что, почему, альтернативы, статус. Решения не переоткрывать — только через новую/обновлённую строку |
+| [29-decision-log.md](./29-decision-log.md) | **Лог решений D-1…D-21 (ADR)**: что, почему, альтернативы, статус. Решения не переоткрывать — только через новую/обновлённую строку |
 | [15-risks-pitfalls.md](./15-risks-pitfalls.md) | Реестр граблей (детерминизм, прогрев солвера, офлайн-контур) — самый долгоиграющий файл пакета |
 | [16-stack-and-plan.md](./16-stack-and-plan.md) | Роли владельцев зон, правила совместной работы; календарный план §3–4 — исторический |
 | [27-cheatsheets-implementation.md](./27-cheatsheets-implementation.md) | Copy-paste сниппеты: OSRM, OR-Tools, MapLibre, SSE, aiogram, faster-whisper, смоук |
 | [10-ux-ui-design.md](./10-ux-ui-design.md) | UX-стандарт «Apple-подхода», motion, чек-лист полировки; инвентарь экранов — сверять с 39 |
+| [Beeline visual reference](../docs/design/beeline/README.md) | Official Yellowbe PDFs, website symbol and colour evidence; Smart Router branding rules with source limitations (D-21) |
 | [13-demo-presentation.md](./13-demo-presentation.md) | Стратегия питча и живого демо; сценарий перекалибровать под 18 §5 (7 шагов + сравнение с FIFO) |
 
 ## 5. Архив (`archive/`)
