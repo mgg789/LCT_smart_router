@@ -24,6 +24,7 @@ Product strategy: **not** "many features" — a thought-through, coherent, beaut
 | `context/29-decision-log.md` | Accepted decisions (ADR), D-1…D-17 |
 | `docs/` | Project documentation (see §8) |
 | `docs/mcp-kanban.md` | How to connect/use the kanban MCP |
+| `docs/ragconnect.md` | **Team memory for AI agents** (RAGConnect): connect guide, usage rules, ops |
 
 Stack (full rationale: `context/16`): pnpm monorepo — `apps/web` (React + TS + Vite + Tailwind +
 MapLibre + framer-motion), `apps/api` (Fastify or FastAPI), `apps/solver` (Python + OR-Tools),
@@ -245,9 +246,11 @@ Conventional Commits, imperative mood, English:
 ## 15. Session Checklist
 
 **Start:** read this file if you haven't → `context/INDEX.md` (route to your zone's files) →
-`git checkout dev && git pull` → board: pick/update your card → branch off `dev`.
-**End:** smoke green → docs + context updated → commits pushed → feature branch merged into `dev`
-and pushed → board card moved with a summary comment.
+`git checkout dev && git pull` → board: pick/update your card → branch off `dev` →
+if the `ragconnect` MCP is connected, search team memory for task context (§17).
+**End:** smoke green → docs + context updated → team memory write-back if connected (§17) →
+commits pushed → feature branch merged into `dev` and pushed → board card moved with a
+summary comment.
 
 ## 16. Definition of Done
 
@@ -257,3 +260,19 @@ and pushed → board card moved with a summary comment.
 - [ ] Commits: green checkpoints, conventional messages, pushed
 - [ ] Board: card moved, summary comment left
 - [ ] Demo contour still works offline; determinism preserved (golden plan unchanged or explained)
+
+## 17. Team Memory (RAGConnect)
+
+The team shares a semantic memory for AI agents — `project_label="lct"`, endpoint, tokens and
+the ~2-minute connect guide live in `docs/ragconnect.md`. Rules of use:
+
+1. **If the `ragconnect` MCP is connected** (tools `memory_*` are available):
+   - **Large work and context gathering**: before starting, `memory_search` with
+     `project_label="lct"` on the task area — prior decisions, known pitfalls and completed
+     work are stored there. It complements `context/` files, never replaces them.
+   - **Write back**: after accepted decisions, non-obvious root causes and completed
+     milestones, `memory_write` with `project_label="lct"`.
+   - Never store secrets in memory (§13.4); label-less (local) memory is for personal notes
+     only.
+2. **If it is NOT connected**: recommend the user connect it — one line, pointing to
+   `docs/ragconnect.md` (~2 minutes) — and continue the task without blocking on it.
