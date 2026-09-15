@@ -158,6 +158,11 @@ core/.venv/Scripts/python -m core.solve --input data/full.json --output data/sol
 core/.venv/Scripts/python -m pytest core/tests -q
 ```
 
+Both CLIs must run from the repository root (so `core.types` does not shadow
+the stdlib `types`); their `--out`/`--output` paths are confined to the
+current working directory by `core.cli.resolve_output_path` and rejected with
+exit code 2 otherwise.
+
 ## Reference numbers (2026-09-13, this machine)
 
 - mini (5×10): 10/10 assigned, sla 100%, travel 642 min, ~180 ms;

@@ -20,6 +20,7 @@ import json
 
 from core import metrics as metrics_mod
 from core import model, reasons
+from core.cli import resolve_output_path
 from core.types import (
     PlanSolution,
     SolverInput,
@@ -89,7 +90,8 @@ def main(argv: list[str] | None = None) -> int:
     solution = solve_task(input_data, time_limit_ms=args.time_limit_ms, solution_limit=args.solution_limit)
 
     raw = solution_to_dict(solution)
-    with open(args.output, "w", encoding="utf-8") as fh:
+    output_path = resolve_output_path(args.output)
+    with output_path.open("w", encoding="utf-8") as fh:
         json.dump(raw, fh, ensure_ascii=False, indent=2)
 
     m = solution.metrics

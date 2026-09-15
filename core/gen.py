@@ -21,6 +21,7 @@ import json
 import random
 from dataclasses import dataclass
 
+from core.cli import resolve_output_path
 from core.matrix import builtin_hour_coefficient
 
 # Real-ish Moscow district anchors (lat, lon).
@@ -270,7 +271,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", required=True, help="output JSON path")
     args = parser.parse_args(argv)
     data = generate(args.scenario, args.seed, args.date)
-    with open(args.out, "w", encoding="utf-8") as fh:
+    out_path = resolve_output_path(args.out)
+    with out_path.open("w", encoding="utf-8") as fh:
         json.dump(data, fh, ensure_ascii=False, indent=2)
     print(f"{args.scenario}: {len(data['engineers'])} engineers, {len(data['requests'])} requests -> {args.out}")
     return 0
