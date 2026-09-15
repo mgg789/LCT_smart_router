@@ -1,0 +1,77 @@
+{
+  "schema_version": "1.0",
+  "scenario_id": "official-east-v1",
+  "region": "east",
+  "local_date": "2026-08-17",
+  "timezone": "Europe/Moscow",
+  "horizon_start": "08:00",
+  "horizon_end": "23:00",
+  "synthetic_file": "east_synthetic_data.csv",
+  "control_file": "east_control_distribution.csv",
+  "expected_request_count": 66,
+  "expected_team_count": 12,
+  "priority_urgent_hd_types": [
+    "Авария",
+    "Нет линка"
+  ],
+  "duration_sec_by_hd_type": {
+    "Конвергенция абонента": 2700,
+    "Заявка на подключение": 5400,
+    "Заказ подключения/Дозаказ оборудования": 3600,
+    "Дозаказ оборудования": 2700,
+    "Нет линка": 3600,
+    "Переключение на Гбит/с": 3600,
+    "Мониторинг": 1800,
+    "Разрывы": 3600,
+    "Работа с кабелем": 5400,
+    "Роутер. Замена техническим специалистом": 2400,
+    "TVE/ENT. Другие ошибки": 2700,
+    "TVE/ENT. Замена приставки техником": 3600,
+    "Информация": 1800,
+    "Авария": 5400
+  },
+  "skill_by_hd_type": {
+    "Конвергенция абонента": "connection",
+    "Заявка на подключение": "connection",
+    "Заказ подключения/Дозаказ оборудования": "connection",
+    "Дозаказ оборудования": "connection",
+    "Нет линка": "emergency",
+    "Переключение на Гбит/с": "connection",
+    "Мониторинг": "local",
+    "Разрывы": "emergency",
+    "Работа с кабелем": "local",
+    "Роутер. Замена техническим специалистом": "connection",
+    "TVE/ENT. Другие ошибки": "local",
+    "TVE/ENT. Замена приставки техником": "connection",
+    "Информация": "local",
+    "Авария": "emergency"
+  },
+  "team_profiles": [
+    {"control_team": "Бригада Соколов", "transport_type": "car", "shift_start": "09:00", "shift_end": "18:00"},
+    {"control_team": "Бригада Мельников", "transport_type": "car", "shift_start": "10:00", "shift_end": "20:00"},
+    {"control_team": "Бригада Матвеев", "transport_type": "bike", "shift_start": "09:00", "shift_end": "19:00"},
+    {"control_team": "Бригада Попов", "transport_type": "car", "shift_start": "12:00", "shift_end": "23:00"},
+    {"control_team": "Бригада Арташкин", "transport_type": "transit", "shift_start": "08:00", "shift_end": "18:00"},
+    {"control_team": "Бригада Комарь", "transport_type": "car", "shift_start": "11:00", "shift_end": "22:00"},
+    {"control_team": "Бригада Каушнян", "transport_type": "walk", "shift_start": "09:00", "shift_end": "18:00"},
+    {"control_team": "Бригада Зверев", "transport_type": "car", "shift_start": "12:00", "shift_end": "23:00"},
+    {"control_team": "Бригада Перов", "transport_type": "bike", "shift_start": "10:00", "shift_end": "20:00"},
+    {"control_team": "Бригада Белузин", "transport_type": "car", "shift_start": "08:00", "shift_end": "18:00"},
+    {"control_team": "Бригада Гусаковский", "transport_type": "transit", "shift_start": "11:00", "shift_end": "23:00"},
+    {"control_team": "Бригада Свеженцев", "transport_type": "car", "shift_start": "09:00", "shift_end": "20:00"}
+  ],
+  "transport_cost_model": {
+    "car": "osrm_duration",
+    "bike_speed_kmh": 15.0,
+    "walk_speed_kmh": 5.0,
+    "transit_speed_kmh": 22.0,
+    "transit_access_sec": 480
+  },
+  "assumptions": [
+    "The official archive has no engineer directory, shifts, transport assignments or service durations.",
+    "Team skills are inferred from HD work types assigned to each named team in the control file.",
+    "All teams start at the official East office and routes remain open after the last job.",
+    "Official requests do not constrain required transport.",
+    "Bike, walk and transit costs are explicit approximations over the cached OSRM road distance."
+  ]
+}
