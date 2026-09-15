@@ -22,5 +22,13 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.13"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "prisma",
+      "esbuild"
+    ]
   }
 }
