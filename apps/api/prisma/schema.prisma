@@ -194,8 +194,8 @@ model Account {
   id        String @id @default(uuid())
   /// Stored lower-cased; the application normalises before writing.
   email     String @unique
-  createdAt BigInt
-  updatedAt BigInt
+  createdAt BigInt @map("created_at")
+  updatedAt BigInt @map("updated_at")
   version   Int    @default(1)
 
   roles           AccountRole[]
@@ -210,9 +210,9 @@ model Account {
 /// Roles are granted, never claimed. A matching email address does not raise an
 /// account's role (context/36 section 7.3).
 model AccountRole {
-  accountId String
+  accountId String @map("account_id")
   role      Role
-  grantedAt BigInt
+  grantedAt BigInt @map("granted_at")
 
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
@@ -225,11 +225,11 @@ model AccountRole {
 model LoginCode {
   id         String  @id @default(uuid())
   email      String
-  codeHash   String
-  issuedAt   BigInt
-  expiresAt  BigInt
+  codeHash   String @map("code_hash")
+  issuedAt   BigInt @map("issued_at")
+  expiresAt  BigInt @map("expires_at")
   attempts   Int     @default(0)
-  consumedAt BigInt?
+  consumedAt BigInt? @map("consumed_at")
 
   @@index([email, expiresAt])
   @@map("login_codes")
@@ -238,14 +238,14 @@ model LoginCode {
 model Session {
   id String @id @default(uuid())
 
-  accountId String
+  accountId String @map("account_id")
   /// The role this session acts as. An account holding several roles gets one session
   /// per role rather than an ambient "highest" role.
   role      Role
-  tokenHash String  @unique
-  createdAt BigInt
-  expiresAt BigInt
-  revokedAt BigInt?
+  tokenHash String  @unique @map("token_hash")
+  createdAt BigInt @map("created_at")
+  expiresAt BigInt @map("expires_at")
+  revokedAt BigInt? @map("revoked_at")
 
   account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
@@ -260,9 +260,9 @@ model ApiToken {
   id        String           @id @default(uuid())
   name      String
   category  ApiTokenCategory
-  tokenHash String           @unique
-  createdAt BigInt
-  revokedAt BigInt?
+  tokenHash String           @unique @map("token_hash")
+  createdAt BigInt @map("created_at")
+  revokedAt BigInt? @map("revoked_at")
 
   @@map("api_tokens")
 }
@@ -279,22 +279,22 @@ model Engineer {
 
   /// Absent while the dispatcher has a routing profile for someone who has no login yet
   /// (context/37 section 3.1).
-  accountId     String?       @unique
-  displayName   String
+  accountId     String?       @unique @map("account_id")
+  displayName   String @map("display_name")
   /// Order of appearance in the input. The baseline picks the first suitable engineer in
   /// this order, so it must never be replaced by a technical sort (context/33 section 5).
-  inputOrder    Int
+  inputOrder    Int @map("input_order")
   skills        Skill[]
-  transportType TransportType
-  depotId       String?
+  transportType TransportType @map("transport_type")
+  depotId       String? @map("depot_id")
   /// Usual start point. May be absent; it is never filled with invented coordinates.
-  homeLat       Float?
-  homeLon       Float?
+  homeLat       Float? @map("home_lat")
+  homeLon       Float? @map("home_lon")
   region        String?
   origin        DataOrigin
-  createdAt     BigInt
-  updatedAt     BigInt
-  archivedAt    BigInt?
+  createdAt     BigInt @map("created_at")
+  updatedAt     BigInt @map("updated_at")
+  archivedAt    BigInt? @map("archived_at")
   version       Int           @default(1)
 
   account Account?      @relation(fields: [accountId], references: [id])
@@ -310,28 +310,28 @@ model Engineer {
 model EngineerDay {
   id String @id @default(uuid())
 
-  engineerId         String
+  engineerId         String @map("engineer_id")
   /// Local calendar day as `YYYY-MM-DD`. The absolute shift bounds next to it are the
   /// authoritative values.
-  workDate           String
-  shiftStartAt       BigInt
-  shiftEndAt         BigInt
+  workDate           String @map("work_date")
+  shiftStartAt       BigInt @map("shift_start_at")
+  shiftEndAt         BigInt @map("shift_end_at")
   availability       Availability @default(online)
   /// Forecast return from a technical stop. Reaching it creates no fact by itself.
-  expectedOnlineAt   BigInt?
-  lunchEnabled       Boolean      @default(false)
-  lunchDurationSec   Int?
-  lunchWindowStartAt BigInt?
-  lunchWindowEndAt   BigInt?
+  expectedOnlineAt   BigInt? @map("expected_online_at")
+  lunchEnabled       Boolean      @default(false) @map("lunch_enabled")
+  lunchDurationSec   Int? @map("lunch_duration_sec")
+  lunchWindowStartAt BigInt? @map("lunch_window_start_at")
+  lunchWindowEndAt   BigInt? @map("lunch_window_end_at")
   /// Set by the dispatcher's explicit "restore lunch" operation. It is never silently
   /// cleared because the task did not solve (context/33 section 6).
-  lunchRequired      Boolean      @default(false)
+  lunchRequired      Boolean      @default(false) @map("lunch_required")
   /// Set by sys when the engineer actually starts lunch, not when a plan schedules one.
   /// True means the single lunch of the day is used up, not that it has finished.
-  lunchTaken         Boolean      @default(false)
-  lunchStartedAt     BigInt?
-  createdAt          BigInt
-  updatedAt          BigInt
+  lunchTaken         Boolean      @default(false) @map("lunch_taken")
+  lunchStartedAt     BigInt? @map("lunch_started_at")
+  createdAt          BigInt @map("created_at")
+  updatedAt          BigInt @map("updated_at")
   version            Int          @default(1)
 
   engineer Engineer @relation(fields: [engineerId], references: [id], onDelete: Cascade)
@@ -345,11 +345,11 @@ model EngineerDay {
 model Depot {
   id          String     @id @default(uuid())
   region      String     @unique
-  addressText String
+  addressText String @map("address_text")
   lat         Float?
   lon         Float?
   origin      DataOrigin
-  createdAt   BigInt
+  createdAt   BigInt @map("created_at")
 
   engineers Engineer[]
 
@@ -363,39 +363,39 @@ model Depot {
 model Request {
   id String @id @default(uuid())
 
-  clientAccountId    String?
+  clientAccountId    String? @map("client_account_id")
   /// Arrival order: the baseline's iteration order (context/33 section 5).
-  arrivalOrder       Int
-  addressText        String
+  arrivalOrder       Int @map("arrival_order")
+  addressText        String @map("address_text")
   district           String?
   region             String?
   /// Absent until the address is geocoded. A request without a point is excluded from the
   /// published snapshot with a counted diagnostic, never given invented coordinates.
   lat                Float?
   lon                Float?
-  needsGeocoding     Boolean          @default(true)
-  serviceDurationSec Int
+  needsGeocoding     Boolean          @default(true) @map("needs_geocoding")
+  serviceDurationSec Int @map("service_duration_sec")
   /// Window for the *start* of the work, not for its end (context/33 section 5).
-  windowStartAt      BigInt
-  windowEndAt        BigInt
-  windowOrigin       WindowOrigin     @default(explicit)
+  windowStartAt      BigInt @map("window_start_at")
+  windowEndAt        BigInt @map("window_end_at")
+  windowOrigin       WindowOrigin     @default(explicit) @map("window_origin")
   priority           Priority         @default(normal)
-  requiredSkill      Skill
+  requiredSkill      Skill @map("required_skill")
   /// Null means the request places no transport restriction.
-  requiredTransport  TransportType?
+  requiredTransport  TransportType? @map("required_transport")
   /// Source work type, kept so a derived skill or duration can be traced back.
-  workTypeHd         String?
+  workTypeHd         String? @map("work_type_hd")
   lifecycle          RequestLifecycle @default(draft)
-  assignmentState    AssignmentState  @default(pending)
+  assignmentState    AssignmentState  @default(pending) @map("assignment_state")
   origin             DataOrigin
-  problemText        String?
-  contactName        String?
-  createdAt          BigInt
-  submittedAt        BigInt?
-  startedAt          BigInt?
-  completedAt        BigInt?
-  cancelledAt        BigInt?
-  updatedAt          BigInt
+  problemText        String? @map("problem_text")
+  contactName        String? @map("contact_name")
+  createdAt          BigInt @map("created_at")
+  submittedAt        BigInt? @map("submitted_at")
+  startedAt          BigInt? @map("started_at")
+  completedAt        BigInt? @map("completed_at")
+  cancelledAt        BigInt? @map("cancelled_at")
+  updatedAt          BigInt @map("updated_at")
   version            Int              @default(1)
 
   clientAccount Account?                  @relation(fields: [clientAccountId], references: [id])
@@ -414,9 +414,9 @@ model Request {
 /// active promise to the customer (context/36 section 4).
 model RequestConditionHistory {
   id          String  @id @default(uuid())
-  requestId   String
-  changedAt   BigInt
-  operationId String?
+  requestId   String @map("request_id")
+  changedAt   BigInt @map("changed_at")
+  operationId String? @map("operation_id")
   /// The conditions as they were before the change.
   previous    Json
   reason      String?
@@ -430,15 +430,15 @@ model RequestConditionHistory {
 model RequestFact {
   id String @id @default(uuid())
 
-  requestId   String
-  engineerId  String?
+  requestId   String @map("request_id")
+  engineerId  String? @map("engineer_id")
   kind        FactKind
   /// When it happened, according to the reporting engineer.
-  occurredAt  BigInt
+  occurredAt  BigInt @map("occurred_at")
   /// When sys stored it. The two differ and neither may be substituted for the other.
-  recordedAt  BigInt
+  recordedAt  BigInt @map("recorded_at")
   note        String?
-  operationId String?
+  operationId String? @map("operation_id")
 
   request  Request   @relation(fields: [requestId], references: [id], onDelete: Cascade)
   engineer Engineer? @relation(fields: [engineerId], references: [id])
@@ -452,10 +452,10 @@ model RequestFact {
 model GpsObservation {
   id String @id @default(uuid())
 
-  accountId  String
+  accountId  String @map("account_id")
   /// Time of the observation itself: an old row does not prove a present position.
-  observedAt BigInt
-  recordedAt BigInt
+  observedAt BigInt @map("observed_at")
+  recordedAt BigInt @map("recorded_at")
   lat        Float
   lon        Float
 
@@ -480,11 +480,11 @@ model RoutingSnapshot {
   payload      String
   /// SHA-256 of `payload`. Kept beside the document and never inside it: a hash cannot
   /// be part of its own input.
-  inputHash    String
+  inputHash    String @map("input_hash")
   /// Moment of this publication of changed data. It does not tick on its own and is not
   /// advanced by a read (context/33 section 7).
-  planningAsOf BigInt
-  createdAt    BigInt
+  planningAsOf BigInt @map("planning_as_of")
+  createdAt    BigInt @map("created_at")
   /// Which business event justified the publication. There is no timer trigger.
   trigger      String
   /// Working-set generation, so a late write from before a reset cannot be applied to
@@ -506,9 +506,9 @@ model RoutingSnapshot {
 /// an older projection (context/37 section 4.2).
 model RoutingCurrent {
   id             String @id @default("singleton")
-  snapshotId     String @unique
-  pointerVersion Int    @default(1)
-  updatedAt      BigInt
+  snapshotId     String @unique @map("snapshot_id")
+  pointerVersion Int    @default(1) @map("pointer_version")
+  updatedAt      BigInt @map("updated_at")
 
   snapshot RoutingSnapshot @relation(fields: [snapshotId], references: [id])
 
@@ -524,16 +524,16 @@ model RoutingCurrent {
 model RouterResult {
   id String @id @default(uuid())
 
-  resultId             String  @unique
-  inputHash            String
-  routerContextVersion String
+  resultId             String  @unique @map("result_id")
+  inputHash            String @map("input_hash")
+  routerContextVersion String @map("router_context_version")
   status               String
-  planningAsOf         BigInt?
-  computedAt           BigInt?
-  receivedAt           BigInt
+  planningAsOf         BigInt? @map("planning_as_of")
+  computedAt           BigInt? @map("computed_at")
+  receivedAt           BigInt @map("received_at")
   accepted             Boolean @default(false)
   /// Error code of the acceptance check that refused it, if any.
-  rejectionCode        String?
+  rejectionCode        String? @map("rejection_code")
   payload              Json
 
   appliedPlans AppliedPlan[]
@@ -549,13 +549,13 @@ model AppliedPlan {
 
   revision       Int        @unique @default(autoincrement())
   origin         PlanOrigin
-  routerResultId String?
+  routerResultId String? @map("router_result_id")
   /// The moment the shown plan describes: `planningAsOf` of the applied result, or the
   /// time of the manual edit. Never the timestamp of a newer, not yet computed snapshot
   /// (context/36 section 6).
-  planAsOf       BigInt
-  appliedAt      BigInt
-  createdBy      String?
+  planAsOf       BigInt @map("plan_as_of")
+  appliedAt      BigInt @map("applied_at")
+  createdBy      String? @map("created_by")
   note           String?
 
   routerResult RouterResult?           @relation(fields: [routerResultId], references: [id])
@@ -569,9 +569,9 @@ model AppliedPlan {
 /// Pointer to the revision the interfaces work from.
 model AppliedPlanCurrent {
   id             String @id @default("singleton")
-  planId         String @unique
-  pointerVersion Int    @default(1)
-  updatedAt      BigInt
+  planId         String @unique @map("plan_id")
+  pointerVersion Int    @default(1) @map("pointer_version")
+  updatedAt      BigInt @map("updated_at")
 
   plan AppliedPlan @relation(fields: [planId], references: [id])
 
@@ -581,20 +581,20 @@ model AppliedPlanCurrent {
 model AppliedPlanRoute {
   id String @id @default(uuid())
 
-  planId         String
-  engineerId     String
-  startLat       Float
-  startLon       Float
-  startAt        BigInt?
-  finishAt       BigInt?
-  distanceKm     Float   @default(0)
-  travelTimeSec  Int     @default(0)
-  workTimeSec    Int     @default(0)
-  waitingTimeSec Int     @default(0)
-  lunchTimeSec   Int     @default(0)
-  assignedCount  Int     @default(0)
+  planId         String @map("plan_id")
+  engineerId     String @map("engineer_id")
+  startLat       Float @map("start_lat")
+  startLon       Float @map("start_lon")
+  startAt        BigInt? @map("start_at")
+  finishAt       BigInt? @map("finish_at")
+  distanceKm     Float   @default(0) @map("distance_km")
+  travelTimeSec  Int     @default(0) @map("travel_time_sec")
+  workTimeSec    Int     @default(0) @map("work_time_sec")
+  waitingTimeSec Int     @default(0) @map("waiting_time_sec")
+  lunchTimeSec   Int     @default(0) @map("lunch_time_sec")
+  assignedCount  Int     @default(0) @map("assigned_count")
   /// One of the distinguishable lunch outcomes of context/33 section 8.
-  lunchStatus    String
+  lunchStatus    String @map("lunch_status")
   reasons        Json
 
   plan  AppliedPlan       @relation(fields: [planId], references: [id], onDelete: Cascade)
@@ -607,16 +607,16 @@ model AppliedPlanRoute {
 model AppliedPlanStop {
   id String @id @default(uuid())
 
-  routeId   String
+  routeId   String @map("route_id")
   sequence  Int
   kind      StopKind
-  requestId String?
+  requestId String? @map("request_id")
   lat       Float
   lon       Float
   /// Computed schedule, not confirmed facts: arrival <= start <= end.
-  arrivalAt BigInt
-  startAt   BigInt
-  endAt     BigInt
+  arrivalAt BigInt @map("arrival_at")
+  startAt   BigInt @map("start_at")
+  endAt     BigInt @map("end_at")
 
   route   AppliedPlanRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
   request Request?         @relation(fields: [requestId], references: [id])
@@ -629,11 +629,11 @@ model AppliedPlanStop {
 model AppliedPlanAssignment {
   id String @id @default(uuid())
 
-  planId     String
-  requestId  String
+  planId     String @map("plan_id")
+  requestId  String @map("request_id")
   status     AssignmentState
-  engineerId String?
-  stopId     String?
+  engineerId String? @map("engineer_id")
+  stopId     String? @map("stop_id")
   /// Structured, checkable grounds from the solver -- never a hand-written sentence and
   /// never model-generated text (context/11, D-3).
   reasons    Json
@@ -652,11 +652,11 @@ model AppliedPlanAssignment {
 model ControlState {
   id           String      @id @default("singleton")
   mode         ControlMode @default(auto)
-  modeVersion  Int         @default(1)
-  changedAt    BigInt
-  changedBy    String?
+  modeVersion  Int         @default(1) @map("mode_version")
+  changedAt    BigInt @map("changed_at")
+  changedBy    String? @map("changed_by")
   /// The revision frozen as the starting point when manual mode was switched on.
-  frozenPlanId String?
+  frozenPlanId String? @map("frozen_plan_id")
 
   @@map("control_state")
 }
@@ -668,10 +668,10 @@ model ControlState {
 /// Supported policies: a catalogue of prepared variants, not a place to store executable
 /// user input. The Dashboard is not a formula editor (context/33 section 5).
 model Policy {
-  policyId    String  @id
+  policyId    String  @id @map("policy_id")
   title       String
   description String
-  isDefault   Boolean @default(false)
+  isDefault   Boolean @default(false) @map("is_default")
   parameters  Json
 
   @@map("policies")
@@ -679,11 +679,11 @@ model Policy {
 
 model ActivePolicy {
   id         String  @id @default("singleton")
-  policyId   String
+  policyId   String @map("policy_id")
   parameters Json
   version    Int     @default(1)
-  changedAt  BigInt
-  changedBy  String?
+  changedAt  BigInt @map("changed_at")
+  changedBy  String? @map("changed_by")
 
   @@map("active_policy")
 }
@@ -695,16 +695,16 @@ model Alert {
 
   code           String
   severity       AlertSeverity
-  engineerIds    String[]
-  requestIds     String[]
+  engineerIds    String[] @map("engineer_ids")
+  requestIds     String[] @map("request_ids")
   reasons        Json
   /// A verified restore option, or null. A guess is never presented as a guaranteed fix
   /// (context/33 section 6).
-  restoreOption  Json?
-  sourceResultId String?
-  createdAt      BigInt
-  seenAt         BigInt?
-  resolvedAt     BigInt?
+  restoreOption  Json? @map("restore_option")
+  sourceResultId String? @map("source_result_id")
+  createdAt      BigInt @map("created_at")
+  seenAt         BigInt? @map("seen_at")
+  resolvedAt     BigInt? @map("resolved_at")
 
   @@index([createdAt])
   @@map("alerts")
@@ -717,20 +717,20 @@ model Alert {
 /// One business operation, stored so that a retry returns the first outcome instead of
 /// doing the work twice (context/36 section 12).
 model Operation {
-  operationId String @id
+  operationId String @id @map("operation_id")
 
-  actorKind          ActorKind
-  actorId            String?
+  actorKind          ActorKind @map("actor_kind")
+  actorId            String? @map("actor_id")
   source             ActorSource
   action             String
-  targetRef          String?
+  targetRef          String? @map("target_ref")
   /// Hash of the arguments. The same id with different arguments is a caller bug and is
   /// refused, not stored as a second write.
-  payloadFingerprint String
+  payloadFingerprint String @map("payload_fingerprint")
   state              OperationState
   response           Json?
-  createdAt          BigInt
-  completedAt        BigInt?
+  createdAt          BigInt @map("created_at")
+  completedAt        BigInt? @map("completed_at")
 
   @@index([createdAt])
   @@map("operations")
@@ -743,14 +743,14 @@ model AuditLog {
   id String @id @default(uuid())
 
   at          BigInt
-  actorKind   ActorKind
-  actorId     String?
+  actorKind   ActorKind @map("actor_kind")
+  actorId     String? @map("actor_id")
   source      ActorSource
   action      String
-  targetRef   String?
-  operationId String?
+  targetRef   String? @map("target_ref")
+  operationId String? @map("operation_id")
   details     Json
-  retainUntil BigInt?
+  retainUntil BigInt? @map("retain_until")
 
   @@index([at])
   @@index([targetRef])
@@ -767,12 +767,12 @@ model NotificationIntent {
   id String @id @default(uuid())
 
   category         NotificationCategory
-  businessEventKey String               @unique
-  recipientEmail   String
+  businessEventKey String               @unique @map("business_event_key")
+  recipientEmail   String @map("recipient_email")
   payload          Json
   state            NotificationState    @default(pending_submission)
-  createdAt        BigInt
-  submittedAt      BigInt?
+  createdAt        BigInt @map("created_at")
+  submittedAt      BigInt? @map("submitted_at")
   error            String?
 
   @@index([state])
@@ -787,7 +787,7 @@ model NotificationIntent {
 model AppState {
   key       String @id
   value     Json
-  updatedAt BigInt
+  updatedAt BigInt @map("updated_at")
 
   @@map("app_state")
 }
@@ -799,7 +799,7 @@ model ImportPackage {
 
   source     String
   checksum   String
-  appliedAt  BigInt
+  appliedAt  BigInt @map("applied_at")
   generation Int    @default(1)
   summary    Json
 
@@ -813,10 +813,10 @@ model ExternalIdMap {
   id String @id @default(uuid())
 
   source     String
-  entityType String
-  externalId String
-  internalId String
-  createdAt  BigInt
+  entityType String @map("entity_type")
+  externalId String @map("external_id")
+  internalId String @map("internal_id")
+  createdAt  BigInt @map("created_at")
 
   @@unique([source, entityType, externalId])
   @@index([internalId])

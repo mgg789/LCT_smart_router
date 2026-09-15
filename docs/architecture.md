@@ -32,12 +32,12 @@ service each.
 |---|---|---|
 | `REST API` | `src/api`, `src/common` | Foundation plus the auth surface: routing prefix, error envelope, Zod validation, request context |
 | `auth-engine` | `src/auth` | Implemented: login codes, dispatcher password path, sessions, roles, integration keys, global guard |
-| `orchestrator backend` | `src/orchestrator`, `src/operations` | Operation envelope in place (idempotency, versions, journal); business scenarios planned |
+| `orchestrator backend` | `src/orchestrator`, `src/operations` | Operation envelope and the request lifecycle; engineers, lunch and policy planned |
 | `dataengine` | `src/persistence` | Implemented: schema, migrations, connection, transaction boundary, row locks, health probe |
 | `mount-data-eng` | `src/routing/mount-data-eng` | Planned — branch `feat/api-snapshot` |
 | `ROUTER-gateway` | `src/routing/router-gateway` | Planned — branch `feat/api-router-gateway` |
 | `AI-gateway` | — | Out of scope of this build; declared in `/health/services` as `not_configured` |
-| `SMTP-gateway` | — | Out of scope of this build; sys records mail intents, transport is absent |
+| `SMTP-gateway` | `src/notifications` (intents only) | sys records mail intents with per-transition deduplication; transport is out of scope of this build |
 
 ## 3. Cross-cutting foundation (implemented)
 

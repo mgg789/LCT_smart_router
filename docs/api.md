@@ -148,7 +148,56 @@ broken (`context/43` section 11.3).
 - **Keys cannot manage keys.** Creating one is a master-category function, but revoking
   requires a dispatcher session: key management is a Dashboard action.
 
-## 5. Missing contracts
+## 5. Requests
+
+### Client contour — `@Roles('client')`
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/client/work-types` | Types of work to choose from |
+| POST | `/api/v1/client/requests` | Prepare a request (a draft) |
+| POST | `/api/v1/client/requests/:id/submit` | Confirm the content and send it |
+| POST | `/api/v1/client/requests/:id/reschedule` | Change the date and window immediately |
+| GET | `/api/v1/client/requests` | Active requests of this customer |
+| GET | `/api/v1/client/requests/:id` | One request |
+
+### Dashboard contour — `@Roles('dispatcher')`
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/dispatch/requests` | The day, including started, finished and cancelled work |
+| POST | `/api/v1/dispatch/requests` | Create a request on behalf of a customer |
+| PATCH | `/api/v1/dispatch/requests/:id` | Change window, address, point or urgency |
+| POST | `/api/v1/dispatch/requests/:id/cancel` | Cancel work that has not started |
+| GET | `/api/v1/dispatch/requests/:id/history` | Previous conditions |
+
+### The rules these endpoints enforce
+
+- **Three states, not one.** A response carries `lifecycle` (business stage) and
+  `assignmentState` (outcome of distribution) separately, and facts live in their own
+  table. `pending` means "waiting for a current result" — not a refusal, and never turned
+  into `unassigned` by an ongoing calculation or a Router error (`context/36` section 3).
+- **A draft is not a task.** It is not in the free pool, produces no mail, and is not
+  published. Only the confirmation makes it real.
+- **The customer never types routing parameters.** The required skill, the expected
+  duration and any transport restriction are derived from the type of work
+  (`context/32` section 4.1). Urgency can raise the priority and never lowers it.
+- **A reschedule keeps one request id and one live window.** The previous conditions go to
+  history, which is a journal, not a second promise to the customer. The previous
+  assignment does not confirm the new conditions, so the outcome returns to `pending`. If
+  the new window finds no assignment, the old one is *not* restored automatically
+  (`context/36` section 4).
+- **Once the engineer records a start, ordinary changes are closed** — reschedule, edits
+  and cancellation all answer `WORK_ALREADY_STARTED`, through every path: a stale screen,
+  a link in an old email, a new session or an integration key (`context/42` DF-05).
+- **Cancellation is a state change with its own timestamp**, never a deletion, and never
+  follows automatically from a request going unassigned.
+- **A customer sees only their own requests.** Someone else's is reported as absent rather
+  than forbidden, because confirming that it exists is itself a disclosure.
+- **A request without coordinates is stored and marked**, then excluded from the published
+  snapshot with a counted diagnostic. Coordinates are never invented.
+
+## 6. Missing contracts
 
 Listed rather than stubbed with invented shapes (AGENTS.md section 10.3).
 
