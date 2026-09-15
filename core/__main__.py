@@ -39,6 +39,15 @@ def main() -> None:
     project.add_argument("--lat", type=float, required=True)
     project.add_argument("--lon", type=float, required=True)
     project.add_argument("--limit-m", type=float, default=100)
+    benchmark = commands.add_parser("benchmark")
+    benchmark.add_argument("--region", choices=("east",), default="east")
+    benchmark.add_argument("--dataset-dir", type=Path, default=Path("data/dataset/anonymized"))
+    benchmark.add_argument("--scenario-dir", type=Path)
+    benchmark.add_argument("--budget-ms", type=int, default=3000)
+    benchmark.add_argument("--solution-limit", type=int, default=32)
+    benchmark.add_argument("--skip-events", action="store_true")
+    benchmark.add_argument("--event-budget-ms", type=int, default=1000)
+    benchmark.add_argument("--output", type=Path)
     args = parser.parse_args()
     if args.command == "export-map":
         from core.contracts import RouterResult
@@ -67,6 +76,32 @@ def main() -> None:
             )
             entries = provider.lookup(args.address)
         print(json.dumps([e.model_dump() for e in entries], ensure_ascii=False, indent=2))
+        return
+    if args.command == "benchmark":
+        from core.benchmark import benchmark_payload, run_official_benchmark
+        from core.official import load_official_east
+
+        scenario = load_official_east(args.dataset_dir, args.scenario_dir)
+        run = run_official_benchmark(
+            scenario,
+            SearchSettings(
+                time_limit_ms=args.budget_ms,
+                solution_limit=args.solution_limit,
+            ),
+            event_settings=(
+                SearchSettings(
+                    time_limit_ms=args.event_budget_ms,
+                    solution_limit=args.solution_limit,
+                )
+                if not args.skip_events
+                else None
+            ),
+        )
+        payload = json.dumps(benchmark_payload(run), ensure_ascii=False, indent=2)
+        if args.output:
+            args.output.write_text(payload + "\n", encoding="utf-8")
+        else:
+            print(payload)
         return
     if args.graph:
         graph = RoadGraph.model_validate_json(args.graph.read_bytes())

@@ -38,6 +38,57 @@ core/.venv/Scripts/python.exe -m core export-map --result core/result.json --out
 starts calculations automatically and keeps repeated result reads idempotent.
 Publish files using an atomic rename/replace; do not edit the live file in place.
 
+## Official East acceptance benchmark
+
+The repository contains a versioned, fully offline preparation of the organizer's
+East-region CSV: 66 requests, 12 named teams, accepted coordinates and a cached
+OSRM driving matrix. Run the reproducible golden profile from the repository root:
+
+```powershell
+core/.venv/Scripts/python.exe -m core benchmark --region east --budget-ms 30000 --solution-limit 32 --skip-events --output core/east-golden.json
+core/.venv/Scripts/python.exe -m core benchmark --region east --budget-ms 3000 --solution-limit 32 --event-budget-ms 1000 --output core/east-events.json
+```
+
+The first command compares the exact FIFO baseline with Router. Golden results are
+44/66 assigned and 3/13 urgent for FIFO versus 65/66 and 12/13 urgent for Router.
+Router uses 40,542 travel seconds versus 50,145 for FIFO while serving 21 more jobs.
+Request `57299` remains unassigned because its late emergency window conflicts with
+available capacity. The golden gate also fixes both serialized plan hashes.
+
+By default the command calculates five independent changes at 15:00 from the same applied plan:
+a normal request, an urgent request, one engineer going offline, simultaneous
+15-minute technical stops for two engineers, and a 3x traffic multiplier on matrix
+edges touching a fixed East-district bounding box. Each event includes the trigger,
+search path, before/after assignment deltas, full main/baseline plans and evidence.
+Use `--skip-events` for the initial FIFO/Router comparison alone. The 30-second
+golden deadline is a safety ceiling: the deterministic 32-solution limit is expected
+to stop first on the pinned OR-Tools runtime.
+
+The archive does not provide durations, shifts, transport or an engineer directory.
+`scenarios/east-v1/config.json` therefore records every synthetic assumption. Skills
+come from work types seen for each control team; transport and shifts are explicit
+per team; service durations are fixed per work type. Car time comes from the cached
+OSRM matrix. Bike, walk and transit times are declared speed approximations over the
+same distance. These figures are benchmark inputs, not measured production facts.
+
+### Explanation data for UI and LLM
+
+`evidence.requests[]` is the calculation-backed source for the “Why this engineer”
+panel. It directly supports the four rows in the UI reference:
+
+- skill and required-transport matches;
+- planned start, request window and remaining window margin;
+- predecessor request, travel seconds and road distance;
+- the original machine reason code, basis and fact object from the plan;
+- every alternative engineer's skills, transport, availability, assigned load,
+  solo feasibility, append-to-current-route feasibility, projected append times,
+  incremental travel cost and blocker codes.
+
+The evidence intentionally distinguishes local checks from global search. A separate
+LLM may turn these facts into natural language, but it must not infer missing facts,
+change assignments or claim global optimality. `solo_feasible` means an empty route
+can serve the job; `append_at_route_end_feasible` checks only one explicit order.
+
 ## Ownership and modules
 
 | Module | Responsibility |
@@ -51,6 +102,9 @@ Publish files using an atomic rename/replace; do not edit the live file in place
 | `runtime.py` | Snapshot adapters, process isolation, generations, result/context ownership |
 | `api.py` | Private result, health, context and tolerance endpoints |
 | `export.py` | GeoJSON paths and stop points for the map frontend |
+| `official.py` | Strict organizer CSV import and versioned East scenario preparation |
+| `evidence.py` | Detailed per-request and per-candidate facts for UI/LLM explanations |
+| `benchmark.py` | FIFO/Router benchmark plus deterministic replanning event harness |
 
 No sys business tables, accounts, request FSM, emails or applied plans are mutated.
 Geocoding happens before publication: sys consumes accepted coordinates rather than
@@ -213,9 +267,9 @@ stable revalidation, stale generations and actual process isolation through the
 private API. Provider HTTP tests use controlled responses; they do not establish
 that a real OSRM/Nominatim deployment or PostgreSQL view already exists.
 
-Remaining integration: sys view/permissions and acceptance transaction; actual
-Moscow/profile resources and geocoding of the organizer dataset; benchmarks at
-regional scale; full application UI/SSE smoke. The standalone Router tests cannot
+Remaining integration: sys view/permissions and acceptance transaction; production
+map/profile resource preparation beyond the cached East benchmark; the other two
+official regions; full application UI/SSE smoke. The standalone Router tests cannot
 substitute for the monorepo smoke gate, which does not exist in this checkout yet.
 
 Implementation references: [OR-Tools VRPTW](https://developers.google.com/optimization/routing/vrptw),

@@ -76,3 +76,40 @@ def test_invalid_snapshot_cli_fails_with_machine_readable_error(tmp_path):
     )
     assert command.returncode == 1
     assert json.loads(result.read_text(encoding="utf-8"))["status"] == "error"
+
+
+def test_official_east_benchmark_cli(tmp_path):
+    result = tmp_path / "east-benchmark.json"
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "core",
+            "benchmark",
+            "--region",
+            "east",
+            "--budget-ms",
+            "500",
+            "--solution-limit",
+            "4",
+            "--event-budget-ms",
+            "100",
+            "--output",
+            str(result),
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    data = json.loads(result.read_text(encoding="utf-8"))
+    assert data["scenario_id"] == "official-east-v1"
+    assert data["source"]["requests"] == 66
+    assert len(data["evidence"]["requests"]) == 66
+    assert [event["event_id"] for event in data["events"]] == [
+        "new_normal_request",
+        "new_urgent_request",
+        "engineer_offline",
+        "two_technical_stops_15m",
+        "district_traffic_x3",
+    ]

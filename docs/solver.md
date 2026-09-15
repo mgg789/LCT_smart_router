@@ -11,12 +11,21 @@ module; System Layer is developed independently.
 - OR-Tools joint job/lunch model, open routes and bounded hierarchical `fast` search.
 - Directed transport graph, path/matrix cache, OSRM adapter, address candidates and GeoJSON.
 - Autonomous process-isolated Runtime with file/PostgreSQL input adapters and private API.
-- Tests for hard constraints, stable replanning, obsolete generations and provider boundaries.
+- Official East importer and offline benchmark: FIFO 44/66 versus Router 65/66;
+  urgent coverage 3/13 versus 12/13 under the pinned golden profile.
+- Structured explanation evidence for the UI and an explanation-only LLM: selected
+  engineer facts, predecessor travel, window margin and all candidate blockers.
+- Five live-event acceptance scenarios: normal/urgent request, engineer offline,
+  two simultaneous 15-minute stops and a geographic 3x traffic multiplier.
+- Tests for hard constraints, stable replanning, event recovery, golden output hashes,
+  obsolete generations and provider boundaries.
 
 See [core/README.md](../core/README.md) for setup, API/view/hash contracts, geographic
-resource formats and explicit v1 limits. Current fixtures are synthetic; real map
-services, the sys database view and end-to-end application integration are not
-claimed to be deployed or verified. The previous prototype/golden files are unchanged.
+resource formats and explicit v1 limits. The official East scenario uses versioned
+synthetic operating assumptions plus cached Nominatim/OSRM preparation; it does not
+claim live traffic or production map deployment. The sys database view and end-to-end
+application integration are not deployed or verified. The previous prototype files
+are unchanged.
 
 ## Historical day-0 prototype
 

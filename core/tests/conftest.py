@@ -1,8 +1,44 @@
 """Small explicit road network and v14 input, independent of legacy contracts."""
 
+import json
+from pathlib import Path
+
 import pytest
+from core.benchmark import run_official_benchmark, run_replanning_events
 from core.contracts import RouterTaskSnapshot
+from core.engine import SearchSettings
 from core.geo import RoadGraph
+from core.official import load_official_east
+
+ROOT = Path(__file__).resolve().parents[2]
+OFFICIAL_GOLDEN = json.loads(
+    (ROOT / "core/tests/golden/official-east-v1.json").read_text(encoding="utf-8")
+)
+
+
+@pytest.fixture(scope="session")
+def official_east_scenario():
+    """Load the versioned official East scenario once for acceptance tests."""
+    return load_official_east(ROOT / "data/dataset/anonymized")
+
+
+@pytest.fixture(scope="session")
+def official_east_run(official_east_scenario):
+    """Run the deterministic official golden settings once per test session."""
+    return run_official_benchmark(
+        official_east_scenario,
+        SearchSettings(**OFFICIAL_GOLDEN["settings"]),
+    )
+
+
+@pytest.fixture(scope="session")
+def official_east_events(official_east_scenario, official_east_run):
+    """Calculate all five independent replanning acceptance events once."""
+    return run_replanning_events(
+        official_east_scenario,
+        official_east_run.output,
+        SearchSettings(time_limit_ms=3000, solution_limit=32),
+    )
 
 
 @pytest.fixture
