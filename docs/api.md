@@ -395,7 +395,64 @@ exactly that. Finishing work that never started is refused rather than inferred.
 
 An engineer may only mark work the **applied plan** assigned them.
 
-## 9. Missing contracts
+## 9. Data: import and the two resets
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/dispatch/data/state` | Whether the application is initialised, how, and what has been imported |
+| POST | `/api/v1/dispatch/data/import` | Load one region of the official dataset |
+| POST | `/api/v1/dispatch/data/reset` | Reset to the test data, or to an empty working set |
+
+### Import
+
+The organisers' files are windows-1251 with `;` separators and Russian headers, and they
+are the untouched source of truth. The importer handles the anomalies they actually
+contain: blank rows, the regional office hidden in a last row that looks blank, empty and
+all-day windows, missing districts, and four spellings of the Moscow prefix.
+
+Three rules from `context/37` section 9.1:
+
+- **the package is checked before anything is applied**;
+- **an error means nothing is applied** — a half-loaded file leaves a state nobody chose.
+  A type of work that is not in the catalogue is an error, because mapping it to the
+  nearest familiar one would silently send the wrong engineer;
+- **repeating a package creates no duplicates**, recognised by origin and content rather
+  than by file name.
+
+What the dataset does not contain matters as much. There is no engineer directory, no
+durations, no priorities and no coordinates (`context/18` section 6.3). Crews come from the
+`Бригада` column of the control distribution; their skills and transport are derived by a
+stated, deterministic rule and stored with `origin = synthesized`, so a derived value never
+looks like data. **Coordinates are not derived at all.** Every imported request is marked
+`needsGeocoding`, excluded from the published task and counted in the diagnostics — a
+plausible-looking point is worse than a missing one. When the data zone supplies
+`data/dataset/geocoded/<region>.json`, the same importer fills the points with no code
+change.
+
+### Resets
+
+Adding data, resetting to the test data and a full reset are three different actions, and
+both resets require an explicit confirmation phrase naming what will be affected:
+
+| Action | Confirmation |
+|---|---|
+| `kind: "demo"` | `reset to test data` |
+| `kind: "empty"` | `erase all application data` |
+
+The refusal lists what the action would remove and what it would keep, so the confirmation
+is an informed one. An integration key cannot confirm a reset: it carries the dispatcher's
+authority, not their confirmation, and an AI may prepare either action but never confirm it
+on the dispatcher's behalf (`context/42` DF-24).
+
+A reset clears **data, not the application**. Source code, `.env`, the schema and the
+knowledge sources stay, and the dispatcher account is restored from configuration rather
+than from a hidden archive of old users. It does clear sessions — including the one that
+confirmed it, so the Dashboard asks for a new sign-in. After an empty reset the startup
+profile records that the emptiness was deliberate: an empty `requests` table is not proof
+that setup never happened, and a restart must not quietly reload the demo data
+(`context/37` section 9.5).
+
+## 10. Missing contracts
 
 Listed rather than stubbed with invented shapes (AGENTS.md section 10.3).
 

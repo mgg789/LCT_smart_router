@@ -1,3 +1,4 @@
+import '../support/env';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
@@ -103,9 +104,8 @@ describe('router gateway', () => {
     });
     const body = (await response.json()) as AcceptanceBody;
     if (body.reason === 'SNAPSHOT_STALE') {
-      // Surface both hashes: a stale answer here usually means the test published again
-      // between building the result and feeding it, and the message should say so rather
-      // than leaving a bare code.
+      // Surface both hashes: a stale answer usually means the task was republished between
+      // building the result and feeding it, and a bare code would hide that.
       const sent = (result as { input_hash?: string }).input_hash;
       body.detail = `${body.detail} (sent ${sent}, current ${await publishedHash()})`;
     }
@@ -218,7 +218,7 @@ describe('router gateway', () => {
     const { body } = await feed(result, 'ctx-1');
     assert.equal(body.accepted, false);
     // Not a failure: the answer is about an earlier task and a newer one is on its way.
-    assert.equal(body.reason, 'SNAPSHOT_STALE');
+    assert.equal(body.reason, 'SNAPSHOT_STALE', body.detail);
   });
 
   it('refuses a result computed under a context that is no longer active', async () => {
@@ -242,13 +242,14 @@ describe('router gateway', () => {
 
     const { body } = await feed(result, 'ctx-now');
     assert.equal(body.accepted, false);
-    assert.equal(body.reason, 'RESULT_NOT_APPLICABLE');
+    assert.equal(body.reason, 'RESULT_NOT_APPLICABLE', body.detail);
   });
 
   it('refuses a finished result whose main plan is not usable', async () => {
     const request = await submitRequest();
+    const resultId = unique('result');
     const result = buildRouterResult({
-      resultId: unique('result'),
+      resultId,
       inputHash: await publishedHash(),
       contextVersion: 'ctx-1',
       planningAsOf: now(),
@@ -267,11 +268,13 @@ describe('router gateway', () => {
 
     const { body } = await feed(result, 'ctx-1');
     assert.equal(body.accepted, false);
-    assert.equal(body.reason, 'RESULT_NOT_APPLICABLE');
-    // It is kept, so the refusal can be explained afterwards.
-    const stored = await prisma.routerResult.findFirst({ orderBy: { receivedAt: 'desc' } });
-    assert.equal(stored?.accepted, false);
-    assert.equal(stored?.rejectionCode, 'RESULT_NOT_APPLICABLE');
+    assert.equal(body.reason, 'RESULT_NOT_APPLICABLE', body.detail);
+    // Kept, so the refusal can be explained afterwards. Looked up by its own id rather
+    // than as "the most recent": `receivedAt` is whole seconds, and several results in one
+    // second have no order between them.
+    const stored = await prisma.routerResult.findUniqueOrThrow({ where: { resultId } });
+    assert.equal(stored.accepted, false);
+    assert.equal(stored.rejectionCode, 'RESULT_NOT_APPLICABLE');
   });
 
   it('applies a valid result as a new immutable plan revision', async () => {
@@ -339,7 +342,7 @@ describe('router gateway', () => {
     assert.equal(second.body.accepted, false);
     // Re-reading a result does not apply it again, does not return completed work and does
     // not repeat a letter (context/33 section 7).
-    assert.equal(second.body.reason, 'ALREADY_APPLIED');
+    assert.equal(second.body.reason, 'ALREADY_APPLIED', second.body.detail);
     assert.equal(await prisma.appliedPlan.count(), revisionsAfterFirst);
   });
 
@@ -395,7 +398,7 @@ describe('router gateway', () => {
     );
 
     assert.equal(later.body.accepted, false);
-    assert.equal(later.body.reason, 'RESULT_NOT_APPLICABLE');
+    assert.equal(later.body.reason, 'RESULT_NOT_APPLICABLE', later.body.detail);
     // sys does not repair the plan with an optimiser of its own; it declines to apply it.
     assert.match(later.body.detail ?? '', /already started/i);
   });
@@ -571,7 +574,7 @@ describe('router gateway', () => {
         'ctx-1',
       );
       assert.equal(refused.body.accepted, false);
-      assert.equal(refused.body.reason, 'MODE_MANUAL');
+      assert.equal(refused.body.reason, 'MODE_MANUAL', refused.body.detail);
 
       // The last applied plan stays on screen; the day is not cleared.
       const planAfter = await call('GET', '/api/v1/dispatch/plan', dispatcherToken);

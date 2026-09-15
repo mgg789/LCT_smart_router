@@ -9,8 +9,10 @@ import { NotificationsModule } from './notifications';
 import { OperationsModule } from './operations';
 import { EngineersModule } from './orchestrator/engineers';
 import { FactsModule } from './orchestrator/facts';
+import { ImportsModule } from './orchestrator/imports';
 import { PolicyModule } from './orchestrator/policy';
 import { RequestsModule } from './orchestrator/requests';
+import { ResetModule } from './orchestrator/reset';
 import { PersistenceModule } from './persistence';
 import { MountDataEngModule } from './routing/mount-data-eng';
 import { RouterGatewayModule } from './routing/router-gateway';
@@ -37,6 +39,8 @@ import { RouterGatewayModule } from './routing/router-gateway';
     RequestsModule,
     EngineersModule,
     FactsModule,
+    ImportsModule,
+    ResetModule,
     ApiModule,
   ],
 })

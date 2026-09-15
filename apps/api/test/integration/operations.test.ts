@@ -1,3 +1,4 @@
+import '../support/env';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { after, before, describe, it } from 'node:test';

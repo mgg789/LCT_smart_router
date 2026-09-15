@@ -72,6 +72,11 @@ services:
     environment:
       PORT: 8000
       DATABASE_URL: postgresql://${POSTGRES_USER:-lct}:${POSTGRES_PASSWORD:-lct_dev_password}@postgres:5432/${POSTGRES_DB:-lct}?schema=public
+      DATASET_ROOT: /app/data/dataset/anonymized
+    volumes:
+      # Read-only bind mount rather than a copy into the image: the dataset is data, not
+      # code, and the geocode sidecar the data zone will add must appear without a rebuild.
+      - ../data/dataset:/app/data/dataset:ro
     depends_on:
       postgres:
         condition: service_healthy

@@ -133,4 +133,4 @@ Listed explicitly rather than stubbed with invented shapes (AGENTS.md section 10
 | Router Core HTTP surface (result, health, active context version, tolerance setting) | `ROUTER-gateway` | Not defined; sys will poll Router, direction agreed |
 | AI-gateway tool call protocol | AI chats | Out of scope of this build |
 | SMTP-gateway transport and accept result | Mail delivery | Out of scope of this build |
-| Source of request coordinates (geocoding) | Publishable snapshot | Absent from the official dataset; separate data-zone task |
+| Source of request coordinates (geocoding) | A publishable snapshot with anything in it | Absent from the official dataset. The importer reads an optional `data/dataset/geocoded/<region>.json`; until that exists, imported work is excluded and counted |

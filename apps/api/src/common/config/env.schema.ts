@@ -53,6 +53,22 @@ export const envSchema = z.object({
    * no SMTP-gateway in this build to deliver it. Refused in production by
    * `validateEnv` -- an exposed code is a full authentication bypass.
    */
+  // --- dataset -------------------------------------------------------------
+  /** Directory holding the organisers' CSV files. */
+  DATASET_ROOT: z.string().min(1).default('data/dataset/anonymized'),
+
+  /**
+   * Offset of the local times printed in those files, in seconds.
+   *
+   * Stated explicitly rather than taken from the host: the files say `17.08.2026
+   * 20:00` with no zone, and reading them on a machine in another zone would
+   * silently move every window (context/33 section 4).
+   */
+  DATASET_TIME_ZONE_OFFSET_SEC: z.coerce
+    .number()
+    .int()
+    .default(3 * 3600),
+
   AUTH_DEV_EXPOSE_CODES: z
     .enum(['true', 'false'])
     .default('false')

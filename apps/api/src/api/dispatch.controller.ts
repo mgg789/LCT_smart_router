@@ -1,14 +1,17 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { type Actor, CurrentActor, Roles } from '../auth';
+import { AppConfigService } from '../common/config';
 import { SysError } from '../common/errors';
 import { Clock } from '../common/time';
 import { zodBody } from '../common/validation';
 import { OperationsService } from '../operations';
 import { EngineersService } from '../orchestrator/engineers';
+import { DatasetImportService } from '../orchestrator/imports';
 import { PolicyService } from '../orchestrator/policy';
 import { RequestsService } from '../orchestrator/requests';
-import { PrismaService } from '../persistence';
+import { ResetService } from '../orchestrator/reset';
+import { APP_STATE_KEYS, PrismaService } from '../persistence';
 import {
   PUBLICATION_TRIGGERS,
   SnapshotBuilder,
@@ -20,6 +23,12 @@ import {
   ManualPlanService,
   ResultAcceptanceService,
 } from '../routing/router-gateway';
+import {
+  type ImportDatasetDto,
+  importDatasetSchema,
+  type ResetDto,
+  resetSchema,
+} from './dto/data.dto';
 import {
   type CreateEngineerDto,
   createEngineerSchema,
@@ -79,6 +88,9 @@ export class DispatchController {
     private readonly control: ControlStateService,
     private readonly manual: ManualPlanService,
     private readonly acceptance: ResultAcceptanceService,
+    private readonly imports: DatasetImportService,
+    private readonly resetService: ResetService,
+    private readonly config: AppConfigService,
     private readonly operations: OperationsService,
     private readonly prisma: PrismaService,
     private readonly clock: Clock,
@@ -569,5 +581,85 @@ export class DispatchController {
     // exists only while that client does not, and it runs the identical checks -- it is a
     // way in for a test, not a second way to apply a plan (context/41 section 6.3).
     return this.acceptance.accept(dto.result, dto.activeContextVersion ?? null);
+  }
+
+  @Get('data/state')
+  @ApiOperation({ summary: 'Whether the application has been initialised, and how' })
+  async dataState() {
+    const state = await this.prisma.appState.findMany({
+      where: {
+        key: {
+          in: [
+            APP_STATE_KEYS.INITIALIZED,
+            APP_STATE_KEYS.STARTUP_PROFILE,
+            APP_STATE_KEYS.GENERATION,
+          ],
+        },
+      },
+    });
+    const byKey = new Map(state.map((row) => [row.key, row.value]));
+    const packages = await this.prisma.importPackage.findMany({
+      orderBy: { appliedAt: 'desc' },
+      take: 20,
+    });
+    return {
+      // An empty `requests` table is not proof that setup never happened; after a
+      // deliberate empty reset it is the intended state (context/37 section 9.5).
+      initialized: byKey.get(APP_STATE_KEYS.INITIALIZED) ?? false,
+      startupProfile: byKey.get(APP_STATE_KEYS.STARTUP_PROFILE) ?? null,
+      generation: byKey.get(APP_STATE_KEYS.GENERATION) ?? 1,
+      imports: packages.map((item) => ({
+        source: item.source,
+        checksum: item.checksum,
+        appliedAt: Number(item.appliedAt),
+        summary: item.summary,
+      })),
+    };
+  }
+
+  @Post('data/import')
+  @ApiOperation({ summary: 'Load one region of the official dataset' })
+  async importDataset(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(importDatasetSchema)) dto: ImportDatasetDto,
+  ) {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'data.import',
+        targetRef: dto.region,
+        payload: dto,
+      },
+      async (context) =>
+        this.imports.importRegion(
+          context,
+          dto.region,
+          this.config.get('DATASET_ROOT'),
+          this.config.get('DATASET_TIME_ZONE_OFFSET_SEC'),
+        ),
+    );
+    return outcome.result;
+  }
+
+  @Post('data/reset')
+  @ApiOperation({ summary: 'Reset to the test data, or to an empty working set' })
+  async reset(@CurrentActor() actor: Actor, @Body(zodBody(resetSchema)) dto: ResetDto) {
+    if (actor.kind !== 'account') {
+      // A destructive reset is a confirmed human action. An integration key carries the
+      // dispatcher's authority but not their confirmation (context/42 DF-24).
+      throw SysError.forbidden('A reset is confirmed from the Dashboard');
+    }
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: `data.reset.${dto.kind}`,
+        payload: dto,
+        confirmation: dto.confirmation,
+      },
+      async (context) => this.resetService.run(context, dto.kind, dto.confirmation),
+    );
+    return outcome.result;
   }
 }
