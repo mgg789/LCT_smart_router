@@ -70,7 +70,37 @@ stay tellable apart without parsing prose:
 `requestId` echoes `X-Request-Id` when the caller supplies one, and is generated
 otherwise. The same id appears on every log line of that request.
 
-## 2. Health
+## 2. Changing anything: the operation envelope
+
+Every write goes through one envelope (`context/36` sections 1, 8 and 12). Endpoints that
+change state accept these fields alongside their own payload:
+
+| Field | Required | Meaning |
+|---|---|---|
+| `operationId` | yes | Stable id of one business intention, chosen by the caller (a UUID). Retrying after a lost response repeats it |
+| `expectedVersion` | when the action follows from a prior read | The `version` of the object the actor was looking at |
+| `confirmation` | for actions that demand explicit confirmation | Reference to the confirmed intent |
+
+**Retrying is safe and is the intended behaviour.** The same `operationId` with the same
+arguments returns the first outcome without doing the work again — one request, one
+`requestId`, one email. A refusal is stored too, so a retry after a lost response returns
+the same refusal rather than attempting the work a second time.
+
+**The same `operationId` with different arguments is refused** with
+`OPERATION_ID_REUSED`. That is a caller bug, not a new write.
+
+**`expectedVersion` is how concurrent edits are surfaced.** If the object changed after
+the actor read it, the answer is `VERSION_CONFLICT` carrying `expectedVersion` and
+`currentVersion`; the client refreshes and confirms again. Nothing is ever silently
+overwritten. Only the data the operation is based on is checked — an unrelated GPS point
+or chat message does not invalidate an action (`context/36` section 8).
+
+Business change, the record of who made it and the follow-up work it requires commit
+together. Waiting on Router, AI or SMTP is deliberately outside that unit: a network call
+never holds the transaction open, and a mail failure does not turn an already saved
+request into a non-existent one.
+
+## 3. Health
 
 | Method | Path | Answers |
 |---|---|---|
@@ -83,7 +113,7 @@ because they are not wired. An unreachable SMTP or LLM must never make the appli
 look down — the dispatcher's password login has to work exactly when the mail contour is
 broken (`context/43` section 11.3).
 
-## 3. Auth
+## 4. Auth
 
 | Method | Path | Access | Purpose |
 |---|---|---|---|
@@ -118,7 +148,7 @@ broken (`context/43` section 11.3).
 - **Keys cannot manage keys.** Creating one is a master-category function, but revoking
   requires a dispatcher session: key management is a Dashboard action.
 
-## 4. Missing contracts
+## 5. Missing contracts
 
 Listed rather than stubbed with invented shapes (AGENTS.md section 10.3).
 

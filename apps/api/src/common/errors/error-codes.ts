@@ -70,3 +70,13 @@ export type ErrorCode = keyof typeof ERROR_CODES;
 export function httpStatusForErrorCode(code: ErrorCode): number {
   return ERROR_CODES[code];
 }
+
+/**
+ * Narrows a stored or received string back to a known code.
+ *
+ * Used when reading a refusal recorded earlier: an unrecognised value must not be passed
+ * through as if the catalogue contained it.
+ */
+export function toErrorCode(value: string): ErrorCode {
+  return value in ERROR_CODES ? (value as ErrorCode) : 'INTERNAL_ERROR';
+}
