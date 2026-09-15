@@ -23,7 +23,7 @@ this and the other D-21 deviations; nothing was changed there silently.
 
 ```bash
 git checkout dev && git pull
-cp .env.example .env          # real values are never committed
+cp .env.example .env          # required: dispatcher credentials have no defaults
 pnpm install
 pnpm compose:up               # docker compose -f infra/docker-compose.yml up -d --build
 ```

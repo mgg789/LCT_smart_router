@@ -3,6 +3,20 @@ import { currentRequestId } from './request-context';
 
 const LEVEL_ORDER: Record<string, number> = { debug: 10, info: 20, warn: 30, error: 40 };
 
+function describe(message: unknown): string {
+  if (typeof message === 'string') {
+    return message;
+  }
+  if (message instanceof Error) {
+    return message.message;
+  }
+  try {
+    return JSON.stringify(message) ?? String(message);
+  } catch {
+    return String(message);
+  }
+}
+
 type Level = 'debug' | 'info' | 'warn' | 'error';
 
 /**
@@ -50,8 +64,14 @@ export class JsonLogger implements LoggerService {
     const entry: Record<string, unknown> = {
       ts: new Date().toISOString(),
       level,
-      msg: typeof message === 'string' ? message : JSON.stringify(message),
+      msg: describe(message),
     };
+    // Nest hands the bootstrap failure to the logger as an Error, whose own enumerable
+    // properties are empty -- serializing it directly would print `{}` and hide the
+    // reason the process cannot start.
+    if (message instanceof Error && !stack) {
+      entry.stack = message.stack;
+    }
     if (context) {
       entry.context = context;
     }

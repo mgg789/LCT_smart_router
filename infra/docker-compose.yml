@@ -58,16 +58,19 @@ services:
       context: ..
       dockerfile: apps/api/Dockerfile
     restart: unless-stopped
-    # Optional: the stack starts with the defaults below, and a copied .env overrides
-    # them. A missing file is not an error, a malformed value still stops the process.
+    # `cp .env.example .env` is required before the first start: the dispatcher's
+    # credentials have no defaults on purpose. A compose file is not a place to keep a
+    # working password, and a silent fallback would become one.
     env_file:
       - path: ../.env
-        required: false
+        required: true
+    # Only container topology is set here; application configuration comes from .env, so
+    # there is one place to look and no silent override. In particular NODE_ENV is the
+    # operator's choice: this contour is a development and demo one, where
+    # AUTH_DEV_EXPOSE_CODES is how a login code reaches the user at all, and the
+    # application refuses to combine that setting with production.
     environment:
-      NODE_ENV: ${NODE_ENV:-production}
       PORT: 8000
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      APP_TIME_ZONE: ${APP_TIME_ZONE:-Europe/Moscow}
       DATABASE_URL: postgresql://${POSTGRES_USER:-lct}:${POSTGRES_PASSWORD:-lct_dev_password}@postgres:5432/${POSTGRES_DB:-lct}?schema=public
     depends_on:
       postgres:
