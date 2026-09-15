@@ -5,8 +5,19 @@ import { SysError } from '../common/errors';
 import { Clock } from '../common/time';
 import { zodBody } from '../common/validation';
 import { OperationsService } from '../operations';
+import { EngineersService } from '../orchestrator/engineers';
 import { RequestsService } from '../orchestrator/requests';
 import { PrismaService } from '../persistence';
+import {
+  type CreateEngineerDto,
+  createEngineerSchema,
+  type SetAvailabilityDto,
+  type SetWorkdayDto,
+  setAvailabilitySchema,
+  setWorkdaySchema,
+  type UpdateEngineerDto,
+  updateEngineerSchema,
+} from './dto/engineer.dto';
 import {
   type CancelRequestDto,
   cancelRequestSchema,
@@ -15,6 +26,12 @@ import {
   dispatcherCreateRequestSchema,
   dispatcherUpdateRequestSchema,
 } from './dto/request.dto';
+import {
+  type EngineerDayView,
+  type EngineerView,
+  toDayView,
+  toEngineerView,
+} from './engineer-view';
 import { type RequestView, toRequestView } from './request-view';
 
 /**
@@ -30,6 +47,7 @@ import { type RequestView, toRequestView } from './request-view';
 export class DispatchController {
   constructor(
     private readonly requests: RequestsService,
+    private readonly engineers: EngineersService,
     private readonly operations: OperationsService,
     private readonly prisma: PrismaService,
     private readonly clock: Clock,
@@ -182,5 +200,147 @@ export class DispatchController {
       })),
       asOf: this.clock.nowSeconds(),
     };
+  }
+
+  @Get('engineers')
+  @ApiOperation({ summary: 'Engineers with their skills, transport and current day' })
+  async listEngineers(): Promise<{
+    engineers: Array<EngineerView & { day: EngineerDayView | null }>;
+  }> {
+    const engineers = await this.prisma.engineer.findMany({
+      where: { archivedAt: null },
+      orderBy: { inputOrder: 'asc' },
+      include: { days: { orderBy: { workDate: 'desc' }, take: 1 } },
+    });
+    return {
+      engineers: engineers.map((engineer) => ({
+        ...toEngineerView(engineer),
+        // Availability, the current day and the profile stay visibly separate; they are
+        // never blended into one "working / offline / unassigned" status
+        // (context/39 DB4).
+        day: engineer.days[0] ? toDayView(engineer.days[0]) : null,
+      })),
+    };
+  }
+
+  @Post('engineers')
+  @ApiOperation({ summary: 'Add an engineer by email address' })
+  async createEngineer(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(createEngineerSchema)) dto: CreateEngineerDto,
+  ): Promise<{ engineer: EngineerView }> {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'engineer.create',
+        payload: dto,
+      },
+      async (context) =>
+        toEngineerView(
+          await this.engineers.create(context, {
+            email: dto.email,
+            displayName: dto.displayName,
+            skills: dto.skills,
+            transportType: dto.transportType,
+            region: dto.region ?? null,
+            homeLat: dto.homeLat ?? null,
+            homeLon: dto.homeLon ?? null,
+          }),
+        ),
+    );
+    return { engineer: outcome.result };
+  }
+
+  @Patch('engineers/:id')
+  @ApiOperation({ summary: 'Change the profile of an engineer' })
+  async updateEngineer(
+    @CurrentActor() actor: Actor,
+    @Param('id') id: string,
+    @Body(zodBody(updateEngineerSchema)) dto: UpdateEngineerDto,
+  ): Promise<{ engineer: EngineerView }> {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'engineer.update_profile',
+        targetRef: id,
+        expectedVersion: dto.expectedVersion ?? null,
+        payload: dto,
+      },
+      // The same handler the engineer's own edit goes through, so the two meet the same
+      // version check and neither overwrites the other silently (context/39 DB4).
+      async (context) =>
+        toEngineerView(
+          await this.engineers.updateProfile(context, id, dto.expectedVersion ?? null, {
+            ...(dto.displayName === undefined ? {} : { displayName: dto.displayName }),
+            ...(dto.skills === undefined ? {} : { skills: dto.skills }),
+            ...(dto.transportType === undefined ? {} : { transportType: dto.transportType }),
+            ...(dto.region === undefined ? {} : { region: dto.region }),
+            ...(dto.homeLat === undefined ? {} : { homeLat: dto.homeLat }),
+            ...(dto.homeLon === undefined ? {} : { homeLon: dto.homeLon }),
+          }),
+        ),
+    );
+    return { engineer: outcome.result };
+  }
+
+  @Post('engineers/:id/workday')
+  @ApiOperation({ summary: 'Set the shift and lunch conditions of one working day' })
+  async setWorkday(
+    @CurrentActor() actor: Actor,
+    @Param('id') id: string,
+    @Body(zodBody(setWorkdaySchema)) dto: SetWorkdayDto,
+  ): Promise<{ day: EngineerDayView }> {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'engineer.set_workday',
+        targetRef: id,
+        payload: dto,
+      },
+      async (context) =>
+        toDayView(
+          await this.engineers.setWorkday(context, id, {
+            workDate: dto.workDate,
+            shiftStartAt: dto.shiftStartAt,
+            shiftEndAt: dto.shiftEndAt,
+            ...(dto.lunch === undefined ? {} : { lunch: dto.lunch }),
+            ...(dto.lunchRequired === undefined ? {} : { lunchRequired: dto.lunchRequired }),
+          }),
+        ),
+    );
+    return { day: outcome.result };
+  }
+
+  @Post('engineers/:id/availability')
+  @ApiOperation({ summary: 'Take an engineer off the line, or put them back on' })
+  async setEngineerAvailability(
+    @CurrentActor() actor: Actor,
+    @Param('id') id: string,
+    @Body(zodBody(setAvailabilitySchema)) dto: SetAvailabilityDto,
+  ): Promise<{ day: EngineerDayView }> {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'engineer.set_availability',
+        targetRef: id,
+        payload: dto,
+      },
+      // Working availability only. It does not finish the work in hand and does not
+      // reassign it (context/42 DF-06).
+      async (context) =>
+        toDayView(
+          await this.engineers.setAvailability(
+            context,
+            id,
+            dto.availability,
+            dto.expectedOnlineAt ?? null,
+          ),
+        ),
+    );
+    return { day: outcome.result };
   }
 }
