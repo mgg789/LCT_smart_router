@@ -1,0 +1,224 @@
+# Router Core v1
+
+Autonomous Python implementation of the v14 snapshot contract: geographic resources,
+OR-Tools Engine and a single-coordinator Runtime. System Layer is developed separately.
+The legacy prototype under `context/legacy_code/core/` remains frozen.
+
+## Quick start
+
+Run from the repository root. Tested on CPython 3.14.3 (Windows x64); dependencies
+are pinned in `core/requirements.txt`. Create `core/.venv` only if it does not exist.
+
+```powershell
+python -m venv core/.venv
+core/.venv/Scripts/python.exe -m pip install -r core/requirements.txt
+core/.venv/Scripts/python.exe -m pytest core/tests -q
+core/.venv/Scripts/python.exe -m core solve --graph core/examples/graph.json --snapshot core/examples/snapshot.json --output core/result.json
+core/.venv/Scripts/python.exe -m core serve --graph core/examples/graph.json --snapshot core/examples/snapshot.json --port 8100
+```
+
+On Linux use `core/.venv/bin/python`. The service binds to **127.0.0.1**. Open
+`http://127.0.0.1:8100/docs` or read `GET /v1/result`. Run one Uvicorn worker only.
+Do not expose this private service directly to end users; sys owns authorization.
+
+The included graph is a **synthetic four-node test network**, not actual Moscow
+roads. All four profile costs are explicitly fabricated fixture values. The engine
+and providers accept external datasets; no algorithm branches on fixture identities.
+Main visits jobs 1 → 2 → 3 (180 travel seconds, 1.8 km), while FIFO baseline visits
+3 → 2 → 1 (300 travel seconds, 3.0 km). These are regression figures, not measured
+business savings on the organizer dataset.
+
+```powershell
+core/.venv/Scripts/python.exe -m core geocode --catalog core/examples/addresses.json "Test office"
+core/.venv/Scripts/python.exe -m core project --graph core/examples/graph.json --lat 55.75 --lon 37.6 --limit-m 100
+core/.venv/Scripts/python.exe -m core export-map --result core/result.json --output core/routes.geojson
+```
+
+`solve` is a one-shot file/DB calculation. `serve` polls the published snapshot,
+starts calculations automatically and keeps repeated result reads idempotent.
+Publish files using an atomic rename/replace; do not edit the live file in place.
+
+## Ownership and modules
+
+| Module | Responsibility |
+|---|---|
+| `contracts.py` | Strict Pydantic snapshot/result schemas; integer Unix seconds |
+| `geo.py` | Versioned directed graph, Dijkstra paths, matrices, coordinate projection, offline gazetteer |
+| `geocoding.py` | Explicit Nominatim source, validated candidates, rate limiting and offline cache |
+| `osrm.py` | Profile-specific OSRM paths, consistent time/distance/geometry, disk cache |
+| `schedule.py` | Fixed-order scheduler, exact FIFO baseline, metrics and result validation |
+| `engine.py` | Joint jobs/lunch routing, bounded policy stages and three replanning paths |
+| `runtime.py` | Snapshot adapters, process isolation, generations, result/context ownership |
+| `api.py` | Private result, health, context and tolerance endpoints |
+| `export.py` | GeoJSON paths and stop points for the map frontend |
+
+No sys business tables, accounts, request FSM, emails or applied plans are mutated.
+Geocoding happens before publication: sys consumes accepted coordinates rather than
+asking the solver to guess an address during optimization.
+
+## Geographic resources
+
+### Offline graph
+
+The JSON format is illustrated by `examples/graph.json`. Each edge is **directed**,
+has integer metres and per-profile integer seconds. A missing profile means that
+profile cannot traverse the edge. Omitted edge geometry means the edge's own straight
+segment between its vertices; a detailed source must provide intermediate points.
+The exported path concatenates precisely those edges. Labels carry source attribution.
+
+Graph costs include whatever restrictions the producer encoded. V1 does not import
+OSM PBF, model turn restrictions, time-dependent traffic or public transport timetables.
+Use a prepared, validated graph or OSRM for road-network preparation/routing. Transit
+is supported only when explicit transit edge costs are supplied; it is never replaced
+by car travel. No external maps or infrastructure are provisioned by these commands.
+
+Snapshot coordinates must match graph vertices (1 mm float tolerance). `project`
+returns a **candidate** nearest vertex and projection distance; accepting it is an
+explicit preparation step. V1 does not invent access-road connectors or silently
+snap through walls. Co-located graph vertices need disambiguation before import.
+Unknown coordinates/unreachable directed paths return no quote, never zero travel.
+
+### OSRM and cache preparation
+
+Use `--osrm-config path/to/private-config.json` instead of `--graph`. Example shape:
+
+```json
+{
+  "map_version": "moscow-extract-YYYY-MM-DD-profile-v1",
+  "endpoints": {"car": "http://127.0.0.1:5000"},
+  "cache_dir": "core/.cache/osrm",
+  "offline": true
+}
+```
+
+Each endpoint must already be deployed with its declared transport profile. The
+OSRM path segment `driving` is the conventional API profile label; it does **not**
+change the Lua profile with which that server was built. Never point walk/bike/transit
+at a car-only backend and label the result as another mode.
+
+For deliberate cache preparation, use `offline:false` and run the desired snapshot
+once; all relevant directed point pairs for the configured engineers are requested.
+Then set `offline:true`. A cache miss is a technical error, while OSRM `NoRoute` is
+an unreachable path. Provider/network failures are not cached as unreachable roads.
+An online cache fill is quadratic and may take much longer than the search budget.
+Prefer preparation outside the serving path. Change `map_version` whenever OSRM
+resources/profiles change; OSRM does not expose an immutable map fingerprint here.
+
+Time, distance and geometry come from the **same** route response. Seconds/metres
+are rounded up. OSRM projection/access semantics apply: no additional access time
+from the original coordinate to OSRM's snapped road position is invented.
+
+### Geocoding
+
+`geocode --catalog` reads an attributed offline candidate array. Alternatively use
+`geocode --nominatim-config private-config.json "address"` with this shape:
+
+```json
+{
+  "endpoint": "http://127.0.0.1:8088",
+  "dataset_version": "prepared-geocoder-v1",
+  "user_agent": "LCT-Router/1 (operator contact)",
+  "cache_dir": "core/.cache/geocoding",
+  "offline": true
+}
+```
+
+An explicit online preparation pass (`offline:false`) caches validated candidates.
+No provider is called by default. Ambiguous addresses return multiple candidates;
+missing cache entries fail explicitly. Accept a candidate in the preparation/UI
+layer before putting it into the snapshot. Provider-specific credentials and usage
+policies belong to operator configuration, never to the snapshot or repository.
+
+## Engine behavior
+
+- Hard checks: skill, transport, known release, start-time window, shift/horizon,
+  directed reachability and non-overlapping travel/work/wait/lunch intervals.
+- Routes are open. The last job's service time still counts before shift end.
+- Baseline: `arrival_order` jobs, first feasible `input_order` engineer, append only.
+- `fast` catalog: urgent coverage → total coverage → optional lunches → travel
+  seconds → integer metres → number of engineers doing jobs. Unknown policies and
+  parameters fail. Business constraints cannot be relaxed by `tolerance_sec`.
+- OR-Tools Routing 9.15 uses domain restrictions for allowed vehicles and a lunch
+  alternative at the engineer's start or directly after a compatible job. Required
+  lunch is mandatory; lunch already taken cannot be scheduled again.
+- Three bounded stages optimize coverage/lunch, travel, then metres. Later stages
+  cannot worsen achieved senior counts. Fleet count is currently a tie-break between
+  the baseline, projected plan and stage candidates, not a separate exhaustive search.
+- `REVALIDATE` reschedules unchanged assignments/order only within the stable
+  reference's tolerance. `REPAIR_AND_IMPROVE` projects previous business IDs and
+  uses a feasible seed. Context changes or no usable seed choose `COLD_START`.
+- A ready plan can contain unassigned jobs. No feasible required-lunch candidate
+  yields `is_usable:false`, empty executable routes and an explicit conflict alert.
+- Reasons distinguish proven static rejection from a bounded search finding no
+  assignment. Neither `ready` nor an unassigned outcome proves global optimality.
+
+`--budget-ms` controls the search budget (default 3000), not validation, graph
+preparation or HTTP calls. Each stage also has a solution limit; repeatability is
+tested on the pinned Windows runtime and fixture. Cross-platform deterministic
+quality under wall-time exhaustion is not asserted. Larger datasets need profiling.
+
+## Sys integration contract (v1 proposal)
+
+The external business schemas follow `context/33-router_contract_v2.md`. Generate
+JSON Schema from `RouterTaskSnapshot.model_json_schema()` / `RouterResult.model_json_schema()`;
+the private service also exposes result schemas in `/openapi.json`.
+
+| Interface | Meaning |
+|---|---|
+| Snapshot payload | Exact UTF-8 JSON document, `schema_version:"1.0"`, duplicate keys rejected |
+| `input_hash` | Lowercase SHA-256 hex of those **exact bytes**, including whitespace; no independent reserialization |
+| PostgreSQL input | Sys-owned `router_active_snapshot` view with exactly one `payload_utf8 text` row |
+| `GET /health` | Coordinator state; liveness is not proof of a usable plan |
+| `GET /v1/context` | Active context version and tolerance, separate from the last result |
+| `GET /v1/result` | Atomic `RouterResult`: pending/ready/error and main/baseline |
+| `PUT /v1/config/tolerance` | `{operation_id,tolerance_sec,expected_context_version}`; 409 on conflict |
+
+DB usage: omit `--snapshot`, set `ROUTER_DATABASE_URL` in the process environment.
+The reader issues one SELECT in a read-only transaction; sys owns publication,
+view/migrations and a SELECT-only role. `payload_utf8` preserves published text;
+do not reconstruct it from JSONB. Sys must hash the same bytes independently.
+No PostgreSQL database or role is created by Router.
+
+Context identity includes resource contents/version, the `fast-1` compiler profile
+and search settings. A new context invalidates the current result immediately.
+Map activation is currently a process restart or internal `update_graph()` call;
+there is no public graph-upload or arbitrary solve endpoint.
+
+Only one job runs; input/context changes replace one waiting job. Finished stale
+generations are discarded, not retagged. Cancellation is cooperative at the job
+boundary: a current bounded search is allowed to finish. The result store, previous
+plan and tolerance idempotency keys are process-local in v1. Restart restores startup
+settings, recomputes the active snapshot and produces a new result ID. Sys must
+reread context and preserve its own applied-plan/execution history across restarts.
+
+Sys applies a result only in AUTO, with matching hash/context, `ready`, usable main
+and no conflict with facts. MANUAL disables consumption; Router keeps calculating.
+These checks are sys responsibilities, not implemented by this module.
+
+A calculation error is retained until the snapshot or context changes (or Runtime
+restarts); v1 does not retry unchanged failed jobs on a timer. Read failures are
+polled again automatically. Refill an OSRM cache before starting the offline service.
+
+## Verification and remaining integration
+
+```powershell
+core/.venv/Scripts/python.exe -m pytest core/tests -q
+core/.venv/Scripts/python.exe -m ruff check core
+core/.venv/Scripts/python.exe -m ruff format --check core
+```
+
+The suite covers hard constraints, policy precedence, lunches, graph direction,
+transport profiles, provider cache contracts, exact hashing, invalid output,
+stable revalidation, stale generations and actual process isolation through the
+private API. Provider HTTP tests use controlled responses; they do not establish
+that a real OSRM/Nominatim deployment or PostgreSQL view already exists.
+
+Remaining integration: sys view/permissions and acceptance transaction; actual
+Moscow/profile resources and geocoding of the organizer dataset; benchmarks at
+regional scale; full application UI/SSE smoke. The standalone Router tests cannot
+substitute for the monorepo smoke gate, which does not exist in this checkout yet.
+
+Implementation references: [OR-Tools VRPTW](https://developers.google.com/optimization/routing/vrptw),
+[OR-Tools v9.15](https://github.com/google/or-tools/releases/tag/v9.15),
+[OSRM API](https://project-osrm.org/docs/v5.24.0/api/),
+[Nominatim search](https://nominatim.org/release-docs/latest/api/Search/).

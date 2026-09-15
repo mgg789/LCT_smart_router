@@ -1,5 +1,25 @@
 # Solver — computation core
 
+## Current Router v1 (2026-09-16)
+
+The new implementation lives in root `core/` by the owner's instruction (D-22).
+It follows the v14 `RouterTaskSnapshot` / `RouterResult` contract rather than the
+legacy contract below. Runtime, Engine and geographic preparation belong to this
+module; System Layer is developed independently.
+
+- Strict Unix-second inputs and result validation; exact FIFO baseline.
+- OR-Tools joint job/lunch model, open routes and bounded hierarchical `fast` search.
+- Directed transport graph, path/matrix cache, OSRM adapter, address candidates and GeoJSON.
+- Autonomous process-isolated Runtime with file/PostgreSQL input adapters and private API.
+- Tests for hard constraints, stable replanning, obsolete generations and provider boundaries.
+
+See [core/README.md](../core/README.md) for setup, API/view/hash contracts, geographic
+resource formats and explicit v1 limits. Current fixtures are synthetic; real map
+services, the sys database view and end-to-end application integration are not
+claimed to be deployed or verified. The previous prototype/golden files are unchanged.
+
+## Historical day-0 prototype
+
 > Status: **legacy, frozen 2026-09-15** — the day-0 prototype moved from
 > `core/` (repo root) to `context/legacy_code/core/` (backup, D-19 in
 > `context/29`); paths below are historical. Target home stays `apps/solver`

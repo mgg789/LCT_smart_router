@@ -82,7 +82,8 @@
 - `data/dataset/` — официальный датасет (см. §1);
 - `context/sources/` — оригиналы первоисточников: PDF кейса «3. Билайн Бизнес», шаблон презентации ЛЦТ (только чтение, не редактировать);
 - `context/legacy_code/core/` — замороженный day-0 прототип ядра (D-19; тесты рабочие);
-- `docs/` — документация подсистем (`solver.md` — legacy).
+- `docs/` — документация подсистем; `solver.md` links the current Router v1 and retains historical prototype documentation.
+- `core/` — current autonomous Router v1 (D-22): Engine, Runtime and geographic resources; integration and limitations in `core/README.md`.
 
 ---
 

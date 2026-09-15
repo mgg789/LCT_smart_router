@@ -1,0 +1,10 @@
+[
+  {
+    "address": "Test office",
+    "location": {
+      "lat": 55.75,
+      "lon": 37.6
+    },
+    "source": "Synthetic fixture"
+  }
+]
