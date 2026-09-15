@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "endpoint": "https://routing.api.2gis.com",
+  "dataset_version": "moscow-traffic-2026-09-16-v1",
+  "cache_dir": "core/.cache/2gis",
+  "api_key_env": "TWOGIS_API_KEY",
+  "offline": true,
+  "chunk_size": 25,
+  "traffic_mode": "statistics",
+  "transit_types": [
+    "metro",
+    "bus",
+    "tram",
+    "trolleybus",
+    "shuttle_bus",
+    "suburban_train",
+    "mcc",
+    "mcd"
+  ],
+  "enable_transit_schedule": true
+}

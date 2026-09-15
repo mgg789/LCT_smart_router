@@ -97,6 +97,7 @@ can serve the job; `append_at_route_end_feasible` checks only one explicit order
 | `geo.py` | Versioned directed graph, Dijkstra paths, matrices, coordinate projection, offline gazetteer |
 | `geocoding.py` | Explicit Nominatim source, validated candidates, rate limiting and offline cache |
 | `osrm.py` | Profile-specific OSRM paths, consistent time/distance/geometry, disk cache |
+| `twogis.py` | Cached 2GIS traffic and multimodal matrix preparation outside Engine |
 | `schedule.py` | Fixed-order scheduler, exact FIFO baseline, metrics and result validation |
 | `engine.py` | Joint jobs/lunch routing, bounded policy stages and three replanning paths |
 | `runtime.py` | Snapshot adapters, process isolation, generations, result/context ownership |
@@ -120,11 +121,12 @@ profile cannot traverse the edge. Omitted edge geometry means the edge's own str
 segment between its vertices; a detailed source must provide intermediate points.
 The exported path concatenates precisely those edges. Labels carry source attribution.
 
-Graph costs include whatever restrictions the producer encoded. V1 does not import
-OSM PBF, model turn restrictions, time-dependent traffic or public transport timetables.
-Use a prepared, validated graph or OSRM for road-network preparation/routing. Transit
-is supported only when explicit transit edge costs are supplied; it is never replaced
-by car travel. No external maps or infrastructure are provisioned by these commands.
+Graph costs include whatever restrictions the producer encoded. Engine costs remain
+static for one calculation: it does not import OSM PBF, evaluate traffic by each future
+departure or query a public-transport timetable during search. Use a prepared, validated
+graph, OSRM or a 2GIS matrix snapshot. Transit is supported only when explicit transit
+costs are supplied; it is never replaced by car travel. No external maps or
+infrastructure are provisioned by these commands.
 
 Snapshot coordinates must match graph vertices (1 mm float tolerance). `project`
 returns a **candidate** nearest vertex and projection distance; accepting it is an
@@ -161,6 +163,49 @@ resources/profiles change; OSRM does not expose an immutable map fingerprint her
 Time, distance and geometry come from the **same** route response. Seconds/metres
 are rounded up. OSRM projection/access semantics apply: no additional access time
 from the original coordinate to OSRM's snapped road position is invented.
+
+### 2GIS traffic and multimodal matrix preparation
+
+`prepare-2gis` creates one immutable `RoadGraph` for the coordinates in a strict
+Router snapshot. It requests separate 2GIS Distance Matrix profiles for cars,
+walking, bicycles and public transport. Car mode supports current traffic (`jam`) or
+traffic statistics for `--departure-at` (`statistics`). Public transport includes the
+same departure timestamp and can enable timetable consideration. The generated graph
+is then consumed by the normal offline `solve --graph ...` or activated atomically by
+`RouterRuntime.update_graph()`; Engine never sees the API key or performs HTTP.
+
+Copy `examples/2gis-config.json` to a private operator config, choose a unique
+`dataset_version`, set `offline:false`, and provide the key only through the environment:
+
+```powershell
+$env:TWOGIS_API_KEY = "<key from 2GIS Platform Manager>"
+core/.venv/Scripts/python.exe -m core prepare-2gis --snapshot core/examples/snapshot.json --config path/to/private-2gis.json --departure-at 1786946400 --output core/2gis-graph.json
+```
+
+After the cache is filled, remove the environment variable, set `offline:true`, and
+repeat the same command. An offline miss fails with `TWOGIS_CACHE_MISS`; authentication,
+network, malformed-response and provider-route failures are distinct and are never
+cached as unreachable travel. The key is absent from the config identity, cache and
+graph. Synchronous requests are split into at most 25 sources and 25 targets.
+
+`jam` means traffic at cache-fill time; use a new `dataset_version` for every deliberate
+refresh. `statistics` is reproducible for the specified timestamp. Transit duration is
+a schedule-aware snapshot at that timestamp, not a time-dependent timetable inside the
+solver. Distance Matrix returns duration and distance only, so these edges currently
+render as straight source-to-target lines. Detailed car/transit geometry is a separate
+Routing API enrichment step. Matrix billing is per source-target combination; a complete
+N-point graph needs N² combinations per requested profile, even when chunked.
+
+The Router `transit` profile represents an engineer travelling on foot plus public
+transport; 2GIS includes the pedestrian legs in that route. The `walk` profile is
+walking only. Snapshot preparation must therefore label a non-car engineer as `transit`
+when public transport is allowed; v1 does not switch a `walk` engineer to transit during
+optimization.
+
+The official API contract and limits are documented by 2GIS:
+[Distance Matrix overview](https://docs.2gis.com/en/api/navigation/distance-matrix/overview),
+[`POST /get_dist_matrix`](https://docs.2gis.com/en/api/navigation/distance-matrix/reference/get_dist_matrix),
+and [profile examples](https://docs.2gis.com/en/api/navigation/distance-matrix/examples).
 
 ### Geocoding
 

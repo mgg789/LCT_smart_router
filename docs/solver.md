@@ -10,6 +10,9 @@ module; System Layer is developed independently.
 - Strict Unix-second inputs and result validation; exact FIFO baseline.
 - OR-Tools joint job/lunch model, open routes and bounded hierarchical `fast` search.
 - Directed transport graph, path/matrix cache, OSRM adapter, address candidates and GeoJSON.
+- Optional 2GIS preparation adapter for current/statistical car traffic and separate
+  walk, bike and schedule-aware public-transport matrix profiles; live HTTP stays
+  outside Engine and every response is available through a versioned offline cache.
 - Autonomous process-isolated Runtime with file/PostgreSQL input adapters and private API.
 - Official East importer and offline benchmark: FIFO 44/66 versus Router 65/66;
   urgent coverage 3/13 versus 12/13 under the pinned golden profile.
@@ -23,7 +26,9 @@ module; System Layer is developed independently.
 See [core/README.md](../core/README.md) for setup, API/view/hash contracts, geographic
 resource formats and explicit v1 limits. The official East scenario uses versioned
 synthetic operating assumptions plus cached Nominatim/OSRM preparation; it does not
-claim live traffic or production map deployment. The sys database view and end-to-end
+claim live traffic or production map deployment. `prepare-2gis` is separately covered
+by controlled provider tests; no real account/key acceptance run has been performed.
+The sys database view and end-to-end
 application integration are not deployed or verified. The previous prototype files
 are unchanged.
 
