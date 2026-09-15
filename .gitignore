@@ -9,5 +9,9 @@ __pycache__/
 dist/
 .env
 
-# ZCode local workspace state
+# Agents local workspace state
 .zcode/
+.mimosa/
+.cursor/
+.claude/
+.codex/
