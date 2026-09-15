@@ -16,3 +16,6 @@ dist/
 .cursor/
 .claude/
 .codex/
+# Local tool state (Mimosa security plugin, ruff)
+.mimosa/
+.ruff_cache/
