@@ -6,6 +6,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../../src/app.module';
 import { AllExceptionsFilter } from '../../src/common/errors';
 import { BigIntGuardInterceptor } from '../../src/common/serialization';
+import { databaseUrl } from '../support/database';
 
 /**
  * Boots the real application the way `main.ts` does and talks to it over HTTP.
@@ -19,6 +20,12 @@ describe('application bootstrap', () => {
 
   before(async () => {
     process.env.NODE_ENV = 'test';
+    // The real module graph includes persistence, so the application needs a database
+    // exactly as it does in production. This is the point of the test. Configuration is
+    // validated while the module is imported, so the value must already be in the
+    // environment or in the repository-root .env by then; the call below turns a missing
+    // one into an actionable message.
+    databaseUrl();
     app = await NestFactory.create(AppModule, { logger: false });
     app.setGlobalPrefix('api/v1', {
       exclude: ['health/live', 'health/ready', 'health/services'],
@@ -42,10 +49,17 @@ describe('application bootstrap', () => {
     assert.ok(Number.isInteger(body.uptimeSec));
   });
 
-  it('is ready when nothing required is registered yet', async () => {
+  it('is ready when the one required dependency answers', async () => {
     const response = await fetch(`${baseUrl}/health/ready`);
     assert.equal(response.status, 200);
-    assert.equal(((await response.json()) as { status: string }).status, 'ok');
+    const body = (await response.json()) as {
+      status: string;
+      checks: Record<string, { status: string }>;
+    };
+    assert.equal(body.status, 'ok');
+    // Only the database gates readiness: an unreachable SMTP or LLM must never make the
+    // application look down (context/43 section 11.3).
+    assert.deepEqual(Object.keys(body.checks), ['database']);
   });
 
   it('names the integrations that are not wired in this build', async () => {
@@ -57,7 +71,12 @@ describe('application bootstrap', () => {
       Object.fromEntries(
         Object.entries(body.services).map(([name, health]) => [name, health.status]),
       ),
-      { router: 'not_configured', ai: 'not_configured', smtp: 'not_configured' },
+      {
+        router: 'not_configured',
+        ai: 'not_configured',
+        smtp: 'not_configured',
+        database: 'ok',
+      },
     );
   });
 

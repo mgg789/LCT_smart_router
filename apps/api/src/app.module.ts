@@ -3,6 +3,7 @@ import { AppConfigModule } from './common/config';
 import { HealthModule } from './common/health';
 import { RequestContextMiddleware } from './common/logging';
 import { TimeModule } from './common/time';
+import { PersistenceModule } from './persistence';
 
 /**
  * Root of the System Layer.
@@ -12,7 +13,7 @@ import { TimeModule } from './common/time';
  * modules of this one application, not one service each.
  */
 @Module({
-  imports: [AppConfigModule, TimeModule, HealthModule],
+  imports: [AppConfigModule, TimeModule, HealthModule, PersistenceModule],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {

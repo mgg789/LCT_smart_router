@@ -22,6 +22,15 @@ export const envSchema = z.object({
    * or subtracted from a stored timestamp (context/43 section 5.3).
    */
   APP_TIME_ZONE: z.string().min(1).default('Europe/Moscow'),
+
+  /** PostgreSQL connection of the business writer. */
+  DATABASE_URL: z.string().min(1),
+
+  /**
+   * Connection used by `prisma migrate deploy`. A deployment points it at the migration
+   * owner; on a developer machine it is absent and the CLI falls back to DATABASE_URL.
+   */
+  MIGRATE_DATABASE_URL: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

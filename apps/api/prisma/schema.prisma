@@ -1,0 +1,824 @@
+// Data Layer of the LCT Smart Router.
+//
+// Canon: context/37 (Data Layer), context/36 (System Layer states), context/33 (Router
+// contract). Names here are physical; the semantic areas they implement are the ones
+// named in context/37 section 2.
+//
+// Conventions that hold everywhere in this file:
+//   * every absolute moment and every duration is whole seconds, stored as BigInt
+//     (context/33 section 4). Conversion to a JSON-safe number happens at the read
+//     boundary, never by a global serializer patch;
+//   * `version` is an optimistic-concurrency counter. A write based on a value the actor
+//     read carries the version it saw; a mismatch is a reported conflict, never a silent
+//     overwrite (context/36 section 8);
+//   * rows are not deleted to express a business outcome. Cancellation, revocation and
+//     completion are states with their own timestamps, because history has to survive.
+
+generator client {
+  provider               = "prisma-client"
+  output                 = "../src/generated/prisma"
+  moduleFormat           = "cjs"
+  runtime                = "nodejs"
+  generatedFileExtension = "ts"
+  importFileExtension    = ""
+}
+
+// Prisma 7 no longer accepts a connection URL here: the migration URL lives in
+// prisma.config.ts and the runtime connection is supplied by a driver adapter.
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Reference values. Codes come from context/33 section 4; their Russian meanings
+// in the case statement are mapped in docs/data.md.
+// ---------------------------------------------------------------------------
+
+enum Role {
+  client
+  engineer
+  dispatcher
+}
+
+enum Skill {
+  local
+  connection
+  emergency
+}
+
+enum TransportType {
+  car
+  walk
+  bike
+  transit
+}
+
+enum Priority {
+  normal
+  urgent
+}
+
+/// Business stage of a request. Deliberately separate from its assignment outcome and
+/// from the visit's progress: collapsing them into one status was rejected in
+/// context/36 section 3.
+enum RequestLifecycle {
+  draft
+  submitted
+  in_progress
+  completed
+  cancelled
+}
+
+/// Outcome of distribution, owned by the accepted automatic result or by the manual
+/// plan. `pending` means "waiting for a current result"; it is not an error or a refusal.
+enum AssignmentState {
+  pending
+  assigned
+  unassigned
+}
+
+/// Working availability of an engineer. Never a statement about network connectivity,
+/// and `online` does not mean "free right now" (context/32 section 5.2).
+enum Availability {
+  online
+  offline
+}
+
+/// How a request's time window came to be, so an assumption is never mistaken for data
+/// the customer actually gave (context/18 section 6.2).
+enum WindowOrigin {
+  explicit
+  declared_full_day
+  missing_treated_as_full_day
+}
+
+enum ControlMode {
+  auto
+  manual
+}
+
+enum PlanOrigin {
+  auto
+  manual
+}
+
+/// Confirmed execution facts. Every one of them comes from an explicit mark by the
+/// engineer; none is ever produced by a timer (context/36 section 5.2).
+enum FactKind {
+  arrived
+  arrived_blocked
+  started
+  finished
+  problem
+  lunch_started
+  lunch_finished
+}
+
+enum StopKind {
+  job
+  lunch
+  wait
+}
+
+enum AlertSeverity {
+  info
+  warning
+  error
+}
+
+/// Where a change came from. The source never replaces the authorization check; it
+/// exists so the journal can tell a human click from an integration call
+/// (context/41 section 3.3).
+enum ActorSource {
+  ui
+  external_api
+  ai_run
+  system
+}
+
+enum ActorKind {
+  account
+  api_token
+  system
+}
+
+/// Outcome of a system operation. An applied write, a refused one and an unknown result
+/// must stay distinguishable (context/36 section 12).
+enum OperationState {
+  applied
+  rejected
+  conflict
+  outcome_unknown
+}
+
+/// Mail catalogue of context/36 section 10. There is deliberately no completion mail and
+/// no pre-visit reminder.
+enum NotificationCategory {
+  account_login_code
+  request_received
+  engineer_assigned
+  visit_change_required
+}
+
+/// Lifecycle of a mail intent. There is no `delivered` state: our control ends when the
+/// external SMTP server accepts the message (context/35, context/42 DF-20).
+enum NotificationState {
+  pending_submission
+  accepted_by_server
+  rejected
+  submission_unknown
+  expired_before_submission
+}
+
+/// Provenance of a stored value. `synthesized` marks data the importer derived by a
+/// documented rule because the dataset does not contain it -- allowed by the case
+/// statement, but it has to stay visible (context/18 section 6.3).
+enum DataOrigin {
+  import
+  manual
+  system_rule
+  synthesized
+}
+
+enum ApiTokenCategory {
+  client
+  eng
+  master
+}
+
+// ---------------------------------------------------------------------------
+// Identity and access
+// ---------------------------------------------------------------------------
+
+model Account {
+  id        String @id @default(uuid())
+  /// Stored lower-cased; the application normalises before writing.
+  email     String @unique
+  createdAt BigInt
+  updatedAt BigInt
+  version   Int    @default(1)
+
+  roles           AccountRole[]
+  sessions        Session[]
+  engineer        Engineer?
+  requests        Request[]
+  gpsObservations GpsObservation[]
+
+  @@map("accounts")
+}
+
+/// Roles are granted, never claimed. A matching email address does not raise an
+/// account's role (context/36 section 7.3).
+model AccountRole {
+  accountId String
+  role      Role
+  grantedAt BigInt
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@id([accountId, role])
+  @@map("account_roles")
+}
+
+/// One-time email login code. Only the hash is stored, so a database dump cannot be
+/// replayed as a login.
+model LoginCode {
+  id         String  @id @default(uuid())
+  email      String
+  codeHash   String
+  issuedAt   BigInt
+  expiresAt  BigInt
+  attempts   Int     @default(0)
+  consumedAt BigInt?
+
+  @@index([email, expiresAt])
+  @@map("login_codes")
+}
+
+model Session {
+  id String @id @default(uuid())
+
+  accountId String
+  /// The role this session acts as. An account holding several roles gets one session
+  /// per role rather than an ambient "highest" role.
+  role      Role
+  tokenHash String  @unique
+  createdAt BigInt
+  expiresAt BigInt
+  revokedAt BigInt?
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@map("sessions")
+}
+
+/// Integration key of the single dispatcher: full access inside its category, no
+/// per-user binding, valid until deleted (context/41 sections 3-4). Only the hash is
+/// stored and the secret is shown exactly once.
+model ApiToken {
+  id        String           @id @default(uuid())
+  name      String
+  category  ApiTokenCategory
+  tokenHash String           @unique
+  createdAt BigInt
+  revokedAt BigInt?
+
+  @@map("api_tokens")
+}
+
+// ---------------------------------------------------------------------------
+// Engineers
+// ---------------------------------------------------------------------------
+
+/// Stable properties of an engineer. Everything that belongs to one working day lives in
+/// EngineerDay instead, so that "already had lunch today" can never become a permanent
+/// property of the person (context/37 section 3.2).
+model Engineer {
+  id String @id @default(uuid())
+
+  /// Absent while the dispatcher has a routing profile for someone who has no login yet
+  /// (context/37 section 3.1).
+  accountId     String?       @unique
+  displayName   String
+  /// Order of appearance in the input. The baseline picks the first suitable engineer in
+  /// this order, so it must never be replaced by a technical sort (context/33 section 5).
+  inputOrder    Int
+  skills        Skill[]
+  transportType TransportType
+  depotId       String?
+  /// Usual start point. May be absent; it is never filled with invented coordinates.
+  homeLat       Float?
+  homeLon       Float?
+  region        String?
+  origin        DataOrigin
+  createdAt     BigInt
+  updatedAt     BigInt
+  archivedAt    BigInt?
+  version       Int           @default(1)
+
+  account Account?      @relation(fields: [accountId], references: [id])
+  depot   Depot?        @relation(fields: [depotId], references: [id])
+  days    EngineerDay[]
+  facts   RequestFact[]
+
+  @@index([inputOrder])
+  @@map("engineers")
+}
+
+/// State of one engineer on one working day.
+model EngineerDay {
+  id String @id @default(uuid())
+
+  engineerId         String
+  /// Local calendar day as `YYYY-MM-DD`. The absolute shift bounds next to it are the
+  /// authoritative values.
+  workDate           String
+  shiftStartAt       BigInt
+  shiftEndAt         BigInt
+  availability       Availability @default(online)
+  /// Forecast return from a technical stop. Reaching it creates no fact by itself.
+  expectedOnlineAt   BigInt?
+  lunchEnabled       Boolean      @default(false)
+  lunchDurationSec   Int?
+  lunchWindowStartAt BigInt?
+  lunchWindowEndAt   BigInt?
+  /// Set by the dispatcher's explicit "restore lunch" operation. It is never silently
+  /// cleared because the task did not solve (context/33 section 6).
+  lunchRequired      Boolean      @default(false)
+  /// Set by sys when the engineer actually starts lunch, not when a plan schedules one.
+  /// True means the single lunch of the day is used up, not that it has finished.
+  lunchTaken         Boolean      @default(false)
+  lunchStartedAt     BigInt?
+  createdAt          BigInt
+  updatedAt          BigInt
+  version            Int          @default(1)
+
+  engineer Engineer @relation(fields: [engineerId], references: [id], onDelete: Cascade)
+
+  @@unique([engineerId, workDate])
+  @@map("engineer_days")
+}
+
+/// Regional office. In the official dataset every region has exactly one, hidden in the
+/// last row of the file (context/18 section 6.4).
+model Depot {
+  id          String     @id @default(uuid())
+  region      String     @unique
+  addressText String
+  lat         Float?
+  lon         Float?
+  origin      DataOrigin
+  createdAt   BigInt
+
+  engineers Engineer[]
+
+  @@map("depots")
+}
+
+// ---------------------------------------------------------------------------
+// Requests, their history and confirmed facts
+// ---------------------------------------------------------------------------
+
+model Request {
+  id String @id @default(uuid())
+
+  clientAccountId    String?
+  /// Arrival order: the baseline's iteration order (context/33 section 5).
+  arrivalOrder       Int
+  addressText        String
+  district           String?
+  region             String?
+  /// Absent until the address is geocoded. A request without a point is excluded from the
+  /// published snapshot with a counted diagnostic, never given invented coordinates.
+  lat                Float?
+  lon                Float?
+  needsGeocoding     Boolean          @default(true)
+  serviceDurationSec Int
+  /// Window for the *start* of the work, not for its end (context/33 section 5).
+  windowStartAt      BigInt
+  windowEndAt        BigInt
+  windowOrigin       WindowOrigin     @default(explicit)
+  priority           Priority         @default(normal)
+  requiredSkill      Skill
+  /// Null means the request places no transport restriction.
+  requiredTransport  TransportType?
+  /// Source work type, kept so a derived skill or duration can be traced back.
+  workTypeHd         String?
+  lifecycle          RequestLifecycle @default(draft)
+  assignmentState    AssignmentState  @default(pending)
+  origin             DataOrigin
+  problemText        String?
+  contactName        String?
+  createdAt          BigInt
+  submittedAt        BigInt?
+  startedAt          BigInt?
+  completedAt        BigInt?
+  cancelledAt        BigInt?
+  updatedAt          BigInt
+  version            Int              @default(1)
+
+  clientAccount Account?                  @relation(fields: [clientAccountId], references: [id])
+  history       RequestConditionHistory[]
+  facts         RequestFact[]
+  assignments   AppliedPlanAssignment[]
+  stops         AppliedPlanStop[]
+
+  @@index([lifecycle, assignmentState])
+  @@index([arrivalOrder])
+  @@map("requests")
+}
+
+/// Previous conditions of a request. A reschedule replaces the single set of live
+/// conditions on the same request id; the old window lives here and is never a second
+/// active promise to the customer (context/36 section 4).
+model RequestConditionHistory {
+  id          String  @id @default(uuid())
+  requestId   String
+  changedAt   BigInt
+  operationId String?
+  /// The conditions as they were before the change.
+  previous    Json
+  reason      String?
+
+  request Request @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId, changedAt])
+  @@map("request_condition_history")
+}
+
+model RequestFact {
+  id String @id @default(uuid())
+
+  requestId   String
+  engineerId  String?
+  kind        FactKind
+  /// When it happened, according to the reporting engineer.
+  occurredAt  BigInt
+  /// When sys stored it. The two differ and neither may be substituted for the other.
+  recordedAt  BigInt
+  note        String?
+  operationId String?
+
+  request  Request   @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  engineer Engineer? @relation(fields: [engineerId], references: [id])
+
+  @@index([requestId, occurredAt])
+  @@map("request_facts")
+}
+
+/// Voluntary telemetry. Collected only: never an input to routing, never an automatic
+/// arrival, never a reconstructed track (context/37 section 5).
+model GpsObservation {
+  id String @id @default(uuid())
+
+  accountId  String
+  /// Time of the observation itself: an old row does not prove a present position.
+  observedAt BigInt
+  recordedAt BigInt
+  lat        Float
+  lon        Float
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, observedAt])
+  @@map("gps_observations")
+}
+
+// ---------------------------------------------------------------------------
+// Published input sector for Router Core
+// ---------------------------------------------------------------------------
+
+/// Immutable published snapshot: a whole task, not a stream of create/update/delete.
+model RoutingSnapshot {
+  id String @id @default(uuid())
+
+  /// Exact serialized bytes of the RouterTaskSnapshot, stored as text.
+  ///
+  /// Not jsonb on purpose: jsonb normalises whitespace and key order, while sys and
+  /// Router must hash an identical byte sequence (context/43 section 5.2).
+  payload      String
+  /// SHA-256 of `payload`. Kept beside the document and never inside it: a hash cannot
+  /// be part of its own input.
+  inputHash    String
+  /// Moment of this publication of changed data. It does not tick on its own and is not
+  /// advanced by a read (context/33 section 7).
+  planningAsOf BigInt
+  createdAt    BigInt
+  /// Which business event justified the publication. There is no timer trigger.
+  trigger      String
+  /// Working-set generation, so a late write from before a reset cannot be applied to
+  /// the new one (context/37 section 9.6).
+  generation   Int    @default(1)
+  /// What the projection had to leave out, for example requests still lacking
+  /// coordinates. Diagnostics are shown, not silently dropped.
+  diagnostics  Json
+
+  current RoutingCurrent?
+
+  @@index([inputHash])
+  @@index([createdAt])
+  @@map("routing_snapshots")
+}
+
+/// Pointer to the snapshot Router must read. Switched in the same transaction that
+/// inserts the snapshot; `pointerVersion` stops a late publisher from moving it back to
+/// an older projection (context/37 section 4.2).
+model RoutingCurrent {
+  id             String @id @default("singleton")
+  snapshotId     String @unique
+  pointerVersion Int    @default(1)
+  updatedAt      BigInt
+
+  snapshot RoutingSnapshot @relation(fields: [snapshotId], references: [id])
+
+  @@map("routing_current")
+}
+
+// ---------------------------------------------------------------------------
+// Router results and the applied working plan
+// ---------------------------------------------------------------------------
+
+/// A received Router package, stored whether or not it was applied, so that a refusal
+/// can still be explained afterwards.
+model RouterResult {
+  id String @id @default(uuid())
+
+  resultId             String  @unique
+  inputHash            String
+  routerContextVersion String
+  status               String
+  planningAsOf         BigInt?
+  computedAt           BigInt?
+  receivedAt           BigInt
+  accepted             Boolean @default(false)
+  /// Error code of the acceptance check that refused it, if any.
+  rejectionCode        String?
+  payload              Json
+
+  appliedPlans AppliedPlan[]
+
+  @@index([inputHash])
+  @@map("router_results")
+}
+
+/// One immutable revision of the working plan. A new revision is added, never edited, so
+/// history and diffs come for free (D-10).
+model AppliedPlan {
+  id String @id @default(uuid())
+
+  revision       Int        @unique @default(autoincrement())
+  origin         PlanOrigin
+  routerResultId String?
+  /// The moment the shown plan describes: `planningAsOf` of the applied result, or the
+  /// time of the manual edit. Never the timestamp of a newer, not yet computed snapshot
+  /// (context/36 section 6).
+  planAsOf       BigInt
+  appliedAt      BigInt
+  createdBy      String?
+  note           String?
+
+  routerResult RouterResult?           @relation(fields: [routerResultId], references: [id])
+  routes       AppliedPlanRoute[]
+  assignments  AppliedPlanAssignment[]
+  current      AppliedPlanCurrent?
+
+  @@map("applied_plans")
+}
+
+/// Pointer to the revision the interfaces work from.
+model AppliedPlanCurrent {
+  id             String @id @default("singleton")
+  planId         String @unique
+  pointerVersion Int    @default(1)
+  updatedAt      BigInt
+
+  plan AppliedPlan @relation(fields: [planId], references: [id])
+
+  @@map("applied_plan_current")
+}
+
+model AppliedPlanRoute {
+  id String @id @default(uuid())
+
+  planId         String
+  engineerId     String
+  startLat       Float
+  startLon       Float
+  startAt        BigInt?
+  finishAt       BigInt?
+  distanceKm     Float   @default(0)
+  travelTimeSec  Int     @default(0)
+  workTimeSec    Int     @default(0)
+  waitingTimeSec Int     @default(0)
+  lunchTimeSec   Int     @default(0)
+  assignedCount  Int     @default(0)
+  /// One of the distinguishable lunch outcomes of context/33 section 8.
+  lunchStatus    String
+  reasons        Json
+
+  plan  AppliedPlan       @relation(fields: [planId], references: [id], onDelete: Cascade)
+  stops AppliedPlanStop[]
+
+  @@unique([planId, engineerId])
+  @@map("applied_plan_routes")
+}
+
+model AppliedPlanStop {
+  id String @id @default(uuid())
+
+  routeId   String
+  sequence  Int
+  kind      StopKind
+  requestId String?
+  lat       Float
+  lon       Float
+  /// Computed schedule, not confirmed facts: arrival <= start <= end.
+  arrivalAt BigInt
+  startAt   BigInt
+  endAt     BigInt
+
+  route   AppliedPlanRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  request Request?         @relation(fields: [requestId], references: [id])
+
+  @@unique([routeId, sequence])
+  @@map("applied_plan_stops")
+}
+
+/// Exactly one outcome per request of the snapshot the plan was built from.
+model AppliedPlanAssignment {
+  id String @id @default(uuid())
+
+  planId     String
+  requestId  String
+  status     AssignmentState
+  engineerId String?
+  stopId     String?
+  /// Structured, checkable grounds from the solver -- never a hand-written sentence and
+  /// never model-generated text (context/11, D-3).
+  reasons    Json
+
+  plan    AppliedPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  request Request     @relation(fields: [requestId], references: [id])
+
+  @@unique([planId, requestId])
+  @@map("applied_plan_assignments")
+}
+
+/// AUTO/MANUAL and the version of that control state.
+///
+/// Acceptance of a result re-reads this row under a lock, so a result that was already
+/// in flight cannot land after the dispatcher took manual control (context/36 section 6).
+model ControlState {
+  id           String      @id @default("singleton")
+  mode         ControlMode @default(auto)
+  modeVersion  Int         @default(1)
+  changedAt    BigInt
+  changedBy    String?
+  /// The revision frozen as the starting point when manual mode was switched on.
+  frozenPlanId String?
+
+  @@map("control_state")
+}
+
+// ---------------------------------------------------------------------------
+// Dispatcher-facing catalogues
+// ---------------------------------------------------------------------------
+
+/// Supported policies: a catalogue of prepared variants, not a place to store executable
+/// user input. The Dashboard is not a formula editor (context/33 section 5).
+model Policy {
+  policyId    String  @id
+  title       String
+  description String
+  isDefault   Boolean @default(false)
+  parameters  Json
+
+  @@map("policies")
+}
+
+model ActivePolicy {
+  id         String  @id @default("singleton")
+  policyId   String
+  parameters Json
+  version    Int     @default(1)
+  changedAt  BigInt
+  changedBy  String?
+
+  @@map("active_policy")
+}
+
+/// Explainable problem for the dispatcher. Marking it seen changes the seen flag only;
+/// it does not resolve the underlying condition (context/39 DB2).
+model Alert {
+  id String @id @default(uuid())
+
+  code           String
+  severity       AlertSeverity
+  engineerIds    String[]
+  requestIds     String[]
+  reasons        Json
+  /// A verified restore option, or null. A guess is never presented as a guaranteed fix
+  /// (context/33 section 6).
+  restoreOption  Json?
+  sourceResultId String?
+  createdAt      BigInt
+  seenAt         BigInt?
+  resolvedAt     BigInt?
+
+  @@index([createdAt])
+  @@map("alerts")
+}
+
+// ---------------------------------------------------------------------------
+// System bookkeeping
+// ---------------------------------------------------------------------------
+
+/// One business operation, stored so that a retry returns the first outcome instead of
+/// doing the work twice (context/36 section 12).
+model Operation {
+  operationId String @id
+
+  actorKind          ActorKind
+  actorId            String?
+  source             ActorSource
+  action             String
+  targetRef          String?
+  /// Hash of the arguments. The same id with different arguments is a caller bug and is
+  /// refused, not stored as a second write.
+  payloadFingerprint String
+  state              OperationState
+  response           Json?
+  createdAt          BigInt
+  completedAt        BigInt?
+
+  @@index([createdAt])
+  @@map("operations")
+}
+
+/// The journal called `eternal-log` in the concept. The user made it explicit that
+/// "eternal" is only a name and the data needs a lifetime, hence `retainUntil`
+/// (context/37 section 6.2).
+model AuditLog {
+  id String @id @default(uuid())
+
+  at          BigInt
+  actorKind   ActorKind
+  actorId     String?
+  source      ActorSource
+  action      String
+  targetRef   String?
+  operationId String?
+  details     Json
+  retainUntil BigInt?
+
+  @@index([at])
+  @@index([targetRef])
+  @@map("audit_log")
+}
+
+/// A mail sys has prepared. Transport belongs to SMTP-gateway, which is not part of this
+/// build, so these rows stay `pending_submission`.
+///
+/// `businessEventKey` is the deduplication key: one letter per business transition, not
+/// per result read. A new result that repeats the same assignment is not a new reason to
+/// write to the customer (context/36 section 10).
+model NotificationIntent {
+  id String @id @default(uuid())
+
+  category         NotificationCategory
+  businessEventKey String               @unique
+  recipientEmail   String
+  payload          Json
+  state            NotificationState    @default(pending_submission)
+  createdAt        BigInt
+  submittedAt      BigInt?
+  error            String?
+
+  @@index([state])
+  @@map("notification_intents")
+}
+
+/// Small service state that must survive a restart: whether the application was ever
+/// initialised, which startup profile was chosen, the current reset generation.
+///
+/// An empty `requests` table is not by itself proof that the system was never
+/// initialised -- that is exactly why this table exists (context/37 section 9.5).
+model AppState {
+  key       String @id
+  value     Json
+  updatedAt BigInt
+
+  @@map("app_state")
+}
+
+/// An accepted data package. The checksum makes a repeated load recognisable by content
+/// and origin rather than by file name (context/37 section 9.1).
+model ImportPackage {
+  id String @id @default(uuid())
+
+  source     String
+  checksum   String
+  appliedAt  BigInt
+  generation Int    @default(1)
+  summary    Json
+
+  @@unique([source, checksum])
+  @@map("import_packages")
+}
+
+/// source + entity type + external id -> internal id. Deleting the API key that imported
+/// the data must not make this mapping unresolvable (context/41 section 7.2).
+model ExternalIdMap {
+  id String @id @default(uuid())
+
+  source     String
+  entityType String
+  externalId String
+  internalId String
+  createdAt  BigInt
+
+  @@unique([source, entityType, externalId])
+  @@index([internalId])
+  @@map("external_id_map")
+}

@@ -2,20 +2,30 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { validateEnv } from '../../src/common/config/env.schema';
 
+/** The keys with no sensible default; everything else may be omitted. */
+const REQUIRED = {
+  DATABASE_URL: 'postgresql://user:pass@localhost:5432/db?schema=public',
+};
+
 describe('environment validation', () => {
-  it('applies defaults for an empty environment', () => {
-    const env = validateEnv({});
+  it('applies defaults around the required keys', () => {
+    const env = validateEnv({ ...REQUIRED });
     assert.equal(env.NODE_ENV, 'development');
     assert.equal(env.PORT, 8000);
     assert.equal(env.LOG_LEVEL, 'info');
+    assert.equal(env.MIGRATE_DATABASE_URL, undefined);
   });
 
   it('coerces PORT from its string form', () => {
-    assert.equal(validateEnv({ PORT: '9100' }).PORT, 9100);
+    assert.equal(validateEnv({ ...REQUIRED, PORT: '9100' }).PORT, 9100);
   });
 
   it('stops the process on an unusable value and names the key', () => {
-    assert.throws(() => validateEnv({ PORT: 'not-a-port' }), /PORT/);
-    assert.throws(() => validateEnv({ LOG_LEVEL: 'chatty' }), /LOG_LEVEL/);
+    assert.throws(() => validateEnv({ ...REQUIRED, PORT: 'not-a-port' }), /PORT/);
+    assert.throws(() => validateEnv({ ...REQUIRED, LOG_LEVEL: 'chatty' }), /LOG_LEVEL/);
+  });
+
+  it('refuses to start without a database connection rather than defaulting to one', () => {
+    assert.throws(() => validateEnv({}), /DATABASE_URL/);
   });
 });

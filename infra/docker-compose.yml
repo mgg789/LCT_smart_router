@@ -6,8 +6,8 @@
 #   cp .env.example .env
 #   docker compose -f infra/docker-compose.yml up -d --build
 #
-# Services are added by the branch that makes them real. `migrate`, `router` and `edge`
-# belong to the target contour but are not declared until they have something to run
+# Services are added by the branch that makes them real. `router` and `edge` belong to
+# the target contour but are not declared until they have something to run
 # (AGENTS.md section 4.1: no empty placeholders).
 
 name: lct-smart-router
@@ -35,6 +35,24 @@ services:
       retries: 20
       start_period: 10s
 
+  # One-shot schema migration. Runs from the same image as the service, so the code and
+  # the schema it expects can never be two different versions. Prisma Migrate is the
+  # single owner of schema history; there is no create-on-boot anywhere in the runtime
+  # (context/43 section 5.4 as amended by D-21).
+  migrate:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    command: ['pnpm', '--filter', 'api', 'exec', 'prisma', 'migrate', 'deploy']
+    restart: 'no'
+    environment:
+      # Explicit and container-local: inside the network the database is `postgres`,
+      # while a developer's .env points at 127.0.0.1. Setting it here avoids that clash.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-lct}:${POSTGRES_PASSWORD:-lct_dev_password}@postgres:5432/${POSTGRES_DB:-lct}?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   api:
     build:
       context: ..
@@ -50,9 +68,12 @@ services:
       PORT: 8000
       LOG_LEVEL: ${LOG_LEVEL:-info}
       APP_TIME_ZONE: ${APP_TIME_ZONE:-Europe/Moscow}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-lct}:${POSTGRES_PASSWORD:-lct_dev_password}@postgres:5432/${POSTGRES_DB:-lct}?schema=public
     depends_on:
       postgres:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     ports:
       - '${API_PORT:-8000}:8000'
 
