@@ -1,0 +1,63 @@
+# Local and demo contour of the LCT Smart Router.
+#
+# Run from the repository root so that the build context and the environment file line
+# up with the workspace layout:
+#
+#   cp .env.example .env
+#   docker compose -f infra/docker-compose.yml up -d --build
+#
+# Services are added by the branch that makes them real. `migrate`, `router` and `edge`
+# belong to the target contour but are not declared until they have something to run
+# (AGENTS.md section 4.1: no empty placeholders).
+
+name: lct-smart-router
+
+services:
+  postgres:
+    # pgvector is not used yet; the image is chosen now so that enabling the extension
+    # for the knowledge segments later needs no change here (context/37 section 2.1).
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-lct}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lct_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-lct}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    # Bound to the loopback interface only: reachable for psql and integration tests on
+    # this machine, not published to the network (context/43 section 11.2).
+    ports:
+      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-lct} -d ${POSTGRES_DB:-lct}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    # Optional: the stack starts with the defaults below, and a copied .env overrides
+    # them. A missing file is not an error, a malformed value still stops the process.
+    env_file:
+      - path: ../.env
+        required: false
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 8000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      APP_TIME_ZONE: ${APP_TIME_ZONE:-Europe/Moscow}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - '${API_PORT:-8000}:8000'
+
+volumes:
+  # Named volume, not a bind mount: an ordinary restart must keep the working plan, the
+  # control mode and lunch facts (context/43 section 11.3). Removing this volume is not
+  # a substitute for the application's own "full reset" action.
+  postgres-data:
