@@ -1,9 +1,14 @@
 # core — LCT Smart Router computation core (prototype)
 
+> **Legacy, frozen 2026-09-15:** moved from `core/` (repo root) to
+> `context/legacy_code/core/` as a backup (D-19 in `context/29`); superseded
+> by the monorepo plan, target home stays `apps/solver` (D-18). Kept runnable:
+> tests pass from `context/legacy_code/`.
+
 Day-0 fitting of the OR-Tools planning core (decision D-18 in
 `context/29-decision-log.md`): static `SolverInput` → `PlanSolution` with
 windows, skills, equipment, transport, shifts, structured reasons and
-metrics. Full documentation: [docs/solver.md](../docs/solver.md).
+metrics. Full documentation: [docs/solver.md](../../../docs/solver.md).
 
 ```bash
 python -m venv .venv

@@ -1,8 +1,10 @@
 # Solver — computation core
 
-> Status: day-0 prototype in `core/` (decision D-18 in `context/29`); moves
-> to `apps/solver` when the monorepo skeleton lands, contracts unchanged.
-> Docs live here per AGENTS.md §8 and travel with the code.
+> Status: **legacy, frozen 2026-09-15** — the day-0 prototype moved from
+> `core/` (repo root) to `context/legacy_code/core/` (backup, D-19 in
+> `context/29`); paths below are historical. Target home stays `apps/solver`
+> (D-18) when the monorepo skeleton lands, contracts unchanged.
+> Docs live here per AGENTS.md §8.
 
 ## What it does
 
