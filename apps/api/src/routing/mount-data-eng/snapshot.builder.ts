@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { AppConfigService } from '../../common/config';
+import { canonicalHash } from '../../common/json';
 import type { Engineer, EngineerDay, Request } from '../../generated/prisma/client';
 import { workDateOf } from '../../orchestrator/engineers';
 import { DEFAULT_POLICY_ID } from '../../orchestrator/policy/policy.catalog';
@@ -15,6 +16,15 @@ import {
 export interface BuiltSnapshot {
   readonly snapshot: RouterTaskSnapshot;
   readonly diagnostics: SnapshotDiagnostics;
+  /**
+   * Digest of the task content with `planning_as_of` left out.
+   *
+   * The published document is hashed whole, timestamp included, because that is what a
+   * result is matched against. Answering "did the task change" needs the opposite: a
+   * digest that ignores the moment of publication, so that republishing the same task a
+   * second later is recognised as a no-op (context/33 section 7).
+   */
+  readonly taskFingerprint: string;
 }
 
 /**
@@ -128,8 +138,11 @@ export class SnapshotBuilder {
       },
     };
 
+    const { planning_as_of: _publishedAt, ...task } = snapshot;
+
     return {
       snapshot,
+      taskFingerprint: canonicalHash(task),
       diagnostics: {
         requestsIncluded: requests.length,
         engineersIncluded: engineers.length,
@@ -168,9 +181,20 @@ export class SnapshotBuilder {
     }
 
     const shiftStart = Number(day.shiftStartAt);
-    // The route cannot start before the planning moment or before the shift. This is a
-    // constraint on the starting moment, not a change to any actual status.
-    const availableFrom = Math.max(shiftStart, planningAsOf);
+    /**
+     * When the route may continue from this point.
+     *
+     * Deliberately **not** clamped to "now". The contract already says a new route starts
+     * no earlier than `planning_as_of`, the shift and a known `available_from`, and Router
+     * applies all three -- so folding the current moment in here adds nothing.
+     *
+     * It would also do real damage: a value that tracks the publication second makes the
+     * projection different every second, which defeats the "do not republish an identical
+     * task" check and turns `planning_as_of` into a ticking clock -- exactly what
+     * context/33 section 7 forbids. This is a property of the engineer's state, not of the
+     * moment we happen to publish.
+     */
+    const availableFrom = shiftStart;
 
     return {
       engineer_id: engineer.id,

@@ -1,11 +1,13 @@
-import { Body, Controller, Get, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { type Actor, CurrentActor, Roles } from '../auth';
 import { SysError } from '../common/errors';
 import { zodBody } from '../common/validation';
 import { OperationsService } from '../operations';
 import { EngineersService, GpsService } from '../orchestrator/engineers';
+import { FactsService } from '../orchestrator/facts';
 import { PrismaService } from '../persistence';
+import { AppliedPlanService } from '../routing/router-gateway';
 import {
   type GpsObservationDto,
   gpsObservationSchema,
@@ -15,12 +17,15 @@ import {
   type UpdateOwnProfileDto,
   updateOwnProfileSchema,
 } from './dto/engineer.dto';
+import { type ReportFactDto, reportFactSchema } from './dto/plan.dto';
 import {
   type EngineerDayView,
   type EngineerView,
   toDayView,
   toEngineerView,
 } from './engineer-view';
+import { toPlanView } from './plan-view';
+import { toRequestView } from './request-view';
 
 /**
  * Engineer App contour.
@@ -38,6 +43,8 @@ export class EngineerController {
   constructor(
     private readonly engineers: EngineersService,
     private readonly gps: GpsService,
+    private readonly facts: FactsService,
+    private readonly plans: AppliedPlanService,
     private readonly operations: OperationsService,
     private readonly prisma: PrismaService,
   ) {}
@@ -205,6 +212,58 @@ export class EngineerController {
       );
     }
     return actor.accountId;
+  }
+
+  @Get('plan')
+  @ApiOperation({ summary: 'The working plan for the signed-in engineer' })
+  async plan(@CurrentActor() actor: Actor) {
+    const engineer = await this.engineers.byAccount(this.prisma, this.accountOf(actor));
+    const plan = await this.plans.current(this.prisma);
+    if (!plan) {
+      // A truthful empty state, not an error: no plan has been applied yet.
+      return { plan: null, route: null, planAsOf: null };
+    }
+    const view = toPlanView(plan);
+    return {
+      // The engineer works from the plan sys applied, never from a background result of
+      // Router directly -- which is why manual mode shows the manual plan here
+      // (context/32 section 5.1).
+      planAsOf: view.planAsOf,
+      origin: view.origin,
+      revision: view.revision,
+      route: view.routes.find((route) => route.engineerId === engineer.id) ?? null,
+    };
+  }
+
+  @Post('requests/:id/facts')
+  @ApiOperation({ summary: 'Record a confirmed execution fact' })
+  async reportFact(
+    @CurrentActor() actor: Actor,
+    @Param('id') requestId: string,
+    @Body(zodBody(reportFactSchema)) dto: ReportFactDto,
+  ) {
+    const engineer = await this.engineers.byAccount(this.prisma, this.accountOf(actor));
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: `request.fact.${dto.kind}`,
+        targetRef: requestId,
+        payload: dto,
+      },
+      async (context) =>
+        toRequestView(
+          await this.facts.record(
+            context,
+            engineer.id,
+            requestId,
+            dto.kind,
+            dto.occurredAt ?? context.now,
+            dto.note ?? null,
+          ),
+        ),
+    );
+    return { request: outcome.result };
   }
 }
 

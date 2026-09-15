@@ -28,7 +28,7 @@ Data Layer board in `context/37` section 2.
 | Engineers | `engineers` (stable profile), `engineer_days` (one working day), `depots` |
 | Requests | `requests`, `request_condition_history`, `request_facts` |
 | Telemetry | `gps_observations` |
-| Published sector | `routing_snapshots`, `routing_current` |
+| Published sector | `routing_snapshots` (payload, `input_hash`, `task_fingerprint`), `routing_current` |
 | Plan | `router_results`, `applied_plans`, `applied_plan_routes`, `applied_plan_stops`, `applied_plan_assignments`, `applied_plan_current`, `control_state` |
 | Dispatcher catalogues | `policies`, `active_policy`, `alerts` |
 | System bookkeeping | `operations`, `audit_log`, `notification_intents`, `app_state`, `import_packages`, `external_id_map` |

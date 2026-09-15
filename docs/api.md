@@ -294,7 +294,15 @@ produce an endless series of timestamps (`context/33` section 7).
 
 The document is serialized once by the canonical rules of
 [contracts/snapshot-canonical.md](./contracts/snapshot-canonical.md); the same string is
-stored and hashed. The snapshot row and the pointer switch commit in one transaction with
+stored and hashed.
+
+Two digests are kept, and the distinction matters. `input_hash` covers the **whole
+document, including `planning_as_of`** — that is what a Router result is matched against.
+`task_fingerprint` covers the task **without** that timestamp, and it is what answers "did
+the task actually change". Comparing `input_hash` would report a change every second,
+because the timestamp is inside the thing being hashed, so the "nothing changed" rule would
+never fire and `planning_as_of` would tick. The contract puts the change check before the
+time is stamped (`context/33` section 7), and the fingerprint is how that is done. The snapshot row and the pointer switch commit in one transaction with
 the pointer locked, so a slow publisher cannot move the active task back to an older
 projection. Published snapshots are immutable and kept; only the pointer moves.
 
@@ -317,7 +325,77 @@ report what is currently excluded and why:
 An engineer with no shift is excluded rather than given an invented one: a calendar-day
 default would let work be scheduled at three in the morning.
 
-## 8. Missing contracts
+## 8. The working plan, control mode and facts
+
+| Method | Path | Access | Purpose |
+|---|---|---|---|
+| GET | `/api/v1/dispatch/plan` | dispatcher | The applied plan, the control mode and the last result |
+| POST | `/api/v1/dispatch/mode` | dispatcher | Switch emergency manual control on or off |
+| POST | `/api/v1/dispatch/plan/reassign` | dispatcher | Move work that has not started to another engineer |
+| POST | `/api/v1/dispatch/plan/reorder` | dispatcher | Save the finished order of one queue |
+| GET | `/api/v1/dispatch/alerts` | dispatcher | Explainable problems from the plan |
+| POST | `/api/v1/dispatch/alerts/:id/seen` | dispatcher | Mark an alert seen |
+| GET | `/api/v1/engineer/plan` | engineer | This engineer's route for the day |
+| POST | `/api/v1/engineer/requests/:id/facts` | engineer | Record a confirmed execution fact |
+| POST | `/api/v1/dispatch/debug/router-result` | dispatcher | Feed a result through the acceptance checks |
+
+### Acceptance: five independent checks
+
+A result becomes the working plan only if **all** of these hold (`context/33` section 7):
+
+1. the mode allows it — in MANUAL the Router-to-sys bus is disconnected;
+2. `input_hash` matches the snapshot published **now**;
+3. `router_context_version` matches the version in force **now** — a result cannot report
+   its own currency, so the active version is read separately;
+4. `main.is_usable` — a finished answer is not automatically an applicable one, and
+   `false` does not prove the visits are impossible;
+5. no conflict with explicit facts — started, finished or cancelled work is not
+   redistributed, and a used lunch is not planned again.
+
+Each failure has its own code, so a stale answer, an unusable plan and a manual-mode
+refusal stay distinguishable. Refused packages are stored with the reason: a refusal has
+to be explainable afterwards, not invisible.
+
+**When a result conflicts with the facts, sys does not repair it.** It declines to apply
+it and publishes a current projection instead. Choosing assignments is Router's job and
+stays Router's job.
+
+Re-reading the same `result_id` does not apply it again, does not return completed work to
+the pool and does not repeat a letter. The single exception is the explicit return to AUTO,
+which may apply a still-suitable result the system has seen before.
+
+### The plan itself
+
+Each acceptance adds an **immutable revision**; a pointer names the one in force (D-10).
+The revision carries `planAsOf` — the moment the plan describes. While a recalculation is
+under way the interface keeps showing the last applied plan with that moment, rather than
+clearing the day or borrowing the timestamp of a snapshot that has not been computed yet
+(`context/36` section 6). `origin` says `auto` or `manual`, so a manual plan never looks
+like a fresh calculation.
+
+### Manual control
+
+Manual mode disconnects exactly one thing: the delivery of Router's result into sys. Router
+keeps computing, the sector keeps being read, requests keep arriving; the answers simply
+stay inside Router. The dispatcher becomes the author of the plan and gets two gestures,
+reassign and reorder — no group draft, no "apply changes" button, and no ETA required.
+Old automatic times are not recomputed and are not presented as if they had been: sys runs
+no hidden optimiser.
+
+Returning to AUTO is an explicit transition. The current result replaces the *future*
+distribution; it does not merge with the manual plan and undoes nothing that happened.
+
+### Facts
+
+`arrived`, `arrived_blocked`, `started`, `finished`, `problem` — every one an explicit mark
+by the engineer. Nothing creates a fact from a timer, from GPS, from a schedule or from
+silence. Arrival and start are separate events, so someone on site who cannot begin reports
+exactly that. Finishing work that never started is refused rather than inferred. `occurredAt`
+(when the engineer says it happened) and the stored `recordedAt` are kept apart.
+
+An engineer may only mark work the **applied plan** assigned them.
+
+## 9. Missing contracts
 
 Listed rather than stubbed with invented shapes (AGENTS.md section 10.3).
 
@@ -335,7 +413,12 @@ has to expose is not defined yet. The System Layer will need, at minimum:
 
 Until it exists the gateway uses a null client that reports `pending`, and
 `/health/services` says `router: not_configured`. The application is fully usable without
-Router; it simply has no automatic plan.
+Router; it simply has no automatic plan. Swapping in an HTTP client is a one-line provider
+change in `router-gateway.module.ts` — nothing else knows how the result arrives.
+
+`POST /api/v1/dispatch/debug/router-result` exists only while that client does not. It runs
+the identical acceptance checks, so it is a way in for a test, never a second way to apply
+a plan.
 
 ### Snapshot serialization — shared with Router Core
 

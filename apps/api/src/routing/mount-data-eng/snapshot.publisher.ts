@@ -49,7 +49,7 @@ export class SnapshotPublisher {
   ): Promise<PublicationOutcome> {
     await lockRoutingCurrent(tx);
 
-    const { snapshot, diagnostics } = await this.builder.build(tx, planningAsOf);
+    const { snapshot, diagnostics, taskFingerprint } = await this.builder.build(tx, planningAsOf);
 
     // The document is serialized once and both stored and hashed from that same string.
     // Re-serializing for the hash would leave room for the two to differ.
@@ -61,7 +61,11 @@ export class SnapshotPublisher {
       include: { snapshot: true },
     });
 
-    if (current && current.snapshot.inputHash === inputHash) {
+    // Compared on the task, not on the document: the document carries `planning_as_of`,
+    // so comparing hashes would report a change every second and the timestamp would tick
+    // -- which is exactly what the contract forbids. The check happens before the time is
+    // stamped (context/33 section 7).
+    if (current && current.snapshot.taskFingerprint === taskFingerprint) {
       // Nothing about the task changed. The trigger was real, the content was not.
       return {
         published: false,
@@ -76,6 +80,7 @@ export class SnapshotPublisher {
       data: {
         payload,
         inputHash,
+        taskFingerprint,
         // Stamped with this publication of changed data, not by a separate clock.
         planningAsOf: BigInt(planningAsOf),
         createdAt: BigInt(planningAsOf),

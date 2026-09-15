@@ -15,6 +15,12 @@ import {
   SnapshotPublisher,
 } from '../routing/mount-data-eng';
 import {
+  AppliedPlanService,
+  ControlStateService,
+  ManualPlanService,
+  ResultAcceptanceService,
+} from '../routing/router-gateway';
+import {
   type CreateEngineerDto,
   createEngineerSchema,
   type SetAvailabilityDto,
@@ -24,6 +30,16 @@ import {
   type UpdateEngineerDto,
   updateEngineerSchema,
 } from './dto/engineer.dto';
+import {
+  type ReassignDto,
+  type ReorderDto,
+  reassignSchema,
+  reorderSchema,
+  type SetModeDto,
+  type SubmitResultDto,
+  setModeSchema,
+  submitResultSchema,
+} from './dto/plan.dto';
 import { type SelectPolicyDto, selectPolicySchema } from './dto/policy.dto';
 import {
   type CancelRequestDto,
@@ -39,6 +55,7 @@ import {
   toDayView,
   toEngineerView,
 } from './engineer-view';
+import { toPlanView } from './plan-view';
 import { type RequestView, toRequestView } from './request-view';
 
 /**
@@ -58,6 +75,10 @@ export class DispatchController {
     private readonly policyService: PolicyService,
     private readonly publisher: SnapshotPublisher,
     private readonly builder: SnapshotBuilder,
+    private readonly plans: AppliedPlanService,
+    private readonly control: ControlStateService,
+    private readonly manual: ManualPlanService,
+    private readonly acceptance: ResultAcceptanceService,
     private readonly operations: OperationsService,
     private readonly prisma: PrismaService,
     private readonly clock: Clock,
@@ -428,5 +449,125 @@ export class DispatchController {
       // would defeat the point of storing them verbatim.
       payload: current.snapshot.payload,
     };
+  }
+
+  @Get('plan')
+  @ApiOperation({ summary: 'The applied working plan and the control mode' })
+  async plan() {
+    const plan = await this.plans.current(this.prisma);
+    const control = await this.control.current(this.prisma);
+    const lastPackage = await this.acceptance.lastPackage();
+
+    return {
+      mode: control.mode,
+      modeVersion: control.modeVersion,
+      // The moment the shown plan describes. While a recalculation is under way the
+      // interface keeps this plan and says it is being rebuilt, rather than clearing the
+      // day (context/36 section 6).
+      plan: plan ? toPlanView(plan) : null,
+      lastResult: lastPackage
+        ? {
+            resultId: lastPackage.resultId,
+            accepted: lastPackage.accepted,
+            // Why a finished result did not become the working plan, kept so a refusal is
+            // explainable rather than invisible.
+            rejectionCode: lastPackage.rejectionCode,
+            receivedAt: Number(lastPackage.receivedAt),
+          }
+        : null,
+    };
+  }
+
+  @Get('alerts')
+  @ApiOperation({ summary: 'Explainable problems reported by the plan' })
+  async alerts() {
+    const alerts = await this.prisma.alert.findMany({ orderBy: { createdAt: 'desc' }, take: 200 });
+    return {
+      alerts: alerts.map((alert) => ({
+        id: alert.id,
+        code: alert.code,
+        severity: alert.severity,
+        engineerIds: alert.engineerIds,
+        requestIds: alert.requestIds,
+        reasons: alert.reasons,
+        restoreOption: alert.restoreOption,
+        createdAt: Number(alert.createdAt),
+        seenAt: alert.seenAt === null ? null : Number(alert.seenAt),
+        resolvedAt: alert.resolvedAt === null ? null : Number(alert.resolvedAt),
+      })),
+    };
+  }
+
+  @Post('alerts/:id/seen')
+  @ApiOperation({ summary: 'Mark an alert as seen' })
+  async markAlertSeen(@Param('id') id: string) {
+    // Seen is not resolved. The underlying condition is unchanged, and it clears only when
+    // the real state changes (context/39 DB2).
+    await this.prisma.alert.updateMany({
+      where: { id, seenAt: null },
+      data: { seenAt: BigInt(this.clock.nowSeconds()) },
+    });
+    return { seen: true };
+  }
+
+  @Post('mode')
+  @ApiOperation({ summary: 'Switch emergency manual control on or off' })
+  async setMode(@CurrentActor() actor: Actor, @Body(zodBody(setModeSchema)) dto: SetModeDto) {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: `control.${dto.mode}`,
+        payload: dto,
+      },
+      async (context) =>
+        dto.mode === 'manual'
+          ? this.control.enterManual(context)
+          : this.control.returnToAuto(context),
+    );
+    return { control: outcome.result };
+  }
+
+  @Post('plan/reassign')
+  @ApiOperation({ summary: 'Move work that has not started to another engineer' })
+  async reassign(@CurrentActor() actor: Actor, @Body(zodBody(reassignSchema)) dto: ReassignDto) {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'plan.reassign',
+        targetRef: dto.requestId,
+        payload: dto,
+      },
+      async (context) => this.manual.reassign(context, dto.requestId, dto.engineerId),
+    );
+    return outcome.result;
+  }
+
+  @Post('plan/reorder')
+  @ApiOperation({ summary: "Save the finished order of one engineer's queue" })
+  async reorder(@CurrentActor() actor: Actor, @Body(zodBody(reorderSchema)) dto: ReorderDto) {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'plan.reorder',
+        targetRef: dto.engineerId,
+        payload: dto,
+      },
+      async (context) => this.manual.reorder(context, dto.engineerId, dto.requestIds),
+    );
+    return outcome.result;
+  }
+
+  @Post('debug/router-result')
+  @ApiOperation({
+    summary: 'Feed a Router result through the acceptance checks (debug contour)',
+  })
+  async submitResult(@Body(zodBody(submitResultSchema)) dto: SubmitResultDto) {
+    // The production path is the opposite direction: sys polls Router. This endpoint
+    // exists only while that client does not, and it runs the identical checks -- it is a
+    // way in for a test, not a second way to apply a plan (context/41 section 6.3).
+    return this.acceptance.accept(dto.result, dto.activeContextVersion ?? null);
   }
 }
