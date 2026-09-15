@@ -16,10 +16,11 @@ Product strategy: **not** "many features" — a thought-through, coherent, beaut
 
 | Link | What |
 |---|---|
-| https://github.com/mgg789/LCT_smart_router | This repository |
+| https://git.sourcecraft.dev/lct-hackaton-2026/case-13-field-engineer-routing-team-22 | **This repository** (primary, migrated 2026-09-15) |
+| https://github.com/mgg789/LCT_smart_router | Original repo (frozen at migration, read-only history) |
 | https://task.droidje.com | **Main task board** (kan.bn, workspace `LCT`) — via `kan` MCP |
 | `context/26-case-source.md` | Verbatim case statement (source of truth for requirements) |
-| `context/00-README.md` | Full research context index (29 files) |
+| `context/INDEX.md` | **Context map: table of contents, per-task routing, creation rules — entry point for all context** |
 | `context/29-decision-log.md` | Accepted decisions (ADR), D-1…D-17 |
 | `docs/` | Project documentation (see §8) |
 | `docs/mcp-kanban.md` | How to connect/use the kanban MCP |
@@ -138,7 +139,7 @@ Conventional Commits, imperative mood, English:
 4. Card hygiene: a card must be understandable without chat context — goal, acceptance criteria,
    links to files/PRs. When creating a card, that minimum is mandatory.
 5. If the board is empty and no direct task was given — say so explicitly instead of inventing work.
-6. Do not create cards for things already in the scope docs (`context/12`, `context/25`); do not
+6. Do not create cards for things already in the scope docs (`context/12`, `context/18` §3); do not
    silently expand scope — new ideas go to a new card for the human to prioritize.
 7. Split a card only if it genuinely can't land as one coherent change; otherwise keep the story
    in one card + several commits.
@@ -160,6 +161,14 @@ Conventional Commits, imperative mood, English:
    incomplete change. Update `context/` files in the same commit when behavior deviates from them.
 4. Every schema/contract change is documented in `docs/api.md` / `docs/data.md` **and** reflected in
    `packages/shared` types.
+5. **Context pack (`context/`)** — the project knowledge base. Search order: this file →
+   `context/INDEX.md` (contents + per-task routing) → the document. Creating a new context file:
+   first check INDEX and update the existing file instead of duplicating; the content must not
+   contradict `context/32-system_concept_v14.md` (system canon), `context/29-decision-log.md`
+   (decisions) or `context/18-official-case-dataset.md` (case/scope) — a divergence is either
+   fixed or explicitly status-marked; name it `NN-short_topic.md` with the next free number and
+   add it to INDEX.md **in the same commit** (a file missing from INDEX does not exist).
+   Superseded files move to `context/archive/` with a "what to read instead" banner.
 
 ## 9. Code Style and Reuse
 
@@ -167,8 +176,8 @@ Conventional Commits, imperative mood, English:
    unavoidable (and then with a comment explaining why). All DTOs, props, state, and form values
    strictly typed. Types live in `packages/shared` when shared across apps.
 2. Python (solver): follow the existing module layout (model / reasons / metrics / matrix); type
-   hints on public functions; `ruff`-clean; times are integer seconds inside OR-Tools, minutes at
-   the API boundary, local-to-city everywhere at the edges (`context/09` §6).
+   hints on public functions; `ruff`-clean; all absolute times are Unix-epoch integer seconds,
+   local date/time only at the input/output edges (`context/33` §4; supersede `context/09` §6).
 3. UI: only components from the design system (`context/10`); Tailwind utility patterns as already
    established; no inline colors or ad-hoc spacing; animations via framer-motion following
    `context/10` §5 (120–180 ms interactions, 250–350 ms reveals); new screens are responsive from
@@ -235,9 +244,8 @@ Conventional Commits, imperative mood, English:
 
 ## 15. Session Checklist
 
-**Start:** read this file if you haven't → `context/00-README.md` → your zone files
-(`context/28` §3) → `git checkout dev && git pull` → board: pick/update your card → branch off
-`dev`.
+**Start:** read this file if you haven't → `context/INDEX.md` (route to your zone's files) →
+`git checkout dev && git pull` → board: pick/update your card → branch off `dev`.
 **End:** smoke green → docs + context updated → commits pushed → feature branch merged into `dev`
 and pushed → board card moved with a summary comment.
 

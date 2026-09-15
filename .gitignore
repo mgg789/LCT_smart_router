@@ -1,6 +1,7 @@
 # Ignore OS noise
 .DS_Store
 Thumbs.db
+.ruff_cache/
 
 # Future code artifacts
 node_modules/
@@ -9,5 +10,12 @@ __pycache__/
 dist/
 .env
 
-# ZCode local workspace state
+# Agents local workspace state
 .zcode/
+.mimosa/
+.cursor/
+.claude/
+.codex/
+# Local tool state (Mimosa security plugin, ruff)
+.mimosa/
+.ruff_cache/

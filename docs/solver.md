@@ -1,8 +1,10 @@
 # Solver — computation core
 
-> Status: day-0 prototype in `core/` (decision D-18 in `context/29`); moves
-> to `apps/solver` when the monorepo skeleton lands, contracts unchanged.
-> Docs live here per AGENTS.md §8 and travel with the code.
+> Status: **legacy, frozen 2026-09-15** — the day-0 prototype moved from
+> `core/` (repo root) to `context/legacy_code/core/` (backup, D-19 in
+> `context/29`); paths below are historical. Target home stays `apps/solver`
+> (D-18) when the monorepo skeleton lands, contracts unchanged.
+> Docs live here per AGENTS.md §8.
 
 ## What it does
 
@@ -157,6 +159,11 @@ core/.venv/Scripts/python -m core.gen --scenario full --seed 42 --out data/full.
 core/.venv/Scripts/python -m core.solve --input data/full.json --output data/solution.json
 core/.venv/Scripts/python -m pytest core/tests -q
 ```
+
+Both CLIs must run from the repository root (so `core.types` does not shadow
+the stdlib `types`); their `--out`/`--output` paths are confined to the
+current working directory by `core.cli.resolve_output_path` and rejected with
+exit code 2 otherwise.
 
 ## Reference numbers (2026-09-13, this machine)
 
