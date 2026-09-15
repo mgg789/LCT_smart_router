@@ -51,7 +51,7 @@ application is designed to run fully without them.
 | `pnpm compose:logs` | Follow container logs |
 | `pnpm compose:down` | Stop the contour, keep the data volume |
 | `pnpm --filter api build` | Compile the service with `tsc` |
-| `pnpm --filter api test` | Compile `src` + `test` and run them under `node:test` |
+| `pnpm --filter api test` | Compile `src` + `test` and run them serially under `node:test` |
 | `pnpm --filter api typecheck` | Types only, no output |
 | `pnpm lint` / `pnpm format` | Biome check / write |
 
@@ -94,7 +94,16 @@ published on `127.0.0.1` only.
 [architecture.md](./architecture.md) section 2 — several blocks are planned and not yet
 implemented, and section 5 lists the contracts that are still missing.
 
-## 6. Smoke gate
+## 6. Why the tests run serially
+
+`--test-concurrency=1` is deliberate. The System Layer has genuinely global singletons --
+the AUTO/MANUAL row and the pointer to the published snapshot -- and they are the subject
+of several tests. Running test files in parallel against one database makes each file
+observe the others' publications, so a suite that is correct in isolation fails at random.
+Separate databases per file would allow parallelism; until that is worth the setup, serial
+execution is the honest option rather than weakening the assertions.
+
+## 7. Smoke gate
 
 `pnpm smoke` (AGENTS.md section 11.1) is not implemented yet: it needs the persistence,
 snapshot and router-gateway branches to exist before it can prove anything end to end.

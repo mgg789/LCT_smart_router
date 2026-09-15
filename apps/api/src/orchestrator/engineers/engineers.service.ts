@@ -10,6 +10,7 @@ import type {
 } from '../../generated/prisma/client';
 import { assertWriteApplied, type OperationContext } from '../../operations';
 import type { Tx } from '../../persistence';
+import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import { assertLunchConditions, type LunchConditions, workDateOf } from './workday';
 
 export interface CreateEngineerInput {
@@ -52,7 +53,10 @@ export const TECHNICAL_BREAK_SEC = 15 * 60;
  */
 @Injectable()
 export class EngineersService {
-  constructor(private readonly config: AppConfigService) {}
+  constructor(
+    private readonly config: AppConfigService,
+    private readonly publisher: SnapshotPublisher,
+  ) {}
 
   /**
    * The dispatcher adds an engineer by address.
@@ -86,7 +90,7 @@ export class EngineersService {
 
     assertSkills(input.skills);
 
-    return context.tx.engineer.create({
+    const created = await context.tx.engineer.create({
       data: {
         accountId: account.id,
         displayName: input.displayName,
@@ -102,6 +106,13 @@ export class EngineersService {
         updatedAt: now,
       },
     });
+
+    await this.publisher.publishIfChanged(
+      context.tx,
+      context.now,
+      PUBLICATION_TRIGGERS.ENGINEER_CREATED,
+    );
+    return created;
   }
 
   /**
@@ -140,6 +151,13 @@ export class EngineersService {
       },
     });
     assertWriteApplied('Engineer', updated.count, expectedVersion, current.version);
+
+    // Skills, transport and the start point are all parameters of the task.
+    await this.publisher.publishIfChanged(
+      context.tx,
+      context.now,
+      PUBLICATION_TRIGGERS.ENGINEER_PROFILE_CHANGED,
+    );
     return context.tx.engineer.findUniqueOrThrow({ where: { id: engineerId } });
   }
 
@@ -165,7 +183,7 @@ export class EngineersService {
       lunchRequired: input.lunchRequired ?? false,
     };
 
-    return context.tx.engineerDay.upsert({
+    const day = await context.tx.engineerDay.upsert({
       where: { engineerId_workDate: { engineerId, workDate: input.workDate } },
       update: {
         shiftStartAt: BigInt(input.shiftStartAt),
@@ -186,6 +204,13 @@ export class EngineersService {
         updatedAt: now,
       },
     });
+
+    await this.publisher.publishIfChanged(
+      context.tx,
+      context.now,
+      PUBLICATION_TRIGGERS.ENGINEER_WORKDAY_CHANGED,
+    );
+    return day;
   }
 
   /**
@@ -202,7 +227,7 @@ export class EngineersService {
     expectedOnlineAt: number | null,
   ): Promise<EngineerDay> {
     const day = await this.currentDay(context, engineerId);
-    return context.tx.engineerDay.update({
+    const updated = await context.tx.engineerDay.update({
       where: { id: day.id },
       data: {
         availability,
@@ -213,6 +238,13 @@ export class EngineersService {
         version: { increment: 1 },
       },
     });
+
+    await this.publisher.publishIfChanged(
+      context.tx,
+      context.now,
+      PUBLICATION_TRIGGERS.ENGINEER_AVAILABILITY_CHANGED,
+    );
+    return updated;
   }
 
   /** A technical stop with an expected return, which is not a lunch. */
@@ -234,7 +266,7 @@ export class EngineersService {
         details: { engineerId, workDate: day.workDate },
       });
     }
-    return context.tx.engineerDay.update({
+    const started = await context.tx.engineerDay.update({
       where: { id: day.id },
       data: {
         lunchTaken: true,
@@ -243,6 +275,14 @@ export class EngineersService {
         version: { increment: 1 },
       },
     });
+
+    // The fact reaches Router so that no second lunch is ever planned for this day.
+    await this.publisher.publishIfChanged(
+      context.tx,
+      context.now,
+      PUBLICATION_TRIGGERS.ENGINEER_LUNCH_TAKEN,
+    );
+    return started;
   }
 
   /**

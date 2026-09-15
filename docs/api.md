@@ -257,7 +257,67 @@ The engineer's plan for the day is not here yet: it is the applied working plan,
 arrives with the ROUTER-gateway. Execution facts (arrived, started, finished) belong with
 it, since what an engineer may mark is what that plan assigned them.
 
-## 7. Missing contracts
+## 7. The published planning task
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/dispatch/policies` | Prepared policies and the one in force |
+| POST | `/api/v1/dispatch/policy` | Choose a prepared policy |
+| GET | `/api/v1/dispatch/debug/snapshot` | The published task exactly as Router reads it |
+
+`mount-data-eng` publishes the **whole current task**, never a stream of changes. Work that
+is finished, cancelled or already under way is removed before publication, which is why
+Router needs no business status per request (`context/33` section 5).
+
+### What publishes, and what must not
+
+Publication happens only on a listed business trigger — a confirmed request, changed
+conditions, a cancellation, an engineer created or edited, a shift or availability change,
+a lunch actually started, a policy change, an import or a reset. The list is a closed enum
+in `publication-triggers.ts`.
+
+Deliberately **not** triggers, each for a stated reason:
+
+| Event | Why not |
+|---|---|
+| Time passing | There is no timer anywhere; `planning_as_of` does not tick |
+| A GPS point | Voluntary telemetry, not an input to routing |
+| A routine arrival, start or completion | Following the current plan needs no re-optimisation; the fact travels in the next justified projection |
+| An engineer's silence | An expired estimate does not become `null`, offline, or a refusal |
+| Reading anything | A read publishes nothing and moves no pointer |
+
+And even on a real trigger, a projection byte-identical to the published one is **not**
+republished and `planning_as_of` does not move. Rewriting the same content must not
+produce an endless series of timestamps (`context/33` section 7).
+
+### Hash and storage
+
+The document is serialized once by the canonical rules of
+[contracts/snapshot-canonical.md](./contracts/snapshot-canonical.md); the same string is
+stored and hashed. The snapshot row and the pointer switch commit in one transaction with
+the pointer locked, so a slow publisher cannot move the active task back to an older
+projection. Published snapshots are immutable and kept; only the pointer moves.
+
+### Diagnostics
+
+`debug/snapshot` returns `diagnostics` computed **live** from current data, plus
+`diagnosticsAtPublication` frozen on the document. The distinction matters: a request still
+waiting for coordinates cannot be projected, so it does not change the task and triggers no
+publication — a count frozen at publication time would never mention it. Live diagnostics
+report what is currently excluded and why:
+
+| Field | Means |
+|---|---|
+| `requestsWithoutLocation` | Submitted work with no coordinates; they are never invented |
+| `requestsOutsideHorizon` | Work whose window lies entirely outside this task's period |
+| `engineersWithoutStartLocation` | No usable start point, so no route could begin |
+| `engineersWithoutShift` | A working day exists but nobody has set a shift |
+| `engineersWithoutWorkday` | No working day for this horizon at all |
+
+An engineer with no shift is excluded rather than given an invented one: a calendar-day
+default would let work be scheduled at three in the morning.
+
+## 8. Missing contracts
 
 Listed rather than stubbed with invented shapes (AGENTS.md section 10.3).
 

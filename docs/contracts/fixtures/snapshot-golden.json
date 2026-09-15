@@ -1,0 +1,95 @@
+{
+  "schema_version": "1.0",
+  "planning_as_of": 1789459200,
+  "horizon_start_at": 1789455600,
+  "horizon_end_at": 1789488000,
+  "requests": [
+    {
+      "request_id": "request-golden-1",
+      "arrival_order": 0,
+      "location": {
+        "lat": 55.76,
+        "lon": 37.64
+      },
+      "service_duration_sec": 2700,
+      "window_start_at": 1789466400,
+      "window_end_at": 1789473600,
+      "priority": "urgent",
+      "required_skill": "emergency",
+      "required_transport": null
+    },
+    {
+      "request_id": "request-golden-2",
+      "arrival_order": 1,
+      "location": {
+        "lat": 55.0,
+        "lon": 37.6173
+      },
+      "service_duration_sec": 1800,
+      "window_start_at": 1789470000,
+      "window_end_at": 1789477200,
+      "priority": "normal",
+      "required_skill": "connection",
+      "required_transport": "car"
+    }
+  ],
+  "engineers": [
+    {
+      "engineer_id": "engineer-golden-1",
+      "input_order": 0,
+      "skills": [
+        "emergency",
+        "connection"
+      ],
+      "transport_type": "car",
+      "shift_start_at": 1789455600,
+      "shift_end_at": 1789488000,
+      "start_location": {
+        "lat": 55.7,
+        "lon": 37.5
+      },
+      "available_from": 1789459200,
+      "position_observed_at": null,
+      "availability": "online",
+      "expected_online_at": null,
+      "lunch_taken": false,
+      "lunch": {
+        "enabled": true,
+        "duration_sec": 2700,
+        "window_start_at": 1789470000,
+        "window_end_at": 1789480800,
+        "required": false
+      }
+    },
+    {
+      "engineer_id": "engineer-golden-2",
+      "input_order": 1,
+      "skills": [
+        "local"
+      ],
+      "transport_type": "walk",
+      "shift_start_at": 1789455600,
+      "shift_end_at": 1789480800,
+      "start_location": {
+        "lat": 55.7512345,
+        "lon": 37.6187654
+      },
+      "available_from": null,
+      "position_observed_at": 1789458000,
+      "availability": "offline",
+      "expected_online_at": 1789462800,
+      "lunch_taken": true,
+      "lunch": {
+        "enabled": true,
+        "duration_sec": 2700,
+        "window_start_at": 1789470000,
+        "window_end_at": 1789480800,
+        "required": false
+      }
+    }
+  ],
+  "policy": {
+    "policy_id": "fast",
+    "parameters": {}
+  }
+}

@@ -47,6 +47,7 @@ describe('engineers and working days', () => {
   let baseUrl: string;
   let dispatcherToken: string;
   const emails: string[] = [];
+  const engineerIds: string[] = [];
 
   const call = async (method: string, path: string, token: string, body?: unknown) =>
     fetch(`${baseUrl}${path}`, {
@@ -70,7 +71,9 @@ describe('engineers and working days', () => {
       ...overrides,
     });
     assert.equal(response.status, 201, await response.clone().text());
-    return { email, engineer: ((await response.json()) as EngineerBody).engineer };
+    const engineer = ((await response.json()) as EngineerBody).engineer;
+    engineerIds.push(engineer.id);
+    return { email, engineer };
   };
 
   /** Signs the engineer in, which is only possible because the dispatcher created them. */
@@ -118,6 +121,13 @@ describe('engineers and working days', () => {
   });
 
   after(async () => {
+    if (engineerIds.length > 0) {
+      // Deleting the account does not delete the engineer: a routing profile may exist
+      // without a login (context/37 section 3.1), so the relation is SetNull by design and
+      // the test has to clean up what it created.
+      await prisma.engineerDay.deleteMany({ where: { engineerId: { in: engineerIds } } });
+      await prisma.engineer.deleteMany({ where: { id: { in: engineerIds } } });
+    }
     if (emails.length > 0) {
       await prisma.account.deleteMany({ where: { email: { in: emails } } });
     }

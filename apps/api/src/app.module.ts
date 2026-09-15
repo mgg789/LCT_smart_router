@@ -8,8 +8,10 @@ import { TimeModule } from './common/time';
 import { NotificationsModule } from './notifications';
 import { OperationsModule } from './operations';
 import { EngineersModule } from './orchestrator/engineers';
+import { PolicyModule } from './orchestrator/policy';
 import { RequestsModule } from './orchestrator/requests';
 import { PersistenceModule } from './persistence';
+import { MountDataEngModule } from './routing/mount-data-eng';
 
 /**
  * Root of the System Layer.
@@ -27,6 +29,8 @@ import { PersistenceModule } from './persistence';
     AuthModule,
     OperationsModule,
     NotificationsModule,
+    MountDataEngModule,
+    PolicyModule,
     RequestsModule,
     EngineersModule,
     ApiModule,

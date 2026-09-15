@@ -5,6 +5,7 @@ import type { Priority, Prisma, Request } from '../../generated/prisma/client';
 import { NotificationsService } from '../../notifications';
 import { assertWriteApplied, type OperationContext } from '../../operations';
 import type { Tx } from '../../persistence';
+import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import { findWorkType } from './work-type.catalog';
 
 export interface PrepareRequestInput {
@@ -48,7 +49,10 @@ export interface DispatcherUpdateInput {
  */
 @Injectable()
 export class RequestsService {
-  constructor(private readonly notifications: NotificationsService) {}
+  constructor(
+    private readonly notifications: NotificationsService,
+    private readonly publisher: SnapshotPublisher,
+  ) {}
 
   /**
    * Prepares a request from what the customer described.
@@ -149,6 +153,14 @@ export class RequestsService {
       payload: { requestId },
     });
 
+    // A confirmed request is new work to distribute, so the task changed and is
+    // republished in the same transaction (context/42 DF-10).
+    await this.publisher.publishIfChanged(
+      context.tx,
+      context.now,
+      PUBLICATION_TRIGGERS.REQUEST_SUBMITTED,
+    );
+
     return this.reload(context.tx, requestId);
   }
 
@@ -186,6 +198,12 @@ export class RequestsService {
       },
     });
     assertWriteApplied('Request', updated.count, expectedVersion, current.version);
+
+    await this.publisher.publishIfChanged(
+      context.tx,
+      context.now,
+      PUBLICATION_TRIGGERS.REQUEST_CONDITIONS_CHANGED,
+    );
 
     return this.reload(context.tx, requestId);
   }
@@ -227,6 +245,12 @@ export class RequestsService {
       },
     });
     assertWriteApplied('Request', updated.count, expectedVersion, current.version);
+
+    await this.publisher.publishIfChanged(
+      context.tx,
+      context.now,
+      PUBLICATION_TRIGGERS.REQUEST_CONDITIONS_CHANGED,
+    );
 
     return this.reload(context.tx, requestId);
   }
@@ -271,6 +295,13 @@ export class RequestsService {
         reason: reason ?? 'cancelled by dispatcher',
       },
     });
+
+    // The free pool changed, so the task changed.
+    await this.publisher.publishIfChanged(
+      context.tx,
+      context.now,
+      PUBLICATION_TRIGGERS.REQUEST_CANCELLED,
+    );
 
     return this.reload(context.tx, requestId);
   }
