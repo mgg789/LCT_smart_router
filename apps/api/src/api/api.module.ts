@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
+import { EngineersModule } from '../orchestrator/engineers';
 import { RequestsModule } from '../orchestrator/requests';
 import { AuthController } from './auth.controller';
 import { ClientController } from './client.controller';
 import { DispatchController } from './dispatch.controller';
+import { EngineerController } from './engineer.controller';
 
 /**
  * `REST API` of context/36 section 2: the four external contours reach the system through
@@ -13,7 +15,7 @@ import { DispatchController } from './dispatch.controller';
  * tool cannot grow three diverging versions of it (context/36 section 2).
  */
 @Module({
-  imports: [RequestsModule],
-  controllers: [AuthController, ClientController, DispatchController],
+  imports: [RequestsModule, EngineersModule],
+  controllers: [AuthController, ClientController, EngineerController, DispatchController],
 })
 export class ApiModule {}

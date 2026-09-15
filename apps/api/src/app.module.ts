@@ -7,6 +7,7 @@ import { RequestContextMiddleware } from './common/logging';
 import { TimeModule } from './common/time';
 import { NotificationsModule } from './notifications';
 import { OperationsModule } from './operations';
+import { EngineersModule } from './orchestrator/engineers';
 import { RequestsModule } from './orchestrator/requests';
 import { PersistenceModule } from './persistence';
 
@@ -27,6 +28,7 @@ import { PersistenceModule } from './persistence';
     OperationsModule,
     NotificationsModule,
     RequestsModule,
+    EngineersModule,
     ApiModule,
   ],
 })

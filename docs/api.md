@@ -197,7 +197,67 @@ broken (`context/43` section 11.3).
 - **A request without coordinates is stored and marked**, then excluded from the published
   snapshot with a counted diagnostic. Coordinates are never invented.
 
-## 6. Missing contracts
+## 6. Engineers and working days
+
+### Engineer contour — `@Roles('engineer')`
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/engineer/profile` | Own profile |
+| PATCH | `/api/v1/engineer/profile` | Change own skills, transport or usual start point |
+| GET | `/api/v1/engineer/day` | Shift, availability and lunch state of today |
+| POST | `/api/v1/engineer/availability` | Go online or offline, with an expected return |
+| POST | `/api/v1/engineer/technical-break` | A 15-minute technical stop |
+| POST | `/api/v1/engineer/lunch/start` · `/finish` | Record the actual start and the return |
+| POST | `/api/v1/engineer/gps` | Report a position; collection is voluntary |
+
+Everything acts on the signed-in engineer. There is no field in which to name someone
+else: the subject comes from the session (`context/42` DF-06).
+
+### Dashboard side
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/dispatch/engineers` | Engineers with skills, transport and their current day |
+| POST | `/api/v1/dispatch/engineers` | Add an engineer by address |
+| PATCH | `/api/v1/dispatch/engineers/:id` | Change a profile |
+| POST | `/api/v1/dispatch/engineers/:id/workday` | Set the shift and lunch conditions |
+| POST | `/api/v1/dispatch/engineers/:id/availability` | Take an engineer off the line, or back on |
+
+### The rules these endpoints enforce
+
+- **Only the dispatcher creates an engineer.** Typing an address on the engineer sign-in
+  screen never produces the role. Creating the access and having someone Router can plan
+  for are different results: skills, transport and a start point must be real values, and
+  missing ones are never invented (`context/42` DF-03).
+- **Profile and working day are separate.** The shift, availability and lunch facts belong
+  to one day, so "already had lunch" cannot become a permanent property of a person.
+- **Lunch cannot be enabled without a duration and a full window**, and the whole lunch
+  must fit inside the window. The hours were never agreed, and a feature that is switched
+  on must not run on an invented norm (`context/32` section 8). `required` together with
+  `enabled: false` is contradictory and is refused.
+- **`lunchTaken` is set only by the engineer actually starting lunch** — not by publishing
+  a schedule. It means the single lunch of the day is used up, not that it has finished,
+  and it survives a restart, a mode switch and turning the feature off and on again.
+- **`online` is working availability**, not a network state and not "free right now".
+  Going offline does not finish the work in hand and does not reassign it.
+  `expectedOnlineAt` is a forecast: reaching it creates no online fact.
+- **The engineer and the dispatcher edit the same profile through the same handler**, so
+  their concurrent edits meet one version check and neither silently overwrites the other.
+  Which of them may change skills, transport and office is explicitly still open
+  (`context/36` section 14.2); the restriction lives in the controller so it can change
+  without touching the logic.
+- **GPS is collected and nothing more.** It is not an input to routing, it does not confirm
+  an arrival, it reconstructs no track, and it publishes no snapshot. An engineer may leave
+  it off entirely and lose no functionality (`context/37` section 5.1). The observation
+  time is stored apart from the arrival time, so a late report is never mistaken for a
+  fresher position.
+
+The engineer's plan for the day is not here yet: it is the applied working plan, which
+arrives with the ROUTER-gateway. Execution facts (arrived, started, finished) belong with
+it, since what an engineer may mark is what that plan assigned them.
+
+## 7. Missing contracts
 
 Listed rather than stubbed with invented shapes (AGENTS.md section 10.3).
 

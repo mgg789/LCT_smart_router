@@ -32,7 +32,7 @@ service each.
 |---|---|---|
 | `REST API` | `src/api`, `src/common` | Foundation plus the auth surface: routing prefix, error envelope, Zod validation, request context |
 | `auth-engine` | `src/auth` | Implemented: login codes, dispatcher password path, sessions, roles, integration keys, global guard |
-| `orchestrator backend` | `src/orchestrator`, `src/operations` | Operation envelope and the request lifecycle; engineers, lunch and policy planned |
+| `orchestrator backend` | `src/orchestrator`, `src/operations` | Operation envelope, request lifecycle, engineers, working days, lunch and GPS; policy and facts planned |
 | `dataengine` | `src/persistence` | Implemented: schema, migrations, connection, transaction boundary, row locks, health probe |
 | `mount-data-eng` | `src/routing/mount-data-eng` | Planned — branch `feat/api-snapshot` |
 | `ROUTER-gateway` | `src/routing/router-gateway` | Planned — branch `feat/api-router-gateway` |
