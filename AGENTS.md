@@ -16,7 +16,8 @@ Product strategy: **not** "many features" — a thought-through, coherent, beaut
 
 | Link | What |
 |---|---|
-| https://github.com/mgg789/LCT_smart_router | This repository |
+| https://git.sourcecraft.dev/lct-hackaton-2026/case-13-field-engineer-routing-team-22 | **This repository** (primary, migrated 2026-09-15) |
+| https://github.com/mgg789/LCT_smart_router | Original repo (frozen at migration, read-only history) |
 | https://task.droidje.com | **Main task board** (kan.bn, workspace `LCT`) — via `kan` MCP |
 | `context/26-case-source.md` | Verbatim case statement (source of truth for requirements) |
 | `context/00-README.md` | Full research context index (29 files) |
