@@ -34,7 +34,7 @@ service each.
 | `auth-engine` | `src/auth` | Implemented: login codes, dispatcher password path, sessions, roles, integration keys, global guard |
 | `orchestrator backend` | `src/orchestrator`, `src/operations` | Operation envelope, request lifecycle, engineers, working days, lunch and GPS; policy and facts planned |
 | `dataengine` | `src/persistence` | Implemented: schema, migrations, connection, transaction boundary, row locks, health probe |
-| `mount-data-eng` | `src/routing/mount-data-eng` | Planned — branch `feat/api-snapshot` |
+| `mount-data-eng` | `src/routing/mount-data-eng` | Implemented: projection, canonical serialization, hash, immutable snapshots and the pointer switch |
 | `ROUTER-gateway` | `src/routing/router-gateway` | Planned — branch `feat/api-router-gateway` |
 | `AI-gateway` | — | Out of scope of this build; declared in `/health/services` as `not_configured` |
 | `SMTP-gateway` | `src/notifications` (intents only) | sys records mail intents with per-transition deduplication; transport is out of scope of this build |
@@ -68,6 +68,15 @@ contract: `VERSION_CONFLICT`, `WORK_ALREADY_STARTED`, `MODE_MANUAL`, `SNAPSHOT_S
 travels with every log line and every error body, and is echoed in `x-request-id`. Logs are
 one JSON object per line; login codes, passwords and token values are never passed to the
 logger.
+
+**Snapshot publication** (`src/routing/mount-data-eng`). Publishes the whole current
+planning task on a listed business trigger, and only when the projection actually differs
+from the one already published. The insert and the pointer switch commit together with the
+pointer locked, so a slow publisher cannot move the active task backwards. What cannot be
+projected -- a request without coordinates, an engineer without a shift -- is counted in
+diagnostics rather than dropped, and those diagnostics are computed live, because an
+unprojectable request changes no task and therefore triggers no publication that could
+record it.
 
 **Canonical JSON** (`src/common/json`). One document must produce one byte sequence in
 both TypeScript and Python, because sys and Router hash the published snapshot

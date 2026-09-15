@@ -6,8 +6,14 @@ import { Clock } from '../common/time';
 import { zodBody } from '../common/validation';
 import { OperationsService } from '../operations';
 import { EngineersService } from '../orchestrator/engineers';
+import { PolicyService } from '../orchestrator/policy';
 import { RequestsService } from '../orchestrator/requests';
 import { PrismaService } from '../persistence';
+import {
+  PUBLICATION_TRIGGERS,
+  SnapshotBuilder,
+  SnapshotPublisher,
+} from '../routing/mount-data-eng';
 import {
   type CreateEngineerDto,
   createEngineerSchema,
@@ -18,6 +24,7 @@ import {
   type UpdateEngineerDto,
   updateEngineerSchema,
 } from './dto/engineer.dto';
+import { type SelectPolicyDto, selectPolicySchema } from './dto/policy.dto';
 import {
   type CancelRequestDto,
   cancelRequestSchema,
@@ -48,6 +55,9 @@ export class DispatchController {
   constructor(
     private readonly requests: RequestsService,
     private readonly engineers: EngineersService,
+    private readonly policyService: PolicyService,
+    private readonly publisher: SnapshotPublisher,
+    private readonly builder: SnapshotBuilder,
     private readonly operations: OperationsService,
     private readonly prisma: PrismaService,
     private readonly clock: Clock,
@@ -342,5 +352,81 @@ export class DispatchController {
         ),
     );
     return { day: outcome.result };
+  }
+
+  @Get('policies')
+  @ApiOperation({ summary: 'Prepared policies and the one in force' })
+  async policies() {
+    return {
+      // A catalogue of prepared variants. There is no editor of weights, criteria order
+      // or solver parameters here, and a rich policy structure in the contracts does not
+      // create one (context/42 DF-15).
+      policies: this.policyService.list(),
+      active: await this.policyService.active(this.prisma),
+    };
+  }
+
+  @Post('policy')
+  @ApiOperation({ summary: 'Choose a prepared policy' })
+  async selectPolicy(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(selectPolicySchema)) dto: SelectPolicyDto,
+  ) {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'policy.select',
+        targetRef: dto.policyId,
+        payload: dto,
+      },
+      async (context) => {
+        const selected = await this.policyService.select(context, dto.policyId);
+        // The choice is data of the task, so it is republished. A new criterion does not
+        // mean a new plan is on screen yet: until a current result is accepted, the
+        // chosen policy and the policy the shown plan was built with are different things
+        // (context/42 DF-15).
+        const publication = await this.publisher.publishIfChanged(
+          context.tx,
+          context.now,
+          PUBLICATION_TRIGGERS.POLICY_CHANGED,
+        );
+        return { ...selected, publication };
+      },
+    );
+    return outcome.result;
+  }
+
+  @Get('debug/snapshot')
+  @ApiOperation({ summary: 'The published planning task, as Router reads it' })
+  async debugSnapshot() {
+    const current = await this.prisma.routingCurrent.findUnique({
+      where: { id: 'singleton' },
+      include: { snapshot: true },
+    });
+    if (!current) {
+      // A valid state, not an error: nothing has yet changed the planning task.
+      const pending = await this.builder.build(this.prisma, this.clock.nowSeconds());
+      return { published: false, snapshot: null, diagnostics: pending.diagnostics };
+    }
+    // Diagnostics are rebuilt from the current state rather than read off the published
+    // document. The reason is specific: a request that cannot be projected -- one still
+    // waiting for coordinates -- does not change the task, so nothing is republished, and
+    // a count frozen at publication time would never mention it. Building them live is a
+    // read; it publishes nothing and moves no pointer.
+    const live = await this.builder.build(this.prisma, this.clock.nowSeconds());
+
+    return {
+      published: true,
+      inputHash: current.snapshot.inputHash,
+      planningAsOf: Number(current.snapshot.planningAsOf),
+      trigger: current.snapshot.trigger,
+      generation: current.snapshot.generation,
+      diagnostics: live.diagnostics,
+      diagnosticsAtPublication: current.snapshot.diagnostics,
+      // The exact bytes Router hashes, returned as text on purpose: re-encoding them
+      // would defeat the point of storing them verbatim.
+      payload: current.snapshot.payload,
+    };
   }
 }

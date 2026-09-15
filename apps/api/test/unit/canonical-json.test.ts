@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, it } from 'node:test';
 import {
   CanonicalJsonError,
@@ -52,6 +54,23 @@ describe('canonical json', () => {
       () => canonicalJson({ engineers: [{ availableFrom: undefined }] }),
       /\$\.engineers\[0\]\.availableFrom/,
     );
+  });
+
+  it('reproduces the golden vector byte for byte', () => {
+    // The vector Router Core must reproduce in its own suite. A failure here is the early
+    // warning for the symptom that is otherwise invisible: Router keeps computing and no
+    // plan is ever applied, because the two sides hash different bytes
+    // (docs/contracts/snapshot-canonical.md).
+    const fixtures = resolve(process.cwd(), '../../docs/contracts/fixtures');
+    const document = JSON.parse(readFileSync(`${fixtures}/snapshot-golden.json`, 'utf8'));
+    const expectedBytes = readFileSync(
+      `${fixtures}/snapshot-golden.canonical.txt`,
+      'utf8',
+    ).trimEnd();
+    const expectedHash = readFileSync(`${fixtures}/snapshot-golden.sha256.txt`, 'utf8').trim();
+
+    assert.equal(canonicalJson(document), expectedBytes);
+    assert.equal(canonicalHash(document), expectedHash);
   });
 
   it('hashes the bytes, so equal documents hash equally regardless of key order', () => {
