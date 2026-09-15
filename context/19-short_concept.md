@@ -2,7 +2,7 @@
 
 **Комплект v14 · 15.09.2026 · default policy: `fast`**
 
-Подробности: [вся система](./system_concept_v14.md), [input/output Router](./router_contract_v2.md), [модель и внутренности](./engine_contract_v2.md).
+Подробности: [вся система](./32-system_concept_v14.md), [input/output Router](./33-router_contract_v2.md), [модель и внутренности](./34-engine_contract_v2.md).
 
 ## Что делаем
 
