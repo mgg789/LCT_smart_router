@@ -127,7 +127,23 @@ Two intermittent failures came from exactly that.
 
 ## 8. Smoke gate
 
-`pnpm smoke` (AGENTS.md section 11.1) is not implemented yet: it needs the persistence,
-snapshot and router-gateway branches to exist before it can prove anything end to end.
-Until then the meaningful gate is `pnpm --filter api test` plus a manual check of the
-running contour as in section 2.
+```bash
+pnpm compose:up
+pnpm smoke
+```
+
+`pnpm smoke` (AGENTS.md section 11.1) drives the whole spine over HTTP against the
+**running contour**, not in process: it proves the artifact that actually ships works —
+migrations applied, configuration read, dataset mounted, every contour reachable.
+
+It checks, in order: the contour answers and reports its missing integrations honestly; the
+dispatcher signs in without SMTP; the application data resets; the official dataset imports
+with no errors and every request marked as awaiting coordinates; an engineer with a shift
+and an urgent request classified from its type of work; the task republished with both in
+it; a read publishing nothing and leaving `planning_as_of` alone; a valid Router result
+becoming the working plan; the same result refused as `ALREADY_APPLIED`; a stale one
+refused as `SNAPSHOT_STALE`; and the dispatcher seeing the applied plan with its mode.
+
+**It is destructive**: it resets the application data first, so it belongs on a development
+or demo contour and nowhere else. `SMOKE_BASE_URL` points it elsewhere than
+`http://localhost:8000`.

@@ -10,7 +10,8 @@
     "start": "node dist/src/main.js",
     "test:build": "tsc -p tsconfig.json",
     "test": "pnpm test:build && node --test --test-concurrency=1 \"dist-test/test/**/*.test.js\"",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "smoke": "pnpm test:build && node dist-test/scripts/smoke.js"
   },
   "dependencies": {
     "@nestjs/common": "11.2.5",
