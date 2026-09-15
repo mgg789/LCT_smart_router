@@ -1,0 +1,22 @@
+# Source files are stored and checked out with LF on every platform, so a Windows
+# checkout does not produce a whole-file diff against a Linux one.
+*.ts          text eol=lf
+*.js          text eol=lf
+*.json        text eol=lf
+*.yaml        text eol=lf
+*.yml         text eol=lf
+*.md          text eol=lf
+*.sql         text eol=lf
+*.prisma      text eol=lf
+Dockerfile    text eol=lf
+.env.example  text eol=lf
+.gitignore    text eol=lf
+.gitattributes text eol=lf
+
+# The organisers' dataset and binary sources are kept byte-exact: they are the
+# untouched source of truth and re-encoding them would change their meaning.
+*.csv   -text
+*.zip   -text
+*.png   -text
+*.pdf   -text
+*.pptx  -text

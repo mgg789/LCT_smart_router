@@ -1,0 +1,22 @@
+{
+  "name": "lct-smart-router",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LCT Smart Router — intelligent planning and live re-planning of field engineer routes",
+  "engines": {
+    "node": ">=24.13.0",
+    "pnpm": ">=10.28.0"
+  },
+  "packageManager": "pnpm@10.28.2",
+  "scripts": {
+    "build": "pnpm --filter api build",
+    "dev": "pnpm --filter api dev",
+    "test": "pnpm --filter api test",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "smoke": "pnpm --filter api smoke"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.13"
+  }
+}
