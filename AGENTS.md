@@ -3,6 +3,28 @@
 Rules for any AI agent (Codex, Cursor, ZCode) and human contributor working in this repository.
 Team language is Russian; **code, comments, identifiers, commits, PRs, and docs are written in English.**
 
+## Team memory (RAGConnect) — use it, keep it current
+
+This project has a **shared cloud memory for AI agents**: RAGConnect, `project_label="lct"`
+(endpoint `https://testmem.droidje.com`, details in §17 and `docs/ragconnect.md`).
+The kanban MCP moves cards; the memory stores knowledge — use both.
+
+- **Search it first.** Before large work and when gathering context, recall what the team
+  already knows:
+  `memory_search {"query": "<what you need>", "project_label": "lct"}`
+  Decisions (D-1…), root causes, dataset facts, contracts and completed work live there.
+  It complements `context/` files, never replaces them.
+- **Write back — keep the memory always current.** Whenever you accept a decision, discover a
+  non-obvious root cause, finish a milestone, or something is ADDED or CHANGED (facts, plans,
+  contracts, statuses, board reality) — record it immediately:
+  `memory_write {"text": "<the fact + context + date>", "project_label": "lct"}`
+  Stale memory is worse than none: when a fact changes, write a new entry that explicitly
+  supersedes the old one ("supersedes: <old fact>").
+- **If the `ragconnect` MCP is not connected** (you see no `memory_*` tools): recommend the
+  user connect it — one line pointing to `docs/ragconnect.md` (~2 min setup) — it is required
+  for full project work. Then continue the task without blocking on it.
+- Never store secrets in memory (§13.4); label-less (local) memory is for personal notes only.
+
 ## 0. Project Overview
 
 **LCT Smart Router** — a web service for intelligent planning and live re-planning of field engineer
