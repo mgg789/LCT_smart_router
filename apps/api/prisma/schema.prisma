@@ -481,6 +481,14 @@ model RoutingSnapshot {
   /// SHA-256 of `payload`. Kept beside the document and never inside it: a hash cannot
   /// be part of its own input.
   inputHash    String @map("input_hash")
+  /// SHA-256 of the task **without** `planning_as_of`.
+  ///
+  /// `input_hash` covers the whole published document, including its timestamp, which is
+  /// what Router matches a result against. That makes it useless for answering "did the
+  /// task actually change", because the timestamp moves every second. The contract is
+  /// explicit that the change check happens *before* the time is updated
+  /// (context/33 section 7), so the comparison uses this fingerprint instead.
+  taskFingerprint String @map("task_fingerprint")
   /// Moment of this publication of changed data. It does not tick on its own and is not
   /// advanced by a read (context/33 section 7).
   planningAsOf BigInt @map("planning_as_of")

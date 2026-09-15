@@ -112,6 +112,7 @@ describe('persistence: schema and boundaries', () => {
       data: {
         payload,
         inputHash: unique('hash'),
+        taskFingerprint: unique('fingerprint'),
         planningAsOf: 1789459200n,
         createdAt: 1789459200n,
         trigger: 'test',

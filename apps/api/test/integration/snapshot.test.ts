@@ -245,6 +245,33 @@ describe('snapshot publication', () => {
     assert.equal(after.planningAsOf, before.planningAsOf);
   });
 
+  it('does not move planning_as_of when a trigger fires a second later with no change', async () => {
+    const engineer = await createEngineer();
+    const before = await snapshot();
+
+    // The clock has to cross a second boundary: the bug this guards against was a
+    // projection that embedded the publication moment, so an unchanged task produced a new
+    // hash every second and planning_as_of effectively ticked -- which context/33 section 7
+    // forbids.
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+
+    const response = await call(
+      'PATCH',
+      `/api/v1/dispatch/engineers/${engineer.id}`,
+      dispatcherToken,
+      {
+        operationId: randomUUID(),
+        expectedVersion: engineer.version,
+        displayName: 'Renamed Again',
+      },
+    );
+    assert.equal(response.status, 200);
+
+    const after = await snapshot();
+    assert.equal(after.inputHash, before.inputHash, 'the task did not change');
+    assert.equal(after.planningAsOf, before.planningAsOf, 'so its moment must not move');
+  });
+
   it('publishes when the engineer starts lunch, so no second one can be planned', async () => {
     const engineer = await createEngineer();
     const account = await prisma.engineer.findUniqueOrThrow({ where: { id: engineer.id } });

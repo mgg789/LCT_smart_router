@@ -32,10 +32,10 @@ service each.
 |---|---|---|
 | `REST API` | `src/api`, `src/common` | Foundation plus the auth surface: routing prefix, error envelope, Zod validation, request context |
 | `auth-engine` | `src/auth` | Implemented: login codes, dispatcher password path, sessions, roles, integration keys, global guard |
-| `orchestrator backend` | `src/orchestrator`, `src/operations` | Operation envelope, request lifecycle, engineers, working days, lunch and GPS; policy and facts planned |
+| `orchestrator backend` | `src/orchestrator`, `src/operations` | Operation envelope, request lifecycle, engineers, working days, lunch, GPS, policy and execution facts |
 | `dataengine` | `src/persistence` | Implemented: schema, migrations, connection, transaction boundary, row locks, health probe |
 | `mount-data-eng` | `src/routing/mount-data-eng` | Implemented: projection, canonical serialization, hash, immutable snapshots and the pointer switch |
-| `ROUTER-gateway` | `src/routing/router-gateway` | Planned — branch `feat/api-router-gateway` |
+| `ROUTER-gateway` | `src/routing/router-gateway` | Implemented: acceptance checks, applied plan revisions, AUTO/MANUAL, manual edits. The client is a null adapter until Router Core exists |
 | `AI-gateway` | — | Out of scope of this build; declared in `/health/services` as `not_configured` |
 | `SMTP-gateway` | `src/notifications` (intents only) | sys records mail intents with per-transition deduplication; transport is out of scope of this build |
 
@@ -68,6 +68,14 @@ contract: `VERSION_CONFLICT`, `WORK_ALREADY_STARTED`, `MODE_MANUAL`, `SNAPSHOT_S
 travels with every log line and every error body, and is echoed in `x-request-id`. Logs are
 one JSON object per line; login codes, passwords and token values are never passed to the
 logger.
+
+**Result acceptance** (`src/routing/router-gateway`). Five independent checks decide
+whether a finished result becomes the working plan: mode, snapshot hash, context version,
+usability, and absence of conflict with explicit facts. Both singletons are locked first,
+so a result already being validated cannot land after the dispatcher takes manual control.
+When a result conflicts with the facts sys declines it and publishes a current projection;
+it never repairs the plan with an optimiser of its own. Each acceptance adds an immutable
+revision carrying the moment it describes.
 
 **Snapshot publication** (`src/routing/mount-data-eng`). Publishes the whole current
 planning task on a listed business trigger, and only when the projection actually differs

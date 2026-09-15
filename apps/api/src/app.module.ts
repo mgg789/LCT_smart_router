@@ -8,10 +8,12 @@ import { TimeModule } from './common/time';
 import { NotificationsModule } from './notifications';
 import { OperationsModule } from './operations';
 import { EngineersModule } from './orchestrator/engineers';
+import { FactsModule } from './orchestrator/facts';
 import { PolicyModule } from './orchestrator/policy';
 import { RequestsModule } from './orchestrator/requests';
 import { PersistenceModule } from './persistence';
 import { MountDataEngModule } from './routing/mount-data-eng';
+import { RouterGatewayModule } from './routing/router-gateway';
 
 /**
  * Root of the System Layer.
@@ -30,9 +32,11 @@ import { MountDataEngModule } from './routing/mount-data-eng';
     OperationsModule,
     NotificationsModule,
     MountDataEngModule,
+    RouterGatewayModule,
     PolicyModule,
     RequestsModule,
     EngineersModule,
+    FactsModule,
     ApiModule,
   ],
 })
