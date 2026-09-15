@@ -1,6 +1,7 @@
 # Ignore OS noise
 .DS_Store
 Thumbs.db
+.ruff_cache/
 
 # Future code artifacts
 node_modules/
