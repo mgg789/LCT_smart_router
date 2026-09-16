@@ -9,6 +9,7 @@ Seconds = Annotated[int, Field(ge=0)]
 PositiveSeconds = Annotated[int, Field(gt=0)]
 Transport = Literal["car", "walk", "bike", "transit"]
 Skill = Literal["local", "connection", "emergency"]
+EquipmentType = Literal["router", "set_top_box", "smart_speaker"]
 TravelTimeMode = Literal["graph_with_access_buffer", "fixed_normative"]
 
 
@@ -35,6 +36,18 @@ class LunchInput(Record):
     required: bool
 
 
+class EquipmentStock(Record):
+    """Immutable start-of-day stock carried by one engineer; units never transfer."""
+
+    router: int = Field(default=0, ge=0)
+    set_top_box: int = Field(default=0, ge=0)
+    smart_speaker: int = Field(default=0, ge=0)
+
+    def quantity(self, equipment_type: EquipmentType) -> int:
+        """Return carried units for one closed-catalog equipment type."""
+        return getattr(self, equipment_type)
+
+
 class Request(Record):
     """An unstarted job; its customer window constrains service start only."""
 
@@ -47,6 +60,7 @@ class Request(Record):
     priority: Literal["normal", "urgent"]
     required_skill: Skill
     required_transport: Transport | None
+    required_equipment: EquipmentType | None = None
 
     @model_validator(mode="after")
     def check_window(self) -> Self:
@@ -71,6 +85,7 @@ class Engineer(Record):
     expected_online_at: Seconds | None
     lunch_taken: bool
     lunch: LunchInput
+    equipment_stock: EquipmentStock
 
     @model_validator(mode="after")
     def check_conditions(self) -> Self:
@@ -313,10 +328,12 @@ class CandidateEvidence(Record):
     label: str | None
     skills: list[Skill]
     transport_type: Transport
+    equipment_stock: int | None
     release_at: int | None
     shift_end_at: int
     skill_match: bool
     transport_match: bool
+    equipment_match: bool
     available: bool
     solo_feasible: bool
     append_at_route_end_feasible: bool
@@ -336,6 +353,7 @@ class RequestEvidence(Record):
     priority: Literal["normal", "urgent"]
     required_skill: Skill
     required_transport: Transport | None
+    required_equipment: EquipmentType | None
     service_duration_sec: int
     window_start_at: int
     window_end_at: int
@@ -360,6 +378,38 @@ class PlanEvidence(Record):
 
     schema_version: Literal["1.0"] = "1.0"
     requests: list[RequestEvidence]
+
+
+class PolicyComparisonRow(Record):
+    """One independently calculated strategy on the shared comparison snapshot."""
+
+    strategy_id: Literal["fast", "compact", "sla", "balanced", "eco", "baseline"]
+    kind: Literal["policy", "baseline"]
+    is_usable: bool
+    calculation_ms: int = Field(ge=0)
+    summary: PlanMetrics
+
+
+class PolicyComparison(Record):
+    """Fair, cached six-strategy comparison tied to one immutable publication."""
+
+    input_publication_id: ID
+    input_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    router_context_version: ID
+    computed_at: Seconds
+    search_budget_ms: int = Field(gt=0, le=2000)
+    rows: list[PolicyComparisonRow] = Field(min_length=6, max_length=6)
+
+    @model_validator(mode="after")
+    def check_rows(self) -> Self:
+        """Require the complete catalog exactly once, including the FIFO baseline."""
+        expected = {"fast", "compact", "sla", "balanced", "eco", "baseline"}
+        observed = [row.strategy_id for row in self.rows]
+        if set(observed) != expected or len(set(observed)) != len(observed):
+            raise ValueError("comparison must contain every strategy exactly once")
+        if any((row.strategy_id == "baseline") != (row.kind == "baseline") for row in self.rows):
+            raise ValueError("comparison row kind contradicts strategy")
+        return self
 
 
 class RouterResult(Record):

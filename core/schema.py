@@ -8,6 +8,7 @@ from pathlib import Path
 
 from core.api import TechnicalSettingsRequest
 from core.contracts import (
+    PolicyComparison,
     RouterResult,
     RouterTaskSnapshot,
     RouterTechnicalSettings,
@@ -15,6 +16,7 @@ from core.contracts import (
 )
 
 _SCHEMAS = {
+    "policy-comparison-v1.json": PolicyComparison,
     "router-task-snapshot-1.0.json": RouterTaskSnapshot,
     "router-result-1.0.json": RouterResult,
     "router-technical-settings-v2.json": RouterTechnicalSettings,

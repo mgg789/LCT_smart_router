@@ -3,11 +3,44 @@ import { SysError } from '../../common/errors';
 import type { RouterResult } from './result.types';
 import { routerResultSchema } from './result.types';
 import {
+  COMPARISON_STRATEGIES,
+  type PolicyComparison,
   RouterClient,
   type RouterTechnicalSettingsState,
   type RouterTechnicalSettingsUpdate,
   type UpdateRouterTechnicalSettings,
 } from './router-client.port';
+
+const comparisonMetricsSchema = z.object({
+  requests_total: z.number().int().nonnegative(),
+  assigned_count: z.number().int().nonnegative(),
+  unassigned_count: z.number().int().nonnegative(),
+  urgent_total: z.number().int().nonnegative(),
+  urgent_assigned_count: z.number().int().nonnegative(),
+  engineers_used: z.number().int().nonnegative(),
+  distance_km: z.number().nonnegative(),
+  travel_time_sec: z.number().int().nonnegative(),
+  work_time_sec: z.number().int().nonnegative(),
+  waiting_time_sec: z.number().int().nonnegative(),
+  lunch_time_sec: z.number().int().nonnegative(),
+});
+
+const policyComparisonSchema = z.object({
+  input_publication_id: z.string().min(1),
+  input_hash: z.string().length(64),
+  router_context_version: z.string().min(1),
+  computed_at: z.number().int().nonnegative(),
+  search_budget_ms: z.number().int().positive(),
+  rows: z.array(
+    z.object({
+      strategy_id: z.enum(COMPARISON_STRATEGIES),
+      kind: z.enum(['policy', 'baseline']),
+      is_usable: z.boolean(),
+      calculation_ms: z.number().int().nonnegative(),
+      summary: comparisonMetricsSchema,
+    }),
+  ),
+});
 
 const technicalSettingsSchema = z.object({
   lunches_enabled: z.boolean(),
@@ -115,14 +148,53 @@ export class HttpRouterClient extends RouterClient {
     };
   }
 
+  /** Runs or reads Router's cached same-snapshot policy comparison. */
+  override async getPolicyComparison(): Promise<PolicyComparison> {
+    const raw = await this.fetchJson('/v1/policy-comparison', {}, 60_000);
+    const parsed = policyComparisonSchema.safeParse(raw);
+    if (!parsed.success) {
+      throw new Error(`Router /v1/policy-comparison response is invalid: ${parsed.error.message}`);
+    }
+    return {
+      inputPublicationId: parsed.data.input_publication_id,
+      inputHash: parsed.data.input_hash,
+      routerContextVersion: parsed.data.router_context_version,
+      computedAt: parsed.data.computed_at,
+      searchBudgetMs: parsed.data.search_budget_ms,
+      rows: parsed.data.rows.map((row) => ({
+        strategyId: row.strategy_id,
+        kind: row.kind,
+        isUsable: row.is_usable,
+        calculationMs: row.calculation_ms,
+        metrics: {
+          requestsTotal: row.summary.requests_total,
+          assignedCount: row.summary.assigned_count,
+          unassignedCount: row.summary.unassigned_count,
+          urgentTotal: row.summary.urgent_total,
+          urgentAssignedCount: row.summary.urgent_assigned_count,
+          engineersUsed: row.summary.engineers_used,
+          distanceKm: row.summary.distance_km,
+          travelTimeSec: row.summary.travel_time_sec,
+          workTimeSec: row.summary.work_time_sec,
+          waitingTimeSec: row.summary.waiting_time_sec,
+          lunchTimeSec: row.summary.lunch_time_sec,
+        },
+      })),
+    };
+  }
+
   /** A constructed HTTP client always has a configured Router origin. */
   isConfigured(): boolean {
     return true;
   }
 
-  private async fetchJson(path: string, init: RequestInit = {}): Promise<unknown> {
+  private async fetchJson(
+    path: string,
+    init: RequestInit = {},
+    timeoutMs = this.options.requestTimeoutMs,
+  ): Promise<unknown> {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.options.requestTimeoutMs);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     timeout.unref();
     try {
       const response = await fetch(`${this.baseUrl}${path}`, {
@@ -157,7 +229,7 @@ export class HttpRouterClient extends RouterClient {
       return await response.json();
     } catch (error) {
       if (controller.signal.aborted) {
-        throw new Error(`Router ${path} timed out after ${this.options.requestTimeoutMs} ms`, {
+        throw new Error(`Router ${path} timed out after ${timeoutMs} ms`, {
           cause: error,
         });
       }

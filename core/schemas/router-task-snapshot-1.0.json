@@ -29,6 +29,9 @@
           "title": "Engineer Id",
           "type": "string"
         },
+        "equipment_stock": {
+          "$ref": "#/$defs/EquipmentStock"
+        },
         "expected_online_at": {
           "anyOf": [
             {
@@ -103,9 +106,36 @@
         "availability",
         "expected_online_at",
         "lunch_taken",
-        "lunch"
+        "lunch",
+        "equipment_stock"
       ],
       "title": "Engineer",
+      "type": "object"
+    },
+    "EquipmentStock": {
+      "additionalProperties": false,
+      "description": "Immutable start-of-day stock carried by one engineer; units never transfer.",
+      "properties": {
+        "router": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Router",
+          "type": "integer"
+        },
+        "set_top_box": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Set Top Box",
+          "type": "integer"
+        },
+        "smart_speaker": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Smart Speaker",
+          "type": "integer"
+        }
+      },
+      "title": "EquipmentStock",
       "type": "object"
     },
     "GeoPoint": {
@@ -261,6 +291,23 @@
           "minLength": 1,
           "title": "Request Id",
           "type": "string"
+        },
+        "required_equipment": {
+          "anyOf": [
+            {
+              "enum": [
+                "router",
+                "set_top_box",
+                "smart_speaker"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Required Equipment"
         },
         "required_skill": {
           "enum": [

@@ -36,6 +36,7 @@ def build_plan_evidence(
         rendering or an explanation-only LLM prompt.
     """
     labels = engineer_labels or {}
+    requests = {request.request_id: request for request in snapshot.requests}
     assignments = {assignment.request_id: assignment for assignment in plan.assignments}
     routes = {route.engineer_id: route for route in plan.routes}
     orders = {
@@ -82,6 +83,12 @@ def build_plan_evidence(
         for engineer in snapshot.engineers:
             skill_match = request.required_skill in engineer.skills
             transport_match = request.required_transport in (None, engineer.transport_type)
+            equipment_stock = (
+                engineer.equipment_stock.quantity(request.required_equipment)
+                if request.required_equipment is not None
+                else None
+            )
+            equipment_match = request.required_equipment is None or equipment_stock > 0
             release = release_at(snapshot, engineer)
             available = release is not None
             static_ok = eligible(snapshot, engineer, request)
@@ -109,22 +116,34 @@ def build_plan_evidence(
                 blockers.append("skill_missing")
             if not transport_match:
                 blockers.append("transport_mismatch")
+            if not equipment_match:
+                blockers.append("equipment_missing")
             if not available:
                 blockers.append("unavailable")
             if static_ok and solo is None:
                 blockers.append("solo_schedule_infeasible")
             if static_ok and solo is not None and appended is None:
                 blockers.append("current_route_append_infeasible")
+                if request.required_equipment is not None:
+                    used = sum(
+                        1
+                        for request_id in current
+                        if requests[request_id].required_equipment == request.required_equipment
+                    )
+                    if equipment_stock is not None and used >= equipment_stock:
+                        blockers.append("equipment_stock_exhausted")
             candidates.append(
                 CandidateEvidence(
                     engineer_id=engineer.engineer_id,
                     label=labels.get(engineer.engineer_id),
                     skills=list(engineer.skills),
                     transport_type=engineer.transport_type,
+                    equipment_stock=equipment_stock,
                     release_at=release,
                     shift_end_at=engineer.shift_end_at,
                     skill_match=skill_match,
                     transport_match=transport_match,
+                    equipment_match=equipment_match,
                     available=available,
                     solo_feasible=solo is not None,
                     append_at_route_end_feasible=appended is not None,
@@ -151,6 +170,7 @@ def build_plan_evidence(
                 priority=request.priority,
                 required_skill=request.required_skill,
                 required_transport=request.required_transport,
+                required_equipment=request.required_equipment,
                 service_duration_sec=request.service_duration_sec,
                 window_start_at=request.window_start_at,
                 window_end_at=request.window_end_at,

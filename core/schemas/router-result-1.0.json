@@ -127,6 +127,21 @@
           "title": "Engineer Id",
           "type": "string"
         },
+        "equipment_match": {
+          "title": "Equipment Match",
+          "type": "boolean"
+        },
+        "equipment_stock": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Equipment Stock"
+        },
         "label": {
           "anyOf": [
             {
@@ -193,10 +208,12 @@
         "label",
         "skills",
         "transport_type",
+        "equipment_stock",
         "release_at",
         "shift_end_at",
         "skill_match",
         "transport_match",
+        "equipment_match",
         "available",
         "solo_feasible",
         "append_at_route_end_feasible",
@@ -765,6 +782,22 @@
           "title": "Request Id",
           "type": "string"
         },
+        "required_equipment": {
+          "anyOf": [
+            {
+              "enum": [
+                "router",
+                "set_top_box",
+                "smart_speaker"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Required Equipment"
+        },
         "required_skill": {
           "enum": [
             "local",
@@ -884,6 +917,7 @@
         "priority",
         "required_skill",
         "required_transport",
+        "required_equipment",
         "service_duration_sec",
         "window_start_at",
         "window_end_at",

@@ -87,6 +87,7 @@ def snapshot(graph):
         "expected_online_at": None,
         "lunch_taken": False,
         "lunch": lunch,
+        "equipment_stock": {"router": 0, "set_top_box": 0, "smart_speaker": 0},
     }
     requests = [
         {

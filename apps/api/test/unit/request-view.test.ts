@@ -26,6 +26,7 @@ describe('request view duration evidence', () => {
       priority: 'normal',
       requiredSkill: 'local',
       requiredTransport: null,
+      requiredEquipment: null,
       workTypeHd: 'monitoring',
       lifecycle: 'completed',
       assignmentState: 'assigned',

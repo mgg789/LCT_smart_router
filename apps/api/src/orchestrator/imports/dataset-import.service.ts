@@ -4,13 +4,14 @@ import { resolve } from 'node:path';
 import { Injectable, Logger } from '@nestjs/common';
 import { z } from 'zod';
 import { SysError } from '../../common/errors';
-import type { Skill, TransportType } from '../../generated/prisma/client';
+import type { EquipmentType, Skill, TransportType } from '../../generated/prisma/client';
 import type { OperationContext } from '../../operations';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import {
   normalizeAddress,
   type ParsedBrigade,
   type ParsedRegion,
+  type ParsedRequest,
   parseBrigades,
   parseSyntheticFile,
 } from './dataset.parser';
@@ -195,6 +196,8 @@ export class DatasetImportService {
       .update('\0')
       .update(geocode.bytes)
       .update('\0')
+      .update('equipment-v0-1')
+      .update('\0')
       .update(String(engineerLimit ?? 'all'))
       .digest('hex');
 
@@ -219,6 +222,7 @@ export class DatasetImportService {
     let depotsCreated = 0;
     let depotId: string | null = null;
     let depotPoint: { lat: number; lon: number } | null = null;
+    const equipmentByBrigade = allocateMorningEquipment(parsed.requests, brigades);
 
     if (parsed.depot) {
       depotPoint = geocoded.get(normalizeAddress(parsed.depot.addressText)) ?? null;
@@ -299,6 +303,7 @@ export class DatasetImportService {
           shiftStartAt: BigInt(horizonStart),
           shiftEndAt: BigInt(horizonEnd),
           updatedAt: now,
+          ...equipmentByBrigade.get(brigade.name),
         },
         create: {
           engineerId,
@@ -307,6 +312,7 @@ export class DatasetImportService {
           shiftEndAt: BigInt(horizonEnd),
           lunchEnabled: false,
           lunchRequired: false,
+          ...equipmentByBrigade.get(brigade.name),
           createdAt: now,
           updatedAt: now,
         },
@@ -358,6 +364,7 @@ export class DatasetImportService {
           priority: request.priority,
           requiredSkill: request.skill,
           requiredTransport: null,
+          requiredEquipment: importedEquipment(request),
           workTypeHd: request.workTypeCode,
           lifecycle: 'submitted',
           assignmentState: 'pending',
@@ -578,4 +585,89 @@ function synthesizeCrew(inputOrder: number): { skills: Skill[]; transportType: T
     skills: skillSets[inputOrder % skillSets.length] ?? ['connection'],
     transportType: transports[inputOrder % transports.length] ?? 'car',
   };
+}
+
+interface EquipmentColumns {
+  readonly equipmentRouter: number;
+  readonly equipmentSetTopBox: number;
+  readonly equipmentSmartSpeaker: number;
+}
+
+/**
+ * Builds a deterministic morning issue from the whole region demand.
+ *
+ * Each equipment visit is placed into one compatible crew's provisional basket. A crew
+ * then receives exactly its basket plus one spare for every equipment kind it uses. The
+ * stock is persisted before Router runs, avoiding a circular "plan first, capacity later"
+ * rule and giving replans a real per-engineer hard limit.
+ */
+function allocateMorningEquipment(
+  requests: readonly ParsedRequest[],
+  brigades: readonly ParsedBrigade[],
+): Map<string, EquipmentColumns> {
+  const demand = new Map(
+    brigades.map((brigade) => [
+      brigade.name,
+      { equipmentRouter: 0, equipmentSetTopBox: 0, equipmentSmartSpeaker: 0 },
+    ]),
+  );
+  const cursor = new Map<EquipmentType, number>();
+  for (const request of requests) {
+    const equipment = importedEquipment(request);
+    if (!equipment) {
+      continue;
+    }
+    const compatible = brigades.filter((brigade) =>
+      synthesizeCrew(brigade.inputOrder).skills.includes(request.skill),
+    );
+    if (compatible.length === 0) {
+      continue;
+    }
+    const position = cursor.get(equipment) ?? 0;
+    const brigade = compatible[position % compatible.length];
+    cursor.set(equipment, position + 1);
+    if (!brigade) {
+      continue;
+    }
+    const row = demand.get(brigade.name);
+    if (!row) {
+      continue;
+    }
+    if (equipment === 'router') row.equipmentRouter += 1;
+    if (equipment === 'set_top_box') row.equipmentSetTopBox += 1;
+    if (equipment === 'smart_speaker') row.equipmentSmartSpeaker += 1;
+  }
+  return new Map(
+    [...demand].map(([name, row]) => [
+      name,
+      {
+        equipmentRouter: row.equipmentRouter > 0 ? row.equipmentRouter + 1 : 0,
+        equipmentSetTopBox: row.equipmentSetTopBox > 0 ? row.equipmentSetTopBox + 1 : 0,
+        equipmentSmartSpeaker: row.equipmentSmartSpeaker > 0 ? row.equipmentSmartSpeaker + 1 : 0,
+      },
+    ]),
+  );
+}
+
+/** Derives only demo equipment absent from the official files; the rule is stable. */
+function importedEquipment(request: ParsedRequest): EquipmentType | null {
+  if (
+    request.workTypeCode === 'router_replacement' ||
+    request.workTypeCode === 'connection_request'
+  ) {
+    return 'router';
+  }
+  if (request.workTypeCode === 'stb_replacement') {
+    return 'set_top_box';
+  }
+  if (request.workTypeCode === 'equipment_order') {
+    const variants: EquipmentType[] = ['router', 'set_top_box', 'smart_speaker'];
+    const numericId = Number.parseInt(request.externalId, 10);
+    return variants[Number.isFinite(numericId) ? numericId % variants.length : 0] ?? 'router';
+  }
+  if (request.workTypeCode === 'convergence') {
+    const numericId = Number.parseInt(request.externalId, 10);
+    return numericId % 5 === 0 ? 'smart_speaker' : null;
+  }
+  return null;
 }

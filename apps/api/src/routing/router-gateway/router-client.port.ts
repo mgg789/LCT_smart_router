@@ -32,6 +32,45 @@ export interface RouterTechnicalSettingsUpdate extends RouterTechnicalSettingsSt
   readonly status: 'accepted';
 }
 
+export const COMPARISON_STRATEGIES = [
+  'fast',
+  'compact',
+  'sla',
+  'balanced',
+  'eco',
+  'baseline',
+] as const;
+export type ComparisonStrategy = (typeof COMPARISON_STRATEGIES)[number];
+
+export interface PolicyComparisonMetrics {
+  readonly requestsTotal: number;
+  readonly assignedCount: number;
+  readonly unassignedCount: number;
+  readonly urgentTotal: number;
+  readonly urgentAssignedCount: number;
+  readonly engineersUsed: number;
+  readonly distanceKm: number;
+  readonly travelTimeSec: number;
+  readonly workTimeSec: number;
+  readonly waitingTimeSec: number;
+  readonly lunchTimeSec: number;
+}
+
+export interface PolicyComparison {
+  readonly inputPublicationId: string;
+  readonly inputHash: string;
+  readonly routerContextVersion: string;
+  readonly computedAt: number;
+  readonly searchBudgetMs: number;
+  readonly rows: ReadonlyArray<{
+    readonly strategyId: ComparisonStrategy;
+    readonly kind: 'policy' | 'baseline';
+    readonly isUsable: boolean;
+    readonly calculationMs: number;
+    readonly metrics: PolicyComparisonMetrics;
+  }>;
+}
+
 /**
  * How the System Layer reaches Router Core.
  *
@@ -65,6 +104,11 @@ export abstract class RouterClient {
     _input: UpdateRouterTechnicalSettings,
   ): Promise<RouterTechnicalSettingsUpdate> {
     throw SysError.notConfigured('Router Core technical settings');
+  }
+
+  /** Compares every prepared policy and FIFO on one immutable current publication. */
+  getPolicyComparison(): Promise<PolicyComparison> {
+    throw SysError.notConfigured('Router Core policy comparison');
   }
 
   abstract isConfigured(): boolean;
@@ -111,6 +155,10 @@ export class NullRouterClient extends RouterClient {
   }
 
   override async updateTechnicalSettings(): Promise<RouterTechnicalSettingsUpdate> {
+    throw SysError.notConfigured('Router Core');
+  }
+
+  override async getPolicyComparison(): Promise<PolicyComparison> {
     throw SysError.notConfigured('Router Core');
   }
 

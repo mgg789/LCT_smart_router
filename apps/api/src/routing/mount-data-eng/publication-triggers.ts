@@ -29,6 +29,7 @@ export const PUBLICATION_TRIGGERS = {
   ENGINEER_PROFILE_CHANGED: 'engineer.profile_changed',
   ENGINEER_WORKDAY_CHANGED: 'engineer.workday_changed',
   ENGINEER_AVAILABILITY_CHANGED: 'engineer.availability_changed',
+  EQUIPMENT_ISSUED: 'engineer.equipment_issued',
   /** The lunch of the day was actually started, so no second one may be planned. */
   ENGINEER_LUNCH_TAKEN: 'engineer.lunch_taken',
   /** A forecast the engineer explicitly reported, already interpreted by sys. */

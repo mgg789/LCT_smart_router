@@ -2,21 +2,30 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DashboardApiError,
   loadDashboardSnapshot,
+  loadPolicyComparison,
   loginDispatcher,
   selectRoutingPolicy,
   setDispatchMode,
+  setEngineerAvailability,
   setLunchesEnabled,
   signOutDispatcher,
 } from '../api/client';
-import type { DashboardSnapshot, PlanDelta, PolicyId } from '../api/types';
+import type {
+  DashboardSnapshot,
+  PlanDelta,
+  PolicyComparisonResponse,
+  PolicyId,
+} from '../api/types';
 import {
   assignmentFor,
   computePlanDelta,
   currentStopId,
+  type DashboardFocus,
   engineerSummaries,
   isExpectedRebuildApplied,
   plannedActivity,
   type RebuildExpectation,
+  reconcileDashboardFocus,
   requestById,
   routeForEngineer,
   unassignedRequests,
@@ -43,33 +52,62 @@ export function useDashboard() {
   const [snapshot, setSnapshot] = useState<DashboardSnapshot | null>(null);
   const [loading, setLoading] = useState(token !== null);
   const [error, setError] = useState<string | null>(null);
-  const [selectedEngineerId, setSelectedEngineerId] = useState<string | null>(null);
-  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
+  const [focus, setFocus] = useState<DashboardFocus>({ engineerId: null, requestId: null });
   const [rebuilding, setRebuilding] = useState(false);
+  const [availabilityPendingId, setAvailabilityPendingId] = useState<string | null>(null);
   const [pendingDelta, setPendingDelta] = useState<PlanDelta | null>(null);
   const [baseline, setBaseline] = useState<RoutingBaseline | null>(null);
+  const [policyComparison, setPolicyComparison] = useState<PolicyComparisonResponse | null>(null);
+  const [policyComparisonLoading, setPolicyComparisonLoading] = useState(false);
+  const [policyComparisonError, setPolicyComparisonError] = useState<string | null>(null);
   const [events, setEvents] = useState<DayEvent[]>([]);
   const refreshInFlight = useRef(false);
+  const comparisonInFlight = useRef(false);
+  const readGeneration = useRef(0);
+  const comparisonRequestId = useRef(0);
 
-  const handleSessionFailure = useCallback((reason: string) => {
-    sessionStorage.removeItem(SESSION_KEY);
-    setToken(null);
-    setSnapshot(null);
-    setLoading(false);
-    setError(reason);
+  const invalidateAsyncReads = useCallback(() => {
+    readGeneration.current += 1;
+    comparisonRequestId.current += 1;
+    refreshInFlight.current = false;
+    comparisonInFlight.current = false;
+    setPolicyComparison(null);
+    setPolicyComparisonLoading(false);
+    setPolicyComparisonError(null);
   }, []);
+
+  const handleSessionFailure = useCallback(
+    (reason: string) => {
+      invalidateAsyncReads();
+      sessionStorage.removeItem(SESSION_KEY);
+      setToken(null);
+      setSnapshot(null);
+      setFocus({ engineerId: null, requestId: null });
+      setLoading(false);
+      setError(reason);
+    },
+    [invalidateAsyncReads],
+  );
 
   const refresh = useCallback(async () => {
     if (!token || refreshInFlight.current) {
       return null;
     }
+    const generation = readGeneration.current;
     refreshInFlight.current = true;
     try {
       const next = await loadDashboardSnapshot(token);
+      if (generation !== readGeneration.current) {
+        return null;
+      }
       setSnapshot(next);
+      setFocus((current) => reconcileDashboardFocus(next, current));
       setError(null);
       return next;
     } catch (cause) {
+      if (generation !== readGeneration.current) {
+        return null;
+      }
       if (cause instanceof DashboardApiError && cause.status === 401) {
         handleSessionFailure('Сессия закончилась. Войдите снова.');
         return null;
@@ -77,8 +115,10 @@ export function useDashboard() {
       setError(errorMessage(cause));
       return null;
     } finally {
-      refreshInFlight.current = false;
-      setLoading(false);
+      if (generation === readGeneration.current) {
+        refreshInFlight.current = false;
+        setLoading(false);
+      }
     }
   }, [handleSessionFailure, token]);
 
@@ -94,19 +134,10 @@ export function useDashboard() {
     return () => window.clearInterval(interval);
   }, [rebuilding, refresh, token]);
 
-  useEffect(() => {
-    if (!snapshot || selectedEngineerId) {
-      return;
-    }
-    const firstRoute = snapshot.plan.plan?.routes[0];
-    if (firstRoute) {
-      setSelectedEngineerId(firstRoute.engineerId);
-      setSelectedRequestId(firstRoute.stops.find((stop) => stop.requestId)?.requestId ?? null);
-    }
-  }, [selectedEngineerId, snapshot]);
-
   const engineers = useMemo(() => (snapshot ? engineerSummaries(snapshot) : []), [snapshot]);
   const unassigned = useMemo(() => (snapshot ? unassignedRequests(snapshot) : []), [snapshot]);
+  const selectedEngineerId = focus.engineerId;
+  const selectedRequestId = focus.requestId;
   const selectedRoute =
     snapshot && selectedEngineerId ? routeForEngineer(snapshot, selectedEngineerId) : null;
   const selectedRequest =
@@ -130,34 +161,41 @@ export function useDashboard() {
     ]);
   }, []);
 
-  const signIn = useCallback(async (email: string, password: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const session = await loginDispatcher(email, password);
-      sessionStorage.setItem(SESSION_KEY, session.token);
-      setToken(session.token);
-    } catch (cause) {
-      setError(errorMessage(cause));
-      setLoading(false);
-    }
-  }, []);
+  const signIn = useCallback(
+    async (email: string, password: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const session = await loginDispatcher(email, password);
+        invalidateAsyncReads();
+        sessionStorage.setItem(SESSION_KEY, session.token);
+        setToken(session.token);
+      } catch (cause) {
+        setError(errorMessage(cause));
+        setLoading(false);
+      }
+    },
+    [invalidateAsyncReads],
+  );
 
   const signOut = useCallback(async () => {
+    invalidateAsyncReads();
     if (token) {
       await signOutDispatcher(token).catch(() => undefined);
     }
     sessionStorage.removeItem(SESSION_KEY);
     setToken(null);
     setSnapshot(null);
+    setFocus({ engineerId: null, requestId: null });
     setPendingDelta(null);
     setBaseline(null);
+    setPolicyComparison(null);
+    setPolicyComparisonError(null);
     setError(null);
-  }, [token]);
+  }, [invalidateAsyncReads, token]);
 
   const clearFocus = useCallback(() => {
-    setSelectedEngineerId(null);
-    setSelectedRequestId(null);
+    setFocus({ engineerId: null, requestId: null });
   }, []);
 
   const selectEngineer = useCallback(
@@ -169,11 +207,8 @@ export function useDashboard() {
         clearFocus();
         return;
       }
-      setSelectedEngineerId(engineerId);
       const current = currentStopId(snapshot, engineerId);
-      if (current) {
-        setSelectedRequestId(current);
-      }
+      setFocus({ engineerId, requestId: current });
     },
     [clearFocus, selectedEngineerId, snapshot],
   );
@@ -183,11 +218,8 @@ export function useDashboard() {
       if (!snapshot) {
         return;
       }
-      setSelectedRequestId(requestId);
       const owner = snapshot.plan.plan?.assignments.find((item) => item.requestId === requestId);
-      if (owner?.engineerId) {
-        setSelectedEngineerId(owner.engineerId);
-      }
+      setFocus({ engineerId: owner?.engineerId ?? null, requestId });
     },
     [snapshot],
   );
@@ -201,7 +233,7 @@ export function useDashboard() {
       const next = (current + offset + unassigned.length) % unassigned.length;
       const request = unassigned[next];
       if (request) {
-        setSelectedRequestId(request.id);
+        setFocus({ engineerId: null, requestId: request.id });
       }
     },
     [unassigned, unassignedIndex],
@@ -223,6 +255,7 @@ export function useDashboard() {
       const previousRevision = previous.plan.plan?.revision ?? null;
       let expectedInputHash: string | null = null;
       let expectedContextVersion = previous.routerContextVersion;
+      invalidateAsyncReads();
       setRebuilding(true);
       setPendingDelta(null);
       setError(null);
@@ -250,6 +283,8 @@ export function useDashboard() {
           routerContextVersion: expectedContextVersion,
         });
         setSnapshot(next);
+        setFocus((current) => reconcileDashboardFocus(next, current));
+        setPolicyComparison(null);
         if (previous.plan.plan && next.plan.plan) {
           setPendingDelta(
             computePlanDelta(
@@ -270,7 +305,7 @@ export function useDashboard() {
         setRebuilding(false);
       }
     },
-    [pushEvent, rebuilding, refresh, snapshot, token],
+    [invalidateAsyncReads, pushEvent, rebuilding, refresh, snapshot, token],
   );
 
   const applyRoutingSettings = useCallback(
@@ -324,6 +359,7 @@ export function useDashboard() {
       if (!token) {
         return;
       }
+      invalidateAsyncReads();
       setError(null);
       try {
         await setDispatchMode(token, mode);
@@ -333,7 +369,98 @@ export function useDashboard() {
         setError(errorMessage(cause));
       }
     },
-    [pushEvent, refresh, token],
+    [invalidateAsyncReads, pushEvent, refresh, token],
+  );
+
+  const refreshPolicyComparison = useCallback(async () => {
+    if (!token || rebuilding || comparisonInFlight.current) {
+      return;
+    }
+    const generation = readGeneration.current;
+    const requestId = ++comparisonRequestId.current;
+    comparisonInFlight.current = true;
+    setPolicyComparisonLoading(true);
+    setPolicyComparisonError(null);
+    try {
+      const next = await loadPolicyComparison(token);
+      if (generation !== readGeneration.current || requestId !== comparisonRequestId.current) {
+        return;
+      }
+      setPolicyComparison(next);
+    } catch (cause) {
+      if (generation !== readGeneration.current || requestId !== comparisonRequestId.current) {
+        return;
+      }
+      if (cause instanceof DashboardApiError && cause.status === 401) {
+        handleSessionFailure('Сессия закончилась. Войдите снова.');
+        return;
+      }
+      setPolicyComparisonError(errorMessage(cause));
+    } finally {
+      if (requestId === comparisonRequestId.current) {
+        comparisonInFlight.current = false;
+        setPolicyComparisonLoading(false);
+      }
+    }
+  }, [handleSessionFailure, rebuilding, token]);
+
+  const updateEngineerAvailability = useCallback(
+    async (engineerId: string, availability: 'online' | 'offline') => {
+      if (!token || !snapshot || rebuilding) {
+        return;
+      }
+      const previous = snapshot;
+      const previousResultId = previous.plan.appliedResult?.resultId ?? null;
+      const previousRevision = previous.plan.plan?.revision ?? null;
+      const solveStartedAtMs = performance.now();
+      invalidateAsyncReads();
+      setAvailabilityPendingId(engineerId);
+      setRebuilding(true);
+      setPendingDelta(null);
+      setBaseline(null);
+      setError(null);
+      pushEvent(
+        availability === 'offline'
+          ? `Отключаем ${engineerName(previous, engineerId)} от линии…`
+          : `Возвращаем ${engineerName(previous, engineerId)} на линию…`,
+      );
+      try {
+        const inputHash = await setEngineerAvailability(token, engineerId, availability);
+        const next = await waitForRebuild(token, {
+          previousRevision,
+          previousResultId,
+          policyId: previous.policyId,
+          lunchesEnabled: previous.lunchesEnabled,
+          inputHash,
+          routerContextVersion: previous.routerContextVersion,
+        });
+        setSnapshot(next);
+        setFocus((current) => reconcileDashboardFocus(next, current));
+        setPolicyComparison(null);
+        if (previous.plan.plan && next.plan.plan) {
+          setPendingDelta(
+            computePlanDelta(
+              previous.plan.plan,
+              next.plan.plan,
+              Math.round(performance.now() - solveStartedAtMs),
+            ),
+          );
+        }
+        pushEvent(
+          `${engineerName(next, engineerId)}: ${availability === 'online' ? 'на линии' : 'отключён'}, применён план rev.${next.plan.plan?.revision ?? '—'}.`,
+        );
+      } catch (cause) {
+        setError(errorMessage(cause));
+        pushEvent(
+          `Не удалось подтвердить перестроение после смены статуса: ${errorMessage(cause)}`,
+        );
+        await refresh();
+      } finally {
+        setAvailabilityPendingId(null);
+        setRebuilding(false);
+      }
+    },
+    [invalidateAsyncReads, pushEvent, rebuilding, refresh, snapshot, token],
   );
 
   return {
@@ -351,7 +478,12 @@ export function useDashboard() {
     selectedActivity,
     unassignedIndex,
     rebuilding,
+    availabilityPendingId,
     pendingDelta,
+    canRejectDelta: baseline !== null,
+    policyComparison,
+    policyComparisonLoading,
+    policyComparisonError,
     events,
     signIn,
     signOut,
@@ -364,6 +496,8 @@ export function useDashboard() {
     acceptDelta,
     rejectDelta,
     setMode,
+    refreshPolicyComparison,
+    updateEngineerAvailability,
   };
 }
 
@@ -388,4 +522,8 @@ function delay(durationMs: number): Promise<void> {
 
 function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : 'Не удалось выполнить запрос';
+}
+
+function engineerName(snapshot: DashboardSnapshot, engineerId: string): string {
+  return snapshot.engineers.find((item) => item.id === engineerId)?.displayName ?? engineerId;
 }

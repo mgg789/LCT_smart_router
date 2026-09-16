@@ -102,6 +102,7 @@ describe('router gateway', () => {
   /** Creates and confirms a request, which also republishes the task. */
   const submitRequest = async (
     workType = 'connection_request',
+    requiredEquipment?: 'router' | 'set_top_box' | 'smart_speaker',
   ): Promise<{ id: string; lat: number; lon: number }> => {
     const prepared = await call('POST', '/api/v1/client/requests', clientToken, {
       operationId: randomUUID(),
@@ -110,6 +111,7 @@ describe('router gateway', () => {
       lat: 55.78,
       lon: 37.66,
       workType,
+      requiredEquipment,
       windowStartAt: now() + HOUR,
       windowEndAt: now() + 3 * HOUR,
     });
@@ -338,7 +340,7 @@ describe('router gateway', () => {
   });
 
   it('applies a valid result as a new immutable plan revision', async () => {
-    const request = await submitRequest();
+    const request = await submitRequest('connection_request', 'router');
     const resultId = unique('result');
     const inputHash = await publishedHash();
     const { body } = await feed(
@@ -368,6 +370,15 @@ describe('router gateway', () => {
     assert.equal(stored.assignmentState, 'assigned');
     // The business stage is untouched: distribution and execution are different things.
     assert.equal(stored.lifecycle, 'submitted');
+
+    const issuedDay = await prisma.engineerDay.findFirstOrThrow({
+      where: { engineerId },
+      orderBy: { workDate: 'desc' },
+    });
+    assert.ok(issuedDay.equipmentIssuedAt, 'the first accepted plan freezes the morning issue');
+    assert.equal(issuedDay.equipmentRouter, 2, 'one assigned router plus one spare is issued');
+    assert.equal(issuedDay.equipmentSetTopBox, 0);
+    assert.equal(issuedDay.equipmentSmartSpeaker, 0);
 
     const planResponse = await call('GET', '/api/v1/dispatch/plan', dispatcherToken);
     const planBody = (await planResponse.json()) as {

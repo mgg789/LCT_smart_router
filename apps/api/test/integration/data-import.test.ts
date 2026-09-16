@@ -207,6 +207,45 @@ describe('official dataset import', () => {
     assert.deepEqual([...transports].sort(), ['bike', 'car', 'transit', 'walk']);
   });
 
+  it('adds deterministic request equipment and engineer-owned morning stock', async () => {
+    const equipped = await prisma.request.findMany({
+      where: { requiredEquipment: { not: null } },
+      select: { requiredEquipment: true },
+    });
+    assert.ok(equipped.length > 0);
+    assert.deepEqual([...new Set(equipped.map((item) => item.requiredEquipment))].sort(), [
+      'router',
+      'set_top_box',
+      'smart_speaker',
+    ]);
+
+    const days = await prisma.engineerDay.findMany({});
+    assert.ok(
+      days.some(
+        (day) =>
+          day.equipmentRouter > 0 || day.equipmentSetTopBox > 0 || day.equipmentSmartSpeaker > 0,
+      ),
+    );
+    for (const day of days) {
+      for (const quantity of [
+        day.equipmentRouter,
+        day.equipmentSetTopBox,
+        day.equipmentSmartSpeaker,
+      ]) {
+        assert.ok(quantity === 0 || quantity >= 2, 'used equipment includes one spare');
+      }
+    }
+
+    const snapshot = await call('GET', '/api/v1/dispatch/debug/snapshot', dispatcherToken);
+    const body = (await snapshot.json()) as { payload: string };
+    const payload = JSON.parse(body.payload) as {
+      requests: Array<{ required_equipment: string | null }>;
+      engineers: Array<{ equipment_stock: Record<string, number> }>;
+    };
+    assert.ok(payload.requests.some((request) => request.required_equipment !== null));
+    assert.ok(payload.engineers.every((engineer) => 'router' in engineer.equipment_stock));
+  });
+
   it('loads every coordinate from the validated offline package', async () => {
     const withoutPoint = await prisma.request.count({ where: { needsGeocoding: true } });
     const total = await prisma.request.count({});

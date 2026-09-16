@@ -8,9 +8,11 @@ import {
 import {
   computePlanDelta,
   engineerSummaries,
+  equipmentLoadout,
   isExpectedRebuildApplied,
   plannedActivity,
   planWithLunches,
+  reconcileDashboardFocus,
   requestById,
   routeVertices,
   unassignedRequests,
@@ -209,5 +211,22 @@ describe('dev dashboard fixture', () => {
       },
     };
     expect(isExpectedRebuildApplied(accepted, expected)).toBe(true);
+  });
+
+  it('keeps explicit general view after a refreshed snapshot', () => {
+    const snapshot = createDevSnapshot();
+    expect(reconcileDashboardFocus(snapshot, { engineerId: null, requestId: null })).toEqual({
+      engineerId: null,
+      requestId: null,
+    });
+  });
+
+  it('calculates morning equipment demand and remaining spare stock', () => {
+    const snapshot = createDevSnapshot();
+    const lines = equipmentLoadout(snapshot, 'eng-sokolov');
+    const router = lines.find((line) => line.type === 'router');
+    expect(router?.stock).toBe(3);
+    expect(router?.spare).toBe(Math.max(0, 3 - (router?.demand ?? 0)));
+    expect(lines).toHaveLength(3);
   });
 });

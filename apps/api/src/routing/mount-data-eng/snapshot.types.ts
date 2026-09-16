@@ -22,6 +22,14 @@ export interface GeoPoint {
 export type SkillCode = 'local' | 'connection' | 'emergency';
 export type TransportCode = 'car' | 'walk' | 'bike' | 'transit';
 export type PriorityCode = 'normal' | 'urgent';
+export type EquipmentCode = 'router' | 'set_top_box' | 'smart_speaker';
+
+/** Engineer-owned stock for the day; v0 never moves it between engineers. */
+export interface SnapshotEquipmentStock {
+  readonly router: number;
+  readonly set_top_box: number;
+  readonly smart_speaker: number;
+}
 
 export interface SnapshotRequest {
   readonly request_id: string;
@@ -36,6 +44,7 @@ export interface SnapshotRequest {
   readonly required_skill: SkillCode;
   /** `null` means the request places no transport restriction. */
   readonly required_transport: TransportCode | null;
+  readonly required_equipment: EquipmentCode | null;
 }
 
 export interface SnapshotLunch {
@@ -70,6 +79,8 @@ export interface SnapshotEngineer {
   readonly availability: 'online' | 'offline';
   /** Forecast return from a technical stop; usually `null` while online. */
   readonly expected_online_at: UnixSeconds | null;
+  /** Morning issue already includes one spare for every equipment kind used by the crew. */
+  readonly equipment_stock: SnapshotEquipmentStock;
   /** The single lunch of the day has been used. Router schedules no second one. */
   readonly lunch_taken: boolean;
   readonly lunch: SnapshotLunch;

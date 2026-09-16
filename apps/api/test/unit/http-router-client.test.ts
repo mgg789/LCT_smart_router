@@ -9,6 +9,49 @@ afterEach(() => {
 });
 
 describe('HttpRouterClient', () => {
+  it('maps one same-snapshot policy comparison without changing Router state', async () => {
+    globalThis.fetch = async (input) => {
+      assert.equal(String(input), 'http://router:8100/v1/policy-comparison');
+      return Response.json({
+        input_publication_id: 'publication-1',
+        input_hash: 'a'.repeat(64),
+        router_context_version: 'context-1',
+        computed_at: 1_800_000_000,
+        search_budget_ms: 2_000,
+        rows: [
+          {
+            strategy_id: 'baseline',
+            kind: 'baseline',
+            is_usable: true,
+            calculation_ms: 4,
+            summary: {
+              requests_total: 5,
+              assigned_count: 4,
+              unassigned_count: 1,
+              urgent_total: 1,
+              urgent_assigned_count: 1,
+              engineers_used: 2,
+              distance_km: 12.5,
+              travel_time_sec: 1800,
+              work_time_sec: 7200,
+              waiting_time_sec: 300,
+              lunch_time_sec: 0,
+            },
+          },
+        ],
+      });
+    };
+    const client = new HttpRouterClient({
+      baseUrl: 'http://router:8100',
+      requestTimeoutMs: 1_000,
+    });
+
+    const comparison = await client.getPolicyComparison();
+    assert.equal(comparison.rows[0]?.strategyId, 'baseline');
+    assert.equal(comparison.rows[0]?.metrics.assignedCount, 4);
+    assert.equal(comparison.inputHash, 'a'.repeat(64));
+  });
+
   it('reads and validates Router result and active context', async () => {
     const calls: string[] = [];
     globalThis.fetch = async (input) => {

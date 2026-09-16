@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 
 from core.contracts import (
+    EquipmentType,
     GeoPoint,
     Plan,
     RouterTaskSnapshot,
@@ -160,7 +161,7 @@ def _task_starts_within_tolerance(previous: Plan, projected: Plan, tolerance: in
     )
 
 
-def _apply_system_policy(
+def apply_system_policy(
     snapshot: RouterTaskSnapshot, settings: SearchSettings
 ) -> RouterTaskSnapshot:
     """Apply Router-owned hard switches without mutating the sys publication."""
@@ -322,6 +323,25 @@ def _search(
     routing.AddDimensionWithVehicleTransits(
         callbacks["job_count"], 0, max(1, len(snapshot.requests)), True, "JobCount"
     )
+    equipment_types: tuple[EquipmentType, ...] = ("router", "set_top_box", "smart_speaker")
+    for equipment_type in equipment_types:
+
+        def equipment_demand(index: int, required: EquipmentType = equipment_type) -> int:
+            node = nodes[manager.IndexToNode(index)]
+            return int(
+                node.kind == "job"
+                and node.job is not None
+                and request_by_id[node.job].required_equipment == required
+            )
+
+        callback = routing.RegisterUnaryTransitCallback(equipment_demand)
+        routing.AddDimensionWithVehicleCapacity(
+            callback,
+            0,
+            [engineer.equipment_stock.quantity(equipment_type) for engineer in engineers],
+            True,
+            f"Equipment_{equipment_type}",
+        )
     time_dimension = routing.GetDimensionOrDie("Time")
     for e, engineer in enumerate(engineers):
         release = release_at(snapshot, engineer)
@@ -533,7 +553,7 @@ def solve(
     """
     settings = settings or SearchSettings()
     travel = configure_travel(travel, settings.technical())
-    snapshot = _apply_system_policy(snapshot, settings)
+    snapshot = apply_system_policy(snapshot, settings)
     policy: PolicySpec = compile_policy(snapshot.policy)
     context_version = context_version or travel.version
     base = baseline(snapshot, travel)

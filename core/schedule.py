@@ -6,6 +6,7 @@ from core.contracts import (
     Assignment,
     Engineer,
     EngineerRoute,
+    EquipmentType,
     Geometry,
     GeoPoint,
     LunchResult,
@@ -57,10 +58,14 @@ def release_at(snapshot: RouterTaskSnapshot, engineer: Engineer) -> int | None:
 
 
 def eligible(snapshot: RouterTaskSnapshot, engineer: Engineer, request: Request) -> bool:
-    """Check static skill/transport/release constraints without assigning a job."""
+    """Check static skill, transport, equipment and release constraints."""
     return (
         request.required_skill in engineer.skills
         and request.required_transport in (None, engineer.transport_type)
+        and (
+            request.required_equipment is None
+            or engineer.equipment_stock.quantity(request.required_equipment) > 0
+        )
         and release_at(snapshot, engineer) is not None
     )
 
@@ -111,6 +116,22 @@ def schedule_steps(
     if lunch_count > 1 or (lunch_count and not active_lunch):
         return None
     if active_lunch and engineer.lunch.required and lunch_count != 1:
+        return None
+    equipment_used: dict[EquipmentType, int] = {
+        "router": 0,
+        "set_top_box": 0,
+        "smart_speaker": 0,
+    }
+    for request_id in (item for item in steps if item is not None):
+        request = request_map.get(request_id)
+        if request is None:
+            return None
+        if request.required_equipment is not None:
+            equipment_used[request.required_equipment] += 1
+    if any(
+        quantity > engineer.equipment_stock.quantity(equipment_type)
+        for equipment_type, quantity in equipment_used.items()
+    ):
         return None
     clock = release or 0
     location = engineer.start_location
@@ -251,7 +272,19 @@ def unassigned_reason(snapshot: RouterTaskSnapshot, request: Request) -> Reason:
         )
     if not transport:
         return reason("NO_TRANSPORT_MATCH", "No skilled engineer has the required transport.")
-    if not any(release_at(snapshot, e) is not None for e in transport):
+    equipped = [
+        engineer
+        for engineer in transport
+        if request.required_equipment is None
+        or engineer.equipment_stock.quantity(request.required_equipment) > 0
+    ]
+    if not equipped:
+        return reason(
+            "NO_EQUIPMENT_STOCK",
+            "No compatible engineer carries the required equipment.",
+            equipment_type=request.required_equipment,
+        )
+    if not any(release_at(snapshot, e) is not None for e in equipped):
         return reason(
             "NO_AVAILABLE_ENGINEER", "No compatible engineer has known usable availability."
         )
@@ -272,6 +305,7 @@ def assemble_plan(
         if s.kind == "job"
     }
     assignments = []
+    engineers = {engineer.engineer_id: engineer for engineer in snapshot.engineers}
     for request in snapshot.requests:
         owner = assigned.get(request.request_id)
         assignments.append(
@@ -281,9 +315,20 @@ def assemble_plan(
                 engineer_id=owner[0] if owner else None,
                 stop_id=owner[1] if owner else None,
                 reasons=[
-                    reason(
-                        "CONSTRAINTS_SATISFIED",
-                        "Skill, transport and schedule constraints verified.",
+                    (
+                        reason(
+                            "CONSTRAINTS_SATISFIED",
+                            "Skill, transport, equipment and schedule constraints verified.",
+                            required_equipment=request.required_equipment,
+                            equipment_stock=engineers[owner[0]].equipment_stock.quantity(
+                                request.required_equipment
+                            ),
+                        )
+                        if request.required_equipment is not None
+                        else reason(
+                            "CONSTRAINTS_SATISFIED",
+                            "Skill, transport and schedule constraints verified.",
+                        )
                     )
                     if owner
                     else unassigned_reason(snapshot, request)

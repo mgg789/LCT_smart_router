@@ -4,6 +4,7 @@ import type {
   AuthSession,
   DashboardSnapshot,
   PlanAssignmentView,
+  PolicyComparisonResponse,
   PolicyId,
   RouterTechnicalSettings,
 } from './types';
@@ -20,6 +21,8 @@ const requestSchema = z.object({
   lat: z.number().nullable(),
   lon: z.number().nullable(),
   needsGeocoding: z.boolean(),
+  geocodeQuality: z.string().nullable(),
+  requiredEquipment: z.enum(['router', 'set_top_box', 'smart_speaker']).nullable(),
   workType: z.string().nullable(),
   workTypeTitle: z.string().nullable(),
   requiredSkill: z.string(),
@@ -53,6 +56,12 @@ const engineerDaySchema = z.object({
   shiftEndAt: z.number().int(),
   availability: z.enum(['online', 'offline', 'technical_break']),
   expectedOnlineAt: z.number().int().nullable(),
+  equipmentStock: z.object({
+    router: z.number().int().nonnegative(),
+    setTopBox: z.number().int().nonnegative(),
+    smartSpeaker: z.number().int().nonnegative(),
+  }),
+  equipmentIssuedAt: z.number().int().nullable(),
   lunch: z.object({
     enabled: z.boolean(),
     durationSec: z.number().int().nullable(),
@@ -212,6 +221,54 @@ const authSessionSchema = z.object({
   expiresAt: z.number().int(),
 });
 
+const policyComparisonSchema = z.object({
+  inputPublicationId: z.string().min(1),
+  inputHash: z.string().min(1),
+  routerContextVersion: z.string().min(1),
+  computedAt: z.number().int(),
+  searchBudgetMs: z.number().int().nonnegative(),
+  rows: z
+    .array(
+      z.object({
+        strategyId: z.enum(['fast', 'compact', 'sla', 'balanced', 'eco', 'baseline']),
+        kind: z.enum(['policy', 'baseline']),
+        isUsable: z.boolean(),
+        calculationMs: z.number().nonnegative(),
+        metrics: z.object({
+          requestsTotal: z.number().int().nonnegative(),
+          assignedCount: z.number().int().nonnegative(),
+          unassignedCount: z.number().int().nonnegative(),
+          urgentTotal: z.number().int().nonnegative(),
+          urgentAssignedCount: z.number().int().nonnegative(),
+          engineersUsed: z.number().int().nonnegative(),
+          distanceKm: z.number().nonnegative(),
+          travelTimeSec: z.number().int().nonnegative(),
+          workTimeSec: z.number().int().nonnegative(),
+          waitingTimeSec: z.number().int().nonnegative(),
+          lunchTimeSec: z.number().int().nonnegative(),
+        }),
+      }),
+    )
+    .length(6)
+    .superRefine((rows, context) => {
+      const strategyIds = new Set(rows.map((row) => row.strategyId));
+      if (strategyIds.size !== 6) {
+        context.addIssue({ code: 'custom', message: 'comparison strategies must be unique' });
+      }
+      if (rows.some((row) => (row.strategyId === 'baseline') !== (row.kind === 'baseline'))) {
+        context.addIssue({ code: 'custom', message: 'comparison strategy kind is inconsistent' });
+      }
+    }),
+});
+
+const availabilityUpdateSchema = z.object({
+  publication: z
+    .object({
+      inputHash: z.string().min(1),
+    })
+    .nullable(),
+});
+
 const reasonSchema = z.object({
   code: z.string(),
   text: z.string(),
@@ -333,6 +390,36 @@ export async function setDispatchMode(token: string, mode: 'auto' | 'manual'): P
     method: 'POST',
     body: JSON.stringify({ operationId: crypto.randomUUID(), mode }),
   });
+}
+
+/** Loads all Router strategies and the official FIFO baseline for one immutable input. */
+export function loadPolicyComparison(token: string): Promise<PolicyComparisonResponse> {
+  return requestJson('/api/v1/dispatch/policy-comparison', policyComparisonSchema, token);
+}
+
+/** Changes an engineer's line availability and returns the publication that must be applied. */
+export async function setEngineerAvailability(
+  token: string,
+  engineerId: string,
+  availability: 'online' | 'offline',
+): Promise<string> {
+  const updated = await requestJson(
+    `/api/v1/dispatch/engineers/${encodeURIComponent(engineerId)}/availability`,
+    availabilityUpdateSchema,
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        operationId: crypto.randomUUID(),
+        availability,
+        expectedOnlineAt: null,
+      }),
+    },
+  );
+  if (!updated.publication) {
+    throw new Error('Backend did not publish the engineer availability change');
+  }
+  return updated.publication.inputHash;
 }
 
 function normalizeAssignment(raw: z.infer<typeof rawAssignmentSchema>): PlanAssignmentView {

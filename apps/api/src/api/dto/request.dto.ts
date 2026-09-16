@@ -25,6 +25,7 @@ export const operationEnvelopeSchema = z.object({
 
 const latitude = z.number().min(-90).max(90);
 const longitude = z.number().min(-180).max(180);
+const equipmentType = z.enum(['router', 'set_top_box', 'smart_speaker']);
 
 export const prepareRequestSchema = operationEnvelopeSchema.extend({
   contactName: z.string().min(1).max(200),
@@ -38,6 +39,8 @@ export const prepareRequestSchema = operationEnvelopeSchema.extend({
   lon: longitude.nullish(),
   /** One of the known types of work; the skill and duration follow from it. */
   workType: z.enum(WORK_TYPE_CODES as [string, ...string[]]),
+  /** Optional portable equipment consumed by the visit. */
+  requiredEquipment: equipmentType.nullish(),
   windowStartAt: unixSeconds,
   windowEndAt: unixSeconds,
   /** The customer's own urgency. It can raise the priority, never lower it. */
@@ -70,6 +73,7 @@ export const dispatcherUpdateRequestSchema = operationEnvelopeSchema
     lat: latitude.nullish(),
     lon: longitude.nullish(),
     urgent: z.boolean().optional(),
+    requiredEquipment: equipmentType.nullish(),
   })
   .refine(
     (value) =>
@@ -78,7 +82,8 @@ export const dispatcherUpdateRequestSchema = operationEnvelopeSchema
       value.addressText !== undefined ||
       value.lat !== undefined ||
       value.lon !== undefined ||
-      value.urgent !== undefined,
+      value.urgent !== undefined ||
+      value.requiredEquipment !== undefined,
     { message: 'Nothing to change' },
   );
 export type DispatcherUpdateRequestDto = z.infer<typeof dispatcherUpdateRequestSchema>;

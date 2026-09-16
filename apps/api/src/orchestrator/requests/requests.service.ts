@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { SysError } from '../../common/errors';
-import type { Priority, Prisma, Request } from '../../generated/prisma/client';
+import type { EquipmentType, Priority, Prisma, Request } from '../../generated/prisma/client';
 import { NotificationsService } from '../../notifications';
 import { assertWriteApplied, type OperationContext } from '../../operations';
 import type { Tx } from '../../persistence';
@@ -13,6 +13,7 @@ export interface PrepareRequestInput {
   readonly lat?: number | null;
   readonly lon?: number | null;
   readonly workType: string;
+  readonly requiredEquipment?: EquipmentType | null;
   readonly windowStartAt: number;
   readonly windowEndAt: number;
   readonly urgent: boolean;
@@ -31,6 +32,7 @@ export interface DispatcherUpdateInput {
   readonly lat?: number | null;
   readonly lon?: number | null;
   readonly urgent?: boolean;
+  readonly requiredEquipment?: EquipmentType | null;
 }
 
 /**
@@ -98,6 +100,10 @@ export class RequestsService {
         documentationDurationSec: spec.documentationDurationSec,
         serviceDurationSec: spec.serviceDurationSec,
         requiredTransport: null,
+        requiredEquipment:
+          input.requiredEquipment === undefined
+            ? defaultEquipment(spec.code)
+            : input.requiredEquipment,
         priority: resolvePriority(spec.priority, input.urgent),
         windowStartAt: BigInt(input.windowStartAt),
         windowEndAt: BigInt(input.windowEndAt),
@@ -242,6 +248,10 @@ export class RequestsService {
         needsGeocoding: movingPoint ? lat === null || lon === null : current.needsGeocoding,
         priority:
           input.urgent === undefined ? current.priority : input.urgent ? 'urgent' : 'normal',
+        requiredEquipment:
+          input.requiredEquipment === undefined
+            ? current.requiredEquipment
+            : input.requiredEquipment,
         assignmentState: 'pending',
         updatedAt: BigInt(context.now),
         version: { increment: 1 },
@@ -392,6 +402,7 @@ function conditionsOf(request: Request): Prisma.InputJsonObject {
     lon: request.lon,
     priority: request.priority,
     requiredSkill: request.requiredSkill,
+    requiredEquipment: request.requiredEquipment,
     normProfileCode: request.normProfileCode,
     normativeTravelDurationSec: request.normativeTravelDurationSec,
     technicalDurationSec: request.technicalDurationSec,
@@ -399,6 +410,17 @@ function conditionsOf(request: Request): Prisma.InputJsonObject {
     serviceDurationSec: request.serviceDurationSec,
     version: request.version,
   };
+}
+
+/** Work types whose wording itself names the consumed device need no extra user choice. */
+function defaultEquipment(workType: string): EquipmentType | null {
+  if (workType === 'router_replacement') {
+    return 'router';
+  }
+  if (workType === 'stb_replacement') {
+    return 'set_top_box';
+  }
+  return null;
 }
 
 function numberOrNull(value: bigint | null): number | null {

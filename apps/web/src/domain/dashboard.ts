@@ -1,5 +1,7 @@
 import type {
   DashboardSnapshot,
+  EquipmentStock,
+  EquipmentType,
   PlanAssignmentView,
   PlanDelta,
   PlanRouteView,
@@ -7,6 +9,19 @@ import type {
   PolicyId,
   RequestView,
 } from '../api/types';
+
+export interface DashboardFocus {
+  readonly engineerId: string | null;
+  readonly requestId: string | null;
+}
+
+export interface EquipmentLoadLine {
+  readonly type: EquipmentType;
+  readonly stock: number;
+  readonly demand: number;
+  readonly spare: number;
+  readonly shortage: number;
+}
 
 export interface RebuildExpectation {
   readonly previousRevision: number | null;
@@ -111,6 +126,60 @@ export function engineerSummaries(snapshot: DashboardSnapshot): EngineerSummary[
       inProgressCount,
     };
   });
+}
+
+/** Preserves explicit general view across polling and only removes selections that disappeared. */
+export function reconcileDashboardFocus(
+  snapshot: DashboardSnapshot,
+  focus: DashboardFocus,
+): DashboardFocus {
+  return {
+    engineerId: snapshot.engineers.some((item) => item.id === focus.engineerId)
+      ? focus.engineerId
+      : null,
+    requestId: snapshot.requests.some((item) => item.id === focus.requestId)
+      ? focus.requestId
+      : null,
+  };
+}
+
+/** Calculates planned demand against the equipment issued to one engineer for the day. */
+export function equipmentLoadout(
+  snapshot: DashboardSnapshot,
+  engineerId: string,
+): EquipmentLoadLine[] {
+  const engineer = snapshot.engineers.find((item) => item.id === engineerId);
+  const stock: EquipmentStock = engineer?.day?.equipmentStock ?? {
+    router: 0,
+    setTopBox: 0,
+    smartSpeaker: 0,
+  };
+  const requestByAssignment = new Map(snapshot.requests.map((request) => [request.id, request]));
+  const demand = { router: 0, set_top_box: 0, smart_speaker: 0 };
+  for (const assignment of snapshot.plan.plan?.assignments ?? []) {
+    if (assignment.engineerId !== engineerId || assignment.status === 'unassigned') {
+      continue;
+    }
+    const equipment = requestByAssignment.get(assignment.requestId)?.requiredEquipment;
+    if (equipment) {
+      demand[equipment] += 1;
+    }
+  }
+  return [
+    equipmentLine('router', stock.router, demand.router),
+    equipmentLine('set_top_box', stock.setTopBox, demand.set_top_box),
+    equipmentLine('smart_speaker', stock.smartSpeaker, demand.smart_speaker),
+  ];
+}
+
+function equipmentLine(type: EquipmentType, stock: number, demand: number): EquipmentLoadLine {
+  return {
+    type,
+    stock,
+    demand,
+    spare: Math.max(0, stock - demand),
+    shortage: Math.max(0, demand - stock),
+  };
 }
 
 export function currentStopId(snapshot: DashboardSnapshot, engineerId: string): string | null {
