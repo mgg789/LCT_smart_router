@@ -9,9 +9,10 @@
   },
   "packageManager": "pnpm@10.28.2",
   "scripts": {
-    "build": "pnpm --filter api build",
+    "build": "pnpm --filter api build && pnpm --filter web build",
     "dev": "pnpm --filter api dev",
-    "test": "pnpm --filter api test",
+    "dev:web": "pnpm --filter web dev",
+    "test": "pnpm --filter api test && pnpm --filter web test",
     "lint": "biome check .",
     "format": "biome format --write .",
     "smoke": "pnpm --filter api smoke",
