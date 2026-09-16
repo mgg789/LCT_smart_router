@@ -2,6 +2,13 @@
   "additionalProperties": false,
   "description": "Complete idempotent replacement of Router-owned technical controls.",
   "properties": {
+    "access_buffer_sec": {
+      "default": 600,
+      "maximum": 86400,
+      "minimum": 0,
+      "title": "Access Buffer Sec",
+      "type": "integer"
+    },
     "departure_lateness_tolerance_sec": {
       "default": 0,
       "maximum": 86400,
@@ -9,13 +16,27 @@
       "title": "Departure Lateness Tolerance Sec",
       "type": "integer"
     },
+    "early_finish_replan_threshold_sec": {
+      "default": 900,
+      "maximum": 86400,
+      "minimum": 0,
+      "title": "Early Finish Replan Threshold Sec",
+      "type": "integer"
+    },
     "expected_context_version": {
       "minLength": 1,
       "title": "Expected Context Version",
       "type": "string"
     },
+    "fixed_travel_time_sec": {
+      "default": 1200,
+      "exclusiveMinimum": 0,
+      "maximum": 86400,
+      "title": "Fixed Travel Time Sec",
+      "type": "integer"
+    },
     "lunches_enabled": {
-      "default": true,
+      "default": false,
       "title": "Lunches Enabled",
       "type": "boolean"
     },
@@ -25,12 +46,28 @@
       "title": "Operation Id",
       "type": "string"
     },
+    "task_overrun_tolerance_sec": {
+      "default": 600,
+      "maximum": 86400,
+      "minimum": 0,
+      "title": "Task Overrun Tolerance Sec",
+      "type": "integer"
+    },
     "task_start_lateness_tolerance_sec": {
       "default": 0,
       "maximum": 86400,
       "minimum": 0,
       "title": "Task Start Lateness Tolerance Sec",
       "type": "integer"
+    },
+    "travel_time_mode": {
+      "default": "graph_with_access_buffer",
+      "enum": [
+        "graph_with_access_buffer",
+        "fixed_normative"
+      ],
+      "title": "Travel Time Mode",
+      "type": "string"
     }
   },
   "required": [

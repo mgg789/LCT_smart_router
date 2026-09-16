@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { type Actor, CurrentActor, Roles } from '../auth';
 import { AppConfigService } from '../common/config';
@@ -7,7 +7,7 @@ import { Clock } from '../common/time';
 import { zodBody } from '../common/validation';
 import { OperationsService } from '../operations';
 import { EngineersService } from '../orchestrator/engineers';
-import { DatasetImportService } from '../orchestrator/imports';
+import { DATASET_REGIONS, DatasetImportService } from '../orchestrator/imports';
 import { PolicyService } from '../orchestrator/policy';
 import { RequestsService } from '../orchestrator/requests';
 import { ResetService } from '../orchestrator/reset';
@@ -22,6 +22,7 @@ import {
   ControlStateService,
   ManualPlanService,
   ResultAcceptanceService,
+  RouterClient,
 } from '../routing/router-gateway';
 import {
   type ImportDatasetDto,
@@ -32,6 +33,7 @@ import {
 import {
   type CreateEngineerDto,
   createEngineerSchema,
+  operationOnlySchema,
   type SetAvailabilityDto,
   type SetWorkdayDto,
   setAvailabilitySchema,
@@ -58,6 +60,10 @@ import {
   dispatcherCreateRequestSchema,
   dispatcherUpdateRequestSchema,
 } from './dto/request.dto';
+import {
+  type UpdateRouterTechnicalSettingsDto,
+  updateRouterTechnicalSettingsSchema,
+} from './dto/router.dto';
 import {
   type EngineerDayView,
   type EngineerView,
@@ -88,6 +94,7 @@ export class DispatchController {
     private readonly control: ControlStateService,
     private readonly manual: ManualPlanService,
     private readonly acceptance: ResultAcceptanceService,
+    private readonly router: RouterClient,
     private readonly imports: DatasetImportService,
     private readonly resetService: ResetService,
     private readonly config: AppConfigService,
@@ -387,6 +394,72 @@ export class DispatchController {
     return { day: outcome.result };
   }
 
+  @Post('engineers/:id/technical-break')
+  @ApiOperation({ summary: 'Take an engineer off the line for a 15-minute technical stop' })
+  async startEngineerTechnicalBreak(
+    @CurrentActor() actor: Actor,
+    @Param('id') id: string,
+    @Body(zodBody(operationOnlySchema)) dto: { operationId: string },
+  ): Promise<{ day: EngineerDayView }> {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'engineer.technical_break',
+        targetRef: id,
+        payload: dto,
+      },
+      async (context) => toDayView(await this.engineers.startTechnicalBreak(context, id)),
+    );
+    return { day: outcome.result };
+  }
+
+  @Get('router/technical-settings')
+  @ApiOperation({ summary: 'Read Router-owned routing and execution controls' })
+  async routerTechnicalSettings() {
+    if (!this.router.isConfigured()) {
+      throw SysError.notConfigured('Router Core');
+    }
+    return this.router.getTechnicalSettings();
+  }
+
+  @Put('router/technical-settings')
+  @ApiOperation({ summary: 'Replace Router-owned routing and execution controls' })
+  async updateRouterTechnicalSettings(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(updateRouterTechnicalSettingsSchema)) dto: UpdateRouterTechnicalSettingsDto,
+  ) {
+    if (!this.router.isConfigured()) {
+      throw SysError.notConfigured('Router Core');
+    }
+    const requested = {
+      operationId: dto.operationId,
+      expectedContextVersion: dto.expectedContextVersion,
+      lunchesEnabled: dto.lunchesEnabled,
+      departureLatenessToleranceSec: dto.departureLatenessToleranceSec,
+      taskStartLatenessToleranceSec: dto.taskStartLatenessToleranceSec,
+      travelTimeMode: dto.travelTimeMode,
+      accessBufferSec: dto.accessBufferSec,
+      fixedTravelTimeSec: dto.fixedTravelTimeSec,
+      earlyFinishReplanThresholdSec: dto.earlyFinishReplanThresholdSec,
+      taskOverrunToleranceSec: dto.taskOverrunToleranceSec,
+    };
+    const outcome = await this.operations.executeExternal(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'router.technical-settings.replace',
+        targetRef: 'router-core',
+        expectedVersion: null,
+        payload: dto,
+      },
+      // Router owns and persists these controls. The external-operation envelope journals
+      // the intent first, then releases the sys transaction before this private HTTP call.
+      () => this.router.updateTechnicalSettings(requested),
+    );
+    return outcome.result;
+  }
+
   @Get('policies')
   @ApiOperation({ summary: 'Prepared policies and the one in force' })
   async policies() {
@@ -620,7 +693,7 @@ export class DispatchController {
   }
 
   @Post('data/import')
-  @ApiOperation({ summary: 'Load one region of the official dataset' })
+  @ApiOperation({ summary: 'Atomically load one, several or all official dataset regions' })
   async importDataset(
     @CurrentActor() actor: Actor,
     @Body(zodBody(importDatasetSchema)) dto: ImportDatasetDto,
@@ -630,16 +703,23 @@ export class DispatchController {
         operationId: dto.operationId,
         actor,
         action: 'data.import',
-        targetRef: dto.region,
+        targetRef: dto.region ?? (dto.regions === 'all' ? 'all' : dto.regions?.join(',')),
         payload: dto,
       },
-      async (context) =>
-        this.imports.importRegion(
+      async (context) => {
+        const regions = dto.region
+          ? [dto.region]
+          : dto.regions === 'all'
+            ? [...DATASET_REGIONS]
+            : (dto.regions ?? []);
+        return this.imports.importRegions(
           context,
-          dto.region,
+          regions,
           this.config.get('DATASET_ROOT'),
           this.config.get('DATASET_TIME_ZONE_OFFSET_SEC'),
-        ),
+          dto.engineerCountPerRegion ?? {},
+        );
+      },
     );
     return outcome.result;
   }

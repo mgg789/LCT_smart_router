@@ -6,10 +6,10 @@
  * concept warns about is a system that republishes on any row changing anywhere.
  *
  * Deliberately absent, and each for a stated reason:
- *   * the passage of time -- there is no timer, and `planning_as_of` does not tick;
+ *   * the passage of time by itself -- only crossing a persisted task-overrun threshold
+ *     changes the projection;
  *   * a GPS point -- voluntary telemetry, not an input to routing;
- *   * a routine arrival, start or completion mark -- following the current plan needs no
- *     re-optimisation; the fact reaches Router in the next justified projection;
+ *   * a routine arrival or problem mark -- neither changes usable capacity;
  *   * silence from an engineer -- an expired estimate does not become `null`, an offline
  *     state or a refusal on its own (context/36 section 5.1);
  *   * reading a result, viewing an alert, signing in, importing knowledge, clearing old
@@ -19,6 +19,12 @@ export const PUBLICATION_TRIGGERS = {
   REQUEST_SUBMITTED: 'request.submitted',
   REQUEST_CONDITIONS_CHANGED: 'request.conditions_changed',
   REQUEST_CANCELLED: 'request.cancelled',
+  /** Started work leaves the free pool and anchors its engineer at the task location. */
+  REQUEST_EXECUTION_STARTED: 'request.execution_started',
+  /** A confirmed finish changed usable capacity by more than the configured threshold. */
+  REQUEST_EXECUTION_VARIANCE: 'request.execution_variance',
+  /** An unfinished task exceeded its normative duration and configured tolerance. */
+  REQUEST_EXECUTION_OVERRUN: 'request.execution_overrun',
   ENGINEER_CREATED: 'engineer.created',
   ENGINEER_PROFILE_CHANGED: 'engineer.profile_changed',
   ENGINEER_WORKDAY_CHANGED: 'engineer.workday_changed',

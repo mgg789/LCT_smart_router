@@ -126,7 +126,7 @@ def test_projection_carries_started_lunch_into_execution_facts(snapshot, graph):
     output = solve(
         task,
         GraphTravel(graph),
-        SearchSettings(time_limit_ms=600, solution_limit=8),
+        SearchSettings(time_limit_ms=600, solution_limit=8, lunches_enabled=True),
     )
     lunch = next(stop for stop in output.main.routes[0].stops if stop.kind == "lunch")
 

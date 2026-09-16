@@ -53,18 +53,6 @@
           "title": "Lunch Taken",
           "type": "boolean"
         },
-        "position_observed_at": {
-          "anyOf": [
-            {
-              "minimum": 0,
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "title": "Position Observed At"
-        },
         "shift_end_at": {
           "minimum": 0,
           "title": "Shift End At",
@@ -112,7 +100,6 @@
         "shift_end_at",
         "start_location",
         "available_from",
-        "position_observed_at",
         "availability",
         "expected_online_at",
         "lunch_taken",

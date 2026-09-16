@@ -1,10 +1,30 @@
 import { z } from 'zod';
 
-export const importDatasetSchema = z.object({
-  operationId: z.uuid(),
-  /** Which region of the official dataset to load. */
-  region: z.enum(['east', 'southeast', 'south_central']),
-});
+const datasetRegion = z.enum(['east', 'southeast', 'south_central']);
+const engineerCount = z.number().int().positive().max(1000);
+
+export const importDatasetSchema = z
+  .object({
+    operationId: z.uuid(),
+    /** Backwards-compatible single-region selector. */
+    region: datasetRegion.optional(),
+    /** A selected set, or every official region in canonical order. */
+    regions: z.union([z.literal('all'), z.array(datasetRegion).min(1)]).optional(),
+    /** Optional deterministic crew cap for benchmark and capacity scenarios. */
+    engineerCountPerRegion: z.partialRecord(datasetRegion, engineerCount).optional(),
+  })
+  .superRefine((value, context) => {
+    if ((value.region === undefined) === (value.regions === undefined)) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Provide exactly one of region or regions',
+        path: ['regions'],
+      });
+    }
+    if (Array.isArray(value.regions) && new Set(value.regions).size !== value.regions.length) {
+      context.addIssue({ code: 'custom', message: 'Regions must be unique', path: ['regions'] });
+    }
+  });
 export type ImportDatasetDto = z.infer<typeof importDatasetSchema>;
 
 export const resetSchema = z.object({

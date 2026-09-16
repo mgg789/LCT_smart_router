@@ -9,6 +9,7 @@ Seconds = Annotated[int, Field(ge=0)]
 PositiveSeconds = Annotated[int, Field(gt=0)]
 Transport = Literal["car", "walk", "bike", "transit"]
 Skill = Literal["local", "connection", "emergency"]
+TravelTimeMode = Literal["graph_with_access_buffer", "fixed_normative"]
 
 
 class Record(BaseModel):
@@ -66,7 +67,6 @@ class Engineer(Record):
     shift_end_at: Seconds
     start_location: GeoPoint
     available_from: Seconds | None
-    position_observed_at: Seconds | None
     availability: Literal["online", "offline"]
     expected_online_at: Seconds | None
     lunch_taken: bool
@@ -109,9 +109,14 @@ class Policy(Record):
 class RouterTechnicalSettings(Record):
     """Persisted Router-owned controls that version the calculation context."""
 
-    lunches_enabled: bool = True
+    lunches_enabled: bool = False
     departure_lateness_tolerance_sec: int = Field(default=0, ge=0, le=86400)
     task_start_lateness_tolerance_sec: int = Field(default=0, ge=0, le=86400)
+    travel_time_mode: TravelTimeMode = "graph_with_access_buffer"
+    access_buffer_sec: int = Field(default=600, ge=0, le=86400)
+    fixed_travel_time_sec: int = Field(default=1200, gt=0, le=86400)
+    early_finish_replan_threshold_sec: int = Field(default=900, ge=0, le=86400)
+    task_overrun_tolerance_sec: int = Field(default=600, ge=0, le=86400)
 
 
 class SnapshotPublicationEnvelope(Record):

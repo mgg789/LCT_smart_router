@@ -9,7 +9,14 @@ from dataclasses import dataclass
 
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 
-from core.contracts import GeoPoint, Plan, RouterTaskSnapshot, RouterTechnicalSettings
+from core.contracts import (
+    GeoPoint,
+    Plan,
+    RouterTaskSnapshot,
+    RouterTechnicalSettings,
+    TravelTimeMode,
+)
+from core.geo import configure_travel
 from core.policy import Criterion, PolicySpec, compile_policy, criterion_values
 from core.schedule import (
     TravelProvider,
@@ -30,9 +37,14 @@ class SearchSettings:
 
     time_limit_ms: int = 3000
     solution_limit: int = 64
-    lunches_enabled: bool = True
+    lunches_enabled: bool = False
     departure_lateness_tolerance_sec: int = 0
     task_start_lateness_tolerance_sec: int = 0
+    travel_time_mode: TravelTimeMode = "graph_with_access_buffer"
+    access_buffer_sec: int = 600
+    fixed_travel_time_sec: int = 1200
+    early_finish_replan_threshold_sec: int = 900
+    task_overrun_tolerance_sec: int = 600
     tolerance_sec: int | None = None
 
     def __post_init__(self):
@@ -46,6 +58,15 @@ class SearchSettings:
             or self.solution_limit < 1
             or self.departure_lateness_tolerance_sec < 0
             or self.task_start_lateness_tolerance_sec < 0
+            or self.travel_time_mode not in ("graph_with_access_buffer", "fixed_normative")
+            or self.access_buffer_sec < 0
+            or self.fixed_travel_time_sec < 1
+            or self.early_finish_replan_threshold_sec < 0
+            or self.task_overrun_tolerance_sec < 0
+            or self.access_buffer_sec > 86400
+            or self.fixed_travel_time_sec > 86400
+            or self.early_finish_replan_threshold_sec > 86400
+            or self.task_overrun_tolerance_sec > 86400
         ):
             raise ValueError("invalid search settings")
 
@@ -55,6 +76,11 @@ class SearchSettings:
             lunches_enabled=self.lunches_enabled,
             departure_lateness_tolerance_sec=self.departure_lateness_tolerance_sec,
             task_start_lateness_tolerance_sec=self.task_start_lateness_tolerance_sec,
+            travel_time_mode=self.travel_time_mode,
+            access_buffer_sec=self.access_buffer_sec,
+            fixed_travel_time_sec=self.fixed_travel_time_sec,
+            early_finish_replan_threshold_sec=self.early_finish_replan_threshold_sec,
+            task_overrun_tolerance_sec=self.task_overrun_tolerance_sec,
         )
 
 
@@ -103,7 +129,7 @@ def _small_change(old: RouterTaskSnapshot, new: RouterTaskSnapshot, tolerance: i
         return False
     for b in new.engineers:
         a = previous_engineers[b.engineer_id]
-        ignore = {"available_from", "position_observed_at"}
+        ignore = {"available_from"}
         if a.model_dump(exclude=ignore) != b.model_dump(exclude=ignore):
             return False
         if a.available_from is None or b.available_from is None:
@@ -506,6 +532,7 @@ def solve(
     Fast keeps engineer count as a final candidate tie-break; compact optimizes it first.
     """
     settings = settings or SearchSettings()
+    travel = configure_travel(travel, settings.technical())
     snapshot = _apply_system_policy(snapshot, settings)
     policy: PolicySpec = compile_policy(snapshot.policy)
     context_version = context_version or travel.version

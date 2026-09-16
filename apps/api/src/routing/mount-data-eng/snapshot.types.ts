@@ -66,7 +66,6 @@ export interface SnapshotEngineer {
    */
   readonly available_from: UnixSeconds | null;
   /** When the position used for the start was observed; `null` if it came from a profile. */
-  readonly position_observed_at: UnixSeconds | null;
   /** Working availability, not a network state. */
   readonly availability: 'online' | 'offline';
   /** Forecast return from a technical stop; usually `null` while online. */
@@ -113,6 +112,8 @@ export interface SnapshotDiagnostics {
   readonly engineersWithoutStartLocation: number;
   /** Engineers whose working day exists but has no shift set yet. */
   readonly engineersWithoutShift: number;
+  /** Engineers still inside a task after its configured overrun tolerance. */
+  readonly engineersOverrun: number;
   /** Engineers with no working day for this horizon. */
   readonly engineersWithoutWorkday: number;
 }

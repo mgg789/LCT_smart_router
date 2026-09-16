@@ -202,7 +202,6 @@ model Account {
   sessions        Session[]
   engineer        Engineer?
   requests        Request[]
-  gpsObservations GpsObservation[]
 
   @@map("accounts")
 }
@@ -374,6 +373,14 @@ model Request {
   lat                Float?
   lon                Float?
   needsGeocoding     Boolean          @default(true) @map("needs_geocoding")
+  /// Canonical normative profile selected from `workTypeHd` by System Layer.
+  normProfileCode    String @map("norm_profile_code")
+  /// Reference road allowance from the normative workbook. Router keeps it separate
+  /// from on-site work and decides whether to use it or graph travel.
+  normativeTravelDurationSec Int @map("normative_travel_duration_sec")
+  technicalDurationSec       Int @map("technical_duration_sec")
+  documentationDurationSec   Int @map("documentation_duration_sec")
+  /// Technical plus documentation time. Road time is deliberately excluded.
   serviceDurationSec Int @map("service_duration_sec")
   /// Window for the *start* of the work, not for its end (context/33 section 5).
   windowStartAt      BigInt @map("window_start_at")
@@ -393,6 +400,13 @@ model Request {
   createdAt          BigInt @map("created_at")
   submittedAt        BigInt? @map("submitted_at")
   startedAt          BigInt? @map("started_at")
+  /// Forecast captured when work starts; reaching it never finishes the request.
+  expectedCompletionAt BigInt? @map("expected_completion_at")
+  /// Time from which routing may schedule the engineer again. It starts as the expected
+  /// completion and changes to the confirmed finish only for a material variance.
+  continuationAvailableAt BigInt? @map("continuation_available_at")
+  /// First time System Layer observed an overrun beyond the configured tolerance.
+  overrunDetectedAt  BigInt? @map("overrun_detected_at")
   completedAt        BigInt? @map("completed_at")
   cancelledAt        BigInt? @map("cancelled_at")
   updatedAt          BigInt @map("updated_at")
@@ -445,24 +459,6 @@ model RequestFact {
 
   @@index([requestId, occurredAt])
   @@map("request_facts")
-}
-
-/// Voluntary telemetry. Collected only: never an input to routing, never an automatic
-/// arrival, never a reconstructed track (context/37 section 5).
-model GpsObservation {
-  id String @id @default(uuid())
-
-  accountId  String @map("account_id")
-  /// Time of the observation itself: an old row does not prove a present position.
-  observedAt BigInt @map("observed_at")
-  recordedAt BigInt @map("recorded_at")
-  lat        Float
-  lon        Float
-
-  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
-
-  @@index([accountId, observedAt])
-  @@map("gps_observations")
 }
 
 // ---------------------------------------------------------------------------

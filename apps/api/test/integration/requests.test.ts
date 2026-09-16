@@ -25,7 +25,16 @@ interface RequestBody {
     windowEndAt: number;
     priority: string;
     requiredSkill: string;
+    normProfileCode: string;
+    normativeTravelDurationSec: number;
+    technicalDurationSec: number;
+    documentationDurationSec: number;
     serviceDurationSec: number;
+    actualDurationSec: number | null;
+    durationVarianceSec: number | null;
+    expectedCompletionAt: number | null;
+    continuationAvailableAt: number | null;
+    overrunDetectedAt: number | null;
     needsGeocoding: boolean;
     lat: number | null;
     lon: number | null;
@@ -148,11 +157,25 @@ describe('request lifecycle', () => {
     const outage = await prepare({ workType: 'outage' });
     assert.equal(outage.requiredSkill, 'emergency');
     assert.equal(outage.priority, 'urgent');
-    assert.ok(outage.serviceDurationSec > 0);
+    assert.equal(outage.normProfileCode, 'outage_tkd');
+    assert.equal(outage.normativeTravelDurationSec, 1200);
+    assert.equal(outage.technicalDurationSec, 4800);
+    assert.equal(outage.documentationDurationSec, 0);
+    assert.equal(outage.serviceDurationSec, 4800);
+    assert.equal(outage.actualDurationSec, null);
+    assert.equal(outage.durationVarianceSec, null);
+    assert.equal(outage.expectedCompletionAt, null);
+    assert.equal(outage.continuationAvailableAt, null);
+    assert.equal(outage.overrunDetectedAt, null);
 
     const replacement = await prepare({ workType: 'router_replacement' });
     assert.equal(replacement.requiredSkill, 'connection');
     assert.equal(replacement.priority, 'normal');
+    assert.equal(replacement.normProfileCode, 'equipment_order');
+    assert.equal(replacement.normativeTravelDurationSec, 1200);
+    assert.equal(replacement.technicalDurationSec, 600);
+    assert.equal(replacement.documentationDurationSec, 600);
+    assert.equal(replacement.serviceDurationSec, 1200);
   });
 
   it("raises the priority on the customer's urgency but never lowers it", async () => {
@@ -162,6 +185,29 @@ describe('request lifecycle', () => {
     // An outage stays urgent even when the customer did not tick the box.
     const outage = await prepare({ workType: 'outage', urgent: false });
     assert.equal(outage.priority, 'urgent');
+  });
+
+  it('accepts normal and urgent unplanned work directly from the dispatcher', async () => {
+    for (const urgent of [false, true]) {
+      const response = await call('POST', '/api/v1/dispatch/requests', dispatcherToken, {
+        operationId: randomUUID(),
+        clientEmail,
+        contactName: 'Unplanned Customer',
+        addressText: 'Москва, ул. Внеплановая, д. 1',
+        lat: 55.75,
+        lon: 37.61,
+        workType: 'monitoring',
+        windowStartAt: DAY + 13 * HOUR,
+        windowEndAt: DAY + 15 * HOUR,
+        urgent,
+      });
+      assert.equal(response.status, 201, await response.clone().text());
+      const request = ((await response.json()) as RequestBody).request;
+      requestIds.push(request.id);
+      assert.equal(request.lifecycle, 'submitted');
+      assert.equal(request.assignmentState, 'pending');
+      assert.equal(request.priority, urgent ? 'urgent' : 'normal');
+    }
   });
 
   it('marks a request without coordinates instead of inventing them', async () => {

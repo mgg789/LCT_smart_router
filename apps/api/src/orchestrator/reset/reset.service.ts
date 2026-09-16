@@ -58,7 +58,7 @@ export class ResetService {
             'client and engineer accounts, roles and profiles',
             'requests with their conditions, assignments and facts',
             'working days, plans, accepted result packages and published snapshots',
-            'gps observations, journals, mail intents and sessions',
+            'journals, mail intents and sessions',
           ],
           preserved: ['source code', '.env', 'database schema', 'the dispatcher account'],
         },
@@ -120,7 +120,6 @@ export class ResetService {
     await tx.engineer.deleteMany({});
     await tx.depot.deleteMany({});
 
-    await tx.gpsObservation.deleteMany({});
     // Unsent intents of the old run are dropped: a letter about a request that no longer
     // exists must not go out later (context/42 DF-24).
     await tx.notificationIntent.deleteMany({});

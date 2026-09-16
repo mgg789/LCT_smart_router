@@ -92,6 +92,10 @@ export class RequestsService {
         // Derived by rule from the type of work; the customer never types these
         // (context/32 section 4.1).
         requiredSkill: spec.skill,
+        normProfileCode: spec.normProfileCode,
+        normativeTravelDurationSec: spec.normativeTravelDurationSec,
+        technicalDurationSec: spec.technicalDurationSec,
+        documentationDurationSec: spec.documentationDurationSec,
         serviceDurationSec: spec.serviceDurationSec,
         requiredTransport: null,
         priority: resolvePriority(spec.priority, input.urgent),
@@ -388,6 +392,10 @@ function conditionsOf(request: Request): Prisma.InputJsonObject {
     lon: request.lon,
     priority: request.priority,
     requiredSkill: request.requiredSkill,
+    normProfileCode: request.normProfileCode,
+    normativeTravelDurationSec: request.normativeTravelDurationSec,
+    technicalDurationSec: request.technicalDurationSec,
+    documentationDurationSec: request.documentationDurationSec,
     serviceDurationSec: request.serviceDurationSec,
     version: request.version,
   };

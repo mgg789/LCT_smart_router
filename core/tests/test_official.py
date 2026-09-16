@@ -54,14 +54,14 @@ def test_official_east_import_rejects_control_drift(tmp_path, official_east_scen
 
 
 def test_official_east_golden(official_east_scenario, official_east_run):
-    assert official_east_scenario.snapshot.policy.policy_id == "fast"
+    assert official_east_scenario.snapshot.policy.policy_id == "compact"
     assert compile_policy(official_east_scenario.snapshot.policy).ordered_criteria == (
         "urgent_unassigned",
         "unassigned",
         "missed_optional_lunches",
-        "travel_time",
-        "distance",
         "engineers_used",
+        "distance",
+        "travel_time",
     )
     baseline = official_east_run.output.baseline
     main = official_east_run.output.main
@@ -106,7 +106,7 @@ def test_explanation_evidence_is_calculation_backed(official_east_run):
     assert appendable.append_incremental_travel_time_sec is not None
     assert appendable.append_incremental_distance_km is not None
 
-    unassigned = next(item for item in evidence if item.request_id == "57299")
+    unassigned = next(item for item in evidence if item.status == "unassigned")
     assert unassigned.reason_codes == ["NO_FEASIBLE_ASSIGNMENT_FOUND"]
     assert unassigned.reasons[0].basis == "calculation_outcome"
     assert any(candidate.solo_feasible for candidate in unassigned.candidates)

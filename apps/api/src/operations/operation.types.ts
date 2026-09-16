@@ -54,6 +54,14 @@ export interface OperationContext {
 export type OperationHandler<T> = (context: OperationContext) => Promise<T>;
 
 /**
+ * A side effect owned by another process.
+ *
+ * The operation envelope reserves and later finalises the durable journal around this
+ * handler, but deliberately invokes it without a database transaction.
+ */
+export type ExternalOperationHandler<T> = () => Promise<T>;
+
+/**
  * Outcome of running an operation.
  *
  * `replayed` distinguishes "we did the work now" from "you asked again and here is what

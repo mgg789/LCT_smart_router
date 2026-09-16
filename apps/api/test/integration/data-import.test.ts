@@ -20,6 +20,7 @@ interface ImportBody {
   requestsWithoutCoordinates: number;
   warnings: string[];
   errors: string[];
+  regionResults?: Array<ImportBody & { region: string }>;
 }
 
 /**
@@ -50,6 +51,15 @@ describe('official dataset import', () => {
     const response = await call('POST', '/api/v1/dispatch/data/import', dispatcherToken, {
       operationId: randomUUID(),
       region,
+    });
+    assert.equal(response.status, 201, await response.clone().text());
+    return (await response.json()) as ImportBody;
+  };
+
+  const importAllRegions = async (): Promise<ImportBody> => {
+    const response = await call('POST', '/api/v1/dispatch/data/import', dispatcherToken, {
+      operationId: randomUUID(),
+      regions: 'all',
     });
     assert.equal(response.status, 201, await response.clone().text());
     return (await response.json()) as ImportBody;
@@ -111,18 +121,29 @@ describe('official dataset import', () => {
     await app?.close();
   });
 
-  it('loads a region, mapping every type of work in the file', async () => {
-    const summary = await importRegion('east');
+  it('atomically loads all regions into one complete routable snapshot', async () => {
+    const summary = await importAllRegions();
 
     assert.equal(summary.applied, true, summary.errors.join('; '));
-    // Nothing is applied when a type cannot be interpreted, so an empty error list is the
-    // proof that the catalogue covers the real data.
     assert.deepEqual(summary.errors, []);
-    assert.ok(
-      summary.requestsCreated > 50,
-      `expected the region's requests, got ${summary.requestsCreated}`,
-    );
-    assert.ok(summary.engineersCreated > 5, 'crews come from the control distribution');
+    assert.equal(summary.requestsCreated, 205);
+    assert.equal(summary.engineersCreated, 35);
+    assert.equal(summary.regionResults?.length, 3);
+
+    const snapshot = await call('GET', '/api/v1/dispatch/debug/snapshot', dispatcherToken);
+    const body = (await snapshot.json()) as {
+      payload: string;
+      diagnostics: { requestsIncluded: number; engineersIncluded: number };
+    };
+    const payload = JSON.parse(body.payload) as {
+      requests: unknown[];
+      engineers: Array<{ input_order: number }>;
+    };
+    assert.equal(payload.requests.length, 205);
+    assert.equal(payload.engineers.length, 35);
+    assert.equal(new Set(payload.engineers.map((item) => item.input_order)).size, 35);
+    assert.equal(body.diagnostics.requestsIncluded, 205);
+    assert.equal(body.diagnostics.engineersIncluded, 35);
   });
 
   it('decodes windows-1251 instead of turning addresses into noise', async () => {
@@ -138,8 +159,10 @@ describe('official dataset import', () => {
     const depot = await prisma.depot.findUnique({ where: { region: 'east' } });
     assert.ok(depot, 'every region carries its office in a row that looks blank');
     assert.match(depot.addressText, /Ленинцев/);
-    // The file has no coordinates for it either, and none are invented.
-    assert.equal(depot.lat, null);
+    assert.ok(
+      depot.lat !== null && depot.lon !== null,
+      'the offline geocode package covers office',
+    );
   });
 
   it('normalises the Moscow prefix without touching house numbers', async () => {
@@ -161,7 +184,11 @@ describe('official dataset import', () => {
     if (outage) {
       assert.equal(outage.requiredSkill, 'emergency');
       assert.equal(outage.priority, 'urgent');
-      assert.ok(outage.serviceDurationSec > 0);
+      assert.equal(outage.normProfileCode, 'outage_tkd');
+      assert.equal(outage.normativeTravelDurationSec, 1200);
+      assert.equal(outage.technicalDurationSec, 4800);
+      assert.equal(outage.documentationDurationSec, 0);
+      assert.equal(outage.serviceDurationSec, 4800);
     }
 
     const engineer = await prisma.engineer.findFirstOrThrow({ where: { region: 'east' } });
@@ -180,17 +207,17 @@ describe('official dataset import', () => {
     assert.deepEqual([...transports].sort(), ['bike', 'car', 'transit', 'walk']);
   });
 
-  it('marks imported requests as awaiting coordinates rather than inventing them', async () => {
+  it('loads every coordinate from the validated offline package', async () => {
     const withoutPoint = await prisma.request.count({ where: { needsGeocoding: true } });
     const total = await prisma.request.count({});
-    assert.equal(withoutPoint, total, 'the dataset has addresses, not coordinates');
+    assert.equal(total, 205);
+    assert.equal(withoutPoint, 0);
 
     const snapshot = await call('GET', '/api/v1/dispatch/debug/snapshot', dispatcherToken);
     const body = (await snapshot.json()) as {
       diagnostics: { requestsWithoutLocation: number };
     };
-    // Counted and visible, not silently missing from the plan.
-    assert.ok(body.diagnostics.requestsWithoutLocation > 0);
+    assert.equal(body.diagnostics.requestsWithoutLocation, 0);
   });
 
   it('recognises the same package by content and creates no duplicates', async () => {
@@ -201,6 +228,17 @@ describe('official dataset import', () => {
     assert.equal(repeated.requestsCreated, 0);
     assert.match(repeated.warnings.join(' '), /already been imported/i);
     assert.equal(await prisma.request.count({}), before);
+  });
+
+  it('refuses to reinterpret an imported region with another crew-count profile', async () => {
+    const before = await prisma.engineer.count({ where: { region: 'east' } });
+    const response = await call('POST', '/api/v1/dispatch/data/import', dispatcherToken, {
+      operationId: randomUUID(),
+      region: 'east',
+      engineerCountPerRegion: { east: 3 },
+    });
+    assert.equal(response.status, 422);
+    assert.equal(await prisma.engineer.count({ where: { region: 'east' } }), before);
   });
 
   it('keeps the arrival order of the file, which the baseline iterates in', async () => {
@@ -284,10 +322,23 @@ describe('official dataset import', () => {
       assert.equal(state.status, 200);
     });
 
-    it('lets the dataset be loaded again after a reset', async () => {
-      const summary = await importRegion('east');
+    it('loads a deterministic crew-count scenario after a reset', async () => {
+      const response = await call('POST', '/api/v1/dispatch/data/import', dispatcherToken, {
+        operationId: randomUUID(),
+        region: 'east',
+        engineerCountPerRegion: { east: 3 },
+      });
+      assert.equal(response.status, 201, await response.clone().text());
+      const summary = (await response.json()) as ImportBody;
       assert.equal(summary.applied, true);
-      assert.ok(summary.requestsCreated > 50);
+      assert.equal(summary.requestsCreated, 66);
+      assert.equal(summary.engineersCreated, 3);
+
+      const snapshot = await call('GET', '/api/v1/dispatch/debug/snapshot', dispatcherToken);
+      const body = (await snapshot.json()) as { payload: string };
+      const payload = JSON.parse(body.payload) as { requests: unknown[]; engineers: unknown[] };
+      assert.equal(payload.requests.length, 66);
+      assert.equal(payload.engineers.length, 3);
     });
   });
 });

@@ -338,6 +338,36 @@ describe('engineers and working days', () => {
     assert.ok(day.expectedOnlineAt && day.expectedOnlineAt > 0);
   });
 
+  it('lets the dispatcher start the same 15-minute technical break', async () => {
+    const { engineer } = await createEngineer();
+    const before = Math.floor(Date.now() / 1000);
+    const response = await call(
+      'POST',
+      `/api/v1/dispatch/engineers/${engineer.id}/technical-break`,
+      dispatcherToken,
+      { operationId: randomUUID() },
+    );
+    assert.equal(response.status, 201, await response.clone().text());
+    const day = ((await response.json()) as DayBody).day;
+    assert.equal(day.availability, 'offline');
+    assert.ok(
+      day.expectedOnlineAt !== null &&
+        day.expectedOnlineAt >= before + 15 * 60 &&
+        day.expectedOnlineAt <= Math.floor(Date.now() / 1000) + 15 * 60,
+    );
+  });
+
+  it('has no GPS collection endpoint in the engineer API', async () => {
+    const { email } = await createEngineer();
+    const token = await signIn(email);
+    const response = await call('POST', '/api/v1/engineer/gps', token, {
+      observedAt: DAY,
+      lat: 55.7,
+      lon: 37.5,
+    });
+    assert.equal(response.status, 404);
+  });
+
   it('clears the expected return when the engineer comes back online', async () => {
     const { email } = await createEngineer();
     const token = await signIn(email);
@@ -374,34 +404,6 @@ describe('engineers and working days', () => {
 
     const stored = await prisma.engineer.findUniqueOrThrow({ where: { id: engineer.id } });
     assert.equal(stored.transportType, 'bike', 'the earlier edit is not silently overwritten');
-  });
-
-  it('stores a position report without letting it drive anything', async () => {
-    const { email, engineer } = await createEngineer();
-    const token = await signIn(email);
-
-    const snapshotsBefore = await prisma.routingSnapshot.count();
-    const response = await call('POST', '/api/v1/engineer/gps', token, {
-      observedAt: DAY + 10 * HOUR,
-      lat: 55.76,
-      lon: 37.64,
-    });
-    assert.equal(response.status, 201);
-
-    const account = await prisma.account.findUniqueOrThrow({ where: { email } });
-    const observations = await prisma.gpsObservation.findMany({
-      where: { accountId: account.id },
-    });
-    assert.equal(observations.length, 1);
-    // The observation time is kept apart from the arrival time, so a late report is never
-    // mistaken for a fresher position (context/37 section 5.2).
-    assert.equal(Number(observations[0]?.observedAt), DAY + 10 * HOUR);
-    assert.ok(observations[0] && observations[0].recordedAt >= observations[0].observedAt);
-
-    // A point publishes no snapshot and confirms no arrival (context/42 DF-09).
-    assert.equal(await prisma.routingSnapshot.count(), snapshotsBefore);
-    const day = await prisma.engineerDay.findFirst({ where: { engineerId: engineer.id } });
-    assert.equal(day?.lunchTaken ?? false, false);
   });
 
   it('does not let one engineer act for another', async () => {

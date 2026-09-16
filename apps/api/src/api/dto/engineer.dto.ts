@@ -84,10 +84,3 @@ export const setWorkdaySchema = operationEnvelopeSchema.extend({
   lunchRequired: z.boolean().optional(),
 });
 export type SetWorkdayDto = z.infer<typeof setWorkdaySchema>;
-
-export const gpsObservationSchema = z.object({
-  observedAt: unixSeconds,
-  lat: latitude,
-  lon: longitude,
-});
-export type GpsObservationDto = z.infer<typeof gpsObservationSchema>;

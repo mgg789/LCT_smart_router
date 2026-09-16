@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 from core.contracts import Engineer, Plan, Request, RouterTaskSnapshot, Skill
 from core.engine import EngineOutput, SearchSettings, solve
 from core.evidence import PlanEvidence, build_plan_evidence
-from core.geo import GraphTravel, RoadGraph
+from core.geo import GraphTravel, RoadGraph, configure_travel
 from core.official import MultiZoneScenario, OfficialScenario
 from core.schedule import validate_plan
 
@@ -116,7 +116,6 @@ def project_remaining_snapshot(
                 update={
                     "start_location": point,
                     "available_from": release,
-                    "position_observed_at": event_at,
                     "lunch_taken": lunch_taken,
                 }
             )
@@ -278,7 +277,7 @@ def run_replanning_events(
     local_day = date.fromisoformat(scenario.config.local_date)
     event_at = int(datetime.combine(local_day, local_time(15, 0), tzinfo=zone).timestamp())
     remaining = project_remaining_snapshot(scenario.snapshot, initial.main, event_at)
-    base_travel = GraphTravel(scenario.graph)
+    base_travel = configure_travel(GraphTravel(scenario.graph), settings.technical())
     event_inputs = [
         (
             "new_normal_request",
@@ -374,7 +373,7 @@ def run_replanning_events(
             },
             remaining,
             traffic_graph,
-            GraphTravel(traffic_graph),
+            configure_travel(GraphTravel(traffic_graph), settings.technical()),
         )
     )
     previous_assignments = _assignment_map(initial.main)
@@ -428,7 +427,7 @@ def run_official_benchmark(
     Returns:
         The validated initial output, evidence, elapsed time and event runs.
     """
-    travel = GraphTravel(scenario.graph)
+    travel = configure_travel(GraphTravel(scenario.graph), settings.technical())
     started = monotonic_time.perf_counter()
     output = solve(scenario.snapshot, travel, settings, context_version=travel.version)
     elapsed = monotonic_time.perf_counter() - started

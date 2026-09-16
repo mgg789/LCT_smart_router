@@ -81,8 +81,10 @@ services:
       ROUTER_DATABASE_URL: postgresql://router_readonly:${ROUTER_DB_PASSWORD:-router_dev_password}@postgres:5432/${POSTGRES_DB:-lct}?sslmode=disable
     command:
       - serve
-      - --official-region
+      - --official-regions
       - east
+      - southeast
+      - south_central
       - --dataset-dir
       - /app/data/dataset/anonymized
       - --host
@@ -90,7 +92,7 @@ services:
       - --port
       - '8100'
       - --budget-ms
-      - '1500'
+      - '${ROUTER_BUDGET_MS:-8000}'
       - --settings
       - /app/state/settings.json
     volumes:

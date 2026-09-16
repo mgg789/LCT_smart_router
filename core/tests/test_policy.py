@@ -6,7 +6,12 @@ from core.engine import SearchSettings, solve
 from core.geo import GraphTravel, RoadGraph
 from core.policy import POLICY_CATALOG_VERSION, compile_policy
 
-SETTINGS = SearchSettings(time_limit_ms=1600, solution_limit=24)
+SETTINGS = SearchSettings(
+    time_limit_ms=1600,
+    solution_limit=24,
+    lunches_enabled=True,
+    access_buffer_sec=0,
+)
 
 
 def _policy_scenario(snapshot, graph, policy_id: str) -> RouterTaskSnapshot:

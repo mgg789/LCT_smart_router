@@ -2,7 +2,7 @@ import { parse } from 'csv-parse/sync';
 import { decode } from 'iconv-lite';
 import { SysError } from '../../common/errors';
 import type { Priority, Skill, WindowOrigin } from '../../generated/prisma/client';
-import { findWorkTypeByTitle } from '../requests/work-type.catalog';
+import { findWorkTypeByTitle, type WorkNormProfileCode } from '../requests/work-type.catalog';
 
 /**
  * Reader for the organisers' dataset.
@@ -20,6 +20,10 @@ export interface ParsedRequest {
   readonly externalId: string;
   readonly workTypeCode: string;
   readonly skill: Skill;
+  readonly normProfileCode: WorkNormProfileCode;
+  readonly normativeTravelDurationSec: number;
+  readonly technicalDurationSec: number;
+  readonly documentationDurationSec: number;
   readonly serviceDurationSec: number;
   readonly priority: Priority;
   readonly windowStartAt: number;
@@ -48,8 +52,7 @@ export interface ParsedRegion {
   readonly brigades: ParsedBrigade[];
   readonly depot: ParsedDepot | null;
   /**
-   * Rows that were skipped for a documented reason -- an empty window, for instance. The
-   * package still applies and the count is reported, so the omission is visible.
+   * Recoverable source anomalies that remain visible after applying the package.
    */
   readonly warnings: string[];
   /**
@@ -72,7 +75,7 @@ const HEADER = {
 } as const;
 
 /** The marker of the hidden office row: the address sits in the type column. */
-const OFFICE_MARKER = 'Адрес Офиса';
+const OFFICE_MARKER = 'адрес офиса';
 
 /**
  * Whole-day window, as stated in the file itself.
@@ -90,6 +93,7 @@ export function parseSyntheticFile(
   timeZoneOffsetSec: number,
 ): ParsedRegion {
   const rows = readRows(content);
+  const sourceDate = findSourceDate(rows);
   const requests: ParsedRequest[] = [];
   const warnings: string[] = [];
   const errors: string[] = [];
@@ -100,7 +104,7 @@ export function parseSyntheticFile(
 
     // The last row of every file carries the regional office, with the address in the
     // type column. It reads as a blank row and is anything but (context/18 section 6.4).
-    if (id === OFFICE_MARKER) {
+    if (id.toLocaleLowerCase('ru-RU') === OFFICE_MARKER) {
       depot = { region, addressText: normalizeAddress((row[HEADER.typeBk] ?? '').trim()) };
       continue;
     }
@@ -123,11 +127,10 @@ export function parseSyntheticFile(
       (row[HEADER.start] ?? '').trim(),
       (row[HEADER.end] ?? '').trim(),
       timeZoneOffsetSec,
+      sourceDate,
     );
     if (!window) {
-      // A documented anomaly of the dataset: some rows carry no window. Skipped and
-      // counted rather than given an invented one (context/18 section 6.2).
-      warnings.push(`No usable time window for request ${id}`);
+      errors.push(`Invalid time window for request ${id}`);
       continue;
     }
 
@@ -136,6 +139,10 @@ export function parseSyntheticFile(
       externalId: id,
       workTypeCode: spec.code,
       skill: spec.skill,
+      normProfileCode: spec.normProfileCode,
+      normativeTravelDurationSec: spec.normativeTravelDurationSec,
+      technicalDurationSec: spec.technicalDurationSec,
+      documentationDurationSec: spec.documentationDurationSec,
       serviceDurationSec: spec.serviceDurationSec,
       priority: spec.priority,
       windowStartAt: window.startAt,
@@ -205,11 +212,19 @@ function parseWindow(
   start: string,
   end: string,
   offsetSec: number,
+  sourceDate: string | null,
 ): { startAt: number; endAt: number; origin: WindowOrigin } | null {
   if (!start && !end) {
-    // No window in the file. Treated as the whole day and marked as such, so the
-    // assumption is never mistaken for something the customer asked for.
-    return null;
+    // The official benchmark treats an absent window as the whole source day. Keeping a
+    // separate origin makes the assumption visible to sys and the Dashboard.
+    if (!sourceDate) {
+      return null;
+    }
+    const startAt = parseLocalMoment(`${sourceDate} 00:00`, offsetSec);
+    const endAt = parseLocalMoment(`${sourceDate} 23:59`, offsetSec);
+    return startAt === null || endAt === null
+      ? null
+      : { startAt, endAt, origin: 'missing_treated_as_full_day' };
   }
 
   const startAt = parseLocalMoment(start, offsetSec);
@@ -231,20 +246,55 @@ function parseWindow(
   };
 }
 
+/** Finds the calendar date carried by the official region package. */
+function findSourceDate(rows: Array<Record<string, string>>): string | null {
+  for (const row of rows) {
+    for (const value of [row[HEADER.start], row[HEADER.end]]) {
+      const match = value?.trim().match(/^(\d{2}\.\d{2}\.\d{4})\s+/);
+      if (match?.[1]) {
+        return match[1];
+      }
+    }
+  }
+  return null;
+}
+
 function parseLocalMoment(value: string, offsetSec: number): number | null {
   const match = value.trim().match(/^(\d{2})\.(\d{2})\.(\d{4})\s+(\d{1,2}):(\d{2})$/);
   if (!match) {
     return null;
   }
   const [, day, month, year, hour, minute] = match;
-  const utc = Date.UTC(
-    Number(year),
-    Number(month) - 1,
-    Number(day),
-    Number(hour),
-    Number(minute),
-    0,
-  );
+  const parts = {
+    day: Number(day),
+    month: Number(month),
+    year: Number(year),
+    hour: Number(hour),
+    minute: Number(minute),
+  };
+  if (
+    parts.month < 1 ||
+    parts.month > 12 ||
+    parts.day < 1 ||
+    parts.day > 31 ||
+    parts.hour < 0 ||
+    parts.hour > 23 ||
+    parts.minute < 0 ||
+    parts.minute > 59
+  ) {
+    return null;
+  }
+  const utc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, 0);
+  const normalized = new Date(utc);
+  if (
+    normalized.getUTCFullYear() !== parts.year ||
+    normalized.getUTCMonth() !== parts.month - 1 ||
+    normalized.getUTCDate() !== parts.day ||
+    normalized.getUTCHours() !== parts.hour ||
+    normalized.getUTCMinutes() !== parts.minute
+  ) {
+    return null;
+  }
   return Math.floor(utc / 1000) - offsetSec;
 }
 

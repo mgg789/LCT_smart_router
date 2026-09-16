@@ -5,9 +5,8 @@ import { toUnixSeconds, type UnixSeconds } from './unix-seconds';
  * Source of "now" for the whole application.
  *
  * Time is injected rather than read from `Date.now()` in place so that acceptance
- * scenarios can move the clock deliberately. It is also a reminder of a system rule:
- * the passage of time is never itself a trigger — it publishes no snapshot and creates
- * no execution fact (context/36 section 5.1).
+ * scenarios can move the clock deliberately. Passage of time creates no execution fact;
+ * it can only make a persisted in-progress task cross its configured overrun threshold.
  */
 export abstract class Clock {
   abstract nowSeconds(): UnixSeconds;

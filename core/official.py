@@ -322,7 +322,6 @@ def load_official_region(
                 "shift_end_at": _epoch(local_day, profile.shift_end, zone),
                 "start_location": office.model_dump(),
                 "available_from": _epoch(local_day, profile.shift_start, zone),
-                "position_observed_at": None,
                 "availability": "online",
                 "expected_online_at": None,
                 "lunch_taken": False,
@@ -393,7 +392,7 @@ def load_official_region(
             "horizon_end_at": _epoch(local_day, config.horizon_end, zone),
             "requests": request_payloads,
             "engineers": engineers,
-            "policy": {"policy_id": "fast", "parameters": {}},
+            "policy": {"policy_id": "compact", "parameters": {}},
         }
     )
     return OfficialScenario(
