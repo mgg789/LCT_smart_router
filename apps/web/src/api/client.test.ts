@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { loadDashboardSnapshot, selectRoutingPolicy, setLunchesEnabled } from './client';
+import {
+  loadDashboardSnapshot,
+  loadPolicyComparison,
+  selectRoutingPolicy,
+  setEngineerAvailability,
+  setLunchesEnabled,
+} from './client';
 
 const request = {
   id: 'request-1',
@@ -10,6 +16,8 @@ const request = {
   lat: 55.75,
   lon: 37.61,
   needsGeocoding: false,
+  geocodeQuality: 'exact',
+  requiredEquipment: 'router',
   workType: 'office',
   workTypeTitle: 'Office connection',
   requiredSkill: 'office',
@@ -54,6 +62,8 @@ const engineer = {
     shiftEndAt: 1_800_028_800,
     availability: 'online',
     expectedOnlineAt: null,
+    equipmentStock: { router: 3, setTopBox: 2, smartSpeaker: 1 },
+    equipmentIssuedAt: 1_799_999_100,
     lunch: {
       enabled: false,
       durationSec: null,
@@ -198,6 +208,60 @@ describe('live dashboard client', () => {
     await expect(selectRoutingPolicy('session-token', 'fast')).resolves.toBe(
       'published-input-hash',
     );
+  });
+
+  it('loads all policy comparison rows for one Router input', async () => {
+    const strategies = ['fast', 'compact', 'sla', 'balanced', 'eco', 'baseline'] as const;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        json({
+          inputPublicationId: 'publication-1',
+          inputHash: 'input-1',
+          routerContextVersion: 'context-1',
+          computedAt: 1_800_000_200,
+          searchBudgetMs: 2_000,
+          rows: strategies.map((strategyId) => ({
+            strategyId,
+            kind: strategyId === 'baseline' ? 'baseline' : 'policy',
+            isUsable: true,
+            calculationMs: 12,
+            metrics: {
+              requestsTotal: 5,
+              assignedCount: 4,
+              unassignedCount: 1,
+              urgentTotal: 1,
+              urgentAssignedCount: 1,
+              engineersUsed: 2,
+              distanceKm: 14.5,
+              travelTimeSec: 2_400,
+              workTimeSec: 10_800,
+              waitingTimeSec: 600,
+              lunchTimeSec: 0,
+            },
+          })),
+        }),
+      ),
+    );
+
+    const comparison = await loadPolicyComparison('session-token');
+    expect(comparison.inputPublicationId).toBe('publication-1');
+    expect(comparison.rows.map((row) => row.strategyId)).toEqual(strategies);
+  });
+
+  it('publishes an engineer availability change for exact rebuild correlation', async () => {
+    let sentBody: unknown = null;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+        sentBody = JSON.parse(String(init?.body));
+        return json({ publication: { inputHash: 'availability-input' } });
+      }),
+    );
+
+    const inputHash = await setEngineerAvailability('session-token', 'engineer/1', 'offline');
+    expect(sentBody).toMatchObject({ availability: 'offline', expectedOnlineAt: null });
+    expect(inputHash).toBe('availability-input');
   });
 });
 

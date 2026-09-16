@@ -14,18 +14,23 @@ from pydantic import ValidationError
 
 from core.contracts import (
     Diagnostic,
+    Policy,
+    PolicyComparison,
+    PolicyComparisonRow,
     RouterResult,
     RouterTaskSnapshot,
     RouterTechnicalSettings,
 )
-from core.engine import EngineMemory, EngineOutput, SearchSettings, solve
+from core.engine import EngineMemory, EngineOutput, SearchSettings, apply_system_policy, solve
 from core.evidence import build_plan_evidence
 from core.geo import GraphTravel, RoadGraph, configure_travel, content_hash
 from core.osrm import OSRMTravel
 from core.policy import POLICY_CATALOG_VERSION, compile_policy
+from core.schedule import baseline, validate_plan
 from core.settings import StoredTechnicalSettingsOperation, TechnicalSettingsStore
 
 MAX_SNAPSHOT_BYTES = 16 * 1024 * 1024
+COMPARISON_POLICY_IDS = ("fast", "compact", "sla", "balanced", "eco")
 
 
 @dataclass(frozen=True)
@@ -213,6 +218,70 @@ def calculate(
     return result, output
 
 
+def calculate_policy_comparison(
+    raw: bytes,
+    publication_id: str,
+    graph: RoadGraph | OSRMTravel,
+    settings: SearchSettings,
+    context_version: str,
+    search_budget_ms: int = 2000,
+) -> PolicyComparison:
+    """Calculate all catalog policies and FIFO on one immutable snapshot.
+
+    The function is intentionally independent from Runtime memory: every policy
+    gets the same cold-start snapshot and bounded budget, and no candidate can
+    affect the active plan or the next replanning anchor.
+    """
+    if not 1 <= search_budget_ms <= 2000:
+        raise ValueError("COMPARISON_BUDGET_INVALID")
+    snapshot = apply_system_policy(parse_snapshot(raw), settings)
+    provider = GraphTravel(graph) if isinstance(graph, RoadGraph) else graph
+    provider = configure_travel(provider, settings.technical())
+    comparison_settings = replace(settings, time_limit_ms=search_budget_ms)
+    rows: list[PolicyComparisonRow] = []
+
+    started = time.monotonic()
+    fifo = baseline(snapshot, provider)
+    validate_plan(snapshot, fifo, provider)
+    baseline_row = PolicyComparisonRow(
+        strategy_id="baseline",
+        kind="baseline",
+        is_usable=fifo.is_usable,
+        calculation_ms=max(0, round((time.monotonic() - started) * 1000)),
+        summary=fifo.summary,
+    )
+    for policy_id in COMPARISON_POLICY_IDS:
+        candidate_snapshot = snapshot.model_copy(
+            update={"policy": Policy(policy_id=policy_id, parameters={})}
+        )
+        started = time.monotonic()
+        output = solve(
+            candidate_snapshot,
+            provider,
+            comparison_settings,
+            memory=None,
+            context_version=context_version,
+        )
+        rows.append(
+            PolicyComparisonRow(
+                strategy_id=policy_id,
+                kind="policy",
+                is_usable=output.main.is_usable,
+                calculation_ms=max(0, round((time.monotonic() - started) * 1000)),
+                summary=output.main.summary,
+            )
+        )
+    rows.append(baseline_row)
+    return PolicyComparison(
+        input_publication_id=publication_id,
+        input_hash=content_hash(raw),
+        router_context_version=context_version,
+        computed_at=int(time.time()),
+        search_budget_ms=search_budget_ms,
+        rows=rows,
+    )
+
+
 class RouterRuntime:
     """One active worker plus one replaceable pending snapshot; no stale publication.
 
@@ -263,6 +332,7 @@ class RouterRuntime:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._operations = settings_store.load_operations() if settings_store is not None else {}
+        self._comparison_cache: dict[tuple[str, str], PolicyComparison] = {}
         self.result = RouterResult(status="pending", router_context_version=self.context_version)
         self.last_path: str | None = None
 
@@ -291,6 +361,79 @@ class RouterRuntime:
         with self._lock:
             return self.result.model_copy(deep=True)
 
+    def compare_policies(self, search_budget_ms: int | None = None) -> PolicyComparison:
+        """Compare six strategies on the ready publication without mutating Runtime."""
+        if search_budget_ms is not None and not 1 <= search_budget_ms <= 2000:
+            raise ValueError("COMPARISON_BUDGET_INVALID")
+        try:
+            publication = self.reader.read()
+        except Exception as exc:
+            raise RuntimeError("ACTIVE_PUBLICATION_UNAVAILABLE") from exc
+        if isinstance(publication, bytes):
+            digest = content_hash(publication)
+            publication = SnapshotPublication(
+                publication_id=f"legacy:{digest}",
+                publication_seq=0,
+                payload=publication,
+                declared_sha256=digest,
+                published_at=int(time.time()),
+            )
+        digest = content_hash(publication.payload)
+        with self._lock:
+            active = self.result.model_copy(deep=True)
+            context_version = self.context_version
+            if (
+                active.status != "ready"
+                or active.input_publication_id is None
+                or active.input_hash is None
+            ):
+                raise RuntimeError("ACTIVE_PUBLICATION_UNAVAILABLE")
+            if (
+                active.input_publication_id != publication.publication_id
+                or active.input_hash != digest
+                or active.router_context_version != context_version
+            ):
+                raise ValueError("PUBLICATION_CHANGED")
+            key = (digest, context_version)
+            graph = copy.deepcopy(self._graph)
+            settings = copy.deepcopy(self.settings)
+            effective_budget_ms = search_budget_ms or min(settings.time_limit_ms, 2000)
+            cached = self._comparison_cache.get(key)
+            if cached is not None and cached.search_budget_ms == effective_budget_ms:
+                return cached.model_copy(deep=True)
+        comparison = calculate_policy_comparison(
+            publication.payload,
+            publication.publication_id,
+            graph,
+            settings,
+            context_version,
+            effective_budget_ms,
+        )
+        try:
+            latest = self.reader.read()
+        except Exception as exc:
+            raise RuntimeError("ACTIVE_PUBLICATION_UNAVAILABLE") from exc
+        if isinstance(latest, bytes):
+            latest_digest = content_hash(latest)
+            latest_id = f"legacy:{latest_digest}"
+        else:
+            latest_digest = content_hash(latest.payload)
+            latest_id = latest.publication_id
+        with self._lock:
+            active = self.result
+            if (
+                latest_id != publication.publication_id
+                or latest_digest != digest
+                or active.status != "ready"
+                or active.input_publication_id != publication.publication_id
+                or active.input_hash != digest
+                or active.router_context_version != context_version
+                or self.context_version != context_version
+            ):
+                raise ValueError("PUBLICATION_CHANGED")
+            self._comparison_cache[key] = comparison
+            return comparison.model_copy(deep=True)
+
     def state(self) -> dict:
         """Expose service state separately from an older result's context version."""
         with self._lock:
@@ -309,6 +452,7 @@ class RouterRuntime:
         self._pending = None
         self._pending_publication_id = None
         self.last_path = None
+        self._comparison_cache.clear()
         self.result = RouterResult(status="pending", router_context_version=self.context_version)
 
     def update_graph(self, graph: RoadGraph) -> None:

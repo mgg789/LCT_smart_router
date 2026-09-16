@@ -38,6 +38,7 @@ interface RequestBody {
     needsGeocoding: boolean;
     lat: number | null;
     lon: number | null;
+    requiredEquipment: string | null;
   };
 }
 
@@ -176,6 +177,13 @@ describe('request lifecycle', () => {
     assert.equal(replacement.technicalDurationSec, 600);
     assert.equal(replacement.documentationDurationSec, 600);
     assert.equal(replacement.serviceDurationSec, 1200);
+    assert.equal(replacement.requiredEquipment, 'router');
+
+    const withoutEquipment = await prepare({
+      workType: 'router_replacement',
+      requiredEquipment: null,
+    });
+    assert.equal(withoutEquipment.requiredEquipment, null);
   });
 
   it("raises the priority on the customer's urgency but never lowers it", async () => {

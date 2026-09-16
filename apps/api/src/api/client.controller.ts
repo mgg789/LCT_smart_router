@@ -63,6 +63,9 @@ export class ClientController {
             lat: dto.lat ?? null,
             lon: dto.lon ?? null,
             workType: dto.workType,
+            ...(dto.requiredEquipment === undefined
+              ? {}
+              : { requiredEquipment: dto.requiredEquipment }),
             windowStartAt: dto.windowStartAt,
             windowEndAt: dto.windowEndAt,
             urgent: dto.urgent,

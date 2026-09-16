@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { SysError } from '../../common/errors';
 import { type AppliedPlan, Prisma } from '../../generated/prisma/client';
 import type { Tx } from '../../persistence';
+import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../mount-data-eng';
 import type { RouterPlan, RouterResult } from './result.types';
 
 /**
@@ -18,6 +19,8 @@ import type { RouterPlan, RouterResult } from './result.types';
  */
 @Injectable()
 export class AppliedPlanService {
+  constructor(private readonly publisher: SnapshotPublisher) {}
+
   /** Stores an accepted automatic result as the new working plan. */
   async applyAutomatic(
     tx: Tx,
@@ -42,6 +45,7 @@ export class AppliedPlanService {
     });
 
     await this.materialise(tx, plan.id, main);
+    await this.issueMorningEquipment(tx, now, main);
     await this.syncAssignmentStates(tx, now, main);
     await this.movePointer(tx, now, plan.id);
     await this.storeAlerts(tx, now, main, result.result_id);
@@ -214,6 +218,78 @@ export class AppliedPlanService {
         },
       });
     }
+  }
+
+  /**
+   * Freezes the first plan's demand plus one spare as physical engineer-owned stock.
+   * Later replans may consume the spare but cannot move stock or issue new units.
+   */
+  private async issueMorningEquipment(tx: Tx, now: number, plan: RouterPlan): Promise<void> {
+    const engineerIds = plan.routes.map((route) => route.engineer_id);
+    if (engineerIds.length === 0) {
+      return;
+    }
+    const days = await tx.engineerDay.findMany({
+      where: { engineerId: { in: engineerIds }, equipmentIssuedAt: null },
+      orderBy: { workDate: 'desc' },
+    });
+    if (days.length === 0) {
+      return;
+    }
+    const requests = await tx.request.findMany({
+      where: { id: { in: plan.assignments.map((assignment) => assignment.request_id) } },
+      select: { id: true, requiredEquipment: true },
+    });
+    const equipmentByRequest = new Map(
+      requests.map((request) => [request.id, request.requiredEquipment]),
+    );
+    const demand = new Map<
+      string,
+      { equipmentRouter: number; equipmentSetTopBox: number; equipmentSmartSpeaker: number }
+    >();
+    for (const assignment of plan.assignments) {
+      if (assignment.status !== 'assigned' || !assignment.engineer_id) {
+        continue;
+      }
+      const equipment = equipmentByRequest.get(assignment.request_id);
+      if (!equipment) {
+        continue;
+      }
+      const row = demand.get(assignment.engineer_id) ?? {
+        equipmentRouter: 0,
+        equipmentSetTopBox: 0,
+        equipmentSmartSpeaker: 0,
+      };
+      if (equipment === 'router') row.equipmentRouter += 1;
+      if (equipment === 'set_top_box') row.equipmentSetTopBox += 1;
+      if (equipment === 'smart_speaker') row.equipmentSmartSpeaker += 1;
+      demand.set(assignment.engineer_id, row);
+    }
+
+    const seen = new Set<string>();
+    for (const day of days) {
+      if (seen.has(day.engineerId)) {
+        continue;
+      }
+      seen.add(day.engineerId);
+      const row = demand.get(day.engineerId) ?? {
+        equipmentRouter: 0,
+        equipmentSetTopBox: 0,
+        equipmentSmartSpeaker: 0,
+      };
+      await tx.engineerDay.update({
+        where: { id: day.id },
+        data: {
+          equipmentRouter: row.equipmentRouter > 0 ? row.equipmentRouter + 1 : 0,
+          equipmentSetTopBox: row.equipmentSetTopBox > 0 ? row.equipmentSetTopBox + 1 : 0,
+          equipmentSmartSpeaker: row.equipmentSmartSpeaker > 0 ? row.equipmentSmartSpeaker + 1 : 0,
+          equipmentIssuedAt: BigInt(now),
+          updatedAt: BigInt(now),
+          version: { increment: 1 },
+        },
+      });
+    }
+    await this.publisher.publishIfChanged(tx, now, PUBLICATION_TRIGGERS.EQUIPMENT_ISSUED);
   }
 
   /**

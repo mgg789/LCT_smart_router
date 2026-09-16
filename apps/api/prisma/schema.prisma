@@ -53,6 +53,14 @@ enum TransportType {
   transit
 }
 
+/// Portable customer equipment carried by one engineer for one working day.
+/// Stock is intentionally engineer-owned in v0: there is no transfer between routes.
+enum EquipmentType {
+  router
+  set_top_box
+  smart_speaker
+}
+
 enum Priority {
   normal
   urgent
@@ -329,6 +337,12 @@ model EngineerDay {
   /// True means the single lunch of the day is used up, not that it has finished.
   lunchTaken         Boolean      @default(false) @map("lunch_taken")
   lunchStartedAt     BigInt? @map("lunch_started_at")
+  /// Morning stock already including the one spare unit for every used equipment kind.
+  equipmentRouter       Int @default(0) @map("equipment_router")
+  equipmentSetTopBox    Int @default(0) @map("equipment_set_top_box")
+  equipmentSmartSpeaker Int @default(0) @map("equipment_smart_speaker")
+  /// First accepted plan freezes the physical morning issue for the rest of the day.
+  equipmentIssuedAt BigInt? @map("equipment_issued_at")
   createdAt          BigInt @map("created_at")
   updatedAt          BigInt @map("updated_at")
   version            Int          @default(1)
@@ -390,6 +404,8 @@ model Request {
   requiredSkill      Skill @map("required_skill")
   /// Null means the request places no transport restriction.
   requiredTransport  TransportType? @map("required_transport")
+  /// Null means that the visit consumes no portable customer equipment.
+  requiredEquipment  EquipmentType? @map("required_equipment")
   /// Source work type, kept so a derived skill or duration can be traced back.
   workTypeHd         String? @map("work_type_hd")
   lifecycle          RequestLifecycle @default(draft)

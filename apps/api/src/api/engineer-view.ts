@@ -27,6 +27,12 @@ export interface EngineerDayView {
   readonly shiftEndAt: number;
   readonly availability: string;
   readonly expectedOnlineAt: number | null;
+  readonly equipmentStock: {
+    readonly router: number;
+    readonly setTopBox: number;
+    readonly smartSpeaker: number;
+  };
+  readonly equipmentIssuedAt: number | null;
   readonly lunch: {
     readonly enabled: boolean;
     readonly durationSec: number | null;
@@ -65,6 +71,12 @@ export function toDayView(day: EngineerDay): EngineerDayView {
     shiftEndAt: Number(day.shiftEndAt),
     availability: day.availability,
     expectedOnlineAt: nullableNumber(day.expectedOnlineAt),
+    equipmentStock: {
+      router: day.equipmentRouter,
+      setTopBox: day.equipmentSetTopBox,
+      smartSpeaker: day.equipmentSmartSpeaker,
+    },
+    equipmentIssuedAt: nullableNumber(day.equipmentIssuedAt),
     lunch: {
       enabled: day.lunchEnabled,
       durationSec: day.lunchDurationSec,

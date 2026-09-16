@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from pydantic import Field
 
-from core.contracts import Record, RouterResult, RouterTechnicalSettings
+from core.contracts import PolicyComparison, Record, RouterResult, RouterTechnicalSettings
 from core.runtime import RouterRuntime
 
 
@@ -49,6 +49,20 @@ def create_app(runtime: RouterRuntime) -> FastAPI:
     def result() -> RouterResult:
         """Read the latest atomic pair, preserving result_id on repeated reads."""
         return runtime.read_result()
+
+    @app.get("/v1/policy-comparison", response_model=PolicyComparison)
+    def policy_comparison() -> PolicyComparison:
+        """Compare the complete policy catalog and FIFO on the active publication."""
+        try:
+            return runtime.compare_policies()
+        except RuntimeError as exc:
+            if str(exc) == "ACTIVE_PUBLICATION_UNAVAILABLE":
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            raise
+        except ValueError as exc:
+            if str(exc) == "PUBLICATION_CHANGED":
+                raise HTTPException(status_code=409, detail=str(exc)) from exc
+            raise
 
     @app.put("/v1/config/tolerance")
     def tolerance(body: ToleranceRequest) -> dict:

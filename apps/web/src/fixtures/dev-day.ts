@@ -371,6 +371,15 @@ function toRequest(place: Place): RequestView {
     lat: place.lat,
     lon: place.lon,
     needsGeocoding: false,
+    geocodeQuality: 'fixture',
+    requiredEquipment:
+      Number(place.id) % 4 === 0
+        ? 'router'
+        : Number(place.id) % 4 === 1
+          ? 'set_top_box'
+          : Number(place.id) % 4 === 2
+            ? 'smart_speaker'
+            : null,
     workType: place.skill,
     workTypeTitle: place.title,
     requiredSkill: place.skill,
@@ -457,6 +466,12 @@ function engineer(
       shiftEndAt: moscowAt(DEV_WORK_DATE, 17),
       availability: 'online',
       expectedOnlineAt: null,
+      equipmentStock: {
+        router: 3,
+        setTopBox: 3,
+        smartSpeaker: 3,
+      },
+      equipmentIssuedAt: moscowAt(DEV_WORK_DATE, 7, 45),
       lunch: {
         enabled: lunchEnabled,
         durationSec: lunchEnabled ? 30 * 60 : null,

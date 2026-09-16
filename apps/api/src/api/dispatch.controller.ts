@@ -160,6 +160,9 @@ export class DispatchController {
           lat: dto.lat ?? null,
           lon: dto.lon ?? null,
           workType: dto.workType,
+          ...(dto.requiredEquipment === undefined
+            ? {}
+            : { requiredEquipment: dto.requiredEquipment }),
           windowStartAt: dto.windowStartAt,
           windowEndAt: dto.windowEndAt,
           urgent: dto.urgent,
@@ -198,6 +201,9 @@ export class DispatchController {
             ...(dto.lat === undefined ? {} : { lat: dto.lat }),
             ...(dto.lon === undefined ? {} : { lon: dto.lon }),
             ...(dto.urgent === undefined ? {} : { urgent: dto.urgent }),
+            ...(dto.requiredEquipment === undefined
+              ? {}
+              : { requiredEquipment: dto.requiredEquipment }),
           }),
         ),
     );
@@ -370,7 +376,10 @@ export class DispatchController {
     @CurrentActor() actor: Actor,
     @Param('id') id: string,
     @Body(zodBody(setAvailabilitySchema)) dto: SetAvailabilityDto,
-  ): Promise<{ day: EngineerDayView }> {
+  ): Promise<{
+    day: EngineerDayView;
+    publication: { publicationId: string; inputHash: string; planningAsOf: number } | null;
+  }> {
     const outcome = await this.operations.execute(
       {
         operationId: dto.operationId,
@@ -391,7 +400,20 @@ export class DispatchController {
           ),
         ),
     );
-    return { day: outcome.result };
+    const current = await this.prisma.routingCurrent.findUnique({
+      where: { id: 'singleton' },
+      include: { snapshot: true },
+    });
+    return {
+      day: outcome.result,
+      publication: current
+        ? {
+            publicationId: current.snapshot.id,
+            inputHash: current.snapshot.inputHash,
+            planningAsOf: Number(current.snapshot.planningAsOf),
+          }
+        : null,
+    };
   }
 
   @Post('engineers/:id/technical-break')
@@ -470,6 +492,30 @@ export class DispatchController {
       policies: this.policyService.list(),
       active: await this.policyService.active(this.prisma),
     };
+  }
+
+  @Get('policy-comparison')
+  @ApiOperation({ summary: 'Compare all prepared policies and FIFO on the current task' })
+  async policyComparison() {
+    if (!this.router.isConfigured()) {
+      throw SysError.notConfigured('Router Core');
+    }
+    const comparison = await this.router.getPolicyComparison();
+    const current = await this.prisma.routingCurrent.findUnique({
+      where: { id: 'singleton' },
+      include: { snapshot: true },
+    });
+    if (
+      !current ||
+      current.snapshot.id !== comparison.inputPublicationId ||
+      current.snapshot.inputHash !== comparison.inputHash
+    ) {
+      throw new SysError(
+        'VERSION_CONFLICT',
+        'Planning data changed while the policy comparison was calculated; retry the read',
+      );
+    }
+    return comparison;
   }
 
   @Post('policy')

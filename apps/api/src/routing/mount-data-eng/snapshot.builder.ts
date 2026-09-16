@@ -57,6 +57,7 @@ export class SnapshotBuilder {
       days.map((day) => day.engineerId),
       horizon,
     );
+    const equipmentByEngineer = await this.remainingEquipment(tx, days, horizon);
 
     const engineers: SnapshotEngineer[] = [];
     let engineersWithoutStartLocation = 0;
@@ -81,7 +82,12 @@ export class SnapshotBuilder {
         engineersOverrun += 1;
         continue;
       }
-      const projected = this.projectEngineer(day.engineer, day, execution);
+      const projected = this.projectEngineer(
+        day.engineer,
+        day,
+        execution,
+        equipmentByEngineer.get(day.engineerId) ?? equipmentStockOf(day),
+      );
       if (!projected) {
         engineersWithoutStartLocation += 1;
         continue;
@@ -133,6 +139,7 @@ export class SnapshotBuilder {
         priority: request.priority,
         required_skill: request.requiredSkill,
         required_transport: request.requiredTransport,
+        required_equipment: request.requiredEquipment,
       });
     }
 
@@ -189,6 +196,7 @@ export class SnapshotBuilder {
     engineer: Engineer,
     day: EngineerDay,
     execution: Request | null,
+    equipmentStock: { router: number; set_top_box: number; smart_speaker: number },
   ): SnapshotEngineer | null {
     const lat = execution?.lat ?? engineer.homeLat;
     const lon = execution?.lon ?? engineer.homeLon;
@@ -224,6 +232,7 @@ export class SnapshotBuilder {
       available_from: availableFrom,
       availability: day.availability,
       expected_online_at: nullableNumber(day.expectedOnlineAt),
+      equipment_stock: equipmentStock,
       lunch_taken: day.lunchTaken,
       lunch: {
         enabled: day.lunchEnabled,
@@ -286,6 +295,50 @@ export class SnapshotBuilder {
     }
     return anchors;
   }
+
+  /**
+   * Subtracts equipment already consumed by a started visit from this engineer's stock.
+   * A request is counted once even when it already has both started and finished facts.
+   */
+  private async remainingEquipment(
+    tx: Tx,
+    days: EngineerDay[],
+    horizon: { start: number; end: number },
+  ): Promise<Map<string, { router: number; set_top_box: number; smart_speaker: number }>> {
+    const remaining = new Map(days.map((day) => [day.engineerId, equipmentStockOf(day)]));
+    const engineerIds = days.map((day) => day.engineerId);
+    if (engineerIds.length === 0) {
+      return remaining;
+    }
+    const facts = await tx.requestFact.findMany({
+      where: {
+        engineerId: { in: engineerIds },
+        kind: 'started',
+        occurredAt: { gte: BigInt(horizon.start), lte: BigInt(horizon.end) },
+      },
+      include: { request: true },
+      orderBy: { occurredAt: 'asc' },
+    });
+    const counted = new Set<string>();
+    for (const fact of facts) {
+      if (!fact.engineerId || !fact.request.requiredEquipment || counted.has(fact.requestId)) {
+        continue;
+      }
+      counted.add(fact.requestId);
+      const stock = remaining.get(fact.engineerId);
+      if (!stock) {
+        continue;
+      }
+      if (fact.request.requiredEquipment === 'router') stock.router = Math.max(0, stock.router - 1);
+      if (fact.request.requiredEquipment === 'set_top_box') {
+        stock.set_top_box = Math.max(0, stock.set_top_box - 1);
+      }
+      if (fact.request.requiredEquipment === 'smart_speaker') {
+        stock.smart_speaker = Math.max(0, stock.smart_speaker - 1);
+      }
+    }
+    return remaining;
+  }
 }
 
 /**
@@ -322,6 +375,18 @@ function hasShift(day: EngineerDay): boolean {
 
 function nullableNumber(value: bigint | null): number | null {
   return value === null ? null : Number(value);
+}
+
+function equipmentStockOf(day: EngineerDay): {
+  router: number;
+  set_top_box: number;
+  smart_speaker: number;
+} {
+  return {
+    router: day.equipmentRouter,
+    set_top_box: day.equipmentSetTopBox,
+    smart_speaker: day.equipmentSmartSpeaker,
+  };
 }
 
 export type { Request as RequestRow };

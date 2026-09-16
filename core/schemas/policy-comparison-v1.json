@@ -1,0 +1,163 @@
+{
+  "$defs": {
+    "PlanMetrics": {
+      "additionalProperties": false,
+      "description": "Snapshot-remaining totals; lunch-only engineers do not count as used.",
+      "properties": {
+        "assigned_count": {
+          "default": 0,
+          "title": "Assigned Count",
+          "type": "integer"
+        },
+        "distance_km": {
+          "default": 0.0,
+          "title": "Distance Km",
+          "type": "number"
+        },
+        "engineers_used": {
+          "default": 0,
+          "title": "Engineers Used",
+          "type": "integer"
+        },
+        "lunch_time_sec": {
+          "default": 0,
+          "title": "Lunch Time Sec",
+          "type": "integer"
+        },
+        "requests_total": {
+          "default": 0,
+          "title": "Requests Total",
+          "type": "integer"
+        },
+        "travel_time_sec": {
+          "default": 0,
+          "title": "Travel Time Sec",
+          "type": "integer"
+        },
+        "unassigned_count": {
+          "default": 0,
+          "title": "Unassigned Count",
+          "type": "integer"
+        },
+        "urgent_assigned_count": {
+          "default": 0,
+          "title": "Urgent Assigned Count",
+          "type": "integer"
+        },
+        "urgent_total": {
+          "default": 0,
+          "title": "Urgent Total",
+          "type": "integer"
+        },
+        "waiting_time_sec": {
+          "default": 0,
+          "title": "Waiting Time Sec",
+          "type": "integer"
+        },
+        "work_time_sec": {
+          "default": 0,
+          "title": "Work Time Sec",
+          "type": "integer"
+        }
+      },
+      "title": "PlanMetrics",
+      "type": "object"
+    },
+    "PolicyComparisonRow": {
+      "additionalProperties": false,
+      "description": "One independently calculated strategy on the shared comparison snapshot.",
+      "properties": {
+        "calculation_ms": {
+          "minimum": 0,
+          "title": "Calculation Ms",
+          "type": "integer"
+        },
+        "is_usable": {
+          "title": "Is Usable",
+          "type": "boolean"
+        },
+        "kind": {
+          "enum": [
+            "policy",
+            "baseline"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "strategy_id": {
+          "enum": [
+            "fast",
+            "compact",
+            "sla",
+            "balanced",
+            "eco",
+            "baseline"
+          ],
+          "title": "Strategy Id",
+          "type": "string"
+        },
+        "summary": {
+          "$ref": "#/$defs/PlanMetrics"
+        }
+      },
+      "required": [
+        "strategy_id",
+        "kind",
+        "is_usable",
+        "calculation_ms",
+        "summary"
+      ],
+      "title": "PolicyComparisonRow",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Fair, cached six-strategy comparison tied to one immutable publication.",
+  "properties": {
+    "computed_at": {
+      "minimum": 0,
+      "title": "Computed At",
+      "type": "integer"
+    },
+    "input_hash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Input Hash",
+      "type": "string"
+    },
+    "input_publication_id": {
+      "minLength": 1,
+      "title": "Input Publication Id",
+      "type": "string"
+    },
+    "router_context_version": {
+      "minLength": 1,
+      "title": "Router Context Version",
+      "type": "string"
+    },
+    "rows": {
+      "items": {
+        "$ref": "#/$defs/PolicyComparisonRow"
+      },
+      "maxItems": 6,
+      "minItems": 6,
+      "title": "Rows",
+      "type": "array"
+    },
+    "search_budget_ms": {
+      "exclusiveMinimum": 0,
+      "maximum": 2000,
+      "title": "Search Budget Ms",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "input_publication_id",
+    "input_hash",
+    "router_context_version",
+    "computed_at",
+    "search_budget_ms",
+    "rows"
+  ],
+  "title": "PolicyComparison",
+  "type": "object"
+}

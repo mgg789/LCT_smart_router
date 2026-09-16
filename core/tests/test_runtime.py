@@ -145,6 +145,18 @@ def test_real_process_and_http_api(snapshot, graph):
         assert result["status"] == "ready", result
         assert result["main"]["summary"]["assigned_count"] == 3
         assert client.get("/v1/result").json()["result_id"] == result["result_id"]
+        comparison = client.get("/v1/policy-comparison")
+        assert comparison.status_code == 200, comparison.text
+        assert comparison.json()["input_publication_id"] == result["input_publication_id"]
+        assert [row["strategy_id"] for row in comparison.json()["rows"]] == [
+            "fast",
+            "compact",
+            "sla",
+            "balanced",
+            "eco",
+            "baseline",
+        ]
+        assert client.get("/v1/result").json()["result_id"] == result["result_id"]
         conflict = client.put(
             "/v1/config/tolerance",
             json={"operation_id": "x", "tolerance_sec": 2, "expected_context_version": "stale"},
@@ -248,3 +260,68 @@ def test_publication_integrity_and_result_states(snapshot):
         RouterResult(status="error")
     error = RouterResult(status="error", errors=[Diagnostic(code="INPUT_INVALID", message="bad")])
     assert error.status == "error"
+
+
+def test_policy_comparison_uses_same_input_and_does_not_mutate_runtime(snapshot, graph):
+    """Six cold comparisons are cached while active plan identity and memory stay intact."""
+    start = snapshot.planning_as_of
+    lunch = snapshot.engineers[0].lunch.model_copy(
+        update={
+            "enabled": True,
+            "duration_sec": 600,
+            "window_start_at": start + 1800,
+            "window_end_at": start + 3600,
+            "required": True,
+        }
+    )
+    snapshot = snapshot.model_copy(
+        update={"engineers": [snapshot.engineers[0].model_copy(update={"lunch": lunch})]}
+    )
+    raw = snapshot.model_dump_json().encode()
+    reader = Reader(raw)
+    executor = ControlledExecutor()
+    runtime = RouterRuntime(
+        reader,
+        graph,
+        SearchSettings(time_limit_ms=100, solution_limit=4),
+        executor=executor,
+    )
+    runtime.tick()
+    executor.complete(0)
+    runtime.tick()
+    before = runtime.read_result()
+    memory = runtime._memory
+
+    comparison = runtime.compare_policies(search_budget_ms=100)
+    cached = runtime.compare_policies(search_budget_ms=100)
+    after = runtime.read_result()
+
+    assert [row.strategy_id for row in comparison.rows] == [
+        "fast",
+        "compact",
+        "sla",
+        "balanced",
+        "eco",
+        "baseline",
+    ]
+    assert comparison.input_publication_id == before.input_publication_id
+    assert comparison.input_hash == before.input_hash
+    assert comparison.router_context_version == before.router_context_version
+    assert comparison.computed_at == cached.computed_at
+    assert comparison.rows == cached.rows
+    assert all(row.summary.lunch_time_sec == 0 for row in comparison.rows)
+    assert after == before
+    assert runtime._memory is memory
+    runtime.close()
+
+
+def test_policy_comparison_api_requires_ready_publication(snapshot, graph):
+    runtime = RouterRuntime(
+        Reader(snapshot.model_dump_json().encode()),
+        graph,
+        executor=ControlledExecutor(),
+    )
+    with TestClient(create_app(runtime)) as client:
+        response = client.get("/v1/policy-comparison")
+    assert response.status_code == 503
+    assert response.json()["detail"] == "ACTIVE_PUBLICATION_UNAVAILABLE"

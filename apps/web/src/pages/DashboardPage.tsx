@@ -1,6 +1,9 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useState } from 'react';
+import type { EquipmentType } from '../api/types';
 import { DayMap } from '../components/DayMap';
+import { EngineersPage } from '../components/EngineersPage';
+import { PolicyComparisonPage } from '../components/PolicyComparisonPage';
 import { PolicyModal } from '../components/PolicyModal';
 import { RouteTimeline } from '../components/RouteTimeline';
 import { activityLabel, plannedActivity } from '../domain/dashboard';
@@ -9,19 +12,22 @@ import { factorLabel, initials, POLICY_LABELS } from '../lib/reasons';
 import { formatClock, formatDayTitle, formatDurationMin, formatKm } from '../lib/time';
 
 const NAV = [
-  { id: 'day', label: 'План дня', active: true },
-  { id: 'requests', label: 'Заявки', active: false },
-  { id: 'engineers', label: 'Инженеры', active: false },
-  { id: 'alerts', label: 'Алерты', active: false },
-  { id: 'policy', label: 'Политика', active: false },
-  { id: 'chats', label: 'Чаты', active: false },
-  { id: 'ai', label: 'AI', active: false },
+  { id: 'day', label: 'План дня', enabled: true },
+  { id: 'policies', label: 'Политики', enabled: true },
+  { id: 'engineers', label: 'Инженеры', enabled: true },
+  { id: 'requests', label: 'Заявки', enabled: false },
+  { id: 'alerts', label: 'Алерты', enabled: false },
+  { id: 'chats', label: 'Чаты', enabled: false },
+  { id: 'ai', label: 'AI', enabled: false },
 ] as const;
+
+type DashboardTab = (typeof NAV)[number]['id'];
 
 export function DashboardPage() {
   const dash = useDashboard();
   const { snapshot } = dash;
   const [policyOpen, setPolicyOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<DashboardTab>('day');
 
   if (!dash.authenticated) {
     return <LoginScreen loading={dash.loading} error={dash.error} onSubmit={dash.signIn} />;
@@ -51,6 +57,9 @@ export function DashboardPage() {
 
   const assignedCount =
     snapshot.plan.plan?.assignments.filter((item) => item.status === 'assigned').length ?? 0;
+  const projectedCoordinateCount = snapshot.requests.filter(
+    (request) => request.geocodeQuality === 'district_centroid_projection',
+  ).length;
 
   return (
     <div className="flex h-full min-h-0 bg-canvas text-ink">
@@ -62,8 +71,24 @@ export function DashboardPage() {
               key={item.id}
               type="button"
               title={item.label}
+              aria-label={item.label}
+              aria-current={activeTab === item.id ? 'page' : undefined}
+              disabled={!item.enabled}
+              onClick={() => {
+                if (!item.enabled) {
+                  return;
+                }
+                setActiveTab(item.id);
+                if (item.id === 'policies') {
+                  void dash.refreshPolicyComparison();
+                }
+              }}
               className={`flex h-10 w-10 items-center justify-center rounded-xl text-[11px] font-semibold ${
-                item.active ? 'bg-ink text-white' : 'text-muted hover:bg-canvas'
+                activeTab === item.id
+                  ? 'bg-ink text-white'
+                  : item.enabled
+                    ? 'text-muted hover:bg-canvas'
+                    : 'cursor-not-allowed text-line'
               }`}
             >
               {item.label.slice(0, 2)}
@@ -114,169 +139,198 @@ export function DashboardPage() {
           </div>
         ) : null}
 
-        <div className="grid min-h-0 flex-1 grid-cols-[320px_minmax(0,1fr)_360px] gap-4 px-4 pb-4">
-          <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl bg-white p-4 shadow-sm">
-            <h1 className="text-[22px] font-semibold">{formatDayTitle(snapshot.workDate)}</h1>
-            <p className="mt-1 text-sm text-muted">
-              {snapshot.requests.length} заявки · {assignedCount} назначены ·{' '}
-              {dash.unassigned.length} без назначения
-            </p>
-            <p className="text-sm text-muted">
-              План от {formatClock(snapshot.plan.plan?.planAsOf ?? snapshot.nowAt)}
-              {dash.rebuilding ? ' · перестраивается' : ''}
-            </p>
-            {dash.events[0] ? (
-              <p className="mt-2 text-[12px] text-muted">{dash.events[0].text}</p>
-            ) : null}
-
-            <div className="mt-5 flex items-center justify-between text-sm">
-              <span className="font-medium">Инженеры · {dash.engineers.length}</span>
-              {dash.selectedEngineerId ? (
-                <button
-                  type="button"
-                  onClick={dash.clearFocus}
-                  className="text-[12px] text-muted hover:text-ink"
-                >
-                  Все маршруты
-                </button>
+        {activeTab === 'day' ? (
+          <div className="grid min-h-0 flex-1 grid-cols-[320px_minmax(0,1fr)_360px] gap-4 px-4 pb-4">
+            <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl bg-white p-4 shadow-sm">
+              <h1 className="text-[22px] font-semibold">{formatDayTitle(snapshot.workDate)}</h1>
+              <p className="mt-1 text-sm text-muted">
+                {snapshot.requests.length} заявки · {assignedCount} назначены ·{' '}
+                {dash.unassigned.length} без назначения
+              </p>
+              <p className="text-sm text-muted">
+                План от {formatClock(snapshot.plan.plan?.planAsOf ?? snapshot.nowAt)}
+                {dash.rebuilding ? ' · перестраивается' : ''}
+              </p>
+              {dash.events[0] ? (
+                <p className="mt-2 text-[12px] text-muted">{dash.events[0].text}</p>
               ) : null}
-            </div>
-            <ul className="mt-2 min-h-0 flex-1 space-y-1 overflow-auto">
-              {dash.engineers.map((engineer) => {
-                const selected = engineer.engineerId === dash.selectedEngineerId;
-                const activity = plannedActivity(snapshot, engineer.engineerId);
-                return (
-                  <li key={engineer.engineerId}>
-                    <button
-                      type="button"
-                      onClick={() => dash.selectEngineer(engineer.engineerId)}
-                      className={`flex w-full items-start gap-3 rounded-2xl px-3 py-3 text-left ${
-                        selected ? 'bg-canvas' : 'hover:bg-canvas/70'
-                      }`}
-                    >
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-line text-xs font-semibold">
-                        {initials(engineer.displayName)}
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="flex items-center justify-between gap-2">
-                          <span className="truncate font-medium">{engineer.displayName}</span>
-                          <span className="text-sm text-muted">
-                            {formatKm(engineer.distanceKm)}
+              {projectedCoordinateCount > 0 ? (
+                <div className="mt-3 rounded-xl bg-canvas px-3 py-2 text-[12px] leading-5 text-muted">
+                  <span className="font-medium text-ink">
+                    {projectedCoordinateCount} точек по центроидам районов.
+                  </span>{' '}
+                  Удалённые точки на юго-востоке и в Кашире входят в официальный регион набора.
+                </div>
+              ) : null}
+
+              <div className="mt-5 flex items-center justify-between text-sm">
+                <span className="font-medium">Инженеры · {dash.engineers.length}</span>
+                {dash.selectedEngineerId ? (
+                  <button
+                    type="button"
+                    onClick={dash.clearFocus}
+                    className="text-[12px] text-muted hover:text-ink"
+                  >
+                    Все маршруты
+                  </button>
+                ) : null}
+              </div>
+              <ul className="mt-2 min-h-0 flex-1 space-y-1 overflow-auto">
+                {dash.engineers.map((engineer) => {
+                  const selected = engineer.engineerId === dash.selectedEngineerId;
+                  const activity = plannedActivity(snapshot, engineer.engineerId);
+                  return (
+                    <li key={engineer.engineerId}>
+                      <button
+                        type="button"
+                        onClick={() => dash.selectEngineer(engineer.engineerId)}
+                        className={`flex w-full items-start gap-3 rounded-2xl px-3 py-3 text-left ${
+                          selected ? 'bg-canvas' : 'hover:bg-canvas/70'
+                        }`}
+                      >
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-line text-xs font-semibold">
+                          {initials(engineer.displayName)}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center justify-between gap-2">
+                            <span className="truncate font-medium">{engineer.displayName}</span>
+                            <span className="text-sm text-muted">
+                              {formatKm(engineer.distanceKm)}
+                            </span>
+                          </span>
+                          <span className="block text-[13px] text-muted">
+                            {activity ? activityLabel(activity.kind) : 'нет плана'} ·{' '}
+                            {engineer.assignedCount} заявок
+                          </span>
+                          <span className="block text-[12px] text-muted">
+                            {engineer.shiftStartAt && engineer.shiftEndAt
+                              ? `${formatClock(engineer.shiftStartAt)}–${formatClock(engineer.shiftEndAt)}`
+                              : 'смена не задана'}{' '}
+                            · выполнено {engineer.doneCount}/{engineer.assignedCount}
                           </span>
                         </span>
-                        <span className="block text-[13px] text-muted">
-                          {activity ? activityLabel(activity.kind) : 'нет плана'} ·{' '}
-                          {engineer.assignedCount} заявок
-                        </span>
-                        <span className="block text-[12px] text-muted">
-                          {engineer.shiftStartAt && engineer.shiftEndAt
-                            ? `${formatClock(engineer.shiftStartAt)}–${formatClock(engineer.shiftEndAt)}`
-                            : 'смена не задана'}{' '}
-                          · выполнено {engineer.doneCount}/{engineer.assignedCount}
-                        </span>
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
 
-            {dash.unassigned.length > 0 ? (
-              <div className="mt-3 rounded-2xl bg-bee px-3 py-3">
-                <div className="px-1 font-semibold">
-                  {dash.unassigned.length} заявки без назначения
+              {dash.unassigned.length > 0 ? (
+                <div className="mt-3 rounded-2xl bg-bee px-3 py-3">
+                  <div className="px-1 font-semibold">
+                    {dash.unassigned.length} заявки без назначения
+                  </div>
+                  <div className="px-1 text-sm">Нет инженера с нужным навыком</div>
+                  <ul className="mt-2 space-y-1">
+                    {dash.unassigned.map((request) => {
+                      const selected = request.id === dash.selectedRequest?.id;
+                      return (
+                        <li key={request.id}>
+                          <button
+                            type="button"
+                            onClick={() => dash.selectRequest(request.id)}
+                            className={`w-full rounded-xl px-2 py-2 text-left text-sm ${
+                              selected ? 'bg-white' : 'hover:bg-white/50'
+                            }`}
+                          >
+                            <span className="font-medium">№{request.id}</span>
+                            <span className="block text-[12px]">
+                              {request.workTypeTitle} · {request.addressText}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
                 </div>
-                <div className="px-1 text-sm">Нет инженера с нужным навыком</div>
-                <ul className="mt-2 space-y-1">
-                  {dash.unassigned.map((request) => {
-                    const selected = request.id === dash.selectedRequest?.id;
-                    return (
-                      <li key={request.id}>
+              ) : null}
+            </section>
+
+            <section className="flex min-h-0 flex-col gap-4">
+              <div className="relative min-h-0 flex-1 overflow-hidden rounded-2xl bg-white shadow-sm">
+                <DayMap
+                  snapshot={snapshot}
+                  selectedEngineerId={dash.selectedEngineerId}
+                  selectedRequestId={dash.selectedRequest?.id ?? null}
+                  onSelectRequest={dash.selectRequest}
+                />
+                <AnimatePresence>
+                  {dash.rebuilding ? (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="absolute left-4 top-4 rounded-full bg-white px-4 py-2 text-sm shadow"
+                    >
+                      Перестраивается…
+                    </motion.div>
+                  ) : null}
+                  {dash.pendingDelta ? (
+                    <motion.div
+                      initial={{ opacity: 0, y: -8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -8 }}
+                      className="absolute left-4 top-4 max-w-md rounded-2xl bg-white p-4 shadow-lg"
+                    >
+                      <p className="text-sm font-semibold">
+                        План пересобран за {dash.pendingDelta.solveMs} мс
+                      </p>
+                      <p className="mt-1 text-sm text-muted">
+                        {dash.pendingDelta.transferred} переданы · {dash.pendingDelta.shifted}{' '}
+                        сдвинуты · риски SLA {dash.pendingDelta.slaBefore} →{' '}
+                        {dash.pendingDelta.slaAfter}
+                      </p>
+                      <div className="mt-3 flex gap-2">
                         <button
                           type="button"
-                          onClick={() => dash.selectRequest(request.id)}
-                          className={`w-full rounded-xl px-2 py-2 text-left text-sm ${
-                            selected ? 'bg-white' : 'hover:bg-white/50'
-                          }`}
+                          onClick={dash.acceptDelta}
+                          className="rounded-full bg-bee px-3 py-1.5 text-sm font-semibold"
                         >
-                          <span className="font-medium">№{request.id}</span>
-                          <span className="block text-[12px]">
-                            {request.workTypeTitle} · {request.addressText}
-                          </span>
+                          Просмотрено
                         </button>
-                      </li>
-                    );
-                  })}
-                </ul>
+                        {dash.canRejectDelta ? (
+                          <button
+                            type="button"
+                            onClick={dash.rejectDelta}
+                            className="rounded-full border border-line px-3 py-1.5 text-sm"
+                          >
+                            Вернуть прежние настройки
+                          </button>
+                        ) : null}
+                      </div>
+                    </motion.div>
+                  ) : null}
+                </AnimatePresence>
               </div>
-            ) : null}
-          </section>
-
-          <section className="flex min-h-0 flex-col gap-4">
-            <div className="relative min-h-0 flex-1 overflow-hidden rounded-2xl bg-white shadow-sm">
-              <DayMap
+              <RouteTimeline
                 snapshot={snapshot}
-                selectedEngineerId={dash.selectedEngineerId}
+                engineerName={dash.selectedEngineer?.displayName ?? 'инженера'}
+                route={dash.selectedRoute}
                 selectedRequestId={dash.selectedRequest?.id ?? null}
                 onSelectRequest={dash.selectRequest}
               />
-              <AnimatePresence>
-                {dash.rebuilding ? (
-                  <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="absolute left-4 top-4 rounded-full bg-white px-4 py-2 text-sm shadow"
-                  >
-                    Перестраивается…
-                  </motion.div>
-                ) : null}
-                {dash.pendingDelta ? (
-                  <motion.div
-                    initial={{ opacity: 0, y: -8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    className="absolute left-4 top-4 max-w-md rounded-2xl bg-white p-4 shadow-lg"
-                  >
-                    <p className="text-sm font-semibold">
-                      План пересобран за {dash.pendingDelta.solveMs} мс
-                    </p>
-                    <p className="mt-1 text-sm text-muted">
-                      {dash.pendingDelta.transferred} переданы · {dash.pendingDelta.shifted}{' '}
-                      сдвинуты · риски SLA {dash.pendingDelta.slaBefore} →{' '}
-                      {dash.pendingDelta.slaAfter}
-                    </p>
-                    <div className="mt-3 flex gap-2">
-                      <button
-                        type="button"
-                        onClick={dash.acceptDelta}
-                        className="rounded-full bg-bee px-3 py-1.5 text-sm font-semibold"
-                      >
-                        Просмотрено
-                      </button>
-                      <button
-                        type="button"
-                        onClick={dash.rejectDelta}
-                        className="rounded-full border border-line px-3 py-1.5 text-sm"
-                      >
-                        Вернуть прежние настройки
-                      </button>
-                    </div>
-                  </motion.div>
-                ) : null}
-              </AnimatePresence>
-            </div>
-            <RouteTimeline
-              snapshot={snapshot}
-              engineerName={dash.selectedEngineer?.displayName ?? 'инженера'}
-              route={dash.selectedRoute}
-              selectedRequestId={dash.selectedRequest?.id ?? null}
-              onSelectRequest={dash.selectRequest}
-            />
-          </section>
+            </section>
 
-          <RequestPanel dash={dash} />
-        </div>
+            <RequestPanel dash={dash} />
+          </div>
+        ) : activeTab === 'policies' ? (
+          <PolicyComparisonPage
+            snapshot={snapshot}
+            comparison={dash.policyComparison}
+            loading={dash.policyComparisonLoading}
+            error={dash.policyComparisonError}
+            onRefresh={() => void dash.refreshPolicyComparison()}
+          />
+        ) : activeTab === 'engineers' ? (
+          <EngineersPage
+            snapshot={snapshot}
+            pendingEngineerId={dash.availabilityPendingId}
+            rebuilding={dash.rebuilding}
+            onAvailabilityChange={(engineerId, availability) =>
+              void dash.updateEngineerAvailability(engineerId, availability)
+            }
+          />
+        ) : null}
       </div>
     </div>
   );
@@ -415,6 +469,11 @@ function RequestPanel({ dash }: { readonly dash: ReturnType<typeof useDashboard>
         <span className="rounded-full bg-white/10 px-3 py-1">
           {request.priority === 'urgent' ? 'Срочная' : 'Обычная'}
         </span>
+        <span className="rounded-full bg-white/10 px-3 py-1">
+          {request.requiredEquipment
+            ? equipmentLabel(request.requiredEquipment)
+            : 'Без оборудования'}
+        </span>
       </div>
 
       <div className="mt-5 space-y-3 text-sm">
@@ -478,4 +537,13 @@ function RequestPanel({ dash }: { readonly dash: ReturnType<typeof useDashboard>
       </div>
     </aside>
   );
+}
+
+function equipmentLabel(type: EquipmentType): string {
+  const labels: Record<EquipmentType, string> = {
+    router: 'Роутер',
+    set_top_box: 'ТВ-приставка',
+    smart_speaker: 'Умная колонка',
+  };
+  return labels[type];
 }

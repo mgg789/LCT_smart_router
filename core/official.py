@@ -332,6 +332,7 @@ def load_official_region(
                     "window_end_at": None,
                     "required": False,
                 },
+                "equipment_stock": {"router": 0, "set_top_box": 0, "smart_speaker": 0},
             }
         )
         engineer_details[engineer_id] = {

@@ -20,6 +20,9 @@ export interface RequestView {
   readonly workType: string | null;
   readonly workTypeTitle: string | null;
   readonly requiredSkill: string;
+  readonly requiredEquipment: string | null;
+  /** Quality marker from the prepared offline coordinate package, when known. */
+  readonly geocodeQuality: string | null;
   readonly normProfileCode: string;
   readonly normativeTravelDurationSec: number;
   readonly technicalDurationSec: number;
@@ -59,6 +62,8 @@ export function toRequestView(request: Request): RequestView {
     workType: request.workTypeHd,
     workTypeTitle: workType?.title ?? null,
     requiredSkill: request.requiredSkill,
+    requiredEquipment: request.requiredEquipment,
+    geocodeQuality: geocodeQualityOf(request.origin, request.region),
     normProfileCode: request.normProfileCode,
     normativeTravelDurationSec: request.normativeTravelDurationSec,
     technicalDurationSec: request.technicalDurationSec,
@@ -81,6 +86,13 @@ export function toRequestView(request: Request): RequestView {
     completedAt: nullableNumber(request.completedAt),
     cancelledAt: nullableNumber(request.cancelledAt),
   };
+}
+
+function geocodeQualityOf(origin: string, region: string | null): string | null {
+  if (origin !== 'import') {
+    return null;
+  }
+  return region === 'east' ? 'address_match' : 'district_centroid_projection';
 }
 
 /** Returns confirmed on-site duration only when both engineer facts are present. */

@@ -7,6 +7,14 @@
  */
 
 export type PolicyId = 'compact' | 'fast' | 'sla' | 'balanced' | 'eco';
+export type StrategyId = PolicyId | 'baseline';
+export type EquipmentType = 'router' | 'set_top_box' | 'smart_speaker';
+
+export interface EquipmentStock {
+  readonly router: number;
+  readonly setTopBox: number;
+  readonly smartSpeaker: number;
+}
 
 export interface PolicySpec {
   readonly policyId: PolicyId;
@@ -24,6 +32,8 @@ export interface RequestView {
   readonly lat: number | null;
   readonly lon: number | null;
   readonly needsGeocoding: boolean;
+  readonly geocodeQuality: string | null;
+  readonly requiredEquipment: EquipmentType | null;
   readonly workType: string | null;
   readonly workTypeTitle: string | null;
   readonly requiredSkill: string;
@@ -70,6 +80,8 @@ export interface EngineerDayView {
   readonly shiftEndAt: number;
   readonly availability: 'online' | 'offline' | 'technical_break';
   readonly expectedOnlineAt: number | null;
+  readonly equipmentStock: EquipmentStock;
+  readonly equipmentIssuedAt: number | null;
   readonly lunch: {
     readonly enabled: boolean;
     readonly durationSec: number | null;
@@ -234,4 +246,35 @@ export interface PlanDelta {
   readonly slaAfter: number;
   readonly solveMs: number;
   readonly notes: string[];
+}
+
+export interface PolicyComparisonMetrics {
+  readonly requestsTotal: number;
+  readonly assignedCount: number;
+  readonly unassignedCount: number;
+  readonly urgentTotal: number;
+  readonly urgentAssignedCount: number;
+  readonly engineersUsed: number;
+  readonly distanceKm: number;
+  readonly travelTimeSec: number;
+  readonly workTimeSec: number;
+  readonly waitingTimeSec: number;
+  readonly lunchTimeSec: number;
+}
+
+export interface PolicyComparisonRow {
+  readonly strategyId: StrategyId;
+  readonly kind: 'policy' | 'baseline';
+  readonly isUsable: boolean;
+  readonly calculationMs: number;
+  readonly metrics: PolicyComparisonMetrics;
+}
+
+export interface PolicyComparisonResponse {
+  readonly inputPublicationId: string;
+  readonly inputHash: string;
+  readonly routerContextVersion: string;
+  readonly computedAt: number;
+  readonly searchBudgetMs: number;
+  readonly rows: PolicyComparisonRow[];
 }
