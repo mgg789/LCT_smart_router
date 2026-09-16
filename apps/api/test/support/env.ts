@@ -32,6 +32,9 @@ process.env.NODE_ENV = 'test';
 process.env.AUTH_DEV_EXPOSE_CODES = 'true';
 // Tests run from apps/api; the dataset lives at the repository root.
 process.env.DATASET_ROOT = resolve(process.cwd(), '../../data/dataset/anonymized');
+// AppModule tests use the deterministic in-process Router client. The real Docker Router is
+// exercised by the repository smoke command and must not race database integration tests.
+delete process.env.ROUTER_BASE_URL;
 
 if (!process.env.DATABASE_URL) {
   throw new Error(

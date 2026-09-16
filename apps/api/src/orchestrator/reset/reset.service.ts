@@ -65,7 +65,7 @@ export class ResetService {
       });
     }
 
-    await this.clearApplicationData(context.tx);
+    const previousPublicationSeq = await this.clearApplicationData(context.tx);
 
     // A new generation marks the boundary of the new working set, so a late write from
     // before the reset cannot be applied to it (context/37 section 9.6).
@@ -80,6 +80,10 @@ export class ResetService {
     // The contour gets a valid, empty task through the ordinary mechanism. sys does not
     // reach into Router's memory to clear anything.
     await this.publisher.publishIfChanged(context.tx, context.now, PUBLICATION_TRIGGERS.DATA_RESET);
+    await context.tx.routingCurrent.update({
+      where: { id: 'singleton' },
+      data: { pointerVersion: previousPublicationSeq + 1 },
+    });
 
     this.logger.warn(`Application data reset to "${kind}" state; generation ${generation}`);
     return { kind, generation, startupProfile: kind };
@@ -92,7 +96,11 @@ export class ResetService {
    * reset there is no manual plan left to protect, and the concept leaves the resulting
    * mode unspecified rather than requiring MANUAL to persist (context/37 section 9.3).
    */
-  private async clearApplicationData(tx: Tx): Promise<void> {
+  private async clearApplicationData(tx: Tx): Promise<number> {
+    const currentPublication = await tx.routingCurrent.findUnique({
+      where: { id: 'singleton' },
+      select: { pointerVersion: true },
+    });
     await tx.appliedPlanCurrent.deleteMany({});
     await tx.appliedPlanStop.deleteMany({});
     await tx.appliedPlanRoute.deleteMany({});
@@ -138,6 +146,11 @@ export class ResetService {
     // Numbering starts again with the data it numbers.
     await tx.$executeRawUnsafe('ALTER SEQUENCE request_arrival_order_seq RESTART WITH 0');
     await tx.$executeRawUnsafe('ALTER SEQUENCE engineer_input_order_seq RESTART WITH 0');
+
+    // Router keeps the latest publication sequence in memory to reject stale pointer
+    // rollbacks. Reset replaces the whole working set, but its first empty publication
+    // must still advance that sequence so the running Router can accept the new generation.
+    return currentPublication?.pointerVersion ?? 0;
   }
 
   private async nextGeneration(tx: Tx, now: number): Promise<number> {

@@ -22,6 +22,7 @@ _API_TRANSPORT: dict[Transport, str] = {
     "transit": "public_transport",
 }
 _UNREACHABLE = {"ROUTE_NOT_FOUND", "ROUTE_DOES_NOT_EXISTS"}
+_CACHE_READ_ERRORS = (OSError, json.JSONDecodeError)
 PublicTransportType = Literal[
     "pedestrian",
     "metro",
@@ -235,7 +236,7 @@ class TwoGISMatrixProvider:
         if cache_path.exists():
             try:
                 data = json.loads(cache_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
+            except _CACHE_READ_ERRORS:
                 raise ValueError("TWOGIS_CACHE_INVALID: expected valid JSON") from None
             if not isinstance(data, dict):
                 raise ValueError("TWOGIS_CACHE_INVALID: expected object")

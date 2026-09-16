@@ -9,8 +9,7 @@ import type { RouterResult } from './result.types';
  * client returns, without Router needing to know or stop computing
  * (context/32 section 7.2).
  *
- * A port rather than a concrete client because Router Core does not exist yet and its
- * HTTP surface is an openly missing contract (docs/api.md). Nothing here guesses at it.
+ * A port keeps the optional null transport and private-network HTTP transport interchangeable.
  */
 export abstract class RouterClient {
   /** The current result, whatever its status. */
@@ -49,6 +48,7 @@ export class NullRouterClient extends RouterClient {
       schema_version: '1.0',
       status: 'pending',
       result_id: null,
+      input_publication_id: null,
       input_hash: null,
       planning_as_of: null,
       computed_at: null,

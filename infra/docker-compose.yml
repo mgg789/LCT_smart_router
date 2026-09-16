@@ -53,6 +53,55 @@ services:
       postgres:
         condition: service_healthy
 
+  router-db-bootstrap:
+    image: pgvector/pgvector:pg17
+    restart: 'no'
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-lct_dev_password}
+      ROUTER_DB_PASSWORD: ${ROUTER_DB_PASSWORD:-router_dev_password}
+    volumes:
+      - ./postgres/enable-router-login.sql:/bootstrap/enable-router-login.sql:ro
+    command:
+      - sh
+      - -ec
+      - >-
+        psql --host=postgres --username=${POSTGRES_USER:-lct} --dbname=${POSTGRES_DB:-lct}
+        --set=ON_ERROR_STOP=1 --set=router_password="$${ROUTER_DB_PASSWORD}"
+        --file=/bootstrap/enable-router-login.sql
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  router:
+    build:
+      context: ..
+      dockerfile: core/Dockerfile
+    restart: unless-stopped
+    environment:
+      ROUTER_DATABASE_URL: postgresql://router_readonly:${ROUTER_DB_PASSWORD:-router_dev_password}@postgres:5432/${POSTGRES_DB:-lct}?sslmode=disable
+    command:
+      - serve
+      - --official-region
+      - east
+      - --dataset-dir
+      - /app/data/dataset/anonymized
+      - --host
+      - 0.0.0.0
+      - --port
+      - '8100'
+      - --budget-ms
+      - '1500'
+      - --settings
+      - /app/state/settings.json
+    volumes:
+      - ../data/dataset:/app/data/dataset:ro
+      - router-state:/app/state
+    depends_on:
+      router-db-bootstrap:
+        condition: service_completed_successfully
+    ports:
+      - '127.0.0.1:${ROUTER_PORT:-8100}:8100'
+
   api:
     build:
       context: ..
@@ -73,6 +122,9 @@ services:
       PORT: 8000
       DATABASE_URL: postgresql://${POSTGRES_USER:-lct}:${POSTGRES_PASSWORD:-lct_dev_password}@postgres:5432/${POSTGRES_DB:-lct}?schema=public
       DATASET_ROOT: /app/data/dataset/anonymized
+      ROUTER_BASE_URL: http://router:8100
+      ROUTER_POLL_INTERVAL_MS: ${ROUTER_POLL_INTERVAL_MS:-500}
+      ROUTER_REQUEST_TIMEOUT_MS: ${ROUTER_REQUEST_TIMEOUT_MS:-3000}
     volumes:
       # Read-only bind mount rather than a copy into the image: the dataset is data, not
       # code, and the geocode sidecar the data zone will add must appear without a rebuild.
@@ -82,6 +134,8 @@ services:
         condition: service_healthy
       migrate:
         condition: service_completed_successfully
+      router:
+        condition: service_healthy
     ports:
       - '${API_PORT:-8000}:8000'
 
@@ -90,3 +144,4 @@ volumes:
   # control mode and lunch facts (context/43 section 11.3). Removing this volume is not
   # a substitute for the application's own "full reset" action.
   postgres-data:
+  router-state:

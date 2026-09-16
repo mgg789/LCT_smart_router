@@ -16,6 +16,9 @@ import { validateEnv } from './env.schema';
        * (/app). A missing file is not an error.
        */
       envFilePath: ['.env', '../../.env'],
+      // Integration tests load the root file explicitly before the module graph and may
+      // remove external-service URLs to keep the in-process contour deterministic.
+      ignoreEnvFile: process.env.NODE_ENV === 'test',
       validate: validateEnv,
     }),
   ],

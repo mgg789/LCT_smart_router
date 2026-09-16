@@ -45,6 +45,9 @@ describe('smoke base URL validation', () => {
   });
 
   it('drops any path, because the gate appends its own endpoints', () => {
-    assert.equal(resolveSmokeBaseUrl('http://localhost:8000/subpath', undefined), 'http://localhost:8000');
+    assert.equal(
+      resolveSmokeBaseUrl('http://localhost:8000/subpath', undefined),
+      'http://localhost:8000',
+    );
   });
 });

@@ -21,11 +21,14 @@ def main() -> None:
         resource = command.add_mutually_exclusive_group(required=True)
         resource.add_argument("--graph", type=Path)
         resource.add_argument("--osrm-config", type=Path)
+        resource.add_argument("--official-region", choices=("east", "southeast", "south_central"))
+        command.add_argument("--dataset-dir", type=Path, default=Path("data/dataset/anonymized"))
         command.add_argument("--snapshot", type=Path)
         command.add_argument("--budget-ms", type=int, default=3000)
         if name == "solve":
             command.add_argument("--output", type=Path)
         else:
+            command.add_argument("--host", default="127.0.0.1")
             command.add_argument("--port", type=int, default=8100)
             command.add_argument("--settings", type=Path, default=Path(".router/settings.json"))
     geocode = commands.add_parser("geocode")
@@ -144,6 +147,10 @@ def main() -> None:
         return
     if args.graph:
         graph = RoadGraph.model_validate_json(args.graph.read_bytes())
+    elif args.official_region:
+        from core.official import load_official_region
+
+        graph = load_official_region(args.dataset_dir, args.official_region).graph
     else:
         config = json.loads(args.osrm_config.read_text(encoding="utf-8"))
         graph = OSRMTravel(
@@ -206,7 +213,7 @@ def main() -> None:
                     settings_store=FileTechnicalSettingsStore(args.settings),
                 )
             ),
-            host="127.0.0.1",
+            host=args.host,
             port=args.port,
             workers=1,
         )

@@ -23,7 +23,7 @@ export interface AcceptanceOutcome {
  * (context/33 section 7):
  *
  *   1. the mode allows it -- in MANUAL the bus is disconnected;
- *   2. `input_hash` matches the snapshot that is published *now*;
+ *   2. `input_publication_id` and `input_hash` both match the snapshot published *now*;
  *   3. `router_context_version` matches the version in force *now*;
  *   4. `main.is_usable` -- a finished answer is not automatically an applicable one;
  *   5. no conflict with explicit facts -- started, finished or cancelled work is not
@@ -98,14 +98,22 @@ export class ResultAcceptanceService {
       if (!current) {
         return this.reject(tx, result, 'SNAPSHOT_STALE', 'No task has been published yet');
       }
-      if (result.input_hash !== current.snapshot.inputHash) {
+      if (result.input_publication_id !== current.snapshot.id) {
         // Not a failure: the answer belongs to an earlier task and a newer one is on its
         // way. The interface keeps showing the last applied plan.
         return this.reject(
           tx,
           result,
           'SNAPSHOT_STALE',
-          'The result belongs to a snapshot that is no longer published',
+          'The result names a publication that is no longer active',
+        );
+      }
+      if (result.input_hash !== current.snapshot.inputHash) {
+        return this.reject(
+          tx,
+          result,
+          'SNAPSHOT_STALE',
+          'The result belongs to snapshot bytes that are no longer published',
         );
       }
       if (result.router_context_version !== activeContextVersion) {

@@ -451,6 +451,8 @@ export class DispatchController {
 
     return {
       published: true,
+      publicationId: current.snapshot.id,
+      publicationSeq: current.pointerVersion,
       inputHash: current.snapshot.inputHash,
       planningAsOf: Number(current.snapshot.planningAsOf),
       trigger: current.snapshot.trigger,

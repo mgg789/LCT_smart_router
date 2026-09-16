@@ -26,6 +26,20 @@ export const envSchema = z.object({
   /** PostgreSQL connection of the business writer. */
   DATABASE_URL: z.string().min(1),
 
+  /** Private Router Core origin. When absent, automatic routing stays disabled. */
+  ROUTER_BASE_URL: z
+    .url()
+    .refine((value) => ['http:', 'https:'].includes(new URL(value).protocol), {
+      message: 'ROUTER_BASE_URL must use http or https',
+    })
+    .optional(),
+
+  /** How often sys asks Router for a newly published result. */
+  ROUTER_POLL_INTERVAL_MS: z.coerce.number().int().min(100).max(60_000).default(500),
+
+  /** Per-request timeout for the private Router HTTP API. */
+  ROUTER_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000).default(3_000),
+
   /**
    * Connection used by `prisma migrate deploy`. A deployment points it at the migration
    * owner; on a developer machine it is absent and the CLI falls back to DATABASE_URL.

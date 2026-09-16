@@ -17,6 +17,7 @@ export interface ResultRequestInput {
 
 export interface BuildResultOptions {
   readonly resultId: string;
+  readonly inputPublicationId?: string;
   readonly inputHash: string;
   readonly contextVersion: string;
   readonly planningAsOf: number;
@@ -164,6 +165,7 @@ export function buildRouterResult(options: BuildResultOptions): unknown {
     schema_version: '1.0',
     status: 'ready',
     result_id: options.resultId,
+    input_publication_id: options.inputPublicationId ?? null,
     input_hash: options.inputHash,
     planning_as_of: options.planningAsOf,
     computed_at: options.planningAsOf + 2,

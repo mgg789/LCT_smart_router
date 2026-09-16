@@ -23,6 +23,9 @@ describe('environment validation', () => {
     assert.equal(env.PORT, 8000);
     assert.equal(env.LOG_LEVEL, 'info');
     assert.equal(env.MIGRATE_DATABASE_URL, undefined);
+    assert.equal(env.ROUTER_BASE_URL, undefined);
+    assert.equal(env.ROUTER_POLL_INTERVAL_MS, 500);
+    assert.equal(env.ROUTER_REQUEST_TIMEOUT_MS, 3000);
   });
 
   it('coerces PORT from its string form', () => {
@@ -32,6 +35,10 @@ describe('environment validation', () => {
   it('stops the process on an unusable value and names the key', () => {
     assert.throws(() => validateEnv({ ...REQUIRED, PORT: 'not-a-port' }), /PORT/);
     assert.throws(() => validateEnv({ ...REQUIRED, LOG_LEVEL: 'chatty' }), /LOG_LEVEL/);
+    assert.throws(
+      () => validateEnv({ ...REQUIRED, ROUTER_BASE_URL: 'file:///tmp/router' }),
+      /ROUTER_BASE_URL/,
+    );
   });
 
   it('refuses to start without a database connection rather than defaulting to one', () => {

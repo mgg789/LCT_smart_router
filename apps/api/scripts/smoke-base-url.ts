@@ -23,7 +23,10 @@ const LOOPBACK_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '
  * @returns The base URL without a trailing path, ready to be joined with endpoints.
  * @throws Error naming the offending part when the value is not a usable contour URL.
  */
-export function resolveSmokeBaseUrl(raw: string | undefined, allowedHosts: string | undefined): string {
+export function resolveSmokeBaseUrl(
+  raw: string | undefined,
+  allowedHosts: string | undefined,
+): string {
   const candidate = raw ?? DEFAULT_BASE_URL;
   let url: URL;
   try {

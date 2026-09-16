@@ -4,22 +4,93 @@ import { resolve } from 'node:path';
 import { resolveSmokeBaseUrl } from './smoke-base-url';
 
 /**
- * Smoke gate: the whole spine of the System Layer, end to end, against a running contour.
+ * End-to-end smoke gate for the real Docker contour.
  *
- * Deliberately not an in-process test. It talks to the deployed artifact over HTTP, so it
- * proves the thing that actually ships works -- migrations applied, configuration read,
- * dataset mounted, every contour reachable (AGENTS.md section 11.1).
+ * The script talks only to the public System Layer API. Router must read the published
+ * snapshot from PostgreSQL, solve it, expose the result over the private Docker network,
+ * and let sys apply it through the ordinary acceptance path. No result package is
+ * fabricated here and the official dataset is deliberately not imported.
  *
- * Run it after `pnpm compose:up`. It is destructive: it resets the application data first,
- * so it never runs against anything but a development or demo contour.
+ * Run after `docker compose -f infra/docker-compose.yml up -d --build`. The gate is
+ * destructive: it resets application data, and target validation therefore permits
+ * loopback by default and requires an explicit allow-list for any other host.
  */
 
 const BASE = resolveSmokeBaseUrl(process.env.SMOKE_BASE_URL, process.env.SMOKE_ALLOWED_HOSTS);
+const DEFAULT_PLAN_TIMEOUT_MS = 45_000;
+const POLL_INTERVAL_MS = 500;
+const DEFAULT_SMOKE_POLICY_ID = 'balanced';
 
 interface Step {
   readonly name: string;
   readonly detail?: string;
 }
+
+interface HttpResult {
+  readonly status: number;
+  readonly body: Record<string, unknown>;
+  readonly rawBody: string;
+}
+
+interface PlanAssignment {
+  readonly requestId: string;
+  readonly status: string;
+  readonly engineerId: string | null;
+}
+
+interface PlanResponse {
+  readonly mode?: string;
+  readonly plan?: {
+    readonly revision: number;
+    readonly origin: string;
+    readonly planAsOf: number;
+    readonly assignments: PlanAssignment[];
+  } | null;
+  readonly lastResult?: {
+    readonly resultId: string;
+    readonly accepted: boolean;
+    readonly rejectionCode: string | null;
+  } | null;
+}
+
+interface SyntheticRequest {
+  readonly addressText: string;
+  readonly lat: number;
+  readonly lon: number;
+  readonly workType: string;
+}
+
+const EAST_ENGINEER_START = { lat: 55.6997977, lon: 37.7725762 };
+
+// Exact nodes from core/scenarios/east-v1/geocodes.json. GraphTravel intentionally
+// accepts only exact graph coordinates, so rounded or invented points would not prove
+// that the complete routing path works.
+const EAST_REQUESTS: readonly SyntheticRequest[] = [
+  {
+    addressText: 'Город Москва, пр-кт.Волгоградский, д. 128 к 5',
+    lat: 55.7062794,
+    lon: 37.7738951,
+    workType: 'outage',
+  },
+  {
+    addressText: 'Город Москва, пер.Маяковского, д. 2',
+    lat: 55.7397743,
+    lon: 37.6599082,
+    workType: 'connection_request',
+  },
+  {
+    addressText: 'Город Москва, ул.Грайвороновская, д. 10 к 2',
+    lat: 55.7173273,
+    lon: 37.7266148,
+    workType: 'monitoring',
+  },
+  {
+    addressText: 'Город Москва, ул.Михайлова, д. 14',
+    lat: 55.7270299,
+    lon: 37.7659603,
+    workType: 'information',
+  },
+];
 
 const steps: Step[] = [];
 let failures = 0;
@@ -48,9 +119,7 @@ async function call(
   path: string,
   token?: string,
   body?: unknown,
-): Promise<{ status: number; body: Record<string, unknown> }> {
-  // Resolve the endpoint against the validated base so every request target is an
-  // absolute URL derived from a host the operator explicitly allowed.
+): Promise<HttpResult> {
   const target = new URL(path, BASE).toString();
   const response = await fetch(target, {
     method,
@@ -60,11 +129,31 @@ async function call(
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
-  const text = await response.text();
+  const rawBody = await response.text();
+  let parsed: unknown = {};
+  if (rawBody) {
+    try {
+      parsed = JSON.parse(rawBody);
+    } catch {
+      parsed = { raw: rawBody };
+    }
+  }
   return {
     status: response.status,
-    body: text ? (JSON.parse(text) as Record<string, unknown>) : {},
+    body:
+      typeof parsed === 'object' && parsed !== null
+        ? (parsed as Record<string, unknown>)
+        : { value: parsed },
+    rawBody,
   };
+}
+
+function requireStatus(result: HttpResult, expected: number, action: string): void {
+  if (result.status !== expected) {
+    throw new Error(
+      `${action} returned HTTP ${result.status}; response: ${result.rawBody || '<empty>'}`,
+    );
+  }
 }
 
 function loadRootEnv(): Record<string, string> {
@@ -78,9 +167,55 @@ function loadRootEnv(): Record<string, string> {
       }
     }
   } catch {
-    // Falls through to process.env below.
+    // Environment variables remain the source when the script is not run from apps/api.
   }
   return values;
+}
+
+function positiveInteger(raw: string | undefined, fallback: number, name: string): number {
+  if (raw === undefined) {
+    return fallback;
+  }
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer, got ${raw}`);
+  }
+  return value;
+}
+
+async function sleep(milliseconds: number): Promise<void> {
+  await new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds));
+}
+
+async function waitForAppliedPlan(
+  token: string,
+  requestIds: readonly string[],
+  engineerId: string,
+  publicationId: string,
+  timeoutMs: number,
+): Promise<PlanResponse> {
+  const deadline = Date.now() + timeoutMs;
+  let last: PlanResponse = {};
+  while (Date.now() < deadline) {
+    const response = await call('GET', '/api/v1/dispatch/plan', token);
+    requireStatus(response, 200, 'read working plan');
+    last = response.body as PlanResponse;
+    const assignments = last.plan?.assignments ?? [];
+    const byRequest = new Map(assignments.map((item) => [item.requestId, item]));
+    const complete = requestIds.every((requestId) => {
+      const assignment = byRequest.get(requestId);
+      return assignment?.status === 'assigned' && assignment.engineerId === engineerId;
+    });
+    if (last.mode === 'auto' && last.lastResult?.accepted === true && complete) {
+      return last;
+    }
+    await sleep(POLL_INTERVAL_MS);
+  }
+
+  throw new Error(
+    `Router plan was not applied within ${timeoutMs} ms for publication ${publicationId}; ` +
+      `last backend state: ${JSON.stringify(last)}`,
+  );
 }
 
 async function main(): Promise<void> {
@@ -88,290 +223,235 @@ async function main(): Promise<void> {
   const env = loadRootEnv();
   const dispatcherEmail = process.env.DISPATCHER_EMAIL ?? env.DISPATCHER_EMAIL;
   const dispatcherPassword = process.env.DISPATCHER_PASSWORD ?? env.DISPATCHER_PASSWORD;
+  const appTimeZone = process.env.APP_TIME_ZONE ?? env.APP_TIME_ZONE ?? 'Europe/Moscow';
+  const planTimeoutMs = positiveInteger(
+    process.env.SMOKE_PLAN_TIMEOUT_MS,
+    DEFAULT_PLAN_TIMEOUT_MS,
+    'SMOKE_PLAN_TIMEOUT_MS',
+  );
+  const targetPolicyId = process.env.SMOKE_POLICY_ID ?? DEFAULT_SMOKE_POLICY_ID;
   if (!dispatcherEmail || !dispatcherPassword) {
     throw new Error('DISPATCHER_EMAIL and DISPATCHER_PASSWORD are needed; copy .env.example');
   }
 
-  // 1. The contour is up and honest about what it does not have.
+  // Check the public health surface before the destructive reset begins.
+  const live = await call('GET', '/health/live');
+  requireStatus(live, 200, 'liveness probe');
+  check(live.body.status === 'ok', 'API process is live', `status=${String(live.body.status)}`);
+
+  const ready = await call('GET', '/health/ready');
+  requireStatus(ready, 200, 'readiness probe');
+  check(
+    ready.body.status === 'ok',
+    'required services are ready',
+    `status=${String(ready.body.status)}`,
+  );
+
   const health = await call('GET', '/health/services');
-  const services = (health.body.services ?? {}) as Record<string, { status: string }>;
-  check(health.status === 200, 'contour answers', `/health/services -> ${health.status}`);
+  requireStatus(health, 200, 'service health probe');
+  const services = (health.body.services ?? {}) as Record<string, { status?: string }>;
   check(
     services.database?.status === 'ok',
     'database reachable',
-    `database=${services.database?.status}`,
+    `database=${String(services.database?.status)}`,
   );
   check(
-    services.router?.status === 'not_configured',
-    'missing integrations reported honestly',
-    `router=${services.router?.status}, ai=${services.ai?.status}, smtp=${services.smtp?.status}`,
+    services.router?.status === 'ok',
+    'Router reachable from backend',
+    `router=${String(services.router?.status)}`,
   );
+  if (failures > 0) {
+    throw new Error('health prerequisites failed; application data was not reset');
+  }
 
-  // 2. The dispatcher signs in without SMTP.
   const signIn = async (): Promise<string> => {
     const response = await call('POST', '/api/v1/auth/dispatcher/password', undefined, {
       email: dispatcherEmail,
       password: dispatcherPassword,
     });
-    if (response.status !== 201) {
-      throw new Error(`dispatcher sign-in failed: ${JSON.stringify(response.body)}`);
+    requireStatus(response, 201, 'dispatcher sign-in');
+    const token = response.body.token;
+    if (typeof token !== 'string' || token.length === 0) {
+      throw new Error('dispatcher sign-in returned no bearer token');
     }
-    return response.body.token as string;
+    return token;
   };
+
   let dispatcher = await signIn();
   pass('dispatcher signs in by password', 'no SMTP involved');
 
-  // 3. A clean slate, so the gate measures this run and not the last one.
   const reset = await call('POST', '/api/v1/dispatch/data/reset', dispatcher, {
     operationId: randomUUID(),
     kind: 'empty',
     confirmation: 'erase all application data',
   });
-  check(reset.status === 201, 'application data reset', `status ${reset.status}`);
+  requireStatus(reset, 201, 'empty data reset');
   dispatcher = await signIn();
+  pass('application data reset', `generation=${String(reset.body.generation)}`);
 
-  // 4. The official dataset loads.
-  const imported = await call('POST', '/api/v1/dispatch/data/import', dispatcher, {
-    operationId: randomUUID(),
-    region: 'east',
-  });
-  const summary = imported.body as {
-    applied: boolean;
-    requestsCreated: number;
-    engineersCreated: number;
-    requestsWithoutCoordinates: number;
-    errors: string[];
-  };
+  // Ensure the intended policy and the complete backend policy catalogue are active.
+  let policiesResponse = await call('GET', '/api/v1/dispatch/policies', dispatcher);
+  requireStatus(policiesResponse, 200, 'read policy catalogue');
+  const catalogue = policiesResponse.body.policies as Array<{ policyId: string }> | undefined;
+  const policyIds = catalogue?.map((policy) => policy.policyId) ?? [];
   check(
-    imported.status === 201 && summary.applied && summary.errors.length === 0,
-    'official dataset imports',
-    `${summary.requestsCreated} requests, ${summary.engineersCreated} engineers`,
+    ['fast', 'compact', 'sla', 'balanced', 'eco'].every((policyId) => policyIds.includes(policyId)),
+    'five Router policies are exposed by backend',
+    policyIds.join(', '),
   );
+  if (!policyIds.includes(targetPolicyId)) {
+    throw new Error(`SMOKE_POLICY_ID is not in the backend catalogue: ${targetPolicyId}`);
+  }
+  const active = policiesResponse.body.active as { policyId?: string } | undefined;
+  if (active?.policyId !== targetPolicyId) {
+    const selected = await call('POST', '/api/v1/dispatch/policy', dispatcher, {
+      operationId: randomUUID(),
+      policyId: targetPolicyId,
+    });
+    requireStatus(selected, 201, `select ${targetPolicyId} policy`);
+    policiesResponse = await call('GET', '/api/v1/dispatch/policies', dispatcher);
+    requireStatus(policiesResponse, 200, 're-read active policy');
+  }
+  const activeAfter = policiesResponse.body.active as { policyId?: string } | undefined;
   check(
-    summary.requestsWithoutCoordinates === summary.requestsCreated,
-    'coordinates are not invented',
-    `${summary.requestsWithoutCoordinates} awaiting geocoding`,
+    activeAfter?.policyId === targetPolicyId,
+    `${targetPolicyId} policy is active`,
+    `active=${String(activeAfter?.policyId)}`,
   );
 
-  // 5. A working engineer and a request with a real point, so the task is non-empty.
+  // Build a small feasible task through the backend using exact East graph nodes.
+  const now = Math.floor(Date.now() / 1000);
   const workDate = new Intl.DateTimeFormat('en-CA', {
-    timeZone: process.env.APP_TIME_ZONE ?? env.APP_TIME_ZONE ?? 'Europe/Moscow',
+    timeZone: appTimeZone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
   }).format(new Date());
-  const now = Math.floor(Date.now() / 1000);
-
   const engineerResponse = await call('POST', '/api/v1/dispatch/engineers', dispatcher, {
     operationId: randomUUID(),
     email: `smoke.engineer.${randomUUID().slice(0, 8)}@example.test`,
-    displayName: 'Smoke Engineer',
-    skills: ['connection', 'emergency'],
+    displayName: 'Smoke East Engineer',
+    skills: ['local', 'connection', 'emergency'],
     transportType: 'car',
-    homeLat: 55.7155,
-    homeLon: 37.7789,
+    region: 'east',
+    homeLat: EAST_ENGINEER_START.lat,
+    homeLon: EAST_ENGINEER_START.lon,
   });
-  const engineer = (engineerResponse.body as { engineer: { id: string } }).engineer;
-  await call('POST', `/api/v1/dispatch/engineers/${engineer.id}/workday`, dispatcher, {
-    operationId: randomUUID(),
-    workDate,
-    shiftStartAt: now - 3600,
-    shiftEndAt: now + 8 * 3600,
-  });
-  pass('engineer created with a shift', engineer.id);
+  requireStatus(engineerResponse, 201, 'create smoke engineer');
+  const engineer = (engineerResponse.body as { engineer?: { id?: string } }).engineer;
+  if (!engineer?.id) {
+    throw new Error('engineer creation returned no id');
+  }
 
-  const before = await call('GET', '/api/v1/dispatch/debug/snapshot', dispatcher);
-  const hashBefore = before.body.inputHash as string | undefined;
-
-  const created = await call('POST', '/api/v1/dispatch/requests', dispatcher, {
-    operationId: randomUUID(),
-    clientEmail: 'smoke.client@example.test',
-    contactName: 'Смоук Клиент',
-    addressText: 'Москва, ул.Грайвороновская, д. 10 к 2',
-    lat: 55.7231,
-    lon: 37.7328,
-    workType: 'outage',
-    windowStartAt: now + 1800,
-    windowEndAt: now + 3 * 3600,
-  });
-  const request = (created.body as { request: { id: string; priority: string } }).request;
-  check(
-    created.status === 201 && request.priority === 'urgent',
-    'request created and classified',
-    `priority ${request.priority} derived from the type of work`,
+  const workday = await call(
+    'POST',
+    `/api/v1/dispatch/engineers/${engineer.id}/workday`,
+    dispatcher,
+    {
+      operationId: randomUUID(),
+      workDate,
+      shiftStartAt: now - 5 * 60,
+      shiftEndAt: now + 10 * 3600,
+      lunch: {
+        enabled: false,
+        durationSec: null,
+        windowStartAt: null,
+        windowEndAt: null,
+      },
+    },
   );
+  requireStatus(workday, 201, 'set smoke engineer workday');
+  pass('East engineer and shift created', engineer.id);
 
-  // 6. The task is published, and its hash changed.
-  const after = await call('GET', '/api/v1/dispatch/debug/snapshot', dispatcher);
-  const hashAfter = after.body.inputHash as string;
-  const planningAsOf = after.body.planningAsOf as number;
-  check(
-    hashAfter !== hashBefore,
-    'task republished on a real trigger',
-    `hash ${hashAfter.slice(0, 12)}`,
-  );
+  const requestIds: string[] = [];
+  for (const [index, synthetic] of EAST_REQUESTS.entries()) {
+    const created = await call('POST', '/api/v1/dispatch/requests', dispatcher, {
+      operationId: randomUUID(),
+      clientEmail: `smoke.client.${index + 1}@example.test`,
+      contactName: `Smoke Client ${index + 1}`,
+      addressText: synthetic.addressText,
+      lat: synthetic.lat,
+      lon: synthetic.lon,
+      workType: synthetic.workType,
+      windowStartAt: now + 60,
+      windowEndAt: now + 8 * 3600,
+    });
+    requireStatus(created, 201, `create synthetic request ${index + 1}`);
+    const request = (created.body as { request?: { id?: string } }).request;
+    if (!request?.id) {
+      throw new Error(`synthetic request ${index + 1} returned no id`);
+    }
+    requestIds.push(request.id);
+  }
+  pass('synthetic requests accepted by backend', `${requestIds.length} exact East points`);
 
-  const document = JSON.parse(after.body.payload as string) as {
+  // Inspect the publication through sys only; Router reads the same bytes from PostgreSQL.
+  const snapshotResponse = await call('GET', '/api/v1/dispatch/debug/snapshot', dispatcher);
+  requireStatus(snapshotResponse, 200, 'read published snapshot diagnostics');
+  const publicationId = snapshotResponse.body.publicationId;
+  const inputHash = snapshotResponse.body.inputHash;
+  const payload = snapshotResponse.body.payload;
+  if (
+    typeof publicationId !== 'string' ||
+    typeof inputHash !== 'string' ||
+    typeof payload !== 'string'
+  ) {
+    throw new Error(`backend did not publish a complete snapshot: ${snapshotResponse.rawBody}`);
+  }
+  const document = JSON.parse(payload) as {
     requests: Array<{ request_id: string }>;
     engineers: Array<{ engineer_id: string }>;
     policy: { policy_id: string };
   };
   check(
-    document.requests.some((item) => item.request_id === request.id) &&
-      document.engineers.some((item) => item.engineer_id === engineer.id),
-    'published task carries the work and the engineer',
-    `${document.requests.length} requests, ${document.engineers.length} engineers, policy ${document.policy.policy_id}`,
+    requestIds.every((requestId) =>
+      document.requests.some((request) => request.request_id === requestId),
+    ) && document.engineers.some((item) => item.engineer_id === engineer.id),
+    'published sector contains the complete synthetic task',
+    `${document.requests.length} requests, ${document.engineers.length} engineers`,
   );
-
-  // 7. Reading twice must not republish.
-  const again = await call('GET', '/api/v1/dispatch/debug/snapshot', dispatcher);
   check(
-    (again.body.inputHash as string) === hashAfter &&
-      (again.body.planningAsOf as number) === planningAsOf,
-    'a read publishes nothing',
-    'planning_as_of unchanged',
+    document.policy.policy_id === targetPolicyId,
+    `published task carries ${targetPolicyId} policy`,
+    `publication=${publicationId}, hash=${inputHash.slice(0, 12)}`,
   );
 
-  // 8. A Router result, shaped by the contract, becomes the working plan.
-  const resultId = `smoke-${randomUUID().slice(0, 8)}`;
-  const plan = {
-    is_usable: true,
-    metric_scope: 'snapshot_remaining',
-    routes: [
-      {
-        engineer_id: engineer.id,
-        start_location: { lat: 55.7155, lon: 37.7789 },
-        start_at: now + 1800,
-        finish_at: now + 1800 + 5400,
-        stops: [
-          {
-            stop_id: 'smoke-stop-1',
-            sequence: 0,
-            kind: 'job',
-            request_id: request.id,
-            location: { lat: 55.7231, lon: 37.7328 },
-            arrival_at: now + 1800,
-            start_at: now + 1800,
-            end_at: now + 1800 + 5400,
-          },
-        ],
-        legs: [],
-        lunch: { status: 'disabled', stop_id: null, reasons: [] },
-        metrics: {
-          distance_km: 4.8,
-          travel_time_sec: 900,
-          work_time_sec: 5400,
-          waiting_time_sec: 0,
-          lunch_time_sec: 0,
-          assigned_count: 1,
-        },
-        reasons: [
-          {
-            code: 'CONSTRAINTS_SATISFIED',
-            text: 'Навык, транспорт и окно соблюдены',
-            basis: 'constraint_check',
-            facts: {},
-          },
-        ],
-      },
-    ],
-    assignments: [
-      {
-        request_id: request.id,
-        status: 'assigned',
-        engineer_id: engineer.id,
-        stop_id: 'smoke-stop-1',
-        reasons: [
-          {
-            code: 'CONSTRAINTS_SATISFIED',
-            text: 'Ближайший подходящий инженер',
-            basis: 'constraint_check',
-            facts: {},
-          },
-        ],
-      },
-    ],
-    summary: {
-      requests_total: 1,
-      assigned_count: 1,
-      unassigned_count: 0,
-      urgent_total: 1,
-      urgent_assigned_count: 1,
-      engineers_used: 1,
-      distance_km: 4.8,
-      travel_time_sec: 900,
-      work_time_sec: 5400,
-      waiting_time_sec: 0,
-      lunch_time_sec: 0,
-    },
-    alerts: [],
-  };
-
-  const result = {
-    schema_version: '1.0',
-    status: 'ready',
-    result_id: resultId,
-    input_hash: hashAfter,
-    planning_as_of: planningAsOf,
-    computed_at: planningAsOf + 2,
-    router_context_version: 'smoke-ctx-1',
-    main: plan,
-    baseline: plan,
-    errors: [],
-  };
-
-  const accepted = await call('POST', '/api/v1/dispatch/debug/router-result', dispatcher, {
-    operationId: randomUUID(),
-    result,
-    activeContextVersion: 'smoke-ctx-1',
-  });
-  const acceptance = accepted.body as { accepted: boolean; planRevision?: number; detail?: string };
+  // Real asynchronous route: sector -> Router -> private HTTP -> sys acceptance -> plan.
+  const plan = await waitForAppliedPlan(
+    dispatcher,
+    requestIds,
+    engineer.id,
+    publicationId,
+    planTimeoutMs,
+  );
   check(
-    acceptance.accepted === true,
-    'valid result becomes the working plan',
-    `revision ${acceptance.planRevision ?? '?'}${acceptance.detail ? ` (${acceptance.detail})` : ''}`,
+    plan.plan?.origin === 'auto' && plan.plan.assignments.length === requestIds.length,
+    'Router result became the automatic working plan',
+    `revision=${String(plan.plan?.revision)}, assignments=${String(plan.plan?.assignments.length)}`,
   );
-
-  // 9. The same result again changes nothing.
-  const repeated = await call('POST', '/api/v1/dispatch/debug/router-result', dispatcher, {
-    operationId: randomUUID(),
-    result,
-    activeContextVersion: 'smoke-ctx-1',
-  });
-  const repeat = repeated.body as { accepted: boolean; reason?: string };
   check(
-    repeat.accepted === false && repeat.reason === 'ALREADY_APPLIED',
-    'a repeated result is not applied twice',
-    `reason ${repeat.reason}`,
+    plan.lastResult?.accepted === true && plan.lastResult.rejectionCode === null,
+    'backend accepted the current Router package',
+    `result=${String(plan.lastResult?.resultId)}`,
   );
 
-  // 10. A stale result is refused with its own distinguishable code.
-  const stale = await call('POST', '/api/v1/dispatch/debug/router-result', dispatcher, {
-    operationId: randomUUID(),
-    result: { ...result, result_id: `${resultId}-stale`, input_hash: 'an-older-task' },
-    activeContextVersion: 'smoke-ctx-1',
-  });
-  const staleBody = stale.body as { accepted: boolean; reason?: string };
+  const requestsResponse = await call('GET', '/api/v1/dispatch/requests', dispatcher);
+  requireStatus(requestsResponse, 200, 'read requests after routing');
+  const requestViews = requestsResponse.body.requests as
+    | Array<{ id: string; assignmentState: string }>
+    | undefined;
   check(
-    staleBody.accepted === false && staleBody.reason === 'SNAPSHOT_STALE',
-    'a stale result is refused distinguishably',
-    `reason ${staleBody.reason}`,
+    requestIds.every(
+      (requestId) =>
+        requestViews?.find((request) => request.id === requestId)?.assignmentState === 'assigned',
+    ),
+    'backend request state reflects the applied plan',
+    `${requestIds.length} assigned requests`,
   );
 
-  // 11. Each contour sees what it should.
-  const dispatcherPlan = await call('GET', '/api/v1/dispatch/plan', dispatcher);
-  const planBody = dispatcherPlan.body as {
-    mode: string;
-    plan: { revision: number; planAsOf: number; origin: string };
-  };
-  check(
-    planBody.mode === 'auto' && planBody.plan.origin === 'auto',
-    'dispatcher sees the applied plan and the mode',
-    `revision ${planBody.plan.revision}, plan as of ${planBody.plan.planAsOf}`,
-  );
-
-  const intents = await call('GET', '/api/v1/dispatch/data/state', dispatcher);
-  check(intents.status === 200, 'data state readable', `initialized=${intents.body.initialized}`);
+  const state = await call('GET', '/api/v1/dispatch/data/state', dispatcher);
+  requireStatus(state, 200, 'read data state');
+  check(state.body.initialized === true, 'data state remains readable', 'initialized=true');
 
   process.stdout.write(
     `\n${failures === 0 ? 'SMOKE GATE GREEN' : 'SMOKE GATE RED'} — ${steps.length - failures}/${steps.length} checks passed\n`,

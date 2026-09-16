@@ -74,6 +74,11 @@ describe('router gateway', () => {
     return ((await response.json()) as { inputHash: string }).inputHash;
   };
 
+  const publishedPublicationId = async (): Promise<string> => {
+    const response = await call('GET', '/api/v1/dispatch/debug/snapshot', dispatcherToken);
+    return ((await response.json()) as { publicationId: string }).publicationId;
+  };
+
   /** Creates and confirms a request, which also republishes the task. */
   const submitRequest = async (): Promise<{ id: string; lat: number; lon: number }> => {
     const prepared = await call('POST', '/api/v1/client/requests', clientToken, {
@@ -97,6 +102,13 @@ describe('router gateway', () => {
   };
 
   const feed = async (result: unknown, contextVersion: string | null = null) => {
+    const packageWithIdentity = result as {
+      status?: string;
+      input_publication_id?: string | null;
+    };
+    if (packageWithIdentity.status === 'ready' && !packageWithIdentity.input_publication_id) {
+      packageWithIdentity.input_publication_id = await publishedPublicationId();
+    }
     const response = await call('POST', '/api/v1/dispatch/debug/router-result', dispatcherToken, {
       operationId: randomUUID(),
       result,
@@ -219,6 +231,32 @@ describe('router gateway', () => {
     assert.equal(body.accepted, false);
     // Not a failure: the answer is about an earlier task and a newer one is on its way.
     assert.equal(body.reason, 'SNAPSHOT_STALE', body.detail);
+  });
+
+  it('refuses matching bytes attributed to a different publication', async () => {
+    const request = await submitRequest();
+    const result = buildRouterResult({
+      resultId: unique('result'),
+      inputPublicationId: 'superseded-publication',
+      inputHash: await publishedHash(),
+      contextVersion: 'ctx-1',
+      planningAsOf: now(),
+      assigned: [
+        {
+          requestId: request.id,
+          engineerId,
+          lat: request.lat,
+          lon: request.lon,
+          startAt: now() + HOUR,
+          durationSec: 1800,
+        },
+      ],
+    });
+
+    const { body } = await feed(result, 'ctx-1');
+    assert.equal(body.accepted, false);
+    assert.equal(body.reason, 'SNAPSHOT_STALE', body.detail);
+    assert.match(body.detail ?? '', /publication/i);
   });
 
   it('refuses a result computed under a context that is no longer active', async () => {

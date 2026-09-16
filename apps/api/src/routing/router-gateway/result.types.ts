@@ -170,6 +170,8 @@ export const routerResultSchema = z.looseObject({
   /** State of getting a new result, not the status of any request. */
   status: z.enum(['pending', 'ready', 'error']),
   result_id: z.string().min(1).nullable(),
+  /** Immutable publication row Router read, checked in addition to the byte hash. */
+  input_publication_id: z.string().min(1).nullable(),
   /** Hash of the snapshot actually used. */
   input_hash: z.string().min(1).nullable(),
   planning_as_of: unixSeconds.nullable(),

@@ -28,21 +28,47 @@ export const POLICIES: readonly PolicySpec[] = [
       'skipped optional lunches, then total travel time, then distance, then the number ' +
       'of engineers with work. The resource block at the end is what distinguishes it ' +
       'from compact.',
-    isDefault: true,
+    isDefault: false,
     parameters: {},
   },
   {
     policyId: 'compact',
     title: 'Compact',
     description:
-      'Additional preset with the resource order staff, then distance, then time. ' +
-      'Offered as an alternative, never as the default.',
+      'Default preset: preserve coverage, then use fewer engineers, then reduce distance ' +
+      'and travel time.',
+    isDefault: true,
+    parameters: {},
+  },
+  {
+    policyId: 'sla',
+    title: 'SLA safe',
+    description:
+      'Preserve coverage, then minimize delay from the opening of customer windows before ' +
+      'travel time, distance and staff usage.',
+    isDefault: false,
+    parameters: {},
+  },
+  {
+    policyId: 'balanced',
+    title: 'Balanced',
+    description:
+      'Preserve coverage, then minimize the largest number of jobs assigned to one ' +
+      'engineer before travel and staff usage.',
+    isDefault: false,
+    parameters: {},
+  },
+  {
+    policyId: 'eco',
+    title: 'Eco',
+    description:
+      'Preserve coverage, then minimize road distance before staff usage and travel time.',
     isDefault: false,
     parameters: {},
   },
 ] as const;
 
-export const DEFAULT_POLICY_ID = 'fast';
+export const DEFAULT_POLICY_ID = 'compact';
 
 export function findPolicy(policyId: string): PolicySpec | undefined {
   return POLICIES.find((policy) => policy.policyId === policyId);

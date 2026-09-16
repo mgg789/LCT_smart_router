@@ -407,23 +407,23 @@ describe('snapshot publication', () => {
     const beforeDocument = JSON.parse(before.payload ?? '{}') as {
       policy: { policy_id: string };
     };
-    assert.equal(beforeDocument.policy.policy_id, 'fast', 'the first default is fast');
+    assert.equal(beforeDocument.policy.policy_id, 'compact', 'the first default is compact');
 
     const response = await call('POST', '/api/v1/dispatch/policy', dispatcherToken, {
       operationId: randomUUID(),
-      policyId: 'compact',
+      policyId: 'sla',
     });
     assert.equal(response.status, 201);
 
     const after = await snapshot();
     const afterDocument = JSON.parse(after.payload ?? '{}') as { policy: { policy_id: string } };
-    assert.equal(afterDocument.policy.policy_id, 'compact');
+    assert.equal(afterDocument.policy.policy_id, 'sla');
     assert.equal(after.trigger, 'policy.changed');
 
     // Put the default back so the rest of the contour is unaffected.
     await call('POST', '/api/v1/dispatch/policy', dispatcherToken, {
       operationId: randomUUID(),
-      policyId: 'fast',
+      policyId: 'compact',
     });
   });
 

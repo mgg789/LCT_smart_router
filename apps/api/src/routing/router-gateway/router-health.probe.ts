@@ -17,7 +17,7 @@ export class RouterHealthProbe implements HealthProbe {
 
   async check(): Promise<ServiceHealth> {
     if (!this.client.isConfigured()) {
-      return { status: 'not_configured', detail: 'Router Core client is not wired yet' };
+      return { status: 'not_configured', detail: 'Router Core URL is not configured' };
     }
     try {
       const result = await this.client.getResult();

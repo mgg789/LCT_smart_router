@@ -235,6 +235,9 @@ describe('official dataset import', () => {
     });
 
     it('empties the working set and records that this was deliberate', async () => {
+      const beforePointer = await prisma.routingCurrent.findUniqueOrThrow({
+        where: { id: 'singleton' },
+      });
       const response = await call('POST', '/api/v1/dispatch/data/reset', dispatcherToken, {
         operationId: randomUUID(),
         kind: 'empty',
@@ -245,6 +248,13 @@ describe('official dataset import', () => {
       assert.equal(await prisma.request.count({}), 0);
       assert.equal(await prisma.engineer.count({}), 0);
       assert.equal(await prisma.importPackage.count({}), 0);
+      const afterPointer = await prisma.routingCurrent.findUniqueOrThrow({
+        where: { id: 'singleton' },
+      });
+      assert.ok(
+        afterPointer.pointerVersion > beforePointer.pointerVersion,
+        'reset advances the publication sequence for a running Router',
+      );
 
       // Sessions of the old state are cleared too, including the one that confirmed the
       // reset (context/37 section 9.4). Being asked to sign in again after erasing every
