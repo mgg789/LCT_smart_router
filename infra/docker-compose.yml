@@ -141,6 +141,17 @@ services:
     ports:
       - '${API_PORT:-8000}:8000'
 
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - '127.0.0.1:${WEB_PORT:-5173}:80'
+
 volumes:
   # Named volume, not a bind mount: an ordinary restart must keep the working plan, the
   # control mode and lunch facts (context/43 section 11.3). Removing this volume is not

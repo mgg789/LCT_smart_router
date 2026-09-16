@@ -552,9 +552,21 @@ export class DispatchController {
       // interface keeps this plan and says it is being rebuilt, rather than clearing the
       // day (context/36 section 6).
       plan: plan ? toPlanView(plan) : null,
+      // Direct relation to the package that produced the working revision. Unlike the
+      // diagnostic last package, this cannot be confused by another result received in
+      // the same second.
+      appliedResult: plan?.routerResult
+        ? {
+            resultId: plan.routerResult.resultId,
+            inputHash: plan.routerResult.inputHash,
+            routerContextVersion: plan.routerResult.routerContextVersion,
+          }
+        : null,
       lastResult: lastPackage
         ? {
             resultId: lastPackage.resultId,
+            inputHash: lastPackage.inputHash,
+            routerContextVersion: lastPackage.routerContextVersion,
             accepted: lastPackage.accepted,
             // Why a finished result did not become the working plan, kept so a refusal is
             // explainable rather than invisible.

@@ -340,10 +340,11 @@ describe('router gateway', () => {
   it('applies a valid result as a new immutable plan revision', async () => {
     const request = await submitRequest();
     const resultId = unique('result');
+    const inputHash = await publishedHash();
     const { body } = await feed(
       buildRouterResult({
         resultId,
-        inputHash: await publishedHash(),
+        inputHash,
         contextVersion: 'ctx-1',
         planningAsOf: now(),
         assigned: [
@@ -367,6 +368,13 @@ describe('router gateway', () => {
     assert.equal(stored.assignmentState, 'assigned');
     // The business stage is untouched: distribution and execution are different things.
     assert.equal(stored.lifecycle, 'submitted');
+
+    const planResponse = await call('GET', '/api/v1/dispatch/plan', dispatcherToken);
+    const planBody = (await planResponse.json()) as {
+      appliedResult: { inputHash: string; routerContextVersion: string } | null;
+    };
+    assert.equal(planBody.appliedResult?.inputHash, inputHash);
+    assert.equal(planBody.appliedResult?.routerContextVersion, 'ctx-1');
 
     const intent = await prisma.notificationIntent.findUnique({
       where: { businessEventKey: `engineer_assigned:${request.id}:${engineerId}` },

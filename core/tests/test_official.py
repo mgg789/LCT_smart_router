@@ -6,10 +6,18 @@ import shutil
 from pathlib import Path
 
 import pytest
+from core.official import load_official_region
 from core.policy import compile_policy
 
 ROOT = Path(__file__).resolve().parents[2]
 GOLDEN = json.loads((ROOT / "core/tests/golden/official-east-v1.json").read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize("region", ["east", "southeast", "south_central"])
+def test_every_official_region_resource_manifest_is_current(region):
+    scenario = load_official_region(ROOT / "data/dataset/anonymized", region)
+    assert scenario.snapshot.requests
+    assert scenario.snapshot.engineers
 
 
 def _plan_hash(plan) -> str:

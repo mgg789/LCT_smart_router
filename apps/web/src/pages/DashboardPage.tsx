@@ -22,7 +22,35 @@ export function DashboardPage() {
   const dash = useDashboard();
   const { snapshot } = dash;
   const [policyOpen, setPolicyOpen] = useState(false);
-  const assignedCount = snapshot.requests.length - dash.unassigned.length;
+
+  if (!dash.authenticated) {
+    return <LoginScreen loading={dash.loading} error={dash.error} onSubmit={dash.signIn} />;
+  }
+
+  if (!snapshot) {
+    return (
+      <div className="flex h-full items-center justify-center bg-canvas text-sm text-muted">
+        {dash.error ? (
+          <div className="max-w-md rounded-2xl bg-white p-6 text-center shadow-sm">
+            <p className="text-ink">Не удалось загрузить рабочий день</p>
+            <p className="mt-2">{dash.error}</p>
+            <button
+              type="button"
+              onClick={() => void dash.refresh()}
+              className="mt-4 rounded-full bg-bee px-4 py-2 font-semibold text-ink"
+            >
+              Повторить
+            </button>
+          </div>
+        ) : (
+          'Загружаем рабочий день…'
+        )}
+      </div>
+    );
+  }
+
+  const assignedCount =
+    snapshot.plan.plan?.assignments.filter((item) => item.status === 'assigned').length ?? 0;
 
   return (
     <div className="flex h-full min-h-0 bg-canvas text-ink">
@@ -71,7 +99,20 @@ export function DashboardPage() {
           <span className="rounded-full border border-line bg-white px-3 py-1.5 text-sm">
             {snapshot.plan.mode.toUpperCase()}
           </span>
+          <button
+            type="button"
+            onClick={() => void dash.signOut()}
+            className="rounded-full border border-line bg-white px-3 py-1.5 text-sm text-muted"
+          >
+            Выйти
+          </button>
         </header>
+
+        {dash.error ? (
+          <div className="mx-4 mb-3 rounded-xl bg-red-50 px-4 py-2 text-sm text-red-700">
+            {dash.error}
+          </div>
+        ) : null}
 
         <div className="grid min-h-0 flex-1 grid-cols-[320px_minmax(0,1fr)_360px] gap-4 px-4 pb-4">
           <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl bg-white p-4 shadow-sm">
@@ -211,14 +252,14 @@ export function DashboardPage() {
                         onClick={dash.acceptDelta}
                         className="rounded-full bg-bee px-3 py-1.5 text-sm font-semibold"
                       >
-                        Принять
+                        Просмотрено
                       </button>
                       <button
                         type="button"
                         onClick={dash.rejectDelta}
                         className="rounded-full border border-line px-3 py-1.5 text-sm"
                       >
-                        Отменить
+                        Вернуть прежние настройки
                       </button>
                     </div>
                   </motion.div>
@@ -241,10 +282,75 @@ export function DashboardPage() {
   );
 }
 
+interface LoginScreenProps {
+  readonly loading: boolean;
+  readonly error: string | null;
+  readonly onSubmit: (email: string, password: string) => Promise<void>;
+}
+
+function LoginScreen({ loading, error, onSubmit }: LoginScreenProps) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+
+  return (
+    <main className="flex h-full items-center justify-center bg-canvas p-6 text-ink">
+      <form
+        className="w-full max-w-sm rounded-3xl bg-white p-7 shadow-sm"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void onSubmit(email, password);
+        }}
+      >
+        <img src="/beeline-symbol.png" alt="Beeline" className="h-10 w-10" />
+        <h1 className="mt-6 text-2xl font-semibold">План дня</h1>
+        <p className="mt-2 text-sm text-muted">
+          Войдите как диспетчер, чтобы открыть актуальный план Router.
+        </p>
+        <label className="mt-6 block text-sm font-medium" htmlFor="dispatcher-email">
+          Email
+        </label>
+        <input
+          id="dispatcher-email"
+          type="email"
+          required
+          autoComplete="username"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          className="mt-2 w-full rounded-xl border border-line px-3 py-2.5 outline-none focus:border-ink"
+        />
+        <label className="mt-4 block text-sm font-medium" htmlFor="dispatcher-password">
+          Пароль
+        </label>
+        <input
+          id="dispatcher-password"
+          type="password"
+          required
+          autoComplete="current-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          className="mt-2 w-full rounded-xl border border-line px-3 py-2.5 outline-none focus:border-ink"
+        />
+        {error ? <p className="mt-3 text-sm text-red-700">{error}</p> : null}
+        <button
+          type="submit"
+          disabled={loading}
+          className="mt-6 w-full rounded-full bg-bee py-3 text-sm font-semibold disabled:opacity-50"
+        >
+          {loading ? 'Входим…' : 'Войти'}
+        </button>
+      </form>
+    </main>
+  );
+}
+
 function RequestPanel({ dash }: { readonly dash: ReturnType<typeof useDashboard> }) {
+  const snapshot = dash.snapshot;
+  if (!snapshot) {
+    return null;
+  }
   const request = dash.selectedRequest;
   const assignment = dash.selectedAssignment;
-  const engineer = dash.snapshot.engineers.find((item) => item.id === assignment?.engineerId);
+  const engineer = snapshot.engineers.find((item) => item.id === assignment?.engineerId);
   const reasons = assignment?.reasons.assignment;
 
   if (!request) {
@@ -342,7 +448,7 @@ function RequestPanel({ dash }: { readonly dash: ReturnType<typeof useDashboard>
             <ul className="mt-2 space-y-2">
               {reasons.alternatives.map((item) => (
                 <li key={item.engineerId}>
-                  {dash.snapshot.engineers.find((eng) => eng.id === item.engineerId)?.displayName ??
+                  {snapshot.engineers.find((eng) => eng.id === item.engineerId)?.displayName ??
                     item.engineerId}
                   : {item.whyNot}
                 </li>
@@ -355,10 +461,10 @@ function RequestPanel({ dash }: { readonly dash: ReturnType<typeof useDashboard>
       <div className="mt-4 space-y-2">
         <button
           type="button"
-          onClick={() => dash.setMode(dash.snapshot.plan.mode === 'auto' ? 'manual' : 'auto')}
+          onClick={() => dash.setMode(snapshot.plan.mode === 'auto' ? 'manual' : 'auto')}
           className="w-full rounded-full bg-bee py-3 text-sm font-semibold text-ink"
         >
-          {dash.snapshot.plan.mode === 'auto'
+          {snapshot.plan.mode === 'auto'
             ? 'Сменить исполнителя — нужен MANUAL'
             : 'Вернуться в AUTO'}
         </button>

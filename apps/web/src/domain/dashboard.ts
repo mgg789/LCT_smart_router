@@ -4,8 +4,39 @@ import type {
   PlanDelta,
   PlanRouteView,
   PlanView,
+  PolicyId,
   RequestView,
 } from '../api/types';
+
+export interface RebuildExpectation {
+  readonly previousRevision: number | null;
+  readonly previousResultId: string | null;
+  readonly policyId: PolicyId;
+  readonly lunchesEnabled: boolean;
+  readonly inputHash: string | null;
+  readonly routerContextVersion: string;
+}
+
+/** Proves that System Layer accepted and applied the Router result requested by the UI. */
+export function isExpectedRebuildApplied(
+  snapshot: DashboardSnapshot,
+  expected: RebuildExpectation,
+): boolean {
+  const appliedResult = snapshot.plan.appliedResult;
+  const revision = snapshot.plan.plan?.revision ?? null;
+  const newerRevision =
+    revision !== null &&
+    (expected.previousRevision === null || revision > expected.previousRevision);
+  return (
+    newerRevision &&
+    appliedResult !== null &&
+    appliedResult.resultId !== expected.previousResultId &&
+    (expected.inputHash === null || appliedResult.inputHash === expected.inputHash) &&
+    appliedResult.routerContextVersion === expected.routerContextVersion &&
+    snapshot.policyId === expected.policyId &&
+    snapshot.lunchesEnabled === expected.lunchesEnabled
+  );
+}
 
 export interface EngineerSummary {
   readonly engineerId: string;
@@ -53,8 +84,11 @@ export function unassignedRequests(snapshot: DashboardSnapshot): RequestView[] {
 export function engineerSummaries(snapshot: DashboardSnapshot): EngineerSummary[] {
   return snapshot.engineers.map((engineer) => {
     const route = routeForEngineer(snapshot, engineer.id);
-    const stops = route?.stops ?? [];
-    const requestIds = stops.flatMap((stop) => (stop.requestId ? [stop.requestId] : []));
+    const assignments =
+      snapshot.plan.plan?.assignments.filter(
+        (assignment) => assignment.engineerId === engineer.id && assignment.status !== 'unassigned',
+      ) ?? [];
+    const requestIds = assignments.map((assignment) => assignment.requestId);
     const doneCount = requestIds.filter((id) => {
       const request = requestById(snapshot, id);
       return request?.lifecycle === 'completed' || request?.assignmentState === 'done';
@@ -72,7 +106,7 @@ export function engineerSummaries(snapshot: DashboardSnapshot): EngineerSummary[
       shiftStartAt: engineer.day?.shiftStartAt ?? null,
       shiftEndAt: engineer.day?.shiftEndAt ?? null,
       distanceKm: route?.distanceKm ?? 0,
-      assignedCount: route?.assignedCount ?? requestIds.length,
+      assignedCount: assignments.length,
       doneCount,
       inProgressCount,
     };
@@ -90,10 +124,16 @@ export function currentStopId(snapshot: DashboardSnapshot, engineerId: string): 
   );
 }
 
-export type ActivityKind = 'not_started' | 'traveling' | 'on_site' | 'lunch' | 'finished';
+export type ActivityKind =
+  | 'not_started'
+  | 'traveling'
+  | 'waiting'
+  | 'on_site'
+  | 'lunch'
+  | 'finished';
 
 export interface RouteVertex {
-  readonly kind: 'start' | 'job' | 'lunch';
+  readonly kind: 'start' | 'job' | 'lunch' | 'wait';
   readonly lat: number;
   readonly lon: number;
   readonly startAt: number;
@@ -133,7 +173,7 @@ export function routeVertices(route: PlanRouteView): RouteVertex[] {
     sequence: 0,
   };
   const rest = route.stops.map((stop) => ({
-    kind: stop.kind === 'lunch' ? ('lunch' as const) : ('job' as const),
+    kind: stop.kind === 'start' ? ('job' as const) : stop.kind,
     lat: stop.lat,
     lon: stop.lon,
     startAt: stop.startAt,
@@ -196,6 +236,17 @@ export function plannedActivity(
           label: 'Обед по плану',
         };
       }
+      if (vertex.kind === 'wait') {
+        return {
+          kind: 'waiting',
+          engineerId,
+          requestId: null,
+          legIndex: null,
+          lat: vertex.lat,
+          lon: vertex.lon,
+          label: 'Ожидает начала временного окна',
+        };
+      }
       return {
         kind: 'on_site',
         engineerId,
@@ -254,6 +305,9 @@ export function activityLabel(kind: ActivityKind): string {
   }
   if (kind === 'lunch') {
     return 'обед';
+  }
+  if (kind === 'waiting') {
+    return 'ожидание';
   }
   if (kind === 'finished') {
     return 'смена закрыта';
