@@ -7,7 +7,12 @@ from core.evidence import build_plan_evidence
 from core.geo import GraphTravel
 from core.schedule import baseline, score, validate_plan
 
-SETTINGS = SearchSettings(time_limit_ms=1200, solution_limit=12)
+SETTINGS = SearchSettings(
+    time_limit_ms=1200,
+    solution_limit=12,
+    lunches_enabled=True,
+    access_buffer_sec=0,
+)
 
 
 def changed(snapshot, edit):
@@ -24,6 +29,34 @@ def test_baseline_order_and_main_improvement(snapshot, graph):
     assert result.main.summary.travel_time_sec == 180
     assert score(snapshot, result.main) < score(snapshot, result.baseline)
     validate_plan(snapshot, result.main, travel)
+
+
+def test_travel_mode_applies_to_baseline_and_main(snapshot, graph):
+    """Both plans use the selected timing policy while keeping graph distance."""
+    graph_result = solve(
+        snapshot,
+        GraphTravel(graph),
+        SearchSettings(time_limit_ms=1200, solution_limit=12),
+    )
+    fixed_result = solve(
+        snapshot,
+        GraphTravel(graph),
+        SearchSettings(
+            time_limit_ms=1200,
+            solution_limit=12,
+            travel_time_mode="fixed_normative",
+        ),
+    )
+
+    assert graph_result.main.summary.travel_time_sec == 1980
+    assert fixed_result.main.summary.travel_time_sec == 3600
+    assert graph_result.main.summary.distance_km == fixed_result.main.summary.distance_km == 1.8
+    assert all(
+        leg.travel_time_sec == 1200
+        for route in fixed_result.baseline.routes
+        for leg in route.legs
+        if leg.distance_km > 0
+    )
 
 
 def test_final_service_must_finish_in_shift(snapshot, graph):
@@ -211,7 +244,12 @@ def test_revalidate_cannot_silently_drop_previous_assignment(snapshot, graph):
         snapshot, lambda d: d["engineers"][0].update(shift_end_at=d["planning_as_of"] + 660)
     )
     travel = GraphTravel(graph)
-    settings = SearchSettings(time_limit_ms=500, solution_limit=6, tolerance_sec=1000)
+    settings = SearchSettings(
+        time_limit_ms=500,
+        solution_limit=6,
+        tolerance_sec=1000,
+        access_buffer_sec=0,
+    )
     first = solve(task, travel, settings)
     assert first.main.summary.assigned_count == 1
     late = changed(

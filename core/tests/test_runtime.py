@@ -161,9 +161,14 @@ def test_technical_settings_persist_and_reload(tmp_path, snapshot, graph):
     )
     old = runtime.context_version
     requested = RouterTechnicalSettings(
-        lunches_enabled=False,
+        lunches_enabled=True,
         departure_lateness_tolerance_sec=90,
         task_start_lateness_tolerance_sec=45,
+        travel_time_mode="fixed_normative",
+        access_buffer_sec=720,
+        fixed_travel_time_sec=1500,
+        early_finish_replan_threshold_sec=840,
+        task_overrun_tolerance_sec=540,
     )
     response = runtime.set_technical_settings("settings-1", requested, old)
     assert response["technical_settings"] == requested.model_dump()
@@ -174,7 +179,16 @@ def test_technical_settings_persist_and_reload(tmp_path, snapshot, graph):
     )
     assert restarted.settings.technical() == requested
     assert restarted.context_version == response["router_context_version"]
+    assert restarted.set_technical_settings("settings-1", requested, old) == response
+    with pytest.raises(ValueError, match="CONTEXT_CONFLICT"):
+        restarted.set_technical_settings("another-operation", requested, old)
     restarted.close()
+
+
+def test_lunches_are_disabled_by_default():
+    """The system policy must require an explicit operator opt-in for lunches."""
+    assert SearchSettings().lunches_enabled is False
+    assert RouterTechnicalSettings().lunches_enabled is False
 
 
 def test_v2_settings_api_updates_complete_revision(tmp_path, snapshot, graph):
@@ -189,19 +203,25 @@ def test_v2_settings_api_updates_complete_revision(tmp_path, snapshot, graph):
             json={
                 "operation_id": "settings-api-1",
                 "expected_context_version": context,
-                "lunches_enabled": False,
+                "lunches_enabled": True,
                 "departure_lateness_tolerance_sec": 120,
                 "task_start_lateness_tolerance_sec": 60,
+                "travel_time_mode": "fixed_normative",
+                "access_buffer_sec": 600,
+                "fixed_travel_time_sec": 1200,
+                "early_finish_replan_threshold_sec": 900,
+                "task_overrun_tolerance_sec": 600,
             },
         )
         assert response.status_code == 200
-        assert response.json()["technical_settings"]["lunches_enabled"] is False
+        assert response.json()["technical_settings"]["lunches_enabled"] is True
     restarted = RouterRuntime(
         Reader(snapshot.model_dump_json().encode()), graph, settings_store=store
     )
-    assert restarted.settings.lunches_enabled is False
+    assert restarted.settings.lunches_enabled is True
     assert restarted.settings.departure_lateness_tolerance_sec == 120
     assert restarted.settings.task_start_lateness_tolerance_sec == 60
+    assert restarted.settings.travel_time_mode == "fixed_normative"
     restarted.close()
 
 
@@ -211,10 +231,10 @@ def test_technical_settings_cannot_be_accepted_without_persistence(snapshot, gra
     with pytest.raises(ValueError, match="SETTINGS_STORE_UNAVAILABLE"):
         runtime.set_technical_settings(
             "settings-no-store",
-            RouterTechnicalSettings(lunches_enabled=False),
+            RouterTechnicalSettings(lunches_enabled=True),
             runtime.context_version,
         )
-    assert runtime.settings.lunches_enabled is True
+    assert runtime.settings.lunches_enabled is False
     runtime.close()
 
 

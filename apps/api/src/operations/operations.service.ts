@@ -5,7 +5,12 @@ import { Clock } from '../common/time';
 import type { OperationState } from '../generated/prisma/client';
 import { PrismaService, UnitOfWork } from '../persistence';
 import { AuditService } from './audit.service';
-import type { OperationHandler, OperationOutcome, OperationRequest } from './operation.types';
+import type {
+  ExternalOperationHandler,
+  OperationHandler,
+  OperationOutcome,
+  OperationRequest,
+} from './operation.types';
 
 interface StoredResponse {
   readonly ok: boolean;
@@ -122,6 +127,87 @@ export class OperationsService {
   }
 
   /**
+   * Journals an idempotent mutation owned by another process without holding a database
+   * transaction across the network call.
+   *
+   * The initial `outcome_unknown` row is a durable reservation. A retry with the same
+   * operation id may safely invoke the remote handler again; the remote boundary must use
+   * that id as its own durable idempotency key. A successful response or a domain refusal
+   * then completes the same row and adds the corresponding audit fact.
+   */
+  async executeExternal<T>(
+    request: OperationRequest,
+    handler: ExternalOperationHandler<T>,
+  ): Promise<OperationOutcome<T>> {
+    const fingerprint = this.fingerprint(request);
+    const existing = await this.prisma.operation.findUnique({
+      where: { operationId: request.operationId },
+    });
+    if (existing) {
+      this.assertFingerprint(existing.payloadFingerprint, fingerprint);
+      if (existing.response !== null) {
+        return {
+          result: this.replay<T>(existing.payloadFingerprint, fingerprint, existing.response),
+          replayed: true,
+        };
+      }
+    } else {
+      await this.reserveExternal(request, fingerprint);
+      const reserved = await this.prisma.operation.findUniqueOrThrow({
+        where: { operationId: request.operationId },
+      });
+      this.assertFingerprint(reserved.payloadFingerprint, fingerprint);
+      if (reserved.response !== null) {
+        return {
+          result: this.replay<T>(reserved.payloadFingerprint, fingerprint, reserved.response),
+          replayed: true,
+        };
+      }
+    }
+
+    try {
+      const value = await handler();
+      const completedAt = this.clock.nowSeconds();
+      const applied = await this.uow.run(async (tx) => {
+        const updated = await tx.operation.updateMany({
+          where: { operationId: request.operationId, state: 'outcome_unknown' },
+          data: {
+            state: 'applied',
+            response: { ok: true, value } as object,
+            completedAt: BigInt(completedAt),
+          },
+        });
+        if (updated.count === 1) {
+          await this.audit.record(tx, completedAt, {
+            actor: request.actor,
+            action: request.action,
+            targetRef: request.targetRef ?? null,
+            operationId: request.operationId,
+            details: { state: 'applied' },
+          });
+        }
+        return updated.count === 1;
+      });
+      if (applied) {
+        return { result: value, replayed: false };
+      }
+
+      const completed = await this.prisma.operation.findUniqueOrThrow({
+        where: { operationId: request.operationId },
+      });
+      return {
+        result: this.replay<T>(completed.payloadFingerprint, fingerprint, completed.response),
+        replayed: true,
+      };
+    } catch (error) {
+      if (error instanceof SysError) {
+        await this.completeExternalRefusal(request, fingerprint, error);
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Fingerprint of the arguments, so that the same id carrying different arguments is
    * detectable. The action and target are part of it: reusing an id for a different
    * action is the same mistake.
@@ -136,7 +222,7 @@ export class OperationsService {
     });
   }
 
-  private replay<T>(storedFingerprint: string, fingerprint: string, response: unknown): T {
+  private assertFingerprint(storedFingerprint: string, fingerprint: string): void {
     if (storedFingerprint !== fingerprint) {
       throw new SysError(
         'OPERATION_ID_REUSED',
@@ -144,6 +230,10 @@ export class OperationsService {
         { details: {} },
       );
     }
+  }
+
+  private replay<T>(storedFingerprint: string, fingerprint: string, response: unknown): T {
+    this.assertFingerprint(storedFingerprint, fingerprint);
 
     const stored = response as StoredResponse | null;
     if (!stored) {
@@ -160,6 +250,84 @@ export class OperationsService {
       error?.message ?? 'The operation was refused',
       { details: error?.details ?? {} },
     );
+  }
+
+  private async reserveExternal(request: OperationRequest, fingerprint: string): Promise<void> {
+    const now = this.clock.nowSeconds();
+    try {
+      await this.uow.run(async (tx) => {
+        await tx.operation.create({
+          data: {
+            operationId: request.operationId,
+            actorKind: request.actor.kind,
+            actorId: request.actor.id,
+            source: request.actor.source,
+            action: request.action,
+            targetRef: request.targetRef ?? null,
+            payloadFingerprint: fingerprint,
+            state: 'outcome_unknown',
+            response: undefined,
+            createdAt: BigInt(now),
+            completedAt: null,
+          },
+        });
+        await this.audit.record(tx, now, {
+          actor: request.actor,
+          action: request.action,
+          targetRef: request.targetRef ?? null,
+          operationId: request.operationId,
+          details: { state: 'outcome_unknown' },
+        });
+      });
+    } catch (error) {
+      if (!isUniqueViolation(error)) {
+        throw error;
+      }
+    }
+  }
+
+  private async completeExternalRefusal(
+    request: OperationRequest,
+    fingerprint: string,
+    error: SysError,
+  ): Promise<void> {
+    const completedAt = this.clock.nowSeconds();
+    const state: OperationState = error.status === 409 ? 'conflict' : 'rejected';
+    const response: StoredResponse = {
+      ok: false,
+      error: { code: error.code, message: error.message, details: error.details },
+    };
+    try {
+      await this.uow.run(async (tx) => {
+        const updated = await tx.operation.updateMany({
+          where: {
+            operationId: request.operationId,
+            payloadFingerprint: fingerprint,
+            state: 'outcome_unknown',
+          },
+          data: {
+            state,
+            response: response as object,
+            completedAt: BigInt(completedAt),
+          },
+        });
+        if (updated.count === 1) {
+          await this.audit.record(tx, completedAt, {
+            actor: request.actor,
+            action: request.action,
+            targetRef: request.targetRef ?? null,
+            operationId: request.operationId,
+            details: { state, code: error.code },
+          });
+        }
+      });
+    } catch (recordError) {
+      this.logger.warn(
+        `Could not complete refusal of external ${request.action}: ${
+          recordError instanceof Error ? recordError.message : String(recordError)
+        }`,
+      );
+    }
   }
 
   private async recordRefusal(

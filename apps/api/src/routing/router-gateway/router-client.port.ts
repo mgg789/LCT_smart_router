@@ -1,5 +1,36 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { SysError } from '../../common/errors';
 import type { RouterResult } from './result.types';
+
+export interface RouterTechnicalSettings {
+  readonly lunchesEnabled: boolean;
+  readonly departureLatenessToleranceSec: number;
+  readonly taskStartLatenessToleranceSec: number;
+  /** How Router converts a graph quote into the planning duration of a road leg. */
+  readonly travelTimeMode: 'graph_with_access_buffer' | 'fixed_normative';
+  /** Parking, building access and ascent added to a non-zero graph journey. */
+  readonly accessBufferSec: number;
+  /** Whole journey duration used by the normative fallback mode. */
+  readonly fixedTravelTimeSec: number;
+  /** Minimum saved on-site time that justifies an early-finish replan. */
+  readonly earlyFinishReplanThresholdSec: number;
+  /** Allowed on-site overrun before the engineer is removed from free capacity. */
+  readonly taskOverrunToleranceSec: number;
+}
+
+export interface RouterTechnicalSettingsState extends RouterTechnicalSettings {
+  readonly routerContextVersion: string;
+}
+
+export interface UpdateRouterTechnicalSettings extends RouterTechnicalSettings {
+  readonly operationId: string;
+  readonly expectedContextVersion: string;
+}
+
+export interface RouterTechnicalSettingsUpdate extends RouterTechnicalSettingsState {
+  readonly operationId: string;
+  readonly status: 'accepted';
+}
 
 /**
  * How the System Layer reaches Router Core.
@@ -23,6 +54,18 @@ export abstract class RouterClient {
    * version (context/33 section 7).
    */
   abstract getActiveContextVersion(): Promise<string | null>;
+
+  /** Reads the complete Router-owned technical settings revision. */
+  getTechnicalSettings(): Promise<RouterTechnicalSettingsState> {
+    throw SysError.notConfigured('Router Core technical settings');
+  }
+
+  /** Replaces settings through Router's idempotent context-version CAS operation. */
+  updateTechnicalSettings(
+    _input: UpdateRouterTechnicalSettings,
+  ): Promise<RouterTechnicalSettingsUpdate> {
+    throw SysError.notConfigured('Router Core technical settings');
+  }
 
   abstract isConfigured(): boolean;
 }
@@ -61,6 +104,14 @@ export class NullRouterClient extends RouterClient {
 
   async getActiveContextVersion(): Promise<string | null> {
     return null;
+  }
+
+  override async getTechnicalSettings(): Promise<RouterTechnicalSettingsState> {
+    throw SysError.notConfigured('Router Core');
+  }
+
+  override async updateTechnicalSettings(): Promise<RouterTechnicalSettingsUpdate> {
+    throw SysError.notConfigured('Router Core');
   }
 
   isConfigured(): boolean {

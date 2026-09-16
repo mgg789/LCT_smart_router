@@ -83,7 +83,6 @@ def snapshot(graph):
         "shift_end_at": start + 8 * 3600,
         "start_location": graph.nodes[0].location.model_dump(),
         "available_from": start,
-        "position_observed_at": None,
         "availability": "online",
         "expected_online_at": None,
         "lunch_taken": False,

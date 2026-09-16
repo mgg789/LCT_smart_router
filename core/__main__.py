@@ -22,6 +22,12 @@ def main() -> None:
         resource.add_argument("--graph", type=Path)
         resource.add_argument("--osrm-config", type=Path)
         resource.add_argument("--official-region", choices=("east", "southeast", "south_central"))
+        resource.add_argument(
+            "--official-regions",
+            nargs="+",
+            choices=("east", "southeast", "south_central"),
+            help="load a disconnected union of official regional graphs",
+        )
         command.add_argument("--dataset-dir", type=Path, default=Path("data/dataset/anonymized"))
         command.add_argument("--snapshot", type=Path)
         command.add_argument("--budget-ms", type=int, default=3000)
@@ -147,10 +153,16 @@ def main() -> None:
         return
     if args.graph:
         graph = RoadGraph.model_validate_json(args.graph.read_bytes())
-    elif args.official_region:
-        from core.official import load_official_region
+    elif args.official_region or args.official_regions:
+        from core.official import combine_official_scenarios, load_official_region
 
-        graph = load_official_region(args.dataset_dir, args.official_region).graph
+        regions = args.official_regions or [args.official_region]
+        scenarios = [load_official_region(args.dataset_dir, region) for region in regions]
+        graph = (
+            combine_official_scenarios(scenarios).graph
+            if len(scenarios) > 1
+            else scenarios[0].graph
+        )
     else:
         config = json.loads(args.osrm_config.read_text(encoding="utf-8"))
         graph = OSRMTravel(

@@ -239,4 +239,72 @@ describe('operation envelope', () => {
     assert.equal(rows.length, 1, 'a race must not produce two business changes');
     assert.ok(handlerRuns <= 2, 'at most one handler may commit');
   });
+
+  it('journals an external mutation without replaying its remote handler', async () => {
+    const operationId = newOperationId();
+    let handlerRuns = 0;
+    const request = {
+      operationId,
+      actor,
+      action: 'test.external',
+      targetRef: 'remote-resource',
+      payload: { enabled: true },
+    };
+
+    const first = await operations.executeExternal(request, async () => {
+      handlerRuns += 1;
+      return { accepted: true };
+    });
+    const replay = await operations.executeExternal(request, async () => {
+      handlerRuns += 1;
+      return { accepted: false };
+    });
+
+    assert.equal(handlerRuns, 1);
+    assert.equal(first.replayed, false);
+    assert.equal(replay.replayed, true);
+    assert.deepEqual(replay.result, first.result);
+    const stored = await prisma.operation.findUniqueOrThrow({ where: { operationId } });
+    assert.equal(stored.state, 'applied');
+    const audit = await prisma.auditLog.findMany({
+      where: { operationId },
+      orderBy: { at: 'asc' },
+    });
+    assert.deepEqual(
+      audit.map((entry) => (entry.details as { state: string }).state),
+      ['outcome_unknown', 'applied'],
+    );
+  });
+
+  it('retries an external operation whose first network outcome was unknown', async () => {
+    const operationId = newOperationId();
+    const request = {
+      operationId,
+      actor,
+      action: 'test.external-retry',
+      targetRef: 'remote-resource',
+      payload: { enabled: false },
+    };
+    let handlerRuns = 0;
+
+    await assert.rejects(() =>
+      operations.executeExternal(request, async () => {
+        handlerRuns += 1;
+        throw new Error('connection reset after remote commit');
+      }),
+    );
+    const pending = await prisma.operation.findUniqueOrThrow({ where: { operationId } });
+    assert.equal(pending.state, 'outcome_unknown');
+    assert.equal(pending.response, null);
+
+    const recovered = await operations.executeExternal(request, async () => {
+      handlerRuns += 1;
+      return { accepted: true };
+    });
+    assert.equal(handlerRuns, 2);
+    assert.equal(recovered.replayed, false);
+    assert.deepEqual(recovered.result, { accepted: true });
+    const stored = await prisma.operation.findUniqueOrThrow({ where: { operationId } });
+    assert.equal(stored.state, 'applied');
+  });
 });

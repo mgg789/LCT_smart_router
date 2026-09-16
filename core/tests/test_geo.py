@@ -1,7 +1,7 @@
 """Road direction, path consistency, coordinates and address ambiguity."""
 
-from core.contracts import GeoPoint
-from core.geo import AddressCandidate, Gazetteer, GraphTravel, RoadGraph
+from core.contracts import GeoPoint, RouterTechnicalSettings
+from core.geo import AddressCandidate, Gazetteer, GraphTravel, RoadGraph, configure_travel
 
 
 def test_path_matrix_and_profiles(graph):
@@ -27,6 +27,24 @@ def test_graph_version_changes_with_costs(graph):
     data = graph.model_dump()
     data["edges"][0]["duration_sec"]["car"] += 1
     assert GraphTravel(graph).version != GraphTravel(RoadGraph.model_validate(data)).version
+
+
+def test_technical_travel_modes_preserve_graph_route_and_zero_distance(graph):
+    """Timing policy changes seconds only; graph distance and geometry remain authoritative."""
+    raw = GraphTravel(graph)
+    a, b = graph.nodes[0].location, graph.nodes[3].location
+    original = raw.quote(a, b, "car")
+    buffered = configure_travel(raw, RouterTechnicalSettings())
+    fixed = configure_travel(
+        raw, RouterTechnicalSettings(travel_time_mode="fixed_normative")
+    )
+
+    assert buffered.quote(a, b, "car").duration_sec == original.duration_sec + 600
+    assert fixed.quote(a, b, "car").duration_sec == 1200
+    assert buffered.quote(a, b, "car").distance_m == original.distance_m
+    assert fixed.quote(a, b, "car").points == original.points
+    assert buffered.quote(a, a, "car").duration_sec == 0
+    assert fixed.quote(a, a, "car").duration_sec == 0
 
 
 def test_geocoder_preserves_ambiguity(graph):

@@ -312,42 +312,6 @@ describe('snapshot publication', () => {
     assert.equal(projected.lunch.required, false);
   });
 
-  it('does not publish for a position report', async () => {
-    const engineer = await createEngineer();
-    const record = await prisma.engineer.findUniqueOrThrow({ where: { id: engineer.id } });
-    const email = (
-      await prisma.account.findUniqueOrThrow({ where: { id: record.accountId ?? '' } })
-    ).email;
-    const codeResponse = await fetch(`${baseUrl}/api/v1/auth/login-code`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email }),
-    });
-    const { devCode } = (await codeResponse.json()) as { devCode: string };
-    const verify = await fetch(`${baseUrl}/api/v1/auth/login-code/verify`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email, code: devCode, role: 'engineer' }),
-    });
-    const engineerToken = ((await verify.json()) as { token: string }).token;
-
-    const before = await snapshot();
-    const snapshotCountBefore = await prisma.routingSnapshot.count();
-
-    await call('POST', '/api/v1/engineer/gps', engineerToken, {
-      observedAt: Math.floor(Date.now() / 1000),
-      lat: 55.7,
-      lon: 37.5,
-    });
-    // Reading the day and the plan are not triggers either.
-    await call('GET', '/api/v1/engineer/day', engineerToken);
-    await call('GET', '/api/v1/dispatch/requests', dispatcherToken);
-
-    const after = await snapshot();
-    assert.equal(after.inputHash, before.inputHash);
-    assert.equal(await prisma.routingSnapshot.count(), snapshotCountBefore);
-  });
-
   it('excludes a request without coordinates and counts it in the diagnostics', async () => {
     const before = await snapshot();
     const request = await createRequest({ lat: null, lon: null });
@@ -403,6 +367,13 @@ describe('snapshot publication', () => {
   });
 
   it('carries the policy in force and republishes when it changes', async () => {
+    // The database is intentionally durable between local contour runs, so establish
+    // this test's starting policy instead of assuming a freshly seeded singleton.
+    const establish = await call('POST', '/api/v1/dispatch/policy', dispatcherToken, {
+      operationId: randomUUID(),
+      policyId: 'compact',
+    });
+    assert.equal(establish.status, 201);
     const before = await snapshot();
     const beforeDocument = JSON.parse(before.payload ?? '{}') as {
       policy: { policy_id: string };

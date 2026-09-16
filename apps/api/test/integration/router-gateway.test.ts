@@ -9,6 +9,8 @@ import { AppModule } from '../../src/app.module';
 import { AllExceptionsFilter } from '../../src/common/errors';
 import { BigIntGuardInterceptor } from '../../src/common/serialization';
 import type { PrismaClient } from '../../src/generated/prisma/client';
+import { ExecutionOverrunCoordinator } from '../../src/orchestrator/facts';
+import type { RouterTaskSnapshot } from '../../src/routing/mount-data-eng';
 import { createTestClient, databaseUrl, unique } from '../support/database';
 import { buildRouterResult } from '../support/router-result';
 
@@ -79,15 +81,35 @@ describe('router gateway', () => {
     return ((await response.json()) as { publicationId: string }).publicationId;
   };
 
+  const publishedSnapshot = async (): Promise<{
+    publicationId: string;
+    trigger: string;
+    snapshot: RouterTaskSnapshot;
+  }> => {
+    const response = await call('GET', '/api/v1/dispatch/debug/snapshot', dispatcherToken);
+    const body = (await response.json()) as {
+      publicationId: string;
+      trigger: string;
+      payload: string;
+    };
+    return {
+      publicationId: body.publicationId,
+      trigger: body.trigger,
+      snapshot: JSON.parse(body.payload) as RouterTaskSnapshot,
+    };
+  };
+
   /** Creates and confirms a request, which also republishes the task. */
-  const submitRequest = async (): Promise<{ id: string; lat: number; lon: number }> => {
+  const submitRequest = async (
+    workType = 'connection_request',
+  ): Promise<{ id: string; lat: number; lon: number }> => {
     const prepared = await call('POST', '/api/v1/client/requests', clientToken, {
       operationId: randomUUID(),
       contactName: 'Gateway Customer',
       addressText: 'Москва, ул. Тестовая, д. 7',
       lat: 55.78,
       lon: 37.66,
-      workType: 'connection_request',
+      workType,
       windowStartAt: now() + HOUR,
       windowEndAt: now() + 3 * HOUR,
     });
@@ -439,6 +461,13 @@ describe('router gateway', () => {
     assert.equal(later.body.reason, 'RESULT_NOT_APPLICABLE', later.body.detail);
     // sys does not repair the plan with an optimiser of its own; it declines to apply it.
     assert.match(later.body.detail ?? '', /already started/i);
+    const cleanup = await call(
+      'POST',
+      `/api/v1/engineer/requests/${request.id}/facts`,
+      engineerToken,
+      { operationId: randomUUID(), kind: 'finished' },
+    );
+    assert.equal(cleanup.status, 201, await cleanup.clone().text());
   });
 
   describe('execution facts', () => {
@@ -556,6 +585,276 @@ describe('router gateway', () => {
       });
       assert.equal(Number(fact.occurredAt), reportedAt);
       assert.ok(fact.recordedAt > fact.occurredAt, 'the two moments are not interchangeable');
+      const cleanup = await call(
+        'POST',
+        `/api/v1/engineer/requests/${request.id}/facts`,
+        engineerToken,
+        { operationId: randomUUID(), kind: 'finished', occurredAt: now() },
+      );
+      assert.equal(cleanup.status, 201, await cleanup.clone().text());
+    });
+
+    it('replans from the task location when an engineer finishes at least 15 minutes early', async () => {
+      const request = await submitRequest();
+      await feed(
+        buildRouterResult({
+          resultId: unique('result'),
+          inputHash: await publishedHash(),
+          contextVersion: 'ctx-1',
+          planningAsOf: now(),
+          assigned: [
+            {
+              requestId: request.id,
+              engineerId,
+              lat: request.lat,
+              lon: request.lon,
+              startAt: now() + HOUR,
+              durationSec: 1800,
+            },
+          ],
+        }),
+        'ctx-1',
+      );
+      const stored = await prisma.request.findUniqueOrThrow({ where: { id: request.id } });
+      const finishAt = now();
+      const startedAt = finishAt - (stored.serviceDurationSec - 15 * 60);
+
+      const started = await call(
+        'POST',
+        `/api/v1/engineer/requests/${request.id}/facts`,
+        engineerToken,
+        { operationId: randomUUID(), kind: 'started', occurredAt: startedAt },
+      );
+      assert.equal(started.status, 201, await started.clone().text());
+      const afterStart = await publishedSnapshot();
+      assert.equal(afterStart.trigger, 'request.execution_started');
+      const busyEngineer = afterStart.snapshot.engineers.find(
+        (engineer) => engineer.engineer_id === engineerId,
+      );
+      assert.deepEqual(busyEngineer?.start_location, { lat: request.lat, lon: request.lon });
+      assert.equal(busyEngineer?.available_from, startedAt + stored.serviceDurationSec);
+
+      const finished = await call(
+        'POST',
+        `/api/v1/engineer/requests/${request.id}/facts`,
+        engineerToken,
+        { operationId: randomUUID(), kind: 'finished', occurredAt: finishAt },
+      );
+      assert.equal(finished.status, 201, await finished.clone().text());
+      const finishedBody = (await finished.json()) as {
+        request: { actualDurationSec: number; durationVarianceSec: number };
+      };
+      assert.equal(finishedBody.request.actualDurationSec, stored.serviceDurationSec - 15 * 60);
+      assert.equal(finishedBody.request.durationVarianceSec, -15 * 60);
+
+      const afterFinish = await publishedSnapshot();
+      assert.notEqual(afterFinish.publicationId, afterStart.publicationId);
+      assert.equal(afterFinish.trigger, 'request.execution_variance');
+      assert.equal(
+        afterFinish.snapshot.engineers.find((engineer) => engineer.engineer_id === engineerId)
+          ?.available_from,
+        finishAt,
+      );
+    });
+
+    it('keeps the planned continuation for a finish inside the variance thresholds', async () => {
+      const request = await submitRequest();
+      await feed(
+        buildRouterResult({
+          resultId: unique('result'),
+          inputHash: await publishedHash(),
+          contextVersion: 'ctx-1',
+          planningAsOf: now(),
+          assigned: [
+            {
+              requestId: request.id,
+              engineerId,
+              lat: request.lat,
+              lon: request.lon,
+              startAt: now() + HOUR,
+              durationSec: 1800,
+            },
+          ],
+        }),
+        'ctx-1',
+      );
+      const stored = await prisma.request.findUniqueOrThrow({ where: { id: request.id } });
+      const finishAt = now();
+      const startedAt = finishAt - (stored.serviceDurationSec - 14 * 60);
+      await call('POST', `/api/v1/engineer/requests/${request.id}/facts`, engineerToken, {
+        operationId: randomUUID(),
+        kind: 'started',
+        occurredAt: startedAt,
+      });
+      const publicationAfterStart = await publishedPublicationId();
+
+      const finished = await call(
+        'POST',
+        `/api/v1/engineer/requests/${request.id}/facts`,
+        engineerToken,
+        { operationId: randomUUID(), kind: 'finished', occurredAt: finishAt },
+      );
+      assert.equal(finished.status, 201, await finished.clone().text());
+      assert.equal(await publishedPublicationId(), publicationAfterStart);
+      const completed = await prisma.request.findUniqueOrThrow({ where: { id: request.id } });
+      assert.equal(
+        Number(completed.continuationAvailableAt),
+        startedAt + stored.serviceDurationSec,
+      );
+    });
+
+    it('absorbs a finish exactly 10 minutes late without rebuilding the route', async () => {
+      const request = await submitRequest('equipment_order');
+      await feed(
+        buildRouterResult({
+          resultId: unique('result'),
+          inputHash: await publishedHash(),
+          contextVersion: 'ctx-1',
+          planningAsOf: now(),
+          assigned: [
+            {
+              requestId: request.id,
+              engineerId,
+              lat: request.lat,
+              lon: request.lon,
+              startAt: now() + HOUR,
+              durationSec: 1200,
+            },
+          ],
+        }),
+        'ctx-1',
+      );
+      const stored = await prisma.request.findUniqueOrThrow({ where: { id: request.id } });
+      const finishAt = now();
+      const startedAt = finishAt - stored.serviceDurationSec - 10 * 60;
+      const started = await call(
+        'POST',
+        `/api/v1/engineer/requests/${request.id}/facts`,
+        engineerToken,
+        { operationId: randomUUID(), kind: 'started', occurredAt: startedAt },
+      );
+      assert.equal(started.status, 201, await started.clone().text());
+      const publicationAfterStart = await publishedPublicationId();
+
+      const finished = await call(
+        'POST',
+        `/api/v1/engineer/requests/${request.id}/facts`,
+        engineerToken,
+        { operationId: randomUUID(), kind: 'finished', occurredAt: finishAt },
+      );
+      assert.equal(finished.status, 201, await finished.clone().text());
+      assert.equal(await publishedPublicationId(), publicationAfterStart);
+      const completed = await prisma.request.findUniqueOrThrow({ where: { id: request.id } });
+      assert.equal(
+        Number(completed.continuationAvailableAt),
+        startedAt + stored.serviceDurationSec,
+      );
+    });
+
+    it('withdraws overdue capacity without auto-finishing and restores it on explicit finish', async () => {
+      const request = await submitRequest('equipment_order');
+      await feed(
+        buildRouterResult({
+          resultId: unique('result'),
+          inputHash: await publishedHash(),
+          contextVersion: 'ctx-1',
+          planningAsOf: now(),
+          assigned: [
+            {
+              requestId: request.id,
+              engineerId,
+              lat: request.lat,
+              lon: request.lon,
+              startAt: now() + HOUR,
+              durationSec: 1800,
+            },
+          ],
+        }),
+        'ctx-1',
+      );
+      const stored = await prisma.request.findUniqueOrThrow({ where: { id: request.id } });
+      const startedAt = now() - stored.serviceDurationSec - 10 * 60 - 1;
+      await call('POST', `/api/v1/engineer/requests/${request.id}/facts`, engineerToken, {
+        operationId: randomUUID(),
+        kind: 'started',
+        occurredAt: startedAt,
+      });
+      // Keep an unfinished task authoritative even when its start falls just before the
+      // current shift horizon. This can happen after a dispatcher corrects a shift or a
+      // long task rolls into the next planning horizon.
+      await prisma.engineerDay.updateMany({
+        where: { engineerId },
+        data: { shiftStartAt: BigInt(startedAt + 1) },
+      });
+
+      await app.get(ExecutionOverrunCoordinator).runOnce();
+      const overdue = await prisma.request.findUniqueOrThrow({ where: { id: request.id } });
+      assert.equal(overdue.lifecycle, 'in_progress');
+      assert.equal(overdue.completedAt, null, 'the threshold must never invent a finish fact');
+      assert.ok(overdue.overrunDetectedAt);
+      const afterOverrun = await publishedSnapshot();
+      assert.equal(afterOverrun.trigger, 'request.execution_overrun');
+      assert.equal(
+        afterOverrun.snapshot.engineers.some((engineer) => engineer.engineer_id === engineerId),
+        false,
+      );
+
+      const finished = await call(
+        'POST',
+        `/api/v1/engineer/requests/${request.id}/facts`,
+        engineerToken,
+        { operationId: randomUUID(), kind: 'finished', occurredAt: now() },
+      );
+      assert.equal(finished.status, 201, await finished.clone().text());
+      const afterFinish = await publishedSnapshot();
+      assert.equal(afterFinish.trigger, 'request.execution_variance');
+      assert.equal(
+        afterFinish.snapshot.engineers.some((engineer) => engineer.engineer_id === engineerId),
+        true,
+      );
+    });
+
+    it('rejects a finish timestamp earlier than the confirmed start', async () => {
+      const request = await submitRequest();
+      await feed(
+        buildRouterResult({
+          resultId: unique('result'),
+          inputHash: await publishedHash(),
+          contextVersion: 'ctx-1',
+          planningAsOf: now(),
+          assigned: [
+            {
+              requestId: request.id,
+              engineerId,
+              lat: request.lat,
+              lon: request.lon,
+              startAt: now() + HOUR,
+              durationSec: 1800,
+            },
+          ],
+        }),
+        'ctx-1',
+      );
+      const startedAt = now();
+      await call('POST', `/api/v1/engineer/requests/${request.id}/facts`, engineerToken, {
+        operationId: randomUUID(),
+        kind: 'started',
+        occurredAt: startedAt,
+      });
+      const response = await call(
+        'POST',
+        `/api/v1/engineer/requests/${request.id}/facts`,
+        engineerToken,
+        { operationId: randomUUID(), kind: 'finished', occurredAt: startedAt - 1 },
+      );
+      assert.equal(response.status, 422);
+      const cleanup = await call(
+        'POST',
+        `/api/v1/engineer/requests/${request.id}/facts`,
+        engineerToken,
+        { operationId: randomUUID(), kind: 'finished', occurredAt: startedAt },
+      );
+      assert.equal(cleanup.status, 201, await cleanup.clone().text());
     });
   });
 

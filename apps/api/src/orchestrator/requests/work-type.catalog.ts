@@ -8,12 +8,10 @@ import type { Priority, Skill } from '../../generated/prisma/client';
  * (context/32 section 4.1). The customer never types a qualification code, and Router
  * never classifies free text.
  *
- * **These values are documented assumptions, not data.** The official dataset has a work
- * type but no duration, no priority and no skill (context/18 section 6.3), and the case
- * statement explicitly allows deriving them by a stated rule. The skill mapping follows
- * context/18 section 6.5; the durations are the midpoints of the ranges named there. They
- * are stored with `origin = synthesized` so that a derived value never looks like
- * something the customer supplied.
+ * The official dataset has a work type but no duration, priority or skill (context/18
+ * section 6.3). Skills and priorities follow the documented derivation rules; duration
+ * components come from the supplied normative workbook and are persisted explicitly so
+ * their source remains explainable.
  *
  * `aliases` carry the exact wording used in the dataset. They exist so the importer maps
  * by a declared string rather than by guessing at an unfamiliar one: an unmapped type
@@ -27,11 +25,67 @@ export interface WorkTypeSpec {
   /** Exact spellings that appear in the official dataset. */
   readonly aliases: readonly string[];
   readonly skill: Skill;
+  readonly normProfileCode: WorkNormProfileCode;
+  /** Official reference travel allowance. Router decides whether to use it or graph travel. */
+  readonly normativeTravelDurationSec: number;
+  /** Work performed at the customer site, excluding paperwork. */
+  readonly technicalDurationSec: number;
+  /** Paperwork performed at the customer site. */
+  readonly documentationDurationSec: number;
+  /** On-site occupancy only: technical plus documentation time, never road time. */
   readonly serviceDurationSec: number;
   readonly priority: Priority;
 }
 
 const MINUTES = 60;
+
+export type WorkNormProfileCode =
+  | 'connection_base'
+  | 'outage_tkd'
+  | 'equipment_order'
+  | 'local_repair';
+
+export interface WorkNormProfile {
+  readonly normProfileCode: WorkNormProfileCode;
+  readonly normativeTravelDurationSec: number;
+  readonly technicalDurationSec: number;
+  readonly documentationDurationSec: number;
+  readonly serviceDurationSec: number;
+}
+
+/**
+ * Canonical work-time norms transcribed from the supplied official workbook.
+ *
+ * The workbook's road column stays separate from `serviceDurationSec`: Router already
+ * schedules travel between points and may use either the graph or the fixed reference
+ * allowance. Mixing it into service time would charge every journey twice.
+ */
+export const WORK_NORM_PROFILES: Readonly<Record<WorkNormProfileCode, WorkNormProfile>> = {
+  connection_base: createNormProfile('connection_base', 20, 60, 10),
+  outage_tkd: createNormProfile('outage_tkd', 20, 80, 0),
+  equipment_order: createNormProfile('equipment_order', 20, 10, 10),
+  local_repair: createNormProfile('local_repair', 20, 30, 0),
+};
+
+function createNormProfile(
+  normProfileCode: WorkNormProfileCode,
+  normativeTravelMinutes: number,
+  technicalMinutes: number,
+  documentationMinutes: number,
+): WorkNormProfile {
+  return {
+    normProfileCode,
+    normativeTravelDurationSec: normativeTravelMinutes * MINUTES,
+    technicalDurationSec: technicalMinutes * MINUTES,
+    documentationDurationSec: documentationMinutes * MINUTES,
+    serviceDurationSec: (technicalMinutes + documentationMinutes) * MINUTES,
+  };
+}
+
+const CONNECTION_BASE = WORK_NORM_PROFILES.connection_base;
+const OUTAGE_TKD = WORK_NORM_PROFILES.outage_tkd;
+const EQUIPMENT_ORDER = WORK_NORM_PROFILES.equipment_order;
+const LOCAL_REPAIR = WORK_NORM_PROFILES.local_repair;
 
 export const WORK_TYPES: readonly WorkTypeSpec[] = [
   // Emergency work: a service already in use has failed.
@@ -40,7 +94,7 @@ export const WORK_TYPES: readonly WorkTypeSpec[] = [
     title: 'Авария',
     aliases: ['Авария'],
     skill: 'emergency',
-    serviceDurationSec: 90 * MINUTES,
+    ...OUTAGE_TKD,
     priority: 'urgent',
   },
   {
@@ -48,7 +102,7 @@ export const WORK_TYPES: readonly WorkTypeSpec[] = [
     title: 'Нет линка',
     aliases: ['Нет линка'],
     skill: 'emergency',
-    serviceDurationSec: 90 * MINUTES,
+    ...OUTAGE_TKD,
     priority: 'urgent',
   },
   {
@@ -56,7 +110,7 @@ export const WORK_TYPES: readonly WorkTypeSpec[] = [
     title: 'Разрывы',
     aliases: ['Разрывы'],
     skill: 'emergency',
-    serviceDurationSec: 60 * MINUTES,
+    ...OUTAGE_TKD,
     priority: 'normal',
   },
   {
@@ -64,7 +118,7 @@ export const WORK_TYPES: readonly WorkTypeSpec[] = [
     title: 'Низкая скорость',
     aliases: ['Низкая скорость'],
     skill: 'emergency',
-    serviceDurationSec: 60 * MINUTES,
+    ...OUTAGE_TKD,
     priority: 'normal',
   },
   {
@@ -72,7 +126,7 @@ export const WORK_TYPES: readonly WorkTypeSpec[] = [
     title: 'Рост ошибок на порту',
     aliases: ['Рост ошибок на порту'],
     skill: 'emergency',
-    serviceDurationSec: 60 * MINUTES,
+    ...OUTAGE_TKD,
     priority: 'normal',
   },
   {
@@ -80,7 +134,7 @@ export const WORK_TYPES: readonly WorkTypeSpec[] = [
     title: 'IP-адрес 169...',
     aliases: ['IP-адрес 169...'],
     skill: 'emergency',
-    serviceDurationSec: 60 * MINUTES,
+    ...OUTAGE_TKD,
     priority: 'normal',
   },
 
@@ -90,7 +144,7 @@ export const WORK_TYPES: readonly WorkTypeSpec[] = [
     title: 'Заявка на подключение',
     aliases: ['Заявка на подключение'],
     skill: 'connection',
-    serviceDurationSec: 75 * MINUTES,
+    ...CONNECTION_BASE,
     priority: 'normal',
   },
   {
@@ -98,7 +152,7 @@ export const WORK_TYPES: readonly WorkTypeSpec[] = [
     title: 'Конвергенция абонента',
     aliases: ['Конвергенция абонента'],
     skill: 'connection',
-    serviceDurationSec: 50 * MINUTES,
+    ...CONNECTION_BASE,
     priority: 'normal',
   },
   {
@@ -106,7 +160,7 @@ export const WORK_TYPES: readonly WorkTypeSpec[] = [
     title: 'Дозаказ оборудования',
     aliases: ['Дозаказ оборудования', 'Заказ подключения/Дозаказ оборудования'],
     skill: 'connection',
-    serviceDurationSec: 45 * MINUTES,
+    ...EQUIPMENT_ORDER,
     priority: 'normal',
   },
   {
@@ -114,7 +168,7 @@ export const WORK_TYPES: readonly WorkTypeSpec[] = [
     title: 'Роутер. Замена',
     aliases: ['Роутер. Замена', 'Роутер. Замена техническим специалистом'],
     skill: 'connection',
-    serviceDurationSec: 35 * MINUTES,
+    ...EQUIPMENT_ORDER,
     priority: 'normal',
   },
   {
@@ -126,7 +180,7 @@ export const WORK_TYPES: readonly WorkTypeSpec[] = [
       'ТВ. Замена приставки техником',
     ],
     skill: 'connection',
-    serviceDurationSec: 35 * MINUTES,
+    ...EQUIPMENT_ORDER,
     priority: 'normal',
   },
   {
@@ -134,7 +188,7 @@ export const WORK_TYPES: readonly WorkTypeSpec[] = [
     title: 'Переключение на Гбит/с',
     aliases: ['Переключение на Гбит/с'],
     skill: 'connection',
-    serviceDurationSec: 45 * MINUTES,
+    ...CONNECTION_BASE,
     priority: 'normal',
   },
 
@@ -144,7 +198,7 @@ export const WORK_TYPES: readonly WorkTypeSpec[] = [
     title: 'Работа с кабелем',
     aliases: ['Работа с кабелем'],
     skill: 'local',
-    serviceDurationSec: 60 * MINUTES,
+    ...LOCAL_REPAIR,
     priority: 'normal',
   },
   {
@@ -152,7 +206,7 @@ export const WORK_TYPES: readonly WorkTypeSpec[] = [
     title: 'Мониторинг',
     aliases: ['Мониторинг'],
     skill: 'local',
-    serviceDurationSec: 30 * MINUTES,
+    ...LOCAL_REPAIR,
     priority: 'normal',
   },
   {
@@ -160,7 +214,7 @@ export const WORK_TYPES: readonly WorkTypeSpec[] = [
     title: 'TVE/ENT. Другие ошибки',
     aliases: ['TVE/ENT. Другие ошибки'],
     skill: 'local',
-    serviceDurationSec: 40 * MINUTES,
+    ...LOCAL_REPAIR,
     priority: 'normal',
   },
   {
@@ -168,7 +222,7 @@ export const WORK_TYPES: readonly WorkTypeSpec[] = [
     title: 'Информация',
     aliases: ['Информация'],
     skill: 'local',
-    serviceDurationSec: 30 * MINUTES,
+    ...LOCAL_REPAIR,
     priority: 'normal',
   },
 ] as const;

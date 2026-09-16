@@ -24,6 +24,10 @@ export class UnitOfWork {
    * turn an already saved request into a non-existent one.
    */
   async run<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
-    return this.prisma.$transaction(async (tx) => fn(tx));
+    // A complete three-region import writes hundreds of rows and publishes its snapshot
+    // in the same atomic unit. Prisma's five-second interactive-transaction default is
+    // shorter than that valid operation on Docker Desktop, so the boundary carries an
+    // explicit ceiling while preserving one all-or-nothing commit.
+    return this.prisma.$transaction(async (tx) => fn(tx), { timeout: 60_000 });
   }
 }

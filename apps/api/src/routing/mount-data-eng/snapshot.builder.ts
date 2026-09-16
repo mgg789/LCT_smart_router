@@ -52,10 +52,16 @@ export class SnapshotBuilder {
     });
 
     const horizon = horizonOf(days, planningAsOf);
+    const executionByEngineer = await this.executionAnchors(
+      tx,
+      days.map((day) => day.engineerId),
+      horizon,
+    );
 
     const engineers: SnapshotEngineer[] = [];
     let engineersWithoutStartLocation = 0;
     let engineersWithoutShift = 0;
+    let engineersOverrun = 0;
     for (const day of days) {
       if (day.engineer.archivedAt !== null) {
         continue;
@@ -68,7 +74,14 @@ export class SnapshotBuilder {
         engineersWithoutShift += 1;
         continue;
       }
-      const projected = this.projectEngineer(day.engineer, day);
+      const execution = executionByEngineer.get(day.engineerId) ?? null;
+      if (execution?.lifecycle === 'in_progress' && execution.overrunDetectedAt !== null) {
+        // The timer only withdraws future capacity. It neither finishes the task nor
+        // guesses when this engineer will become available again.
+        engineersOverrun += 1;
+        continue;
+      }
+      const projected = this.projectEngineer(day.engineer, day, execution);
       if (!projected) {
         engineersWithoutStartLocation += 1;
         continue;
@@ -150,6 +163,7 @@ export class SnapshotBuilder {
         requestsOutsideHorizon,
         engineersWithoutStartLocation,
         engineersWithoutShift,
+        engineersOverrun,
         engineersWithoutWorkday: Math.max(0, activeEngineers - days.length),
       },
     };
@@ -171,8 +185,14 @@ export class SnapshotBuilder {
    * input, and the contract is explicit that it does not license substituting an office
    * or zero coordinates.
    */
-  private projectEngineer(engineer: Engineer, day: EngineerDay): SnapshotEngineer | null {
-    if (engineer.homeLat === null || engineer.homeLon === null) {
+  private projectEngineer(
+    engineer: Engineer,
+    day: EngineerDay,
+    execution: Request | null,
+  ): SnapshotEngineer | null {
+    const lat = execution?.lat ?? engineer.homeLat;
+    const lon = execution?.lon ?? engineer.homeLon;
+    if (lat === null || lon === null) {
       return null;
     }
 
@@ -190,7 +210,8 @@ export class SnapshotBuilder {
      * context/33 section 7 forbids. This is a property of the engineer's state, not of the
      * moment we happen to publish.
      */
-    const availableFrom = shiftStart;
+    const continuation = execution?.continuationAvailableAt ?? null;
+    const availableFrom = continuation === null ? shiftStart : Number(continuation);
 
     return {
       engineer_id: engineer.id,
@@ -199,11 +220,8 @@ export class SnapshotBuilder {
       transport_type: engineer.transportType,
       shift_start_at: shiftStart,
       shift_end_at: Number(day.shiftEndAt),
-      start_location: { lat: engineer.homeLat, lon: engineer.homeLon },
+      start_location: { lat, lon },
       available_from: availableFrom,
-      // The start came from the profile, not from an observation, so there is no
-      // observation time to report. It does not confirm anyone's arrival anywhere.
-      position_observed_at: null,
       availability: day.availability,
       expected_online_at: nullableNumber(day.expectedOnlineAt),
       lunch_taken: day.lunchTaken,
@@ -217,6 +235,56 @@ export class SnapshotBuilder {
         required: day.lunchTaken ? false : day.lunchRequired,
       },
     };
+  }
+
+  /**
+   * Finds the latest confirmed task position for every engineer in this horizon.
+   * Started work wins while it is active; after completion the finish position remains
+   * the continuation point for later replans instead of snapping back to the depot.
+   */
+  private async executionAnchors(
+    tx: Tx,
+    engineerIds: string[],
+    horizon: { start: number; end: number },
+  ): Promise<Map<string, Request>> {
+    if (engineerIds.length === 0) {
+      return new Map();
+    }
+    const facts = await tx.requestFact.findMany({
+      where: {
+        engineerId: { in: engineerIds },
+        kind: { in: ['started', 'finished'] },
+      },
+      include: { request: true },
+      orderBy: [{ occurredAt: 'desc' }, { recordedAt: 'desc' }],
+    });
+    const active = new Map<string, Request>();
+    const completed = new Map<string, Request>();
+    for (const fact of facts) {
+      if (!fact.engineerId) {
+        continue;
+      }
+      const occurredAt = Number(fact.occurredAt);
+      const isActiveStart = fact.kind === 'started' && fact.request.lifecycle === 'in_progress';
+      const isConfirmedFinish =
+        fact.kind === 'finished' &&
+        fact.request.lifecycle === 'completed' &&
+        occurredAt >= horizon.start &&
+        occurredAt <= horizon.end;
+      if (isActiveStart && !active.has(fact.engineerId)) {
+        active.set(fact.engineerId, fact.request);
+      } else if (isConfirmedFinish && !completed.has(fact.engineerId)) {
+        completed.set(fact.engineerId, fact.request);
+      }
+    }
+    // Active work always wins, even if an earlier test/import left a more recent completed
+    // fact. The invariant normally permits only one active task per engineer; this order
+    // also keeps the projection conservative if historic data predates that guard.
+    const anchors = new Map(completed);
+    for (const [engineerId, request] of active) {
+      anchors.set(engineerId, request);
+    }
+    return anchors;
   }
 }
 

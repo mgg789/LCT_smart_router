@@ -2,11 +2,18 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { Injectable, Logger } from '@nestjs/common';
+import { z } from 'zod';
 import { SysError } from '../../common/errors';
 import type { Skill, TransportType } from '../../generated/prisma/client';
 import type { OperationContext } from '../../operations';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
-import { type ParsedRegion, parseBrigades, parseSyntheticFile } from './dataset.parser';
+import {
+  normalizeAddress,
+  type ParsedBrigade,
+  type ParsedRegion,
+  parseBrigades,
+  parseSyntheticFile,
+} from './dataset.parser';
 
 export interface ImportSummary {
   readonly source: string;
@@ -20,23 +27,58 @@ export interface ImportSummary {
   readonly errors: string[];
 }
 
-/** Regions of the official dataset, in the order their files are listed. */
+export interface ImportBatchSummary extends ImportSummary {
+  readonly regionResults: ReadonlyArray<ImportSummary & { readonly region: DatasetRegion }>;
+}
+
+/** Regions of the official dataset, in stable cross-region baseline order. */
 export const DATASET_REGIONS = ['east', 'southeast', 'south_central'] as const;
 export type DatasetRegion = (typeof DATASET_REGIONS)[number];
 
+interface PreparedRegion {
+  readonly region: DatasetRegion;
+  readonly source: string;
+  readonly checksum: string;
+  readonly parsed: ParsedRegion;
+  readonly brigades: ParsedBrigade[];
+  readonly geocoded: Map<string, { lat: number; lon: number }>;
+  readonly engineerLimit: number | null;
+}
+
+const geocodePackageSchema = z
+  .object({
+    schema_version: z.string().min(1).optional(),
+    /** Compatibility name used by the prepared Core scenario resources. */
+    version: z.string().min(1).optional(),
+    region: z.enum(DATASET_REGIONS).optional(),
+    source: z.string().min(1),
+    entries: z
+      .array(
+        z.object({
+          address: z.string().min(1),
+          node_id: z.string().min(1).optional(),
+          location: z.object({
+            lat: z.number().min(-90).max(90),
+            lon: z.number().min(-180).max(180),
+          }),
+          match_level: z.string().min(1).optional(),
+          source: z.string().min(1).optional(),
+        }),
+      )
+      .min(1),
+  })
+  .strict()
+  .refine((value) => Boolean(value.schema_version ?? value.version), {
+    message: 'A geocode package version is required',
+  });
+
 /**
- * Imports the organisers' dataset.
+ * Imports one or more official regions as one atomic planning-data operation.
  *
- * Three rules from context/37 section 9.1 shape the whole thing: the package is checked
- * before anything is applied; an error means **nothing** is applied, because a half-loaded
- * file leaves a state nobody chose; and repeating the same package creates no duplicates,
- * recognised by content and origin rather than by file name.
- *
- * What the dataset does not contain is as important as what it does. There is no engineer
- * directory, no durations, no priorities and no coordinates (context/18 section 6.3).
- * Crews, skills and transport are derived by stated rules and stored with
- * `origin = synthesized`; coordinates are not derived at all, because a plausible-looking
- * point is worse than a missing one.
+ * Every selected package is parsed and its versioned coordinate catalogue is validated
+ * before the first database write. Request windows are rebased to a live planning
+ * horizon while preserving their relative offsets, because the official files are a
+ * historical benchmark and an import must remain runnable at any time of day.
  */
 @Injectable()
 export class DatasetImportService {
@@ -44,18 +86,89 @@ export class DatasetImportService {
 
   constructor(private readonly publisher: SnapshotPublisher) {}
 
-  /**
-   * Loads one region.
-   *
-   * `datasetRoot` is passed in so a test can point at a fixture; the default is the
-   * dataset committed to the repository.
-   */
+  /** Backwards-compatible one-region entry point. */
   async importRegion(
     context: OperationContext,
     region: DatasetRegion,
     datasetRoot: string,
     timeZoneOffsetSec: number,
   ): Promise<ImportSummary> {
+    const result = await this.importRegions(context, [region], datasetRoot, timeZoneOffsetSec, {});
+    return result.regionResults[0] ?? result;
+  }
+
+  /** Loads all selected regions and publishes the resulting task exactly once. */
+  async importRegions(
+    context: OperationContext,
+    regions: readonly DatasetRegion[],
+    datasetRoot: string,
+    timeZoneOffsetSec: number,
+    engineerCountPerRegion: Partial<Record<DatasetRegion, number>>,
+  ): Promise<ImportBatchSummary> {
+    const prepared = regions.map((region) =>
+      this.prepareRegion(
+        context,
+        region,
+        datasetRoot,
+        timeZoneOffsetSec,
+        engineerCountPerRegion[region] ?? null,
+      ),
+    );
+    if (prepared.some((item) => item.parsed.errors.length > 0)) {
+      return aggregate(
+        prepared.map((item) => ({
+          region: item.region,
+          ...emptySummary(item.source, item.parsed.warnings, item.parsed.errors),
+        })),
+      );
+    }
+
+    const results: Array<ImportSummary & { region: DatasetRegion }> = [];
+    for (const item of prepared) {
+      const prior = await context.tx.importPackage.findFirst({ where: { source: item.source } });
+      if (prior) {
+        if (prior.checksum !== item.checksum) {
+          throw new SysError(
+            'VALIDATION_FAILED',
+            'The region was already imported with a different package or engineer count',
+            { details: { region: item.region, source: item.source } },
+          );
+        }
+        results.push({
+          region: item.region,
+          ...emptySummary(item.source, ['This exact package has already been imported'], []),
+        });
+        continue;
+      }
+      results.push({
+        region: item.region,
+        ...(await this.apply(context, item, timeZoneOffsetSec)),
+      });
+    }
+
+    if (results.some((item) => item.applied)) {
+      await this.publisher.publishIfChanged(
+        context.tx,
+        context.now,
+        PUBLICATION_TRIGGERS.DATA_IMPORTED,
+      );
+    }
+
+    const summary = aggregate(results);
+    this.logger.log(
+      `Imported ${regions.join(', ')}: ${summary.requestsCreated} requests, ` +
+        `${summary.engineersCreated} engineers`,
+    );
+    return summary;
+  }
+
+  private prepareRegion(
+    context: OperationContext,
+    region: DatasetRegion,
+    datasetRoot: string,
+    timeZoneOffsetSec: number,
+    engineerLimit: number | null,
+  ): PreparedRegion {
     const syntheticPath = resolve(datasetRoot, `${region}_synthetic_data.csv`);
     const controlPath = resolve(datasetRoot, `${region}_control_distribution.csv`);
     if (!existsSync(syntheticPath) || !existsSync(controlPath)) {
@@ -64,96 +177,77 @@ export class DatasetImportService {
 
     const syntheticBytes = readFileSync(syntheticPath);
     const controlBytes = readFileSync(controlPath);
-
-    // Origin and content, not the file name: reloading a renamed copy of the same data
-    // must still be recognised as the same package.
-    const source = `official-dataset:${region}`;
-    const checksum = createHash('sha256').update(syntheticBytes).update(controlBytes).digest('hex');
-
-    const already = await context.tx.importPackage.findUnique({
-      where: { source_checksum: { source, checksum } },
-    });
-    if (already) {
-      return {
-        source,
-        applied: false,
-        requestsCreated: 0,
-        requestsSkippedAsDuplicate: 0,
-        engineersCreated: 0,
-        depotsCreated: 0,
-        requestsWithoutCoordinates: 0,
-        warnings: ['This exact package has already been imported'],
-        errors: [],
-      };
+    const parsedSource = parseSyntheticFile(region, syntheticBytes, timeZoneOffsetSec);
+    const parsed = rebaseToLiveHorizon(parsedSource, context.now);
+    const allBrigades = parseBrigades(region, controlBytes);
+    if (engineerLimit !== null && engineerLimit > allBrigades.length) {
+      throw new SysError('VALIDATION_FAILED', 'Engineer count exceeds crews in the dataset', {
+        details: { region, requested: engineerLimit, available: allBrigades.length },
+      });
     }
+    const brigades = allBrigades.slice(0, engineerLimit ?? allBrigades.length);
+    const geocode = this.loadGeocodePackage(datasetRoot, region, parsedSource);
 
-    const parsed = parseSyntheticFile(region, syntheticBytes, timeZoneOffsetSec);
-    const brigades = parseBrigades(region, controlBytes);
+    const checksum = createHash('sha256')
+      .update(syntheticBytes)
+      .update('\0')
+      .update(controlBytes)
+      .update('\0')
+      .update(geocode.bytes)
+      .update('\0')
+      .update(String(engineerLimit ?? 'all'))
+      .digest('hex');
 
-    if (parsed.errors.length > 0) {
-      // Nothing is written. Reporting what is wrong and applying the rest would leave a
-      // silently partial dataset.
-      return {
-        source,
-        applied: false,
-        requestsCreated: 0,
-        requestsSkippedAsDuplicate: 0,
-        engineersCreated: 0,
-        depotsCreated: 0,
-        requestsWithoutCoordinates: 0,
-        warnings: parsed.warnings,
-        errors: parsed.errors,
-      };
-    }
-
-    const geocoded = this.loadGeocodeSidecar(datasetRoot, region);
-    const summary = await this.apply(context, source, checksum, parsed, brigades, geocoded);
-
-    // The free pool and the set of engineers both changed, so the task changed.
-    await this.publisher.publishIfChanged(
-      context.tx,
-      context.now,
-      PUBLICATION_TRIGGERS.DATA_IMPORTED,
-    );
-
-    this.logger.log(
-      `Imported ${region}: ${summary.requestsCreated} requests, ` +
-        `${summary.engineersCreated} engineers, ` +
-        `${summary.requestsWithoutCoordinates} awaiting coordinates`,
-    );
-    return summary;
+    return {
+      region,
+      source: `official-dataset:${region}`,
+      checksum,
+      parsed,
+      brigades,
+      geocoded: geocode.points,
+      engineerLimit,
+    };
   }
 
   private async apply(
     context: OperationContext,
-    source: string,
-    checksum: string,
-    parsed: ParsedRegion,
-    brigades: ReturnType<typeof parseBrigades>,
-    geocoded: Map<string, { lat: number; lon: number }>,
+    prepared: PreparedRegion,
+    timeZoneOffsetSec: number,
   ): Promise<ImportSummary> {
+    const { source, checksum, parsed, brigades, geocoded } = prepared;
     const now = BigInt(context.now);
     let depotsCreated = 0;
     let depotId: string | null = null;
+    let depotPoint: { lat: number; lon: number } | null = null;
 
     if (parsed.depot) {
+      depotPoint = geocoded.get(normalizeAddress(parsed.depot.addressText)) ?? null;
+      const existing = await context.tx.depot.findUnique({
+        where: { region: parsed.depot.region },
+      });
       const depot = await context.tx.depot.upsert({
         where: { region: parsed.depot.region },
-        update: {},
+        update: {
+          addressText: parsed.depot.addressText,
+          lat: depotPoint?.lat ?? null,
+          lon: depotPoint?.lon ?? null,
+        },
         create: {
           region: parsed.depot.region,
           addressText: parsed.depot.addressText,
-          // The office address has no coordinates either. It is stored as written.
-          lat: geocoded.get(parsed.depot.addressText)?.lat ?? null,
-          lon: geocoded.get(parsed.depot.addressText)?.lon ?? null,
+          lat: depotPoint?.lat ?? null,
+          lon: depotPoint?.lon ?? null,
           origin: 'import',
           createdAt: now,
         },
       });
       depotId = depot.id;
-      depotsCreated = 1;
+      depotsCreated = existing ? 0 : 1;
     }
 
+    const horizonStart = Math.min(...parsed.requests.map((request) => request.windowStartAt));
+    const horizonEnd = Math.max(...parsed.requests.map((request) => request.windowEndAt));
+    const workDate = localDate(context.now, timeZoneOffsetSec);
     let engineersCreated = 0;
     for (const brigade of brigades) {
       const mapped = await context.tx.externalIdMap.findUnique({
@@ -165,47 +259,62 @@ export class DatasetImportService {
           },
         },
       });
-      if (mapped) {
-        continue;
+      let engineerId = mapped?.internalId ?? null;
+      if (!engineerId) {
+        const synthesized = synthesizeCrew(brigade.inputOrder);
+        const rows = await context.tx.$queryRaw<Array<{ value: bigint }>>`
+          SELECT nextval('engineer_input_order_seq') AS value
+        `;
+        const engineer = await context.tx.engineer.create({
+          data: {
+            displayName: brigade.name,
+            inputOrder: Number(rows[0]?.value ?? 0),
+            skills: synthesized.skills,
+            transportType: synthesized.transportType,
+            region: brigade.region,
+            depotId,
+            homeLat: depotPoint?.lat ?? null,
+            homeLon: depotPoint?.lon ?? null,
+            origin: 'synthesized',
+            createdAt: now,
+            updatedAt: now,
+          },
+        });
+        engineerId = engineer.id;
+        await context.tx.externalIdMap.create({
+          data: {
+            source,
+            entityType: 'engineer',
+            externalId: brigade.name,
+            internalId: engineer.id,
+            createdAt: now,
+          },
+        });
+        engineersCreated += 1;
       }
 
-      const synthesized = synthesizeCrew(brigade.inputOrder);
-      const engineer = await context.tx.engineer.create({
-        data: {
-          displayName: brigade.name,
-          // Order of first appearance in the control file, which the baseline iterates in.
-          inputOrder: brigade.inputOrder,
-          skills: synthesized.skills,
-          transportType: synthesized.transportType,
-          region: brigade.region,
-          depotId,
-          // The crew starts from the regional office, which is the only start point the
-          // dataset gives (context/18 section 6.4). Without its coordinates the engineer
-          // is simply not yet plannable, and the snapshot says so.
-          homeLat: null,
-          homeLon: null,
-          // Marked as derived: the dataset has no skills or transport at all.
-          origin: 'synthesized',
+      await context.tx.engineerDay.upsert({
+        where: { engineerId_workDate: { engineerId, workDate } },
+        update: {
+          shiftStartAt: BigInt(horizonStart),
+          shiftEndAt: BigInt(horizonEnd),
+          updatedAt: now,
+        },
+        create: {
+          engineerId,
+          workDate,
+          shiftStartAt: BigInt(horizonStart),
+          shiftEndAt: BigInt(horizonEnd),
+          lunchEnabled: false,
+          lunchRequired: false,
           createdAt: now,
           updatedAt: now,
         },
       });
-      await context.tx.externalIdMap.create({
-        data: {
-          source,
-          entityType: 'engineer',
-          externalId: brigade.name,
-          internalId: engineer.id,
-          createdAt: now,
-        },
-      });
-      engineersCreated += 1;
     }
 
     let requestsCreated = 0;
     let duplicates = 0;
-    let withoutCoordinates = 0;
-
     for (const request of parsed.requests) {
       const mapped = await context.tx.externalIdMap.findUnique({
         where: {
@@ -220,26 +329,28 @@ export class DatasetImportService {
         duplicates += 1;
         continue;
       }
-
-      const point = geocoded.get(request.addressText);
+      const point = geocoded.get(normalizeAddress(request.addressText));
       if (!point) {
-        withoutCoordinates += 1;
+        throw new SysError('VALIDATION_FAILED', 'Validated geocode disappeared during import', {
+          details: { region: prepared.region, address: request.addressText },
+        });
       }
-
       const rows = await context.tx.$queryRaw<Array<{ value: bigint }>>`
         SELECT nextval('request_arrival_order_seq') AS value
       `;
-      const arrivalOrder = Number(rows[0]?.value ?? 0);
-
       const created = await context.tx.request.create({
         data: {
-          arrivalOrder,
+          arrivalOrder: Number(rows[0]?.value ?? 0),
           addressText: request.addressText,
           district: request.district,
           region: request.region,
-          lat: point?.lat ?? null,
-          lon: point?.lon ?? null,
-          needsGeocoding: !point,
+          lat: point.lat,
+          lon: point.lon,
+          needsGeocoding: false,
+          normProfileCode: request.normProfileCode,
+          normativeTravelDurationSec: request.normativeTravelDurationSec,
+          technicalDurationSec: request.technicalDurationSec,
+          documentationDurationSec: request.documentationDurationSec,
           serviceDurationSec: request.serviceDurationSec,
           windowStartAt: BigInt(request.windowStartAt),
           windowEndAt: BigInt(request.windowEndAt),
@@ -248,8 +359,6 @@ export class DatasetImportService {
           requiredSkill: request.skill,
           requiredTransport: null,
           workTypeHd: request.workTypeCode,
-          // Already in the system and available for distribution: these are real orders,
-          // not drafts someone still has to confirm.
           lifecycle: 'submitted',
           assignmentState: 'pending',
           origin: 'import',
@@ -276,12 +385,14 @@ export class DatasetImportService {
         checksum,
         appliedAt: now,
         summary: {
+          region: prepared.region,
           requestsCreated,
           engineersCreated,
           depotsCreated,
           duplicates,
-          withoutCoordinates,
-          warnings: parsed.warnings.length,
+          requestsWithoutCoordinates: 0,
+          engineerLimit: prepared.engineerLimit,
+          rebasedToWorkDate: workDate,
         },
       },
     });
@@ -293,60 +404,156 @@ export class DatasetImportService {
       requestsSkippedAsDuplicate: duplicates,
       engineersCreated,
       depotsCreated,
-      requestsWithoutCoordinates: withoutCoordinates,
+      requestsWithoutCoordinates: 0,
       warnings: parsed.warnings,
       errors: [],
     };
   }
 
-  /**
-   * Optional address-to-point file supplied by the data zone.
-   *
-   * The dataset has only addresses, and geocoding is a separate task. When the file is
-   * absent every imported request is marked `needsGeocoding` and excluded from the
-   * published task with a counted diagnostic -- visible, not silently missing. When it
-   * appears, the same importer fills the points with no code change here.
-   */
-  private loadGeocodeSidecar(
+  /** Reads and completely validates the versioned offline coordinate catalogue. */
+  private loadGeocodePackage(
     datasetRoot: string,
-    region: string,
-  ): Map<string, { lat: number; lon: number }> {
+    region: DatasetRegion,
+    parsed: ParsedRegion,
+  ): { bytes: Buffer; points: Map<string, { lat: number; lon: number }> } {
     const path = resolve(datasetRoot, '..', 'geocoded', `${region}.json`);
     if (!existsSync(path)) {
-      return new Map();
+      throw SysError.notFound('Geocode package for region', { region, path });
     }
+    const bytes = readFileSync(path);
+    let raw: unknown;
     try {
-      const parsed = JSON.parse(readFileSync(path, 'utf8')) as Record<
-        string,
-        { lat: number; lon: number }
-      >;
-      return new Map(Object.entries(parsed));
+      raw = JSON.parse(bytes.toString('utf8'));
     } catch (error) {
-      this.logger.warn(
-        `Ignoring unreadable geocode file for ${region}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      return new Map();
+      throw new SysError('VALIDATION_FAILED', 'Geocode package is not valid JSON', {
+        details: { region },
+        cause: error,
+      });
     }
+    const result = geocodePackageSchema.safeParse(raw);
+    if (!result.success) {
+      throw new SysError('VALIDATION_FAILED', 'Geocode package has an invalid schema', {
+        details: { region, issues: result.error.issues },
+      });
+    }
+    if (result.data.region && result.data.region !== region) {
+      throw new SysError('VALIDATION_FAILED', 'Geocode package region does not match its file', {
+        details: { expected: region, actual: result.data.region },
+      });
+    }
+
+    const points = new Map<string, { lat: number; lon: number }>();
+    for (const entry of result.data.entries) {
+      const address = normalizeAddress(entry.address);
+      const previous = points.get(address);
+      if (previous) {
+        throw new SysError('VALIDATION_FAILED', 'Geocode package has a duplicate address', {
+          details: { region, address },
+        });
+      }
+      points.set(address, entry.location);
+    }
+
+    const required = new Set(
+      parsed.requests.map((request) => normalizeAddress(request.addressText)),
+    );
+    if (parsed.depot) {
+      required.add(normalizeAddress(parsed.depot.addressText));
+    }
+    const missing = [...required].filter((address) => !points.has(address));
+    if (missing.length > 0) {
+      throw new SysError('VALIDATION_FAILED', 'Geocode package does not cover the dataset', {
+        details: { region, missingCount: missing.length, missing: missing.slice(0, 20) },
+      });
+    }
+    return { bytes, points };
   }
 }
 
-/**
- * Derives a crew's qualification and transport.
- *
- * The dataset has neither, and the case statement allows deriving them by a stated rule
- * (context/18 section 6.3). The rule: rotate through skill combinations and transport
- * types so that all three skills and all four transports occur, deterministically by
- * position, so two imports of the same file always produce the same directory.
- *
- * This is the most openly invented part of the import, which is why every engineer it
- * creates carries `origin = synthesized`.
- */
-function synthesizeCrew(inputOrder: number): {
-  skills: Skill[];
-  transportType: TransportType;
-} {
+/** Moves a historical benchmark to a future horizon without changing relative windows. */
+function rebaseToLiveHorizon(parsed: ParsedRegion, now: number): ParsedRegion {
+  const constrained = parsed.requests.filter(
+    (request) =>
+      request.windowOrigin !== 'declared_full_day' &&
+      request.windowOrigin !== 'missing_treated_as_full_day',
+  );
+  const anchors = constrained.length > 0 ? constrained : parsed.requests;
+  const sourceStart = Math.min(...anchors.map((request) => request.windowStartAt));
+  const sourceEnd = Math.max(...anchors.map((request) => request.windowEndAt));
+  const targetStart = now + 60;
+  const targetEnd = targetStart + (sourceEnd - sourceStart);
+
+  return {
+    ...parsed,
+    requests: parsed.requests.map((request) => {
+      const wholeHorizon =
+        request.windowOrigin === 'declared_full_day' ||
+        request.windowOrigin === 'missing_treated_as_full_day';
+      return {
+        ...request,
+        windowStartAt: wholeHorizon
+          ? targetStart
+          : targetStart + (request.windowStartAt - sourceStart),
+        windowEndAt: wholeHorizon ? targetEnd : targetStart + (request.windowEndAt - sourceStart),
+      };
+    }),
+  };
+}
+
+function localDate(now: number, offsetSec: number): string {
+  return new Date((now + offsetSec) * 1000).toISOString().slice(0, 10);
+}
+
+function emptySummary(source: string, warnings: string[], errors: string[]): ImportSummary {
+  return {
+    source,
+    applied: false,
+    requestsCreated: 0,
+    requestsSkippedAsDuplicate: 0,
+    engineersCreated: 0,
+    depotsCreated: 0,
+    requestsWithoutCoordinates: 0,
+    warnings,
+    errors,
+  };
+}
+
+function aggregate(
+  regionResults: ReadonlyArray<ImportSummary & { readonly region: DatasetRegion }>,
+): ImportBatchSummary {
+  return {
+    source:
+      regionResults.length === 1
+        ? (regionResults[0]?.source ?? 'official-dataset')
+        : 'official-dataset:batch',
+    applied: regionResults.some((item) => item.applied),
+    requestsCreated: sum(regionResults, 'requestsCreated'),
+    requestsSkippedAsDuplicate: sum(regionResults, 'requestsSkippedAsDuplicate'),
+    engineersCreated: sum(regionResults, 'engineersCreated'),
+    depotsCreated: sum(regionResults, 'depotsCreated'),
+    requestsWithoutCoordinates: sum(regionResults, 'requestsWithoutCoordinates'),
+    warnings: regionResults.flatMap((item) =>
+      item.warnings.map((value) => `${item.region}: ${value}`),
+    ),
+    errors: regionResults.flatMap((item) => item.errors.map((value) => `${item.region}: ${value}`)),
+    regionResults,
+  };
+}
+
+function sum(
+  summaries: ReadonlyArray<ImportSummary>,
+  key:
+    | 'requestsCreated'
+    | 'requestsSkippedAsDuplicate'
+    | 'engineersCreated'
+    | 'depotsCreated'
+    | 'requestsWithoutCoordinates',
+): number {
+  return summaries.reduce((total, item) => total + item[key], 0);
+}
+
+/** Deterministically derives qualifications and transport absent from the source files. */
+function synthesizeCrew(inputOrder: number): { skills: Skill[]; transportType: TransportType } {
   const skillSets: Skill[][] = [
     ['connection'],
     ['connection', 'emergency'],
@@ -367,7 +574,6 @@ function synthesizeCrew(inputOrder: number): {
     'car',
     'transit',
   ];
-
   return {
     skills: skillSets[inputOrder % skillSets.length] ?? ['connection'],
     transportType: transports[inputOrder % transports.length] ?? 'car',

@@ -4,13 +4,11 @@ import { type Actor, CurrentActor, Roles } from '../auth';
 import { SysError } from '../common/errors';
 import { zodBody } from '../common/validation';
 import { OperationsService } from '../operations';
-import { EngineersService, GpsService } from '../orchestrator/engineers';
+import { EngineersService } from '../orchestrator/engineers';
 import { FactsService } from '../orchestrator/facts';
 import { PrismaService } from '../persistence';
 import { AppliedPlanService } from '../routing/router-gateway';
 import {
-  type GpsObservationDto,
-  gpsObservationSchema,
   operationOnlySchema,
   type SetAvailabilityDto,
   setAvailabilitySchema,
@@ -42,7 +40,6 @@ import { toRequestView } from './request-view';
 export class EngineerController {
   constructor(
     private readonly engineers: EngineersService,
-    private readonly gps: GpsService,
     private readonly facts: FactsService,
     private readonly plans: AppliedPlanService,
     private readonly operations: OperationsService,
@@ -193,18 +190,6 @@ export class EngineerController {
     return { day: outcome.result };
   }
 
-  @Post('gps')
-  @ApiOperation({ summary: 'Report a position; collection is voluntary' })
-  async reportPosition(
-    @CurrentActor() actor: Actor,
-    @Body(zodBody(gpsObservationSchema)) dto: GpsObservationDto,
-  ): Promise<{ recorded: true }> {
-    await this.gps.record(this.accountOf(actor), dto.observedAt, dto.lat, dto.lon);
-    // Storing a point changes no plan, confirms no arrival and publishes nothing
-    // (context/42 DF-09).
-    return { recorded: true };
-  }
-
   private accountOf(actor: Actor): string {
     if (!actor.accountId) {
       throw SysError.forbidden(
@@ -243,6 +228,9 @@ export class EngineerController {
     @Body(zodBody(reportFactSchema)) dto: ReportFactDto,
   ) {
     const engineer = await this.engineers.byAccount(this.prisma, this.accountOf(actor));
+    // Router owns the thresholds. Read them before the operation opens its database
+    // transaction; a private-network call must never hold a business transaction open.
+    const timing = await this.facts.timing();
     const outcome = await this.operations.execute(
       {
         operationId: dto.operationId,
@@ -260,6 +248,7 @@ export class EngineerController {
             dto.kind,
             dto.occurredAt ?? context.now,
             dto.note ?? null,
+            timing,
           ),
         ),
     );

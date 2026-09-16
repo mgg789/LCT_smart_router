@@ -20,7 +20,13 @@ export interface RequestView {
   readonly workType: string | null;
   readonly workTypeTitle: string | null;
   readonly requiredSkill: string;
+  readonly normProfileCode: string;
+  readonly normativeTravelDurationSec: number;
+  readonly technicalDurationSec: number;
+  readonly documentationDurationSec: number;
   readonly serviceDurationSec: number;
+  readonly actualDurationSec: number | null;
+  readonly durationVarianceSec: number | null;
   readonly windowStartAt: number;
   readonly windowEndAt: number;
   readonly priority: string;
@@ -29,12 +35,16 @@ export interface RequestView {
   readonly createdAt: number;
   readonly submittedAt: number | null;
   readonly startedAt: number | null;
+  readonly expectedCompletionAt: number | null;
+  readonly continuationAvailableAt: number | null;
+  readonly overrunDetectedAt: number | null;
   readonly completedAt: number | null;
   readonly cancelledAt: number | null;
 }
 
 export function toRequestView(request: Request): RequestView {
   const workType = request.workTypeHd === null ? null : findWorkType(request.workTypeHd);
+  const actualDurationSec = actualDuration(request.startedAt, request.completedAt);
   return {
     id: request.id,
     // Returned so the caller can send it back as `expectedVersion` on its next change.
@@ -49,7 +59,14 @@ export function toRequestView(request: Request): RequestView {
     workType: request.workTypeHd,
     workTypeTitle: workType?.title ?? null,
     requiredSkill: request.requiredSkill,
+    normProfileCode: request.normProfileCode,
+    normativeTravelDurationSec: request.normativeTravelDurationSec,
+    technicalDurationSec: request.technicalDurationSec,
+    documentationDurationSec: request.documentationDurationSec,
     serviceDurationSec: request.serviceDurationSec,
+    actualDurationSec,
+    durationVarianceSec:
+      actualDurationSec === null ? null : actualDurationSec - request.serviceDurationSec,
     windowStartAt: Number(request.windowStartAt),
     windowEndAt: Number(request.windowEndAt),
     priority: request.priority,
@@ -58,9 +75,17 @@ export function toRequestView(request: Request): RequestView {
     createdAt: Number(request.createdAt),
     submittedAt: nullableNumber(request.submittedAt),
     startedAt: nullableNumber(request.startedAt),
+    expectedCompletionAt: nullableNumber(request.expectedCompletionAt),
+    continuationAvailableAt: nullableNumber(request.continuationAvailableAt),
+    overrunDetectedAt: nullableNumber(request.overrunDetectedAt),
     completedAt: nullableNumber(request.completedAt),
     cancelledAt: nullableNumber(request.cancelledAt),
   };
+}
+
+/** Returns confirmed on-site duration only when both engineer facts are present. */
+function actualDuration(startedAt: bigint | null, completedAt: bigint | null): number | null {
+  return startedAt === null || completedAt === null ? null : Number(completedAt - startedAt);
 }
 
 function nullableNumber(value: bigint | null): number | null {

@@ -7,7 +7,7 @@ import { createTestClient } from '../support/database';
 
 /**
  * Router Core reads the published sector directly and must not be able to reach anything
- * else -- not sessions, not contacts, not the optional GPS observations
+ * else -- not sessions, tokens or customer/engineer business data
  * (context/37 section 4.4).
  *
  * These checks assert real GRANTs. A naming convention would pass a code review and fail
@@ -45,8 +45,8 @@ describe('database privileges: router_readonly', () => {
     );
   });
 
-  it('may not read sessions, tokens or telemetry', async () => {
-    for (const table of ['sessions', 'api_tokens', 'gps_observations']) {
+  it('may not read sessions or tokens', async () => {
+    for (const table of ['sessions', 'api_tokens']) {
       await assert.rejects(
         () =>
           prisma.$transaction(async (tx) => {

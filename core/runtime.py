@@ -20,10 +20,10 @@ from core.contracts import (
 )
 from core.engine import EngineMemory, EngineOutput, SearchSettings, solve
 from core.evidence import build_plan_evidence
-from core.geo import GraphTravel, RoadGraph, content_hash
+from core.geo import GraphTravel, RoadGraph, configure_travel, content_hash
 from core.osrm import OSRMTravel
 from core.policy import POLICY_CATALOG_VERSION, compile_policy
-from core.settings import TechnicalSettingsStore
+from core.settings import StoredTechnicalSettingsOperation, TechnicalSettingsStore
 
 MAX_SNAPSHOT_BYTES = 16 * 1024 * 1024
 
@@ -175,6 +175,7 @@ def calculate(
             errors=[Diagnostic(code="INPUT_INVALID", message=str(exc))],
         ), None
     provider = GraphTravel(graph) if isinstance(graph, RoadGraph) else graph
+    provider = configure_travel(provider, settings.technical())
     try:
         output = solve(snapshot, provider, settings, memory, context_version)
         effective_snapshot = output.memory.snapshot
@@ -242,6 +243,11 @@ class RouterRuntime:
                 lunches_enabled=saved.lunches_enabled,
                 departure_lateness_tolerance_sec=saved.departure_lateness_tolerance_sec,
                 task_start_lateness_tolerance_sec=saved.task_start_lateness_tolerance_sec,
+                travel_time_mode=saved.travel_time_mode,
+                access_buffer_sec=saved.access_buffer_sec,
+                fixed_travel_time_sec=saved.fixed_travel_time_sec,
+                early_finish_replan_threshold_sec=saved.early_finish_replan_threshold_sec,
+                task_overrun_tolerance_sec=saved.task_overrun_tolerance_sec,
             )
         self.poll_sec = poll_sec
         self._lock = threading.RLock()
@@ -256,7 +262,7 @@ class RouterRuntime:
         self._memory: EngineMemory | None = None
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
-        self._operations: dict[str, tuple[RouterTechnicalSettings, str, dict]] = {}
+        self._operations = settings_store.load_operations() if settings_store is not None else {}
         self.result = RouterResult(status="pending", router_context_version=self.context_version)
         self.last_path: str | None = None
 
@@ -333,28 +339,47 @@ class RouterRuntime:
         with self._lock:
             previous = self._operations.get(operation_id)
             if previous:
-                if previous[:2] != (requested, expected_context_version):
+                if (
+                    previous.requested != requested
+                    or previous.expected_context_version != expected_context_version
+                ):
                     raise ValueError("OPERATION_CONFLICT")
-                return dict(previous[2])
+                return dict(previous.response)
             if expected_context_version != self.context_version:
                 raise ValueError("CONTEXT_CONFLICT")
             if self._settings_store is None:
                 raise ValueError("SETTINGS_STORE_UNAVAILABLE")
-            self._settings_store.save(requested)
-            self.settings = replace(
+            updated_settings = replace(
                 self.settings,
                 lunches_enabled=requested.lunches_enabled,
                 departure_lateness_tolerance_sec=requested.departure_lateness_tolerance_sec,
                 task_start_lateness_tolerance_sec=requested.task_start_lateness_tolerance_sec,
+                travel_time_mode=requested.travel_time_mode,
+                access_buffer_sec=requested.access_buffer_sec,
+                fixed_travel_time_sec=requested.fixed_travel_time_sec,
+                early_finish_replan_threshold_sec=requested.early_finish_replan_threshold_sec,
+                task_overrun_tolerance_sec=requested.task_overrun_tolerance_sec,
             )
-            self._invalidate()
+            previous_settings = self.settings
+            self.settings = updated_settings
             response = {
                 "operation_id": operation_id,
                 "status": "accepted",
                 "technical_settings": requested.model_dump(),
                 "router_context_version": self.context_version,
             }
-            self._operations[operation_id] = (requested, expected_context_version, response)
+            operation = StoredTechnicalSettingsOperation(
+                requested=requested,
+                expected_context_version=expected_context_version,
+                response=response,
+            )
+            try:
+                self._settings_store.save_operation(requested, operation_id, operation)
+            except Exception:
+                self.settings = previous_settings
+                raise
+            self._operations[operation_id] = operation
+            self._invalidate()
             return dict(response)
 
     def tick(self) -> None:

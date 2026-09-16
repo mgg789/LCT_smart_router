@@ -11,10 +11,11 @@ import math
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 from pydantic import Field, model_validator
 
-from core.contracts import GeoPoint, Record, Transport
+from core.contracts import GeoPoint, Record, RouterTechnicalSettings, Transport
 
 
 def content_hash(payload: bytes) -> str:
@@ -93,6 +94,61 @@ class TravelQuote:
     duration_sec: int
     distance_m: int
     points: tuple[GeoPoint, ...]
+
+
+class TravelSource(Protocol):
+    """Minimal immutable provider contract accepted by timing-policy decoration."""
+
+    version: str
+
+    def quote(
+        self, origin: GeoPoint, destination: GeoPoint, profile: Transport
+    ) -> TravelQuote | None:
+        """Return one route quote or ``None`` when the route is unreachable."""
+        ...
+
+
+class TechnicalTravel:
+    """Apply Router-owned timing policy while preserving the graph path and distance."""
+
+    def __init__(self, travel: TravelSource, settings: RouterTechnicalSettings):
+        """Wrap one immutable provider with a complete technical settings revision."""
+        self.travel = travel
+        self.settings = settings
+        timing = {
+            "base_version": travel.version,
+            "travel_time_mode": settings.travel_time_mode,
+            "access_buffer_sec": settings.access_buffer_sec,
+            "fixed_travel_time_sec": settings.fixed_travel_time_sec,
+        }
+        self.version = content_hash(
+            json.dumps(timing, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        )
+
+    def quote(
+        self, origin: GeoPoint, destination: GeoPoint, profile: Transport
+    ) -> TravelQuote | None:
+        """Return configured duration; zero-distance legs remain zero-cost."""
+        quote = self.travel.quote(origin, destination, profile)
+        if quote is None or quote.distance_m == 0:
+            return quote
+        duration_sec = (
+            quote.duration_sec + self.settings.access_buffer_sec
+            if self.settings.travel_time_mode == "graph_with_access_buffer"
+            else self.settings.fixed_travel_time_sec
+        )
+        return TravelQuote(duration_sec, quote.distance_m, quote.points)
+
+
+def configure_travel(
+    travel: TravelSource, settings: RouterTechnicalSettings
+) -> TechnicalTravel:
+    """Return one idempotently configured travel provider for every calculation path."""
+    if isinstance(travel, TechnicalTravel) and travel.settings == settings:
+        return travel
+    if isinstance(travel, TechnicalTravel):
+        travel = travel.travel
+    return TechnicalTravel(travel, settings)
 
 
 class GraphTravel:

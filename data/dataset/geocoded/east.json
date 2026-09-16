@@ -1,0 +1,666 @@
+{
+  "version": "official-east-geocodes-2026-09-16",
+  "source": "Nominatim/OpenStreetMap accepted candidates prepared and cached for offline demo use.",
+  "entries": [
+    {
+      "address": "г. Москва, ул Юных Ленинцев, д 83с 4",
+      "node_id": "0",
+      "location": {
+        "lat": 55.6997977,
+        "lon": 37.7725762
+      },
+      "match_level": "house_without_unit",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, пр-кт.Волгоградский, д. 128 к 5",
+      "node_id": "1",
+      "location": {
+        "lat": 55.7062794,
+        "lon": 37.7738951
+      },
+      "match_level": "street",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, пер.Маяковского, д. 2",
+      "node_id": "2",
+      "location": {
+        "lat": 55.7397743,
+        "lon": 37.6599082
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Грайвороновская, д. 10 к 2",
+      "node_id": "3",
+      "location": {
+        "lat": 55.7173273,
+        "lon": 37.7266148
+      },
+      "match_level": "street",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Михайлова, д. 14",
+      "node_id": "4",
+      "location": {
+        "lat": 55.7270299,
+        "lon": 37.7659603
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.3-я Институтская, д. 5 к 2",
+      "node_id": "5",
+      "location": {
+        "lat": 55.7219922,
+        "lon": 37.7821899
+      },
+      "match_level": "house_without_unit",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.1-я Новокузьминская, д. 16 к 1",
+      "node_id": "6",
+      "location": {
+        "lat": 55.714359,
+        "lon": 37.7897959
+      },
+      "match_level": "house_without_unit",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Окская, д. 32",
+      "node_id": "7",
+      "location": {
+        "lat": 55.7144711,
+        "lon": 37.7695221
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Юных Ленинцев, д. 84",
+      "node_id": "8",
+      "location": {
+        "lat": 55.6981178,
+        "lon": 37.7786035
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Международная, д. 28 стр. 1",
+      "node_id": "9",
+      "location": {
+        "lat": 55.7431752,
+        "lon": 37.6878434
+      },
+      "match_level": "house_without_unit",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Новорогожская, д. 8",
+      "node_id": "10",
+      "location": {
+        "lat": 55.740895,
+        "lon": 37.6845796
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Чистова, д. 12",
+      "node_id": "11",
+      "location": {
+        "lat": 55.696506,
+        "lon": 37.741942
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Паперника, д. 19",
+      "node_id": "12",
+      "location": {
+        "lat": 55.7217574,
+        "lon": 37.7907198
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Окская, д. 48/2",
+      "node_id": "13",
+      "location": {
+        "lat": 55.7176399,
+        "lon": 37.7794008
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Трофимова, д. 24 к 2",
+      "node_id": "14",
+      "location": {
+        "lat": 55.7024336,
+        "lon": 37.6763581
+      },
+      "match_level": "house_without_unit",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.1-я Дубровская, д. 6",
+      "node_id": "15",
+      "location": {
+        "lat": 55.7267393,
+        "lon": 37.6695609
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Рогожский Вал, д. 2/50",
+      "node_id": "16",
+      "location": {
+        "lat": 55.7456189,
+        "lon": 37.6777676
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Талалихина, д. 2/1 к 4",
+      "node_id": "17",
+      "location": {
+        "lat": 55.737567,
+        "lon": 37.674078
+      },
+      "match_level": "house_without_unit",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Артюхиной, д. 20А",
+      "node_id": "18",
+      "location": {
+        "lat": 55.6972845,
+        "lon": 37.7365767
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Малышева, д. 13",
+      "node_id": "19",
+      "location": {
+        "lat": 55.6980379,
+        "lon": 37.7438382
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Бронницкая, д. 12",
+      "node_id": "20",
+      "location": {
+        "lat": 55.7314152,
+        "lon": 37.759554
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Авиамоторная, д. 14",
+      "node_id": "21",
+      "location": {
+        "lat": 55.7523201,
+        "lon": 37.7153975
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Фёдора Полетаева, д. 2 к 6",
+      "node_id": "22",
+      "location": {
+        "lat": 55.7143456,
+        "lon": 37.773254
+      },
+      "match_level": "house_without_unit",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Зарайская, д. 51 к 2",
+      "node_id": "23",
+      "location": {
+        "lat": 55.7275854,
+        "lon": 37.7769058
+      },
+      "match_level": "house_without_unit",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Саратовская, д. 14/1",
+      "node_id": "24",
+      "location": {
+        "lat": 55.7145577,
+        "lon": 37.7378743
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Нижегородская, д. 63",
+      "node_id": "25",
+      "location": {
+        "lat": 55.7324552,
+        "lon": 37.7186987
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Смирновская, д. 6",
+      "node_id": "26",
+      "location": {
+        "lat": 55.7367411,
+        "lon": 37.7085631
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Нижегородская, д. 61",
+      "node_id": "27",
+      "location": {
+        "lat": 55.732503,
+        "lon": 37.7178025
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Зеленодольская, д. 28Б",
+      "node_id": "28",
+      "location": {
+        "lat": 55.7118436,
+        "lon": 37.7708367
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Артюхиной, д. 16",
+      "node_id": "29",
+      "location": {
+        "lat": 55.6984967,
+        "lon": 37.7377998
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.3-я Карачаровская, д. 4 к 1",
+      "node_id": "30",
+      "location": {
+        "lat": 55.7332184,
+        "lon": 37.7450136
+      },
+      "match_level": "house_without_unit",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, пр-кт.Рязанский, д. 73",
+      "node_id": "31",
+      "location": {
+        "lat": 55.7184554,
+        "lon": 37.7902547
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Ферганская, д. 28/7",
+      "node_id": "32",
+      "location": {
+        "lat": 55.7010782,
+        "lon": 37.8250104
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, б-р.Самаркандский Квартал 137а, д. к5",
+      "node_id": "33",
+      "location": {
+        "lat": 55.7000662,
+        "lon": 37.8193568
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Боровая, д. 14",
+      "node_id": "34",
+      "location": {
+        "lat": 55.7693914,
+        "lon": 37.7156999
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Стройковская, д. 8",
+      "node_id": "35",
+      "location": {
+        "lat": 55.7347571,
+        "lon": 37.6737801
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.2-я Синичкина, д. 9 к 1",
+      "node_id": "36",
+      "location": {
+        "lat": 55.76264,
+        "lon": 37.7130584
+      },
+      "match_level": "house_without_unit",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Москва, проезд Орехово-Зуевский, д. 18/8",
+      "node_id": "37",
+      "location": {
+        "lat": 55.7311522,
+        "lon": 37.7534715
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, пер.Большой Рогожский, д. 10 к 2",
+      "node_id": "38",
+      "location": {
+        "lat": 55.7428641,
+        "lon": 37.6679638
+      },
+      "match_level": "street",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Машкова, д. 13 стр. 1",
+      "node_id": "39",
+      "location": {
+        "lat": 55.7624148,
+        "lon": 37.6489953
+      },
+      "match_level": "house_without_unit",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.11-я Текстильщиков, д. 10",
+      "node_id": "40",
+      "location": {
+        "lat": 55.706885,
+        "lon": 37.7431987
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Паперника, д. 18",
+      "node_id": "41",
+      "location": {
+        "lat": 55.7213231,
+        "lon": 37.7935117
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Большая Калитниковская, д. 38",
+      "node_id": "42",
+      "location": {
+        "lat": 55.7361675,
+        "lon": 37.6862063
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Маршала Чуйкова, д. 9 к 2",
+      "node_id": "43",
+      "location": {
+        "lat": 55.6971444,
+        "lon": 37.7620114
+      },
+      "match_level": "house_without_unit",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Талалихина, д. 16",
+      "node_id": "44",
+      "location": {
+        "lat": 55.7355002,
+        "lon": 37.676817
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, б-р.Волжский, д. 50 к 2",
+      "node_id": "45",
+      "location": {
+        "lat": 55.6970458,
+        "lon": 37.751726
+      },
+      "match_level": "house_without_unit",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Артюхиной, д. 3",
+      "node_id": "46",
+      "location": {
+        "lat": 55.7029289,
+        "lon": 37.7378149
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, проезд.Ферганский, д. 7 к 5",
+      "node_id": "47",
+      "location": {
+        "lat": 55.6956336,
+        "lon": 37.8217002
+      },
+      "match_level": "house_without_unit",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Земляной Вал, д. 24/30 стр. 1",
+      "node_id": "48",
+      "location": {
+        "lat": 55.7586892,
+        "lon": 37.6571501
+      },
+      "match_level": "house_without_unit",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.3-я Карачаровская, д. 8 к 2",
+      "node_id": "49",
+      "location": {
+        "lat": 55.7339025,
+        "lon": 37.7468037
+      },
+      "match_level": "house_without_unit",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Чистопольская, д. 2 к 2",
+      "node_id": "50",
+      "location": {
+        "lat": 55.7306095,
+        "lon": 37.758355
+      },
+      "match_level": "house_without_unit",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Боровая, д. 12",
+      "node_id": "51",
+      "location": {
+        "lat": 55.770292,
+        "lon": 37.7147651
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Красноказарменная, д. 9Б стр. 1",
+      "node_id": "52",
+      "location": {
+        "lat": 55.7603241,
+        "lon": 37.6903596
+      },
+      "match_level": "street",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Сторожевая, д. 31",
+      "node_id": "53",
+      "location": {
+        "lat": 55.7647986,
+        "lon": 37.7168314
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Новорогожская, д. 10",
+      "node_id": "54",
+      "location": {
+        "lat": 55.740048,
+        "lon": 37.6832489
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Нижегородская, д. 25",
+      "node_id": "55",
+      "location": {
+        "lat": 55.7374783,
+        "lon": 37.6944616
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, ул.Окская, д. 6 к 1",
+      "node_id": "56",
+      "location": {
+        "lat": 55.710308,
+        "lon": 37.7514109
+      },
+      "match_level": "house_without_unit",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "Город Москва, пр-кт.Волгоградский, д. 97 к 1",
+      "node_id": "57",
+      "location": {
+        "lat": 55.7081978,
+        "lon": 37.7524931
+      },
+      "match_level": "house_without_unit",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "г.Город Москва, б-р.Самаркандский, д. 32к1",
+      "node_id": "58",
+      "location": {
+        "lat": 55.6977027,
+        "lon": 37.8126854
+      },
+      "match_level": "house_without_unit",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "г.Город Москва, б-р.Самаркандский, д. 10к2",
+      "node_id": "59",
+      "location": {
+        "lat": 55.6998184,
+        "lon": 37.8172295
+      },
+      "match_level": "street",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "г.Город Москва, ул.Новорогожская, д. 20",
+      "node_id": "60",
+      "location": {
+        "lat": 55.73903,
+        "lon": 37.6880379
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "г.Город Москва, ул.Ташкентская, д. 16к2",
+      "node_id": "61",
+      "location": {
+        "lat": 55.6957257,
+        "lon": 37.8039782
+      },
+      "match_level": "street",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "г.Город Москва, ул.Саратовская, д. 16",
+      "node_id": "62",
+      "location": {
+        "lat": 55.7150007,
+        "lon": 37.7401969
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "г.Город Москва, наб.Семеновская, д. 3/1к2",
+      "node_id": "63",
+      "location": {
+        "lat": 55.7788782,
+        "lon": 37.7087416
+      },
+      "match_level": "house_without_unit",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "г.Город Москва, наб.Семеновская, д. 2/1",
+      "node_id": "64",
+      "location": {
+        "lat": 55.7768615,
+        "lon": 37.7046831
+      },
+      "match_level": "exact",
+      "source": "https://nominatim.openstreetmap.org"
+    },
+    {
+      "address": "г.Город Москва, пр-кт.Волгоградский, д. 128к1",
+      "node_id": "65",
+      "location": {
+        "lat": 55.7023381,
+        "lon": 37.7828754
+      },
+      "match_level": "house_without_unit",
+      "source": "https://nominatim.openstreetmap.org"
+    }
+  ]
+}
