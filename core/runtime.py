@@ -338,8 +338,9 @@ class RouterRuntime:
                 return dict(previous[2])
             if expected_context_version != self.context_version:
                 raise ValueError("CONTEXT_CONFLICT")
-            if self._settings_store is not None:
-                self._settings_store.save(requested)
+            if self._settings_store is None:
+                raise ValueError("SETTINGS_STORE_UNAVAILABLE")
+            self._settings_store.save(requested)
             self.settings = replace(
                 self.settings,
                 lunches_enabled=requested.lunches_enabled,
@@ -370,7 +371,10 @@ class RouterRuntime:
                     published_at=int(time.time()),
                 )
             raw = publication.payload
-        except Exception:
+        except Exception as exc:
+            reported_code = str(exc).split(":", 1)[0]
+            if not reported_code.startswith("SNAPSHOT_"):
+                reported_code = "SNAPSHOT_READ_FAILED"
             with self._lock:
                 self._invalidate()
                 self.result = RouterResult(
@@ -378,7 +382,8 @@ class RouterRuntime:
                     router_context_version=self.context_version,
                     errors=[
                         Diagnostic(
-                            code="SNAPSHOT_READ_FAILED", message="Cannot read published snapshot."
+                            code=reported_code,
+                            message="Cannot accept the published snapshot.",
                         )
                     ],
                 )

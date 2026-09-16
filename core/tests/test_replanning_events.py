@@ -2,6 +2,8 @@
 
 import pytest
 from core.benchmark import _with_new_request, project_remaining_snapshot
+from core.engine import SearchSettings, solve
+from core.geo import GraphTravel
 
 
 def _by_id(events):
@@ -107,3 +109,58 @@ def test_projection_rejects_an_unusable_or_partial_plan(official_east_scenario, 
     )
     with pytest.raises(ValueError, match="one route per engineer"):
         project_remaining_snapshot(official_east_scenario.snapshot, partial, event_at)
+
+
+def test_projection_carries_started_lunch_into_execution_facts(snapshot, graph):
+    """A planned lunch that already started must not be scheduled a second time."""
+    start = snapshot.planning_as_of
+    data = snapshot.model_dump()
+    data["engineers"][0]["lunch"] = {
+        "enabled": True,
+        "required": True,
+        "duration_sec": 900,
+        "window_start_at": start + 1000,
+        "window_end_at": start + 2300,
+    }
+    task = type(snapshot).model_validate(data)
+    output = solve(
+        task,
+        GraphTravel(graph),
+        SearchSettings(time_limit_ms=600, solution_limit=8),
+    )
+    lunch = next(stop for stop in output.main.routes[0].stops if stop.kind == "lunch")
+
+    remaining = project_remaining_snapshot(task, output.main, lunch.start_at + 1)
+
+    assert remaining.engineers[0].lunch_taken is True
+
+
+def test_projection_preserves_unknown_release_without_observed_progress(snapshot, graph):
+    """Projection must not invent availability for an idle engineer with unknown release."""
+    data = snapshot.model_dump()
+    data["requests"] = []
+    data["engineers"][0]["available_from"] = None
+    task = type(snapshot).model_validate(data)
+    output = solve(task, GraphTravel(graph), SearchSettings(time_limit_ms=200, solution_limit=4))
+
+    remaining = project_remaining_snapshot(task, output.main, task.planning_as_of + 60)
+
+    assert remaining.engineers[0].available_from is None
+
+
+def test_projection_places_engineer_at_leg_target_on_exact_arrival(snapshot, graph):
+    """An event at exact leg arrival must not charge the completed travel again."""
+    output = solve(
+        snapshot,
+        GraphTravel(graph),
+        SearchSettings(time_limit_ms=600, solution_limit=8),
+    )
+    route = output.main.routes[0]
+    leg = route.legs[0]
+    target = next(stop for stop in route.stops if stop.stop_id == leg.to_stop_id)
+
+    remaining = project_remaining_snapshot(snapshot, output.main, leg.arrival_at)
+    engineer = remaining.engineers[0]
+
+    assert engineer.start_location == target.location
+    assert engineer.available_from == leg.arrival_at

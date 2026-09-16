@@ -18,7 +18,15 @@ module; System Layer is developed independently.
 - Autonomous process-isolated Runtime with exact publication integrity checks, durable
   Router technical settings, file/PostgreSQL adapters and a private API.
 - Official East importer and offline benchmark: FIFO 44/66 versus Router 65/66;
-  urgent coverage 3/13 versus 12/13 under the pinned golden profile.
+  urgent coverage 3/13 versus 12/13 under the pinned golden profile. The South-central
+  acceptance fixture produces FIFO 35/56 versus Router 54/56 and 3/16 versus 16/16
+  urgent coverage.
+- East and South-central can be namespaced and solved as one 122-request, 23-engineer
+  snapshot with disconnected graph components. The acceptance test proves that no
+  cross-zone assignment is produced.
+- Router owns one durable technical revision: a hard global lunch switch plus separate
+  departure and downstream task-start revalidation tolerances. Tolerances select the
+  replanning path and never relax shifts, horizons or customer windows.
 - Structured explanation evidence is part of every ready result for the UI and an
   explanation-only LLM: selected engineer facts, predecessor travel, window margin and
   all candidate blockers.
@@ -29,9 +37,11 @@ module; System Layer is developed independently.
 
 See [core/README.md](../core/README.md), [api.md](./api.md) and [data.md](./data.md)
 for setup, API/view/hash contracts, geographic
-resource formats and explicit v1 limits. The official East scenario uses versioned
+resource formats and explicit V2 limits. The official East scenario uses versioned
 synthetic operating assumptions plus cached Nominatim/OSRM preparation; it does not
-claim live traffic or production map deployment. `prepare-2gis` is separately covered
+claim live traffic or production map deployment. South-central uses declared
+district-centroid projections and an approximate matrix until accepted provider data
+is prepared. `prepare-2gis` is separately covered
 by controlled provider tests; no real account/key acceptance run has been performed.
 The sys database view and end-to-end
 application integration are not deployed or verified. The previous prototype files

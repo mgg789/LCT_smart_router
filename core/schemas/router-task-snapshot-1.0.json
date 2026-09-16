@@ -1,0 +1,387 @@
+{
+  "$defs": {
+    "Engineer": {
+      "additionalProperties": false,
+      "description": "Prepared continuation point and availability; execution facts belong to sys.",
+      "properties": {
+        "availability": {
+          "enum": [
+            "online",
+            "offline"
+          ],
+          "title": "Availability",
+          "type": "string"
+        },
+        "available_from": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Available From"
+        },
+        "engineer_id": {
+          "minLength": 1,
+          "title": "Engineer Id",
+          "type": "string"
+        },
+        "expected_online_at": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Expected Online At"
+        },
+        "input_order": {
+          "minimum": 0,
+          "title": "Input Order",
+          "type": "integer"
+        },
+        "lunch": {
+          "$ref": "#/$defs/LunchInput"
+        },
+        "lunch_taken": {
+          "title": "Lunch Taken",
+          "type": "boolean"
+        },
+        "position_observed_at": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Position Observed At"
+        },
+        "shift_end_at": {
+          "minimum": 0,
+          "title": "Shift End At",
+          "type": "integer"
+        },
+        "shift_start_at": {
+          "minimum": 0,
+          "title": "Shift Start At",
+          "type": "integer"
+        },
+        "skills": {
+          "items": {
+            "enum": [
+              "local",
+              "connection",
+              "emergency"
+            ],
+            "type": "string"
+          },
+          "maxItems": 3,
+          "minItems": 1,
+          "title": "Skills",
+          "type": "array"
+        },
+        "start_location": {
+          "$ref": "#/$defs/GeoPoint"
+        },
+        "transport_type": {
+          "enum": [
+            "car",
+            "walk",
+            "bike",
+            "transit"
+          ],
+          "title": "Transport Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "engineer_id",
+        "input_order",
+        "skills",
+        "transport_type",
+        "shift_start_at",
+        "shift_end_at",
+        "start_location",
+        "available_from",
+        "position_observed_at",
+        "availability",
+        "expected_online_at",
+        "lunch_taken",
+        "lunch"
+      ],
+      "title": "Engineer",
+      "type": "object"
+    },
+    "GeoPoint": {
+      "additionalProperties": false,
+      "description": "WGS84 geographic coordinates in degrees, never GeoJSON lon/lat arrays.",
+      "properties": {
+        "lat": {
+          "maximum": 90,
+          "minimum": -90,
+          "title": "Lat",
+          "type": "number"
+        },
+        "lon": {
+          "maximum": 180,
+          "minimum": -180,
+          "title": "Lon",
+          "type": "number"
+        }
+      },
+      "required": [
+        "lat",
+        "lon"
+      ],
+      "title": "GeoPoint",
+      "type": "object"
+    },
+    "LunchInput": {
+      "additionalProperties": false,
+      "description": "Normalized absolute lunch window supplied by sys, with no invented defaults.",
+      "properties": {
+        "duration_sec": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Duration Sec"
+        },
+        "enabled": {
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "required": {
+          "title": "Required",
+          "type": "boolean"
+        },
+        "window_end_at": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Window End At"
+        },
+        "window_start_at": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Window Start At"
+        }
+      },
+      "required": [
+        "enabled",
+        "duration_sec",
+        "window_start_at",
+        "window_end_at",
+        "required"
+      ],
+      "title": "LunchInput",
+      "type": "object"
+    },
+    "Policy": {
+      "additionalProperties": false,
+      "description": "Supported catalog choice; preferences cannot disable hard constraints.",
+      "properties": {
+        "parameters": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": "Parameters",
+          "type": "object"
+        },
+        "policy_id": {
+          "enum": [
+            "fast",
+            "compact",
+            "sla",
+            "balanced",
+            "eco"
+          ],
+          "title": "Policy Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "policy_id",
+        "parameters"
+      ],
+      "title": "Policy",
+      "type": "object"
+    },
+    "Request": {
+      "additionalProperties": false,
+      "description": "An unstarted job; its customer window constrains service start only.",
+      "properties": {
+        "arrival_order": {
+          "minimum": 0,
+          "title": "Arrival Order",
+          "type": "integer"
+        },
+        "location": {
+          "$ref": "#/$defs/GeoPoint"
+        },
+        "priority": {
+          "enum": [
+            "normal",
+            "urgent"
+          ],
+          "title": "Priority",
+          "type": "string"
+        },
+        "request_id": {
+          "minLength": 1,
+          "title": "Request Id",
+          "type": "string"
+        },
+        "required_skill": {
+          "enum": [
+            "local",
+            "connection",
+            "emergency"
+          ],
+          "title": "Required Skill",
+          "type": "string"
+        },
+        "required_transport": {
+          "anyOf": [
+            {
+              "enum": [
+                "car",
+                "walk",
+                "bike",
+                "transit"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Required Transport"
+        },
+        "service_duration_sec": {
+          "exclusiveMinimum": 0,
+          "title": "Service Duration Sec",
+          "type": "integer"
+        },
+        "window_end_at": {
+          "minimum": 0,
+          "title": "Window End At",
+          "type": "integer"
+        },
+        "window_start_at": {
+          "minimum": 0,
+          "title": "Window Start At",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "request_id",
+        "arrival_order",
+        "location",
+        "service_duration_sec",
+        "window_start_at",
+        "window_end_at",
+        "priority",
+        "required_skill",
+        "required_transport"
+      ],
+      "title": "Request",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Complete remaining-work projection, published atomically by sys.",
+  "properties": {
+    "engineers": {
+      "items": {
+        "$ref": "#/$defs/Engineer"
+      },
+      "title": "Engineers",
+      "type": "array"
+    },
+    "horizon_end_at": {
+      "minimum": 0,
+      "title": "Horizon End At",
+      "type": "integer"
+    },
+    "horizon_start_at": {
+      "minimum": 0,
+      "title": "Horizon Start At",
+      "type": "integer"
+    },
+    "planning_as_of": {
+      "minimum": 0,
+      "title": "Planning As Of",
+      "type": "integer"
+    },
+    "policy": {
+      "$ref": "#/$defs/Policy"
+    },
+    "requests": {
+      "items": {
+        "$ref": "#/$defs/Request"
+      },
+      "title": "Requests",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "planning_as_of",
+    "horizon_start_at",
+    "horizon_end_at",
+    "requests",
+    "engineers",
+    "policy"
+  ],
+  "title": "RouterTaskSnapshot",
+  "type": "object"
+}

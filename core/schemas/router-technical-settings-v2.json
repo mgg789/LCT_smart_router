@@ -1,0 +1,27 @@
+{
+  "additionalProperties": false,
+  "description": "Persisted Router-owned controls that version the calculation context.",
+  "properties": {
+    "departure_lateness_tolerance_sec": {
+      "default": 0,
+      "maximum": 86400,
+      "minimum": 0,
+      "title": "Departure Lateness Tolerance Sec",
+      "type": "integer"
+    },
+    "lunches_enabled": {
+      "default": true,
+      "title": "Lunches Enabled",
+      "type": "boolean"
+    },
+    "task_start_lateness_tolerance_sec": {
+      "default": 0,
+      "maximum": 86400,
+      "minimum": 0,
+      "title": "Task Start Lateness Tolerance Sec",
+      "type": "integer"
+    }
+  },
+  "title": "RouterTechnicalSettings",
+  "type": "object"
+}

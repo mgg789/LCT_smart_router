@@ -44,3 +44,25 @@ Official benchmark import is a separate, versioned offline acceptance adapter. I
 synthetic engineer profiles, service durations, geocoding quality and travel assumptions
 are recorded with the scenario and must not be treated as production business facts.
 
+The acceptance adapter executes these checks before creating a snapshot:
+
+1. verify pinned SHA-256 for both organizer CSV files and both prepared resources;
+2. decode the organizer files as CP1251 semicolon CSV and validate required headers;
+3. keep numeric request rows, recognize the case-insensitive office footer and reject
+   duplicate synthetic request IDs;
+4. compare the complete multiset of request time/type/district facts with the control
+   distribution (control request IDs are not assumed unique);
+5. require complete duration, skill, team, geocode and matrix catalogs;
+6. validate the resulting `RouterTaskSnapshot` and `RoadGraph` through the same strict
+   models used by the service.
+
+`python -m core.prepare_official` reproducibly rebuilds the South-central acceptance
+resources. Those coordinates are declared district-centroid projections and the matrix
+is an approximation, not production geocoding or road time. Their byte hashes are pinned
+in the scenario config.
+
+Multi-zone acceptance namespaces every request, engineer and graph node by region,
+renumbers the two business-order fields contiguously and combines regional graphs as
+disconnected components. The Router then performs one ordinary calculation. Absence of
+cross-component edges makes cross-zone travel unreachable instead of assigning an
+invented large or zero cost.

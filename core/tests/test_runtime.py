@@ -66,13 +66,14 @@ def test_latest_wins_and_same_result_id(snapshot, graph):
     runtime.close()
 
 
-def test_context_change_rejects_inflight_result(snapshot, graph):
+def test_context_change_rejects_inflight_result(tmp_path, snapshot, graph):
     executor = ControlledExecutor()
     runtime = RouterRuntime(
         Reader(snapshot.model_dump_json().encode()),
         graph,
         SearchSettings(time_limit_ms=500, solution_limit=4),
         executor=executor,
+        settings_store=FileTechnicalSettingsStore(tmp_path / "settings.json"),
     )
     runtime.tick()
     old = runtime.context_version
@@ -112,6 +113,20 @@ def test_reader_failure_cannot_publish_old_result(snapshot, graph):
     runtime.close()
 
 
+def test_reader_integrity_code_is_preserved_without_exposing_details(graph):
+    """Known special-sector integrity errors remain machine-readable at the API boundary."""
+    reader = Reader(None)
+    reader.read = lambda: (_ for _ in ()).throw(ValueError("SNAPSHOT_HASH_MISMATCH: secret"))
+    runtime = RouterRuntime(reader, graph, executor=ControlledExecutor())
+
+    runtime.tick()
+
+    diagnostic = runtime.read_result().errors[0]
+    assert diagnostic.code == "SNAPSHOT_HASH_MISMATCH"
+    assert "secret" not in diagnostic.message
+    runtime.close()
+
+
 def test_real_process_and_http_api(snapshot, graph):
     runtime = RouterRuntime(
         Reader(snapshot.model_dump_json().encode()),
@@ -141,7 +156,9 @@ def test_real_process_and_http_api(snapshot, graph):
 def test_technical_settings_persist_and_reload(tmp_path, snapshot, graph):
     """All Router-owned controls survive restart as one atomic revision."""
     store = FileTechnicalSettingsStore(tmp_path / "router-settings.json")
-    runtime = RouterRuntime(Reader(snapshot.model_dump_json().encode()), graph, settings_store=store)
+    runtime = RouterRuntime(
+        Reader(snapshot.model_dump_json().encode()), graph, settings_store=store
+    )
     old = runtime.context_version
     requested = RouterTechnicalSettings(
         lunches_enabled=False,
@@ -160,8 +177,11 @@ def test_technical_settings_persist_and_reload(tmp_path, snapshot, graph):
     restarted.close()
 
 
-def test_v2_settings_api_updates_complete_revision(snapshot, graph):
-    runtime = RouterRuntime(Reader(snapshot.model_dump_json().encode()), graph)
+def test_v2_settings_api_updates_complete_revision(tmp_path, snapshot, graph):
+    store = FileTechnicalSettingsStore(tmp_path / "settings.json")
+    runtime = RouterRuntime(
+        Reader(snapshot.model_dump_json().encode()), graph, settings_store=store
+    )
     with TestClient(create_app(runtime)) as client:
         context = client.get("/v1/context").json()["router_context_version"]
         response = client.put(
@@ -176,6 +196,26 @@ def test_v2_settings_api_updates_complete_revision(snapshot, graph):
         )
         assert response.status_code == 200
         assert response.json()["technical_settings"]["lunches_enabled"] is False
+    restarted = RouterRuntime(
+        Reader(snapshot.model_dump_json().encode()), graph, settings_store=store
+    )
+    assert restarted.settings.lunches_enabled is False
+    assert restarted.settings.departure_lateness_tolerance_sec == 120
+    assert restarted.settings.task_start_lateness_tolerance_sec == 60
+    restarted.close()
+
+
+def test_technical_settings_cannot_be_accepted_without_persistence(snapshot, graph):
+    """A successful settings response always means the revision can survive restart."""
+    runtime = RouterRuntime(Reader(snapshot.model_dump_json().encode()), graph)
+    with pytest.raises(ValueError, match="SETTINGS_STORE_UNAVAILABLE"):
+        runtime.set_technical_settings(
+            "settings-no-store",
+            RouterTechnicalSettings(lunches_enabled=False),
+            runtime.context_version,
+        )
+    assert runtime.settings.lunches_enabled is True
+    runtime.close()
 
 
 def test_publication_integrity_and_result_states(snapshot):
@@ -186,7 +226,5 @@ def test_publication_integrity_and_result_states(snapshot):
         RouterResult(status="ready")
     with pytest.raises(ValueError, match="error result"):
         RouterResult(status="error")
-    error = RouterResult(
-        status="error", errors=[Diagnostic(code="INPUT_INVALID", message="bad")]
-    )
+    error = RouterResult(status="error", errors=[Diagnostic(code="INPUT_INVALID", message="bad")])
     assert error.status == "error"

@@ -42,7 +42,11 @@ def main() -> None:
     project.add_argument("--lon", type=float, required=True)
     project.add_argument("--limit-m", type=float, default=100)
     benchmark = commands.add_parser("benchmark")
-    benchmark.add_argument("--region", choices=("east",), default="east")
+    benchmark_region = benchmark.add_mutually_exclusive_group()
+    benchmark_region.add_argument("--region", choices=("east", "southeast", "south_central"))
+    benchmark_region.add_argument(
+        "--regions", nargs="+", choices=("east", "southeast", "south_central")
+    )
     benchmark.add_argument("--dataset-dir", type=Path, default=Path("data/dataset/anonymized"))
     benchmark.add_argument("--scenario-dir", type=Path)
     benchmark.add_argument("--budget-ms", type=int, default=3000)
@@ -92,9 +96,18 @@ def main() -> None:
         return
     if args.command == "benchmark":
         from core.benchmark import benchmark_payload, run_official_benchmark
-        from core.official import load_official_east
+        from core.official import combine_official_scenarios, load_official_region
 
-        scenario = load_official_east(args.dataset_dir, args.scenario_dir)
+        regions = args.regions or [args.region or "east"]
+        scenarios = [
+            load_official_region(
+                args.dataset_dir,
+                region,
+                args.scenario_dir if len(regions) == 1 else None,
+            )
+            for region in regions
+        ]
+        scenario = combine_official_scenarios(scenarios) if len(scenarios) > 1 else scenarios[0]
         run = run_official_benchmark(
             scenario,
             SearchSettings(

@@ -1,0 +1,24 @@
+{
+  "settings": {
+    "time_limit_ms": 12000,
+    "solution_limit": 24
+  },
+  "source": {
+    "requests": 56,
+    "engineers": 11,
+    "urgent_requests": 16
+  },
+  "baseline": {
+    "plan_sha256": "53b1cee4e9435a392397ef29a00ba55dd580676af8954632bb4b3a0ccdaec8a1",
+    "assigned_count": 35,
+    "urgent_assigned_count": 3,
+    "travel_time_sec": 43811
+  },
+  "main": {
+    "plan_sha256": "78e726df05e278c7addfa0b328df1cfed65421f1bc10f888359a07c92c7c7cd3",
+    "assigned_count": 54,
+    "urgent_assigned_count": 16,
+    "travel_time_sec": 35924,
+    "unassigned_request_ids": ["52576", "49105"]
+  }
+}

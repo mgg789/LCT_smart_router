@@ -42,9 +42,10 @@ explanation-only LLM. The LLM must not change the plan.
 ```
 
 The operation uses compare-and-swap against the active context and is idempotent during
-the process lifetime. When a settings store is configured, the accepted revision is
-atomically persisted before activation and restored after restart. Every change creates
-a new context version and invalidates an in-flight older result.
+the process lifetime. A write is rejected with `SETTINGS_STORE_UNAVAILABLE` when the
+Runtime has no durable settings store. An accepted revision is atomically persisted
+before activation and restored after restart. Every change creates a new context version
+and invalidates an in-flight older result.
 
 The lunch switch is a hard system policy. When false, no optional or required lunch is
 scheduled in either main or baseline; the sys-owned input bytes and lunch facts remain
@@ -61,3 +62,5 @@ The service version is `2.0`. The sys exchange payload remains `schema_version="
 because V2 adds output metadata and Router-owned context without changing the shape of
 `RouterTaskSnapshot`. Unknown fields and unknown policy IDs are rejected.
 
+Checked integration artifacts live in `core/schemas/`. Regenerate them with
+`python -m core.schema`; CI/tests should treat a schema diff as a contract change.

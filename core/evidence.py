@@ -42,9 +42,7 @@ def build_plan_evidence(
         engineer.engineer_id: [
             stop.request_id
             for stop in (
-                routes[engineer.engineer_id].stops
-                if engineer.engineer_id in routes
-                else ()
+                routes[engineer.engineer_id].stops if engineer.engineer_id in routes else ()
             )
             if stop.kind == "job" and stop.request_id is not None
         ]

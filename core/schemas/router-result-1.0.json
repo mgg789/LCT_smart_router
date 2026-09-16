@@ -1,0 +1,1294 @@
+{
+  "$defs": {
+    "Assignment": {
+      "additionalProperties": false,
+      "description": "Exactly one planning outcome per request, unrelated to execution status.",
+      "properties": {
+        "engineer_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Engineer Id"
+        },
+        "reasons": {
+          "items": {
+            "$ref": "#/$defs/Reason"
+          },
+          "title": "Reasons",
+          "type": "array"
+        },
+        "request_id": {
+          "title": "Request Id",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "assigned",
+            "unassigned"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "stop_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Stop Id"
+        }
+      },
+      "required": [
+        "request_id",
+        "status",
+        "engineer_id",
+        "stop_id",
+        "reasons"
+      ],
+      "title": "Assignment",
+      "type": "object"
+    },
+    "CandidateEvidence": {
+      "additionalProperties": false,
+      "description": "Structured compatibility and append checks for one engineer alternative.",
+      "properties": {
+        "append_at_route_end_feasible": {
+          "title": "Append At Route End Feasible",
+          "type": "boolean"
+        },
+        "append_end_at": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Append End At"
+        },
+        "append_incremental_distance_km": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Append Incremental Distance Km"
+        },
+        "append_incremental_travel_time_sec": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Append Incremental Travel Time Sec"
+        },
+        "append_start_at": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Append Start At"
+        },
+        "assigned_job_count": {
+          "title": "Assigned Job Count",
+          "type": "integer"
+        },
+        "available": {
+          "title": "Available",
+          "type": "boolean"
+        },
+        "blockers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Blockers",
+          "type": "array"
+        },
+        "engineer_id": {
+          "title": "Engineer Id",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Label"
+        },
+        "release_at": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Release At"
+        },
+        "shift_end_at": {
+          "title": "Shift End At",
+          "type": "integer"
+        },
+        "skill_match": {
+          "title": "Skill Match",
+          "type": "boolean"
+        },
+        "skills": {
+          "items": {
+            "enum": [
+              "local",
+              "connection",
+              "emergency"
+            ],
+            "type": "string"
+          },
+          "title": "Skills",
+          "type": "array"
+        },
+        "solo_feasible": {
+          "title": "Solo Feasible",
+          "type": "boolean"
+        },
+        "transport_match": {
+          "title": "Transport Match",
+          "type": "boolean"
+        },
+        "transport_type": {
+          "enum": [
+            "car",
+            "walk",
+            "bike",
+            "transit"
+          ],
+          "title": "Transport Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "engineer_id",
+        "label",
+        "skills",
+        "transport_type",
+        "release_at",
+        "shift_end_at",
+        "skill_match",
+        "transport_match",
+        "available",
+        "solo_feasible",
+        "append_at_route_end_feasible",
+        "append_start_at",
+        "append_end_at",
+        "append_incremental_travel_time_sec",
+        "append_incremental_distance_km",
+        "assigned_job_count",
+        "blockers"
+      ],
+      "title": "CandidateEvidence",
+      "type": "object"
+    },
+    "Diagnostic": {
+      "additionalProperties": false,
+      "description": "Technical failure, separate from a valid unassigned outcome.",
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "entity_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Entity Id"
+        },
+        "field_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Field Path"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "Diagnostic",
+      "type": "object"
+    },
+    "EngineerRoute": {
+      "additionalProperties": false,
+      "description": "One open route per input engineer, including empty routes.",
+      "properties": {
+        "engineer_id": {
+          "title": "Engineer Id",
+          "type": "string"
+        },
+        "finish_at": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Finish At"
+        },
+        "legs": {
+          "items": {
+            "$ref": "#/$defs/RouteLeg"
+          },
+          "title": "Legs",
+          "type": "array"
+        },
+        "lunch": {
+          "$ref": "#/$defs/LunchResult"
+        },
+        "metrics": {
+          "$ref": "#/$defs/RouteMetrics"
+        },
+        "reasons": {
+          "items": {
+            "$ref": "#/$defs/Reason"
+          },
+          "title": "Reasons",
+          "type": "array"
+        },
+        "start_at": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Start At"
+        },
+        "start_location": {
+          "$ref": "#/$defs/GeoPoint"
+        },
+        "stops": {
+          "items": {
+            "$ref": "#/$defs/RouteStop"
+          },
+          "title": "Stops",
+          "type": "array"
+        }
+      },
+      "required": [
+        "engineer_id",
+        "start_location",
+        "start_at",
+        "finish_at",
+        "stops",
+        "legs",
+        "lunch",
+        "metrics"
+      ],
+      "title": "EngineerRoute",
+      "type": "object"
+    },
+    "GeoPoint": {
+      "additionalProperties": false,
+      "description": "WGS84 geographic coordinates in degrees, never GeoJSON lon/lat arrays.",
+      "properties": {
+        "lat": {
+          "maximum": 90,
+          "minimum": -90,
+          "title": "Lat",
+          "type": "number"
+        },
+        "lon": {
+          "maximum": 180,
+          "minimum": -180,
+          "title": "Lon",
+          "type": "number"
+        }
+      },
+      "required": [
+        "lat",
+        "lon"
+      ],
+      "title": "GeoPoint",
+      "type": "object"
+    },
+    "Geometry": {
+      "additionalProperties": false,
+      "description": "Ordered geographic points on the selected road path.",
+      "properties": {
+        "points": {
+          "items": {
+            "$ref": "#/$defs/GeoPoint"
+          },
+          "title": "Points",
+          "type": "array"
+        }
+      },
+      "required": [
+        "points"
+      ],
+      "title": "Geometry",
+      "type": "object"
+    },
+    "LunchResult": {
+      "additionalProperties": false,
+      "description": "Distinguish actual lunch facts, scheduled lunch and conflicts.",
+      "properties": {
+        "alert_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Alert Id"
+        },
+        "reasons": {
+          "items": {
+            "$ref": "#/$defs/Reason"
+          },
+          "title": "Reasons",
+          "type": "array"
+        },
+        "status": {
+          "enum": [
+            "disabled",
+            "already_taken",
+            "scheduled",
+            "skipped_for_work",
+            "not_scheduled",
+            "required_conflict"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "stop_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stop Id"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "title": "LunchResult",
+      "type": "object"
+    },
+    "Plan": {
+      "additionalProperties": false,
+      "description": "Validated plan; unusable plans must not be applied by sys.",
+      "properties": {
+        "alerts": {
+          "items": {
+            "$ref": "#/$defs/PlanningAlert"
+          },
+          "title": "Alerts",
+          "type": "array"
+        },
+        "assignments": {
+          "items": {
+            "$ref": "#/$defs/Assignment"
+          },
+          "title": "Assignments",
+          "type": "array"
+        },
+        "is_usable": {
+          "title": "Is Usable",
+          "type": "boolean"
+        },
+        "metric_scope": {
+          "const": "snapshot_remaining",
+          "default": "snapshot_remaining",
+          "title": "Metric Scope",
+          "type": "string"
+        },
+        "routes": {
+          "items": {
+            "$ref": "#/$defs/EngineerRoute"
+          },
+          "title": "Routes",
+          "type": "array"
+        },
+        "summary": {
+          "$ref": "#/$defs/PlanMetrics"
+        }
+      },
+      "required": [
+        "is_usable",
+        "routes",
+        "assignments",
+        "summary",
+        "alerts"
+      ],
+      "title": "Plan",
+      "type": "object"
+    },
+    "PlanEvidence": {
+      "additionalProperties": false,
+      "description": "Versioned evidence bundle kept separate from the route decision itself.",
+      "properties": {
+        "requests": {
+          "items": {
+            "$ref": "#/$defs/RequestEvidence"
+          },
+          "title": "Requests",
+          "type": "array"
+        },
+        "schema_version": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Schema Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "requests"
+      ],
+      "title": "PlanEvidence",
+      "type": "object"
+    },
+    "PlanMetrics": {
+      "additionalProperties": false,
+      "description": "Snapshot-remaining totals; lunch-only engineers do not count as used.",
+      "properties": {
+        "assigned_count": {
+          "default": 0,
+          "title": "Assigned Count",
+          "type": "integer"
+        },
+        "distance_km": {
+          "default": 0.0,
+          "title": "Distance Km",
+          "type": "number"
+        },
+        "engineers_used": {
+          "default": 0,
+          "title": "Engineers Used",
+          "type": "integer"
+        },
+        "lunch_time_sec": {
+          "default": 0,
+          "title": "Lunch Time Sec",
+          "type": "integer"
+        },
+        "requests_total": {
+          "default": 0,
+          "title": "Requests Total",
+          "type": "integer"
+        },
+        "travel_time_sec": {
+          "default": 0,
+          "title": "Travel Time Sec",
+          "type": "integer"
+        },
+        "unassigned_count": {
+          "default": 0,
+          "title": "Unassigned Count",
+          "type": "integer"
+        },
+        "urgent_assigned_count": {
+          "default": 0,
+          "title": "Urgent Assigned Count",
+          "type": "integer"
+        },
+        "urgent_total": {
+          "default": 0,
+          "title": "Urgent Total",
+          "type": "integer"
+        },
+        "waiting_time_sec": {
+          "default": 0,
+          "title": "Waiting Time Sec",
+          "type": "integer"
+        },
+        "work_time_sec": {
+          "default": 0,
+          "title": "Work Time Sec",
+          "type": "integer"
+        }
+      },
+      "title": "PlanMetrics",
+      "type": "object"
+    },
+    "PlanningAlert": {
+      "additionalProperties": false,
+      "description": "Actionable explanation without implicit cancellation of any request.",
+      "properties": {
+        "alert_id": {
+          "title": "Alert Id",
+          "type": "string"
+        },
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "engineer_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Engineer Ids",
+          "type": "array"
+        },
+        "reasons": {
+          "items": {
+            "$ref": "#/$defs/Reason"
+          },
+          "title": "Reasons",
+          "type": "array"
+        },
+        "request_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Request Ids",
+          "type": "array"
+        },
+        "restore_option": {
+          "default": null,
+          "title": "Restore Option",
+          "type": "null"
+        },
+        "severity": {
+          "enum": [
+            "info",
+            "warning",
+            "error"
+          ],
+          "title": "Severity",
+          "type": "string"
+        }
+      },
+      "required": [
+        "alert_id",
+        "code",
+        "severity",
+        "engineer_ids",
+        "request_ids",
+        "reasons"
+      ],
+      "title": "PlanningAlert",
+      "type": "object"
+    },
+    "Reason": {
+      "additionalProperties": false,
+      "description": "Machine-readable evidence, never a claim of proven global optimality.",
+      "properties": {
+        "basis": {
+          "enum": [
+            "constraint_check",
+            "calculation_outcome"
+          ],
+          "title": "Basis",
+          "type": "string"
+        },
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "facts": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "title": "Facts",
+          "type": "object"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "text",
+        "basis"
+      ],
+      "title": "Reason",
+      "type": "object"
+    },
+    "RequestEvidence": {
+      "additionalProperties": false,
+      "description": "Calculation-backed assignment facts for deterministic UI and LLM input.",
+      "properties": {
+        "arrival_at": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Arrival At"
+        },
+        "candidates": {
+          "items": {
+            "$ref": "#/$defs/CandidateEvidence"
+          },
+          "title": "Candidates",
+          "type": "array"
+        },
+        "distance_km": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Distance Km"
+        },
+        "end_at": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "End At"
+        },
+        "engineer_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Engineer Id"
+        },
+        "predecessor_request_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Predecessor Request Id"
+        },
+        "priority": {
+          "enum": [
+            "normal",
+            "urgent"
+          ],
+          "title": "Priority",
+          "type": "string"
+        },
+        "reason_codes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Reason Codes",
+          "type": "array"
+        },
+        "reasons": {
+          "items": {
+            "$ref": "#/$defs/Reason"
+          },
+          "title": "Reasons",
+          "type": "array"
+        },
+        "request_id": {
+          "title": "Request Id",
+          "type": "string"
+        },
+        "required_skill": {
+          "enum": [
+            "local",
+            "connection",
+            "emergency"
+          ],
+          "title": "Required Skill",
+          "type": "string"
+        },
+        "required_transport": {
+          "anyOf": [
+            {
+              "enum": [
+                "car",
+                "walk",
+                "bike",
+                "transit"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Required Transport"
+        },
+        "service_duration_sec": {
+          "title": "Service Duration Sec",
+          "type": "integer"
+        },
+        "start_at": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Start At"
+        },
+        "status": {
+          "enum": [
+            "assigned",
+            "unassigned"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "stop_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Stop Id"
+        },
+        "travel_time_sec": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Travel Time Sec"
+        },
+        "waiting_time_sec": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Waiting Time Sec"
+        },
+        "window_end_at": {
+          "title": "Window End At",
+          "type": "integer"
+        },
+        "window_end_margin_sec": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Window End Margin Sec"
+        },
+        "window_start_at": {
+          "title": "Window Start At",
+          "type": "integer"
+        },
+        "window_start_offset_sec": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Window Start Offset Sec"
+        }
+      },
+      "required": [
+        "request_id",
+        "status",
+        "priority",
+        "required_skill",
+        "required_transport",
+        "service_duration_sec",
+        "window_start_at",
+        "window_end_at",
+        "engineer_id",
+        "stop_id",
+        "predecessor_request_id",
+        "arrival_at",
+        "start_at",
+        "end_at",
+        "waiting_time_sec",
+        "window_start_offset_sec",
+        "window_end_margin_sec",
+        "travel_time_sec",
+        "distance_km",
+        "reason_codes",
+        "reasons",
+        "candidates"
+      ],
+      "title": "RequestEvidence",
+      "type": "object"
+    },
+    "RouteLeg": {
+      "additionalProperties": false,
+      "description": "Travel quote used in both calculation and displayed geometry.",
+      "properties": {
+        "arrival_at": {
+          "minimum": 0,
+          "title": "Arrival At",
+          "type": "integer"
+        },
+        "departure_at": {
+          "minimum": 0,
+          "title": "Departure At",
+          "type": "integer"
+        },
+        "distance_km": {
+          "minimum": 0,
+          "title": "Distance Km",
+          "type": "number"
+        },
+        "from_stop_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "From Stop Id"
+        },
+        "geometry": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Geometry"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "leg_id": {
+          "title": "Leg Id",
+          "type": "string"
+        },
+        "to_stop_id": {
+          "title": "To Stop Id",
+          "type": "string"
+        },
+        "travel_time_sec": {
+          "minimum": 0,
+          "title": "Travel Time Sec",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "leg_id",
+        "from_stop_id",
+        "to_stop_id",
+        "departure_at",
+        "arrival_at",
+        "travel_time_sec",
+        "distance_km",
+        "geometry"
+      ],
+      "title": "RouteLeg",
+      "type": "object"
+    },
+    "RouteMetrics": {
+      "additionalProperties": false,
+      "description": "Durations in seconds; distances in kilometres.",
+      "properties": {
+        "assigned_count": {
+          "default": 0,
+          "title": "Assigned Count",
+          "type": "integer"
+        },
+        "distance_km": {
+          "default": 0.0,
+          "title": "Distance Km",
+          "type": "number"
+        },
+        "lunch_time_sec": {
+          "default": 0,
+          "title": "Lunch Time Sec",
+          "type": "integer"
+        },
+        "travel_time_sec": {
+          "default": 0,
+          "title": "Travel Time Sec",
+          "type": "integer"
+        },
+        "waiting_time_sec": {
+          "default": 0,
+          "title": "Waiting Time Sec",
+          "type": "integer"
+        },
+        "work_time_sec": {
+          "default": 0,
+          "title": "Work Time Sec",
+          "type": "integer"
+        }
+      },
+      "title": "RouteMetrics",
+      "type": "object"
+    },
+    "RouteStop": {
+      "additionalProperties": false,
+      "description": "Non-overlapping work, waiting or lunch interval.",
+      "properties": {
+        "arrival_at": {
+          "minimum": 0,
+          "title": "Arrival At",
+          "type": "integer"
+        },
+        "end_at": {
+          "minimum": 0,
+          "title": "End At",
+          "type": "integer"
+        },
+        "kind": {
+          "enum": [
+            "job",
+            "lunch",
+            "wait"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "location": {
+          "$ref": "#/$defs/GeoPoint"
+        },
+        "request_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Request Id"
+        },
+        "sequence": {
+          "title": "Sequence",
+          "type": "integer"
+        },
+        "start_at": {
+          "minimum": 0,
+          "title": "Start At",
+          "type": "integer"
+        },
+        "stop_id": {
+          "title": "Stop Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stop_id",
+        "sequence",
+        "kind",
+        "request_id",
+        "location",
+        "arrival_at",
+        "start_at",
+        "end_at"
+      ],
+      "title": "RouteStop",
+      "type": "object"
+    },
+    "RouterTechnicalSettings": {
+      "additionalProperties": false,
+      "description": "Persisted Router-owned controls that version the calculation context.",
+      "properties": {
+        "departure_lateness_tolerance_sec": {
+          "default": 0,
+          "maximum": 86400,
+          "minimum": 0,
+          "title": "Departure Lateness Tolerance Sec",
+          "type": "integer"
+        },
+        "lunches_enabled": {
+          "default": true,
+          "title": "Lunches Enabled",
+          "type": "boolean"
+        },
+        "task_start_lateness_tolerance_sec": {
+          "default": 0,
+          "maximum": 86400,
+          "minimum": 0,
+          "title": "Task Start Lateness Tolerance Sec",
+          "type": "integer"
+        }
+      },
+      "title": "RouterTechnicalSettings",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Atomic pair of main/baseline belonging to one input and resource context.",
+  "properties": {
+    "baseline": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Plan"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "baseline_evidence": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PlanEvidence"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "computed_at": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Computed At"
+    },
+    "errors": {
+      "items": {
+        "$ref": "#/$defs/Diagnostic"
+      },
+      "title": "Errors",
+      "type": "array"
+    },
+    "input_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Input Hash"
+    },
+    "input_publication_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Input Publication Id"
+    },
+    "main": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Plan"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "main_evidence": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PlanEvidence"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "planning_as_of": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Planning As Of"
+    },
+    "policy_criteria": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Policy Criteria",
+      "type": "array"
+    },
+    "policy_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Policy Id"
+    },
+    "result_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Result Id"
+    },
+    "router_context_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Router Context Version"
+    },
+    "schema_version": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "search_path": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Search Path"
+    },
+    "status": {
+      "enum": [
+        "pending",
+        "ready",
+        "error"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "technical_settings": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RouterTechnicalSettings"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    }
+  },
+  "required": [
+    "status"
+  ],
+  "title": "RouterResult",
+  "type": "object"
+}

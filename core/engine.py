@@ -39,12 +39,8 @@ class SearchSettings:
         if self.tolerance_sec is not None:
             if self.tolerance_sec < 0 or self.departure_lateness_tolerance_sec:
                 raise ValueError("invalid or conflicting legacy tolerance")
-            object.__setattr__(
-                self, "departure_lateness_tolerance_sec", self.tolerance_sec
-            )
-            object.__setattr__(
-                self, "task_start_lateness_tolerance_sec", self.tolerance_sec
-            )
+            object.__setattr__(self, "departure_lateness_tolerance_sec", self.tolerance_sec)
+            object.__setattr__(self, "task_start_lateness_tolerance_sec", self.tolerance_sec)
         if (
             self.time_limit_ms < 1
             or self.solution_limit < 1
@@ -251,7 +247,10 @@ def _search(
     # Resolve every external lookup before entering a C++ callback. Exceptions must
     # never cross SWIG and become an accidental zero-cost arc.
     physical = sorted(set(jobs.values()) | set(starts))
-    for e in range(len(engineers)):
+    profile_representatives = {}
+    for e, engineer in enumerate(engineers):
+        profile_representatives.setdefault(engineer.transport_type, e)
+    for e in profile_representatives.values():
         for a in physical:
             for b in physical:
                 quote(a, b, e)
@@ -436,11 +435,7 @@ def _search(
         job_count_dimension.SetGlobalSpanCostCoefficient(1)
     for e in range(len(engineers)):
         routing.SetArcCostEvaluatorOfVehicle(
-            (
-                objective_callbacks[stage][e]
-                if stage in objective_callbacks
-                else zero
-            ),
+            (objective_callbacks[stage][e] if stage in objective_callbacks else zero),
             e,
         )
     parameters = pywrapcp.DefaultRoutingSearchParameters()
@@ -528,9 +523,7 @@ def solve(
     )
     if (
         same_assignments
-        and _small_change(
-            memory.snapshot, snapshot, settings.departure_lateness_tolerance_sec
-        )
+        and _small_change(memory.snapshot, snapshot, settings.departure_lateness_tolerance_sec)
         and _task_starts_within_tolerance(
             memory.plan, projected, settings.task_start_lateness_tolerance_sec
         )

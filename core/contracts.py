@@ -114,6 +114,16 @@ class RouterTechnicalSettings(Record):
     task_start_lateness_tolerance_sec: int = Field(default=0, ge=0, le=86400)
 
 
+class SnapshotPublicationEnvelope(Record):
+    """Sys-owned active publication row before exact-byte verification by Router."""
+
+    publication_id: ID
+    publication_seq: int = Field(ge=0)
+    payload_utf8: str
+    payload_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    published_at_epoch: Seconds
+
+
 class RouterTaskSnapshot(Record):
     """Complete remaining-work projection, published atomically by sys."""
 

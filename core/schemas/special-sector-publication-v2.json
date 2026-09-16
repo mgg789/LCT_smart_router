@@ -1,0 +1,39 @@
+{
+  "additionalProperties": false,
+  "description": "Sys-owned active publication row before exact-byte verification by Router.",
+  "properties": {
+    "payload_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Payload Sha256",
+      "type": "string"
+    },
+    "payload_utf8": {
+      "title": "Payload Utf8",
+      "type": "string"
+    },
+    "publication_id": {
+      "minLength": 1,
+      "title": "Publication Id",
+      "type": "string"
+    },
+    "publication_seq": {
+      "minimum": 0,
+      "title": "Publication Seq",
+      "type": "integer"
+    },
+    "published_at_epoch": {
+      "minimum": 0,
+      "title": "Published At Epoch",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "publication_id",
+    "publication_seq",
+    "payload_utf8",
+    "payload_sha256",
+    "published_at_epoch"
+  ],
+  "title": "SnapshotPublicationEnvelope",
+  "type": "object"
+}

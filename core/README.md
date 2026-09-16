@@ -1,4 +1,4 @@
-# Router Core v1
+# Router Core v2
 
 Autonomous Python implementation of the v14 snapshot contract: geographic resources,
 OR-Tools Engine and a single-coordinator Runtime. System Layer is developed separately.
@@ -38,20 +38,23 @@ core/.venv/Scripts/python.exe -m core export-map --result core/result.json --out
 starts calculations automatically and keeps repeated result reads idempotent.
 Publish files using an atomic rename/replace; do not edit the live file in place.
 
-## Official East acceptance benchmark
+## Official-region acceptance benchmarks
 
 The repository contains a versioned, fully offline preparation of the organizer's
 East-region CSV: 66 requests, 12 named teams, accepted coordinates and a cached
-OSRM driving matrix. Run the reproducible golden profile from the repository root:
+OSRM driving matrix. It also contains a South-central acceptance fixture: 56 requests
+and 11 named teams. Run the reproducible profiles from the repository root:
 
 ```powershell
 core/.venv/Scripts/python.exe -m core benchmark --region east --budget-ms 30000 --solution-limit 32 --skip-events --output core/east-golden.json
 core/.venv/Scripts/python.exe -m core benchmark --region east --budget-ms 3000 --solution-limit 32 --event-budget-ms 1000 --output core/east-events.json
+core/.venv/Scripts/python.exe -m core benchmark --region south_central --budget-ms 12000 --solution-limit 24 --skip-events --output core/south-central-golden.json
+core/.venv/Scripts/python.exe -m core benchmark --regions east south_central --budget-ms 8000 --solution-limit 16 --skip-events --output core/multizone.json
 ```
 
 The first command compares the exact FIFO baseline with Router. Golden results are
 44/66 assigned and 3/13 urgent for FIFO versus 65/66 and 12/13 urgent for Router.
-Router uses 40,542 travel seconds versus 50,145 for FIFO while serving 21 more jobs.
+Router uses 38,021 travel seconds versus 50,145 for FIFO while serving 21 more jobs.
 Request `57299` remains unassigned because its late emergency window conflicts with
 available capacity. The golden gate also fixes both serialized plan hashes.
 
@@ -65,11 +68,18 @@ golden deadline is a safety ceiling: the deterministic 32-solution limit is expe
 to stop first on the pinned OR-Tools runtime.
 
 The archive does not provide durations, shifts, transport or an engineer directory.
-`scenarios/east-v1/config.json` therefore records every synthetic assumption. Skills
+Each scenario config therefore records every synthetic assumption. Skills
 come from work types seen for each control team; transport and shifts are explicit
 per team; service durations are fixed per work type. Car time comes from the cached
 OSRM matrix. Bike, walk and transit times are declared speed approximations over the
 same distance. These figures are benchmark inputs, not measured production facts.
+
+The South-central coordinates are explicitly labelled deterministic district-centroid
+projections with address jitter, and its matrix is a haversine acceptance approximation.
+They prove import, policy and multi-zone mechanics; they are not rooftop geocodes or
+production road ETAs. The combined run is one snapshot and one Engine invocation over
+two disconnected graph components. Namespaced IDs prevent collisions, and a missing
+cross-zone edge makes cross-zone assignment impossible by construction.
 
 ### Explanation data for UI and LLM
 
@@ -98,13 +108,13 @@ can serve the job; `append_at_route_end_feasible` checks only one explicit order
 | `geocoding.py` | Explicit Nominatim source, validated candidates, rate limiting and offline cache |
 | `osrm.py` | Profile-specific OSRM paths, consistent time/distance/geometry, disk cache |
 | `twogis.py` | Cached 2GIS traffic and multimodal matrix preparation outside Engine |
-| `policy.py` | Versioned `fast`/`compact` catalog and candidate comparison |
+| `policy.py` | Versioned five-policy catalog and candidate comparison |
 | `schedule.py` | Fixed-order scheduler, exact FIFO baseline, metrics and result validation |
 | `engine.py` | Joint jobs/lunch routing, bounded policy stages and three replanning paths |
 | `runtime.py` | Snapshot adapters, process isolation, generations, result/context ownership |
-| `api.py` | Private result, health, context and tolerance endpoints |
+| `api.py` | Private result, health, context and durable technical-settings endpoints |
 | `export.py` | GeoJSON paths and stop points for the map frontend |
-| `official.py` | Strict organizer CSV import and versioned East scenario preparation |
+| `official.py` | Strict organizer CSV import, resource integrity and multi-zone composition |
 | `evidence.py` | Detailed per-request and per-candidate facts for UI/LLM explanations |
 | `benchmark.py` | FIFO/Router benchmark plus deterministic replanning event harness |
 
@@ -131,7 +141,7 @@ infrastructure are provisioned by these commands.
 
 Snapshot coordinates must match graph vertices (1 mm float tolerance). `project`
 returns a **candidate** nearest vertex and projection distance; accepting it is an
-explicit preparation step. V1 does not invent access-road connectors or silently
+explicit preparation step. Router does not invent access-road connectors or silently
 snap through walls. Co-located graph vertices need disambiguation before import.
 Unknown coordinates/unreachable directed paths return no quote, never zero travel.
 
@@ -200,7 +210,7 @@ N-point graph needs N² combinations per requested profile, even when chunked.
 The Router `transit` profile represents an engineer travelling on foot plus public
 transport; 2GIS includes the pedestrian legs in that route. The `walk` profile is
 walking only. Snapshot preparation must therefore label a non-car engineer as `transit`
-when public transport is allowed; v1 does not switch a `walk` engineer to transit during
+when public transport is allowed; Router does not switch a `walk` engineer to transit during
 optimization.
 
 The official API contract and limits are documented by 2GIS:
@@ -236,15 +246,17 @@ policies belong to operator configuration, never to the snapshot or repository.
 - Routes are open. The last job's service time still counts before shift end.
 - Baseline: `arrival_order` jobs, first feasible `input_order` engineer, append only.
 - Policy catalog keeps the same hard constraints and coverage/lunch priorities for
-  both presets. `fast`: travel seconds → integer metres → engineers doing jobs;
-  `compact`: engineers doing jobs → integer metres → travel seconds. Unknown policy
-  IDs and all v1 parameters fail instead of silently falling back or being ignored.
+  all presets. `fast` minimizes travel time; `compact` minimizes engineers used;
+  `sla` favors earlier starts inside customer windows; `balanced` reduces the maximum
+  jobs on one engineer; `eco` minimizes distance. Each then applies documented
+  secondary criteria. Unknown IDs and policy parameters fail instead of silently
+  falling back or being ignored.
 - OR-Tools Routing 9.15 uses domain restrictions for allowed vehicles and a lunch
   alternative at the engineer's start or directly after a compatible job. Required
   lunch is mandatory; lunch already taken cannot be scheduled again.
-- Three bounded stages optimize coverage/lunch, travel, then metres. Later stages
-  cannot worsen achieved senior counts. Fleet count is currently a tie-break between
-  the baseline, projected plan and stage candidates, not a separate exhaustive search.
+- The policy compiler runs bounded lexicographic stages. Later stages cannot worsen
+  values already fixed by earlier stages. This preserves urgent and total coverage
+  while allowing the selected business value to decide among equally covered plans.
 - `REVALIDATE` reschedules unchanged assignments/order only within the stable
   reference's tolerance. `REPAIR_AND_IMPROVE` projects previous business IDs and
   uses a feasible seed. Context changes or no usable seed choose `COLD_START`.
@@ -258,26 +270,29 @@ preparation or HTTP calls. Each stage also has a solution limit; repeatability i
 tested on the pinned Windows runtime and fixture. Cross-platform deterministic
 quality under wall-time exhaustion is not asserted. Larger datasets need profiling.
 
-## Sys integration contract (v1 proposal)
+## Sys and data-layer integration contract
 
-The external business schemas follow `context/33-router_contract_v2.md`. Generate
-JSON Schema from `RouterTaskSnapshot.model_json_schema()` / `RouterResult.model_json_schema()`;
-the private service also exposes result schemas in `/openapi.json`.
+The external schemas follow `context/33-router_contract_v2.md`. Checked JSON Schema
+files live in `core/schemas/`; regenerate them with `python -m core.schema`. The private
+service also exposes request and response schemas in `/openapi.json`.
 
 | Interface | Meaning |
 |---|---|
 | Snapshot payload | Exact UTF-8 JSON document, `schema_version:"1.0"`, duplicate keys rejected |
 | `input_hash` | Lowercase SHA-256 hex of those **exact bytes**, including whitespace; no independent reserialization |
-| PostgreSQL input | Sys-owned `router_active_snapshot` view with exactly one `payload_utf8 text` row |
+| PostgreSQL input | Sys-owned `router_active_snapshot` view with one publication row; see `docs/data.md` |
 | `GET /health` | Coordinator state; liveness is not proof of a usable plan |
-| `GET /v1/context` | Active context version and tolerance, separate from the last result |
-| `GET /v1/result` | Atomic `RouterResult`: pending/ready/error and main/baseline |
-| `PUT /v1/config/tolerance` | `{operation_id,tolerance_sec,expected_context_version}`; 409 on conflict |
+| `GET /v1/context` | Active context version and complete technical settings, separate from the last result |
+| `GET /v1/result` | Atomic `RouterResult`: state, plans, evidence, policy and exact input identity |
+| `PUT /v2/config/technical-settings` | CAS update for lunch switch and both lateness tolerances |
+| `PUT /v1/config/tolerance` | Compatibility alias for departure tolerance |
 
 DB usage: omit `--snapshot`, set `ROUTER_DATABASE_URL` in the process environment.
-The reader issues one SELECT in a read-only transaction; sys owns publication,
-view/migrations and a SELECT-only role. `payload_utf8` preserves published text;
-do not reconstruct it from JSONB. Sys must hash the same bytes independently.
+The view returns `publication_id`, monotonic `publication_seq`, `payload_utf8`,
+`payload_sha256` and `published_at_epoch`. The reader issues one SELECT in a read-only
+transaction; sys owns publication, view/migrations and a SELECT-only role. Router
+rejects multiple rows, rollback, payloads above 16 MiB and a SHA mismatch.
+`payload_utf8` preserves published text; do not reconstruct it from JSONB.
 No PostgreSQL database or role is created by Router.
 
 Context identity includes resource contents/version, the derived policy-catalog version
@@ -285,10 +300,19 @@ and search settings. A new context invalidates the current result immediately.
 Map activation is currently a process restart or internal `update_graph()` call;
 there is no public graph-upload or arbitrary solve endpoint.
 
+The Router-owned technical revision contains `lunches_enabled`,
+`departure_lateness_tolerance_sec` and `task_start_lateness_tolerance_sec`. The lunch
+switch is a hard override and suppresses every optional or required lunch without
+mutating sys input. Tolerances only choose revalidation versus repair; they never widen
+customer windows, engineer shifts or the planning horizon. Accepted settings are saved
+atomically in `.router/settings.json` by the default service command and restored on restart.
+An embedded Runtime without a durable store may calculate, but rejects settings writes
+instead of acknowledging a process-only change.
+
 Only one job runs; input/context changes replace one waiting job. Finished stale
 generations are discarded, not retagged. Cancellation is cooperative at the job
 boundary: a current bounded search is allowed to finish. The result store, previous
-plan and tolerance idempotency keys are process-local in v1. Restart restores startup
+plan and operation-id cache are process-local. Restart restores durable technical
 settings, recomputes the active snapshot and produces a new result ID. Sys must
 reread context and preserve its own applied-plan/execution history across restarts.
 
@@ -297,7 +321,7 @@ and no conflict with facts. MANUAL disables consumption; Router keeps calculatin
 These checks are sys responsibilities, not implemented by this module.
 
 A calculation error is retained until the snapshot or context changes (or Runtime
-restarts); v1 does not retry unchanged failed jobs on a timer. Read failures are
+restarts); Router does not retry unchanged failed jobs on a timer. Read failures are
 polled again automatically. Refill an OSRM cache before starting the offline service.
 
 ## Verification and remaining integration
@@ -314,10 +338,11 @@ stable revalidation, stale generations and actual process isolation through the
 private API. Provider HTTP tests use controlled responses; they do not establish
 that a real OSRM/Nominatim deployment or PostgreSQL view already exists.
 
-Remaining integration: sys view/permissions and acceptance transaction; production
-map/profile resource preparation beyond the cached East benchmark; the other two
-official regions; full application UI/SSE smoke. The standalone Router tests cannot
-substitute for the monorepo smoke gate, which does not exist in this checkout yet.
+Remaining integration: sys view/permissions and acceptance transaction; replacement
+of the South-central acceptance projection with accepted geocodes and road/provider
+ETAs; preparation of the Southeast official region; full application UI/SSE smoke.
+The standalone Router tests cannot substitute for the monorepo smoke gate while the
+repository root has no pnpm importer manifest.
 
 Implementation references: [OR-Tools VRPTW](https://developers.google.com/optimization/routing/vrptw),
 [OR-Tools v9.15](https://github.com/google/or-tools/releases/tag/v9.15),

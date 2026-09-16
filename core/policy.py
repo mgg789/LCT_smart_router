@@ -60,14 +60,26 @@ _CATALOG: dict[str, PolicySpec] = {
         definition_version="sla-1",
         ordered_criteria=_COVERAGE
         + ("window_start_delay", "travel_time", "distance", "engineers_used"),
-        search_stages=("coverage", "window_start_delay", "travel_time", "distance"),
+        search_stages=(
+            "coverage",
+            "window_start_delay",
+            "travel_time",
+            "distance",
+            "engineers_used",
+        ),
     ),
     "balanced": PolicySpec(
         policy_id="balanced",
         definition_version="balanced-1",
         ordered_criteria=_COVERAGE
         + ("max_jobs_per_engineer", "travel_time", "distance", "engineers_used"),
-        search_stages=("coverage", "max_jobs_per_engineer", "travel_time", "distance"),
+        search_stages=(
+            "coverage",
+            "max_jobs_per_engineer",
+            "travel_time",
+            "distance",
+            "engineers_used",
+        ),
     ),
     "eco": PolicySpec(
         policy_id="eco",
