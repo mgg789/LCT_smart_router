@@ -62,6 +62,10 @@ pnpm --filter api build
 node apps/api/dist/src/main.js
 ```
 
+Router Core has its own CLI (`solve`, `serve`, `benchmark`, `geocode`, `project`,
+`export-map`, `prepare-2gis`, `schema`) and offline resources — quick start and
+acceptance benchmarks: [core/README.md](../core/README.md).
+
 ## 4. Loading the dataset
 
 The contour starts empty. To load one region of the organisers' data:

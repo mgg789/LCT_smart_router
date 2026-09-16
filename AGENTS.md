@@ -37,8 +37,8 @@ thought-through, beautiful tool; explainability is the core trust feature.
 | `docs/` | Project documentation (see §8), incl. `docs/mcp-kanban.md` and `docs/ragconnect.md` |
 
 Stack (rationale: `context/16`): pnpm monorepo — `apps/web` (React + TS + Vite + Tailwind + MapLibre +
-framer-motion), `apps/api` (NestJS + TypeScript, D-23), `apps/solver` (Python + OR-Tools), `packages/shared`
-(contract types), PostgreSQL, docker-compose (`infra/`).
+framer-motion), `apps/api` (NestJS + TypeScript System Layer, D-23), `core/` (Python + OR-Tools
+Router Core, D-22), `packages/shared` (contract types), PostgreSQL, docker-compose (`infra/`).
 
 ## 1. Sources of Truth (priority ladder)
 
@@ -63,7 +63,7 @@ follow them strictly; never introduce a second way of doing the same thing.
 
 ## 3. Scope of Work
 
-1. Work only in the area your task belongs to (`apps/web`, `apps/api`, `apps/solver`,
+1. Work only in the area your task belongs to (`apps/web`, `apps/api`, `core/`,
    `packages/shared`, `infra/`, `data/`, `docs/`, `context/`); other areas are read-only
    (read them to understand contracts and integrations).
 2. Modifying other areas is forbidden without a direct command.
@@ -153,7 +153,8 @@ Examples: `feat(solver): add lunch-break intervals to routing model`,
 
 1. TypeScript `strict`: no `any`, no unsafe casts, no suppressed errors unless truly unavoidable (with
    a comment why). Strictly typed DTOs, props, state, form values. Shared types live in `packages/shared`.
-2. Python (solver): existing module layout (model / reasons / metrics / matrix); type hints on public
+2. Python (Router Core, `core/`): existing module layout (contracts / geo / policy / engine /
+   runtime / api — see `core/README.md` § "Ownership and modules"); type hints on public
    functions; `ruff`-clean; absolute times are Unix-epoch integer seconds, local date/time only at
    input/output edges (`context/33` §4).
 3. UI: design-system components only (`context/10`); established Tailwind patterns; no inline colors or

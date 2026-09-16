@@ -14,7 +14,7 @@ Integration API ─┘          │
                             ├─ mount-data-eng ─► published RouterTaskSnapshot
                             │                         │ read-only
                             │                         ▼
-                            │                   Router Core (apps/solver)
+                            │                   Router Core (root `core/`)
                             ◄── ROUTER-gateway ──┘  result, accepted only in AUTO
 ```
 
@@ -35,7 +35,7 @@ service each.
 | `orchestrator backend` | `src/orchestrator`, `src/operations` | Operation envelope, request lifecycle, engineers, working days, lunch, GPS, policy and execution facts |
 | `dataengine` | `src/persistence` | Implemented: schema, migrations, connection, transaction boundary, row locks, health probe |
 | `mount-data-eng` | `src/routing/mount-data-eng` | Implemented: projection, canonical serialization, hash, immutable snapshots and the pointer switch |
-| `ROUTER-gateway` | `src/routing/router-gateway` | Implemented: acceptance checks, applied plan revisions, AUTO/MANUAL, manual edits. The client is a null adapter until Router Core exists |
+| `ROUTER-gateway` | `src/routing/router-gateway` | Implemented: acceptance checks, applied plan revisions, AUTO/MANUAL, manual edits. Router Core now exists (root `core/`, private HTTP API in `core/api.py`); the remaining integration is replacing the null client adapter with the real HTTP client |
 | `AI-gateway` | — | Out of scope of this build; declared in `/health/services` as `not_configured` |
 | `SMTP-gateway` | `src/notifications` (intents only) | sys records mail intents with per-transition deduplication; transport is out of scope of this build |
 
@@ -130,7 +130,7 @@ Listed explicitly rather than stubbed with invented shapes (AGENTS.md section 10
 
 | Contract | Needed for | Status |
 |---|---|---|
-| Router Core HTTP surface (result, health, active context version, tolerance setting) | `ROUTER-gateway` | Not defined; sys will poll Router, direction agreed |
+| Router Core HTTP surface (result, health, active context version, tolerance setting) | `ROUTER-gateway` | **Defined and implemented** (`core/api.py`, `core/README.md` § "Sys and data-layer integration contract", `docs/api.md` section 11). Remaining: replace the null client adapter with the HTTP client |
 | AI-gateway tool call protocol | AI chats | Out of scope of this build |
 | SMTP-gateway transport and accept result | Mail delivery | Out of scope of this build |
 | Source of request coordinates (geocoding) | A publishable snapshot with anything in it | Absent from the official dataset. The importer reads an optional `data/dataset/geocoded/<region>.json`; until that exists, imported work is excluded and counted |
