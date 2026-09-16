@@ -21,6 +21,7 @@ from core.contracts import (
     Transport,
 )
 from core.geo import TravelQuote
+from core.policy import policy_score
 
 
 class TravelProvider(Protocol):
@@ -363,24 +364,8 @@ def baseline(snapshot: RouterTaskSnapshot, travel: TravelProvider) -> Plan:
 
 
 def score(snapshot: RouterTaskSnapshot, plan: Plan) -> tuple[int, ...]:
-    """The versioned fast catalog comparator: urgent, coverage, lunch, time, metres, K."""
-    summary = plan.summary
-    lunches = {r.engineer_id: r.lunch.status for r in plan.routes}
-    missed = sum(
-        e.lunch.enabled
-        and not e.lunch_taken
-        and not e.lunch.required
-        and lunches.get(e.engineer_id) != "scheduled"
-        for e in snapshot.engineers
-    )
-    return (
-        summary.urgent_total - summary.urgent_assigned_count,
-        summary.unassigned_count,
-        missed,
-        summary.travel_time_sec,
-        round(summary.distance_km * 1000),
-        summary.engineers_used,
-    )
+    """Compare a candidate with the exact versioned policy selected by the snapshot."""
+    return policy_score(snapshot, plan)
 
 
 def validate_plan(snapshot: RouterTaskSnapshot, plan: Plan, travel: TravelProvider) -> None:

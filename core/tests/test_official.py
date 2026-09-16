@@ -6,6 +6,7 @@ import shutil
 from pathlib import Path
 
 import pytest
+from core.policy import compile_policy
 
 ROOT = Path(__file__).resolve().parents[2]
 GOLDEN = json.loads((ROOT / "core/tests/golden/official-east-v1.json").read_text(encoding="utf-8"))
@@ -52,7 +53,16 @@ def test_official_east_import_rejects_control_drift(tmp_path, official_east_scen
         load_official_east(dataset)
 
 
-def test_official_east_golden(official_east_run):
+def test_official_east_golden(official_east_scenario, official_east_run):
+    assert official_east_scenario.snapshot.policy.policy_id == "fast"
+    assert compile_policy(official_east_scenario.snapshot.policy).ordered_criteria == (
+        "urgent_unassigned",
+        "unassigned",
+        "missed_optional_lunches",
+        "travel_time",
+        "distance",
+        "engineers_used",
+    )
     baseline = official_east_run.output.baseline
     main = official_east_run.output.main
     assert _plan_hash(baseline) == GOLDEN["baseline"]["plan_sha256"]

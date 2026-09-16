@@ -93,16 +93,16 @@ class Engineer(Record):
 
 
 class Policy(Record):
-    """Version-one supported catalog; preferences cannot disable hard constraints."""
+    """Supported catalog choice; preferences cannot disable hard constraints."""
 
-    policy_id: Literal["fast"]
+    policy_id: Literal["fast", "compact"]
     parameters: dict[str, str | int | float | bool | None]
 
     @model_validator(mode="after")
     def check_parameters(self) -> Self:
         """Reject unsupported preferences instead of pretending they were applied."""
         if self.parameters:
-            raise ValueError("fast v1 accepts only empty parameters")
+            raise ValueError(f"{self.policy_id} v1 accepts only empty parameters")
         return self
 
 

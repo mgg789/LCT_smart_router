@@ -8,7 +8,9 @@ legacy contract below. Runtime, Engine and geographic preparation belong to this
 module; System Layer is developed independently.
 
 - Strict Unix-second inputs and result validation; exact FIFO baseline.
-- OR-Tools joint job/lunch model, open routes and bounded hierarchical `fast` search.
+- OR-Tools joint job/lunch model, open routes and a versioned policy catalog:
+  `fast` minimizes travel then distance, while `compact` minimizes engineers used,
+  then distance and travel after preserving coverage and optional lunches.
 - Directed transport graph, path/matrix cache, OSRM adapter, address candidates and GeoJSON.
 - Optional 2GIS preparation adapter for current/statistical car traffic and separate
   walk, bike and schedule-aware public-transport matrix profiles; live HTTP stays
