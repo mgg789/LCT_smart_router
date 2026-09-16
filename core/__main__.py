@@ -9,6 +9,7 @@ from core.engine import SearchSettings
 from core.geo import Gazetteer, GraphTravel, RoadGraph
 from core.osrm import OSRMTravel
 from core.runtime import FileSnapshotReader, PostgresSnapshotReader, RouterRuntime, calculate
+from core.settings import FileTechnicalSettingsStore
 
 
 def main() -> None:
@@ -26,6 +27,7 @@ def main() -> None:
             command.add_argument("--output", type=Path)
         else:
             command.add_argument("--port", type=int, default=8100)
+            command.add_argument("--settings", type=Path, default=Path(".router/settings.json"))
     geocode = commands.add_parser("geocode")
     geocoding_source = geocode.add_mutually_exclusive_group(required=True)
     geocoding_source.add_argument("--catalog", type=Path)
@@ -40,7 +42,11 @@ def main() -> None:
     project.add_argument("--lon", type=float, required=True)
     project.add_argument("--limit-m", type=float, default=100)
     benchmark = commands.add_parser("benchmark")
-    benchmark.add_argument("--region", choices=("east",), default="east")
+    benchmark_region = benchmark.add_mutually_exclusive_group()
+    benchmark_region.add_argument("--region", choices=("east", "southeast", "south_central"))
+    benchmark_region.add_argument(
+        "--regions", nargs="+", choices=("east", "southeast", "south_central")
+    )
     benchmark.add_argument("--dataset-dir", type=Path, default=Path("data/dataset/anonymized"))
     benchmark.add_argument("--scenario-dir", type=Path)
     benchmark.add_argument("--budget-ms", type=int, default=3000)
@@ -90,9 +96,18 @@ def main() -> None:
         return
     if args.command == "benchmark":
         from core.benchmark import benchmark_payload, run_official_benchmark
-        from core.official import load_official_east
+        from core.official import combine_official_scenarios, load_official_region
 
-        scenario = load_official_east(args.dataset_dir, args.scenario_dir)
+        regions = args.regions or [args.region or "east"]
+        scenarios = [
+            load_official_region(
+                args.dataset_dir,
+                region,
+                args.scenario_dir if len(regions) == 1 else None,
+            )
+            for region in regions
+        ]
+        scenario = combine_official_scenarios(scenarios) if len(scenarios) > 1 else scenarios[0]
         run = run_official_benchmark(
             scenario,
             SearchSettings(
@@ -160,7 +175,14 @@ def main() -> None:
     if args.command == "solve":
         runtime = RouterRuntime(reader, graph, settings)
         try:
-            result, _ = calculate(reader.read(), graph, settings, runtime.context_version)
+            publication = reader.read()
+            result, _ = calculate(
+                publication.payload,
+                graph,
+                settings,
+                runtime.context_version,
+                publication_id=publication.publication_id,
+            )
         finally:
             runtime.close()
         payload = result.model_dump_json(indent=2)
@@ -176,7 +198,14 @@ def main() -> None:
         from core.api import create_app
 
         uvicorn.run(
-            create_app(RouterRuntime(reader, graph, settings)),
+            create_app(
+                RouterRuntime(
+                    reader,
+                    graph,
+                    settings,
+                    settings_store=FileTechnicalSettingsStore(args.settings),
+                )
+            ),
             host="127.0.0.1",
             port=args.port,
             workers=1,

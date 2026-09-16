@@ -5,9 +5,11 @@ from concurrent.futures import Future
 
 import pytest
 from core.api import create_app
+from core.contracts import Diagnostic, RouterResult, RouterTechnicalSettings
 from core.engine import SearchSettings
 from core.geo import content_hash
-from core.runtime import RouterRuntime, calculate
+from core.runtime import RouterRuntime, SnapshotPublication, calculate
+from core.settings import FileTechnicalSettingsStore
 from fastapi.testclient import TestClient
 
 
@@ -64,13 +66,14 @@ def test_latest_wins_and_same_result_id(snapshot, graph):
     runtime.close()
 
 
-def test_context_change_rejects_inflight_result(snapshot, graph):
+def test_context_change_rejects_inflight_result(tmp_path, snapshot, graph):
     executor = ControlledExecutor()
     runtime = RouterRuntime(
         Reader(snapshot.model_dump_json().encode()),
         graph,
         SearchSettings(time_limit_ms=500, solution_limit=4),
         executor=executor,
+        settings_store=FileTechnicalSettingsStore(tmp_path / "settings.json"),
     )
     runtime.tick()
     old = runtime.context_version
@@ -110,6 +113,20 @@ def test_reader_failure_cannot_publish_old_result(snapshot, graph):
     runtime.close()
 
 
+def test_reader_integrity_code_is_preserved_without_exposing_details(graph):
+    """Known special-sector integrity errors remain machine-readable at the API boundary."""
+    reader = Reader(None)
+    reader.read = lambda: (_ for _ in ()).throw(ValueError("SNAPSHOT_HASH_MISMATCH: secret"))
+    runtime = RouterRuntime(reader, graph, executor=ControlledExecutor())
+
+    runtime.tick()
+
+    diagnostic = runtime.read_result().errors[0]
+    assert diagnostic.code == "SNAPSHOT_HASH_MISMATCH"
+    assert "secret" not in diagnostic.message
+    runtime.close()
+
+
 def test_real_process_and_http_api(snapshot, graph):
     runtime = RouterRuntime(
         Reader(snapshot.model_dump_json().encode()),
@@ -134,3 +151,80 @@ def test_real_process_and_http_api(snapshot, graph):
         )
         assert conflict.status_code == 409
         assert client.post("/plans/build", json={}).status_code == 404
+
+
+def test_technical_settings_persist_and_reload(tmp_path, snapshot, graph):
+    """All Router-owned controls survive restart as one atomic revision."""
+    store = FileTechnicalSettingsStore(tmp_path / "router-settings.json")
+    runtime = RouterRuntime(
+        Reader(snapshot.model_dump_json().encode()), graph, settings_store=store
+    )
+    old = runtime.context_version
+    requested = RouterTechnicalSettings(
+        lunches_enabled=False,
+        departure_lateness_tolerance_sec=90,
+        task_start_lateness_tolerance_sec=45,
+    )
+    response = runtime.set_technical_settings("settings-1", requested, old)
+    assert response["technical_settings"] == requested.model_dump()
+    runtime.close()
+
+    restarted = RouterRuntime(
+        Reader(snapshot.model_dump_json().encode()), graph, settings_store=store
+    )
+    assert restarted.settings.technical() == requested
+    assert restarted.context_version == response["router_context_version"]
+    restarted.close()
+
+
+def test_v2_settings_api_updates_complete_revision(tmp_path, snapshot, graph):
+    store = FileTechnicalSettingsStore(tmp_path / "settings.json")
+    runtime = RouterRuntime(
+        Reader(snapshot.model_dump_json().encode()), graph, settings_store=store
+    )
+    with TestClient(create_app(runtime)) as client:
+        context = client.get("/v1/context").json()["router_context_version"]
+        response = client.put(
+            "/v2/config/technical-settings",
+            json={
+                "operation_id": "settings-api-1",
+                "expected_context_version": context,
+                "lunches_enabled": False,
+                "departure_lateness_tolerance_sec": 120,
+                "task_start_lateness_tolerance_sec": 60,
+            },
+        )
+        assert response.status_code == 200
+        assert response.json()["technical_settings"]["lunches_enabled"] is False
+    restarted = RouterRuntime(
+        Reader(snapshot.model_dump_json().encode()), graph, settings_store=store
+    )
+    assert restarted.settings.lunches_enabled is False
+    assert restarted.settings.departure_lateness_tolerance_sec == 120
+    assert restarted.settings.task_start_lateness_tolerance_sec == 60
+    restarted.close()
+
+
+def test_technical_settings_cannot_be_accepted_without_persistence(snapshot, graph):
+    """A successful settings response always means the revision can survive restart."""
+    runtime = RouterRuntime(Reader(snapshot.model_dump_json().encode()), graph)
+    with pytest.raises(ValueError, match="SETTINGS_STORE_UNAVAILABLE"):
+        runtime.set_technical_settings(
+            "settings-no-store",
+            RouterTechnicalSettings(lunches_enabled=False),
+            runtime.context_version,
+        )
+    assert runtime.settings.lunches_enabled is True
+    runtime.close()
+
+
+def test_publication_integrity_and_result_states(snapshot):
+    raw = snapshot.model_dump_json().encode()
+    with pytest.raises(ValueError, match="SNAPSHOT_HASH_MISMATCH"):
+        SnapshotPublication("pub-1", 1, raw, "0" * 64, snapshot.planning_as_of)
+    with pytest.raises(ValueError, match="ready result is incomplete"):
+        RouterResult(status="ready")
+    with pytest.raises(ValueError, match="error result"):
+        RouterResult(status="error")
+    error = RouterResult(status="error", errors=[Diagnostic(code="INPUT_INVALID", message="bad")])
+    assert error.status == "error"

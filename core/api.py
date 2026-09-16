@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from pydantic import Field
 
-from core.contracts import Record, RouterResult
+from core.contracts import Record, RouterResult, RouterTechnicalSettings
 from core.runtime import RouterRuntime
 
 
@@ -14,6 +14,13 @@ class ToleranceRequest(Record):
 
     operation_id: str = Field(min_length=1, max_length=128)
     tolerance_sec: int = Field(ge=0, le=86400)
+    expected_context_version: str = Field(min_length=1)
+
+
+class TechnicalSettingsRequest(RouterTechnicalSettings):
+    """Complete idempotent replacement of Router-owned technical controls."""
+
+    operation_id: str = Field(min_length=1, max_length=128)
     expected_context_version: str = Field(min_length=1)
 
 
@@ -26,7 +33,7 @@ def create_app(runtime: RouterRuntime) -> FastAPI:
         yield
         runtime.close()
 
-    app = FastAPI(title="LCT Router Core", version="1.0", lifespan=lifespan)
+    app = FastAPI(title="LCT Router Core", version="2.0", lifespan=lifespan)
 
     @app.get("/health")
     def health() -> dict:
@@ -49,6 +56,19 @@ def create_app(runtime: RouterRuntime) -> FastAPI:
         try:
             return runtime.set_tolerance(
                 body.operation_id, body.tolerance_sec, body.expected_context_version
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.put("/v2/config/technical-settings")
+    def technical_settings(body: TechnicalSettingsRequest) -> dict:
+        """Persist a complete settings revision after a context-version CAS check."""
+        try:
+            settings = RouterTechnicalSettings.model_validate(
+                body.model_dump(exclude={"operation_id", "expected_context_version"})
+            )
+            return runtime.set_technical_settings(
+                body.operation_id, settings, body.expected_context_version
             )
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc

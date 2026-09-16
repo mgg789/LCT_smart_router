@@ -49,7 +49,7 @@ def test_official_east_import_rejects_control_drift(tmp_path, official_east_scen
     )
     from core.official import load_official_east
 
-    with pytest.raises(ValueError, match="control rows do not match"):
+    with pytest.raises(ValueError, match="file hash mismatch"):
         load_official_east(dataset)
 
 

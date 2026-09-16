@@ -176,10 +176,10 @@ def schedule_steps(
             )
         )
         clock, location = end, request.location
-    if engineer.lunch_taken:
-        lunch_result = LunchResult(status="already_taken")
-    elif not engineer.lunch.enabled:
+    if not engineer.lunch.enabled:
         lunch_result = LunchResult(status="disabled")
+    elif engineer.lunch_taken:
+        lunch_result = LunchResult(status="already_taken")
     elif lunch_stop:
         lunch_result = LunchResult(status="scheduled", stop_id=lunch_stop)
     else:

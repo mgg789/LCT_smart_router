@@ -13,7 +13,7 @@ from core.contracts import Engineer, Plan, Request, RouterTaskSnapshot, Skill
 from core.engine import EngineOutput, SearchSettings, solve
 from core.evidence import PlanEvidence, build_plan_evidence
 from core.geo import GraphTravel, RoadGraph
-from core.official import OfficialEastScenario
+from core.official import MultiZoneScenario, OfficialScenario
 from core.schedule import validate_plan
 
 
@@ -35,7 +35,7 @@ class EventRun:
 class BenchmarkRun:
     """Initial East calculation plus independent event replans from one stable plan."""
 
-    scenario: OfficialEastScenario
+    scenario: OfficialScenario | MultiZoneScenario
     output: EngineOutput
     evidence: PlanEvidence
     elapsed_sec: float
@@ -90,21 +90,26 @@ def project_remaining_snapshot(
     for engineer in snapshot.engineers:
         route = routes[engineer.engineer_id]
         point = engineer.start_location
-        release = max(event_at, engineer.available_from or event_at)
+        release = (
+            None if engineer.available_from is None else max(event_at, engineer.available_from)
+        )
+        lunch_taken = engineer.lunch_taken
         for stop in route.stops:
             if stop.start_at >= event_at:
                 break
             point = stop.location
-            release = max(release, stop.end_at)
+            release = max(release or event_at, stop.end_at)
+            if stop.kind == "lunch":
+                lunch_taken = True
         for leg in route.legs:
-            if leg.departure_at < event_at < leg.arrival_at:
+            if leg.departure_at < event_at <= leg.arrival_at:
                 target = next(
                     (stop for stop in route.stops if stop.stop_id == leg.to_stop_id), None
                 )
                 if target is None:
                     raise ValueError("travel leg target is absent from its engineer route")
                 point = target.location
-                release = max(release, leg.arrival_at)
+                release = max(release or event_at, leg.arrival_at)
                 break
         engineers.append(
             engineer.model_copy(
@@ -112,6 +117,7 @@ def project_remaining_snapshot(
                     "start_location": point,
                     "available_from": release,
                     "position_observed_at": event_at,
+                    "lunch_taken": lunch_taken,
                 }
             )
         )
@@ -251,7 +257,7 @@ def _with_technical_stop(
 
 
 def run_replanning_events(
-    scenario: OfficialEastScenario,
+    scenario: OfficialScenario,
     initial: EngineOutput,
     settings: SearchSettings,
 ) -> tuple[EventRun, ...]:
@@ -407,7 +413,7 @@ def run_replanning_events(
 
 
 def run_official_benchmark(
-    scenario: OfficialEastScenario,
+    scenario: OfficialScenario | MultiZoneScenario,
     settings: SearchSettings,
     *,
     event_settings: SearchSettings | None = None,
@@ -435,6 +441,8 @@ def run_official_benchmark(
     events = (
         run_replanning_events(scenario, output, event_settings)
         if event_settings is not None
+        and isinstance(scenario, OfficialScenario)
+        and scenario.config.region == "east"
         else ()
     )
     return BenchmarkRun(scenario, output, evidence, elapsed, events)
@@ -469,15 +477,17 @@ def benchmark_payload(run: BenchmarkRun) -> dict:
                 )
         return result
 
+    config = run.scenario.config if isinstance(run.scenario, OfficialScenario) else None
     return {
         "schema_version": "1.0",
-        "scenario_id": run.scenario.config.scenario_id,
+        "scenario_id": config.scenario_id if config else run.scenario.scenario_id,
         "source": {
             "requests": len(run.scenario.snapshot.requests),
             "engineers": len(run.scenario.snapshot.engineers),
             "geocode_quality": run.scenario.geocode_quality,
+            "zones": [config.region] if config else list(run.scenario.zones),
         },
-        "assumptions": run.scenario.config.assumptions,
+        "assumptions": config.assumptions if config else run.scenario.assumptions,
         "search": {
             "path": run.output.path,
             "elapsed_sec": run.elapsed_sec,

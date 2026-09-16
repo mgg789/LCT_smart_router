@@ -1,0 +1,85 @@
+{
+  "schema_version": "1.0",
+  "scenario_id": "official-south-central-v1",
+  "region": "south_central",
+  "local_date": "2026-08-17",
+  "timezone": "Europe/Moscow",
+  "horizon_start": "08:00",
+  "horizon_end": "23:00",
+  "synthetic_file": "south_central_synthetic_data.csv",
+  "control_file": "south_central_control_distribution.csv",
+  "expected_request_count": 56,
+  "expected_team_count": 11,
+  "priority_urgent_hd_types": [
+    "Нет линка",
+    "Разрывы",
+    "IP-адрес 169...",
+    "Рост ошибок на порту"
+  ],
+  "duration_sec_by_hd_type": {
+    "Конвергенция абонента": 2700,
+    "Заявка на подключение": 5400,
+    "Заказ подключения/Дозаказ оборудования": 3600,
+    "Нет линка": 3600,
+    "Переключение на Гбит/с": 3600,
+    "Работа с кабелем": 5400,
+    "Роутер. Замена техническим специалистом": 2400,
+    "TVE/ENT. Другие ошибки": 2700,
+    "Информация": 1800,
+    "IP-адрес 169...": 3600,
+    "Рост ошибок на порту": 3600,
+    "ТВ. Замена приставки техником": 3600,
+    "Разрывы": 3600
+  },
+  "skill_by_hd_type": {
+    "Конвергенция абонента": "connection",
+    "Заявка на подключение": "connection",
+    "Заказ подключения/Дозаказ оборудования": "connection",
+    "Нет линка": "emergency",
+    "Переключение на Гбит/с": "connection",
+    "Работа с кабелем": "local",
+    "Роутер. Замена техническим специалистом": "connection",
+    "TVE/ENT. Другие ошибки": "local",
+    "Информация": "local",
+    "IP-адрес 169...": "emergency",
+    "Рост ошибок на порту": "emergency",
+    "ТВ. Замена приставки техником": "connection",
+    "Разрывы": "emergency"
+  },
+  "team_profiles": [
+    {"control_team": "Капитанчук Александр", "transport_type": "car", "shift_start": "09:00", "shift_end": "18:00"},
+    {"control_team": "Исхаков Денис", "transport_type": "car", "shift_start": "10:00", "shift_end": "20:00"},
+    {"control_team": "Брюзгин Ярослав", "transport_type": "bike", "shift_start": "09:00", "shift_end": "19:00"},
+    {"control_team": "Бахарев Андрей", "transport_type": "car", "shift_start": "12:00", "shift_end": "23:00"},
+    {"control_team": "Прокопенко Вячеслав", "transport_type": "transit", "shift_start": "08:00", "shift_end": "18:00"},
+    {"control_team": "Выговский Сергей", "transport_type": "car", "shift_start": "11:00", "shift_end": "22:00"},
+    {"control_team": "Данилов Даниил", "transport_type": "walk", "shift_start": "09:00", "shift_end": "18:00"},
+    {"control_team": "Переладов Алексей", "transport_type": "car", "shift_start": "12:00", "shift_end": "23:00"},
+    {"control_team": "Сакур Тимофей", "transport_type": "bike", "shift_start": "10:00", "shift_end": "20:00"},
+    {"control_team": "Рыбалкин Егор", "transport_type": "transit", "shift_start": "08:00", "shift_end": "18:00"},
+    {"control_team": "Ионов Геннадий", "transport_type": "car", "shift_start": "09:00", "shift_end": "20:00"}
+  ],
+  "transport_cost_model": {
+    "car": "osrm_duration",
+    "bike_speed_kmh": 15.0,
+    "walk_speed_kmh": 5.0,
+    "transit_speed_kmh": 22.0,
+    "transit_access_sec": 480
+  },
+  "source_sha256": {
+    "synthetic": "e553b5b1ad985f2ec62ffe291544a7df1c8622ef5cd80165287d95f45a53a035",
+    "control": "023b7c99121491b389b5a87305ad7986fe76a576f0c1c8ff938cf6ec74e99669"
+  },
+  "resource_sha256": {
+    "geocodes": "d659c1c0d9e1f4c3c30a6f9a00ff50cf987a1c9b1d98e2918a61aedd6ef217b2",
+    "road_matrix": "6347746947f38a0ad6316d06aea48351657985999420a9e1c2c642ab957c22c3"
+  },
+  "assumptions": [
+    "The official archive has no engineer directory, shifts, transport assignments, service durations or coordinates.",
+    "Team skills are inferred from HD work types assigned to each named team in the control file.",
+    "All teams start at the official South-central office and routes remain open after the last job.",
+    "Official requests do not constrain required transport.",
+    "Coordinates are deterministic district-centroid projections with address-specific jitter; they are not rooftop geocodes.",
+    "The offline matrix uses great-circle distance times 1.25 and a constant 28 km/h car speed; it validates routing behavior, not production ETA accuracy."
+  ]
+}

@@ -67,6 +67,14 @@
     "transit_speed_kmh": 22.0,
     "transit_access_sec": 480
   },
+  "source_sha256": {
+    "synthetic": "35b2e2e34ed488579ed722b55345b73989f277b9b710b66b12d01c5ec38a00b9",
+    "control": "74c93280f079866bc22f36451fbbdf95da1ff40802af89da6094df4408c67b36"
+  },
+  "resource_sha256": {
+    "geocodes": "01a75f464bfa08f11f2da4f74775c4b35339d0a1bed3f1cb290f44be232116a0",
+    "road_matrix": "33b8ea542b880562340b02497417043c38c8345321f03891de9db86c378572d0"
+  },
   "assumptions": [
     "The official archive has no engineer directory, shifts, transport assignments or service durations.",
     "Team skills are inferred from HD work types assigned to each named team in the control file.",

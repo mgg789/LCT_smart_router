@@ -3,7 +3,7 @@
 import pytest
 from core.contracts import RouterTaskSnapshot
 from core.engine import SearchSettings, solve
-from core.geo import GraphTravel
+from core.geo import GraphTravel, RoadGraph
 from core.policy import POLICY_CATALOG_VERSION, compile_policy
 
 SETTINGS = SearchSettings(time_limit_ms=1600, solution_limit=24)
@@ -59,6 +59,19 @@ def test_catalog_is_strict_and_versioned(snapshot):
     with pytest.raises(ValueError):
         RouterTaskSnapshot.model_validate(compact)
 
+    expected = {
+        "fast": "travel_time",
+        "compact": "engineers_used",
+        "sla": "window_start_delay",
+        "balanced": "max_jobs_per_engineer",
+        "eco": "distance",
+    }
+    for policy_id, first_resource in expected.items():
+        data = snapshot.model_dump()
+        data["policy"] = {"policy_id": policy_id, "parameters": {}}
+        spec = compile_policy(RouterTaskSnapshot.model_validate(data).policy)
+        assert spec.search_stages[1] == first_resource
+
 
 def test_fast_minimizes_travel_while_compact_minimizes_engineers(snapshot, graph):
     """Show the catalog's intended resource trade-off on the same feasible jobs."""
@@ -95,3 +108,78 @@ def test_compact_does_not_count_required_lunch_only_route_as_engineer_used(snaps
     assert plan.summary.engineers_used == 1
     assert [route.lunch.status for route in plan.routes] == ["scheduled", "scheduled"]
     assert sum(route.metrics.assigned_count == 0 for route in plan.routes) == 1
+
+
+def test_balanced_and_sla_spread_work_while_compact_concentrates(snapshot, graph):
+    travel = GraphTravel(graph)
+    compact = solve(_policy_scenario(snapshot, graph, "compact"), travel, SETTINGS).main
+    balanced = solve(_policy_scenario(snapshot, graph, "balanced"), travel, SETTINGS).main
+    sla = solve(_policy_scenario(snapshot, graph, "sla"), travel, SETTINGS).main
+    assert max(route.metrics.assigned_count for route in compact.routes) == 2
+    assert max(route.metrics.assigned_count for route in balanced.routes) == 1
+    assert max(route.metrics.assigned_count for route in sla.routes) == 1
+
+
+def test_eco_prefers_shorter_distance_while_fast_prefers_time(snapshot):
+    """Prove the eco preset on a graph with intentionally opposed cost signals."""
+    start = snapshot.planning_as_of
+    graph = RoadGraph.model_validate(
+        {
+            "version": "policy-cost-tradeoff",
+            "source": "test",
+            "nodes": [
+                {"node_id": "fast", "location": {"lat": 55.75, "lon": 37.60}},
+                {"node_id": "eco", "location": {"lat": 55.75, "lon": 37.61}},
+                {"node_id": "job", "location": {"lat": 55.75, "lon": 37.62}},
+            ],
+            "edges": [
+                {
+                    "source": "fast",
+                    "target": "job",
+                    "distance_m": 1000,
+                    "duration_sec": {"car": 60},
+                },
+                {
+                    "source": "eco",
+                    "target": "job",
+                    "distance_m": 100,
+                    "duration_sec": {"car": 180},
+                },
+            ],
+        }
+    )
+    base = snapshot.model_dump()
+    engineer = base["engineers"][0]
+    engineer.update(skills=["local"], transport_type="car")
+    second = {
+        **engineer,
+        "engineer_id": "eco-eng",
+        "input_order": 1,
+        "start_location": graph.nodes[1].location.model_dump(),
+    }
+    engineer.update(
+        engineer_id="fast-eng",
+        input_order=0,
+        start_location=graph.nodes[0].location.model_dump(),
+    )
+    base["engineers"] = [engineer, second]
+    base["requests"] = [
+        {
+            "request_id": "job",
+            "arrival_order": 0,
+            "location": graph.nodes[2].location.model_dump(),
+            "service_duration_sec": 300,
+            "window_start_at": start,
+            "window_end_at": start + 3600,
+            "priority": "normal",
+            "required_skill": "local",
+            "required_transport": None,
+        }
+    ]
+    travel = GraphTravel(graph)
+    owners = {}
+    for policy_id in ("fast", "eco"):
+        base["policy"] = {"policy_id": policy_id, "parameters": {}}
+        plan = solve(RouterTaskSnapshot.model_validate(base), travel, SETTINGS).main
+        owners[policy_id] = plan.assignments[0].engineer_id
+    assert owners == {"fast": "fast-eng", "eco": "eco-eng"}

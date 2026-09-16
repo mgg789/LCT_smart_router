@@ -1,8 +1,9 @@
-"""Offline importer for the organizer's official East-region CSV scenario."""
+"""Strict offline import and multi-zone composition for official regional CSV data."""
 
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import math
 from collections import Counter, defaultdict
@@ -37,12 +38,15 @@ class TransportCostSpec(Record):
     transit_access_sec: Annotated[int, Field(ge=0)]
 
 
+Region = Literal["east", "southeast", "south_central"]
+
+
 class OfficialScenarioConfig(Record):
     """Versioned assumptions needed to turn organizer rows into a strict snapshot."""
 
     schema_version: Literal["1.0"]
     scenario_id: Annotated[str, Field(min_length=1)]
-    region: Literal["east"]
+    region: Region
     local_date: Annotated[str, Field(pattern=r"^\d{4}-\d{2}-\d{2}$")]
     timezone: Annotated[str, Field(min_length=1)]
     horizon_start: Annotated[str, Field(pattern=r"^\d{2}:\d{2}$")]
@@ -57,6 +61,8 @@ class OfficialScenarioConfig(Record):
     team_profiles: list[TeamProfileSpec]
     transport_cost_model: TransportCostSpec
     assumptions: list[Annotated[str, Field(min_length=1)]]
+    source_sha256: dict[Literal["synthetic", "control"], str] = Field(default_factory=dict)
+    resource_sha256: dict[Literal["geocodes", "road_matrix"], str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def check_catalogs(self) -> Self:
@@ -68,12 +74,23 @@ class OfficialScenarioConfig(Record):
             raise ValueError("team profile count or identity mismatch")
         if _clock(self.horizon_end) <= _clock(self.horizon_start):
             raise ValueError("scenario horizon is reversed")
+        for catalog in (self.source_sha256, self.resource_sha256):
+            if any(
+                len(digest) != 64
+                or any(character not in "0123456789abcdef" for character in digest)
+                for digest in catalog.values()
+            ):
+                raise ValueError("scenario hashes must be lowercase SHA-256")
+        if set(self.source_sha256) != {"synthetic", "control"}:
+            raise ValueError("source hashes must cover synthetic and control files")
+        if set(self.resource_sha256) != {"geocodes", "road_matrix"}:
+            raise ValueError("resource hashes must cover geocodes and road matrix")
         return self
 
 
 @dataclass(frozen=True)
-class OfficialEastScenario:
-    """Prepared official snapshot, road graph and import provenance for benchmarks."""
+class OfficialScenario:
+    """Prepared regional snapshot, road graph and import provenance for benchmarks."""
 
     config: OfficialScenarioConfig
     snapshot: RouterTaskSnapshot
@@ -81,6 +98,23 @@ class OfficialEastScenario:
     request_details: dict[str, dict[str, str | int | float | bool | None]]
     engineer_details: dict[str, dict[str, str | int | list[str]]]
     geocode_quality: dict[str, int]
+
+
+@dataclass(frozen=True)
+class MultiZoneScenario:
+    """One strict calculation assembled from isolated official-region components."""
+
+    scenario_id: str
+    zones: tuple[str, ...]
+    snapshot: RouterTaskSnapshot
+    graph: RoadGraph
+    request_details: dict[str, dict[str, str | int | float | bool | None]]
+    engineer_details: dict[str, dict[str, str | int | list[str]]]
+    geocode_quality: dict[str, int]
+    assumptions: list[str]
+
+
+OfficialEastScenario = OfficialScenario
 
 
 def _clock(value: str) -> time:
@@ -92,21 +126,43 @@ def _epoch(local_day: date, local_clock: str, zone: ZoneInfo) -> int:
     return int(moment.timestamp())
 
 
-def _read_rows(path: Path) -> list[dict[str, str]]:
+def _read_rows(path: Path, extra_fields: set[str] | None = None) -> list[dict[str, str]]:
+    """Decode organizer CSV and verify all columns needed by the selected stage."""
     with path.open(encoding="cp1251", newline="") as handle:
-        return list(csv.DictReader(handle, delimiter=";"))
+        reader = csv.DictReader(handle, delimiter=";")
+        required = {
+            "Заявка",
+            "Тип заявки BK",
+            "Тип заявки HD",
+            "Начало",
+            "Окончание",
+            "Район",
+            "Адрес",
+        }
+        required.update(extra_fields or set())
+        if reader.fieldnames is None or not required.issubset(reader.fieldnames):
+            raise ValueError(f"official CSV headers are incomplete: {path.name}")
+        return list(reader)
+
+
+def _verify_file_hash(path: Path, expected: str | None) -> None:
+    """Reject scenario source/resource drift before decoding or enrichment."""
+    if expected is None:
+        return
+    actual = hashlib.sha256(path.read_bytes()).hexdigest()
+    if actual != expected:
+        raise ValueError(f"official scenario file hash mismatch: {path.name}")
 
 
 def _validate_request_rows(requests: list[dict[str, str]], control: list[dict[str, str]]) -> None:
-    for label, rows in (("synthetic", requests), ("control", control)):
-        request_ids = [row["Заявка"] for row in rows]
-        if len(request_ids) != len(set(request_ids)):
-            raise ValueError(f"duplicate request ID in official East {label} CSV")
+    request_ids = [row["Заявка"] for row in requests]
+    if len(request_ids) != len(set(request_ids)):
+        raise ValueError("duplicate request ID in official synthetic CSV")
     fields = ("Начало", "Окончание", "Тип заявки HD", "Район")
     request_facts = Counter(tuple(row[field] for field in fields) for row in requests)
     control_facts = Counter(tuple(row[field] for field in fields) for row in control)
     if request_facts != control_facts:
-        raise ValueError("official East control rows do not match synthetic request facts")
+        raise ValueError("official control rows do not match synthetic request facts")
 
 
 def _load_geocodes(path: Path) -> tuple[dict[str, tuple[str, GeoPoint, str]], dict[str, GeoPoint]]:
@@ -179,16 +235,18 @@ def _load_graph(path: Path, locations: dict[str, GeoPoint], costs: TransportCost
     )
 
 
-def load_official_east(
+def load_official_region(
     dataset_dir: Path,
+    region: Region,
     scenario_dir: Path | None = None,
-) -> OfficialEastScenario:
-    """Build the deterministic East benchmark from official CSV and offline resources.
+) -> OfficialScenario:
+    """Build one deterministic official-region benchmark from cached resources.
 
     Args:
         dataset_dir: Directory containing the organizer's anonymized CSV files.
+        region: Official region key.
         scenario_dir: Versioned assumptions/geocodes/matrix directory. Defaults to
-            ``core/scenarios/east-v1``.
+            ``core/scenarios/<region>-v1``.
 
     Returns:
         A strict Router snapshot, multi-profile graph and source metadata.
@@ -196,42 +254,52 @@ def load_official_east(
     Raises:
         ValueError: If the archive or resource catalogs drift or are incomplete.
     """
-    scenario_dir = scenario_dir or Path(__file__).with_name("scenarios") / "east-v1"
+    scenario_dir = scenario_dir or Path(__file__).with_name("scenarios") / (
+        f"{region.replace('_', '-')}-v1"
+    )
     config = OfficialScenarioConfig.model_validate_json((scenario_dir / "config.json").read_bytes())
-    synthetic_raw = _read_rows(dataset_dir / config.synthetic_file)
-    control = [
-        row for row in _read_rows(dataset_dir / config.control_file) if row["Заявка"].isdigit()
-    ]
+    if config.region != region:
+        raise ValueError("scenario directory region does not match requested region")
+    synthetic_path = dataset_dir / config.synthetic_file
+    control_path = dataset_dir / config.control_file
+    geocodes_path = scenario_dir / "geocodes.json"
+    matrix_path = scenario_dir / "road-matrix.json"
+    _verify_file_hash(synthetic_path, config.source_sha256["synthetic"])
+    _verify_file_hash(control_path, config.source_sha256["control"])
+    _verify_file_hash(geocodes_path, config.resource_sha256["geocodes"])
+    _verify_file_hash(matrix_path, config.resource_sha256["road_matrix"])
+    synthetic_raw = _read_rows(synthetic_path)
+    control = [row for row in _read_rows(control_path, {"Бригада"}) if row["Заявка"].isdigit()]
     requests = [row for row in synthetic_raw if row["Заявка"].isdigit()]
-    office_rows = [row for row in synthetic_raw if row["Заявка"] == "Адрес Офиса"]
+    office_rows = [
+        row for row in synthetic_raw if row["Заявка"].strip().casefold() == "адрес офиса"
+    ]
     if len(requests) != config.expected_request_count or len(control) != len(requests):
-        raise ValueError("official East request count drift")
+        raise ValueError(f"official {region} request count drift")
     _validate_request_rows(requests, control)
     if len(office_rows) != 1:
-        raise ValueError("official East office footer missing or duplicated")
+        raise ValueError(f"official {region} office footer missing or duplicated")
     office_address = office_rows[0]["Тип заявки BK"]
 
-    geocodes, locations = _load_geocodes(scenario_dir / "geocodes.json")
+    geocodes, locations = _load_geocodes(geocodes_path)
     required_addresses = {row["Адрес"] for row in requests} | {office_address}
     missing_addresses = required_addresses - set(geocodes)
     if missing_addresses:
         raise ValueError(f"geocode catalog misses {sorted(missing_addresses)!r}")
-    graph = _load_graph(scenario_dir / "road-matrix.json", locations, config.transport_cost_model)
+    graph = _load_graph(matrix_path, locations, config.transport_cost_model)
 
     profile_by_name = {profile.control_team: profile for profile in config.team_profiles}
-    team_order: list[str] = []
     skills_by_team: dict[str, set[Skill]] = defaultdict(set)
     for row in control:
         team = row["Бригада"].strip()
         if not team:
             continue
-        if team not in skills_by_team:
-            team_order.append(team)
         work_type = row["Тип заявки HD"]
         if work_type not in config.skill_by_hd_type:
             raise ValueError(f"unknown control HD type: {work_type}")
         skills_by_team[team].add(config.skill_by_hd_type[work_type])
-    if set(team_order) != set(profile_by_name) or len(team_order) != config.expected_team_count:
+    team_order = [profile.control_team for profile in config.team_profiles]
+    if set(skills_by_team) != set(profile_by_name) or len(team_order) != config.expected_team_count:
         raise ValueError("control team identities drifted from scenario profiles")
 
     local_day = date.fromisoformat(config.local_date)
@@ -242,7 +310,7 @@ def load_official_east(
     engineer_details: dict[str, dict[str, str | int | list[str]]] = {}
     for index, team in enumerate(team_order):
         profile = profile_by_name[team]
-        engineer_id = f"east-team-{index + 1:02d}"
+        engineer_id = f"{region}-team-{index + 1:02d}"
         skills = sorted(skills_by_team[team], key=skill_order.__getitem__)
         engineers.append(
             {
@@ -328,11 +396,113 @@ def load_official_east(
             "policy": {"policy_id": "fast", "parameters": {}},
         }
     )
-    return OfficialEastScenario(
+    return OfficialScenario(
         config=config,
         snapshot=snapshot,
         graph=graph,
         request_details=request_details,
         engineer_details=engineer_details,
         geocode_quality=dict(quality),
+    )
+
+
+def load_official_east(dataset_dir: Path, scenario_dir: Path | None = None) -> OfficialScenario:
+    """Keep the established East loader as a compatibility wrapper."""
+    return load_official_region(dataset_dir, "east", scenario_dir)
+
+
+def combine_official_scenarios(
+    scenarios: list[OfficialScenario],
+) -> MultiZoneScenario:
+    """Combine isolated regional graphs into one multi-zone Engine calculation.
+
+    Regions remain disconnected by construction. Namespaced business and graph IDs
+    prevent collisions, while contiguous order fields preserve baseline semantics.
+    """
+    if len(scenarios) < 2:
+        raise ValueError("multi-zone scenario requires at least two regions")
+    zones = tuple(scenario.config.region for scenario in scenarios)
+    if len(set(zones)) != len(zones):
+        raise ValueError("multi-zone scenario contains a duplicate region")
+    first = scenarios[0].snapshot
+    for scenario in scenarios[1:]:
+        if (
+            scenario.snapshot.horizon_start_at != first.horizon_start_at
+            or scenario.snapshot.horizon_end_at != first.horizon_end_at
+            or scenario.snapshot.policy != first.policy
+        ):
+            raise ValueError("multi-zone horizons and policies must match")
+
+    requests = []
+    engineers = []
+    nodes = []
+    edges = []
+    request_details = {}
+    engineer_details = {}
+    quality: Counter[str] = Counter()
+    for scenario in scenarios:
+        zone = scenario.config.region
+        request_offset = len(requests)
+        engineer_offset = len(engineers)
+        for index, request in enumerate(scenario.snapshot.requests):
+            request_id = f"{zone}:{request.request_id}"
+            requests.append(
+                request.model_copy(
+                    update={"request_id": request_id, "arrival_order": request_offset + index}
+                )
+            )
+            request_details[request_id] = {
+                **scenario.request_details[request.request_id],
+                "zone": zone,
+            }
+        for index, engineer in enumerate(scenario.snapshot.engineers):
+            engineer_id = f"{zone}:{engineer.engineer_id}"
+            engineers.append(
+                engineer.model_copy(
+                    update={"engineer_id": engineer_id, "input_order": engineer_offset + index}
+                )
+            )
+            engineer_details[engineer_id] = {
+                **scenario.engineer_details[engineer.engineer_id],
+                "zone": zone,
+            }
+        nodes.extend(
+            node.model_copy(update={"node_id": f"{zone}:{node.node_id}"})
+            for node in scenario.graph.nodes
+        )
+        edges.extend(
+            edge.model_copy(
+                update={"source": f"{zone}:{edge.source}", "target": f"{zone}:{edge.target}"}
+            )
+            for edge in scenario.graph.edges
+        )
+        quality.update(scenario.geocode_quality)
+
+    snapshot = RouterTaskSnapshot(
+        schema_version="1.0",
+        planning_as_of=first.planning_as_of,
+        horizon_start_at=first.horizon_start_at,
+        horizon_end_at=first.horizon_end_at,
+        requests=requests,
+        engineers=engineers,
+        policy=first.policy,
+    )
+    graph = RoadGraph(
+        version="multi-zone:" + "+".join(scenario.graph.version for scenario in scenarios),
+        source="Disconnected union of prepared official-region graph resources.",
+        nodes=nodes,
+        edges=edges,
+    )
+    return MultiZoneScenario(
+        scenario_id="official-" + "+".join(zones) + "-v2",
+        zones=zones,
+        snapshot=snapshot,
+        graph=graph,
+        request_details=request_details,
+        engineer_details=engineer_details,
+        geocode_quality=dict(quality),
+        assumptions=[
+            "Each region is an isolated graph component; cross-zone assignments are unreachable.",
+            "Business and graph IDs are namespaced by region for this combined calculation.",
+        ],
     )
