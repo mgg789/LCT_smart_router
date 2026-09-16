@@ -154,7 +154,18 @@ const diagnostic = z.object({
   entity_id: z.string().nullable().optional(),
 });
 
-export const routerResultSchema = z.object({
+/**
+ * The package as sys reads it.
+ *
+ * Deliberately a *loose* object: Router V2 also returns `input_publication_id`,
+ * `policy_id`, `policy_criteria`, `search_path`, `technical_settings`, `main_evidence` and
+ * `baseline_evidence` (context/33 section 8, D-22). sys does not act on them yet, but the
+ * Data Layer is required to keep the accepted package whole, evidence included
+ * (context/37 section 4.5) -- and a stripping parser would throw it away silently at the
+ * door. Unknown fields survive into the stored payload; only the fields declared below are
+ * ever acted upon.
+ */
+export const routerResultSchema = z.looseObject({
   schema_version: z.string().min(1),
   /** State of getting a new result, not the status of any request. */
   status: z.enum(['pending', 'ready', 'error']),

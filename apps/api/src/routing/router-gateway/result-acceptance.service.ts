@@ -116,7 +116,7 @@ export class ResultAcceptanceService {
           'The result used a map or technical context that is no longer active',
         );
       }
-      if (!result.main || !result.main.is_usable) {
+      if (!result.main?.is_usable) {
         // A finished answer that must not become the working plan. It does not prove that
         // the visits are impossible, and it does not cancel anything.
         return this.reject(

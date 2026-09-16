@@ -1,0 +1,42 @@
+{
+  "additionalProperties": false,
+  "description": "Complete idempotent replacement of Router-owned technical controls.",
+  "properties": {
+    "departure_lateness_tolerance_sec": {
+      "default": 0,
+      "maximum": 86400,
+      "minimum": 0,
+      "title": "Departure Lateness Tolerance Sec",
+      "type": "integer"
+    },
+    "expected_context_version": {
+      "minLength": 1,
+      "title": "Expected Context Version",
+      "type": "string"
+    },
+    "lunches_enabled": {
+      "default": true,
+      "title": "Lunches Enabled",
+      "type": "boolean"
+    },
+    "operation_id": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Operation Id",
+      "type": "string"
+    },
+    "task_start_lateness_tolerance_sec": {
+      "default": 0,
+      "maximum": 86400,
+      "minimum": 0,
+      "title": "Task Start Lateness Tolerance Sec",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "operation_id",
+    "expected_context_version"
+  ],
+  "title": "TechnicalSettingsRequest",
+  "type": "object"
+}

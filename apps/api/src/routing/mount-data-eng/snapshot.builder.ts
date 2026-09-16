@@ -68,7 +68,7 @@ export class SnapshotBuilder {
         engineersWithoutShift += 1;
         continue;
       }
-      const projected = this.projectEngineer(day.engineer, day, planningAsOf);
+      const projected = this.projectEngineer(day.engineer, day);
       if (!projected) {
         engineersWithoutStartLocation += 1;
         continue;
@@ -171,11 +171,7 @@ export class SnapshotBuilder {
    * input, and the contract is explicit that it does not license substituting an office
    * or zero coordinates.
    */
-  private projectEngineer(
-    engineer: Engineer,
-    day: EngineerDay,
-    planningAsOf: number,
-  ): SnapshotEngineer | null {
+  private projectEngineer(engineer: Engineer, day: EngineerDay): SnapshotEngineer | null {
     if (engineer.homeLat === null || engineer.homeLon === null) {
       return null;
     }

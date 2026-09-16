@@ -8,7 +8,7 @@
 | Tool | Version used here | Note |
 |---|---|---|
 | Node.js | 24.13.0 (host), 24.21.0 (container) | LTS branch, per `context/43` section 4 |
-| pnpm | 10.28.2 | Package manager of the workspace (D-21) |
+| pnpm | 10.28.2 | Package manager of the workspace (D-23) |
 | Docker Engine | 28.5.1 | |
 | Docker Compose | v2.40.2 | The `docker compose` plugin, not the legacy v1 binary |
 
@@ -17,7 +17,7 @@ npm 11.19.1, PostgreSQL 18.6, Docker Engine 29.8.1 and Compose 5.5.1. Several of
 are not obtainable on the current development machine. The contour therefore pins what
 actually installs: the versions above, `pgvector/pgvector:pg17` for the database, and the
 exact dependency versions in `pnpm-lock.yaml`. `context/43` carries a status block naming
-this and the other D-21 deviations; nothing was changed there silently.
+this and the other D-23 deviations; nothing was changed there silently.
 
 ## 2. First run
 

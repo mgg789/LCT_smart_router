@@ -274,11 +274,9 @@ describe('request lifecycle', () => {
     const history = await prisma.requestConditionHistory.findMany({
       where: { requestId: draft.id },
     });
-    assert.ok(history.length >= 1);
-    assert.equal(
-      (history[0]?.previous as { windowStartAt: number }).windowStartAt,
-      DAY + 10 * HOUR,
-    );
+    const [entry] = history;
+    assert.ok(entry, 'moving the window must leave a history entry');
+    assert.equal((entry.previous as { windowStartAt: number }).windowStartAt, DAY + 10 * HOUR);
   });
 
   it('reports a conflict when the screen the customer confirmed is out of date', async () => {

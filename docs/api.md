@@ -3,6 +3,7 @@
 > Updated in the same commit as the code it describes (AGENTS.md section 8.2).
 > Generated schema: <http://localhost:8000/docs/openapi.json>; interactive: `/docs`.
 > Architecture: [architecture.md](./architecture.md). Data model: [data.md](./data.md).
+> Sections 1-10 are the System Layer API; section 11 is the Router Core service API (D-22).
 
 ## 1. Conventions
 
@@ -456,19 +457,42 @@ that setup never happened, and a restart must not quietly reload the demo data
 
 Listed rather than stubbed with invented shapes (AGENTS.md section 10.3).
 
-### Router Core HTTP surface — needed by `ROUTER-gateway`
+### Router Core HTTP surface — specified, not yet called
 
-The direction is decided: **sys polls Router**; Router never writes into sys. What Router
-has to expose is not defined yet. The System Layer will need, at minimum:
+**No longer missing.** Router Core V2 (D-22) publishes its private service API; it is
+reproduced in section 11 below, and the machine-readable payloads live in `core/schemas/`.
+The four things this gateway needs all exist:
 
-| Purpose | Shape |
+| What `ROUTER-gateway` needs | Router endpoint |
 |---|---|
-| Current result | `RouterResult` of `context/33` section 8, including `resultId`, `inputHash`, `routerContextVersion`, `planningAsOf`, `computedAt`, `main`, `baseline`, `errors` |
-| Active context version | The `routerContextVersion` in force *now*, read separately from any result package. A result cannot report its own currency (`context/33` section 7) |
-| Health | Whether Router is reachable and computing |
-| Tolerance setting | The one narrow configuration operation of `context/33` section 8: `operationId`, `toleranceSec`, `expectedContextVersion`; answered with accepted or rejected plus the active version |
+| Current result | `GET /v1/result` |
+| Active context version, read apart from any result | `GET /v1/context` |
+| Reachability | `GET /health` |
+| Tolerance | `PUT /v1/config/tolerance`, superseded by `PUT /v2/config/technical-settings` |
 
-Until it exists the gateway uses a null client that reports `pending`, and
+The payload shapes were written independently on both sides from `context/33` and agree
+field for field: `plan`, `engineer_route`, `route_stop`, `route_leg`, `assignment`,
+`lunch_result`, `route_metrics`, `plan_metrics`, `planning_alert`, `reason` and
+`diagnostic` in `result.types.ts` have exactly the properties of the matching `$defs` in
+`core/schemas/router-result-1.0.json`, in both directions. The same holds for the
+published task: the golden vector in `docs/contracts/fixtures/` validates against
+`core/schemas/router-task-snapshot-1.0.json`, including every enum.
+
+What is still open is on the sys side, and is deliberately left for the branch that writes
+the HTTP client rather than smuggled into a merge:
+
+* **V2 fields are dropped.** Router also returns `input_publication_id`, `policy_id`,
+  `policy_criteria`, `search_path`, `technical_settings`, `main_evidence` and
+  `baseline_evidence`. `routerResultSchema` strips them, so nothing breaks, but the
+  evidence bundle — the supported input for map explanations — is thrown away at the
+  door.
+* **Acceptance matches on `input_hash` alone.** Router now also names the publication it
+  read (`input_publication_id`). Checking both is strictly stronger and costs one
+  comparison.
+* **Technical settings are not driven from sys.** `lunches_enabled` and the two tolerance
+  values are Router-owned state that the Dashboard has no operation for yet.
+
+Until the client is written the gateway uses a null client that reports `pending`, and
 `/health/services` says `router: not_configured`. The application is fully usable without
 Router; it simply has no automatic plan. Swapping in an HTTP client is a one-line provider
 change in `router-gateway.module.ts` — nothing else knows how the result arrives.
@@ -479,12 +503,85 @@ a plan.
 
 ### Snapshot serialization — shared with Router Core
 
-sys and Router must hash **the same bytes** of the same document, or `inputHash` can never
-match. `JSON.stringify` and `json.dumps` disagree on number formatting, so the byte-level
-rule will be written down once, with a golden test vector both sides must reproduce.
-Planned for the snapshot branch; see `context/43` section 5.2.
+sys and Router must hash **the same bytes** of the same document, or `input_hash` can never
+match. The byte-level rule is written down in
+[contracts/snapshot-canonical.md](./contracts/snapshot-canonical.md) with a golden vector
+in [contracts/fixtures/](./contracts/fixtures/), reproduced independently in TypeScript and
+Python.
+
+In practice the shared path does not depend on re-serialization at all: sys publishes exact
+bytes and their SHA-256, and Router hashes the bytes it was given
+(`core/runtime.py`, `SnapshotPublication`). The specification is what keeps a future
+re-serializer on either side from drifting, and it remains the rule.
 
 ### Out of scope of this build
 
 `AI-gateway` tool protocol and `SMTP-gateway` transport. sys will record mail intents;
 delivery belongs to the external mail server, which is not in this contour.
+
+## 11. Router Core private API
+
+### Boundary
+
+Router exposes a private service API to System Layer. Authentication and business
+authorization remain in sys. Router accepts no endpoint that directly assigns a job,
+changes route order or applies a plan.
+
+### Read endpoints
+
+| Method | Path | Response |
+|---|---|---|
+| `GET` | `/health` | Liveness plus current coordinator status and technical context. |
+| `GET` | `/v1/context` | Active `router_context_version`, generation, calculation state, search path and complete technical settings. |
+| `GET` | `/v1/result` | The latest atomic `RouterResult` publication. |
+
+`RouterResult.status` is a discriminated state:
+
+- `pending` contains no plans, evidence or diagnostics;
+- `ready` contains IDs, exact input hash, timestamps, context version, policy,
+  technical settings, search path, ordered policy criteria, main/baseline plans and
+  evidence for both plans;
+- `error` contains at least one diagnostic and no plans or evidence.
+
+The evidence bundle contains the selected schedule facts and every engineer candidate's
+skill, transport, availability, solo feasibility, route-end append feasibility, travel
+delta and blockers. It is the supported input for deterministic UI explanations and an
+explanation-only LLM. The LLM must not change the plan.
+
+### Technical settings
+
+`PUT /v2/config/technical-settings` replaces the complete Router-owned revision:
+
+```json
+{
+  "operation_id": "settings-42",
+  "expected_context_version": "<sha256>",
+  "lunches_enabled": false,
+  "departure_lateness_tolerance_sec": 120,
+  "task_start_lateness_tolerance_sec": 60
+}
+```
+
+The operation uses compare-and-swap against the active context and is idempotent during
+the process lifetime. A write is rejected with `SETTINGS_STORE_UNAVAILABLE` when the
+Runtime has no durable settings store. An accepted revision is atomically persisted
+before activation and restored after restart. Every change creates a new context version
+and invalidates an in-flight older result.
+
+The lunch switch is a hard system policy. When false, no optional or required lunch is
+scheduled in either main or baseline; the sys-owned input bytes and lunch facts remain
+unchanged. The two tolerances only decide whether a changed schedule can use
+`REVALIDATE`. They never extend customer windows or engineer shifts.
+
+`PUT /v1/config/tolerance` remains a compatibility alias for the departure tolerance.
+Conflicting operation IDs or stale context versions return HTTP `409`; malformed bodies
+return `422`.
+
+### Versioning
+
+The service version is `2.0`. The sys exchange payload remains `schema_version="1.0"`
+because V2 adds output metadata and Router-owned context without changing the shape of
+`RouterTaskSnapshot`. Unknown fields and unknown policy IDs are rejected.
+
+Checked integration artifacts live in `core/schemas/`. Regenerate them with
+`python -m core.schema`; CI/tests should treat a schema diff as a contract change.

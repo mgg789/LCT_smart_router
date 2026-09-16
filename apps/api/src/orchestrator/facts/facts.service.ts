@@ -141,7 +141,7 @@ export class FactsService {
       throw new SysError('NOT_FOUND', 'There is no working plan yet', { details: { requestId } });
     }
     const assignment = plan.assignments.find((item) => item.requestId === requestId);
-    if (!assignment || assignment.status !== 'assigned' || assignment.engineerId !== engineerId) {
+    if (assignment?.status !== 'assigned' || assignment.engineerId !== engineerId) {
       throw SysError.forbidden('This work is not in your plan', { requestId });
     }
     return request;

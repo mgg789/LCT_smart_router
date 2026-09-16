@@ -38,7 +38,7 @@ services:
   # One-shot schema migration. Runs from the same image as the service, so the code and
   # the schema it expects can never be two different versions. Prisma Migrate is the
   # single owner of schema history; there is no create-on-boot anywhere in the runtime
-  # (context/43 section 5.4 as amended by D-21).
+  # (context/43 section 5.4 as amended by D-23).
   migrate:
     build:
       context: ..

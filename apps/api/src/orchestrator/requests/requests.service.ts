@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import type { Actor } from '../../auth';
 import { SysError } from '../../common/errors';
 import type { Priority, Prisma, Request } from '../../generated/prisma/client';
 import { NotificationsService } from '../../notifications';
