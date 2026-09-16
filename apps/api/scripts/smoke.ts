@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { resolveSmokeBaseUrl } from './smoke-base-url';
 
 /**
  * Smoke gate: the whole spine of the System Layer, end to end, against a running contour.
@@ -13,7 +14,7 @@ import { resolve } from 'node:path';
  * so it never runs against anything but a development or demo contour.
  */
 
-const BASE = process.env.SMOKE_BASE_URL ?? 'http://localhost:8000';
+const BASE = resolveSmokeBaseUrl(process.env.SMOKE_BASE_URL, process.env.SMOKE_ALLOWED_HOSTS);
 
 interface Step {
   readonly name: string;
@@ -48,7 +49,10 @@ async function call(
   token?: string,
   body?: unknown,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
-  const response = await fetch(`${BASE}${path}`, {
+  // Resolve the endpoint against the validated base so every request target is an
+  // absolute URL derived from a host the operator explicitly allowed.
+  const target = new URL(path, BASE).toString();
+  const response = await fetch(target, {
     method,
     headers: {
       ...(token ? { authorization: `Bearer ${token}` } : {}),
@@ -68,7 +72,7 @@ function loadRootEnv(): Record<string, string> {
   try {
     const content = readFileSync(resolve(process.cwd(), '../../.env'), 'utf8');
     for (const line of content.split('\n')) {
-      const match = /^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/.exec(line);
+      const match = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
       if (match?.[1]) {
         values[match[1]] = (match[2] ?? '').trim();
       }

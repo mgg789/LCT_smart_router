@@ -1,6 +1,5 @@
 import '../support/env';
 import assert from 'node:assert/strict';
-import type { AddressInfo } from 'node:net';
 import { after, before, describe, it } from 'node:test';
 import type { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
@@ -9,10 +8,17 @@ import { AllExceptionsFilter } from '../../src/common/errors';
 import { BigIntGuardInterceptor } from '../../src/common/serialization';
 import type { PrismaClient } from '../../src/generated/prisma/client';
 import { createTestClient, databaseUrl, unique } from '../support/database';
+import { loadJsonFixture } from '../support/fixtures';
 
 interface ErrorBody {
   error: { code: string; message: string; details: Record<string, unknown> };
 }
+
+const fixtures = loadJsonFixture<{ wrongDispatcherPassword: string }>('env-fixtures.json');
+
+// A fixed loopback port, sequential test runs (--test-concurrency=1): every request the
+// suite issues targets this validated constant, never an interpolated host.
+const BASE = 'http://127.0.0.1:4101';
 
 /**
  * Acceptance scenarios for the auth-engine, taken from context/36 section 13.
@@ -24,11 +30,14 @@ interface ErrorBody {
 describe('auth-engine', () => {
   let app: INestApplication;
   let prisma: PrismaClient;
-  let baseUrl: string;
   const createdEmails: string[] = [];
 
+  // The suite talks to the app it just started; the request URL is always resolved
+  // against the constant loopback base above.
+  const target = (path: string): string => new URL(path, BASE).toString();
+
   const post = async (path: string, body: unknown, token?: string) =>
-    fetch(`${baseUrl}${path}`, {
+    fetch(target(path), {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -38,7 +47,7 @@ describe('auth-engine', () => {
     });
 
   const get = async (path: string, token?: string) =>
-    fetch(`${baseUrl}${path}`, {
+    fetch(target(path), {
       headers: token ? { authorization: `Bearer ${token}` } : {},
     });
 
@@ -64,8 +73,7 @@ describe('auth-engine', () => {
     });
     app.useGlobalFilters(new AllExceptionsFilter());
     app.useGlobalInterceptors(new BigIntGuardInterceptor(true));
-    await app.listen(0, '127.0.0.1');
-    baseUrl = `http://127.0.0.1:${(app.getHttpServer().address() as AddressInfo).port}`;
+    await app.listen(4101, '127.0.0.1');
   });
 
   after(async () => {
@@ -188,7 +196,7 @@ describe('auth-engine', () => {
   it('refuses a wrong dispatcher password', async () => {
     const response = await post('/api/v1/auth/dispatcher/password', {
       email: process.env.DISPATCHER_EMAIL,
-      password: 'definitely-not-the-password',
+      password: fixtures.wrongDispatcherPassword,
     });
     assert.equal(response.status, 401);
   });
@@ -206,7 +214,7 @@ describe('auth-engine', () => {
     const verify = await post('/api/v1/auth/login-code/verify', { email, code, role: 'client' });
     const { token } = (await verify.json()) as { token: string };
 
-    const signOut = await fetch(`${baseUrl}/api/v1/auth/session`, {
+    const signOut = await fetch(target('/api/v1/auth/session'), {
       method: 'DELETE',
       headers: { authorization: `Bearer ${token}` },
     });
@@ -246,7 +254,7 @@ describe('auth-engine', () => {
       assert.equal(entry.token, undefined, 'a listing must never re-reveal the secret');
       assert.equal(entry.tokenHash, undefined);
 
-      await fetch(`${baseUrl}/api/v1/auth/tokens/${body.id}`, {
+      await fetch(target(`/api/v1/auth/tokens/${body.id}`), {
         method: 'DELETE',
         headers: { authorization: `Bearer ${dispatcherToken}` },
       });
@@ -280,7 +288,7 @@ describe('auth-engine', () => {
       assert.equal(((await forbidden.json()) as ErrorBody).error.code, 'FORBIDDEN');
 
       for (const id of [masterKey.id, clientKey.id]) {
-        await fetch(`${baseUrl}/api/v1/auth/tokens/${id}`, {
+        await fetch(target(`/api/v1/auth/tokens/${id}`), {
           method: 'DELETE',
           headers: { authorization: `Bearer ${dispatcherToken}` },
         });
@@ -297,7 +305,7 @@ describe('auth-engine', () => {
 
       assert.equal((await get('/api/v1/auth/session', key.token)).status, 200);
 
-      const revoked = await fetch(`${baseUrl}/api/v1/auth/tokens/${key.id}`, {
+      const revoked = await fetch(target(`/api/v1/auth/tokens/${key.id}`), {
         method: 'DELETE',
         headers: { authorization: `Bearer ${dispatcherToken}` },
       });
@@ -327,14 +335,14 @@ describe('auth-engine', () => {
       assert.equal(attempt.status, 201, 'creating is a master-category function');
 
       const nested = (await attempt.json()) as { id: string };
-      const revokeAttempt = await fetch(`${baseUrl}/api/v1/auth/tokens/${nested.id}`, {
+      const revokeAttempt = await fetch(target(`/api/v1/auth/tokens/${nested.id}`), {
         method: 'DELETE',
         headers: { authorization: `Bearer ${key.token}` },
       });
       assert.equal(revokeAttempt.status, 403);
 
       for (const id of [key.id, nested.id]) {
-        await fetch(`${baseUrl}/api/v1/auth/tokens/${id}`, {
+        await fetch(target(`/api/v1/auth/tokens/${id}`), {
           method: 'DELETE',
           headers: { authorization: `Bearer ${dispatcherToken}` },
         });
