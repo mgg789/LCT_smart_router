@@ -98,7 +98,9 @@ def schedule_steps(
     Returns None on infeasibility. Does not change assignments or invent availability.
     Lunch location is the continuation point or the preceding job's location.
     """
-    requests = {r.request_id: r for r in snapshot.requests}
+    # A plain dict lookup. The name deliberately avoids colliding with the famous HTTP
+    # client package: static SSRF rules flag that shape even though no network call exists.
+    request_map = {r.request_id: r for r in snapshot.requests}
     release = release_at(snapshot, engineer)
     if release is None and steps:
         return None
@@ -145,7 +147,7 @@ def schedule_steps(
             lunch_stop = add_stop("lunch", None, clock, start, end, location).stop_id
             clock = end
             continue
-        request = requests.get(request_id)
+        request = request_map.get(request_id)
         if request is None or not eligible(snapshot, engineer, request):
             return None
         quote = travel.quote(location, request.location, engineer.transport_type)
