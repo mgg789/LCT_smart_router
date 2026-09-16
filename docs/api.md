@@ -93,8 +93,8 @@ the same refusal rather than attempting the work a second time.
 **`expectedVersion` is how concurrent edits are surfaced.** If the object changed after
 the actor read it, the answer is `VERSION_CONFLICT` carrying `expectedVersion` and
 `currentVersion`; the client refreshes and confirms again. Nothing is ever silently
-overwritten. Only the data the operation is based on is checked — an unrelated GPS point
-or chat message does not invalidate an action (`context/36` section 8).
+overwritten. Only the data the operation is based on is checked — an unrelated chat
+message does not invalidate an action (`context/36` section 8).
 
 Business change, the record of who made it and the follow-up work it requires commit
 together. Waiting on Router, AI or SMTP is deliberately outside that unit: a network call
@@ -109,10 +109,12 @@ request into a non-existent one.
 | GET | `/health/ready` | Required dependencies are usable; 503 when not. Only the database gates readiness |
 | GET | `/health/services` | Every dependency, including ones this build does not have |
 
-`not_configured` is a real answer, not a failure: `router`, `ai` and `smtp` report it
-because they are not wired. An unreachable SMTP or LLM must never make the application
-look down — the dispatcher's password login has to work exactly when the mail contour is
-broken (`context/43` section 11.3).
+`not_configured` is a real answer, not a failure. In this contour the `router` probe
+pings Router Core's `/health` through the configured `ROUTER_BASE_URL`, so it reports the
+real reachability of the Python service. `ai` and `smtp` report `not_configured` because
+they are not wired. An unreachable SMTP or LLM must never make the application look down —
+the dispatcher's password login has to work exactly when the mail contour is broken
+(`context/43` section 11.3).
 
 ## 4. Auth
 
@@ -183,6 +185,12 @@ broken (`context/43` section 11.3).
 - **The customer never types routing parameters.** The required skill, the expected
   duration and any transport restriction are derived from the type of work
   (`context/32` section 4.1). Urgency can raise the priority and never lowers it.
+- **Duration comes from a work-norm profile, stored split.** Every one of the 16 work
+  types maps to one of four profiles (`connection_base`, `outage_tkd`, `equipment_order`,
+  `local_repair`); the importer stores the profile code plus its technical and
+  documentation components, whose sum is `serviceDurationSec`, and a normative travel
+  allowance (1200 s). The breakdown is visible on the request view, not recomputed at
+  read time.
 - **A reschedule keeps one request id and one live window.** The previous conditions go to
   history, which is a journal, not a second promise to the customer. The previous
   assignment does not confirm the new conditions, so the outcome returns to `pending`. If
@@ -210,7 +218,6 @@ broken (`context/43` section 11.3).
 | POST | `/api/v1/engineer/availability` | Go online or offline, with an expected return |
 | POST | `/api/v1/engineer/technical-break` | A 15-minute technical stop |
 | POST | `/api/v1/engineer/lunch/start` · `/finish` | Record the actual start and the return |
-| POST | `/api/v1/engineer/gps` | Report a position; collection is voluntary |
 
 Everything acts on the signed-in engineer. There is no field in which to name someone
 else: the subject comes from the session (`context/42` DF-06).
@@ -224,6 +231,7 @@ else: the subject comes from the session (`context/42` DF-06).
 | PATCH | `/api/v1/dispatch/engineers/:id` | Change a profile |
 | POST | `/api/v1/dispatch/engineers/:id/workday` | Set the shift and lunch conditions |
 | POST | `/api/v1/dispatch/engineers/:id/availability` | Take an engineer off the line, or back on |
+| POST | `/api/v1/dispatch/engineers/:id/technical-break` | Put an engineer on a 15-minute technical stop; the day goes offline |
 
 ### The rules these endpoints enforce
 
@@ -248,15 +256,11 @@ else: the subject comes from the session (`context/42` DF-06).
   Which of them may change skills, transport and office is explicitly still open
   (`context/36` section 14.2); the restriction lives in the controller so it can change
   without touching the logic.
-- **GPS is collected and nothing more.** It is not an input to routing, it does not confirm
-  an arrival, it reconstructs no track, and it publishes no snapshot. An engineer may leave
-  it off entirely and lose no functionality (`context/37` section 5.1). The observation
-  time is stored apart from the arrival time, so a late report is never mistaken for a
-  fresher position.
 
-The engineer's plan for the day is not here yet: it is the applied working plan, which
-arrives with the ROUTER-gateway. Execution facts (arrived, started, finished) belong with
-it, since what an engineer may mark is what that plan assigned them.
+The engineer's route for the day is the applied working plan (`GET /api/v1/engineer/plan`),
+and what an engineer may mark are the execution facts of that plan (section 8). Location
+tracking is not part of the product at all: GPS collection was removed by decision
+(`context/50` section 2), and there is no position endpoint, table or live layer.
 
 ## 7. The published planning task
 
@@ -264,6 +268,8 @@ it, since what an engineer may mark is what that plan assigned them.
 |---|---|---|
 | GET | `/api/v1/dispatch/policies` | Prepared policies and the one in force |
 | POST | `/api/v1/dispatch/policy` | Choose a prepared policy |
+| GET | `/api/v1/dispatch/router/technical-settings` | The Router-owned technical revision in force, with its context version |
+| PUT | `/api/v1/dispatch/router/technical-settings` | Replace the whole revision (operation envelope; see below) |
 | GET | `/api/v1/dispatch/debug/snapshot` | The published task exactly as Router reads it |
 
 `mount-data-eng` publishes the **whole current task**, never a stream of changes. Work that
@@ -274,16 +280,17 @@ Router needs no business status per request (`context/33` section 5).
 
 Publication happens only on a listed business trigger — a confirmed request, changed
 conditions, a cancellation, an engineer created or edited, a shift or availability change,
-a lunch actually started, a policy change, an import or a reset. The list is a closed enum
-in `publication-triggers.ts`.
+a lunch actually started, a policy change, an execution fact with a material timing
+consequence (`request.execution_started`, `request.execution_variance`,
+`request.execution_overrun`), an import or a reset. The list is a closed enum in
+`publication-triggers.ts`.
 
 Deliberately **not** triggers, each for a stated reason:
 
 | Event | Why not |
 |---|---|
-| Time passing | There is no timer anywhere; `planning_as_of` does not tick |
-| A GPS point | Voluntary telemetry, not an input to routing |
-| A routine arrival, start or completion | Following the current plan needs no re-optimisation; the fact travels in the next justified projection |
+| Time passing | There is no replanning timer; `planning_as_of` does not tick. The single deliberate exception is the execution-overrun poller, which only *detects* an overrun of an already started task and publishes its projection — it never rebuilds the plan |
+| A routine completion without material variance | Following the current plan needs no re-optimisation; a finish inside both tolerances moves no anchor that Router can see |
 | An engineer's silence | An expired estimate does not become `null`, offline, or a refusal |
 | Reading anything | A read publishes nothing and moves no pointer |
 
@@ -322,9 +329,35 @@ report what is currently excluded and why:
 | `engineersWithoutStartLocation` | No usable start point, so no route could begin |
 | `engineersWithoutShift` | A working day exists but nobody has set a shift |
 | `engineersWithoutWorkday` | No working day for this horizon at all |
+| `engineersOverrun` | Engineers withdrawn from the task because their started work overran its tolerance (`overrunDetectedAt` is set) |
 
 An engineer with no shift is excluded rather than given an invented one: a calendar-day
 default would let work be scheduled at three in the morning.
+
+### Router technical settings, driven from sys
+
+The eight Router-owned controls that version the calculation context — `lunchesEnabled`
+(off by default since `context/50`), the two revalidation tolerances, `travelTimeMode`
+(`graph_with_access_buffer` or `fixed_normative`), `accessBufferSec`, `fixedTravelTimeSec`,
+`earlyFinishReplanThresholdSec` and `taskOverrunToleranceSec` — are read and replaced as
+one revision:
+
+- `GET /api/v1/dispatch/router/technical-settings` reads them from Router's `GET /v1/context`
+  together with the active `router_context_version`; the read-through is not cached as
+  state.
+- `PUT /api/v1/dispatch/router/technical-settings` goes through the operation envelope and
+  `executeExternal`: the journal row is reserved as `outcome_unknown`, the remote
+  `PUT /v2/config/technical-settings` (with `operation_id` and `expected_context_version`)
+  runs **outside** any database transaction, and the journal is finalised to
+  `applied`, `conflict` or `rejected` afterwards. A replayed `operationId` returns the
+  stored outcome without calling Router again; a crash between the call and the finalisation
+  leaves the row pending for retry, and Router's own durable operation receipts make the
+  retried call idempotent. Router's HTTP 409 surfaces as `VERSION_CONFLICT` with Router's
+  `detail` preserved.
+
+The same external-operation pattern (reserved journal row, remote call outside the
+transaction, finalise after) backs `engineer.technical-break` and `data.import`, so a lost
+response can never repeat a side effect or lose the record of one.
 
 ## 8. The working plan, control mode and facts
 
@@ -389,19 +422,46 @@ distribution; it does not merge with the manual plan and undoes nothing that hap
 ### Facts
 
 `arrived`, `arrived_blocked`, `started`, `finished`, `problem` — every one an explicit mark
-by the engineer. Nothing creates a fact from a timer, from GPS, from a schedule or from
-silence. Arrival and start are separate events, so someone on site who cannot begin reports
-exactly that. Finishing work that never started is refused rather than inferred. `occurredAt`
-(when the engineer says it happened) and the stored `recordedAt` are kept apart.
+by the engineer. Nothing creates a fact from a schedule or from silence — the single
+exception, again deliberate, is the overrun detection below, which derives a *diagnostic*,
+never a completion. Arrival and start are separate events, so someone on site who cannot
+begin reports exactly that. Finishing work that never started is refused rather than
+inferred. `occurredAt` (when the engineer says it happened) and the stored `recordedAt` are
+kept apart.
 
 An engineer may only mark work the **applied plan** assigned them.
+
+### Execution timing
+
+A started fact is where prediction meets reality, and the request row carries the state it
+creates: `expectedCompletionAt` (started at + service duration), `continuationAvailableAt`
+(when the engineer can take the next task) and, when things go wrong, `overrunDetectedAt`.
+
+- **Start** records one active task per engineer (a second start is refused), sets
+  `expectedCompletionAt` and `continuationAvailableAt`, and publishes
+  `request.execution_started`.
+- **Finish** is refused if it predates the start (422). Otherwise the variance is
+  classified against the two Router-owned tolerances: finishing at least
+  `earlyFinishReplanThresholdSec` early, or more than `taskOverrunToleranceSec` late, or
+  after a detected overrun is a **material variance** — `continuationAvailableAt` moves to
+  the actual finish and `request.execution_variance` is published. An absorbed deviation
+  (for example 14 minutes early) changes no anchor and publishes nothing.
+- **Overrun** is detected by a background coordinator (`ROUTER_POLL_INTERVAL_MS`, disabled
+  in tests) that marks `overrunDetectedAt` on in-progress requests past
+  `expectedCompletionAt + taskOverrunToleranceSec` and publishes
+  `request.execution_overrun`. The engineer disappears from the next published snapshot
+  (counted in `engineersOverrun`); no finish fact is ever invented.
+
+The two thresholds are read from Router's technical settings
+(`ExecutionTimingPolicy`), with defaults of 900 and 600 seconds when Router is not
+configured — so the classifier stays honest about whose numbers it is using.
 
 ## 9. Data: import and the two resets
 
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/v1/dispatch/data/state` | Whether the application is initialised, how, and what has been imported |
-| POST | `/api/v1/dispatch/data/import` | Load one region of the official dataset |
+| POST | `/api/v1/dispatch/data/import` | Load one, several or all regions of the official dataset |
 | POST | `/api/v1/dispatch/data/reset` | Reset to the test data, or to an empty working set |
 
 ### Import
@@ -409,11 +469,22 @@ An engineer may only mark work the **applied plan** assigned them.
 The organisers' files are windows-1251 with `;` separators and Russian headers, and they
 are the untouched source of truth. The importer handles the anomalies they actually
 contain: blank rows, the regional office hidden in a last row that looks blank, empty and
-all-day windows, missing districts, and four spellings of the Moscow prefix.
+all-day windows (a missing window is treated as the full source day, and the date is
+derived from the rows), missing districts, four spellings of the Moscow prefix, and
+impossible windows (`31.02` is an error, not a guess).
+
+`POST /api/v1/dispatch/data/import` takes `region` (one) **xor** `regions` (`"all"` or an
+explicit list of `east`, `southeast`, `south_central`), plus an optional
+`engineerCountPerRegion` cap that must not exceed the crews the dataset actually contains.
+The whole batch — every requested region — applies atomically or not at all, and the
+summary reports per-region results. For `regions: "all"` that is 205 requests and 35
+engineers across the three regions.
 
 Three rules from `context/37` section 9.1:
 
-- **the package is checked before anything is applied**;
+- **the package is checked before anything is applied** — including the SHA-256 of every
+  source and geocode byte; re-importing the same source with different bytes is a 422, not
+  a silent overwrite;
 - **an error means nothing is applied** — a half-loaded file leaves a state nobody chose.
   A type of work that is not in the catalogue is an error, because mapping it to the
   nearest familiar one would silently send the wrong engineer;
@@ -424,11 +495,12 @@ What the dataset does not contain matters as much. There is no engineer director
 durations, no priorities and no coordinates (`context/18` section 6.3). Crews come from the
 `Бригада` column of the control distribution; their skills and transport are derived by a
 stated, deterministic rule and stored with `origin = synthesized`, so a derived value never
-looks like data. **Coordinates are not derived at all.** Every imported request is marked
-`needsGeocoding`, excluded from the published task and counted in the diagnostics — a
-plausible-looking point is worse than a missing one. When the data zone supplies
-`data/dataset/geocoded/<region>.json`, the same importer fills the points with no code
-change.
+looks like data. **Coordinates come only from a versioned geocode package** at
+`data/dataset/geocoded/<region>.json` (strict schema, one entry per request address plus
+the depot); the import refuses to run without a package that covers every address, and
+imported requests are created with real points — nothing sits in `needsGeocoding`. Benchmark
+windows are rebased onto the live horizon (shifted to start 60 seconds after import), so a
+dataset dated 17.08 plans against "now" without editing the CSVs.
 
 ### Resets
 
@@ -457,18 +529,18 @@ that setup never happened, and a restart must not quietly reload the demo data
 
 Listed rather than stubbed with invented shapes (AGENTS.md section 10.3).
 
-### Router Core HTTP surface — specified, not yet called
+### Router Core HTTP surface — implemented
 
-**No longer missing.** Router Core V2 (D-22) publishes its private service API; it is
-reproduced in section 11 below, and the machine-readable payloads live in `core/schemas/`.
-The four things this gateway needs all exist:
+**No longer missing.** Router Core V2 (D-22) publishes its private service API, reproduced
+in section 11 below with machine-readable payloads in `core/schemas/`. The gateway's HTTP
+client (`http-router-client.ts`) speaks all of it:
 
 | What `ROUTER-gateway` needs | Router endpoint |
 |---|---|
 | Current result | `GET /v1/result` |
-| Active context version, read apart from any result | `GET /v1/context` |
+| Active context version and technical settings | `GET /v1/context` |
+| Replace technical settings (CAS, idempotent) | `PUT /v2/config/technical-settings` |
 | Reachability | `GET /health` |
-| Tolerance | `PUT /v1/config/tolerance`, superseded by `PUT /v2/config/technical-settings` |
 
 The payload shapes were written independently on both sides from `context/33` and agree
 field for field: `plan`, `engineer_route`, `route_stop`, `route_leg`, `assignment`,
@@ -478,28 +550,17 @@ field for field: `plan`, `engineer_route`, `route_stop`, `route_leg`, `assignmen
 published task: the golden vector in `docs/contracts/fixtures/` validates against
 `core/schemas/router-task-snapshot-1.0.json`, including every enum.
 
-What is still open is on the sys side, and is deliberately left for the branch that writes
-the HTTP client rather than smuggled into a merge:
+Acceptance checks `input_hash` **and** `input_publication_id` against the snapshot
+published now, plus the context version. What is deliberately still open:
 
-* **V2 fields are dropped.** Router also returns `input_publication_id`, `policy_id`,
-  `policy_criteria`, `search_path`, `technical_settings`, `main_evidence` and
-  `baseline_evidence`. `routerResultSchema` strips them, so nothing breaks, but the
-  evidence bundle — the supported input for map explanations — is thrown away at the
-  door.
-* **Acceptance matches on `input_hash` alone.** Router now also names the publication it
-  read (`input_publication_id`). Checking both is strictly stronger and costs one
-  comparison.
-* **Technical settings are not driven from sys.** `lunches_enabled` and the two tolerance
-  values are Router-owned state that the Dashboard has no operation for yet.
+* **The evidence bundle is not consumed yet.** Router also returns `input_publication_id`,
+  `policy_id`, `policy_criteria`, `search_path`, `technical_settings`, `main_evidence` and
+  `baseline_evidence`. `routerResultSchema` keeps them (it is a loose object), but nothing
+  downstream acts on the evidence yet — and the evidence bundle is the supported input for
+  map explanations. Wiring it to the UI is the next contract, not a silent merge.
 
-Until the client is written the gateway uses a null client that reports `pending`, and
-`/health/services` says `router: not_configured`. The application is fully usable without
-Router; it simply has no automatic plan. Swapping in an HTTP client is a one-line provider
-change in `router-gateway.module.ts` — nothing else knows how the result arrives.
-
-`POST /api/v1/dispatch/debug/router-result` exists only while that client does not. It runs
-the identical acceptance checks, so it is a way in for a test, never a second way to apply
-a plan.
+The debug endpoint `POST /api/v1/dispatch/debug/router-result` remains as a test way in
+that runs the identical acceptance checks — never a second way to apply a plan.
 
 ### Snapshot serialization — shared with Router Core
 
@@ -550,7 +611,9 @@ explanation-only LLM. The LLM must not change the plan.
 
 ### Technical settings
 
-`PUT /v2/config/technical-settings` replaces the complete Router-owned revision:
+`GET /v1/context` returns the active `router_context_version` plus the complete technical
+revision. `PUT /v2/config/technical-settings` replaces that revision in full — partial
+updates are refused:
 
 ```json
 {
@@ -558,20 +621,41 @@ explanation-only LLM. The LLM must not change the plan.
   "expected_context_version": "<sha256>",
   "lunches_enabled": false,
   "departure_lateness_tolerance_sec": 120,
-  "task_start_lateness_tolerance_sec": 60
+  "task_start_lateness_tolerance_sec": 60,
+  "travel_time_mode": "graph_with_access_buffer",
+  "access_buffer_sec": 600,
+  "fixed_travel_time_sec": 1200,
+  "early_finish_replan_threshold_sec": 900,
+  "task_overrun_tolerance_sec": 600
 }
 ```
 
-The operation uses compare-and-swap against the active context and is idempotent during
-the process lifetime. A write is rejected with `SETTINGS_STORE_UNAVAILABLE` when the
-Runtime has no durable settings store. An accepted revision is atomically persisted
-before activation and restored after restart. Every change creates a new context version
-and invalidates an in-flight older result.
+Defaults: `lunches_enabled=false`, both revalidation tolerances `0`,
+`graph_with_access_buffer` with a 600-second access buffer, `fixed_travel_time_sec=1200`,
+`early_finish_replan_threshold_sec=900`, `task_overrun_tolerance_sec=600`; every field is
+capped at 86400.
 
-The lunch switch is a hard system policy. When false, no optional or required lunch is
-scheduled in either main or baseline; the sys-owned input bytes and lunch facts remain
-unchanged. The two tolerances only decide whether a changed schedule can use
-`REVALIDATE`. They never extend customer windows or engineer shifts.
+The operation uses compare-and-swap against the active context and is idempotent —
+durably, not just within a process: accepted operations are stored as receipts in the same
+atomic document as the settings (schema `1.0`), so a replay after a restart returns the
+original outcome instead of conflicting. A write is rejected with
+`SETTINGS_STORE_UNAVAILABLE` when the Runtime has no durable settings store. Every change
+creates a new context version and invalidates an in-flight older result.
+
+`travel_time_mode` decides how every non-zero leg is priced, on top of the connected road
+graph and without changing its paths or distances: `graph_with_access_buffer` adds
+`access_buffer_sec` to the graph duration; `fixed_normative` replaces the duration with
+`fixed_travel_time_sec`. A zero-distance leg stays zero in both modes. The wrapper owns a
+derived version (`base graph version + timing configuration`), so a timing-only change
+still invalidates results.
+
+The lunch switch is a hard system policy. When false — the default since `context/50` —
+no optional or required lunch is scheduled in either main or baseline; the sys-owned input
+bytes and lunch facts remain unchanged. The two revalidation tolerances only decide whether
+a changed schedule can use `REVALIDATE`. `early_finish_replan_threshold_sec` and
+`task_overrun_tolerance_sec` are consumed by sys's execution-timing policy to classify
+finish variance and detect overruns (section 8). None of these values ever extend customer
+windows or engineer shifts.
 
 `PUT /v1/config/tolerance` remains a compatibility alias for the departure tolerance.
 Conflicting operation IDs or stale context versions return HTTP `409`; malformed bodies

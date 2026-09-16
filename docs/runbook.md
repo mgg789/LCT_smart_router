@@ -39,9 +39,10 @@ curl localhost:8000/health/services
 Interactive API documentation: <http://localhost:8000/docs>.
 Machine-readable schema: <http://localhost:8000/docs/openapi.json>.
 
-`health/services` reports `not_configured` for `router`, `ai` and `smtp`. That is the
-truth about this build, not a failure: those integrations are not wired yet, and the
-application is designed to run fully without them.
+`health/services` reports the real state of each integration. `router` pings Router
+Core, which the contour starts as its own service (port 8100, reads the published
+snapshot with the read-only DB role); `ai` and `smtp` report `not_configured` because
+they are not wired. The application is designed to run fully without them.
 
 ## 3. Everyday commands
 
@@ -62,26 +63,42 @@ pnpm --filter api build
 node apps/api/dist/src/main.js
 ```
 
+Router-related environment (all optional; see `.env.example`): `ROUTER_BASE_URL`
+(where the gateway finds Router Core; compose sets `http://router:8100`),
+`ROUTER_BUDGET_MS` (solver budget passed to the core service, default 8000),
+`ROUTER_POLL_INTERVAL_MS` (execution-overrun coordinator period, default 500),
+`ROUTER_REQUEST_TIMEOUT_MS` (gateway HTTP timeout, default 3000).
+
 Router Core has its own CLI (`solve`, `serve`, `benchmark`, `geocode`, `project`,
 `export-map`, `prepare-2gis`, `schema`) and offline resources — quick start and
-acceptance benchmarks: [core/README.md](../core/README.md).
+acceptance benchmarks: [core/README.md](../core/README.md). The contour's `router`
+service runs `serve --official-regions east southeast south_central` with its durable
+technical settings in the `router-state` volume.
 
 ## 4. Loading the dataset
 
-The contour starts empty. To load one region of the organisers' data:
+The contour starts empty. To load one, several or all regions of the organisers' data:
 
 ```bash
 TOKEN=$(curl -s -X POST localhost:8000/api/v1/auth/dispatcher/password   -H 'content-type: application/json'   -d '{"email":"dispatcher@example.test","password":"<the one in .env>"}' | jq -r .token)
 
+# one region
 curl -s -X POST localhost:8000/api/v1/dispatch/data/import   -H "authorization: Bearer $TOKEN" -H 'content-type: application/json'   -d '{"operationId":"'$(uuidgen)'","region":"east"}'
+
+# everything (205 requests, 35 engineers across east + southeast + south_central)
+curl -s -X POST localhost:8000/api/v1/dispatch/data/import   -H "authorization: Bearer $TOKEN" -H 'content-type: application/json'   -d '{"operationId":"'$(uuidgen)'","regions":"all"}'
 ```
 
-Regions: `east`, `southeast`, `south_central`. The files are mounted read-only into the
-container from `data/dataset`, so a geocode sidecar added later needs no rebuild.
+Regions: `east`, `southeast`, `south_central` (`regions` also accepts an explicit list).
+An optional `engineerCountPerRegion` object caps crews per region (a cap above the
+dataset's crew count is a 422). The import is atomic across all requested regions.
 
-Expect every imported request to come back as awaiting coordinates: the dataset has
-addresses, not points, and none are invented. `GET /api/v1/dispatch/debug/snapshot` shows
-exactly how many are waiting and why.
+**The geocode sidecar is required.** `data/dataset/geocoded/<region>.json` must exist and
+cover every request address plus the depot; the files are mounted read-only into the
+container, so an updated package needs no rebuild. Imported requests get real points
+(declared district-centroid projections with recorded provenance), and benchmark windows
+are rebased onto the live horizon so a dataset dated 17.08 plans against "now".
+`GET /api/v1/dispatch/debug/snapshot` shows the published task and its diagnostics.
 
 ## 5. Data and restarts
 
@@ -142,11 +159,11 @@ migrations applied, configuration read, dataset mounted, every contour reachable
 
 It checks, in order: the contour answers and reports its missing integrations honestly; the
 dispatcher signs in without SMTP; the application data resets; the official dataset imports
-with no errors and every request marked as awaiting coordinates; an engineer with a shift
-and an urgent request classified from its type of work; the task republished with both in
-it; a read publishing nothing and leaving `planning_as_of` alone; a valid Router result
-becoming the working plan; the same result refused as `ALREADY_APPLIED`; a stale one
-refused as `SNAPSHOT_STALE`; and the dispatcher seeing the applied plan with its mode.
+with geocode coverage and no errors; an engineer with a shift and an urgent request
+classified from its type of work; the task republished with both in it; a read publishing
+nothing and leaving `planning_as_of` alone; a valid Router result becoming the working plan;
+the same result refused as `ALREADY_APPLIED`; a stale one refused as `SNAPSHOT_STALE`; and
+the dispatcher seeing the applied plan with its mode.
 
 **It is destructive**: it resets the application data first, so it belongs on a development
 or demo contour and nowhere else. `SMOKE_BASE_URL` points it elsewhere than

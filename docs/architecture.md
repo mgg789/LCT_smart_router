@@ -35,10 +35,10 @@ service each.
 |---|---|---|
 | `REST API` | `src/api`, `src/common` | Foundation plus the auth surface: routing prefix, error envelope, Zod validation, request context |
 | `auth-engine` | `src/auth` | Implemented: login codes, dispatcher password path, sessions, roles, integration keys, global guard |
-| `orchestrator backend` | `src/orchestrator`, `src/operations` | Operation envelope, request lifecycle, engineers, working days, lunch, GPS, policy and execution facts |
+| `orchestrator backend` | `src/orchestrator`, `src/operations` | Operation envelope (including external operations with reserved journal rows), request lifecycle with work-norm profiles and execution timing, engineers, working days, lunch, policy, execution facts and the execution-overrun coordinator. GPS is removed entirely (`context/50`) |
 | `dataengine` | `src/persistence` | Implemented: schema, migrations, connection, transaction boundary, row locks, health probe |
-| `mount-data-eng` | `src/routing/mount-data-eng` | Implemented: projection, canonical serialization, hash, immutable snapshots and the pointer switch |
-| `ROUTER-gateway` | `src/routing/router-gateway` | Implemented: acceptance checks, applied plan revisions, AUTO/MANUAL, manual edits. Router Core now exists (root `core/`, private HTTP API in `core/api.py`); the remaining integration is replacing the null client adapter with the real HTTP client |
+| `mount-data-eng` | `src/routing/mount-data-eng` | Implemented: projection (with execution anchors — an active task pins the engineer's start point and `available_from`), canonical serialization, hash, immutable snapshots and the pointer switch |
+| `ROUTER-gateway` | `src/routing/router-gateway` | Implemented end to end: HTTP client to Router Core (`/v1/result`, `/v1/context`, `PUT /v2/config/technical-settings`), acceptance checks (publication id + hash + context version + usability + facts), applied plan revisions, AUTO/MANUAL, manual edits, technical settings driven from sys |
 | `AI-gateway` | — | Out of scope of this build; declared in `/health/services` as `not_configured` |
 | `SMTP-gateway` | `src/notifications` (intents only) | sys records mail intents with per-transition deduplication; transport is out of scope of this build |
 
@@ -133,7 +133,7 @@ Listed explicitly rather than stubbed with invented shapes (AGENTS.md section 10
 
 | Contract | Needed for | Status |
 |---|---|---|
-| Router Core HTTP surface (result, health, active context version, tolerance setting) | `ROUTER-gateway` | **Defined and implemented** (`core/api.py`, `core/README.md` § "Sys and data-layer integration contract", `docs/api.md` section 11). Remaining: replace the null client adapter with the HTTP client |
+| Router Core HTTP surface (result, health, context version, technical settings) | `ROUTER-gateway` | **Implemented end to end**: `http-router-client.ts` calls `/v1/result`, `/v1/context` and `PUT /v2/config/technical-settings`; acceptance checks publication id + hash + context version (`docs/api.md` sections 10–11). Open: the evidence bundle (`main_evidence`/`baseline_evidence`) is parsed but not yet consumed by any view |
 | AI-gateway tool call protocol | AI chats | Out of scope of this build |
 | SMTP-gateway transport and accept result | Mail delivery | Out of scope of this build |
-| Source of request coordinates (geocoding) | A publishable snapshot with anything in it | Absent from the official dataset. The importer reads an optional `data/dataset/geocoded/<region>.json`; until that exists, imported work is excluded and counted |
+| Source of request coordinates (geocoding) | A publishable snapshot with anything in it | Resolved for the official dataset: the import requires a versioned geocode package at `data/dataset/geocoded/<region>.json` (declared district-centroid projections, provenance stored). Ad-hoc requests without coordinates are still excluded and counted, never invented |

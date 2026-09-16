@@ -49,7 +49,6 @@
         "lon": 37.5
       },
       "available_from": 1789459200,
-      "position_observed_at": null,
       "availability": "online",
       "expected_online_at": null,
       "lunch_taken": false,
@@ -75,7 +74,6 @@
         "lon": 37.6187654
       },
       "available_from": null,
-      "position_observed_at": 1789458000,
       "availability": "offline",
       "expected_online_at": 1789462800,
       "lunch_taken": true,
