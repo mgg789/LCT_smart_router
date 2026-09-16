@@ -2,6 +2,9 @@
 
 Checked: **2026-09-15**. Scope: dispatcher, engineer and client interfaces.
 
+For the earlier generated screen examples, see [UI mockup examples](../mockups/README.md).
+Those illustrative PNGs predate this verified brand reference and do not override it.
+
 ## Status and authority
 
 The project owner requested Beeline colours and symbols on 2026-09-15. This

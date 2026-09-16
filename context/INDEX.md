@@ -69,6 +69,7 @@
 | [27-cheatsheets-implementation.md](./27-cheatsheets-implementation.md) | Copy-paste сниппеты: OSRM, OR-Tools, MapLibre, SSE, aiogram, faster-whisper, смоук |
 | [10-ux-ui-design.md](./10-ux-ui-design.md) | UX-стандарт «Apple-подхода», motion, чек-лист полировки; инвентарь экранов — сверять с 39 |
 | [Beeline visual reference](../docs/design/beeline/README.md) | Official Yellowbe PDFs, website symbol and colour evidence; Smart Router branding rules with source limitations (D-21) |
+| [UI mockup examples](../docs/design/mockups/README.md) | Three generated PNG examples: dispatcher, engineer and client; illustrative content, known limitations, not an approved specification |
 | [13-demo-presentation.md](./13-demo-presentation.md) | Стратегия питча и живого демо; сценарий перекалибровать под 18 §5 (7 шагов + сравнение с FIFO) |
 
 ## 5. Архив (`archive/`)
