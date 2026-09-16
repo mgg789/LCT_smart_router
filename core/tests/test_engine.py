@@ -3,6 +3,7 @@
 import pytest
 from core.contracts import RouterTaskSnapshot
 from core.engine import SearchSettings, solve
+from core.evidence import build_plan_evidence
 from core.geo import GraphTravel
 from core.schedule import baseline, score, validate_plan
 
@@ -88,13 +89,29 @@ def test_lunch_inside_model_and_no_second_lunch(snapshot, graph):
     assert taken.main.routes[0].lunch.status == "already_taken"
 
 
-def test_required_lunch_failure_is_ready_unusable(snapshot, graph):
-    result = solve(
-        lunch_task(snapshot, required=True, impossible=True), GraphTravel(graph), SETTINGS
+def test_system_policy_disables_even_required_lunch(snapshot, graph):
+    """The Router hard switch overrides per-engineer lunch input for both plans."""
+    task = lunch_task(snapshot, required=True)
+    output = solve(
+        task,
+        GraphTravel(graph),
+        SearchSettings(time_limit_ms=600, solution_limit=8, lunches_enabled=False),
     )
+    assert output.main.is_usable and output.baseline.is_usable
+    assert output.main.routes[0].lunch.status == "disabled"
+    assert output.baseline.routes[0].lunch.status == "disabled"
+    assert all(stop.kind != "lunch" for stop in output.main.routes[0].stops)
+
+
+def test_required_lunch_failure_is_ready_unusable(snapshot, graph):
+    task = lunch_task(snapshot, required=True, impossible=True)
+    travel = GraphTravel(graph)
+    result = solve(task, travel, SETTINGS)
     assert not result.main.is_usable
     assert result.main.routes == []
     assert result.main.alerts[0].code == "REQUIRED_LUNCH_UNPLACED"
+    evidence = build_plan_evidence(task, result.main, travel)
+    assert len(evidence.requests) == len(task.requests)
 
 
 def test_empty_requests_and_lunch_only_engineer(snapshot, graph):
@@ -119,6 +136,32 @@ def test_revalidation_uses_stable_reference_and_repairs(snapshot, graph):
     cancelled = changed(snapshot, lambda d: d["requests"].pop(0))
     result = solve(cancelled, travel, settings, first.memory)
     assert "job-1" not in [a.request_id for a in result.main.assignments]
+
+
+def test_task_start_tolerance_is_independent_from_departure_tolerance(snapshot, graph):
+    """A bounded departure drift still repairs when downstream start drift is too large."""
+    travel = GraphTravel(graph)
+    first = solve(snapshot, travel, SearchSettings(time_limit_ms=800, solution_limit=8))
+
+    def delay(data):
+        data["planning_as_of"] += 40
+        data["engineers"][0]["available_from"] += 40
+
+    delayed = changed(snapshot, delay)
+    strict = SearchSettings(
+        time_limit_ms=800,
+        solution_limit=8,
+        departure_lateness_tolerance_sec=60,
+        task_start_lateness_tolerance_sec=30,
+    )
+    relaxed = SearchSettings(
+        time_limit_ms=800,
+        solution_limit=8,
+        departure_lateness_tolerance_sec=60,
+        task_start_lateness_tolerance_sec=60,
+    )
+    assert solve(delayed, travel, strict, first.memory).path == "REPAIR_AND_IMPROVE"
+    assert solve(delayed, travel, relaxed, first.memory).path == "REVALIDATE"
 
 
 def test_deterministic_golden(snapshot, graph):

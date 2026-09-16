@@ -14,15 +14,24 @@ Criterion = Literal[
     "travel_time",
     "distance",
     "engineers_used",
+    "window_start_delay",
+    "max_jobs_per_engineer",
 ]
-SearchStage = Literal["coverage", "travel_time", "distance", "engineers_used"]
+SearchStage = Literal[
+    "coverage",
+    "travel_time",
+    "distance",
+    "engineers_used",
+    "window_start_delay",
+    "max_jobs_per_engineer",
+]
 
 
 @dataclass(frozen=True)
 class PolicySpec:
     """Compiled immutable objective order for one supported dispatcher preset."""
 
-    policy_id: Literal["fast", "compact"]
+    policy_id: Literal["fast", "compact", "sla", "balanced", "eco"]
     definition_version: str
     ordered_criteria: tuple[Criterion, ...]
     search_stages: tuple[SearchStage, ...]
@@ -38,14 +47,33 @@ _CATALOG: dict[str, PolicySpec] = {
         policy_id="fast",
         definition_version="fast-1",
         ordered_criteria=_COVERAGE + ("travel_time", "distance", "engineers_used"),
-        # Engineer count remains the final candidate tie-break for the v1 fast profile.
-        search_stages=("coverage", "travel_time", "distance"),
+        search_stages=("coverage", "travel_time", "distance", "engineers_used"),
     ),
     "compact": PolicySpec(
         policy_id="compact",
         definition_version="compact-1",
         ordered_criteria=_COVERAGE + ("engineers_used", "distance", "travel_time"),
         search_stages=("coverage", "engineers_used", "distance", "travel_time"),
+    ),
+    "sla": PolicySpec(
+        policy_id="sla",
+        definition_version="sla-1",
+        ordered_criteria=_COVERAGE
+        + ("window_start_delay", "travel_time", "distance", "engineers_used"),
+        search_stages=("coverage", "window_start_delay", "travel_time", "distance"),
+    ),
+    "balanced": PolicySpec(
+        policy_id="balanced",
+        definition_version="balanced-1",
+        ordered_criteria=_COVERAGE
+        + ("max_jobs_per_engineer", "travel_time", "distance", "engineers_used"),
+        search_stages=("coverage", "max_jobs_per_engineer", "travel_time", "distance"),
+    ),
+    "eco": PolicySpec(
+        policy_id="eco",
+        definition_version="eco-1",
+        ordered_criteria=_COVERAGE + ("distance", "engineers_used", "travel_time"),
+        search_stages=("coverage", "distance", "engineers_used", "travel_time"),
     ),
 }
 POLICY_CATALOG_VERSION = sha256(
@@ -76,6 +104,13 @@ def criterion_values(snapshot: RouterTaskSnapshot, plan: Plan) -> dict[Criterion
         for engineer in snapshot.engineers
     )
     summary = plan.summary
+    requests = {request.request_id: request for request in snapshot.requests}
+    job_stops = [
+        stop
+        for route in plan.routes
+        for stop in route.stops
+        if stop.kind == "job" and stop.request_id is not None
+    ]
     return {
         "urgent_unassigned": summary.urgent_total - summary.urgent_assigned_count,
         "unassigned": summary.unassigned_count,
@@ -83,6 +118,12 @@ def criterion_values(snapshot: RouterTaskSnapshot, plan: Plan) -> dict[Criterion
         "travel_time": summary.travel_time_sec,
         "distance": round(summary.distance_km * 1000),
         "engineers_used": summary.engineers_used,
+        "window_start_delay": sum(
+            stop.start_at - requests[stop.request_id].window_start_at for stop in job_stops
+        ),
+        "max_jobs_per_engineer": max(
+            (route.metrics.assigned_count for route in plan.routes), default=0
+        ),
     }
 
 

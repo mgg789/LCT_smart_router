@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 
-from core.contracts import GeoPoint, Plan, RouterTaskSnapshot
+from core.contracts import GeoPoint, Plan, RouterTaskSnapshot, RouterTechnicalSettings
 from core.policy import Criterion, PolicySpec, compile_policy, criterion_values
 from core.schedule import (
     TravelProvider,
@@ -30,11 +30,36 @@ class SearchSettings:
 
     time_limit_ms: int = 3000
     solution_limit: int = 64
-    tolerance_sec: int = 0
+    lunches_enabled: bool = True
+    departure_lateness_tolerance_sec: int = 0
+    task_start_lateness_tolerance_sec: int = 0
+    tolerance_sec: int | None = None
 
     def __post_init__(self):
-        if self.time_limit_ms < 1 or self.solution_limit < 1 or self.tolerance_sec < 0:
+        if self.tolerance_sec is not None:
+            if self.tolerance_sec < 0 or self.departure_lateness_tolerance_sec:
+                raise ValueError("invalid or conflicting legacy tolerance")
+            object.__setattr__(
+                self, "departure_lateness_tolerance_sec", self.tolerance_sec
+            )
+            object.__setattr__(
+                self, "task_start_lateness_tolerance_sec", self.tolerance_sec
+            )
+        if (
+            self.time_limit_ms < 1
+            or self.solution_limit < 1
+            or self.departure_lateness_tolerance_sec < 0
+            or self.task_start_lateness_tolerance_sec < 0
+        ):
             raise ValueError("invalid search settings")
+
+    def technical(self) -> RouterTechnicalSettings:
+        """Expose only persisted context controls, excluding per-run search budgets."""
+        return RouterTechnicalSettings(
+            lunches_enabled=self.lunches_enabled,
+            departure_lateness_tolerance_sec=self.departure_lateness_tolerance_sec,
+            task_start_lateness_tolerance_sec=self.task_start_lateness_tolerance_sec,
+        )
 
 
 @dataclass(frozen=True)
@@ -91,6 +116,47 @@ def _small_change(old: RouterTaskSnapshot, new: RouterTaskSnapshot, tolerance: i
         elif abs(a.available_from - b.available_from) > tolerance:
             return False
     return True
+
+
+def _task_starts_within_tolerance(previous: Plan, projected: Plan, tolerance: int) -> bool:
+    """Accept revalidation only while every retained job's later start stays bounded."""
+    old_starts = {
+        stop.request_id: stop.start_at
+        for route in previous.routes
+        for stop in route.stops
+        if stop.kind == "job" and stop.request_id is not None
+    }
+    new_starts = {
+        stop.request_id: stop.start_at
+        for route in projected.routes
+        for stop in route.stops
+        if stop.kind == "job" and stop.request_id is not None
+    }
+    return all(
+        request_id in old_starts and start_at - old_starts[request_id] <= tolerance
+        for request_id, start_at in new_starts.items()
+    )
+
+
+def _apply_system_policy(
+    snapshot: RouterTaskSnapshot, settings: SearchSettings
+) -> RouterTaskSnapshot:
+    """Apply Router-owned hard switches without mutating the sys publication."""
+    if settings.lunches_enabled:
+        return snapshot
+    engineers = []
+    for engineer in snapshot.engineers:
+        lunch = engineer.lunch.model_copy(
+            update={
+                "enabled": False,
+                "duration_sec": None,
+                "window_start_at": None,
+                "window_end_at": None,
+                "required": False,
+            }
+        )
+        engineers.append(engineer.model_copy(update={"lunch": lunch}))
+    return snapshot.model_copy(update={"engineers": engineers}, deep=True)
 
 
 def _project(snapshot: RouterTaskSnapshot, previous: Plan, travel: TravelProvider) -> Plan | None:
@@ -204,6 +270,8 @@ def _search(
                 nodes[a].kind == "lunch" and nodes[a].anchor == starts[e]
             )
             return int(nodes[b].kind == "job" and first_anchor)
+        if metric == "job_count":
+            return int(nodes[b].kind == "job")
         if nodes[b].kind == "end":
             return nodes[a].service if metric == "clock" else 0
         road = quote(a, b, e)
@@ -214,7 +282,7 @@ def _search(
         return road.duration_sec + (nodes[a].service if metric == "clock" else 0)
 
     callbacks: dict[str, list[int]] = {}
-    for metric in ("clock", "travel", "distance", "engineers_used"):
+    for metric in ("clock", "travel", "distance", "engineers_used", "job_count"):
         callbacks[metric] = [
             routing.RegisterTransitCallback(
                 lambda a, b, e=e, metric=metric: transit(a, b, e, metric)
@@ -225,6 +293,9 @@ def _search(
     routing.AddDimensionWithVehicleTransits(callbacks["travel"], 0, horizon, True, "Travel")
     routing.AddDimensionWithVehicleTransits(
         callbacks["distance"], 0, distance_bound, True, "Distance"
+    )
+    routing.AddDimensionWithVehicleTransits(
+        callbacks["job_count"], 0, max(1, len(snapshot.requests)), True, "JobCount"
     )
     time_dimension = routing.GetDimensionOrDie("Time")
     for e, engineer in enumerate(engineers):
@@ -256,6 +327,8 @@ def _search(
             routing.ActiveVar(index).SetValue(0)
         else:
             time_dimension.CumulVar(index).SetRange(lower, upper)
+            if stage == "window_start_delay":
+                time_dimension.SetCumulVarSoftUpperBound(index, lower, 1)
         penalty = coverage_weight + (urgent_weight if request.priority == "urgent" else 0)
         routing.AddDisjunction([index], penalty if stage == "coverage" else 0)
 
@@ -320,6 +393,20 @@ def _search(
         ]
         used_expressions.append(solver.Max(assigned) if assigned else solver.IntConst(0))
     engineers_used = solver.Sum(used_expressions)
+    window_start_delay = solver.Sum(
+        [
+            solver.Max(
+                time_dimension.CumulVar(manager.NodeToIndex(jobs[request.request_id]))
+                - max(0, request.window_start_at - origin),
+                0,
+            )
+            for request in snapshot.requests
+        ]
+    )
+    job_count_dimension = routing.GetDimensionOrDie("JobCount")
+    max_jobs_per_engineer = solver.Max(
+        [job_count_dimension.CumulVar(routing.End(e)) for e in range(len(engineers))]
+    )
     if incumbent is not None and stage != "coverage":
         values = criterion_values(snapshot, incumbent)
         expressions = {
@@ -329,6 +416,8 @@ def _search(
             "travel_time": travel_sum,
             "distance": distance_sum,
             "engineers_used": engineers_used,
+            "window_start_delay": window_start_delay,
+            "max_jobs_per_engineer": max_jobs_per_engineer,
         }
         for criterion in (
             "urgent_unassigned",
@@ -343,9 +432,16 @@ def _search(
         "distance": callbacks["distance"],
         "engineers_used": callbacks["engineers_used"],
     }
+    if stage == "max_jobs_per_engineer":
+        job_count_dimension.SetGlobalSpanCostCoefficient(1)
     for e in range(len(engineers)):
         routing.SetArcCostEvaluatorOfVehicle(
-            zero if stage == "coverage" else objective_callbacks[stage][e], e
+            (
+                objective_callbacks[stage][e]
+                if stage in objective_callbacks
+                else zero
+            ),
+            e,
         )
     parameters = pywrapcp.DefaultRoutingSearchParameters()
     parameters.first_solution_strategy = (
@@ -415,6 +511,7 @@ def solve(
     Fast keeps engineer count as a final candidate tie-break; compact optimizes it first.
     """
     settings = settings or SearchSettings()
+    snapshot = _apply_system_policy(snapshot, settings)
     policy: PolicySpec = compile_policy(snapshot.policy)
     context_version = context_version or travel.version
     base = baseline(snapshot, travel)
@@ -429,7 +526,15 @@ def solve(
         and {a.request_id: a.engineer_id for a in projected.assignments}
         == {a.request_id: a.engineer_id for a in memory.plan.assignments}
     )
-    if same_assignments and _small_change(memory.snapshot, snapshot, settings.tolerance_sec):
+    if (
+        same_assignments
+        and _small_change(
+            memory.snapshot, snapshot, settings.departure_lateness_tolerance_sec
+        )
+        and _task_starts_within_tolerance(
+            memory.plan, projected, settings.task_start_lateness_tolerance_sec
+        )
+    ):
         return EngineOutput(projected, base, "REVALIDATE", memory)
     path = "REPAIR_AND_IMPROVE" if projected else "COLD_START"
     candidates = [p for p in (base, projected) if p is not None and p.is_usable]

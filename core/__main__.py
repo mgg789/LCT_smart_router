@@ -9,6 +9,7 @@ from core.engine import SearchSettings
 from core.geo import Gazetteer, GraphTravel, RoadGraph
 from core.osrm import OSRMTravel
 from core.runtime import FileSnapshotReader, PostgresSnapshotReader, RouterRuntime, calculate
+from core.settings import FileTechnicalSettingsStore
 
 
 def main() -> None:
@@ -26,6 +27,7 @@ def main() -> None:
             command.add_argument("--output", type=Path)
         else:
             command.add_argument("--port", type=int, default=8100)
+            command.add_argument("--settings", type=Path, default=Path(".router/settings.json"))
     geocode = commands.add_parser("geocode")
     geocoding_source = geocode.add_mutually_exclusive_group(required=True)
     geocoding_source.add_argument("--catalog", type=Path)
@@ -160,7 +162,14 @@ def main() -> None:
     if args.command == "solve":
         runtime = RouterRuntime(reader, graph, settings)
         try:
-            result, _ = calculate(reader.read(), graph, settings, runtime.context_version)
+            publication = reader.read()
+            result, _ = calculate(
+                publication.payload,
+                graph,
+                settings,
+                runtime.context_version,
+                publication_id=publication.publication_id,
+            )
         finally:
             runtime.close()
         payload = result.model_dump_json(indent=2)
@@ -176,7 +185,14 @@ def main() -> None:
         from core.api import create_app
 
         uvicorn.run(
-            create_app(RouterRuntime(reader, graph, settings)),
+            create_app(
+                RouterRuntime(
+                    reader,
+                    graph,
+                    settings,
+                    settings_store=FileTechnicalSettingsStore(args.settings),
+                )
+            ),
             host="127.0.0.1",
             port=args.port,
             workers=1,

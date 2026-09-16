@@ -95,15 +95,23 @@ class Engineer(Record):
 class Policy(Record):
     """Supported catalog choice; preferences cannot disable hard constraints."""
 
-    policy_id: Literal["fast", "compact"]
+    policy_id: Literal["fast", "compact", "sla", "balanced", "eco"]
     parameters: dict[str, str | int | float | bool | None]
 
     @model_validator(mode="after")
     def check_parameters(self) -> Self:
         """Reject unsupported preferences instead of pretending they were applied."""
         if self.parameters:
-            raise ValueError(f"{self.policy_id} v1 accepts only empty parameters")
+            raise ValueError(f"{self.policy_id} accepts only empty parameters")
         return self
+
+
+class RouterTechnicalSettings(Record):
+    """Persisted Router-owned controls that version the calculation context."""
+
+    lunches_enabled: bool = True
+    departure_lateness_tolerance_sec: int = Field(default=0, ge=0, le=86400)
+    task_start_lateness_tolerance_sec: int = Field(default=0, ge=0, le=86400)
 
 
 class RouterTaskSnapshot(Record):
@@ -283,16 +291,110 @@ class Plan(Record):
     alerts: list[PlanningAlert]
 
 
+class CandidateEvidence(Record):
+    """Structured compatibility and append checks for one engineer alternative."""
+
+    engineer_id: str
+    label: str | None
+    skills: list[Skill]
+    transport_type: Transport
+    release_at: int | None
+    shift_end_at: int
+    skill_match: bool
+    transport_match: bool
+    available: bool
+    solo_feasible: bool
+    append_at_route_end_feasible: bool
+    append_start_at: int | None
+    append_end_at: int | None
+    append_incremental_travel_time_sec: int | None
+    append_incremental_distance_km: float | None
+    assigned_job_count: int
+    blockers: list[str]
+
+
+class RequestEvidence(Record):
+    """Calculation-backed assignment facts for deterministic UI and LLM input."""
+
+    request_id: str
+    status: Literal["assigned", "unassigned"]
+    priority: Literal["normal", "urgent"]
+    required_skill: Skill
+    required_transport: Transport | None
+    service_duration_sec: int
+    window_start_at: int
+    window_end_at: int
+    engineer_id: str | None
+    stop_id: str | None
+    predecessor_request_id: str | None
+    arrival_at: int | None
+    start_at: int | None
+    end_at: int | None
+    waiting_time_sec: int | None
+    window_start_offset_sec: int | None
+    window_end_margin_sec: int | None
+    travel_time_sec: int | None
+    distance_km: float | None
+    reason_codes: list[str]
+    reasons: list[Reason]
+    candidates: list[CandidateEvidence]
+
+
+class PlanEvidence(Record):
+    """Versioned evidence bundle kept separate from the route decision itself."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    requests: list[RequestEvidence]
+
+
 class RouterResult(Record):
     """Atomic pair of main/baseline belonging to one input and resource context."""
 
     schema_version: Literal["1.0"] = "1.0"
     status: Literal["pending", "ready", "error"]
     result_id: str | None = None
+    input_publication_id: str | None = None
     input_hash: str | None = None
     planning_as_of: int | None = None
     computed_at: int | None = None
     router_context_version: str | None = None
+    policy_id: str | None = None
+    technical_settings: RouterTechnicalSettings | None = None
+    search_path: str | None = None
+    policy_criteria: list[str] = Field(default_factory=list)
     main: Plan | None = None
     baseline: Plan | None = None
+    main_evidence: PlanEvidence | None = None
+    baseline_evidence: PlanEvidence | None = None
     errors: list[Diagnostic] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def check_state(self) -> Self:
+        """Reject partial publications whose status contradicts their payload."""
+        if self.input_hash is not None and (
+            len(self.input_hash) != 64
+            or any(character not in "0123456789abcdef" for character in self.input_hash)
+        ):
+            raise ValueError("input_hash must be lowercase SHA-256")
+        payload = (self.main, self.baseline, self.main_evidence, self.baseline_evidence)
+        if self.status == "ready":
+            required = (
+                self.result_id,
+                self.input_hash,
+                self.planning_as_of,
+                self.computed_at,
+                self.router_context_version,
+                self.policy_id,
+                self.technical_settings,
+                self.search_path,
+            )
+            if any(value is None for value in required) or any(value is None for value in payload):
+                raise ValueError("ready result is incomplete")
+            if self.errors or not self.policy_criteria:
+                raise ValueError("ready result has errors or no policy criteria")
+        elif self.status == "error":
+            if any(value is not None for value in payload) or not self.errors:
+                raise ValueError("error result must contain diagnostics and no plans")
+        elif any(value is not None for value in payload) or self.errors:
+            raise ValueError("pending result cannot contain plans or errors")
+        return self

@@ -2,66 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Literal
-
-from core.contracts import Plan, Reason, Record, RouterTaskSnapshot, Skill, Transport
+from core.contracts import (
+    CandidateEvidence,
+    Plan,
+    PlanEvidence,
+    RequestEvidence,
+    RouterTaskSnapshot,
+)
 from core.schedule import TravelProvider, eligible, fixed_order, release_at
-
-
-class CandidateEvidence(Record):
-    """Static and fixed-order checks for one request/engineer alternative."""
-
-    engineer_id: str
-    label: str | None
-    skills: list[Skill]
-    transport_type: Transport
-    release_at: int | None
-    shift_end_at: int
-    skill_match: bool
-    transport_match: bool
-    available: bool
-    solo_feasible: bool
-    append_at_route_end_feasible: bool
-    append_start_at: int | None
-    append_end_at: int | None
-    append_incremental_travel_time_sec: int | None
-    append_incremental_distance_km: float | None
-    assigned_job_count: int
-    blockers: list[str]
-
-
-class RequestEvidence(Record):
-    """Decision evidence for one request, without generated prose or recommendations."""
-
-    request_id: str
-    status: Literal["assigned", "unassigned"]
-    priority: Literal["normal", "urgent"]
-    required_skill: Skill
-    required_transport: Transport | None
-    service_duration_sec: int
-    window_start_at: int
-    window_end_at: int
-    engineer_id: str | None
-    stop_id: str | None
-    predecessor_request_id: str | None
-    arrival_at: int | None
-    start_at: int | None
-    end_at: int | None
-    waiting_time_sec: int | None
-    window_start_offset_sec: int | None
-    window_end_margin_sec: int | None
-    travel_time_sec: int | None
-    distance_km: float | None
-    reason_codes: list[str]
-    reasons: list[Reason]
-    candidates: list[CandidateEvidence]
-
-
-class PlanEvidence(Record):
-    """Versioned evidence bundle kept separate from the plan decision contract."""
-
-    schema_version: Literal["1.0"] = "1.0"
-    requests: list[RequestEvidence]
 
 
 def build_plan_evidence(
@@ -93,7 +41,11 @@ def build_plan_evidence(
     orders = {
         engineer.engineer_id: [
             stop.request_id
-            for stop in routes[engineer.engineer_id].stops
+            for stop in (
+                routes[engineer.engineer_id].stops
+                if engineer.engineer_id in routes
+                else ()
+            )
             if stop.kind == "job" and stop.request_id is not None
         ]
         for engineer in snapshot.engineers

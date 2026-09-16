@@ -1,6 +1,6 @@
 # Solver — computation core
 
-## Current Router v1 (2026-09-16)
+## Current Router V2 (2026-09-16)
 
 The new implementation lives in root `core/` by the owner's instruction (D-22).
 It follows the v14 `RouterTaskSnapshot` / `RouterResult` contract rather than the
@@ -8,24 +8,27 @@ legacy contract below. Runtime, Engine and geographic preparation belong to this
 module; System Layer is developed independently.
 
 - Strict Unix-second inputs and result validation; exact FIFO baseline.
-- OR-Tools joint job/lunch model, open routes and a versioned policy catalog:
-  `fast` minimizes travel then distance, while `compact` minimizes engineers used,
-  then distance and travel after preserving coverage and optional lunches.
+- OR-Tools joint job/lunch model, open routes and five versioned policy presets:
+  `fast`, `compact`, `sla`, `balanced` and `eco`. Hard constraints are shared;
+  their resource/SLA-risk ordering is compiled from the catalog.
 - Directed transport graph, path/matrix cache, OSRM adapter, address candidates and GeoJSON.
 - Optional 2GIS preparation adapter for current/statistical car traffic and separate
   walk, bike and schedule-aware public-transport matrix profiles; live HTTP stays
   outside Engine and every response is available through a versioned offline cache.
-- Autonomous process-isolated Runtime with file/PostgreSQL input adapters and private API.
+- Autonomous process-isolated Runtime with exact publication integrity checks, durable
+  Router technical settings, file/PostgreSQL adapters and a private API.
 - Official East importer and offline benchmark: FIFO 44/66 versus Router 65/66;
   urgent coverage 3/13 versus 12/13 under the pinned golden profile.
-- Structured explanation evidence for the UI and an explanation-only LLM: selected
-  engineer facts, predecessor travel, window margin and all candidate blockers.
+- Structured explanation evidence is part of every ready result for the UI and an
+  explanation-only LLM: selected engineer facts, predecessor travel, window margin and
+  all candidate blockers.
 - Five live-event acceptance scenarios: normal/urgent request, engineer offline,
   two simultaneous 15-minute stops and a geographic 3x traffic multiplier.
 - Tests for hard constraints, stable replanning, event recovery, golden output hashes,
   obsolete generations and provider boundaries.
 
-See [core/README.md](../core/README.md) for setup, API/view/hash contracts, geographic
+See [core/README.md](../core/README.md), [api.md](./api.md) and [data.md](./data.md)
+for setup, API/view/hash contracts, geographic
 resource formats and explicit v1 limits. The official East scenario uses versioned
 synthetic operating assumptions plus cached Nominatim/OSRM preparation; it does not
 claim live traffic or production map deployment. `prepare-2gis` is separately covered
