@@ -8,6 +8,7 @@ import {
 import {
   computePlanDelta,
   engineerSummaries,
+  isExpectedRebuildApplied,
   plannedActivity,
   planWithLunches,
   requestById,
@@ -25,10 +26,58 @@ describe('dev dashboard fixture', () => {
   });
 
   it('summarizes Sokolov route from the applied plan', () => {
-    const [sokolov] = engineerSummaries(createDevSnapshot());
+    const snapshot = createDevSnapshot();
+    const route = snapshot.plan.plan?.routes[0];
+    const conflicting = {
+      ...snapshot,
+      plan: {
+        ...snapshot.plan,
+        plan:
+          snapshot.plan.plan && route
+            ? {
+                ...snapshot.plan.plan,
+                routes: [{ ...route, assignedCount: 999 }, ...snapshot.plan.plan.routes.slice(1)],
+              }
+            : snapshot.plan.plan,
+      },
+    };
+    const [sokolov] = engineerSummaries(conflicting);
     expect(sokolov?.engineerId).toBe('eng-sokolov');
     expect(sokolov?.assignedCount).toBe(6);
     expect(sokolov?.distanceKm).toBe(28);
+  });
+
+  it('preserves Router wait stops and reports waiting as planned activity', () => {
+    const base = createDevSnapshot();
+    const route = base.plan.plan?.routes[0];
+    expect(route).toBeTruthy();
+    if (!route || !base.plan.plan) {
+      return;
+    }
+    const wait = {
+      sequence: 1,
+      kind: 'wait' as const,
+      requestId: null,
+      lat: route.startLat,
+      lon: route.startLon,
+      arrivalAt: base.nowAt - 60,
+      startAt: base.nowAt - 60,
+      endAt: base.nowAt + 60,
+    };
+    const waitingRoute = { ...route, stops: [wait, ...route.stops] };
+    const snapshot = {
+      ...base,
+      plan: {
+        ...base.plan,
+        plan: {
+          ...base.plan.plan,
+          routes: [waitingRoute, ...base.plan.plan.routes.slice(1)],
+        },
+      },
+    };
+
+    expect(routeVertices(waitingRoute)[1]?.kind).toBe('wait');
+    expect(plannedActivity(snapshot, waitingRoute.engineerId)?.kind).toBe('waiting');
   });
 
   it('exposes structured reasons for the focused request', () => {
@@ -88,5 +137,77 @@ describe('dev dashboard fixture', () => {
     expect(delta.slaBefore).toBe(2);
     expect(delta.slaAfter).toBe(2);
     expect(delta.solveMs).toBe(1180);
+  });
+
+  it('accepts a rebuild only after a newer plan and accepted Router result', () => {
+    const base = createDevSnapshot();
+    const revision = base.plan.plan?.revision ?? 0;
+    const expected = {
+      previousRevision: revision,
+      previousResultId: 'previous-result',
+      policyId: base.policyId,
+      lunchesEnabled: base.lunchesEnabled,
+      inputHash: 'target-input',
+      routerContextVersion: 'target-context',
+    } as const;
+    const rejected = {
+      ...base,
+      plan: {
+        ...base.plan,
+        plan: base.plan.plan ? { ...base.plan.plan, revision: revision + 1 } : null,
+        lastResult: {
+          resultId: 'rejected-result',
+          inputHash: 'target-input',
+          routerContextVersion: 'target-context',
+          accepted: false,
+          rejectionCode: 'STALE_PUBLICATION',
+          receivedAt: base.nowAt + 1,
+        },
+      },
+    };
+    expect(isExpectedRebuildApplied(rejected, expected)).toBe(false);
+
+    const acceptedWithoutRevision = {
+      ...base,
+      plan: {
+        ...base.plan,
+        appliedResult: {
+          resultId: 'accepted-result',
+          inputHash: 'target-input',
+          routerContextVersion: 'target-context',
+        },
+        lastResult: {
+          resultId: 'accepted-result',
+          inputHash: 'target-input',
+          routerContextVersion: 'target-context',
+          accepted: true,
+          rejectionCode: null,
+          receivedAt: base.nowAt + 1,
+        },
+      },
+    };
+    expect(isExpectedRebuildApplied(acceptedWithoutRevision, expected)).toBe(false);
+
+    const unrelated = {
+      ...acceptedWithoutRevision,
+      plan: {
+        ...acceptedWithoutRevision.plan,
+        plan: base.plan.plan ? { ...base.plan.plan, revision: revision + 1 } : null,
+        appliedResult: {
+          ...acceptedWithoutRevision.plan.appliedResult,
+          inputHash: 'unrelated-input',
+        },
+      },
+    };
+    expect(isExpectedRebuildApplied(unrelated, expected)).toBe(false);
+
+    const accepted = {
+      ...acceptedWithoutRevision,
+      plan: {
+        ...acceptedWithoutRevision.plan,
+        plan: base.plan.plan ? { ...base.plan.plan, revision: revision + 1 } : null,
+      },
+    };
+    expect(isExpectedRebuildApplied(accepted, expected)).toBe(true);
   });
 });

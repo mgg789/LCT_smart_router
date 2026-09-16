@@ -19,7 +19,7 @@ export interface RequestView {
   readonly id: string;
   readonly version: number;
   readonly lifecycle: 'draft' | 'submitted' | 'in_progress' | 'completed' | 'cancelled';
-  readonly assignmentState: 'unassigned' | 'assigned' | 'in_progress' | 'done';
+  readonly assignmentState: 'pending' | 'unassigned' | 'assigned' | 'in_progress' | 'done';
   readonly addressText: string;
   readonly lat: number | null;
   readonly lon: number | null;
@@ -27,7 +27,13 @@ export interface RequestView {
   readonly workType: string | null;
   readonly workTypeTitle: string | null;
   readonly requiredSkill: string;
+  readonly normProfileCode?: string;
+  readonly normativeTravelDurationSec?: number;
+  readonly technicalDurationSec?: number;
+  readonly documentationDurationSec?: number;
   readonly serviceDurationSec: number;
+  readonly actualDurationSec?: number | null;
+  readonly durationVarianceSec?: number | null;
   readonly windowStartAt: number;
   readonly windowEndAt: number;
   readonly priority: 'normal' | 'urgent';
@@ -36,6 +42,9 @@ export interface RequestView {
   readonly createdAt: number;
   readonly submittedAt: number | null;
   readonly startedAt: number | null;
+  readonly expectedCompletionAt?: number | null;
+  readonly continuationAvailableAt?: number | null;
+  readonly overrunDetectedAt?: number | null;
   readonly completedAt: number | null;
   readonly cancelledAt: number | null;
 }
@@ -74,7 +83,7 @@ export interface EngineerDayView {
 
 export interface PlanStopView {
   readonly sequence: number;
-  readonly kind: 'job' | 'lunch' | 'start';
+  readonly kind: 'job' | 'lunch' | 'wait' | 'start';
   readonly requestId: string | null;
   readonly lat: number;
   readonly lon: number;
@@ -95,7 +104,17 @@ export interface PlanRouteView {
   readonly waitingTimeSec: number;
   readonly lunchTimeSec: number;
   readonly assignedCount: number;
-  readonly lunchStatus: 'none' | 'planned' | 'taken' | 'skipped';
+  readonly lunchStatus:
+    | 'none'
+    | 'planned'
+    | 'taken'
+    | 'skipped'
+    | 'disabled'
+    | 'already_taken'
+    | 'scheduled'
+    | 'skipped_for_work'
+    | 'not_scheduled'
+    | 'required_conflict';
   readonly stops: PlanStopView[];
 }
 
@@ -104,6 +123,8 @@ export interface ReasonFactor {
   readonly ok?: boolean;
   readonly value?: number;
   readonly detail: string;
+  readonly basis?: string;
+  readonly facts?: Readonly<Record<string, unknown>>;
 }
 
 export interface ReasonAlternative {
@@ -159,8 +180,15 @@ export interface DispatchPlanResponse {
   readonly mode: 'auto' | 'manual';
   readonly modeVersion: number;
   readonly plan: PlanView | null;
+  readonly appliedResult: {
+    readonly resultId: string;
+    readonly inputHash: string;
+    readonly routerContextVersion: string;
+  } | null;
   readonly lastResult: {
     readonly resultId: string;
+    readonly inputHash: string;
+    readonly routerContextVersion: string;
     readonly accepted: boolean;
     readonly rejectionCode: string | null;
     readonly receivedAt: number;
@@ -173,11 +201,30 @@ export interface DashboardSnapshot {
   readonly nowAt: number;
   readonly policyId: PolicyId;
   readonly lunchesEnabled: boolean;
+  readonly routerContextVersion: string;
   readonly policies: readonly PolicySpec[];
   readonly engineers: Array<EngineerView & { day: EngineerDayView | null }>;
   readonly requests: RequestView[];
   readonly plan: DispatchPlanResponse;
   readonly alerts: AlertView[];
+}
+
+export interface RouterTechnicalSettings {
+  readonly lunchesEnabled: boolean;
+  readonly departureLatenessToleranceSec: number;
+  readonly taskStartLatenessToleranceSec: number;
+  readonly travelTimeMode: 'graph_with_access_buffer' | 'fixed_normative';
+  readonly accessBufferSec: number;
+  readonly fixedTravelTimeSec: number;
+  readonly earlyFinishReplanThresholdSec: number;
+  readonly taskOverrunToleranceSec: number;
+  readonly routerContextVersion: string;
+}
+
+export interface AuthSession {
+  readonly token: string;
+  readonly role: 'dispatcher';
+  readonly expiresAt: number;
 }
 
 export interface PlanDelta {

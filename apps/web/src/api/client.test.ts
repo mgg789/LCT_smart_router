@@ -1,0 +1,209 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { loadDashboardSnapshot, selectRoutingPolicy, setLunchesEnabled } from './client';
+
+const request = {
+  id: 'request-1',
+  version: 1,
+  lifecycle: 'submitted',
+  assignmentState: 'assigned',
+  addressText: 'Moscow',
+  lat: 55.75,
+  lon: 37.61,
+  needsGeocoding: false,
+  workType: 'office',
+  workTypeTitle: 'Office connection',
+  requiredSkill: 'office',
+  normProfileCode: 'connection',
+  normativeTravelDurationSec: 1200,
+  technicalDurationSec: 3000,
+  documentationDurationSec: 600,
+  serviceDurationSec: 3600,
+  actualDurationSec: null,
+  durationVarianceSec: null,
+  windowStartAt: 1_800_000_000,
+  windowEndAt: 1_800_003_600,
+  priority: 'normal',
+  contactName: null,
+  problemText: null,
+  createdAt: 1_799_990_000,
+  submittedAt: 1_799_990_100,
+  startedAt: null,
+  expectedCompletionAt: null,
+  continuationAvailableAt: null,
+  overrunDetectedAt: null,
+  completedAt: null,
+  cancelledAt: null,
+} as const;
+
+const engineer = {
+  id: 'engineer-1',
+  version: 1,
+  displayName: 'Alex Engineer',
+  inputOrder: 1,
+  skills: ['office'],
+  transportType: 'car',
+  region: 'east',
+  homeLat: 55.74,
+  homeLon: 37.6,
+  hasAccount: false,
+  day: {
+    engineerId: 'engineer-1',
+    workDate: '2026-09-17',
+    version: 1,
+    shiftStartAt: 1_800_000_000,
+    shiftEndAt: 1_800_028_800,
+    availability: 'online',
+    expectedOnlineAt: null,
+    lunch: {
+      enabled: false,
+      durationSec: null,
+      windowStartAt: null,
+      windowEndAt: null,
+      required: false,
+      taken: false,
+      startedAt: null,
+    },
+  },
+} as const;
+
+const settings = {
+  lunchesEnabled: false,
+  departureLatenessToleranceSec: 0,
+  taskStartLatenessToleranceSec: 0,
+  travelTimeMode: 'graph_with_access_buffer',
+  accessBufferSec: 600,
+  fixedTravelTimeSec: 1200,
+  earlyFinishReplanThresholdSec: 900,
+  taskOverrunToleranceSec: 600,
+  routerContextVersion: 'context-1',
+} as const;
+
+afterEach(() => vi.unstubAllGlobals());
+
+describe('live dashboard client', () => {
+  it('aggregates backend resources and normalizes structured reasons', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request) => {
+        const path = new URL(String(input), 'http://local').pathname;
+        if (path.endsWith('/requests')) return json({ requests: [request] });
+        if (path.endsWith('/engineers')) return json({ engineers: [engineer] });
+        if (path.endsWith('/plan')) {
+          return json({
+            mode: 'auto',
+            modeVersion: 1,
+            plan: {
+              revision: 7,
+              origin: 'auto',
+              planAsOf: 1_800_000_000,
+              appliedAt: 1_800_000_100,
+              routes: [],
+              assignments: [
+                {
+                  requestId: 'request-1',
+                  status: 'assigned',
+                  engineerId: 'engineer-1',
+                  reasons: [
+                    {
+                      code: 'CONSTRAINTS_SATISFIED',
+                      text: 'Constraints verified.',
+                      basis: 'constraint_check',
+                      facts: { skill: 'office' },
+                    },
+                  ],
+                },
+              ],
+            },
+            appliedResult: null,
+            lastResult: null,
+          });
+        }
+        if (path.endsWith('/alerts')) return json({ alerts: [] });
+        if (path.endsWith('/policies')) {
+          return json({
+            policies: [
+              {
+                policyId: 'compact',
+                title: 'Compact',
+                description: 'Use fewer engineers',
+                isDefault: true,
+              },
+            ],
+            active: { policyId: 'compact', version: 1, changedAt: 1_800_000_000 },
+          });
+        }
+        if (path.endsWith('/router/technical-settings')) return json(settings);
+        throw new Error(`Unexpected request: ${path}`);
+      }),
+    );
+
+    const snapshot = await loadDashboardSnapshot('session-token');
+
+    expect(snapshot.workDate).toBe('2026-09-17');
+    expect(snapshot.policyId).toBe('compact');
+    expect(snapshot.requests).toHaveLength(1);
+    expect(snapshot.plan.plan?.assignments[0]?.reasons.assignment?.factors[0]).toMatchObject({
+      code: 'CONSTRAINTS_SATISFIED',
+      detail: 'Constraints verified.',
+      basis: 'constraint_check',
+      facts: { skill: 'office' },
+    });
+  });
+
+  it('preserves all technical settings when toggling lunches', async () => {
+    let sentBody: unknown = null;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+        const method = init?.method ?? 'GET';
+        if (method === 'GET') return json(settings);
+        sentBody = JSON.parse(String(init?.body));
+        return json({
+          ...settings,
+          ...((sentBody ?? {}) as object),
+          routerContextVersion: 'context-2',
+          status: 'accepted',
+        });
+      }),
+    );
+
+    const contextVersion = await setLunchesEnabled('session-token', true);
+
+    expect(sentBody).toMatchObject({
+      expectedContextVersion: 'context-1',
+      lunchesEnabled: true,
+      travelTimeMode: 'graph_with_access_buffer',
+      accessBufferSec: 600,
+      taskOverrunToleranceSec: 600,
+    });
+    expect(contextVersion).toBe('context-2');
+  });
+
+  it('returns the exact publication hash created by a policy selection', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        json({
+          policyId: 'fast',
+          publication: {
+            published: true,
+            inputHash: 'published-input-hash',
+            planningAsOf: 1_800_000_100,
+            snapshotId: 'snapshot-1',
+          },
+        }),
+      ),
+    );
+
+    await expect(selectRoutingPolicy('session-token', 'fast')).resolves.toBe(
+      'published-input-hash',
+    );
+  });
+});
+
+function json(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
+}

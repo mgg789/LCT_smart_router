@@ -1,6 +1,6 @@
 {
   "settings": {
-    "time_limit_ms": 12000,
+    "time_limit_ms": 30000,
     "solution_limit": 24
   },
   "source": {
@@ -15,10 +15,10 @@
     "travel_time_sec": 62710
   },
   "main": {
-    "plan_sha256": "499ed6a6b945df31fd38a091d33213967a1f0c90810d7562c605118964ed5f78",
+    "plan_sha256": "85915baf384e85fccb0981f10a07d53dc4cbcf848eade8f97fa955af244f5b0d",
     "assigned_count": 51,
     "urgent_assigned_count": 16,
-    "travel_time_sec": 59359,
+    "travel_time_sec": 61545,
     "unassigned_request_ids": ["32840", "97770", "94575", "52576", "78036"]
   }
 }

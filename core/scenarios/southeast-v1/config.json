@@ -75,8 +75,8 @@
     "control": "a2272a6d88db5ee53e3bf51670e1101ddfd59a5e8b7560b932b36e3044e32caa"
   },
   "resource_sha256": {
-    "geocodes": "aa5c3830987f771f1fba9fb88e691bb13ad734ba92f1bc17812529fad4047515",
-    "road_matrix": "253399ab125ca5a0699a78a906d33817f5fb8e8c16947682302719105f963b45"
+    "geocodes": "f23e4d64f9c81a6d4aceab5c5076d63f8607743f9dc59a206738fc6bba1abdf6",
+    "road_matrix": "a101a2d5e3af19d842741ea5c5710392900d164ecb5d44fe47b761a9bbedf515"
   },
   "assumptions": [
     "The official archive has no engineer directory, shifts, transport assignments, service durations or coordinates.",

@@ -31,6 +31,7 @@ def write_schemas(output_dir: Path) -> None:
         (output_dir / filename).write_text(
             json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
+            newline="\n",
         )
 
 

@@ -815,6 +815,7 @@ export function createDevSnapshot(plan: PlanView = CURRENT_PLAN): DashboardSnaps
     nowAt: NOW,
     policyId: 'compact',
     lunchesEnabled: false,
+    routerContextVersion: 'fixture-context-v1',
     policies: POLICIES,
     engineers: ENGINEERS,
     requests: REQUESTS,
@@ -822,8 +823,15 @@ export function createDevSnapshot(plan: PlanView = CURRENT_PLAN): DashboardSnaps
       mode: 'auto',
       modeVersion: 1,
       plan: planWithLunches(plan, false),
+      appliedResult: {
+        resultId: `res-${plan.revision}`,
+        inputHash: `fixture-input-${plan.revision}`,
+        routerContextVersion: 'fixture-context-v1',
+      },
       lastResult: {
         resultId: `res-${plan.revision}`,
+        inputHash: `fixture-input-${plan.revision}`,
+        routerContextVersion: 'fixture-context-v1',
         accepted: true,
         rejectionCode: null,
         receivedAt: plan.appliedAt,

@@ -56,6 +56,7 @@ export class AppliedPlanService {
       include: {
         plan: {
           include: {
+            routerResult: true,
             routes: { include: { stops: { orderBy: { sequence: 'asc' } } } },
             assignments: true,
           },

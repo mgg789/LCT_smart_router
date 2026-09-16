@@ -23,6 +23,9 @@ function stopStatus(
   if (kind === 'lunch') {
     return 'обед';
   }
+  if (kind === 'wait') {
+    return 'ожидание окна';
+  }
   if (!request) {
     return '';
   }
@@ -129,6 +132,7 @@ export function RouteTimeline({
             const current =
               (vertex.kind === 'start' && activity?.kind === 'not_started') ||
               (vertex.kind === 'lunch' && activity?.kind === 'lunch') ||
+              (vertex.kind === 'wait' && activity?.kind === 'waiting') ||
               (vertex.kind === 'job' &&
                 activity?.kind === 'on_site' &&
                 activity.requestId === vertex.requestId) ||
@@ -140,7 +144,9 @@ export function RouteTimeline({
                 ? 'Старт смены'
                 : vertex.kind === 'lunch'
                   ? 'Обед'
-                  : (request?.workTypeTitle ?? 'Остановка');
+                  : vertex.kind === 'wait'
+                    ? 'Ожидание'
+                    : (request?.workTypeTitle ?? 'Остановка');
             return (
               <li key={`${vertex.kind}-${vertex.sequence}`} className="w-40 shrink-0">
                 <button
@@ -171,7 +177,11 @@ export function RouteTimeline({
                   <span className="text-sm font-semibold">{formatClock(vertex.startAt)}</span>
                   <span className="mt-1 text-[13px] leading-5 text-ink">{title}</span>
                   <span className="text-[12px] text-muted">
-                    {vertex.kind === 'start' ? 'точка выезда' : request?.addressText}
+                    {vertex.kind === 'start'
+                      ? 'точка выезда'
+                      : vertex.kind === 'wait'
+                        ? 'до начала окна'
+                        : request?.addressText}
                   </span>
                   <span className="mt-1 text-[12px] text-muted">
                     {stopStatus(snapshot, request, vertex.kind)}

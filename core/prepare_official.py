@@ -157,10 +157,14 @@ def prepare_official_fixture(dataset_dir: Path, scenario_dir: Path) -> None:
     }
     scenario_dir.mkdir(parents=True, exist_ok=True)
     (scenario_dir / "geocodes.json").write_text(
-        json.dumps(geocodes, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        json.dumps(geocodes, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
     )
     (scenario_dir / "road-matrix.json").write_text(
-        json.dumps(matrix, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        json.dumps(matrix, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
     )
 
 
