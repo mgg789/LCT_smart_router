@@ -16,6 +16,7 @@ from core.contracts import Diagnostic, RouterResult, RouterTaskSnapshot
 from core.engine import EngineMemory, EngineOutput, SearchSettings, solve
 from core.geo import GraphTravel, RoadGraph, content_hash
 from core.osrm import OSRMTravel
+from core.policy import POLICY_CATALOG_VERSION
 
 
 def parse_snapshot(raw: bytes) -> RouterTaskSnapshot:
@@ -173,7 +174,7 @@ class RouterRuntime:
             if isinstance(self._graph, RoadGraph)
             else self._graph.version
         )
-        data = ["router-v1:fast-1", resource, asdict(self.settings)]
+        data = ["router-v1", POLICY_CATALOG_VERSION, resource, asdict(self.settings)]
         return content_hash(json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8"))
 
     def read_result(self) -> RouterResult:

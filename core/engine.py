@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 
 from core.contracts import GeoPoint, Plan, RouterTaskSnapshot
+from core.policy import Criterion, PolicySpec, compile_policy, criterion_values
 from core.schedule import (
     TravelProvider,
     assemble_plan,
@@ -120,6 +121,7 @@ def _search(
     stage: str,
     incumbent: Plan | None,
     budget_ms: int,
+    preserved_criteria: tuple[Criterion, ...] = (),
 ) -> Plan | None:
     engineers = sorted(snapshot.engineers, key=lambda e: e.engineer_id)
     if not engineers:
@@ -197,6 +199,11 @@ def _search(
         a, b = manager.IndexToNode(a_index), manager.IndexToNode(b_index)
         if a_index == b_index:
             return 0
+        if metric == "engineers_used":
+            first_anchor = nodes[a].kind == "start" or (
+                nodes[a].kind == "lunch" and nodes[a].anchor == starts[e]
+            )
+            return int(nodes[b].kind == "job" and first_anchor)
         if nodes[b].kind == "end":
             return nodes[a].service if metric == "clock" else 0
         road = quote(a, b, e)
@@ -207,7 +214,7 @@ def _search(
         return road.duration_sec + (nodes[a].service if metric == "clock" else 0)
 
     callbacks: dict[str, list[int]] = {}
-    for metric in ("clock", "travel", "distance"):
+    for metric in ("clock", "travel", "distance", "engineers_used"):
         callbacks[metric] = [
             routing.RegisterTransitCallback(
                 lambda a, b, e=e, metric=metric: transit(a, b, e, metric)
@@ -299,16 +306,46 @@ def _search(
             for e in range(len(engineers))
         ]
     )
+    distance_sum = solver.Sum(
+        [
+            routing.GetDimensionOrDie("Distance").CumulVar(routing.End(e))
+            for e in range(len(engineers))
+        ]
+    )
+    used_expressions = []
+    for e in range(len(engineers)):
+        assigned = [
+            solver.IsEqualCstVar(routing.VehicleVar(manager.NodeToIndex(node)), e)
+            for node in jobs.values()
+        ]
+        used_expressions.append(solver.Max(assigned) if assigned else solver.IntConst(0))
+    engineers_used = solver.Sum(used_expressions)
     if incumbent is not None and stage != "coverage":
-        incumbent_score = score(snapshot, incumbent)
-        for expression, value in zip((urgent_drops, all_drops, missed_lunch), incumbent_score[:3]):
-            solver.Add(expression <= value)
-        if stage == "distance":
-            solver.Add(travel_sum <= incumbent_score[3])
+        values = criterion_values(snapshot, incumbent)
+        expressions = {
+            "urgent_unassigned": urgent_drops,
+            "unassigned": all_drops,
+            "missed_optional_lunches": missed_lunch,
+            "travel_time": travel_sum,
+            "distance": distance_sum,
+            "engineers_used": engineers_used,
+        }
+        for criterion in (
+            "urgent_unassigned",
+            "unassigned",
+            "missed_optional_lunches",
+            *preserved_criteria,
+        ):
+            solver.Add(expressions[criterion] <= values[criterion])
     zero = routing.RegisterTransitCallback(lambda a, b: 0)
+    objective_callbacks = {
+        "travel_time": callbacks["travel"],
+        "distance": callbacks["distance"],
+        "engineers_used": callbacks["engineers_used"],
+    }
     for e in range(len(engineers)):
         routing.SetArcCostEvaluatorOfVehicle(
-            zero if stage == "coverage" else callbacks[stage][e], e
+            zero if stage == "coverage" else objective_callbacks[stage][e], e
         )
     parameters = pywrapcp.DefaultRoutingSearchParameters()
     parameters.first_solution_strategy = (
@@ -374,10 +411,11 @@ def solve(
 ) -> EngineOutput:
     """Compute baseline and bounded main, preserving feasible small-change ordering.
 
-    The three search stages optimize coverage/lunch, travel, then metres. Engineer count
-    is the final comparator tie-break among candidates, not a proof of minimum fleet.
+    Policy stages preserve achieved coverage/lunch criteria before their resource order.
+    Fast keeps engineer count as a final candidate tie-break; compact optimizes it first.
     """
     settings = settings or SearchSettings()
+    policy: PolicySpec = compile_policy(snapshot.policy)
     context_version = context_version or travel.version
     base = baseline(snapshot, travel)
     validate_plan(snapshot, base, travel)
@@ -397,11 +435,19 @@ def solve(
     candidates = [p for p in (base, projected) if p is not None and p.is_usable]
     incumbent = min(candidates, key=lambda p: score(snapshot, p)) if candidates else None
     deadline = time.monotonic() + settings.time_limit_ms / 1000
-    for i, stage in enumerate(("coverage", "travel", "distance")):
+    for i, stage in enumerate(policy.search_stages):
         remaining = int((deadline - time.monotonic()) * 1000)
         if remaining <= 0:
             break
-        candidate = _search(snapshot, travel, settings, stage, incumbent, remaining // (3 - i))
+        candidate = _search(
+            snapshot,
+            travel,
+            settings,
+            stage,
+            incumbent,
+            remaining // (len(policy.search_stages) - i),
+            tuple(policy.search_stages[1:i]),
+        )
         if candidate is not None and (
             incumbent is None or score(snapshot, candidate) < score(snapshot, incumbent)
         ):

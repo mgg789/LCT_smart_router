@@ -98,6 +98,7 @@ can serve the job; `append_at_route_end_feasible` checks only one explicit order
 | `geocoding.py` | Explicit Nominatim source, validated candidates, rate limiting and offline cache |
 | `osrm.py` | Profile-specific OSRM paths, consistent time/distance/geometry, disk cache |
 | `twogis.py` | Cached 2GIS traffic and multimodal matrix preparation outside Engine |
+| `policy.py` | Versioned `fast`/`compact` catalog and candidate comparison |
 | `schedule.py` | Fixed-order scheduler, exact FIFO baseline, metrics and result validation |
 | `engine.py` | Joint jobs/lunch routing, bounded policy stages and three replanning paths |
 | `runtime.py` | Snapshot adapters, process isolation, generations, result/context ownership |
@@ -234,9 +235,10 @@ policies belong to operator configuration, never to the snapshot or repository.
   directed reachability and non-overlapping travel/work/wait/lunch intervals.
 - Routes are open. The last job's service time still counts before shift end.
 - Baseline: `arrival_order` jobs, first feasible `input_order` engineer, append only.
-- `fast` catalog: urgent coverage → total coverage → optional lunches → travel
-  seconds → integer metres → number of engineers doing jobs. Unknown policies and
-  parameters fail. Business constraints cannot be relaxed by `tolerance_sec`.
+- Policy catalog keeps the same hard constraints and coverage/lunch priorities for
+  both presets. `fast`: travel seconds → integer metres → engineers doing jobs;
+  `compact`: engineers doing jobs → integer metres → travel seconds. Unknown policy
+  IDs and all v1 parameters fail instead of silently falling back or being ignored.
 - OR-Tools Routing 9.15 uses domain restrictions for allowed vehicles and a lunch
   alternative at the engineer's start or directly after a compatible job. Required
   lunch is mandatory; lunch already taken cannot be scheduled again.
@@ -278,7 +280,7 @@ view/migrations and a SELECT-only role. `payload_utf8` preserves published text;
 do not reconstruct it from JSONB. Sys must hash the same bytes independently.
 No PostgreSQL database or role is created by Router.
 
-Context identity includes resource contents/version, the `fast-1` compiler profile
+Context identity includes resource contents/version, the derived policy-catalog version
 and search settings. A new context invalidates the current result immediately.
 Map activation is currently a process restart or internal `update_graph()` call;
 there is no public graph-upload or arbitrary solve endpoint.
