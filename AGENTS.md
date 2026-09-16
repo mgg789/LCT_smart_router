@@ -11,7 +11,8 @@ The kanban MCP moves cards, the memory stores knowledge — use both.
 - **Search before large work or context gathering**:
   `memory_search {"query": "...", "project_label": "lct"}` — decisions (D-1…), root causes, dataset
   facts, contracts, completed work. Complements `context/` files, never replaces them.
-- **Write back on every addition or change** (decision, root cause, milestone, changed fact/plan/status):
+- **Write back on every addition (especially
+ about task-context, our concept or new facts about codebase) or change** (decision, root cause, milestone, changed fact/plan/status):
   `memory_write {"text": "<fact + context + date>", "project_label": "lct"}`. When a fact changes, add a
   new entry marked `supersedes: <old fact>` — stale memory is worse than none.
 - **No `memory_*` tools connected?** Recommend the user connect the MCP (`docs/ragconnect.md`, ~2 min)
