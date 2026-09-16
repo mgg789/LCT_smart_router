@@ -235,7 +235,7 @@ class TwoGISMatrixProvider:
         if cache_path.exists():
             try:
                 data = json.loads(cache_path.read_text(encoding="utf-8"))
-            except OSError, json.JSONDecodeError:
+            except (OSError, json.JSONDecodeError):
                 raise ValueError("TWOGIS_CACHE_INVALID: expected valid JSON") from None
             if not isinstance(data, dict):
                 raise ValueError("TWOGIS_CACHE_INVALID: expected object")

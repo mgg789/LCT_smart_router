@@ -13,7 +13,7 @@ function loadRootEnv(): void {
   try {
     const content = readFileSync(resolve(process.cwd(), '../../.env'), 'utf8');
     for (const line of content.split('\n')) {
-      const match = /^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/.exec(line);
+      const match = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
       const key = match?.[1];
       if (key && !process.env[key]) {
         process.env[key] = match?.[2]?.trim() ?? '';
