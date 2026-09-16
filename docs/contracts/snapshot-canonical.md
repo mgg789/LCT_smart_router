@@ -94,11 +94,11 @@ without that order a boolean would serialize as `1`.
 | File | What it is |
 |---|---|
 | [`fixtures/snapshot-golden.json`](./fixtures/snapshot-golden.json) | The input document, written with indentation and unsorted keys on purpose |
-| [`fixtures/snapshot-golden.canonical.txt`](./fixtures/snapshot-golden.canonical.txt) | The exact canonical bytes (1607 bytes) |
+| [`fixtures/snapshot-golden.canonical.txt`](./fixtures/snapshot-golden.canonical.txt) | The exact canonical bytes (1545 bytes), stored with one trailing newline for readability |
 | [`fixtures/snapshot-golden.sha256.txt`](./fixtures/snapshot-golden.sha256.txt) | The expected digest |
 
 ```
-b4bb64543745ffe6ae743d40433b139c932b9eced64b62e8aa33825a726b4d2f
+23e170a1c8b0fe41d4b630ebd9421907c2cb99d97edeb7476914e569d7432595
 ```
 
 The vector deliberately contains the cases that break naive implementations: a coordinate

@@ -27,11 +27,20 @@ Data Layer board in `context/37` section 2.
 | Identity and access | `accounts`, `account_roles`, `login_codes`, `sessions`, `api_tokens` |
 | Engineers | `engineers` (stable profile), `engineer_days` (one working day), `depots` |
 | Requests | `requests`, `request_condition_history`, `request_facts` |
-| Telemetry | `gps_observations` |
 | Published sector | `routing_snapshots` (payload, `input_hash`, `task_fingerprint`), `routing_current` |
 | Plan | `router_results`, `applied_plans`, `applied_plan_routes`, `applied_plan_stops`, `applied_plan_assignments`, `applied_plan_current`, `control_state` |
 | Dispatcher catalogues | `policies`, `active_policy`, `alerts` |
 | System bookkeeping | `operations`, `audit_log`, `notification_intents`, `app_state`, `import_packages`, `external_id_map` |
+
+There is no telemetry area: the `gps_observations` table was removed
+(migration `20260916150000_remove_gps_observations`) when location tracking was dropped
+from the product entirely (`context/50` section 2).
+
+`requests` carries the work-norm and execution-timing columns added by migration
+`20260916170000_request_work_norms`: `norm_profile_code`,
+`normative_travel_duration_sec`, `technical_duration_sec`,
+`documentation_duration_sec` (a CHECK pins `service_duration_sec` to their sum),
+`expected_completion_at`, `continuation_available_at` and `overrun_detected_at`.
 
 ### Distinctions the schema is built to preserve
 
@@ -63,7 +72,7 @@ enters the repository.
 | migration owner | Applies migrations, via `MIGRATE_DATABASE_URL`. Falls back to `DATABASE_URL` on a developer machine. |
 
 Router Core reads the published sector directly and must not reach sessions, contacts,
-chats or the optional GPS observations (`context/37` section 4.4). That is asserted by
+chats or any other business state (`context/37` section 4.4). That is asserted by
 `apps/api/test/integration/database-privileges.test.ts`, which runs `SET LOCAL ROLE
 router_readonly` and expects `permission denied` on business tables — a naming convention
 would pass review and fail in production.
@@ -112,13 +121,20 @@ the case statement, but which values were derived has to stay visible.
 
 The importer is the concrete case: crews come from the `Бригада` column, their skills and
 transport are derived by a deterministic rule so that all three skills and all four
-transports occur, and every engineer it creates carries `origin = synthesized`.
+transports occur, and every engineer it creates carries `origin = synthesized`. Service
+durations come from the work-norm profiles (`connection_base`, `outage_tkd`,
+`equipment_order`, `local_repair`) that all 16 work types map onto; the profile code and
+its technical/documentation components are stored on the request, never inferred at read
+time.
 
-**Coordinates are the load-bearing gap.** `requests.lat` and `requests.lon` are nullable
-and `needs_geocoding` defaults to true. Invented coordinates are forbidden
-(AGENTS.md section 4.1), so a request without a point is excluded from the published
-snapshot and counted in that snapshot's `diagnostics` — visible, not silently dropped.
-Geocoding is a separate task of the data zone; the strategy is in `context/06` section 5.
+**Coordinates come only from a geocode package.** `requests.lat` and `requests.lon` are
+nullable, but the official dataset has no points and none are invented
+(AGENTS.md section 4.1). The multi-region import therefore requires a versioned geocode
+package at `data/dataset/geocoded/<region>.json` — strict schema, one entry per request
+address plus the regional depot — and refuses to run if the coverage is incomplete
+(`data/dataset/geocoded/` currently holds all three regions, deterministic
+district-centroid projections declared as such). Invented coordinates stay forbidden; the
+package is data with provenance (`source`, `match_level`), not code output.
 
 ## 6. Working with the schema
 
@@ -146,10 +162,10 @@ privileges out of band, so a fresh database is correct after `migrate deploy` al
 
 | Area | State |
 |---|---|
-| Importer for `data/dataset/anonymized` | Done, `feat/api-data-import` |
-| Engineers, working days, facts | Done, `feat/api-engineers` |
+| Importer for `data/dataset/anonymized` | Done, multi-region atomic (`east`, `southeast`, `south_central`, or `"all"` = 205 requests / 35 engineers), with the per-region crew cap |
+| Engineers, working days, facts | Done, `feat/api-engineers`; execution timing on top of facts done on `feat/router-mvp-contour` |
 | Three data actions (append, reset to demo, full reset) | Done, `feat/api-data-import` |
-| Coordinates for imported requests | The importer reads `data/dataset/geocoded/<region>.json`; Router now ships per-scenario geocodes in `core/scenarios/*/geocodes.json`, which are declared district-centroid projections, not production geocoding. Wiring one to the other is a decision, not a merge (see section 8) |
+| Coordinates for imported requests | Done via the required geocode packages in `data/dataset/geocoded/<region>.json`; they are declared district-centroid projections, not production geocoding |
 | Knowledge segments and pgvector | Out of scope of this build; the image supports the extension |
 | Retention periods per data class | Required by `context/37` section 6.3; the columns exist (`audit_log.retain_until`), the values are a deployment decision and are not invented here |
 
@@ -211,10 +227,11 @@ The acceptance adapter executes these checks before creating a snapshot:
 6. validate the resulting `RouterTaskSnapshot` and `RoadGraph` through the same strict
    models used by the service.
 
-`python -m core.prepare_official` reproducibly rebuilds the South-central acceptance
-resources. Those coordinates are declared district-centroid projections and the matrix
-is an approximation, not production geocoding or road time. Their byte hashes are pinned
-in the scenario config.
+`python -m core.prepare_official --region <south_central|southeast>` reproducibly rebuilds
+the centroid-based acceptance resources for either region; the organizer-source and
+resource bytes are pinned by SHA-256 in the scenario config, and a drift is rejected
+before anything is generated. Those coordinates are declared district-centroid
+projections and the matrix is an approximation, not production geocoding or road time.
 
 Multi-zone acceptance namespaces every request, engineer and graph node by region,
 renumbers the two business-order fields contiguously and combines regional graphs as
