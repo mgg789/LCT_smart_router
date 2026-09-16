@@ -1,12 +1,19 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { validateEnv } from '../../src/common/config/env.schema';
+import { loadJsonFixture } from '../support/fixtures';
+
+const fixtures = loadJsonFixture<{
+  databaseUrl: string;
+  dispatcherEmail: string;
+  dispatcherPassword: string;
+}>('env-fixtures.json');
 
 /** The keys with no sensible default; everything else may be omitted. */
 const REQUIRED = {
-  DATABASE_URL: 'postgresql://user:pass@localhost:5432/db?schema=public',
-  DISPATCHER_EMAIL: 'dispatcher@example.test',
-  DISPATCHER_PASSWORD: 'long-enough-password',
+  DATABASE_URL: fixtures.databaseUrl,
+  DISPATCHER_EMAIL: fixtures.dispatcherEmail,
+  DISPATCHER_PASSWORD: fixtures.dispatcherPassword,
 };
 
 describe('environment validation', () => {
