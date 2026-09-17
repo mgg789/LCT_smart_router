@@ -328,10 +328,45 @@ describe('official dataset import', () => {
     const before = await prisma.request.count({});
     const repeated = await importRegion('east');
 
-    assert.equal(repeated.applied, false);
     assert.equal(repeated.requestsCreated, 0);
     assert.match(repeated.warnings.join(' '), /already been imported/i);
     assert.equal(await prisma.request.count({}), before);
+  });
+
+  it('rebases a repeated official import onto today so the day stays plannable', async () => {
+    const eastBefore = await prisma.request.findMany({
+      where: { region: 'east' },
+      select: { id: true, windowStartAt: true },
+    });
+    assert.ok(eastBefore.length > 0);
+    await prisma.engineerDay.updateMany({
+      where: { engineer: { region: 'east' } },
+      data: { workDate: '2026-09-17' },
+    });
+
+    const repeated = await importRegion('east');
+    assert.equal(repeated.applied, true);
+    assert.equal(repeated.requestsCreated, 0);
+    assert.equal(await prisma.request.count({ where: { region: 'east' } }), eastBefore.length);
+
+    const tzOffsetSec = 3 * 3600;
+    const today = new Date((Math.floor(Date.now() / 1000) + tzOffsetSec) * 1000)
+      .toISOString()
+      .slice(0, 10);
+    const daysToday = await prisma.engineerDay.count({
+      where: { workDate: today, engineer: { region: 'east' } },
+    });
+    assert.ok(daysToday > 0, 'imported crews must have a shift on the live work date');
+
+    const after = await prisma.request.findMany({
+      where: { region: 'east' },
+      select: { id: true, windowStartAt: true },
+    });
+    const shifted = after.filter((row) => {
+      const previous = eastBefore.find((item) => item.id === row.id);
+      return previous !== undefined && previous.windowStartAt !== row.windowStartAt;
+    });
+    assert.ok(shifted.length > 0, 'windows must move onto the live horizon');
   });
 
   it('refuses to reinterpret an imported region with another crew-count profile', async () => {

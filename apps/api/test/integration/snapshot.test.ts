@@ -406,6 +406,49 @@ describe('snapshot publication', () => {
     assert.equal(response.status, 422);
   });
 
+  it('keeps an overnight shift in the published task after the calendar date rolls', async () => {
+    const engineer = await createEngineer();
+    const timeZone = process.env.APP_TIME_ZONE ?? 'Europe/Moscow';
+    const today = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date());
+    const yesterday = new Date(Date.parse(`${today}T00:00:00.000Z`) - 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+    const day = await prisma.engineerDay.findUniqueOrThrow({
+      where: { engineerId_workDate: { engineerId: engineer.id, workDate: today } },
+    });
+    await prisma.engineerDay.update({
+      where: { id: day.id },
+      data: { workDate: yesterday },
+    });
+
+    const response = await call(
+      'PATCH',
+      `/api/v1/dispatch/engineers/${engineer.id}`,
+      dispatcherToken,
+      {
+        operationId: randomUUID(),
+        expectedVersion: engineer.version,
+        skills: ['connection', 'emergency', 'local'],
+      },
+    );
+    assert.equal(response.status, 200, await response.clone().text());
+
+    const current = await snapshot();
+    assert.ok(current.payload);
+    const document = JSON.parse(current.payload) as {
+      engineers: Array<{ engineer_id: string }>;
+    };
+    assert.ok(
+      document.engineers.some((item) => item.engineer_id === engineer.id),
+      'a still-open overnight shift must stay in the published task',
+    );
+  });
+
   it('keeps every published snapshot and moves only the pointer', async () => {
     const countBefore = await prisma.routingSnapshot.count();
     const request = await createRequest();
