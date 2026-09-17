@@ -19,6 +19,7 @@ import type {
   PolicyComparisonResponse,
   PolicyId,
 } from '../api/types';
+import { demoScenarios, recordedScenario } from '../demo/scenarios';
 import {
   assignmentFor,
   computePlanDelta,
@@ -31,6 +32,15 @@ import {
   routeForEngineer,
   unassignedRequests,
 } from '../domain/dashboard';
+import {
+  type ConnectionDiagnostic,
+  clearSavedDay,
+  connectionDiagnostic,
+  recoverySessionExpired,
+  restoreDay,
+  saveDay,
+  startRecoverySession,
+} from '../domain/resilience';
 
 const SESSION_KEY = 'lct.dispatcher.session';
 const REBUILD_TIMEOUT_MS = 45_000;
@@ -50,7 +60,40 @@ interface RoutingBaseline {
 /** Owns authentication and the live Dashboard-to-backend state flow. */
 export function useDashboard() {
   const [token, setToken] = useState<string | null>(() => sessionStorage.getItem(SESSION_KEY));
-  const [snapshot, setSnapshot] = useState<DashboardSnapshot | null>(null);
+  const [recovered] = useState(() => restoreDay(sessionStorage, token !== null));
+  const [source, setSourceState] = useState<'live' | 'cached' | 'demo'>(
+    new URLSearchParams(window.location.search).get('demo') === '1'
+      ? 'demo'
+      : recovered
+        ? 'cached'
+        : 'live',
+  );
+  const sourceRef = useRef(source);
+  const setSource = useCallback((next: 'live' | 'cached' | 'demo') => {
+    sourceRef.current = next;
+    setSourceState(next);
+  }, []);
+  const [snapshot, setSnapshotState] = useState<DashboardSnapshot | null>(
+    source === 'demo' ? null : (recovered?.snapshot ?? null),
+  );
+  const snapshotRef = useRef(snapshot);
+  const [savedAt, setSavedAt] = useState<number | null>(recovered?.savedAt ?? null);
+  const [cacheAvailable, setCacheAvailable] = useState(recovered !== null);
+  const [diagnostic, setDiagnostic] = useState<ConnectionDiagnostic | null>(null);
+  const [operationWarning, setOperationWarning] = useState<string | null>(null);
+  const [scenarioId, setScenarioId] = useState('initial');
+  const setSnapshot = useCallback(
+    (next: DashboardSnapshot | null) => {
+      snapshotRef.current = next;
+      setSnapshotState(next);
+      if (next && sourceRef.current !== 'demo') {
+        setSource('live');
+        setSavedAt(Date.now());
+        setCacheAvailable(saveDay(sessionStorage, next));
+      }
+    },
+    [setSource],
+  );
   const [loading, setLoading] = useState(token !== null);
   const [error, setError] = useState<string | null>(null);
   const [focus, setFocus] = useState<DashboardFocus>({ engineerId: null, requestId: null });
@@ -82,17 +125,40 @@ export function useDashboard() {
     (reason: string) => {
       invalidateAsyncReads();
       sessionStorage.removeItem(SESSION_KEY);
+      clearSavedDay(sessionStorage);
+      setCacheAvailable(false);
+      setSavedAt(null);
+      setSource('live');
       setToken(null);
+      setRebuilding(false);
+      setUploadingData(false);
+      setAvailabilityPendingId(null);
       setSnapshot(null);
       setFocus({ engineerId: null, requestId: null });
       setLoading(false);
       setError(reason);
     },
-    [invalidateAsyncReads],
+    [invalidateAsyncReads, setSnapshot, setSource],
+  );
+
+  const reportFailure = useCallback(
+    (cause: unknown) => {
+      setDiagnostic(connectionDiagnostic(cause));
+      if (cause instanceof DashboardApiError && (cause.status === 401 || cause.status === 403)) {
+        handleSessionFailure('Доступ к рабочим данным закрыт. Войдите снова.');
+        return;
+      }
+      if (snapshotRef.current && sourceRef.current !== 'demo') setSource('cached');
+    },
+    [handleSessionFailure, setSource],
   );
 
   const refresh = useCallback(async () => {
-    if (!token || refreshInFlight.current) {
+    if (!token || sourceRef.current === 'demo' || refreshInFlight.current) {
+      return null;
+    }
+    if (recoverySessionExpired(sessionStorage)) {
+      handleSessionFailure('Сессия закончилась. Войдите снова.');
       return null;
     }
     const generation = readGeneration.current;
@@ -110,7 +176,8 @@ export function useDashboard() {
       if (generation !== readGeneration.current) {
         return null;
       }
-      if (cause instanceof DashboardApiError && cause.status === 401) {
+      reportFailure(cause);
+      if (cause instanceof DashboardApiError && (cause.status === 401 || cause.status === 403)) {
         handleSessionFailure('Сессия закончилась. Войдите снова.');
         return null;
       }
@@ -122,19 +189,19 @@ export function useDashboard() {
         setLoading(false);
       }
     }
-  }, [handleSessionFailure, token]);
+  }, [handleSessionFailure, token, reportFailure, setSnapshot]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
   useEffect(() => {
-    if (!token || rebuilding) {
+    if (!token || source === 'demo' || rebuilding) {
       return;
     }
     const interval = window.setInterval(() => void refresh(), 10_000);
     return () => window.clearInterval(interval);
-  }, [rebuilding, refresh, token]);
+  }, [rebuilding, refresh, token, source]);
 
   const engineers = useMemo(() => (snapshot ? engineerSummaries(snapshot) : []), [snapshot]);
   const unassigned = useMemo(() => (snapshot ? unassignedRequests(snapshot) : []), [snapshot]);
@@ -163,28 +230,40 @@ export function useDashboard() {
 
   const signIn = useCallback(
     async (email: string, password: string) => {
+      const generation = readGeneration.current;
       setLoading(true);
       setError(null);
       try {
         const session = await loginDispatcher(email, password);
+        if (generation !== readGeneration.current) return;
         invalidateAsyncReads();
         sessionStorage.setItem(SESSION_KEY, session.token);
+        startRecoverySession(sessionStorage, session.expiresAt);
+        setSource('live');
+        setSnapshot(null);
         setToken(session.token);
       } catch (cause) {
+        if (generation !== readGeneration.current) return;
+        reportFailure(cause);
         setError(errorMessage(cause));
         setLoading(false);
       }
     },
-    [invalidateAsyncReads],
+    [invalidateAsyncReads, setSnapshot, setSource, reportFailure],
   );
 
   const signOut = useCallback(async () => {
+    const remoteToken = sourceRef.current === 'demo' ? null : token;
     invalidateAsyncReads();
-    if (token) {
-      await signOutDispatcher(token).catch(() => undefined);
-    }
     sessionStorage.removeItem(SESSION_KEY);
+    clearSavedDay(sessionStorage);
+    setSource('live');
+    setSavedAt(null);
+    setCacheAvailable(false);
     setToken(null);
+    setRebuilding(false);
+    setUploadingData(false);
+    setAvailabilityPendingId(null);
     setSnapshot(null);
     setFocus({ engineerId: null, requestId: null });
     setPendingDelta(null);
@@ -192,7 +271,59 @@ export function useDashboard() {
     setPolicyComparison(null);
     setPolicyComparisonError(null);
     setError(null);
-  }, [invalidateAsyncReads, token]);
+    setOperationWarning(null);
+    if (remoteToken) await signOutDispatcher(remoteToken).catch(() => undefined);
+  }, [invalidateAsyncReads, token, setSnapshot, setSource]);
+
+  const selectDemoScenario = useCallback(
+    (id: string, policy: PolicyId = 'compact') => {
+      if (rebuilding || uploadingData) return;
+      const recorded = recordedScenario(id, policy);
+      const previous = sourceRef.current === 'demo' ? snapshotRef.current?.plan.plan : null;
+      invalidateAsyncReads();
+      setSource('demo');
+      setScenarioId(id);
+      setSnapshot(recorded.snapshot);
+      setPolicyComparison(recorded.comparison);
+      setLoading(false);
+      setError(null);
+      setPendingDelta(
+        previous && recorded.snapshot.plan.plan && id !== 'initial'
+          ? computePlanDelta(previous, recorded.snapshot.plan.plan, 0)
+          : null,
+      );
+      setBaseline(null);
+      setFocus({ engineerId: null, requestId: null });
+      pushEvent(
+        `Демо: ${demoScenarios.find((item) => item.id === id)?.title}. Записанный результат Router.`,
+      );
+    },
+    [invalidateAsyncReads, pushEvent, rebuilding, uploadingData, setSource, setSnapshot],
+  );
+
+  const leaveDemo = useCallback(() => {
+    invalidateAsyncReads();
+    const cached = restoreDay(sessionStorage, token !== null);
+    setSource(cached ? 'cached' : 'live');
+    snapshotRef.current = cached?.snapshot ?? null;
+    setSnapshotState(cached?.snapshot ?? null);
+    setPendingDelta(null);
+    setBaseline(null);
+    setFocus({ engineerId: null, requestId: null });
+    setEvents([]);
+    setLoading(token !== null);
+    void refresh();
+  }, [invalidateAsyncReads, refresh, setSource, token]);
+
+  const initialDemoApplied = useRef(false);
+  useEffect(() => {
+    if (initialDemoApplied.current) return;
+    initialDemoApplied.current = true;
+    if (new URLSearchParams(window.location.search).get('demo') === '1') {
+      selectDemoScenario('initial');
+    }
+    // Only an explicit initial URL chooses demo; later source changes belong to the presenter.
+  }, [selectDemoScenario]);
 
   const clearFocus = useCallback(() => {
     setFocus({ engineerId: null, requestId: null });
@@ -245,7 +376,13 @@ export function useDashboard() {
       reason: string,
       keepBaseline: boolean,
     ) => {
-      if (!token || !snapshot || rebuilding) {
+      if (
+        !token ||
+        sourceRef.current !== 'live' ||
+        !snapshot ||
+        rebuilding ||
+        operationWarning !== null
+      ) {
         return false;
       }
       const previous = snapshot;
@@ -255,6 +392,7 @@ export function useDashboard() {
       let expectedInputHash: string | null = null;
       let expectedContextVersion = previous.routerContextVersion;
       invalidateAsyncReads();
+      const generation = readGeneration.current;
       setRebuilding(true);
       setPendingDelta(null);
       setError(null);
@@ -270,9 +408,11 @@ export function useDashboard() {
         if (lunchesEnabled !== previous.lunchesEnabled) {
           expectedContextVersion = await setLunchesEnabled(token, lunchesEnabled);
         }
+        if (generation !== readGeneration.current) return false;
         if (nextPolicy !== previous.policyId) {
           expectedInputHash = await selectRoutingPolicy(token, nextPolicy);
         }
+        if (generation !== readGeneration.current) return false;
         const next = await waitForRebuild(token, {
           previousRevision,
           previousResultId,
@@ -281,6 +421,7 @@ export function useDashboard() {
           inputHash: expectedInputHash,
           routerContextVersion: expectedContextVersion,
         });
+        if (generation !== readGeneration.current) return false;
         setSnapshot(next);
         setFocus((current) => reconcileDashboardFocus(next, current));
         setPolicyComparison(null);
@@ -296,7 +437,12 @@ export function useDashboard() {
         pushEvent(`Применён план rev.${next.plan.plan?.revision ?? '—'} (${nextPolicy}).`);
         return true;
       } catch (cause) {
+        if (generation !== readGeneration.current) return false;
+        reportFailure(cause);
         setError(errorMessage(cause));
+        setOperationWarning(
+          'Результат изменения не подтверждён. Проверьте актуальный план перед повторным действием.',
+        );
         pushEvent(`Перестроение не завершено: ${errorMessage(cause)}`);
         await refresh();
         return false;
@@ -304,7 +450,17 @@ export function useDashboard() {
         setRebuilding(false);
       }
     },
-    [invalidateAsyncReads, pushEvent, rebuilding, refresh, snapshot, token],
+    [
+      invalidateAsyncReads,
+      pushEvent,
+      rebuilding,
+      refresh,
+      snapshot,
+      token,
+      reportFailure,
+      setSnapshot,
+      operationWarning,
+    ],
   );
 
   const applyRoutingSettings = useCallback(
@@ -355,26 +511,37 @@ export function useDashboard() {
 
   const setMode = useCallback(
     async (mode: 'auto' | 'manual') => {
-      if (!token) {
+      if (!token || sourceRef.current !== 'live') {
         return;
       }
       invalidateAsyncReads();
+      const generation = readGeneration.current;
       setError(null);
       try {
         await setDispatchMode(token, mode);
+        if (generation !== readGeneration.current) return;
         await refresh();
         pushEvent(
           mode === 'manual' ? 'Включён ручной режим.' : 'Восстановлен автоматический режим.',
         );
       } catch (cause) {
+        if (generation !== readGeneration.current) return;
+        reportFailure(cause);
+        setOperationWarning(
+          'Результат изменения режима не подтверждён. Проверьте состояние на сервере.',
+        );
         setError(errorMessage(cause));
       }
     },
-    [invalidateAsyncReads, pushEvent, refresh, token],
+    [invalidateAsyncReads, pushEvent, refresh, token, reportFailure],
   );
 
   const refreshPolicyComparison = useCallback(async () => {
-    if (!token || rebuilding || comparisonInFlight.current) {
+    if (sourceRef.current === 'demo') {
+      setPolicyComparison(recordedScenario(scenarioId, snapshotRef.current?.policyId).comparison);
+      return;
+    }
+    if (!token || sourceRef.current !== 'live' || rebuilding || comparisonInFlight.current) {
       return;
     }
     const generation = readGeneration.current;
@@ -392,7 +559,8 @@ export function useDashboard() {
       if (generation !== readGeneration.current || requestId !== comparisonRequestId.current) {
         return;
       }
-      if (cause instanceof DashboardApiError && cause.status === 401) {
+      reportFailure(cause);
+      if (cause instanceof DashboardApiError && (cause.status === 401 || cause.status === 403)) {
         handleSessionFailure('Сессия закончилась. Войдите снова.');
         return;
       }
@@ -403,11 +571,17 @@ export function useDashboard() {
         setPolicyComparisonLoading(false);
       }
     }
-  }, [handleSessionFailure, rebuilding, token]);
+  }, [handleSessionFailure, rebuilding, token, scenarioId, reportFailure]);
 
   const updateEngineerAvailability = useCallback(
     async (engineerId: string, availability: 'online' | 'offline') => {
-      if (!token || !snapshot || rebuilding) {
+      if (
+        !token ||
+        sourceRef.current !== 'live' ||
+        !snapshot ||
+        rebuilding ||
+        operationWarning !== null
+      ) {
         return;
       }
       const previous = snapshot;
@@ -415,6 +589,7 @@ export function useDashboard() {
       const previousRevision = previous.plan.plan?.revision ?? null;
       const solveStartedAtMs = performance.now();
       invalidateAsyncReads();
+      const generation = readGeneration.current;
       setAvailabilityPendingId(engineerId);
       setRebuilding(true);
       setPendingDelta(null);
@@ -427,6 +602,7 @@ export function useDashboard() {
       );
       try {
         const inputHash = await setEngineerAvailability(token, engineerId, availability);
+        if (generation !== readGeneration.current) return false;
         const next = await waitForRebuild(token, {
           previousRevision,
           previousResultId,
@@ -435,6 +611,7 @@ export function useDashboard() {
           inputHash,
           routerContextVersion: previous.routerContextVersion,
         });
+        if (generation !== readGeneration.current) return false;
         setSnapshot(next);
         setFocus((current) => reconcileDashboardFocus(next, current));
         setPolicyComparison(null);
@@ -451,33 +628,54 @@ export function useDashboard() {
           `${engineerName(next, engineerId)}: ${availability === 'online' ? 'на линии' : 'отключён'}, применён план rev.${next.plan.plan?.revision ?? '—'}.`,
         );
       } catch (cause) {
+        if (generation !== readGeneration.current) return;
+        reportFailure(cause);
         setError(errorMessage(cause));
         pushEvent(
           `Не удалось подтвердить перестроение после смены статуса: ${errorMessage(cause)}`,
         );
+        setOperationWarning('Результат изменения не подтверждён. Проверьте состояние на сервере.');
         await refresh();
       } finally {
         setAvailabilityPendingId(null);
         setRebuilding(false);
       }
     },
-    [invalidateAsyncReads, pushEvent, rebuilding, refresh, snapshot, token],
+    [
+      invalidateAsyncReads,
+      pushEvent,
+      rebuilding,
+      refresh,
+      snapshot,
+      token,
+      reportFailure,
+      setSnapshot,
+      operationWarning,
+    ],
   );
 
   const uploadDataset = useCallback(
     async (file: DataUploadFile): Promise<DataUploadSummary> => {
-      if (!token || uploadingData) {
+      if (!token || sourceRef.current !== 'live' || uploadingData) {
         throw new Error('Загрузка данных уже выполняется');
       }
       invalidateAsyncReads();
+      const generation = readGeneration.current;
       setUploadingData(true);
       setError(null);
       try {
         const summary = await uploadDataPackage(token, file);
+        if (generation !== readGeneration.current) return summary;
         try {
           const next = await loadDashboardSnapshot(token);
+          if (generation !== readGeneration.current) return summary;
           setSnapshot(next);
         } catch (refreshCause) {
+          if (generation !== readGeneration.current) return summary;
+          reportFailure(refreshCause);
+          setOperationWarning(
+            'Данные приняты сервером, но обновление экрана не подтверждено. Не отправляйте пакет повторно.',
+          );
           setError(`Данные приняты, но экран не обновился: ${errorMessage(refreshCause)}`);
         }
         setFocus({ engineerId: null, requestId: null });
@@ -489,17 +687,36 @@ export function useDashboard() {
         );
         return summary;
       } catch (cause) {
-        setError(errorMessage(cause));
+        if (generation === readGeneration.current) {
+          reportFailure(cause);
+          setOperationWarning(
+            'Результат загрузки не подтверждён. Проверьте список заявок перед повтором.',
+          );
+          setError(errorMessage(cause));
+        }
         throw cause;
       } finally {
         setUploadingData(false);
       }
     },
-    [invalidateAsyncReads, pushEvent, token, uploadingData],
+    [invalidateAsyncReads, pushEvent, token, uploadingData, reportFailure, setSnapshot],
   );
 
   return {
-    authenticated: token !== null,
+    authenticated: token !== null || source === 'demo',
+    source,
+    savedAt,
+    cacheAvailable,
+    diagnostic,
+    scenarioId,
+    operationWarning,
+    dismissOperationWarning: () => setOperationWarning(null),
+    selectDemoScenario,
+    leaveDemo,
+    demoScenarios,
+    writesDisabled: source !== 'live' || loading || operationWarning !== null,
+    busy: rebuilding || uploadingData,
+    isDemo: source === 'demo',
     loading,
     error,
     snapshot,

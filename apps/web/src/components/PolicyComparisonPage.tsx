@@ -3,6 +3,8 @@ import { POLICY_DESCRIPTIONS, POLICY_LABELS } from '../lib/reasons';
 import { formatClock, formatDurationMin, formatKm } from '../lib/time';
 
 interface PolicyComparisonPageProps {
+  readonly recorded?: boolean;
+  readonly readOnly?: boolean;
   readonly snapshot: DashboardSnapshot;
   readonly comparison: PolicyComparisonResponse | null;
   readonly loading: boolean;
@@ -12,6 +14,8 @@ interface PolicyComparisonPageProps {
 
 /** Renders a non-mutating comparison of every Router policy and the official FIFO baseline. */
 export function PolicyComparisonPage({
+  recorded = false,
+  readOnly = false,
   snapshot,
   comparison,
   loading,
@@ -39,10 +43,16 @@ export function PolicyComparisonPage({
           <button
             type="button"
             onClick={onRefresh}
-            disabled={loading}
+            disabled={loading || readOnly}
             className="rounded-full bg-bee px-4 py-2 text-sm font-semibold disabled:opacity-50"
           >
-            {loading ? 'Считаем шесть стратегий…' : comparison ? 'Пересчитать' : 'Сравнить'}
+            {recorded
+              ? 'Показать записанное сравнение'
+              : loading
+                ? 'Считаем шесть стратегий…'
+                : comparison
+                  ? 'Пересчитать'
+                  : 'Сравнить'}
           </button>
         </div>
 
@@ -63,7 +73,9 @@ export function PolicyComparisonPage({
 
         {!loading && !comparison && !error ? (
           <div className="mt-8 rounded-2xl border border-dashed border-line p-8 text-center text-sm text-muted">
-            Запустите сравнение. Активный план и выбранная политика при этом не изменятся.
+            {readOnly
+              ? 'Новое сравнение станет доступно после восстановления связи.'
+              : 'Запустите сравнение. Активный план и выбранная политика при этом не изменятся.'}
           </div>
         ) : null}
 
@@ -144,7 +156,11 @@ export function PolicyComparisonPage({
                         <td className="px-3 py-4">
                           {formatDurationMin(row.metrics.waitingTimeSec)}
                         </td>
-                        <td className="px-3 py-4">{Math.round(row.calculationMs)} мс</td>
+                        <td className="px-3 py-4">
+                          {recorded
+                            ? 'Запись · не замерено'
+                            : `${Math.round(row.calculationMs)} мс`}
+                        </td>
                       </tr>
                     );
                   })}

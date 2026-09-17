@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  DashboardApiError,
   loadDashboardSnapshot,
   loadPolicyComparison,
   selectRoutingPolicy,
@@ -7,6 +8,51 @@ import {
   setLunchesEnabled,
   uploadDataPackage,
 } from './client';
+
+describe('request failure metadata', () => {
+  it('bounds a stalled request without replaying it', async () => {
+    vi.useFakeTimers();
+    const fetcher = vi.fn(
+      (_url: string, init: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        }),
+    );
+    vi.stubGlobal('fetch', fetcher);
+    try {
+      const request = selectRoutingPolicy('test-session', 'compact');
+      const assertion = expect(request).rejects.toMatchObject({
+        status: 0,
+        path: '/api/v1/dispatch/policy',
+      });
+      await vi.advanceTimersByTimeAsync(12_000);
+      await assertion;
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('preserves status and trace ID for an HTTP failure', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ message: 'unavailable' }), {
+          status: 503,
+          headers: { 'x-request-id': 'trace-qa' },
+        }),
+      ),
+    );
+    await expect(selectRoutingPolicy('test-session', 'compact')).rejects.toMatchObject({
+      name: 'DashboardApiError',
+      status: 503,
+      requestId: 'trace-qa',
+      path: '/api/v1/dispatch/policy',
+    });
+    expect(new DashboardApiError('test', 401).status).toBe(401);
+  });
+});
 
 const request = {
   id: 'request-1',
