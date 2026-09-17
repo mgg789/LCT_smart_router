@@ -1,0 +1,5 @@
+# Root compose file so mgg-server-deploy (and SourceCraft CD) find the contour
+# without knowing about `infra/`. Paths inside the included file stay relative
+# to `infra/`, so `env_file: ../.env` still reads the repository-root environment.
+include:
+  - path: infra/docker-compose.yml

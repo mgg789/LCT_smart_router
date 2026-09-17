@@ -20,7 +20,9 @@ Integration API ─┘          │
 
 The dispatcher Dashboard lives in `apps/web` (`docs/web.md`). It reads sys views; it does
 not talk to Router or the database. In compose it is the `web` service on
-`http://127.0.0.1:5173`, proxying `/api` to `api`.
+`http://127.0.0.1:5173`, proxying `/api` to `api`. The public demo gate is
+`https://navix.droidje.com` (host nginx → that loopback port). Pipeline and
+deploy path: [ci.md](./ci.md).
 
 The System Layer owns business state, authorization, user operations, the applied working
 plan and its execution. It prepares the input for Router Core, accepts a current result and

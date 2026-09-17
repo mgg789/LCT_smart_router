@@ -37,8 +37,13 @@ curl localhost:8000/health/services
 ```
 
 Dispatcher dashboard: <http://127.0.0.1:5173> (nginx in the `web` service, `/api` to `api`).
+Public demo gate (after a `main` deploy): <https://navix.droidje.com>.
 Interactive API documentation: <http://localhost:8000/docs>.
 Machine-readable schema: <http://localhost:8000/docs/openapi.json>.
+
+CI/CD (SourceCraft checks on `dev`, compose deploy on `main`) is documented in
+[ci.md](./ci.md). The root `docker-compose.yml` includes this file so the MGG
+deploy skill finds the contour without a `-f infra/...` argument.
 
 `health/services` reports the real state of each integration. `router` pings Router
 Core, which the contour starts as its own service (port 8100, reads the published

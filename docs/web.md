@@ -33,7 +33,8 @@ Docker image serves the same origin through nginx → `api:8000`.
 
 `pnpm compose:up` starts `web` with postgres, router and api. Open
 <http://127.0.0.1:5173>. The container talks to `api` on the compose network; no
-separate frontend env is required.
+separate frontend env is required. After a `main` deploy the same stack is the
+public gate at <https://navix.droidje.com> ([ci.md](./ci.md)).
 
 ## Missing contracts the UI already expects
 
