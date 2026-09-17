@@ -155,8 +155,9 @@ inside a container.
 `pnpm-lock.yaml` disagree. Run `pnpm install` on the host and commit the updated
 lockfile; do not relax the flag, its whole purpose is to fail on drift.
 
-**Port already in use.** Override `API_PORT` or `POSTGRES_PORT` in `.env`. Postgres is
-published on `127.0.0.1` only.
+**Port already in use.** Override `API_PORT`, `ROUTER_PORT`, or `POSTGRES_PORT` in
+`.env`. Postgres and the router stay on `127.0.0.1`. On the MGG demo host the
+live remap is `API_PORT=127.0.0.1:18080` and `ROUTER_PORT=18100` (`docs/ci.md`).
 
 **Health endpoints answer but a feature does not exist.** Check the table in
 [architecture.md](./architecture.md) section 2 — several blocks are planned and not yet
