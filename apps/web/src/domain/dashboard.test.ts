@@ -8,6 +8,7 @@ import {
 import {
   computePlanDelta,
   engineerSummaries,
+  regionalDistanceKm,
   equipmentLoadout,
   isExpectedRebuildApplied,
   plannedActivity,
@@ -47,6 +48,7 @@ describe('dev dashboard fixture', () => {
     expect(sokolov?.engineerId).toBe('eng-sokolov');
     expect(sokolov?.assignedCount).toBe(6);
     expect(sokolov?.distanceKm).toBe(28);
+    expect(regionalDistanceKm(engineerSummaries(snapshot))).toBeGreaterThan(0);
   });
 
   it('preserves Router wait stops and reports waiting as planned activity', () => {

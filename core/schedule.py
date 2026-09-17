@@ -275,27 +275,103 @@ def fixed_order(
     return route
 
 
-def unassigned_reason(snapshot: RouterTaskSnapshot, request: Request) -> Reason:
-    """State only static impossibility proven by data, otherwise report search outcome."""
+def _busy_engineer_ids(routes: list[EngineerRoute]) -> set[str]:
+    """Engineers who already have at least one job on the assembled routes."""
+    return {route.engineer_id for route in routes if route.metrics.assigned_count > 0}
+
+
+def _job_context(
+    routes: list[EngineerRoute], engineer_id: str, stop_id: str
+) -> tuple[EngineerRoute | None, RouteStop | None, str | None, int | None, float | None]:
+    """Look up predecessor job and inbound travel for one assigned stop."""
+    route = next((item for item in routes if item.engineer_id == engineer_id), None)
+    if route is None:
+        return None, None, None, None, None
+    stop = next((item for item in route.stops if item.stop_id == stop_id), None)
+    if stop is None:
+        return route, None, None, None, None
+    predecessor = None
+    for prior in route.stops:
+        if prior.stop_id == stop.stop_id:
+            break
+        if prior.kind == "job":
+            predecessor = prior.request_id
+    target = stop.stop_id
+    stop_index = route.stops.index(stop)
+    if stop_index and route.stops[stop_index - 1].kind == "wait":
+        target = route.stops[stop_index - 1].stop_id
+    leg = next((item for item in route.legs if item.to_stop_id == target), None)
+    return (
+        route,
+        stop,
+        predecessor,
+        leg.travel_time_sec if leg else None,
+        leg.distance_km if leg else None,
+    )
+
+
+def _candidate_pool(snapshot: RouterTaskSnapshot, request: Request, routes: list[EngineerRoute]):
+    """Split regional candidates into skilled / idle sets for explanation facts."""
+    busy = _busy_engineer_ids(routes)
     regional = [
         engineer
         for engineer in snapshot.engineers
         if request.region is None or engineer.region is None or request.region == engineer.region
     ]
+    skilled = [engineer for engineer in regional if request.required_skill in engineer.skills]
+    transport = [
+        engineer
+        for engineer in skilled
+        if request.required_transport in (None, engineer.transport_type)
+    ]
+    idle_regional = [engineer for engineer in regional if engineer.engineer_id not in busy]
+    idle_skilled = [engineer for engineer in skilled if engineer.engineer_id not in busy]
+    return regional, skilled, transport, idle_regional, idle_skilled
+
+
+def unassigned_reason(
+    snapshot: RouterTaskSnapshot, request: Request, routes: list[EngineerRoute] | None = None
+) -> Reason:
+    """State only static impossibility proven by data, otherwise report search outcome."""
+    pool_routes = routes or []
+    regional, skilled, transport, idle_regional, idle_skilled = _candidate_pool(
+        snapshot, request, pool_routes
+    )
+    shared = {
+        "policy_id": snapshot.policy.policy_id,
+        "required_skill": request.required_skill,
+        "required_transport": request.required_transport,
+        "request_region": request.region,
+        "service_duration_sec": request.service_duration_sec,
+        "window_start_at": request.window_start_at,
+        "window_end_at": request.window_end_at,
+        "regional_count": len(regional),
+        "skilled_count": len(skilled),
+        "idle_regional_count": len(idle_regional),
+        "idle_skilled_count": len(idle_skilled),
+        "idle_skilled_ids": ",".join(engineer.engineer_id for engineer in idle_skilled[:4]),
+        "idle_regional_ids": ",".join(engineer.engineer_id for engineer in idle_regional[:4]),
+    }
     if not regional:
         return reason(
             "NO_REGION_MATCH",
             "No engineer belongs to the request region.",
             region=request.region,
+            **shared,
         )
-    skilled = [e for e in regional if request.required_skill in e.skills]
-    transport = [e for e in skilled if request.required_transport in (None, e.transport_type)]
     if not skilled:
         return reason(
-            "NO_SKILL_MATCH", "No engineer has the required skill.", skill=request.required_skill
+            "NO_SKILL_MATCH",
+            "No engineer has the required skill.",
+            skill=request.required_skill,
+            **shared,
         )
     if not transport:
-        return reason("NO_TRANSPORT_MATCH", "No skilled engineer has the required transport.")
+        return reason(
+            "NO_TRANSPORT_MATCH",
+            "No skilled engineer has the required transport.",
+            **shared,
+        )
     equipped = [
         engineer
         for engineer in transport
@@ -307,13 +383,60 @@ def unassigned_reason(snapshot: RouterTaskSnapshot, request: Request) -> Reason:
             "NO_EQUIPMENT_STOCK",
             "No compatible engineer carries the required equipment.",
             equipment_type=request.required_equipment,
+            **shared,
         )
-    if not any(release_at(snapshot, e) is not None for e in equipped):
+    if not any(release_at(snapshot, engineer) is not None for engineer in equipped):
         return reason(
-            "NO_AVAILABLE_ENGINEER", "No compatible engineer has known usable availability."
+            "NO_AVAILABLE_ENGINEER",
+            "No compatible engineer has known usable availability.",
+            **shared,
         )
     return reason(
-        "NO_FEASIBLE_ASSIGNMENT_FOUND", "The bounded search found no assignment.", outcome=True
+        "NO_FEASIBLE_ASSIGNMENT_FOUND",
+        "The bounded search found no assignment.",
+        outcome=True,
+        **shared,
+    )
+
+
+def assigned_reason(
+    snapshot: RouterTaskSnapshot,
+    request: Request,
+    engineer: Engineer,
+    routes: list[EngineerRoute],
+    stop_id: str,
+) -> Reason:
+    """Record the facts that made this engineer the chosen assignment."""
+    route, stop, predecessor, travel_time, distance = _job_context(
+        routes, engineer.engineer_id, stop_id
+    )
+    return reason(
+        "CONSTRAINTS_SATISFIED",
+        "Skill, transport and schedule constraints verified.",
+        policy_id=snapshot.policy.policy_id,
+        required_skill=request.required_skill,
+        required_transport=request.required_transport,
+        required_equipment=request.required_equipment,
+        engineer_skills=",".join(engineer.skills),
+        transport_type=engineer.transport_type,
+        engineer_region=engineer.region,
+        request_region=request.region,
+        predecessor_request_id=predecessor,
+        travel_time_sec=travel_time,
+        distance_km=None if distance is None else round(distance, 3),
+        arrival_at=None if stop is None else stop.arrival_at,
+        start_at=None if stop is None else stop.start_at,
+        window_start_at=request.window_start_at,
+        window_end_at=request.window_end_at,
+        window_end_margin_sec=None if stop is None else request.window_end_at - stop.start_at,
+        window_start_offset_sec=None if stop is None else stop.start_at - request.window_start_at,
+        assigned_count=None if route is None else route.metrics.assigned_count,
+        service_duration_sec=request.service_duration_sec,
+        equipment_stock=(
+            engineer.equipment_stock.quantity(request.required_equipment)
+            if request.required_equipment is not None
+            else None
+        ),
     )
 
 
@@ -339,23 +462,9 @@ def assemble_plan(
                 engineer_id=owner[0] if owner else None,
                 stop_id=owner[1] if owner else None,
                 reasons=[
-                    (
-                        reason(
-                            "CONSTRAINTS_SATISFIED",
-                            "Skill, transport, equipment and schedule constraints verified.",
-                            required_equipment=request.required_equipment,
-                            equipment_stock=engineers[owner[0]].equipment_stock.quantity(
-                                request.required_equipment
-                            ),
-                        )
-                        if request.required_equipment is not None
-                        else reason(
-                            "CONSTRAINTS_SATISFIED",
-                            "Skill, transport and schedule constraints verified.",
-                        )
-                    )
+                    assigned_reason(snapshot, request, engineers[owner[0]], routes, owner[1])
                     if owner
-                    else unassigned_reason(snapshot, request)
+                    else unassigned_reason(snapshot, request, routes)
                 ],
             )
         )

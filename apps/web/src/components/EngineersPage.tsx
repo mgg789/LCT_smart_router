@@ -1,6 +1,6 @@
 import type { DashboardSnapshot, EquipmentType } from '../api/types';
 import { equipmentLoadout } from '../domain/dashboard';
-import { initials } from '../lib/reasons';
+import { initials, skillLabel } from '../lib/reasons';
 import { formatClock } from '../lib/time';
 
 interface EngineersPageProps {
@@ -114,7 +114,7 @@ export function EngineersPage({
                             key={skill}
                             className="rounded-full bg-canvas px-2.5 py-1 text-[12px]"
                           >
-                            {skill}
+                            {skillLabel(skill)}
                           </span>
                         ))}
                       </div>
