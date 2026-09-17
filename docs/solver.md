@@ -1,236 +1,213 @@
-# Solver — computation core
+# Solver — расчётное ядро
 
-## Current Router V2 (2026-09-17)
+## Текущий Router V2 (2026-09-17)
 
-The new implementation lives in root `core/` by the owner's instruction (D-22).
-It follows the v14 `RouterTaskSnapshot` / `RouterResult` contract rather than the
-legacy contract below. Runtime, Engine and geographic preparation belong to this
-module; System Layer is integrated through the ROUTER-gateway HTTP client
-(`docs/api.md` section 10).
+Актуальная реализация живёт в корневом `core/` по решению владельца (D-22).
+Она следует контракту v14 `RouterTaskSnapshot` / `RouterResult`, а не legacy-контракту
+ниже. Runtime, Engine и подготовка географии принадлежат этому модулю; System Layer
+интегрирован через HTTP-клиент ROUTER-gateway (`docs/api.md` §10).
 
-- Strict Unix-second inputs and result validation; exact FIFO baseline.
-- OR-Tools joint job/lunch model, open routes and five versioned policy presets:
-  `fast`, `compact`, `sla`, `balanced` and `eco`. Hard constraints are shared;
-  their resource/SLA-risk ordering is compiled from the catalog. The default
-  policy is `compact` since the QA decisions (`context/50`) — scenario snapshots
-  and goldens are built on it.
-- Explicit request/engineer region identity. A request can only be assigned to an
-  engineer from the same declared region; omitted regions remain compatible only for
-  legacy snapshots. Multi-region snapshots therefore cannot create cross-region work.
-- Optional lunch inputs use 45 minutes inside the local 11:20–15:00 window. The bounded
-  job-coverage search runs without optional lunch nodes and then projects the same
-  assignments into the lunch-aware schedule. This removes the observed artefact where
-  adding an optional lunch changed the heuristic trajectory and accidentally assigned
-  more work. A required lunch remains a hard feasibility condition.
-- Directed transport graph, path/matrix cache, OSRM adapter, address candidates and GeoJSON.
-- Optional 2GIS preparation adapter for current/statistical car traffic and separate
-  walk, bike and schedule-aware public-transport matrix profiles; live HTTP stays
-  outside Engine and every response is available through a versioned offline cache.
-- Autonomous process-isolated Runtime with exact publication integrity checks, durable
-  Router technical settings **with durable idempotency receipts** (accepted operations
-  survive a restart in the same atomic document), file/PostgreSQL adapters and a
-  private API.
-- Eight-field technical revision (D-22 implementation of `context/50`):
-  `lunches_enabled` (default **false**), the two revalidation tolerances,
-  `travel_time_mode` (`graph_with_access_buffer` adds `access_buffer_sec` to graph
-  durations; `fixed_normative` prices every non-zero leg at `fixed_travel_time_sec`),
-  `early_finish_replan_threshold_sec` and `task_overrun_tolerance_sec`. The
-  `TechnicalTravel` wrapper (core/geo.py `configure_travel`) applies the timing policy
-  on every calculation path and derives its version from `base graph version + timing
-  configuration`. The last two thresholds are also read by sys to classify execution
-  variance.
-- `position_observed_at` removed from `Engineer` and the snapshot schema: sys anchors
-  the remaining route at the active task's location with `available_from`; there is
-  no telemetry input.
-- Official acceptance: East baseline 36/66 (urgent 2/13) vs Router 64/66 (12/13);
-  South-central baseline 33/56 (2/16) vs Router 51/56 (16/16) under the pinned
-  golden profiles (compact, aligned work-norm durations). Southeast is a third
-  complete scenario (`core/scenarios/southeast-v1`: 83 requests, 12 engineers,
-  31 urgent, includes out-of-MKAD Kashira/Stupino) solvable under the same rules.
-- All three regions run as one 205-request, 35-engineer snapshot with disconnected
-  graph components (East + South-central 122/23 is also pinned). The acceptance test
-  proves that no cross-zone assignment is produced. `python -m core.prepare_official
-  --region <name>` regenerates either centroid fixture with source-hash verification.
-- Structured explanation evidence is part of every ready result for the UI and an
-  explanation-only LLM: selected engineer facts, predecessor travel, window margin and
-  all candidate blockers.
-- Five live-event acceptance scenarios: normal/urgent request, engineer offline,
-  two simultaneous 15-minute stops and a geographic 3x traffic multiplier.
-- Every result leg identifies its fidelity: `approximate`, `road_matrix`, `route_api`
-  or `traffic_api`. Distance and duration always come from the same quote; a matrix does
-  not pretend to provide a road polyline. Car quotes from a non-traffic source receive a
-  deterministic, versioned Moscow radial forecast factor based on time band, travel
-  direction and distance from the centre. OR-Tools uses the snapshot planning-time band
-  while exploring its static matrix; every extracted candidate is then scheduled and
-  validated with the planned departure time of each leg. It is a forecast, not live traffic.
-- Tests for hard constraints, stable replanning, event recovery, golden output hashes,
-  obsolete generations and provider boundaries.
+- Строгая валидация входов/результатов в целых секундах Unix; точный FIFO-baseline.
+- OR-Tools-модель «заявки + обеды», открытые маршруты и пять версионируемых политик:
+  `fast`, `compact`, `sla`, `balanced`, `eco`. Жёсткие ограничения общие; порядок
+  ресурсных/SLA-целей компилируется из каталога. Политика по умолчанию — `compact`
+  с решений QA (`context/50`); на ней собраны сценарии и goldens.
+- Ориентированный транспортный граф, кэш путей/матриц, OSRM-адаптер, кандидаты адресов
+  и GeoJSON.
+- Опциональный адаптер подготовки 2GIS: текущий/статистический автомобильный трафик
+  и отдельные профили матриц для пешехода, велосипеда и расписаний общественного
+  транспорта; живой HTTP остаётся вне Engine, каждый ответ доступен через версионируемый
+  офлайн-кэш.
+- Автономный процессно-изолированный Runtime с точными проверками целостности
+  публикаций, durable-технастройками **с durable-квитанциями операций** (принятые
+  операции переживают рестарт в том же атомарном документе), файловым/PostgreSQL
+  адаптерами и приватным API.
+- Восьмиполевая техническая ревизия (реализация D-22 поверх `context/50`):
+  `lunches_enabled` (по умолчанию **false**), два допуска revalidation,
+  `travel_time_mode` (`graph_with_access_buffer` добавляет `access_buffer_sec` к
+  времени графа; `fixed_normative` оценивает любое ненулевое плечо в
+  `fixed_travel_time_sec`), `early_finish_replan_threshold_sec` и
+  `task_overrun_tolerance_sec`. Обёртка `TechnicalTravel` (core/geo.py,
+  `configure_travel`) применяет тайминг-политику на каждом пути расчёта и выводит свою
+  версию из «версия графа + конфигурация тайминга». Последние два порога читает sys
+  для классификации отклонений исполнения.
+- `position_observed_at` удалён из `Engineer` и схемы снимка: sys якорит остаток
+  маршрута в точке активной задачи с `available_from`; телеметрического входа нет.
+- Официальная приёмка: Восток — baseline 36/66 (срочных 2/13) против Router 64/66
+  (12/13); Юг-Центр — baseline 33/56 (2/16) против Router 50/56 (16/16) под
+  закреплёнными golden-профилями (compact, длительности по нормам работ). Юго-восток —
+  третий полный сценарий (`core/scenarios/southeast-v1`: 83 заявки, 12 инженеров,
+  31 срочных, включает Каширу и Ступино за МКАД), решается по тем же правилам.
+- Все три региона решаются одним снимком 205 заявок / 35 инженеров с несвязными
+  компонентами графа (Восток + Юг-Центр 122/23 тоже закреплены). Acceptance-тест
+  доказывает отсутствие межзональных назначений. `python -m core.prepare_official
+  --region <имя>` пересобирает любой центроидный фикстур-набор с проверкой хэшей
+  источников.
+- Структурированная evidence — часть каждого готового результата для UI и
+  explanation-only LLM: факты выбранных инженеров, дорога от предшественника, запас
+  по окну и все блокировки кандидатов.
+- Пять acceptance-сценариев живых событий: обычная/срочная заявка, инженер offline,
+  две одновременные техостановки по 15 минут и географический множитель пробок 3x.
+- Тесты жёстких ограничений, стабильного перепланирования, восстановления после
+  событий, golden-хэшей, устаревших поколений и границ провайдеров.
 
-See [core/README.md](../core/README.md), [api.md](./api.md) and [data.md](./data.md)
-for setup, API/view/hash contracts, geographic
-resource formats and explicit V2 limits. The official East scenario uses versioned
-synthetic operating assumptions plus cached Nominatim/OSRM preparation; it does not
-claim live traffic or production map deployment. South-central and Southeast use
-declared district-centroid projections and an approximate matrix until accepted
-provider data is prepared. `prepare-2gis` is separately covered
-by controlled provider tests; no real account/key acceptance run has been performed.
-The sys database view is exercised by integration tests; the frontend contour is
-being built in parallel on `feat/web-dashboard-dev`. The previous prototype files
-are unchanged.
+См. [core/README.md](../core/README.md), [api.md](./api.md) и [data.md](./data.md) —
+запуск, контракты API/представления/hash, форматы гео-ресурсов и явные пределы V2.
+Восточный сценарий использует версионируемые синтетические операционные допущения
+и кэшированную подготовку Nominatim/OSRM; живой трафик и продакшен-карта не заявляются.
+Юг-Центр и Юго-восток используют задекларированные проекции по центроидам районов
+и аппроксимированную матрицу до подготовки принятых провайдерских данных.
+`prepare-2gis` покрыт отдельными контролируемыми провайдерскими тестами; реальный
+acceptance-прогон с аккаунтом/ключом не выполнялся. Представление БД sys покрыто
+интеграционными тестами; фронтовый контур строится параллельно на
+`feat/web-dashboard-dev`. Файлы прежнего прототипа не менялись.
 
-## Historical day-0 prototype
+## Исторический прототип day-0
 
-> Status: **legacy, frozen 2026-09-15** — the day-0 prototype moved from
-> `core/` (repo root) to `context/legacy_code/core/` (backup, D-19 in
-> `context/29`); paths below are historical. Target home stays `apps/solver`
-> (D-18) when the monorepo skeleton lands, contracts unchanged.
-> Docs live here per AGENTS.md §8.
+> Статус: **legacy, заморожен 2026-09-15** — прототип day-0 переехал из `core/`
+> (корень репо) в `context/legacy_code/core/` (бэкап, D-19 в `context/29`); пути ниже
+> исторические. Целевой дом — `apps/solver` (D-18) при появлении скелета монорепо,
+> контракты без изменений. Документация живёт здесь по AGENTS.md §8.
 
-## What it does
+## Что он делает
 
-Static daily plan: `SolverInput` JSON → `PlanSolution` JSON (both defined in
-`context/14` §3) on Google OR-Tools Routing (GLS). Covers case items 1–3 and
-5 of the Beeline Business ТЗ (qualification/availability distribution, time
-windows, transport+equipment verification, travel/SLA objective, structured
-reasons). Re-planning (case item 4), lunch breaks and the balance objective
-in the cost function are **not** in the prototype yet — see "Next steps".
+Статичный дневной план: `SolverInput` JSON → `PlanSolution` JSON (оба определены в
+`context/14` §3) на Google OR-Tools Routing (GLS). Покрывает пункты кейса 1–3 и 5
+(распределение по квалификации/доступности, временные окна, проверка
+транспорт+оборудование, цель «дорога/SLA», структурированные причины).
+Перепланирование (пункт 4 кейса), обеды и баланс-цель в стоимости — **в прототип
+не вошли** — см. «Next steps».
 
-## Module layout (AGENTS.md §9.2)
+## Раскладка модулей (AGENTS.md §9.2)
 
-| Module | Responsibility |
+| Модуль | Ответственность |
 |---|---|
-| `core/types.py` | JSON contract layer: `SolverInput` / `PlanSolution` dataclasses, "HH:MM" ↔ minutes parsing |
-| `core/matrix.py` | travel-time matrix backend: offline haversine × road factor × hour coefficient (D-7); OSRM cache is a future drop-in (D-5 unchanged) |
-| `core/model.py` | compatibility prefilter + OR-Tools routing model + route extraction |
-| `core/reasons.py` | rule-based explanation factors (D-3, context/11 §3) |
-| `core/metrics.py` | plan metrics object (context/14 §4 subset) |
-| `core/gen.py` | seeded dataset generator: `mini` (5×10, feasible) and `full` (10×80 per context/14 §5.1) |
-| `core/solve.py` | `solve_task()` composition + CLI |
-| `core/studio.py` + `core/studio.html` | local interactive playground: map UI to add/cancel requests and watch replans (dev tool, not the product API) |
+| `core/types.py` | Слой JSON-контрактов: `SolverInput` / `PlanSolution`, парсинг «HH:MM» ↔ минуты |
+| `core/matrix.py` | Бэкенд матрицы времён: офлайн haversine × дорожный коэффициент × коэффициент часа (D-7); OSRM-кэш — будущий drop-in (D-5 без изменений) |
+| `core/model.py` | префильтр совместимости + OR-Tools-модель + извлечение маршрутов |
+| `core/reasons.py` | rule-based факторы объяснений (D-3, context/11 §3) |
+| `core/metrics.py` | объект метрик плана (подмножество context/14 §4) |
+| `core/gen.py` | сеяный генератор датасетов: `mini` (5×10, выполнимо) и `full` (10×80 по context/14 §5.1) |
+| `core/solve.py` | композиция `solve_task()` + CLI |
+| `core/studio.py` + `core/studio.html` | локальная интерактивная студия: добавление/отмена заявок на карте с репланами (dev-инструмент, не продуктовый API) |
 
-## Replanning (warm start, D-4)
+## Перепланирование (warm start, D-4)
 
-`solve_task(..., previous_plan=plan)` re-plans the day: the previous plan's
-routes seed the search via `ReadAssignmentFromRoutes` (new requests start
-inactive and are inserted around the preserved routes), and the metrics gain
-`moves_vs_prev`:
+`solve_task(..., previous_plan=plan)` перепланирует день: маршруты прошлого плана
+сеют поиск через `ReadAssignmentFromRoutes` (новые заявки стартуют неактивными и
+вставляются вокруг сохранённых), метрики получают `moves_vs_prev`:
 
-- `reassigned` — the engineer changed for a request present in both plans;
-- `shifted` — same engineer, eta drifted ≥ 5 min (`SHIFTED_ETA_MIN`).
+- `reassigned` — инженер сменился у заявки, присутствующей в обоих планах;
+- `shifted` — инженер тот же, ETA уехала ≥ 5 мин (`SHIFTED_ETA_MIN`).
 
-`SolveOutput.warm_started` reports whether the seed was accepted; an
-infeasible seed (e.g. a request became unservable) silently falls back to a
-cold start. Gotcha: `ReadAssignmentFromRoutes` speaks in **internal manager
-indices**, not node numbers — the multi-depot manager shifts regular nodes
-down (`NodeToIndex` must be applied).
+`SolveOutput.warm_started` сообщает, принят ли seed; невыполнимый seed (например,
+заявка стала необслуживаемой) тихо падает в холодный старт. Ловушка:
+`ReadAssignmentFromRoutes` говорит на **внутренних индексах менеджера**, а не номерах
+узлов — multi-depot-менеджер сдвигает обычные узлы (нужен `NodeToIndex`).
 
-**Not in yet** (documented next steps): the explicit stability penalty
-(`w_stab × moved + shifted`) and `fix` pinning — warm start alone keeps the
-plan recognizable but GLS still wanders within the budget.
+**Ещё не вошло** (задокументированные next steps): явный штраф стабильности
+(`w_stab × moved + shifted`) и пиннинг `fix` — один warm start держит план
+узнаваемым, но GLS всё ещё блуждает в рамках бюджета.
 
-## Studio (local testing)
+## Студия (локальное тестирование)
 
 ```bash
 python -m core.studio --scenario full --seed 42 --port 8017
 # → http://127.0.0.1:8017
 ```
 
-Single-page UI (MapLibre GL — the product engine per D-16 — with keyless
-OSM raster tiles): click the map to drop a new
-work order (work type, window, strict/VIP), cancel requests, what-if weight
-presets, day reset. Every mutation warm-starts the solver and the UI shows
-the diff chips, the Gantt timeline (wait hatched), engineer workload bars
-and the structured reasons panel per request. Tiles need internet; this is a
-dev tool — the product API is `apps/api` (context/09 §3).
+Одностраничный UI (MapLibre GL — продуктовый движок по D-16 — с безключевыми
+OSM-тайлами): клик по карте добавляет заявку (тип работ, окно, strict/VIP), отмена
+заявок, what-if-пресеты весов, сброс дня. Каждая мутация репланит с warm start; UI
+показывает diff-чипы, Gantt-таймлайн (ожидание — штриховка), бары загрузки инженеров
+и панель структурированных причин по заявке. Тайлы требуют интернет; это dev-инструмент
+— продуктовый API в `apps/api` (context/09 §3).
 
-## Model
+## Модель
 
-**Nodes/vehicles.** Each engineer is one vehicle with a private start and end
-depot ("engineer from home" = own depot, never shared). Request nodes are
-added in id-sorted order — determinism starts at node construction.
+**Узлы/транспорт.** Каждый инженер — одна машина с приватным стартом и концом
+(«инженер от дома» = свой депо, никогда общий). Узлы заявок добавляются в порядке
+id — детерминизм начинается с построения узлов.
 
-**Time dimension.** Integer seconds inside the model (AGENTS.md §9.2), local
-city time, no timezone objects anywhere. Transit = travel + service at the
-origin node; slack = waiting, capped at 240 min (the context/27 §3 snippet's
-60 min would make requests with longer waits unassignable).
+**Время.** Целые секунды внутри модели (AGENTS.md §9.2), локальное городское время,
+без timezone-объектов. Transit = дорога + сервис в узле-источнике; slack = ожидание,
+потолок 240 мин (60 мин из сниппета context/27 §3 сделали бы невыполнимыми заявки
+с бо́льшими ожиданиями).
 
-**Windows.** Service must *start* inside the window; `done_by = eta + service`
-may run past the window close. Lower bound is always hard. Upper bound:
-hard for `window_strict` or `priority == "vip"`, otherwise soft with a
-per-minute penalty of `weights.sla` (linear; the context/04 §4 formula is
-quadratic — accepted simplification, listed below).
+**Окна.** Сервис должен *начаться* внутри окна; `done_by = eta + service` может
+выйти за закрытие окна. Нижняя граница всегда жёсткая. Верхняя: жёсткая для
+`window_strict` или `priority == "vip"`, иначе мягкая со штрафом `weights.sla` за
+минуту (линейно; формула context/04 §4 квадратичная — принятое упрощение, отмечено
+ниже).
 
-**Shifts.** Departure fixed at `shift[0]`, return to end depot no later than
-`shift[1]` (end-node cumul upper bound).
+**Смены.** Выезд фиксирован в `shift[0]`, возврат в конечный депо не позже `shift[1]`
+(верхняя граница end-node cumul).
 
-**Compatibility.** `prefilter()` assigns each request its candidate engineer
-list: skills ⊇ required, equipment counts covered, vehicle class allowed
-(`any` wildcard), window intersecting the shift. Candidates become
-`VehicleVar.SetValues([vehicles…] + [-1])` — the 9.15 SWIG wrapper rejects
-Python sequences in `SetAllowedVehiclesForIndex`, and `-1` preserves the
-drop option. The same candidate lists feed the reasons layer.
+**Совместимость.** `prefilter()` назначает каждой заявке список кандидатов: навыки ⊇
+требуемых, оборудование покрыто, класс машины разрешён (wildcard `any`), окно
+пересекается со сменой. Кандидаты становятся
+`VehicleVar.SetValues([vehicles…] + [-1])` — SWIG-обёртка 9.15 отвергает python-списки
+в `SetAllowedVehiclesForIndex`, а `-1` сохраняет опцию сброса. Те же списки кормят
+слой причин.
 
-**Objective (D-2 lexicographic via weights, context/04 §4).**
+**Цель (D-2 лексикография через веса, context/04 §4).**
 
-| Term | Penalty | Mechanism |
+| Слагаемое | Штраф | Механизм |
 |---|---|---|
-| unassigned request | 1 000 000 | disjunction penalty; **0** when nobody can ever serve it (free drop, no phantom cost) |
-| late service start | `weights.sla` / minute | soft upper bound on the time cumul |
-| travel | 1 / minute | arc cost (seconds), `weights.travel` implied |
+| неназначенная заявка | 1 000 000 | штраф disjunction; **0**, когда обслужить её не может никто (свободный сброс без фантомной стоимости) |
+| поздний старт сервиса | `weights.sla` / минута | мягкая верхняя граница на time cumul |
+| дорога | 1 / минута | стоимость дуги (секунды), `weights.travel` подразумевается |
 
-The `balance` weight is not applied in the cost yet (balance is measured in
-metrics only); overload and quadratic lateness shaping are next steps.
+Вес `balance` в стоимость пока не входит (баланс меряется только в метриках);
+перегрузка и квадратичное формирование опозданий — следующие шаги.
 
-**Search.** `PARALLEL_CHEAPEST_INSERTION` + `GUIDED_LOCAL_SEARCH`, default
-budget 1500 ms wall clock (context/07 §5). `solution_limit` gives a
-deterministic stop for golden runs. Empirically plans repeat run-to-run even
-under the pure time limit, but only `solution_limit` is *guaranteed* — demos
-and tests must pin it.
+**Поиск.** `PARALLEL_CHEAPEST_INSERTION` + `GUIDED_LOCAL_SEARCH`, бюджет по умолчанию
+1500 мс настенных часов (context/07 §5). `solution_limit` даёт детерминированную
+остановку для golden-прогонов. Эмпирически планы повторяются от запуска к запуску даже
+на чистом time limit, но гарантирован только `solution_limit` — демо и тесты обязаны
+его пинить.
 
-## Reasons (context/11 §3, D-3)
+## Причины (context/11 §3, D-3)
 
-Per request, structured JSON — never LLM, never hand-written:
+По заявке — структурированный JSON, никогда LLM и никогда рукописный:
 
-- `assignment.factors` in importance order: `skill_match`, `equipment_ok`,
-  `sla_margin`, `window_tight`, `travel_delta`, `load_balance` — each
-  `{code, ok, value, detail}`;
-- `assignment.alternatives` (up to 2): feasible engineers with travel-only
-  insertion `cost_delta`, or blocked ones with `why_not` codes
+- `assignment.factors` по важности: `skill_match`, `equipment_ok`, `sla_margin`,
+  `window_tight`, `travel_delta`, `load_balance` — каждый `{code, ok, value, detail}`;
+- `assignment.alternatives` (до 2): выполнимые инженеры с cost_delta только по дороге
+  или заблокированные с кодами `why_not`
   (`skill_missing` / `equipment_missing` / `vehicle_class` / `shift_window`);
-- `sequence`: adjacent-swap deltas for the visit (travel-only);
-- `unassigned.why`: `no_candidate: <label>` when prefilter found nobody,
-  `window_conflict: …` when candidates exist but insertion failed.
+- `sequence`: дельты смежных перестановок для визита (только дорога);
+- `unassigned.why`: `no_candidate: <label>`, когда префильтр не нашёл никого,
+  `window_conflict: …`, когда кандидаты есть, а вставка не прошла.
 
-Simplification: alternative/swap deltas ignore knock-on window effects.
+Упрощение: дельты альтернатив/перестановок игнорируют каскадные эффекты по окнам.
 
-## Metrics (context/14 §4 subset)
+## Метрики (подмножество context/14 §4)
 
 `requests_total, assigned, unassigned, sla_ok_pct, sla_at_risk,
 late_total_min, travel_min_total, travel_min_mean_per_eng, workload_min,
 balance_std_min, makespan_min, wait_min_total`.
 
-Definitions that matter: **unassigned counts against `sla_ok_pct`** (an
-unserved request is not OK); `travel_min_total` includes return legs to end
-depots; `workload_min` is the occupied span (travel + wait + service);
-`balance_std_min` is the population std-dev over all engineers, idle
-included.
+Определения, которые важны: **неназначенные считаются против `sla_ok_pct`**
+(необслуженная заявка — не OK); `travel_min_total` включает возвраты в конечные депо;
+`workload_min` — занятый размах (дорога + ожидание + сервис); `balance_std_min` —
+популяционное стандартное отклонение по всем инженерам, включая незанятых.
 
-## Matrix caveats
+## Ловушки матрицы
 
-Haversine × 1.35 road factor ÷ 28 km/h, times one traffic coefficient for
-the whole matrix at the earliest shift-start hour (a pre-solve matrix cannot
-depend on solver decisions). Absolute minutes are a proxy: fine for fitting
-the model, swap to the OSRM cache backend (D-5) before trusting ETAs.
+Haversine × 1.35 дорожный коэффициент ÷ 28 км/ч, один коэффициент трафика на всю
+матрицу по часу раннего старта смены (предварительно решённая матрица не может
+зависеть от решений солвера). Абсолютные минуты — прокси: норм для подгонки модели,
+перед доверением ETA — заменить на OSRM-кэш-бэкенд (D-5).
 
-## Golden gate
+## Golden-гейт
 
-`core/tests/golden/` holds the seed-42 mini input + reference plan.
-`test_golden.py` fails on: run-to-run drift, plan ≠ snapshot, or
-assigned < 10 / sla_ok_pct < 100. A PR that shifts the golden plan must
-regenerate the snapshot and explain the delta in the commit body
-(context/27 §10, determinism is sacred).
+`core/tests/golden/` хранит mini-вход seed-42 + эталонный план.
+`test_golden.py` падает на: дрейфе от запуска к запуску, плане ≠ снимку или
+assigned < 10 / sla_ok_pct < 100. PR, сдвинувший golden-план, обязан перегенерировать
+снимок и объяснить дельту в теле коммита (context/27 §10, детерминизм священен).
 
-## Run
+## Запуск
 
 ```bash
 python -m venv core/.venv
@@ -240,25 +217,23 @@ core/.venv/Scripts/python -m core.solve --input data/full.json --output data/sol
 core/.venv/Scripts/python -m pytest core/tests -q
 ```
 
-Both CLIs must run from the repository root (so `core.types` does not shadow
-the stdlib `types`); their `--out`/`--output` paths are confined to the
-current working directory by `core.cli.resolve_output_path` and rejected with
-exit code 2 otherwise.
+Оба CLI должны запускаться из корня репозитория (чтобы `core.types` не затенял
+стдбибный `types`); пути `--out`/`--output` ограничены текущей рабочей директорией
+через `core.cli.resolve_output_path` и отклоняются с кодом выхода 2 иначе.
 
-## Reference numbers (2026-09-13, this machine)
+## Референсные числа (2026-09-13, эта машина)
 
-- mini (5×10): 10/10 assigned, sla 100%, travel 642 min, ~180 ms;
-- full (10×80): 71/80 assigned, sla 88.8%, late 0 min, 1.5 s budget; the 9
-  unassigned are genuine capacity scarcity (3× CCTV against one qualifying
-  engineer, splice-pair overload, afternoon fiber demand) — demo material
-  for the reasons panel, not search failures.
+- mini (5×10): 10/10 назначено, SLA 100%, дорога 642 мин, ~180 мс;
+- full (10×80): 71/80, SLA 88.8%, опозданий 0 мин, бюджет 1.5 с; 9 неназначенных —
+  настоящий дефицит ёмкости (3× CCTV против одного подходящего инженера, перегруз
+  splice-пары, послеполуденный спрос на оптику) — материал для панели причин,
+  а не провалы поиска.
 
-## Next steps (in order)
+## Next steps (по порядку)
 
-1. Stability penalty (`w_stab`) + `fix` pinning on top of the warm start (D-4);
-2. balance term in the objective (overload / imbalance penalties);
-3. quadratic lateness shaping; lunch breaks via `SetBreakIntervalsOfVehicle`
+1. Штраф стабильности (`w_stab`) + пиннинг `fix` поверх warm start (D-4);
+2. слагаемое баланса в цели (штрафы перегрузки/дисбаланса);
+3. квадратичное формирование опозданий; обеды через `SetBreakIntervalsOfVehicle`
    (context/21 §2, context/25 #8);
-4. OSRM matrix backend + cache (D-5), per-arc departure-hour coefficients;
-5. FastAPI wrapper on port 8100 (context/27 §1), then the move to
-   `apps/solver`.
+4. OSRM-бэкенд матрицы + кэш (D-5), по-дуговые коэффициенты часа выезда;
+5. FastAPI-обёртка на порту 8100 (context/27 §1), затем переезд в `apps/solver`.

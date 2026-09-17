@@ -1,13 +1,16 @@
 # Router Core v2
 
-Autonomous Python implementation of the v14 snapshot contract: geographic resources,
-OR-Tools Engine and a single-coordinator Runtime. System Layer is developed separately.
-The legacy prototype under `context/legacy_code/core/` remains frozen.
+Автономная реализация на Python контракта снимка (snapshot) v14: географические ресурсы,
+движок на OR-Tools (Engine) и Runtime с единственным координатором. System Layer уже
+интегрирован: ROUTER-gateway в `apps/api` вызывает `GET /v1/result`, `GET /v1/context`
+и `PUT /v2/config/technical-settings` (см. `docs/api.md`). Устаревший прототип в
+`context/legacy_code/core/` остаётся замороженным.
 
-## Quick start
+## Быстрый старт
 
-Run from the repository root. Tested on CPython 3.14.3 (Windows x64); dependencies
-are pinned in `core/requirements.txt`. Create `core/.venv` only if it does not exist.
+Команды выполняются из корня репозитория. Проверено на CPython 3.14.3 (Windows x64);
+зависимости зафиксированы в `core/requirements.txt`. `core/.venv` создаётся, только если
+его ещё нет.
 
 ```powershell
 python -m venv core/.venv
@@ -17,16 +20,17 @@ core/.venv/Scripts/python.exe -m core solve --graph core/examples/graph.json --s
 core/.venv/Scripts/python.exe -m core serve --graph core/examples/graph.json --snapshot core/examples/snapshot.json --port 8100
 ```
 
-On Linux use `core/.venv/bin/python`. The service binds to **127.0.0.1**. Open
-`http://127.0.0.1:8100/docs` or read `GET /v1/result`. Run one Uvicorn worker only.
-Do not expose this private service directly to end users; sys owns authorization.
+В Linux используйте `core/.venv/bin/python`. Сервис слушает **127.0.0.1**. OpenAPI-описание:
+`http://127.0.0.1:8100/docs`, результат читается через `GET /v1/result`. Запускается ровно
+один воркер Uvicorn. Этот приватный сервис не предназначен для прямого доступа конечных
+пользователей; авторизация — ответственность sys.
 
-The included graph is a **synthetic four-node test network**, not actual Moscow
-roads. All four profile costs are explicitly fabricated fixture values. The engine
-and providers accept external datasets; no algorithm branches on fixture identities.
-Main visits jobs 1 → 2 → 3 (180 travel seconds, 1.8 km), while FIFO baseline visits
-3 → 2 → 1 (300 travel seconds, 3.0 km). These are regression figures, not measured
-business savings on the organizer dataset.
+Включённый в репозиторий граф — **синтетическая тестовая сеть из четырёх узлов**, а не
+реальные дороги Москвы. Стоимости всех четырёх профилей — явно сконструированные значения
+фикстуры. Engine и провайдеры принимают внешние наборы данных; ни одна ветка алгоритма
+не зависит от «личности» фикстуры. Основной план обходит заявки 1 → 2 → 3 (180 секунд
+в пути, 1,8 км), а FIFO-baseline — 3 → 2 → 1 (300 секунд, 3,0 км). Это регрессионные
+цифры, а не измеренная бизнес-экономия на датасете организатора.
 
 ```powershell
 core/.venv/Scripts/python.exe -m core geocode --catalog core/examples/addresses.json "Test office"
@@ -34,16 +38,22 @@ core/.venv/Scripts/python.exe -m core project --graph core/examples/graph.json -
 core/.venv/Scripts/python.exe -m core export-map --result core/result.json --output core/routes.geojson
 ```
 
-`solve` is a one-shot file/DB calculation. `serve` polls the published snapshot,
-starts calculations automatically and keeps repeated result reads idempotent.
-Publish files using an atomic rename/replace; do not edit the live file in place.
+`solve` — разовый расчёт из файла/БД. `serve` опрашивает опубликованный снимок, запускает
+расчёты автоматически и сохраняет идемпотентность повторных чтений результата. Файлы
+публикуются атомарной заменой/переименованием; редактировать «живой» файл на месте нельзя.
 
-## Official-region acceptance benchmarks
+## Эталонные прогоны на официальных регионах
 
-The repository contains a versioned, fully offline preparation of the organizer's
-East-region CSV: 66 requests, 12 named teams, accepted coordinates and a cached
-OSRM driving matrix. It also contains a South-central acceptance fixture: 56 requests
-and 11 named teams. Run the reproducible profiles from the repository root:
+В репозитории лежит версионированная полностью офлайн-подготовка восточного региона
+организатора (east): 66 заявок, 12 именных бригад, согласованные координаты и кешированная
+автомобильная матрица OSRM. Рядом — официальные сценарии south-central (56 заявок, 11 бригад)
+и southeast (83 заявки, 12 бригад; включает находящиеся за МКАД Каширу и Ступино). Итого
+три официальных сценария: `east-v1`, `south-central-v1`, `southeast-v1` (в `core/scenarios/`).
+Вместо `--graph` команды `solve`/`serve` принимают `--official-region <east|southeast|south_central>`
+или `--official-regions <east|southeast|south_central>...` — несвязный объединённый граф
+нескольких регионов; именно так compose (`infra/docker-compose.yml`) запускает сервис:
+`serve --official-regions east southeast south_central --budget-ms ${ROUTER_BUDGET_MS:-8000}`.
+Воспроизводимые эталонные прогоны из корня репозитория:
 
 ```powershell
 core/.venv/Scripts/python.exe -m core benchmark --region east --budget-ms 30000 --solution-limit 32 --skip-events --output core/east-golden.json
@@ -52,102 +62,116 @@ core/.venv/Scripts/python.exe -m core benchmark --region south_central --budget-
 core/.venv/Scripts/python.exe -m core benchmark --regions east south_central --budget-ms 8000 --solution-limit 16 --skip-events --output core/multizone.json
 ```
 
-The first command compares the exact FIFO baseline with Router. Golden results are
-44/66 assigned and 3/13 urgent for FIFO versus 65/66 and 12/13 urgent for Router.
-Router uses 38,021 travel seconds versus 50,145 for FIFO while serving 21 more jobs.
-Request `57299` remains unassigned because its late emergency window conflicts with
-available capacity. The golden gate also fixes both serialized plan hashes.
+Первая команда сравнивает точный FIFO-baseline с Router. Golden-результаты: baseline —
+36 из 66 назначенных и 2 из 13 срочных, Router — 64 из 66 и 12 из 13 срочных. Router
+затрачивает 91 541 секунду в пути против 65 640 у baseline, обслуживая на 28 заявок
+больше: политика по умолчанию `compact` сначала минимизирует число задействованных
+инженеров, поэтому план плотнее, но длиннее по дороге. Заявки `98815` и `47670` остаются
+неназначенными: их поздние аварийные окна конфликтуют с доступной мощностью. Golden-гейт
+также фиксирует оба хеша сериализованных планов. Для south-central golden зафиксирован
+отдельно: baseline 33 из 56 (2 из 16 срочных) против 50 из 56 у Router (все 16 срочных).
 
-By default the command calculates five independent changes at 15:00 from the same applied plan:
-a normal request, an urgent request, one engineer going offline, simultaneous
-15-minute technical stops for two engineers, and a 3x traffic multiplier on matrix
-edges touching a fixed East-district bounding box. Each event includes the trigger,
-search path, before/after assignment deltas, full main/baseline plans and evidence.
-Use `--skip-events` for the initial FIFO/Router comparison alone. The 30-second
-golden deadline is a safety ceiling: the deterministic 32-solution limit is expected
-to stop first on the pinned OR-Tools runtime.
+По умолчанию команда считает пять независимых изменений в 15:00 поверх одного и того же
+применённого плана: обычную заявку, срочную заявку, отключение одного инженера,
+одновременные 15-минутные технические остановки у двух инженеров и трёхкратный множитель
+трафика на рёбрах матрицы в фиксированном bounding box восточного района. Каждое событие
+включает триггер, путь поиска, дельты назначений «до/после», полные основной/baseline
+планы и evidence. `--skip-events` оставляет только первичное сравнение FIFO/Router.
+30-секундный golden-дедлайн — предохранительный потолок: детерминированный лимит в
+32 решения, ожидаемо, сработает раньше на зафиксированной сборке OR-Tools.
 
-The archive does not provide durations, shifts, transport or an engineer directory.
-Each scenario config therefore records every synthetic assumption. Skills
-come from work types seen for each control team; transport and shifts are explicit
-per team; service durations are fixed per work type. Car time comes from the cached
-OSRM matrix. Bike, walk and transit times are declared speed approximations over the
-same distance. These figures are benchmark inputs, not measured production facts.
+В архиве организатора нет ни длительностей, ни смен, ни транспорта, ни справочника
+инженеров. Поэтому конфиг каждого сценария фиксирует все синтетические допущения. Навыки
+выводятся из типов работ, встречающихся у каждой контрольной бригады; транспорт и смены
+заданы явно по бригадам; длительности обслуживания фиксированы по типу работ. Автомобильное
+время берётся из кешированной матрицы OSRM. Велосипед, пешком и общественный транспорт —
+заявленные скоростные приближения поверх той же дистанции. Это входные данные бенчмарка,
+а не измеренные производственные факты.
 
-The South-central coordinates are explicitly labelled deterministic district-centroid
-projections with address jitter, and its matrix is a haversine acceptance approximation.
-They prove import, policy and multi-zone mechanics; they are not rooftop geocodes or
-production road ETAs. The combined run is one snapshot and one Engine invocation over
-two disconnected graph components. Namespaced IDs prevent collisions, and a missing
-cross-zone edge makes cross-zone assignment impossible by construction.
+Координаты south-central и southeast явно помечены как детерминированные проекции
+на центроиды районов с адресным джиттером, а их матрицы — haversine-приближение для
+приёмки (дуга большого круга × 1,25 при постоянной скорости 28 км/ч). Они доказывают
+механику импорта, политик и мультризонности; это не геокоды «по адресу» и не
+производственные ETA по дорогам. Центроидные фикстуры для `south_central` и `southeast`
+воспроизводятся командой `python -m core.prepare_official --region <south_central|southeast>`
+с проверкой sha256 исходных CSV организатора. Комбинированный прогон — один снимок
+и один вызов Engine над несколькими несвязными компонентами графа. Пространства имён
+в ID исключают коллизии, а отсутствие межзоновых рёбер делает назначение через зоны
+невозможным по построению.
 
-### Explanation data for UI and LLM
+### Данные объяснений для UI и LLM
 
-`evidence.requests[]` is the calculation-backed source for the “Why this engineer”
-panel. It directly supports the four rows in the UI reference:
+`evidence.requests[]` — опирающийся на расчёт источник для панели «Почему этот инженер».
+Он напрямую покрывает четыре строки UI-референса:
 
-- skill and required-transport matches;
-- planned start, request window and remaining window margin;
-- predecessor request, travel seconds and road distance;
-- the original machine reason code, basis and fact object from the plan;
-- every alternative engineer's skills, transport, availability, assigned load,
-  solo feasibility, append-to-current-route feasibility, projected append times,
-  incremental travel cost and blocker codes.
+- совпадение навыка и требуемого транспорта;
+- плановое время старта, окно заявки и остаточный запас окна;
+- предыдущая заявка, секунды в пути и дистанция по дороге;
+- исходный машинный код причины, основание и объект факта из плана;
+- по каждому альтернативному инженеру: навыки, транспорт, доступность, назначенная
+  нагрузка, выполнимость соло, выполнимость добавления в конец текущего маршрута,
+  прогнозные времена такого добавления, инкрементальная стоимость в пути и коды
+  блокировок.
 
-The evidence intentionally distinguishes local checks from global search. A separate
-LLM may turn these facts into natural language, but it must not infer missing facts,
-change assignments or claim global optimality. `solo_feasible` means an empty route
-can serve the job; `append_at_route_end_feasible` checks only one explicit order.
+Evidence сознательно различает локальные проверки и глобальный поиск. Отдельный LLM
+может превращать эти факты в естественный язык, но не вправе домысливать недостающие
+факты, менять назначения или заявлять глобальную оптимальность. `solo_feasible` означает,
+что пустой маршрут может обслужить заявку; `append_at_route_end_feasible` проверяет
+только один явный порядок.
 
-## Ownership and modules
+## Владение и модули
 
-| Module | Responsibility |
+| Модуль | Ответственность |
 |---|---|
-| `contracts.py` | Strict Pydantic snapshot/result schemas; integer Unix seconds |
-| `geo.py` | Versioned directed graph, Dijkstra paths, matrices, coordinate projection, offline gazetteer |
-| `geocoding.py` | Explicit Nominatim source, validated candidates, rate limiting and offline cache |
-| `osrm.py` | Profile-specific OSRM paths, consistent time/distance/geometry, disk cache |
-| `twogis.py` | Cached 2GIS traffic and multimodal matrix preparation outside Engine |
-| `policy.py` | Versioned five-policy catalog and candidate comparison |
-| `schedule.py` | Fixed-order scheduler, exact FIFO baseline, metrics and result validation |
-| `engine.py` | Joint jobs/lunch routing, bounded policy stages and three replanning paths |
-| `runtime.py` | Snapshot adapters, process isolation, generations, result/context ownership |
-| `api.py` | Private result, health, context and durable technical-settings endpoints |
-| `export.py` | GeoJSON paths and stop points for the map frontend |
-| `official.py` | Strict organizer CSV import, resource integrity and multi-zone composition |
-| `evidence.py` | Detailed per-request and per-candidate facts for UI/LLM explanations |
-| `benchmark.py` | FIFO/Router benchmark plus deterministic replanning event harness |
+| `contracts.py` | Строгие Pydantic-схемы снимка/результата; целочисленные Unix-секунды |
+| `geo.py` | Версионированный ориентированный граф, пути Дейкстры, матрицы, проекция координат, офлайн-газеттир |
+| `geocoding.py` | Явный источник Nominatim, валидированные кандидаты, ограничение частоты и офлайн-кеш |
+| `osrm.py` | Профильно-специфичные пути OSRM, согласованные время/дистанция/геометрия, дисковый кеш |
+| `twogis.py` | Кешированный трафик 2GIS и подготовка мультимодальной матрицы вне Engine |
+| `policy.py` | Версионированный каталог из пяти политик и сравнение кандидатов |
+| `schedule.py` | Планировщик фиксированного порядка, точный FIFO-baseline, метрики и валидация результата |
+| `engine.py` | Совместная маршрутизация заявок и обедов, ограниченные стадии политик и три пути перепланирования |
+| `runtime.py` | Адаптеры снимков, изоляция процесса, поколения, владение результатом/контекстом |
+| `api.py` | Приватные эндпоинты результата, здоровья, контекста и долговременных технических настроек |
+| `export.py` | GeoJSON-пути и точки остановок для картографического фронтенда |
+| `official.py` | Строгий импорт CSV организатора, целостность ресурсов и мультризонная композиция |
+| `prepare_official.py` | Воспроизводимая генерация центроидных фикстур (south_central, southeast) с проверкой sha256 источника |
+| `evidence.py` | Детальные факты по каждой заявке и кандидату для объяснений UI/LLM |
+| `benchmark.py` | Бенчмарк FIFO/Router и детерминированный стенд событий перепланирования |
 
-No sys business tables, accounts, request FSM, emails or applied plans are mutated.
-Geocoding happens before publication: sys consumes accepted coordinates rather than
-asking the solver to guess an address during optimization.
+Никакие бизнес-таблицы, учётные записи, FSM заявок, письма или применённые планы sys
+не мутируются. Геокодирование выполняется до публикации: sys потребляет согласованные
+координаты, а не просит решатель угадывать адрес во время оптимизации.
 
-## Geographic resources
+## Географические ресурсы
 
-### Offline graph
+### Офлайн-граф
 
-The JSON format is illustrated by `examples/graph.json`. Each edge is **directed**,
-has integer metres and per-profile integer seconds. A missing profile means that
-profile cannot traverse the edge. Omitted edge geometry means the edge's own straight
-segment between its vertices; a detailed source must provide intermediate points.
-The exported path concatenates precisely those edges. Labels carry source attribution.
+Формат JSON иллюстрирует `examples/graph.json`. Каждое ребро **ориентированное** и несёт
+целочисленные метры и целочисленные секунды по профилям. Отсутствующий профиль означает,
+что этим профилем ребро непроходимо. Пропущенная геометрия ребра означает собственный
+прямой отрезок между его вершинами; детализированный источник обязан давать промежуточные
+точки. Экспортируемый путь склеивается ровно из этих рёбер. Подписи несут атрибуцию
+источника.
 
-Graph costs include whatever restrictions the producer encoded. Engine costs remain
-static for one calculation: it does not import OSM PBF, evaluate traffic by each future
-departure or query a public-transport timetable during search. Use a prepared, validated
-graph, OSRM or a 2GIS matrix snapshot. Transit is supported only when explicit transit
-costs are supplied; it is never replaced by car travel. No external maps or
-infrastructure are provisioned by these commands.
+Стоимости графа включают всё, что продюсер закодировал как ограничения. Стоимости Engine
+остаются статичными в рамках одного расчёта: он не импортирует OSM PBF, не оценивает
+трафик на каждый будущий выезд и не запрашивает расписание общественного транспорта во
+время поиска. Используйте подготовленный валидированный граф, OSRM или снимок матрицы
+2GIS. Общественный транспорт поддерживается только при явно заданных стоимостях transit;
+автомобилем он никогда не подменяется. Никакая внешняя картография или инфраструктура
+этими командами не разворачивается.
 
-Snapshot coordinates must match graph vertices (1 mm float tolerance). `project`
-returns a **candidate** nearest vertex and projection distance; accepting it is an
-explicit preparation step. Router does not invent access-road connectors or silently
-snap through walls. Co-located graph vertices need disambiguation before import.
-Unknown coordinates/unreachable directed paths return no quote, never zero travel.
+Координаты снимка обязаны совпадать с вершинами графа (допуск 1 мм по float). `project`
+возвращает **кандидата** — ближайшую вершину и дистанцию проекции; принятие кандидата —
+явный шаг подготовки. Router не изобретает подъездные коннекторы и не «протыкает» стены
+молча. Совпадающие вершины графа требуют дизамбигуации до импорта. Неизвестные координаты
+и недостижимые ориентированные пути возвращают «нет оценки», но никогда — нулевое время
+в пути.
 
-### OSRM and cache preparation
+### Подготовка OSRM и кеша
 
-Use `--osrm-config path/to/private-config.json` instead of `--graph`. Example shape:
+Вместо `--graph` используйте `--osrm-config path/to/private-config.json`. Пример формы:
 
 ```json
 {
@@ -158,71 +182,74 @@ Use `--osrm-config path/to/private-config.json` instead of `--graph`. Example sh
 }
 ```
 
-Each endpoint must already be deployed with its declared transport profile. Requests
-use explicit OSRM API profile labels: `driving`, `walking`, `cycling`, and `transit`.
-The endpoint still controls the actual prepared graph/profile, so never point
-walk/bike/transit at a car-only backend and label the result as another mode. A custom
-transit deployment must accept the `transit` label; stock OSRM has no timetable model.
+Каждый эндпоинт должен быть уже развёрнут с заявленным транспортным профилем. Сегмент
+пути OSRM `driving` — условная метка профиля в API; она **не** меняет Lua-профиль,
+с которым собран данный сервер. Никогда не направляйте walk/bike/transit на бэкенд,
+собранный только для автомобиля, и не выдавайте результат за другой режим.
 
-For deliberate cache preparation, use `offline:false` and run the desired snapshot
-once; all relevant directed point pairs for the configured engineers are requested.
-Then set `offline:true`. A cache miss is a technical error, while OSRM `NoRoute` is
-an unreachable path. Provider/network failures are not cached as unreachable roads.
-An online cache fill is quadratic and may take much longer than the search budget.
-Prefer preparation outside the serving path. Change `map_version` whenever OSRM
-resources/profiles change; OSRM does not expose an immutable map fingerprint here.
+Для намеренного наполнения кеша используйте `offline:false` и один раз прогоните нужный
+снимок: будут запрошены все релевантные ориентированные пары точек для настроенных
+инженеров. Затем установите `offline:true`. Промах кеша — техническая ошибка, а OSRM
+`NoRoute` — недостижимый путь. Сбои провайдера/сети не кешируются как непроезжаемые
+дороги. Онлайн-наполнение кеша квадратично и может занять заметно больше времени, чем
+бюджет поиска. Готовьте кеш вне обслуживающего пути. Меняйте `map_version` при любом
+изменении ресурсов/профилей OSRM; неизменяемого отпечатка карты OSRM здесь не
+предоставляет.
 
-Time, distance and geometry come from the **same** route response. Seconds/metres
-are rounded up. OSRM projection/access semantics apply: no additional access time
-from the original coordinate to OSRM's snapped road position is invented.
+Время, дистанция и геометрия приходят из **одного и того же** ответа маршрута. Секунды
+и метры округляются вверх. Действует семантика проекции/доступа OSRM: дополнительное
+время доступа от исходной координаты до притянутой OSRM позиции на дороге не
+придумывается.
 
-### 2GIS traffic and multimodal matrix preparation
+### Подготовка трафика и мультимодальной матрицы 2GIS
 
-`prepare-2gis` creates one immutable `RoadGraph` for the coordinates in a strict
-Router snapshot. It requests separate 2GIS Distance Matrix profiles for cars,
-walking, bicycles and public transport. Car mode supports current traffic (`jam`) or
-traffic statistics for `--departure-at` (`statistics`). Public transport includes the
-same departure timestamp and can enable timetable consideration. The generated graph
-is then consumed by the normal offline `solve --graph ...` or activated atomically by
-`RouterRuntime.update_graph()`; Engine never sees the API key or performs HTTP.
+`prepare-2gis` создаёт один неизменяемый `RoadGraph` для координат строгого снимка
+Router. Он запрашивает отдельные профили 2GIS Distance Matrix для автомобилей, пешком,
+велосипедов и общественного транспорта. Автомобильный режим поддерживает текущий трафик
+(`jam`) или статистику на момент `--departure-at` (`statistics`). Общественный транспорт
+получает ту же временную метку выезда и может учитывать расписание. Сгенерированный граф
+затем потребляется обычным офлайн `solve --graph ...` или атомарно активируется через
+`RouterRuntime.update_graph()`; Engine никогда не видит API-ключ и не выполняет HTTP.
 
-Copy `examples/2gis-config.json` to a private operator config, choose a unique
-`dataset_version`, set `offline:false`, and provide the key only through the environment:
+Скопируйте `examples/2gis-config.json` в приватный операторский конфиг, выберите
+уникальный `dataset_version`, установите `offline:false`, а ключ передавайте только
+через окружение:
 
 ```powershell
 $env:TWOGIS_API_KEY = "<key from 2GIS Platform Manager>"
 core/.venv/Scripts/python.exe -m core prepare-2gis --snapshot core/examples/snapshot.json --config path/to/private-2gis.json --departure-at 1786946400 --output core/2gis-graph.json
 ```
 
-After the cache is filled, remove the environment variable, set `offline:true`, and
-repeat the same command. An offline miss fails with `TWOGIS_CACHE_MISS`; authentication,
-network, malformed-response and provider-route failures are distinct and are never
-cached as unreachable travel. The key is absent from the config identity, cache and
-graph. Synchronous requests are split into at most 25 sources and 25 targets.
+После наполнения кеша удалите переменную окружения, установите `offline:true` и повторите
+ту же команду. Офлайн-промах падает с `TWOGIS_CACHE_MISS`; ошибки аутентификации, сети,
+некорректного ответа и маршрута провайдера различимы и никогда не кешируются как
+непроезжаемое движение. Ключ отсутствует в идентичности конфига, кеше и графе.
+Синхронные запросы режутся максимум на 25 источников и 25 целей.
 
-`jam` means traffic at cache-fill time; use a new `dataset_version` for every deliberate
-refresh. `statistics` is reproducible for the specified timestamp. Transit duration is
-a schedule-aware snapshot at that timestamp, not a time-dependent timetable inside the
-solver. Distance Matrix returns duration and distance only, so these edges currently
-render as straight source-to-target lines. Detailed car/transit geometry is a separate
-Routing API enrichment step. Matrix billing is per source-target combination; a complete
-N-point graph needs N² combinations per requested profile, even when chunked.
+`jam` — это трафик на момент наполнения кеша; для каждого осознанного обновления
+используйте новый `dataset_version`. `statistics` воспроизводим для указанной временной
+метки. Длительность transit — снимок с учётом расписания на эту метку, а не зависящее
+от времени расписание внутри решателя. Distance Matrix возвращает только длительность
+и дистанцию, поэтому такие рёбра сейчас рисуются прямыми линиями «источник → цель».
+Детальная автомобильная/transit-геометрия — отдельный шаг обогащения через Routing API.
+Тарификация матрицы идёт за комбинацию «источник–цель»; полный граф из N точек требует
+N² комбинаций на каждый запрошенный профиль, даже при чанкинге.
 
-The Router `transit` profile represents an engineer travelling on foot plus public
-transport; 2GIS includes the pedestrian legs in that route. The `walk` profile is
-walking only. Snapshot preparation must therefore label a non-car engineer as `transit`
-when public transport is allowed; Router does not switch a `walk` engineer to transit during
-optimization.
+Профиль `transit` у Router — инженер, движущийся пешком плюс общественным транспортом;
+2GIS включает пешие плечи в этот маршрут. Профиль `walk` — только пешком. Поэтому при
+подготовке снимка инженер без автомобиля, которому доступен общественный транспорт,
+помечается как `transit`; Router не переключает `walk`-инженера на transit в ходе
+оптимизации.
 
-The official API contract and limits are documented by 2GIS:
+Официальный API-контракт и лимиты документированы 2GIS:
 [Distance Matrix overview](https://docs.2gis.com/en/api/navigation/distance-matrix/overview),
 [`POST /get_dist_matrix`](https://docs.2gis.com/en/api/navigation/distance-matrix/reference/get_dist_matrix),
-and [profile examples](https://docs.2gis.com/en/api/navigation/distance-matrix/examples).
+[примеры профилей](https://docs.2gis.com/en/api/navigation/distance-matrix/examples).
 
-### Geocoding
+### Геокодирование
 
-`geocode --catalog` reads an attributed offline candidate array. Alternatively use
-`geocode --nominatim-config private-config.json "address"` with this shape:
+`geocode --catalog` читает офлайн-массив кандидатов с атрибуцией. Альтернатива —
+`geocode --nominatim-config private-config.json "address"` такой формы:
 
 ```json
 {
@@ -234,98 +261,114 @@ and [profile examples](https://docs.2gis.com/en/api/navigation/distance-matrix/e
 }
 ```
 
-An explicit online preparation pass (`offline:false`) caches validated candidates.
-No provider is called by default. Ambiguous addresses return multiple candidates;
-missing cache entries fail explicitly. Accept a candidate in the preparation/UI
-layer before putting it into the snapshot. Provider-specific credentials and usage
-policies belong to operator configuration, never to the snapshot or repository.
+Явный онлайн-проход подготовки (`offline:false`) кеширует валидированные кандидаты.
+По умолчанию ни один провайдер не вызывается. Неоднозначные адреса возвращают несколько
+кандидатов; отсутствие записи в кеше падает явно. Принятие кандидата — шаг подготовки
+или UI-слоя до помещения в снимок. Провайдерские учётные данные и политики использования
+принадлежат операторскому конфигу, но не снимку и не репозиторию.
 
-## Engine behavior
+## Поведение Engine
 
-- Hard checks: skill, transport, known release, start-time window, shift/horizon,
-  directed reachability and non-overlapping travel/work/wait/lunch intervals.
-- Routes are open. The last job's service time still counts before shift end.
-- Baseline: `arrival_order` jobs, first feasible `input_order` engineer, append only.
-- Policy catalog keeps the same hard constraints and coverage/lunch priorities for
-  all presets. `fast` minimizes travel time; `compact` minimizes engineers used;
-  `sla` favors earlier starts inside customer windows; `balanced` reduces the maximum
-  jobs on one engineer; `eco` minimizes distance. Each then applies documented
-  secondary criteria. Unknown IDs and policy parameters fail instead of silently
-  falling back or being ignored.
-- OR-Tools Routing 9.15 uses domain restrictions for allowed vehicles and a lunch
-  alternative at the engineer's start or directly after a compatible job. Required
-  lunch is mandatory; lunch already taken cannot be scheduled again.
-- The policy compiler runs bounded lexicographic stages. Later stages cannot worsen
-  values already fixed by earlier stages. This preserves urgent and total coverage
-  while allowing the selected business value to decide among equally covered plans.
-- `REVALIDATE` reschedules unchanged assignments/order only within the stable
-  reference's tolerance. `REPAIR_AND_IMPROVE` projects previous business IDs and
-  uses a feasible seed. Context changes or no usable seed choose `COLD_START`.
-- A ready plan can contain unassigned jobs. No feasible required-lunch candidate
-  yields `is_usable:false`, empty executable routes and an explicit conflict alert.
-- Reasons distinguish proven static rejection from a bounded search finding no
-  assignment. Neither `ready` nor an unassigned outcome proves global optimality.
+- Жёсткие проверки: навык, транспорт, известное время освобождения инженера (`release_at`),
+  окно времени старта, смена/горизонт, ориентированная достижимость и непересекающиеся
+  интервалы travel/work/wait/lunch.
+- Маршруты открытые. Время обслуживания последней заявки всё равно учитывается до конца
+  смены.
+- Baseline: заявки в порядке `arrival_order`, первый допустимый инженер в `input_order`,
+  только добавление в конец маршрута.
+- Каталог политик сохраняет одинаковые жёсткие ограничения и приоритеты покрытия/обедов
+  для всех пресетов. `fast` минимизирует время в пути; `compact` — число задействованных
+  инженеров; `sla` предпочитает более ранние старты внутри клиентских окон; `balanced`
+  снижает максимум заявок на одном инженере; `eco` минимизирует дистанцию. Затем каждый
+  пресет применяет документированные вторичные критерии. Для официальных сценариев
+  политикой по умолчанию выступает `compact`. Неизвестные ID и параметры политик приводят
+  к ошибке, а не к молчаливому откату или игнорированию.
+- OR-Tools Routing 9.15 использует доменные ограничения по допустимым машинам
+  и альтернативу обеда на старте инженера или сразу после совместимой заявки. Требуемый
+  обед обязателен; уже взятый обед не может быть запланирован повторно.
+- Компилятор политик выполняет ограниченные лексикографические стадии. Поздние стадии
+  не могут ухудшить значения, зафиксированные ранними. Это сохраняет срочное и суммарное
+  покрытие, позволяя выбранной бизнес-величине выбирать между равно покрытыми планами.
+- `REVALIDATE` перепланирует неизменённые назначения/порядок только в пределах допуска
+  стабильного референса. `REPAIR_AND_IMPROVE` проецирует прежние бизнес-ID и использует
+  допустимый сид. Изменение контекста или отсутствие применимого сида выбирает
+  `COLD_START`.
+- Готовый план может содержать неназначенные заявки. Отсутствие допустимого кандидата
+  с требуемым обедом даёт `is_usable:false`, пустые исполняемые маршруты и явную запись
+  о конфликте.
+- Причины различают доказанный статичный отказ и ситуацию, когда ограниченный поиск
+  не нашёл назначения. Ни `ready`, ни результат с неназначенными заявками не доказывает
+  глобальную оптимальность.
 
-`--budget-ms` controls the search budget (default 3000), not validation, graph
-preparation or HTTP calls. Each stage also has a solution limit; repeatability is
-tested on the pinned Windows runtime and fixture. Cross-platform deterministic
-quality under wall-time exhaustion is not asserted. Larger datasets need profiling.
+`--budget-ms` управляет бюджетом поиска (по умолчанию 3000), но не валидацией,
+подготовкой графа или HTTP-вызовами. У каждой стадии есть лимит решений; повторяемость
+проверяется на зафиксированной Windows-сборке и фикстуре. Детерминированное качество
+на других платформах при исчерпании wall-time не заявляется. Большие наборы данных
+требуют профилирования.
 
-## Sys and data-layer integration contract
+## Контракт интеграции с sys и слоем данных
 
-The external schemas follow `context/33-router_contract_v2.md`. Checked JSON Schema
-files live in `core/schemas/`; regenerate them with `python -m core.schema`. The private
-service also exposes request and response schemas in `/openapi.json`.
+Внешние схемы следуют `context/33-router_contract_v2.md`. Проверенные JSON Schema лежат
+в `core/schemas/`; перегенерируются командой `python -m core.schema`. Приватный сервис
+также отдаёт схемы запросов/ответов в `/openapi.json`.
 
-| Interface | Meaning |
+| Интерфейс | Смысл |
 |---|---|
-| Snapshot payload | Exact UTF-8 JSON document, `schema_version:"1.0"`, duplicate keys rejected |
-| `input_hash` | Lowercase SHA-256 hex of those **exact bytes**, including whitespace; no independent reserialization |
-| PostgreSQL input | Sys-owned `router_active_snapshot` view with one publication row; see `docs/data.md` |
-| `GET /health` | Coordinator state; liveness is not proof of a usable plan |
-| `GET /v1/context` | Active context version and complete technical settings, separate from the last result |
-| `GET /v1/result` | Atomic `RouterResult`: state, plans, evidence, policy and exact input identity |
-| `PUT /v2/config/technical-settings` | CAS update for lunch switch and both lateness tolerances |
-| `PUT /v1/config/tolerance` | Compatibility alias for departure tolerance |
+| Тело снимка | Точный UTF-8 JSON-документ, `schema_version:"1.0"`, дубликаты ключей отклоняются |
+| `input_hash` | Строчный SHA-256 hex ровно этих **байтов**, включая пробелы; никакой самостоятельной пересериализации |
+| Вход PostgreSQL | Принадлежащее sys представление `router_active_snapshot` с одной строкой публикации; см. `docs/data.md` |
+| `GET /health` | Состояние координатора; живость не является доказательством пригодности плана |
+| `GET /v1/context` | Активная версия контекста и полные технические настройки, отдельно от последнего результата |
+| `GET /v1/result` | Атомарный `RouterResult`: состояние, планы, evidence, политика и точная идентичность входа |
+| `PUT /v2/config/technical-settings` | CAS-обновление обеденного переключателя, допусков опозданий и режима времени в пути |
+| `PUT /v1/config/tolerance` | Совместимый алиас для допуска выезда |
 
-DB usage: omit `--snapshot`, set `ROUTER_DATABASE_URL` in the process environment.
-The view returns `publication_id`, monotonic `publication_seq`, `payload_utf8`,
-`payload_sha256` and `published_at_epoch`. The reader issues one SELECT in a read-only
-transaction; sys owns publication, view/migrations and a SELECT-only role. Router
-rejects multiple rows, rollback, payloads above 16 MiB and a SHA mismatch.
-`payload_utf8` preserves published text; do not reconstruct it from JSONB.
-No PostgreSQL database or role is created by Router.
+Работа с БД: не передавайте `--snapshot`, задайте `ROUTER_DATABASE_URL` в окружении
+процесса. Представление возвращает `publication_id`, монотонный `publication_seq`,
+`payload_utf8`, `payload_sha256` и `published_at_epoch`. Читатель выполняет один SELECT
+в read-only транзакции; публикация, представления/миграции и SELECT-only роль —
+ответственность sys. Router отклоняет несколько строк, откат, полезную нагрузку выше
+16 МиБ и несовпадение SHA. `payload_utf8` сохраняет опубликованный текст; не
+реконструируйте его из JSONB. Ни база PostgreSQL, ни роль Router-ом не создаются.
 
-Context identity includes resource contents/version, the derived policy-catalog version
-and search settings. A new context invalidates the current result immediately.
-Map activation is currently a process restart or internal `update_graph()` call;
-there is no public graph-upload or arbitrary solve endpoint.
+Идентичность контекста включает содержимое/версии ресурсов, производную версию каталога
+политик и настройки поиска. Новый контекст немедленно инвалидирует текущий результат.
+Активация карты — сейчас перезапуск процесса или внутренний вызов `update_graph()`;
+публичного эндпоинта загрузки графа или произвольного solve нет.
 
-The Router-owned technical revision contains `lunches_enabled`,
-`departure_lateness_tolerance_sec` and `task_start_lateness_tolerance_sec`. The lunch
-switch is a hard override and suppresses every optional or required lunch without
-mutating sys input. Tolerances only choose revalidation versus repair; they never widen
-customer windows, engineer shifts or the planning horizon. Accepted settings are saved
-atomically in `.router/settings.json` by the default service command and restored on restart.
-An embedded Runtime without a durable store may calculate, but rejects settings writes
-instead of acknowledging a process-only change.
+Принадлежащая Router техническая ревизия содержит восемь полей: `lunches_enabled`
+(по умолчанию `false`), `departure_lateness_tolerance_sec`,
+`task_start_lateness_tolerance_sec`, `travel_time_mode`
+(`graph_with_access_buffer` | `fixed_normative`), `access_buffer_sec` (600),
+`fixed_travel_time_sec` (1200), `early_finish_replan_threshold_sec` (900) и
+`task_overrun_tolerance_sec` (600). Обеденный переключатель — жёсткий оверрайд: он
+подавляет все опциональные и обязательные обеды без мутации входа sys. Допуски лишь
+выбирают между revalidation и repair; они никогда не расширяют клиентские окна, смены
+инженеров или горизонт планирования. Принятые настройки атомарно сохраняются
+в `.router/settings.json` сервисной командой по умолчанию и восстанавливаются после
+рестарта. Встроенный Runtime без долговременного хранилища может считать, но отклоняет
+запись настроек вместо подтверждения изменения, живущего только в процессе. Квитанции
+операций (operation receipts) долговечны: они переживают рестарт и хранятся в том же
+атомарном документе со строгой схемой `1.0`.
 
-Only one job runs; input/context changes replace one waiting job. Finished stale
-generations are discarded, not retagged. Cancellation is cooperative at the job
-boundary: a current bounded search is allowed to finish. The result store, previous
-plan and operation-id cache are process-local. Restart restores durable technical
-settings, recomputes the active snapshot and produces a new result ID. Sys must
-reread context and preserve its own applied-plan/execution history across restarts.
+Выполняется не более одной задачи; изменения входа/контекста замещают одну ожидающую
+задачу. Завершённые устаревшие поколения отбрасываются, а не перетаговываются. Отмена
+кооперативная и работает на границе задачи: текущий ограниченный поиск получают
+возможность завершиться. Хранилище результата и предыдущий план живут в процессе;
+квитанции операций durable (см. выше). Рестарт восстанавливает долговременные технические
+настройки, пересчитывает активный снимок и выдаёт новый ID результата. Sys обязан
+перечитать контекст и сохранить собственную историю применённых планов/исполнения между
+рестартами.
 
-Sys applies a result only in AUTO, with matching hash/context, `ready`, usable main
-and no conflict with facts. MANUAL disables consumption; Router keeps calculating.
-These checks are sys responsibilities, not implemented by this module.
+Sys применяет результат только в AUTO, при совпадении хеша/контекста, статусе `ready`,
+пригодном основном плане и отсутствии конфликта с фактами. MANUAL отключает потребление;
+Router продолжает считать. Эти проверки — ответственность sys, а не этого модуля.
 
-A calculation error is retained until the snapshot or context changes (or Runtime
-restarts); Router does not retry unchanged failed jobs on a timer. Read failures are
-polled again automatically. Refill an OSRM cache before starting the offline service.
+Ошибка расчёта сохраняется до изменения снимка или контекста (или рестарта Runtime);
+Router не ретраит неизменённые упавшие задачи по таймеру. Ошибки чтения опрашиваются
+повторно автоматически. Наполняйте кеш OSRM до запуска офлайн-сервиса.
 
-## Verification and remaining integration
+## Верификация и оставшаяся интеграция
 
 ```powershell
 core/.venv/Scripts/python.exe -m pytest core/tests -q
@@ -333,19 +376,18 @@ core/.venv/Scripts/python.exe -m ruff check core
 core/.venv/Scripts/python.exe -m ruff format --check core
 ```
 
-The suite covers hard constraints, policy precedence, lunches, graph direction,
-transport profiles, provider cache contracts, exact hashing, invalid output,
-stable revalidation, stale generations and actual process isolation through the
-private API. Provider HTTP tests use controlled responses; they do not establish
-that a real OSRM/Nominatim deployment or PostgreSQL view already exists.
+Набор тестов покрывает жёсткие ограничения, приоритеты политик, обеды, направленность
+графа, транспортные профили, контракты кешей провайдеров, точное хеширование, невалидный
+вывод, стабильную revalidation, устаревшие поколения и реальную изоляцию процесса через
+приватный API. HTTP-тесты провайдеров используют контролируемые ответы; они не доказывают,
+что реальный деплой OSRM/Nominatim или представление PostgreSQL уже существуют.
 
-Remaining integration: sys view/permissions and acceptance transaction; replacement
-of the South-central acceptance projection with accepted geocodes and road/provider
-ETAs; preparation of the Southeast official region; full application UI/SSE smoke.
-The standalone Router tests cannot substitute for the monorepo smoke gate while the
-repository root has no pnpm importer manifest.
+Оставшаяся интеграция: представление/права sys и транзакция приёмки; замена центроидных
+матриц приёмки (south-central, southeast) согласованными геокодами и дорожными/
+провайдерскими ETA; полный UI/SSE smoke приложения. Автономные тесты Router не заменяют
+smoke-гейт монорепозитория, пока в корне репозитория нет pnpm-манифеста импортёра.
 
-Implementation references: [OR-Tools VRPTW](https://developers.google.com/optimization/routing/vrptw),
+Справочные материалы: [OR-Tools VRPTW](https://developers.google.com/optimization/routing/vrptw),
 [OR-Tools v9.15](https://github.com/google/or-tools/releases/tag/v9.15),
 [OSRM API](https://project-osrm.org/docs/v5.24.0/api/),
-[Nominatim search](https://nominatim.org/release-docs/latest/api/Search/).
+[поиск Nominatim](https://nominatim.org/release-docs/latest/api/Search/).

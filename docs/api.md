@@ -1,42 +1,42 @@
-# API — endpoints, conventions and missing contracts
+# API — эндпоинты, конвенции и недостающие контракты
 
-> Updated in the same commit as the code it describes (AGENTS.md section 8.2).
-> Generated schema: <http://localhost:8000/docs/openapi.json>; interactive: `/docs`.
-> Architecture: [architecture.md](./architecture.md). Data model: [data.md](./data.md).
-> Sections 1-10 are the System Layer API; section 11 is the Router Core service API (D-22).
+> Обновляется тем же коммитом, что и описываемый код (AGENTS.md §8.2).
+> Сгенерированная схема: <http://localhost:8000/docs/openapi.json>; интерактивная: `/docs`.
+> Архитектура: [architecture.md](./architecture.md). Модель данных: [data.md](./data.md).
+> Разделы 1–10 — API System Layer; раздел 11 — сервисный API Router Core (D-22).
 
-## 1. Conventions
+## 1. Конвенции
 
-**Prefix.** Everything lives under `/api/v1`. The three health endpoints are outside it,
-because a probe should not have to know the API version.
+**Префикс.** Всё живёт под `/api/v1`. Три health-эндпоинта — вне его, потому что проба
+не должна знать версию API.
 
-**Time.** Every absolute moment and every duration in a payload is an integer number of
-Unix seconds (`context/33` section 4). No ISO strings, no milliseconds, no local dates.
-Formatting for a human happens in the client, with an explicitly chosen zone.
+**Время.** Каждый абсолютный момент и каждая длительность в полезной нагрузке — целое
+число секунд Unix (`context/33` §4). Никаких ISO-строк, никаких миллисекунд, никаких
+локальных дат. Форматирование для человека происходит на клиенте, с явно выбранной зоной.
 
-**Authentication.** A bearer credential in the `Authorization` header, never in the URL,
-where it would end up in access logs and browser history (`context/41` section 12):
+**Аутентификация.** Bearer-учётные данные в заголовке `Authorization`, никогда в URL,
+где они попали бы в журналы доступа и историю браузера (`context/41` §12):
 
 ```
 Authorization: Bearer <session token | integration key>
 ```
 
-Both kinds resolve through the same guard into one `Actor`. A UI session and an
-integration key differ in provenance, not in which handler runs: a business rule exists in
-exactly one place, and the UI, the integration API and (later) an AI tool must not grow
-three diverging versions of it (`context/36` section 2).
+Оба вида резолвятся через один и тот же guard в одного `Actor`. UI-сессия и
+интеграционный ключ различаются происхождением, а не тем, какой обработчик выполняется:
+бизнес-правило существует ровно в одном месте, и UI, интеграционный API и (позже)
+AI-инструмент не должны обрасти тремя расходящимися его версиями (`context/36` §2).
 
-**Roles.** A session acts as one role. An integration key has a category instead, mapped
-onto the role whose UI actions it replaces: `client` → client, `eng` → engineer,
-`master` → dispatcher. A `client` or `eng` key never gains dispatcher functions just
-because the same person owns it (`context/41` section 5).
+**Роли.** Сессия действует от одной роли. Интеграционный ключ вместо этого имеет
+категорию, отображаемую на роль, чьи UI-действия она заменяет: `client` → client,
+`eng` → engineer, `master` → dispatcher. Ключ `client` или `eng` никогда не получает
+диспетчерских функций лишь потому, что им владеет тот же человек (`context/41` §5).
 
-**Closed by default.** The guard is global and denies unless an endpoint is marked public.
-A new route with no decorator is unreachable rather than open. The only public endpoints
-are the two login-code ones, the dispatcher password login and health — exactly the
-exceptions `context/32` section 15 allows.
+**Закрыто по умолчанию.** Guard глобальный и по умолчанию запрещает, если эндпоинт
+не помечен публичным. Новый маршрут без декоратора недостижим, а не открыт. Единственные
+публичные эндпоинты — два login-code, парольный вход диспетчера и health — ровно те
+исключения, которые допускает `context/32` §15.
 
-**Errors.** One envelope, always:
+**Ошибки.** Один конверт, всегда:
 
 ```json
 {
@@ -49,597 +49,605 @@ exceptions `context/32` section 15 allows.
 }
 ```
 
-The **code** is the contract, not the status. Several distinct refusals share 409 and must
-stay tellable apart without parsing prose:
+**Код** — контракт, а не статус. Несколько различных отказов делят 409 и должны
+оставаться различимыми без разбора прозы:
 
-| Code | Status | Means |
+| Код | Статус | Значение |
 |---|---|---|
-| `VALIDATION_FAILED` | 422 | Payload failed its schema; `details.issues` lists the paths |
-| `UNAUTHENTICATED` | 401 | No credential, or it is no longer valid |
-| `FORBIDDEN` | 403 | Known actor, wrong role or token category |
-| `NOT_FOUND` | 404 | No such object, or not visible to this actor |
-| `VERSION_CONFLICT` | 409 | Someone changed the object after the actor read it |
-| `OPERATION_ID_REUSED` | 409 | Same operation id replayed with different arguments |
-| `WORK_ALREADY_STARTED` | 409 | The engineer recorded a start; ordinary changes are closed |
-| `MODE_MANUAL` / `MODE_AUTO` | 409 | The working plan is owned by the other control mode |
-| `SNAPSHOT_STALE` | 409 | The result belongs to a snapshot that is no longer published |
-| `RESULT_NOT_APPLICABLE` | 409 | Finished, but must not become the working plan |
-| `CONFIRMATION_REQUIRED` | 409 | A destructive action without its explicit confirmation |
-| `SERVICE_NOT_CONFIGURED` | 503 | An optional integration is not wired in this deployment |
-| `INTERNAL_ERROR` | 500 | Unexpected; details are logged, not returned |
+| `VALIDATION_FAILED` | 422 | Полезная нагрузка не прошла свою схему; `details.issues` перечисляет пути |
+| `UNAUTHENTICATED` | 401 | Учётных данных нет или они уже недействительны |
+| `FORBIDDEN` | 403 | Актор известен, роль или категория токена неверны |
+| `NOT_FOUND` | 404 | Такого объекта нет или он не виден этому актору |
+| `VERSION_CONFLICT` | 409 | Кто-то изменил объект после того, как актор его прочитал |
+| `OPERATION_ID_REUSED` | 409 | Тот же operation id повторён с другими аргументами |
+| `WORK_ALREADY_STARTED` | 409 | Инженер зафиксировал старт; обычные изменения закрыты |
+| `MODE_MANUAL` / `MODE_AUTO` | 409 | Рабочим планом владеет другой режим управления |
+| `SNAPSHOT_STALE` | 409 | Результат относится к снимку, который больше не опубликован |
+| `RESULT_NOT_APPLICABLE` | 409 | Завершён, но не должен становиться рабочим планом |
+| `CONFIRMATION_REQUIRED` | 409 | Разрушающее действие без явного подтверждения |
+| `SERVICE_NOT_CONFIGURED` | 503 | Опциональная интеграция не подключена в этом развёртывании |
+| `INTERNAL_ERROR` | 500 | Неожиданная ошибка; детали в логах, а не в ответе |
 
-`requestId` echoes `X-Request-Id` when the caller supplies one, and is generated
-otherwise. The same id appears on every log line of that request.
+`requestId` повторяет `X-Request-Id`, если вызывающий его передал, и генерируется
+в противном случае. Тот же id появляется в каждой строке лога этого запроса.
 
-## 2. Changing anything: the operation envelope
+## 2. Любое изменение: конверт операций
 
-Every write goes through one envelope (`context/36` sections 1, 8 and 12). Endpoints that
-change state accept these fields alongside their own payload:
+Каждая запись проходит через один конверт (`context/36` §1, §8 и §12). Эндпоинты,
+меняющие состояние, принимают эти поля наряду со своей полезной нагрузкой:
 
-| Field | Required | Meaning |
+| Поле | Обязательность | Значение |
 |---|---|---|
-| `operationId` | yes | Stable id of one business intention, chosen by the caller (a UUID). Retrying after a lost response repeats it |
-| `expectedVersion` | when the action follows from a prior read | The `version` of the object the actor was looking at |
-| `confirmation` | for actions that demand explicit confirmation | Reference to the confirmed intent |
+| `operationId` | да | Стабильный id одного бизнес-намерения, выбранный вызывающим (UUID). Повтор после потерянного ответа повторяет его |
+| `expectedVersion` | когда действие следует из предварительного чтения | `version` объекта, который видел актор |
+| `confirmation` | для действий, требующих явного подтверждения | Ссылка на подтверждённое намерение |
 
-**Retrying is safe and is the intended behaviour.** The same `operationId` with the same
-arguments returns the first outcome without doing the work again — one request, one
-`requestId`, one email. A refusal is stored too, so a retry after a lost response returns
-the same refusal rather than attempting the work a second time.
+**Повтор безопасен и является задуманным поведением.** Тот же `operationId` с теми же
+аргументами возвращает первый исход, не выполняя работу заново, — один запрос, один
+`requestId`, одно письмо. Отказ тоже сохраняется, поэтому повтор после потерянного
+ответа возвращает тот же отказ, а не пытается выполнить работу второй раз.
 
-**The same `operationId` with different arguments is refused** with
-`OPERATION_ID_REUSED`. That is a caller bug, not a new write.
+**Тот же `operationId` с другими аргументами отклоняется** с `OPERATION_ID_REUSED`.
+Это ошибка вызывающего, а не новая запись.
 
-**`expectedVersion` is how concurrent edits are surfaced.** If the object changed after
-the actor read it, the answer is `VERSION_CONFLICT` carrying `expectedVersion` and
-`currentVersion`; the client refreshes and confirms again. Nothing is ever silently
-overwritten. Only the data the operation is based on is checked — an unrelated chat
-message does not invalidate an action (`context/36` section 8).
+**`expectedVersion` — способ сделать конкурентные правки видимыми.** Если объект
+изменился после того, как актор его прочитал, ответ — `VERSION_CONFLICT` с
+`expectedVersion` и `currentVersion`; клиент обновляется и подтверждает заново.
+Ничто никогда не перезаписывается молча. Проверяются только данные, на которых основана
+операция, — постороннее сообщение в чате не делает действие недействительным
+(`context/36` §8).
 
-Business change, the record of who made it and the follow-up work it requires commit
-together. Waiting on Router, AI or SMTP is deliberately outside that unit: a network call
-never holds the transaction open, and a mail failure does not turn an already saved
-request into a non-existent one.
+Бизнес-изменение, запись о том, кто его сделал, и требуемая им последующая работа
+коммитятся вместе. Ожидание Router, AI или SMTP намеренно вне этой единицы: сетевой
+вызов никогда не держит транзакцию открытой, а сбой почты не превращает уже сохранённую
+заявку в несуществующую.
 
 ## 3. Health
 
-| Method | Path | Answers |
+| Метод | Путь | Ответ |
 |---|---|---|
-| GET | `/health/live` | The process is up |
-| GET | `/health/ready` | Required dependencies are usable; 503 when not. Only the database gates readiness |
-| GET | `/health/services` | Every dependency, including ones this build does not have |
+| GET | `/health/live` | Процесс поднят |
+| GET | `/health/ready` | Обязательные зависимости работоспособны; иначе 503. Готовность определяет только база данных |
+| GET | `/health/services` | Каждая зависимость, включая те, которых в этой сборке нет |
 
-`not_configured` is a real answer, not a failure. In this contour the `router` probe
-pings Router Core's `/health` through the configured `ROUTER_BASE_URL`, so it reports the
-real reachability of the Python service. `ai` and `smtp` report `not_configured` because
-they are not wired. An unreachable SMTP or LLM must never make the application look down —
-the dispatcher's password login has to work exactly when the mail contour is broken
-(`context/43` section 11.3).
+`not_configured` — настоящий ответ, а не сбой. В этом контуре проба `router` пингует
+`/health` Router Core через настроенный `ROUTER_BASE_URL`, поэтому сообщает реальную
+достижимость Python-сервиса. `ai` и `smtp` сообщают `not_configured`, потому что не
+подключены. Недостижимые SMTP или LLM никогда не должны делать приложение «лежащим» —
+парольный вход диспетчера обязан работать именно тогда, когда почтовый контур сломан
+(`context/43` §11.3).
 
 ## 4. Auth
 
-| Method | Path | Access | Purpose |
+| Метод | Путь | Доступ | Назначение |
 |---|---|---|---|
-| POST | `/api/v1/auth/login-code` | public | Request a one-time code for an address |
-| POST | `/api/v1/auth/login-code/verify` | public | Exchange a code for a session |
-| POST | `/api/v1/auth/dispatcher/password` | public | Sign the dispatcher in without SMTP |
-| GET | `/api/v1/auth/session` | any actor | Describe the actor behind the credential |
-| DELETE | `/api/v1/auth/session` | any actor | Sign out; idempotent |
-| POST | `/api/v1/auth/tokens` | dispatcher | Create an integration key |
-| GET | `/api/v1/auth/tokens` | dispatcher | List keys without their secrets |
-| DELETE | `/api/v1/auth/tokens/:id` | dispatcher session | Revoke a key |
+| POST | `/api/v1/auth/login-code` | публичный | Запросить одноразовый код для адреса |
+| POST | `/api/v1/auth/login-code/verify` | публичный | Обменять код на сессию |
+| POST | `/api/v1/auth/dispatcher/password` | публичный | Войти диспетчеру без SMTP |
+| GET | `/api/v1/auth/session` | любой актор | Описать актора за учётными данными |
+| DELETE | `/api/v1/auth/session` | любой актор | Выйти; идемпотентно |
+| POST | `/api/v1/auth/tokens` | диспетчер | Создать интеграционный ключ |
+| GET | `/api/v1/auth/tokens` | диспетчер | Перечислить ключи без их секретов |
+| DELETE | `/api/v1/auth/tokens/:id` | сессия диспетчера | Отозвать ключ |
 
-### Behaviour worth knowing before integrating
+### Поведение, которое стоит знать до интеграции
 
-- **Requesting a code reveals nothing.** The response is the same whether or not the
-  address is known; otherwise the endpoint would be a directory of clients, engineers and
-  the dispatcher.
-- **A role is granted, never claimed.** `role: "client"` creates the account on first
-  successful verification. `role: "engineer"` only works if the dispatcher created that
-  engineer; otherwise the answer is indistinguishable from a wrong code, so the staff list
-  does not leak (`context/36` section 7.2).
-- **A code is single-use**, expires, is retired when a newer one is issued for the same
-  address, and stops working after `LOGIN_CODE_MAX_ATTEMPTS` wrong guesses. Attempts are
-  counted against the code, not the address, so a third party cannot lock someone out.
-- **`devCode` in the response** appears only when `AUTH_DEV_EXPOSE_CODES` is on, which
-  this build needs because it has no SMTP-gateway to deliver a code. The application
-  refuses to start with it enabled in production.
-- **Integration keys** take a name and a category and nothing else: no scopes, no expiry,
-  no end-user binding, valid until deleted (`context/41` sections 3–4). The secret is
-  shown once, at creation; a listing never re-reveals it. Revoking stops new calls and
-  does not delete what the key created.
-- **Keys cannot manage keys.** Creating one is a master-category function, but revoking
-  requires a dispatcher session: key management is a Dashboard action.
+- **Запрос кода ничего не раскрывает.** Ответ одинаков, известен адрес или нет; иначе
+  эндпоинт стал бы справочником клиентов, инженеров и диспетчера.
+- **Роль выдаётся, а не заявляется.** `role: "client"` создаёт учётную запись при первой
+  успешной верификации. `role: "engineer"` работает, только если диспетчер создал этого
+  инженера; иначе ответ неотличим от неверного кода, поэтому список персонала не утекает
+  (`context/36` §7.2).
+- **Код одноразовый**, истекает, отзывается, когда для того же адреса выпущен более
+  новый, и перестаёт работать после `LOGIN_CODE_MAX_ATTEMPTS` неверных попыток. Попытки
+  считаются против кода, а не адреса, поэтому третья сторона не может кого-то заблокировать.
+- **`devCode` в ответе** появляется только при включённом `AUTH_DEV_EXPOSE_CODES`, что
+  нужно этой сборке, потому что у неё нет SMTP-gateway для доставки кода. С включённой
+  настройкой в продакшене приложение отказывается стартовать.
+- **Интеграционные ключи** принимают имя и категорию и ничего больше: ни скоупов, ни
+  срока действия, ни привязки к конечному пользователю; действительны до удаления
+  (`context/41` §3–4). Секрет показывается один раз, при создании; перечисление никогда
+  не раскрывает его снова. Отзыв останавливает новые вызовы и не удаляет созданное ключом.
+- **Ключи не управляют ключами.** Создание — функция категории master, но отзыв требует
+  сессии диспетчера: управление ключами — действие Дашборда.
 
-## 5. Requests
+## 5. Заявки
 
-### Client contour — `@Roles('client')`
+### Контур клиента — `@Roles('client')`
 
-| Method | Path | Purpose |
+| Метод | Путь | Назначение |
 |---|---|---|
-| GET | `/api/v1/client/work-types` | Types of work to choose from |
-| POST | `/api/v1/client/requests` | Prepare a request (a draft) |
-| POST | `/api/v1/client/requests/:id/submit` | Confirm the content and send it |
-| POST | `/api/v1/client/requests/:id/reschedule` | Change the date and window immediately |
-| GET | `/api/v1/client/requests` | Active requests of this customer |
-| GET | `/api/v1/client/requests/:id` | One request |
+| GET | `/api/v1/client/work-types` | Виды работ на выбор |
+| POST | `/api/v1/client/requests` | Подготовить заявку (черновик) |
+| POST | `/api/v1/client/requests/:id/submit` | Подтвердить содержимое и отправить |
+| POST | `/api/v1/client/requests/:id/reschedule` | Сразу изменить дату и окно |
+| GET | `/api/v1/client/requests` | Активные заявки этого заказчика |
+| GET | `/api/v1/client/requests/:id` | Одна заявка |
 
-### Dashboard contour — `@Roles('dispatcher')`
+### Контур дашборда — `@Roles('dispatcher')`
 
-| Method | Path | Purpose |
+| Метод | Путь | Назначение |
 |---|---|---|
-| GET | `/api/v1/dispatch/requests` | The day, including started, finished and cancelled work |
-| POST | `/api/v1/dispatch/requests` | Create a request on behalf of a customer |
-| PATCH | `/api/v1/dispatch/requests/:id` | Change window, address, point or urgency |
-| POST | `/api/v1/dispatch/requests/:id/cancel` | Cancel work that has not started |
-| GET | `/api/v1/dispatch/requests/:id/history` | Previous conditions |
+| GET | `/api/v1/dispatch/requests` | День, включая начатые, завершённые и отменённые работы |
+| POST | `/api/v1/dispatch/requests` | Создать заявку от имени заказчика |
+| PATCH | `/api/v1/dispatch/requests/:id` | Изменить окно, адрес, точку или срочность |
+| POST | `/api/v1/dispatch/requests/:id/cancel` | Отменить ещё не начатую работу |
+| GET | `/api/v1/dispatch/requests/:id/history` | Прежние условия |
 
-### The rules these endpoints enforce
+### Правила, которые эти эндпоинты гарантируют
 
-- **Three states, not one.** A response carries `lifecycle` (business stage) and
-  `assignmentState` (outcome of distribution) separately, and facts live in their own
-  table. `pending` means "waiting for a current result" — not a refusal, and never turned
-  into `unassigned` by an ongoing calculation or a Router error (`context/36` section 3).
-- **A draft is not a task.** It is not in the free pool, produces no mail, and is not
-  published. Only the confirmation makes it real.
-- **The customer never types routing parameters.** The required skill, the expected
-  duration and any transport restriction are derived from the type of work
-  (`context/32` section 4.1). Urgency can raise the priority and never lowers it.
-- **Duration comes from a work-norm profile, stored split.** Every one of the 16 work
-  types maps to one of four profiles (`connection_base`, `outage_tkd`, `equipment_order`,
-  `local_repair`); the importer stores the profile code plus its technical and
-  documentation components, whose sum is `serviceDurationSec`, and a normative travel
-  allowance (1200 s). The breakdown is visible on the request view, not recomputed at
-  read time.
-- **A reschedule keeps one request id and one live window.** The previous conditions go to
-  history, which is a journal, not a second promise to the customer. The previous
-  assignment does not confirm the new conditions, so the outcome returns to `pending`. If
-  the new window finds no assignment, the old one is *not* restored automatically
-  (`context/36` section 4).
-- **Once the engineer records a start, ordinary changes are closed** — reschedule, edits
-  and cancellation all answer `WORK_ALREADY_STARTED`, through every path: a stale screen,
-  a link in an old email, a new session or an integration key (`context/42` DF-05).
-- **Cancellation is a state change with its own timestamp**, never a deletion, and never
-  follows automatically from a request going unassigned.
-- **A customer sees only their own requests.** Someone else's is reported as absent rather
-  than forbidden, because confirming that it exists is itself a disclosure.
-- **A request without coordinates is stored and marked**, then excluded from the published
-  snapshot with a counted diagnostic. Coordinates are never invented.
+- **Три состояния, а не одно.** Ответ несёт `lifecycle` (деловая стадия) и
+  `assignmentState` (исход распределения) отдельно, а факты живут в своей таблице.
+  `pending` означает «ожидает актуального результата» — это не отказ, и идущий расчёт
+  или ошибка Router никогда не превращают его в `unassigned` (`context/36` §3).
+- **Черновик — не задача.** Он не в свободном пуле, не порождает почты и не публикуется.
+  Только подтверждение делает его настоящим.
+- **Заказчик никогда не вводит параметры маршрутизации.** Требуемый навык, ожидаемая
+  длительность и любое транспортное ограничение выводятся из вида работ
+  (`context/32` §4.1). Срочность может поднять приоритет и никогда его не понижает.
+- **Длительность берётся из профиля норм и хранится в разбивке.** Каждый из 16 видов
+  работ отображается на один из четырёх профилей (`connection_base`, `outage_tkd`,
+  `equipment_order`, `local_repair`); импортёр хранит код профиля плюс его техническую
+  и документационную составляющие, чья сумма — `serviceDurationSec`, и нормативную
+  добавку на перемещение (1200 с). Разбивка видна на экране заявки, а не пересчитывается
+  при чтении.
+- **Перенос сохраняет один id заявки и одно живое окно.** Прежние условия уходят
+  в историю, которая — журнал, а не второе обещание заказчику. Прежнее назначение не
+  подтверждает новые условия, поэтому исход возвращается в `pending`. Если новое окно
+  не находит назначения, старое автоматически *не* восстанавливается (`context/36` §4).
+- **Как только инженер зафиксировал старт, обычные изменения закрыты** — перенос, правки
+  и отмена отвечают `WORK_ALREADY_STARTED` через любой путь: устаревший экран, ссылку
+  в старом письме, новую сессию или интеграционный ключ (`context/42` DF-05).
+- **Отмена — изменение состояния с собственным штампом времени**, никогда не удаление
+  и никогда не следует автоматически из ухода заявки в нераспределённые.
+- **Заказчик видит только свои заявки.** Чужая сообщается как отсутствующая, а не
+  запрещённая, потому что подтвердить её существование — само по себе раскрытие.
+- **Заявка без координат сохраняется и помечается**, затем исключается из опубликованного
+  снимка с посчитанной диагностикой. Координаты никогда не выдумываются.
 
-## 6. Engineers and working days
+## 6. Инженеры и рабочие дни
 
-### Engineer contour — `@Roles('engineer')`
+### Контур инженера — `@Roles('engineer')`
 
-| Method | Path | Purpose |
+| Метод | Путь | Назначение |
 |---|---|---|
-| GET | `/api/v1/engineer/profile` | Own profile |
-| PATCH | `/api/v1/engineer/profile` | Change own skills, transport or usual start point |
-| GET | `/api/v1/engineer/day` | Shift, availability and lunch state of today |
-| POST | `/api/v1/engineer/availability` | Go online or offline, with an expected return |
-| POST | `/api/v1/engineer/technical-break` | A 15-minute technical stop |
-| POST | `/api/v1/engineer/lunch/start` · `/finish` | Record the actual start and the return |
+| GET | `/api/v1/engineer/profile` | Свой профиль |
+| PATCH | `/api/v1/engineer/profile` | Изменить свои навыки, транспорт или обычную точку старта |
+| GET | `/api/v1/engineer/day` | Смена, доступность и состояние обеда на сегодня |
+| POST | `/api/v1/engineer/availability` | Уйти в online или offline, с ожидаемым возвращением |
+| POST | `/api/v1/engineer/technical-break` | 15-минутная техническая остановка |
+| POST | `/api/v1/engineer/lunch/start` · `/finish` | Зафиксировать фактическое начало и возвращение |
 
-Everything acts on the signed-in engineer. There is no field in which to name someone
-else: the subject comes from the session (`context/42` DF-06).
+Всё действует на вошедшего инженера. Нет поля, в котором можно назвать кого-то другого:
+субъект берётся из сессии (`context/42` DF-06).
 
-### Dashboard side
+### Сторона дашборда
 
-| Method | Path | Purpose |
+| Метод | Путь | Назначение |
 |---|---|---|
-| GET | `/api/v1/dispatch/engineers` | Engineers with skills, transport and their current day |
-| POST | `/api/v1/dispatch/engineers` | Add an engineer by address |
-| PATCH | `/api/v1/dispatch/engineers/:id` | Change a profile |
-| POST | `/api/v1/dispatch/engineers/:id/workday` | Set the shift and lunch conditions |
-| POST | `/api/v1/dispatch/engineers/:id/availability` | Take an engineer off the line, or back on |
-| POST | `/api/v1/dispatch/engineers/:id/technical-break` | Put an engineer on a 15-minute technical stop; the day goes offline |
+| GET | `/api/v1/dispatch/engineers` | Инженеры с навыками, транспортом и их текущим днём |
+| POST | `/api/v1/dispatch/engineers` | Добавить инженера по адресу |
+| PATCH | `/api/v1/dispatch/engineers/:id` | Изменить профиль |
+| POST | `/api/v1/dispatch/engineers/:id/workday` | Задать смену и условия обеда |
+| POST | `/api/v1/dispatch/engineers/:id/availability` | Снять инженера с линии или вернуть на неё |
+| POST | `/api/v1/dispatch/engineers/:id/technical-break` | Поставить инженера на 15-минутную техническую остановку; день уходит в offline |
 
-### The rules these endpoints enforce
+### Правила, которые эти эндпоинты гарантируют
 
-- **Only the dispatcher creates an engineer.** Typing an address on the engineer sign-in
-  screen never produces the role. Creating the access and having someone Router can plan
-  for are different results: skills, transport and a start point must be real values, and
-  missing ones are never invented (`context/42` DF-03).
-- **Profile and working day are separate.** The shift, availability and lunch facts belong
-  to one day, so "already had lunch" cannot become a permanent property of a person.
-- **Lunch cannot be enabled without a duration and a full window**, and the whole lunch
-  must fit inside the window. The hours were never agreed, and a feature that is switched
-  on must not run on an invented norm (`context/32` section 8). `required` together with
-  `enabled: false` is contradictory and is refused.
-- **`lunchTaken` is set only by the engineer actually starting lunch** — not by publishing
-  a schedule. It means the single lunch of the day is used up, not that it has finished,
-  and it survives a restart, a mode switch and turning the feature off and on again.
-- **`online` is working availability**, not a network state and not "free right now".
-  Going offline does not finish the work in hand and does not reassign it.
-  `expectedOnlineAt` is a forecast: reaching it creates no online fact.
-- **The engineer and the dispatcher edit the same profile through the same handler**, so
-  their concurrent edits meet one version check and neither silently overwrites the other.
-  Which of them may change skills, transport and office is explicitly still open
-  (`context/36` section 14.2); the restriction lives in the controller so it can change
-  without touching the logic.
+- **Инженера создаёт только диспетчер.** Ввод адреса на экране входа инженера никогда
+  не порождает роль. Создать доступ и получить человека, для которого Router может
+  планировать, — разные результаты: навыки, транспорт и точка старта должны быть
+  настоящими значениями, а недостающие никогда не выдумываются (`context/42` DF-03).
+- **Профиль и рабочий день раздельны.** Факты смены, доступности и обеда принадлежат
+  одному дню, поэтому «уже пообедал» не может стать постоянным свойством человека.
+- **Обед нельзя включить без длительности и полного окна**, и весь обед должен
+  помещаться внутрь окна. Часы никогда не были согласованы, а включённая функция не
+  должна работать на выдуманной норме (`context/32` §8). `required` вместе с
+  `enabled: false` противоречиво и отклоняется.
+- **`lunchTaken` ставится только инженером, фактически начавшим обед** — не публикацией
+  расписания. Это значит, что единственный обед дня израсходован, а не что он закончился,
+  и это переживает перезапуск, переключение режима и выключение-включение функции.
+- **`online` — рабочая доступность**, не сетевое состояние и не «свободен прямо сейчас».
+  Уход в offline не завершает работу в руках и не переназначает её. `expectedOnlineAt` —
+  прогноз: его достижение не создаёт факта online.
+- **Инженер и диспетчер правят один профиль через один обработчик**, поэтому их
+  конкурентные правки встречают одну проверку версии, и никто молча не перезаписывает
+  другого. Кто из них может менять навыки, транспорт и офис — явно ещё открытый вопрос
+  (`context/36` §14.2); ограничение живёт в контроллере, чтобы меняться, не трогая логику.
 
-The engineer's route for the day is the applied working plan (`GET /api/v1/engineer/plan`),
-and what an engineer may mark are the execution facts of that plan (section 8). Location
-tracking is not part of the product at all: GPS collection was removed by decision
-(`context/50` section 2), and there is no position endpoint, table or live layer.
+Маршрут инженера на день — применённый рабочий план (`GET /api/v1/engineer/plan`), а
+отмечать инженер может факты исполнения этого плана (раздел 8). Отслеживание
+местоположения вообще не входит в продукт: сбор GPS удалён решением (`context/50` §2),
+и нет ни эндпоинта позиции, ни таблицы, ни живого слоя.
 
-## 7. The published planning task
+## 7. Опубликованная задача планирования
 
-| Method | Path | Purpose |
+| Метод | Путь | Назначение |
 |---|---|---|
-| GET | `/api/v1/dispatch/policies` | Prepared policies and the one in force |
-| POST | `/api/v1/dispatch/policy` | Choose a prepared policy |
-| GET | `/api/v1/dispatch/router/technical-settings` | The Router-owned technical revision in force, with its context version |
-| PUT | `/api/v1/dispatch/router/technical-settings` | Replace the whole revision (operation envelope; see below) |
-| GET | `/api/v1/dispatch/debug/snapshot` | The published task exactly as Router reads it |
+| GET | `/api/v1/dispatch/policies` | Подготовленные политики и действующая |
+| POST | `/api/v1/dispatch/policy` | Выбрать подготовленную политику |
+| GET | `/api/v1/dispatch/router/technical-settings` | Действующая техническая ревизия Router со своей версией контекста |
+| PUT | `/api/v1/dispatch/router/technical-settings` | Заменить ревизию целиком (конверт операций; см. ниже) |
+| GET | `/api/v1/dispatch/debug/snapshot` | Опубликованная задача ровно так, как её читает Router |
 
-`mount-data-eng` publishes the **whole current task**, never a stream of changes. Work that
-is finished, cancelled or already under way is removed before publication, which is why
-Router needs no business status per request (`context/33` section 5).
+`mount-data-eng` публикует **всю текущую задачу**, никогда поток изменений. Завершённая,
+отменённая или уже идущая работа удаляется до публикации, поэтому Router не нужен
+бизнес-статус на каждую заявку (`context/33` §5).
 
-### What publishes, and what must not
+### Что публикуется, а что — нет
 
-Publication happens only on a listed business trigger — a confirmed request, changed
-conditions, a cancellation, an engineer created or edited, a shift or availability change,
-a lunch actually started, a policy change, an execution fact with a material timing
-consequence (`request.execution_started`, `request.execution_variance`,
-`request.execution_overrun`), an import or a reset. The list is a closed enum in
+Публикация происходит только по перечисленному бизнес-триггеру — подтверждённая заявка,
+изменившиеся условия, отмена, созданный или отредактированный инженер, изменение смены
+или доступности, фактически начатый обед, смена политики, факт исполнения с существенными
+временными последствиями (`request.execution_started`, `request.execution_variance`,
+`request.execution_overrun`), импорт или сброс. Список — закрытый enum в
 `publication-triggers.ts`.
 
-Deliberately **not** triggers, each for a stated reason:
+Намеренно **не** триггеры, каждый по названной причине:
 
-| Event | Why not |
+| Событие | Почему нет |
 |---|---|
-| Time passing | There is no replanning timer; `planning_as_of` does not tick. The single deliberate exception is the execution-overrun poller, which only *detects* an overrun of an already started task and publishes its projection — it never rebuilds the plan |
-| A routine completion without material variance | Following the current plan needs no re-optimisation; a finish inside both tolerances moves no anchor that Router can see |
-| An engineer's silence | An expired estimate does not become `null`, offline, or a refusal |
-| Reading anything | A read publishes nothing and moves no pointer |
+| Течение времени | Таймера перепланирования нет; `planning_as_of` не тикает. Единственное намеренное исключение — поллер превышений исполнения: он только *обнаруживает* превышение уже начатой задачи и публикует её проекцию, план он никогда не перестраивает |
+| Рядовое завершение без существенного отклонения | Следование текущему плану не требует реоптимизации; финиш внутри обоих допусков не сдвигает ни одного якоря, который видел бы Router |
+| Молчание инженера | Истёкшая оценка не становится `null`, offline или отказом |
+| Любое чтение | Чтение ничего не публикует и не двигает указатель |
 
-And even on a real trigger, a projection byte-identical to the published one is **not**
-republished and `planning_as_of` does not move. Rewriting the same content must not
-produce an endless series of timestamps (`context/33` section 7).
+И даже по настоящему триггеру проекция, байт-в-байт совпадающая с опубликованной, **не**
+публикуется повторно, и `planning_as_of` не сдвигается. Перезапись того же содержимого
+не должна порождать бесконечную серию штампов времени (`context/33` §7).
 
-### Hash and storage
+### Hash и хранение
 
-The document is serialized once by the canonical rules of
-[contracts/snapshot-canonical.md](./contracts/snapshot-canonical.md); the same string is
-stored and hashed.
+Документ сериализуется один раз по каноническим правилам
+[contracts/snapshot-canonical.md](./contracts/snapshot-canonical.md); та же строка
+сохраняется и хешируется.
 
-Two digests are kept, and the distinction matters. `input_hash` covers the **whole
-document, including `planning_as_of`** — that is what a Router result is matched against.
-`task_fingerprint` covers the task **without** that timestamp, and it is what answers "did
-the task actually change". Comparing `input_hash` would report a change every second,
-because the timestamp is inside the thing being hashed, so the "nothing changed" rule would
-never fire and `planning_as_of` would tick. The contract puts the change check before the
-time is stamped (`context/33` section 7), and the fingerprint is how that is done. The snapshot row and the pointer switch commit in one transaction with
-the pointer locked, so a slow publisher cannot move the active task back to an older
-projection. Published snapshots are immutable and kept; only the pointer moves.
+Хранятся два дайджеста, и это различие важно. `input_hash` покрывает **весь документ,
+включая `planning_as_of`** — именно с ним сопоставляется результат Router.
+`task_fingerprint` покрывает задачу **без** этого штампа времени, и именно он отвечает
+на вопрос «изменилась ли задача на самом деле». Сравнение `input_hash` сообщало бы об
+изменении каждую секунду, потому что штамп времени находится внутри хешируемого; правило
+«ничего не изменилось» не срабатывало бы никогда, и `planning_as_of` тикал бы. Контракт
+ставит проверку изменения до простановки времени (`context/33` §7), и fingerprint —
+способ это обеспечить. Строка снимка и переключение указателя коммитятся в одной
+транзакции с заблокированным указателем, поэтому медленный издатель не может откатить
+активную задачу к более старой проекции. Опубликованные снимки неизменяемы и хранятся;
+двигается только указатель.
 
-### Diagnostics
+### Диагностика
 
-`debug/snapshot` returns `diagnostics` computed **live** from current data, plus
-`diagnosticsAtPublication` frozen on the document. The distinction matters: a request still
-waiting for coordinates cannot be projected, so it does not change the task and triggers no
-publication — a count frozen at publication time would never mention it. Live diagnostics
-report what is currently excluded and why:
+`debug/snapshot` возвращает `diagnostics`, вычисленные **живьём** из текущих данных,
+плюс `diagnosticsAtPublication`, замороженный в документе. Различие важно: заявка, всё
+ещё ждущая координат, не может быть спроецирована, поэтому она не меняет задачу и не
+вызывает публикацию — счётчик, замороженный на момент публикации, никогда бы её не
+упомянул. Живая диагностика сообщает, что исключено прямо сейчас и почему:
 
-| Field | Means |
+| Поле | Значение |
 |---|---|
-| `requestsWithoutLocation` | Submitted work with no coordinates; they are never invented |
-| `requestsOutsideHorizon` | Work whose window lies entirely outside this task's period |
-| `engineersWithoutStartLocation` | No usable start point, so no route could begin |
-| `engineersWithoutShift` | A working day exists but nobody has set a shift |
-| `engineersWithoutWorkday` | No working day for this horizon at all |
-| `engineersOverrun` | Engineers withdrawn from the task because their started work overran its tolerance (`overrunDetectedAt` is set) |
+| `requestsWithoutLocation` | Поданная работа без координат; они никогда не выдумываются |
+| `requestsOutsideHorizon` | Работа, чьё окно целиком лежит вне периода этой задачи |
+| `engineersWithoutStartLocation` | Нет пригодной точки старта, поэтому маршрут не мог бы начаться |
+| `engineersWithoutShift` | Рабочий день есть, но смену никто не задал |
+| `engineersWithoutWorkday` | Для этого горизонта рабочего дня нет вовсе |
+| `engineersOverrun` | Инженеры, выведенные из задачи, потому что их начатая работа превысила допуск (`overrunDetectedAt` установлен) |
 
-An engineer with no shift is excluded rather than given an invented one: a calendar-day
-default would let work be scheduled at three in the morning.
+Инженер без смены исключается, а не получает выдуманную: значение по умолчанию «весь
+календарный день» позволило бы планировать работу на три часа утра.
 
-### Router technical settings, driven from sys
+### Технические настройки Router, управляемые из sys
 
-The eight Router-owned controls that version the calculation context — `lunchesEnabled`
-(off by default since `context/50`), the two revalidation tolerances, `travelTimeMode`
-(`graph_with_access_buffer` or `fixed_normative`), `accessBufferSec`, `fixedTravelTimeSec`,
-`earlyFinishReplanThresholdSec` and `taskOverrunToleranceSec` — are read and replaced as
-one revision:
+Восемь принадлежащих Router регуляторов, задающих версию расчётного контекста, —
+`lunchesEnabled` (выключен по умолчанию с `context/50`), два допуска ревалидации,
+`travelTimeMode` (`graph_with_access_buffer` или `fixed_normative`), `accessBufferSec`,
+`fixedTravelTimeSec`, `earlyFinishReplanThresholdSec` и `taskOverrunToleranceSec` —
+читаются и заменяются как одна ревизия:
 
-- `GET /api/v1/dispatch/router/technical-settings` reads them from Router's `GET /v1/context`
-  together with the active `router_context_version`; the read-through is not cached as
-  state.
-- `PUT /api/v1/dispatch/router/technical-settings` goes through the operation envelope and
-  `executeExternal`: the journal row is reserved as `outcome_unknown`, the remote
-  `PUT /v2/config/technical-settings` (with `operation_id` and `expected_context_version`)
-  runs **outside** any database transaction, and the journal is finalised to
-  `applied`, `conflict` or `rejected` afterwards. A replayed `operationId` returns the
-  stored outcome without calling Router again; a crash between the call and the finalisation
-  leaves the row pending for retry, and Router's own durable operation receipts make the
-  retried call idempotent. Router's HTTP 409 surfaces as `VERSION_CONFLICT` with Router's
-  `detail` preserved.
+- `GET /api/v1/dispatch/router/technical-settings` читает их из `GET /v1/context` Router
+  вместе с активной `router_context_version`; read-through не кешируется как состояние.
+- `PUT /api/v1/dispatch/router/technical-settings` идёт через конверт операций и
+  `executeExternal`: строка журнала резервируется как `outcome_unknown`, удалённый
+  `PUT /v2/config/technical-settings` (с `operation_id` и `expected_context_version`)
+  выполняется **вне** любой транзакции базы данных, а журнал затем финализируется в
+  `applied`, `conflict` или `rejected`. Повторенный `operationId` возвращает сохранённый
+  исход, не обращаясь к Router снова; сбой между вызовом и финализацией оставляет строку
+  ожидающей повтора, а собственные durable-квитанции операций Router делают повторный
+  вызов идемпотентным. HTTP 409 от Router проступает как `VERSION_CONFLICT` с
+  сохранённым `detail` Router.
 
-The same external-operation pattern (reserved journal row, remote call outside the
-transaction, finalise after) backs `engineer.technical-break` and `data.import`, so a lost
-response can never repeat a side effect or lose the record of one.
+Тот же шаблон внешней операции (зарезервированная строка журнала, удалённый вызов вне
+транзакции, финализация после) стоит за `engineer.technical-break` и `data.import`,
+поэтому потерянный ответ никогда не повторит побочный эффект и не потеряет его записи.
 
-## 8. The working plan, control mode and facts
+## 8. Рабочий план, режим управления и факты
 
-| Method | Path | Access | Purpose |
+| Метод | Путь | Доступ | Назначение |
 |---|---|---|---|
-| GET | `/api/v1/dispatch/plan` | dispatcher | The applied plan, the control mode and the last result |
-| POST | `/api/v1/dispatch/mode` | dispatcher | Switch emergency manual control on or off |
-| POST | `/api/v1/dispatch/plan/reassign` | dispatcher | Move work that has not started to another engineer |
-| POST | `/api/v1/dispatch/plan/reorder` | dispatcher | Save the finished order of one queue |
-| GET | `/api/v1/dispatch/alerts` | dispatcher | Explainable problems from the plan |
-| POST | `/api/v1/dispatch/alerts/:id/seen` | dispatcher | Mark an alert seen |
-| GET | `/api/v1/engineer/plan` | engineer | This engineer's route for the day |
-| POST | `/api/v1/engineer/requests/:id/facts` | engineer | Record a confirmed execution fact |
-| POST | `/api/v1/dispatch/debug/router-result` | dispatcher | Feed a result through the acceptance checks |
+| GET | `/api/v1/dispatch/plan` | диспетчер | Применённый план, режим управления и последний результат |
+| POST | `/api/v1/dispatch/mode` | диспетчер | Включить или выключить аварийное ручное управление |
+| POST | `/api/v1/dispatch/plan/reassign` | диспетчер | Перенести ещё не начатую работу другому инженеру |
+| POST | `/api/v1/dispatch/plan/reorder` | диспетчер | Сохранить итоговый порядок одной очереди |
+| GET | `/api/v1/dispatch/alerts` | диспетчер | Объяснимые проблемы из плана |
+| POST | `/api/v1/dispatch/alerts/:id/seen` | диспетчер | Отметить алерт просмотренным |
+| GET | `/api/v1/engineer/plan` | инженер | Маршрут этого инженера на день |
+| POST | `/api/v1/engineer/requests/:id/facts` | инженер | Записать подтверждённый факт исполнения |
+| POST | `/api/v1/dispatch/debug/router-result` | диспетчер | Прогнать результат через проверки приёмки |
 
-### Acceptance: five independent checks
+### Приёмка: пять независимых проверок
 
-A result becomes the working plan only if **all** of these hold (`context/33` section 7):
+Результат становится рабочим планом, только если выполняется **всё** из этого
+(`context/33` §7):
 
-1. the mode allows it — in MANUAL the Router-to-sys bus is disconnected;
-2. `input_hash` matches the snapshot published **now**;
-3. `router_context_version` matches the version in force **now** — a result cannot report
-   its own currency, so the active version is read separately;
-4. `main.is_usable` — a finished answer is not automatically an applicable one, and
-   `false` does not prove the visits are impossible;
-5. no conflict with explicit facts — started, finished or cancelled work is not
-   redistributed, and a used lunch is not planned again.
+1. режим это позволяет — в MANUAL шина Router → sys разомкнута;
+2. `input_hash` совпадает со снимком, опубликованным **сейчас**;
+3. `router_context_version` совпадает с действующей **сейчас** версией — результат не
+   может отчитаться о собственной актуальности, поэтому активная версия читается отдельно;
+4. `main.is_usable` — завершённый ответ не автоматически применимый, а `false` не
+   доказывает, что визиты невозможны;
+5. нет конфликта с явными фактами — начатая, завершённая или отменённая работа не
+   перераспределяется, а использованный обед не планируется заново.
 
-Each failure has its own code, so a stale answer, an unusable plan and a manual-mode
-refusal stay distinguishable. Refused packages are stored with the reason: a refusal has
-to be explainable afterwards, not invisible.
+У каждого отказа свой код, поэтому устаревший ответ, непригодный план и отказ в ручном
+режиме остаются различимыми. Отклонённые пакеты сохраняются вместе с причиной: отказ
+должен быть объясним потом, а не невидим.
 
-**When a result conflicts with the facts, sys does not repair it.** It declines to apply
-it and publishes a current projection instead. Choosing assignments is Router's job and
-stays Router's job.
+**Когда результат конфликтует с фактами, sys его не чинит.** Он отказывается применять
+конфликтный результат и публикует вместо него актуальную проекцию. Выбор назначений —
+работа Router и остаётся ею.
 
-Re-reading the same `result_id` does not apply it again, does not return completed work to
-the pool and does not repeat a letter. The single exception is the explicit return to AUTO,
-which may apply a still-suitable result the system has seen before.
+Повторное чтение того же `result_id` не применяет его снова, не возвращает завершённую
+работу в пул и не повторяет письмо. Единственное исключение — явный возврат в AUTO: он
+может применить всё ещё пригодный результат, который система уже видела.
 
-### The plan itself
+### Сам план
 
-Each acceptance adds an **immutable revision**; a pointer names the one in force (D-10).
-The revision carries `planAsOf` — the moment the plan describes. While a recalculation is
-under way the interface keeps showing the last applied plan with that moment, rather than
-clearing the day or borrowing the timestamp of a snapshot that has not been computed yet
-(`context/36` section 6). `origin` says `auto` or `manual`, so a manual plan never looks
-like a fresh calculation.
+Каждая приёмка добавляет **неизменяемую ревизию**; указатель называет действующую
+(D-10). Ревизия несёт `planAsOf` — момент, который план описывает. Пока пересчёт идёт,
+интерфейс продолжает показывать последний применённый план с тем самым моментом, а не
+очищает день и не занимает штамп времени снимка, который ещё не вычислен
+(`context/36` §6). `origin` равен `auto` или `manual`, поэтому ручной план никогда не
+выглядит свежим расчётом.
 
-### Manual control
+### Ручное управление
 
-Manual mode disconnects exactly one thing: the delivery of Router's result into sys. Router
-keeps computing, the sector keeps being read, requests keep arriving; the answers simply
-stay inside Router. The dispatcher becomes the author of the plan and gets two gestures,
-reassign and reorder — no group draft, no "apply changes" button, and no ETA required.
-Old automatic times are not recomputed and are not presented as if they had been: sys runs
-no hidden optimiser.
+Ручной режим отключает ровно одну вещь: доставку результата Router в sys. Router
+продолжает считать, сектор продолжает читаться, заявки продолжают приходить; ответы
+просто остаются внутри Router. Диспетчер становится автором плана и получает два жеста,
+reassign и reorder, — без группового черновика, без кнопки «применить изменения» и без
+обязательной ETA. Старые автоматические времена не пересчитываются и не подаются так,
+будто были пересчитаны: sys не запускает скрытого оптимизатора.
 
-Returning to AUTO is an explicit transition. The current result replaces the *future*
-distribution; it does not merge with the manual plan and undoes nothing that happened.
+Возврат в AUTO — явный переход. Текущий результат заменяет *будущее* распределение; он
+не сливается с ручным планом и не отменяет ничего случившегося.
 
-### Facts
+### Факты
 
-`arrived`, `arrived_blocked`, `started`, `finished`, `problem` — every one an explicit mark
-by the engineer. Nothing creates a fact from a schedule or from silence — the single
-exception, again deliberate, is the overrun detection below, which derives a *diagnostic*,
-never a completion. Arrival and start are separate events, so someone on site who cannot
-begin reports exactly that. Finishing work that never started is refused rather than
-inferred. `occurredAt` (when the engineer says it happened) and the stored `recordedAt` are
-kept apart.
+`arrived`, `arrived_blocked`, `started`, `finished`, `problem` — каждая из них явная
+отметка от инженера. Ничто не создаёт факт из расписания или из молчания — единственное
+исключение, снова намеренное, обнаружение превышения ниже: оно выводит *диагностику* и
+никогда — завершение. Прибытие и старт — отдельные события, поэтому тот, кто на месте,
+но не может начать, сообщает именно это. Завершение работы, которая никогда не
+начиналась, отклоняется, а не выводится. `occurredAt` (когда, по словам инженера, это
+произошло) и сохраняемый `recordedAt` держатся раздельно.
 
-An engineer may only mark work the **applied plan** assigned them.
+Инженер может отмечать только работу, назначенную ему **применённым планом**.
 
-### Execution timing
+### Тайминг исполнения
 
-A started fact is where prediction meets reality, and the request row carries the state it
-creates: `expectedCompletionAt` (started at + service duration), `continuationAvailableAt`
-(when the engineer can take the next task) and, when things go wrong, `overrunDetectedAt`.
+Факт старта — то место, где прогноз встречается с реальностью, и строка заявки несёт
+создаваемое им состояние: `expectedCompletionAt` (момент старта + длительность
+обслуживания), `continuationAvailableAt` (когда инженер сможет взять следующую задачу)
+и, когда что-то идёт не так, `overrunDetectedAt`.
 
-- **Start** records one active task per engineer (a second start is refused), sets
-  `expectedCompletionAt` and `continuationAvailableAt`, and publishes
+- **Старт** записывает одну активную задачу на инженера (второй старт отклоняется),
+  ставит `expectedCompletionAt` и `continuationAvailableAt` и публикует
   `request.execution_started`.
-- **Finish** is refused if it predates the start (422). Otherwise the variance is
-  classified against the two Router-owned tolerances: finishing at least
-  `earlyFinishReplanThresholdSec` early, or more than `taskOverrunToleranceSec` late, or
-  after a detected overrun is a **material variance** — `continuationAvailableAt` moves to
-  the actual finish and `request.execution_variance` is published. An absorbed deviation
-  (for example 14 minutes early) changes no anchor and publishes nothing.
-- **Overrun** is detected by a background coordinator (`ROUTER_POLL_INTERVAL_MS`, disabled
-  in tests) that marks `overrunDetectedAt` on in-progress requests past
-  `expectedCompletionAt + taskOverrunToleranceSec` and publishes
-  `request.execution_overrun`. The engineer disappears from the next published snapshot
-  (counted in `engineersOverrun`); no finish fact is ever invented.
+- **Финиш** отклоняется, если предшествует старту (422). Иначе отклонение
+  классифицируется по двум допускам, принадлежащим Router: финиш минимум на
+  `earlyFinishReplanThresholdSec` раньше, более чем на `taskOverrunToleranceSec` позже
+  или после обнаруженного превышения — **существенное отклонение**:
+  `continuationAvailableAt` переносится на фактический финиш и публикуется
+  `request.execution_variance`. Поглощённое отклонение (например, на 14 минут раньше)
+  не сдвигает ни одного якоря и ничего не публикует.
+- **Превышение** обнаруживает фоновый координатор (`ROUTER_POLL_INTERVAL_MS`, в тестах
+  отключён): он помечает `overrunDetectedAt` на находящихся в работе заявках, вышедших
+  за `expectedCompletionAt + taskOverrunToleranceSec`, и публикует
+  `request.execution_overrun`. Инженер исчезает из следующего опубликованного снимка
+  (считается в `engineersOverrun`); факт финиша никогда не выдумывается.
 
-The two thresholds are read from Router's technical settings
-(`ExecutionTimingPolicy`), with defaults of 900 and 600 seconds when Router is not
-configured — so the classifier stays honest about whose numbers it is using.
+Оба порога читаются из технических настроек Router (`ExecutionTimingPolicy`) со
+значениями по умолчанию 900 и 600 секунд, когда Router не настроен, — так классификатор
+остаётся честным о том, чьи числа использует.
 
-## 9. Data: import and the two resets
+## 9. Данные: импорт и два сброса
 
-| Method | Path | Purpose |
+| Метод | Путь | Назначение |
 |---|---|---|
-| GET | `/api/v1/dispatch/data/state` | Whether the application is initialised, how, and what has been imported |
-| POST | `/api/v1/dispatch/data/import` | Load one, several or all regions of the official dataset |
-| POST | `/api/v1/dispatch/data/upload` | Atomically load a JSON package for a new region or append requests to an existing region |
-| POST | `/api/v1/dispatch/data/reset` | Reset to the test data, or to an empty working set |
+| GET | `/api/v1/dispatch/data/state` | Инициализировано ли приложение, как именно, и что импортировано |
+| POST | `/api/v1/dispatch/data/import` | Загрузить один, несколько или все регионы официального датасета |
+| POST | `/api/v1/dispatch/data/upload` | Атомарно загрузить JSON-пакет для нового региона или дописать заявки в существующий регион |
+| POST | `/api/v1/dispatch/data/reset` | Сбросить к тестовым данным или к пустому рабочему набору |
 
-### Import
+### Импорт
 
-The organisers' files are windows-1251 with `;` separators and Russian headers, and they
-are the untouched source of truth. The importer handles the anomalies they actually
-contain: blank rows, the regional office hidden in a last row that looks blank, empty and
-all-day windows (a missing window is treated as the full source day, and the date is
-derived from the rows), missing districts, four spellings of the Moscow prefix, and
-impossible windows (`31.02` is an error, not a guess).
+Файлы организаторов — windows-1251 с разделителями `;` и русскими заголовками, и они —
+нетронутый источник истины. Импортёр обрабатывает аномалии, которые они реально содержат:
+пустые строки, региональный офис, спрятанный в последней строке, выглядящей пустой,
+пустые и полнодневные окна (отсутствующее окно трактуется как полный исходный день, а
+дата выводится из строк), отсутствующие районы, четыре варианта написания московского
+префикса и невозможные окна (`31.02` — ошибка, а не догадка).
 
-`POST /api/v1/dispatch/data/import` takes `region` (one) **xor** `regions` (`"all"` or an
-explicit list of `east`, `southeast`, `south_central`), plus an optional
-`engineerCountPerRegion` cap that must not exceed the crews the dataset actually contains.
-The whole batch — every requested region — applies atomically or not at all, and the
-summary reports per-region results. For `regions: "all"` that is 205 requests and 35
-engineers across the three regions.
+`POST /api/v1/dispatch/data/import` принимает `region` (один) **xor** `regions`
+(`"all"` или явный список из `east`, `southeast`, `south_central`), плюс опциональное
+ограничение `engineerCountPerRegion`, которое не должно превышать число бригад, реально
+содержащихся в датасете. Вся пачка — каждый запрошенный регион — применяется атомарно
+или никак, и сводка сообщает результаты по каждому региону. Для `regions: "all"` это
+205 заявок и 35 инженеров по трём регионам.
 
-Three rules from `context/37` section 9.1:
+Три правила из `context/37` §9.1:
 
-- **the package is checked before anything is applied** — including the SHA-256 of every
-  source and geocode byte; re-importing the same source with different bytes is a 422, not
-  a silent overwrite;
-- **an error means nothing is applied** — a half-loaded file leaves a state nobody chose.
-  A type of work that is not in the catalogue is an error, because mapping it to the
-  nearest familiar one would silently send the wrong engineer;
-- **repeating a package creates no duplicates**, recognised by origin and content rather
-  than by file name.
+- **пакет проверяется до того, как что-либо применено** — включая SHA-256 каждого байта
+  источника и геокода; повторный импорт того же источника с другими байтами — 422,
+  а не тихая перезапись;
+- **ошибка означает, что не применено ничего** — полузагруженный файл оставляет
+  состояние, которое никто не выбирал. Вид работ, которого нет в каталоге, — ошибка,
+  потому что отображение на ближайший знакомый молча послало бы не того инженера;
+- **повтор пакета не создаёт дубликатов** — пакеты распознаются по происхождению и
+  содержимому, а не по имени файла.
 
-What the dataset does not contain matters as much. There is no engineer directory, no
-durations, no priorities and no coordinates (`context/18` section 6.3). Crews come from the
-`Бригада` column of the control distribution; their skills and transport are derived by a
-stated, deterministic rule and stored with `origin = synthesized`, so a derived value never
-looks like data. **Coordinates come only from a versioned geocode package** at
-`data/dataset/geocoded/<region>.json` (strict schema, one entry per request address plus
-the depot); the import refuses to run without a package that covers every address, and
-imported requests are created with real points — nothing sits in `needsGeocoding`. Benchmark
-windows are rebased onto the live horizon (shifted to start 60 seconds after import), so a
-dataset dated 17.08 plans against "now" without editing the CSVs.
+Чего датасет не содержит, важно не меньше. Нет справочника инженеров, длительностей,
+приоритетов и координат (`context/18` §6.3). Бригады берутся из колонки `Бригада`
+контрольного распределения; их навыки и транспорт выводятся по заявленному
+детерминированному правилу и хранятся с `origin = synthesized`, поэтому выведенное
+значение никогда не выглядит данными. **Координаты приходят только из версионированного
+геокод-пакета** в `data/dataset/geocoded/<region>.json` (строгая схема, по записи на
+адрес каждой заявки плюс депо); импорт отказывается выполняться без пакета, покрывающего
+каждый адрес, и импортированные заявки создаются с реальными точками — ничего не
+остаётся в `needsGeocoding`. Окна бенчмарка перепривязываются к живому горизонту
+(сдвигаются так, чтобы начинаться через 60 секунд после импорта), поэтому датасет от
+17.08 планирует относительно «сейчас» без правки CSV.
 
-### Dispatcher JSON upload
+### JSON-загрузка диспетчера
 
-`POST /api/v1/dispatch/data/upload` accepts one strict `schemaVersion: "1.0"` document.
-`mode: "new_region"` requires a depot, at least one engineer and at least one request;
-`mode: "append_requests"` accepts only requests and requires the named region to exist.
-The browser performs the same structural checks for immediate feedback, but the server is
-authoritative. Coordinates are WGS84 and all times are Unix seconds.
+`POST /api/v1/dispatch/data/upload` принимает один строгий документ
+`schemaVersion: "1.0"`. `mode: "new_region"` требует депо, минимум одного инженера и
+минимум одной заявки; `mode: "append_requests"` принимает только заявки и требует, чтобы
+названный регион существовал. Браузер выполняет те же структурные проверки ради
+немедленной обратной связи, но источник истины — сервер. Координаты — WGS84, все
+времена — секунды Unix.
 
-The entire package runs in the operation transaction. Duplicate IDs inside a file, an
-unknown structure, an impossible time interval, a changed row behind an existing external
-ID, or a mode/region mismatch rejects the whole package. An exact package replay is
-idempotent. A matching existing request is skipped with a warning; the same external ID
-with different business data is a conflict. A successful import publishes one new Router
-snapshot and returns its `publicationId` and `inputHash`.
+Весь пакет выполняется в транзакции операции. Дубликаты ID внутри файла, неизвестная
+структура, невозможный временной интервал, изменённая строка под существующим внешним ID
+или несоответствие режима и региона отклоняют весь пакет. Точный повтор пакета
+идемпотентен. Совпадающая с существующей заявка пропускается с предупреждением; тот же
+внешний ID с другими деловыми данными — конфликт. Успешный импорт публикует один новый
+снимок Router и возвращает его `publicationId` и `inputHash`.
 
-The request shape and an executable example live in
-[`data-upload-example.json`](./data-upload-example.json). Uploaded engineers receive the
-standard optional 45-minute lunch window 11:20–15:00 local time. The global Router switch
-still decides whether those lunch inputs participate in a calculation.
+Форма запроса и исполняемый пример лежат в
+[`data-upload-example.json`](./data-upload-example.json). Загруженные инженеры получают
+стандартное опциональное 45-минутное обеденное окно 11:20–15:00 по локальному времени.
+Участвуют ли эти обеденные входы в расчёте, по-прежнему решает глобальный переключатель
+Router.
 
-### Resets
+### Сбросы
 
-Adding data, resetting to the test data and a full reset are three different actions, and
-both resets require an explicit confirmation phrase naming what will be affected:
+Добавление данных, сброс к тестовым данным и полный сброс — три разных действия, и оба
+сброса требуют явной подтверждающей фразы, называющей, что будет затронуто:
 
-| Action | Confirmation |
+| Действие | Подтверждение |
 |---|---|
 | `kind: "demo"` | `reset to test data` |
 | `kind: "empty"` | `erase all application data` |
 
-The refusal lists what the action would remove and what it would keep, so the confirmation
-is an informed one. An integration key cannot confirm a reset: it carries the dispatcher's
-authority, not their confirmation, and an AI may prepare either action but never confirm it
-on the dispatcher's behalf (`context/42` DF-24).
+При отказе перечисляется, что действие удалило бы и что оставило бы, поэтому
+подтверждение — информированное. Интеграционный ключ не может подтвердить сброс: он
+несёт полномочия диспетчера, но не его подтверждение; AI может подготовить любое из этих
+действий, но никогда не подтверждает его от имени диспетчера (`context/42` DF-24).
 
-A reset clears **data, not the application**. Source code, `.env`, the schema and the
-knowledge sources stay, and the dispatcher account is restored from configuration rather
-than from a hidden archive of old users. It does clear sessions — including the one that
-confirmed it, so the Dashboard asks for a new sign-in. After an empty reset the startup
-profile records that the emptiness was deliberate: an empty `requests` table is not proof
-that setup never happened, and a restart must not quietly reload the demo data
-(`context/37` section 9.5).
+Сброс очищает **данные, а не приложение**. Исходный код, `.env`, схема и источники
+знаний остаются, а учётная запись диспетчера восстанавливается из конфигурации, а не из
+скрытого архива старых пользователей. Сессии он очищает — включая ту, что подтвердила
+сброс, поэтому Дашборд просит войти заново. После пустого сброса startup-профиль
+фиксирует, что пустота была намеренной: пустая таблица `requests` — не доказательство,
+что настройка никогда не проводилась, и перезапуск не должен тихо перезагрузить
+демо-данные (`context/37` §9.5).
 
-## 10. Missing contracts
+## 10. Недостающие контракты
 
-Listed rather than stubbed with invented shapes (AGENTS.md section 10.3).
+Перечислены, а не заменены заглушками с выдуманными формами (AGENTS.md §10.3).
 
-### Router Core HTTP surface — implemented
+### HTTP-поверхность Router Core — реализована
 
-**No longer missing.** Router Core V2 (D-22) publishes its private service API, reproduced
-in section 11 below with machine-readable payloads in `core/schemas/`. The gateway's HTTP
-client (`http-router-client.ts`) speaks all of it:
+**Больше не отсутствует.** Router Core V2 (D-22) публикует свой приватный сервисный API;
+он воспроизведён в разделе 11 ниже с машиночитаемыми полезными нагрузками в
+`core/schemas/`. HTTP-клиент шлюза (`http-router-client.ts`) покрывает его целиком:
 
-| What `ROUTER-gateway` needs | Router endpoint |
+| Что нужно `ROUTER-gateway` | Эндпоинт Router |
 |---|---|
-| Current result | `GET /v1/result` |
-| Active context version and technical settings | `GET /v1/context` |
-| Replace technical settings (CAS, idempotent) | `PUT /v2/config/technical-settings` |
-| Reachability | `GET /health` |
+| Текущий результат | `GET /v1/result` |
+| Активная версия контекста и технические настройки | `GET /v1/context` |
+| Заменить технические настройки (CAS, идемпотентно) | `PUT /v2/config/technical-settings` |
+| Достижимость | `GET /health` |
 
-The payload shapes were written independently on both sides from `context/33` and agree
-field for field: `plan`, `engineer_route`, `route_stop`, `route_leg`, `assignment`,
-`lunch_result`, `route_metrics`, `plan_metrics`, `planning_alert`, `reason` and
-`diagnostic` in `result.types.ts` have exactly the properties of the matching `$defs` in
-`core/schemas/router-result-1.0.json`, in both directions. The same holds for the
-published task: the golden vector in `docs/contracts/fixtures/` validates against
-`core/schemas/router-task-snapshot-1.0.json`, including every enum.
+Формы полезных нагрузок писались независимо на обеих сторонах по `context/33` и
+совпадают поле в поле: `plan`, `engineer_route`, `route_stop`, `route_leg`,
+`assignment`, `lunch_result`, `route_metrics`, `plan_metrics`, `planning_alert`,
+`reason` и `diagnostic` в `result.types.ts` имеют ровно те свойства, что и
+соответствующие `$defs` в `core/schemas/router-result-1.0.json`, в обе стороны. То же
+верно для опубликованной задачи: золотой вектор в `docs/contracts/fixtures/`
+валидируется против `core/schemas/router-task-snapshot-1.0.json`, включая каждый enum.
 
-Applied plan routes persist Router legs instead of reconstructing travel in the UI. Every
-leg exposes `travelSource` (`approximate`, `road_matrix`, `route_api`, or `traffic_api`),
-`trafficFactor`, distance, duration and optional provider geometry. `road_matrix` means
-road distance/time is known; it does not imply that a drawable road polyline was returned.
+Маршруты применённого плана сохраняют плечи Router, а не восстанавливают перемещения
+в UI. Каждое плечо раскрывает `travelSource` (`approximate`, `road_matrix`, `route_api`
+или `traffic_api`), `trafficFactor`, расстояние, длительность и опциональную геометрию
+провайдера. `road_matrix` означает, что дорожные расстояние и время известны; это не
+подразумевает, что была возвращена отрисовываемая дорожная полилиния.
 
-Acceptance checks `input_hash` **and** `input_publication_id` against the snapshot
-published now, plus the context version. What is deliberately still open:
+Приёмка сверяет `input_hash` **и** `input_publication_id` со снимком, опубликованным
+сейчас, плюс версию контекста. Что намеренно остаётся открытым:
 
-* **The evidence bundle is not consumed yet.** Router also returns `input_publication_id`,
-  `policy_id`, `policy_criteria`, `search_path`, `technical_settings`, `main_evidence` and
-  `baseline_evidence`. `routerResultSchema` keeps them (it is a loose object), but nothing
-  downstream acts on the evidence yet — and the evidence bundle is the supported input for
-  map explanations. Wiring it to the UI is the next contract, not a silent merge.
+* **Пакет обоснований пока не потребляется.** Router также возвращает
+  `input_publication_id`, `policy_id`, `policy_criteria`, `search_path`,
+  `technical_settings`, `main_evidence` и `baseline_evidence`. `routerResultSchema`
+  сохраняет их (это loose object), но пока ничто ниже по потоку не действует на
+  обоснования — а пакет обоснований и есть поддерживаемый вход для объяснений на карте.
+  Подключение его к UI — следующий контракт, а не тихое слияние.
 
-The debug endpoint `POST /api/v1/dispatch/debug/router-result` remains as a test way in
-that runs the identical acceptance checks — never a second way to apply a plan.
+Отладочный эндпоинт `POST /api/v1/dispatch/debug/router-result` остаётся тестовым входом,
+прогоняющим те же самые проверки приёмки, — никогда вторым способом применить план.
 
-### Snapshot serialization — shared with Router Core
+### Сериализация снимка — общая с Router Core
 
-sys and Router must hash **the same bytes** of the same document, or `input_hash` can never
-match. The byte-level rule is written down in
-[contracts/snapshot-canonical.md](./contracts/snapshot-canonical.md) with a golden vector
-in [contracts/fixtures/](./contracts/fixtures/), reproduced independently in TypeScript and
-Python.
+sys и Router должны хешировать **одни и те же байты** одного документа, иначе
+`input_hash` никогда не совпадёт. Побайтовое правило записано в
+[contracts/snapshot-canonical.md](./contracts/snapshot-canonical.md), золотой вектор —
+в [contracts/fixtures/](./contracts/fixtures/); воспроизведены независимо в TypeScript
+и Python.
 
-In practice the shared path does not depend on re-serialization at all: sys publishes exact
-bytes and their SHA-256, and Router hashes the bytes it was given
-(`core/runtime.py`, `SnapshotPublication`). The specification is what keeps a future
-re-serializer on either side from drifting, and it remains the rule.
+На практике общий путь вообще не зависит от пересериализации: sys публикует точные
+байты и их SHA-256, а Router хеширует полученные байты (`core/runtime.py`,
+`SnapshotPublication`). Спецификация нужна, чтобы будущий пересериализатор на любой из
+сторон не разошёлся, и она остаётся правилом.
 
-### Out of scope of this build
+### Вне скоупа этой сборки
 
-`AI-gateway` tool protocol and `SMTP-gateway` transport. sys will record mail intents;
-delivery belongs to the external mail server, which is not in this contour.
+Протокол инструментов `AI-gateway` и транспорт `SMTP-gateway`. sys будет записывать
+почтовые интенты; доставка — дело внешнего почтового сервера, который в этот контур не
+входит.
 
-## 11. Router Core private API
+## 11. Приватный API Router Core
 
-### Boundary
+### Граница
 
-Router exposes a private service API to System Layer. Authentication and business
-authorization remain in sys. Router accepts no endpoint that directly assigns a job,
-changes route order or applies a plan.
+Router открывает приватный сервисный API для System Layer. Аутентификация и деловая
+авторизация остаются в sys. Router не принимает ни одного эндпоинта, который напрямую
+назначал бы работу, менял порядок маршрута или применял план.
 
-### Read endpoints
+### Эндпоинты чтения
 
-| Method | Path | Response |
+| Метод | Путь | Ответ |
 |---|---|---|
-| `GET` | `/health` | Liveness plus current coordinator status and technical context. |
-| `GET` | `/v1/context` | Active `router_context_version`, generation, calculation state, search path and complete technical settings. |
-| `GET` | `/v1/result` | The latest atomic `RouterResult` publication. |
+| `GET` | `/health` | Живость плюс текущий статус координатора и технический контекст. |
+| `GET` | `/v1/context` | Активная `router_context_version`, поколение, состояние расчёта, путь поиска и полные технические настройки. |
+| `GET` | `/v1/result` | Последняя атомарная публикация `RouterResult`. |
 
-`RouterResult.status` is a discriminated state:
+`RouterResult.status` — размеченное состояние:
 
-- `pending` contains no plans, evidence or diagnostics;
-- `ready` contains IDs, exact input hash, timestamps, context version, policy,
-  technical settings, search path, ordered policy criteria, main/baseline plans and
-  evidence for both plans;
-- `error` contains at least one diagnostic and no plans or evidence.
+- `pending` не содержит планов, обоснований или диагностик;
+- `ready` содержит ID, точный input hash, штампы времени, версию контекста, политику,
+  технические настройки, путь поиска, упорядоченные критерии политики, основной/базовый
+  планы и обоснования обоих планов;
+- `error` содержит хотя бы одну диагностику и не содержит планов и обоснований.
 
-The evidence bundle contains the selected schedule facts and every engineer candidate's
-skill, transport, availability, solo feasibility, route-end append feasibility, travel
-delta and blockers. It is the supported input for deterministic UI explanations and an
-explanation-only LLM. The LLM must not change the plan.
+Пакет обоснований содержит факты выбранного расписания и по каждому инженеру-кандидату:
+навык, транспорт, доступность, осуществимость соло, осуществимость добавления в конец
+маршрута, дельту перемещения и блокеры. Это поддерживаемый вход для детерминированных
+объяснений в UI и для LLM, которая только объясняет. LLM не должна менять план.
 
-### Technical settings
+### Технические настройки
 
-`GET /v1/context` returns the active `router_context_version` plus the complete technical
-revision. `PUT /v2/config/technical-settings` replaces that revision in full — partial
-updates are refused:
+`GET /v1/context` возвращает активную `router_context_version` плюс полную техническую
+ревизию. `PUT /v2/config/technical-settings` заменяет эту ревизию целиком — частичные
+обновления отклоняются:
 
 ```json
 {
@@ -656,42 +664,45 @@ updates are refused:
 }
 ```
 
-Defaults: `lunches_enabled=false`, both revalidation tolerances `0`,
-`graph_with_access_buffer` with a 600-second access buffer, `fixed_travel_time_sec=1200`,
-`early_finish_replan_threshold_sec=900`, `task_overrun_tolerance_sec=600`; every field is
-capped at 86400.
+По умолчанию: `lunches_enabled=false`, оба допуска ревалидации `0`,
+`graph_with_access_buffer` с буфером доступа 600 секунд, `fixed_travel_time_sec=1200`,
+`early_finish_replan_threshold_sec=900`, `task_overrun_tolerance_sec=600`; каждое поле
+ограничено сверху значением 86400.
 
-The operation uses compare-and-swap against the active context and is idempotent —
-durably, not just within a process: accepted operations are stored as receipts in the same
-atomic document as the settings (schema `1.0`), so a replay after a restart returns the
-original outcome instead of conflicting. A write is rejected with
-`SETTINGS_STORE_UNAVAILABLE` when the Runtime has no durable settings store. Every change
-creates a new context version and invalidates an in-flight older result.
+Операция использует compare-and-swap против активного контекста и идемпотентна —
+надёжно (durable), а не только внутри процесса: принятые операции сохраняются как
+квитанции в том же атомарном документе, что и настройки (схема `1.0`), поэтому повтор
+после перезапуска возвращает исходный исход вместо конфликта. Запись отклоняется с
+`SETTINGS_STORE_UNAVAILABLE`, когда у Runtime нет постоянного хранилища настроек.
+Каждое изменение создаёт новую версию контекста и делает недействительным более старый
+результат, находящийся в полёте.
 
-`travel_time_mode` decides how every non-zero leg is priced, on top of the connected road
-graph and without changing its paths or distances: `graph_with_access_buffer` adds
-`access_buffer_sec` to the graph duration; `fixed_normative` replaces the duration with
-`fixed_travel_time_sec`. A zero-distance leg stays zero in both modes. The wrapper owns a
-derived version (`base graph version + timing configuration`), so a timing-only change
-still invalidates results.
+`travel_time_mode` решает, как оценивается каждое ненулевое плечо, поверх связного
+дорожного графа и без изменения его путей и расстояний: `graph_with_access_buffer`
+добавляет `access_buffer_sec` к длительности по графу; `fixed_normative` заменяет
+длительность на `fixed_travel_time_sec`. Плечо с нулевым расстоянием остаётся нулевым
+в обоих режимах. Обёртка владеет производной версией (`версия базового графа +
+конфигурация тайминга`), поэтому изменение одного только тайминга всё равно делает
+результаты недействительными.
 
-The lunch switch is a hard system policy. When false — the default since `context/50` —
-no optional or required lunch is scheduled in either main or baseline; the sys-owned input
-bytes and lunch facts remain unchanged. The two revalidation tolerances only decide whether
-a changed schedule can use `REVALIDATE`. `early_finish_replan_threshold_sec` and
-`task_overrun_tolerance_sec` are consumed by sys's execution-timing policy to classify
-finish variance and detect overruns (section 8). None of these values ever extend customer
-windows or engineer shifts.
+Переключатель обедов — жёсткая системная политика. Когда он false — значение по
+умолчанию с `context/50` — ни опциональный, ни обязательный обед не планируется ни в
+основном, ни в базовом плане; входные байты, принадлежащие sys, и факты обедов остаются
+неизменными. Два допуска ревалидации решают лишь, может ли изменившееся расписание
+использовать `REVALIDATE`. `early_finish_replan_threshold_sec` и
+`task_overrun_tolerance_sec` потребляются политикой тайминга исполнения в sys, чтобы
+классифицировать отклонение финиша и обнаруживать превышения (раздел 8). Ни одно из
+этих значений никогда не расширяет окна заказчиков или смены инженеров.
 
-`PUT /v1/config/tolerance` remains a compatibility alias for the departure tolerance.
-Conflicting operation IDs or stale context versions return HTTP `409`; malformed bodies
-return `422`.
+`PUT /v1/config/tolerance` остаётся алиасом совместимости для допуска опоздания
+отправления. Конфликтующие id операций или устаревшие версии контекста возвращают
+HTTP `409`; некорректные тела — `422`.
 
-### Versioning
+### Версионирование
 
-The service version is `2.0`. The sys exchange payload remains `schema_version="1.0"`
-because V2 adds output metadata and Router-owned context without changing the shape of
-`RouterTaskSnapshot`. Unknown fields and unknown policy IDs are rejected.
+Версия сервиса — `2.0`. Полезная нагрузка обмена с sys остаётся `schema_version="1.0"`,
+потому что V2 добавляет выходные метаданные и принадлежащий Router контекст, не меняя
+формы `RouterTaskSnapshot`. Неизвестные поля и неизвестные id политик отклоняются.
 
-Checked integration artifacts live in `core/schemas/`. Regenerate them with
-`python -m core.schema`; CI/tests should treat a schema diff as a contract change.
+Проверяемые интеграционные артефакты лежат в `core/schemas/`. Перегенерация — командой
+`python -m core.schema`; CI/тесты должны считать diff схемы изменением контракта.

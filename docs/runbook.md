@@ -1,201 +1,180 @@
-# Runbook — running, testing and troubleshooting
+# Runbook — запуск, тесты и диагностика
 
-> Updated in the same commit as the code it describes (AGENTS.md section 8.2).
-> Architecture: [architecture.md](./architecture.md).
+> Обновляется тем же коммитом, что и описываемый код (AGENTS.md §8.2).
+> Архитектура: [architecture.md](./architecture.md).
 
-## 1. Prerequisites
+## 1. Предпосылки
 
-| Tool | Version used here | Note |
+| Инструмент | Версия здесь | Примечание |
 |---|---|---|
-| Node.js | 24.13.0 (host), 24.21.0 (container) | LTS branch, per `context/43` section 4 |
-| pnpm | 10.28.2 | Package manager of the workspace (D-23) |
+| Node.js | 24.13.0 (хост), 24.21.0 (контейнер) | LTS-ветка, по `context/43` §4 |
+| pnpm | 10.28.2 | Пакетный менеджер воркспейса (D-23) |
 | Docker Engine | 28.5.1 | |
-| Docker Compose | v2.40.2 | The `docker compose` plugin, not the legacy v1 binary |
+| Docker Compose | v2.40.2 | Плагин `docker compose`, не legacy-бинарник |
 
-**Version deviation, recorded honestly.** `context/43` section 1 lists Node 24.21.0,
-npm 11.19.1, PostgreSQL 18.6, Docker Engine 29.8.1 and Compose 5.5.1. Several of those
-are not obtainable on the current development machine. The contour therefore pins what
-actually installs: the versions above, `pgvector/pgvector:pg17` for the database, and the
-exact dependency versions in `pnpm-lock.yaml`. `context/43` carries a status block naming
-this and the other D-23 deviations; nothing was changed there silently.
+**Отклонение версий зафиксировано честно.** `context/43` §1 называет Node 24.21.0,
+npm 11.19.1, PostgreSQL 18.6, Docker Engine 29.8.1 и Compose 5.5.1. Часть из них
+на текущей машине разработки недоступна. Контур поэтому закрепляет то, что реально
+ставится: версии выше, `pgvector/pgvector:pg17` для базы и точные версии зависимостей
+в `pnpm-lock.yaml`. В `context/43` стоит статус-блок об этом и прочих отклонениях
+D-23; там ничего не менялось молча.
 
-## 2. First run
+## 2. Первый запуск
 
 ```bash
 git checkout dev && git pull
-cp .env.example .env          # required: dispatcher credentials have no defaults
+cp .env.example .env          # обязательно: у учётных данных диспетчера нет дефолтов
 pnpm install
 pnpm compose:up               # docker compose -f infra/docker-compose.yml up -d --build
 ```
 
-Then:
+Затем:
 
 ```bash
-pnpm compose:ps               # postgres, router, api and web healthy
+pnpm compose:ps               # postgres healthy, api healthy
 curl localhost:8000/health/live
 curl localhost:8000/health/services
 ```
 
-Dispatcher dashboard: <http://127.0.0.1:5173> (nginx in the `web` service, `/api` to `api`).
-Public demo gate (after a `main` deploy): <https://navix.droidje.com>.
-Interactive API documentation: <http://localhost:8000/docs>.
-Machine-readable schema: <http://localhost:8000/docs/openapi.json>.
+Интерактивная документация API: <http://localhost:8000/docs>.
+Машинночитаемая схема: <http://localhost:8000/docs/openapi.json>.
+Дашборд диспетчера: <http://localhost:5173> (сервис `web` в контуре).
 
-CI/CD (SourceCraft checks on `dev`, compose deploy on `main`) is documented in
-[ci.md](./ci.md). The root `docker-compose.yml` includes this file so the MGG
-deploy skill finds the contour without a `-f infra/...` argument.
+`health/services` сообщает реальное состояние каждой интеграции. `router` пингует
+Router Core, который контур запускает отдельным сервисом (порт 8100, читает
+опубликованный снимок под read-only ролью в БД); `ai` и `smtp` сообщают
+`not_configured`, потому что не подключены. Приложение спроектировано полноценно
+работать без них.
 
-`health/services` reports the real state of each integration. `router` pings Router
-Core, which the contour starts as its own service (port 8100, reads the published
-snapshot with the read-only DB role); `ai` and `smtp` report `not_configured` because
-they are not wired. The application is designed to run fully without them.
+## 3. Повседневные команды
 
-## 3. Everyday commands
-
-| Command | What it does |
+| Команда | Что делает |
 |---|---|
-| `pnpm compose:up` | Build and start the contour in the background |
-| `pnpm compose:logs` | Follow container logs |
-| `pnpm compose:down` | Stop the contour, keep the data volume |
-| `pnpm --filter api build` | Compile the service with `tsc` |
-| `pnpm --filter api test` | Compile `src` + `test` and run them serially under `node:test` |
-| `pnpm --filter api typecheck` | Types only, no output |
+| `pnpm compose:up` | Собрать и запустить контур в фоне |
+| `pnpm compose:logs` | Следить за логами контейнеров |
+| `pnpm compose:down` | Остановить контур, сохранив том данных |
+| `pnpm --filter api build` | Скомпилировать сервис через `tsc` |
+| `pnpm --filter api test` | Собрать `src` + `test` и прогнать последовательно под `node:test` |
+| `pnpm --filter api typecheck` | Только типы, без вывода |
+| `pnpm --filter web dev` | Дашборд в dev-режиме на 127.0.0.1:5173 (vite) |
+| `pnpm --filter web test` | Тесты дашборда (vitest) |
 | `pnpm lint` / `pnpm format` | Biome check / write |
 
-Running the service outside Docker, against the compose database:
+Запуск сервиса вне Docker, против базы из compose:
 
 ```bash
 pnpm --filter api build
 node apps/api/dist/src/main.js
 ```
 
-Router-related environment (all optional; see `.env.example`): `ROUTER_BASE_URL`
-(where the gateway finds Router Core; compose sets `http://router:8100`),
-`ROUTER_BUDGET_MS` (solver budget passed to the core service, default 8000),
-`ROUTER_POLL_INTERVAL_MS` (execution-overrun coordinator period, default 500),
-`ROUTER_REQUEST_TIMEOUT_MS` (gateway HTTP timeout, default 3000).
+Переменные окружения, относящиеся к ядру (все опциональные, см. `.env.example`):
+`ROUTER_BASE_URL` (где шлюз ищет Router Core; в compose — `http://router:8100`),
+`ROUTER_BUDGET_MS` (бюджет солвера, передаётся сервису ядра; по умолчанию 8000),
+`ROUTER_POLL_INTERVAL_MS` (период координатора превышений, по умолчанию 500),
+`ROUTER_REQUEST_TIMEOUT_MS` (HTTP-таймаут шлюза, по умолчанию 3000).
 
-Router Core has its own CLI (`solve`, `serve`, `benchmark`, `geocode`, `project`,
-`export-map`, `prepare-2gis`, `schema`) and offline resources — quick start and
-acceptance benchmarks: [core/README.md](../core/README.md). The contour's `router`
-service runs `serve --official-regions east southeast south_central` with its durable
-technical settings in the `router-state` volume.
+Router Core имеет собственный CLI (`solve`, `serve`, `benchmark`, `geocode`,
+`project`, `export-map`, `prepare-2gis`, `schema`) и офлайн-ресурсы — быстрый старт
+и acceptance-бенчмарки: [core/README.md](../core/README.md). Сервис `router` в
+контуре запускается как `serve --official-regions east southeast south_central`
+с durable-технастройками в томе `router-state`.
 
-## 4. Loading the dataset
+## 4. Загрузка датасета
 
-The contour starts empty. To load one, several or all regions of the organisers' data:
+Контур стартует пустым. Загрузка одного, нескольких или всех регионов данных
+организаторов:
 
 ```bash
-TOKEN=$(curl -s -X POST localhost:8000/api/v1/auth/dispatcher/password   -H 'content-type: application/json'   -d '{"email":"dispatcher@example.test","password":"<the one in .env>"}' | jq -r .token)
+TOKEN=$(curl -s -X POST localhost:8000/api/v1/auth/dispatcher/password   -H 'content-type: application/json'   -d '{"email":"dispatcher@example.test","password":"<пароль из .env>"}' | jq -r .token)
 
-# one region
+# один регион
 curl -s -X POST localhost:8000/api/v1/dispatch/data/import   -H "authorization: Bearer $TOKEN" -H 'content-type: application/json'   -d '{"operationId":"'$(uuidgen)'","region":"east"}'
 
-# everything (205 requests, 35 engineers across east + southeast + south_central)
+# всё сразу (205 заявок, 35 инженеров: east + southeast + south_central)
 curl -s -X POST localhost:8000/api/v1/dispatch/data/import   -H "authorization: Bearer $TOKEN" -H 'content-type: application/json'   -d '{"operationId":"'$(uuidgen)'","regions":"all"}'
 ```
 
-Regions: `east`, `southeast`, `south_central` (`regions` also accepts an explicit list).
-An optional `engineerCountPerRegion` object caps crews per region (a cap above the
-dataset's crew count is a 422). The import is atomic across all requested regions.
+Регионы: `east`, `southeast`, `south_central` (`regions` принимает и явный список).
+Опциональный объект `engineerCountPerRegion` ограничивает число бригад по регионам
+(потолок выше фактического числа бригад датасета — ошибка 422). Импорт атомарен по
+всем запрошенным регионам.
 
-**The geocode sidecar is required.** `data/dataset/geocoded/<region>.json` must exist and
-cover every request address plus the depot; the files are mounted read-only into the
-container, so an updated package needs no rebuild. Imported requests get real points
-(declared district-centroid projections with recorded provenance), and benchmark windows
-are rebased onto the live horizon so a dataset dated 17.08 plans against "now".
-`GET /api/v1/dispatch/debug/snapshot` shows the published task and its diagnostics.
+**Геокод-пакет обязателен.** Файл `data/dataset/geocoded/<регион>.json` должен
+существовать и покрывать каждый адрес заявки плюс депо; файлы монтируются в контейнер
+read-only, так что обновлённый пакет не требует пересборки. Импортированные заявки
+получают реальные точки (задекларированные проекции по центроидам районов с записанным
+происхождением), а окна бенчмарка ребейсятся на живой горизонт — датасет от 17.08
+планируется от «сейчас» без правки CSV. Опубликованная задача и её диагностика:
+`GET /api/v1/dispatch/debug/snapshot`.
 
-### Loading a new region or appending requests
+## 5. Данные и перезапуски
 
-The dashboard's `+` button accepts a UTF-8 JSON package. The same operation is
-available over HTTP:
+`docker compose down` сохраняет именованный том `postgres-data`, поэтому обычный
+перезапуск хранит бизнес-данные, рабочий план, режим управления и обеденные факты
+(`context/43` §11.3).
 
-```bash
-curl -s -X POST localhost:8000/api/v1/dispatch/data/upload \
-  -H "authorization: Bearer $TOKEN" \
-  -H 'content-type: application/json' \
-  --data-binary @docs/data-upload-example.json
-```
+`docker compose down -v` уничтожает этот том. **Это не «полный сброс» приложения.**
+Продуктовый сброс — подтверждаемое действие диспетчера со своим объёмом и
+пост-условиями (`context/37` §9.4); удаление тома просто стирает базу и никому об
+этом не сообщает.
 
-Use `mode: "new_region"` for a complete region package with one depot, engineers,
-and requests. Use `mode: "append_requests"` to add requests to an existing region;
-that form must not contain a depot or engineers. `sourceVersion` identifies the
-source revision, while external entity ids stay stable inside the region namespace.
+## 6. Диагностика
 
-The server validates the complete package before publishing anything: schema version,
-region consistency, coordinates, time windows, skills, transport and equipment enums,
-duplicate ids, and collisions with already imported entities. A repeated identical
-package is idempotent. Reusing a source version or an entity id with different content
-returns `409`; invalid input returns `422`. Either the whole transaction and its one
-snapshot publication succeed, or the database remains unchanged.
+**Контейнер `api` сразу перезапускается.** Окружение не прошло валидацию. Первая
+строка лога называет каждый проблемный ключ. Сверьте `.env` с `.env.example`.
 
-## 5. Data and restarts
+**`Cannot find module .../typescript/bin/tsc` при сборке образа.** Хостовый
+`node_modules` попал в контекст сборки. `.dockerignore` его исключает; проверьте,
+что файл не удалили — `node_modules` pnpm — дерево симлинков в локальный стор,
+внутри контейнера оно бесполезно.
 
-`docker compose down` keeps the named volume `postgres-data`, so an ordinary restart
-preserves business data, the working plan, the control mode and lunch facts
-(`context/43` section 11.3).
+**`pnpm install --frozen-lockfile` падает в образе.** `package.json` и
+`pnpm-lock.yaml` разошлись. Выполните `pnpm install` на хосте и закоммитьте
+обновлённый lockfile; не ослабляйте флаг — его смысл в том и состоит, чтобы падать
+на расхождении.
 
-`docker compose down -v` destroys that volume. **It is not the application's "full
-reset".** The product-level reset is a confirmed dispatcher action with its own defined
-scope and post-conditions (`context/37` section 9.4); deleting the volume merely removes
-the database and tells nobody.
+**Порт занят.** Переопределите `API_PORT`, `ROUTER_PORT`, `POSTGRES_PORT` или
+`WEB_PORT` в `.env`. Postgres и router остаются на `127.0.0.1`. На демо-хосте MGG
+живой ремап: `API_PORT=127.0.0.1:18080` и `ROUTER_PORT=18100` (`docs/ci.md`).
 
-## 6. Troubleshooting
+**Health-эндпоинты отвечают, а функциональности нет.** Сверьтесь с таблицей блоков
+в [architecture.md](./architecture.md) §2 и списком контрактов в §5.
 
-**`api` container restarts immediately.** The environment failed validation. The first
-log line names every offending key. Check `.env` against `.env.example`.
+## 7. Почему тесты идут последовательно
 
-**`Cannot find module .../typescript/bin/tsc` during the image build.** The host
-`node_modules` reached the build context. `.dockerignore` excludes it; verify it was not
-removed — pnpm's `node_modules` is a symlink tree into the local store and is useless
-inside a container.
+`--test-concurrency=1` — намеренно. У System Layer есть настоящие глобальные
+синглтоны — строка AUTO/MANUAL и указатель на опубликованный снимок — и именно они
+объект нескольких тестов. Параллельный запуск файлов против одной базы заставляет
+каждый файл наблюдать публикации соседей: корректный в изоляции набор падает
+случайно. Отдельная база на файл позволила бы параллельность; пока это не стоит
+настройки, честнее последовательное исполнение, чем ослабленные проверки.
 
-**`pnpm install --frozen-lockfile` fails in the image.** `package.json` and
-`pnpm-lock.yaml` disagree. Run `pnpm install` on the host and commit the updated
-lockfile; do not relax the flag, its whole purpose is to fail on drift.
+Родственная ловушка при написании тестов: каждый timestamp — целая секунда, поэтому
+«самая свежая строка» неоднозначна, когда две строки записаны в одну секунду.
+Определяйте строку по её собственному id или уникальному для неё значению, никогда
+по `orderBy: { createdAt: 'desc' }`. Два перемежающихся падения случились именно
+из-за этого.
 
-**Port already in use.** Override `API_PORT`, `ROUTER_PORT`, or `POSTGRES_PORT` in
-`.env`. Postgres and the router stay on `127.0.0.1`. On the MGG demo host the
-live remap is `API_PORT=127.0.0.1:18080` and `ROUTER_PORT=18100` (`docs/ci.md`).
-
-**Health endpoints answer but a feature does not exist.** Check the table in
-[architecture.md](./architecture.md) section 2 — several blocks are planned and not yet
-implemented, and section 5 lists the contracts that are still missing.
-
-## 7. Why the tests run serially
-
-`--test-concurrency=1` is deliberate. The System Layer has genuinely global singletons --
-the AUTO/MANUAL row and the pointer to the published snapshot -- and they are the subject
-of several tests. Running test files in parallel against one database makes each file
-observe the others' publications, so a suite that is correct in isolation fails at random.
-Separate databases per file would allow parallelism; until that is worth the setup, serial
-execution is the honest option rather than weakening the assertions.
-
-A related trap when writing tests here: every timestamp is a whole second, so "the most
-recent row" is ambiguous whenever two rows are written in the same second. Identify a row
-by its own id or by a value that is unique to it, never by `orderBy: { createdAt: 'desc' }`.
-Two intermittent failures came from exactly that.
-
-## 8. Smoke gate
+## 8. Smoke-гейт
 
 ```bash
 pnpm compose:up
 pnpm smoke
 ```
 
-`pnpm smoke` (AGENTS.md section 11.1) drives the whole spine over HTTP against the
-**running contour**, not in process: it proves the artifact that actually ships works —
-migrations applied, configuration read, dataset mounted, every contour reachable.
+`pnpm smoke` (AGENTS.md §11.1) прогоняет весь хребет по HTTP против **работающего
+контура**, а не в процессе: проверяется тот артефакт, который реально поставляется —
+миграции применены, конфигурация прочитана, датасет смонтирован, каждый сервис
+достижим.
 
-It checks, in order: the contour answers and reports its missing integrations honestly; the
-dispatcher signs in without SMTP; the application data resets; the official dataset imports
-with geocode coverage and no errors; an engineer with a shift and an urgent request
-classified from its type of work; the task republished with both in it; a read publishing
-nothing and leaving `planning_as_of` alone; a valid Router result becoming the working plan;
-the same result refused as `ALREADY_APPLIED`; a stale one refused as `SNAPSHOT_STALE`; and
-the dispatcher seeing the applied plan with its mode.
+Проверки по порядку: контур отвечает и честно сообщает о недостающих интеграциях;
+диспетчер входит без SMTP; данные приложения сбрасываются; официальный датасет
+импортируется с геокод-покрытием и без ошибок; инженер со сменой и срочная заявка,
+классифицированная по типу работ; задача переопубликована с обоими; чтение ничего
+не публикует и не двигает `planning_as_of`; корректный результат ядра становится
+рабочим планом; тот же результат отклоняется как `ALREADY_APPLIED`; устаревший —
+как `SNAPSHOT_STALE`; диспетчер видит применённый план с его режимом.
 
-**It is destructive**: it resets the application data first, so it belongs on a development
-or demo contour and nowhere else. `SMOKE_BASE_URL` points it elsewhere than
-`http://localhost:8000`.
+**Смоук деструктивен**: сначала он сбрасывает данные приложения, поэтому ему место
+на контуре разработки или демо и нигде больше. `SMOKE_BASE_URL` указывает на другой
+адрес вместо `http://localhost:8000`.

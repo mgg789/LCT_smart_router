@@ -41,6 +41,6 @@
 *Список открыт: дополняется по мере решений. Реализация каждого пункта — с тестами и обновлением затронутых канон-файлов тем же коммитом.*
 
 **Статус реализации (17.09, `feat/router-mvp-contour`):**
-1. `compact` — default в `core/official.py` и каталоге; golden-профили East/South-central пересчитаны (East: FIFO 36/66, urgent 2/13 vs Router 64/66, 12/13; South-central: 33/56, 2/16 vs 51/56, 16/16); третий сценарий Southeast (83/12, 31 срочных) добавлен.
+1. `compact` — default в `core/official.py` и каталоге; golden-профили East/South-central пересчитаны (East: FIFO 36/66, urgent 2/13 vs Router 64/66, 12/13; South-central: 33/56, 2/16 vs 50/56, 16/16; число уточнено после мержа трафик-импорта 17.09; третий сценарий Southeast (83/12, 31 срочных) добавлен.
 2. GPS — удалены модель `GpsObservation`, `GpsService`, эндпоинт `POST /engineer/gps` и поле `position_observed_at` (миграция `20260916150000`).
 3. Обеды — `lunches_enabled=false` по умолчанию в контракте, сценариях и схемах; включение — технастройка Router из Dashboard (`GET/PUT /api/v1/dispatch/router/technical-settings`).

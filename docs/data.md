@@ -1,255 +1,247 @@
-# Data — model, storage rules and provenance
+# Данные — модель, правила хранения и происхождение
 
-> Updated in the same commit as the code it describes (AGENTS.md section 8.2).
-> Canon: `context/37` (Data Layer), `context/36` (System Layer states), `context/33`
-> (Router contract), `context/18` (official dataset).
-> Schema source of truth: [`apps/api/prisma/schema.prisma`](../apps/api/prisma/schema.prisma).
+> Обновляется тем же коммитом, что и описываемый код (AGENTS.md §8.2).
+> Канон: `context/37` (Data Layer), `context/36` (состояния System Layer), `context/33`
+> (контракт Router), `context/18` (официальный датасет).
+> Источник истины схемы: [`apps/api/prisma/schema.prisma`](../apps/api/prisma/schema.prisma).
 
-## 1. Storage decisions
+## 1. Решения о хранении
 
-| Decision | Why |
+| Решение | Почему |
 |---|---|
-| One PostgreSQL for everything | `context/37` section 2.1. The image is `pgvector/pgvector:pg17` so the knowledge segments can be enabled later without touching infrastructure; nothing uses vectors yet. |
-| Prisma ORM, Prisma Migrate as the single schema history | D-23, which supersedes `context/43` sections 2.1 and 5.4 for the Node side. No `db push`, no create-on-boot: the runtime never changes the schema. |
-| All times and durations are `BIGINT` whole seconds | `context/33` section 4. Local rendering happens at the edges only, by formatter, never by adding an offset to a stored value. |
-| `routing_snapshots.payload` is `TEXT`, not `jsonb` | `jsonb` normalises whitespace and key order. sys and Router must hash an identical byte sequence, so the exact serialized document is stored (`context/43` section 5.2). |
-| `version` columns on mutable business rows | Optimistic concurrency. A write based on something the actor read carries the version it saw; a mismatch is a reported conflict, never a silent overwrite (`context/36` section 8). |
-| Rows are not deleted to express an outcome | Cancellation, revocation and completion are states with their own timestamps. History has to survive; `context/37` section 6. |
-| Tables **and columns** are snake_case | Router Core reads the published sector directly, from Python. An unquoted `SELECT inputHash` there folds to `inputhash` and fails, and requiring every cross-language query to quote a camelCase identifier is a trap. Prisma models keep their camelCase field names and carry `@map`. |
+| Один PostgreSQL для всего | `context/37` §2.1. Образ `pgvector/pgvector:pg17`, чтобы позже включить сегменты знаний без изменения инфраструктуры; векторы пока никем не используются. |
+| Prisma ORM, Prisma Migrate — единственная история схемы | D-23, заменяет `context/43` §2.1 и §5.4 для Node-стороны. Никаких `db push` и create-on-boot: рантайм никогда не меняет схему. |
+| Все времена и длительности — `BIGINT` целые секунды | `context/33` §4. Локальный рендеринг — только на границах, форматтером, никогда не прибавлением смещения к сохранённому значению. |
+| `routing_snapshots.payload` — `TEXT`, не `jsonb` | `jsonb` нормализует пробелы и порядок ключей. sys и Router обязаны хэшировать идентичную последовательность байтов, поэтому хранится точно сериализованный документ (`context/43` §5.2). |
+| Колонки `version` на изменяемых бизнес-строках | Оптимистическая конкурентность. Запись, основанная на прочитанном, несёт увиденную версию; расхождение — сообщённый конфликт, а не тихая перезапись (`context/36` §8). |
+| Строки не удаляются для выражения исхода | Отмена, отзыв и завершение — состояния со своими timestamp-ами. История обязана переживать событие; `context/37` §6. |
+| Таблицы **и колонки** — snake_case | Router Core читает опубликованный сектор напрямую из Python. Незакавыченный `SELECT inputHash` там свернётся в `inputhash` и упадёт, а требование квотовать camelCase в каждом межъязыковом запросе — ловушка. Prisma-модели сохраняют camelCase-поля и несут `@map`. |
 
-## 2. Areas of the model
+## 2. Области модели
 
-Names below are physical tables; the semantic areas they implement are the ones on the
-Data Layer board in `context/37` section 2.
+Ниже — физические таблицы; смысловые области, которые они реализуют, — области доски
+Data Layer из `context/37` §2.
 
-| Area | Tables |
+| Область | Таблицы |
 |---|---|
-| Identity and access | `accounts`, `account_roles`, `login_codes`, `sessions`, `api_tokens` |
-| Engineers | `engineers` (stable profile), `engineer_days` (one working day), `depots` |
-| Requests | `requests`, `request_condition_history`, `request_facts` |
-| Published sector | `routing_snapshots` (payload, `input_hash`, `task_fingerprint`), `routing_current` |
-| Plan | `router_results`, `applied_plans`, `applied_plan_routes`, `applied_plan_stops`, `applied_plan_assignments`, `applied_plan_current`, `control_state` |
-| Dispatcher catalogues | `policies`, `active_policy`, `alerts` |
-| System bookkeeping | `operations`, `audit_log`, `notification_intents`, `app_state`, `import_packages`, `external_id_map` |
+| Идентичность и доступ | `accounts`, `account_roles`, `login_codes`, `sessions`, `api_tokens` |
+| Инженеры | `engineers` (стабильный профиль), `engineer_days` (один рабочий день), `depots` |
+| Заявки | `requests`, `request_condition_history`, `request_facts` |
+| Опубликованный сектор | `routing_snapshots` (payload, `input_hash`, `task_fingerprint`), `routing_current` |
+| План | `router_results`, `applied_plans`, `applied_plan_routes`, `applied_plan_stops`, `applied_plan_assignments`, `applied_plan_current`, `control_state` |
+| Каталоги диспетчера | `policies`, `active_policy`, `alerts` |
+| Служебная книга системы | `operations`, `audit_log`, `notification_intents`, `app_state`, `import_packages`, `external_id_map` |
 
-There is no telemetry area: the `gps_observations` table was removed
-(migration `20260916150000_remove_gps_observations`) when location tracking was dropped
-from the product entirely (`context/50` section 2).
+Области телеметрии нет: таблица `gps_observations` удалена (миграция
+`20260916150000_remove_gps_observations`), когда трекинг локации исключили из продукта
+целиком (`context/50` §2).
 
-`requests` carries the work-norm and execution-timing columns added by migration
+`requests` несёт колонки норм работ и execution-тайминга из миграции
 `20260916170000_request_work_norms`: `norm_profile_code`,
-`normative_travel_duration_sec`, `technical_duration_sec`,
-`documentation_duration_sec` (a CHECK pins `service_duration_sec` to their sum),
-`expected_completion_at`, `continuation_available_at` and `overrun_detected_at`.
+`normative_travel_duration_sec`, `technical_duration_sec`, `documentation_duration_sec`
+(CHECK закрепляет `service_duration_sec` равным их сумме), `expected_completion_at`,
+`continuation_available_at` и `overrun_detected_at`.
 
-### Distinctions the schema is built to preserve
+### Различия, ради которых строилась схема
 
-- **Request state is not one status.** Business stage (`lifecycle`), distribution outcome
-  (`assignment_state`) and the visit's progress (`request_facts`) are separate columns and
-  tables. Collapsing them was explicitly rejected in `context/36` section 3.
-- **Stable profile vs. one working day.** `engineer_days` holds the shift, availability,
-  lunch conditions and `lunch_taken`, so "already had lunch" can never become a permanent
-  property of a person (`context/37` section 3.2).
-- **Computed schedule vs. confirmed fact.** `applied_plan_stops` holds arrival, start and
-  end times that were *calculated*. A fact only exists in `request_facts`, and only
-  because an engineer marked it. No timer produces one (`context/36` section 5.2).
-- **Four timestamps that are not interchangeable**: `planning_as_of` (when the input was
-  published), `computed_at` (when Router produced a result), `applied_at` (when sys
-  accepted it) and `occurred_at`/`recorded_at` on a fact.
-- **Mail intent vs. delivery.** `notification_intents` has no `delivered` state. Our
-  control ends when an external SMTP server accepts a message (`context/42` DF-20).
+- **Состояние заявки — не один статус.** Бизнес-стадия (`lifecycle`), исход
+  распределения (`assignment_state`) и прогресс визита (`request_facts`) — отдельные
+  колонки и таблицы. Схлопнуть их было явно отвергнуто в `context/36` §3.
+- **Стабильный профиль против одного рабочего дня.** `engineer_days` хранит смену,
+  доступность, условия обеда и `lunch_taken`, поэтому «уже пообедал» никогда не
+  становится постоянным свойством человека (`context/37` §3.2).
+- **Расчётное расписание против подтверждённого факта.** `applied_plan_stops` хранит
+  прибытие, начало и конец, которые были *вычислены*. Факт существует только в
+  `request_facts` и только потому, что его отметил инженер. Никакой таймер факт не
+  создаёт (`context/36` §5.2).
+- **Четыре невзаимозаменяемых времени**: `planning_as_of` (когда опубликован вход),
+  `computed_at` (когда Router дал результат), `applied_at` (когда sys его принял) и
+  `occurred_at`/`recorded_at` факта.
+- **Почтовый интент против доставки.** У `notification_intents` нет состояния
+  `delivered`. Наш контроль заканчивается, когда внешний SMTP-сервер принимает письмо
+  (`context/42` DF-20).
 
-## 3. Privilege model
+## 3. Модель привилегий
 
-The initial migration creates two group roles with real GRANTs, `NOLOGIN` and without
-passwords. A deployment creates the login users and grants them these roles, so no secret
-enters the repository.
+Начальная миграция создаёт две групповые роли с реальными GRANT-ами, `NOLOGIN` и без
+паролей. Развёртывание создаёт login-пользователей и выдаёт им эти роли, поэтому секрет
+в репозиторий не попадает.
 
-| Role | May |
+| Роль | Может |
 |---|---|
-| `sys_app` | Select, insert, update and delete every business table. The application connects as this role. |
-| `router_readonly` | `SELECT` on `routing_snapshots`, `routing_current` and the `router_active_snapshot` view, and nothing else. No default privileges, so a table added later stays invisible until someone grants it deliberately. |
-| migration owner | Applies migrations, via `MIGRATE_DATABASE_URL`. Falls back to `DATABASE_URL` on a developer machine. |
+| `sys_app` | Select/insert/update/delete всех бизнес-таблиц. Приложение подключается под этой ролью. |
+| `router_readonly` | `SELECT` на `routing_snapshots`, `routing_current` и представление `router_active_snapshot`, и ничего больше. Дефолтных привилегий нет, поэтому добавленная позже таблица остаётся невидимой, пока кто-то не выдаст её сознательно. |
+| владелец миграций | Применяет миграции через `MIGRATE_DATABASE_URL`; на машине разработчика — фолбэк на `DATABASE_URL`. |
 
-Router Core reads the published sector directly and must not reach sessions, contacts,
-chats or any other business state (`context/37` section 4.4). That is asserted by
-`apps/api/test/integration/database-privileges.test.ts`, which runs `SET LOCAL ROLE
-router_readonly` and expects `permission denied` on business tables — a naming convention
-would pass review and fail in production.
+Router Core читает опубликованный сектор напрямую и не должен доставать сессии,
+контакты, чаты и прочее бизнес-состояние (`context/37` §4.4). Это проверяется
+`apps/api/test/integration/database-privileges.test.ts`: тест выполняет
+`SET LOCAL ROLE router_readonly` и ожидает `permission denied` на бизнес-таблицах —
+соглашение об именах прошло бы ревью и провалилось бы в продакшене.
 
-### The `router_active_snapshot` read contract
+### Контракт чтения `router_active_snapshot`
 
-Router V2 does not receive the task; it reads it. Migration
-`20260916120000_router_active_snapshot_view` creates the view Router's own SQL names, and
-the same test runs that query verbatim as `router_readonly`:
+Router V2 задачу не получает; он её читает. Миграция
+`20260916120000_router_active_snapshot_view` создаёт представление с SQL-именами
+Router, и тот же тест исполняет этот запрос дословно под `router_readonly`:
 
-| Router's column | Comes from |
+| Колонка Router | Происхождение |
 |---|---|
 | `publication_id` | `routing_snapshots.id` |
-| `publication_seq` | `routing_current.pointer_version` — increases by one per swap, so a lower value genuinely is a rollback |
-| `payload_utf8` | `routing_snapshots.payload`, the exact hashed bytes |
+| `publication_seq` | `routing_current.pointer_version` — растёт на единицу за подмену, поэтому меньшее значение — действительно откат |
+| `payload_utf8` | `routing_snapshots.payload`, точные хэшированные байты |
 | `payload_sha256` | `routing_snapshots.input_hash` |
 | `published_at_epoch` | `routing_snapshots.created_at` |
 
-The view joins the singleton pointer, so it yields one row or none, never two — which is
-what Router checks before it will plan on anything. The mapping lives in the view on
-purpose: either side can rename its own columns without touching the other. The test also
-re-hashes `payload_utf8` and compares it with `payload_sha256`, because that is the first
-thing Router does with the row.
+Представление соединяется с синглтонным указателем, поэтому даёт одну строку или ни
+одной, никогда две — именно это Router проверяет, прежде чем планировать. Отображение
+живёт в представлении намеренно: любая сторона может переименовать свои колонки, не
+трогая другую. Тест также пересчитывает hash `payload_utf8` и сверяет с
+`payload_sha256` — это первое, что Router делает со строкой.
 
-## 4. Reference values
+## 4. Справочные значения
 
-Codes are the technical identifiers of `context/33` section 4; the Russian terms are the
-ones the case statement uses.
+Коды — технические идентификаторы `context/33` §4; русские значения — из текста кейса.
 
-| Enum | Values | Russian meaning |
+| Enum | Значения | Русское значение |
 |---|---|---|
 | `Skill` | `local` / `connection` / `emergency` | Локальные работы / Работы на подключение и дозаказы / Аварийные работы |
 | `TransportType` | `car` / `walk` / `bike` / `transit` | Автомобиль / Пешеход / Велосипед / Общественный транспорт |
 | `Priority` | `normal` / `urgent` | Обычная / Срочная |
 
-A request requires exactly one skill; an engineer has one to three. An engineer has one
-transport type; a request may place no transport restriction at all (`required_transport`
-is null).
+Заявка требует ровно один навык; инженер имеет от одного до трёх. У инженера один тип
+транспорта; заявка может не иметь транспортного ограничения вовсе (`required_transport`
+равен null).
 
-## 5. Provenance and what the dataset does not contain
+Профили норм работ: `connection_base` (дорога 1200 / технические 3600 / документы 600 /
+всего 4200 с), `outage_tkd` (1200/4800/0/4800), `equipment_order` (1200/600/600/1200),
+`local_repair` (1200/1800/0/1800). Все 16 типов работ отображаются ровно на один
+профиль; код профиля и компоненты хранятся на заявке.
 
-`data_origin` is stored on every imported entity, and `synthesized` is not a decoration:
-the official dataset has no engineer directory, no work durations, no priorities and no
-coordinates (`context/18` section 6.3). Deriving them by a documented rule is allowed by
-the case statement, but which values were derived has to stay visible.
+## 5. Происхождение и то, чего в датасете нет
 
-The importer is the concrete case: crews come from the `Бригада` column, their skills and
-transport are derived by a deterministic rule so that all three skills and all four
-transports occur, and every engineer it creates carries `origin = synthesized`. Service
-durations come from the work-norm profiles (`connection_base`, `outage_tkd`,
-`equipment_order`, `local_repair`) that all 16 work types map onto; the profile code and
-its technical/documentation components are stored on the request, never inferred at read
-time.
+`data_origin` хранится на каждой импортированной сущности, и `synthesized` — не
+украшение: в официальном датасете нет справочника инженеров, длительностей,
+приоритетов и координат (`context/18` §6.3). Выводить их по документированному правилу
+разрешено, но какие значения выведены — должно оставаться видимым.
 
-**Coordinates come only from a geocode package.** `requests.lat` and `requests.lon` are
-nullable, but the official dataset has no points and none are invented
-(AGENTS.md section 4.1). The multi-region import therefore requires a versioned geocode
-package at `data/dataset/geocoded/<region>.json` — strict schema, one entry per request
-address plus the regional depot — and refuses to run if the coverage is incomplete
-(`data/dataset/geocoded/` currently holds all three regions, deterministic
-district-centroid projections declared as such). Invented coordinates stay forbidden; the
-package is data with provenance (`source`, `match_level`), not code output.
+Импортёр — конкретный случай: бригады берутся из колонки `Бригада`, их навыки и
+транспорт выводятся детерминированным правилом так, чтобы встречались все три навыка
+и все четыре транспорта, и каждый созданный инженер несёт `origin = synthesized`.
+Длительности берутся из профилей норм работ; код профиля и компоненты хранятся на
+заявке и никогда не досчитываются в момент чтения.
 
-## 6. Working with the schema
+**Координаты приходят только из геокод-пакета.** `requests.lat` и `requests.lon`
+допускают null, но в официальном датасете точек нет, и выдумывать их запрещено
+(AGENTS.md §4.1). Поэтому мультирегионый импорт требует версионированный геокод-пакет
+в `data/dataset/geocoded/<region>.json` — строгая схема, по записи на каждый адрес
+заявки плюс депо региона — и отказывается работать, если покрытие неполное
+(`data/dataset/geocoded/` сейчас содержит все три региона, детерминированные проекции
+по центроидам районов, задекларированные как таковые). Выдуманные координаты по-прежнему
+запрещены; пакет — данные с происхождением (`source`, `match_level`), а не вывод кода.
+
+## 6. Работа со схемой
 
 ```bash
-# Change the model, then create a migration (needs a running database):
+# Изменить модель, затем создать миграцию (нужна запущенная база):
 pnpm --filter api exec prisma migrate dev --create-only --name <change>
 
-# Review and, where needed, hand-edit the generated SQL, then apply it:
+# Проверить и при необходимости вручную доправить сгенерированный SQL, затем применить:
 pnpm --filter api exec prisma migrate deploy
 
-# Regenerate the client after any schema change:
+# После любого изменения схемы перегенерировать клиент:
 pnpm --filter api exec prisma generate
 ```
 
-The generated client is written to `apps/api/src/generated/prisma`, is git-ignored and is
-compiled into `dist` together with the rest of the service. In the contour the one-shot
-`migrate` compose service runs `prisma migrate deploy` from the same image as the
-application, so the code and the schema it expects cannot be two different versions.
+Сгенерированный клиент пишется в `apps/api/src/generated/prisma`, игнорируется git-ом
+и компилируется в `dist` вместе с остальным сервисом. В контуре одноразовый compose-сервис
+`migrate` выполняет `prisma migrate deploy` из того же образа, что и приложение, поэтому
+код и ожидаемая им схема не могут оказаться разных версий.
 
-Custom SQL that Prisma cannot express — the role grants above — lives inside the
-migration, appended after the generated statements. Keep doing that rather than applying
-privileges out of band, so a fresh database is correct after `migrate deploy` alone.
+Собственный SQL, который Prisma не выражает, — гранты ролей выше — лежит внутри
+миграции, после сгенерированных инструкций. Так и продолжаем: привилегии вне миграций
+не применяются, чтобы свежая база была корректной после одного `migrate deploy`.
 
-## 7. Not implemented yet
+## 7. Состояние реализации
 
-| Area | State |
+| Область | Состояние |
 |---|---|
-| Importer for `data/dataset/anonymized` | Done, multi-region atomic (`east`, `southeast`, `south_central`, or `"all"` = 205 requests / 35 engineers), with the per-region crew cap |
-| Engineers, working days, facts | Done, `feat/api-engineers`; execution timing on top of facts done on `feat/router-mvp-contour` |
-| Three data actions (append, reset to demo, full reset) | Done, `feat/api-data-import` |
-| Dispatcher JSON package for a new region / appended requests | Done through `POST /dispatch/data/upload`; strict schema, stable external IDs and one atomic operation |
-| Coordinates for imported requests | Done via the required geocode packages in `data/dataset/geocoded/<region>.json`; they are declared district-centroid projections, not production geocoding |
-| Knowledge segments and pgvector | Out of scope of this build; the image supports the extension |
-| Retention periods per data class | Required by `context/37` section 6.3; the columns exist (`audit_log.retain_until`), the values are a deployment decision and are not invented here |
+| Импортёр `data/dataset/anonymized` | Готов, мультирегионый атомарный (`east`, `southeast`, `south_central` или `"all"` = 205 заявок / 35 инженеров), с лимитом бригад по регионам |
+| Инженеры, рабочие дни, факты | Готово, `feat/api-engineers`; execution-тайминг поверх фактов — на `feat/router-mvp-contour` |
+| Три действия с данными (догрузка, сброс к демо, полный сброс) | Готово, `feat/api-data-import` |
+| Координаты импортированных заявок | Закрыто обязательными геокод-пакетами в `data/dataset/geocoded/<region>.json`; это задекларированные проекции по центроидам, не продакшен-геокодинг |
+| Сегменты знаний и pgvector | Вне скоупа этой сборки; образ поддерживает расширение |
+| Сроки хранения по классам данных | Требуются `context/37` §6.3; колонки существуют (`audit_log.retain_until`), значения — решение развёртывания и здесь не выдумываются |
 
-## 8. Router data boundary (Router Core side)
+## 8. Граница данных Router (сторона Router Core)
 
-### Special-sector input
+### Специальный сектор на входе
 
-System Layer is the only writer of business state and publishes one immutable full
-`RouterTaskSnapshot`. Router reads the active publication directly with a SELECT-only
-role; it does not read live request rows or write to the special sector.
+System Layer — единственный писатель бизнес-состояния и публикует один неизменяемый
+полный `RouterTaskSnapshot`. Router читает активную публикацию напрямую под SELECT-only
+ролью; живые строки заявок он не читает и в специальный сектор не пишет.
 
-The `router_active_snapshot` view contract is exactly one row:
+Контракт представления `router_active_snapshot` — ровно одна строка:
 
-| Column | Type/meaning |
+| Колонка | Тип / смысл |
 |---|---|
-| `publication_id` | Non-empty immutable publication ID. |
-| `publication_seq` | Monotonic non-negative integer; a lower active value is rejected as rollback. |
-| `payload_utf8` | Exact UTF-8 JSON text used for calculation and hashing. |
-| `payload_sha256` | Lowercase SHA-256 supplied by sys and independently verified by Router. |
-| `published_at_epoch` | Non-negative Unix seconds for publication metadata. |
+| `publication_id` | Непустой неизменяемый идентификатор публикации. |
+| `publication_seq` | Монотонное неотрицательное целое; меньшее активное значение отклоняется как откат. |
+| `payload_utf8` | Точный текст UTF-8 JSON, использованный для расчёта и хэширования. |
+| `payload_sha256` | Строчный SHA-256, присланный sys и независимо проверяемый Router. |
+| `published_at_epoch` | Неотрицательные секунды Unix для метаданных публикации. |
 
-Publication metadata is outside the hashed payload. Router rejects hash mismatches,
-invalid UTF-8, duplicate JSON keys, strict-schema violations, more than one active row
-and payloads larger than 16 MiB. PostgreSQL reads use a short read-only transaction with
-connection and statement timeouts. File input derives equivalent metadata from the
-atomic file publication.
+Метаданные публикации вне хэшируемого payload. Router отклоняет несовпадение hash,
+невалидный UTF-8, дубли ключей JSON, нарушения строгой схемы, более одной активной
+строки и payload больше 16 MiB. Чтения PostgreSQL идут в короткой read-only транзакции
+с таймаутами соединения и оператора. Файловый ввод выводит эквивалентные метаданные
+из атомарной файловой публикации.
 
-### Output
+### Выход
 
-Router publishes `RouterResult` through its own result memory/API. It does not write the
-result into `routing_snapshots`. Sys may store an accepted full main+baseline result and
-its evidence in Data Layer, linked by `result_id`, `input_publication_id`, `input_hash`
-and `router_context_version`.
+Router публикует `RouterResult` через собственную память результатов/API. Результат он
+не пишет в `routing_snapshots`. Sys может хранить принятый полный пакет main+baseline
+с evidence в Data Layer, связанный по `result_id`, `input_publication_id`, `input_hash`
+и `router_context_version` (полный пакет хранится в `RouterResult.payload`).
 
-Sys applies a result only when the exact input hash and active Router context match,
-AUTO is active, `main.is_usable` is true and current execution facts do not conflict.
+Sys применяет результат только при совпадении точного hash входа и активного контекста
+Router, активном AUTO, `main.is_usable=true` и отсутствии конфликта с текущими фактами
+исполнения.
 
-### Import and enrichment ownership
+### Владение импортом и обогащением
 
-Business CSV/API data ingestion belongs to sys/data-layer: stage the whole batch,
-validate schema and encoding, deduplicate external IDs, report conflicts, normalize
-addresses, enrich from versioned caches, check completeness, then apply atomically.
-Router only validates the resulting snapshot and prepares routing resources. It never
-silently invents missing duration, coordinates, skills, transport or availability.
+Загрузка бизнес-CSV/API-данных — зона sys/data-layer: поставить всю пачку целиком,
+проверить схему и кодировку, дедуплицировать внешние идентификаторы, сообщить
+конфликты, нормализовать адреса, обогатить из версионированных кэшей, проверить
+полноту, затем применить атомарно. Router только валидирует итоговый снимок и готовит
+маршрутные ресурсы. Он никогда молча не выдумывает отсутствующую длительность,
+координаты, навык, транспорт или доступность.
 
-Official benchmark import is a separate, versioned offline acceptance adapter. Its
-synthetic engineer profiles, service durations, geocoding quality and travel assumptions
-are recorded with the scenario and must not be treated as production business facts.
+Официальный benchmark-импорт — отдельный версионированный офлайн-адаптер приёмки.
+Его синтетические профили инженеров, длительности работ, качество геокодинга и
+транспортные допущения записаны вместе со сценарием и не являются продакшен-фактами.
 
-The acceptance adapter executes these checks before creating a snapshot:
+Перед созданием снимка адаптер приёмки выполняет проверки:
 
-1. verify pinned SHA-256 for both organizer CSV files and both prepared resources;
-2. decode the organizer files as CP1251 semicolon CSV and validate required headers;
-3. keep numeric request rows, recognize the case-insensitive office footer and reject
-   duplicate synthetic request IDs;
-4. compare the complete multiset of request time/type/district facts with the control
-   distribution (control request IDs are not assumed unique);
-5. require complete duration, skill, team, geocode and matrix catalogs;
-6. validate the resulting `RouterTaskSnapshot` and `RoadGraph` through the same strict
-   models used by the service.
+1. сверить закреплённые SHA-256 обоих CSV организаторов и обоих подготовленных ресурсов;
+2. декодировать файлы организаторов как CP1251 CSV с разделителем `;` и проверить
+   обязательные заголовки;
+3. оставить числовые строки заявок, распознать регистрационный футер офиса
+   (безотносительно регистра) и отклонить дубли синтетических ID;
+4. сравнить полный мультимножеств факт-набор «время/тип/район» заявок с контрольным
+   распределением (уникальность ID контроля не предполагается);
+5. требовать полные каталоги длительностей, навыков, бригад, геокодов и матрицы;
+6. провалидировать итоговые `RouterTaskSnapshot` и `RoadGraph` теми же строгими
+   моделями, что и сервис.
 
-`python -m core.prepare_official --region <south_central|southeast>` reproducibly rebuilds
-the centroid-based acceptance resources for either region; the organizer-source and
-resource bytes are pinned by SHA-256 in the scenario config, and a drift is rejected
-before anything is generated. Those coordinates are declared district-centroid
-projections and the matrix is an approximation, not production geocoding or road time.
+`python -m core.prepare_official --region <south_central|southeast>` воспроизводимо
+пересобирает центроидные ресурсы приёмки любого из двух регионов; байты источников
+организаторов и ресурсов закреплены SHA-256 в конфиге сценария, расхождение
+отклоняется до генерации. Эти координаты — задекларированные проекции по центроидам
+районов, матрица — аппроксимация, не продакшен-геокодинг и не дорожное время.
 
-Multi-zone acceptance namespaces every request, engineer and graph node by region,
-renumbers the two business-order fields contiguously and combines regional graphs as
-disconnected components. The Router then performs one ordinary calculation. Absence of
-cross-component edges makes cross-zone travel unreachable instead of assigning an
-invented large or zero cost.
-
-### Uploaded region package
-
-The upload boundary uses a single JSON document so validation can finish before writes.
-The stable namespace is the region slug, not the uploaded file name. `new_region` owns the
-depot and engineer roster; `append_requests` cannot mutate them. Both modes require at least
-one request. External request and engineer IDs are unique inside the document and remain
-stable across imports.
-
-Validation, entity creation, external-ID mappings, the import receipt and snapshot
-publication share one database transaction. Therefore a bad row cannot leave a partially
-created region. The import receipt hashes canonical package content without `operationId`,
-so retrying the same file is safe even with a new operation ID. See
-[`data-upload-example.json`](./data-upload-example.json) for the versioned wire format.
+Мультизональная приёмка неймспейсует каждую заявку, инженера и узел графа регионом,
+перенумеровывает два бизнес-порядковых поля подряд и соединяет региональные графы
+как несвязные компоненты. Router выполняет один обычный расчёт. Отсутствие
+межкомпонентных рёбер делает переезды между зонами недостижимыми вместо выдуманной
+большой или нулевой стоимости.

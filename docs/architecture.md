@@ -1,142 +1,144 @@
-# Architecture — System Layer
+# Архитектура — System Layer
 
-> Living documentation of the backend core. Updated in the same commit as the code it
-> describes (AGENTS.md section 8.2). Canon for behaviour: `context/36` (System Layer),
-> `context/33` (Router contract), `context/37` (Data Layer), `context/42` (data flows).
+> Живая документация бэкенд-ядра. Обновляется тем же коммитом, что и описываемый код
+> (AGENTS.md §8.2). Канон поведения: `context/36` (System Layer), `context/33`
+> (контракт Router), `context/37` (Data Layer), `context/42` (потоки данных).
 
-## 1. Where the System Layer sits
+## 1. Место System Layer
 
 ```text
 Client App ─┐
 Engineer App ┤
 Dashboard   ─┼─► System Layer (apps/api) ─► Data Layer (PostgreSQL)
 Integration API ─┘          │
-                            ├─ mount-data-eng ─► published RouterTaskSnapshot
+                            ├─ mount-data-eng ─► опубликованный RouterTaskSnapshot
                             │                         │ read-only
                             │                         ▼
-                            │                   Router Core (root `core/`)
-                            ◄── ROUTER-gateway ──┘  result, accepted only in AUTO
+                            │                   Router Core (корень `core/`)
+                            ◄── ROUTER-gateway ──┘  результат, принимается только в AUTO
 ```
 
-The dispatcher Dashboard lives in `apps/web` (`docs/web.md`). It reads sys views; it does
-not talk to Router or the database. In compose it is the `web` service on
-`http://127.0.0.1:5173`, proxying `/api` to `api`. The public demo gate is
-`https://navix.droidje.com` (host nginx → that loopback port). Pipeline and
-deploy path: [ci.md](./ci.md).
+Дашборд диспетчера живёт в `apps/web` (`docs/web.md`). Он читает представления sys;
+ни с Router, ни с базой он напрямую не общается. В compose это сервис `web` на
+`http://127.0.0.1:5173`, проксирующий `/api` к `api`.
 
-The System Layer owns business state, authorization, user operations, the applied working
-plan and its execution. It prepares the input for Router Core, accepts a current result and
-serves the interfaces. It does **not** repeat Router's optimization, edit Router's memory,
-or invent execution facts from the passage of time (`context/32` section 9).
+System Layer владеет бизнес-состоянием, авторизацией, пользовательскими операциями,
+применённым рабочим планом и его исполнением. Он готовит вход для Router Core,
+принимает актуальный результат и обслуживает интерфейсы. Он **не** повторяет
+оптимизацию Router, не редактирует его память и не придумывает факты исполнения из
+течения времени (`context/32` §9).
 
-## 2. Internal blocks
+## 2. Внутренние блоки
 
-The eight blocks named in `context/36` section 2 are modules of one Nest application, not a
-service each.
+Восемь блоков из `context/36` §2 — модули одного Nest-приложения, а не отдельные сервисы.
 
-| Block | Module | State |
+| Блок | Модуль | Состояние |
 |---|---|---|
-| `REST API` | `src/api`, `src/common` | Foundation plus the auth surface: routing prefix, error envelope, Zod validation, request context |
-| `auth-engine` | `src/auth` | Implemented: login codes, dispatcher password path, sessions, roles, integration keys, global guard |
-| `orchestrator backend` | `src/orchestrator`, `src/operations` | Operation envelope (including external operations with reserved journal rows), request lifecycle with work-norm profiles and execution timing, engineers, working days, lunch, policy, execution facts and the execution-overrun coordinator. GPS is removed entirely (`context/50`) |
-| `dataengine` | `src/persistence` | Implemented: schema, migrations, connection, transaction boundary, row locks, health probe |
-| `mount-data-eng` | `src/routing/mount-data-eng` | Implemented: projection (with execution anchors — an active task pins the engineer's start point and `available_from`), canonical serialization, hash, immutable snapshots and the pointer switch |
-| `ROUTER-gateway` | `src/routing/router-gateway` | Implemented end to end: HTTP client to Router Core (`/v1/result`, `/v1/context`, `PUT /v2/config/technical-settings`), acceptance checks (publication id + hash + context version + usability + facts), applied plan revisions, AUTO/MANUAL, manual edits, technical settings driven from sys |
-| `AI-gateway` | — | Out of scope of this build; declared in `/health/services` as `not_configured` |
-| `SMTP-gateway` | `src/notifications` (intents only) | sys records mail intents with per-transition deduplication; transport is out of scope of this build |
+| `REST API` | `src/api`, `src/common` | Фундамент и auth-поверхность: префикс маршрутов, конверт ошибок, Zod-валидация, контекст запроса |
+| `auth-engine` | `src/auth` | Реализовано: коды входа, парольный путь диспетчера, сессии, роли, интеграционные ключи, глобальный guard |
+| `orchestrator backend` | `src/orchestrator`, `src/operations` | Конверт операций (включая внешние операции с резервированием строк журнала), жизненный цикл заявок с профилями норм и execution-таймингом, инженеры, рабочие дни, обед, политика, факты исполнения и координатор превышений. GPS удалён полностью (`context/50`) |
+| `dataengine` | `src/persistence` | Реализовано: схема, миграции, соединение, граница транзакций, блокировки строк, health-проба |
+| `mount-data-eng` | `src/routing/mount-data-eng` | Реализовано: проекция (с execution-якорями — активная работа закрепляет точку старта инженера и `available_from`), каноническая сериализация, hash, неизменяемые снимки и переключение указателя |
+| `ROUTER-gateway` | `src/routing/router-gateway` | Реализовано от конца до конца: HTTP-клиент к Router Core (`/v1/result`, `/v1/context`, `PUT /v2/config/technical-settings`), проверки приёмки (id публикации + hash + версия контекста + пригодность + факты), ревизии применённого плана, AUTO/MANUAL, ручные правки, технастройки, управляемые из sys |
+| `AI-gateway` | — | Вне скоупа этой сборки; в `/health/services` объявлен как `not_configured` |
+| `SMTP-gateway` | `src/notifications` (только интенты) | sys записывает почтовые интенты с дедупликацией по переходам; транспорт вне скоупа этой сборки |
 
-## 3. Cross-cutting foundation (implemented)
+## 3. Сквозной фундамент (реализован)
 
-**Configuration** (`src/common/config`). One Zod schema describes every environment key the
-process reads; an unparsable environment stops the process at boot rather than surfacing as
-an `undefined` at the first request. `AppConfigService` gives typed access.
+**Конфигурация** (`src/common/config`). Одна Zod-схема описывает каждый ключ окружения,
+который читает процесс; непарсируемое окружение останавливает процесс на старте, а не
+вылезает `undefined`-ом на первом запросе. `AppConfigService` даёт типизированный доступ.
 
-**Time** (`src/common/time`). Every absolute moment is an integer number of Unix seconds
-(`context/33` section 4); local formatting happens only at the edges and never by adding an
-offset to a stored value. `Clock` is injected rather than read from `Date.now()` in place —
-partly for testability, partly as a standing reminder that the passage of time is not a
-trigger for anything (`context/36` section 5.1).
+**Время** (`src/common/time`). Каждый абсолютный момент — целое число секунд Unix
+(`context/33` §4); локальное форматирование — только на границах и никогда не прибавлением
+смещения к сохранённому значению. `Clock` внедряется, а не читается как `Date.now()` на
+месте — отчасти для тестируемости, отчасти как постоянное напоминание, что течение
+времени — не триггер ни для чего (`context/36` §5.1).
 
-**BigInt boundary** (`src/common/time/bigint-boundary.ts`). PostgreSQL stores those seconds
-as `BIGINT`, which the driver returns as a JavaScript `bigint` that `JSON.stringify` cannot
-encode. Conversion is explicit at the read boundary and refuses to approximate values outside
-the safe integer range. `BigIntGuardInterceptor` fails the response outside production if an
-unconverted `bigint` still reaches the encoder — better a 500 in development than a string
-where the contract promises a number (`context/43` section 5.3).
+**Граница BigInt** (`src/common/time/bigint-boundary.ts`). PostgreSQL хранит эти секунды
+как `BIGINT`; драйвер возвращает JavaScript `bigint`, который `JSON.stringify` не может
+закодировать. Преобразование явное, на границе чтения, и отказывается аппроксимировать
+значения вне безопасного целочисленного диапазона. `BigIntGuardInterceptor` роняет ответ
+вне продакшена, если несконвертированный `bigint` дошёл до кодировщика, — лучше 500
+в разработке, чем строка там, где контракт обещает число (`context/43` §5.3).
 
-**Errors** (`src/common/errors`). Services throw `SysError` with a code from a fixed
-catalogue; one exception filter maps code to HTTP status and renders the single envelope
-`{ error: { code, message, details, requestId } }`. The code, not the status, is the
-contract: `VERSION_CONFLICT`, `WORK_ALREADY_STARTED`, `MODE_MANUAL`, `SNAPSHOT_STALE` and
-`RESULT_NOT_APPLICABLE` are all 409 and must stay distinguishable without parsing prose.
+**Ошибки** (`src/common/errors`). Сервисы бросают `SysError` с кодом из фиксированного
+каталога; один exception-фильтр отображает код на HTTP-статус и рендерит единственный
+конверт `{ error: { code, message, details, requestId } }`. Код, а не статус, — контракт:
+`VERSION_CONFLICT`, `WORK_ALREADY_STARTED`, `MODE_MANUAL`, `SNAPSHOT_STALE` и
+`RESULT_NOT_APPLICABLE` — все 409 и должны различаться без разбора прозы.
 
-**Request context and logging** (`src/common/logging`). An `AsyncLocalStorage` request id
-travels with every log line and every error body, and is echoed in `x-request-id`. Logs are
-one JSON object per line; login codes, passwords and token values are never passed to the
-logger.
+**Контекст запроса и логирование** (`src/common/logging`). Идентификатор запроса
+(`AsyncLocalStorage`) идёт с каждой строкой лога и каждым телом ошибки и возвращается
+в `x-request-id`. Логи — один JSON-объект на строку; коды входа, пароли и значения
+токенов никогда не попадают в логгер.
 
-**Result acceptance** (`src/routing/router-gateway`). Five independent checks decide
-whether a finished result becomes the working plan: mode, snapshot hash, context version,
-usability, and absence of conflict with explicit facts. Both singletons are locked first,
-so a result already being validated cannot land after the dispatcher takes manual control.
-When a result conflicts with the facts sys declines it and publishes a current projection;
-it never repairs the plan with an optimiser of its own. Each acceptance adds an immutable
-revision carrying the moment it describes.
+**Приёмка результата** (`src/routing/router-gateway`). Пять независимых проверок решают,
+станет ли готовый результат рабочим планом: режим, hash снимка, версия контекста,
+пригодность и отсутствие конфликта с явными фактами. Оба синглтона сначала блокируются,
+поэтому результат, уже проходящий валидацию, не может приземлиться после того, как
+диспетчер взял ручное управление. Когда результат конфликтует с фактами, sys отклоняет
+его и публикует актуальную проекцию; своим оптимизатором план он не «чинит». Каждая
+приёмка добавляет неизменяемую ревизию с моментом, который она описывает.
 
-**Snapshot publication** (`src/routing/mount-data-eng`). Publishes the whole current
-planning task on a listed business trigger, and only when the projection actually differs
-from the one already published. The insert and the pointer switch commit together with the
-pointer locked, so a slow publisher cannot move the active task backwards. What cannot be
-projected -- a request without coordinates, an engineer without a shift -- is counted in
-diagnostics rather than dropped, and those diagnostics are computed live, because an
-unprojectable request changes no task and therefore triggers no publication that could
-record it.
+**Публикация снимка** (`src/routing/mount-data-eng`). Публикует всю текущую задачу
+планирования по перечисленному бизнес-триггеру и только если проекция реально
+отличается от уже опубликованной. Вставка и переключение указателя коммитятся вместе
+с заблокированным указателем, поэтому медленный издатель не может откатить активную
+задачу назад. Что не проецируется — заявка без координат, инженер без смены — считается
+в диагностике, а не выбрасывается; диагностика вычисляется живьём, потому что
+непроектируемая заявка не меняет задачу и потому не вызывает публикации, которая могла
+бы её зафиксировать.
 
-**Canonical JSON** (`src/common/json`). One document must produce one byte sequence in
-both TypeScript and Python, because sys and Router hash the published snapshot
-independently. `JSON.stringify` and `json.dumps` agree on syntax but disagree on numbers,
-so the module fixes sorted keys, no whitespace, literal non-ASCII, integers without a
-decimal point and every other number at exactly seven decimal places. The rules are stated
-in the file and asserted by unit tests; Router Core has to reproduce them.
+**Канонический JSON** (`src/common/json`). Один документ должен давать одну
+последовательность байтов и в TypeScript, и в Python, потому что sys и Router считают
+hash опубликованного снимка независимо. `JSON.stringify` и `json.dumps` сходятся в
+синтаксисе, но расходятся в числах, поэтому модуль фиксирует: сортировку ключей,
+отсутствие пробелов, неэкранированный не-ASCII, целые без десятичной точки и все
+остальные числа ровно с семью знаками после запятой. Правила записаны в файле и
+проверяются unit-тестами; Router Core обязан их воспроизводить.
 
-**Operation envelope** (`src/operations`). The single entry point for every change: an
-`operationId` makes a retry return the first outcome instead of repeating the work, a
-fingerprint of the arguments makes reuse of an id detectable, `expectedVersion` turns a
-concurrent edit into a reported conflict instead of a silent overwrite, and the journal
-entry is written in the same transaction as the change so it cannot be missing for
-something that happened.
+**Конверт операций** (`src/operations`). Единственная точка входа для любого изменения:
+`operationId` делает повтор возвращающим первый исход вместо повторения работы,
+отпечаток аргументов делает повторное использование id обнаружимым, `expectedVersion`
+превращает конкурентную правку в сообщённый конфликт вместо тихой перезаписи, а строка
+журнала пишется в той же транзакции, что и изменение, — для случившегося она не может
+отсутствовать. Для действий, ждущих внешний сервис (Router, импорт, техостановка),
+строка журнала резервируется как `outcome_unknown`, удалённый вызов идёт **вне**
+транзакции, и только затем журнал финализируется: потерянный ответ не повторяет
+побочный эффект и не теряет его записи.
 
-**Access control** (`src/common/access`, `src/auth`). The guard is global and denies by
-default, so a new endpoint without a decorator is unreachable rather than public. It
-resolves either a session token or an integration key into one `Actor`, and a category is
-mapped onto the role whose UI actions it replaces. The decorators live in `common/access`
-because health has to declare itself public without depending on the auth module.
+**Контроль доступа** (`src/common/access`, `src/auth`). Guard глобальный и по умолчанию
+запрещает, поэтому новый эндпоинт без декоратора недостижим, а не публичен. Он
+разрешает либо токен сессии, либо интеграционный ключ в одного `Actor`, а категория
+отображается на роль, чьи UI-действия она заменяет. Декораторы живут в `common/access`,
+потому что health должен объявить себя публичным без зависимости от auth-модуля.
 
-**Health** (`src/common/health`). Three endpoints outside the `api/v1` prefix: `health/live`
-(process), `health/ready` (required dependencies only) and `health/services` (everything,
-including integrations that are not wired). Modules register their own probes in
-`HealthRegistry`, so an unreachable SMTP or LLM can never make the application look down —
-the dispatcher's password login must work exactly when the mail contour is broken
-(`context/43` section 11.3).
+**Health** (`src/common/health`). Три эндпоинта вне префикса `api/v1`: `health/live`
+(процесс), `health/ready` (только обязательные зависимости) и `health/services` (всё,
+включая неподключённые интеграции). Модули регистрируют свои пробы в `HealthRegistry`,
+поэтому недостижимые SMTP или LLM никогда не делают приложение «лежащим» — парольный
+вход диспетчера обязан работать именно тогда, когда почтовый контур сломан
+(`context/43` §11.3).
 
-## 4. Conventions
+## 4. Соглашения
 
-- TypeScript `strict`, no `any`, no non-null assertions.
-- Build is `tsc` with `experimentalDecorators` and `emitDecoratorMetadata`; Vite is not used
-  to compile Nest classes (`context/43` section 4).
-- Tests run on the compiled output with `node:test`, so they exercise the same decorator and
-  metadata build as production.
-- Lint and format: Biome, scoped to `apps/**` and `packages/**`.
-- `packages/shared` is owned by the contracts owner and is not modified from here
-  (AGENTS.md section 3.4).
+- TypeScript `strict`, без `any`, без non-null assertions.
+- Сборка — `tsc` с `experimentalDecorators` и `emitDecoratorMetadata`; Vite Nest-классы
+  не компилирует (`context/43` §4).
+- Тесты исполняются на скомпилированном выводе под `node:test`, поэтому проверяют ту же
+  сборку с декораторами и метаданными, что и продакшен.
+- Линт и формат — Biome, ограничен `apps/**` и `packages/**`.
+- `packages/shared` принадлежит владельцу контрактов и отсюда не изменяется
+  (AGENTS.md §3.4).
 
-## 5. Missing contracts
+## 5. Незакрытые контракты
 
-Listed explicitly rather than stubbed with invented shapes (AGENTS.md section 10.3):
+Перечислены явно, а не затыкаются выдуманными формами (AGENTS.md §10.3):
 
-| Contract | Needed for | Status |
+| Контракт | Нужен для | Статус |
 |---|---|---|
-| Router Core HTTP surface (result, health, context version, technical settings) | `ROUTER-gateway` | **Implemented end to end**: `http-router-client.ts` calls `/v1/result`, `/v1/context` and `PUT /v2/config/technical-settings`; acceptance checks publication id + hash + context version (`docs/api.md` sections 10–11). Open: the evidence bundle (`main_evidence`/`baseline_evidence`) is parsed but not yet consumed by any view |
-| AI-gateway tool call protocol | AI chats | Out of scope of this build |
-| SMTP-gateway transport and accept result | Mail delivery | Out of scope of this build |
-| Source of request coordinates (geocoding) | A publishable snapshot with anything in it | Resolved for the official dataset: the import requires a versioned geocode package at `data/dataset/geocoded/<region>.json` (declared district-centroid projections, provenance stored). Ad-hoc requests without coordinates are still excluded and counted, never invented |
+| HTTP-поверхность Router Core (результат, health, версия контекста, технастройки) | `ROUTER-gateway` | **Реализована от конца до конца**: `http-router-client.ts` вызывает `/v1/result`, `/v1/context` и `PUT /v2/config/technical-settings`; приёмка сверяет id публикации + hash + версию контекста (`docs/api.md` §10–11). Открыто: пакет evidence (`main_evidence`/`baseline_evidence`) парсится, но ещё не потребляется ни одним представлением |
+| Протокол tool-вызовов AI-gateway | AI-чаты | Вне скоупа этой сборки |
+| Транспорт и подтверждение приёма SMTP-gateway | Доставка писем | Вне скоупа этой сборки |
+| Источник координат заявок (геокодинг) | Публикуемый снимок хоть с чем-то внутри | Для официального датасета закрыто: импорт требует версионированный геокод-пакет `data/dataset/geocoded/<region>.json` (задекларированные проекции по центроидам районов, происхождение сохраняется). Ручные заявки без координат по-прежнему исключаются и считаются в диагностике — координаты не выдумываются |

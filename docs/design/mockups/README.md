@@ -1,41 +1,42 @@
-# UI mockup examples
+# Примеры UI-макетов
 
-Generated on 2026-09-15; added to the repository on 2026-09-16 at the project
-owner's request. These three original PNGs illustrate role-specific interfaces
-for LCT Smart Router. They are examples for design discussion, not approved
-specifications, implemented screens, or official Beeline artwork.
+Сгенерированы 15.09.2026; добавлены в репозиторий 16.09.2026 по запросу владельца
+проекта. Эти три оригинальных PNG иллюстрируют интерфейсы ролей LCT Smart Router.
+Это материал для дизайн-обсуждения, а не утверждённые спецификации, реализованные
+экраны или официальная графика Билайн.
 
-## Dispatcher dashboard
+## Дашборд диспетчера
 
-Map-led desktop workspace with engineers, a selected request, assignment reasons
-and a route timeline.
+Рабочее место на карте: инженеры, выбранная заявка, причины назначения и таймлайн
+маршрута.
 
-![Dispatcher dashboard example](dispatcher-dashboard.png)
+![Пример дашборда диспетчера](dispatcher-dashboard.png)
 
-## Engineer day plan
+## План дня инженера
 
-Mobile view of the next appointment, external navigation and the remaining day.
+Мобильный вид ближайшего визита, внешней навигации и остатка дня.
 
-![Engineer day-plan example](engineer-day-plan.png)
+![Пример плана дня инженера](engineer-day-plan.png)
 
-## Client visit status
+## Статус визита клиента
 
-Mobile view of the client's own request, agreed window and estimated visit time.
+Мобильный вид собственной заявки клиента, согласованного окна и расчётного времени
+визита.
 
-![Client visit-status example](client-visit-status.png)
+![Пример статуса визита клиента](client-visit-status.png)
 
-## How to use these examples
+## Как использовать эти примеры
 
-- All names, times, addresses, counts and distances are demonstration content.
-  The maps are illustrative and are not routing output or verified geography.
-- The dispatcher image has inconsistent route colours and repeated marker numbers.
-  Do not reproduce those generation errors in the application.
-- The images predate the verified brand reference. Their approximate yellow
-  (`#FFD54A` in the generation brief) and generated logos are not authoritative.
-  Follow the [Beeline visual reference](../beeline/README.md) for `#FED305`, the
-  original official symbol and the distinction between sourced and project colours.
-- The current product contracts and role concepts take precedence over any controls,
-  labels, statuses or layout implied by these pictures. See
-  [the context index](../../../context/INDEX.md), especially documents 38 and 39.
-- Files are stored unchanged from the generated originals. These are raster
-  references; no editable Figma file or interactive HTML/React prototype is included.
+- Все имена, времена, адреса, количества и расстояния — демонстрационный контент.
+  Карты иллюстративны: это не вывод маршрутизации и не проверенная география.
+- На изображении диспетчера inconsistent-цвета маршрутов и повторяющиеся номера
+  маркеров. Не воспроизводить эти ошибки генерации в приложении.
+- Изображения старше проверенного бренд-референса: их приблизительный жёлтый
+  (`#FFD54A` в брифе генерации) и сгенерированные логотипы не авторитетны.
+  Для `#FED305`, оригинального официального символа и различения «сourced/проектные»
+  цвета следуйте [визуальному референсу Билайн](../beeline/README.md).
+- Текущие продуктовые контракты и ролевые концепты главнее любых контролов, подписей,
+  статусов и раскладок, подразумеваемых этими картинками. См.
+  [индекс контекста](../../../context/INDEX.md), особенно документы 38 и 39.
+- Файлы хранятся без изменений от сгенерированных оригиналов. Это растровые
+  референсы: редактируемого Figma-файла или интерактивного HTML/React-прототипа нет.

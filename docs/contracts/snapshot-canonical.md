@@ -1,53 +1,54 @@
-# Canonical serialization of `RouterTaskSnapshot`
+# Каноническая сериализация `RouterTaskSnapshot`
 
-> Shared contract between the System Layer (TypeScript) and Router Core (Python).
-> Implementation: [`apps/api/src/common/json/canonical-json.ts`](../../apps/api/src/common/json/canonical-json.ts).
-> Canon: `context/33` sections 4 and 7, `context/43` section 5.2.
+> Общий контракт System Layer (TypeScript) и Router Core (Python).
+> Реализация: [`apps/api/src/common/json/canonical-json.ts`](../../apps/api/src/common/json/canonical-json.ts).
+> Канон: `context/33` §4 и §7, `context/43` §5.2.
 
-## Why this document exists
+## Зачем этот документ
 
-`input_hash` is computed **independently** on both sides: the System Layer hashes the
-document it publishes, Router Core hashes the document it read. A result is only applied
-when the two agree (`context/33` section 7). If the serializers differ by one byte the
-hashes never match, every result is rejected as belonging to another snapshot, and the
-contour quietly stops applying plans while every component reports itself healthy.
+`input_hash` считается **независимо** на двух сторонах: System Layer хэширует
+публикуемый им документ, Router Core — прочитанный им документ. Результат применяется,
+только когда значения совпали (`context/33` §7). Если сериализаторы различаются хотя
+бы на байт, hash-и никогда не совпадут, каждый результат отклоняется как принадлежащий
+чужому снимку, и контур тихо перестаёт применять планы, пока все компоненты рапортуют
+о здоровье.
 
-`JSON.stringify` and `json.dumps` are not interchangeable. They agree on object and string
-syntax and disagree on numbers: JavaScript prints `55` for the value `55.0` where Python
-prints `55.0`, and the two switch to exponential notation at different magnitudes. The
-rules below remove that freedom.
+`JSON.stringify` и `json.dumps` взаимозаменяемы не полностью. Они согласны в синтаксисе
+объектов и строк и расходятся в числах: JavaScript печатает `55` для значения `55.0`,
+где Python печатает `55.0`, и они переходят в экспоненциальную запись при разных
+порядках. Правила ниже снимают эту свободу.
 
-## The rules
+## Правила
 
-1. **Object keys are sorted** ascending by UTF-16 code unit — JavaScript's default string
-   comparison, and Python's `sorted()` over `str`.
-2. **No whitespace** anywhere: `{"a":1,"b":[2,3]}`.
-3. **Strings** use standard JSON escaping. Non-ASCII characters are **not** escaped; the
-   output is UTF-8. In Python that means `ensure_ascii=False`.
-4. **A number that is an integer** is written without a decimal point: `1789459200`. The
-   value `55.0` is an integer and is written `55`.
-5. **Any other number** is written with **exactly seven decimal places**: `55.7600000`.
-   In Python, `format(value, '.7f')`. Seven places is chosen for geographic coordinates,
-   where it is about a centimetre — far finer than any routing decision.
-6. `true`, `false` and `null` are written literally.
-7. **Arrays keep their order.** Order carries meaning: `arrival_order` and `input_order`
-   define the baseline and must never be re-sorted (`context/33` section 5).
-8. **Rejected, not coerced:** `undefined`, `NaN`, infinities, dates, functions. A value
-   that is absent must be an explicit `null`, because "the field was missing" and "the
-   value is unknown" are different statements (`context/33` section 4).
-9. **`bigint` is rejected.** The read boundary converts it to a number first, so one value
-   cannot be serialized two different ways.
+1. **Ключи объектов сортируются** по возрастанию кодовой единицы UTF-16 — сравнение
+   строк по умолчанию в JavaScript и `sorted()` над `str` в Python.
+2. **Никаких пробелов**: `{"a":1,"b":[2,3]}`.
+3. **Строки** — стандартный JSON-экранирование. Не-ASCII символы **не** экранируются;
+   вывод — UTF-8. В Python это `ensure_ascii=False`.
+4. **Число, являющееся целым**, пишется без десятичной точки: `1789459200`. Значение
+   `55.0` — целое и пишется `55`.
+5. **Любое другое число** пишется **ровно с семью знаками после запятой**: `55.7600000`.
+   В Python — `format(value, '.7f')`. Семь знаков выбраны под географические координаты:
+   это около сантиметра — намного точнее любого маршрутного решения.
+6. `true`, `false` и `null` пишутся литерально.
+7. **Массивы сохраняют порядок.** Порядок несёт смысл: `arrival_order` и `input_order`
+   задают baseline и никогда не пересортировываются (`context/33` §5).
+8. **Отклоняется, не приводится:** `undefined`, `NaN`, бесконечности, даты, функции.
+   Отсутствующее значение — явный `null`: «поля не было» и «значение неизвестно» —
+   разные утверждения (`context/33` §4).
+9. **`bigint` отклоняется.** Граница чтения конвертирует его в number первым, чтобы
+   одно значение не сериализовалось двумя способами.
 
-`input_hash` is `sha256(canonical_bytes)` in lower-case hex. The hash is stored **beside**
-the document and never inside it: a hash cannot be part of its own input.
+`input_hash` — `sha256(canonical_bytes)` строчными hex. Хэш хранится **рядом** с
+документом и никогда внутри него: хэш не может быть частью собственного входа.
 
-The document is serialized once, and the same string is both stored and hashed.
-Re-serializing for the hash would leave room for the two to differ.
+Документ сериализуется один раз, и одна и та же строка и хранится, и хэшируется.
+Пересериализация ради хэша оставила бы двум копиям шанс разойтись.
 
-## Reference implementation (Python)
+## Эталонная реализация (Python)
 
-This is the Router Core side. It produces byte-identical output to the TypeScript
-implementation for the vector below — verified, not assumed.
+Это сторона Router Core. Она производит байт-в-байт идентичный вывод с реализацией
+TypeScript для вектора ниже — проверено, не предположено.
 
 ```python
 import hashlib
@@ -86,34 +87,34 @@ def input_hash(document) -> str:
     return hashlib.sha256(canonical(document).encode("utf-8")).hexdigest()
 ```
 
-Note the `bool` checks come before the `int` check: in Python `True` *is* an `int`, and
-without that order a boolean would serialize as `1`.
+Обратите внимание: проверки `bool` стоят перед проверкой `int` — в Python `True` **есть**
+`int`, и без этого порядка булево значение сериализовалось бы как `1`.
 
-## Golden vector
+## Golden-вектор
 
-| File | What it is |
+| Файл | Что это |
 |---|---|
-| [`fixtures/snapshot-golden.json`](./fixtures/snapshot-golden.json) | The input document, written with indentation and unsorted keys on purpose |
-| [`fixtures/snapshot-golden.canonical.txt`](./fixtures/snapshot-golden.canonical.txt) | The exact canonical bytes (1545 bytes), stored with one trailing newline for readability |
-| [`fixtures/snapshot-golden.sha256.txt`](./fixtures/snapshot-golden.sha256.txt) | The expected digest |
+| [`fixtures/snapshot-golden.json`](./fixtures/snapshot-golden.json) | Входной документ, нарочно записанный с отступами и несортированными ключами |
+| [`fixtures/snapshot-golden.canonical.txt`](./fixtures/snapshot-golden.canonical.txt) | Точные канонические байты (1545 байт), хранятся с одним завершающим переводом строки для читаемости |
+| [`fixtures/snapshot-golden.sha256.txt`](./fixtures/snapshot-golden.sha256.txt) | Ожидаемый дайджест |
 
 ```
 23e170a1c8b0fe41d4b630ebd9421907c2cb99d97edeb7476914e569d7432595
 ```
 
-The vector deliberately contains the cases that break naive implementations: a coordinate
-whose value is a whole number (`55.0`), a coordinate with more than seven significant
-decimals, `null` in every nullable field, `lunch_taken` both true and false, an empty
-`parameters` object, and nested objects whose keys are not in alphabetical order.
+Вектор нарочно содержит случаи, ломающие наивные реализации: координату с целым
+значением (`55.0`), координату с более чем семью значащими знаками, `null` в каждом
+nullable-поле, `lunch_taken` в true и false, пустой объект `parameters` и вложенные
+объекты с ключами не по алфавиту.
 
-**Both sides must reproduce these bytes.** `apps/api/test/unit/canonical-json.test.ts`
-asserts it for TypeScript; Router Core should assert the same file in its own suite. A
-failure there is the early warning that would otherwise appear as "Router keeps computing
-but no plan is ever applied".
+**Обе стороны обязаны воспроизводить эти байты.**
+`apps/api/test/unit/canonical-json.test.ts` проверяет это для TypeScript; Router Core
+должен проверить тот же файл в своём наборе. Падение здесь — раннее предупреждение
+симптома, который иначе выглядит как «Router считает, но план никогда не применяется».
 
-## What is deliberately not in the snapshot
+## Что нарочно отсутствует в снимке
 
-The customer's problem text, names and addresses; execution history; a computed ETA; the
-road matrix; the internal tolerance; the map. Those are either the System Layer's own
-business data or Router's separately connected resources (`context/33` section 3). The
-hash covers the task and nothing else, so unrelated activity cannot invalidate a result.
+Текст проблемы клиента, имена и адреса; история исполнения; вычисленный ETA; дорожная
+матрица; внутренний допуск; карта. Это либо собственные бизнес-данные System Layer,
+либо отдельно подключаемые ресурсы Router (`context/33` §3). Хэш покрывает задачу и
+ничего больше, поэтому посторонняя активность не инвалидирует результат.
