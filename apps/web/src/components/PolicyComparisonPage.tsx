@@ -36,8 +36,10 @@ export function PolicyComparisonPage({
             <p className="text-sm text-muted">Одинаковые заявки, инженеры и дорожная матрица</p>
             <h1 className="mt-1 text-2xl font-semibold">Сравнение политик</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-              Пять политик считаются на одном снимке. «Базовая из ТЗ» берёт заявки по очереди
-              поступления и отдаёт их первому подходящему свободному инженеру.
+              Рабочие политики считаются на одном снимке с тем же составом инженеров.
+              Строка «Базовая из ТЗ» выделена отдельно: это прямое последовательное
+              назначение из ТЗ (очередь заявок → первый подходящий свободный инженер), а не
+              оптимизация. Сравнивайте с ней число исполнителей и пробег.
             </p>
           </div>
           <button
@@ -115,16 +117,28 @@ export function PolicyComparisonPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {comparison.rows.map((row) => {
+                  {[...comparison.rows]
+                    .sort((left, right) => Number(right.kind === 'baseline') - Number(left.kind === 'baseline'))
+                    .map((row) => {
                     const active = row.kind === 'policy' && row.strategyId === snapshot.policyId;
+                    const baseline = row.kind === 'baseline';
                     return (
                       <tr
                         key={row.strategyId}
-                        className={`border-t border-line ${active ? 'bg-bee/15' : ''}`}
+                        className={`border-t border-line ${
+                          baseline ? 'bg-amber-50' : active ? 'bg-bee/15' : ''
+                        }`}
                       >
                         <td className="px-4 py-4">
                           <div className="flex items-center gap-2">
-                            <span className="font-semibold">{strategyLabel(row.strategyId)}</span>
+                            <span className={`font-semibold ${baseline ? 'text-amber-950' : ''}`}>
+                              {strategyLabel(row.strategyId)}
+                            </span>
+                            {baseline ? (
+                              <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[11px] font-semibold text-amber-950">
+                                сравнение с ТЗ
+                              </span>
+                            ) : null}
                             {active ? (
                               <span className="rounded-full bg-bee px-2 py-0.5 text-[11px] font-medium">
                                 активная

@@ -7,12 +7,13 @@ import type {
   DataUploadSummary,
   PlanAssignmentView,
   PolicyComparisonResponse,
+  OfficialImportSummary,
   PolicyId,
   RouterTechnicalSettings,
 } from './types';
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
-const policyIdSchema = z.enum(['compact', 'fast', 'sla', 'balanced', 'eco']);
+const policyIdSchema = z.enum(['compact', 'fast', 'sla', 'balanced', 'eco', 'covering']);
 
 const requestSchema = z.object({
   id: z.string(),
@@ -260,7 +261,7 @@ const policyComparisonSchema = z.object({
   rows: z
     .array(
       z.object({
-        strategyId: z.enum(['fast', 'compact', 'sla', 'balanced', 'eco', 'baseline']),
+        strategyId: z.enum(['fast', 'compact', 'sla', 'balanced', 'eco', 'covering', 'baseline']),
         kind: z.enum(['policy', 'baseline']),
         isUsable: z.boolean(),
         calculationMs: z.number().nonnegative(),
@@ -550,6 +551,30 @@ export function uploadDataPackage(token: string, file: DataUploadFile): Promise<
   });
 }
 
+const officialImportSummarySchema = z
+  .object({
+    source: z.string().default('official-dataset'),
+    applied: z.boolean(),
+    requestsCreated: z.number().int().nonnegative(),
+    requestsSkippedAsDuplicate: z.number().int().nonnegative(),
+    engineersCreated: z.number().int().nonnegative(),
+    depotsCreated: z.number().int().nonnegative(),
+    requestsWithoutCoordinates: z.number().int().nonnegative(),
+    warnings: z.array(z.string()),
+    errors: z.array(z.string()),
+  })
+  .passthrough();
+
+/**
+ * Loads the official TZ dataset shipped in the repo (`regions: all`) without curl.
+ */
+export function importOfficialDataset(token: string): Promise<OfficialImportSummary> {
+  return requestJson('/api/v1/dispatch/data/import', officialImportSummarySchema, token, {
+    method: 'POST',
+    body: JSON.stringify({ operationId: crypto.randomUUID(), regions: 'all' }),
+  });
+}
+
 function normalizeAssignment(raw: z.infer<typeof rawAssignmentSchema>): PlanAssignmentView {
   return {
     requestId: raw.requestId,
@@ -560,6 +585,57 @@ function normalizeAssignment(raw: z.infer<typeof rawAssignmentSchema>): PlanAssi
 }
 
 function normalizeReasons(raw: unknown, engineerId: string | null): AssignmentReasons {
+  const structured = z
+    .object({
+      assignment: z
+        .object({
+          chosen: z.string().nullable().optional(),
+          factors: z.array(reasonSchema).default([]),
+          alternatives: z
+            .array(
+              z.object({
+                engineerId: z.string().optional(),
+                engineer: z.string().optional(),
+                blocked: z.boolean().optional(),
+                costDeltaMin: z.number().optional(),
+                cost_delta: z.number().optional(),
+                whyNot: z.string().optional(),
+                why_not: z.string().optional(),
+              }),
+            )
+            .optional(),
+        })
+        .optional(),
+    })
+    .safeParse(raw);
+  if (structured.success && structured.data.assignment) {
+    const assignment = structured.data.assignment;
+    return {
+      assignment: {
+        chosen: assignment.chosen ?? engineerId,
+        factors: assignment.factors.map((reason) => ({
+          code: reason.code,
+          detail: reason.text,
+          basis: reason.basis,
+          facts: reason.facts,
+        })),
+        alternatives: (assignment.alternatives ?? []).flatMap((item) => {
+          const id = item.engineerId ?? item.engineer;
+          if (!id) {
+            return [];
+          }
+          return [
+            {
+              engineerId: id,
+              blocked: item.blocked ?? false,
+              costDeltaMin: item.costDeltaMin ?? item.cost_delta,
+              whyNot: item.whyNot ?? item.why_not ?? '',
+            },
+          ];
+        }),
+      },
+    };
+  }
   const parsed = z.array(reasonSchema).safeParse(raw);
   if (!parsed.success) {
     return { assignment: { chosen: engineerId, factors: [], alternatives: [] } };

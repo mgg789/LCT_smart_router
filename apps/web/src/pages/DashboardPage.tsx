@@ -9,7 +9,7 @@ import { EngineersPage } from '../components/EngineersPage';
 import { PolicyComparisonPage } from '../components/PolicyComparisonPage';
 import { PolicyModal } from '../components/PolicyModal';
 import { RouteTimeline } from '../components/RouteTimeline';
-import { engineerSummaries, unassignedRequests } from '../domain/dashboard';
+import { assignmentFor, engineerSummaries, unassignedRequests } from '../domain/dashboard';
 import {
   ALL_REGIONS,
   filterSnapshotByRegion,
@@ -134,8 +134,8 @@ export function DashboardPage() {
         </nav>
         <button
           type="button"
-          title="Загрузить данные"
-          aria-label="Загрузить новый регион или заявки"
+          title="Загрузить данные или датасет из ТЗ"
+          aria-label="Загрузить датасет из ТЗ или свой файл"
           disabled={dash.writesDisabled}
           onClick={() => setUploadOpen(true)}
           className="mt-3 flex h-10 w-10 items-center justify-center rounded-xl border border-line text-muted hover:bg-canvas hover:text-ink"
@@ -172,6 +172,7 @@ export function DashboardPage() {
             existingRegions={regions.map((region) => region.id)}
             onClose={() => setUploadOpen(false)}
             onUpload={dash.uploadDataset}
+            onImportOfficial={dash.importOfficialTzDataset}
           />
           <button
             type="button"
@@ -326,10 +327,12 @@ export function DashboardPage() {
                     <div className="px-1 font-semibold">
                       {visibleUnassigned.length} заявки без назначения
                     </div>
-                    <div className="px-1 text-sm">Нет инженера с нужным навыком</div>
+                    <div className="px-1 text-sm">Точная причина — в карточке заявки</div>
                     <ul className="mt-2 space-y-1">
                       {visibleUnassigned.map((request) => {
                         const selected = request.id === dash.selectedRequest?.id;
+                        const reasonCode = assignmentFor(visibleSnapshot, request.id)?.reasons
+                          .assignment?.factors[0]?.code;
                         return (
                           <li key={request.id}>
                             <button
@@ -343,6 +346,11 @@ export function DashboardPage() {
                               <span className="block text-[12px]">
                                 {request.workTypeTitle} · {request.addressText}
                               </span>
+                              {reasonCode ? (
+                                <span className="mt-1 block text-[12px] text-ink/70">
+                                  {factorLabel(reasonCode)}
+                                </span>
+                              ) : null}
                             </button>
                           </li>
                         );
