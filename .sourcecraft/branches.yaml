@@ -1,0 +1,17 @@
+# Branch protection for the SourceCraft repository.
+# Loaded from the default branch (`main`). See docs/ci.md.
+branch_protection:
+  policies:
+    - target: branch
+      matches: "main"
+      message: "main is the demo mirror — merge from a pull request, do not push or force-push"
+      rules:
+        - prevent_force_push
+        - prevent_non_pr_changes
+        - prevent_deletion
+    - target: branch
+      matches: "dev"
+      message: "dev history must stay linear — no force-push, no deleting the working branch"
+      rules:
+        - prevent_force_push
+        - prevent_deletion

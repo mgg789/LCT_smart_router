@@ -1,5 +1,85 @@
 # Solver — computation core
 
+## Current Router V2 (2026-09-17)
+
+The new implementation lives in root `core/` by the owner's instruction (D-22).
+It follows the v14 `RouterTaskSnapshot` / `RouterResult` contract rather than the
+legacy contract below. Runtime, Engine and geographic preparation belong to this
+module; System Layer is integrated through the ROUTER-gateway HTTP client
+(`docs/api.md` section 10).
+
+- Strict Unix-second inputs and result validation; exact FIFO baseline.
+- OR-Tools joint job/lunch model, open routes and five versioned policy presets:
+  `fast`, `compact`, `sla`, `balanced` and `eco`. Hard constraints are shared;
+  their resource/SLA-risk ordering is compiled from the catalog. The default
+  policy is `compact` since the QA decisions (`context/50`) — scenario snapshots
+  and goldens are built on it.
+- Explicit request/engineer region identity. A request can only be assigned to an
+  engineer from the same declared region; omitted regions remain compatible only for
+  legacy snapshots. Multi-region snapshots therefore cannot create cross-region work.
+- Optional lunch inputs use 45 minutes inside the local 11:20–15:00 window. The bounded
+  job-coverage search runs without optional lunch nodes and then projects the same
+  assignments into the lunch-aware schedule. This removes the observed artefact where
+  adding an optional lunch changed the heuristic trajectory and accidentally assigned
+  more work. A required lunch remains a hard feasibility condition.
+- Directed transport graph, path/matrix cache, OSRM adapter, address candidates and GeoJSON.
+- Optional 2GIS preparation adapter for current/statistical car traffic and separate
+  walk, bike and schedule-aware public-transport matrix profiles; live HTTP stays
+  outside Engine and every response is available through a versioned offline cache.
+- Autonomous process-isolated Runtime with exact publication integrity checks, durable
+  Router technical settings **with durable idempotency receipts** (accepted operations
+  survive a restart in the same atomic document), file/PostgreSQL adapters and a
+  private API.
+- Eight-field technical revision (D-22 implementation of `context/50`):
+  `lunches_enabled` (default **false**), the two revalidation tolerances,
+  `travel_time_mode` (`graph_with_access_buffer` adds `access_buffer_sec` to graph
+  durations; `fixed_normative` prices every non-zero leg at `fixed_travel_time_sec`),
+  `early_finish_replan_threshold_sec` and `task_overrun_tolerance_sec`. The
+  `TechnicalTravel` wrapper (core/geo.py `configure_travel`) applies the timing policy
+  on every calculation path and derives its version from `base graph version + timing
+  configuration`. The last two thresholds are also read by sys to classify execution
+  variance.
+- `position_observed_at` removed from `Engineer` and the snapshot schema: sys anchors
+  the remaining route at the active task's location with `available_from`; there is
+  no telemetry input.
+- Official acceptance: East baseline 36/66 (urgent 2/13) vs Router 64/66 (12/13);
+  South-central baseline 33/56 (2/16) vs Router 51/56 (16/16) under the pinned
+  golden profiles (compact, aligned work-norm durations). Southeast is a third
+  complete scenario (`core/scenarios/southeast-v1`: 83 requests, 12 engineers,
+  31 urgent, includes out-of-MKAD Kashira/Stupino) solvable under the same rules.
+- All three regions run as one 205-request, 35-engineer snapshot with disconnected
+  graph components (East + South-central 122/23 is also pinned). The acceptance test
+  proves that no cross-zone assignment is produced. `python -m core.prepare_official
+  --region <name>` regenerates either centroid fixture with source-hash verification.
+- Structured explanation evidence is part of every ready result for the UI and an
+  explanation-only LLM: selected engineer facts, predecessor travel, window margin and
+  all candidate blockers.
+- Five live-event acceptance scenarios: normal/urgent request, engineer offline,
+  two simultaneous 15-minute stops and a geographic 3x traffic multiplier.
+- Every result leg identifies its fidelity: `approximate`, `road_matrix`, `route_api`
+  or `traffic_api`. Distance and duration always come from the same quote; a matrix does
+  not pretend to provide a road polyline. Car quotes from a non-traffic source receive a
+  deterministic, versioned Moscow radial forecast factor based on time band, travel
+  direction and distance from the centre. OR-Tools uses the snapshot planning-time band
+  while exploring its static matrix; every extracted candidate is then scheduled and
+  validated with the planned departure time of each leg. It is a forecast, not live traffic.
+- Tests for hard constraints, stable replanning, event recovery, golden output hashes,
+  obsolete generations and provider boundaries.
+
+See [core/README.md](../core/README.md), [api.md](./api.md) and [data.md](./data.md)
+for setup, API/view/hash contracts, geographic
+resource formats and explicit V2 limits. The official East scenario uses versioned
+synthetic operating assumptions plus cached Nominatim/OSRM preparation; it does not
+claim live traffic or production map deployment. South-central and Southeast use
+declared district-centroid projections and an approximate matrix until accepted
+provider data is prepared. `prepare-2gis` is separately covered
+by controlled provider tests; no real account/key acceptance run has been performed.
+The sys database view is exercised by integration tests; the frontend contour is
+being built in parallel on `feat/web-dashboard-dev`. The previous prototype files
+are unchanged.
+
+## Historical day-0 prototype
+
 > Status: **legacy, frozen 2026-09-15** — the day-0 prototype moved from
 > `core/` (repo root) to `context/legacy_code/core/` (backup, D-19 in
 > `context/29`); paths below are historical. Target home stays `apps/solver`

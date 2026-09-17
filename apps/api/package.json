@@ -1,0 +1,39 @@
+{
+  "name": "api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LCT Smart Router — System Layer (sys): business state, operations, snapshot publication, plan application",
+  "main": "dist/src/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput & node --watch dist/src/main.js",
+    "start": "node dist/src/main.js",
+    "test:build": "tsc -p tsconfig.json",
+    "test": "pnpm test:build && node --test --test-concurrency=1 \"dist-test/test/**/*.test.js\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "smoke": "pnpm test:build && node dist-test/scripts/smoke.js"
+  },
+  "dependencies": {
+    "@nestjs/common": "11.2.5",
+    "@nestjs/config": "4.0.4",
+    "@nestjs/core": "11.2.5",
+    "@nestjs/platform-express": "11.2.5",
+    "@nestjs/swagger": "11.4.7",
+    "@prisma/adapter-pg": "^7.10.0",
+    "@prisma/client": "7.10.0",
+    "csv-parse": "7.0.2",
+    "dotenv": "^17.4.2",
+    "iconv-lite": "0.7.3",
+    "pg": "^8.23.0",
+    "prisma": "7.10.0",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.6",
+    "@types/node": "24.13.4",
+    "@types/pg": "^8.23.1",
+    "typescript": "5.9.3"
+  }
+}

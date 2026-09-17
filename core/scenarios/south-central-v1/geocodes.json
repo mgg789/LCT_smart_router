@@ -1,0 +1,510 @@
+{
+  "schema_version": "1.0",
+  "source": "Deterministic district-centroid projection for offline Router acceptance; not rooftop geocoding.",
+  "entries": [
+    {
+      "address": "Город Москва, б-р.Кленовый, д. 10 к 1",
+      "node_id": "south-central-000",
+      "location": {
+        "lat": 55.681493,
+        "lon": 37.692883
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, б-р.Симферопольский, д. 27",
+      "node_id": "south-central-001",
+      "location": {
+        "lat": 55.664633,
+        "lon": 37.615622
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, б-р.Смоленский, д. 17 стр. 1",
+      "node_id": "south-central-002",
+      "location": {
+        "lat": 55.735118,
+        "lon": 37.570172
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, б-р.Черноморский, д. 19 к 2",
+      "node_id": "south-central-003",
+      "location": {
+        "lat": 55.655757,
+        "lon": 37.573089
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, б-р.Чонгарский, д. 1 к 4",
+      "node_id": "south-central-004",
+      "location": {
+        "lat": 55.667061,
+        "lon": 37.614193
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, б-р.Чонгарский, д. 22 к 2",
+      "node_id": "south-central-005",
+      "location": {
+        "lat": 55.657619,
+        "lon": 37.57616
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, наб.Нагатинская, д. 60 к 2",
+      "node_id": "south-central-006",
+      "location": {
+        "lat": 55.679683,
+        "lon": 37.69471
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, пер.Ослябинский, д. 3",
+      "node_id": "south-central-007",
+      "location": {
+        "lat": 55.704861,
+        "lon": 37.631881
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, пр-кт.60-летия Октября, д. 17",
+      "node_id": "south-central-008",
+      "location": {
+        "lat": 55.685884,
+        "lon": 37.57255
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, пр-кт.60-летия Октября, д. 18 к 2",
+      "node_id": "south-central-009",
+      "location": {
+        "lat": 55.690928,
+        "lon": 37.570661
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, пр-кт.Балаклавский, д. 20 к 4",
+      "node_id": "south-central-010",
+      "location": {
+        "lat": 55.658944,
+        "lon": 37.575862
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, пр-кт.Балаклавский, д. 50",
+      "node_id": "south-central-011",
+      "location": {
+        "lat": 55.655621,
+        "lon": 37.57842
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, пр-кт.Нахимовский, д. 50",
+      "node_id": "south-central-012",
+      "location": {
+        "lat": 55.688399,
+        "lon": 37.57467
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, пр-кт.Севастопольский, д. 9 к 1",
+      "node_id": "south-central-013",
+      "location": {
+        "lat": 55.696084,
+        "lon": 37.605995
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, проезд.3-й Павелецкий, д. 7 к 2",
+      "node_id": "south-central-014",
+      "location": {
+        "lat": 55.702706,
+        "lon": 37.633127
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, проезд.3-й Павелецкий, д. 9",
+      "node_id": "south-central-015",
+      "location": {
+        "lat": 55.704923,
+        "lon": 37.639307
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, проезд.Коломенский, д. 27 к 3",
+      "node_id": "south-central-016",
+      "location": {
+        "lat": 55.673054,
+        "lon": 37.646716
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.2-я Рощинская, д. 11",
+      "node_id": "south-central-017",
+      "location": {
+        "lat": 55.705999,
+        "lon": 37.636612
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Автозаводская, д. 11",
+      "node_id": "south-central-018",
+      "location": {
+        "lat": 55.701385,
+        "lon": 37.629437
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Академика Миллионщикова, д. 13 к 1",
+      "node_id": "south-central-019",
+      "location": {
+        "lat": 55.675908,
+        "lon": 37.653093
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Болотниковская, д. 9 к 2",
+      "node_id": "south-central-020",
+      "location": {
+        "lat": 55.660584,
+        "lon": 37.605462
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Большая Пионерская, д. 33 к 2",
+      "node_id": "south-central-021",
+      "location": {
+        "lat": 55.730404,
+        "lon": 37.631988
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Большая Серпуховская, д. 31 к 6",
+      "node_id": "south-central-022",
+      "location": {
+        "lat": 55.728389,
+        "lon": 37.626828
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Винокурова, д. 12 к 4",
+      "node_id": "south-central-023",
+      "location": {
+        "lat": 55.690409,
+        "lon": 37.575318
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Винокурова, д. 5/6 к 2",
+      "node_id": "south-central-024",
+      "location": {
+        "lat": 55.690044,
+        "lon": 37.56972
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Восточная, д. 2 к 2",
+      "node_id": "south-central-025",
+      "location": {
+        "lat": 55.700875,
+        "lon": 37.638084
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Городская, д. 9",
+      "node_id": "south-central-026",
+      "location": {
+        "lat": 55.703337,
+        "lon": 37.63119
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Дмитрия Ульянова, д. 27",
+      "node_id": "south-central-027",
+      "location": {
+        "lat": 55.690429,
+        "lon": 37.569186
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Дубининская, д. 59 к 2",
+      "node_id": "south-central-028",
+      "location": {
+        "lat": 55.700968,
+        "lon": 37.632719
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Затонная, д. 11 к 3",
+      "node_id": "south-central-029",
+      "location": {
+        "lat": 55.683722,
+        "lon": 37.695645
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Затонная, д. 12 к 1",
+      "node_id": "south-central-030",
+      "location": {
+        "lat": 55.68301,
+        "lon": 37.68927
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Каховка, д. 7 к 1",
+      "node_id": "south-central-031",
+      "location": {
+        "lat": 55.658107,
+        "lon": 37.577274
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Керченская, д. 10 к 2",
+      "node_id": "south-central-032",
+      "location": {
+        "lat": 55.653328,
+        "lon": 37.573989
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Керченская, д. 6 к 2",
+      "node_id": "south-central-033",
+      "location": {
+        "lat": 55.659393,
+        "lon": 37.575185
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Коломенская, д. 21",
+      "node_id": "south-central-034",
+      "location": {
+        "lat": 55.684834,
+        "lon": 37.687926
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Коломенская, д. 5",
+      "node_id": "south-central-035",
+      "location": {
+        "lat": 55.681747,
+        "lon": 37.686942
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Люсиновская, д. 4",
+      "node_id": "south-central-036",
+      "location": {
+        "lat": 55.729636,
+        "lon": 37.630383
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Нагорная, д. 44 к 2",
+      "node_id": "south-central-037",
+      "location": {
+        "lat": 55.673407,
+        "lon": 37.594498
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Плющиха, д. 42",
+      "node_id": "south-central-038",
+      "location": {
+        "lat": 55.729614,
+        "lon": 37.569185
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Профсоюзная, д. 8 к 2",
+      "node_id": "south-central-039",
+      "location": {
+        "lat": 55.689801,
+        "lon": 37.570621
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Ремизова, д. 15 к 2",
+      "node_id": "south-central-040",
+      "location": {
+        "lat": 55.672152,
+        "lon": 37.594987
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Садовники, д. 10 к 1",
+      "node_id": "south-central-041",
+      "location": {
+        "lat": 55.670153,
+        "lon": 37.644138
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Судостроительная, д. 27 к 2",
+      "node_id": "south-central-042",
+      "location": {
+        "lat": 55.685479,
+        "lon": 37.688655
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Судостроительная, д. 31 к 3",
+      "node_id": "south-central-043",
+      "location": {
+        "lat": 55.683643,
+        "lon": 37.690357
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Судостроительная, д. 36",
+      "node_id": "south-central-044",
+      "location": {
+        "lat": 55.679579,
+        "lon": 37.687303
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Трофимова, д. 4А",
+      "node_id": "south-central-045",
+      "location": {
+        "lat": 55.700149,
+        "lon": 37.637888
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Усачёва, д. 25",
+      "node_id": "south-central-046",
+      "location": {
+        "lat": 55.729663,
+        "lon": 37.567105
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Усачёва, д. 29 к 1",
+      "node_id": "south-central-047",
+      "location": {
+        "lat": 55.733246,
+        "lon": 37.578863
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Херсонская, д. 18",
+      "node_id": "south-central-048",
+      "location": {
+        "lat": 55.653664,
+        "lon": 37.567038
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Шверника, д. 12/2 к 3",
+      "node_id": "south-central-049",
+      "location": {
+        "lat": 55.683722,
+        "lon": 37.570498
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Шверника, д. 14/1 к 2",
+      "node_id": "south-central-050",
+      "location": {
+        "lat": 55.690946,
+        "lon": 37.576938
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Шверника, д. 18 к 2",
+      "node_id": "south-central-051",
+      "location": {
+        "lat": 55.688123,
+        "lon": 37.573686
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Шверника, д. 3",
+      "node_id": "south-central-052",
+      "location": {
+        "lat": 55.683904,
+        "lon": 37.569957
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "Город Москва, ул.Шверника, д. 5 к 2",
+      "node_id": "south-central-053",
+      "location": {
+        "lat": 55.687078,
+        "lon": 37.570076
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "г.Город Москва, пр-кт.Ленинский, д. 70/11",
+      "node_id": "south-central-054",
+      "location": {
+        "lat": 55.690521,
+        "lon": 37.541471
+      },
+      "match_level": "district_centroid_projection"
+    },
+    {
+      "address": "г.Москва проезд Симферопольский, д.7",
+      "node_id": "south-central-055",
+      "location": {
+        "lat": 55.655,
+        "lon": 37.61
+      },
+      "match_level": "district_centroid_projection"
+    }
+  ]
+}

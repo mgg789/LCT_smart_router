@@ -1,0 +1,89 @@
+{
+  "schema_version": "1.0",
+  "scenario_id": "official-southeast-v1",
+  "region": "southeast",
+  "local_date": "2026-08-17",
+  "timezone": "Europe/Moscow",
+  "horizon_start": "08:00",
+  "horizon_end": "23:00",
+  "synthetic_file": "southeast_synthetic_data.csv",
+  "control_file": "southeast_control_distribution.csv",
+  "expected_request_count": 83,
+  "expected_team_count": 12,
+  "priority_urgent_hd_types": [
+    "Авария",
+    "Нет линка",
+    "Разрывы",
+    "IP-адрес 169...",
+    "Рост ошибок на порту"
+  ],
+  "duration_sec_by_hd_type": {
+    "Конвергенция абонента": 4200,
+    "Заявка на подключение": 4200,
+    "Заказ подключения/Дозаказ оборудования": 1200,
+    "Дозаказ оборудования": 1200,
+    "Нет линка": 4800,
+    "Переключение на Гбит/с": 4200,
+    "Работа с кабелем": 1800,
+    "Роутер. Замена техническим специалистом": 1200,
+    "TVE/ENT. Замена приставки техником": 1200,
+    "IP-адрес 169...": 4800,
+    "Рост ошибок на порту": 4800,
+    "Низкая скорость": 4800,
+    "Разрывы": 4800,
+    "Авария": 4800
+  },
+  "skill_by_hd_type": {
+    "Конвергенция абонента": "connection",
+    "Заявка на подключение": "connection",
+    "Заказ подключения/Дозаказ оборудования": "connection",
+    "Дозаказ оборудования": "connection",
+    "Нет линка": "emergency",
+    "Переключение на Гбит/с": "connection",
+    "Работа с кабелем": "local",
+    "Роутер. Замена техническим специалистом": "connection",
+    "TVE/ENT. Замена приставки техником": "connection",
+    "IP-адрес 169...": "emergency",
+    "Рост ошибок на порту": "emergency",
+    "Низкая скорость": "emergency",
+    "Разрывы": "emergency",
+    "Авария": "emergency"
+  },
+  "team_profiles": [
+    {"control_team": "Бригада Паршин", "transport_type": "car", "shift_start": "09:00", "shift_end": "18:00"},
+    {"control_team": "Бригада Андреев", "transport_type": "car", "shift_start": "10:00", "shift_end": "20:00"},
+    {"control_team": "Бригада Белоновский", "transport_type": "bike", "shift_start": "09:00", "shift_end": "19:00"},
+    {"control_team": "Бригада Рыбин", "transport_type": "car", "shift_start": "12:00", "shift_end": "23:00"},
+    {"control_team": "Бригада Горбанев", "transport_type": "transit", "shift_start": "08:00", "shift_end": "18:00"},
+    {"control_team": "Бригада Бузань", "transport_type": "car", "shift_start": "11:00", "shift_end": "22:00"},
+    {"control_team": "Бригада Козырь", "transport_type": "walk", "shift_start": "09:00", "shift_end": "18:00"},
+    {"control_team": "Бригада Царьков", "transport_type": "car", "shift_start": "12:00", "shift_end": "23:00"},
+    {"control_team": "Бригада Саламатин", "transport_type": "bike", "shift_start": "10:00", "shift_end": "20:00"},
+    {"control_team": "Бригада Макаров", "transport_type": "car", "shift_start": "08:00", "shift_end": "18:00"},
+    {"control_team": "Бригада Каушнян", "transport_type": "transit", "shift_start": "11:00", "shift_end": "23:00"},
+    {"control_team": "Бригада Демин", "transport_type": "car", "shift_start": "09:00", "shift_end": "20:00"}
+  ],
+  "transport_cost_model": {
+    "car": "osrm_duration",
+    "bike_speed_kmh": 15.0,
+    "walk_speed_kmh": 5.0,
+    "transit_speed_kmh": 22.0,
+    "transit_access_sec": 480
+  },
+  "source_sha256": {
+    "synthetic": "1e68ba6470814314fea7bf3b00d08d98ac3a13228ca3ee6071e26cff1d15ef68",
+    "control": "18d3249d1f591e25445d20a1c80dcb3e3372966ec49f26b74cf6bbee9825d53c"
+  },
+  "resource_sha256": {
+    "geocodes": "f23e4d64f9c81a6d4aceab5c5076d63f8607743f9dc59a206738fc6bba1abdf6",
+    "road_matrix": "a101a2d5e3af19d842741ea5c5710392900d164ecb5d44fe47b761a9bbedf515"
+  },
+  "assumptions": [
+    "The official archive has no engineer directory, shifts, transport assignments, service durations or coordinates.",
+    "Team skills are inferred from HD work types assigned to each named team in the control file.",
+    "All teams start at the official Southeast office and routes remain open after the last job.",
+    "Official requests do not constrain required transport.",
+    "Coordinates are deterministic district-centroid projections with address-specific jitter; they are not rooftop geocodes.",
+    "The offline matrix uses great-circle distance times 1.25 and a constant 28 km/h car speed; it validates routing behavior, not production ETA accuracy."
+  ]
+}

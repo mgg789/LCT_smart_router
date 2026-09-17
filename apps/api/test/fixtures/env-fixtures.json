@@ -1,0 +1,6 @@
+{
+  "databaseUrl": "postgresql://user:pass@localhost:5432/db?schema=public",
+  "dispatcherEmail": "dispatcher@example.test",
+  "dispatcherPassword": "long-enough-password",
+  "wrongDispatcherPassword": "definitely-not-the-password"
+}

@@ -1,0 +1,102 @@
+{
+  "version": "fixture-1",
+  "source": "Synthetic four-node fixture. Not actual Moscow roads or traffic.",
+  "nodes": [
+    {
+      "node_id": "0",
+      "location": {
+        "lat": 55.75,
+        "lon": 37.6
+      }
+    },
+    {
+      "node_id": "1",
+      "location": {
+        "lat": 55.75,
+        "lon": 37.61
+      }
+    },
+    {
+      "node_id": "2",
+      "location": {
+        "lat": 55.75,
+        "lon": 37.620000000000005
+      }
+    },
+    {
+      "node_id": "3",
+      "location": {
+        "lat": 55.75,
+        "lon": 37.63
+      }
+    }
+  ],
+  "edges": [
+    {
+      "source": "0",
+      "target": "1",
+      "distance_m": 600,
+      "duration_sec": {
+        "car": 60,
+        "walk": 420,
+        "bike": 180,
+        "transit": 300
+      }
+    },
+    {
+      "source": "1",
+      "target": "0",
+      "distance_m": 600,
+      "duration_sec": {
+        "car": 60,
+        "walk": 420,
+        "bike": 180,
+        "transit": 300
+      }
+    },
+    {
+      "source": "1",
+      "target": "2",
+      "distance_m": 600,
+      "duration_sec": {
+        "car": 60,
+        "walk": 420,
+        "bike": 180,
+        "transit": 300
+      }
+    },
+    {
+      "source": "2",
+      "target": "1",
+      "distance_m": 600,
+      "duration_sec": {
+        "car": 60,
+        "walk": 420,
+        "bike": 180,
+        "transit": 300
+      }
+    },
+    {
+      "source": "2",
+      "target": "3",
+      "distance_m": 600,
+      "duration_sec": {
+        "car": 60,
+        "walk": 420,
+        "bike": 180,
+        "transit": 300
+      }
+    },
+    {
+      "source": "3",
+      "target": "2",
+      "distance_m": 600,
+      "duration_sec": {
+        "car": 60,
+        "walk": 420,
+        "bike": 180,
+        "transit": 300
+      }
+    }
+  ]
+}

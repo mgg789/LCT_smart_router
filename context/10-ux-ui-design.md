@@ -12,7 +12,7 @@
 4. **Доверие через предсказуемость.** Система ничего не меняет молча: любое авто-действие сопровождается диффом и объяснением. Отсюда — спокойствие диспетчера.
 5. **Скорость = ощущение.** Всё < 100 мс отклик; оптимизация явно помечена прогрессом («пересобираю план…»), а не зависанием.
 
-Визуальный язык: светлая тема по умолчанию (диспетчер работает днём), тёмная — переключатель; типографика Inter/«Golos Text» (кириллица!) — одна семья, шкала размеров 12/13/15/17/22/28; нейтральная палитра + 4 семантических цвета (SLA-риск красный/янтарный, успех зелёный, акцент — синий Билайна); радиусы 8–12; тени мягкие, двухслойные; сетка 4pt.
+Visual language: light by default, optional dark theme; one Cyrillic-capable family (Inter or Golos Text), type scale 12/13/15/17/22/28; neutral surfaces, separate red/amber risk and green success semantics. The primary brand accent is Beeline yellow `#FED305` with dark text, following the owner's 2026-09-15 request (D-21); the previous blue-primary wording is superseded. Preserve 8–12 px radii, soft shadows and the 4-point grid. See the [Beeline visual reference](../docs/design/beeline/README.md) for official source PDFs, the unchanged symbol, observed website colours and explicitly separate project choices. That reference is not a complete official brandbook.
 
 ## 2. Инвентарь экранов (всего 4 + 2 вторичных)
 

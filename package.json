@@ -1,0 +1,35 @@
+{
+  "name": "lct-smart-router",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LCT Smart Router — intelligent planning and live re-planning of field engineer routes",
+  "engines": {
+    "node": ">=24.13.0",
+    "pnpm": ">=10.28.0"
+  },
+  "packageManager": "pnpm@10.28.2",
+  "scripts": {
+    "build": "pnpm --filter api build && pnpm --filter web build",
+    "dev": "pnpm --filter api dev",
+    "dev:web": "pnpm --filter web dev",
+    "test": "pnpm --filter api test && pnpm --filter web test",
+    "lint": "biome check .",
+    "format": "biome format --write .",
+    "smoke": "pnpm --filter api smoke",
+    "compose:up": "docker compose -f infra/docker-compose.yml up -d --build",
+    "compose:down": "docker compose -f infra/docker-compose.yml down",
+    "compose:logs": "docker compose -f infra/docker-compose.yml logs -f --tail=100",
+    "compose:ps": "docker compose -f infra/docker-compose.yml ps"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.13"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "prisma",
+      "esbuild"
+    ]
+  }
+}

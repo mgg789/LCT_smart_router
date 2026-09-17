@@ -1,0 +1,159 @@
+# Local and demo contour of the LCT Smart Router.
+#
+# Run from the repository root so that the build context and the environment file line
+# up with the workspace layout:
+#
+#   cp .env.example .env
+#   docker compose -f infra/docker-compose.yml up -d --build
+#
+# Contour: postgres, migrate, router, api, web. The dashboard (`web`) is reached at
+# http://127.0.0.1:5173 and proxies `/api` to the System Layer on the compose network.
+
+name: lct-smart-router
+
+services:
+  postgres:
+    # pgvector is not used yet; the image is chosen now so that enabling the extension
+    # for the knowledge segments later needs no change here (context/37 section 2.1).
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-lct}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lct_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-lct}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    # Bound to the loopback interface only: reachable for psql and integration tests on
+    # this machine, not published to the network (context/43 section 11.2).
+    ports:
+      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-lct} -d ${POSTGRES_DB:-lct}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  # One-shot schema migration. Runs from the same image as the service, so the code and
+  # the schema it expects can never be two different versions. Prisma Migrate is the
+  # single owner of schema history; there is no create-on-boot anywhere in the runtime
+  # (context/43 section 5.4 as amended by D-23).
+  migrate:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    command: ['pnpm', '--filter', 'api', 'exec', 'prisma', 'migrate', 'deploy']
+    restart: 'no'
+    environment:
+      # Explicit and container-local: inside the network the database is `postgres`,
+      # while a developer's .env points at 127.0.0.1. Setting it here avoids that clash.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-lct}:${POSTGRES_PASSWORD:-lct_dev_password}@postgres:5432/${POSTGRES_DB:-lct}?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  router-db-bootstrap:
+    image: pgvector/pgvector:pg17
+    restart: 'no'
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:-lct_dev_password}
+      ROUTER_DB_PASSWORD: ${ROUTER_DB_PASSWORD:-router_dev_password}
+    volumes:
+      - ./postgres/enable-router-login.sql:/bootstrap/enable-router-login.sql:ro
+    command:
+      - sh
+      - -ec
+      - >-
+        psql --host=postgres --username=${POSTGRES_USER:-lct} --dbname=${POSTGRES_DB:-lct}
+        --set=ON_ERROR_STOP=1 --set=router_password="$${ROUTER_DB_PASSWORD}"
+        --file=/bootstrap/enable-router-login.sql
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  router:
+    build:
+      context: ..
+      dockerfile: core/Dockerfile
+    restart: unless-stopped
+    environment:
+      ROUTER_DATABASE_URL: postgresql://router_readonly:${ROUTER_DB_PASSWORD:-router_dev_password}@postgres:5432/${POSTGRES_DB:-lct}?sslmode=disable
+    command:
+      - serve
+      - --official-regions
+      - east
+      - southeast
+      - south_central
+      - --dataset-dir
+      - /app/data/dataset/anonymized
+      - --host
+      - 0.0.0.0
+      - --port
+      - '8100'
+      - --budget-ms
+      - '${ROUTER_BUDGET_MS:-8000}'
+      - --settings
+      - /app/state/settings.json
+    volumes:
+      - ../data/dataset:/app/data/dataset:ro
+      - router-state:/app/state
+    depends_on:
+      router-db-bootstrap:
+        condition: service_completed_successfully
+    ports:
+      - '127.0.0.1:${ROUTER_PORT:-8100}:8100'
+
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    # `cp .env.example .env` is required before the first start: the dispatcher's
+    # credentials have no defaults on purpose. A compose file is not a place to keep a
+    # working password, and a silent fallback would become one.
+    env_file:
+      - path: ../.env
+        required: true
+    # Only container topology is set here; application configuration comes from .env, so
+    # there is one place to look and no silent override. In particular NODE_ENV is the
+    # operator's choice: this contour is a development and demo one, where
+    # AUTH_DEV_EXPOSE_CODES is how a login code reaches the user at all, and the
+    # application refuses to combine that setting with production.
+    environment:
+      PORT: 8000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-lct}:${POSTGRES_PASSWORD:-lct_dev_password}@postgres:5432/${POSTGRES_DB:-lct}?schema=public
+      DATASET_ROOT: /app/data/dataset/anonymized
+      ROUTER_BASE_URL: http://router:8100
+      ROUTER_POLL_INTERVAL_MS: ${ROUTER_POLL_INTERVAL_MS:-500}
+      ROUTER_REQUEST_TIMEOUT_MS: ${ROUTER_REQUEST_TIMEOUT_MS:-3000}
+    volumes:
+      # Read-only bind mount rather than a copy into the image: the dataset is data, not
+      # code, and the geocode sidecar the data zone will add must appear without a rebuild.
+      - ../data/dataset:/app/data/dataset:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      router:
+        condition: service_healthy
+    ports:
+      - '${API_PORT:-8000}:8000'
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - '127.0.0.1:${WEB_PORT:-5173}:80'
+
+volumes:
+  # Named volume, not a bind mount: an ordinary restart must keep the working plan, the
+  # control mode and lunch facts (context/43 section 11.3). Removing this volume is not
+  # a substitute for the application's own "full reset" action.
+  postgres-data:
+  router-state:

@@ -1,0 +1,87 @@
+{
+  "schema_version": "1.0",
+  "planning_as_of": 1786946400,
+  "horizon_start_at": 1786946400,
+  "horizon_end_at": 1786975200,
+  "engineers": [
+    {
+      "engineer_id": "eng-1",
+      "input_order": 0,
+      "skills": [
+        "local",
+        "connection"
+      ],
+      "transport_type": "car",
+      "shift_start_at": 1786946400,
+      "shift_end_at": 1786975200,
+      "start_location": {
+        "lat": 55.75,
+        "lon": 37.6
+      },
+      "available_from": 1786946400,
+      "availability": "online",
+      "expected_online_at": null,
+      "equipment_stock": {
+        "router": 0,
+        "set_top_box": 0,
+        "smart_speaker": 0
+      },
+      "lunch_taken": false,
+      "lunch": {
+        "enabled": false,
+        "duration_sec": null,
+        "window_start_at": null,
+        "window_end_at": null,
+        "required": false
+      }
+    }
+  ],
+  "requests": [
+    {
+      "request_id": "job-1",
+      "arrival_order": 2,
+      "location": {
+        "lat": 55.75,
+        "lon": 37.61
+      },
+      "service_duration_sec": 600,
+      "window_start_at": 1786946400,
+      "window_end_at": 1786971600,
+      "priority": "normal",
+      "required_skill": "local",
+      "required_transport": null
+    },
+    {
+      "request_id": "job-2",
+      "arrival_order": 1,
+      "location": {
+        "lat": 55.75,
+        "lon": 37.620000000000005
+      },
+      "service_duration_sec": 600,
+      "window_start_at": 1786946400,
+      "window_end_at": 1786971600,
+      "priority": "normal",
+      "required_skill": "local",
+      "required_transport": null
+    },
+    {
+      "request_id": "job-3",
+      "arrival_order": 0,
+      "location": {
+        "lat": 55.75,
+        "lon": 37.63
+      },
+      "service_duration_sec": 600,
+      "window_start_at": 1786946400,
+      "window_end_at": 1786971600,
+      "priority": "normal",
+      "required_skill": "local",
+      "required_transport": null
+    }
+  ],
+  "policy": {
+    "policy_id": "fast",
+    "parameters": {}
+  }
+}

@@ -19,3 +19,16 @@ dist/
 # Local tool state (Mimosa security plugin, ruff)
 .mimosa/
 .ruff_cache/
+
+# Node / TypeScript build artifacts
+*.tsbuildinfo
+.pnpm-store/
+apps/*/dist/
+apps/*/dist-test/
+apps/*/generated/
+apps/api/src/generated/
+coverage/
+
+# Local environment files (only .env.example is committed)
+.env.*
+!.env.example
