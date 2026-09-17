@@ -232,7 +232,7 @@ def calculate_policy_comparison(
     graph: RoadGraph | OSRMTravel,
     settings: SearchSettings,
     context_version: str,
-    search_budget_ms: int = 2000,
+    search_budget_ms: int = 8000,
 ) -> PolicyComparison:
     """Calculate all catalog policies and FIFO on one immutable snapshot.
 
@@ -240,7 +240,7 @@ def calculate_policy_comparison(
     gets the same cold-start snapshot and bounded budget, and no candidate can
     affect the active plan or the next replanning anchor.
     """
-    if not 1 <= search_budget_ms <= 2000:
+    if not 1 <= search_budget_ms <= 8000:
         raise ValueError("COMPARISON_BUDGET_INVALID")
     snapshot = official_roster(apply_system_policy(parse_snapshot(raw), settings))
     provider = GraphTravel(graph) if isinstance(graph, RoadGraph) else graph
@@ -372,7 +372,7 @@ class RouterRuntime:
 
     def compare_policies(self, search_budget_ms: int | None = None) -> PolicyComparison:
         """Compare six strategies on the ready publication without mutating Runtime."""
-        if search_budget_ms is not None and not 1 <= search_budget_ms <= 2000:
+        if search_budget_ms is not None and not 1 <= search_budget_ms <= 8000:
             raise ValueError("COMPARISON_BUDGET_INVALID")
         try:
             publication = self.reader.read()
@@ -406,7 +406,7 @@ class RouterRuntime:
             key = (digest, context_version)
             graph = copy.deepcopy(self._graph)
             settings = copy.deepcopy(self.settings)
-            effective_budget_ms = search_budget_ms or min(settings.time_limit_ms, 2000)
+            effective_budget_ms = search_budget_ms or min(settings.time_limit_ms, 8000)
             cached = self._comparison_cache.get(key)
             if cached is not None and cached.search_budget_ms == effective_budget_ms:
                 return cached.model_copy(deep=True)

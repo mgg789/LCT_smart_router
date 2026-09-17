@@ -145,7 +145,7 @@
     },
     "search_budget_ms": {
       "exclusiveMinimum": 0,
-      "maximum": 2000,
+      "maximum": 8000,
       "title": "Search Budget Ms",
       "type": "integer"
     }
