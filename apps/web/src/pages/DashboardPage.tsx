@@ -2,14 +2,18 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { HardHat, Map as MapIcon, Plus, ShieldCog } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { EquipmentType } from '../api/types';
-import { ConnectionBar } from '../components/ConnectionBar';
 import { DataUploadModal } from '../components/DataUploadModal';
 import { DayMap } from '../components/DayMap';
 import { EngineersPage } from '../components/EngineersPage';
 import { PolicyComparisonPage } from '../components/PolicyComparisonPage';
 import { PolicyModal } from '../components/PolicyModal';
 import { RouteTimeline } from '../components/RouteTimeline';
-import { assignmentFor, engineerSummaries, unassignedRequests } from '../domain/dashboard';
+import {
+  assignmentFor,
+  engineerSummaries,
+  regionalDistanceKm,
+  unassignedRequests,
+} from '../domain/dashboard';
 import {
   ALL_REGIONS,
   filterSnapshotByRegion,
@@ -17,7 +21,8 @@ import {
   regionOptions,
 } from '../domain/regions';
 import { useDashboard } from '../hooks/useDashboard';
-import { factorLabel, initials, modeLabel, POLICY_LABELS, reasonDetail } from '../lib/reasons';
+import { explainSelection, type CaseExplanation } from '../lib/explanations';
+import { factorLabel, initials, modeLabel, POLICY_LABELS, skillLabel, transportLabel } from '../lib/reasons';
 import { formatClock, formatDayTitle, formatDurationMin, formatKm } from '../lib/time';
 
 const NAV = [
@@ -102,6 +107,7 @@ export function DashboardPage() {
   ).length;
   const visibleEngineers = engineerSummaries(visibleSnapshot);
   const visibleUnassigned = unassignedRequests(visibleSnapshot);
+  const regionMileageKm = regionalDistanceKm(visibleEngineers);
 
   return (
     <div className="flex h-full min-h-0 bg-canvas text-ink">
@@ -196,8 +202,6 @@ export function DashboardPage() {
           </button>
         </header>
 
-        <ConnectionBar dashboard={dash} />
-
         {dash.error ? (
           <div className="mx-4 mb-3 rounded-xl bg-red-50 px-4 py-2 text-sm text-red-700">
             {dash.error}
@@ -248,7 +252,8 @@ export function DashboardPage() {
                 </h1>
                 <p className="mt-1 text-sm text-muted">
                   {visibleSnapshot.requests.length} заявки · {assignedCount} назначены ·{' '}
-                  {visibleUnassigned.length} без назначения
+                  {visibleUnassigned.length} без назначения · {formatKm(regionMileageKm)} суммарный
+                  пробег
                 </p>
                 <p className="text-sm text-muted">
                   План от {formatClock(snapshot.plan.plan?.planAsOf ?? snapshot.nowAt)}
@@ -301,7 +306,11 @@ export function DashboardPage() {
                               </span>
                             </span>
                             <span className="block text-[13px] text-muted">
-                              План: {engineer.assignedCount} заявок · {engineer.transportType}
+                              План: {engineer.assignedCount} заявок ·{' '}
+                              {transportLabel(engineer.transportType)}
+                            </span>
+                            <span className="block text-[12px] text-muted">
+                              Навыки: {engineer.skills.map(skillLabel).join(', ') || 'не указаны'}
                             </span>
                             <span className="block text-[12px] text-muted">
                               {engineer.shiftStartAt && engineer.shiftEndAt
@@ -523,17 +532,27 @@ function RequestPanel({ dash }: { readonly dash: ReturnType<typeof useDashboard>
   }
   const request = dash.selectedRequest;
   const assignment = dash.selectedAssignment;
-  const engineer = snapshot.engineers.find((item) => item.id === assignment?.engineerId);
-  const reasons = assignment?.reasons.assignment;
+  const engineer =
+    snapshot.engineers.find((item) => item.id === assignment?.engineerId) ?? dash.selectedEngineer;
+  const route = dash.selectedRoute;
+  const explanation = explainSelection(snapshot, request, assignment, engineer, route);
 
   if (!request) {
     return (
-      <aside className="rounded-2xl bg-panel p-5 text-white">
-        <p className="text-[13px] text-white/50">Общий план</p>
-        <h2 className="mt-2 text-[22px] font-semibold leading-7">Все маршруты дня</h2>
-        <p className="mt-3 text-sm text-white/70">
-          На карте все инженеры. Клик по заявке или человеку открывает один маршрут.
+      <aside className="flex min-h-0 flex-col overflow-hidden rounded-2xl bg-panel p-5 text-white">
+        <p className="text-[13px] text-white/50">
+          {engineer ? engineer.displayName : 'Общий план'}
         </p>
+        <h2 className="mt-2 text-[22px] font-semibold leading-7">
+          {engineer ? (route?.assignedCount ? 'Маршрут смены' : 'Смена без заявок') : 'Все маршруты дня'}
+        </h2>
+        {explanation ? (
+          <ExplanationBlock explanation={explanation} />
+        ) : (
+          <p className="mt-3 text-sm text-white/70">
+            На карте все инженеры. Клик по заявке или человеку открывает один маршрут.
+          </p>
+        )}
       </aside>
     );
   }
@@ -583,8 +602,11 @@ function RequestPanel({ dash }: { readonly dash: ReturnType<typeof useDashboard>
         </div>
       ) : null}
 
-      <div className="mt-4 flex gap-2 text-[12px]">
+      <div className="mt-4 flex flex-wrap gap-2 text-[12px]">
         <span className="rounded-full bg-white/10 px-3 py-1">{request.workTypeTitle}</span>
+        <span className="rounded-full bg-white/10 px-3 py-1">
+          Навык: {skillLabel(request.requiredSkill)}
+        </span>
         <span className="rounded-full bg-white/10 px-3 py-1">
           {request.priority === 'urgent' ? 'Срочная' : 'Обычная'}
         </span>
@@ -606,37 +628,7 @@ function RequestPanel({ dash }: { readonly dash: ReturnType<typeof useDashboard>
         </p>
       </div>
 
-      <div className="mt-6 min-h-0 flex-1 overflow-auto">
-        <h3 className="text-[17px] font-semibold">
-          {assignment?.status === 'unassigned'
-            ? 'Почему без назначения'
-            : `Почему ${engineer?.displayName.split(' ')[0] ?? 'этот инженер'}?`}
-        </h3>
-        <ul className="mt-3 space-y-3 text-sm text-white/80">
-          {(reasons?.factors ?? []).map((factor) => (
-            <li key={factor.code}>
-              <span className="font-medium text-white">{factorLabel(factor.code)}</span>
-              <span className="block text-white/70">
-                {reasonDetail(factor.code, factor.detail)}
-              </span>
-            </li>
-          ))}
-        </ul>
-        {reasons?.alternatives.length ? (
-          <details className="mt-4 text-sm text-white/70">
-            <summary className="cursor-pointer text-white">Другие кандидаты</summary>
-            <ul className="mt-2 space-y-2">
-              {reasons.alternatives.map((item) => (
-                <li key={item.engineerId}>
-                  {snapshot.engineers.find((eng) => eng.id === item.engineerId)?.displayName ??
-                    item.engineerId}
-                  : {item.whyNot}
-                </li>
-              ))}
-            </ul>
-          </details>
-        ) : null}
-      </div>
+      {explanation ? <ExplanationBlock explanation={explanation} /> : null}
 
       <div className="mt-4 space-y-2">
         <button
@@ -657,6 +649,34 @@ function RequestPanel({ dash }: { readonly dash: ReturnType<typeof useDashboard>
         </button>
       </div>
     </aside>
+  );
+}
+
+function ExplanationBlock({ explanation }: { readonly explanation: CaseExplanation }) {
+  return (
+    <div className="mt-6 min-h-0 flex-1 overflow-auto">
+      <h3 className="text-[17px] font-semibold">{explanation.title}</h3>
+      <section className="mt-3">
+        <p className="text-[12px] font-medium uppercase tracking-wide text-white/50">
+          Факты, которые повлияли
+        </p>
+        <ul className="mt-2 list-disc space-y-2 pl-4 text-sm text-white/80">
+          {explanation.facts.map((fact) => (
+            <li key={fact}>{fact}</li>
+          ))}
+        </ul>
+      </section>
+      <section className="mt-4">
+        <p className="text-[12px] font-medium uppercase tracking-wide text-white/50">
+          Как они влияют
+        </p>
+        <p className="mt-2 text-sm text-white/80">{explanation.influence}</p>
+      </section>
+      <section className="mt-4">
+        <p className="text-[12px] font-medium uppercase tracking-wide text-white/50">Результат</p>
+        <p className="mt-2 text-sm text-white">{explanation.result}</p>
+      </section>
+    </div>
   );
 }
 
