@@ -43,7 +43,8 @@ text = Path(path).read_text()
 text = text.replace("lct_dev_password", pg_pw)
 text = text.replace("router_dev_password", router_pw)
 text = text.replace("change-me-before-deploying", disp_pw)
-text = text.replace("API_PORT=8000", "API_PORT=127.0.0.1:8000")
+        text = text.replace("API_PORT=8000", "API_PORT=127.0.0.1:18080")
+        text = text.replace("ROUTER_PORT=8100", "ROUTER_PORT=18100")
 Path(path).write_text(text)
 PY
   chmod 600 "$app_dir/.env"
