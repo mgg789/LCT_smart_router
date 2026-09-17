@@ -68,6 +68,14 @@ docker compose -f docker-compose.yml up -d --build --remove-orphans
 `mgg@178.140.207.217` → `~/.ssh/authorized_keys`. Ключ не коммитить, на доску не
 класть, в командную память не писать.
 
+Поле Value в UI SourceCraft часто схлопывает переносы строк. Тогда CD пишет
+`Load key … error in libcrypto` и дальше `Permission denied` — это не пароль
+сервера, а битый PEM. Нужен **весь** файл `~/.ssh/navix_mgg_ci`, с строками
+`BEGIN` / `END`. Если секрет уже лежит одной строкой, перезапишите его
+(API ждёт base64 содержимого файла) или вставьте файл целиком ещё раз.
+`scripts/ci/ssh-deploy.sh` умеет восстановить PEM из `\n` / base64 / одной
+строки, но корректный секрет надёжнее.
+
 Хосту MGG нужен также **read-only deploy-ключ SourceCraft**, чтобы
 `git pull --ff-only origin main` работал в `/home/mgg/navix`. Публичную половину —
 в Deploy keys репозитория; приватная остаётся в `~mgg/.ssh/navix_sourcecraft`

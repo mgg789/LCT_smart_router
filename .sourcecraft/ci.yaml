@@ -43,7 +43,7 @@ workflows:
           - name: deploy-mgg
             image: docker.io/library/alpine:3.21
             script:
-              - apk add --no-cache openssh-client bash
+              - apk add --no-cache openssh-client bash python3
               - chmod +x scripts/ci/ssh-deploy.sh
               - ./scripts/ci/ssh-deploy.sh
 
