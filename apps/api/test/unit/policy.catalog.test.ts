@@ -7,7 +7,7 @@ import {
 } from '../../src/orchestrator/policy/policy.catalog';
 
 describe('policy catalogue', () => {
-  it('matches the five Router policy identifiers and uses compact by default', () => {
+  it('matches the six Router policy identifiers and uses compact by default', () => {
     assert.deepEqual(
       POLICIES.map((policy) => policy.policyId),
       ['fast', 'compact', 'sla', 'balanced', 'eco', 'covering'],

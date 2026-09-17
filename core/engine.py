@@ -708,6 +708,10 @@ def _solve_prepared(
 ) -> EngineOutput:
     """Run the existing baseline + staged search on an already expanded snapshot."""
     settings = settings or SearchSettings()
+    if memory is not None and memory.snapshot.policy.policy_id != snapshot.policy.policy_id:
+        # A new objective is not a small repair of the previous policy's routes.
+        # Reusing them made every preset collapse onto the last applied plan.
+        memory = None
     default_context_version = routing_context_version(travel, settings.technical())
     travel = configure_travel(travel, settings.technical(), snapshot.planning_as_of)
     snapshot = apply_system_policy(snapshot, settings)

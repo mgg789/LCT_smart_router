@@ -79,6 +79,60 @@ def test_catalog_is_strict_and_versioned(snapshot):
         assert spec.search_stages[1] == first_resource
 
 
+def test_switching_policy_does_not_keep_previous_routes(snapshot, graph):
+    """A new preset must search from scratch, not repair the last policy's plan."""
+    travel = GraphTravel(graph)
+    compact = solve(_policy_scenario(snapshot, graph, "compact"), travel, SETTINGS)
+    assert compact.main.summary.engineers_used == 1
+    fast = solve(_policy_scenario(snapshot, graph, "fast"), travel, SETTINGS, compact.memory)
+    assert fast.path == "COLD_START"
+    assert fast.main.summary.engineers_used == 2
+    assert fast.main.summary.travel_time_sec == 0
+
+
+def test_repeated_policy_switches_do_not_flatten_to_one_plan(snapshot, graph):
+    """Compact → fast → compact must keep the compact/fast trade-off after each hop."""
+    travel = GraphTravel(graph)
+    memory = None
+    used = {}
+    for policy_id in ("compact", "fast", "sla", "compact"):
+        output = solve(_policy_scenario(snapshot, graph, policy_id), travel, SETTINGS, memory)
+        used[policy_id] = output.main.summary.engineers_used
+        memory = output.memory
+    assert used["compact"] == 1
+    assert used["fast"] == 2
+    assert used["sla"] == 2
+
+
+def test_policy_comparison_rows_are_not_identical(snapshot, graph):
+    """Working presets and FIFO must not collapse to one metric vector."""
+    from core.runtime import calculate_policy_comparison
+
+    task = _policy_scenario(snapshot, graph, "compact")
+    comparison = calculate_policy_comparison(
+        task.model_dump_json().encode(),
+        "publication-policies",
+        graph,
+        SETTINGS,
+        "context-policies",
+        search_budget_ms=1600,
+    )
+    fingerprints = {
+        (
+            row.summary.assigned_count,
+            row.summary.engineers_used,
+            round(row.summary.distance_km, 3),
+            row.summary.travel_time_sec,
+        )
+        for row in comparison.rows
+    }
+    assert len(fingerprints) >= 2
+    by_id = {row.strategy_id: row.summary for row in comparison.rows}
+    assert by_id["fast"].engineers_used == 2
+    assert by_id["compact"].engineers_used == 1
+    assert by_id["baseline"].engineers_used >= 1
+
+
 def test_fast_minimizes_travel_while_compact_minimizes_engineers(snapshot, graph):
     """Show the catalog's intended resource trade-off on the same feasible jobs."""
     travel = GraphTravel(graph)

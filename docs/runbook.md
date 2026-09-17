@@ -2,6 +2,7 @@
 
 > Обновляется тем же коммитом, что и описываемый код (AGENTS.md §8.2).
 > Архитектура: [architecture.md](./architecture.md).
+> Состав V0.1 MVP: [release-v0.1.md](./release-v0.1.md).
 
 ## 1. Предпосылки
 
