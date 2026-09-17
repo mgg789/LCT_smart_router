@@ -53,10 +53,15 @@ Healthchecks after `up`:
 
 The dashboard is the `web` container on `127.0.0.1:5173`; host nginx terminates
 TLS for `navix.droidje.com` and proxies there. `web` already forwards `/api/`
-to `api:8000`. On the server `.env` should set `API_PORT=127.0.0.1:8000` so the
-System Layer is not published on the public interface. This remains a demo
-contour: `NODE_ENV=development` and `AUTH_DEV_EXPOSE_CODES=true` — the
-application refuses to combine exposed login codes with `production`.
+to `api:8000`. On this host `.env` must remap occupied ports:
+
+- `API_PORT=127.0.0.1:18080` — host `:8000` is taken
+- `ROUTER_PORT=18100` — host `127.0.0.1:8100` is taken (`binom-landing-test`)
+
+Compose still talks `api:8000` and `router:8100` on the internal network.
+This remains a demo contour: `NODE_ENV=development` and
+`AUTH_DEV_EXPOSE_CODES=true` — the application refuses to combine exposed
+login codes with `production`.
 
 ### Secrets and host one-offs
 
@@ -71,8 +76,9 @@ half in the repository Deploy keys; the private half stays at
 `~mgg/.ssh/navix_sourcecraft` (see `~mgg/.ssh/config`).
 
 `scripts/ci/bootstrap-navix-host.sh` creates the SourceCraft pull key and a
-server-only `.env` (random DB and dispatcher passwords, `API_PORT` bound to
-loopback). Dispatcher credentials live only in `/home/mgg/navix/.env`.
+server-only `.env` (random DB and dispatcher passwords, loopback API on
+`18080`, router publish on `18100`). Dispatcher credentials live only in
+`/home/mgg/navix/.env`.
 
 Host nginx is not written by CI. After the clone exists, on the server:
 
