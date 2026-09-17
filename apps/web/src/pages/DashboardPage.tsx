@@ -356,7 +356,6 @@ export function DashboardPage() {
             <section className="flex min-h-0 flex-col gap-4 max-xl:min-h-[560px]">
               <div className="relative min-h-0 flex-1 overflow-hidden rounded-2xl bg-white shadow-sm">
                 <DayMap
-                  forceLocal={dash.source !== 'live'}
                   snapshot={visibleSnapshot}
                   selectedEngineerId={dash.selectedEngineerId}
                   selectedRequestId={dash.selectedRequest?.id ?? null}

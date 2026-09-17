@@ -32,7 +32,7 @@ export function offlineBundle(): Plugin {
         `
 const CACHE = ${JSON.stringify(cache)};
 const FILES = ${JSON.stringify(files)};
-self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(FILES))));
+self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(FILES)).then(() => self.skipWaiting())));
 self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);

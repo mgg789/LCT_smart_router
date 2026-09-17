@@ -100,6 +100,10 @@ export function ConnectionBar({
         )}
         <details className="ml-auto max-w-full">
           <summary className="cursor-pointer text-muted">Диагностика</summary>
+          <p className="mt-2 max-w-sm text-xs text-muted">
+            Сведения о состоянии данных для разработчика. Эта панель не запускает тесты и ничего не
+            исправляет.
+          </p>
           <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap text-xs">
             {JSON.stringify(details, null, 2)}
           </pre>
