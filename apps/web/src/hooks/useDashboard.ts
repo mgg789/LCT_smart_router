@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DashboardApiError,
+  importOfficialDataset,
   loadDashboardSnapshot,
   loadPolicyComparison,
   loginDispatcher,
@@ -10,7 +11,6 @@ import {
   setLunchesEnabled,
   signOutDispatcher,
   uploadDataPackage,
-  importOfficialDataset,
 } from '../api/client';
 import type {
   DashboardSnapshot,
