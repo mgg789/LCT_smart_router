@@ -31,8 +31,16 @@ describe('dispatcher explanations', () => {
 
   it('explains an idle same-zone engineer against leftover work', () => {
     const base = createDevSnapshot();
+    const template = base.engineers[0];
+    const templateRoute = base.plan.plan?.routes[0];
+    expect(template).toBeDefined();
+    expect(templateRoute).toBeDefined();
+    expect(base.plan.plan).toBeTruthy();
+    if (!template || !templateRoute || !base.plan.plan) {
+      return;
+    }
     const idle = {
-      ...base.engineers[0],
+      ...template,
       id: 'eng-idle',
       displayName: 'Бригада Восточная 7',
       skills: ['local'],
@@ -42,26 +50,25 @@ describe('dispatcher explanations', () => {
       engineers: [...base.engineers, idle],
       plan: {
         ...base.plan,
-        plan: base.plan.plan
-          ? {
-              ...base.plan.plan,
-              routes: [
-                ...base.plan.plan.routes,
-                {
-                  ...base.plan.plan.routes[0],
-                  engineerId: 'eng-idle',
-                  assignedCount: 0,
-                  distanceKm: 0,
-                  travelTimeSec: 0,
-                  stops: [],
-                  legs: [],
-                },
-              ],
-            }
-          : base.plan.plan,
+        plan: {
+          ...base.plan.plan,
+          routes: [
+            ...base.plan.plan.routes,
+            {
+              ...templateRoute,
+              engineerId: 'eng-idle',
+              assignedCount: 0,
+              distanceKm: 0,
+              travelTimeSec: 0,
+              stops: [],
+              legs: [],
+            },
+          ],
+        },
       },
     };
-    const explanation = explainSelection(snapshot, null, null, idle, snapshot.plan.plan?.routes.at(-1) ?? null);
+    const idleRoute = snapshot.plan.plan.routes.at(-1) ?? null;
+    const explanation = explainSelection(snapshot, null, null, idle, idleRoute);
     expect(explanation?.title).toBe('Почему Бригада Восточная 7 без заявок');
     expect(explanation?.facts.some((line) => line.includes('0 заявок'))).toBe(true);
     expect(explanation?.result).toContain('простаивает');
@@ -70,6 +77,10 @@ describe('dispatcher explanations', () => {
   it('explains why the selected route has this order', () => {
     const snapshot = createDevSnapshot();
     const engineer = snapshot.engineers[0];
+    expect(engineer).toBeDefined();
+    if (!engineer) {
+      return;
+    }
     const route = routeForEngineer(snapshot, engineer.id);
     const explanation = explainSelection(snapshot, null, null, engineer, route);
     expect(explanation?.title).toContain(engineer.displayName);
