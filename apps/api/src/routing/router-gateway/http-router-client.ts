@@ -150,7 +150,14 @@ export class HttpRouterClient extends RouterClient {
 
   /** Runs or reads Router's cached same-snapshot policy comparison. */
   override async getPolicyComparison(): Promise<PolicyComparison> {
-    const raw = await this.fetchJson('/v1/policy-comparison', {}, 60_000);
+    // A cold comparison computes six policies (up to two seconds each), so the ordinary
+    // single-request timeout is too short. Keep a finite ceiling while allowing the
+    // documented cold-cache budget to complete.
+    const raw = await this.fetchJson(
+      '/v1/policy-comparison',
+      {},
+      Math.max(this.options.requestTimeoutMs, 15_000),
+    );
     const parsed = policyComparisonSchema.safeParse(raw);
     if (!parsed.success) {
       throw new Error(`Router /v1/policy-comparison response is invalid: ${parsed.error.message}`);

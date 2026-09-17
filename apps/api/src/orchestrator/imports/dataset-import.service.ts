@@ -4,7 +4,7 @@ import { resolve } from 'node:path';
 import { Injectable, Logger } from '@nestjs/common';
 import { z } from 'zod';
 import { SysError } from '../../common/errors';
-import type { EquipmentType, Skill, TransportType } from '../../generated/prisma/client';
+import type { EquipmentType, Prisma, Skill, TransportType } from '../../generated/prisma/client';
 import type { OperationContext } from '../../operations';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import {
@@ -135,9 +135,24 @@ export class DatasetImportService {
             { details: { region: item.region, source: item.source } },
           );
         }
+        const lunchRowsUpdated = await this.ensureImportedLunchSettings(
+          context,
+          item.region,
+          timeZoneOffsetSec,
+        );
         results.push({
           region: item.region,
-          ...emptySummary(item.source, ['This exact package has already been imported'], []),
+          ...emptySummary(
+            item.source,
+            [
+              'This exact package has already been imported',
+              ...(lunchRowsUpdated > 0
+                ? [`Updated lunch settings for ${lunchRowsUpdated} existing engineer days`]
+                : []),
+            ],
+            [],
+          ),
+          applied: lunchRowsUpdated > 0,
         });
         continue;
       }
@@ -161,6 +176,40 @@ export class DatasetImportService {
         `${summary.engineersCreated} engineers`,
     );
     return summary;
+  }
+
+  /** Brings rows imported by an older build onto the current optional-lunch contract. */
+  private async ensureImportedLunchSettings(
+    context: OperationContext,
+    region: DatasetRegion,
+    timeZoneOffsetSec: number,
+  ): Promise<number> {
+    const workDate = localDate(context.now, timeZoneOffsetSec);
+    const lunch = localLunchWindow(workDate, timeZoneOffsetSec);
+    const where: Prisma.EngineerDayWhereInput = {
+      workDate,
+      engineer: { region, origin: { in: ['import', 'synthesized'] } },
+      OR: [
+        { lunchEnabled: false },
+        { lunchDurationSec: { not: 45 * 60 } },
+        { lunchWindowStartAt: { not: BigInt(lunch.start) } },
+        { lunchWindowEndAt: { not: BigInt(lunch.end) } },
+      ],
+    };
+    const outdated = await context.tx.engineerDay.count({ where });
+    if (outdated === 0) return 0;
+    await context.tx.engineerDay.updateMany({
+      where,
+      data: {
+        lunchEnabled: true,
+        lunchDurationSec: 45 * 60,
+        lunchWindowStartAt: BigInt(lunch.start),
+        lunchWindowEndAt: BigInt(lunch.end),
+        updatedAt: BigInt(context.now),
+        version: { increment: 1 },
+      },
+    });
+    return outdated;
   }
 
   private prepareRegion(
@@ -252,6 +301,7 @@ export class DatasetImportService {
     const horizonStart = Math.min(...parsed.requests.map((request) => request.windowStartAt));
     const horizonEnd = Math.max(...parsed.requests.map((request) => request.windowEndAt));
     const workDate = localDate(context.now, timeZoneOffsetSec);
+    const lunchWindow = localLunchWindow(workDate, timeZoneOffsetSec);
     let engineersCreated = 0;
     for (const brigade of brigades) {
       const mapped = await context.tx.externalIdMap.findUnique({
@@ -302,6 +352,10 @@ export class DatasetImportService {
         update: {
           shiftStartAt: BigInt(horizonStart),
           shiftEndAt: BigInt(horizonEnd),
+          lunchEnabled: true,
+          lunchDurationSec: 45 * 60,
+          lunchWindowStartAt: BigInt(lunchWindow.start),
+          lunchWindowEndAt: BigInt(lunchWindow.end),
           updatedAt: now,
           ...equipmentByBrigade.get(brigade.name),
         },
@@ -310,7 +364,10 @@ export class DatasetImportService {
           workDate,
           shiftStartAt: BigInt(horizonStart),
           shiftEndAt: BigInt(horizonEnd),
-          lunchEnabled: false,
+          lunchEnabled: true,
+          lunchDurationSec: 45 * 60,
+          lunchWindowStartAt: BigInt(lunchWindow.start),
+          lunchWindowEndAt: BigInt(lunchWindow.end),
           lunchRequired: false,
           ...equipmentByBrigade.get(brigade.name),
           createdAt: now,
@@ -509,6 +566,15 @@ function rebaseToLiveHorizon(parsed: ParsedRegion, now: number): ParsedRegion {
 
 function localDate(now: number, offsetSec: number): string {
   return new Date((now + offsetSec) * 1000).toISOString().slice(0, 10);
+}
+
+/** Optional lunch may start anywhere from 11:20 through 15:00 local regional time. */
+function localLunchWindow(workDate: string, offsetSec: number): { start: number; end: number } {
+  const midnightUtc = Date.parse(`${workDate}T00:00:00.000Z`) / 1000 - offsetSec;
+  return {
+    start: midnightUtc + 11 * 3600 + 20 * 60,
+    end: midnightUtc + 15 * 3600,
+  };
 }
 
 function emptySummary(source: string, warnings: string[], errors: string[]): ImportSummary {

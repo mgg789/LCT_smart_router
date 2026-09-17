@@ -17,7 +17,7 @@ from core.contracts import (
     RouterTechnicalSettings,
     TravelTimeMode,
 )
-from core.geo import configure_travel
+from core.geo import configure_travel, routing_context_version
 from core.policy import Criterion, PolicySpec, compile_policy, criterion_values
 from core.schedule import (
     TravelProvider,
@@ -180,6 +180,26 @@ def apply_system_policy(
         )
         engineers.append(engineer.model_copy(update={"lunch": lunch}))
     return snapshot.model_copy(update={"engineers": engineers}, deep=True)
+
+
+def _without_optional_lunches(snapshot: RouterTaskSnapshot) -> RouterTaskSnapshot:
+    """Remove optional lunch nodes for the bounded job-coverage search only."""
+    engineers = []
+    changed = False
+    for engineer in snapshot.engineers:
+        lunch = engineer.lunch
+        if lunch.enabled and not lunch.required and not engineer.lunch_taken:
+            changed = True
+            lunch = lunch.model_copy(
+                update={
+                    "enabled": False,
+                    "duration_sec": None,
+                    "window_start_at": None,
+                    "window_end_at": None,
+                }
+            )
+        engineers.append(engineer.model_copy(update={"lunch": lunch}))
+    return snapshot.model_copy(update={"engineers": engineers}, deep=True) if changed else snapshot
 
 
 def _project(snapshot: RouterTaskSnapshot, previous: Plan, travel: TravelProvider) -> Plan | None:
@@ -552,10 +572,12 @@ def solve(
     Fast keeps engineer count as a final candidate tie-break; compact optimizes it first.
     """
     settings = settings or SearchSettings()
-    travel = configure_travel(travel, settings.technical())
+    default_context_version = routing_context_version(travel, settings.technical())
+    travel = configure_travel(travel, settings.technical(), snapshot.planning_as_of)
     snapshot = apply_system_policy(snapshot, settings)
-    policy: PolicySpec = compile_policy(snapshot.policy)
-    context_version = context_version or travel.version
+    search_snapshot = _without_optional_lunches(snapshot)
+    policy: PolicySpec = compile_policy(search_snapshot.policy)
+    context_version = context_version or default_context_version
     base = baseline(snapshot, travel)
     validate_plan(snapshot, base, travel)
     compatible = memory is not None and memory.context_version == context_version
@@ -577,15 +599,26 @@ def solve(
     ):
         return EngineOutput(projected, base, "REVALIDATE", memory)
     path = "REPAIR_AND_IMPROVE" if projected else "COLD_START"
-    candidates = [p for p in (base, projected) if p is not None and p.is_usable]
-    incumbent = min(candidates, key=lambda p: score(snapshot, p)) if candidates else None
+    search_base = base if search_snapshot is snapshot else baseline(search_snapshot, travel)
+    validate_plan(search_snapshot, search_base, travel)
+    search_projected = (
+        _project(search_snapshot, memory.plan, travel)
+        if compatible and memory is not None and memory.plan.is_usable
+        else None
+    )
+    candidates = [
+        plan for plan in (search_base, search_projected) if plan is not None and plan.is_usable
+    ]
+    incumbent = (
+        min(candidates, key=lambda plan: score(search_snapshot, plan)) if candidates else None
+    )
     deadline = time.monotonic() + settings.time_limit_ms / 1000
     for i, stage in enumerate(policy.search_stages):
         remaining = int((deadline - time.monotonic()) * 1000)
         if remaining <= 0:
             break
         candidate = _search(
-            snapshot,
+            search_snapshot,
             travel,
             settings,
             stage,
@@ -594,10 +627,17 @@ def solve(
             tuple(policy.search_stages[1:i]),
         )
         if candidate is not None and (
-            incumbent is None or score(snapshot, candidate) < score(snapshot, incumbent)
+            incumbent is None
+            or score(search_snapshot, candidate) < score(search_snapshot, incumbent)
         ):
             incumbent = candidate
-    main = incumbent or base
+    search_main = incumbent or search_base
+    if search_snapshot is snapshot:
+        main = search_main
+    else:
+        main = _project(snapshot, search_main, travel)
+        if main is None:
+            raise ValueError("OPTIONAL_LUNCH_ENRICHMENT_FAILED")
     validate_plan(snapshot, main, travel)
     return EngineOutput(
         main, base, path, EngineMemory(snapshot.model_copy(deep=True), main, context_version)

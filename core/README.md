@@ -158,10 +158,11 @@ Use `--osrm-config path/to/private-config.json` instead of `--graph`. Example sh
 }
 ```
 
-Each endpoint must already be deployed with its declared transport profile. The
-OSRM path segment `driving` is the conventional API profile label; it does **not**
-change the Lua profile with which that server was built. Never point walk/bike/transit
-at a car-only backend and label the result as another mode.
+Each endpoint must already be deployed with its declared transport profile. Requests
+use explicit OSRM API profile labels: `driving`, `walking`, `cycling`, and `transit`.
+The endpoint still controls the actual prepared graph/profile, so never point
+walk/bike/transit at a car-only backend and label the result as another mode. A custom
+transit deployment must accept the `transit` label; stock OSRM has no timetable model.
 
 For deliberate cache preparation, use `offline:false` and run the desired snapshot
 once; all relevant directed point pairs for the configured engineers are requested.

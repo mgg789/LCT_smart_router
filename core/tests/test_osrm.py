@@ -33,6 +33,7 @@ def test_osrm_cache_and_geometry(tmp_path, graph, monkeypatch):
     quote = provider.quote(origin, target, "car")
     assert (quote.duration_sec, quote.distance_m) == (91, 601)
     assert quote.points == (origin, target)
+    assert quote.geometry_exact is True
     assert f"{origin.lon},{origin.lat};{target.lon},{target.lat}" in calls[0]
     offline = OSRMTravel({"car": "http://osrm.test"}, "map-1", tmp_path)
     assert offline.quote(origin, target, "car") == quote
@@ -41,6 +42,39 @@ def test_osrm_cache_and_geometry(tmp_path, graph, monkeypatch):
         offline.quote(target, origin, "car")
     with pytest.raises(ValueError, match="not configured"):
         offline.quote(origin, target, "transit")
+
+
+def test_osrm_uses_transport_specific_api_profile(tmp_path, graph, monkeypatch):
+    """Each configured transport must keep its own OSRM API profile path."""
+    origin, target = graph.nodes[0].location, graph.nodes[1].location
+    calls = []
+
+    def get(url, **kwargs):
+        calls.append(url)
+        return httpx.Response(
+            200,
+            request=httpx.Request("GET", url),
+            json={"code": "NoRoute"},
+        )
+
+    monkeypatch.setattr(httpx, "get", get)
+    endpoints = {
+        "car": "http://car.test",
+        "walk": "http://walk.test",
+        "bike": "http://bike.test",
+        "transit": "http://transit.test",
+    }
+    provider = OSRMTravel(endpoints, "map-profiles", tmp_path, offline=False)
+
+    for profile in endpoints:
+        assert provider.quote(origin, target, profile) is None
+
+    assert [url.split("/route/v1/")[1].split("/")[0] for url in calls] == [
+        "driving",
+        "walking",
+        "cycling",
+        "transit",
+    ]
 
 
 def test_osrm_noroute_distinguished_from_provider_failure(tmp_path, graph, monkeypatch):

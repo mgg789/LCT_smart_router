@@ -11,6 +11,7 @@ Transport = Literal["car", "walk", "bike", "transit"]
 Skill = Literal["local", "connection", "emergency"]
 EquipmentType = Literal["router", "set_top_box", "smart_speaker"]
 TravelTimeMode = Literal["graph_with_access_buffer", "fixed_normative"]
+TravelProvenance = Literal["approximate", "road_matrix", "route_api", "traffic_api"]
 
 
 class Record(BaseModel):
@@ -61,6 +62,7 @@ class Request(Record):
     required_skill: Skill
     required_transport: Transport | None
     required_equipment: EquipmentType | None = None
+    region: Annotated[str, Field(min_length=1)] | None = None
 
     @model_validator(mode="after")
     def check_window(self) -> Self:
@@ -86,6 +88,7 @@ class Engineer(Record):
     lunch_taken: bool
     lunch: LunchInput
     equipment_stock: EquipmentStock
+    region: Annotated[str, Field(min_length=1)] | None = None
 
     @model_validator(mode="after")
     def check_conditions(self) -> Self:
@@ -228,6 +231,8 @@ class RouteLeg(Record):
     travel_time_sec: Seconds
     distance_km: Annotated[float, Field(ge=0)]
     geometry: Geometry | None
+    travel_source: TravelProvenance
+    traffic_factor: Annotated[float, Field(ge=1.0)] = 1.0
 
     @model_validator(mode="after")
     def check_interval(self) -> Self:

@@ -615,6 +615,8 @@ model AppliedPlanRoute {
   assignedCount  Int     @default(0) @map("assigned_count")
   /// One of the distinguishable lunch outcomes of context/33 section 8.
   lunchStatus    String @map("lunch_status")
+  /// Router-produced travel legs, including optional road geometry and source fidelity.
+  legs           Json   @default("[]")
   reasons        Json
 
   plan  AppliedPlan       @relation(fields: [planId], references: [id], onDelete: Cascade)

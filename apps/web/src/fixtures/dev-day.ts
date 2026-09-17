@@ -368,6 +368,7 @@ function toRequest(place: Place): RequestView {
     lifecycle,
     assignmentState: completed ? 'done' : 'assigned',
     addressText: place.address,
+    region: 'moscow',
     lat: place.lat,
     lon: place.lon,
     needsGeocoding: false,
@@ -543,6 +544,7 @@ function route(
       .filter((item) => item.kind === 'lunch')
       .reduce((sum, item) => sum + (item.endAt - item.startAt), 0),
     stops,
+    legs: [],
   };
 }
 

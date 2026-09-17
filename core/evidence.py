@@ -81,6 +81,11 @@ def build_plan_evidence(
 
         candidates = []
         for engineer in snapshot.engineers:
+            region_match = (
+                request.region is None
+                or engineer.region is None
+                or request.region == engineer.region
+            )
             skill_match = request.required_skill in engineer.skills
             transport_match = request.required_transport in (None, engineer.transport_type)
             equipment_stock = (
@@ -112,6 +117,8 @@ def build_plan_evidence(
                 else None
             )
             blockers = []
+            if not region_match:
+                blockers.append("region_mismatch")
             if not skill_match:
                 blockers.append("skill_missing")
             if not transport_match:

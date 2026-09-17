@@ -5,6 +5,7 @@ import {
   selectRoutingPolicy,
   setEngineerAvailability,
   setLunchesEnabled,
+  uploadDataPackage,
 } from './client';
 
 const request = {
@@ -262,6 +263,53 @@ describe('live dashboard client', () => {
     const inputHash = await setEngineerAvailability('session-token', 'engineer/1', 'offline');
     expect(sentBody).toMatchObject({ availability: 'offline', expectedOnlineAt: null });
     expect(inputHash).toBe('availability-input');
+  });
+
+  it('adds an idempotency key to a locally validated data package', async () => {
+    let sentBody: Record<string, unknown> | null = null;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+        sentBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return json({
+          applied: true,
+          region: 'east',
+          mode: 'append_requests',
+          requestsCreated: 1,
+          engineersCreated: 0,
+          depotsCreated: 0,
+          warnings: [],
+          publicationId: 'publication-2',
+          inputHash: 'input-2',
+        });
+      }),
+    );
+
+    await uploadDataPackage('session-token', {
+      schemaVersion: '1.0',
+      mode: 'append_requests',
+      region: 'east',
+      sourceVersion: '2',
+      requests: [
+        {
+          externalId: 'request-2',
+          addressText: 'Moscow',
+          lat: 55.75,
+          lon: 37.61,
+          serviceDurationSec: 3600,
+          windowStartAt: 1_800_000_000,
+          windowEndAt: 1_800_003_600,
+          priority: 'normal',
+          requiredSkill: 'connection',
+        },
+      ],
+    });
+
+    expect(sentBody).toMatchObject({
+      operationId: expect.any(String),
+      schemaVersion: '1.0',
+      mode: 'append_requests',
+    });
   });
 });
 

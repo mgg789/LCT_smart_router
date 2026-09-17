@@ -55,8 +55,8 @@ def _read_rows(path: Path) -> list[dict[str, str]]:
 
 
 def _verify_source(path: Path, expected_sha256: str) -> None:
-    """Reject organizer-source drift before generating derived resources."""
-    actual = hashlib.sha256(path.read_bytes()).hexdigest()
+    """Reject organizer-source drift using repository-canonical LF bytes."""
+    actual = hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
     if actual != expected_sha256:
         raise ValueError(f"official source hash mismatch: {path.name}")
 

@@ -9,9 +9,11 @@ afterEach(() => {
 });
 
 describe('HttpRouterClient', () => {
-  it('maps one same-snapshot policy comparison without changing Router state', async () => {
-    globalThis.fetch = async (input) => {
+  it('maps a cold policy comparison with a timeout longer than ordinary Router calls', async () => {
+    globalThis.fetch = async (input, init) => {
       assert.equal(String(input), 'http://router:8100/v1/policy-comparison');
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      assert.equal(init?.signal?.aborted, false);
       return Response.json({
         input_publication_id: 'publication-1',
         input_hash: 'a'.repeat(64),
@@ -43,7 +45,7 @@ describe('HttpRouterClient', () => {
     };
     const client = new HttpRouterClient({
       baseUrl: 'http://router:8100',
-      requestTimeoutMs: 1_000,
+      requestTimeoutMs: 10,
     });
 
     const comparison = await client.getPolicyComparison();

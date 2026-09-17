@@ -64,4 +64,5 @@ def test_output_interval_invariants(graph):
             travel_time_sec=0,
             distance_km=1.0,
             geometry=None,
+            travel_source="road_matrix",
         )

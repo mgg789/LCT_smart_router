@@ -1,13 +1,20 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { HardHat, Map as MapIcon, ShieldCog } from 'lucide-react';
-import { useState } from 'react';
+import { HardHat, Map as MapIcon, Plus, ShieldCog } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import type { EquipmentType } from '../api/types';
+import { DataUploadModal } from '../components/DataUploadModal';
 import { DayMap } from '../components/DayMap';
 import { EngineersPage } from '../components/EngineersPage';
 import { PolicyComparisonPage } from '../components/PolicyComparisonPage';
 import { PolicyModal } from '../components/PolicyModal';
 import { RouteTimeline } from '../components/RouteTimeline';
-import { activityLabel, plannedActivity } from '../domain/dashboard';
+import { engineerSummaries, unassignedRequests } from '../domain/dashboard';
+import {
+  ALL_REGIONS,
+  filterSnapshotByRegion,
+  type RegionSelection,
+  regionOptions,
+} from '../domain/regions';
 import { useDashboard } from '../hooks/useDashboard';
 import { factorLabel, initials, modeLabel, POLICY_LABELS, reasonDetail } from '../lib/reasons';
 import { formatClock, formatDayTitle, formatDurationMin, formatKm } from '../lib/time';
@@ -24,13 +31,28 @@ export function DashboardPage() {
   const dash = useDashboard();
   const { snapshot } = dash;
   const [policyOpen, setPolicyOpen] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<DashboardTab>('day');
+  const [selectedRegion, setSelectedRegion] = useState<RegionSelection>(ALL_REGIONS);
+
+  const regions = useMemo(() => (snapshot ? regionOptions(snapshot) : []), [snapshot]);
+  const visibleSnapshot = useMemo(
+    () => (snapshot ? filterSnapshotByRegion(snapshot, selectedRegion) : null),
+    [selectedRegion, snapshot],
+  );
+
+  useEffect(() => {
+    if (selectedRegion !== ALL_REGIONS && !regions.some((region) => region.id === selectedRegion)) {
+      setSelectedRegion(ALL_REGIONS);
+      dash.clearFocus();
+    }
+  }, [dash.clearFocus, regions, selectedRegion]);
 
   if (!dash.authenticated) {
     return <LoginScreen loading={dash.loading} error={dash.error} onSubmit={dash.signIn} />;
   }
 
-  if (!snapshot) {
+  if (!snapshot || !visibleSnapshot) {
     return (
       <div className="flex h-full items-center justify-center bg-canvas text-sm text-muted">
         {dash.error ? (
@@ -53,10 +75,12 @@ export function DashboardPage() {
   }
 
   const assignedCount =
-    snapshot.plan.plan?.assignments.filter((item) => item.status === 'assigned').length ?? 0;
-  const projectedCoordinateCount = snapshot.requests.filter(
+    visibleSnapshot.plan.plan?.assignments.filter((item) => item.status === 'assigned').length ?? 0;
+  const projectedCoordinateCount = visibleSnapshot.requests.filter(
     (request) => request.geocodeQuality === 'district_centroid_projection',
   ).length;
+  const visibleEngineers = engineerSummaries(visibleSnapshot);
+  const visibleUnassigned = unassignedRequests(visibleSnapshot);
 
   return (
     <div className="flex h-full min-h-0 bg-canvas text-ink">
@@ -87,6 +111,15 @@ export function DashboardPage() {
             );
           })}
         </nav>
+        <button
+          type="button"
+          title="Загрузить данные"
+          aria-label="Загрузить новый регион или заявки"
+          onClick={() => setUploadOpen(true)}
+          className="mt-3 flex h-10 w-10 items-center justify-center rounded-xl border border-line text-muted hover:bg-canvas hover:text-ink"
+        >
+          <Plus className="h-5 w-5" />
+        </button>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
@@ -109,6 +142,13 @@ export function DashboardPage() {
             policies={snapshot.policies}
             onClose={() => setPolicyOpen(false)}
             onApply={dash.applyRoutingSettings}
+          />
+          <DataUploadModal
+            open={uploadOpen}
+            submitting={dash.uploadingData}
+            existingRegions={regions.map((region) => region.id)}
+            onClose={() => setUploadOpen(false)}
+            onUpload={dash.uploadDataset}
           />
           <button
             type="button"
@@ -139,13 +179,50 @@ export function DashboardPage() {
         ) : null}
 
         {activeTab === 'day' ? (
-          <div className="grid min-h-0 flex-1 grid-cols-[320px_minmax(0,1fr)_360px] gap-4 px-4 pb-4">
+          <div className="grid min-h-0 flex-1 grid-cols-[320px_minmax(0,1fr)_360px] gap-4 px-4 pb-4 max-xl:grid-cols-1 max-xl:overflow-y-auto">
             <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl bg-white p-4 shadow-sm">
               <div className="min-h-0 flex-1 overflow-y-auto pr-1">
-                <h1 className="text-[22px] font-semibold">{formatDayTitle(snapshot.workDate)}</h1>
+                <label htmlFor="region-select" className="text-[12px] font-medium text-muted">
+                  Регион
+                </label>
+                <select
+                  id="region-select"
+                  value={selectedRegion}
+                  onChange={(event) => {
+                    setSelectedRegion(event.target.value);
+                    dash.clearFocus();
+                  }}
+                  className="mt-1 w-full rounded-xl border border-line bg-white px-3 py-2 text-sm font-medium outline-none focus:border-ink"
+                >
+                  <option value={ALL_REGIONS}>
+                    Все регионы · {snapshot.requests.length} заявок
+                  </option>
+                  {regions.map((region) => (
+                    <option key={region.id} value={region.id}>
+                      {region.label} · {region.requestCount} заявок
+                    </option>
+                  ))}
+                </select>
+                <fieldset className="mt-2 flex flex-wrap gap-1.5" aria-label="Цвета регионов">
+                  {regions.map((region) => (
+                    <span
+                      key={region.id}
+                      className="inline-flex items-center gap-1 rounded-full bg-canvas px-2 py-1 text-[11px] text-muted"
+                    >
+                      <span
+                        className="h-2 w-2 rounded-full"
+                        style={{ backgroundColor: region.color }}
+                      />
+                      {region.label}
+                    </span>
+                  ))}
+                </fieldset>
+                <h1 className="mt-4 text-[22px] font-semibold">
+                  {formatDayTitle(snapshot.workDate)}
+                </h1>
                 <p className="mt-1 text-sm text-muted">
-                  {snapshot.requests.length} заявки · {assignedCount} назначены ·{' '}
-                  {dash.unassigned.length} без назначения
+                  {visibleSnapshot.requests.length} заявки · {assignedCount} назначены ·{' '}
+                  {visibleUnassigned.length} без назначения
                 </p>
                 <p className="text-sm text-muted">
                   План от {formatClock(snapshot.plan.plan?.planAsOf ?? snapshot.nowAt)}
@@ -159,12 +236,12 @@ export function DashboardPage() {
                     <span className="font-medium text-ink">
                       {projectedCoordinateCount} точек по центроидам районов.
                     </span>{' '}
-                    Удалённые точки на юго-востоке и в Кашире входят в официальный регион набора.
+                    Это расчётные координаты набора, а не подтверждённые адресные точки.
                   </div>
                 ) : null}
 
                 <div className="mt-5 flex items-center justify-between text-sm">
-                  <span className="font-medium">Инженеры · {dash.engineers.length}</span>
+                  <span className="font-medium">Инженеры · {visibleEngineers.length}</span>
                   {dash.selectedEngineerId ? (
                     <button
                       type="button"
@@ -176,9 +253,8 @@ export function DashboardPage() {
                   ) : null}
                 </div>
                 <ul className="mt-2 space-y-1">
-                  {dash.engineers.map((engineer) => {
+                  {visibleEngineers.map((engineer) => {
                     const selected = engineer.engineerId === dash.selectedEngineerId;
-                    const activity = plannedActivity(snapshot, engineer.engineerId);
                     return (
                       <li key={engineer.engineerId}>
                         <button
@@ -199,8 +275,7 @@ export function DashboardPage() {
                               </span>
                             </span>
                             <span className="block text-[13px] text-muted">
-                              {activity ? activityLabel(activity.kind) : 'нет плана'} ·{' '}
-                              {engineer.assignedCount} заявок
+                              План: {engineer.assignedCount} заявок · {engineer.transportType}
                             </span>
                             <span className="block text-[12px] text-muted">
                               {engineer.shiftStartAt && engineer.shiftEndAt
@@ -215,14 +290,20 @@ export function DashboardPage() {
                   })}
                 </ul>
 
-                {dash.unassigned.length > 0 ? (
+                {visibleEngineers.length === 0 ? (
+                  <div className="mt-3 rounded-2xl bg-canvas px-3 py-4 text-sm text-muted">
+                    В выбранном регионе пока нет инженеров.
+                  </div>
+                ) : null}
+
+                {visibleUnassigned.length > 0 ? (
                   <div className="mt-3 rounded-2xl bg-bee px-3 py-3">
                     <div className="px-1 font-semibold">
-                      {dash.unassigned.length} заявки без назначения
+                      {visibleUnassigned.length} заявки без назначения
                     </div>
                     <div className="px-1 text-sm">Нет инженера с нужным навыком</div>
                     <ul className="mt-2 space-y-1">
-                      {dash.unassigned.map((request) => {
+                      {visibleUnassigned.map((request) => {
                         const selected = request.id === dash.selectedRequest?.id;
                         return (
                           <li key={request.id}>
@@ -247,10 +328,10 @@ export function DashboardPage() {
               </div>
             </section>
 
-            <section className="flex min-h-0 flex-col gap-4">
+            <section className="flex min-h-0 flex-col gap-4 max-xl:min-h-[560px]">
               <div className="relative min-h-0 flex-1 overflow-hidden rounded-2xl bg-white shadow-sm">
                 <DayMap
-                  snapshot={snapshot}
+                  snapshot={visibleSnapshot}
                   selectedEngineerId={dash.selectedEngineerId}
                   selectedRequestId={dash.selectedRequest?.id ?? null}
                   onSelectRequest={dash.selectRequest}
@@ -304,7 +385,7 @@ export function DashboardPage() {
                 </AnimatePresence>
               </div>
               <RouteTimeline
-                snapshot={snapshot}
+                snapshot={visibleSnapshot}
                 engineerName={dash.selectedEngineer?.displayName ?? 'инженера'}
                 route={dash.selectedRoute}
                 selectedRequestId={dash.selectedRequest?.id ?? null}

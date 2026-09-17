@@ -56,6 +56,19 @@
           "title": "Lunch Taken",
           "type": "boolean"
         },
+        "region": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Region"
+        },
         "shift_end_at": {
           "minimum": 0,
           "title": "Shift End At",
@@ -286,6 +299,19 @@
           ],
           "title": "Priority",
           "type": "string"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Region"
         },
         "request_id": {
           "minLength": 1,

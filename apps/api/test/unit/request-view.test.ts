@@ -48,6 +48,7 @@ describe('request view duration evidence', () => {
     const view = toRequestView(request);
 
     assert.equal(view.normProfileCode, 'local_repair');
+    assert.equal(view.region, 'east');
     assert.equal(view.normativeTravelDurationSec, 1200);
     assert.equal(view.technicalDurationSec, 1800);
     assert.equal(view.documentationDurationSec, 0);

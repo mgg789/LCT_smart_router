@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { DashboardSnapshot, PlanRouteView, RequestView } from '../api/types';
-import { plannedActivity, requestById, routeVertices } from '../domain/dashboard';
+import { requestById, routeVertices } from '../domain/dashboard';
 import { engineerColor } from '../lib/reasons';
 import { formatClock } from '../lib/time';
 
@@ -12,11 +12,7 @@ interface RouteTimelineProps {
   readonly onSelectRequest: (requestId: string) => void;
 }
 
-function stopStatus(
-  snapshot: DashboardSnapshot,
-  request: RequestView | null,
-  kind: string,
-): string {
+function stopStatus(request: RequestView | null, kind: string): string {
   if (kind === 'start') {
     return 'старт смены';
   }
@@ -35,8 +31,7 @@ function stopStatus(
   if (request.lifecycle === 'in_progress') {
     return 'в работе';
   }
-  const wait = Math.max(0, Math.round((request.windowEndAt - snapshot.nowAt) / 60));
-  return `визит через ${wait} мин`;
+  return 'запланировано';
 }
 
 export function RouteTimeline({
@@ -48,7 +43,6 @@ export function RouteTimeline({
 }: RouteTimelineProps) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const [canScroll, setCanScroll] = useState(false);
-  const activity = route ? plannedActivity(snapshot, route.engineerId) : null;
 
   useEffect(() => {
     const node = scrollerRef.current;
@@ -66,7 +60,7 @@ export function RouteTimeline({
     };
   }, [route]);
 
-  const scrollToken = `${route?.engineerId ?? ''}:${selectedRequestId ?? ''}:${activity?.kind ?? ''}`;
+  const scrollToken = `${route?.engineerId ?? ''}:${selectedRequestId ?? ''}`;
   useEffect(() => {
     if (!scrollToken) {
       return;
@@ -99,8 +93,7 @@ export function RouteTimeline({
         <div>
           <h2 className="text-[17px] font-semibold">Маршрут {engineerName}</h2>
           <p className="text-sm text-muted">
-            {activity?.label ?? 'план'} · {route.assignedCount} заявок ·{' '}
-            {route.distanceKm.toFixed(0)} км
+            План без live-позиции · {route.assignedCount} заявок · {route.distanceKm.toFixed(0)} км
           </p>
         </div>
         {canScroll ? (
@@ -129,16 +122,6 @@ export function RouteTimeline({
           {vertices.map((vertex, index) => {
             const request = vertex.requestId ? requestById(snapshot, vertex.requestId) : null;
             const selected = vertex.requestId !== null && vertex.requestId === selectedRequestId;
-            const current =
-              (vertex.kind === 'start' && activity?.kind === 'not_started') ||
-              (vertex.kind === 'lunch' && activity?.kind === 'lunch') ||
-              (vertex.kind === 'wait' && activity?.kind === 'waiting') ||
-              (vertex.kind === 'job' &&
-                activity?.kind === 'on_site' &&
-                activity.requestId === vertex.requestId) ||
-              (vertex.kind === 'job' &&
-                activity?.kind === 'traveling' &&
-                activity.requestId === vertex.requestId);
             const title =
               vertex.kind === 'start'
                 ? 'Старт смены'
@@ -151,7 +134,7 @@ export function RouteTimeline({
               <li key={`${vertex.kind}-${vertex.sequence}`} className="w-40 shrink-0">
                 <button
                   type="button"
-                  data-current={current || selected ? 'true' : 'false'}
+                  data-current={selected ? 'true' : 'false'}
                   onClick={() => {
                     if (vertex.requestId) {
                       onSelectRequest(vertex.requestId);
@@ -163,12 +146,11 @@ export function RouteTimeline({
                     <span
                       className="z-10 h-3 w-3 rounded-full border-2 border-white"
                       style={{
-                        background:
-                          current || selected
-                            ? color
-                            : vertex.kind === 'lunch'
-                              ? '#E07A2F'
-                              : '#D4D4D4',
+                        background: selected
+                          ? color
+                          : vertex.kind === 'lunch'
+                            ? '#E07A2F'
+                            : '#D4D4D4',
                         borderRadius: vertex.kind === 'start' ? '2px' : '999px',
                       }}
                     />
@@ -184,7 +166,7 @@ export function RouteTimeline({
                         : request?.addressText}
                   </span>
                   <span className="mt-1 text-[12px] text-muted">
-                    {stopStatus(snapshot, request, vertex.kind)}
+                    {stopStatus(request, vertex.kind)}
                   </span>
                 </button>
               </li>

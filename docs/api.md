@@ -462,6 +462,7 @@ configured — so the classifier stays honest about whose numbers it is using.
 |---|---|---|
 | GET | `/api/v1/dispatch/data/state` | Whether the application is initialised, how, and what has been imported |
 | POST | `/api/v1/dispatch/data/import` | Load one, several or all regions of the official dataset |
+| POST | `/api/v1/dispatch/data/upload` | Atomically load a JSON package for a new region or append requests to an existing region |
 | POST | `/api/v1/dispatch/data/reset` | Reset to the test data, or to an empty working set |
 
 ### Import
@@ -501,6 +502,26 @@ the depot); the import refuses to run without a package that covers every addres
 imported requests are created with real points — nothing sits in `needsGeocoding`. Benchmark
 windows are rebased onto the live horizon (shifted to start 60 seconds after import), so a
 dataset dated 17.08 plans against "now" without editing the CSVs.
+
+### Dispatcher JSON upload
+
+`POST /api/v1/dispatch/data/upload` accepts one strict `schemaVersion: "1.0"` document.
+`mode: "new_region"` requires a depot, at least one engineer and at least one request;
+`mode: "append_requests"` accepts only requests and requires the named region to exist.
+The browser performs the same structural checks for immediate feedback, but the server is
+authoritative. Coordinates are WGS84 and all times are Unix seconds.
+
+The entire package runs in the operation transaction. Duplicate IDs inside a file, an
+unknown structure, an impossible time interval, a changed row behind an existing external
+ID, or a mode/region mismatch rejects the whole package. An exact package replay is
+idempotent. A matching existing request is skipped with a warning; the same external ID
+with different business data is a conflict. A successful import publishes one new Router
+snapshot and returns its `publicationId` and `inputHash`.
+
+The request shape and an executable example live in
+[`data-upload-example.json`](./data-upload-example.json). Uploaded engineers receive the
+standard optional 45-minute lunch window 11:20–15:00 local time. The global Router switch
+still decides whether those lunch inputs participate in a calculation.
 
 ### Resets
 
@@ -549,6 +570,11 @@ field for field: `plan`, `engineer_route`, `route_stop`, `route_leg`, `assignmen
 `core/schemas/router-result-1.0.json`, in both directions. The same holds for the
 published task: the golden vector in `docs/contracts/fixtures/` validates against
 `core/schemas/router-task-snapshot-1.0.json`, including every enum.
+
+Applied plan routes persist Router legs instead of reconstructing travel in the UI. Every
+leg exposes `travelSource` (`approximate`, `road_matrix`, `route_api`, or `traffic_api`),
+`trafficFactor`, distance, duration and optional provider geometry. `road_matrix` means
+road distance/time is known; it does not imply that a drawable road polyline was returned.
 
 Acceptance checks `input_hash` **and** `input_publication_id` against the snapshot
 published now, plus the context version. What is deliberately still open:

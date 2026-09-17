@@ -14,6 +14,7 @@ export interface RequestView {
   readonly lifecycle: string;
   readonly assignmentState: string;
   readonly addressText: string;
+  readonly region: string | null;
   readonly lat: number | null;
   readonly lon: number | null;
   readonly needsGeocoding: boolean;
@@ -56,6 +57,7 @@ export function toRequestView(request: Request): RequestView {
     lifecycle: request.lifecycle,
     assignmentState: request.assignmentState,
     addressText: request.addressText,
+    region: request.region,
     lat: request.lat,
     lon: request.lon,
     needsGeocoding: request.needsGeocoding,

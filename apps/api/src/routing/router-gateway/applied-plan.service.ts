@@ -129,6 +129,7 @@ export class AppliedPlanService {
           lunchTimeSec: route.lunchTimeSec,
           assignedCount: route.assignedCount,
           lunchStatus: route.lunchStatus,
+          legs: route.legs === null ? [] : (route.legs as Prisma.InputJsonValue),
           reasons: route.reasons as object,
         },
       });
@@ -185,6 +186,18 @@ export class AppliedPlanService {
           lunchTimeSec: route.metrics.lunch_time_sec,
           assignedCount: route.metrics.assigned_count,
           lunchStatus: route.lunch.status,
+          legs: route.legs.map((leg) => ({
+            legId: leg.leg_id,
+            fromStopId: leg.from_stop_id,
+            toStopId: leg.to_stop_id,
+            departureAt: leg.departure_at,
+            arrivalAt: leg.arrival_at,
+            travelTimeSec: leg.travel_time_sec,
+            distanceKm: leg.distance_km,
+            geometry: leg.geometry ?? null,
+            travelSource: leg.travel_source,
+            trafficFactor: leg.traffic_factor,
+          })),
           reasons: route.reasons as object,
         },
       });

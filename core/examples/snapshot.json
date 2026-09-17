@@ -21,6 +21,11 @@
       "available_from": 1786946400,
       "availability": "online",
       "expected_online_at": null,
+      "equipment_stock": {
+        "router": 0,
+        "set_top_box": 0,
+        "smart_speaker": 0
+      },
       "lunch_taken": false,
       "lunch": {
         "enabled": false,

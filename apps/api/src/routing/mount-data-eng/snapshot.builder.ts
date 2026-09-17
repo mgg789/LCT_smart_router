@@ -131,6 +131,7 @@ export class SnapshotBuilder {
       }
       requests.push({
         request_id: request.id,
+        region: request.region,
         arrival_order: request.arrivalOrder,
         location: { lat: request.lat, lon: request.lon },
         service_duration_sec: request.serviceDurationSec,
@@ -223,6 +224,7 @@ export class SnapshotBuilder {
 
     return {
       engineer_id: engineer.id,
+      region: engineer.region,
       input_order: engineer.inputOrder,
       skills: engineer.skills,
       transport_type: engineer.transportType,

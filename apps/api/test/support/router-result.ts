@@ -26,6 +26,7 @@ export interface BuildResultOptions {
   readonly isUsable?: boolean;
   readonly scheduledLunchFor?: string[];
   readonly alerts?: Array<{ alertId: string; code: string; requestIds: string[] }>;
+  readonly withRoadLeg?: boolean;
 }
 
 export function buildRouterResult(options: BuildResultOptions): unknown {
@@ -75,7 +76,25 @@ export function buildRouterResult(options: BuildResultOptions): unknown {
       start_at: stops[0]?.start_at ?? null,
       finish_at: stops.at(-1)?.end_at ?? null,
       stops,
-      legs: [],
+      legs:
+        options.withRoadLeg && stops[0]
+          ? [
+              {
+                leg_id: `${engineerId}-leg-0`,
+                from_stop_id: null,
+                to_stop_id: stops[0].stop_id,
+                departure_at: stops[0].arrival_at - 600,
+                arrival_at: stops[0].arrival_at,
+                travel_time_sec: 600,
+                distance_km: 3.5,
+                geometry: {
+                  points: [{ lat: 55.75, lon: 37.62 }, stops[0].location],
+                },
+                travel_source: 'route_api',
+                traffic_factor: 1.25,
+              },
+            ]
+          : [],
       lunch: withLunch
         ? { status: 'scheduled', stop_id: `${engineerId}-lunch`, reasons: [] }
         : { status: 'disabled', stop_id: null, reasons: [] },

@@ -68,12 +68,12 @@
     "transit_access_sec": 480
   },
   "source_sha256": {
-    "synthetic": "35b2e2e34ed488579ed722b55345b73989f277b9b710b66b12d01c5ec38a00b9",
-    "control": "74c93280f079866bc22f36451fbbdf95da1ff40802af89da6094df4408c67b36"
+    "synthetic": "ac18ea7aaa5721eef8dfff3e6b1a4adb9f07497c20ed42ff7cf4d6aee59ac430",
+    "control": "98b6378716e0c52b683289e578a1efc2bd885c1a32b0b3c1f5d4e0fd9b66b298"
   },
   "resource_sha256": {
-    "geocodes": "01a75f464bfa08f11f2da4f74775c4b35339d0a1bed3f1cb290f44be232116a0",
-    "road_matrix": "33b8ea542b880562340b02497417043c38c8345321f03891de9db86c378572d0"
+    "geocodes": "169627d2f78a9fdfe7795234f77d1dde5d4955bb908d107bdff1c50da113046a",
+    "road_matrix": "3ba788321aefc4f98542662da7b2a79f742d04e79234125d2dc673136711c6ac"
   },
   "assumptions": [
     "The official archive has no engineer directory, shifts, transport assignments or service durations.",
