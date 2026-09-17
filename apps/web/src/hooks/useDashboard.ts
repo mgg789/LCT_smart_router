@@ -407,6 +407,10 @@ export function useDashboard() {
         });
       }
       try {
+        if (previous.plan.mode === 'manual') {
+          await setDispatchMode(token, 'auto');
+          pushEvent('Для перестроения включён авторежим — иначе Router не применит новый план.');
+        }
         if (lunchesEnabled !== previous.lunchesEnabled) {
           expectedContextVersion = await setLunchesEnabled(token, lunchesEnabled);
         }
