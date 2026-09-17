@@ -46,14 +46,20 @@ docker compose -f docker-compose.yml up -d --build --remove-orphans
 Хелсчеки после `up`:
 
 - публичный гейт `https://navix.droidje.com/`
-- loopback `http://127.0.0.1:8000/health/live`
+- loopback `http://127.0.0.1:18080/health/live` (этот хост уже публикует другое
+  приложение на `:8000`; System Layer остаётся в сети compose на `api:8000`,
+  изменился только хостовый порт публикации)
 
 Дашборд — контейнер `web` на `127.0.0.1:5173`; хостовый nginx терминирует TLS для
 `navix.droidje.com` и проксирует туда. `web` уже проксирует `/api/` на `api:8000`.
-На сервере в `.env` стоит задать `API_PORT=127.0.0.1:8000`, чтобы System Layer не
-публиковался на публичном интерфейсе. Это остаётся демо-контур:
-`NODE_ENV=development` и `AUTH_DEV_EXPOSE_CODES=true` — приложение отказывается
-сочетать открытые коды входа с `production`.
+На этом хосте `.env` обязан переносить занятые порты:
+
+- `API_PORT=127.0.0.1:18080` — хостовый `:8000` занят;
+- `ROUTER_PORT=18100` — хостовый `127.0.0.1:8100` занят (`binom-landing-test`).
+
+Внутри сети compose по-прежнему `api:8000` и `router:8100`. Это остаётся
+демо-контур: `NODE_ENV=development` и `AUTH_DEV_EXPOSE_CODES=true` — приложение
+отказывается сочетать открытые коды входа с `production`.
 
 ### Секреты и разовые настройки хоста
 
@@ -68,8 +74,9 @@ docker compose -f docker-compose.yml up -d --build --remove-orphans
 (см. `~mgg/.ssh/config`).
 
 `scripts/ci/bootstrap-navix-host.sh` создаёт pull-ключ SourceCraft и серверный
-`.env` (случайные пароли БД и диспетчера, `API_PORT` на loopback). Учётные данные
-диспетчера живут только в `/home/mgg/navix/.env`.
+`.env` (случайные пароли БД и диспетчера, loopback API на `18080`, публикация
+router на `18100`). Учётные данные диспетчера живут только в
+`/home/mgg/navix/.env`.
 
 Хостовый nginx CI не пишет. После появления клона, на сервере:
 

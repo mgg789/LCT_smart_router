@@ -11,7 +11,7 @@ set -euo pipefail
 app_dir="${MGG_APP_DIR:-/home/mgg/navix}"
 branch_or_ref="${MGG_BRANCH:-main}"
 healthcheck_url="${MGG_HEALTHCHECK_URL:-https://navix.droidje.com/}"
-healthcheck_api_url="${MGG_HEALTHCHECK_API_URL:-http://127.0.0.1:8000/health/live}"
+healthcheck_api_url="${MGG_HEALTHCHECK_API_URL:-http://127.0.0.1:18080/health/live}"
 
 cd "$app_dir"
 
