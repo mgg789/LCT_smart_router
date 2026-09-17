@@ -156,7 +156,7 @@ export class HttpRouterClient extends RouterClient {
     const raw = await this.fetchJson(
       '/v1/policy-comparison',
       {},
-      Math.max(this.options.requestTimeoutMs, 15_000),
+      Math.max(this.options.requestTimeoutMs, 90_000),
     );
     const parsed = policyComparisonSchema.safeParse(raw);
     if (!parsed.success) {

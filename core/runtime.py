@@ -21,7 +21,14 @@ from core.contracts import (
     RouterTaskSnapshot,
     RouterTechnicalSettings,
 )
-from core.engine import EngineMemory, EngineOutput, SearchSettings, apply_system_policy, solve
+from core.engine import (
+    EngineMemory,
+    EngineOutput,
+    SearchSettings,
+    apply_system_policy,
+    official_roster,
+    solve,
+)
 from core.evidence import build_plan_evidence
 from core.geo import GraphTravel, RoadGraph, configure_travel, content_hash
 from core.osrm import OSRMTravel, attach_live_roads
@@ -235,7 +242,7 @@ def calculate_policy_comparison(
     """
     if not 1 <= search_budget_ms <= 2000:
         raise ValueError("COMPARISON_BUDGET_INVALID")
-    snapshot = apply_system_policy(parse_snapshot(raw), settings)
+    snapshot = official_roster(apply_system_policy(parse_snapshot(raw), settings))
     provider = GraphTravel(graph) if isinstance(graph, RoadGraph) else graph
     provider = attach_live_roads(provider)
     provider = configure_travel(provider, settings.technical(), snapshot.planning_as_of)

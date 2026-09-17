@@ -11,7 +11,6 @@ from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 
 from core.contracts import (
     Engineer,
-    EngineerRoute,
     EquipmentType,
     GeoPoint,
     Plan,
@@ -565,6 +564,22 @@ def _search(
 _COVERING_SKILLS: tuple[str, ...] = ("local", "connection", "emergency")
 
 
+def official_roster(snapshot: RouterTaskSnapshot) -> RouterTaskSnapshot:
+    """Drop synthesized covering extras so working policies stay on the real crew.
+
+    Persisted ``covering-*`` people must not leak into compact/fast/sla/eco/FIFO:
+    that made every strategy assign the full day with the same 57-person roster.
+    """
+    official = [
+        engineer
+        for engineer in snapshot.engineers
+        if not engineer.engineer_id.startswith("covering-")
+    ]
+    if len(official) == len(snapshot.engineers):
+        return snapshot
+    return snapshot.model_copy(update={"engineers": official})
+
+
 def _covering_clone(template: Engineer, index: int) -> Engineer:
     """Clone a regional template as a synthesized extra engineer with every skill."""
     region = template.region or "any"
@@ -581,16 +596,6 @@ def _covering_clone(template: Engineer, index: int) -> Engineer:
     )
 
 
-def _next_covering_index(engineers: list[Engineer]) -> int:
-    """Continue covering-N ids after any extras already present on the snapshot."""
-    highest = 0
-    for engineer in engineers:
-        prefix, _sep, tail = engineer.engineer_id.rpartition("-")
-        if prefix.startswith("covering-") and tail.isdigit():
-            highest = max(highest, int(tail))
-    return highest + 1
-
-
 def _covering_extra_engineers(snapshot: RouterTaskSnapshot, extra: int) -> list[Engineer]:
     """Synthesize ``extra`` engineers, round-robin across regional templates."""
     if extra <= 0 or not snapshot.engineers:
@@ -601,115 +606,10 @@ def _covering_extra_engineers(snapshot: RouterTaskSnapshot, extra: int) -> list[
         if key not in templates:
             templates[key] = engineer
     regions = sorted(templates)
-    start = _next_covering_index(snapshot.engineers)
     return [
-        _covering_clone(templates[regions[index % len(regions)]], start + index)
+        _covering_clone(templates[regions[index % len(regions)]], index + 1)
         for index in range(extra)
     ]
-
-
-def _union_memory_engineers(
-    snapshot: RouterTaskSnapshot, memory: EngineMemory | None
-) -> RouterTaskSnapshot:
-    """Keep previously synthesized covering extras so a rebuild can reuse them."""
-    if memory is None:
-        return snapshot
-    known = {engineer.engineer_id for engineer in snapshot.engineers}
-    extras = [
-        engineer for engineer in memory.snapshot.engineers if engineer.engineer_id not in known
-    ]
-    if not extras:
-        return snapshot
-    return snapshot.model_copy(update={"engineers": [*snapshot.engineers, *extras]})
-
-
-def _unique_engineers(engineers: list[Engineer]) -> list[Engineer]:
-    """Preserve first-seen engineer identity order."""
-    unique: list[Engineer] = []
-    seen: set[str] = set()
-    for engineer in engineers:
-        if engineer.engineer_id in seen:
-            continue
-        unique.append(engineer)
-        seen.add(engineer.engineer_id)
-    return unique
-
-
-def _cover_leftovers(
-    snapshot: RouterTaskSnapshot,
-    first: Plan,
-    travel: TravelProvider,
-) -> tuple[list[Engineer], list[EngineerRoute]]:
-    """Give leftover jobs to idle same-region crews first, then FIFO extras.
-
-    Idle people already on the snapshot are cheaper than synthesizing new ones.
-    Baseline append-only search is enough here: leftover VRP is what blew the
-    live rebuild window on the official 205-request day.
-    """
-    leftover_ids = {
-        item.request_id for item in first.assignments if item.status == "unassigned"
-    }
-    leftover_requests = [
-        request for request in snapshot.requests if request.request_id in leftover_ids
-    ]
-    busy_ids = {
-        route.engineer_id for route in first.routes if route.metrics.assigned_count > 0
-    }
-    idle = [engineer for engineer in snapshot.engineers if engineer.engineer_id not in busy_ids]
-    extras = _covering_extra_engineers(snapshot, len(leftover_requests))
-    leftover_snapshot = snapshot.model_copy(
-        update={
-            "requests": leftover_requests,
-            "engineers": [*idle, *extras],
-            "policy": Policy(policy_id="compact", parameters={}),
-        }
-    )
-    leftover = baseline(leftover_snapshot, travel)
-    leftover_by_id = (
-        {route.engineer_id: route for route in leftover.routes} if leftover.is_usable else {}
-    )
-    used_extra_ids = {
-        route.engineer_id
-        for route in leftover_by_id.values()
-        if route.engineer_id.startswith("covering-") and route.metrics.assigned_count > 0
-    }
-    used_extra_ids |= {
-        route.engineer_id
-        for route in first.routes
-        if route.engineer_id.startswith("covering-") and route.metrics.assigned_count > 0
-    }
-    merged: list[EngineerRoute] = []
-    for route in first.routes:
-        replacement = leftover_by_id.get(route.engineer_id)
-        if replacement is not None and replacement.metrics.assigned_count > 0:
-            merged.append(replacement)
-        elif not route.engineer_id.startswith("covering-") or route.engineer_id in used_extra_ids:
-            merged.append(route)
-    merged_ids = {route.engineer_id for route in merged}
-    for extra_id in used_extra_ids:
-        extra_route = leftover_by_id.get(extra_id)
-        if extra_id not in merged_ids and extra_route is not None:
-            merged.append(extra_route)
-            merged_ids.add(extra_id)
-    covered = _unique_engineers(
-        [
-            engineer
-            for engineer in [*snapshot.engineers, *extras]
-            if not engineer.engineer_id.startswith("covering-") or engineer.engineer_id in used_extra_ids
-        ]
-    )
-    by_id = {route.engineer_id: route for route in merged}
-    ordered: list[EngineerRoute] = []
-    for engineer in covered:
-        route = by_id.get(engineer.engineer_id)
-        if route is None:
-            route = leftover_by_id.get(engineer.engineer_id) or fixed_order(
-                snapshot.model_copy(update={"engineers": covered}), engineer, [], travel
-            )
-        if route is None:
-            continue
-        ordered.append(route)
-    return covered, ordered
 
 
 def _solve_covering(
@@ -719,73 +619,57 @@ def _solve_covering(
     memory: EngineMemory | None,
     context_version: str | None,
 ) -> EngineOutput:
-    """Keep locked coverage, then FIFO-cover leftovers with idle crews and extras.
+    """Cover leftovers with the fewest extras; do not re-solve already assigned work.
 
-    Policy switch compact→covering reuses memory instead of solving 205 jobs again.
-    Unused extras are dropped so ``n`` is the crew that actually received work.
+    Compact keeps the current coverage on the official roster, then one compact
+    solve runs only on unassigned requests plus synthesized extras. Unused extras
+    are dropped so ``n`` is the crew that actually received work.
     """
-    aligned = _union_memory_engineers(snapshot, memory)
-    first_main: Plan | None = None
-    first_baseline: Plan | None = None
-    path = "COVERING_COLD"
-    if memory is not None and memory.plan.is_usable:
-        try:
-            projected = _project(aligned, memory.plan, travel)
-        except ValueError:
-            projected = None
-        if projected is not None and projected.is_usable:
-            first_main = projected
-            first_baseline = baseline(snapshot, travel)
-            path = "COVERING_FROM_MEMORY"
-    if first_main is None:
-        compact = snapshot.model_copy(update={"policy": Policy(policy_id="compact", parameters={})})
-        first = _solve_prepared(compact, travel, settings, None, context_version)
-        first_main = first.main
-        first_baseline = first.baseline
-        path = first.path
-        aligned = snapshot
+    del memory
+    snapshot = official_roster(snapshot)
+    compact = snapshot.model_copy(update={"policy": Policy(policy_id="compact", parameters={})})
+    first = _solve_prepared(compact, travel, settings, None, context_version)
     leftover_ids = {
-        item.request_id for item in first_main.assignments if item.status == "unassigned"
+        item.request_id for item in first.main.assignments if item.status == "unassigned"
     }
     if not leftover_ids:
-        used = {
-            route.engineer_id for route in first_main.routes if route.metrics.assigned_count > 0
-        }
-        kept = [
-            engineer
-            for engineer in aligned.engineers
-            if not engineer.engineer_id.startswith("covering-") or engineer.engineer_id in used
-        ]
-        if len(kept) != len(aligned.engineers):
-            covered = aligned.model_copy(update={"engineers": kept})
-            kept_routes = [
-                route for route in first_main.routes if route.engineer_id in {item.engineer_id for item in kept}
-            ]
-            main = assemble_plan(covered, kept_routes)
-            validate_plan(covered, main, travel)
-            return EngineOutput(
-                main,
-                first_baseline or first_main,
-                path,
-                EngineMemory(covered, main, context_version or ""),
-            )
         return EngineOutput(
-            first_main,
-            first_baseline or first_main,
-            path,
-            EngineMemory(aligned.model_copy(deep=True), first_main, context_version or ""),
+            first.main,
+            first.baseline,
+            first.path,
+            EngineMemory(snapshot.model_copy(deep=True), first.main, first.memory.context_version),
         )
-    covered_engineers, merged_routes = _cover_leftovers(aligned, first_main, travel)
-    covered = aligned.model_copy(
-        update={"engineers": covered_engineers, "policy": snapshot.policy}
+    leftover_requests = [request for request in snapshot.requests if request.request_id in leftover_ids]
+    extras = _covering_extra_engineers(snapshot, len(leftover_requests))
+    leftover_snapshot = snapshot.model_copy(
+        update={
+            "requests": leftover_requests,
+            "engineers": extras,
+            "policy": Policy(policy_id="compact", parameters={}),
+        }
     )
-    main = assemble_plan(covered, merged_routes)
+    leftover = _solve_prepared(leftover_snapshot, travel, settings, None, context_version)
+    used_extra_ids = {
+        route.engineer_id
+        for route in leftover.main.routes
+        if route.engineer_id.startswith("covering-") and route.metrics.assigned_count > 0
+    }
+    extra_routes = [route for route in leftover.main.routes if route.engineer_id in used_extra_ids]
+    covered = snapshot.model_copy(
+        update={
+            "engineers": [
+                *snapshot.engineers,
+                *[engineer for engineer in extras if engineer.engineer_id in used_extra_ids],
+            ]
+        }
+    )
+    main = assemble_plan(covered, [*first.main.routes, *extra_routes])
     validate_plan(covered, main, travel)
     return EngineOutput(
         main,
-        first_baseline or first_main,
-        path,
-        EngineMemory(covered, main, context_version or ""),
+        first.baseline,
+        leftover.path,
+        EngineMemory(covered, main, first.memory.context_version),
     )
 
 
@@ -801,8 +685,10 @@ def solve(
     Policy stages preserve achieved coverage/lunch criteria before their resource order.
     Fast keeps engineer count as a final candidate tie-break; compact optimizes it first.
     Covering first adds the fewest extra engineers that assign every remaining request.
+    Working policies never see persisted covering extras.
     """
     settings = settings or SearchSettings()
+    snapshot = official_roster(snapshot)
     if snapshot.policy.policy_id == "covering":
         default_context_version = routing_context_version(travel, settings.technical())
         travel = configure_travel(travel, settings.technical(), snapshot.planning_as_of)

@@ -45,6 +45,8 @@ export class SnapshotBuilder {
   async build(tx: Tx, planningAsOf: number): Promise<BuiltSnapshot> {
     const workDate = workDateOf(planningAsOf, this.config.get('APP_TIME_ZONE'));
     const previousDate = previousCalendarDate(workDate);
+    const active = await tx.activePolicy.findUnique({ where: { id: 'singleton' } });
+    const policyId = active?.policyId ?? DEFAULT_POLICY_ID;
 
     const rawDays = await tx.engineerDay.findMany({
       where: {
@@ -79,6 +81,11 @@ export class SnapshotBuilder {
     let engineersOverrun = 0;
     for (const day of days) {
       if (day.engineer.archivedAt !== null) {
+        continue;
+      }
+      // Covering extras stay on the map only while that policy is active. Otherwise
+      // they leak into every strategy and flatten the comparison onto one roster.
+      if (policyId !== 'covering' && day.engineer.id.startsWith('covering-')) {
         continue;
       }
       if (!hasShift(day)) {
@@ -158,8 +165,6 @@ export class SnapshotBuilder {
       });
     }
 
-    const active = await tx.activePolicy.findUnique({ where: { id: 'singleton' } });
-
     const snapshot: RouterTaskSnapshot = {
       schema_version: SNAPSHOT_SCHEMA_VERSION,
       planning_as_of: planningAsOf,
@@ -168,7 +173,7 @@ export class SnapshotBuilder {
       requests,
       engineers,
       policy: {
-        policy_id: active?.policyId ?? DEFAULT_POLICY_ID,
+        policy_id: policyId,
         parameters: {},
       },
     };
