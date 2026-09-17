@@ -2,12 +2,12 @@ import maplibregl from 'maplibre-gl';
 import { useEffect, useRef, useState } from 'react';
 import type { DashboardSnapshot } from '../api/types';
 import { unassignedRequests } from '../domain/dashboard';
+import { localMapStyle } from '../domain/localBasemap';
 import { regionStyle, requestRegion, routeRegion } from '../domain/regions';
 import { mapRouteSegments } from '../domain/travel';
 import { engineerColor } from '../lib/reasons';
 
 interface DayMapProps {
-  readonly forceLocal?: boolean;
   readonly snapshot: DashboardSnapshot;
   readonly selectedEngineerId: string | null;
   readonly selectedRequestId: string | null;
@@ -17,18 +17,29 @@ interface DayMapProps {
 const STYLE_URL = 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json';
 
 export function DayMap({
-  forceLocal = false,
   snapshot,
   selectedEngineerId,
   selectedRequestId,
   onSelectRequest,
 }: DayMapProps) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [forceLocal, setForceLocal] = useState(!navigator.onLine);
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    const update = () => setForceLocal(!navigator.onLine);
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    return () => {
+      window.removeEventListener('online', update);
+      window.removeEventListener('offline', update);
+    };
+  }, []);
+  const containerRef = useRef<HTMLElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const onSelectRef = useRef(onSelectRequest);
   const fittedKeyRef = useRef<string | null>(null);
   const [localMap, setLocalMap] = useState(forceLocal);
   const [mapFailed, setMapFailed] = useState(false);
+  const [mapReady, setMapReady] = useState(false);
   onSelectRef.current = onSelectRequest;
 
   useEffect(() => {
@@ -36,14 +47,16 @@ export function DayMap({
     if (!container) {
       return;
     }
+    container.dataset.mapAttempt = String(retry);
     setLocalMap(forceLocal);
     setMapFailed(false);
+    setMapReady(false);
     fittedKeyRef.current = null;
     let map: maplibregl.Map;
     try {
       map = new maplibregl.Map({
         container,
-        style: forceLocal ? localStyle() : STYLE_URL,
+        style: forceLocal ? localMapStyle() : STYLE_URL,
         center: [37.62, 55.75],
         zoom: 11.4,
         attributionControl: false,
@@ -53,11 +66,14 @@ export function DayMap({
       return;
     }
     let fallback = forceLocal;
+    const markReady = () => setMapReady(true);
+    map.on('idle', markReady);
     const activateLocalMap = () => {
       if (fallback) return;
       fallback = true;
+      setMapReady(false);
       setLocalMap(true);
-      map.setStyle(localStyle());
+      map.setStyle(localMapStyle());
     };
     const timeout = window.setTimeout(() => {
       if (!map.isStyleLoaded()) activateLocalMap();
@@ -73,10 +89,11 @@ export function DayMap({
       observer.disconnect();
       window.clearTimeout(timeout);
       map.off('error', activateLocalMap);
+      map.off('idle', markReady);
       map.remove();
       mapRef.current = null;
     };
-  }, [forceLocal]);
+  }, [forceLocal, retry]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -85,7 +102,7 @@ export function DayMap({
     }
 
     const apply = () => {
-      if (mapRef.current !== map || !map.isStyleLoaded()) {
+      if (mapRef.current !== map || !map.getStyle()) {
         return false;
       }
       const allRoutes = snapshot.plan.plan?.routes ?? [];
@@ -329,7 +346,7 @@ export function DayMap({
         });
       });
 
-      const fitKey = `${forceLocal}:${selectedEngineerId ?? 'all'}:${selectedRequestId ?? ''}`;
+      const fitKey = `${retry}:${forceLocal}:${selectedEngineerId ?? 'all'}:${selectedRequestId ?? ''}`;
       if (fittedKeyRef.current !== fitKey) {
         fittedKeyRef.current = fitKey;
         const bounds = new maplibregl.LngLatBounds();
@@ -362,11 +379,22 @@ export function DayMap({
       map.off('style.load', onStyle);
       map.off('load', onStyle);
     };
-  }, [selectedEngineerId, selectedRequestId, snapshot, forceLocal]);
+  }, [selectedEngineerId, selectedRequestId, snapshot, forceLocal, retry]);
 
   return (
     <>
-      <div ref={containerRef} className="absolute inset-0 h-full w-full" />
+      <section
+        ref={containerRef}
+        aria-label="Карта маршрутов"
+        aria-busy={!mapReady && !mapFailed}
+        data-map-ready={mapReady}
+        className="absolute inset-0 h-full w-full"
+      />
+      {!mapReady && !mapFailed ? (
+        <div className="absolute top-14 left-3 rounded-xl bg-white px-3 py-2 text-xs text-muted">
+          Загружаем карту…
+        </div>
+      ) : null}
       {localMap || mapFailed ? (
         <div
           role="status"
@@ -374,7 +402,16 @@ export function DayMap({
         >
           {mapFailed
             ? 'Карта недоступна в этом браузере. Используйте список заявок и таймлайн.'
-            : 'Локальная схема без подложки улиц · точки и маршруты доступны'}
+            : 'Сохранённая карта района демо · улицы, парки и водоёмы'}
+          {localMap && !forceLocal && !mapFailed ? (
+            <button
+              type="button"
+              className="ml-2 underline"
+              onClick={() => setRetry((value) => value + 1)}
+            >
+              Повторить онлайн-карту
+            </button>
+          ) : null}
         </div>
       ) : null}
       <div className="pointer-events-none absolute bottom-3 left-3 rounded-xl bg-white/90 px-3 py-2 text-[11px] text-muted shadow">
@@ -382,19 +419,24 @@ export function DayMap({
           ? 'Показан план выбранного инженера. Пунктир — схематичная связь точек, сплошная линия — геометрия дороги.'
           : 'План дня без live-позиции инженеров. Пунктир — схематичная связь точек, сплошная линия — геометрия дороги.'}
       </div>
+      <div className="absolute right-2 bottom-1 rounded bg-white/90 px-2 text-[10px] text-muted">
+        ©{' '}
+        <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
+          OpenStreetMap contributors
+        </a>
+        {' · '}
+        {localMap ? (
+          <a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noreferrer">
+            ODbL
+          </a>
+        ) : (
+          <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">
+            CARTO
+          </a>
+        )}
+      </div>
     </>
   );
-}
-
-/** Network-free geographic canvas; never presents invented streets as map data. */
-function localStyle(): maplibregl.StyleSpecification {
-  return {
-    version: 8,
-    sources: {},
-    layers: [
-      { id: 'local-background', type: 'background', paint: { 'background-color': '#fafaf8' } },
-    ],
-  };
 }
 
 function pickRequest(

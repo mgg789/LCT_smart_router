@@ -1,0 +1,14 @@
+{
+  "source": "OpenStreetMap contributors",
+  "license": "ODbL-1.0",
+  "licenseUrl": "https://opendatacommons.org/licenses/odbl/1-0/",
+  "attributionUrl": "https://www.openstreetmap.org/copyright",
+  "endpoint": "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+  "sourceTimestamp": "2026-09-17T18:24:42Z",
+  "bounds": [37.63, 55.68, 37.82, 55.76],
+  "query": "[out:json][timeout:40];(way[\"highway\"~\"^(motorway|trunk|primary|secondary|tertiary|residential|unclassified|living_street)(_link)?$\"](55.68,37.63,55.76,37.82);way[\"waterway\"~\"^(river|canal)$\"](55.68,37.63,55.76,37.82);way[\"natural\"=\"water\"](55.68,37.63,55.76,37.82);way[\"landuse\"~\"^(forest|grass)$\"](55.68,37.63,55.76,37.82);way[\"leisure\"=\"park\"](55.68,37.63,55.76,37.82););out geom;",
+  "sourceSha256": "1f75f1fd4c944711140e0c625180d445ed50d322fd62463b1cb7b7ecd8c3a90d",
+  "fileSha256": "aee91e3b3f55425372f34b154d3dfcd8df1e9f44260cc50512cc419405bd32a2",
+  "featureCount": 7529,
+  "transform": "OSM ways only; selected road/water/park tags; coordinates rounded to 6 decimals. Ways intersect the query bbox; full way geometry may extend outside it. No buildings or address guarantee."
+}

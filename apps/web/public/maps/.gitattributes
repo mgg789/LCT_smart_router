@@ -1,0 +1,2 @@
+# Preserve bytes recorded in the OSM data manifest.
+*.geojson text eol=lf
