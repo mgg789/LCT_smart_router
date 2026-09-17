@@ -336,23 +336,35 @@ describe('official dataset import', () => {
   it('rebases a repeated official import onto today so the day stays plannable', async () => {
     const eastBefore = await prisma.request.findMany({
       where: { region: 'east' },
-      select: { id: true, windowStartAt: true },
+      select: { id: true, windowStartAt: true, windowEndAt: true },
     });
     assert.ok(eastBefore.length > 0);
+    const tzOffsetSec = 3 * 3600;
+    const nowSec = Math.floor(Date.now() / 1000);
+    const today = new Date((nowSec + tzOffsetSec) * 1000).toISOString().slice(0, 10);
+    const yesterday = new Date((nowSec + tzOffsetSec - 86400) * 1000).toISOString().slice(0, 10);
+    // Age the live day: after midnight workDate rolls and windows sit in the past.
+    // Same-second re-import otherwise keeps identical now+60 anchors and this
+    // assertion is a false red on a fast CI runner.
     await prisma.engineerDay.updateMany({
       where: { engineer: { region: 'east' } },
-      data: { workDate: '2026-09-17' },
+      data: { workDate: yesterday },
     });
+    for (const row of eastBefore) {
+      await prisma.request.update({
+        where: { id: row.id },
+        data: {
+          windowStartAt: row.windowStartAt - 86_400n,
+          windowEndAt: row.windowEndAt - 86_400n,
+        },
+      });
+    }
 
     const repeated = await importRegion('east');
     assert.equal(repeated.applied, true);
     assert.equal(repeated.requestsCreated, 0);
     assert.equal(await prisma.request.count({ where: { region: 'east' } }), eastBefore.length);
 
-    const tzOffsetSec = 3 * 3600;
-    const today = new Date((Math.floor(Date.now() / 1000) + tzOffsetSec) * 1000)
-      .toISOString()
-      .slice(0, 10);
     const daysToday = await prisma.engineerDay.count({
       where: { workDate: today, engineer: { region: 'east' } },
     });

@@ -413,7 +413,9 @@ function pickCurrentDays<T extends EngineerDay & { engineer: Engineer }>(
       chosen.set(day.engineerId, day);
     }
   }
-  return [...chosen.values()].sort((left, right) => left.engineer.inputOrder - right.engineer.inputOrder);
+  return [...chosen.values()].sort(
+    (left, right) => left.engineer.inputOrder - right.engineer.inputOrder,
+  );
 }
 
 function nullableNumber(value: bigint | null): number | null {

@@ -21,8 +21,15 @@ import {
   regionOptions,
 } from '../domain/regions';
 import { useDashboard } from '../hooks/useDashboard';
-import { explainSelection, type CaseExplanation } from '../lib/explanations';
-import { factorLabel, initials, modeLabel, POLICY_LABELS, skillLabel, transportLabel } from '../lib/reasons';
+import { type CaseExplanation, explainSelection } from '../lib/explanations';
+import {
+  factorLabel,
+  initials,
+  modeLabel,
+  POLICY_LABELS,
+  skillLabel,
+  transportLabel,
+} from '../lib/reasons';
 import { formatClock, formatDayTitle, formatDurationMin, formatKm } from '../lib/time';
 
 const NAV = [
@@ -544,7 +551,11 @@ function RequestPanel({ dash }: { readonly dash: ReturnType<typeof useDashboard>
           {engineer ? engineer.displayName : 'Общий план'}
         </p>
         <h2 className="mt-2 text-[22px] font-semibold leading-7">
-          {engineer ? (route?.assignedCount ? 'Маршрут смены' : 'Смена без заявок') : 'Все маршруты дня'}
+          {engineer
+            ? route?.assignedCount
+              ? 'Маршрут смены'
+              : 'Смена без заявок'
+            : 'Все маршруты дня'}
         </h2>
         {explanation ? (
           <ExplanationBlock explanation={explanation} />
