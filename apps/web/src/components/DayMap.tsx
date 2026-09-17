@@ -1,5 +1,5 @@
 import maplibregl from 'maplibre-gl';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { DashboardSnapshot } from '../api/types';
 import { unassignedRequests } from '../domain/dashboard';
 import { regionStyle, requestRegion, routeRegion } from '../domain/regions';
@@ -7,6 +7,7 @@ import { mapRouteSegments } from '../domain/travel';
 import { engineerColor } from '../lib/reasons';
 
 interface DayMapProps {
+  readonly forceLocal?: boolean;
   readonly snapshot: DashboardSnapshot;
   readonly selectedEngineerId: string | null;
   readonly selectedRequestId: string | null;
@@ -16,6 +17,7 @@ interface DayMapProps {
 const STYLE_URL = 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json';
 
 export function DayMap({
+  forceLocal = false,
   snapshot,
   selectedEngineerId,
   selectedRequestId,
@@ -25,6 +27,8 @@ export function DayMap({
   const mapRef = useRef<maplibregl.Map | null>(null);
   const onSelectRef = useRef(onSelectRequest);
   const fittedKeyRef = useRef<string | null>(null);
+  const [localMap, setLocalMap] = useState(forceLocal);
+  const [mapFailed, setMapFailed] = useState(false);
   onSelectRef.current = onSelectRequest;
 
   useEffect(() => {
@@ -32,13 +36,33 @@ export function DayMap({
     if (!container) {
       return;
     }
-    const map = new maplibregl.Map({
-      container,
-      style: STYLE_URL,
-      center: [37.62, 55.75],
-      zoom: 11.4,
-      attributionControl: false,
-    });
+    setLocalMap(forceLocal);
+    setMapFailed(false);
+    fittedKeyRef.current = null;
+    let map: maplibregl.Map;
+    try {
+      map = new maplibregl.Map({
+        container,
+        style: forceLocal ? localStyle() : STYLE_URL,
+        center: [37.62, 55.75],
+        zoom: 11.4,
+        attributionControl: false,
+      });
+    } catch {
+      setMapFailed(true);
+      return;
+    }
+    let fallback = forceLocal;
+    const activateLocalMap = () => {
+      if (fallback) return;
+      fallback = true;
+      setLocalMap(true);
+      map.setStyle(localStyle());
+    };
+    const timeout = window.setTimeout(() => {
+      if (!map.isStyleLoaded()) activateLocalMap();
+    }, 6000);
+    map.on('error', activateLocalMap);
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
     map.on('click', 'stops-circle', (event) => pickRequest(event, onSelectRef));
     map.on('click', 'unassigned-circle', (event) => pickRequest(event, onSelectRef));
@@ -47,10 +71,12 @@ export function DayMap({
     mapRef.current = map;
     return () => {
       observer.disconnect();
+      window.clearTimeout(timeout);
+      map.off('error', activateLocalMap);
       map.remove();
       mapRef.current = null;
     };
-  }, []);
+  }, [forceLocal]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -213,18 +239,23 @@ export function DayMap({
             'circle-stroke-color': ['get', 'regionColor'],
           },
         });
-        map.addLayer({
-          id: 'starts-label',
-          type: 'symbol',
-          source: 'starts',
-          layout: {
-            'text-field': 'Старт плана',
-            'text-size': 11,
-            'text-offset': [0, 1.2],
-            'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
-          },
-          paint: { 'text-color': '#202124', 'text-halo-color': '#ffffff', 'text-halo-width': 1.2 },
-        });
+        if (map.getStyle().glyphs)
+          map.addLayer({
+            id: 'starts-label',
+            type: 'symbol',
+            source: 'starts',
+            layout: {
+              'text-field': 'Старт плана',
+              'text-size': 11,
+              'text-offset': [0, 1.2],
+              'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
+            },
+            paint: {
+              'text-color': '#202124',
+              'text-halo-color': '#ffffff',
+              'text-halo-width': 1.2,
+            },
+          });
       });
 
       upsert(map, 'stops', { type: 'FeatureCollection', features: jobFeatures }, () => {
@@ -239,17 +270,18 @@ export function DayMap({
             'circle-stroke-color': ['get', 'regionColor'],
           },
         });
-        map.addLayer({
-          id: 'stops-label',
-          type: 'symbol',
-          source: 'stops',
-          layout: {
-            'text-field': ['to-string', ['get', 'sequence']],
-            'text-size': 11,
-            'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
-          },
-          paint: { 'text-color': '#ffffff' },
-        });
+        if (map.getStyle().glyphs)
+          map.addLayer({
+            id: 'stops-label',
+            type: 'symbol',
+            source: 'stops',
+            layout: {
+              'text-field': ['to-string', ['get', 'sequence']],
+              'text-size': 11,
+              'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+            },
+            paint: { 'text-color': '#ffffff' },
+          });
       });
 
       upsert(map, 'lunches', { type: 'FeatureCollection', features: lunchFeatures }, () => {
@@ -264,18 +296,23 @@ export function DayMap({
             'circle-stroke-color': '#E07A2F',
           },
         });
-        map.addLayer({
-          id: 'lunch-label',
-          type: 'symbol',
-          source: 'lunches',
-          layout: {
-            'text-field': 'Обед',
-            'text-size': 11,
-            'text-offset': [0, 1.2],
-            'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
-          },
-          paint: { 'text-color': '#8A4B12', 'text-halo-color': '#ffffff', 'text-halo-width': 1.2 },
-        });
+        if (map.getStyle().glyphs)
+          map.addLayer({
+            id: 'lunch-label',
+            type: 'symbol',
+            source: 'lunches',
+            layout: {
+              'text-field': 'Обед',
+              'text-size': 11,
+              'text-offset': [0, 1.2],
+              'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
+            },
+            paint: {
+              'text-color': '#8A4B12',
+              'text-halo-color': '#ffffff',
+              'text-halo-width': 1.2,
+            },
+          });
       });
 
       upsert(map, 'unassigned', { type: 'FeatureCollection', features: unassignedFeatures }, () => {
@@ -292,7 +329,7 @@ export function DayMap({
         });
       });
 
-      const fitKey = `${selectedEngineerId ?? 'all'}:${selectedRequestId ?? ''}`;
+      const fitKey = `${forceLocal}:${selectedEngineerId ?? 'all'}:${selectedRequestId ?? ''}`;
       if (fittedKeyRef.current !== fitKey) {
         fittedKeyRef.current = fitKey;
         const bounds = new maplibregl.LngLatBounds();
@@ -315,23 +352,31 @@ export function DayMap({
       return true;
     };
 
-    if (apply()) {
-      return;
-    }
+    apply();
     const onStyle = () => {
       apply();
     };
-    map.on('styledata', onStyle);
+    map.on('style.load', onStyle);
     map.once('load', onStyle);
     return () => {
-      map.off('styledata', onStyle);
+      map.off('style.load', onStyle);
       map.off('load', onStyle);
     };
-  }, [selectedEngineerId, selectedRequestId, snapshot]);
+  }, [selectedEngineerId, selectedRequestId, snapshot, forceLocal]);
 
   return (
     <>
       <div ref={containerRef} className="absolute inset-0 h-full w-full" />
+      {localMap || mapFailed ? (
+        <div
+          role="status"
+          className="absolute top-3 left-3 right-3 rounded-xl bg-white px-3 py-2 text-xs text-ink shadow"
+        >
+          {mapFailed
+            ? 'Карта недоступна в этом браузере. Используйте список заявок и таймлайн.'
+            : 'Локальная схема без подложки улиц · точки и маршруты доступны'}
+        </div>
+      ) : null}
       <div className="pointer-events-none absolute bottom-3 left-3 rounded-xl bg-white/90 px-3 py-2 text-[11px] text-muted shadow">
         {selectedEngineerId
           ? 'Показан план выбранного инженера. Пунктир — схематичная связь точек, сплошная линия — геометрия дороги.'
@@ -339,6 +384,17 @@ export function DayMap({
       </div>
     </>
   );
+}
+
+/** Network-free geographic canvas; never presents invented streets as map data. */
+function localStyle(): maplibregl.StyleSpecification {
+  return {
+    version: 8,
+    sources: {},
+    layers: [
+      { id: 'local-background', type: 'background', paint: { 'background-color': '#fafaf8' } },
+    ],
+  };
 }
 
 function pickRequest(
