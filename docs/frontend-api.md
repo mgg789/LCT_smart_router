@@ -327,6 +327,8 @@ CAS по `expectedContextVersion`: устарели — 409 `VERSION_CONFLICT`, 
 `region: "east"` **или** `regions: "all" | ["east","southeast"]`, опционально
 `engineerCountPerRegion: {"east": 15}` (больше фактических бригад — 422). →
 `{…, regionResults: [{region, source, applied, requestsCreated, engineersCreated, depotsCreated, requestsSkippedAsDuplicate, requestsWithoutCoordinates, warnings, errors}]}`.
+Повтор того же пакета не плодит заявки: окна и смены переносятся на сегодняшний горизонт
+(`applied: true`, warning про rebase).
 
 **POST `/dispatch/data/upload`** — JSON-пакет: новый регион или догрузка заявок.
 
