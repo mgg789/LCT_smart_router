@@ -47,7 +47,9 @@ about `infra/`.
 Healthchecks after `up`:
 
 - public gate `https://navix.droidje.com/`
-- loopback `http://127.0.0.1:8000/health/live`
+- loopback `http://127.0.0.1:18080/health/live` (this host already publishes
+  another app on `:8000`; the System Layer stays on the compose network at
+  `api:8000`, only the host publish port changed)
 
 The dashboard is the `web` container on `127.0.0.1:5173`; host nginx terminates
 TLS for `navix.droidje.com` and proxies there. `web` already forwards `/api/`
