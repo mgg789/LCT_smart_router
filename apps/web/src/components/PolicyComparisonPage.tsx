@@ -1,5 +1,5 @@
 import type { DashboardSnapshot, PolicyComparisonResponse, StrategyId } from '../api/types';
-import { POLICY_LABELS } from '../lib/reasons';
+import { POLICY_DESCRIPTIONS, POLICY_LABELS } from '../lib/reasons';
 import { formatClock, formatDurationMin, formatKm } from '../lib/time';
 
 interface PolicyComparisonPageProps {
@@ -32,8 +32,8 @@ export function PolicyComparisonPage({
             <p className="text-sm text-muted">Одинаковые заявки, инженеры и дорожная матрица</p>
             <h1 className="mt-1 text-2xl font-semibold">Сравнение политик</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-              Пять политик Router считаются на одном снимке. «Базовая из ТЗ» — FIFO: заявки идут по
-              порядку поступления к первому подходящему свободному инженеру.
+              Пять политик считаются на одном снимке. «Базовая из ТЗ» берёт заявки по очереди
+              поступления и отдаёт их первому подходящему свободному инженеру.
             </p>
           </div>
           <button
@@ -163,15 +163,5 @@ function strategyLabel(strategyId: StrategyId): string {
 }
 
 function strategyDescription(strategyId: StrategyId): string {
-  if (strategyId === 'baseline') {
-    return 'FIFO без оптимизации: первый подходящий свободный инженер.';
-  }
-  const descriptions: Record<Exclude<StrategyId, 'baseline'>, string> = {
-    fast: 'Минимум времени до клиента и покрытие срочных заявок.',
-    compact: 'Максимум выполненных задач меньшим числом инженеров.',
-    sla: 'Максимальный запас до конца клиентских окон.',
-    balanced: 'Ровная загрузка между доступными инженерами.',
-    eco: 'Минимальный суммарный пробег при сохранении покрытия.',
-  };
-  return descriptions[strategyId];
+  return POLICY_DESCRIPTIONS[strategyId] ?? strategyId;
 }

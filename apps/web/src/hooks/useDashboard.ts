@@ -364,7 +364,9 @@ export function useDashboard() {
       try {
         await setDispatchMode(token, mode);
         await refresh();
-        pushEvent(mode === 'manual' ? 'Включён режим MANUAL.' : 'Восстановлен режим AUTO.');
+        pushEvent(
+          mode === 'manual' ? 'Включён ручной режим.' : 'Восстановлен автоматический режим.',
+        );
       } catch (cause) {
         setError(errorMessage(cause));
       }

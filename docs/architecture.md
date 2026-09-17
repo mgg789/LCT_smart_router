@@ -19,7 +19,8 @@ Integration API ─┘          │
 ```
 
 The dispatcher Dashboard lives in `apps/web` (`docs/web.md`). It reads sys views; it does
-not talk to Router or the database.
+not talk to Router or the database. In compose it is the `web` service on
+`http://127.0.0.1:5173`, proxying `/api` to `api`.
 
 The System Layer owns business state, authorization, user operations, the applied working
 plan and its execution. It prepares the input for Router Core, accepts a current result and

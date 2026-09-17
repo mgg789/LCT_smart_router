@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { PolicyId, PolicySpec } from '../api/types';
-import { POLICY_LABELS } from '../lib/reasons';
+import { POLICY_DESCRIPTIONS, POLICY_LABELS } from '../lib/reasons';
 
 interface PolicyModalProps {
   readonly open: boolean;
@@ -88,7 +88,9 @@ export function PolicyModal({
                       <span className="text-[11px] text-muted">по умолчанию</span>
                     ) : null}
                   </span>
-                  <span className="mt-1 block text-[13px] text-muted">{policy.description}</span>
+                  <span className="mt-1 block text-[13px] text-muted">
+                    {POLICY_DESCRIPTIONS[policy.policyId] ?? 'Готовый пресет маршрутизации.'}
+                  </span>
                 </button>
               </li>
             );
@@ -109,15 +111,11 @@ export function PolicyModal({
             aria-label="Обеды в плане"
             aria-checked={draftLunches}
             onClick={() => setDraftLunches((value) => !value)}
-            className={`relative mt-1 h-7 w-12 shrink-0 rounded-full transition-colors ${
-              draftLunches ? 'bg-bee' : 'bg-line'
+            className={`mt-1 flex h-7 w-12 shrink-0 items-center rounded-full p-0.5 transition-colors ${
+              draftLunches ? 'justify-end bg-bee' : 'justify-start bg-line'
             }`}
           >
-            <span
-              className={`absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-transform ${
-                draftLunches ? 'translate-x-5' : 'translate-x-0.5'
-              }`}
-            />
+            <span className="h-6 w-6 rounded-full bg-white shadow" />
           </button>
         </div>
 

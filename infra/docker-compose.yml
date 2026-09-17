@@ -6,9 +6,8 @@
 #   cp .env.example .env
 #   docker compose -f infra/docker-compose.yml up -d --build
 #
-# Services are added by the branch that makes them real. `router` and `edge` belong to
-# the target contour but are not declared until they have something to run
-# (AGENTS.md section 4.1: no empty placeholders).
+# Contour: postgres, migrate, router, api, web. The dashboard (`web`) is reached at
+# http://127.0.0.1:5173 and proxies `/api` to the System Layer on the compose network.
 
 name: lct-smart-router
 

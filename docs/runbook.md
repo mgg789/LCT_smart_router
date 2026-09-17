@@ -31,11 +31,12 @@ pnpm compose:up               # docker compose -f infra/docker-compose.yml up -d
 Then:
 
 ```bash
-pnpm compose:ps               # postgres healthy, api healthy
+pnpm compose:ps               # postgres, router, api and web healthy
 curl localhost:8000/health/live
 curl localhost:8000/health/services
 ```
 
+Dispatcher dashboard: <http://127.0.0.1:5173> (nginx in the `web` service, `/api` to `api`).
 Interactive API documentation: <http://localhost:8000/docs>.
 Machine-readable schema: <http://localhost:8000/docs/openapi.json>.
 

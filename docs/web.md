@@ -1,24 +1,21 @@
-# Web — dispatcher dashboard (dev contour)
+# Web — dispatcher dashboard
 
-> Living notes for `apps/web`. The screen is a working stand-in until the
-> designer/frontend pass replaces the chrome. Types stay aligned with sys views.
+> Living notes for `apps/web`. Types stay aligned with sys views.
 
 ## What is on screen
 
-The only implemented page is the dispatcher day:
+Dispatcher day, policy comparison and engineer roster:
 
-- engineer list with distance, shift and done/assigned counts
-- MapLibre map (CARTO Voyager fallback, `context/27` §4) with per-engineer routes
-- horizontal route timeline for the selected engineer
+- engineer list, unassigned jobs, MapLibre map, route timeline
 - request panel with structured “why this engineer” factors (`context/11` §3)
-- unassigned banner (skill-blocked jobs stay visible)
 - policy modal (catalog + lunch switch). Lunch is off by default
-  (`lunches_enabled=false`, context/50 §3). AUTO rebuilds on apply; there is
-  no separate “rebuild” button. A delta card still appears after a change
+  (`lunches_enabled=false`, context/50 §3)
+- header control mode is a real AUTO/MANUAL toggle (`POST /dispatch/mode`)
+- UI copy is Russian; solver English evidence is translated by reason code
 
 ## Data
 
-Absolute times are Unix seconds. The fixture `createDevSnapshot()` mirrors:
+Absolute times are Unix seconds. Live HTTP goes through `apps/web/src/api/client.ts`:
 
 | UI | sys |
 |---|---|
@@ -27,20 +24,19 @@ Absolute times are Unix seconds. The fixture `createDevSnapshot()` mirrors:
 | Map, timeline, reasons | `GET /api/v1/dispatch/plan` → `PlanView` |
 | Unassigned / alerts | `GET /api/v1/dispatch/alerts` |
 | Policy labels | `GET /api/v1/dispatch/policies` |
+| Lunch switch | `GET/PUT /api/v1/dispatch/router/technical-settings` |
 
-Live HTTP is not wired yet. Changing policy or the lunch switch locally swaps
-fixture plans so the automatic-replan delta can be reviewed without Router. The
-map starts on one engineer; close (×) on the request panel, “Все маршруты”, or
-a second click on the selected engineer returns the day overview with every
-route. A traveling master lights the whole planned edge — never a point on
-that edge (no GPS).
+`VITE_API_BASE` is empty by default: Vite proxies `/api` to `127.0.0.1:8000`, and the
+Docker image serves the same origin through nginx → `api:8000`.
+
+## Docker
+
+`pnpm compose:up` starts `web` with postgres, router and api. Open
+<http://127.0.0.1:5173>. The container talks to `api` on the compose network; no
+separate frontend env is required.
 
 ## Missing contracts the UI already expects
 
-- SSE / poll of `plan.updated` while “Перестраивается”
-- Accept/reject of a pending result (today the working plan is applied by sys)
-- Dashboard lunch switch → sys technical setting `lunches_enabled` (Router-owned;
-  no dispatch DTO yet). The modal already sends the boolean with the policy
+- SSE of `plan.updated` (today the client polls after a publication)
 - Dispatcher AI chat (`read-only` / `fix`) — button is disabled on purpose
-- MANUAL reassign / reorder endpoints exist (`POST /dispatch/plan/reassign`,
-  `reorder`); the screen only toggles the mode badge
+- MANUAL reassign / reorder endpoints exist; the screen toggles the mode

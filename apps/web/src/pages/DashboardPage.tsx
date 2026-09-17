@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
+import { HardHat, Map as MapIcon, ShieldCog } from 'lucide-react';
 import { useState } from 'react';
 import type { EquipmentType } from '../api/types';
 import { DayMap } from '../components/DayMap';
@@ -8,17 +9,13 @@ import { PolicyModal } from '../components/PolicyModal';
 import { RouteTimeline } from '../components/RouteTimeline';
 import { activityLabel, plannedActivity } from '../domain/dashboard';
 import { useDashboard } from '../hooks/useDashboard';
-import { factorLabel, initials, POLICY_LABELS } from '../lib/reasons';
+import { factorLabel, initials, modeLabel, POLICY_LABELS, reasonDetail } from '../lib/reasons';
 import { formatClock, formatDayTitle, formatDurationMin, formatKm } from '../lib/time';
 
 const NAV = [
-  { id: 'day', label: 'План дня', enabled: true },
-  { id: 'policies', label: 'Политики', enabled: true },
-  { id: 'engineers', label: 'Инженеры', enabled: true },
-  { id: 'requests', label: 'Заявки', enabled: false },
-  { id: 'alerts', label: 'Алерты', enabled: false },
-  { id: 'chats', label: 'Чаты', enabled: false },
-  { id: 'ai', label: 'AI', enabled: false },
+  { id: 'day', label: 'План дня', icon: MapIcon },
+  { id: 'policies', label: 'Политики', icon: ShieldCog },
+  { id: 'engineers', label: 'Инженеры', icon: HardHat },
 ] as const;
 
 type DashboardTab = (typeof NAV)[number]['id'];
@@ -66,34 +63,29 @@ export function DashboardPage() {
       <aside className="flex w-16 flex-col items-center border-r border-line bg-white py-4">
         <img src="/beeline-symbol.png" alt="Beeline" className="mb-8 h-8 w-8" />
         <nav className="flex flex-1 flex-col gap-2">
-          {NAV.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              title={item.label}
-              aria-label={item.label}
-              aria-current={activeTab === item.id ? 'page' : undefined}
-              disabled={!item.enabled}
-              onClick={() => {
-                if (!item.enabled) {
-                  return;
-                }
-                setActiveTab(item.id);
-                if (item.id === 'policies') {
-                  void dash.refreshPolicyComparison();
-                }
-              }}
-              className={`flex h-10 w-10 items-center justify-center rounded-xl text-[11px] font-semibold ${
-                activeTab === item.id
-                  ? 'bg-ink text-white'
-                  : item.enabled
-                    ? 'text-muted hover:bg-canvas'
-                    : 'cursor-not-allowed text-line'
-              }`}
-            >
-              {item.label.slice(0, 2)}
-            </button>
-          ))}
+          {NAV.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                title={item.label}
+                aria-label={item.label}
+                aria-current={activeTab === item.id ? 'page' : undefined}
+                onClick={() => {
+                  setActiveTab(item.id);
+                  if (item.id === 'policies') {
+                    void dash.refreshPolicyComparison();
+                  }
+                }}
+                className={`flex h-10 w-10 items-center justify-center rounded-xl ${
+                  activeTab === item.id ? 'bg-ink text-white' : 'text-muted hover:bg-canvas'
+                }`}
+              >
+                <Icon className="h-5 w-5" strokeWidth={1.8} />
+              </button>
+            );
+          })}
         </nav>
       </aside>
 
@@ -118,12 +110,19 @@ export function DashboardPage() {
             onClose={() => setPolicyOpen(false)}
             onApply={dash.applyRoutingSettings}
           />
-          <span className="text-[12px] text-muted">
-            План пересобирается сам: новая заявка, смена политики, факт с линии
-          </span>
-          <span className="rounded-full border border-line bg-white px-3 py-1.5 text-sm">
-            {snapshot.plan.mode.toUpperCase()}
-          </span>
+          <button
+            type="button"
+            disabled={dash.rebuilding}
+            title={
+              snapshot.plan.mode === 'auto'
+                ? 'Перейти в ручной режим'
+                : 'Вернуть автоматический режим'
+            }
+            onClick={() => void dash.setMode(snapshot.plan.mode === 'auto' ? 'manual' : 'auto')}
+            className="rounded-full border border-line bg-white px-3 py-1.5 text-sm font-medium disabled:opacity-50"
+          >
+            {modeLabel(snapshot.plan.mode)}
+          </button>
           <button
             type="button"
             onClick={() => void dash.signOut()}
@@ -142,108 +141,110 @@ export function DashboardPage() {
         {activeTab === 'day' ? (
           <div className="grid min-h-0 flex-1 grid-cols-[320px_minmax(0,1fr)_360px] gap-4 px-4 pb-4">
             <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl bg-white p-4 shadow-sm">
-              <h1 className="text-[22px] font-semibold">{formatDayTitle(snapshot.workDate)}</h1>
-              <p className="mt-1 text-sm text-muted">
-                {snapshot.requests.length} заявки · {assignedCount} назначены ·{' '}
-                {dash.unassigned.length} без назначения
-              </p>
-              <p className="text-sm text-muted">
-                План от {formatClock(snapshot.plan.plan?.planAsOf ?? snapshot.nowAt)}
-                {dash.rebuilding ? ' · перестраивается' : ''}
-              </p>
-              {dash.events[0] ? (
-                <p className="mt-2 text-[12px] text-muted">{dash.events[0].text}</p>
-              ) : null}
-              {projectedCoordinateCount > 0 ? (
-                <div className="mt-3 rounded-xl bg-canvas px-3 py-2 text-[12px] leading-5 text-muted">
-                  <span className="font-medium text-ink">
-                    {projectedCoordinateCount} точек по центроидам районов.
-                  </span>{' '}
-                  Удалённые точки на юго-востоке и в Кашире входят в официальный регион набора.
-                </div>
-              ) : null}
+              <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                <h1 className="text-[22px] font-semibold">{formatDayTitle(snapshot.workDate)}</h1>
+                <p className="mt-1 text-sm text-muted">
+                  {snapshot.requests.length} заявки · {assignedCount} назначены ·{' '}
+                  {dash.unassigned.length} без назначения
+                </p>
+                <p className="text-sm text-muted">
+                  План от {formatClock(snapshot.plan.plan?.planAsOf ?? snapshot.nowAt)}
+                  {dash.rebuilding ? ' · перестраивается' : ''}
+                </p>
+                {dash.events[0] ? (
+                  <p className="mt-2 text-[12px] text-muted">{dash.events[0].text}</p>
+                ) : null}
+                {projectedCoordinateCount > 0 ? (
+                  <div className="mt-3 rounded-xl bg-canvas px-3 py-2 text-[12px] leading-5 text-muted">
+                    <span className="font-medium text-ink">
+                      {projectedCoordinateCount} точек по центроидам районов.
+                    </span>{' '}
+                    Удалённые точки на юго-востоке и в Кашире входят в официальный регион набора.
+                  </div>
+                ) : null}
 
-              <div className="mt-5 flex items-center justify-between text-sm">
-                <span className="font-medium">Инженеры · {dash.engineers.length}</span>
-                {dash.selectedEngineerId ? (
-                  <button
-                    type="button"
-                    onClick={dash.clearFocus}
-                    className="text-[12px] text-muted hover:text-ink"
-                  >
-                    Все маршруты
-                  </button>
+                <div className="mt-5 flex items-center justify-between text-sm">
+                  <span className="font-medium">Инженеры · {dash.engineers.length}</span>
+                  {dash.selectedEngineerId ? (
+                    <button
+                      type="button"
+                      onClick={dash.clearFocus}
+                      className="text-[12px] text-muted hover:text-ink"
+                    >
+                      Все маршруты
+                    </button>
+                  ) : null}
+                </div>
+                <ul className="mt-2 space-y-1">
+                  {dash.engineers.map((engineer) => {
+                    const selected = engineer.engineerId === dash.selectedEngineerId;
+                    const activity = plannedActivity(snapshot, engineer.engineerId);
+                    return (
+                      <li key={engineer.engineerId}>
+                        <button
+                          type="button"
+                          onClick={() => dash.selectEngineer(engineer.engineerId)}
+                          className={`flex w-full items-start gap-3 rounded-2xl px-3 py-3 text-left ${
+                            selected ? 'bg-canvas' : 'hover:bg-canvas/70'
+                          }`}
+                        >
+                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-line text-xs font-semibold">
+                            {initials(engineer.displayName)}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-center justify-between gap-2">
+                              <span className="truncate font-medium">{engineer.displayName}</span>
+                              <span className="text-sm text-muted">
+                                {formatKm(engineer.distanceKm)}
+                              </span>
+                            </span>
+                            <span className="block text-[13px] text-muted">
+                              {activity ? activityLabel(activity.kind) : 'нет плана'} ·{' '}
+                              {engineer.assignedCount} заявок
+                            </span>
+                            <span className="block text-[12px] text-muted">
+                              {engineer.shiftStartAt && engineer.shiftEndAt
+                                ? `${formatClock(engineer.shiftStartAt)}–${formatClock(engineer.shiftEndAt)}`
+                                : 'смена не задана'}{' '}
+                              · выполнено {engineer.doneCount}/{engineer.assignedCount}
+                            </span>
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+
+                {dash.unassigned.length > 0 ? (
+                  <div className="mt-3 rounded-2xl bg-bee px-3 py-3">
+                    <div className="px-1 font-semibold">
+                      {dash.unassigned.length} заявки без назначения
+                    </div>
+                    <div className="px-1 text-sm">Нет инженера с нужным навыком</div>
+                    <ul className="mt-2 space-y-1">
+                      {dash.unassigned.map((request) => {
+                        const selected = request.id === dash.selectedRequest?.id;
+                        return (
+                          <li key={request.id}>
+                            <button
+                              type="button"
+                              onClick={() => dash.selectRequest(request.id)}
+                              className={`w-full rounded-xl px-2 py-2 text-left text-sm ${
+                                selected ? 'bg-white' : 'hover:bg-white/50'
+                              }`}
+                            >
+                              <span className="font-medium">№{request.id}</span>
+                              <span className="block text-[12px]">
+                                {request.workTypeTitle} · {request.addressText}
+                              </span>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
                 ) : null}
               </div>
-              <ul className="mt-2 min-h-0 flex-1 space-y-1 overflow-auto">
-                {dash.engineers.map((engineer) => {
-                  const selected = engineer.engineerId === dash.selectedEngineerId;
-                  const activity = plannedActivity(snapshot, engineer.engineerId);
-                  return (
-                    <li key={engineer.engineerId}>
-                      <button
-                        type="button"
-                        onClick={() => dash.selectEngineer(engineer.engineerId)}
-                        className={`flex w-full items-start gap-3 rounded-2xl px-3 py-3 text-left ${
-                          selected ? 'bg-canvas' : 'hover:bg-canvas/70'
-                        }`}
-                      >
-                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-line text-xs font-semibold">
-                          {initials(engineer.displayName)}
-                        </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="flex items-center justify-between gap-2">
-                            <span className="truncate font-medium">{engineer.displayName}</span>
-                            <span className="text-sm text-muted">
-                              {formatKm(engineer.distanceKm)}
-                            </span>
-                          </span>
-                          <span className="block text-[13px] text-muted">
-                            {activity ? activityLabel(activity.kind) : 'нет плана'} ·{' '}
-                            {engineer.assignedCount} заявок
-                          </span>
-                          <span className="block text-[12px] text-muted">
-                            {engineer.shiftStartAt && engineer.shiftEndAt
-                              ? `${formatClock(engineer.shiftStartAt)}–${formatClock(engineer.shiftEndAt)}`
-                              : 'смена не задана'}{' '}
-                            · выполнено {engineer.doneCount}/{engineer.assignedCount}
-                          </span>
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-
-              {dash.unassigned.length > 0 ? (
-                <div className="mt-3 rounded-2xl bg-bee px-3 py-3">
-                  <div className="px-1 font-semibold">
-                    {dash.unassigned.length} заявки без назначения
-                  </div>
-                  <div className="px-1 text-sm">Нет инженера с нужным навыком</div>
-                  <ul className="mt-2 space-y-1">
-                    {dash.unassigned.map((request) => {
-                      const selected = request.id === dash.selectedRequest?.id;
-                      return (
-                        <li key={request.id}>
-                          <button
-                            type="button"
-                            onClick={() => dash.selectRequest(request.id)}
-                            className={`w-full rounded-xl px-2 py-2 text-left text-sm ${
-                              selected ? 'bg-white' : 'hover:bg-white/50'
-                            }`}
-                          >
-                            <span className="font-medium">№{request.id}</span>
-                            <span className="block text-[12px]">
-                              {request.workTypeTitle} · {request.addressText}
-                            </span>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              ) : null}
             </section>
 
             <section className="flex min-h-0 flex-col gap-4">
@@ -277,7 +278,7 @@ export function DashboardPage() {
                       </p>
                       <p className="mt-1 text-sm text-muted">
                         {dash.pendingDelta.transferred} переданы · {dash.pendingDelta.shifted}{' '}
-                        сдвинуты · риски SLA {dash.pendingDelta.slaBefore} →{' '}
+                        сдвинуты · риски окон {dash.pendingDelta.slaBefore} →{' '}
                         {dash.pendingDelta.slaAfter}
                       </p>
                       <div className="mt-3 flex gap-2">
@@ -355,10 +356,10 @@ function LoginScreen({ loading, error, onSubmit }: LoginScreenProps) {
           void onSubmit(email, password);
         }}
       >
-        <img src="/beeline-symbol.png" alt="Beeline" className="h-10 w-10" />
-        <h1 className="mt-6 text-2xl font-semibold">План дня</h1>
-        <p className="mt-2 text-sm text-muted">
-          Войдите как диспетчер, чтобы открыть актуальный план Router.
+        <img src="/beeline-symbol.png" alt="Beeline" className="mx-auto h-10 w-10" />
+        <h1 className="mt-6 text-center text-2xl font-semibold">План дня</h1>
+        <p className="mt-2 text-center text-sm text-muted">
+          Войдите как диспетчер, чтобы открыть актуальный план.
         </p>
         <label className="mt-6 block text-sm font-medium" htmlFor="dispatcher-email">
           Email
@@ -497,7 +498,9 @@ function RequestPanel({ dash }: { readonly dash: ReturnType<typeof useDashboard>
           {(reasons?.factors ?? []).map((factor) => (
             <li key={factor.code}>
               <span className="font-medium text-white">{factorLabel(factor.code)}</span>
-              <span className="block text-white/70">{factor.detail}</span>
+              <span className="block text-white/70">
+                {reasonDetail(factor.code, factor.detail)}
+              </span>
             </li>
           ))}
         </ul>
@@ -524,8 +527,8 @@ function RequestPanel({ dash }: { readonly dash: ReturnType<typeof useDashboard>
           className="w-full rounded-full bg-bee py-3 text-sm font-semibold text-ink"
         >
           {snapshot.plan.mode === 'auto'
-            ? 'Сменить исполнителя — нужен MANUAL'
-            : 'Вернуться в AUTO'}
+            ? 'Сменить исполнителя — нужен ручной режим'
+            : 'Вернуть автоматический режим'}
         </button>
         <button
           type="button"
