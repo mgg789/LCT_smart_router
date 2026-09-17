@@ -11,6 +11,11 @@ import { resolveSmokeBaseUrl } from './smoke-base-url';
  * and let sys apply it through the ordinary acceptance path. No result package is
  * fabricated here and the official dataset is deliberately not imported.
  *
+ * Sequence: health → reset → policy → synthetic East sector → Router acceptance →
+ * urgent-request event → second accepted plan. The last pair is TZ demo step 6
+ * (one live event rebuilds the day). There is no UI button for that event; this
+ * script uses the same dispatcher create-request path the stand already has.
+ *
  * Run after `docker compose -f infra/docker-compose.yml up -d --build`. The gate is
  * destructive: it resets application data, and target validation therefore permits
  * loopback by default and requires an explicit allow-list for any other host.
@@ -53,6 +58,18 @@ interface PlanResponse {
   } | null;
 }
 
+interface WaitForAppliedPlanInput {
+  readonly token: string;
+  readonly requestIds: readonly string[];
+  readonly engineerId: string;
+  readonly publicationId: string;
+  readonly timeoutMs: number;
+  /** When set, the applied revision must be strictly newer than this value. */
+  readonly minRevision?: number;
+  /** When set, the accepted package must not be this previous result. */
+  readonly previousResultId?: string;
+}
+
 interface SyntheticRequest {
   readonly addressText: string;
   readonly lat: number;
@@ -91,6 +108,14 @@ const EAST_REQUESTS: readonly SyntheticRequest[] = [
     workType: 'information',
   },
 ];
+
+/** Fifth exact East graph node, used only as the post-acceptance urgent event. */
+const EAST_URGENT_REQUEST: SyntheticRequest = {
+  addressText: 'Город Москва, ул.3-я Институтская, д. 5 к 2',
+  lat: 55.7219922,
+  lon: 37.7821899,
+  workType: 'monitoring',
+};
 
 const steps: Step[] = [];
 let failures = 0;
@@ -187,33 +212,33 @@ async function sleep(milliseconds: number): Promise<void> {
   await new Promise((resolvePromise) => setTimeout(resolvePromise, milliseconds));
 }
 
-async function waitForAppliedPlan(
-  token: string,
-  requestIds: readonly string[],
-  engineerId: string,
-  publicationId: string,
-  timeoutMs: number,
-): Promise<PlanResponse> {
-  const deadline = Date.now() + timeoutMs;
+async function waitForAppliedPlan(input: WaitForAppliedPlanInput): Promise<PlanResponse> {
+  const deadline = Date.now() + input.timeoutMs;
   let last: PlanResponse = {};
   while (Date.now() < deadline) {
-    const response = await call('GET', '/api/v1/dispatch/plan', token);
+    const response = await call('GET', '/api/v1/dispatch/plan', input.token);
     requireStatus(response, 200, 'read working plan');
     last = response.body as PlanResponse;
     const assignments = last.plan?.assignments ?? [];
     const byRequest = new Map(assignments.map((item) => [item.requestId, item]));
-    const complete = requestIds.every((requestId) => {
+    const complete = input.requestIds.every((requestId) => {
       const assignment = byRequest.get(requestId);
-      return assignment?.status === 'assigned' && assignment.engineerId === engineerId;
+      return assignment?.status === 'assigned' && assignment.engineerId === input.engineerId;
     });
-    if (last.mode === 'auto' && last.lastResult?.accepted === true && complete) {
+    const revisionOk =
+      input.minRevision === undefined || (last.plan?.revision ?? 0) > input.minRevision;
+    const resultOk =
+      last.lastResult?.accepted === true &&
+      last.lastResult.rejectionCode === null &&
+      (input.previousResultId === undefined || last.lastResult.resultId !== input.previousResultId);
+    if (last.mode === 'auto' && complete && revisionOk && resultOk) {
       return last;
     }
     await sleep(POLL_INTERVAL_MS);
   }
 
   throw new Error(
-    `Router plan was not applied within ${timeoutMs} ms for publication ${publicationId}; ` +
+    `Router plan was not applied within ${input.timeoutMs} ms for publication ${input.publicationId}; ` +
       `last backend state: ${JSON.stringify(last)}`,
   );
 }
@@ -417,13 +442,18 @@ async function main(): Promise<void> {
   );
 
   // Real asynchronous route: sector -> Router -> private HTTP -> sys acceptance -> plan.
-  const plan = await waitForAppliedPlan(
-    dispatcher,
+  const plan = await waitForAppliedPlan({
+    token: dispatcher,
     requestIds,
-    engineer.id,
+    engineerId: engineer.id,
     publicationId,
-    planTimeoutMs,
-  );
+    timeoutMs: planTimeoutMs,
+  });
+  const firstRevision = plan.plan?.revision;
+  const firstResultId = plan.lastResult?.resultId;
+  if (firstRevision === undefined || firstResultId === undefined) {
+    throw new Error(`accepted plan is missing revision or result id: ${JSON.stringify(plan)}`);
+  }
   check(
     plan.plan?.origin === 'auto' && plan.plan.assignments.length === requestIds.length,
     'Router result became the automatic working plan',
@@ -447,6 +477,84 @@ async function main(): Promise<void> {
     ),
     'backend request state reflects the applied plan',
     `${requestIds.length} assigned requests`,
+  );
+
+  // TZ demo step 6 / expert Q3: one event must rebuild the accepted day. Smoke talks
+  // to the API; the UI event remains engineer-offline. Creating an urgent request is
+  // the publication trigger `request.submitted`.
+  const urgentCreated = await call('POST', '/api/v1/dispatch/requests', dispatcher, {
+    operationId: randomUUID(),
+    clientEmail: `smoke.urgent.${randomUUID().slice(0, 8)}@example.test`,
+    contactName: 'Smoke Urgent Client',
+    addressText: EAST_URGENT_REQUEST.addressText,
+    lat: EAST_URGENT_REQUEST.lat,
+    lon: EAST_URGENT_REQUEST.lon,
+    workType: EAST_URGENT_REQUEST.workType,
+    urgent: true,
+    windowStartAt: now + 60,
+    windowEndAt: now + 8 * 3600,
+  });
+  requireStatus(urgentCreated, 201, 'create urgent event request');
+  const urgentRequest = (urgentCreated.body as { request?: { id?: string; priority?: string } })
+    .request;
+  if (!urgentRequest?.id) {
+    throw new Error('urgent request returned no id');
+  }
+  check(
+    urgentRequest.priority === 'urgent',
+    'event request is urgent',
+    `request=${urgentRequest.id}`,
+  );
+
+  const eventSnapshot = await call('GET', '/api/v1/dispatch/debug/snapshot', dispatcher);
+  requireStatus(eventSnapshot, 200, 'read snapshot after urgent event');
+  const eventPublicationId = eventSnapshot.body.publicationId;
+  const eventInputHash = eventSnapshot.body.inputHash;
+  if (typeof eventPublicationId !== 'string' || typeof eventInputHash !== 'string') {
+    throw new Error(`urgent event did not publish a snapshot: ${eventSnapshot.rawBody}`);
+  }
+  check(
+    eventPublicationId !== publicationId && eventInputHash !== inputHash,
+    'urgent event published a new sector',
+    `publication=${eventPublicationId}, hash=${eventInputHash.slice(0, 12)}`,
+  );
+
+  const replanned = await waitForAppliedPlan({
+    token: dispatcher,
+    requestIds: [...requestIds, urgentRequest.id],
+    engineerId: engineer.id,
+    publicationId: eventPublicationId,
+    timeoutMs: planTimeoutMs,
+    minRevision: firstRevision,
+    previousResultId: firstResultId,
+  });
+  check(
+    (replanned.plan?.revision ?? 0) > firstRevision &&
+      replanned.lastResult?.resultId !== firstResultId,
+    'urgent event produced a new accepted plan',
+    `revision=${firstRevision}→${String(replanned.plan?.revision)}, result=${String(replanned.lastResult?.resultId)}`,
+  );
+  check(
+    replanned.plan?.assignments.some(
+      (item) =>
+        item.requestId === urgentRequest.id &&
+        item.status === 'assigned' &&
+        item.engineerId === engineer.id,
+    ) === true,
+    'replanned day includes the urgent request',
+    `assignments=${String(replanned.plan?.assignments.length)}`,
+  );
+
+  const afterEventRequests = await call('GET', '/api/v1/dispatch/requests', dispatcher);
+  requireStatus(afterEventRequests, 200, 'read requests after replan');
+  const afterViews = afterEventRequests.body.requests as
+    | Array<{ id: string; assignmentState: string; priority: string }>
+    | undefined;
+  const urgentView = afterViews?.find((item) => item.id === urgentRequest.id);
+  check(
+    urgentView?.assignmentState === 'assigned' && urgentView.priority === 'urgent',
+    'backend request state reflects the rebuilt plan',
+    `urgent=${urgentRequest.id}`,
   );
 
   const state = await call('GET', '/api/v1/dispatch/data/state', dispatcher);

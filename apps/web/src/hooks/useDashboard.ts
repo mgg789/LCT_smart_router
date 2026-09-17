@@ -45,7 +45,8 @@ import {
 } from '../domain/resilience';
 
 const SESSION_KEY = 'lct.dispatcher.session';
-const REBUILD_TIMEOUT_MS = 45_000;
+const DEFAULT_REBUILD_TIMEOUT_MS = 90_000;
+const COVERING_REBUILD_TIMEOUT_MS = 180_000;
 
 export interface DayEvent {
   readonly id: string;
@@ -415,14 +416,18 @@ export function useDashboard() {
           expectedInputHash = await selectRoutingPolicy(token, nextPolicy);
         }
         if (generation !== readGeneration.current) return false;
-        const next = await waitForRebuild(token, {
-          previousRevision,
-          previousResultId,
-          policyId: nextPolicy,
-          lunchesEnabled,
-          inputHash: expectedInputHash,
-          routerContextVersion: expectedContextVersion,
-        });
+        const next = await waitForRebuild(
+          token,
+          {
+            previousRevision,
+            previousResultId,
+            policyId: nextPolicy,
+            lunchesEnabled,
+            inputHash: expectedInputHash,
+            routerContextVersion: expectedContextVersion,
+          },
+          rebuildTimeoutMs(nextPolicy),
+        );
         if (generation !== readGeneration.current) return false;
         setSnapshot(next);
         setFocus((current) => reconcileDashboardFocus(next, current));
@@ -605,14 +610,18 @@ export function useDashboard() {
       try {
         const inputHash = await setEngineerAvailability(token, engineerId, availability);
         if (generation !== readGeneration.current) return false;
-        const next = await waitForRebuild(token, {
-          previousRevision,
-          previousResultId,
-          policyId: previous.policyId,
-          lunchesEnabled: previous.lunchesEnabled,
-          inputHash,
-          routerContextVersion: previous.routerContextVersion,
-        });
+        const next = await waitForRebuild(
+          token,
+          {
+            previousRevision,
+            previousResultId,
+            policyId: previous.policyId,
+            lunchesEnabled: previous.lunchesEnabled,
+            inputHash,
+            routerContextVersion: previous.routerContextVersion,
+          },
+          rebuildTimeoutMs(previous.policyId),
+        );
         if (generation !== readGeneration.current) return false;
         setSnapshot(next);
         setFocus((current) => reconcileDashboardFocus(next, current));
@@ -800,11 +809,17 @@ export function useDashboard() {
   };
 }
 
+/** Covering runs a second leftover solve; the official day does not finish in 45s. */
+function rebuildTimeoutMs(policyId: PolicyId): number {
+  return policyId === 'covering' ? COVERING_REBUILD_TIMEOUT_MS : DEFAULT_REBUILD_TIMEOUT_MS;
+}
+
 async function waitForRebuild(
   token: string,
   expected: RebuildExpectation,
+  timeoutMs: number,
 ): Promise<DashboardSnapshot> {
-  const deadline = Date.now() + REBUILD_TIMEOUT_MS;
+  const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const snapshot = await loadDashboardSnapshot(token);
     if (isExpectedRebuildApplied(snapshot, expected)) {
@@ -812,7 +827,9 @@ async function waitForRebuild(
     }
     await delay(750);
   }
-  throw new Error('Router не успел применить новую ревизию за 45 секунд');
+  throw new Error(
+    `Router не успел применить новую ревизию за ${Math.round(timeoutMs / 1000)} секунд`,
+  );
 }
 
 function delay(durationMs: number): Promise<void> {

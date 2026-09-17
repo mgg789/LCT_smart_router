@@ -29,7 +29,9 @@ pull request не запускаются.
 - **mojibake** — `node scripts/ci/check-mojibake.mjs` (UTF-8 / cp1251-как-UTF-8).
 
 `pnpm smoke` остаётся гейтом локального/демо-контура (AGENTS.md §11.1). Он деструктивен
-и в пайплайн не входит.
+и в пайплайн не входит: импорт синтетического сектора → снимок → расчёт ядром →
+приёмка → срочная заявка → вторая приёмка. Полные `pnpm --filter api test` тоже
+нужна живая PostgreSQL (тот же compose).
 
 ## Deploy
 
@@ -67,6 +69,14 @@ docker compose -f docker-compose.yml up -d --build --remove-orphans
 половина deploy-only SSH-ключа, публичная половина которого лежит в
 `mgg@178.140.207.217` → `~/.ssh/authorized_keys`. Ключ не коммитить, на доску не
 класть, в командную память не писать.
+
+Поле Value в UI SourceCraft часто схлопывает переносы строк. Тогда CD пишет
+`Load key … error in libcrypto` и дальше `Permission denied` — это не пароль
+сервера, а битый PEM. Нужен **весь** файл `~/.ssh/navix_mgg_ci`, с строками
+`BEGIN` / `END`. Если секрет уже лежит одной строкой, перезапишите его
+(API ждёт base64 содержимого файла) или вставьте файл целиком ещё раз.
+`scripts/ci/ssh-deploy.sh` умеет восстановить PEM из `\n` / base64 / одной
+строки, но корректный секрет надёжнее.
 
 Хосту MGG нужен также **read-only deploy-ключ SourceCraft**, чтобы
 `git pull --ff-only origin main` работал в `/home/mgg/navix`. Публичную половину —

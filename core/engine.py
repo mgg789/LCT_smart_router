@@ -580,21 +580,20 @@ def _covering_clone(template: Engineer, index: int) -> Engineer:
     )
 
 
-def _augment_covering(snapshot: RouterTaskSnapshot, extra: int) -> RouterTaskSnapshot:
-    """Add ``extra`` synthesized engineers, round-robin across regions."""
+def _covering_extra_engineers(snapshot: RouterTaskSnapshot, extra: int) -> list[Engineer]:
+    """Synthesize ``extra`` engineers, round-robin across regional templates."""
     if extra <= 0 or not snapshot.engineers:
-        return snapshot
+        return []
     templates: dict[str, Engineer] = {}
     for engineer in snapshot.engineers:
         key = engineer.region or "any"
         if key not in templates:
             templates[key] = engineer
     regions = sorted(templates)
-    extras = [
+    return [
         _covering_clone(templates[regions[index % len(regions)]], index + 1)
         for index in range(extra)
     ]
-    return snapshot.model_copy(update={"engineers": [*snapshot.engineers, *extras]})
 
 
 def _solve_covering(
@@ -604,42 +603,57 @@ def _solve_covering(
     memory: EngineMemory | None,
     context_version: str | None,
 ) -> EngineOutput:
-    """Find the smallest extra crew that covers every request, then keep those routes."""
+    """Cover leftovers with the fewest extras; do not re-solve already assigned work.
+
+    A full binary search over the official 205-request day exceeds the live
+    rebuild window. Compact keeps the current coverage, then one compact solve
+    runs only on unassigned requests plus synthesized extras. Unused extras are
+    dropped so ``n`` is the crew that actually received work.
+    """
+    del memory
     compact = snapshot.model_copy(update={"policy": Policy(policy_id="compact", parameters={})})
     first = _solve_prepared(compact, travel, settings, None, context_version)
-    unassigned = first.main.summary.unassigned_count
-    if unassigned == 0:
+    leftover_ids = {
+        item.request_id for item in first.main.assignments if item.status == "unassigned"
+    }
+    if not leftover_ids:
         return EngineOutput(
             first.main,
             first.baseline,
             first.path,
             EngineMemory(snapshot.model_copy(deep=True), first.main, first.memory.context_version),
         )
-    low, high = 1, unassigned
-    best_n = unassigned
-    best = None
-    while low <= high:
-        mid = (low + high) // 2
-        trial = _solve_prepared(
-            _augment_covering(compact, mid), travel, settings, None, context_version
-        )
-        if trial.main.summary.unassigned_count == 0:
-            best_n = mid
-            best = trial
-            high = mid - 1
-        else:
-            low = mid + 1
-    if best is None:
-        best = _solve_prepared(
-            _augment_covering(compact, unassigned), travel, settings, memory, context_version
-        )
-        best_n = unassigned
-    covered = _augment_covering(snapshot, best_n)
+    leftover_requests = [request for request in snapshot.requests if request.request_id in leftover_ids]
+    extras = _covering_extra_engineers(snapshot, len(leftover_requests))
+    leftover_snapshot = snapshot.model_copy(
+        update={
+            "requests": leftover_requests,
+            "engineers": extras,
+            "policy": Policy(policy_id="compact", parameters={}),
+        }
+    )
+    leftover = _solve_prepared(leftover_snapshot, travel, settings, None, context_version)
+    used_extra_ids = {
+        route.engineer_id
+        for route in leftover.main.routes
+        if route.engineer_id.startswith("covering-") and route.metrics.assigned_count > 0
+    }
+    extra_routes = [route for route in leftover.main.routes if route.engineer_id in used_extra_ids]
+    covered = snapshot.model_copy(
+        update={
+            "engineers": [
+                *snapshot.engineers,
+                *[engineer for engineer in extras if engineer.engineer_id in used_extra_ids],
+            ]
+        }
+    )
+    main = assemble_plan(covered, [*first.main.routes, *extra_routes])
+    validate_plan(covered, main, travel)
     return EngineOutput(
-        best.main,
-        best.baseline,
-        best.path,
-        EngineMemory(covered, best.main, best.memory.context_version),
+        main,
+        first.baseline,
+        leftover.path,
+        EngineMemory(covered, main, first.memory.context_version),
     )
 
 
