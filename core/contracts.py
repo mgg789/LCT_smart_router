@@ -402,7 +402,7 @@ class PolicyComparison(Record):
     input_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     router_context_version: ID
     computed_at: Seconds
-    search_budget_ms: int = Field(gt=0, le=2000)
+    search_budget_ms: int = Field(gt=0, le=8000)
     rows: list[PolicyComparisonRow] = Field(min_length=6, max_length=6)
 
     @model_validator(mode="after")
