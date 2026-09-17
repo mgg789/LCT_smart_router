@@ -31,7 +31,7 @@ SearchStage = Literal[
 class PolicySpec:
     """Compiled immutable objective order for one supported dispatcher preset."""
 
-    policy_id: Literal["fast", "compact", "sla", "balanced", "eco"]
+    policy_id: Literal["fast", "compact", "sla", "balanced", "eco", "covering"]
     definition_version: str
     ordered_criteria: tuple[Criterion, ...]
     search_stages: tuple[SearchStage, ...]
@@ -86,6 +86,12 @@ _CATALOG: dict[str, PolicySpec] = {
         definition_version="eco-1",
         ordered_criteria=_COVERAGE + ("distance", "engineers_used", "travel_time"),
         search_stages=("coverage", "distance", "engineers_used", "travel_time"),
+    ),
+    "covering": PolicySpec(
+        policy_id="covering",
+        definition_version="covering-1",
+        ordered_criteria=_COVERAGE + ("engineers_used", "distance", "travel_time"),
+        search_stages=("coverage", "engineers_used", "distance", "travel_time"),
     ),
 }
 POLICY_CATALOG_VERSION = sha256(

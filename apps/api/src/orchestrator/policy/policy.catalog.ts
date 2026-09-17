@@ -66,6 +66,15 @@ export const POLICIES: readonly PolicySpec[] = [
     isDefault: false,
     parameters: {},
   },
+  {
+    policyId: 'covering',
+    title: 'Covering',
+    description:
+      'Add the fewest extra synthesized engineers so every remaining request is assigned, ' +
+      'then keep the compact resource order on that enlarged crew.',
+    isDefault: false,
+    parameters: {},
+  },
 ] as const;
 
 export const DEFAULT_POLICY_ID = 'compact';

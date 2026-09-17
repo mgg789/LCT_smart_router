@@ -2,13 +2,14 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { HardHat, Map as MapIcon, Plus, ShieldCog } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { EquipmentType } from '../api/types';
+import { ConnectionBar } from '../components/ConnectionBar';
 import { DataUploadModal } from '../components/DataUploadModal';
 import { DayMap } from '../components/DayMap';
 import { EngineersPage } from '../components/EngineersPage';
 import { PolicyComparisonPage } from '../components/PolicyComparisonPage';
 import { PolicyModal } from '../components/PolicyModal';
 import { RouteTimeline } from '../components/RouteTimeline';
-import { engineerSummaries, unassignedRequests } from '../domain/dashboard';
+import { assignmentFor, engineerSummaries, unassignedRequests } from '../domain/dashboard';
 import {
   ALL_REGIONS,
   filterSnapshotByRegion,
@@ -49,7 +50,20 @@ export function DashboardPage() {
   }, [dash.clearFocus, regions, selectedRegion]);
 
   if (!dash.authenticated) {
-    return <LoginScreen loading={dash.loading} error={dash.error} onSubmit={dash.signIn} />;
+    return (
+      <div>
+        <LoginScreen loading={dash.loading} error={dash.error} onSubmit={dash.signIn} />
+        <div className="fixed bottom-8 inset-x-0 text-center">
+          <button
+            type="button"
+            onClick={() => dash.selectDemoScenario('initial')}
+            className="rounded-full bg-bee px-5 py-3 font-semibold"
+          >
+            Открыть автономный демо-сценарий
+          </button>
+        </div>
+      </div>
+    );
   }
 
   if (!snapshot || !visibleSnapshot) {
@@ -65,6 +79,13 @@ export function DashboardPage() {
               className="mt-4 rounded-full bg-bee px-4 py-2 font-semibold text-ink"
             >
               Повторить
+            </button>
+            <button
+              type="button"
+              onClick={() => dash.selectDemoScenario('initial')}
+              className="mt-4 ml-3 underline"
+            >
+              Открыть демо
             </button>
           </div>
         ) : (
@@ -113,8 +134,9 @@ export function DashboardPage() {
         </nav>
         <button
           type="button"
-          title="Загрузить данные"
-          aria-label="Загрузить новый регион или заявки"
+          title="Загрузить данные или датасет из ТЗ"
+          aria-label="Загрузить датасет из ТЗ или свой файл"
+          disabled={dash.writesDisabled}
           onClick={() => setUploadOpen(true)}
           className="mt-3 flex h-10 w-10 items-center justify-center rounded-xl border border-line text-muted hover:bg-canvas hover:text-ink"
         >
@@ -123,10 +145,11 @@ export function DashboardPage() {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center justify-end gap-3 px-5 py-3">
+        <header className="flex items-center justify-end gap-3 px-5 py-3 max-sm:flex-wrap">
           <button
             type="button"
             onClick={() => setPolicyOpen(true)}
+            disabled={dash.writesDisabled}
             className="flex items-center gap-2 rounded-full border border-line bg-white px-3 py-1.5 text-sm"
           >
             <span className="text-muted">Политика</span>
@@ -149,10 +172,11 @@ export function DashboardPage() {
             existingRegions={regions.map((region) => region.id)}
             onClose={() => setUploadOpen(false)}
             onUpload={dash.uploadDataset}
+            onImportOfficial={dash.importOfficialTzDataset}
           />
           <button
             type="button"
-            disabled={dash.rebuilding}
+            disabled={dash.rebuilding || dash.writesDisabled}
             title={
               snapshot.plan.mode === 'auto'
                 ? 'Перейти в ручной режим'
@@ -172,6 +196,8 @@ export function DashboardPage() {
           </button>
         </header>
 
+        <ConnectionBar dashboard={dash} />
+
         {dash.error ? (
           <div className="mx-4 mb-3 rounded-xl bg-red-50 px-4 py-2 text-sm text-red-700">
             {dash.error}
@@ -179,7 +205,7 @@ export function DashboardPage() {
         ) : null}
 
         {activeTab === 'day' ? (
-          <div className="grid min-h-0 flex-1 grid-cols-[320px_minmax(0,1fr)_360px] gap-4 px-4 pb-4 max-xl:grid-cols-1 max-xl:overflow-y-auto">
+          <div className="grid min-h-0 flex-1 grid-cols-[320px_minmax(0,1fr)_360px] gap-4 px-4 pb-4 max-xl:grid-cols-1 max-xl:auto-rows-[minmax(420px,auto)] max-xl:overflow-y-auto">
             <section className="flex min-h-0 flex-col overflow-hidden rounded-2xl bg-white p-4 shadow-sm">
               <div className="min-h-0 flex-1 overflow-y-auto pr-1">
                 <label htmlFor="region-select" className="text-[12px] font-medium text-muted">
@@ -301,10 +327,12 @@ export function DashboardPage() {
                     <div className="px-1 font-semibold">
                       {visibleUnassigned.length} заявки без назначения
                     </div>
-                    <div className="px-1 text-sm">Нет инженера с нужным навыком</div>
+                    <div className="px-1 text-sm">Точная причина — в карточке заявки</div>
                     <ul className="mt-2 space-y-1">
                       {visibleUnassigned.map((request) => {
                         const selected = request.id === dash.selectedRequest?.id;
+                        const reasonCode = assignmentFor(visibleSnapshot, request.id)?.reasons
+                          .assignment?.factors[0]?.code;
                         return (
                           <li key={request.id}>
                             <button
@@ -318,6 +346,11 @@ export function DashboardPage() {
                               <span className="block text-[12px]">
                                 {request.workTypeTitle} · {request.addressText}
                               </span>
+                              {reasonCode ? (
+                                <span className="mt-1 block text-[12px] text-ink/70">
+                                  {factorLabel(reasonCode)}
+                                </span>
+                              ) : null}
                             </button>
                           </li>
                         );
@@ -355,7 +388,9 @@ export function DashboardPage() {
                       className="absolute left-4 top-4 max-w-md rounded-2xl bg-white p-4 shadow-lg"
                     >
                       <p className="text-sm font-semibold">
-                        План пересобран за {dash.pendingDelta.solveMs} мс
+                        {dash.isDemo
+                          ? 'Изменения между записанными сценариями'
+                          : `План пересобран за ${dash.pendingDelta.solveMs} мс`}
                       </p>
                       <p className="mt-1 text-sm text-muted">
                         {dash.pendingDelta.transferred} переданы · {dash.pendingDelta.shifted}{' '}
@@ -397,6 +432,8 @@ export function DashboardPage() {
           </div>
         ) : activeTab === 'policies' ? (
           <PolicyComparisonPage
+            recorded={dash.isDemo}
+            readOnly={dash.source === 'cached'}
             snapshot={snapshot}
             comparison={dash.policyComparison}
             loading={dash.policyComparisonLoading}
@@ -407,7 +444,7 @@ export function DashboardPage() {
           <EngineersPage
             snapshot={snapshot}
             pendingEngineerId={dash.availabilityPendingId}
-            rebuilding={dash.rebuilding}
+            rebuilding={dash.rebuilding || dash.writesDisabled}
             onAvailabilityChange={(engineerId, availability) =>
               void dash.updateEngineerAvailability(engineerId, availability)
             }

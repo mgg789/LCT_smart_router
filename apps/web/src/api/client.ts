@@ -5,6 +5,7 @@ import type {
   DashboardSnapshot,
   DataUploadFile,
   DataUploadSummary,
+  OfficialImportSummary,
   PlanAssignmentView,
   PolicyComparisonResponse,
   PolicyId,
@@ -12,7 +13,7 @@ import type {
 } from './types';
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
-const policyIdSchema = z.enum(['compact', 'fast', 'sla', 'balanced', 'eco']);
+const policyIdSchema = z.enum(['compact', 'fast', 'sla', 'balanced', 'eco', 'covering']);
 
 const requestSchema = z.object({
   id: z.string(),
@@ -260,7 +261,7 @@ const policyComparisonSchema = z.object({
   rows: z
     .array(
       z.object({
-        strategyId: z.enum(['fast', 'compact', 'sla', 'balanced', 'eco', 'baseline']),
+        strategyId: z.enum(['fast', 'compact', 'sla', 'balanced', 'eco', 'covering', 'baseline']),
         kind: z.enum(['policy', 'baseline']),
         isUsable: z.boolean(),
         calculationMs: z.number().nonnegative(),
@@ -323,10 +324,88 @@ export class DashboardApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly path = '',
+    readonly requestId: string | null = null,
   ) {
     super(message);
     this.name = 'DashboardApiError';
   }
+}
+
+const normalizedAssignmentSchema = rawAssignmentSchema.extend({
+  reasons: z.object({
+    assignment: z
+      .object({
+        chosen: z.string().nullable(),
+        factors: z.array(
+          z.object({
+            code: z.string(),
+            detail: z.string(),
+            ok: z.boolean().optional(),
+            value: z.number().optional(),
+            basis: z.string().optional(),
+            facts: z.record(z.string(), z.unknown()).optional(),
+          }),
+        ),
+        alternatives: z.array(
+          z.object({
+            engineerId: z.string(),
+            blocked: z.boolean(),
+            whyNot: z.string(),
+            costDeltaMin: z.number().optional(),
+          }),
+        ),
+      })
+      .optional(),
+    sequence: z
+      .array(z.object({ swapWith: z.string(), costDeltaMin: z.number(), why: z.string() }))
+      .optional(),
+  }),
+});
+
+const snapshotSchema = z.object({
+  workDate: z.string(),
+  timeZone: z.literal('Europe/Moscow'),
+  nowAt: z.number().int(),
+  policyId: policyIdSchema,
+  lunchesEnabled: z.boolean(),
+  routerContextVersion: z.string(),
+  policies: policiesSchema.shape.policies,
+  engineers: z.array(engineerSchema),
+  requests: z.array(requestSchema),
+  plan: dispatchPlanSchema.extend({
+    plan: planSchema.extend({ assignments: z.array(normalizedAssignmentSchema) }).nullable(),
+  }),
+  alerts: z.array(alertSchema.extend({ reasons: z.array(z.string()) })),
+});
+
+/** Validate persisted/demo data against the same views as HTTP; rejects broken references. */
+export function parseDashboardSnapshot(value: unknown): DashboardSnapshot {
+  const snapshot = snapshotSchema.parse(value);
+  const engineers = new Set(snapshot.engineers.map((item) => item.id));
+  const requests = new Set(snapshot.requests.map((item) => item.id));
+  if (
+    engineers.size !== snapshot.engineers.length ||
+    requests.size !== snapshot.requests.length ||
+    snapshot.plan.plan?.assignments.some(
+      (item) =>
+        !requests.has(item.requestId) ||
+        (item.engineerId !== null && !engineers.has(item.engineerId)),
+    ) ||
+    snapshot.plan.plan?.routes.some(
+      (route) =>
+        !engineers.has(route.engineerId) ||
+        route.stops.some((stop) => stop.requestId !== null && !requests.has(stop.requestId)),
+    )
+  ) {
+    throw new DashboardApiError('Несогласованный снимок рабочего дня', 0, 'snapshot');
+  }
+  return snapshot;
+}
+
+/** Validate recorded policy comparison data without issuing an HTTP request. */
+export function parsePolicyComparison(value: unknown): PolicyComparisonResponse {
+  return policyComparisonSchema.parse(value);
 }
 
 /** Authenticates a dispatcher without exposing configured credentials to the bundle. */
@@ -472,6 +551,30 @@ export function uploadDataPackage(token: string, file: DataUploadFile): Promise<
   });
 }
 
+const officialImportSummarySchema = z
+  .object({
+    source: z.string().default('official-dataset'),
+    applied: z.boolean(),
+    requestsCreated: z.number().int().nonnegative(),
+    requestsSkippedAsDuplicate: z.number().int().nonnegative(),
+    engineersCreated: z.number().int().nonnegative(),
+    depotsCreated: z.number().int().nonnegative(),
+    requestsWithoutCoordinates: z.number().int().nonnegative(),
+    warnings: z.array(z.string()),
+    errors: z.array(z.string()),
+  })
+  .passthrough();
+
+/**
+ * Loads the official TZ dataset shipped in the repo (`regions: all`) without curl.
+ */
+export function importOfficialDataset(token: string): Promise<OfficialImportSummary> {
+  return requestJson('/api/v1/dispatch/data/import', officialImportSummarySchema, token, {
+    method: 'POST',
+    body: JSON.stringify({ operationId: crypto.randomUUID(), regions: 'all' }),
+  });
+}
+
 function normalizeAssignment(raw: z.infer<typeof rawAssignmentSchema>): PlanAssignmentView {
   return {
     requestId: raw.requestId,
@@ -482,6 +585,57 @@ function normalizeAssignment(raw: z.infer<typeof rawAssignmentSchema>): PlanAssi
 }
 
 function normalizeReasons(raw: unknown, engineerId: string | null): AssignmentReasons {
+  const structured = z
+    .object({
+      assignment: z
+        .object({
+          chosen: z.string().nullable().optional(),
+          factors: z.array(reasonSchema).default([]),
+          alternatives: z
+            .array(
+              z.object({
+                engineerId: z.string().optional(),
+                engineer: z.string().optional(),
+                blocked: z.boolean().optional(),
+                costDeltaMin: z.number().optional(),
+                cost_delta: z.number().optional(),
+                whyNot: z.string().optional(),
+                why_not: z.string().optional(),
+              }),
+            )
+            .optional(),
+        })
+        .optional(),
+    })
+    .safeParse(raw);
+  if (structured.success && structured.data.assignment) {
+    const assignment = structured.data.assignment;
+    return {
+      assignment: {
+        chosen: assignment.chosen ?? engineerId,
+        factors: assignment.factors.map((reason) => ({
+          code: reason.code,
+          detail: reason.text,
+          basis: reason.basis,
+          facts: reason.facts,
+        })),
+        alternatives: (assignment.alternatives ?? []).flatMap((item) => {
+          const id = item.engineerId ?? item.engineer;
+          if (!id) {
+            return [];
+          }
+          return [
+            {
+              engineerId: id,
+              blocked: item.blocked ?? false,
+              costDeltaMin: item.costDeltaMin ?? item.cost_delta,
+              whyNot: item.whyNot ?? item.why_not ?? '',
+            },
+          ];
+        }),
+      },
+    };
+  }
   const parsed = z.array(reasonSchema).safeParse(raw);
   if (!parsed.success) {
     return { assignment: { chosen: engineerId, factors: [], alternatives: [] } };
@@ -514,20 +668,47 @@ async function requestJson<T>(
   token?: string,
   init: RequestInit = {},
 ): Promise<T> {
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...init,
-    headers: {
-      accept: 'application/json',
-      ...(init.body ? { 'content-type': 'application/json' } : {}),
-      ...(token ? { authorization: `Bearer ${token}` } : {}),
-      ...Object.fromEntries(new Headers(init.headers)),
-    },
-  });
-  const body: unknown = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new DashboardApiError(apiErrorMessage(body, response.status), response.status);
+  const controller = new AbortController();
+  const timeout = globalThis.setTimeout(() => controller.abort(), 12_000);
+  try {
+    const response = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      signal: controller.signal,
+      headers: {
+        accept: 'application/json',
+        ...(init.body ? { 'content-type': 'application/json' } : {}),
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+        ...Object.fromEntries(new Headers(init.headers)),
+      },
+    });
+    const body: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new DashboardApiError(
+        apiErrorMessage(body, response.status),
+        response.status,
+        path,
+        response.headers.get('x-request-id'),
+      );
+    }
+    const parsed = schema.safeParse(body);
+    if (!parsed.success)
+      throw new DashboardApiError(
+        'Ответ сервера не соответствует контракту',
+        0,
+        path,
+        response.headers.get('x-request-id'),
+      );
+    return parsed.data;
+  } catch (cause) {
+    if (cause instanceof DashboardApiError) throw cause;
+    throw new DashboardApiError(
+      controller.signal.aborted ? 'Сервер не ответил за 12 секунд' : 'Нет связи с сервером',
+      0,
+      path,
+    );
+  } finally {
+    globalThis.clearTimeout(timeout);
   }
-  return schema.parse(body);
 }
 
 function apiErrorMessage(body: unknown, status: number): string {

@@ -1,6 +1,6 @@
-import { FileJson, Upload, X } from 'lucide-react';
+import { Database, FileJson, Upload, X } from 'lucide-react';
 import { type ChangeEvent, type DragEvent, useEffect, useState } from 'react';
-import type { DataUploadFile, DataUploadSummary } from '../api/types';
+import type { DataUploadFile, DataUploadSummary, OfficialImportSummary } from '../api/types';
 import { parseDataUpload } from '../domain/dataUpload';
 import { regionStyle } from '../domain/regions';
 
@@ -10,6 +10,7 @@ interface DataUploadModalProps {
   readonly existingRegions: readonly string[];
   readonly onClose: () => void;
   readonly onUpload: (file: DataUploadFile) => Promise<DataUploadSummary>;
+  readonly onImportOfficial: () => Promise<OfficialImportSummary>;
 }
 
 /** Validates and previews a region package before sending it to the backend atomically. */
@@ -19,11 +20,12 @@ export function DataUploadModal({
   existingRegions,
   onClose,
   onUpload,
+  onImportOfficial,
 }: DataUploadModalProps) {
   const [fileName, setFileName] = useState<string | null>(null);
   const [candidate, setCandidate] = useState<DataUploadFile | null>(null);
   const [issues, setIssues] = useState<string[]>([]);
-  const [result, setResult] = useState<DataUploadSummary | null>(null);
+  const [result, setResult] = useState<DataUploadSummary | OfficialImportSummary | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
 
@@ -107,11 +109,11 @@ export function DataUploadModal({
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 id="data-upload-title" className="text-xl font-semibold">
-              Загрузить данные региона
+              Загрузить данные
             </h2>
             <p className="mt-1 text-sm text-muted">
-              Файл сначала проверяется в браузере, затем целиком принимается или отклоняется
-              сервером.
+              Официальный датасет из ТЗ подгружается из репозитория одной кнопкой. Свой JSON сначала
+              проверяется в браузере.
             </p>
           </div>
           <button
@@ -124,6 +126,33 @@ export function DataUploadModal({
             <X className="h-5 w-5" />
           </button>
         </div>
+
+        <button
+          type="button"
+          disabled={submitting}
+          onClick={() => {
+            setSubmitError(null);
+            setCandidate(null);
+            setIssues([]);
+            void onImportOfficial()
+              .then(setResult)
+              .catch((error: unknown) =>
+                setSubmitError(
+                  error instanceof Error ? error.message : 'Не удалось загрузить датасет из ТЗ',
+                ),
+              );
+          }}
+          className="mt-5 flex w-full flex-col items-start rounded-2xl border border-bee bg-bee/15 px-4 py-4 text-left disabled:opacity-50"
+        >
+          <span className="flex items-center gap-2 text-sm font-semibold">
+            <Database className="h-4 w-4" />
+            Использовать датасет из ТЗ
+          </span>
+          <span className="mt-1 text-[13px] text-muted">
+            Три региона организаторов из репозитория: 205 заявок и 35 инженеров. План пересчитается
+            после загрузки.
+          </span>
+        </button>
 
         <input
           id="data-upload-file"
@@ -182,7 +211,10 @@ export function DataUploadModal({
             </p>
             <p className="mt-1">
               Заявки: +{result.requestsCreated}, инженеры: +{result.engineersCreated}, базы: +
-              {result.depotsCreated}.
+              {result.depotsCreated}
+              {'errors' in result && result.errors.length > 0
+                ? `. Ошибки: ${result.errors.join('; ')}`
+                : '.'}
             </p>
             {result.warnings.map((warning) => (
               <p key={warning} className="mt-1">

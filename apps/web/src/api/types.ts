@@ -6,7 +6,7 @@
  * Absolute times are Unix-epoch seconds; local formatting stays in the UI.
  */
 
-export type PolicyId = 'compact' | 'fast' | 'sla' | 'balanced' | 'eco';
+export type PolicyId = 'compact' | 'fast' | 'sla' | 'balanced' | 'eco' | 'covering';
 export type StrategyId = PolicyId | 'baseline';
 export type EquipmentType = 'router' | 'set_top_box' | 'smart_speaker';
 
@@ -347,4 +347,16 @@ export interface DataUploadSummary {
   readonly warnings: string[];
   readonly publicationId: string | null;
   readonly inputHash: string | null;
+}
+
+export interface OfficialImportSummary {
+  readonly source: string;
+  readonly applied: boolean;
+  readonly requestsCreated: number;
+  readonly requestsSkippedAsDuplicate: number;
+  readonly engineersCreated: number;
+  readonly depotsCreated: number;
+  readonly requestsWithoutCoordinates: number;
+  readonly warnings: string[];
+  readonly errors: string[];
 }

@@ -113,7 +113,7 @@ class Engineer(Record):
 class Policy(Record):
     """Supported catalog choice; preferences cannot disable hard constraints."""
 
-    policy_id: Literal["fast", "compact", "sla", "balanced", "eco"]
+    policy_id: Literal["fast", "compact", "sla", "balanced", "eco", "covering"]
     parameters: dict[str, str | int | float | bool | None]
 
     @model_validator(mode="after")

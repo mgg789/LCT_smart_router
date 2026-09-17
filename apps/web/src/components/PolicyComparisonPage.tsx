@@ -3,6 +3,8 @@ import { POLICY_DESCRIPTIONS, POLICY_LABELS } from '../lib/reasons';
 import { formatClock, formatDurationMin, formatKm } from '../lib/time';
 
 interface PolicyComparisonPageProps {
+  readonly recorded?: boolean;
+  readonly readOnly?: boolean;
   readonly snapshot: DashboardSnapshot;
   readonly comparison: PolicyComparisonResponse | null;
   readonly loading: boolean;
@@ -12,6 +14,8 @@ interface PolicyComparisonPageProps {
 
 /** Renders a non-mutating comparison of every Router policy and the official FIFO baseline. */
 export function PolicyComparisonPage({
+  recorded = false,
+  readOnly = false,
   snapshot,
   comparison,
   loading,
@@ -32,17 +36,25 @@ export function PolicyComparisonPage({
             <p className="text-sm text-muted">Одинаковые заявки, инженеры и дорожная матрица</p>
             <h1 className="mt-1 text-2xl font-semibold">Сравнение политик</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-              Пять политик считаются на одном снимке. «Базовая из ТЗ» берёт заявки по очереди
-              поступления и отдаёт их первому подходящему свободному инженеру.
+              Рабочие политики считаются на одном снимке с тем же составом инженеров. Строка
+              «Базовая из ТЗ» выделена отдельно: это прямое последовательное назначение из ТЗ
+              (очередь заявок → первый подходящий свободный инженер), а не оптимизация. Сравнивайте
+              с ней число исполнителей и пробег.
             </p>
           </div>
           <button
             type="button"
             onClick={onRefresh}
-            disabled={loading}
+            disabled={loading || readOnly}
             className="rounded-full bg-bee px-4 py-2 text-sm font-semibold disabled:opacity-50"
           >
-            {loading ? 'Считаем шесть стратегий…' : comparison ? 'Пересчитать' : 'Сравнить'}
+            {recorded
+              ? 'Показать записанное сравнение'
+              : loading
+                ? 'Считаем шесть стратегий…'
+                : comparison
+                  ? 'Пересчитать'
+                  : 'Сравнить'}
           </button>
         </div>
 
@@ -63,7 +75,9 @@ export function PolicyComparisonPage({
 
         {!loading && !comparison && !error ? (
           <div className="mt-8 rounded-2xl border border-dashed border-line p-8 text-center text-sm text-muted">
-            Запустите сравнение. Активный план и выбранная политика при этом не изменятся.
+            {readOnly
+              ? 'Новое сравнение станет доступно после восстановления связи.'
+              : 'Запустите сравнение. Активный план и выбранная политика при этом не изменятся.'}
           </div>
         ) : null}
 
@@ -103,51 +117,72 @@ export function PolicyComparisonPage({
                   </tr>
                 </thead>
                 <tbody>
-                  {comparison.rows.map((row) => {
-                    const active = row.kind === 'policy' && row.strategyId === snapshot.policyId;
-                    return (
-                      <tr
-                        key={row.strategyId}
-                        className={`border-t border-line ${active ? 'bg-bee/15' : ''}`}
-                      >
-                        <td className="px-4 py-4">
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold">{strategyLabel(row.strategyId)}</span>
-                            {active ? (
-                              <span className="rounded-full bg-bee px-2 py-0.5 text-[11px] font-medium">
-                                активная
+                  {[...comparison.rows]
+                    .sort(
+                      (left, right) =>
+                        Number(right.kind === 'baseline') - Number(left.kind === 'baseline'),
+                    )
+                    .map((row) => {
+                      const active = row.kind === 'policy' && row.strategyId === snapshot.policyId;
+                      const baseline = row.kind === 'baseline';
+                      return (
+                        <tr
+                          key={row.strategyId}
+                          className={`border-t border-line ${
+                            baseline ? 'bg-amber-50' : active ? 'bg-bee/15' : ''
+                          }`}
+                        >
+                          <td className="px-4 py-4">
+                            <div className="flex items-center gap-2">
+                              <span className={`font-semibold ${baseline ? 'text-amber-950' : ''}`}>
+                                {strategyLabel(row.strategyId)}
+                              </span>
+                              {baseline ? (
+                                <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[11px] font-semibold text-amber-950">
+                                  сравнение с ТЗ
+                                </span>
+                              ) : null}
+                              {active ? (
+                                <span className="rounded-full bg-bee px-2 py-0.5 text-[11px] font-medium">
+                                  активная
+                                </span>
+                              ) : null}
+                            </div>
+                            <p className="mt-1 max-w-xs text-[12px] text-muted">
+                              {strategyDescription(row.strategyId)}
+                            </p>
+                            {!row.isUsable ? (
+                              <span className="mt-1 inline-block text-[12px] text-red-700">
+                                План непригоден
                               </span>
                             ) : null}
-                          </div>
-                          <p className="mt-1 max-w-xs text-[12px] text-muted">
-                            {strategyDescription(row.strategyId)}
-                          </p>
-                          {!row.isUsable ? (
-                            <span className="mt-1 inline-block text-[12px] text-red-700">
-                              План непригоден
-                            </span>
-                          ) : null}
-                        </td>
-                        <td className="px-3 py-4 font-medium">
-                          {row.metrics.assignedCount}/{row.metrics.requestsTotal}
-                        </td>
-                        <td className="px-3 py-4">{row.metrics.unassignedCount}</td>
-                        <td className="px-3 py-4">
-                          {row.metrics.urgentAssignedCount}/{row.metrics.urgentTotal}
-                        </td>
-                        <td className="px-3 py-4">{row.metrics.engineersUsed}</td>
-                        <td className="px-3 py-4">{formatKm(row.metrics.distanceKm)}</td>
-                        <td className="px-3 py-4">
-                          {formatDurationMin(row.metrics.travelTimeSec)}
-                        </td>
-                        <td className="px-3 py-4">{formatDurationMin(row.metrics.workTimeSec)}</td>
-                        <td className="px-3 py-4">
-                          {formatDurationMin(row.metrics.waitingTimeSec)}
-                        </td>
-                        <td className="px-3 py-4">{Math.round(row.calculationMs)} мс</td>
-                      </tr>
-                    );
-                  })}
+                          </td>
+                          <td className="px-3 py-4 font-medium">
+                            {row.metrics.assignedCount}/{row.metrics.requestsTotal}
+                          </td>
+                          <td className="px-3 py-4">{row.metrics.unassignedCount}</td>
+                          <td className="px-3 py-4">
+                            {row.metrics.urgentAssignedCount}/{row.metrics.urgentTotal}
+                          </td>
+                          <td className="px-3 py-4">{row.metrics.engineersUsed}</td>
+                          <td className="px-3 py-4">{formatKm(row.metrics.distanceKm)}</td>
+                          <td className="px-3 py-4">
+                            {formatDurationMin(row.metrics.travelTimeSec)}
+                          </td>
+                          <td className="px-3 py-4">
+                            {formatDurationMin(row.metrics.workTimeSec)}
+                          </td>
+                          <td className="px-3 py-4">
+                            {formatDurationMin(row.metrics.waitingTimeSec)}
+                          </td>
+                          <td className="px-3 py-4">
+                            {recorded
+                              ? 'Запись · не замерено'
+                              : `${Math.round(row.calculationMs)} мс`}
+                          </td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>

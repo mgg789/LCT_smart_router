@@ -1,7 +1,8 @@
 import maplibregl from 'maplibre-gl';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { DashboardSnapshot } from '../api/types';
 import { unassignedRequests } from '../domain/dashboard';
+import { localMapStyle } from '../domain/localBasemap';
 import { regionStyle, requestRegion, routeRegion } from '../domain/regions';
 import { mapRouteSegments } from '../domain/travel';
 import { engineerColor } from '../lib/reasons';
@@ -21,10 +22,24 @@ export function DayMap({
   selectedRequestId,
   onSelectRequest,
 }: DayMapProps) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [forceLocal, setForceLocal] = useState(!navigator.onLine);
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    const update = () => setForceLocal(!navigator.onLine);
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    return () => {
+      window.removeEventListener('online', update);
+      window.removeEventListener('offline', update);
+    };
+  }, []);
+  const containerRef = useRef<HTMLElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const onSelectRef = useRef(onSelectRequest);
   const fittedKeyRef = useRef<string | null>(null);
+  const [localMap, setLocalMap] = useState(forceLocal);
+  const [mapFailed, setMapFailed] = useState(false);
+  const [mapReady, setMapReady] = useState(false);
   onSelectRef.current = onSelectRequest;
 
   useEffect(() => {
@@ -32,13 +47,38 @@ export function DayMap({
     if (!container) {
       return;
     }
-    const map = new maplibregl.Map({
-      container,
-      style: STYLE_URL,
-      center: [37.62, 55.75],
-      zoom: 11.4,
-      attributionControl: false,
-    });
+    container.dataset.mapAttempt = String(retry);
+    setLocalMap(forceLocal);
+    setMapFailed(false);
+    setMapReady(false);
+    fittedKeyRef.current = null;
+    let map: maplibregl.Map;
+    try {
+      map = new maplibregl.Map({
+        container,
+        style: forceLocal ? localMapStyle() : STYLE_URL,
+        center: [37.62, 55.75],
+        zoom: 11.4,
+        attributionControl: false,
+      });
+    } catch {
+      setMapFailed(true);
+      return;
+    }
+    let fallback = forceLocal;
+    const markReady = () => setMapReady(true);
+    map.on('idle', markReady);
+    const activateLocalMap = () => {
+      if (fallback) return;
+      fallback = true;
+      setMapReady(false);
+      setLocalMap(true);
+      map.setStyle(localMapStyle());
+    };
+    const timeout = window.setTimeout(() => {
+      if (!map.isStyleLoaded()) activateLocalMap();
+    }, 6000);
+    map.on('error', activateLocalMap);
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
     map.on('click', 'stops-circle', (event) => pickRequest(event, onSelectRef));
     map.on('click', 'unassigned-circle', (event) => pickRequest(event, onSelectRef));
@@ -47,10 +87,13 @@ export function DayMap({
     mapRef.current = map;
     return () => {
       observer.disconnect();
+      window.clearTimeout(timeout);
+      map.off('error', activateLocalMap);
+      map.off('idle', markReady);
       map.remove();
       mapRef.current = null;
     };
-  }, []);
+  }, [forceLocal, retry]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -59,7 +102,7 @@ export function DayMap({
     }
 
     const apply = () => {
-      if (mapRef.current !== map || !map.isStyleLoaded()) {
+      if (mapRef.current !== map || !map.getStyle()) {
         return false;
       }
       const allRoutes = snapshot.plan.plan?.routes ?? [];
@@ -213,18 +256,23 @@ export function DayMap({
             'circle-stroke-color': ['get', 'regionColor'],
           },
         });
-        map.addLayer({
-          id: 'starts-label',
-          type: 'symbol',
-          source: 'starts',
-          layout: {
-            'text-field': 'Старт плана',
-            'text-size': 11,
-            'text-offset': [0, 1.2],
-            'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
-          },
-          paint: { 'text-color': '#202124', 'text-halo-color': '#ffffff', 'text-halo-width': 1.2 },
-        });
+        if (map.getStyle().glyphs)
+          map.addLayer({
+            id: 'starts-label',
+            type: 'symbol',
+            source: 'starts',
+            layout: {
+              'text-field': 'Старт плана',
+              'text-size': 11,
+              'text-offset': [0, 1.2],
+              'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
+            },
+            paint: {
+              'text-color': '#202124',
+              'text-halo-color': '#ffffff',
+              'text-halo-width': 1.2,
+            },
+          });
       });
 
       upsert(map, 'stops', { type: 'FeatureCollection', features: jobFeatures }, () => {
@@ -239,17 +287,18 @@ export function DayMap({
             'circle-stroke-color': ['get', 'regionColor'],
           },
         });
-        map.addLayer({
-          id: 'stops-label',
-          type: 'symbol',
-          source: 'stops',
-          layout: {
-            'text-field': ['to-string', ['get', 'sequence']],
-            'text-size': 11,
-            'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
-          },
-          paint: { 'text-color': '#ffffff' },
-        });
+        if (map.getStyle().glyphs)
+          map.addLayer({
+            id: 'stops-label',
+            type: 'symbol',
+            source: 'stops',
+            layout: {
+              'text-field': ['to-string', ['get', 'sequence']],
+              'text-size': 11,
+              'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+            },
+            paint: { 'text-color': '#ffffff' },
+          });
       });
 
       upsert(map, 'lunches', { type: 'FeatureCollection', features: lunchFeatures }, () => {
@@ -264,18 +313,23 @@ export function DayMap({
             'circle-stroke-color': '#E07A2F',
           },
         });
-        map.addLayer({
-          id: 'lunch-label',
-          type: 'symbol',
-          source: 'lunches',
-          layout: {
-            'text-field': 'Обед',
-            'text-size': 11,
-            'text-offset': [0, 1.2],
-            'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
-          },
-          paint: { 'text-color': '#8A4B12', 'text-halo-color': '#ffffff', 'text-halo-width': 1.2 },
-        });
+        if (map.getStyle().glyphs)
+          map.addLayer({
+            id: 'lunch-label',
+            type: 'symbol',
+            source: 'lunches',
+            layout: {
+              'text-field': 'Обед',
+              'text-size': 11,
+              'text-offset': [0, 1.2],
+              'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
+            },
+            paint: {
+              'text-color': '#8A4B12',
+              'text-halo-color': '#ffffff',
+              'text-halo-width': 1.2,
+            },
+          });
       });
 
       upsert(map, 'unassigned', { type: 'FeatureCollection', features: unassignedFeatures }, () => {
@@ -292,7 +346,7 @@ export function DayMap({
         });
       });
 
-      const fitKey = `${selectedEngineerId ?? 'all'}:${selectedRequestId ?? ''}`;
+      const fitKey = `${retry}:${forceLocal}:${selectedEngineerId ?? 'all'}:${selectedRequestId ?? ''}`;
       if (fittedKeyRef.current !== fitKey) {
         fittedKeyRef.current = fitKey;
         const bounds = new maplibregl.LngLatBounds();
@@ -315,27 +369,71 @@ export function DayMap({
       return true;
     };
 
-    if (apply()) {
-      return;
-    }
+    apply();
     const onStyle = () => {
       apply();
     };
-    map.on('styledata', onStyle);
+    map.on('style.load', onStyle);
     map.once('load', onStyle);
     return () => {
-      map.off('styledata', onStyle);
+      map.off('style.load', onStyle);
       map.off('load', onStyle);
     };
-  }, [selectedEngineerId, selectedRequestId, snapshot]);
+  }, [selectedEngineerId, selectedRequestId, snapshot, forceLocal, retry]);
 
   return (
     <>
-      <div ref={containerRef} className="absolute inset-0 h-full w-full" />
+      <section
+        ref={containerRef}
+        aria-label="Карта маршрутов"
+        aria-busy={!mapReady && !mapFailed}
+        data-map-ready={mapReady}
+        className="absolute inset-0 h-full w-full"
+      />
+      {!mapReady && !mapFailed ? (
+        <div className="absolute top-14 left-3 rounded-xl bg-white px-3 py-2 text-xs text-muted">
+          Загружаем карту…
+        </div>
+      ) : null}
+      {localMap || mapFailed ? (
+        <div
+          role="status"
+          className="absolute top-3 left-3 right-3 rounded-xl bg-white px-3 py-2 text-xs text-ink shadow"
+        >
+          {mapFailed
+            ? 'Карта недоступна в этом браузере. Используйте список заявок и таймлайн.'
+            : 'Сохранённая карта района демо · улицы, парки и водоёмы'}
+          {localMap && !forceLocal && !mapFailed ? (
+            <button
+              type="button"
+              className="ml-2 underline"
+              onClick={() => setRetry((value) => value + 1)}
+            >
+              Повторить онлайн-карту
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       <div className="pointer-events-none absolute bottom-3 left-3 rounded-xl bg-white/90 px-3 py-2 text-[11px] text-muted shadow">
         {selectedEngineerId
           ? 'Показан план выбранного инженера. Пунктир — схематичная связь точек, сплошная линия — геометрия дороги.'
           : 'План дня без live-позиции инженеров. Пунктир — схематичная связь точек, сплошная линия — геометрия дороги.'}
+      </div>
+      <div className="absolute right-2 bottom-1 rounded bg-white/90 px-2 text-[10px] text-muted">
+        ©{' '}
+        <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
+          OpenStreetMap contributors
+        </a>
+        {' · '}
+        {localMap ? (
+          <a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noreferrer">
+            ODbL
+          </a>
+        ) : (
+          <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">
+            CARTO
+          </a>
+        )}
       </div>
     </>
   );

@@ -44,6 +44,7 @@ export class AppliedPlanService {
       },
     });
 
+    await this.ensureCoveringEngineers(tx, now, main);
     await this.materialise(tx, plan.id, main);
     await this.issueMorningEquipment(tx, now, main);
     await this.syncAssignmentStates(tx, now, main);
@@ -368,6 +369,88 @@ export class AppliedPlanService {
           restoreOption: alert.restore_option ?? Prisma.DbNull,
           sourceResultId: resultId,
           createdAt: BigInt(now),
+        },
+      });
+    }
+  }
+
+  /**
+   * Persist synthesized covering-policy engineers so their routes stay visible
+   * and the next snapshot includes the extra crew that produced the plan.
+   */
+  private async ensureCoveringEngineers(tx: Tx, now: number, plan: RouterPlan): Promise<void> {
+    const coveringIds = [
+      ...new Set(
+        plan.routes
+          .map((route) => route.engineer_id)
+          .filter((engineerId) => engineerId.startsWith('covering-')),
+      ),
+    ];
+    if (coveringIds.length === 0) {
+      return;
+    }
+    const existing = await tx.engineer.findMany({
+      where: { id: { in: coveringIds } },
+      select: { id: true },
+    });
+    const known = new Set(existing.map((row) => row.id));
+    const missing = coveringIds.filter((engineerId) => !known.has(engineerId));
+    if (missing.length === 0) {
+      return;
+    }
+    const templates = await tx.engineer.findMany({
+      where: { archivedAt: null },
+      include: { days: { orderBy: { workDate: 'desc' }, take: 1 } },
+      orderBy: { inputOrder: 'asc' },
+    });
+    const fallback = templates[0];
+    if (!fallback) {
+      return;
+    }
+    const byRegion = new Map<string, (typeof templates)[number]>();
+    for (const template of templates) {
+      if (template.region && !byRegion.has(template.region)) {
+        byRegion.set(template.region, template);
+      }
+    }
+    for (const engineerId of missing) {
+      const parsed = /^covering-(.+)-(\d+)$/.exec(engineerId);
+      const region = parsed?.[1] ?? fallback.region ?? 'any';
+      const index = Number(parsed?.[2] ?? 0);
+      const template = byRegion.get(region) ?? fallback;
+      const day = template.days[0];
+      await tx.engineer.create({
+        data: {
+          id: engineerId,
+          displayName: `Резерв ${region} ${index || engineerId}`,
+          inputOrder: 10_000 + index,
+          skills: ['local', 'connection', 'emergency'],
+          transportType: 'car',
+          depotId: template.depotId,
+          homeLat: template.homeLat,
+          homeLon: template.homeLon,
+          region: region === 'any' ? template.region : region,
+          origin: 'synthesized',
+          createdAt: BigInt(now),
+          updatedAt: BigInt(now),
+        },
+      });
+      if (!day) {
+        continue;
+      }
+      await tx.engineerDay.create({
+        data: {
+          engineerId,
+          workDate: day.workDate,
+          shiftStartAt: day.shiftStartAt,
+          shiftEndAt: day.shiftEndAt,
+          lunchEnabled: day.lunchEnabled,
+          lunchDurationSec: day.lunchDurationSec,
+          lunchWindowStartAt: day.lunchWindowStartAt,
+          lunchWindowEndAt: day.lunchWindowEndAt,
+          lunchRequired: day.lunchRequired,
+          createdAt: BigInt(now),
+          updatedAt: BigInt(now),
         },
       });
     }

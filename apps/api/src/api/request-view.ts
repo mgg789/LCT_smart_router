@@ -1,5 +1,7 @@
 import type { Request } from '../generated/prisma/client';
-import { findWorkType } from '../orchestrator/requests';
+// Catalog file only — the requests barrel also loads Nest modules and can leave
+// `findWorkType` undefined under CJS circular imports in unit tests.
+import { findWorkType } from '../orchestrator/requests/work-type.catalog';
 
 /**
  * What a caller is shown about a request.

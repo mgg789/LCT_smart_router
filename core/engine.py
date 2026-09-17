@@ -10,9 +10,11 @@ from dataclasses import dataclass
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 
 from core.contracts import (
+    Engineer,
     EquipmentType,
     GeoPoint,
     Plan,
+    Policy,
     RouterTaskSnapshot,
     RouterTechnicalSettings,
     TravelTimeMode,
@@ -559,6 +561,88 @@ def _search(
     return plan
 
 
+_COVERING_SKILLS: tuple[str, ...] = ("local", "connection", "emergency")
+
+
+def _covering_clone(template: Engineer, index: int) -> Engineer:
+    """Clone a regional template as a synthesized extra engineer with every skill."""
+    region = template.region or "any"
+    return template.model_copy(
+        update={
+            "engineer_id": f"covering-{region}-{index}",
+            "input_order": 10_000 + index,
+            "skills": list(_COVERING_SKILLS),
+            "transport_type": "car",
+            "availability": "online",
+            "expected_online_at": None,
+            "lunch_taken": False,
+        }
+    )
+
+
+def _augment_covering(snapshot: RouterTaskSnapshot, extra: int) -> RouterTaskSnapshot:
+    """Add ``extra`` synthesized engineers, round-robin across regions."""
+    if extra <= 0 or not snapshot.engineers:
+        return snapshot
+    templates: dict[str, Engineer] = {}
+    for engineer in snapshot.engineers:
+        key = engineer.region or "any"
+        if key not in templates:
+            templates[key] = engineer
+    regions = sorted(templates)
+    extras = [
+        _covering_clone(templates[regions[index % len(regions)]], index + 1)
+        for index in range(extra)
+    ]
+    return snapshot.model_copy(update={"engineers": [*snapshot.engineers, *extras]})
+
+
+def _solve_covering(
+    snapshot: RouterTaskSnapshot,
+    travel: TravelProvider,
+    settings: SearchSettings,
+    memory: EngineMemory | None,
+    context_version: str | None,
+) -> EngineOutput:
+    """Find the smallest extra crew that covers every request, then keep those routes."""
+    compact = snapshot.model_copy(update={"policy": Policy(policy_id="compact", parameters={})})
+    first = _solve_prepared(compact, travel, settings, None, context_version)
+    unassigned = first.main.summary.unassigned_count
+    if unassigned == 0:
+        return EngineOutput(
+            first.main,
+            first.baseline,
+            first.path,
+            EngineMemory(snapshot.model_copy(deep=True), first.main, first.memory.context_version),
+        )
+    low, high = 1, unassigned
+    best_n = unassigned
+    best = None
+    while low <= high:
+        mid = (low + high) // 2
+        trial = _solve_prepared(
+            _augment_covering(compact, mid), travel, settings, None, context_version
+        )
+        if trial.main.summary.unassigned_count == 0:
+            best_n = mid
+            best = trial
+            high = mid - 1
+        else:
+            low = mid + 1
+    if best is None:
+        best = _solve_prepared(
+            _augment_covering(compact, unassigned), travel, settings, memory, context_version
+        )
+        best_n = unassigned
+    covered = _augment_covering(snapshot, best_n)
+    return EngineOutput(
+        best.main,
+        best.baseline,
+        best.path,
+        EngineMemory(covered, best.main, best.memory.context_version),
+    )
+
+
 def solve(
     snapshot: RouterTaskSnapshot,
     travel: TravelProvider,
@@ -570,7 +654,27 @@ def solve(
 
     Policy stages preserve achieved coverage/lunch criteria before their resource order.
     Fast keeps engineer count as a final candidate tie-break; compact optimizes it first.
+    Covering first adds the fewest extra engineers that assign every remaining request.
     """
+    settings = settings or SearchSettings()
+    if snapshot.policy.policy_id == "covering":
+        default_context_version = routing_context_version(travel, settings.technical())
+        travel = configure_travel(travel, settings.technical(), snapshot.planning_as_of)
+        snapshot = apply_system_policy(snapshot, settings)
+        return _solve_covering(
+            snapshot, travel, settings, memory, context_version or default_context_version
+        )
+    return _solve_prepared(snapshot, travel, settings, memory, context_version)
+
+
+def _solve_prepared(
+    snapshot: RouterTaskSnapshot,
+    travel: TravelProvider,
+    settings: SearchSettings | None = None,
+    memory: EngineMemory | None = None,
+    context_version: str | None = None,
+) -> EngineOutput:
+    """Run the existing baseline + staged search on an already expanded snapshot."""
     settings = settings or SearchSettings()
     default_context_version = routing_context_version(travel, settings.technical())
     travel = configure_travel(travel, settings.technical(), snapshot.planning_as_of)
