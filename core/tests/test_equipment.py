@@ -72,7 +72,8 @@ def test_missing_stock_has_structured_reason_and_candidate_blocker(snapshot, gra
 
     assert assignment.status == "unassigned"
     assert assignment.reasons[0].code == "NO_EQUIPMENT_STOCK"
-    assert assignment.reasons[0].facts == {"equipment_type": "smart_speaker"}
+    assert assignment.reasons[0].facts["equipment_type"] == "smart_speaker"
+    assert assignment.reasons[0].facts["required_skill"] == request.required_skill
     evidence = build_plan_evidence(task, output.main, travel).requests[0]
     assert evidence.required_equipment == "smart_speaker"
     assert evidence.candidates[0].equipment_stock == 0

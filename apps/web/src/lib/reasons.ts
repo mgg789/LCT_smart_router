@@ -81,6 +81,40 @@ export function initials(name: string): string {
   return `${first}${second}`.toUpperCase();
 }
 
+export const SKILL_LABELS: Record<string, string> = {
+  local: 'локальные работы',
+  connection: 'подключение',
+  emergency: 'авария',
+};
+
+export const SKILL_MARKS: Record<string, string> = {
+  local: 'Л',
+  connection: 'П',
+  emergency: 'А',
+};
+
+export const TRANSPORT_LABELS: Record<string, string> = {
+  car: 'авто',
+  walk: 'пешком',
+  bike: 'велосипед',
+  transit: 'общественный транспорт',
+};
+
+/** Dispatcher label for a stored skill code. Unknown codes stay as-is. */
+export function skillLabel(skill: string): string {
+  return SKILL_LABELS[skill] ?? skill;
+}
+
+/** Short map mark so the day map shows which skill the stop required. */
+export function skillMark(skill: string): string {
+  return SKILL_MARKS[skill] ?? skill.slice(0, 1).toUpperCase();
+}
+
+/** Dispatcher label for a stored transport code. */
+export function transportLabel(transport: string): string {
+  return TRANSPORT_LABELS[transport] ?? transport;
+}
+
 export const POLICY_LABELS: Record<string, string> = {
   compact: 'Компактнее — меньше инженеров',
   fast: 'Быстрее до клиента',
@@ -97,7 +131,7 @@ export const POLICY_DESCRIPTIONS: Record<string, string> = {
   balanced: 'Покрытие заявок, затем ровная загрузка между инженерами.',
   eco: 'Покрытие заявок, затем короткий суммарный пробег.',
   covering:
-    'Добавляет минимальное число новых инженеров, чтобы назначить все оставшиеся заявки, и рисует маршрут каждому из них.',
+    'Сначала отдаёт остаток свободным бригадам той же зоны, затем добавляет минимум новых инженеров и рисует маршрут каждому, кому досталась работа.',
   baseline:
     'Базовая из ТЗ: заявки по очереди поступления первому подходящему свободному инженеру. Нужна для сравнения, не как рабочая политика.',
 };

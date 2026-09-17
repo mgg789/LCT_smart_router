@@ -46,7 +46,6 @@ import {
 
 const SESSION_KEY = 'lct.dispatcher.session';
 const DEFAULT_REBUILD_TIMEOUT_MS = 90_000;
-const COVERING_REBUILD_TIMEOUT_MS = 180_000;
 
 export interface DayEvent {
   readonly id: string;
@@ -809,9 +808,9 @@ export function useDashboard() {
   };
 }
 
-/** Covering runs a second leftover solve; the official day does not finish in 45s. */
-function rebuildTimeoutMs(policyId: PolicyId): number {
-  return policyId === 'covering' ? COVERING_REBUILD_TIMEOUT_MS : DEFAULT_REBUILD_TIMEOUT_MS;
+/** Covering leftover is FIFO on idle crews; one compact solve must finish in this window. */
+function rebuildTimeoutMs(_policyId: PolicyId): number {
+  return DEFAULT_REBUILD_TIMEOUT_MS;
 }
 
 async function waitForRebuild(

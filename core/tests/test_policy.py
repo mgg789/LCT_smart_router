@@ -245,3 +245,123 @@ def test_covering_adds_minimum_engineers_to_assign_every_request(snapshot, graph
     extra_ids = [route.engineer_id for route in covering_plan.routes if route.engineer_id.startswith("covering-")]
     assert extra_ids == ["covering-east-1"]
     assert any(stop.request_id == "emergency-job" for route in covering_plan.routes for stop in route.stops)
+
+
+def test_covering_uses_idle_same_region_engineer_before_extras(snapshot, graph):
+    """Leftover covering must open an idle skilled crew before synthesizing extras."""
+    from core.engine import _cover_leftovers
+    from core.schedule import assemble_plan
+
+    data = snapshot.model_dump()
+    start = data["planning_as_of"]
+    first = data["engineers"][0]
+    idle = dict(first)
+    first.update(
+        engineer_id="busy-local",
+        input_order=0,
+        skills=["local"],
+        start_location=graph.nodes[1].location.model_dump(),
+        region="east",
+    )
+    idle.update(
+        engineer_id="idle-emergency",
+        input_order=1,
+        skills=["emergency"],
+        start_location=graph.nodes[2].location.model_dump(),
+        region="east",
+    )
+    data["engineers"] = [first, idle]
+    data["requests"] = [
+        {
+            "request_id": "local-job",
+            "arrival_order": 1,
+            "location": graph.nodes[1].location.model_dump(),
+            "service_duration_sec": 300,
+            "window_start_at": start,
+            "window_end_at": start + 7200,
+            "priority": "normal",
+            "required_skill": "local",
+            "required_transport": None,
+            "region": "east",
+        },
+        {
+            "request_id": "emergency-job",
+            "arrival_order": 2,
+            "location": graph.nodes[2].location.model_dump(),
+            "service_duration_sec": 300,
+            "window_start_at": start,
+            "window_end_at": start + 7200,
+            "priority": "normal",
+            "required_skill": "emergency",
+            "required_transport": None,
+            "region": "east",
+        },
+    ]
+    task = RouterTaskSnapshot.model_validate({**data, "policy": {"policy_id": "covering", "parameters": {}}})
+    travel = GraphTravel(graph)
+    from core.schedule import fixed_order
+
+    locked_routes = []
+    for engineer in task.engineers:
+        order = ["local-job"] if engineer.engineer_id == "busy-local" else []
+        route = fixed_order(task, engineer, order, travel)
+        assert route is not None
+        locked_routes.append(route)
+    locked = assemble_plan(task, locked_routes)
+    assert locked.summary.unassigned_count == 1
+    engineers, routes = _cover_leftovers(task, locked, travel)
+    covered = assemble_plan(task.model_copy(update={"engineers": engineers}), routes)
+    assert covered.summary.unassigned_count == 0
+    owner = next(item.engineer_id for item in covered.assignments if item.request_id == "emergency-job")
+    assert owner == "idle-emergency"
+    assert not any(engineer.engineer_id.startswith("covering-") for engineer in engineers)
+
+
+def test_required_skill_changes_who_receives_the_job(snapshot, graph):
+    """Skill is a hard constraint: the same address goes to a different crew when the skill changes."""
+    data = snapshot.model_dump()
+    start = data["planning_as_of"]
+    first = data["engineers"][0]
+    second = dict(first)
+    first.update(
+        engineer_id="local-crew",
+        input_order=0,
+        skills=["local"],
+        start_location=graph.nodes[1].location.model_dump(),
+        region="east",
+    )
+    second.update(
+        engineer_id="emergency-crew",
+        input_order=1,
+        skills=["emergency"],
+        start_location=graph.nodes[1].location.model_dump(),
+        region="east",
+    )
+    job = {
+        "request_id": "skill-job",
+        "arrival_order": 1,
+        "location": graph.nodes[1].location.model_dump(),
+        "service_duration_sec": 300,
+        "window_start_at": start,
+        "window_end_at": start + 7200,
+        "priority": "normal",
+        "required_skill": "local",
+        "required_transport": None,
+        "region": "east",
+    }
+    data["engineers"] = [first, second]
+    data["requests"] = [job]
+    travel = GraphTravel(graph)
+    local_plan = solve(
+        RouterTaskSnapshot.model_validate({**data, "policy": {"policy_id": "compact", "parameters": {}}}),
+        travel,
+        SETTINGS,
+    ).main
+    job["required_skill"] = "emergency"
+    emergency_plan = solve(
+        RouterTaskSnapshot.model_validate({**data, "policy": {"policy_id": "compact", "parameters": {}}}),
+        travel,
+        SETTINGS,
+    ).main
+    assert local_plan.assignments[0].engineer_id == "local-crew"
+    assert emergency_plan.assignments[0].engineer_id == "emergency-crew"

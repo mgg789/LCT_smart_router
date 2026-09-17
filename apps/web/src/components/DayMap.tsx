@@ -5,7 +5,7 @@ import { unassignedRequests } from '../domain/dashboard';
 import { localMapStyle } from '../domain/localBasemap';
 import { regionStyle, requestRegion, routeRegion } from '../domain/regions';
 import { mapRouteSegments } from '../domain/travel';
-import { engineerColor } from '../lib/reasons';
+import { engineerColor, skillMark } from '../lib/reasons';
 
 interface DayMapProps {
   readonly snapshot: DashboardSnapshot;
@@ -177,6 +177,7 @@ export function DayMap({
               properties: {
                 requestId: stop.requestId,
                 sequence,
+                skillMark: request ? skillMark(request.requiredSkill) : '',
                 engineerId: route.engineerId,
                 selected: stop.requestId === selectedRequestId ? 1 : 0,
                 color: engineerColor(route.engineerId),
@@ -204,6 +205,7 @@ export function DayMap({
               type: 'Feature' as const,
               properties: {
                 requestId: request.id,
+                skillMark: skillMark(request.requiredSkill),
                 selected: request.id === selectedRequestId ? 1 : 0,
                 regionColor: regionStyle(requestRegion(snapshot, request)).color,
               },
@@ -293,7 +295,7 @@ export function DayMap({
             type: 'symbol',
             source: 'stops',
             layout: {
-              'text-field': ['to-string', ['get', 'sequence']],
+              'text-field': ['concat', ['to-string', ['get', 'sequence']], ' ', ['get', 'skillMark']],
               'text-size': 11,
               'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
             },

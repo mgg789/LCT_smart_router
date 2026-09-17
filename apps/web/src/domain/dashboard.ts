@@ -96,6 +96,11 @@ export function unassignedRequests(snapshot: DashboardSnapshot): RequestView[] {
   return snapshot.requests.filter((item) => unassignedIds.has(item.id));
 }
 
+/** Sum planned mileage of the engineers currently shown for the selected region. */
+export function regionalDistanceKm(engineers: readonly EngineerSummary[]): number {
+  return engineers.reduce((sum, item) => sum + item.distanceKm, 0);
+}
+
 export function engineerSummaries(snapshot: DashboardSnapshot): EngineerSummary[] {
   return snapshot.engineers.map((engineer) => {
     const route = routeForEngineer(snapshot, engineer.id);

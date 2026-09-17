@@ -9,13 +9,13 @@
     "urgent_requests": 16
   },
   "baseline": {
-    "plan_sha256": "524dab912c16ce607b37c550b322fdb2f7996f56b75d71f0c238c336aab5fc27",
+    "plan_sha256": "e17a1dca973297d076d851db463f16af4241554800670cc61e59d5a2c3adc9b6",
     "assigned_count": 33,
     "urgent_assigned_count": 2,
     "travel_time_sec": 65473
   },
   "main": {
-    "plan_sha256": "28378bbb77bbe88198491125c232b09e20ce5383ed766fe2afa63b41fd7bc882",
+    "plan_sha256": "f4005d2985e25ef9f21c0c13a2812e1c058f8f9183bdf6a073041a40b70a2f49",
     "assigned_count": 50,
     "urgent_assigned_count": 16,
     "travel_time_sec": 57945,
