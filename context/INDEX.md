@@ -87,7 +87,7 @@
 - `data/dataset/` — официальный датасет (см. §1);
 - `context/sources/` — оригиналы первоисточников: PDF кейса «3. Билайн Бизнес», шаблон презентации ЛЦТ (только чтение, не редактировать);
 - `context/legacy_code/core/` — замороженный day-0 прототип ядра (D-19; тесты рабочие);
-- `docs/` — документация подсистем; `solver.md` links the current Router v1 and retains historical prototype documentation.
+- `docs/` — документация подсистем; `solver.md` links the current Router v1 and retains historical prototype documentation; [ci.md](../docs/ci.md) — SourceCraft CI/CD and the `navix.droidje.com` gate.
 - `core/` — current autonomous Router v1 (D-22): Engine, Runtime and geographic resources; integration and limitations in `core/README.md`.
 
 ---
@@ -113,6 +113,7 @@
 | Скоуп-споры «делаем/не делаем» | 18 §3, 29, 32 §1.1 |
 | Официальные уточнения условий задачи (QA 16.09) | 47, 48; наш разбор — 49; правки концепции — 50 |
 | Питч и демо | 13, 03, 17; цифры — только из 18 |
+| CI/CD, деплой на MGG, публичный гейт | [docs/ci.md](../docs/ci.md), runbook §2 |
 
 ## Статусные поправки к старым файлам
 

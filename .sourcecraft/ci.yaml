@@ -1,0 +1,91 @@
+# Native SourceCraft CI/CD. Triggers fire only after this file is on the
+# repository default branch (`main`). See docs/ci.md.
+on:
+  pull_request:
+    - workflows: [ci]
+      filter:
+        target_branches: ["dev", "main"]
+  push:
+    - workflows: [ci]
+      filter:
+        branches: ["dev"]
+    - workflows: [cd]
+      filter:
+        branches: ["main"]
+
+workflows:
+  ci:
+    tasks:
+      - lint
+      - test-js
+      - test-core
+      - secrets
+      - mojibake
+  cd:
+    tasks:
+      - lint
+      - test-js
+      - test-core
+      - secrets
+      - mojibake
+      - name: deploy
+        needs: [lint, test-js, test-core, secrets, mojibake]
+        env:
+          MGG_DEPLOY_SSH_KEY: ${{ secrets.MGG_DEPLOY_SSH_KEY }}
+          MGG_DEPLOY_HOST: "178.140.207.217"
+          MGG_DEPLOY_USER: "mgg"
+          MGG_DEPLOY_PORT: "2222"
+          MGG_APP_DIR: "/home/mgg/navix"
+          MGG_BRANCH: "main"
+          MGG_HEALTHCHECK_URL: "https://navix.droidje.com/"
+          MGG_HEALTHCHECK_API_URL: "http://127.0.0.1:8000/health/live"
+        cubes:
+          - name: deploy-mgg
+            image: docker.io/library/alpine:3.21
+            script:
+              - apk add --no-cache openssh-client bash
+              - chmod +x scripts/ci/ssh-deploy.sh
+              - ./scripts/ci/ssh-deploy.sh
+
+tasks:
+  - name: lint
+    cubes:
+      - name: biome
+        image: docker.io/library/node:24-bookworm
+        script:
+          - corepack enable
+          - corepack prepare pnpm@10.28.2 --activate
+          - pnpm install --frozen-lockfile
+          - pnpm lint
+      - name: ruff
+        image: docker.io/library/python:3.14-slim-bookworm
+        script:
+          - pip install --disable-pip-version-check ruff==0.16.7
+          - ruff check core
+  - name: test-js
+    cubes:
+      - name: web-and-api
+        script:
+          - chmod +x scripts/ci/run-js-tests.sh
+          - ./scripts/ci/run-js-tests.sh
+  - name: test-core
+    cubes:
+      - name: pytest
+        image: docker.io/library/python:3.14-bookworm
+        script:
+          - pip install --disable-pip-version-check -r core/requirements.txt
+          - python -m pytest core/tests -q
+  - name: secrets
+    cubes:
+      - name: gitleaks
+        image:
+          name: docker.io/zricethezav/gitleaks:v8.28.0
+          entrypoint: ""
+        script:
+          - gitleaks detect --source . --no-git --redact --verbose --config .gitleaks.toml
+  - name: mojibake
+    cubes:
+      - name: encoding
+        image: docker.io/library/node:24-bookworm
+        script:
+          - node scripts/ci/check-mojibake.mjs
