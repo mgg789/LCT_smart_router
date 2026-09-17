@@ -267,7 +267,8 @@
             "compact",
             "sla",
             "balanced",
-            "eco"
+            "eco",
+            "covering"
           ],
           "title": "Policy Id",
           "type": "string"

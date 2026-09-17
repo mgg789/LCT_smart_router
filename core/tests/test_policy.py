@@ -70,6 +70,7 @@ def test_catalog_is_strict_and_versioned(snapshot):
         "sla": "window_start_delay",
         "balanced": "max_jobs_per_engineer",
         "eco": "distance",
+        "covering": "engineers_used",
     }
     for policy_id, first_resource in expected.items():
         data = snapshot.model_dump()
@@ -188,3 +189,59 @@ def test_eco_prefers_shorter_distance_while_fast_prefers_time(snapshot):
         plan = solve(RouterTaskSnapshot.model_validate(base), travel, SETTINGS).main
         owners[policy_id] = plan.assignments[0].engineer_id
     assert owners == {"fast": "fast-eng", "eco": "eco-eng"}
+
+
+def test_covering_adds_minimum_engineers_to_assign_every_request(snapshot, graph):
+    """Covering synthesizes the fewest extra engineers that clear leftover jobs."""
+    data = snapshot.model_dump()
+    start = data["planning_as_of"]
+    first = data["engineers"][0]
+    first.update(
+        engineer_id="only-local",
+        input_order=0,
+        skills=["local"],
+        start_location=graph.nodes[1].location.model_dump(),
+        region="east",
+    )
+    data["engineers"] = [first]
+    data["requests"] = [
+        {
+            "request_id": "local-job",
+            "arrival_order": 1,
+            "location": graph.nodes[1].location.model_dump(),
+            "service_duration_sec": 300,
+            "window_start_at": start,
+            "window_end_at": start + 7200,
+            "priority": "normal",
+            "required_skill": "local",
+            "required_transport": None,
+            "region": "east",
+        },
+        {
+            "request_id": "emergency-job",
+            "arrival_order": 2,
+            "location": graph.nodes[2].location.model_dump(),
+            "service_duration_sec": 300,
+            "window_start_at": start,
+            "window_end_at": start + 7200,
+            "priority": "normal",
+            "required_skill": "emergency",
+            "required_transport": None,
+            "region": "east",
+        },
+    ]
+    compact = RouterTaskSnapshot.model_validate({**data, "policy": {"policy_id": "compact", "parameters": {}}})
+    covering = RouterTaskSnapshot.model_validate(
+        {**data, "policy": {"policy_id": "covering", "parameters": {}}}
+    )
+    travel = GraphTravel(graph)
+    compact_plan = solve(compact, travel, SETTINGS).main
+    covering_out = solve(covering, travel, SETTINGS)
+    covering_plan = covering_out.main
+
+    assert compact_plan.summary.unassigned_count == 1
+    assert covering_plan.summary.unassigned_count == 0
+    assert covering_plan.summary.assigned_count == 2
+    extra_ids = [route.engineer_id for route in covering_plan.routes if route.engineer_id.startswith("covering-")]
+    assert extra_ids == ["covering-east-1"]
+    assert any(stop.request_id == "emergency-job" for route in covering_plan.routes for stop in route.stops)

@@ -10,11 +10,13 @@ import {
   setLunchesEnabled,
   signOutDispatcher,
   uploadDataPackage,
+  importOfficialDataset,
 } from '../api/client';
 import type {
   DashboardSnapshot,
   DataUploadFile,
   DataUploadSummary,
+  OfficialImportSummary,
   PlanDelta,
   PolicyComparisonResponse,
   PolicyId,
@@ -702,6 +704,49 @@ export function useDashboard() {
     [invalidateAsyncReads, pushEvent, token, uploadingData, reportFailure, setSnapshot],
   );
 
+  const importOfficialTzDataset = useCallback(async (): Promise<OfficialImportSummary> => {
+    if (!token || sourceRef.current !== 'live' || uploadingData) {
+      throw new Error('Загрузка данных уже выполняется');
+    }
+    invalidateAsyncReads();
+    const generation = readGeneration.current;
+    setUploadingData(true);
+    setError(null);
+    try {
+      const summary = await importOfficialDataset(token);
+      if (generation !== readGeneration.current) return summary;
+      try {
+        const next = await loadDashboardSnapshot(token);
+        if (generation !== readGeneration.current) return summary;
+        setSnapshot(next);
+      } catch (refreshCause) {
+        if (generation !== readGeneration.current) return summary;
+        reportFailure(refreshCause);
+        setOperationWarning(
+          'Датасет принят сервером, но обновление экрана не подтверждено. Не запускайте импорт повторно.',
+        );
+        setError(`Датасет принят, но экран не обновился: ${errorMessage(refreshCause)}`);
+      }
+      setFocus({ engineerId: null, requestId: null });
+      setPolicyComparison(null);
+      pushEvent(
+        summary.applied
+          ? `Датасет из ТЗ: ${summary.requestsCreated} заявок, ${summary.engineersCreated} инженеров.`
+          : 'Официальный датасет из ТЗ уже был загружен.',
+      );
+      return summary;
+    } catch (cause) {
+      if (generation === readGeneration.current) {
+        reportFailure(cause);
+        setOperationWarning('Импорт датасета из ТЗ не подтверждён. Проверьте список заявок.');
+        setError(errorMessage(cause));
+      }
+      throw cause;
+    } finally {
+      setUploadingData(false);
+    }
+  }, [invalidateAsyncReads, pushEvent, token, uploadingData, reportFailure, setSnapshot]);
+
   return {
     authenticated: token !== null || source === 'demo',
     source,
@@ -751,6 +796,7 @@ export function useDashboard() {
     refreshPolicyComparison,
     updateEngineerAvailability,
     uploadDataset,
+    importOfficialTzDataset,
   };
 }
 

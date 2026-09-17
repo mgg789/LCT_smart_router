@@ -8,7 +8,7 @@ from pathlib import Path
 import httpx
 
 from core.contracts import GeoPoint, Transport
-from core.geo import TravelQuote, content_hash
+from core.geo import MixedTravel, TravelQuote, TravelSource, content_hash
 
 _OSRM_API_PROFILE: dict[Transport, str] = {
     "car": "driving",
@@ -88,3 +88,24 @@ class OSRMTravel:
             "route_api",
             geometry_exact=True,
         )
+
+
+def live_osrm_from_env() -> OSRMTravel | None:
+    """Build a live OSRM adapter only when the operator configured an endpoint."""
+    base = os.environ.get("ROUTER_OSRM_URL")
+    if not base:
+        return None
+    cache = Path(os.environ.get("ROUTER_OSRM_CACHE", ".osrm-cache"))
+    offline = os.environ.get("ROUTER_OSRM_OFFLINE", "").strip().lower() in {"1", "true", "yes"}
+    return OSRMTravel(
+        {profile: base for profile in _OSRM_API_PROFILE},
+        map_version=os.environ.get("ROUTER_OSRM_MAP_VERSION", "live"),
+        cache=cache,
+        offline=offline,
+    )
+
+
+def attach_live_roads(travel: TravelSource) -> TravelSource:
+    """Keep the prepared graph; overlay live OSRM on centroid or unknown legs."""
+    overlay = live_osrm_from_env()
+    return MixedTravel(travel, overlay) if overlay is not None else travel

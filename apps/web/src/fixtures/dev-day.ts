@@ -48,6 +48,12 @@ const POLICIES: readonly PolicySpec[] = [
     description: 'Покрытие, затем короткий пробег.',
     isDefault: false,
   },
+  {
+    policyId: 'covering',
+    title: 'Covering',
+    description: 'Минимум новых инженеров, чтобы закрыть все заявки.',
+    isDefault: false,
+  },
 ];
 
 interface Place {

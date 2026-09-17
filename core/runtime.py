@@ -24,7 +24,7 @@ from core.contracts import (
 from core.engine import EngineMemory, EngineOutput, SearchSettings, apply_system_policy, solve
 from core.evidence import build_plan_evidence
 from core.geo import GraphTravel, RoadGraph, configure_travel, content_hash
-from core.osrm import OSRMTravel
+from core.osrm import OSRMTravel, attach_live_roads
 from core.policy import POLICY_CATALOG_VERSION, compile_policy
 from core.schedule import baseline, validate_plan
 from core.settings import StoredTechnicalSettingsOperation, TechnicalSettingsStore
@@ -180,6 +180,7 @@ def calculate(
             errors=[Diagnostic(code="INPUT_INVALID", message=str(exc))],
         ), None
     provider = GraphTravel(graph) if isinstance(graph, RoadGraph) else graph
+    provider = attach_live_roads(provider)
     provider = configure_travel(provider, settings.technical(), snapshot.planning_as_of)
     try:
         output = solve(snapshot, provider, settings, memory, context_version)
@@ -236,6 +237,7 @@ def calculate_policy_comparison(
         raise ValueError("COMPARISON_BUDGET_INVALID")
     snapshot = apply_system_policy(parse_snapshot(raw), settings)
     provider = GraphTravel(graph) if isinstance(graph, RoadGraph) else graph
+    provider = attach_live_roads(provider)
     provider = configure_travel(provider, settings.technical(), snapshot.planning_as_of)
     comparison_settings = replace(settings, time_limit_ms=search_budget_ms)
     rows: list[PolicyComparisonRow] = []

@@ -468,6 +468,64 @@ class GraphTravel:
         return [[self.quote(a, b, profile) for b in points] for a in points]
 
 
+def _road_quality_node(graph: RoadGraph, node_id: str) -> bool:
+    """Return True when this vertex belongs to a prepared road/OSRM/traffic subgraph."""
+    if node_id.startswith("east:"):
+        return True
+    if node_id.startswith("southeast:") or node_id.startswith("south_central:"):
+        return False
+    version = graph.version.lower()
+    if "centroid" in version or "haversine" in version:
+        return False
+    return "osrm" in version or "2gis" in version or version.startswith("2gis:")
+
+
+class MixedTravel:
+    """Use the prepared graph where it is road-quality; otherwise try a live overlay.
+
+    A combined official graph already mixes East OSRM vertices with Southeast /
+    South-central centroid vertices. Unknown uploaded points fall back to the
+    overlay (OSRM/traffic) when configured, then to the graph's disclosed
+    approximation. Overlay absence leaves quotes unchanged.
+    """
+
+    def __init__(self, travel: TravelSource, overlay: TravelSource):
+        """Bind one immutable graph provider and one optional live road provider."""
+        self.travel = travel
+        self.overlay = overlay
+        self.version = content_hash(
+            json.dumps(
+                {"base": travel.version, "overlay": overlay.version},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        )
+        self.provenance: TravelProvenance = getattr(overlay, "provenance", "route_api")
+
+    def _needs_overlay(self, origin: GeoPoint, destination: GeoPoint, quote: TravelQuote | None) -> bool:
+        """Upgrade centroid, approximate and missing graph legs when a better source exists."""
+        if quote is None or quote.provenance == "approximate":
+            return True
+        graph = getattr(self.travel, "graph", None)
+        nearest = getattr(self.travel, "_node", None)
+        if graph is None or not callable(nearest):
+            return False
+        source, target = nearest(origin), nearest(destination)
+        if source is None or target is None:
+            return True
+        return not (_road_quality_node(graph, source) and _road_quality_node(graph, target))
+
+    def quote(
+        self, origin: GeoPoint, destination: GeoPoint, profile: Transport
+    ) -> TravelQuote | None:
+        """Prefer exact road-graph costs; overlay only the legs that are not road-quality."""
+        base = self.travel.quote(origin, destination, profile)
+        if not self._needs_overlay(origin, destination, base):
+            return base
+        upgraded = self.overlay.quote(origin, destination, profile)
+        return upgraded if upgraded is not None else base
+
+
 class AddressCandidate(Record):
     """Geocoding result with provenance, not an automatically accepted address."""
 
