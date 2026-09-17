@@ -515,7 +515,13 @@ export async function setDispatchMode(token: string, mode: 'auto' | 'manual'): P
 
 /** Loads all Router strategies and the official FIFO baseline for one immutable input. */
 export function loadPolicyComparison(token: string): Promise<PolicyComparisonResponse> {
-  return requestJson('/api/v1/dispatch/policy-comparison', policyComparisonSchema, token);
+  return requestJson(
+    '/api/v1/dispatch/policy-comparison',
+    policyComparisonSchema,
+    token,
+    {},
+    90_000,
+  );
 }
 
 /** Changes an engineer's line availability and returns the publication that must be applied. */
@@ -667,9 +673,10 @@ async function requestJson<T>(
   schema: z.ZodType<T>,
   token?: string,
   init: RequestInit = {},
+  timeoutMs = 12_000,
 ): Promise<T> {
   const controller = new AbortController();
-  const timeout = globalThis.setTimeout(() => controller.abort(), 12_000);
+  const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(`${API_BASE}${path}`, {
       ...init,
