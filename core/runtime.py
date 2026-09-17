@@ -246,7 +246,13 @@ def calculate_policy_comparison(
     provider = GraphTravel(graph) if isinstance(graph, RoadGraph) else graph
     provider = attach_live_roads(provider)
     provider = configure_travel(provider, settings.technical(), snapshot.planning_as_of)
-    comparison_settings = replace(settings, time_limit_ms=search_budget_ms)
+    comparison_settings = replace(
+        settings,
+        time_limit_ms=search_budget_ms,
+        # A 64-solution cap returns the FIFO seed in tens of milliseconds and
+        # makes every preset look identical. Comparison is bounded by time.
+        solution_limit=max(settings.solution_limit, 10_000),
+    )
     rows: list[PolicyComparisonRow] = []
 
     started = time.monotonic()
