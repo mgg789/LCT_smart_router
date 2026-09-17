@@ -38,7 +38,7 @@ workflows:
           MGG_APP_DIR: "/home/mgg/navix"
           MGG_BRANCH: "main"
           MGG_HEALTHCHECK_URL: "https://navix.droidje.com/"
-          MGG_HEALTHCHECK_API_URL: "http://127.0.0.1:8000/health/live"
+          MGG_HEALTHCHECK_API_URL: "http://127.0.0.1:18080/health/live"
         cubes:
           - name: deploy-mgg
             image: docker.io/library/alpine:3.21
