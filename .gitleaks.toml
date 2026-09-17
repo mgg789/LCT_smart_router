@@ -1,0 +1,14 @@
+# Secret scan allowlist. Placeholders in the documented env template are not live
+# credentials; gitleaks still fails on anything that looks like a real key elsewhere.
+title = "LCT Smart Router"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Documented placeholders and committed fixtures, not live secrets"
+paths = [
+  '''(^|/)\.env\.example$''',
+  '''(^|/)docs/''',
+  '''(^|/)context/''',
+]

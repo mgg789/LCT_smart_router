@@ -152,7 +152,7 @@ describe('official dataset import', () => {
       orderBy: { arrivalOrder: 'asc' },
     });
     assert.match(request.addressText, /[А-Яа-яЁё]/, 'the address is readable Russian');
-    assert.equal(request.addressText.includes('�'), false);
+    assert.equal(request.addressText.includes('\uFFFD'), false);
   });
 
   it('reads the office address hidden in the last row', async () => {
