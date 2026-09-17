@@ -235,9 +235,14 @@ export class DatasetImportService {
     const now = BigInt(context.now);
     const workDate = localDate(context.now, timeZoneOffsetSec);
     const lunchWindow = localLunchWindow(workDate, timeZoneOffsetSec);
-    const horizonStart = Math.min(...prepared.parsed.requests.map((request) => request.windowStartAt));
+    const horizonStart = Math.min(
+      ...prepared.parsed.requests.map((request) => request.windowStartAt),
+    );
     const horizonEnd = Math.max(...prepared.parsed.requests.map((request) => request.windowEndAt));
-    const equipmentByBrigade = allocateMorningEquipment(prepared.parsed.requests, prepared.brigades);
+    const equipmentByBrigade = allocateMorningEquipment(
+      prepared.parsed.requests,
+      prepared.brigades,
+    );
     let upserted = 0;
     for (const brigade of prepared.brigades) {
       const mapped = await context.tx.externalIdMap.findUnique({

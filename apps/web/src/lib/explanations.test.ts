@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createDevSnapshot, FOCUS_REQUEST_ID } from '../fixtures/dev-day';
 import { assignmentFor, routeForEngineer } from '../domain/dashboard';
+import { createDevSnapshot, FOCUS_REQUEST_ID } from '../fixtures/dev-day';
 import { explainSelection } from './explanations';
 
 describe('dispatcher explanations', () => {
