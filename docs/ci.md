@@ -1,91 +1,90 @@
-# CI/CD — SourceCraft and the public gate
+# CI/CD — SourceCraft и публичный гейт
 
-> Living notes for the pipeline. The contour itself is described in
-> [runbook.md](./runbook.md) and [architecture.md](./architecture.md).
+> Живые заметки по пайплайну. Сам контур описан в
+> [runbook.md](./runbook.md) и [architecture.md](./architecture.md).
 
-SourceCraft reads [`.sourcecraft/ci.yaml`](../.sourcecraft/ci.yaml) from the
-repository **default branch** (`main`). Until that file is on `main`, push and
-pull-request triggers do not start.
+SourceCraft читает [`.sourcecraft/ci.yaml`](../.sourcecraft/ci.yaml) из **дефолтной
+ветки** репозитория (`main`). Пока этого файла нет на `main`, триггеры на push и
+pull request не запускаются.
 
-## Workflows
+## Воркфлоу
 
-| Workflow | When | What |
+| Воркфлоу | Когда | Что |
 |---|---|---|
-| `ci` | push to `dev`; pull request targeting `dev` or `main` | lint, tests, secret scan, mojibake |
-| `cd` | push to `main` (after merge) | the same checks, then compose build + deploy |
+| `ci` | push в `dev`; pull request в `dev` или `main` | lint, тесты, скан секретов, mojibake |
+| `cd` | push в `main` (после мержа) | те же проверки, затем compose build + deploy |
 
-A red `ci` run on a pull request into `main` is the merge condition. Branch
-protection in [`.sourcecraft/branches.yaml`](../.sourcecraft/branches.yaml)
-blocks direct push and force-push to `main`, and force-push / deletion of `dev`.
+Красный прогон `ci` на pull request в `main` — условие мержа. Защита веток в
+[`.sourcecraft/branches.yaml`](../.sourcecraft/branches.yaml) блокирует прямой push
+и force-push в `main`, а также force-push/удаление `dev`.
 
-### `ci` tasks
+### Задачи `ci`
 
-- **lint** — `pnpm lint` (Biome) and `ruff check core`.
-- **test-js** — web Vitest + typecheck; API `node:test` against a throwaway
-  `pgvector/pgvector:pg17` container (`scripts/ci/run-js-tests.sh`).
-- **test-core** — `pytest core/tests`. Official-region golden benchmarks are
-  **not** in this job (too heavy for every push).
-- **secrets** — `gitleaks detect` with [`.gitleaks.toml`](../.gitleaks.toml).
-- **mojibake** — `node scripts/ci/check-mojibake.mjs` (UTF-8 / cp1251-as-UTF-8).
+- **lint** — `pnpm lint` (Biome) и `ruff check core`.
+- **test-js** — Vitest веба + typecheck; `node:test` API против одноразового
+  контейнера `pgvector/pgvector:pg17` (`scripts/ci/run-js-tests.sh`).
+- **test-core** — `pytest core/tests`. Golden-бенчмарки официальных регионов
+  **не** входят в эту задачу (слишком тяжело на каждый push).
+- **secrets** — `gitleaks detect` с [`.gitleaks.toml`](../.gitleaks.toml).
+- **mojibake** — `node scripts/ci/check-mojibake.mjs` (UTF-8 / cp1251-как-UTF-8).
 
-`pnpm smoke` is still the local / demo contour gate (AGENTS.md §11.1). It is
-destructive and is not part of this pipeline.
+`pnpm smoke` остаётся гейтом локального/демо-контура (AGENTS.md §11.1). Он деструктивен
+и в пайплайн не входит.
 
 ## Deploy
 
-`cd` SSHs to the MGG host with the same compose path as the `mgg-server-deploy`
-skill: fast-forward `main` in `/home/mgg/navix`, then
+`cd` по SSH заходит на хост MGG с тем же compose-путём, что и скилл
+`mgg-server-deploy`: fast-forward `main` в `/home/mgg/navix`, затем
 
 ```bash
 docker compose -f docker-compose.yml up -d --build --remove-orphans
 ```
 
-The root [docker-compose.yml](../docker-compose.yml) includes
-`infra/docker-compose.yml` so the skill can find the contour without knowing
-about `infra/`.
+Корневой [docker-compose.yml](../docker-compose.yml) включает
+`infra/docker-compose.yml`, чтобы скилл находил контур, не зная про `infra/`.
 
-Healthchecks after `up`:
+Хелсчеки после `up`:
 
-- public gate `https://navix.droidje.com/`
+- публичный гейт `https://navix.droidje.com/`
 - loopback `http://127.0.0.1:8000/health/live`
 
-The dashboard is the `web` container on `127.0.0.1:5173`; host nginx terminates
-TLS for `navix.droidje.com` and proxies there. `web` already forwards `/api/`
-to `api:8000`. On the server `.env` should set `API_PORT=127.0.0.1:8000` so the
-System Layer is not published on the public interface. This remains a demo
-contour: `NODE_ENV=development` and `AUTH_DEV_EXPOSE_CODES=true` — the
-application refuses to combine exposed login codes with `production`.
+Дашборд — контейнер `web` на `127.0.0.1:5173`; хостовый nginx терминирует TLS для
+`navix.droidje.com` и проксирует туда. `web` уже проксирует `/api/` на `api:8000`.
+На сервере в `.env` стоит задать `API_PORT=127.0.0.1:8000`, чтобы System Layer не
+публиковался на публичном интерфейсе. Это остаётся демо-контур:
+`NODE_ENV=development` и `AUTH_DEV_EXPOSE_CODES=true` — приложение отказывается
+сочетать открытые коды входа с `production`.
 
-### Secrets and host one-offs
+### Секреты и разовые настройки хоста
 
-Create a SourceCraft repository secret named **`MGG_DEPLOY_SSH_KEY`**: the
-private half of a deploy-only SSH key whose public half is in
-`mgg@178.140.207.217` `~/.ssh/authorized_keys`. Do not commit the key, do not
-put it on the board, do not write it to team memory.
+Создайте в SourceCraft секрет репозитория с именем **`MGG_DEPLOY_SSH_KEY`**: приватная
+половина deploy-only SSH-ключа, публичная половина которого лежит в
+`mgg@178.140.207.217` → `~/.ssh/authorized_keys`. Ключ не коммитить, на доску не
+класть, в командную память не писать.
 
-The MGG host also needs a **read-only SourceCraft deploy key** so
-`git pull --ff-only origin main` works in `/home/mgg/navix`. Put the public
-half in the repository Deploy keys; the private half stays at
-`~mgg/.ssh/navix_sourcecraft` (see `~mgg/.ssh/config`).
+Хосту MGG нужен также **read-only deploy-ключ SourceCraft**, чтобы
+`git pull --ff-only origin main` работал в `/home/mgg/navix`. Публичную половину —
+в Deploy keys репозитория; приватная остаётся в `~mgg/.ssh/navix_sourcecraft`
+(см. `~mgg/.ssh/config`).
 
-`scripts/ci/bootstrap-navix-host.sh` creates the SourceCraft pull key and a
-server-only `.env` (random DB and dispatcher passwords, `API_PORT` bound to
-loopback). Dispatcher credentials live only in `/home/mgg/navix/.env`.
+`scripts/ci/bootstrap-navix-host.sh` создаёт pull-ключ SourceCraft и серверный
+`.env` (случайные пароли БД и диспетчера, `API_PORT` на loopback). Учётные данные
+диспетчера живут только в `/home/mgg/navix/.env`.
 
-Host nginx is not written by CI. After the clone exists, on the server:
+Хостовый nginx CI не пишет. После появления клона, на сервере:
 
 ```bash
 sudo bash /home/mgg/navix/scripts/ci/install-navix-nginx.sh
 ```
 
-That installs [infra/nginx/navix.droidje.com.conf](../infra/nginx/navix.droidje.com.conf)
-(`proxy_pass http://127.0.0.1:5173`) and asks certbot for the certificate. `mgg`
-is in `sudo` but the password is interactive.
+Это ставит [infra/nginx/navix.droidje.com.conf](../infra/nginx/navix.droidje.com.conf)
+(`proxy_pass http://127.0.0.1:5173`) и запрашивает сертификат через certbot. `mgg`
+в группе `sudo`, но пароль интерактивный.
 
-The secret is mounted only on the `cd` / `deploy` task (push to `main`), never
-on pull-request pipelines.
+Секрет монтируется только в задаче `cd` / `deploy` (push в `main`) и никогда —
+в пайплайнах pull request.
 
-Manual deploy from a machine that already has SSH to the host:
+Ручной деплой с машины, у которой уже есть SSH к хосту:
 
 ```powershell
 & "$env:USERPROFILE\.cursor\skills\mgg-server-deploy\scripts\deploy-mgg-app.ps1" `
@@ -94,10 +93,9 @@ Manual deploy from a machine that already has SSH to the host:
   -HealthcheckUrl "https://navix.droidje.com/"
 ```
 
-## Activation order
+## Порядок активации
 
-1. Merge `feat/infra-sourcecraft-ci` into `dev`.
-2. Put the deploy key on the server and the private half into SourceCraft
-   **before** the first merge to `main`.
-3. Team-lead merge `dev` → `main`. That commit activates the triggers and
-   should run `cd`.
+1. Вмержить `feat/infra-sourcecraft-ci` в `dev`.
+2. Разложить deploy-ключ на сервер и приватную половину в SourceCraft **до** первого
+   мержа в `main`.
+3. Мерж тимлида `dev` → `main`. Этот коммит активирует триггеры и должен запустить `cd`.

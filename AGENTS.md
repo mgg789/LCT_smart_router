@@ -1,7 +1,7 @@
 # AGENTS.md — LCT Smart Router
 
 Rules for any AI agent (Claude Code, Codex, Cursor, ZCode) and human contributor working in this repository.
-Team language is Russian; **code, comments, identifiers, commits, PRs, and docs are written in English.**
+Team language is Russian; **code, comments, identifiers, commits, and PRs are written in English; user- and judge-facing documentation (root `README.md` and `docs/`) is written in Russian** (decided 2026-09-17 before v0).
 
 ## Team memory (RAGConnect) — read first
 

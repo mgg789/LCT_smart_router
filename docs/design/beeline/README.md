@@ -1,120 +1,118 @@
-# Beeline visual reference for LCT Smart Router
+# Визуальный референс Билайн для LCT Smart Router
 
-Checked: **2026-09-15**. Scope: dispatcher, engineer and client interfaces.
+Проверено: **15.09.2026**. Область действия: интерфейсы диспетчера, инженера и клиента.
 
-For the earlier generated screen examples, see [UI mockup examples](../mockups/README.md).
-Those illustrative PNGs predate this verified brand reference and do not override it.
+Ранние сгенерированные примеры экранов — [примеры UI-макетов](../mockups/README.md);
+эти иллюстративные PNG старше проверенного бренд-референса и его не отменяют.
 
-## Status and authority
+## Статус и полномочность
 
-The project owner requested Beeline colours and symbols on 2026-09-15. This
-document applies that direction to the existing light, restrained UI in
-[context/10](../../../context/10-ux-ui-design.md). It does not change product scope.
+Пользователь проекта запросил цвета и символы Билайн 15.09.2026. Этот документ
+применяет это решение к существующему светлому сдержанному UI из
+[context/10](../../../context/10-ux-ui-design.md). Продуктовый скоуп он не меняет.
 
-**This is a project design guide, not an official Beeline brandbook.** A complete,
-current public Russian Beeline brandbook was not located in this search. The
-official public Yellowbe documents below describe a design platform; they do not
-publish a complete brand palette, logo clear-space rules or a redistribution licence.
-Website observations and our own UI decisions are explicitly separated below.
+**Это проектный дизайн-гайд, а не официальный брендбук Билайн.** Полный актуальный
+публичный бренбук российского Билайна в этом поиске обнаружен не был. Официальные
+публичные документы Yellowbe ниже описывают дизайн-платформу; они не публикуют полной
+бренд-палитры, правил охранного поля логотипа или лицензии на редистрибуцию.
+Наблюдения по сайту и наши собственные UI-решения явно разделены ниже.
 
-## Official sources stored locally
+## Официальные источники, сохранённые локально
 
-| File | Source and purpose |
+| Файл | Источник и назначение |
 |---|---|
-| [Yellowbe user guide](sources/yellowbe-user-guide.pdf) | [Official PDF](https://static.beeline.ru/upload/images/business/beeline-prodvizhenie/Rukovodstvo_polzovatelya_Yellowbe.pdf), 13 pages. Pages 3–4 describe the platform and tokens; pages 7–8 describe logo, font and favicon assets; pages 12–13 describe design-library usage. |
-| [Yellowbe functional description](sources/yellowbe-functional-description.pdf) | [Official PDF](https://static.beeline.ru/upload/images/business/beeline-prodvizhenie/Opisanie_funkcionalnyh_harakteristik_Yellowbe.pdf), 6 pages. Platform scope and intended use. |
-| [Beeline symbol](assets/beeline-symbol-official-site.png) | [Official PNG](https://static.beeline.ru/upload/images/business/main/v3/Beeblik_2025.png), unchanged 120 × 120 RGBA asset referenced by the business website header. A symbol, not a full wordmark or vector master. |
-| [Website colour excerpt](sources/official-site-colors.css) | Selected declarations from the official site's stylesheet, with source URL. Evidence, not a library to import. |
-| [Source manifest](sources/manifest.json) | Retrieval date, URLs, sizes and SHA-256 hashes of the local copies. |
+| [Руководство пользователя Yellowbe](sources/yellowbe-user-guide.pdf) | [Официальный PDF](https://static.beeline.ru/upload/images/business/beeline-prodvizhenie/Rukovodstvo_polzovatelya_Yellowbe.pdf), 13 стр. Стр. 3–4 — платформа и токены; стр. 7–8 — логотип, шрифт, favicon; стр. 12–13 — использование дизайн-библиотеки. |
+| [Функциональное описание Yellowbe](sources/yellowbe-functional-description.pdf) | [Официальный PDF](https://static.beeline.ru/upload/images/business/beeline-prodvizhenie/Opisanie_funkcionalnyh_harakteristik_Yellowbe.pdf), 6 стр. Скоуп платформы и назначение. |
+| [Символ Билайн](assets/beeline-symbol-official-site.png) | [Официальный PNG](https://static.beeline.ru/upload/images/business/main/v3/Beeblik_2025.png), неизменённый ассет 120 × 120 RGBA из шапки бизнес-сайта. Символ, а не полный вордмарк или векторный мастер. |
+| [Выдержка цветов сайта](sources/official-site-colors.css) | Отобранные декларации из стилей официального сайта с URL источника. Свидетельство, а не библиотека для импорта. |
+| [Манифест источников](sources/manifest.json) | Дата получения, URL, размеры и SHA-256 локальных копий. |
 
-The [official Yellowbe product page](https://moskva.beeline.ru/business/beeline-prodvizhenie/yellowbe/)
-links both PDFs. Its FAQ describes library and Handbook access after a contract
-and payment. The public PDFs alone do not provide those packages or access.
-Do not introduce a Yellowbe dependency just because its package names appear in
-the guide; this repository retains its existing stack.
+[Официальная страница продукта Yellowbe](https://moskva.beeline.ru/business/beeline-prodvizhenie/yellowbe/)
+ссылает оба PDF; FAQ описывает доступ к библиотеке и Handbook после договора и оплаты.
+Сами публичные PDF этих пакетов и доступа не дают. Не вводите зависимость от Yellowbe
+только потому, что названия его пакетов встречаются в руководстве: репозиторий
+сохраняет существующий стек.
 
-## Colour evidence and project mapping
+## Цветовые свидетельства и проектный маппинг
 
-The following values were observed in
-[the official business website CSS](https://moskva.beeline.ru/business/v3_commonStyles.29b04f11.css)
-on the date above. They are website implementation values, **not a claim about
-the complete corporate palette or the private Yellowbe theme**.
+Значения ниже наблюдались в
+[CSS официального бизнес-сайта](https://moskva.beeline.ru/business/v3_commonStyles.29b04f11.css)
+на указанную дату. Это значения реализации сайта, **а не утверждение о полной
+корпоративной палитре или приватной теме Yellowbe**.
 
-| Observed declaration | Value | Smart Router usage (project decision) |
+| Наблюдаемая декларация | Значение | Использование в Smart Router (проектное решение) |
 |---|---|---|
-| `--yellowPrime` | `#FED305` | Primary action background, active-navigation accent, selected-item accent |
-| `--black` | `#000000` | Text on the primary yellow action; brand contrast |
-| `--white` | `#FFFFFF` | Main light surface |
-| `--yellow4` | `#FFE161` | Optional secondary decorative yellow; not warning text |
-| `--green` | `#22B26D` | Reference only; do not assume sufficient contrast for small status text |
-| `--red` | `#EF2525` | Reference only; semantic errors need independent contrast checks |
-| `--blue` | `#3F9FE4` | Reference only; not the primary brand accent |
+| `--yellowPrime` | `#FED305` | Фон первичного действия, акцент активной навигации, выделение выбранного |
+| `--black` | `#000000` | Текст на жёлтом первичном действии; брендовый контраст |
+| `--white` | `#FFFFFF` | Основная светлая поверхность |
+| `--yellow4` | `#FFE161` | Опциональный вторичный декоративный жёлтый; не текст предупреждений |
+| `--green` | `#22B26D` | Только референс; не считать контраст достаточным для мелкого статусного текста |
+| `--red` | `#EF2525` | Только референс; семантике ошибок нужна отдельная проверка контраста |
+| `--blue` | `#3F9FE4` | Только референс; не первичный бренд-акцент |
 
-Project-only supporting colours: `#FAFAF8` canvas, `#202124` primary text,
-`#5F6368` secondary text and `#E4E5E7` decorative separators. These are our UI
-choices, not official Beeline tokens. Separators alone must not define required
-input boundaries or focus states.
+Служебные цвета проекта: `#FAFAF8` холст, `#202124` основной текст, `#5F6368`
+вторичный текст, `#E4E5E7` декоративные разделители. Это наши UI-решения, а не
+официальные токены Билайн. Одни разделители не задают обязательные границы полей
+ввода и состояния фокуса.
 
-Use semantic tokens in future frontend implementation. The earlier generated
-mockups used approximate `#FFD54A`; use `#FED305` for subsequent work. The phrase
-“Beeline blue” in context/10 has been superseded for the primary accent.
+В будущей вёрстке используйте семантические токены. Ранние сгенерированные макеты
+брали приблизительный `#FFD54A`; в дальнейшей работе — `#FED305`. Формулировка
+«Beeline blue» в context/10 для первичного акцента отменена.
 
-## Interface rules — project decisions
+## Правила интерфейса — проектные решения
 
-- Keep the map, schedules and explanations prominent. Yellow identifies a small
-  number of actions or selections; it is not a background for the entire workspace.
-- Use dark text on yellow buttons. Do not use yellow text on white or white text
-  on yellow for ordinary labels. Check text and control contrast in the final UI.
-- Preserve separate error, warning and success semantics. A warning needs an icon
-  and explicit wording so it cannot be mistaken for a yellow primary action.
-- Routes need distinct colours plus numbers/names. Do not make every engineer's
-  route yellow or use the brand symbol as a location/status marker.
-- Use the same foundations across all three roles. Layout and information density
-  follow each role's tasks; branding does not add new product features.
-- Preserve the existing 4-point grid, 8–12 px radii and restrained motion rules.
-  Use Inter or Golos Text as the existing project typography. Beeline Sans is
-  mentioned in the official guide, but its font files and use terms are not supplied
-  here; it has not been downloaded, installed or relabelled as a free font.
+- Карта, расписание и объяснения остаются главными. Жёлтый маркирует малое число
+  действий или выборов; он не фон всего рабочего пространства.
+- На жёлтых кнопках — тёмный текст. Жёлтый текст на белом и белый на жёлтом для
+  обычных подписей не использовать. Контраст текста и контролов проверить в финальном UI.
+- Сохранить раздельные семантики ошибки, предупреждения и успеха. Предупреждению
+  нужны иконка и явная формулировка, чтобы его не спутали с жёлтым первичным действием.
+- Маршрутам нужны различимые цвета плюс номера/имена. Не делать каждый маршрут
+  инженера жёлтым и не использовать брендовый символ как маркер позиции/статуса.
+- Одни основы для всех трёх ролей. Сетка и плотность информации следуют задачам роли;
+  брендинг не добавляет продуктовых фич.
+- Сохранить существующую сетку 4 px, радиусы 8–12 px и сдержанные правила анимации.
+  Типографика проекта — Inter или Golos Text. Beeline Sans упомянут в официальном
+  руководстве, но файлы шрифта и условия использования здесь не поставляются; шрифт
+  не скачивался, не устанавливался и не переименовывался в свободный.
 
-## Symbol and naming — project decisions
+## Символ и именование — проектные решения
 
-Use the supplied official symbol without redrawing it, replacing its stripe
-geometry, recolouring it, cropping it or stretching its aspect ratio. Generated
-logos in earlier concepts are not approved source assets.
+Поставляемый официальный символ используется без перерисовки, замены геометрии
+полос, перекраски, обрезки и растяжения пропорций. Сгенерированные логотипы из
+ранних концептов — не утверждённые исходники.
 
-For a header, a 32–40 CSS px symbol with at least 8 px free space is a practical
-project default, **not an official minimum-size or clear-space rule**. The 120 px
-PNG is suitable for small UI uses; obtain the official vector master for large
-presentation graphics instead of enlarging or automatically tracing this file.
+Для шапки практичный проектный дефолт — символ 32–40 CSS px со свободным полем
+от 8 px; **это не официальный минимум и не правило охранного поля**. PNG 120 px
+пригоден для мелких элементов UI; для крупной презентационной графики получите
+официальный векторный мастер, а не масштабируйте или автотрассируйте этот файл.
 
-Keep the product name **LCT Smart Router**. Present `билайн бизнес` as the case
-context, for example `Кейс «билайн бизнес» · ЛЦТ 2026`. Do not invent a merged
-official Beeline/Smart Router logo or describe the hackathon prototype as an
-officially released Beeline product. Ordinary text is not a substitute for an
-official wordmark asset.
+Имя продукта — **LCT Smart Router**. `билайн бизнес` подаётся как контекст кейса,
+например `Кейс «билайн бизнес» · ЛЦТ 2026`. Не изобретать объединённый официальный
+логотип «Билайн + Smart Router» и не называть хакатонский прототип официально
+вышедшим продуктом Билайн. Обычный текст не заменяет официальный вордмарк.
 
-Third-party documents and the symbol retain their respective owners' rights.
-Public availability and local storage do not establish an open-source licence.
-Official co-branding rules, vector wordmarks, font rights and the current full
-brandbook remain items to obtain from the case organiser if needed.
+Сторонние документы и символ сохраняют права своих владельцев. Публичная доступность
+и локальное хранение не создают лицензии open source. Официальные правила
+кобрендинга, векторные вордмарки, права на шрифты и актуальный полный бренбук —
+то, что при необходимости запрашивается у организатора кейса.
 
-## Sources not treated as current design authority
+## Источники, не считающиеся актуальным дизайнерским авторитетом
 
-- The widely mirrored 2005 brandbook is historical and was not added as today's
-  standard.
-- [Art. Lebedev's Beeline Business design-system case](https://www.artlebedev.ru/beeline/design-system/)
-  is an original designer's reference, not a current downloadable brandbook.
-- `beeline.com/design-system` belongs to a different Beeline business with green
-  branding. It is not a source for the Russian telecom case.
+- Широко растиражированный бренбук 2005 года историчен и как нынешний стандарт
+  не принимался.
+- [Кейс дизайн-системы Билайн Бизнес от Art. Lebedev](https://www.artlebedev.ru/beeline/design-system/)
+  — референс автора оригинала, а не актуальный загружаемый бренбук.
+- `beeline.com/design-system` принадлежит другому бизнесу Beeline с зелёным
+  брендингом; для российского телеком-кейса это не источник.
 
-## Verification and maintenance
+## Верификация и сопровождение
 
-The downloaded PDFs have 13 and 6 readable pages respectively. Representative
-pages and the transparent symbol were rendered and visually inspected. Copies
-are stored unchanged; hashes are recorded in the manifest. The selected CSS
-declarations were checked against the live stylesheet.
+Скачанные PDF читаемы (13 и 6 страниц). Репрезентативные страницы и прозрачный символ
+отрендерены и осмотрены визуально. Копии хранятся без изменений, хэши — в манифесте.
+Отобранные CSS-декларации сверены с живым стилем сайта.
 
-This update contains documentation and reference assets only. No frontend,
-library integration or rendered product behaviour has been implemented or tested.
-Recheck source availability and branding before adopting a new official pack;
-update this guide, the manifest and context/10 together.
+Это обновление содержит только документацию и референс-ассеты. Ни фронтенд, ни
+интеграция библиотек, ни рендер продуктового поведения не реализовывались и не
+тестировались. Перед принятием нового официального пакета перепроверьте доступность
+источников и брендинг; обновляйте этот гайд, манифест и context/10 вместе.
