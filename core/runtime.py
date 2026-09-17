@@ -180,7 +180,7 @@ def calculate(
             errors=[Diagnostic(code="INPUT_INVALID", message=str(exc))],
         ), None
     provider = GraphTravel(graph) if isinstance(graph, RoadGraph) else graph
-    provider = configure_travel(provider, settings.technical())
+    provider = configure_travel(provider, settings.technical(), snapshot.planning_as_of)
     try:
         output = solve(snapshot, provider, settings, memory, context_version)
         effective_snapshot = output.memory.snapshot
@@ -236,7 +236,7 @@ def calculate_policy_comparison(
         raise ValueError("COMPARISON_BUDGET_INVALID")
     snapshot = apply_system_policy(parse_snapshot(raw), settings)
     provider = GraphTravel(graph) if isinstance(graph, RoadGraph) else graph
-    provider = configure_travel(provider, settings.technical())
+    provider = configure_travel(provider, settings.technical(), snapshot.planning_as_of)
     comparison_settings = replace(settings, time_limit_ms=search_budget_ms)
     rows: list[PolicyComparisonRow] = []
 

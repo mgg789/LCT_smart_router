@@ -21,7 +21,7 @@ from core.contracts import (
     RouteStop,
     Transport,
 )
-from core.geo import TravelQuote
+from core.geo import TravelQuote, quote_at
 from core.policy import policy_score
 
 
@@ -58,9 +58,10 @@ def release_at(snapshot: RouterTaskSnapshot, engineer: Engineer) -> int | None:
 
 
 def eligible(snapshot: RouterTaskSnapshot, engineer: Engineer, request: Request) -> bool:
-    """Check static skill, transport, equipment and release constraints."""
+    """Check region, skill, transport, equipment and release constraints."""
     return (
-        request.required_skill in engineer.skills
+        (request.region is None or engineer.region is None or request.region == engineer.region)
+        and request.required_skill in engineer.skills
         and request.required_transport in (None, engineer.transport_type)
         and (
             request.required_equipment is None
@@ -171,7 +172,13 @@ def schedule_steps(
         request = request_map.get(request_id)
         if request is None or not eligible(snapshot, engineer, request):
             return None
-        quote = travel.quote(location, request.location, engineer.transport_type)
+        quote = quote_at(
+            travel,
+            location,
+            request.location,
+            engineer.transport_type,
+            clock,
+        )
         if quote is None:
             return None
         arrival = clock + quote.duration_sec
@@ -195,7 +202,13 @@ def schedule_steps(
                 arrival_at=arrival,
                 travel_time_sec=quote.duration_sec,
                 distance_km=quote.distance_m / 1000,
-                geometry=Geometry(points=list(quote.points)),
+                geometry=(
+                    None
+                    if quote.provenance == "traffic_api" and not quote.geometry_exact
+                    else Geometry(points=list(quote.points))
+                ),
+                travel_source=quote.provenance,
+                traffic_factor=quote.traffic_factor,
             )
         )
         clock, location = end, request.location
@@ -264,7 +277,18 @@ def fixed_order(
 
 def unassigned_reason(snapshot: RouterTaskSnapshot, request: Request) -> Reason:
     """State only static impossibility proven by data, otherwise report search outcome."""
-    skilled = [e for e in snapshot.engineers if request.required_skill in e.skills]
+    regional = [
+        engineer
+        for engineer in snapshot.engineers
+        if request.region is None or engineer.region is None or request.region == engineer.region
+    ]
+    if not regional:
+        return reason(
+            "NO_REGION_MATCH",
+            "No engineer belongs to the request region.",
+            region=request.region,
+        )
+    skilled = [e for e in regional if request.required_skill in e.skills]
     transport = [e for e in skilled if request.required_transport in (None, e.transport_type)]
     if not skilled:
         return reason(

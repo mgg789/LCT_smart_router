@@ -10,6 +10,13 @@ import httpx
 from core.contracts import GeoPoint, Transport
 from core.geo import TravelQuote, content_hash
 
+_OSRM_API_PROFILE: dict[Transport, str] = {
+    "car": "driving",
+    "walk": "walking",
+    "bike": "cycling",
+    "transit": "transit",
+}
+
 
 class OSRMTravel:
     """Query a configured per-profile OSRM deployment; no public server default.
@@ -43,7 +50,8 @@ class OSRMTravel:
         else:
             coordinates = f"{origin.lon},{origin.lat};{destination.lon},{destination.lat}"
             response = httpx.get(
-                f"{self.endpoints[profile].rstrip('/')}/route/v1/driving/{coordinates}",
+                f"{self.endpoints[profile].rstrip('/')}/route/v1/"
+                f"{_OSRM_API_PROFILE[profile]}/{coordinates}",
                 params={"overview": "full", "geometries": "geojson"},
                 timeout=10.0,
             )
@@ -73,4 +81,10 @@ class OSRMTravel:
         points = tuple(GeoPoint(lat=lat, lon=lon) for lon, lat in route["geometry"]["coordinates"])
         if not points:
             raise ValueError("missing OSRM geometry")
-        return TravelQuote(math.ceil(duration), math.ceil(distance), points)
+        return TravelQuote(
+            math.ceil(duration),
+            math.ceil(distance),
+            points,
+            "route_api",
+            geometry_exact=True,
+        )

@@ -246,6 +246,71 @@ describe('official dataset import', () => {
     assert.ok(payload.engineers.every((engineer) => 'router' in engineer.equipment_stock));
   });
 
+  it('prepares optional 45-minute lunches in the 11:20-15:00 local window', async () => {
+    const day = await prisma.engineerDay.findFirstOrThrow({
+      include: { engineer: true },
+      where: { engineer: { region: 'east' } },
+    });
+    const midnightUtc = Date.parse(`${day.workDate}T00:00:00.000Z`) / 1000 - 3 * 3600;
+    assert.equal(day.lunchEnabled, true);
+    assert.equal(day.lunchRequired, false);
+    assert.equal(day.lunchDurationSec, 2700);
+    assert.equal(Number(day.lunchWindowStartAt), midnightUtc + 11 * 3600 + 20 * 60);
+    assert.equal(Number(day.lunchWindowEndAt), midnightUtc + 15 * 3600);
+  });
+
+  it('updates lunch settings on existing imported day rows without duplicating data', async () => {
+    const engineer = await prisma.engineer.findFirstOrThrow({ where: { region: 'east' } });
+    const day = await prisma.engineerDay.findFirstOrThrow({ where: { engineerId: engineer.id } });
+    const now = BigInt(Math.floor(Date.now() / 1000));
+    const manual = await prisma.engineer.create({
+      data: {
+        displayName: 'Manual East engineer',
+        inputOrder: 50_000,
+        skills: ['local'],
+        transportType: 'walk',
+        region: 'east',
+        origin: 'manual',
+        createdAt: now,
+        updatedAt: now,
+        days: {
+          create: {
+            workDate: day.workDate,
+            shiftStartAt: day.shiftStartAt,
+            shiftEndAt: day.shiftEndAt,
+            lunchEnabled: false,
+            createdAt: now,
+            updatedAt: now,
+          },
+        },
+      },
+    });
+    await prisma.engineerDay.update({
+      where: { id: day.id },
+      data: {
+        lunchEnabled: false,
+        lunchDurationSec: null,
+        lunchWindowStartAt: null,
+        lunchWindowEndAt: null,
+      },
+    });
+    const requestsBefore = await prisma.request.count({});
+    const summary = await importRegion('east');
+    assert.equal(summary.applied, true);
+    assert.equal(summary.requestsCreated, 0);
+    assert.equal(await prisma.request.count({}), requestsBefore);
+    const updated = await prisma.engineerDay.findUniqueOrThrow({ where: { id: day.id } });
+    assert.equal(updated.lunchEnabled, true);
+    assert.equal(updated.lunchDurationSec, 2700);
+    const manualDay = await prisma.engineerDay.findUniqueOrThrow({
+      where: {
+        engineerId_workDate: { engineerId: manual.id, workDate: day.workDate },
+      },
+    });
+    assert.equal(manualDay.lunchEnabled, false);
+    assert.equal(manualDay.lunchDurationSec, null);
+  });
+
   it('loads every coordinate from the validated offline package', async () => {
     const withoutPoint = await prisma.request.count({ where: { needsGeocoding: true } });
     const total = await prisma.request.count({});

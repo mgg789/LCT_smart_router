@@ -58,6 +58,12 @@ const routeLeg = z.object({
     .object({ points: z.array(geoPoint) })
     .nullable()
     .optional(),
+  /** Fidelity selected by Router; a matrix does not imply drawable road geometry. */
+  travel_source: z
+    .enum(['approximate', 'road_matrix', 'route_api', 'traffic_api'])
+    .default('approximate'),
+  /** Deterministic forecast or provider multiplier already included in travel_time_sec. */
+  traffic_factor: z.number().min(1).default(1),
 });
 
 /** Distinguishable lunch outcomes; a lunch that did not fit is never shown as scheduled. */

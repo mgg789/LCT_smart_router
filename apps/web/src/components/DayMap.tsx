@@ -1,7 +1,9 @@
 import maplibregl from 'maplibre-gl';
 import { useEffect, useRef } from 'react';
 import type { DashboardSnapshot } from '../api/types';
-import { plannedActivity, routeLegs, unassignedRequests } from '../domain/dashboard';
+import { unassignedRequests } from '../domain/dashboard';
+import { regionStyle, requestRegion, routeRegion } from '../domain/regions';
+import { mapRouteSegments } from '../domain/travel';
 import { engineerColor } from '../lib/reasons';
 
 interface DayMapProps {
@@ -70,21 +72,20 @@ export function DayMap({
       const showUnassigned = selectedEngineerId === null || viewingUnassigned;
 
       const lineFeatures = routes.flatMap((route) => {
-        const activity = plannedActivity(snapshot, route.engineerId);
-        return routeLegs(route).map((leg) => ({
+        const region = routeRegion(snapshot, route);
+        return mapRouteSegments(route).map((segment) => ({
           type: 'Feature' as const,
           properties: {
             engineerId: route.engineerId,
             selected: !selectedEngineerId || route.engineerId === selectedEngineerId ? 1 : 0,
-            active: activity?.kind === 'traveling' && activity.legIndex === leg.index ? 1 : 0,
+            approximate: segment.approximate ? 1 : 0,
             color: engineerColor(route.engineerId),
+            regionColor: regionStyle(region).color,
+            travelSource: segment.source,
           },
           geometry: {
             type: 'LineString' as const,
-            coordinates: [
-              [leg.from.lon, leg.from.lat],
-              [leg.to.lon, leg.to.lat],
-            ],
+            coordinates: segment.coordinates,
           },
         }));
       });
@@ -95,6 +96,7 @@ export function DayMap({
           engineerId: route.engineerId,
           selected: !selectedEngineerId || route.engineerId === selectedEngineerId ? 1 : 0,
           color: engineerColor(route.engineerId),
+          regionColor: regionStyle(routeRegion(snapshot, route)).color,
         },
         geometry: {
           type: 'Point' as const,
@@ -111,12 +113,6 @@ export function DayMap({
                 properties: {
                   engineerId: route.engineerId,
                   selected: !selectedEngineerId || route.engineerId === selectedEngineerId ? 1 : 0,
-                  active:
-                    plannedActivity(snapshot, route.engineerId)?.kind === 'lunch' &&
-                    snapshot.nowAt >= stop.startAt &&
-                    snapshot.nowAt < stop.endAt
-                      ? 1
-                      : 0,
                 },
                 geometry: {
                   type: 'Point' as const,
@@ -128,7 +124,7 @@ export function DayMap({
           if (!stop.requestId) {
             return [];
           }
-          const activity = plannedActivity(snapshot, route.engineerId);
+          const request = snapshot.requests.find((item) => item.id === stop.requestId);
           const sequence = route.stops
             .slice(0, index + 1)
             .filter((item) => item.kind === 'job').length;
@@ -140,9 +136,8 @@ export function DayMap({
                 sequence,
                 engineerId: route.engineerId,
                 selected: stop.requestId === selectedRequestId ? 1 : 0,
-                active:
-                  activity?.kind === 'on_site' && activity.requestId === stop.requestId ? 1 : 0,
                 color: engineerColor(route.engineerId),
+                regionColor: regionStyle(request ? requestRegion(snapshot, request) : null).color,
               },
               geometry: {
                 type: 'Point' as const,
@@ -167,6 +162,7 @@ export function DayMap({
               properties: {
                 requestId: request.id,
                 selected: request.id === selectedRequestId ? 1 : 0,
+                regionColor: regionStyle(requestRegion(snapshot, request)).color,
               },
               geometry: {
                 type: 'Point' as const,
@@ -184,14 +180,7 @@ export function DayMap({
           source: 'routes',
           paint: {
             'line-color': '#ffffff',
-            'line-width': [
-              'case',
-              ['==', ['get', 'active'], 1],
-              10,
-              ['==', ['get', 'selected'], 1],
-              7,
-              5,
-            ],
+            'line-width': ['case', ['==', ['get', 'selected'], 1], 7, 5],
           },
         });
         map.addLayer({
@@ -200,22 +189,14 @@ export function DayMap({
           source: 'routes',
           paint: {
             'line-color': ['get', 'color'],
-            'line-width': [
+            'line-width': ['case', ['==', ['get', 'selected'], 1], 3.5, 2],
+            'line-dasharray': [
               'case',
-              ['==', ['get', 'active'], 1],
-              6,
-              ['==', ['get', 'selected'], 1],
-              3.5,
-              2,
+              ['==', ['get', 'approximate'], 1],
+              ['literal', [2, 2]],
+              ['literal', [1, 0]],
             ],
-            'line-opacity': [
-              'case',
-              ['==', ['get', 'active'], 1],
-              1,
-              ['==', ['get', 'selected'], 1],
-              0.9,
-              0.35,
-            ],
+            'line-opacity': ['case', ['==', ['get', 'selected'], 1], 0.9, 0.35],
           },
         });
       });
@@ -229,7 +210,7 @@ export function DayMap({
             'circle-radius': 7,
             'circle-color': '#ffffff',
             'circle-stroke-width': 3,
-            'circle-stroke-color': ['get', 'color'],
+            'circle-stroke-color': ['get', 'regionColor'],
           },
         });
         map.addLayer({
@@ -237,7 +218,7 @@ export function DayMap({
           type: 'symbol',
           source: 'starts',
           layout: {
-            'text-field': 'Старт',
+            'text-field': 'Старт плана',
             'text-size': 11,
             'text-offset': [0, 1.2],
             'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
@@ -248,32 +229,14 @@ export function DayMap({
 
       upsert(map, 'stops', { type: 'FeatureCollection', features: jobFeatures }, () => {
         map.addLayer({
-          id: 'stops-halo',
-          type: 'circle',
-          source: 'stops',
-          filter: ['==', ['get', 'active'], 1],
-          paint: {
-            'circle-radius': 18,
-            'circle-color': ['get', 'color'],
-            'circle-opacity': 0.22,
-          },
-        });
-        map.addLayer({
           id: 'stops-circle',
           type: 'circle',
           source: 'stops',
           paint: {
-            'circle-radius': [
-              'case',
-              ['==', ['get', 'active'], 1],
-              12,
-              ['==', ['get', 'selected'], 1],
-              10,
-              8,
-            ],
+            'circle-radius': ['case', ['==', ['get', 'selected'], 1], 10, 8],
             'circle-color': ['get', 'color'],
-            'circle-stroke-width': ['case', ['==', ['get', 'active'], 1], 4, 2],
-            'circle-stroke-color': '#ffffff',
+            'circle-stroke-width': ['case', ['==', ['get', 'selected'], 1], 4, 2.5],
+            'circle-stroke-color': ['get', 'regionColor'],
           },
         });
         map.addLayer({
@@ -290,17 +253,6 @@ export function DayMap({
       });
 
       upsert(map, 'lunches', { type: 'FeatureCollection', features: lunchFeatures }, () => {
-        map.addLayer({
-          id: 'lunch-halo',
-          type: 'circle',
-          source: 'lunches',
-          filter: ['==', ['get', 'active'], 1],
-          paint: {
-            'circle-radius': 16,
-            'circle-color': '#E07A2F',
-            'circle-opacity': 0.25,
-          },
-        });
         map.addLayer({
           id: 'lunch-circle',
           type: 'circle',
@@ -326,8 +278,6 @@ export function DayMap({
         });
       });
 
-      upsert(map, 'activity', { type: 'FeatureCollection', features: [] }, () => {});
-
       upsert(map, 'unassigned', { type: 'FeatureCollection', features: unassignedFeatures }, () => {
         map.addLayer({
           id: 'unassigned-circle',
@@ -335,7 +285,7 @@ export function DayMap({
           source: 'unassigned',
           paint: {
             'circle-radius': ['case', ['==', ['get', 'selected'], 1], 10, 8],
-            'circle-color': '#FED305',
+            'circle-color': ['get', 'regionColor'],
             'circle-stroke-width': 2,
             'circle-stroke-color': '#202124',
           },
@@ -384,8 +334,8 @@ export function DayMap({
       <div ref={containerRef} className="absolute inset-0 h-full w-full" />
       <div className="pointer-events-none absolute bottom-3 left-3 rounded-xl bg-white/90 px-3 py-2 text-[11px] text-muted shadow">
         {selectedEngineerId
-          ? 'Показан маршрут выбранного инженера. Крестик в карточке заявки возвращает общий план.'
-          : 'Общий план дня: все маршруты. В пути подсвечивается участок, не точка — GPS нет.'}
+          ? 'Показан план выбранного инженера. Пунктир — схематичная связь точек, сплошная линия — геометрия дороги.'
+          : 'План дня без live-позиции инженеров. Пунктир — схематичная связь точек, сплошная линия — геометрия дороги.'}
       </div>
     </>
   );

@@ -101,6 +101,30 @@ container, so an updated package needs no rebuild. Imported requests get real po
 are rebased onto the live horizon so a dataset dated 17.08 plans against "now".
 `GET /api/v1/dispatch/debug/snapshot` shows the published task and its diagnostics.
 
+### Loading a new region or appending requests
+
+The dashboard's `+` button accepts a UTF-8 JSON package. The same operation is
+available over HTTP:
+
+```bash
+curl -s -X POST localhost:8000/api/v1/dispatch/data/upload \
+  -H "authorization: Bearer $TOKEN" \
+  -H 'content-type: application/json' \
+  --data-binary @docs/data-upload-example.json
+```
+
+Use `mode: "new_region"` for a complete region package with one depot, engineers,
+and requests. Use `mode: "append_requests"` to add requests to an existing region;
+that form must not contain a depot or engineers. `sourceVersion` identifies the
+source revision, while external entity ids stay stable inside the region namespace.
+
+The server validates the complete package before publishing anything: schema version,
+region consistency, coordinates, time windows, skills, transport and equipment enums,
+duplicate ids, and collisions with already imported entities. A repeated identical
+package is idempotent. Reusing a source version or an entity id with different content
+returns `409`; invalid input returns `422`. Either the whole transaction and its one
+snapshot publication succeed, or the database remains unchanged.
+
 ## 5. Data and restarts
 
 `docker compose down` keeps the named volume `postgres-data`, so an ordinary restart

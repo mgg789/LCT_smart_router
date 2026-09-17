@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 from core.contracts import Engineer, Plan, Request, RouterTaskSnapshot, Skill
 from core.engine import EngineOutput, SearchSettings, solve
 from core.evidence import PlanEvidence, build_plan_evidence
-from core.geo import GraphTravel, RoadGraph, configure_travel
+from core.geo import GraphTravel, RoadGraph, configure_travel, routing_context_version
 from core.official import MultiZoneScenario, OfficialScenario
 from core.schedule import validate_plan
 
@@ -276,8 +276,12 @@ def run_replanning_events(
     zone = ZoneInfo(scenario.config.timezone)
     local_day = date.fromisoformat(scenario.config.local_date)
     event_at = int(datetime.combine(local_day, local_time(15, 0), tzinfo=zone).timestamp())
-    remaining = project_remaining_snapshot(scenario.snapshot, initial.main, event_at)
-    base_travel = configure_travel(GraphTravel(scenario.graph), settings.technical())
+    initial_snapshot = initial.memory.snapshot
+    remaining = project_remaining_snapshot(initial_snapshot, initial.main, event_at)
+    base_travel = configure_travel(
+        GraphTravel(scenario.graph), settings.technical(), remaining.planning_as_of
+    )
+    base_context_version = routing_context_version(base_travel, settings.technical())
     event_inputs = [
         (
             "new_normal_request",
@@ -290,7 +294,7 @@ def run_replanning_events(
             },
             _with_new_request(
                 remaining,
-                scenario.snapshot,
+                initial_snapshot,
                 request_id="event-normal-1",
                 priority="normal",
                 skill="connection",
@@ -313,7 +317,7 @@ def run_replanning_events(
             },
             _with_new_request(
                 remaining,
-                scenario.snapshot,
+                initial_snapshot,
                 request_id="event-urgent-1",
                 priority="urgent",
                 skill="emergency",
@@ -383,14 +387,17 @@ def run_replanning_events(
     }
     runs = []
     for event_id, trigger, snapshot, graph, travel in event_inputs:
+        travel = configure_travel(travel, settings.technical(), snapshot.planning_as_of)
+        event_context_version = routing_context_version(travel, settings.technical())
         output = solve(
             snapshot,
             travel,
             settings,
             memory=initial.memory,
-            context_version=travel.version,
+            context_version=event_context_version,
         )
-        validate_plan(snapshot, output.main, travel)
+        effective_snapshot = output.memory.snapshot
+        validate_plan(effective_snapshot, output.main, travel)
         current = _assignment_map(output.main)
         changed = sum(
             previous_assignments.get(request_id) != engineer_id
@@ -403,9 +410,9 @@ def run_replanning_events(
                 snapshot=snapshot,
                 graph=graph,
                 output=output,
-                evidence=build_plan_evidence(snapshot, output.main, travel, labels),
+                evidence=build_plan_evidence(effective_snapshot, output.main, travel, labels),
                 changed_assignments=changed,
-                context_changed=travel.version != base_travel.version,
+                context_changed=event_context_version != base_context_version,
             )
         )
     return tuple(runs)
@@ -427,16 +434,20 @@ def run_official_benchmark(
     Returns:
         The validated initial output, evidence, elapsed time and event runs.
     """
-    travel = configure_travel(GraphTravel(scenario.graph), settings.technical())
+    travel = configure_travel(
+        GraphTravel(scenario.graph), settings.technical(), scenario.snapshot.planning_as_of
+    )
+    context_version = routing_context_version(travel, settings.technical())
     started = monotonic_time.perf_counter()
-    output = solve(scenario.snapshot, travel, settings, context_version=travel.version)
+    output = solve(scenario.snapshot, travel, settings, context_version=context_version)
     elapsed = monotonic_time.perf_counter() - started
-    validate_plan(scenario.snapshot, output.main, travel)
+    effective_snapshot = output.memory.snapshot
+    validate_plan(effective_snapshot, output.main, travel)
     labels = {
         engineer_id: str(details["control_team"])
         for engineer_id, details in scenario.engineer_details.items()
     }
-    evidence = build_plan_evidence(scenario.snapshot, output.main, travel, labels)
+    evidence = build_plan_evidence(effective_snapshot, output.main, travel, labels)
     events = (
         run_replanning_events(scenario, output, event_settings)
         if event_settings is not None

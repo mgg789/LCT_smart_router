@@ -3,6 +3,8 @@ import type {
   AssignmentReasons,
   AuthSession,
   DashboardSnapshot,
+  DataUploadFile,
+  DataUploadSummary,
   PlanAssignmentView,
   PolicyComparisonResponse,
   PolicyId,
@@ -18,6 +20,11 @@ const requestSchema = z.object({
   lifecycle: z.enum(['draft', 'submitted', 'in_progress', 'completed', 'cancelled']),
   assignmentState: z.enum(['pending', 'unassigned', 'assigned', 'in_progress', 'done']),
   addressText: z.string(),
+  region: z
+    .string()
+    .nullable()
+    .optional()
+    .transform((value) => value ?? null),
   lat: z.number().nullable(),
   lon: z.number().nullable(),
   needsGeocoding: z.boolean(),
@@ -98,6 +105,25 @@ const planStopSchema = z.object({
   endAt: z.number().int(),
 });
 
+const planLegSchema = z.object({
+  legId: z.string(),
+  fromStopId: z.string().nullable(),
+  toStopId: z.string(),
+  departureAt: z.number().int(),
+  arrivalAt: z.number().int(),
+  travelTimeSec: z.number().int().nonnegative(),
+  distanceKm: z.number().nonnegative(),
+  travelSource: z.enum(['approximate', 'road_matrix', 'route_api', 'traffic_api']),
+  trafficFactor: z.number().min(1),
+  geometry: z
+    .object({
+      points: z
+        .array(z.object({ lat: z.number().min(-90).max(90), lon: z.number().min(-180).max(180) }))
+        .min(2),
+    })
+    .nullable(),
+});
+
 const lunchStatusSchema = z.enum([
   'none',
   'disabled',
@@ -122,6 +148,10 @@ const routeSchema = z.object({
   assignedCount: z.number().int(),
   lunchStatus: lunchStatusSchema,
   stops: z.array(planStopSchema),
+  legs: z
+    .array(planLegSchema)
+    .optional()
+    .transform((value) => value ?? []),
 });
 
 const rawAssignmentSchema = z.object({
@@ -267,6 +297,18 @@ const availabilityUpdateSchema = z.object({
       inputHash: z.string().min(1),
     })
     .nullable(),
+});
+
+const dataUploadSummarySchema = z.object({
+  applied: z.boolean(),
+  region: z.string(),
+  mode: z.enum(['new_region', 'append_requests']),
+  requestsCreated: z.number().int().nonnegative(),
+  engineersCreated: z.number().int().nonnegative(),
+  depotsCreated: z.number().int().nonnegative(),
+  warnings: z.array(z.string()),
+  publicationId: z.string().nullable(),
+  inputHash: z.string().nullable(),
 });
 
 const reasonSchema = z.object({
@@ -422,6 +464,14 @@ export async function setEngineerAvailability(
   return updated.publication.inputHash;
 }
 
+/** Uploads one locally validated data package as an idempotent backend operation. */
+export function uploadDataPackage(token: string, file: DataUploadFile): Promise<DataUploadSummary> {
+  return requestJson('/api/v1/dispatch/data/upload', dataUploadSummarySchema, token, {
+    method: 'POST',
+    body: JSON.stringify({ operationId: crypto.randomUUID(), ...file }),
+  });
+}
+
 function normalizeAssignment(raw: z.infer<typeof rawAssignmentSchema>): PlanAssignmentView {
   return {
     requestId: raw.requestId,
@@ -475,20 +525,32 @@ async function requestJson<T>(
   });
   const body: unknown = await response.json().catch(() => null);
   if (!response.ok) {
-    const message = z
-      .object({
-        message: z.string().optional(),
-        error: z.object({ message: z.string() }).optional(),
-      })
-      .safeParse(body);
-    throw new DashboardApiError(
-      message.success
-        ? (message.data.error?.message ?? message.data.message ?? `HTTP ${response.status}`)
-        : `HTTP ${response.status}`,
-      response.status,
-    );
+    throw new DashboardApiError(apiErrorMessage(body, response.status), response.status);
   }
   return schema.parse(body);
+}
+
+function apiErrorMessage(body: unknown, status: number): string {
+  const parsed = z
+    .object({
+      message: z.union([z.string(), z.array(z.string())]).optional(),
+      error: z.union([z.string(), z.object({ message: z.string().optional() })]).optional(),
+    })
+    .passthrough()
+    .safeParse(body);
+  if (!parsed.success) {
+    return `HTTP ${status}`;
+  }
+  if (Array.isArray(parsed.data.message)) {
+    return parsed.data.message.join('; ');
+  }
+  if (typeof parsed.data.message === 'string') {
+    return parsed.data.message;
+  }
+  if (typeof parsed.data.error === 'string') {
+    return parsed.data.error;
+  }
+  return parsed.data.error?.message ?? `HTTP ${status}`;
 }
 
 function moscowDate(date: Date): string {

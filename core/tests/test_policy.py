@@ -88,7 +88,7 @@ def test_fast_minimizes_travel_while_compact_minimizes_engineers(snapshot, graph
     assert fast.summary.engineers_used == 2
     assert fast.summary.travel_time_sec == 0
     assert compact.summary.engineers_used == 1
-    assert compact.summary.travel_time_sec == 60
+    assert compact.summary.travel_time_sec == 81
     assert compact.summary.distance_km == 0.6
 
 

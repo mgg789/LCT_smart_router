@@ -146,10 +146,13 @@ def _read_rows(path: Path, extra_fields: set[str] | None = None) -> list[dict[st
 
 
 def _verify_file_hash(path: Path, expected: str | None) -> None:
-    """Reject scenario source/resource drift before decoding or enrichment."""
+    """Reject drift; CSV manifests use repository-canonical LF bytes."""
     if expected is None:
         return
-    actual = hashlib.sha256(path.read_bytes()).hexdigest()
+    payload = path.read_bytes()
+    if path.suffix.casefold() in {".csv", ".json"}:
+        payload = payload.replace(b"\r\n", b"\n")
+    actual = hashlib.sha256(payload).hexdigest()
     if actual != expected:
         raise ValueError(f"official scenario file hash mismatch: {path.name}")
 
@@ -315,6 +318,7 @@ def load_official_region(
         engineers.append(
             {
                 "engineer_id": engineer_id,
+                "region": region,
                 "input_order": index,
                 "skills": skills,
                 "transport_type": profile.transport_type,
@@ -326,10 +330,10 @@ def load_official_region(
                 "expected_online_at": None,
                 "lunch_taken": False,
                 "lunch": {
-                    "enabled": False,
-                    "duration_sec": None,
-                    "window_start_at": None,
-                    "window_end_at": None,
+                    "enabled": True,
+                    "duration_sec": 45 * 60,
+                    "window_start_at": _epoch(local_day, "11:20", zone),
+                    "window_end_at": _epoch(local_day, "15:00", zone),
                     "required": False,
                 },
                 "equipment_stock": {"router": 0, "set_top_box": 0, "smart_speaker": 0},
@@ -365,6 +369,7 @@ def load_official_region(
         request_payloads.append(
             {
                 "request_id": request_id,
+                "region": region,
                 "arrival_order": arrival_order,
                 "location": point.model_dump(),
                 "service_duration_sec": duration,

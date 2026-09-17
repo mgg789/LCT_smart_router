@@ -4,7 +4,7 @@ import pytest
 from core.contracts import RouterTaskSnapshot
 from core.engine import SearchSettings, solve
 from core.evidence import build_plan_evidence
-from core.geo import GraphTravel
+from core.geo import GraphTravel, configure_travel
 from core.schedule import baseline, score, validate_plan
 
 SETTINGS = SearchSettings(
@@ -26,9 +26,10 @@ def test_baseline_order_and_main_improvement(snapshot, graph):
     result = solve(snapshot, travel, SETTINGS)
     assert [s.request_id for s in result.baseline.routes[0].stops] == ["job-3", "job-2", "job-1"]
     assert result.main.summary.assigned_count == 3
-    assert result.main.summary.travel_time_sec == 180
+    assert result.main.summary.travel_time_sec == 243
     assert score(snapshot, result.main) < score(snapshot, result.baseline)
-    validate_plan(snapshot, result.main, travel)
+    configured = configure_travel(travel, SETTINGS.technical(), snapshot.planning_as_of)
+    validate_plan(snapshot, result.main, configured)
 
 
 def test_travel_mode_applies_to_baseline_and_main(snapshot, graph):
@@ -48,7 +49,7 @@ def test_travel_mode_applies_to_baseline_and_main(snapshot, graph):
         ),
     )
 
-    assert graph_result.main.summary.travel_time_sec == 1980
+    assert graph_result.main.summary.travel_time_sec == 2043
     assert fixed_result.main.summary.travel_time_sec == 3600
     assert graph_result.main.summary.distance_km == fixed_result.main.summary.distance_km == 1.8
     assert all(
@@ -116,7 +117,8 @@ def test_lunch_inside_model_and_no_second_lunch(snapshot, graph):
     assert result.main.routes[0].lunch.status == "scheduled"
     assert result.main.summary.assigned_count == 3
     assert result.main.summary.lunch_time_sec == 900
-    validate_plan(task, result.main, travel)
+    configured = configure_travel(travel, SETTINGS.technical(), task.planning_as_of)
+    validate_plan(task, result.main, configured)
     taken = solve(lunch_task(snapshot, taken=True), travel, SETTINGS)
     assert taken.main.summary.lunch_time_sec == 0
     assert taken.main.routes[0].lunch.status == "already_taken"
@@ -134,6 +136,51 @@ def test_system_policy_disables_even_required_lunch(snapshot, graph):
     assert output.main.routes[0].lunch.status == "disabled"
     assert output.baseline.routes[0].lunch.status == "disabled"
     assert all(stop.kind != "lunch" for stop in output.main.routes[0].stops)
+
+
+def test_optional_lunch_search_preserves_lunch_off_job_coverage(snapshot, graph):
+    """Optional lunch nodes may enrich a route but cannot consume bounded-search coverage."""
+    task = lunch_task(snapshot, required=False)
+    common = {
+        "time_limit_ms": 120,
+        "solution_limit": 4,
+        "access_buffer_sec": 0,
+    }
+    without_lunch = solve(
+        task,
+        GraphTravel(graph),
+        SearchSettings(lunches_enabled=False, **common),
+    )
+    with_lunch = solve(
+        task,
+        GraphTravel(graph),
+        SearchSettings(lunches_enabled=True, **common),
+    )
+
+    assert with_lunch.main.summary.assigned_count == without_lunch.main.summary.assigned_count
+    assert with_lunch.main.summary.urgent_assigned_count == (
+        without_lunch.main.summary.urgent_assigned_count
+    )
+    assert with_lunch.main.routes[0].lunch.status in {"scheduled", "skipped_for_work"}
+
+
+def test_region_isolation_is_static_and_missing_region_is_backward_compatible(snapshot, graph):
+    """Explicitly different regions never match; omitted legacy regions remain compatible."""
+
+    def isolate(data):
+        data["engineers"][0]["region"] = "south"
+        for request in data["requests"]:
+            request["region"] = "east"
+
+    isolated = changed(snapshot, isolate)
+    blocked = solve(isolated, GraphTravel(graph), SETTINGS)
+    assert blocked.main.summary.assigned_count == 0
+    assert {reason.code for item in blocked.main.assignments for reason in item.reasons} == {
+        "NO_REGION_MATCH"
+    }
+
+    compatible = solve(snapshot, GraphTravel(graph), SETTINGS)
+    assert compatible.main.summary.assigned_count == len(snapshot.requests)
 
 
 def test_required_lunch_failure_is_ready_unusable(snapshot, graph):
@@ -202,7 +249,7 @@ def test_deterministic_golden(snapshot, graph):
     assert plans[0] == plans[1] == plans[2]
     assert plans[0]["summary"] == {
         "distance_km": 1.8,
-        "travel_time_sec": 180,
+        "travel_time_sec": 243,
         "work_time_sec": 1800,
         "waiting_time_sec": 0,
         "lunch_time_sec": 0,
@@ -241,7 +288,7 @@ def test_urgent_dominates_ordinary_coverage(snapshot, graph):
 
 def test_revalidate_cannot_silently_drop_previous_assignment(snapshot, graph):
     task = changed(
-        snapshot, lambda d: d["engineers"][0].update(shift_end_at=d["planning_as_of"] + 660)
+        snapshot, lambda d: d["engineers"][0].update(shift_end_at=d["planning_as_of"] + 720)
     )
     travel = GraphTravel(graph)
     settings = SearchSettings(

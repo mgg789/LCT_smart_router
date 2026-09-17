@@ -29,6 +29,7 @@ export interface RequestView {
   readonly lifecycle: 'draft' | 'submitted' | 'in_progress' | 'completed' | 'cancelled';
   readonly assignmentState: 'pending' | 'unassigned' | 'assigned' | 'in_progress' | 'done';
   readonly addressText: string;
+  readonly region: string | null;
   readonly lat: number | null;
   readonly lon: number | null;
   readonly needsGeocoding: boolean;
@@ -128,6 +129,26 @@ export interface PlanRouteView {
     | 'not_scheduled'
     | 'required_conflict';
   readonly stops: PlanStopView[];
+  readonly legs: PlanLegView[];
+}
+
+export type TravelSource = 'approximate' | 'road_matrix' | 'route_api' | 'traffic_api';
+
+export interface PlanLegView {
+  readonly legId: string;
+  readonly fromStopId: string | null;
+  readonly toStopId: string;
+  readonly departureAt: number;
+  readonly arrivalAt: number;
+  readonly travelTimeSec: number;
+  readonly distanceKm: number;
+  readonly travelSource: TravelSource;
+  /** Forecast/provider multiplier already included in travelTimeSec. */
+  readonly trafficFactor: number;
+  /** Ordered WGS84 points returned by the routing provider. */
+  readonly geometry: {
+    readonly points: ReadonlyArray<{ readonly lat: number; readonly lon: number }>;
+  } | null;
 }
 
 export interface ReasonFactor {
@@ -277,4 +298,53 @@ export interface PolicyComparisonResponse {
   readonly computedAt: number;
   readonly searchBudgetMs: number;
   readonly rows: PolicyComparisonRow[];
+}
+
+export type DataUploadMode = 'new_region' | 'append_requests';
+
+export interface DataUploadRequest {
+  readonly externalId: string;
+  readonly addressText: string;
+  readonly lat: number;
+  readonly lon: number;
+  readonly serviceDurationSec: number;
+  readonly windowStartAt: number;
+  readonly windowEndAt: number;
+  readonly priority: 'normal' | 'urgent';
+  readonly requiredSkill: 'local' | 'connection' | 'emergency';
+  readonly requiredTransport?: 'car' | 'walk' | 'bike' | 'transit';
+  readonly requiredEquipment?: EquipmentType;
+  readonly workType?: string;
+}
+
+export interface DataUploadEngineer {
+  readonly externalId: string;
+  readonly displayName: string;
+  readonly skills: Array<'local' | 'connection' | 'emergency'>;
+  readonly transportType: 'car' | 'walk' | 'bike' | 'transit';
+  readonly start: { readonly lat: number; readonly lon: number };
+  readonly shiftStartAt: number;
+  readonly shiftEndAt: number;
+}
+
+export interface DataUploadFile {
+  readonly schemaVersion: '1.0';
+  readonly mode: DataUploadMode;
+  readonly region: string;
+  readonly sourceVersion: string;
+  readonly requests: DataUploadRequest[];
+  readonly engineers?: DataUploadEngineer[];
+  readonly depot?: { readonly addressText: string; readonly lat: number; readonly lon: number };
+}
+
+export interface DataUploadSummary {
+  readonly applied: boolean;
+  readonly region: string;
+  readonly mode: DataUploadMode;
+  readonly requestsCreated: number;
+  readonly engineersCreated: number;
+  readonly depotsCreated: number;
+  readonly warnings: string[];
+  readonly publicationId: string | null;
+  readonly inputHash: string | null;
 }

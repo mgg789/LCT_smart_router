@@ -11,6 +11,10 @@ Dispatcher day, policy comparison and engineer roster:
 - policy modal (catalog + lunch switch). Lunch is off by default
   (`lunches_enabled=false`, context/50 §3)
 - header control mode is a real AUTO/MANUAL toggle (`POST /dispatch/mode`)
+- region selector at the top of the day panel; official regions have stable distinct
+  colours and uploaded region slugs receive a deterministic palette colour
+- bottom `+` action opens a JSON package validator/preview for a new region or appended
+  requests; the API applies the package atomically
 - UI copy is Russian; solver English evidence is translated by reason code
 
 ## Data
@@ -25,6 +29,13 @@ Absolute times are Unix seconds. Live HTTP goes through `apps/web/src/api/client
 | Unassigned / alerts | `GET /api/v1/dispatch/alerts` |
 | Policy labels | `GET /api/v1/dispatch/policies` |
 | Lunch switch | `GET/PUT /api/v1/dispatch/router/technical-settings` |
+| Region/request package upload | `POST /api/v1/dispatch/data/upload` |
+
+The map does not claim a current engineer position: there is no GPS/execution-stage input.
+Starts, stops and timelines are explicitly planned values. A solid route line is used only
+when `route_api` or `traffic_api` supplied a road geometry. Approximate and matrix-only
+legs remain dashed straight connections even when their distance/time came from a road
+matrix.
 
 `VITE_API_BASE` is empty by default: Vite proxies `/api` to `127.0.0.1:8000`, and the
 Docker image serves the same origin through nginx → `api:8000`.

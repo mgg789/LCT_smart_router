@@ -7,7 +7,11 @@ import { Clock } from '../common/time';
 import { zodBody } from '../common/validation';
 import { OperationsService } from '../operations';
 import { EngineersService } from '../orchestrator/engineers';
-import { DATASET_REGIONS, DatasetImportService } from '../orchestrator/imports';
+import {
+  DATASET_REGIONS,
+  DatasetImportService,
+  UploadImportService,
+} from '../orchestrator/imports';
 import { PolicyService } from '../orchestrator/policy';
 import { RequestsService } from '../orchestrator/requests';
 import { ResetService } from '../orchestrator/reset';
@@ -29,6 +33,8 @@ import {
   importDatasetSchema,
   type ResetDto,
   resetSchema,
+  type UploadDataPackageDto,
+  uploadDataPackageSchema,
 } from './dto/data.dto';
 import {
   type CreateEngineerDto,
@@ -96,6 +102,7 @@ export class DispatchController {
     private readonly acceptance: ResultAcceptanceService,
     private readonly router: RouterClient,
     private readonly imports: DatasetImportService,
+    private readonly uploadImports: UploadImportService,
     private readonly resetService: ResetService,
     private readonly config: AppConfigService,
     private readonly operations: OperationsService,
@@ -735,12 +742,33 @@ export class DispatchController {
       orderBy: { appliedAt: 'desc' },
       take: 20,
     });
+    const [depots, requestRegions, engineerRegions] = await Promise.all([
+      this.prisma.depot.findMany({ select: { region: true } }),
+      this.prisma.request.findMany({
+        where: { region: { not: null } },
+        distinct: ['region'],
+        select: { region: true },
+      }),
+      this.prisma.engineer.findMany({
+        where: { region: { not: null }, archivedAt: null },
+        distinct: ['region'],
+        select: { region: true },
+      }),
+    ]);
+    const availableRegions = [
+      ...new Set(
+        [...depots, ...requestRegions, ...engineerRegions].flatMap((item) =>
+          item.region === null ? [] : [item.region],
+        ),
+      ),
+    ].sort();
     return {
       // An empty `requests` table is not proof that setup never happened; after a
       // deliberate empty reset it is the intended state (context/37 section 9.5).
       initialized: byKey.get(APP_STATE_KEYS.INITIALIZED) ?? false,
       startupProfile: byKey.get(APP_STATE_KEYS.STARTUP_PROFILE) ?? null,
       generation: byKey.get(APP_STATE_KEYS.GENERATION) ?? 1,
+      availableRegions,
       imports: packages.map((item) => ({
         source: item.source,
         checksum: item.checksum,
@@ -748,6 +776,30 @@ export class DispatchController {
         summary: item.summary,
       })),
     };
+  }
+
+  @Post('data/upload')
+  @ApiOperation({ summary: 'Atomically load a new region or append requests from JSON' })
+  async uploadData(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(uploadDataPackageSchema)) dto: UploadDataPackageDto,
+  ) {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'data.upload',
+        targetRef: dto.region,
+        payload: dto,
+      },
+      async (context) =>
+        this.uploadImports.importPackage(
+          context,
+          dto,
+          this.config.get('DATASET_TIME_ZONE_OFFSET_SEC'),
+        ),
+    );
+    return outcome.result;
   }
 
   @Post('data/import')

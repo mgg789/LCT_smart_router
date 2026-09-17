@@ -9,9 +9,12 @@ import {
   setEngineerAvailability,
   setLunchesEnabled,
   signOutDispatcher,
+  uploadDataPackage,
 } from '../api/client';
 import type {
   DashboardSnapshot,
+  DataUploadFile,
+  DataUploadSummary,
   PlanDelta,
   PolicyComparisonResponse,
   PolicyId,
@@ -19,11 +22,9 @@ import type {
 import {
   assignmentFor,
   computePlanDelta,
-  currentStopId,
   type DashboardFocus,
   engineerSummaries,
   isExpectedRebuildApplied,
-  plannedActivity,
   type RebuildExpectation,
   reconcileDashboardFocus,
   requestById,
@@ -55,6 +56,7 @@ export function useDashboard() {
   const [focus, setFocus] = useState<DashboardFocus>({ engineerId: null, requestId: null });
   const [rebuilding, setRebuilding] = useState(false);
   const [availabilityPendingId, setAvailabilityPendingId] = useState<string | null>(null);
+  const [uploadingData, setUploadingData] = useState(false);
   const [pendingDelta, setPendingDelta] = useState<PlanDelta | null>(null);
   const [baseline, setBaseline] = useState<RoutingBaseline | null>(null);
   const [policyComparison, setPolicyComparison] = useState<PolicyComparisonResponse | null>(null);
@@ -148,8 +150,6 @@ export function useDashboard() {
     snapshot && selectedEngineerId
       ? (snapshot.engineers.find((item) => item.id === selectedEngineerId) ?? null)
       : null;
-  const selectedActivity =
-    snapshot && selectedEngineerId ? plannedActivity(snapshot, selectedEngineerId) : null;
   const unassignedIndex = selectedRequestId
     ? unassigned.findIndex((item) => item.id === selectedRequestId)
     : -1;
@@ -207,8 +207,7 @@ export function useDashboard() {
         clearFocus();
         return;
       }
-      const current = currentStopId(snapshot, engineerId);
-      setFocus({ engineerId, requestId: current });
+      setFocus({ engineerId, requestId: null });
     },
     [clearFocus, selectedEngineerId, snapshot],
   );
@@ -465,6 +464,40 @@ export function useDashboard() {
     [invalidateAsyncReads, pushEvent, rebuilding, refresh, snapshot, token],
   );
 
+  const uploadDataset = useCallback(
+    async (file: DataUploadFile): Promise<DataUploadSummary> => {
+      if (!token || uploadingData) {
+        throw new Error('Загрузка данных уже выполняется');
+      }
+      invalidateAsyncReads();
+      setUploadingData(true);
+      setError(null);
+      try {
+        const summary = await uploadDataPackage(token, file);
+        try {
+          const next = await loadDashboardSnapshot(token);
+          setSnapshot(next);
+        } catch (refreshCause) {
+          setError(`Данные приняты, но экран не обновился: ${errorMessage(refreshCause)}`);
+        }
+        setFocus({ engineerId: null, requestId: null });
+        setPolicyComparison(null);
+        pushEvent(
+          summary.applied
+            ? `Регион ${summary.region}: добавлено ${summary.requestsCreated} заявок.`
+            : `Пакет региона ${summary.region} уже был загружен.`,
+        );
+        return summary;
+      } catch (cause) {
+        setError(errorMessage(cause));
+        throw cause;
+      } finally {
+        setUploadingData(false);
+      }
+    },
+    [invalidateAsyncReads, pushEvent, token, uploadingData],
+  );
+
   return {
     authenticated: token !== null,
     loading,
@@ -477,10 +510,10 @@ export function useDashboard() {
     selectedRoute,
     selectedRequest,
     selectedAssignment,
-    selectedActivity,
     unassignedIndex,
     rebuilding,
     availabilityPendingId,
+    uploadingData,
     pendingDelta,
     canRejectDelta: baseline !== null,
     policyComparison,
@@ -500,6 +533,7 @@ export function useDashboard() {
     setMode,
     refreshPolicyComparison,
     updateEngineerAvailability,
+    uploadDataset,
   };
 }
 

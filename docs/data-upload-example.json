@@ -1,0 +1,41 @@
+{
+  "schemaVersion": "1.0",
+  "mode": "new_region",
+  "region": "north_demo",
+  "sourceVersion": "north-demo-2026-09-17",
+  "depot": {
+    "addressText": "Moscow, Northern depot",
+    "lat": 55.8397,
+    "lon": 37.5256
+  },
+  "engineers": [
+    {
+      "externalId": "north-engineer-1",
+      "displayName": "Demo Engineer",
+      "skills": ["connection", "local"],
+      "transportType": "car",
+      "start": {
+        "lat": 55.8397,
+        "lon": 37.5256
+      },
+      "shiftStartAt": 1789621200,
+      "shiftEndAt": 1789657200
+    }
+  ],
+  "requests": [
+    {
+      "externalId": "north-request-1",
+      "addressText": "Moscow, Leningradskoye Highway, 16A",
+      "lat": 55.8236,
+      "lon": 37.4976,
+      "serviceDurationSec": 3600,
+      "windowStartAt": 1789628400,
+      "windowEndAt": 1789635600,
+      "priority": "normal",
+      "requiredSkill": "connection",
+      "requiredTransport": "car",
+      "requiredEquipment": "router",
+      "workType": "office_connection"
+    }
+  ]
+}

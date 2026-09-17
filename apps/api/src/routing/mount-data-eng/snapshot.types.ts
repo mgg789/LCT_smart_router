@@ -33,6 +33,8 @@ export interface SnapshotEquipmentStock {
 
 export interface SnapshotRequest {
   readonly request_id: string;
+  /** Logical planning region used for multizone routing and diagnostics. */
+  readonly region: string | null;
   /** Order of arrival. The baseline iterates in it, so it is not a read order. */
   readonly arrival_order: number;
   readonly location: GeoPoint;
@@ -58,6 +60,8 @@ export interface SnapshotLunch {
 
 export interface SnapshotEngineer {
   readonly engineer_id: string;
+  /** Logical planning region; null only for legacy manually-created profiles. */
+  readonly region: string | null;
   /** The baseline picks the first suitable engineer in this order. */
   readonly input_order: number;
   readonly skills: SkillCode[];

@@ -165,6 +165,7 @@ privileges out of band, so a fresh database is correct after `migrate deploy` al
 | Importer for `data/dataset/anonymized` | Done, multi-region atomic (`east`, `southeast`, `south_central`, or `"all"` = 205 requests / 35 engineers), with the per-region crew cap |
 | Engineers, working days, facts | Done, `feat/api-engineers`; execution timing on top of facts done on `feat/router-mvp-contour` |
 | Three data actions (append, reset to demo, full reset) | Done, `feat/api-data-import` |
+| Dispatcher JSON package for a new region / appended requests | Done through `POST /dispatch/data/upload`; strict schema, stable external IDs and one atomic operation |
 | Coordinates for imported requests | Done via the required geocode packages in `data/dataset/geocoded/<region>.json`; they are declared district-centroid projections, not production geocoding |
 | Knowledge segments and pgvector | Out of scope of this build; the image supports the extension |
 | Retention periods per data class | Required by `context/37` section 6.3; the columns exist (`audit_log.retain_until`), the values are a deployment decision and are not invented here |
@@ -238,3 +239,17 @@ renumbers the two business-order fields contiguously and combines regional graph
 disconnected components. The Router then performs one ordinary calculation. Absence of
 cross-component edges makes cross-zone travel unreachable instead of assigning an
 invented large or zero cost.
+
+### Uploaded region package
+
+The upload boundary uses a single JSON document so validation can finish before writes.
+The stable namespace is the region slug, not the uploaded file name. `new_region` owns the
+depot and engineer roster; `append_requests` cannot mutate them. Both modes require at least
+one request. External request and engineer IDs are unique inside the document and remain
+stable across imports.
+
+Validation, entity creation, external-ID mappings, the import receipt and snapshot
+publication share one database transaction. Therefore a bad row cannot leave a partially
+created region. The import receipt hashes canonical package content without `operationId`,
+so retrying the same file is safe even with a new operation ID. See
+[`data-upload-example.json`](./data-upload-example.json) for the versioned wire format.

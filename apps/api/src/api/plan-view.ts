@@ -1,5 +1,7 @@
 import type { AppliedPlanCurrentShape } from './plan-view.types';
 
+export type TravelSource = 'approximate' | 'road_matrix' | 'route_api' | 'traffic_api';
+
 /**
  * What an interface is given about the working plan.
  *
@@ -33,7 +35,24 @@ export interface PlanRouteView {
   readonly lunchTimeSec: number;
   readonly assignedCount: number;
   readonly lunchStatus: string;
+  readonly legs: PlanRouteLegView[];
   readonly stops: PlanStopView[];
+}
+
+/** One planned movement between stops, with geometry only when Router had a road route. */
+export interface PlanRouteLegView {
+  readonly legId: string;
+  readonly fromStopId: string | null;
+  readonly toStopId: string;
+  readonly departureAt: number;
+  readonly arrivalAt: number;
+  readonly travelTimeSec: number;
+  readonly distanceKm: number;
+  readonly geometry: {
+    readonly points: Array<{ readonly lat: number; readonly lon: number }>;
+  } | null;
+  readonly travelSource: TravelSource;
+  readonly trafficFactor: number;
 }
 
 export interface PlanView {
@@ -71,6 +90,7 @@ export function toPlanView(plan: AppliedPlanCurrentShape): PlanView {
       lunchTimeSec: route.lunchTimeSec,
       assignedCount: route.assignedCount,
       lunchStatus: route.lunchStatus,
+      legs: planLegs(route.legs),
       stops: route.stops.map((stop) => ({
         sequence: stop.sequence,
         kind: stop.kind,
@@ -89,4 +109,55 @@ export function toPlanView(plan: AppliedPlanCurrentShape): PlanView {
       reasons: item.reasons,
     })),
   };
+}
+
+function planLegs(value: unknown): PlanRouteLegView[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const leg = item as Record<string, unknown>;
+    if (
+      typeof leg.legId !== 'string' ||
+      typeof leg.toStopId !== 'string' ||
+      typeof leg.departureAt !== 'number' ||
+      typeof leg.arrivalAt !== 'number' ||
+      typeof leg.travelTimeSec !== 'number' ||
+      typeof leg.distanceKm !== 'number' ||
+      !isTravelSource(leg.travelSource) ||
+      typeof leg.trafficFactor !== 'number' ||
+      leg.trafficFactor < 1
+    ) {
+      return [];
+    }
+    const geometry = leg.geometry;
+    const points =
+      geometry &&
+      typeof geometry === 'object' &&
+      Array.isArray((geometry as { points?: unknown }).points)
+        ? (geometry as { points: Array<{ lat: number; lon: number }> }).points
+        : null;
+    return [
+      {
+        legId: leg.legId,
+        fromStopId: typeof leg.fromStopId === 'string' ? leg.fromStopId : null,
+        toStopId: leg.toStopId,
+        departureAt: leg.departureAt,
+        arrivalAt: leg.arrivalAt,
+        travelTimeSec: leg.travelTimeSec,
+        distanceKm: leg.distanceKm,
+        geometry: points ? { points } : null,
+        travelSource: leg.travelSource,
+        trafficFactor: leg.trafficFactor,
+      },
+    ];
+  });
+}
+
+function isTravelSource(value: unknown): value is TravelSource {
+  return (
+    value === 'approximate' ||
+    value === 'road_matrix' ||
+    value === 'route_api' ||
+    value === 'traffic_api'
+  );
 }

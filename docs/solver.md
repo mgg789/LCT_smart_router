@@ -14,6 +14,14 @@ module; System Layer is integrated through the ROUTER-gateway HTTP client
   their resource/SLA-risk ordering is compiled from the catalog. The default
   policy is `compact` since the QA decisions (`context/50`) — scenario snapshots
   and goldens are built on it.
+- Explicit request/engineer region identity. A request can only be assigned to an
+  engineer from the same declared region; omitted regions remain compatible only for
+  legacy snapshots. Multi-region snapshots therefore cannot create cross-region work.
+- Optional lunch inputs use 45 minutes inside the local 11:20–15:00 window. The bounded
+  job-coverage search runs without optional lunch nodes and then projects the same
+  assignments into the lunch-aware schedule. This removes the observed artefact where
+  adding an optional lunch changed the heuristic trajectory and accidentally assigned
+  more work. A required lunch remains a hard feasibility condition.
 - Directed transport graph, path/matrix cache, OSRM adapter, address candidates and GeoJSON.
 - Optional 2GIS preparation adapter for current/statistical car traffic and separate
   walk, bike and schedule-aware public-transport matrix profiles; live HTTP stays
@@ -48,6 +56,13 @@ module; System Layer is integrated through the ROUTER-gateway HTTP client
   all candidate blockers.
 - Five live-event acceptance scenarios: normal/urgent request, engineer offline,
   two simultaneous 15-minute stops and a geographic 3x traffic multiplier.
+- Every result leg identifies its fidelity: `approximate`, `road_matrix`, `route_api`
+  or `traffic_api`. Distance and duration always come from the same quote; a matrix does
+  not pretend to provide a road polyline. Car quotes from a non-traffic source receive a
+  deterministic, versioned Moscow radial forecast factor based on time band, travel
+  direction and distance from the centre. OR-Tools uses the snapshot planning-time band
+  while exploring its static matrix; every extracted candidate is then scheduled and
+  validated with the planned departure time of each leg. It is a forecast, not live traffic.
 - Tests for hard constraints, stable replanning, event recovery, golden output hashes,
   obsolete generations and provider boundaries.
 

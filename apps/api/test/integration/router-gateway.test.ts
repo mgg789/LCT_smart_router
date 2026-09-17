@@ -349,6 +349,7 @@ describe('router gateway', () => {
         inputHash,
         contextVersion: 'ctx-1',
         planningAsOf: now(),
+        withRoadLeg: true,
         assigned: [
           {
             requestId: request.id,
@@ -383,9 +384,21 @@ describe('router gateway', () => {
     const planResponse = await call('GET', '/api/v1/dispatch/plan', dispatcherToken);
     const planBody = (await planResponse.json()) as {
       appliedResult: { inputHash: string; routerContextVersion: string } | null;
+      plan: {
+        routes: Array<{
+          legs: Array<{
+            travelSource: string;
+            trafficFactor: number;
+            geometry: { points: Array<{ lat: number; lon: number }> } | null;
+          }>;
+        }>;
+      } | null;
     };
     assert.equal(planBody.appliedResult?.inputHash, inputHash);
     assert.equal(planBody.appliedResult?.routerContextVersion, 'ctx-1');
+    assert.equal(planBody.plan?.routes[0]?.legs[0]?.travelSource, 'route_api');
+    assert.equal(planBody.plan?.routes[0]?.legs[0]?.trafficFactor, 1.25);
+    assert.equal(planBody.plan?.routes[0]?.legs[0]?.geometry?.points.length, 2);
 
     const intent = await prisma.notificationIntent.findUnique({
       where: { businessEventKey: `engineer_assigned:${request.id}:${engineerId}` },
