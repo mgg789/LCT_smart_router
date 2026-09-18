@@ -66,6 +66,8 @@
   --color-figma-hint: #b0b0b0;
   --color-figma-soft: #f4f6f8;
   --color-figma-sub: #2d2d2d;
+  --color-figma-done: #2f9e44;
+  --color-figma-danger: #e23b3b;
 }
 
 html,

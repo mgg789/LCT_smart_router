@@ -31,4 +31,8 @@ export const FIGMA_ASSETS = {
   radioEmpty: '/figma/radio-empty.svg',
   radioFilled: '/figma/radio-filled.svg',
   toggleOn: '/figma/toggle-on.svg',
+  notifDelay: '/figma/icon-notif-delay.svg',
+  notifRoute: '/figma/icon-notif-route.svg',
+  notifMessage: '/figma/icon-notif-message.svg',
+  arrowRight: '/figma/icon-arrow-right.svg',
 } as const;

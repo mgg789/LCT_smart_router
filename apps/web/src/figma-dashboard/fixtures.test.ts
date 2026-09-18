@@ -5,7 +5,10 @@ import {
   POLICY_OPTIONS,
   filterEngineers,
   formatNotificationCount,
+  isCompletedStop,
   requestCountLabel,
+  routeStopStatusLabel,
+  visibleNotifications,
 } from './fixtures';
 
 describe('Figma MAIN fixture', () => {
@@ -24,6 +27,15 @@ describe('Figma MAIN fixture', () => {
     expect(formatNotificationCount(99)).toBe('99');
     expect(formatNotificationCount(100)).toBe('99+');
     expect(requestCountLabel(MAIN_REQUEST_COUNT)).toMatch(/заявк/);
+    expect(MAIN_DASHBOARD.notifications).toHaveLength(3);
+    expect(visibleNotifications([...MAIN_DASHBOARD.notifications, { ...MAIN_DASHBOARD.notifications[0]!, id: 'extra' }])).toHaveLength(3);
+  });
+
+  it('renders completed route stops as a green uppercase label', () => {
+    expect(isCompletedStop('выполнено')).toBe(true);
+    expect(routeStopStatusLabel('выполнено')).toBe('ВЫПОЛНЕНО');
+    expect(isCompletedStop('сейчас - визит 45 мин')).toBe(false);
+    expect(routeStopStatusLabel('в пути 18 мин')).toBe('в пути 18 мин');
   });
 
   it('filters engineers by a case-insensitive name fragment', () => {

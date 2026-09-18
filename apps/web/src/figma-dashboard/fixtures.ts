@@ -63,12 +63,44 @@ export type EngineerCard = {
 
 export type NotificationTone = 'gray' | 'yellow';
 
+export type NotificationIconKey = 'delay' | 'route' | 'message';
+
+export type DashboardNotification = {
+  id: string;
+  tone: 'yellow' | 'plain';
+  icon: NotificationIconKey;
+  text: string;
+};
+
+/**
+ * Keeps at most three notifications for the header dropdown.
+ */
+export function visibleNotifications(
+  items: readonly DashboardNotification[],
+): DashboardNotification[] {
+  return items.slice(0, 3);
+}
+
 /**
  * Formats a notification count as a single-line badge label.
  */
 export function formatNotificationCount(count: number): string {
   if (count > 99) return '99+';
   return String(Math.max(0, Math.floor(count)));
+}
+
+/**
+ * Completed route stops are shown as a green uppercase label.
+ */
+export function isCompletedStop(status: string): boolean {
+  return status.trim().toLocaleLowerCase('ru').startsWith('выполнен');
+}
+
+/**
+ * Display label for a route-stop status chip.
+ */
+export function routeStopStatusLabel(status: string): string {
+  return isCompletedStop(status) ? 'ВЫПОЛНЕНО' : status;
 }
 
 /**
@@ -84,6 +116,26 @@ export const MAIN_DASHBOARD = {
   dateLabel: '15 сентября, 2026',
   defaultPolicy: 'Быстрее до клиента' satisfies PolicyOption,
   notification: { count: 12, tone: 'yellow' as NotificationTone },
+  notifications: [
+    {
+      id: 'delay',
+      tone: 'yellow',
+      icon: 'delay',
+      text: 'Сильное опоздание у Алексея Соколова',
+    },
+    {
+      id: 'graph',
+      tone: 'plain',
+      icon: 'route',
+      text: 'Граф перестроен из-за новой политики',
+    },
+    {
+      id: 'message',
+      tone: 'plain',
+      icon: 'message',
+      text: 'Новое сообщение от Елены Волковой',
+    },
+  ] satisfies DashboardNotification[],
   unassigned: {
     title: '2 заявки без назначения',
     reason: 'Нет инженера с нужным навыком',

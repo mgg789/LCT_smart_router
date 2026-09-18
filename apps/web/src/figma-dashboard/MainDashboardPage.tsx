@@ -1,4 +1,5 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { FIGMA_ASSETS } from './assets';
 import {
@@ -9,9 +10,14 @@ import {
   POLICY_OPTIONS,
   filterEngineers,
   formatNotificationCount,
+  isCompletedStop,
   requestCountLabel,
+  routeStopStatusLabel,
+  visibleNotifications,
+  type DashboardNotification,
   type EngineerCard,
   type NavItemId,
+  type NotificationIconKey,
   type NotificationTone,
   type PolicyOption,
 } from './fixtures';
@@ -46,7 +52,29 @@ const REASON_ICONS = {
 
 const NAV_ITEM_HEIGHT = 74;
 const NAV_ITEM_GAP = 10;
+const SEARCH_CONTROL_SIZE = 40;
+const SEARCH_OPEN_WIDTH = 351;
+const HEADER_LIFT = 16;
+const POLICY_LEFT = 1329;
+const POLICY_TOP = 26 - HEADER_LIFT;
+const POLICY_OPEN_HEIGHT = 497;
+const NOTIF_PANEL_LEFT = 1407;
+const NOTIF_PANEL_TOP = 29 - HEADER_LIFT;
+const NOTIF_OPEN_HEIGHT = 450;
+const HEADER_AVATAR_LEFT = 1800;
+const HEADER_AVATAR_TOP = 28 - HEADER_LIFT;
+const DATE_TOP = 100 - HEADER_LIFT;
+const PANEL_TOP = 154 - HEADER_LIFT;
+const PANEL_HEIGHT = 893 + HEADER_LIFT;
+const UNASSIGNED_TOP = 778 + HEADER_LIFT;
+const CLOSE_PANEL_SIZE = 43;
+const MAP_COMPACT = { left: 623, top: PANEL_TOP, width: 751, height: 582 + HEADER_LIFT };
+const MAP_EXPANDED = { left: 623, top: PANEL_TOP, width: 1267, height: PANEL_HEIGHT };
 const ROUTE_STOP_WIDTH = 260;
+const ROUTE_TOPIC_WIDTH = 240;
+const ROUTE_DOT_SIZE = 20;
+const ROUTE_DOT_LEFT = (ROUTE_TOPIC_WIDTH - ROUTE_DOT_SIZE) / 2;
+const ROUTE_LINE_LEFT = 30 + ROUTE_DOT_LEFT + ROUTE_DOT_SIZE / 2;
 const PROGRESS_TRACK = 321;
 
 const springQuick = { type: 'spring' as const, stiffness: 420, damping: 36, mass: 0.8 };
@@ -62,10 +90,14 @@ export function MainDashboardPage() {
   const [policyOpen, setPolicyOpen] = useState(false);
   const [policy, setPolicy] = useState<PolicyOption>(MAIN_DASHBOARD.defaultPolicy);
   const [lunchOn, setLunchOn] = useState(true);
+  const [trafficOn, setTrafficOn] = useState(false);
   const [activeNav, setActiveNav] = useState<NavItemId>('day');
   const [selectedEngineerId, setSelectedEngineerId] = useState(FALLBACK_ENGINEER.id);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [mapExpanded, setMapExpanded] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   const visibleEngineers = useMemo(
     () => filterEngineers(MAIN_DASHBOARD.engineers, searchQuery),
@@ -90,11 +122,23 @@ export function MainDashboardPage() {
         setSearchQuery('');
         return;
       }
-      if (policyOpen) setPolicyOpen(false);
+      if (notifOpen) {
+        setNotifOpen(false);
+        return;
+      }
+      if (userMenuOpen) {
+        setUserMenuOpen(false);
+        return;
+      }
+      if (policyOpen) {
+        setPolicyOpen(false);
+        return;
+      }
+      if (mapExpanded) setMapExpanded(false);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [policyOpen, searchOpen]);
+  }, [mapExpanded, notifOpen, policyOpen, searchOpen, userMenuOpen]);
 
   const scale = useArtboardScale();
   const motionOn = !reduceMotion;
@@ -116,20 +160,49 @@ export function MainDashboardPage() {
             setSearchOpen(false);
             setSearchQuery('');
           }
+          if (notifOpen && !target.closest('[data-notif-panel]')) setNotifOpen(false);
+          if (userMenuOpen && !target.closest('[data-user-menu]')) setUserMenuOpen(false);
+          if (policyOpen && !target.closest('[data-policy-panel]')) setPolicyOpen(false);
         }}
       >
         <SidebarNav activeNav={activeNav} onSelect={setActiveNav} motionOn={motionOn} />
-        <HeaderTools />
         <PolicyControl
           open={policyOpen}
           policy={policy}
           lunchOn={lunchOn}
+          trafficOn={trafficOn}
           motionOn={motionOn}
-          onToggle={() => setPolicyOpen((value) => !value)}
+          onToggle={() => {
+            setNotifOpen(false);
+            setUserMenuOpen(false);
+            setPolicyOpen((value) => !value);
+          }}
           onSelect={setPolicy}
           onLunchToggle={() => setLunchOn((value) => !value)}
+          onTrafficToggle={() => setTrafficOn((value) => !value)}
         />
-        <FigmaText className="figma-nowrap absolute left-[180px] top-[100px] font-murs text-[32px] tracking-[-0.544px] text-figma-ink">
+        <NotificationControl
+          open={notifOpen}
+          motionOn={motionOn}
+          onToggle={() => {
+            setPolicyOpen(false);
+            setUserMenuOpen(false);
+            setNotifOpen((value) => !value);
+          }}
+        />
+        <UserMenu
+          open={userMenuOpen}
+          motionOn={motionOn}
+          onToggle={() => {
+            setPolicyOpen(false);
+            setNotifOpen(false);
+            setUserMenuOpen((value) => !value);
+          }}
+        />
+        <FigmaText
+          className="figma-nowrap absolute left-[180px] font-murs text-[32px] tracking-[-0.544px] text-figma-ink"
+          style={{ top: DATE_TOP }}
+        >
           {MAIN_DASHBOARD.dateLabel}
         </FigmaText>
         <EngineersColumn
@@ -139,25 +212,38 @@ export function MainDashboardPage() {
           searchOpen={searchOpen}
           searchQuery={searchQuery}
           motionOn={motionOn}
-          onSearchOpen={() => setSearchOpen(true)}
+          onSearchToggle={() => {
+            if (searchOpen) {
+              setSearchOpen(false);
+              setSearchQuery('');
+              return;
+            }
+            setSearchOpen(true);
+          }}
           onSearchChange={setSearchQuery}
           onSelect={(id) => {
             setSelectedEngineerId(id);
             setSearchOpen(false);
             setSearchQuery('');
+            setMapExpanded(false);
           }}
         />
-        <MapCard engineerId={selectedEngineer.id} motionOn={motionOn} />
-        <RouteCard engineer={selectedEngineer} motionOn={motionOn} />
-        <RequestCard request={selectedEngineer.request} motionOn={motionOn} />
-        {policyOpen ? (
-          <button
-            type="button"
-            aria-label="Закрыть список политик"
-            className="absolute inset-0 z-10 cursor-default bg-transparent"
-            onClick={() => setPolicyOpen(false)}
-          />
-        ) : null}
+        <MapCard engineerId={selectedEngineer.id} expanded={mapExpanded} motionOn={motionOn} />
+        <AnimatePresence>
+          {mapExpanded ? null : (
+            <RouteCard key="route-card" engineer={selectedEngineer} motionOn={motionOn} />
+          )}
+        </AnimatePresence>
+        <AnimatePresence>
+          {mapExpanded ? null : (
+            <RequestCard
+              key="request-card"
+              request={selectedEngineer.request}
+              motionOn={motionOn}
+              onExpandMap={() => setMapExpanded(true)}
+            />
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );
@@ -239,17 +325,287 @@ function SidebarNav({
   );
 }
 
-function HeaderTools() {
+const NOTIF_ICONS: Record<NotificationIconKey, string> = {
+  delay: FIGMA_ASSETS.notifDelay,
+  route: FIGMA_ASSETS.notifRoute,
+  message: FIGMA_ASSETS.notifMessage,
+};
+
+/**
+ * Header bell + alerts dropdown. The 30×30 glyph stays at the same screen
+ * point; opening only paints a 43px ink circle behind it.
+ */
+function NotificationControl({
+  open,
+  motionOn,
+  onToggle,
+}: {
+  open: boolean;
+  motionOn: boolean;
+  onToggle: () => void;
+}) {
+  const [dismissedIds, setDismissedIds] = useState<string[]>([]);
+  const ignoreOutsideClick = useRef(false);
+  const items = visibleNotifications(MAIN_DASHBOARD.notifications).filter(
+    (item) => !dismissedIds.includes(item.id),
+  );
+  const badgeCount = Math.max(0, MAIN_DASHBOARD.notification.count - dismissedIds.length);
+
+  useEffect(() => {
+    const blockClick = (event: MouseEvent) => {
+      if (!ignoreOutsideClick.current) return;
+      event.stopPropagation();
+      ignoreOutsideClick.current = false;
+    };
+    document.addEventListener('click', blockClick, true);
+    return () => document.removeEventListener('click', blockClick, true);
+  }, []);
+
   return (
-    <div className="absolute left-[1728px] top-[32px] z-30 h-[50px] w-[162px]">
-      <div className="absolute left-0 top-[7px]">
-        <FigmaIcon src={FIGMA_ASSETS.bellHeader} alt="Уведомления" width={30} height={30} />
-        <NotificationBadge
-          count={MAIN_DASHBOARD.notification.count}
-          tone={MAIN_DASHBOARD.notification.tone}
-        />
-      </div>
-      <div className="absolute left-[72px] top-1/2 flex -translate-y-1/2 items-center gap-[20px]">
+    <div
+      data-notif-panel
+      className="pointer-events-none absolute z-50"
+      style={{ left: NOTIF_PANEL_LEFT, top: NOTIF_PANEL_TOP, width: 363 }}
+    >
+      <motion.div
+        className={`relative w-full rounded-[27px] ${
+          open ? 'pointer-events-auto overflow-hidden bg-white' : 'overflow-visible bg-transparent'
+        }`}
+        initial={false}
+        animate={{
+          height: open ? NOTIF_OPEN_HEIGHT : 51,
+          boxShadow: open ? '0 22px 48px rgba(39, 41, 48, 0.18)' : '0 0 0 rgba(39, 41, 48, 0)',
+        }}
+        transition={
+          motionOn
+            ? {
+                height: { duration: 0.44, ease: [0.22, 1, 0.36, 1] },
+                boxShadow: { duration: 0.32, ease: [0.22, 1, 0.36, 1] },
+              }
+            : { duration: 0 }
+        }
+      >
+        <AnimatePresence>
+          {open ? (
+            <motion.div
+              key="notif-body"
+              className="absolute inset-0"
+              initial={motionOn ? { opacity: 0 } : false}
+              animate={{ opacity: 1 }}
+              exit={motionOn ? { opacity: 0 } : undefined}
+              transition={fadeSoft}
+            >
+              <FigmaText className="figma-nowrap absolute left-[16px] top-[19px] font-murs text-[20px] text-figma-ink">
+                Алерты и уведомления
+              </FigmaText>
+              <div className="absolute left-[16px] top-[63px] flex h-[331px] w-[331px] flex-col gap-[19px] overflow-hidden">
+                <AnimatePresence initial={false}>
+                  {items.map((item) => (
+                    <NotificationRow
+                      key={item.id}
+                      item={item}
+                      motionOn={motionOn}
+                      onSwipeStart={() => {
+                        ignoreOutsideClick.current = true;
+                      }}
+                      onDismiss={() => {
+                        ignoreOutsideClick.current = true;
+                        setDismissedIds((current) =>
+                          current.includes(item.id) ? current : [...current, item.id],
+                        );
+                      }}
+                    />
+                  ))}
+                </AnimatePresence>
+              </div>
+              <button
+                type="button"
+                className="group absolute left-[16px] top-[410px] flex h-[25px] w-[331px] items-center justify-center gap-[2px]"
+              >
+                <span className="transition-transform duration-150 group-hover:-translate-x-1.5">
+                  <FigmaText className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
+                    К Алёртам
+                  </FigmaText>
+                </span>
+                <span className="transition-transform duration-150 group-hover:translate-x-1.5">
+                  <FigmaIcon src={FIGMA_ASSETS.arrowRight} alt="" width={24} height={24} />
+                </span>
+              </button>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+        <motion.button
+          type="button"
+          aria-label={open ? 'Закрыть уведомления' : 'Уведомления'}
+          onClick={onToggle}
+          className="pointer-events-auto absolute right-[4px] top-[4px] flex size-[43px] items-center justify-center"
+          whileHover={motionOn ? { scale: 1.08 } : undefined}
+          whileTap={motionOn ? { scale: 0.96 } : undefined}
+          transition={{ duration: 0.16 }}
+        >
+          <motion.span
+            className="absolute inset-0 rounded-full bg-figma-ink"
+            initial={false}
+            animate={{ opacity: open ? 1 : 0 }}
+            transition={motionOn ? { duration: 0.28, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
+          />
+          <span className="relative">
+            <FigmaIcon
+              src={FIGMA_ASSETS.bellHeader}
+              alt=""
+              width={30}
+              height={30}
+              className={open ? 'nav-glyph-on' : ''}
+            />
+            <AnimatePresence>
+              {open || badgeCount <= 0 ? null : (
+                <motion.span
+                  key="badge"
+                  className="absolute inset-0"
+                  initial={false}
+                  exit={motionOn ? { opacity: 0, scale: 0.85 } : undefined}
+                  transition={fadeSoft}
+                >
+                  <NotificationBadge
+                    count={badgeCount}
+                    tone={MAIN_DASHBOARD.notification.tone}
+                  />
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </span>
+        </motion.button>
+      </motion.div>
+    </div>
+  );
+}
+
+function NotificationRow({
+  item,
+  motionOn,
+  onSwipeStart,
+  onDismiss,
+}: {
+  item: DashboardNotification;
+  motionOn: boolean;
+  onSwipeStart: () => void;
+  onDismiss: () => void;
+}) {
+  const [offsetX, setOffsetX] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const originX = useRef<number | null>(null);
+  const exitX = useRef(360);
+
+  const beginSwipe = (clientX: number) => {
+    originX.current = clientX;
+    setDragging(true);
+    onSwipeStart();
+  };
+
+  const moveSwipe = (clientX: number) => {
+    if (originX.current === null) return;
+    setOffsetX(clientX - originX.current);
+  };
+
+  const endSwipe = (clientX: number) => {
+    if (originX.current === null) return;
+    const dx = clientX - originX.current;
+    originX.current = null;
+    setDragging(false);
+    if (Math.abs(dx) < 64) {
+      setOffsetX(0);
+      return;
+    }
+    exitX.current = dx >= 0 ? 380 : -380;
+    setOffsetX(exitX.current);
+    onDismiss();
+  };
+
+  useEffect(() => {
+    if (!dragging) return;
+    const onMove = (event: PointerEvent) => moveSwipe(event.clientX);
+    const onUp = (event: PointerEvent) => endSwipe(event.clientX);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+  }, [dragging]);
+
+  return (
+    <motion.div
+      layout
+      initial={motionOn ? { opacity: 0, y: 10 } : false}
+      animate={{ opacity: 1, y: 0 }}
+      exit={
+        motionOn
+          ? { opacity: 0, x: exitX.current, height: 0, marginBottom: 0, transition: { duration: 0.22 } }
+          : { opacity: 0 }
+      }
+      className="shrink-0"
+    >
+      <motion.div
+        onPointerDown={(event) => {
+          try {
+            event.currentTarget.setPointerCapture(event.pointerId);
+          } catch {
+            /* pointer capture is unavailable for some synthetic events */
+          }
+          beginSwipe(event.clientX);
+        }}
+        onPointerMove={(event) => {
+          if (originX.current === null) return;
+          moveSwipe(event.clientX);
+        }}
+        onPointerUp={(event) => endSwipe(event.clientX)}
+        onPointerCancel={(event) => endSwipe(event.clientX)}
+        whileHover={
+          motionOn && !dragging
+            ? { y: -3, boxShadow: '0 12px 24px rgba(39, 41, 48, 0.14)' }
+            : undefined
+        }
+        animate={{ x: offsetX }}
+        transition={dragging ? { duration: 0 } : fadeSoft}
+        role="button"
+        aria-label={item.text}
+        className={`flex h-[99px] w-[331px] cursor-grab items-center gap-[11px] overflow-clip rounded-[20px] px-[36px] py-[20px] select-none ${
+          dragging ? 'cursor-grabbing' : ''
+        } ${item.tone === 'yellow' ? 'bg-figma-bee' : 'border-2 border-solid border-figma-ink bg-white'}`}
+        style={{ touchAction: 'pan-x' }}
+      >
+        <FigmaIcon src={NOTIF_ICONS[item.icon]} alt="" width={30} height={30} />
+        <FigmaText className="font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
+          {item.text}
+        </FigmaText>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/**
+ * Avatar + chevron open a compact account menu.
+ */
+function UserMenu({
+  open,
+  motionOn,
+  onToggle,
+}: {
+  open: boolean;
+  motionOn: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div data-user-menu className="absolute z-50" style={{ left: HEADER_AVATAR_LEFT, top: HEADER_AVATAR_TOP }}>
+      <motion.button
+        type="button"
+        onClick={onToggle}
+        className="flex items-center gap-[20px]"
+        aria-label="Меню пользователя"
+        whileHover={motionOn ? { scale: 1.04 } : undefined}
+        whileTap={motionOn ? { scale: 0.98 } : undefined}
+        transition={{ duration: 0.16 }}
+      >
         <div className="relative size-[50px] overflow-clip rounded-[81px] bg-figma-ink">
           <img
             alt=""
@@ -257,8 +613,46 @@ function HeaderTools() {
             className="absolute left-0 top-[-2px] size-[52px] max-w-none object-cover"
           />
         </div>
-        <FigmaIcon src={FIGMA_ASSETS.chevronDown} alt="" width={20} height={20} />
-      </div>
+        <motion.span
+          className="flex size-[20px] items-center justify-center"
+          animate={{ rotate: open ? 180 : 0 }}
+          whileHover={motionOn && !open ? { rotate: 18 } : undefined}
+          transition={{ duration: 0.2 }}
+        >
+          <FigmaIcon src={FIGMA_ASSETS.chevronDown} alt="" width={20} height={20} />
+        </motion.span>
+      </motion.button>
+      <AnimatePresence>
+        {open ? (
+          <motion.div
+            className="absolute right-0 top-[62px] flex w-[214px] flex-col gap-[8px] rounded-[16px] bg-white p-[10px]"
+            initial={motionOn ? { opacity: 0, y: -8, scale: 0.96 } : false}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={motionOn ? { opacity: 0, y: -8, scale: 0.96 } : undefined}
+            transition={motionOn ? { duration: 0.28, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
+            style={{ boxShadow: '0 16px 36px rgba(39, 41, 48, 0.16)' }}
+          >
+            <motion.button
+              type="button"
+              className="flex h-[44px] w-full items-center justify-center rounded-[12px] bg-figma-danger font-semibold text-[16px] text-white"
+              whileHover={motionOn ? { scale: 1.03, filter: 'brightness(1.08)' } : undefined}
+              whileTap={motionOn ? { scale: 0.98 } : undefined}
+              transition={{ duration: 0.16 }}
+            >
+              Сбросить данные
+            </motion.button>
+            <motion.button
+              type="button"
+              className="flex h-[44px] w-full items-center justify-center rounded-[12px] bg-figma-danger font-semibold text-[16px] text-white"
+              whileHover={motionOn ? { scale: 1.03, filter: 'brightness(1.08)' } : undefined}
+              whileTap={motionOn ? { scale: 0.98 } : undefined}
+              transition={{ duration: 0.16 }}
+            >
+              Выйти
+            </motion.button>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 }
@@ -284,26 +678,31 @@ function PolicyControl({
   open,
   policy,
   lunchOn,
+  trafficOn,
   motionOn,
   onToggle,
   onSelect,
   onLunchToggle,
+  onTrafficToggle,
 }: {
   open: boolean;
   policy: PolicyOption;
   lunchOn: boolean;
+  trafficOn: boolean;
   motionOn: boolean;
   onToggle: () => void;
   onSelect: (policy: PolicyOption) => void;
   onLunchToggle: () => void;
+  onTrafficToggle: () => void;
 }) {
   return (
     <motion.div
       data-policy-panel
-      className="absolute left-[1289px] top-[26px] z-50 w-[363px] overflow-hidden rounded-[27px] bg-white"
+      className="absolute z-50 w-[363px] overflow-hidden rounded-[27px] bg-white"
+      style={{ left: POLICY_LEFT, top: POLICY_TOP }}
       initial={false}
       animate={{
-        height: open ? 451 : 51,
+        height: open ? POLICY_OPEN_HEIGHT : 51,
         boxShadow: open ? '0 22px 48px rgba(39, 41, 48, 0.18)' : '0 0 0 rgba(39, 41, 48, 0)',
       }}
       transition={
@@ -316,16 +715,25 @@ function PolicyControl({
       }
     >
       <div className="relative h-[51px] w-full">
-        <button
+        <motion.button
           type="button"
           onClick={onToggle}
           className="absolute inset-y-0 left-0 right-[52px] px-[16px] text-left"
+          whileHover={motionOn ? { x: 2 } : undefined}
+          transition={{ duration: 0.16 }}
         >
           <FigmaText className="figma-nowrap font-semibold text-[18px] tracking-[-0.306px] text-figma-ink">
             {open ? 'Выбери свою политику' : `Политика: ${policy}`}
           </FigmaText>
-        </button>
-        <button type="button" onClick={onToggle} className="absolute right-[4px] top-[4px] size-[43px]">
+        </motion.button>
+        <motion.button
+          type="button"
+          onClick={onToggle}
+          className="absolute right-[4px] top-[4px] size-[43px]"
+          whileHover={motionOn ? { scale: 1.08 } : undefined}
+          whileTap={motionOn ? { scale: 0.96 } : undefined}
+          transition={{ duration: 0.16 }}
+        >
           <motion.span
             className="flex size-[43px] origin-center items-center justify-center will-change-transform"
             initial={false}
@@ -334,16 +742,18 @@ function PolicyControl({
           >
             <FigmaIcon src={FIGMA_ASSETS.policyArrowClosed} alt={open ? 'Свернуть' : 'Открыть политики'} width={43} height={43} />
           </motion.span>
-        </button>
+        </motion.button>
       </div>
-      <div className={`relative h-[400px] w-[363px] ${open ? '' : 'pointer-events-none'}`}>
+      <div className={`relative h-[460px] w-[363px] ${open ? '' : 'pointer-events-none'}`}>
         {POLICY_OPTIONS.map((option, index) => (
-          <button
+          <motion.button
             key={option}
             type="button"
             onClick={() => onSelect(option)}
             className="absolute left-0 h-[32px] w-full"
             style={{ top: 14 + index * 44 }}
+            whileHover={motionOn ? { x: 4 } : undefined}
+            transition={{ duration: 0.16 }}
           >
             <FigmaIcon
               src={option === policy ? FIGMA_ASSETS.radioFilled : FIGMA_ASSETS.radioEmpty}
@@ -355,24 +765,25 @@ function PolicyControl({
             <FigmaText className="figma-nowrap absolute left-[50px] top-[4px] font-medium text-[20px] text-figma-ink">
               {option}
             </FigmaText>
-          </button>
+          </motion.button>
         ))}
-        <button type="button" onClick={onLunchToggle} className="absolute left-[16px] top-[274px]">
-          {lunchOn ? (
-            <FigmaIcon src={FIGMA_ASSETS.toggleOn} alt="Обед включён" width={59} height={29} />
-          ) : (
-            <span className="relative block h-[29px] w-[59px] overflow-clip">
-              <span className="absolute inset-0 rounded-[14.5px] bg-figma-muted" />
-              <span className="absolute left-[3px] top-[3px] size-[23px] rounded-full bg-white" />
-            </span>
-          )}
-        </button>
-        <FigmaText className="figma-nowrap absolute left-[85px] top-[281px] font-medium leading-none text-[20px] text-black">
-          Обед включён
-        </FigmaText>
+        <PolicySwitch
+          on={lunchOn}
+          label="Рассчитать обеды"
+          top={274}
+          motionOn={motionOn}
+          onToggle={onLunchToggle}
+        />
+        <PolicySwitch
+          on={trafficOn}
+          label="Прогнозировать пробки"
+          top={318}
+          motionOn={motionOn}
+          onToggle={onTrafficToggle}
+        />
         <button
           type="button"
-          className="absolute left-[16px] top-[319px] flex h-[67px] w-[331px] items-center justify-center rounded-[20px] bg-figma-bee p-[20px] transition-transform duration-150 hover:scale-[1.01]"
+          className="absolute left-[16px] top-[363px] flex h-[67px] w-[331px] items-center justify-center rounded-[20px] bg-figma-bee p-[20px] transition-transform duration-150 hover:scale-[1.01]"
         >
           <span className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
             Ручное управление
@@ -383,6 +794,49 @@ function PolicyControl({
   );
 }
 
+/**
+ * Animated policy toggle: 59×29 track with a sliding thumb.
+ */
+function PolicySwitch({
+  on,
+  label,
+  top,
+  motionOn,
+  onToggle,
+}: {
+  on: boolean;
+  label: string;
+  top: number;
+  motionOn: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="absolute left-[16px] flex items-center"
+      style={{ top }}
+    >
+      <span className="relative block h-[29px] w-[59px] overflow-hidden rounded-[14.5px]">
+        <span
+          className={`absolute inset-0 rounded-[14.5px] transition-colors duration-300 ${
+            on ? 'bg-figma-ink' : 'bg-figma-muted'
+          }`}
+        />
+        <motion.span
+          className="absolute top-[3px] size-[23px] rounded-full bg-white"
+          initial={false}
+          animate={{ left: on ? 33 : 3 }}
+          transition={motionOn ? { duration: 0.28, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
+        />
+      </span>
+      <FigmaText className="figma-nowrap ml-[10px] font-medium leading-none text-[20px] text-black">
+        {label}
+      </FigmaText>
+    </button>
+  );
+}
+
 function EngineersColumn({
   engineers,
   totalCount,
@@ -390,7 +844,7 @@ function EngineersColumn({
   searchOpen,
   searchQuery,
   motionOn,
-  onSearchOpen,
+  onSearchToggle,
   onSearchChange,
   onSelect,
 }: {
@@ -400,7 +854,7 @@ function EngineersColumn({
   searchOpen: boolean;
   searchQuery: string;
   motionOn: boolean;
-  onSearchOpen: () => void;
+  onSearchToggle: () => void;
   onSearchChange: (value: string) => void;
   onSelect: (id: string) => void;
 }) {
@@ -411,14 +865,17 @@ function EngineersColumn({
   }, [searchOpen]);
 
   return (
-    <section className="absolute left-[180px] top-[154px] h-[893px] w-[411px] overflow-hidden rounded-[20px] bg-white">
-      <FigmaText className="figma-nowrap absolute left-[30px] top-[30px] font-extrabold text-[28px] tracking-[-0.476px] text-figma-ink">
+    <section
+      className="absolute left-[180px] w-[411px] overflow-hidden rounded-[20px] bg-white"
+      style={{ top: PANEL_TOP, height: PANEL_HEIGHT }}
+    >
+      <FigmaText className="figma-nowrap absolute left-[30px] top-[30px] z-0 font-extrabold text-[28px] tracking-[-0.476px] text-figma-ink">
         {requestCountLabel(MAIN_REQUEST_COUNT)}
       </FigmaText>
-      <FigmaText className="figma-nowrap absolute left-[30px] top-[68px] font-semibold text-[18px] tracking-[-0.306px] text-figma-muted">
+      <FigmaText className="figma-nowrap absolute left-[30px] top-[68px] z-0 font-semibold text-[18px] tracking-[-0.306px] text-figma-muted">
         {MAIN_DASHBOARD.unassigned.title.replace('заявки без назначения', 'без назначения')} - план от 11:42
       </FigmaText>
-      <div className="absolute left-[30px] right-[30px] top-[114px] h-[48px]" data-engineer-search>
+      <div className="absolute left-[30px] right-[30px] top-[114px] z-0 h-[48px]" data-engineer-search>
         <AnimatePresence initial={false}>
           {!searchOpen ? (
             <motion.div
@@ -446,9 +903,14 @@ function EngineersColumn({
           ) : null}
         </AnimatePresence>
         <motion.div
-          className="absolute right-0 top-[calc(50%-3px)] flex h-[44px] -translate-y-1/2 items-center overflow-hidden rounded-[20px] border border-solid border-figma-ink bg-white"
+          className="absolute right-0 top-[calc(50%-2px)] box-border flex -translate-y-1/2 items-center overflow-hidden rounded-[20px] border border-solid border-figma-ink bg-white"
+          style={{
+            height: SEARCH_CONTROL_SIZE,
+            minHeight: SEARCH_CONTROL_SIZE,
+            maxHeight: SEARCH_CONTROL_SIZE,
+          }}
           initial={false}
-          animate={{ width: searchOpen ? 351 : 44 }}
+          animate={{ width: searchOpen ? SEARCH_OPEN_WIDTH : SEARCH_CONTROL_SIZE }}
           transition={motionOn ? { duration: 0.4, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
         >
           <input
@@ -458,22 +920,29 @@ function EngineersColumn({
             placeholder="Найти инженера"
             tabIndex={searchOpen ? 0 : -1}
             aria-hidden={!searchOpen}
-            className="h-full min-w-0 flex-1 bg-transparent pl-[18px] pr-[44px] font-medium text-[18px] tracking-[-0.3px] text-figma-ink outline-none placeholder:text-figma-hint"
+            className="box-border h-full min-h-0 min-w-0 flex-1 border-0 bg-transparent py-0 pl-[18px] pr-[40px] font-medium leading-none text-[18px] tracking-[-0.3px] text-figma-ink outline-none placeholder:text-figma-hint"
           />
           <button
             type="button"
-            aria-label="Найти инженера"
-            onClick={onSearchOpen}
-            className="absolute right-0 top-0 flex size-[44px] items-center justify-center"
+            aria-label={searchOpen ? 'Закрыть поиск' : 'Найти инженера'}
+            onClick={onSearchToggle}
+            className="absolute right-0 top-0 flex items-center justify-center"
+            style={{ width: SEARCH_CONTROL_SIZE, height: SEARCH_CONTROL_SIZE }}
           >
-            <FigmaIcon src={FIGMA_ASSETS.searchPanel} alt="" width={22} height={22} className="-translate-y-[2px]" />
+            <FigmaIcon
+              src={FIGMA_ASSETS.searchPanel}
+              alt=""
+              width={22}
+              height={22}
+              className="translate-x-[1px] -translate-y-[1px]"
+            />
           </button>
         </motion.div>
       </div>
-      <div className="absolute inset-x-0 top-[170px] bottom-[132px] overflow-y-auto px-[30px] [scrollbar-width:thin]">
+      <div className="absolute inset-x-0 top-[158px] bottom-[132px] z-20 overflow-y-auto px-[30px] pt-[12px] [scrollbar-width:thin]">
         <div className="flex flex-col gap-[20px] pb-[8px]">
           <AnimatePresence initial={false}>
-            {engineers.map((engineer) => (
+            {engineers.map((engineer, index) => (
               <motion.div
                 key={engineer.id}
                 layout
@@ -481,10 +950,14 @@ function EngineersColumn({
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 transition={motionOn ? springQuick : { duration: 0 }}
+                className="relative"
+                style={{ zIndex: index === 0 ? 30 : 10 }}
+                whileHover={{ zIndex: 40 }}
               >
                 <EngineerRow
                   engineer={engineer}
                   selected={engineer.id === selectedEngineerId}
+                  elevate={index === 0}
                   motionOn={motionOn}
                   onSelect={() => onSelect(engineer.id)}
                 />
@@ -499,7 +972,8 @@ function EngineersColumn({
         </div>
       </div>
       <motion.div
-        className="absolute left-[30px] top-[778px] w-[351px] overflow-clip rounded-[20px] bg-figma-bee px-[29px] py-[25px]"
+        className="absolute left-[30px] z-30 w-[351px] overflow-clip rounded-[20px] bg-figma-bee px-[29px] py-[25px]"
+        style={{ top: UNASSIGNED_TOP }}
         whileHover={motionOn ? { scale: 1.01 } : undefined}
         transition={{ duration: 0.16 }}
       >
@@ -519,11 +993,13 @@ function EngineersColumn({
 function EngineerRow({
   engineer,
   selected,
+  elevate,
   motionOn,
   onSelect,
 }: {
   engineer: EngineerCard;
   selected: boolean;
+  elevate: boolean;
   motionOn: boolean;
   onSelect: () => void;
 }) {
@@ -533,10 +1009,10 @@ function EngineerRow({
     <motion.button
       type="button"
       onClick={onSelect}
-      whileHover={motionOn ? { y: -1 } : undefined}
+      whileHover={motionOn ? { y: -2, zIndex: 40 } : undefined}
       className={`relative box-border h-[132px] w-[351px] overflow-clip rounded-[15px] text-left transition-[box-shadow,background-color] duration-200 ease-out ${
         selected ? 'bg-figma-soft' : 'bg-transparent'
-      }`}
+      } ${elevate ? 'z-30' : 'z-10'}`}
       style={{ boxShadow: selected ? 'inset 0 0 0 1px #727478' : 'inset 0 0 0 1px transparent' }}
     >
       <img
@@ -574,23 +1050,33 @@ function EngineerRow({
   );
 }
 
-function MapCard({ engineerId, motionOn }: { engineerId: string; motionOn: boolean }) {
+function MapCard({
+  engineerId,
+  expanded,
+  motionOn,
+}: {
+  engineerId: string;
+  expanded: boolean;
+  motionOn: boolean;
+}) {
+  const frame = expanded ? MAP_EXPANDED : MAP_COMPACT;
   return (
-    <section className="absolute left-[623px] top-[154px] h-[582px] w-[751px] overflow-clip rounded-[20px] bg-white">
-      <motion.div
+    <motion.section
+      className="absolute overflow-clip rounded-[20px] bg-white"
+      initial={false}
+      animate={frame}
+      transition={motionOn ? { duration: 0.45, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
+    >
+      <motion.img
         key={engineerId}
-        className="absolute left-1/2 top-[268px] h-[628px] w-[1227px] -translate-x-1/2 -translate-y-1/2"
+        alt="Карта Москвы"
+        src={FIGMA_ASSETS.map}
+        className="absolute inset-0 size-full max-w-none object-cover"
         initial={motionOn ? { opacity: 0.72, scale: 1.012 } : false}
         animate={{ opacity: 1, scale: 1 }}
         transition={fadeSoft}
-      >
-        <img
-          alt="Карта Москвы"
-          src={FIGMA_ASSETS.map}
-          className="absolute inset-0 size-full max-w-none object-cover"
-        />
-      </motion.div>
-    </section>
+      />
+    </motion.section>
   );
 }
 
@@ -617,7 +1103,13 @@ function RouteCard({ engineer, motionOn }: { engineer: EngineerCard; motionOn: b
   }, [engineer.id, engineer.stops.length]);
 
   return (
-    <section className="absolute left-[623px] top-[768px] h-[279px] w-[751px] overflow-hidden rounded-[20px] bg-white">
+    <motion.section
+      className="absolute left-[623px] top-[768px] h-[279px] w-[751px] overflow-hidden rounded-[20px] bg-white"
+      initial={motionOn ? { opacity: 0, y: 20 } : false}
+      animate={{ opacity: 1, y: 0 }}
+      exit={motionOn ? { opacity: 0, y: 28 } : undefined}
+      transition={motionOn ? { duration: 0.38, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
+    >
       <AnimatePresence mode="wait">
         <motion.div
           key={engineer.id}
@@ -635,7 +1127,13 @@ function RouteCard({ engineer, motionOn }: { engineer: EngineerCard; motionOn: b
           </FigmaText>
           <div ref={scrollerRef} className="route-scroll absolute inset-x-0 top-[110px] bottom-[22px] overflow-x-auto">
             <div className="relative px-[30px]" style={{ width: 60 + engineer.stops.length * ROUTE_STOP_WIDTH }}>
-              <div className="absolute left-[56px] top-[19px] h-[3px] bg-figma-ink" style={{ width: Math.max(0, (engineer.stops.length - 1) * ROUTE_STOP_WIDTH) }} />
+              <div
+                className="absolute top-[19px] h-[3px] bg-figma-ink"
+                style={{
+                  left: ROUTE_LINE_LEFT,
+                  width: Math.max(0, (engineer.stops.length - 1) * ROUTE_STOP_WIDTH),
+                }}
+              />
               <div className="flex">
                 {engineer.stops.map((stop, index) => (
                   <motion.div
@@ -646,15 +1144,22 @@ function RouteCard({ engineer, motionOn }: { engineer: EngineerCard; motionOn: b
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ ...fadeSoft, delay: index * 0.04 }}
                   >
-                    <span className="absolute left-[16px] top-[10px] size-[20px] rounded-full bg-figma-ink" />
+                    <span
+                      className="absolute top-[10px] rounded-full bg-figma-ink"
+                      style={{ left: ROUTE_DOT_LEFT, width: ROUTE_DOT_SIZE, height: ROUTE_DOT_SIZE }}
+                    />
                     <FigmaText className="figma-nowrap absolute left-0 top-[46px] w-[240px] text-center font-semibold text-[24px] tracking-[-0.408px] text-black">
                       {stop.time}
                     </FigmaText>
                     <p className="absolute left-0 top-[78px] w-[240px] text-center font-semibold text-[18px] leading-[22px] tracking-[-0.306px] text-figma-muted">
                       {stop.place}
                     </p>
-                    <FigmaText className="absolute left-0 top-[126px] w-[240px] text-center font-semibold text-[16px] tracking-[-0.272px] text-figma-hint">
-                      {stop.status}
+                    <FigmaText
+                      className={`absolute left-0 top-[126px] w-[240px] text-center font-semibold text-[16px] tracking-[-0.272px] ${
+                        isCompletedStop(stop.status) ? 'text-figma-done' : 'text-figma-hint'
+                      }`}
+                    >
+                      {routeStopStatusLabel(stop.status)}
                     </FigmaText>
                   </motion.div>
                 ))}
@@ -667,19 +1172,37 @@ function RouteCard({ engineer, motionOn }: { engineer: EngineerCard; motionOn: b
         className="pointer-events-none absolute top-[267px] h-[6px] rounded-[13px] bg-figma-hint"
         style={{ left: thumb.left, width: thumb.width }}
       />
-    </section>
+    </motion.section>
   );
 }
 
 function RequestCard({
   request,
   motionOn,
+  onExpandMap,
 }: {
   request: EngineerCard['request'];
   motionOn: boolean;
+  onExpandMap: () => void;
 }) {
   return (
-    <aside className="absolute left-[1406px] top-[154px] h-[893px] w-[484px] overflow-clip rounded-[20px] bg-figma-ink">
+    <motion.aside
+      className="absolute left-[1406px] w-[484px] overflow-clip rounded-[20px] bg-figma-ink"
+      style={{ top: PANEL_TOP, height: PANEL_HEIGHT }}
+      initial={motionOn ? { opacity: 0, x: 28 } : false}
+      animate={{ opacity: 1, x: 0 }}
+      exit={motionOn ? { opacity: 0, x: 36 } : undefined}
+      transition={motionOn ? { duration: 0.38, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
+    >
+      <button
+        type="button"
+        aria-label="Развернуть карту"
+        onClick={onExpandMap}
+        className="absolute right-[16px] top-[16px] z-10 flex items-center justify-center rounded-full bg-white"
+        style={{ width: CLOSE_PANEL_SIZE, height: CLOSE_PANEL_SIZE }}
+      >
+        <X size={22} strokeWidth={2.25} className="text-figma-ink" />
+      </button>
       <AnimatePresence mode="wait">
         <motion.div
           key={request.number}
@@ -771,17 +1294,17 @@ function RequestCard({
         className="absolute left-[27px] top-[711px] flex h-[67px] w-[430px] items-center justify-center rounded-[20px] bg-figma-bee p-[20px] transition-transform duration-150 hover:scale-[1.01]"
       >
         <span className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
-          Сменить пользователя
+          Переназначить
         </span>
       </button>
       <button
         type="button"
-        className="absolute left-[20px] top-[794px] flex h-[67px] w-[444px] items-center justify-center rounded-[20px] border border-solid border-white bg-figma-ink px-[20px] transition-transform duration-150 hover:scale-[1.01]"
+        className="absolute left-[27px] top-[794px] flex h-[67px] w-[430px] items-center justify-center rounded-[20px] border border-solid border-white bg-figma-ink px-[8px] transition-transform duration-150 hover:scale-[1.01]"
       >
         <span className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-white">
           Разобрать с AI ассистентом
         </span>
       </button>
-    </aside>
+    </motion.aside>
   );
 }
