@@ -35,4 +35,12 @@ export const FIGMA_ASSETS = {
   notifRoute: '/figma/icon-notif-route.svg',
   notifMessage: '/figma/icon-notif-message.svg',
   arrowRight: '/figma/icon-arrow-right.svg',
+  toastSystem: '/figma/icon-toast-wrench.svg',
+  toastProgress: '/figma/icon-toast-progress.png',
+  toastAi: '/figma/icon-toast-robot.svg',
+  toastChat: '/figma/icon-toast-message.svg',
+  toastRoute: '/figma/icon-toast-route.svg',
+  toastAlert: '/figma/icon-toast-alert.svg',
+  toastClose: '/figma/icon-toast-close.svg',
+  toastCloseInk: '/figma/icon-toast-close-ink.svg',
 } as const;

@@ -23,24 +23,28 @@ import {
   isCompletedStop,
   requestCountLabel,
   routeStopStatusLabel,
-  visibleNotifications,
-  type DashboardNotification,
   type EngineerCard,
   type NavItemId,
-  type NotificationIconKey,
   type NotificationTone,
   type RouteStop,
 } from './fixtures';
 import {
   dashboardViewFromSnapshot,
   nextRouterSettings,
-  notificationsFromSnapshot,
   policyLabel,
   requestUrgency,
   rightPanelMode,
 } from './fromSnapshot';
 import { PolicyComparisonView } from './PolicyComparisonView';
+import { ToastColumn } from './ToastColumn';
 import { FigmaIcon, FigmaText } from './primitives';
+import {
+  seedDemoToasts,
+  toastFromAlert,
+  toastFromEvent,
+  upsertNewToasts,
+  useToasts,
+} from './toasts';
 
 const NAV_ICONS = {
   navHome: FIGMA_ASSETS.navHome,
@@ -72,7 +76,6 @@ const POLICY_TOP = 26 - HEADER_LIFT;
 const POLICY_OPEN_HEIGHT = 497;
 const NOTIF_PANEL_LEFT = 1407;
 const NOTIF_PANEL_TOP = 29 - HEADER_LIFT;
-const NOTIF_OPEN_HEIGHT = 450;
 const HEADER_AVATAR_LEFT = 1800;
 const HEADER_AVATAR_TOP = 28 - HEADER_LIFT;
 const DATE_TOP = 100 - HEADER_LIFT;
@@ -103,7 +106,8 @@ export function MainDashboardPage() {
   const [activeNav, setActiveNav] = useState<NavItemId>('day');
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [notifOpen, setNotifOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(true);
+  const toasts = useToasts();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [regionOpen, setRegionOpen] = useState(false);
   const [selectedRegion, setSelectedRegion] = useState<RegionSelection>(ALL_REGIONS);
@@ -169,29 +173,23 @@ export function MainDashboardPage() {
     dash.snapshot,
     panelMode,
   ]);
-  const inbox = useMemo(() => {
-    if (!dash.snapshot) {
-      return {
-        count: MAIN_DASHBOARD.notification.count,
-        tone: MAIN_DASHBOARD.notification.tone,
-        items: visibleNotifications(MAIN_DASHBOARD.notifications),
-      };
-    }
-    const fromAlerts = notificationsFromSnapshot(dash.snapshot);
-    if (fromAlerts.items.length > 0) return fromAlerts;
-    return {
-      count: dash.events.length,
-      tone: 'gray' as const,
-      items: visibleNotifications(
-        dash.events.map((event) => ({
-          id: event.id,
-          tone: 'plain' as const,
-          icon: 'route' as const,
-          text: event.text,
-        })),
-      ),
-    };
-  }, [dash.events, dash.snapshot]);
+  useEffect(() => {
+    if (dash.isDemo) seedDemoToasts();
+  }, [dash.isDemo]);
+
+  useEffect(() => {
+    const openAlerts = (dash.snapshot?.alerts ?? []).filter((alert) => alert.resolvedAt === null);
+    upsertNewToasts(openAlerts.map(toastFromAlert));
+    if (!dash.isDemo) upsertNewToasts(dash.events.map(toastFromEvent));
+  }, [dash.events, dash.isDemo, dash.snapshot]);
+
+  const inbox = useMemo(
+    () => ({
+      count: toasts.length,
+      tone: (toasts.some((item) => item.kind === 'alert') ? 'yellow' : 'gray') as NotificationTone,
+    }),
+    [toasts],
+  );
   const policies = (dash.snapshot?.policies ?? []).map((item) => ({
     id: item.policyId,
     label: policyLabel(item.policyId, item.title),
@@ -277,7 +275,6 @@ export function MainDashboardPage() {
             setSearchOpen(false);
             setSearchQuery('');
           }
-          if (notifOpen && !target.closest('[data-notif-panel]')) setNotifOpen(false);
           if (userMenuOpen && !target.closest('[data-user-menu]')) setUserMenuOpen(false);
           if (policyOpen && !target.closest('[data-policy-panel]')) setPolicyOpen(false);
           if (regionOpen && !target.closest('[data-region-panel]')) setRegionOpen(false);
@@ -292,8 +289,6 @@ export function MainDashboardPage() {
             if (id === 'alerts') {
               setUserMenuOpen(false);
               setNotifOpen(true);
-            } else {
-              setNotifOpen(false);
             }
           }}
         />
@@ -306,7 +301,6 @@ export function MainDashboardPage() {
           trafficOn={trafficOn}
           motionOn={motionOn}
           onToggle={() => {
-            setNotifOpen(false);
             setUserMenuOpen(false);
             setPolicyOpen((value) => !value);
           }}
@@ -320,7 +314,6 @@ export function MainDashboardPage() {
         />
         <NotificationControl
           open={notifOpen}
-          items={inbox.items}
           count={inbox.count}
           tone={inbox.tone}
           motionOn={motionOn}
@@ -330,12 +323,12 @@ export function MainDashboardPage() {
             setNotifOpen((value) => !value);
           }}
         />
+        <ToastColumn open={notifOpen} motionOn={motionOn} scale={scale} />
         <UserMenu
           open={userMenuOpen}
           motionOn={motionOn}
           onToggle={() => {
             setPolicyOpen(false);
-            setNotifOpen(false);
             setUserMenuOpen((value) => !value);
           }}
           onReset={() => {
@@ -409,7 +402,6 @@ export function MainDashboardPage() {
           onSelectRequest={dash.selectRequest}
           onToggleRegion={() => {
             setPolicyOpen(false);
-            setNotifOpen(false);
             setUserMenuOpen(false);
             setRegionOpen((value) => !value);
           }}
@@ -524,267 +516,44 @@ function SidebarNav({
   );
 }
 
-const NOTIF_ICONS: Record<NotificationIconKey, string> = {
-  delay: FIGMA_ASSETS.notifDelay,
-  route: FIGMA_ASSETS.notifRoute,
-  message: FIGMA_ASSETS.notifMessage,
-};
-
 /**
- * Header bell + alerts dropdown. The 30×30 glyph stays at the same screen
- * point; opening only paints a 43px ink circle behind it.
+ * Header bell toggles the right-hand toast column. No dropdown of its own.
  */
 function NotificationControl({
   open,
-  items,
   count,
   tone,
   motionOn,
   onToggle,
 }: {
   open: boolean;
-  items: DashboardNotification[];
   count: number;
   tone: NotificationTone;
   motionOn: boolean;
   onToggle: () => void;
 }) {
-  const [dismissedIds, setDismissedIds] = useState<string[]>([]);
-  const ignoreOutsideClick = useRef(false);
-  const visibleItems = items.filter((item) => !dismissedIds.includes(item.id));
-  const badgeCount = Math.max(0, count - dismissedIds.length);
-
-  useEffect(() => {
-    const blockClick = (event: MouseEvent) => {
-      if (!ignoreOutsideClick.current) return;
-      event.stopPropagation();
-      ignoreOutsideClick.current = false;
-    };
-    document.addEventListener('click', blockClick, true);
-    return () => document.removeEventListener('click', blockClick, true);
-  }, []);
-
   return (
     <div
       data-notif-panel
       className="pointer-events-none absolute z-50"
-      style={{ left: NOTIF_PANEL_LEFT, top: NOTIF_PANEL_TOP, width: 363 }}
+      style={{ left: NOTIF_PANEL_LEFT, top: NOTIF_PANEL_TOP, width: 363, height: 51 }}
     >
-      <motion.div
-        className={`relative w-full rounded-[27px] ${
-          open ? 'pointer-events-auto overflow-hidden bg-white' : 'overflow-visible bg-transparent'
-        }`}
-        initial={false}
-        animate={{
-          height: open ? NOTIF_OPEN_HEIGHT : 51,
-          boxShadow: open ? '0 22px 48px rgba(39, 41, 48, 0.18)' : '0 0 0 rgba(39, 41, 48, 0)',
-        }}
-        transition={
-          motionOn
-            ? {
-                height: { duration: 0.44, ease: [0.22, 1, 0.36, 1] },
-                boxShadow: { duration: 0.32, ease: [0.22, 1, 0.36, 1] },
-              }
-            : { duration: 0 }
-        }
+      <motion.button
+        type="button"
+        aria-label={open ? 'Скрыть уведомления' : 'Показать уведомления'}
+        aria-pressed={open}
+        onClick={onToggle}
+        className="pointer-events-auto absolute right-[6px] top-[6px] flex size-[43px] items-center justify-center"
+        whileHover={motionOn ? { scale: 1.08 } : undefined}
+        whileTap={motionOn ? { scale: 0.96 } : undefined}
+        transition={{ duration: 0.16 }}
       >
-        <AnimatePresence>
-          {open ? (
-            <motion.div
-              key="notif-body"
-              className="absolute inset-0"
-              initial={motionOn ? { opacity: 0 } : false}
-              animate={{ opacity: 1 }}
-              exit={motionOn ? { opacity: 0 } : undefined}
-              transition={fadeSoft}
-            >
-              <FigmaText className="figma-nowrap absolute left-[16px] top-[19px] z-0 font-murs text-[20px] text-figma-ink">
-                Алерты и уведомления
-              </FigmaText>
-              <div className="absolute inset-x-[16px] top-[48px] bottom-[44px] z-20 flex flex-col gap-[19px] overflow-visible pt-[15px] pb-[14px]">
-                <AnimatePresence initial={false}>
-                  {visibleItems.map((item, index) => (
-                    <NotificationRow
-                      key={item.id}
-                      item={item}
-                      elevate={index === 0 || index === visibleItems.length - 1}
-                      motionOn={motionOn}
-                      onSwipeStart={() => {
-                        ignoreOutsideClick.current = true;
-                      }}
-                      onDismiss={() => {
-                        ignoreOutsideClick.current = true;
-                        setDismissedIds((current) =>
-                          current.includes(item.id) ? current : [...current, item.id],
-                        );
-                      }}
-                    />
-                  ))}
-                </AnimatePresence>
-              </div>
-              <button
-                type="button"
-                className="group absolute left-[16px] top-[410px] z-10 flex h-[25px] w-[331px] items-center justify-center gap-[2px]"
-              >
-                <span className="transition-transform duration-150 group-hover:-translate-x-1.5">
-                  <FigmaText className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
-                    К Алёртам
-                  </FigmaText>
-                </span>
-                <span className="transition-transform duration-150 group-hover:translate-x-1.5">
-                  <FigmaIcon src={FIGMA_ASSETS.arrowRight} alt="" width={24} height={24} />
-                </span>
-              </button>
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
-        <motion.button
-          type="button"
-          aria-label={open ? 'Закрыть уведомления' : 'Уведомления'}
-          onClick={onToggle}
-          className="pointer-events-auto absolute right-[6px] top-[6px] flex size-[43px] items-center justify-center"
-          whileHover={motionOn ? { scale: 1.08 } : undefined}
-          whileTap={motionOn ? { scale: 0.96 } : undefined}
-          transition={{ duration: 0.16 }}
-        >
-          <motion.span
-            className="absolute inset-0 rounded-full bg-figma-ink"
-            initial={false}
-            animate={{ opacity: open ? 1 : 0 }}
-            transition={motionOn ? { duration: 0.28, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
-          />
-          <span className="relative">
-            <FigmaIcon
-              src={FIGMA_ASSETS.bellHeader}
-              alt=""
-              width={30}
-              height={30}
-              className={open ? 'nav-glyph-on' : ''}
-            />
-            <AnimatePresence>
-              {open || badgeCount <= 0 ? null : (
-                <motion.span
-                  key="badge"
-                  className="absolute inset-0"
-                  initial={false}
-                  exit={motionOn ? { opacity: 0, scale: 0.85 } : undefined}
-                  transition={fadeSoft}
-                >
-                  <NotificationBadge count={badgeCount} tone={tone} />
-                </motion.span>
-              )}
-            </AnimatePresence>
-          </span>
-        </motion.button>
-      </motion.div>
+        <span className="relative">
+          <FigmaIcon src={FIGMA_ASSETS.bellHeader} alt="" width={30} height={30} />
+          {count > 0 ? <NotificationBadge count={count} tone={tone} /> : null}
+        </span>
+      </motion.button>
     </div>
-  );
-}
-
-function NotificationRow({
-  item,
-  elevate,
-  motionOn,
-  onSwipeStart,
-  onDismiss,
-}: {
-  item: DashboardNotification;
-  elevate: boolean;
-  motionOn: boolean;
-  onSwipeStart: () => void;
-  onDismiss: () => void;
-}) {
-  const [offsetX, setOffsetX] = useState(0);
-  const [dragging, setDragging] = useState(false);
-  const originX = useRef<number | null>(null);
-  const exitX = useRef(360);
-
-  const beginSwipe = (clientX: number) => {
-    originX.current = clientX;
-    setDragging(true);
-    onSwipeStart();
-  };
-
-  const moveSwipe = (clientX: number) => {
-    if (originX.current === null) return;
-    setOffsetX(clientX - originX.current);
-  };
-
-  const endSwipe = (clientX: number) => {
-    if (originX.current === null) return;
-    const dx = clientX - originX.current;
-    originX.current = null;
-    setDragging(false);
-    if (Math.abs(dx) < 64) {
-      setOffsetX(0);
-      return;
-    }
-    exitX.current = dx >= 0 ? 380 : -380;
-    setOffsetX(exitX.current);
-    onDismiss();
-  };
-
-  useEffect(() => {
-    if (!dragging) return;
-    const onMove = (event: PointerEvent) => moveSwipe(event.clientX);
-    const onUp = (event: PointerEvent) => endSwipe(event.clientX);
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    return () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-    };
-  }, [dragging]);
-
-  return (
-    <motion.div
-      layout
-      initial={motionOn ? { opacity: 0, y: 10 } : false}
-      animate={{ opacity: 1, y: 0 }}
-      exit={
-        motionOn
-          ? { opacity: 0, x: exitX.current, height: 0, marginBottom: 0, transition: { duration: 0.22 } }
-          : { opacity: 0 }
-      }
-      className={`relative shrink-0 ${elevate ? 'z-30' : 'z-10'}`}
-      style={{ zIndex: elevate ? 30 : 10 }}
-      whileHover={{ zIndex: 40 }}
-    >
-      <motion.div
-        onPointerDown={(event) => {
-          try {
-            event.currentTarget.setPointerCapture(event.pointerId);
-          } catch {
-            /* pointer capture is unavailable for some synthetic events */
-          }
-          beginSwipe(event.clientX);
-        }}
-        onPointerMove={(event) => {
-          if (originX.current === null) return;
-          moveSwipe(event.clientX);
-        }}
-        onPointerUp={(event) => endSwipe(event.clientX)}
-        onPointerCancel={(event) => endSwipe(event.clientX)}
-        whileHover={
-          motionOn && !dragging
-            ? { y: -3, boxShadow: '0 12px 24px rgba(39, 41, 48, 0.14)' }
-            : undefined
-        }
-        animate={{ x: offsetX }}
-        transition={dragging ? { duration: 0 } : fadeSoft}
-        role="button"
-        aria-label={item.text}
-        className={`flex h-[99px] w-[331px] cursor-grab items-center gap-[11px] overflow-clip rounded-[20px] px-[36px] py-[20px] select-none ${
-          dragging ? 'cursor-grabbing' : ''
-        } ${item.tone === 'yellow' ? 'bg-figma-bee' : 'border-2 border-solid border-figma-ink bg-white'}`}
-        style={{ touchAction: 'pan-x' }}
-      >
-        <FigmaIcon src={NOTIF_ICONS[item.icon]} alt="" width={30} height={30} />
-        <FigmaText className="font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
-          {item.text}
-        </FigmaText>
-      </motion.div>
-    </motion.div>
   );
 }
 
