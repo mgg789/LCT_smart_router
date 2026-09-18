@@ -464,9 +464,11 @@ export function DashboardPage() {
             snapshot={snapshot}
             pendingEngineerId={dash.availabilityPendingId}
             rebuilding={dash.rebuilding || dash.writesDisabled}
+            writesDisabled={dash.writesDisabled}
             onAvailabilityChange={(engineerId, availability) =>
               void dash.updateEngineerAvailability(engineerId, availability)
             }
+            onLinkAccount={(engineerId, email) => dash.linkEngineerLogin(engineerId, email)}
           />
         ) : activeTab === 'settings' ? (
           <ApiTokensPage token={dash.token} />

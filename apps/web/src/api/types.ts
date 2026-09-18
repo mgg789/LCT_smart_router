@@ -288,6 +288,20 @@ export type CreatedApiToken = Omit<ApiTokenSummary, 'revokedAt'> & {
   readonly token: string;
 };
 
+export interface EngineerAuthSession {
+  readonly token: string;
+  readonly role: 'engineer';
+  readonly expiresAt: number;
+}
+
+export interface EngineerPlanResponse {
+  readonly planAsOf: number | null;
+  readonly origin: 'auto' | 'manual' | null;
+  readonly revision: number | null;
+  readonly route: PlanRouteView | null;
+  readonly requests: RequestView[];
+}
+
 export interface PlanDelta {
   readonly transferred: number;
   readonly shifted: number;

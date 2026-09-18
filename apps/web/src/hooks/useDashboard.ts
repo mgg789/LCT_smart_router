@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DashboardApiError,
   importOfficialDataset,
+  linkEngineerAccount,
   loadDashboardSnapshot,
   loadPolicyComparison,
   loginDispatcher,
@@ -692,6 +693,18 @@ export function useDashboard() {
     ],
   );
 
+  /** Grants a login address to a brigade that arrived without one. Does not republish. */
+  const linkEngineerLogin = useCallback(
+    async (engineerId: string, email: string) => {
+      if (!token || sourceRef.current !== 'live') {
+        throw new Error('Привязка почты доступна только в живом контуре');
+      }
+      await linkEngineerAccount(token, engineerId, email);
+      await refresh();
+    },
+    [refresh, token],
+  );
+
   const uploadDataset = useCallback(
     async (file: DataUploadFile): Promise<DataUploadSummary> => {
       if (!token || sourceRef.current !== 'live' || uploadingData) {
@@ -834,6 +847,7 @@ export function useDashboard() {
     setMode,
     refreshPolicyComparison,
     updateEngineerAvailability,
+    linkEngineerLogin,
     uploadDataset,
     importOfficialTzDataset,
   };

@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { type Actor, CurrentActor, Roles } from '../auth';
+import { type Actor, AuthService, CurrentActor, Roles } from '../auth';
 import { SysError } from '../common/errors';
 import { zodBody } from '../common/validation';
 import { OperationsService } from '../operations';
@@ -9,7 +9,11 @@ import { FactsService } from '../orchestrator/facts';
 import { PrismaService } from '../persistence';
 import { AppliedPlanService } from '../routing/router-gateway';
 import {
+  type ConfirmEmailChangeDto,
+  confirmEmailChangeSchema,
   operationOnlySchema,
+  type RequestEmailChangeDto,
+  requestEmailChangeSchema,
   type SetAvailabilityDto,
   setAvailabilitySchema,
   type UpdateOwnProfileDto,
@@ -22,7 +26,7 @@ import {
   toDayView,
   toEngineerView,
 } from './engineer-view';
-import { toPlanView } from './plan-view';
+import { type PlanRouteView, toPlanView } from './plan-view';
 import { toRequestView } from './request-view';
 
 /**
@@ -44,6 +48,7 @@ export class EngineerController {
     private readonly plans: AppliedPlanService,
     private readonly operations: OperationsService,
     private readonly prisma: PrismaService,
+    private readonly auth: AuthService,
   ) {}
 
   @Get('profile')
@@ -81,6 +86,31 @@ export class EngineerController {
         ),
     );
     return { engineer: outcome.result };
+  }
+
+  @Post('email-change')
+  @ApiOperation({ summary: 'Send a confirmation code to a new login address' })
+  async requestEmailChange(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(requestEmailChangeSchema)) dto: RequestEmailChangeDto,
+  ) {
+    const issued = await this.auth.requestOwnedEmailChange(this.accountOf(actor), dto.email);
+    return {
+      email: issued.email,
+      expiresAt: issued.expiresAt,
+      ...(issued.devCode === undefined ? {} : { devCode: issued.devCode }),
+    };
+  }
+
+  @Post('email-change/confirm')
+  @ApiOperation({ summary: 'Confirm a new login address with the emailed code' })
+  async confirmEmailChange(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(confirmEmailChangeSchema)) dto: ConfirmEmailChangeDto,
+  ): Promise<{ engineer: EngineerView }> {
+    await this.auth.confirmOwnedEmailChange(this.accountOf(actor), dto.email, dto.code);
+    const engineer = await this.engineers.byAccount(this.prisma, this.accountOf(actor));
+    return { engineer: toEngineerView(engineer) };
   }
 
   @Get('day')
@@ -199,6 +229,31 @@ export class EngineerController {
     return actor.accountId;
   }
 
+  /**
+   * Request cards for the stops on this engineer's working route, in route order.
+   *
+   * The list endpoint would otherwise have to guess which dispatch requests belong to
+   * the signed-in crew. Only ids that appear on the applied plan are loaded.
+   */
+  private async requestsOnRoute(route: PlanRouteView | null) {
+    const ids = [
+      ...new Set(
+        (route?.stops ?? [])
+          .map((stop) => stop.requestId)
+          .filter((requestId): requestId is string => requestId !== null),
+      ),
+    ];
+    if (ids.length === 0) {
+      return [];
+    }
+    const rows = await this.prisma.request.findMany({ where: { id: { in: ids } } });
+    const byId = new Map(rows.map((row) => [row.id, toRequestView(row)]));
+    return ids.flatMap((id) => {
+      const view = byId.get(id);
+      return view === undefined ? [] : [view];
+    });
+  }
+
   @Get('plan')
   @ApiOperation({ summary: 'The working plan for the signed-in engineer' })
   async plan(@CurrentActor() actor: Actor) {
@@ -206,9 +261,17 @@ export class EngineerController {
     const plan = await this.plans.current(this.prisma);
     if (!plan) {
       // A truthful empty state, not an error: no plan has been applied yet.
-      return { plan: null, route: null, planAsOf: null };
+      return {
+        plan: null,
+        route: null,
+        planAsOf: null,
+        origin: null,
+        revision: null,
+        requests: [],
+      };
     }
     const view = toPlanView(plan);
+    const route = view.routes.find((item) => item.engineerId === engineer.id) ?? null;
     return {
       // The engineer works from the plan sys applied, never from a background result of
       // Router directly -- which is why manual mode shows the manual plan here
@@ -216,8 +279,30 @@ export class EngineerController {
       planAsOf: view.planAsOf,
       origin: view.origin,
       revision: view.revision,
-      route: view.routes.find((route) => route.engineerId === engineer.id) ?? null,
+      route,
+      requests: await this.requestsOnRoute(route),
     };
+  }
+
+  @Get('requests/:id')
+  @ApiOperation({ summary: 'One assigned request from the working plan' })
+  async request(@CurrentActor() actor: Actor, @Param('id') requestId: string) {
+    const engineer = await this.engineers.byAccount(this.prisma, this.accountOf(actor));
+    const plan = await this.plans.current(this.prisma);
+    if (!plan) {
+      throw SysError.notFound('Request');
+    }
+    const view = toPlanView(plan);
+    const route = view.routes.find((item) => item.engineerId === engineer.id) ?? null;
+    const stop = route?.stops.find((item) => item.requestId === requestId) ?? null;
+    if (stop === null) {
+      throw SysError.notFound('Request');
+    }
+    const row = await this.prisma.request.findUnique({ where: { id: requestId } });
+    if (row === null) {
+      throw SysError.notFound('Request');
+    }
+    return { request: toRequestView(row), stop };
   }
 
   @Post('requests/:id/facts')

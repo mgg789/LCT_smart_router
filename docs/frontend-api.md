@@ -38,9 +38,11 @@ Authorization: Bearer <token>
 | GET | `/api/v1/auth/session` | — | `{kind, source, role, accountId, tokenCategory}` | Кто за предъявленным токеном |
 | DELETE | `/api/v1/auth/session` | — | `{signedOut: true}` | Идемпотентный выход |
 
-Токен — bearer-сессия; храните в памяти/`sessionStorage`, уважайте `expiresAt`.
-Интеграционные ключи (`POST /auth/tokens`, категории `client/eng/master`) фронтенду
-не нужны — это машинный доступ.
+Токен — bearer-сессия; уважайте `expiresAt`. Дашборд диспетчера хранит сессию в
+`sessionStorage` (`SESSION_TTL_SEC`, по умолчанию сутки). Приложение инженера на
+`/engineer/` хранит сессию в `localStorage` на устройстве (`ENGINEER_SESSION_TTL_SEC`,
+по умолчанию 30 суток). Интеграционные ключи (`POST /auth/tokens`, категории
+`client/eng/master`) фронтенду не нужны — это машинный доступ.
 
 ## 3. Ошибки: один конверт
 
@@ -384,12 +386,17 @@ CAS по `expectedContextVersion`: устарели — 409 `VERSION_CONFLICT`, 
 |---|---|---|
 | GET | `/engineer/profile` | → `{engineer: EngineerView}` |
 | PATCH | `/engineer/profile` | `{operationId, expectedVersion?, displayName?, skills?, transportType?, homeLat?, homeLon?}` → `{engineer}` |
+| POST | `/engineer/email-change` | `{email}` → `{email, expiresAt, devCode?}` — код на **новый** адрес; текущий логин не меняется, пока код не подтверждён. Занятый адрес — `VALIDATION_FAILED` |
+| POST | `/engineer/email-change/confirm` | `{email, code}` → `{engineer}` — переносит логин на подтверждённый адрес |
 | GET | `/engineer/day` | → `{day: EngineerDayView}` |
 | POST | `/engineer/availability` | `{operationId, availability, expectedOnlineAt?}` → `{day}` |
 | POST | `/engineer/technical-break` | `{operationId}` → `{day}` |
 | POST | `/engineer/lunch/start` · `/finish` | `{operationId}` → `{day}` |
-| GET | `/engineer/plan` | → `{planAsOf, origin, revision, route: PlanRouteView|null}` — свой маршрут применённого плана |
+| GET | `/engineer/plan` | → `{planAsOf, origin, revision, route: PlanRouteView|null, requests: RequestView[]}` — свой маршрут применённого плана и карточки заявок этого маршрута |
+| GET | `/engineer/requests/:id` | → `{request: RequestView, stop: PlanStopView}` — только если заявка стоит в применённом маршруте этого инженера; иначе `NOT_FOUND` |
 | POST | `/engineer/requests/:id/facts` | `{operationId, kind: "arrived"\|"arrived_blocked"\|"started"\|"finished"\|"problem", occurredAt?, note?}` → факт исполнения; отмечать можно только то, что назначено применённым планом; финиш без старта — 422 |
+
+SPA `/engineer/` (вход по коду, список заявок и обеда, карточка/карта точки, маршрут на день, настройки имени/транспорта/почты) живёт в том же `apps/web`, что и дашборд. Почту бригаде без логина задаёт диспетчер через `POST /dispatch/engineers/link-account` на вкладке «Инженеры».
 
 ## 8. Контур клиента `/api/v1/client/...` (роль `client`)
 

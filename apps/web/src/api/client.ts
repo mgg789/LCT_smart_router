@@ -94,8 +94,8 @@ const engineerSchema = z.object({
   region: z.string().nullable(),
   homeLat: z.number().nullable(),
   homeLon: z.number().nullable(),
-  hasAccount: z.boolean(),
-  email: z.string().nullable(),
+  hasAccount: z.boolean().optional().default(false),
+  email: z.string().nullable().optional().default(null),
   day: engineerDaySchema.nullable(),
 });
 
@@ -495,6 +495,25 @@ export async function revokeApiToken(sessionToken: string, id: string): Promise<
   );
 }
 
+const engineerProfileSchema = engineerSchema.omit({ day: true });
+
+/** Grants a login address to an imported brigade that still has none. */
+export function linkEngineerAccount(
+  token: string,
+  engineerId: string,
+  email: string,
+): Promise<{ engineer: z.infer<typeof engineerProfileSchema> }> {
+  return requestJson(
+    '/api/v1/dispatch/engineers/link-account',
+    z.object({ engineer: engineerProfileSchema }),
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({ operationId: crypto.randomUUID(), engineerId, email }),
+    },
+  );
+}
+
 /** Loads and validates all resources required by the dispatcher day screen. */
 export async function loadDashboardSnapshot(token: string): Promise<DashboardSnapshot> {
   const [requests, engineers, planResponse, alerts, policies, settings] = await Promise.all([
@@ -757,7 +776,7 @@ function formatUnknownReason(reason: unknown): string {
   return parsed.success ? parsed.data.text : 'Подробности доступны в структурированных данных';
 }
 
-async function requestJson<T>(
+export async function requestJson<T>(
   path: string,
   schema: z.ZodType<T>,
   token?: string,

@@ -64,6 +64,17 @@ export const updateOwnProfileSchema = operationEnvelopeSchema.extend({
 });
 export type UpdateOwnProfileDto = z.infer<typeof updateOwnProfileSchema>;
 
+export const requestEmailChangeSchema = z.object({
+  email: z.email(),
+});
+export type RequestEmailChangeDto = z.infer<typeof requestEmailChangeSchema>;
+
+export const confirmEmailChangeSchema = z.object({
+  email: z.email(),
+  code: z.string().regex(/^\d{6}$/, 'The code is six digits'),
+});
+export type ConfirmEmailChangeDto = z.infer<typeof confirmEmailChangeSchema>;
+
 export const setAvailabilitySchema = operationEnvelopeSchema.extend({
   availability: z.enum(['online', 'offline']),
   /**

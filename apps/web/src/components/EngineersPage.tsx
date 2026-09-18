@@ -1,5 +1,11 @@
+import { useEffect, useState } from 'react';
 import type { DashboardSnapshot, EquipmentType } from '../api/types';
 import { equipmentLoadout } from '../domain/dashboard';
+import {
+  isLocalEngineerBypass,
+  localEngineerEmail,
+  writeEngineerRoster,
+} from '../engineer/preview';
 import { initials, skillLabel } from '../lib/reasons';
 import { formatClock } from '../lib/time';
 
@@ -7,7 +13,9 @@ interface EngineersPageProps {
   readonly snapshot: DashboardSnapshot;
   readonly pendingEngineerId: string | null;
   readonly rebuilding: boolean;
+  readonly writesDisabled: boolean;
   readonly onAvailabilityChange: (engineerId: string, availability: 'online' | 'offline') => void;
+  readonly onLinkAccount: (engineerId: string, email: string) => Promise<void>;
 }
 
 /** Shows the day roster, issued equipment, and live engineer availability controls. */
@@ -15,11 +23,21 @@ export function EngineersPage({
   snapshot,
   pendingEngineerId,
   rebuilding,
+  writesDisabled,
   onAvailabilityChange,
+  onLinkAccount,
 }: EngineersPageProps) {
   const engineers = [...snapshot.engineers].sort(
     (left, right) => left.inputOrder - right.inputOrder,
   );
+  const localBypass = isLocalEngineerBypass();
+
+  useEffect(() => {
+    if (!localBypass) {
+      return;
+    }
+    writeEngineerRoster(window.sessionStorage, snapshot);
+  }, [localBypass, snapshot]);
   const teamEquipment = engineers.flatMap((engineer) => equipmentLoadout(snapshot, engineer.id));
   const totals = (['router', 'set_top_box', 'smart_speaker'] as const).map((type) => {
     const lines = teamEquipment.filter((line) => line.type === type);
@@ -40,6 +58,9 @@ export function EngineersPage({
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
               Выключение инженера публикует новый снимок и ждёт реального плана Router. Комплекты
               закреплены за инженером на день: обмен между инженерами в v0 не выполняется.
+              {localBypass
+                ? ' Локально: откройте бригаду как инженера — вход только по почте, без кода.'
+                : null}
             </p>
           </div>
           <div className="grid grid-cols-3 gap-2">
@@ -118,6 +139,14 @@ export function EngineersPage({
                           </span>
                         ))}
                       </div>
+                      <EngineerLoginField
+                        engineerId={engineer.id}
+                        email={engineer.email}
+                        localEmail={localEngineerEmail(engineer)}
+                        localBypass={localBypass}
+                        disabled={writesDisabled}
+                        onLinkAccount={onLinkAccount}
+                      />
                     </div>
                   </div>
 
@@ -154,6 +183,80 @@ export function EngineersPage({
         )}
       </section>
     </main>
+  );
+}
+
+function EngineerLoginField({
+  engineerId,
+  email,
+  localEmail,
+  localBypass,
+  disabled,
+  onLinkAccount,
+}: {
+  readonly engineerId: string;
+  readonly email: string | null;
+  readonly localEmail: string;
+  readonly localBypass: boolean;
+  readonly disabled: boolean;
+  readonly onLinkAccount: (engineerId: string, email: string) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const openAsEngineer = (
+    <a
+      href={`/engineer/?email=${encodeURIComponent(localEmail)}`}
+      className="rounded-full bg-bee px-3 py-1.5 text-sm font-semibold"
+    >
+      Открыть как инженер
+    </a>
+  );
+
+  if (email || (localBypass && disabled)) {
+    return (
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <p className="text-[12px] text-muted">
+          {email ? `Вход: ${email}` : `Локальный вход: ${localEmail}`}
+        </p>
+        {localBypass ? openAsEngineer : null}
+      </div>
+    );
+  }
+
+  return (
+    <form
+      className="mt-3 flex flex-wrap items-center gap-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        setBusy(true);
+        setError(null);
+        void onLinkAccount(engineerId, draft)
+          .catch((cause) => {
+            setError(cause instanceof Error ? cause.message : 'Не удалось привязать почту');
+          })
+          .finally(() => setBusy(false));
+      }}
+    >
+      <input
+        type="email"
+        required
+        value={draft}
+        disabled={disabled || busy}
+        placeholder="Почта бригады"
+        onChange={(event) => setDraft(event.target.value)}
+        className="min-w-48 flex-1 rounded-xl border border-line px-3 py-1.5 text-sm"
+      />
+      <button
+        type="submit"
+        disabled={disabled || busy || draft.length === 0}
+        className="rounded-full bg-bee px-3 py-1.5 text-sm font-semibold disabled:opacity-50"
+      >
+        Привязать
+      </button>
+      {localBypass ? openAsEngineer : null}
+      {error ? <p className="w-full text-[12px] text-red-700">{error}</p> : null}
+    </form>
   );
 }
 
