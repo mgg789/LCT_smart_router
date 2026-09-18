@@ -82,7 +82,7 @@ python -m core.policy_benchmark --access-buffer-sec 0 --output /tmp/policy-no-bu
 - `pnpm --filter api test`: 179 passed на отдельной локальной PostgreSQL 17 с миграциями проекта.
 - `pnpm --filter web test`: 45 passed; `pnpm build`: passed (предупреждение Vite о размере bundle).
 - `SMOKE_BASE_URL=http://127.0.0.1:18000 pnpm smoke`: 21/21, включая перепланирование новой срочной заявки.
-- Biome по всем 14 изменённым TS/TSX-файлам: passed. Общий `pnpm lint` остаётся красным из-за существовавшего форматирования в `DayMap.tsx`, `domain/dashboard.test.ts`, `lib/explanations.test.ts`, `lib/explanations.ts`; эти файлы не изменялись.
+- Biome по всем 14 изменённым TS/TSX-файлам: passed. Первый запуск общего `pnpm lint` обнаружил существовавшие ошибки форматирования в `DayMap.tsx`, `domain/dashboard.test.ts`, `lib/explanations.test.ts`, `lib/explanations.ts`. После падения CI они исправлены отдельным коммитом без изменения логики: полный `pnpm lint` проходит по 204 файлам.
 - В браузере проверены сравнение политик, новые столбцы и сохранение допуска 10 минут через API. Исправлены прокрутка модального окна и сброс черновика настроек при обновлении данных. Мобильная версия отдельно не проверялась.
 - Проверка проведена локально; PR не означает выкладку в release или доказательство глобальной оптимальности.
 
