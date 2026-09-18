@@ -1,0 +1,8 @@
+[Unit]
+Description=Navix SMTP tunnel heartbeat (MGG → SMTP watchdog)
+After=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/home/mgg/hysteria/watchdog.env
+ExecStart=/usr/bin/curl -fsS -X POST -H "Authorization: Bearer ${WATCHDOG_TOKEN}" http://127.0.0.1:8587/beat

@@ -12,7 +12,7 @@ pull request не запускаются.
 | Воркфлоу | Когда | Что |
 |---|---|---|
 | `ci` | push в `dev`; pull request в `dev` или `main` | lint, тесты, скан секретов, mojibake |
-| `cd` | push в `main` (после мержа) | те же проверки, затем compose build + deploy |
+| `cd` | push в `main` (после мержа) | те же проверки, затем compose + SMTP deploy, затем health сервисов |
 
 Красный прогон `ci` на pull request в `main` — условие мержа. Защита веток в
 [`.sourcecraft/branches.yaml`](../.sourcecraft/branches.yaml) блокирует прямой push
@@ -35,22 +35,37 @@ pull request не запускаются.
 
 ## Deploy
 
-`cd` по SSH заходит на хост MGG с тем же compose-путём, что и скилл
-`mgg-server-deploy`: fast-forward `main` в `/home/mgg/navix`, затем
+`cd` по SSH заходит на два хоста одним push в `main`:
+
+1. MGG — тот же compose-путь, что и скилл `mgg-server-deploy`: fast-forward
+   `main` в `/home/mgg/navix`, затем
 
 ```bash
 docker compose -f docker-compose.yml up -d --build --remove-orphans
 ```
 
+2. SMTP — `scripts/ci/ssh-deploy-smtp.sh` заливает `infra/smtp/` на
+   `deploy@194.87.202.172` и вызывает идемпотентный apply. Полный clone
+   монорепы на почтовом хосте не нужен. Если раннер SourceCraft не достучится
+   до `:22` SMTP-хоста, деплой идёт прыжком `SourceCraft → MGG:2222 → SMTP:22`.
+
 Корневой [docker-compose.yml](../docker-compose.yml) включает
 `infra/docker-compose.yml`, чтобы скилл находил контур, не зная про `infra/`.
 
-Хелсчеки после `up`:
+Хелсчеки сразу после `up` (внутри `deploy` / `deploy-smtp`):
 
 - публичный гейт `https://navix.droidje.com/`
 - loopback `http://127.0.0.1:18080/health/live` (этот хост уже публикует другое
   приложение на `:8000`; System Layer остаётся в сети compose на `api:8000`,
   изменился только хостовый порт публикации)
+- watchdog SMTP `http://127.0.0.1:8587/health` на почтовом хосте
+
+После обоих деплоев отдельная задача `health` ждёт 20 с и ещё раз проверяет
+публичный гейт плюс loopback `/health/live`, `/health/ready` и `/health/services`.
+Пайплайн красный, если `database`, `router` или `smtp` не `ok`. `ai` по-прежнему
+`not_configured` и в гейт не входит. Скрипты:
+`scripts/ci/ssh-check-health.sh`, `scripts/ci/check-deploy-health.sh`,
+`scripts/ci/evaluate_health_services.py`.
 
 Дашборд — контейнер `web` на `127.0.0.1:5173`; хостовый nginx терминирует TLS для
 `navix.droidje.com` и проксирует туда. `web` уже проксирует `/api/` на `api:8000`.
@@ -65,10 +80,16 @@ docker compose -f docker-compose.yml up -d --build --remove-orphans
 
 ### Секреты и разовые настройки хоста
 
-Создайте в SourceCraft секрет репозитория с именем **`MGG_DEPLOY_SSH_KEY`**: приватная
-половина deploy-only SSH-ключа, публичная половина которого лежит в
-`mgg@178.140.207.217` → `~/.ssh/authorized_keys`. Ключ не коммитить, на доску не
-класть, в командную память не писать.
+Создайте в SourceCraft секреты репозитория:
+
+- **`MGG_DEPLOY_SSH_KEY`** — приватная половина deploy-only SSH-ключа, публичная
+  половина которого лежит в `mgg@178.140.207.217` → `~/.ssh/authorized_keys`.
+- **`SMTP_DEPLOY_SSH_KEY`** — отдельный deploy-only ключ
+  (`~/.ssh/navix_smtp_ci` на машине, которая его создала). Публичная половина
+  уже в `deploy@194.87.202.172` → `~/.ssh/authorized_keys`. Не используйте
+  личный ключ ноутбука и не пароль root.
+
+Ключи не коммитить, на доску не класть, в командную память не писать.
 
 Поле Value в UI SourceCraft часто схлопывает переносы строк. Тогда CD пишет
 `Load key … error in libcrypto` и дальше `Permission denied` — это не пароль

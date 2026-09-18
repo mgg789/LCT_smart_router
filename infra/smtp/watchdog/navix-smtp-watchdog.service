@@ -1,0 +1,16 @@
+[Unit]
+Description=Navix SMTP watchdog (VPN beat + fallback 587)
+After=network-online.target postfix.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/navix-smtp/watchdog.env
+ExecStart=/usr/bin/python3 /opt/navix-smtp/watchdog/watchdog.py
+Restart=always
+RestartSec=3
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target

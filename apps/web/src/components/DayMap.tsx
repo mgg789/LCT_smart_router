@@ -295,7 +295,12 @@ export function DayMap({
             type: 'symbol',
             source: 'stops',
             layout: {
-              'text-field': ['concat', ['to-string', ['get', 'sequence']], ' ', ['get', 'skillMark']],
+              'text-field': [
+                'concat',
+                ['to-string', ['get', 'sequence']],
+                ' ',
+                ['get', 'skillMark'],
+              ],
               'text-size': 11,
               'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
             },
