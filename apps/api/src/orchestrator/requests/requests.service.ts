@@ -208,6 +208,16 @@ export class RequestsService {
     });
     assertWriteApplied('Request', updated.count, expectedVersion, current.version);
 
+    // The previously agreed window can no longer be guaranteed, so the customer is asked
+    // to pick a new one. One letter per proposed window: repeating the same change stays
+    // a no-op, moving to another window asks again (context/36 section 10).
+    await this.notifications.record(context.tx, context.now, {
+      category: 'visit_change_required',
+      businessEventKey: `visit_change_required:${requestId}:${input.windowStartAt}:${input.windowEndAt}`,
+      recipientAccountId: current.clientAccountId,
+      payload: { requestId },
+    });
+
     await this.publisher.publishIfChanged(
       context.tx,
       context.now,

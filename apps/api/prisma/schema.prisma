@@ -779,8 +779,9 @@ model AuditLog {
   @@map("audit_log")
 }
 
-/// A mail sys has prepared. Transport belongs to SMTP-gateway, which is not part of this
-/// build, so these rows stay `pending_submission`.
+/// A mail sys has prepared. The SMTP-gateway drains the `pending_submission` rows,
+/// submits them and records the server's acceptance; whether a mailbox was reached is
+/// outside our control, so there is no `delivered` state (context/35 section 13).
 ///
 /// `businessEventKey` is the deduplication key: one letter per business transition, not
 /// per result read. A new result that repeats the same assignment is not a new reason to
