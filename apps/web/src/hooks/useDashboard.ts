@@ -11,6 +11,7 @@ import {
   setDispatchMode,
   setEngineerAvailability,
   signOutDispatcher,
+  unlinkEngineerAccount,
   updateRouterTechnicalSettings,
   uploadDataPackage,
   verifyDispatcherLoginCode,
@@ -751,6 +752,18 @@ export function useDashboard() {
     [refresh, token],
   );
 
+  /** Takes the login away so the Engineer App can no longer verify that address. */
+  const unlinkEngineerLogin = useCallback(
+    async (engineerId: string) => {
+      if (!token || sourceRef.current !== 'live') {
+        throw new Error('Снятие почты доступно только в живом контуре');
+      }
+      await unlinkEngineerAccount(token, engineerId);
+      await refresh();
+    },
+    [refresh, token],
+  );
+
   const uploadDataset = useCallback(
     async (file: DataUploadFile): Promise<DataUploadSummary> => {
       if (!token || sourceRef.current !== 'live' || uploadingData) {
@@ -896,6 +909,7 @@ export function useDashboard() {
     refreshPolicyComparison,
     updateEngineerAvailability,
     linkEngineerLogin,
+    unlinkEngineerLogin,
     uploadDataset,
     importOfficialTzDataset,
   };

@@ -44,6 +44,15 @@ export const linkEngineerAccountSchema = operationEnvelopeSchema.extend({
 });
 export type LinkEngineerAccountDto = z.infer<typeof linkEngineerAccountSchema>;
 
+/**
+ * Removes the login the dispatcher previously granted. The routing profile stays;
+ * only the address, the engineer role and live engineer sessions are taken away.
+ */
+export const unlinkEngineerAccountSchema = operationEnvelopeSchema.extend({
+  engineerId: z.string().min(1),
+});
+export type UnlinkEngineerAccountDto = z.infer<typeof unlinkEngineerAccountSchema>;
+
 export const updateEngineerSchema = operationEnvelopeSchema.extend({
   displayName: z.string().min(1).max(200).optional(),
   skills: skills.optional(),

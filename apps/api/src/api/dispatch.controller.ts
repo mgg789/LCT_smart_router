@@ -46,7 +46,9 @@ import {
   type SetWorkdayDto,
   setAvailabilitySchema,
   setWorkdaySchema,
+  type UnlinkEngineerAccountDto,
   type UpdateEngineerDto,
+  unlinkEngineerAccountSchema,
   updateEngineerSchema,
 } from './dto/engineer.dto';
 import {
@@ -333,6 +335,26 @@ export class DispatchController {
       },
       async (context) =>
         toEngineerView(await this.engineers.linkAccount(context, dto.engineerId, dto.email)),
+    );
+    return { engineer: outcome.result };
+  }
+
+  @Post('engineers/unlink-account')
+  @ApiOperation({ summary: 'Remove the login from an engineer without deleting the profile' })
+  async unlinkEngineerAccount(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(unlinkEngineerAccountSchema)) dto: UnlinkEngineerAccountDto,
+  ): Promise<{ engineer: EngineerView }> {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'engineer.unlink_account',
+        targetRef: dto.engineerId,
+        payload: dto,
+      },
+      async (context) =>
+        toEngineerView(await this.engineers.unlinkAccount(context, dto.engineerId)),
     );
     return { engineer: outcome.result };
   }

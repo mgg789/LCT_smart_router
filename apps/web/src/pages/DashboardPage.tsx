@@ -475,6 +475,7 @@ export function DashboardPage() {
               void dash.updateEngineerAvailability(engineerId, availability)
             }
             onLinkAccount={(engineerId, email) => dash.linkEngineerLogin(engineerId, email)}
+            onUnlinkAccount={(engineerId) => dash.unlinkEngineerLogin(engineerId)}
           />
         ) : activeTab === 'settings' ? (
           <ApiTokensPage token={dash.token} />

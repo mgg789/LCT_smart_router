@@ -21,14 +21,8 @@ import type {
   RequestView,
 } from '../api/types';
 import { EngineerMap } from '../components/engineer/EngineerMap';
-import { engineerDemoDay, isEngineerDemo } from '../engineer/demo';
 import { formatWindow, formatWindowCountdown } from '../engineer/format';
 import { mapsDirectionsUrl } from '../engineer/maps';
-import {
-  type EngineerPreview,
-  findEngineerPreview,
-  isLocalEngineerBypass,
-} from '../engineer/preview';
 import {
   clearEngineerSession,
   readEngineerSession,
@@ -49,16 +43,8 @@ type EngineerPath =
 /** Engineer App shell: email-code login, day list, one-stop map, settings. */
 export function EngineerApp() {
   const [path, setPath] = useState<EngineerPath>(() => parseEngineerPath(window.location.pathname));
-  const [demo, setDemo] = useState(() => isEngineerDemo());
-  const [preview, setPreview] = useState<EngineerPreview | null>(() => {
-    const email = new URLSearchParams(window.location.search).get('email');
-    if (!isLocalEngineerBypass() || email === null) {
-      return null;
-    }
-    return findEngineerPreview(window.sessionStorage, email);
-  });
-  const [token, setToken] = useState<string | null>(() =>
-    isEngineerDemo() ? 'demo' : (readEngineerSession(window.localStorage)?.token ?? null),
+  const [token, setToken] = useState<string | null>(
+    () => readEngineerSession(window.localStorage)?.token ?? null,
   );
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -87,7 +73,7 @@ export function EngineerApp() {
   );
 
   const onSignedOut = useCallback(async () => {
-    if (token && token !== 'demo') {
+    if (token) {
       try {
         await signOutEngineer(token);
       } catch {
@@ -96,33 +82,18 @@ export function EngineerApp() {
       }
     }
     clearEngineerSession(window.localStorage);
-    setDemo(false);
-    setPreview(null);
     setToken(null);
     setMenuOpen(false);
-    if (isEngineerDemo() || new URLSearchParams(window.location.search).has('email')) {
-      window.history.replaceState({}, '', '/engineer');
-    }
     navigate({ name: 'list' });
   }, [navigate, token]);
 
-  if (token === null && !demo && preview === null) {
-    return (
-      <EngineerLoginPage
-        onSignedIn={onSignedIn}
-        onPreview={(next) => {
-          setPreview(next);
-          navigate({ name: 'list' });
-        }}
-      />
-    );
+  if (token === null) {
+    return <EngineerLoginPage onSignedIn={onSignedIn} />;
   }
 
   return (
     <EngineerSignedIn
-      token={token ?? 'preview'}
-      demo={demo}
-      preview={preview}
+      token={token}
       path={path}
       menuOpen={menuOpen}
       setMenuOpen={setMenuOpen}
@@ -138,8 +109,6 @@ export function EngineerApp() {
 
 function EngineerSignedIn({
   token,
-  demo,
-  preview,
   path,
   menuOpen,
   setMenuOpen,
@@ -148,8 +117,6 @@ function EngineerSignedIn({
   onSessionExpired,
 }: {
   readonly token: string;
-  readonly demo: boolean;
-  readonly preview: EngineerPreview | null;
   readonly path: EngineerPath;
   readonly menuOpen: boolean;
   readonly setMenuOpen: (open: boolean) => void;
@@ -166,21 +133,6 @@ function EngineerSignedIn({
   const reload = useCallback(async () => {
     setLoading(true);
     setError(null);
-    if (preview) {
-      setProfile(preview.profile);
-      setDay(preview.day);
-      setPlan(preview.plan);
-      setLoading(false);
-      return;
-    }
-    if (demo) {
-      const fixture = engineerDemoDay();
-      setProfile(fixture.profile);
-      setDay(fixture.day);
-      setPlan(fixture.plan);
-      setLoading(false);
-      return;
-    }
     try {
       const [nextProfile, nextDay, nextPlan] = await Promise.all([
         loadEngineerProfile(token),
@@ -199,7 +151,7 @@ function EngineerSignedIn({
     } finally {
       setLoading(false);
     }
-  }, [demo, onSessionExpired, preview, token]);
+  }, [onSessionExpired, token]);
 
   useEffect(() => {
     void reload();
@@ -253,7 +205,6 @@ function EngineerSignedIn({
         ) : path.name === 'settings' && profile ? (
           <EngineerSettingsPage
             token={token}
-            demo={demo || preview !== null}
             profile={profile}
             onProfile={setProfile}
             onSessionExpired={onSessionExpired}
@@ -263,7 +214,6 @@ function EngineerSignedIn({
         ) : path.name === 'request' && profile ? (
           <EngineerRequestPage
             token={token}
-            demo={demo || preview !== null}
             requestId={path.requestId}
             profile={profile}
             plan={plan}
@@ -286,12 +236,9 @@ function EngineerSignedIn({
 
 function EngineerLoginPage({
   onSignedIn,
-  onPreview,
 }: {
   readonly onSignedIn: (token: string, expiresAt: number) => void;
-  readonly onPreview: (preview: EngineerPreview) => void;
 }) {
-  const localBypass = isLocalEngineerBypass();
   const [email, setEmail] = useState(
     () => new URLSearchParams(window.location.search).get('email') ?? '',
   );
@@ -299,37 +246,6 @@ function EngineerLoginPage({
   const [issued, setIssued] = useState<{ email: string; devCode?: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
-  const signInLocally = async () => {
-    setBusy(true);
-    setError(null);
-    const stored = findEngineerPreview(window.sessionStorage, email);
-    if (stored) {
-      onPreview(stored);
-      setBusy(false);
-      return;
-    }
-    try {
-      const issuedCode = await requestEngineerLoginCode(email);
-      if (issuedCode.devCode) {
-        const session = await verifyEngineerLoginCode(issuedCode.email, issuedCode.devCode);
-        onSignedIn(session.token, session.expiresAt);
-        return;
-      }
-      setIssued({ email: issuedCode.email });
-      setError(
-        'Код ушёл письмом. Локальный снимок этой почты не найден — откройте бригаду из дашборда.',
-      );
-    } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? `${cause.message}. Сначала откройте вкладку «Инженеры» в дашборде и нажмите «Открыть как инженер».`
-          : 'Не удалось войти',
-      );
-    } finally {
-      setBusy(false);
-    }
-  };
 
   const requestCode = async () => {
     setBusy(true);
@@ -367,19 +283,13 @@ function EngineerLoginPage({
         className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-sm"
         onSubmit={(event) => {
           event.preventDefault();
-          if (localBypass) {
-            void signInLocally();
-            return;
-          }
           void (issued ? verify() : requestCode());
         }}
       >
         <img src="/beeline-symbol.png" alt="Beeline" className="mx-auto h-10 w-10" />
         <h1 className="mt-4 text-center text-xl font-semibold">Вход инженера</h1>
         <p className="mt-2 text-center text-sm text-muted">
-          {localBypass
-            ? 'Локально: почта бригады с вкладки «Инженеры», без кода.'
-            : 'Почта бригады и код из письма. Роль выдаёт диспетчер, ввод адреса сам её не создаёт.'}
+          Почта бригады и код из письма. Роль выдаёт диспетчер, ввод адреса сам её не создаёт.
         </p>
         <label className="mt-6 block text-sm">
           Почта
@@ -387,12 +297,12 @@ function EngineerLoginPage({
             type="email"
             required
             value={email}
-            disabled={!localBypass && issued !== null}
+            disabled={issued !== null}
             onChange={(event) => setEmail(event.target.value)}
             className="mt-1 w-full rounded-2xl border border-line px-3 py-2"
           />
         </label>
-        {!localBypass && issued ? (
+        {issued ? (
           <label className="mt-4 block text-sm">
             Код
             <input
@@ -406,7 +316,7 @@ function EngineerLoginPage({
             />
           </label>
         ) : null}
-        {!localBypass && issued?.devCode ? (
+        {issued?.devCode ? (
           <p className="mt-2 text-xs text-muted">Код для локальной отладки: {issued.devCode}</p>
         ) : null}
         {error ? <p className="mt-3 text-sm text-red-700">{error}</p> : null}
@@ -415,9 +325,9 @@ function EngineerLoginPage({
           disabled={busy}
           className="mt-6 w-full rounded-full bg-bee py-3 text-sm font-semibold disabled:opacity-50"
         >
-          {localBypass ? 'Войти' : issued ? 'Войти' : 'Получить код'}
+          {issued ? 'Войти' : 'Получить код'}
         </button>
-        {issued && !localBypass ? (
+        {issued ? (
           <button
             type="button"
             onClick={() => {
@@ -429,9 +339,6 @@ function EngineerLoginPage({
             Другая почта
           </button>
         ) : null}
-        <a href="/engineer/?demo=1" className="mt-4 block text-center text-sm text-muted underline">
-          Открыть экраны без входа
-        </a>
       </form>
     </div>
   );
@@ -505,7 +412,6 @@ function EngineerDayPage({
 
 function EngineerRequestPage({
   token,
-  demo,
   requestId,
   profile,
   plan,
@@ -513,7 +419,6 @@ function EngineerRequestPage({
   onSessionExpired,
 }: {
   readonly token: string;
-  readonly demo: boolean;
   readonly requestId: string;
   readonly profile: EngineerView;
   readonly plan: EngineerPlanResponse | null;
@@ -530,10 +435,6 @@ function EngineerRequestPage({
     if (fromPlan && stopFromPlan) {
       setRequest(fromPlan);
       setStop(stopFromPlan);
-      return;
-    }
-    if (demo) {
-      setError('Заявка недоступна');
       return;
     }
     let cancelled = false;
@@ -554,7 +455,7 @@ function EngineerRequestPage({
     return () => {
       cancelled = true;
     };
-  }, [demo, fromPlan, onSessionExpired, requestId, stopFromPlan, token]);
+  }, [fromPlan, onSessionExpired, requestId, stopFromPlan, token]);
 
   if (error) {
     return (
@@ -654,13 +555,11 @@ function EngineerRoutePage({
 
 function EngineerSettingsPage({
   token,
-  demo,
   profile,
   onProfile,
   onSessionExpired,
 }: {
   readonly token: string;
-  readonly demo: boolean;
   readonly profile: EngineerView;
   readonly onProfile: (profile: EngineerView) => void;
   readonly onSessionExpired: () => void;
@@ -686,12 +585,6 @@ function EngineerSettingsPage({
     setBusy(true);
     setError(null);
     setMessage(null);
-    if (demo) {
-      onProfile({ ...profile, displayName, transportType, version: profile.version + 1 });
-      setMessage('Профиль обновлён (демо)');
-      setBusy(false);
-      return;
-    }
     try {
       const next = await updateEngineerProfile(token, {
         expectedVersion: profile.version,
@@ -711,12 +604,6 @@ function EngineerSettingsPage({
     setBusy(true);
     setError(null);
     setMessage(null);
-    if (demo) {
-      setIssued({ email, devCode: '123456' });
-      setMessage('Код отправлен на новый адрес (демо)');
-      setBusy(false);
-      return;
-    }
     try {
       const next = await requestEngineerEmailChange(token, email);
       setIssued({ email: next.email, ...(next.devCode ? { devCode: next.devCode } : {}) });
@@ -733,15 +620,6 @@ function EngineerSettingsPage({
     setBusy(true);
     setError(null);
     setMessage(null);
-    if (demo) {
-      onProfile({ ...profile, email: issued.email, version: profile.version + 1 });
-      setIssued(null);
-      setEmail('');
-      setCode('');
-      setMessage('Почта входа обновлена (демо)');
-      setBusy(false);
-      return;
-    }
     try {
       const next = await confirmEngineerEmailChange(token, issued.email, code);
       onProfile(next);

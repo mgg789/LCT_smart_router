@@ -524,6 +524,22 @@ export async function revokeApiToken(sessionToken: string, id: string): Promise<
 
 const engineerProfileSchema = engineerSchema.omit({ day: true });
 
+/** Removes the login from a brigade. The routing profile stays; live sessions die. */
+export function unlinkEngineerAccount(
+  token: string,
+  engineerId: string,
+): Promise<{ engineer: z.infer<typeof engineerProfileSchema> }> {
+  return requestJson(
+    '/api/v1/dispatch/engineers/unlink-account',
+    z.object({ engineer: engineerProfileSchema }),
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({ operationId: crypto.randomUUID(), engineerId }),
+    },
+  );
+}
+
 /** Grants a login address to an imported brigade that still has none. */
 export function linkEngineerAccount(
   token: string,

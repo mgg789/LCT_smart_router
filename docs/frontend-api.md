@@ -192,6 +192,8 @@ Authorization: Bearer <token>
 
 **POST `/dispatch/engineers/link-account`** — `{operationId, engineerId, email}` → `{engineer}`. Выдать логин профилю без адреса (бригада из импорта): аккаунт создаётся, роль инженера выдаётся, параметры планирования не меняются. Повторная привязка и адрес, уже являющийся логином другого инженера, — `VALIDATION_FAILED`. После привязки инженер входит через `POST /auth/login-code` + `verify` с `role: "engineer"`.
 
+**POST `/dispatch/engineers/unlink-account`** — `{operationId, engineerId}` → `{engineer}`. Снимает логин: `hasAccount: false`, `email: null`, роль инженера удаляется, живые сессии инженера отзываются. Профиль и план не меняются. Новый `verify` с `role: "engineer"` на этот адрес — `401`.
+
 **PATCH `/dispatch/engineers/:id`** — `{operationId, expectedVersion?, displayName?, skills?, transportType?, region?, homeLat?, homeLon?}` → `{engineer}`.
 
 **POST `/dispatch/engineers/:id/workday`** — `{operationId, workDate: "YYYY-MM-DD", shiftStartAt, shiftEndAt, lunch?: {enabled, durationSec?, windowStartAt?, windowEndAt?}, lunchRequired?}` → `{day}`. Включённый обед требует длительность и полное окно, обед помещается в окно целиком.
@@ -396,7 +398,7 @@ CAS по `expectedContextVersion`: устарели — 409 `VERSION_CONFLICT`, 
 | GET | `/engineer/requests/:id` | → `{request: RequestView, stop: PlanStopView}` — только если заявка стоит в применённом маршруте этого инженера; иначе `NOT_FOUND` |
 | POST | `/engineer/requests/:id/facts` | `{operationId, kind: "arrived"\|"arrived_blocked"\|"started"\|"finished"\|"problem", occurredAt?, note?}` → факт исполнения; отмечать можно только то, что назначено применённым планом; финиш без старта — 422 |
 
-SPA `/engineer/` (вход по коду, список заявок и обеда, карточка/карта точки, маршрут на день, настройки имени/транспорта/почты) живёт в том же `apps/web`, что и дашборд. Почту бригаде без логина задаёт диспетчер через `POST /dispatch/engineers/link-account` на вкладке «Инженеры».
+SPA `/engineer/` (вход по коду, список заявок и обеда, карточка/карта точки, маршрут на день, настройки имени/транспорта/почты) живёт в том же `apps/web`, что и дашборд. Почту бригаде без логина задаёт диспетчер через `POST /dispatch/engineers/link-account` на вкладке «Инженеры»; снять её можно через `unlink-account`. Вход только живой сессией по коду, без локального обхода.
 
 ## 8. Контур клиента `/api/v1/client/...` (роль `client`)
 
