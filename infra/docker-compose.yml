@@ -114,6 +114,10 @@ services:
     env_file:
       - path: ../.env
         required: true
+    # Hysteria SMTP forwards live on the host loopback. Without this alias the
+    # API container's 127.0.0.1 is itself, so SMTP_HOST=host.docker.internal.
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
     # Only container topology is set here; application configuration comes from .env, so
     # there is one place to look and no silent override. In particular NODE_ENV is the
     # operator's choice: this contour is a development and demo one, where

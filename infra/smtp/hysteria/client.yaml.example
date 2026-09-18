@@ -14,7 +14,9 @@ bandwidth:
   up: 50 mbps
   down: 50 mbps
 tcpForwarding:
-  - listen: 127.0.0.1:2525
+  # 0.0.0.0 so the API container can reach the forwards via host.docker.internal.
+  # Keep UFW INPUT DROP on the public NIC; deploy-remote opens only Docker bridges.
+  - listen: 0.0.0.0:2525
     remote: 127.0.0.1:587
-  - listen: 127.0.0.1:8587
+  - listen: 0.0.0.0:8587
     remote: 127.0.0.1:8587

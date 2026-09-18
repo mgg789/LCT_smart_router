@@ -9,7 +9,7 @@
 | Роль | Адрес | Что слушает |
 |---|---|---|
 | SMTP | `194.87.202.172`, `mail.droidje.com` | Postfix 25 (локальная доставка/bounce), 587 (submission), Hysteria UDP/443, watchdog `127.0.0.1:8587` |
-| MGG | `178.140.207.217` | Hysteria-клиент: `127.0.0.1:2525` → submission, `127.0.0.1:8587` → watchdog |
+| MGG | `178.140.207.217` | Hysteria-клиент: `0.0.0.0:2525` / `:8587` (с хоста всё ещё `127.0.0.1`); API в compose ходит на `host.docker.internal` |
 
 Отправитель: `Navix <noreply@mail.droidje.com>`. EHLO: `mail.droidje.com`.
 Установлено: Postfix 3.6.4 (Ubuntu 22.04), OpenDKIM, certbot, Hysteria 2.6.2
@@ -18,7 +18,10 @@
 ## Сеть
 
 Нормальный режим — `VPN_ONLY`: публичный TCP/587 закрыт iptables-цепочкой
-`NAVIX_SMTP`. Sys ходит в `127.0.0.1:2525` через Hysteria.
+`NAVIX_SMTP`. Контейнер API ходит в `host.docker.internal:2525` (хостовый
+Hysteria). С самого хоста по-прежнему `127.0.0.1:2525`. UFW на MGG —
+`INPUT DROP`; `deploy-remote.sh` держит контейнер `navix-smtp-host-allow`,
+который открывает только docker-bridge на 2525/8587, не публичный NIC.
 
 Hysteria 2 на SMTP-хосте — односторонний прокси, поэтому heartbeat едет
 MGG → SMTP (`POST /beat` каждые 15 с). Три пропущенных интервала
@@ -61,7 +64,7 @@ _dmarc.mail.droidje.com.        TXT  "v=DMARC1; p=quarantine; adkim=s; aspf=s;"
 
 Модуль `apps/api/src/notifications`. Без `SMTP_HOST` health остаётся
 `not_configured`, парольный вход диспетчера жив. На MGG в `/home/mgg/navix/.env`
-уже прописаны loopback-хост, fallback и health URL.
+уже прописаны `host.docker.internal`, fallback и health URL.
 
 Каталог писем: `account_login_code`, `request_received`, `engineer_assigned`,
 `visit_change_required`. UI ввода кода — карточка DRO-39.
