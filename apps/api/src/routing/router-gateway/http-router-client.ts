@@ -40,6 +40,7 @@ const policyComparisonSchema = z.object({
     z.object({
       strategy_id: z.enum(COMPARISON_STRATEGIES),
       kind: z.enum(['policy', 'baseline']),
+      additional_engineers: z.number().int().nonnegative().default(0),
       is_usable: z.boolean(),
       calculation_ms: z.number().int().nonnegative(),
       summary: comparisonMetricsSchema,
@@ -165,13 +166,12 @@ export class HttpRouterClient extends RouterClient {
 
   /** Runs or reads Router's cached same-snapshot policy comparison. */
   override async getPolicyComparison(): Promise<PolicyComparison> {
-    // A cold comparison computes six policies (up to two seconds each), so the ordinary
-    // single-request timeout is too short. Keep a finite ceiling while allowing the
-    // documented cold-cache budget to complete.
+    // A cold comparison includes fixed-roster refinement and expanded-workforce
+    // covering. Keep its timeout separate from ordinary status requests.
     const raw = await this.fetchJson(
       '/v1/policy-comparison',
       {},
-      Math.max(this.options.requestTimeoutMs, 15_000),
+      Math.max(this.options.requestTimeoutMs, 60_000),
     );
     const parsed = policyComparisonSchema.safeParse(raw);
     if (!parsed.success) {
@@ -186,6 +186,7 @@ export class HttpRouterClient extends RouterClient {
       rows: parsed.data.rows.map((row) => ({
         strategyId: row.strategy_id,
         kind: row.kind,
+        additionalEngineers: row.additional_engineers,
         isUsable: row.is_usable,
         calculationMs: row.calculation_ms,
         metrics: {

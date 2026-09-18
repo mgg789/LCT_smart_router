@@ -152,6 +152,10 @@ class RouteEvaluator:
             "travel_time": sum(s.travel for s in states),
             "distance": sum(s.distance for s in states),
             "engineers_used": sum(bool(s.jobs) for s in states),
+            "additional_engineers": sum(
+                bool(state.jobs) and engineer.engineer_id.startswith("covering-")
+                for engineer, state in zip(self.engineers, states)
+            ),
             "window_start_delay": sum(s.delay for s in states),
             "max_jobs_per_engineer": max((len(s.jobs) for s in states), default=0),
             "total_lateness": sum(s.lateness for s in states),

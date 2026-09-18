@@ -22,8 +22,9 @@ describe('HttpRouterClient', () => {
         search_budget_ms: 2_000,
         rows: [
           {
-            strategy_id: 'baseline',
-            kind: 'baseline',
+            strategy_id: 'covering',
+            kind: 'policy',
+            additional_engineers: 2,
             is_usable: true,
             calculation_ms: 4,
             summary: {
@@ -49,7 +50,8 @@ describe('HttpRouterClient', () => {
     });
 
     const comparison = await client.getPolicyComparison();
-    assert.equal(comparison.rows[0]?.strategyId, 'baseline');
+    assert.equal(comparison.rows[0]?.strategyId, 'covering');
+    assert.equal(comparison.rows[0]?.additionalEngineers, 2);
     assert.equal(comparison.rows[0]?.metrics.assignedCount, 4);
     assert.equal(comparison.inputHash, 'a'.repeat(64));
   });

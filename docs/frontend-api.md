@@ -439,3 +439,13 @@ CAS по `expectedContextVersion`: устарели — 409 `VERSION_CONFLICT`, 
 Техническая ревизия Router расширена `windowLatenessToleranceSec` (0…1200 секунд, default 0), `trafficEnabled` и `equipmentEnabled` (default true); Python использует snake_case. Передача — через существующие endpoint технических настроек и CAS contextVersion. Предыдущие поля обязательны и сохраняются. Окно клиента остаётся исходным, новая настройка допуска отличается от старого допуска дрейфа начала работы.
 
 Метрики сравнения дополнены `lateAssignedCount`, `totalLatenessSec`, `minWindowSlackSec` (null без назначений), `workloadSpreadSec`, `maxWorkloadSec`. Отсутствующие поля старых записей читаются с defaults 0/null; такие записи не доказывают измерение новых показателей. Полный смысл и формулы — `docs/solver.md`, сверочные значения — `docs/policy-efficiency.md`.
+
+
+## Дополнение 18.09.2026: сравнение с расширяемым составом
+
+«Полное покрытие» (`covering-2`) включено отдельной седьмой строкой.
+Количество дополнительных исполнителей передаётся в `additional_engineers`
+(`additionalEngineers` в веб/API). Её маршруты не доступны остальным политикам
+и FIFO. Клиент читает старые шестистрочные записи без миграции. Полное покрытие
+не отменяет окна, смены, доступность дорог и оборудование; невозможные назначения
+сохраняются как unassigned. Замеры и ограничения: `docs/policy-efficiency.md`.

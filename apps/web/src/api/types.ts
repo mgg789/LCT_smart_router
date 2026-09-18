@@ -297,6 +297,7 @@ export interface PolicyComparisonMetrics {
 export interface PolicyComparisonRow {
   readonly strategyId: StrategyId;
   readonly kind: 'policy' | 'baseline';
+  readonly additionalEngineers?: number;
   readonly isUsable: boolean;
   readonly calculationMs: number;
   readonly metrics: PolicyComparisonMetrics;

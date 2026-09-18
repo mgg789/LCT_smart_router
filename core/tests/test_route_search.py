@@ -71,7 +71,7 @@ def test_window_lateness_is_explicit_and_does_not_extend_shifts(snapshot, graph,
     assert result.main.summary.assigned_count == 0
 
 
-@pytest.mark.parametrize("policy", ["fast", "compact", "sla", "balanced", "eco"])
+@pytest.mark.parametrize("policy", ["fast", "compact", "sla", "balanced", "eco", "covering"])
 def test_search_score_matches_independent_public_metrics(snapshot, graph, policy):
     task = snapshot.model_copy(update={"policy": Policy(policy_id=policy, parameters={})})
     travel = configure_travel(GraphTravel(graph), RouterTechnicalSettings(), task.planning_as_of)

@@ -266,6 +266,7 @@ const policyComparisonSchema = z.object({
       z.object({
         strategyId: z.enum(['fast', 'compact', 'sla', 'balanced', 'eco', 'covering', 'baseline']),
         kind: z.enum(['policy', 'baseline']),
+        additionalEngineers: z.number().int().nonnegative().default(0),
         isUsable: z.boolean(),
         calculationMs: z.number().nonnegative(),
         metrics: z.object({
@@ -288,11 +289,19 @@ const policyComparisonSchema = z.object({
         }),
       }),
     )
-    .length(6)
+    .min(6)
+    .max(7)
     .superRefine((rows, context) => {
       const strategyIds = new Set(rows.map((row) => row.strategyId));
-      if (strategyIds.size !== 6) {
+      if (strategyIds.size !== rows.length) {
         context.addIssue({ code: 'custom', message: 'comparison strategies must be unique' });
+      }
+      if (
+        !['fast', 'compact', 'sla', 'balanced', 'eco', 'baseline'].every((id) =>
+          rows.some((row) => row.strategyId === id),
+        )
+      ) {
+        context.addIssue({ code: 'custom', message: 'comparison strategies are incomplete' });
       }
       if (rows.some((row) => (row.strategyId === 'baseline') !== (row.kind === 'baseline'))) {
         context.addIssue({ code: 'custom', message: 'comparison strategy kind is inconsistent' });
@@ -540,7 +549,14 @@ export async function setDispatchMode(token: string, mode: 'auto' | 'manual'): P
 
 /** Loads all Router strategies and the official FIFO baseline for one immutable input. */
 export function loadPolicyComparison(token: string): Promise<PolicyComparisonResponse> {
-  return requestJson('/api/v1/dispatch/policy-comparison', policyComparisonSchema, token);
+  // Allow the API's bounded cold comparison to finish before the UI gives up.
+  return requestJson(
+    '/api/v1/dispatch/policy-comparison',
+    policyComparisonSchema,
+    token,
+    {},
+    75_000,
+  );
 }
 
 /** Changes an engineer's line availability and returns the publication that must be applied. */
@@ -692,9 +708,10 @@ async function requestJson<T>(
   schema: z.ZodType<T>,
   token?: string,
   init: RequestInit = {},
+  timeoutMs = 12_000,
 ): Promise<T> {
   const controller = new AbortController();
-  const timeout = globalThis.setTimeout(() => controller.abort(), 12_000);
+  const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(`${API_BASE}${path}`, {
       ...init,

@@ -33,10 +33,11 @@ export function PolicyComparisonPage({
       <section className="mx-auto max-w-[1440px] rounded-3xl bg-white p-6 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <p className="text-sm text-muted">Одинаковые заявки, инженеры и дорожная матрица</p>
+            <p className="text-sm text-muted">Одинаковые заявки и дорожные условия</p>
             <h1 className="mt-1 text-2xl font-semibold">Сравнение политик</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
-              Рабочие политики считаются на одном снимке с тем же составом инженеров. Строка
+              Политики считаются на одном снимке. «Полное покрытие» может привлекать дополнительных
+              инженеров — их число указано отдельно. Остальные используют исходный состав. Строка
               «Базовая из ТЗ» выделена отдельно: это прямое последовательное назначение из ТЗ
               (очередь заявок → первый подходящий свободный инженер), а не оптимизация. Сравнивайте
               с ней число исполнителей, пробег и качество окон. Опоздание здесь считается от
@@ -52,7 +53,7 @@ export function PolicyComparisonPage({
             {recorded
               ? 'Показать записанное сравнение'
               : loading
-                ? 'Считаем шесть стратегий…'
+                ? 'Считаем семь стратегий…'
                 : comparison
                   ? 'Пересчитать'
                   : 'Сравнить'}
@@ -68,9 +69,11 @@ export function PolicyComparisonPage({
 
         {loading && !comparison ? (
           <div className="mt-8 grid gap-3 md:grid-cols-3">
-            {['fast', 'compact', 'sla', 'balanced', 'eco', 'baseline'].map((strategyId) => (
-              <div key={strategyId} className="h-32 animate-pulse rounded-2xl bg-canvas" />
-            ))}
+            {['fast', 'compact', 'sla', 'balanced', 'eco', 'covering', 'baseline'].map(
+              (strategyId) => (
+                <div key={strategyId} className="h-32 animate-pulse rounded-2xl bg-canvas" />
+              ),
+            )}
           </div>
         ) : null}
 
@@ -177,7 +180,14 @@ export function PolicyComparisonPage({
                             <td className="px-3 py-4">
                               {row.metrics.urgentAssignedCount}/{row.metrics.urgentTotal}
                             </td>
-                            <td className="px-3 py-4">{row.metrics.engineersUsed}</td>
+                            <td className="px-3 py-4">
+                              {row.metrics.engineersUsed}
+                              {row.strategyId === 'covering' ? (
+                                <span className="block whitespace-nowrap text-[11px] text-muted">
+                                  из них +{row.additionalEngineers ?? 0} дополнительных
+                                </span>
+                              ) : null}
+                            </td>
                             <td className="px-3 py-4">
                               <MetricWithSubline
                                 value={formatKm(row.metrics.distanceKm)}

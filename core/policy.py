@@ -14,6 +14,7 @@ Criterion = Literal[
     "travel_time",
     "distance",
     "engineers_used",
+    "additional_engineers",
     "window_start_delay",
     "max_jobs_per_engineer",
     "total_lateness",
@@ -23,6 +24,7 @@ Criterion = Literal[
 ]
 SearchStage = Literal[
     "coverage",
+    "additional_engineers",
     "travel_time",
     "distance",
     "engineers_used",
@@ -99,9 +101,9 @@ _CATALOG: dict[str, PolicySpec] = {
     ),
     "covering": PolicySpec(
         policy_id="covering",
-        definition_version="covering-1",
-        ordered_criteria=_COVERAGE + ("engineers_used", "distance", "travel_time"),
-        search_stages=("coverage", "engineers_used", "distance", "travel_time"),
+        definition_version="covering-2",
+        ordered_criteria=_COVERAGE + ("additional_engineers", "engineers_used", "distance", "travel_time"),
+        search_stages=("coverage", "additional_engineers", "engineers_used", "distance", "travel_time"),
     ),
 }
 POLICY_CATALOG_VERSION = sha256(
@@ -162,6 +164,10 @@ def criterion_values(snapshot: RouterTaskSnapshot, plan: Plan) -> dict[Criterion
         "travel_time": summary.travel_time_sec,
         "distance": round(summary.distance_km * 1000),
         "engineers_used": summary.engineers_used,
+        "additional_engineers": sum(
+            route.engineer_id.startswith("covering-") and route.metrics.assigned_count > 0
+            for route in plan.routes
+        ),
         "window_start_delay": sum(
             stop.start_at - requests[stop.request_id].window_start_at for stop in job_stops
         ),

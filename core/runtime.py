@@ -315,6 +315,28 @@ def calculate_policy_comparison(
         )
         best = min(candidates, key=lambda plan: score(candidate_snapshot, plan))
         rows[index] = row.model_copy(update={"is_usable": best.is_usable, "summary": best.summary})
+    # Expanded-workforce plans must never enter the fixed-roster candidate pool.
+    started = time.monotonic()
+    covering = solve(
+        snapshot.model_copy(update={"policy": Policy(policy_id="covering", parameters={})}),
+        provider,
+        comparison_settings,
+        memory=None,
+        context_version=context_version,
+    )
+    rows.append(
+        PolicyComparisonRow(
+            strategy_id="covering",
+            kind="policy",
+            additional_engineers=sum(
+                route.engineer_id.startswith("covering-") and route.metrics.assigned_count > 0
+                for route in covering.main.routes
+            ),
+            is_usable=covering.main.is_usable,
+            calculation_ms=round((time.monotonic() - started) * 1000),
+            summary=covering.main.summary,
+        )
+    )
     rows.append(baseline_row)
     return PolicyComparison(
         input_publication_id=publication_id,
@@ -409,7 +431,7 @@ class RouterRuntime:
             return self.result.model_copy(deep=True)
 
     def compare_policies(self, search_budget_ms: int | None = None) -> PolicyComparison:
-        """Compare six strategies on the ready publication without mutating Runtime."""
+        """Compare seven strategies on the ready publication without mutating Runtime."""
         if search_budget_ms is not None and not 1 <= search_budget_ms <= 8000:
             raise ValueError("COMPARISON_BUDGET_INVALID")
         try:

@@ -34,6 +34,32 @@ describe('request failure metadata', () => {
     }
   });
 
+  it('allows cold comparisons past the ordinary timeout but still bounds stalled work', async () => {
+    vi.useFakeTimers();
+    let signal: AbortSignal | null | undefined;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_url: string, init: RequestInit) => {
+        signal = init.signal;
+        return new Promise<Response>((_resolve, reject) => {
+          signal?.addEventListener('abort', () => reject(new Error('aborted')));
+        });
+      }),
+    );
+    try {
+      const request = loadPolicyComparison('test-session');
+      const assertion = expect(request).rejects.toMatchObject({ status: 0 });
+      await vi.advanceTimersByTimeAsync(12_000);
+      expect(signal?.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(63_000);
+      await assertion;
+      expect(signal?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('preserves status and trace ID for an HTTP failure', async () => {
     vi.stubGlobal(
       'fetch',
@@ -260,46 +286,56 @@ describe('live dashboard client', () => {
     );
   });
 
-  it('loads all policy comparison rows for one Router input', async () => {
-    const strategies = ['fast', 'compact', 'sla', 'balanced', 'eco', 'baseline'] as const;
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () =>
-        json({
-          inputPublicationId: 'publication-1',
-          inputHash: 'input-1',
-          routerContextVersion: 'context-1',
-          computedAt: 1_800_000_200,
-          searchBudgetMs: 2_000,
-          rows: strategies.map((strategyId) => ({
-            strategyId,
-            kind: strategyId === 'baseline' ? 'baseline' : 'policy',
-            isUsable: true,
-            calculationMs: 12,
-            metrics: {
-              requestsTotal: 5,
-              assignedCount: 4,
-              unassignedCount: 1,
-              urgentTotal: 1,
-              urgentAssignedCount: 1,
-              engineersUsed: 2,
-              distanceKm: 14.5,
-              travelTimeSec: 2_400,
-              workTimeSec: 10_800,
-              waitingTimeSec: 600,
-              lunchTimeSec: 0,
-              minWindowSlackSec: -600,
-            },
-          })),
-        }),
-      ),
-    );
+  it.each([false, true])(
+    'loads legacy and expanded comparisons (covering=%s)',
+    async (expanded) => {
+      const strategies = expanded
+        ? (['fast', 'compact', 'sla', 'balanced', 'eco', 'covering', 'baseline'] as const)
+        : (['fast', 'compact', 'sla', 'balanced', 'eco', 'baseline'] as const);
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () =>
+          json({
+            inputPublicationId: 'publication-1',
+            inputHash: 'input-1',
+            routerContextVersion: 'context-1',
+            computedAt: 1_800_000_200,
+            searchBudgetMs: 2_000,
+            rows: strategies.map((strategyId) => ({
+              strategyId,
+              kind: strategyId === 'baseline' ? 'baseline' : 'policy',
+              additionalEngineers: strategyId === 'covering' ? 2 : 0,
+              isUsable: true,
+              calculationMs: 12,
+              metrics: {
+                requestsTotal: 5,
+                assignedCount: 4,
+                unassignedCount: 1,
+                urgentTotal: 1,
+                urgentAssignedCount: 1,
+                engineersUsed: 2,
+                distanceKm: 14.5,
+                travelTimeSec: 2_400,
+                workTimeSec: 10_800,
+                waitingTimeSec: 600,
+                lunchTimeSec: 0,
+                minWindowSlackSec: -600,
+              },
+            })),
+          }),
+        ),
+      );
 
-    const comparison = await loadPolicyComparison('session-token');
-    expect(comparison.inputPublicationId).toBe('publication-1');
-    expect(comparison.rows[0]?.metrics.minWindowSlackSec).toBe(-600);
-    expect(comparison.rows.map((row) => row.strategyId)).toEqual(strategies);
-  });
+      const comparison = await loadPolicyComparison('session-token');
+      expect(comparison.inputPublicationId).toBe('publication-1');
+      expect(comparison.rows[0]?.metrics.minWindowSlackSec).toBe(-600);
+      expect(comparison.rows.map((row) => row.strategyId)).toEqual(strategies);
+      if (expanded)
+        expect(
+          comparison.rows.find((row) => row.strategyId === 'covering')?.additionalEngineers,
+        ).toBe(2);
+    },
+  );
 
   it('publishes an engineer availability change for exact rebuild correlation', async () => {
     let sentBody: unknown = null;

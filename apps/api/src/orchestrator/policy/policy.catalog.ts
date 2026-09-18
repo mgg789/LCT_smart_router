@@ -69,8 +69,8 @@ export const POLICIES: readonly PolicySpec[] = [
     policyId: 'covering',
     title: 'Covering',
     description:
-      'Add the fewest extra synthesized engineers so every remaining request is assigned, ' +
-      'then keep the compact resource order on that enlarged crew.',
+      'Increase feasible coverage with demand-matched regional crews and route reassignment; ' +
+      'reduce the additional workforce without claiming a proven minimum or impossible windows.',
     isDefault: false,
     parameters: {},
   },

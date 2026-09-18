@@ -44,6 +44,7 @@ export const COMPARISON_STRATEGIES = [
   'sla',
   'balanced',
   'eco',
+  'covering',
   'baseline',
 ] as const;
 export type ComparisonStrategy = (typeof COMPARISON_STRATEGIES)[number];
@@ -76,6 +77,7 @@ export interface PolicyComparison {
   readonly rows: ReadonlyArray<{
     readonly strategyId: ComparisonStrategy;
     readonly kind: 'policy' | 'baseline';
+    readonly additionalEngineers?: number;
     readonly isUsable: boolean;
     readonly calculationMs: number;
     readonly metrics: PolicyComparisonMetrics;
