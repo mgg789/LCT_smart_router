@@ -6,9 +6,15 @@ title = "LCT Smart Router"
 useDefault = true
 
 [allowlist]
-description = "Documented placeholders and committed fixtures, not live secrets"
+description = "Documented placeholders, the published jury login in README, and demo fixtures"
 paths = [
   '''(^|/)\.env\.example$''',
+  '''(^|/)README\.md$''',
+  '''(^|/)demo/''',
   '''(^|/)docs/''',
   '''(^|/)context/''',
+]
+# Published demo-stand password in the root README. The live .env is still scanned.
+regexes = [
+  '''9658dd575f3abab304123a2c''',
 ]

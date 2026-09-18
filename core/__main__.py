@@ -31,6 +31,12 @@ def main() -> None:
         command.add_argument("--dataset-dir", type=Path, default=Path("data/dataset/anonymized"))
         command.add_argument("--snapshot", type=Path)
         command.add_argument("--budget-ms", type=int, default=3000)
+        command.add_argument(
+            "--solution-limit",
+            type=int,
+            default=10_000,
+            help="OR-Tools solution cap; keep high so the time budget is the real stop",
+        )
         if name == "solve":
             command.add_argument("--output", type=Path)
         else:
@@ -183,7 +189,10 @@ def main() -> None:
             )
         )
         return
-    settings = SearchSettings(time_limit_ms=args.budget_ms)
+    settings = SearchSettings(
+        time_limit_ms=args.budget_ms,
+        solution_limit=args.solution_limit,
+    )
     if args.snapshot:
         reader = FileSnapshotReader(args.snapshot)
     else:

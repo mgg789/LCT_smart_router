@@ -555,7 +555,7 @@ export function loadPolicyComparison(token: string): Promise<PolicyComparisonRes
     policyComparisonSchema,
     token,
     {},
-    75_000,
+    90_000,
   );
 }
 

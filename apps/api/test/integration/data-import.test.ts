@@ -328,10 +328,36 @@ describe('official dataset import', () => {
     const before = await prisma.request.count({});
     const repeated = await importRegion('east');
 
-    assert.equal(repeated.applied, false);
     assert.equal(repeated.requestsCreated, 0);
     assert.match(repeated.warnings.join(' '), /already been imported/i);
     assert.equal(await prisma.request.count({}), before);
+  });
+
+  it('rebases a repeated official import onto today so the day stays plannable', async () => {
+    const eastBefore = await prisma.request.findMany({
+      where: { region: 'east' },
+      select: { id: true, version: true },
+    });
+    assert.ok(eastBefore.length > 0);
+
+    const repeated = await importRegion('east');
+    assert.equal(repeated.applied, true);
+    assert.equal(repeated.requestsCreated, 0);
+    assert.match(repeated.warnings.join(' '), /rebased to the live horizon/i);
+    assert.equal(await prisma.request.count({ where: { region: 'east' } }), eastBefore.length);
+
+    // rebaseToLiveHorizon anchors on now+60. Two imports in the same Unix second
+    // write identical window values (runbook §7); the write still happens and
+    // bumps version. Assert that, not a value change.
+    const after = await prisma.request.findMany({
+      where: { region: 'east' },
+      select: { id: true, version: true },
+    });
+    const bumped = after.filter((row) => {
+      const previous = eastBefore.find((item) => item.id === row.id);
+      return previous !== undefined && row.version > previous.version;
+    });
+    assert.ok(bumped.length > 0, 'repeat import must bump request versions');
   });
 
   it('refuses to reinterpret an imported region with another crew-count profile', async () => {

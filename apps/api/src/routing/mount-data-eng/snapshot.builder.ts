@@ -44,12 +44,28 @@ export class SnapshotBuilder {
 
   async build(tx: Tx, planningAsOf: number): Promise<BuiltSnapshot> {
     const workDate = workDateOf(planningAsOf, this.config.get('APP_TIME_ZONE'));
+    const previousDate = previousCalendarDate(workDate);
+    const active = await tx.activePolicy.findUnique({ where: { id: 'singleton' } });
+    const policyId = active?.policyId ?? DEFAULT_POLICY_ID;
 
-    const days = await tx.engineerDay.findMany({
-      where: { workDate },
+    const rawDays = await tx.engineerDay.findMany({
+      where: {
+        OR: [
+          { workDate },
+          {
+            workDate: previousDate,
+            shiftEndAt: { gt: BigInt(planningAsOf) },
+          },
+        ],
+      },
       include: { engineer: true },
       orderBy: { engineer: { inputOrder: 'asc' } },
     });
+    // A shift that started yesterday is still the live day until it ends. After
+    // midnight the calendar key rolls, but the Unix bounds do not — dropping those
+    // rows emptied the published task (0 engineers) while the dashboard still listed
+    // every imported crew.
+    const days = pickCurrentDays(rawDays, workDate);
 
     const horizon = horizonOf(days, planningAsOf);
     const executionByEngineer = await this.executionAnchors(
@@ -65,6 +81,11 @@ export class SnapshotBuilder {
     let engineersOverrun = 0;
     for (const day of days) {
       if (day.engineer.archivedAt !== null) {
+        continue;
+      }
+      // Covering extras stay on the map only while that policy is active. Otherwise
+      // they leak into every strategy and flatten the comparison onto one roster.
+      if (policyId !== 'covering' && day.engineer.id.startsWith('covering-')) {
         continue;
       }
       if (!hasShift(day)) {
@@ -144,8 +165,6 @@ export class SnapshotBuilder {
       });
     }
 
-    const active = await tx.activePolicy.findUnique({ where: { id: 'singleton' } });
-
     const snapshot: RouterTaskSnapshot = {
       schema_version: SNAPSHOT_SCHEMA_VERSION,
       planning_as_of: planningAsOf,
@@ -154,7 +173,7 @@ export class SnapshotBuilder {
       requests,
       engineers,
       policy: {
-        policy_id: active?.policyId ?? DEFAULT_POLICY_ID,
+        policy_id: policyId,
         parameters: {},
       },
     };
@@ -373,6 +392,30 @@ function horizonOf(
 /** A working day only counts once someone has given it a shift with a duration. */
 function hasShift(day: EngineerDay): boolean {
   return day.shiftEndAt > day.shiftStartAt;
+}
+
+/** Calendar day before `workDate` (`YYYY-MM-DD`), independent of the host timezone. */
+export function previousCalendarDate(workDate: string): string {
+  return new Date(Date.parse(`${workDate}T00:00:00.000Z`) - 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
+ * One day row per engineer: today's row wins over a still-open overnight shift.
+ */
+function pickCurrentDays<T extends EngineerDay & { engineer: Engineer }>(
+  days: readonly T[],
+  workDate: string,
+): T[] {
+  const chosen = new Map<string, T>();
+  for (const day of days) {
+    const current = chosen.get(day.engineerId);
+    if (!current || (day.workDate === workDate && current.workDate !== workDate)) {
+      chosen.set(day.engineerId, day);
+    }
+  }
+  return [...chosen.values()].sort(
+    (left, right) => left.engineer.inputOrder - right.engineer.inputOrder,
+  );
 }
 
 function nullableNumber(value: bigint | null): number | null {

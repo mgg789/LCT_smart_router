@@ -44,7 +44,14 @@ export class AppliedPlanService {
       },
     });
 
-    await this.ensureCoveringEngineers(tx, now, main);
+    const usesCoveringExtras = main.routes.some((route) =>
+      route.engineer_id.startsWith('covering-'),
+    );
+    if (usesCoveringExtras) {
+      await this.ensureCoveringEngineers(tx, now, main);
+    } else {
+      await this.archiveCoveringEngineers(tx, now);
+    }
     await this.materialise(tx, plan.id, main);
     await this.issueMorningEquipment(tx, now, main);
     await this.syncAssignmentStates(tx, now, main);
@@ -375,8 +382,23 @@ export class AppliedPlanService {
   }
 
   /**
+   * Hide synthesized covering extras after leaving that policy so they cannot
+   * inflate compact/fast/sla/eco/FIFO.
+   */
+  private async archiveCoveringEngineers(tx: Tx, now: number): Promise<void> {
+    const archived = await tx.engineer.updateMany({
+      where: { id: { startsWith: 'covering-' }, archivedAt: null },
+      data: { archivedAt: BigInt(now), updatedAt: BigInt(now) },
+    });
+    if (archived.count === 0) {
+      return;
+    }
+    await this.publisher.publishIfChanged(tx, now, PUBLICATION_TRIGGERS.ENGINEER_PROFILE_CHANGED);
+  }
+
+  /**
    * Persist synthesized covering-policy engineers so their routes stay visible
-   * and the next snapshot includes the extra crew that produced the plan.
+   * while covering is the active policy.
    */
   private async ensureCoveringEngineers(tx: Tx, now: number, plan: RouterPlan): Promise<void> {
     const coveringIds = [

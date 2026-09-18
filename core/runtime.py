@@ -251,7 +251,11 @@ def calculate_policy_comparison(
         provider = attach_live_roads(provider)
     provider = configure_travel(provider, settings.technical(), snapshot.planning_as_of)
     comparison_settings = replace(
-        settings, time_limit_ms=search_budget_ms, solution_limit=max(settings.solution_limit, 10000)
+        settings,
+        time_limit_ms=search_budget_ms,
+        # A 64-solution cap returns the FIFO seed in tens of milliseconds and
+        # makes every preset look identical. Comparison is bounded by time.
+        solution_limit=max(settings.solution_limit, 10_000),
     )
     rows: list[PolicyComparisonRow] = []
 
@@ -466,7 +470,7 @@ class RouterRuntime:
             key = (digest, context_version)
             graph = copy.deepcopy(self._graph)
             settings = copy.deepcopy(self.settings)
-            effective_budget_ms = search_budget_ms or min(settings.time_limit_ms, 2000)
+            effective_budget_ms = search_budget_ms or min(settings.time_limit_ms, 8000)
             cached = self._comparison_cache.get(key)
             if cached is not None and cached.search_budget_ms == effective_budget_ms:
                 return cached.model_copy(deep=True)

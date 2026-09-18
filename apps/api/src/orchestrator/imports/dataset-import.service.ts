@@ -135,24 +135,9 @@ export class DatasetImportService {
             { details: { region: item.region, source: item.source } },
           );
         }
-        const lunchRowsUpdated = await this.ensureImportedLunchSettings(
-          context,
-          item.region,
-          timeZoneOffsetSec,
-        );
         results.push({
           region: item.region,
-          ...emptySummary(
-            item.source,
-            [
-              'This exact package has already been imported',
-              ...(lunchRowsUpdated > 0
-                ? [`Updated lunch settings for ${lunchRowsUpdated} existing engineer days`]
-                : []),
-            ],
-            [],
-          ),
-          applied: lunchRowsUpdated > 0,
+          ...(await this.refreshImportedRegion(context, item, timeZoneOffsetSec)),
         });
         continue;
       }
@@ -176,6 +161,132 @@ export class DatasetImportService {
         `${summary.engineersCreated} engineers`,
     );
     return summary;
+  }
+
+  /**
+   * Same official package again: move windows and shifts onto today's horizon.
+   *
+   * The first import rebases the historical CSV to "now". After midnight those
+   * `engineer_days.workDate` keys are yesterday, so a no-op skip left Router with
+   * zero crews. Repeating the TZ button must make the day plannable again without
+   * duplicating requests.
+   */
+  private async refreshImportedRegion(
+    context: OperationContext,
+    prepared: PreparedRegion,
+    timeZoneOffsetSec: number,
+  ): Promise<ImportSummary> {
+    const now = BigInt(context.now);
+    const { source, parsed } = prepared;
+    let windowsUpdated = 0;
+    for (const request of parsed.requests) {
+      const mapped = await context.tx.externalIdMap.findUnique({
+        where: {
+          source_entityType_externalId: {
+            source,
+            entityType: 'request',
+            externalId: request.externalId,
+          },
+        },
+      });
+      if (!mapped) {
+        continue;
+      }
+      const updated = await context.tx.request.updateMany({
+        where: { id: mapped.internalId, lifecycle: 'submitted' },
+        data: {
+          windowStartAt: BigInt(request.windowStartAt),
+          windowEndAt: BigInt(request.windowEndAt),
+          updatedAt: now,
+          version: { increment: 1 },
+        },
+      });
+      windowsUpdated += updated.count;
+    }
+
+    const daysUpserted = await this.upsertImportedDays(context, prepared, timeZoneOffsetSec);
+    const lunchRowsUpdated = await this.ensureImportedLunchSettings(
+      context,
+      prepared.region,
+      timeZoneOffsetSec,
+    );
+    return {
+      ...emptySummary(
+        source,
+        [
+          'This exact package has already been imported; windows and shifts were rebased to the live horizon',
+          ...(lunchRowsUpdated > 0
+            ? [`Updated lunch settings for ${lunchRowsUpdated} existing engineer days`]
+            : []),
+        ],
+        [],
+      ),
+      requestsSkippedAsDuplicate: parsed.requests.length,
+      applied: windowsUpdated > 0 || daysUpserted > 0 || lunchRowsUpdated > 0,
+    };
+  }
+
+  /** Writes today's shift row for every imported brigade. */
+  private async upsertImportedDays(
+    context: OperationContext,
+    prepared: PreparedRegion,
+    timeZoneOffsetSec: number,
+  ): Promise<number> {
+    const now = BigInt(context.now);
+    const workDate = localDate(context.now, timeZoneOffsetSec);
+    const lunchWindow = localLunchWindow(workDate, timeZoneOffsetSec);
+    const horizonStart = Math.min(
+      ...prepared.parsed.requests.map((request) => request.windowStartAt),
+    );
+    const horizonEnd = Math.max(...prepared.parsed.requests.map((request) => request.windowEndAt));
+    const equipmentByBrigade = allocateMorningEquipment(
+      prepared.parsed.requests,
+      prepared.brigades,
+    );
+    let upserted = 0;
+    for (const brigade of prepared.brigades) {
+      const mapped = await context.tx.externalIdMap.findUnique({
+        where: {
+          source_entityType_externalId: {
+            source: prepared.source,
+            entityType: 'engineer',
+            externalId: brigade.name,
+          },
+        },
+      });
+      if (!mapped) {
+        continue;
+      }
+      await context.tx.engineerDay.upsert({
+        where: { engineerId_workDate: { engineerId: mapped.internalId, workDate } },
+        update: {
+          shiftStartAt: BigInt(horizonStart),
+          shiftEndAt: BigInt(horizonEnd),
+          lunchEnabled: true,
+          lunchDurationSec: 45 * 60,
+          lunchWindowStartAt: BigInt(lunchWindow.start),
+          lunchWindowEndAt: BigInt(lunchWindow.end),
+          updatedAt: now,
+          ...equipmentByBrigade.get(brigade.name),
+        },
+        create: {
+          engineerId: mapped.internalId,
+          workDate,
+          shiftStartAt: BigInt(horizonStart),
+          shiftEndAt: BigInt(horizonEnd),
+          lunchEnabled: true,
+          lunchDurationSec: 45 * 60,
+          lunchWindowStartAt: BigInt(lunchWindow.start),
+          lunchWindowEndAt: BigInt(lunchWindow.end),
+          lunchRequired: false,
+          ...equipmentByBrigade.get(brigade.name),
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+      upserted += 1;
+    }
+    return upserted;
   }
 
   /** Brings rows imported by an older build onto the current optional-lunch contract. */

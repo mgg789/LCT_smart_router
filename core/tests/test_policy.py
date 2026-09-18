@@ -87,6 +87,60 @@ def test_catalog_is_strict_and_versioned(snapshot):
         assert spec.search_stages[1] == first_resource
 
 
+def test_switching_policy_does_not_keep_previous_routes(snapshot, graph):
+    """A new preset must search from scratch, not repair the last policy's plan."""
+    travel = GraphTravel(graph)
+    compact = solve(_policy_scenario(snapshot, graph, "compact"), travel, SETTINGS)
+    assert compact.main.summary.engineers_used == 1
+    fast = solve(_policy_scenario(snapshot, graph, "fast"), travel, SETTINGS, compact.memory)
+    assert fast.path == "COLD_START"
+    assert fast.main.summary.engineers_used == 2
+    assert fast.main.summary.travel_time_sec == 0
+
+
+def test_repeated_policy_switches_do_not_flatten_to_one_plan(snapshot, graph):
+    """Compact → fast → compact must keep the compact/fast trade-off after each hop."""
+    travel = GraphTravel(graph)
+    memory = None
+    used = {}
+    for policy_id in ("compact", "fast", "sla", "compact"):
+        output = solve(_policy_scenario(snapshot, graph, policy_id), travel, SETTINGS, memory)
+        used[policy_id] = output.main.summary.engineers_used
+        memory = output.memory
+    assert used["compact"] == 1
+    assert used["fast"] == 2
+    assert used["sla"] == 2
+
+
+def test_policy_comparison_rows_are_not_identical(snapshot, graph):
+    """Working presets and FIFO must not collapse to one metric vector."""
+    from core.runtime import calculate_policy_comparison
+
+    task = _policy_scenario(snapshot, graph, "compact")
+    comparison = calculate_policy_comparison(
+        task.model_dump_json().encode(),
+        "publication-policies",
+        graph,
+        SETTINGS,
+        "context-policies",
+        search_budget_ms=1600,
+    )
+    fingerprints = {
+        (
+            row.summary.assigned_count,
+            row.summary.engineers_used,
+            round(row.summary.distance_km, 3),
+            row.summary.travel_time_sec,
+        )
+        for row in comparison.rows
+    }
+    assert len(fingerprints) >= 2
+    by_id = {row.strategy_id: row.summary for row in comparison.rows}
+    assert by_id["fast"].engineers_used == 2
+    assert by_id["compact"].engineers_used == 1
+    assert by_id["baseline"].engineers_used >= 1
+
+
 def test_fast_minimizes_travel_while_compact_minimizes_engineers(snapshot, graph):
     """Show the catalog's intended resource trade-off on the same feasible jobs."""
     travel = GraphTravel(graph)
@@ -255,74 +309,39 @@ def test_covering_adds_minimum_engineers_to_assign_every_request(snapshot, graph
     assert any(stop.request_id == "emergency-job" for route in covering_plan.routes for stop in route.stops)
 
 
-def test_covering_uses_idle_same_region_engineer_before_extras(snapshot, graph):
-    """Leftover covering must open an idle skilled crew before synthesizing extras."""
-    from core.engine import _cover_leftovers
-    from core.schedule import assemble_plan
+def test_persisted_covering_extras_do_not_inflate_other_policies(snapshot, graph):
+    """A leftover covering-* person must not change compact or FIFO metrics."""
+    from core.engine import official_roster
+    from core.schedule import baseline
 
-    data = snapshot.model_dump()
-    start = data["planning_as_of"]
-    first = data["engineers"][0]
-    idle = dict(first)
-    first.update(
-        engineer_id="busy-local",
-        input_order=0,
-        skills=["local"],
-        start_location=graph.nodes[1].location.model_dump(),
-        region="east",
+    extra = snapshot.engineers[0].model_copy(
+        update={
+            "engineer_id": "covering-east-1",
+            "input_order": 10_001,
+            "skills": ["local", "connection", "emergency"],
+        }
     )
-    idle.update(
-        engineer_id="idle-emergency",
-        input_order=1,
-        skills=["emergency"],
-        start_location=graph.nodes[2].location.model_dump(),
-        region="east",
+    bloated = snapshot.model_copy(
+        update={
+            "engineers": [*snapshot.engineers, extra],
+            "policy": Policy(policy_id="compact", parameters={}),
+        }
     )
-    data["engineers"] = [first, idle]
-    data["requests"] = [
-        {
-            "request_id": "local-job",
-            "arrival_order": 1,
-            "location": graph.nodes[1].location.model_dump(),
-            "service_duration_sec": 300,
-            "window_start_at": start,
-            "window_end_at": start + 7200,
-            "priority": "normal",
-            "required_skill": "local",
-            "required_transport": None,
-            "region": "east",
-        },
-        {
-            "request_id": "emergency-job",
-            "arrival_order": 2,
-            "location": graph.nodes[2].location.model_dump(),
-            "service_duration_sec": 300,
-            "window_start_at": start,
-            "window_end_at": start + 7200,
-            "priority": "normal",
-            "required_skill": "emergency",
-            "required_transport": None,
-            "region": "east",
-        },
-    ]
-    task = RouterTaskSnapshot.model_validate({**data, "policy": {"policy_id": "covering", "parameters": {}}})
     travel = GraphTravel(graph)
-    from core.schedule import fixed_order
-
-    locked_routes = []
-    for engineer in task.engineers:
-        order = ["local-job"] if engineer.engineer_id == "busy-local" else []
-        route = fixed_order(task, engineer, order, travel)
-        assert route is not None
-        locked_routes.append(route)
-    locked = assemble_plan(task, locked_routes)
-    assert locked.summary.unassigned_count == 1
-    engineers, routes = _cover_leftovers(task, locked, travel)
-    covered = assemble_plan(task.model_copy(update={"engineers": engineers}), routes)
-    assert covered.summary.unassigned_count == 0
-    owner = next(item.engineer_id for item in covered.assignments if item.request_id == "emergency-job")
-    assert owner == "idle-emergency"
-    assert not any(engineer.engineer_id.startswith("covering-") for engineer in engineers)
+    clean = solve(
+        snapshot.model_copy(update={"policy": Policy(policy_id="compact", parameters={})}),
+        travel,
+        SETTINGS,
+    ).main
+    inflated = solve(bloated, travel, SETTINGS).main
+    assert inflated.summary.engineers_used == clean.summary.engineers_used
+    assert inflated.summary.assigned_count == clean.summary.assigned_count
+    assert [item.engineer_id for item in official_roster(bloated).engineers] == [
+        item.engineer_id for item in snapshot.engineers
+    ]
+    fifo_official = baseline(official_roster(bloated), travel)
+    fifo_clean = baseline(snapshot, travel)
+    assert fifo_official.summary.engineers_used == fifo_clean.summary.engineers_used
 
 
 def test_covering_extras_match_transport_equipment_region_and_shift(snapshot, graph):
