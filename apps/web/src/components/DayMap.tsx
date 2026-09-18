@@ -252,7 +252,7 @@ export function DayMap({
           type: 'circle',
           source: 'starts',
           paint: {
-            'circle-radius': 7,
+            'circle-radius': 11,
             'circle-color': '#ffffff',
             'circle-stroke-width': 3,
             'circle-stroke-color': ['get', 'regionColor'],
@@ -283,7 +283,7 @@ export function DayMap({
           type: 'circle',
           source: 'stops',
           paint: {
-            'circle-radius': ['case', ['==', ['get', 'selected'], 1], 10, 8],
+            'circle-radius': ['case', ['==', ['get', 'selected'], 1], 16, 13],
             'circle-color': ['get', 'color'],
             'circle-stroke-width': ['case', ['==', ['get', 'selected'], 1], 4, 2.5],
             'circle-stroke-color': ['get', 'regionColor'],
@@ -295,13 +295,8 @@ export function DayMap({
             type: 'symbol',
             source: 'stops',
             layout: {
-              'text-field': [
-                'concat',
-                ['to-string', ['get', 'sequence']],
-                ' ',
-                ['get', 'skillMark'],
-              ],
-              'text-size': 11,
+              'text-field': ['to-string', ['get', 'sequence']],
+              'text-size': 14,
               'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
             },
             paint: { 'text-color': '#ffffff' },
@@ -314,7 +309,7 @@ export function DayMap({
           type: 'circle',
           source: 'lunches',
           paint: {
-            'circle-radius': 8,
+            'circle-radius': 12,
             'circle-color': '#FFE7C2',
             'circle-stroke-width': 3,
             'circle-stroke-color': '#E07A2F',
@@ -345,7 +340,7 @@ export function DayMap({
           type: 'circle',
           source: 'unassigned',
           paint: {
-            'circle-radius': ['case', ['==', ['get', 'selected'], 1], 10, 8],
+            'circle-radius': ['case', ['==', ['get', 'selected'], 1], 16, 13],
             'circle-color': ['get', 'regionColor'],
             'circle-stroke-width': 2,
             'circle-stroke-color': '#202124',

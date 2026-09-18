@@ -1,9 +1,19 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { PolicyId } from '../api/types';
+import type { PolicyId, RequestView } from '../api/types';
 import { DayMap } from '../components/DayMap';
+import {
+  ALL_REGIONS,
+  filterSnapshotByRegion,
+  regionOptions,
+  regionStyle,
+  type RegionSelection,
+} from '../domain/regions';
 import { useDashboard } from '../hooks/useDashboard';
+import { type CaseExplanation, explainSelection } from '../lib/explanations';
+import { skillLabel } from '../lib/reasons';
+import { formatDurationMin } from '../lib/time';
 import { FIGMA_ASSETS } from './assets';
 import {
   FIGMA_ARTBOARD,
@@ -17,16 +27,17 @@ import {
   visibleNotifications,
   type DashboardNotification,
   type EngineerCard,
-  type EngineerRequest,
   type NavItemId,
   type NotificationIconKey,
   type NotificationTone,
+  type RouteStop,
 } from './fixtures';
 import {
   dashboardViewFromSnapshot,
   nextRouterSettings,
   notificationsFromSnapshot,
   policyLabel,
+  rightPanelMode,
 } from './fromSnapshot';
 import { FigmaIcon, FigmaText } from './primitives';
 
@@ -50,13 +61,6 @@ const NAV_ICON_BOX: Record<NavItemId, { width: number; height: number; className
   ai: { width: 24, height: 24, className: 'absolute left-1/2 top-[10px] -translate-x-1/2' },
 };
 
-const REASON_ICONS = {
-  reasonCheck: { src: FIGMA_ASSETS.reasonCheck, width: 20, height: 13, top: 71, left: 16 },
-  reasonCar: { src: FIGMA_ASSETS.reasonCar, width: 20, height: 20, top: 102, left: 16 },
-  reasonClock: { src: FIGMA_ASSETS.reasonClock, width: 18, height: 20, top: 138, left: 17 },
-  reasonPin: { src: FIGMA_ASSETS.reasonPin, width: 17, height: 18, top: 173, left: 18 },
-} as const;
-
 const NAV_ITEM_HEIGHT = 74;
 const NAV_ITEM_GAP = 10;
 const SEARCH_CONTROL_SIZE = 40;
@@ -76,6 +80,7 @@ const PANEL_HEIGHT = 893 + HEADER_LIFT;
 const UNASSIGNED_TOP = 778 + HEADER_LIFT;
 const CLOSE_PANEL_SIZE = 43;
 const MAP_COMPACT = { left: 623, top: PANEL_TOP, width: 751, height: 582 + HEADER_LIFT };
+const MAP_REQUEST_ONLY = { left: 623, top: PANEL_TOP, width: 751, height: PANEL_HEIGHT };
 const MAP_EXPANDED = { left: 623, top: PANEL_TOP, width: 1267, height: PANEL_HEIGHT };
 const ROUTE_STOP_WIDTH = 260;
 const ROUTE_TOPIC_WIDTH = 240;
@@ -86,8 +91,6 @@ const PROGRESS_TRACK = 321;
 
 const springQuick = { type: 'spring' as const, stiffness: 420, damping: 36, mass: 0.8 };
 const fadeSoft = { duration: 0.28, ease: [0.22, 1, 0.36, 1] as const };
-const FALLBACK_ENGINEER: EngineerCard = MAIN_DASHBOARD.engineers[0] as EngineerCard;
-
 /**
  * Dispatcher MAIN screen from Figma 28:614 / 29:2552.
  * Static first pass: mock copy only, no dispatch API.
@@ -99,31 +102,72 @@ export function MainDashboardPage() {
   const [activeNav, setActiveNav] = useState<NavItemId>('day');
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [mapExpanded, setMapExpanded] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [regionOpen, setRegionOpen] = useState(false);
+  const [selectedRegion, setSelectedRegion] = useState<RegionSelection>(ALL_REGIONS);
 
   useEffect(() => {
     if (dash.snapshot || dash.loading || dash.authenticated) return;
     dash.selectDemoScenario('initial');
   }, [dash.authenticated, dash.loading, dash.selectDemoScenario, dash.snapshot]);
 
+  const visibleSnapshot = useMemo(
+    () => (dash.snapshot ? filterSnapshotByRegion(dash.snapshot, selectedRegion) : null),
+    [dash.snapshot, selectedRegion],
+  );
+  const regions = useMemo(() => (dash.snapshot ? regionOptions(dash.snapshot) : []), [dash.snapshot]);
+
+  useEffect(() => {
+    if (selectedRegion !== ALL_REGIONS && !regions.some((region) => region.id === selectedRegion)) {
+      setSelectedRegion(ALL_REGIONS);
+      dash.clearFocus();
+    }
+  }, [dash.clearFocus, regions, selectedRegion]);
   const view = useMemo(
     () =>
-      dash.snapshot
-        ? dashboardViewFromSnapshot(dash.snapshot, {
+      visibleSnapshot
+        ? dashboardViewFromSnapshot(visibleSnapshot, {
             engineerId: dash.selectedEngineerId,
             requestId: dash.selectedRequest?.id ?? null,
           })
         : null,
-    [dash.selectedEngineerId, dash.selectedRequest, dash.snapshot],
+    [dash.selectedEngineerId, dash.selectedRequest, visibleSnapshot],
   );
   const roster = view?.engineers ?? MAIN_DASHBOARD.engineers;
   const visibleEngineers = useMemo(() => filterEngineers(roster, searchQuery), [roster, searchQuery]);
-  const selectedEngineer =
-    visibleEngineers.find((item) => item.id === (dash.selectedEngineerId ?? view?.displayedEngineerId)) ??
-    visibleEngineers[0] ??
-    FALLBACK_ENGINEER;
+  const selectedEngineer = dash.selectedEngineerId
+    ? (visibleEngineers.find((item) => item.id === dash.selectedEngineerId) ?? null)
+    : null;
+  const panelMode = rightPanelMode(dash.selectedEngineerId, dash.selectedRequest?.id ?? null);
+  const showRightPanel = panelMode !== null;
+  const showRouteCard = Boolean(selectedEngineer);
+  const mapFrame = !showRightPanel ? MAP_EXPANDED : showRouteCard ? MAP_COMPACT : MAP_REQUEST_ONLY;
+  const regionLabel =
+    selectedRegion === ALL_REGIONS ? 'Все регионы' : regionStyle(selectedRegion).label;
+  const panelExplanation = useMemo(() => {
+    if (!dash.snapshot) return null;
+    if (panelMode === 'request' && dash.selectedRequest) {
+      return explainSelection(
+        dash.snapshot,
+        dash.selectedRequest,
+        dash.selectedAssignment,
+        dash.selectedEngineer,
+        dash.selectedRoute,
+      );
+    }
+    if (panelMode === 'plan' && dash.selectedEngineer) {
+      return explainSelection(dash.snapshot, null, null, dash.selectedEngineer, dash.selectedRoute);
+    }
+    return null;
+  }, [
+    dash.selectedAssignment,
+    dash.selectedEngineer,
+    dash.selectedRequest,
+    dash.selectedRoute,
+    dash.snapshot,
+    panelMode,
+  ]);
   const inbox = useMemo(() => {
     if (!dash.snapshot) {
       return {
@@ -155,7 +199,6 @@ export function MainDashboardPage() {
   const policyTitle = policyLabel(policyId, dash.snapshot?.policies.find((item) => item.policyId === policyId)?.title);
   const lunchOn = dash.snapshot?.lunchesEnabled ?? false;
   const trafficOn = dash.snapshot?.routerSettings?.trafficEnabled ?? false;
-  const displayedRequest = view?.displayedRequest ?? selectedEngineer.request;
   const requestCount = view?.requestCount ?? MAIN_DASHBOARD.engineers.reduce((sum, item) => sum + item.requestCount, 0);
   const planLabel =
     view?.planLabel ??
@@ -202,11 +245,15 @@ export function MainDashboardPage() {
         setPolicyOpen(false);
         return;
       }
-      if (mapExpanded) setMapExpanded(false);
+      if (regionOpen) {
+        setRegionOpen(false);
+        return;
+      }
+      if (showRightPanel) dash.clearFocus();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [mapExpanded, notifOpen, policyOpen, searchOpen, userMenuOpen]);
+  }, [dash, notifOpen, policyOpen, regionOpen, searchOpen, showRightPanel, userMenuOpen]);
 
   const scale = useArtboardScale();
   const motionOn = !reduceMotion;
@@ -231,6 +278,7 @@ export function MainDashboardPage() {
           if (notifOpen && !target.closest('[data-notif-panel]')) setNotifOpen(false);
           if (userMenuOpen && !target.closest('[data-user-menu]')) setUserMenuOpen(false);
           if (policyOpen && !target.closest('[data-policy-panel]')) setPolicyOpen(false);
+          if (regionOpen && !target.closest('[data-region-panel]')) setRegionOpen(false);
         }}
       >
         <SidebarNav
@@ -313,7 +361,7 @@ export function MainDashboardPage() {
           planLabel={planLabel}
           unassignedTitle={view?.unassignedTitle ?? MAIN_DASHBOARD.unassigned.title}
           unassignedReason={view?.unassignedReason ?? MAIN_DASHBOARD.unassigned.reason}
-          selectedEngineerId={dash.selectedEngineerId ?? selectedEngineer.id}
+          selectedEngineerId={dash.selectedEngineerId}
           searchOpen={searchOpen}
           searchQuery={searchQuery}
           motionOn={motionOn}
@@ -327,44 +375,58 @@ export function MainDashboardPage() {
           }}
           onSearchChange={setSearchQuery}
           onSelect={(id) => {
-            const card = roster.find((item) => item.id === id);
-            if (card?.primaryRequestId) dash.selectRequest(card.primaryRequestId);
-            else dash.selectEngineer(id);
+            dash.selectEngineer(id);
             setSearchOpen(false);
             setSearchQuery('');
-            setMapExpanded(false);
           }}
           onSelectUnassigned={() => {
             if (view?.firstUnassignedId) dash.selectRequest(view.firstUnassignedId);
           }}
         />
         <MapCard
-          snapshot={dash.snapshot}
+          snapshot={visibleSnapshot}
           selectedEngineerId={dash.selectedEngineerId}
           selectedRequestId={dash.selectedRequest?.id ?? null}
-          expanded={mapExpanded}
+          frame={mapFrame}
+          regionLabel={regionLabel}
+          regions={[{ id: ALL_REGIONS, label: 'Все регионы' }, ...regions.map((item) => ({ id: item.id, label: item.label }))]}
+          selectedRegion={selectedRegion}
+          regionOpen={regionOpen}
           motionOn={motionOn}
           onSelectRequest={dash.selectRequest}
+          onToggleRegion={() => {
+            setPolicyOpen(false);
+            setNotifOpen(false);
+            setUserMenuOpen(false);
+            setRegionOpen((value) => !value);
+          }}
+          onSelectRegion={(id) => {
+            setSelectedRegion(id);
+            setRegionOpen(false);
+            dash.clearFocus();
+          }}
         />
         <AnimatePresence>
-          {mapExpanded ? null : (
-            <RouteCard key="route-card" engineer={selectedEngineer} motionOn={motionOn} />
-          )}
+          {showRouteCard && selectedEngineer ? (
+            <RouteCard
+              key="route-card"
+              engineer={selectedEngineer}
+              motionOn={motionOn}
+              onSelectRequest={dash.selectRequest}
+            />
+          ) : null}
         </AnimatePresence>
         <AnimatePresence>
-          {mapExpanded ? null : (
-            <RequestCard
-              key="request-card"
-              request={displayedRequest}
-              mode={dash.snapshot?.plan.mode ?? 'auto'}
+          {showRightPanel ? (
+            <DetailPanel
+              key={panelMode === 'request' ? dash.selectedRequest?.id ?? 'request' : dash.selectedEngineerId ?? 'plan'}
+              mode={panelMode === 'request' ? 'request' : 'plan'}
+              request={dash.selectedRequest}
+              explanation={panelExplanation}
               motionOn={motionOn}
-              onExpandMap={() => setMapExpanded(true)}
-              onReassign={() => {
-                if (!dash.snapshot) return;
-                void dash.setMode(dash.snapshot.plan.mode === 'auto' ? 'manual' : 'auto');
-              }}
+              onClose={() => dash.clearFocus()}
             />
-          )}
+          ) : null}
         </AnimatePresence>
       </div>
     </div>
@@ -565,7 +627,7 @@ function NotificationControl({
           type="button"
           aria-label={open ? 'Закрыть уведомления' : 'Уведомления'}
           onClick={onToggle}
-          className="pointer-events-auto absolute right-[4px] top-[4px] flex size-[43px] items-center justify-center"
+          className="pointer-events-auto absolute right-[6px] top-[6px] flex size-[43px] items-center justify-center"
           whileHover={motionOn ? { scale: 1.08 } : undefined}
           whileTap={motionOn ? { scale: 0.96 } : undefined}
           transition={{ duration: 0.16 }}
@@ -1009,7 +1071,7 @@ function EngineersColumn({
   planLabel: string;
   unassignedTitle: string;
   unassignedReason: string;
-  selectedEngineerId: string;
+  selectedEngineerId: string | null;
   searchOpen: boolean;
   searchQuery: string;
   motionOn: boolean;
@@ -1172,7 +1234,7 @@ function EngineerRow({
       type="button"
       onClick={onSelect}
       whileHover={motionOn ? { y: -2, zIndex: 40 } : undefined}
-      className={`relative box-border h-[132px] w-[351px] overflow-clip rounded-[15px] text-left transition-[box-shadow,background-color] duration-200 ease-out ${
+      className={`relative box-border h-[132px] w-[351px] overflow-visible rounded-[15px] text-left transition-[box-shadow,background-color] duration-200 ease-out ${
         selected ? 'bg-figma-soft' : 'bg-transparent'
       } ${elevate ? 'z-30' : 'z-10'}`}
       style={{ boxShadow: selected ? 'inset 0 0 0 1px #727478' : 'inset 0 0 0 1px transparent' }}
@@ -1182,8 +1244,8 @@ function EngineerRow({
         src={FIGMA_ASSETS.avatarEngineer}
         className="absolute left-[15px] top-[20px] size-[44px] max-w-none rounded-full object-cover"
       />
-      <div className="absolute left-[69px] right-[15px] top-[20px] flex items-baseline justify-between gap-[10px]">
-        <FigmaText className="figma-nowrap min-w-0 overflow-hidden font-murs text-[20px] tracking-[0.1px] text-ellipsis text-black">
+      <div className="absolute left-[69px] right-[15px] top-[20px] z-20 flex items-baseline justify-between gap-[10px] overflow-visible">
+        <FigmaText className="figma-nowrap relative z-20 min-w-0 overflow-visible font-murs text-[20px] leading-[24px] tracking-[0.1px] text-black">
           {engineer.name}
         </FigmaText>
         <FigmaText className="figma-nowrap shrink-0 font-bold text-[16px] tracking-[0.16px] text-black">
@@ -1216,58 +1278,186 @@ function MapCard({
   snapshot,
   selectedEngineerId,
   selectedRequestId,
-  expanded,
+  frame,
+  regionLabel,
+  regions,
+  selectedRegion,
+  regionOpen,
   motionOn,
   onSelectRequest,
+  onToggleRegion,
+  onSelectRegion,
 }: {
   snapshot: ReturnType<typeof useDashboard>['snapshot'];
   selectedEngineerId: string | null;
   selectedRequestId: string | null;
-  expanded: boolean;
+  frame: { left: number; top: number; width: number; height: number };
+  regionLabel: string;
+  regions: { id: RegionSelection; label: string }[];
+  selectedRegion: RegionSelection;
+  regionOpen: boolean;
   motionOn: boolean;
   onSelectRequest: (requestId: string) => void;
+  onToggleRegion: () => void;
+  onSelectRegion: (id: RegionSelection) => void;
 }) {
-  const frame = expanded ? MAP_EXPANDED : MAP_COMPACT;
   return (
     <motion.section
-      className="absolute overflow-clip rounded-[20px] bg-white"
+      className="absolute overflow-visible rounded-[20px] bg-white"
       initial={false}
       animate={frame}
       transition={motionOn ? { duration: 0.45, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
     >
-      {snapshot ? (
-        <DayMap
-          snapshot={snapshot}
-          selectedEngineerId={selectedEngineerId}
-          selectedRequestId={selectedRequestId}
-          onSelectRequest={onSelectRequest}
-        />
-      ) : (
-        <motion.img
-          alt="Карта Москвы"
-          src={FIGMA_ASSETS.map}
-          className="absolute inset-0 size-full max-w-none object-cover"
-          initial={motionOn ? { opacity: 0.72, scale: 1.012 } : false}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={fadeSoft}
-        />
-      )}
+      <div className="absolute inset-0 overflow-clip rounded-[20px]">
+        {snapshot ? (
+          <DayMap
+            snapshot={snapshot}
+            selectedEngineerId={selectedEngineerId}
+            selectedRequestId={selectedRequestId}
+            onSelectRequest={onSelectRequest}
+          />
+        ) : (
+          <motion.img
+            alt="Карта Москвы"
+            src={FIGMA_ASSETS.map}
+            className="absolute inset-0 size-full max-w-none object-cover"
+            initial={motionOn ? { opacity: 0.72, scale: 1.012 } : false}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={fadeSoft}
+          />
+        )}
+      </div>
+      <RegionSwitch
+        open={regionOpen}
+        label={regionLabel}
+        regions={regions}
+        selectedId={selectedRegion}
+        motionOn={motionOn}
+        onToggle={onToggleRegion}
+        onSelect={onSelectRegion}
+      />
     </motion.section>
   );
 }
 
-function RouteCard({ engineer, motionOn }: { engineer: EngineerCard; motionOn: boolean }) {
+/**
+ * Compact policy-style pill pinned to the map corner; width hugs the region name.
+ */
+function RegionSwitch({
+  open,
+  label,
+  regions,
+  selectedId,
+  motionOn,
+  onToggle,
+  onSelect,
+}: {
+  open: boolean;
+  label: string;
+  regions: { id: RegionSelection; label: string }[];
+  selectedId: RegionSelection;
+  motionOn: boolean;
+  onToggle: () => void;
+  onSelect: (id: RegionSelection) => void;
+}) {
+  const extra = Math.max(0, regions.length - 1) * 40;
+  return (
+    <motion.div
+      data-region-panel
+      className="absolute left-[16px] top-[16px] z-30 w-max overflow-hidden rounded-[27px] bg-white"
+      initial={false}
+      animate={{
+        height: open ? 51 + extra + 16 : 51,
+        boxShadow: open ? '0 22px 48px rgba(39, 41, 48, 0.18)' : '0 8px 22px rgba(39, 41, 48, 0.12)',
+      }}
+      transition={
+        motionOn
+          ? {
+              height: { duration: 0.36, ease: [0.22, 1, 0.36, 1] },
+              boxShadow: { duration: 0.24, ease: [0.22, 1, 0.36, 1] },
+            }
+          : { duration: 0 }
+      }
+    >
+      <div className="relative h-[51px] w-full">
+        <motion.button
+          type="button"
+          onClick={onToggle}
+          className="absolute inset-y-0 left-0 right-[48px] px-[16px] text-left"
+          whileHover={motionOn ? { x: 2 } : undefined}
+          transition={{ duration: 0.16 }}
+        >
+          <FigmaText className="figma-nowrap font-semibold text-[18px] tracking-[-0.306px] text-figma-ink">
+            {label}
+          </FigmaText>
+        </motion.button>
+        <motion.button
+          type="button"
+          onClick={onToggle}
+          className="absolute right-[4px] top-[4px] size-[43px]"
+          whileHover={motionOn ? { scale: 1.08 } : undefined}
+          whileTap={motionOn ? { scale: 0.96 } : undefined}
+          transition={{ duration: 0.16 }}
+        >
+          <motion.span
+            className="flex size-[43px] origin-center items-center justify-center will-change-transform"
+            initial={false}
+            animate={{ rotate: open ? 180 : 0 }}
+            transition={motionOn ? { duration: 0.36, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
+          >
+            <FigmaIcon src={FIGMA_ASSETS.policyArrowClosed} alt={open ? 'Свернуть регионы' : 'Выбрать регион'} width={43} height={43} />
+          </motion.span>
+        </motion.button>
+      </div>
+      <div className={`relative ${open ? '' : 'pointer-events-none'}`}>
+        {regions.map((region, index) => (
+          <motion.button
+            key={region.id}
+            type="button"
+            onClick={() => onSelect(region.id)}
+            className="flex h-[40px] w-full items-center px-[16px] text-left"
+            style={{ display: index === 0 && region.id === selectedId && !open ? 'none' : undefined }}
+            whileHover={motionOn ? { x: 4 } : undefined}
+            transition={{ duration: 0.16 }}
+          >
+            <FigmaText
+              className={`figma-nowrap font-medium text-[18px] ${
+                region.id === selectedId ? 'text-figma-ink' : 'text-figma-muted'
+              }`}
+            >
+              {region.label}
+            </FigmaText>
+          </motion.button>
+        ))}
+      </div>
+    </motion.div>
+  );
+}
+
+function RouteCard({
+  engineer,
+  motionOn,
+  onSelectRequest,
+}: {
+  engineer: EngineerCard;
+  motionOn: boolean;
+  onSelectRequest: (requestId: string) => void;
+}) {
   const scrollerRef = useRef<HTMLDivElement>(null);
-  const [thumb, setThumb] = useState({ left: 174, width: 321 });
+  const [thumb, setThumb] = useState({ left: 174, width: 321, visible: false });
 
   const updateThumb = () => {
     const el = scrollerRef.current;
     if (!el) return;
     const overflow = el.scrollWidth - el.clientWidth;
+    if (overflow <= 0 || engineer.stops.length === 0) {
+      setThumb({ left: 174, width: 321, visible: false });
+      return;
+    }
     const track = 691;
-    const width = overflow <= 0 ? 321 : Math.max(96, Math.round((el.clientWidth / el.scrollWidth) * track));
-    const left = overflow <= 0 ? 30 + (track - width) / 2 : 30 + (el.scrollLeft / overflow) * (track - width);
-    setThumb({ left, width });
+    const width = Math.max(96, Math.round((el.clientWidth / el.scrollWidth) * track));
+    const left = 30 + (el.scrollLeft / overflow) * (track - width);
+    setThumb({ left, width, visible: true });
   };
 
   useEffect(() => {
@@ -1275,7 +1465,12 @@ function RouteCard({ engineer, motionOn }: { engineer: EngineerCard; motionOn: b
     if (!el) return;
     updateThumb();
     el.addEventListener('scroll', updateThumb, { passive: true });
-    return () => el.removeEventListener('scroll', updateThumb);
+    const observer = new ResizeObserver(updateThumb);
+    observer.observe(el);
+    return () => {
+      el.removeEventListener('scroll', updateThumb);
+      observer.disconnect();
+    };
   }, [engineer.id, engineer.stops.length]);
 
   return (
@@ -1312,62 +1507,98 @@ function RouteCard({ engineer, motionOn }: { engineer: EngineerCard; motionOn: b
               />
               <div className="flex">
                 {engineer.stops.map((stop, index) => (
-                  <motion.div
-                    key={`${engineer.id}-${stop.time}-${stop.place}`}
-                    className="relative shrink-0"
-                    style={{ width: ROUTE_STOP_WIDTH }}
-                    initial={motionOn ? { opacity: 0, y: 8 } : false}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ ...fadeSoft, delay: index * 0.04 }}
-                  >
-                    <span
-                      className="absolute top-[10px] rounded-full bg-figma-ink"
-                      style={{ left: ROUTE_DOT_LEFT, width: ROUTE_DOT_SIZE, height: ROUTE_DOT_SIZE }}
-                    />
-                    <FigmaText className="figma-nowrap absolute left-0 top-[46px] w-[240px] text-center font-semibold text-[24px] tracking-[-0.408px] text-black">
-                      {stop.time}
-                    </FigmaText>
-                    <p className="absolute left-0 top-[78px] w-[240px] text-center font-semibold text-[18px] leading-[22px] tracking-[-0.306px] text-figma-muted">
-                      {stop.place}
-                    </p>
-                    <FigmaText
-                      className={`absolute left-0 top-[126px] w-[240px] text-center font-semibold text-[16px] tracking-[-0.272px] ${
-                        isCompletedStop(stop.status) ? 'text-figma-done' : 'text-figma-hint'
-                      }`}
-                    >
-                      {routeStopStatusLabel(stop.status)}
-                    </FigmaText>
-                  </motion.div>
+                  <RouteStopTopic
+                    key={`${engineer.id}-${stop.requestId ?? stop.place}-${stop.time}-${index}`}
+                    stop={stop}
+                    index={index}
+                    motionOn={motionOn}
+                    onSelectRequest={onSelectRequest}
+                  />
                 ))}
               </div>
             </div>
           </div>
         </motion.div>
       </AnimatePresence>
-      <div
-        className="pointer-events-none absolute top-[267px] h-[6px] rounded-[13px] bg-figma-hint"
-        style={{ left: thumb.left, width: thumb.width }}
-      />
+      {thumb.visible ? (
+        <div
+          className="pointer-events-none absolute top-[267px] h-[6px] rounded-[13px] bg-figma-hint"
+          style={{ left: thumb.left, width: thumb.width }}
+        />
+      ) : null}
     </motion.section>
   );
 }
 
-function RequestCard({
-  request,
-  mode,
+function RouteStopTopic({
+  stop,
+  index,
   motionOn,
-  onExpandMap,
-  onReassign,
+  onSelectRequest,
 }: {
-  request: EngineerRequest;
-  mode: 'auto' | 'manual';
+  stop: RouteStop;
+  index: number;
   motionOn: boolean;
-  onExpandMap: () => void;
-  onReassign: () => void;
+  onSelectRequest: (requestId: string) => void;
 }) {
+  const clickable = Boolean(stop.requestId);
+  return (
+    <motion.button
+      type="button"
+      disabled={!clickable}
+      onClick={() => {
+        if (stop.requestId) onSelectRequest(stop.requestId);
+      }}
+      className={`relative shrink-0 text-left ${clickable ? 'cursor-pointer' : 'cursor-default'}`}
+      style={{ width: ROUTE_STOP_WIDTH }}
+      initial={motionOn ? { opacity: 0, y: 8 } : false}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ ...fadeSoft, delay: index * 0.04 }}
+    >
+      <span
+        className="absolute top-[10px] rounded-full bg-figma-ink"
+        style={{ left: ROUTE_DOT_LEFT, width: ROUTE_DOT_SIZE, height: ROUTE_DOT_SIZE }}
+      />
+      <FigmaText className="figma-nowrap absolute left-0 top-[46px] w-[240px] text-center font-semibold text-[24px] tracking-[-0.408px] text-black">
+        {stop.time}
+      </FigmaText>
+      <p className="absolute left-0 top-[78px] w-[240px] text-center font-semibold text-[18px] leading-[22px] tracking-[-0.306px] text-figma-muted">
+        {stop.place}
+      </p>
+      <FigmaText
+        className={`absolute left-0 top-[126px] w-[240px] text-center font-semibold text-[16px] tracking-[-0.272px] ${
+          isCompletedStop(stop.status) ? 'text-figma-done' : 'text-figma-hint'
+        }`}
+      >
+        {routeStopStatusLabel(stop.status)}
+      </FigmaText>
+    </motion.button>
+  );
+}
+
+function DetailPanel({
+  mode,
+  request,
+  explanation,
+  motionOn,
+  onClose,
+}: {
+  mode: 'plan' | 'request';
+  request: RequestView | null;
+  explanation: CaseExplanation | null;
+  motionOn: boolean;
+  onClose: () => void;
+}) {
+  const skill = request?.requiredSkill ? skillLabel(request.requiredSkill) : null;
+  const equipment = request
+    ? request.requiredEquipment
+      ? 'С оборудованием'
+      : 'Нет оборудования'
+    : null;
+
   return (
     <motion.aside
-      className="absolute left-[1406px] w-[484px] overflow-clip rounded-[20px] bg-figma-ink"
+      className="absolute left-[1406px] w-[484px] overflow-hidden rounded-[20px] bg-figma-ink"
       style={{ top: PANEL_TOP, height: PANEL_HEIGHT }}
       initial={motionOn ? { opacity: 0, x: 28 } : false}
       animate={{ opacity: 1, x: 0 }}
@@ -1376,117 +1607,98 @@ function RequestCard({
     >
       <button
         type="button"
-        aria-label="Развернуть карту"
-        onClick={onExpandMap}
-        className="absolute right-[16px] top-[16px] z-10 flex items-center justify-center rounded-full bg-white"
+        aria-label="Закрыть панель"
+        onClick={onClose}
+        className="absolute right-[16px] top-[16px] z-20 flex items-center justify-center rounded-full bg-white"
         style={{ width: CLOSE_PANEL_SIZE, height: CLOSE_PANEL_SIZE }}
       >
         <X size={22} strokeWidth={2.25} className="text-figma-ink" />
       </button>
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={request.number}
-          className="absolute inset-0"
-          initial={motionOn ? { opacity: 0, x: 16 } : false}
-          animate={{ opacity: 1, x: 0 }}
-          exit={motionOn ? { opacity: 0, x: -12 } : undefined}
-          transition={fadeSoft}
+      <div
+        className={`absolute inset-x-0 top-0 overflow-y-auto px-[27px] pt-[24px] [scrollbar-width:thin] ${
+          mode === 'plan' ? 'bottom-[110px]' : 'bottom-[24px]'
+        }`}
+      >
+        {mode === 'request' && request ? (
+          <div className="pr-[52px]">
+            <FigmaText className="font-murs text-[32px] leading-[36px] tracking-[-0.544px] text-white">
+              {request.workTypeTitle || 'Заявка'}
+            </FigmaText>
+            <p className="mt-[8px] font-semibold text-[20px] tracking-[-0.34px] text-white/60">
+              {request.id}
+            </p>
+            <div className="mt-[16px] flex flex-wrap gap-[12px]">
+              {skill ? <PanelTag label={skill} /> : null}
+              {equipment ? <PanelTag label={equipment} /> : null}
+            </div>
+            <div className="mt-[16px] flex min-h-[67px] w-full items-center rounded-[20px] bg-figma-dim px-[20px] py-[16px]">
+              <p className="font-medium text-[20px] leading-[24px] tracking-[-0.6px] text-white">
+                {request.addressText}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="h-[36px]" />
+        )}
+        <div className="mt-[16px] flex min-h-[216px] w-full flex-col rounded-[20px] bg-figma-dim px-[20px] py-[22px]">
+          <FigmaText className="font-medium text-[28px] tracking-[-0.84px] text-white">Факты</FigmaText>
+          <p className="mt-[12px] font-medium text-[18px] leading-[24px] tracking-[-0.3px] text-white/70">
+            {explanation?.facts.join(' ') || 'Нет фактов по этому выбору.'}
+          </p>
+        </div>
+        <div className="mt-[16px] flex min-h-[216px] w-full flex-col rounded-[20px] bg-figma-dim px-[20px] py-[22px]">
+          <FigmaText className="font-medium text-[28px] tracking-[-0.84px] text-white">
+            {mode === 'plan' ? 'Как они повлияли' : 'Как влияет'}
+          </FigmaText>
+          <p className="mt-[12px] font-medium text-[18px] leading-[24px] tracking-[-0.3px] text-white/70">
+            {explanation?.influence || 'Нет объяснения влияния.'}
+          </p>
+        </div>
+        {mode === 'plan' ? (
+          <div className="mt-[16px] flex min-h-[67px] w-full items-center rounded-[20px] bg-figma-dim px-[20px] py-[16px]">
+            <p className="font-medium text-[20px] leading-[24px] tracking-[-0.6px] text-white">
+              {explanation?.result || 'Нет итога по смене.'}
+            </p>
+          </div>
+        ) : (
+          <div className="mt-[16px] flex gap-[12px]">
+            <div className="flex h-[67px] min-w-0 flex-1 items-center rounded-[20px] bg-figma-dim px-[20px]">
+              <p className="figma-nowrap font-medium text-[20px] tracking-[-0.6px] text-white">
+                {request ? formatDurationMin(request.serviceDurationSec) : '—'}
+              </p>
+            </div>
+            <button
+              type="button"
+              className="flex h-[67px] flex-1 items-center justify-center rounded-[20px] bg-figma-bee px-[16px] transition-transform duration-150 hover:scale-[1.01]"
+            >
+              <span className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
+                Написать
+              </span>
+            </button>
+          </div>
+        )}
+      </div>
+      {mode === 'plan' ? (
+        <button
+          type="button"
+          disabled
+          className="absolute left-[27px] bottom-[24px] flex h-[67px] w-[430px] items-center justify-center rounded-[20px] border border-solid border-white bg-figma-ink px-[8px] opacity-60"
         >
-          <FigmaText className="figma-nowrap absolute left-[30px] top-[30px] font-murs text-[32px] tracking-[-0.544px] text-white">
-            {request.number}
-          </FigmaText>
-          <FigmaIcon
-            src={FIGMA_ASSETS.statusDot}
-            alt=""
-            width={10}
-            height={10}
-            className="absolute left-[320px] top-[36px]"
-          />
-          <FigmaText className="figma-nowrap absolute left-[30px] top-[74px] font-semibold text-[24px] tracking-[-0.408px] text-white/60">
-            {request.title}
-          </FigmaText>
-          <div className="absolute left-[30px] top-[111px] flex gap-[12px]">
-            {request.tags.map((tag) => (
-              <div
-                key={tag}
-                className="flex items-center justify-center rounded-[20px] bg-figma-track px-[20px] py-[12px]"
-              >
-                <FigmaText className="figma-nowrap font-medium text-[20px] tracking-[-0.34px] text-figma-ink">
-                  {tag}
-                </FigmaText>
-              </div>
-            ))}
-          </div>
-          <div className="absolute left-[27px] top-[198px] flex w-[430px] flex-col items-start gap-[16px]">
-            <div className="flex h-[67px] w-[430px] items-center overflow-clip rounded-[20px] bg-figma-dim px-[20px]">
-              <FigmaText className="figma-nowrap font-medium text-[20px] tracking-[-0.6px] text-white">
-                {request.company}
-              </FigmaText>
-            </div>
-            <div className="flex w-[430px] gap-[12.48px]">
-              <div className="relative h-[67px] w-[208.76px] overflow-clip rounded-[20px] bg-figma-dim">
-                <FigmaText className="figma-nowrap absolute left-[20px] top-[24px] font-medium text-[20px] tracking-[-0.6px] text-white">
-                  {request.address}
-                </FigmaText>
-              </div>
-              <div className="flex h-[67px] w-[208.76px] items-center overflow-clip rounded-[20px] bg-figma-dim p-[20px]">
-                <FigmaText className="figma-nowrap font-medium text-[20px] tracking-[-0.6px] text-white">
-                  {request.window}
-                </FigmaText>
-              </div>
-            </div>
-            <div className="flex h-[67px] w-[430px] items-center overflow-clip rounded-[20px] bg-figma-dim p-[20px]">
-              <FigmaText className="figma-nowrap font-medium text-[20px] tracking-[-0.6px] text-white">
-                {request.work}
-              </FigmaText>
-            </div>
-            <div className="relative h-[216px] w-[430px] overflow-clip rounded-[20px] bg-figma-dim">
-              <FigmaText className="figma-nowrap absolute left-[20px] top-[26px] font-medium text-[28px] tracking-[-0.84px] text-white">
-                {request.whyTitle}
-              </FigmaText>
-              {request.reasons.map((reason, index) => {
-                const icon = REASON_ICONS[reason.icon];
-                return (
-                  <div key={reason.label}>
-                    <FigmaIcon
-                      src={icon.src}
-                      alt=""
-                      width={icon.width}
-                      height={icon.height}
-                      className="absolute"
-                      style={{ left: icon.left, top: icon.top }}
-                    />
-                    <FigmaText
-                      className="figma-nowrap absolute left-[46px] font-medium text-[20px] tracking-[-0.6px] text-white/60"
-                      style={{ top: 70 + index * 35 }}
-                    >
-                      {reason.label}
-                    </FigmaText>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </motion.div>
-      </AnimatePresence>
-      <button
-        type="button"
-        onClick={onReassign}
-        className="absolute left-[27px] top-[711px] flex h-[67px] w-[430px] items-center justify-center rounded-[20px] bg-figma-bee p-[20px] transition-transform duration-150 hover:scale-[1.01]"
-      >
-        <span className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
-          {mode === 'auto' ? 'Переназначить' : 'Вернуть авто'}
-        </span>
-      </button>
-      <button
-        type="button"
-        disabled
-        className="absolute left-[27px] top-[794px] flex h-[67px] w-[430px] items-center justify-center rounded-[20px] border border-solid border-white bg-figma-ink px-[8px] opacity-60"
-      >
-        <span className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-white">
-          Разобрать с AI ассистентом
-        </span>
-      </button>
+          <span className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-white">
+            Разобрать с AI
+          </span>
+        </button>
+      ) : null}
     </motion.aside>
+  );
+}
+
+function PanelTag({ label }: { label: string }) {
+  return (
+    <div className="flex items-center justify-center rounded-[20px] bg-figma-track px-[20px] py-[12px]">
+      <FigmaText className="figma-nowrap font-medium text-[20px] tracking-[-0.34px] text-figma-ink">
+        {label}
+      </FigmaText>
+    </div>
   );
 }

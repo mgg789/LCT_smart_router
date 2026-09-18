@@ -21,6 +21,7 @@ import {
   factorLabel,
   POLICY_LABELS,
   skillLabel,
+  transportLabel,
 } from '../lib/reasons';
 import { formatClock, formatDayTitle, formatDurationMin } from '../lib/time';
 import {
@@ -127,6 +128,18 @@ export function notificationsFromSnapshot(snapshot: DashboardSnapshot): {
 }
 
 /**
+ * Right-hand Figma panel: plan (brigade card) or request (map/topic). Hidden otherwise.
+ */
+export function rightPanelMode(
+  engineerId: string | null,
+  requestId: string | null,
+): 'plan' | 'request' | null {
+  if (requestId) return 'request';
+  if (engineerId) return 'plan';
+  return null;
+}
+
+/**
  * Engineer roster + selected request/route for the Figma MAIN slots.
  */
 export function dashboardViewFromSnapshot(
@@ -205,7 +218,7 @@ function engineerCardFromSummary(
     id: summary.engineerId,
     name: summary.displayName,
     km: Math.round(summary.distanceKm),
-    status: engineerStatus(summary),
+    status: transportLabel(summary.transportType),
     shift:
       summary.shiftStartAt && summary.shiftEndAt
         ? `${formatClock(summary.shiftStartAt)}-${formatClock(summary.shiftEndAt)}`
@@ -269,13 +282,13 @@ function routeStopsFromRoute(
 
 function stopToCard(snapshot: DashboardSnapshot, stop: PlanStopView): RouteStop {
   if (stop.kind === 'lunch') {
-    return { time: formatClock(stop.startAt), place: 'Обед', status: 'обед' };
+    return { time: formatClock(stop.startAt), place: 'Обед', status: 'обед', requestId: null };
   }
   if (stop.kind === 'start') {
-    return { time: formatClock(stop.startAt), place: 'Старт смены', status: 'старт смены' };
+    return { time: formatClock(stop.startAt), place: 'Старт смены', status: 'старт смены', requestId: null };
   }
   if (stop.kind === 'wait') {
-    return { time: formatClock(stop.startAt), place: 'Ожидание окна', status: 'ожидание окна' };
+    return { time: formatClock(stop.startAt), place: 'Ожидание окна', status: 'ожидание окна', requestId: null };
   }
   const request = stop.requestId ? requestById(snapshot, stop.requestId) : null;
   const title = request?.workTypeTitle ?? 'Заявка';
@@ -284,6 +297,7 @@ function stopToCard(snapshot: DashboardSnapshot, stop: PlanStopView): RouteStop 
     time: formatClock(stop.startAt),
     place,
     status: stopStatus(request),
+    requestId: stop.requestId,
   };
 }
 
@@ -304,15 +318,6 @@ function firstAssignedRequest(snapshot: DashboardSnapshot, engineerId: string): 
     (item) => item.engineerId === engineerId && item.status !== 'unassigned',
   );
   return assignment ? requestById(snapshot, assignment.requestId) : null;
-}
-
-function engineerStatus(summary: EngineerSummary): string {
-  if (summary.availability === 'offline') return 'офлайн';
-  if (summary.availability === 'technical_break') return 'перерыв';
-  if (summary.inProgressCount > 0) return 'в работе';
-  if (summary.assignedCount === 0) return 'свободен';
-  if (summary.doneCount >= summary.assignedCount) return 'завершил';
-  return 'в пути';
 }
 
 function unassignedCountTitle(count: number): string {

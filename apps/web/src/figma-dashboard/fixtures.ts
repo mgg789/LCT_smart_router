@@ -34,6 +34,7 @@ export type RouteStop = {
   time: string;
   place: string;
   status: string;
+  requestId?: string | null;
 };
 
 export type EngineerRequest = {

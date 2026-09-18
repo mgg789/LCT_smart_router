@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createDevSnapshot, FOCUS_ENGINEER_ID } from '../fixtures/dev-day';
+import { transportLabel } from '../lib/reasons';
 import {
   dashboardViewFromSnapshot,
   figmaDateLabel,
@@ -7,13 +8,14 @@ import {
   notificationFromAlert,
   notificationsFromSnapshot,
   policyLabel,
+  rightPanelMode,
 } from './fromSnapshot';
 
 describe('Figma MAIN snapshot mapper', () => {
   it('formats the header date and policy the same way as the live day page', () => {
     expect(figmaDateLabel('2026-09-15')).toBe('15 сентября, 2026');
     expect(policyLabel('fast')).toBe('Быстрее до клиента');
-    expect(policyLabel('compact')).toContain('инженеров');
+    expect(policyLabel('compact')).toBe('Экономичнее');
   });
 
   it('maps demo-day engineers, alerts and the selected request into Figma slots', () => {
@@ -29,6 +31,12 @@ describe('Figma MAIN snapshot mapper', () => {
     expect(view.engineers.length).toBe(snapshot.engineers.length);
     expect(view.engineers.some((item) => item.id === FOCUS_ENGINEER_ID)).toBe(true);
     expect(view.engineers.some((item) => item.stops.length > 0)).toBe(true);
+    const focused = view.engineers.find((item) => item.id === FOCUS_ENGINEER_ID);
+    const focusedLive = snapshot.engineers.find((item) => item.id === FOCUS_ENGINEER_ID);
+    expect(focused?.status).toBe(transportLabel(focusedLive?.transportType ?? ''));
+    expect(rightPanelMode(FOCUS_ENGINEER_ID, null)).toBe('plan');
+    expect(rightPanelMode(FOCUS_ENGINEER_ID, 'req-1')).toBe('request');
+    expect(rightPanelMode(null, null)).toBeNull();
     expect(view.displayedRequest.number).toMatch(/^Заявка № /);
     expect(view.unassignedTitle).toMatch(/без назначения/);
     expect(alerts.count).toBe(1);
