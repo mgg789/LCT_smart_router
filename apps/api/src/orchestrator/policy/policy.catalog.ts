@@ -24,10 +24,8 @@ export const POLICIES: readonly PolicySpec[] = [
     policyId: 'fast',
     title: 'Fast',
     description:
-      'Starting preset: unassigned urgent work, then unassigned work overall, then ' +
-      'skipped optional lunches, then total travel time, then distance, then the number ' +
-      'of engineers with work. The resource block at the end is what distinguishes it ' +
-      'from compact.',
+      'Common order first: urgent coverage, total coverage, optional lunches and total ' +
+      'lateness; then travel time, distance and engineers used.',
     isDefault: false,
     parameters: {},
   },
@@ -35,8 +33,8 @@ export const POLICIES: readonly PolicySpec[] = [
     policyId: 'compact',
     title: 'Compact',
     description:
-      'Default preset: preserve coverage, then use fewer engineers, then reduce distance ' +
-      'and travel time.',
+      'Common coverage and lateness order first; then use fewer engineers, shorter distance ' +
+      'and less travel time.',
     isDefault: true,
     parameters: {},
   },
@@ -44,8 +42,8 @@ export const POLICIES: readonly PolicySpec[] = [
     policyId: 'sla',
     title: 'SLA safe',
     description:
-      'Preserve coverage, then minimize delay from the opening of customer windows before ' +
-      'travel time, distance and staff usage.',
+      'After common urgent and total coverage, maximize minimum start slack against the ' +
+      'original customer window, then reduce travel.',
     isDefault: false,
     parameters: {},
   },
@@ -53,8 +51,8 @@ export const POLICIES: readonly PolicySpec[] = [
     policyId: 'balanced',
     title: 'Balanced',
     description:
-      'Preserve coverage, then minimize the largest number of jobs assigned to one ' +
-      'engineer before travel and staff usage.',
+      'After common urgent and total coverage, minimize the maximum utilized shift fraction, ' +
+      'then minimize workload spread in seconds.',
     isDefault: false,
     parameters: {},
   },
@@ -62,7 +60,8 @@ export const POLICIES: readonly PolicySpec[] = [
     policyId: 'eco',
     title: 'Eco',
     description:
-      'Preserve coverage, then minimize road distance before staff usage and travel time.',
+      'Common coverage and lateness order first; then minimize distance, engineers used and ' +
+      'travel time.',
     isDefault: false,
     parameters: {},
   },

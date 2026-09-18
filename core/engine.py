@@ -22,6 +22,7 @@ from core.contracts import (
 )
 from core.geo import configure_travel, routing_context_version
 from core.policy import Criterion, PolicySpec, compile_policy, criterion_values
+from core.route_search import improve_routes
 from core.schedule import (
     TravelProvider,
     assemble_plan,
@@ -40,8 +41,11 @@ class SearchSettings:
     """Technical budget, independent of business policy; one seed/thread by design."""
 
     time_limit_ms: int = 3000
-    solution_limit: int = 64
+    solution_limit: int = 10000
     lunches_enabled: bool = False
+    traffic_enabled: bool = True
+    equipment_enabled: bool = True
+    window_lateness_tolerance_sec: int = 0
     departure_lateness_tolerance_sec: int = 0
     task_start_lateness_tolerance_sec: int = 0
     travel_time_mode: TravelTimeMode = "graph_with_access_buffer"
@@ -58,7 +62,8 @@ class SearchSettings:
             object.__setattr__(self, "departure_lateness_tolerance_sec", self.tolerance_sec)
             object.__setattr__(self, "task_start_lateness_tolerance_sec", self.tolerance_sec)
         if (
-            self.time_limit_ms < 1
+            not 0 <= self.window_lateness_tolerance_sec <= 1200
+            or self.time_limit_ms < 1
             or self.solution_limit < 1
             or self.departure_lateness_tolerance_sec < 0
             or self.task_start_lateness_tolerance_sec < 0
@@ -78,6 +83,9 @@ class SearchSettings:
         """Expose only persisted context controls, excluding per-run search budgets."""
         return RouterTechnicalSettings(
             lunches_enabled=self.lunches_enabled,
+            traffic_enabled=self.traffic_enabled,
+            equipment_enabled=self.equipment_enabled,
+            window_lateness_tolerance_sec=self.window_lateness_tolerance_sec,
             departure_lateness_tolerance_sec=self.departure_lateness_tolerance_sec,
             task_start_lateness_tolerance_sec=self.task_start_lateness_tolerance_sec,
             travel_time_mode=self.travel_time_mode,
@@ -168,6 +176,15 @@ def apply_system_policy(
     snapshot: RouterTaskSnapshot, settings: SearchSettings
 ) -> RouterTaskSnapshot:
     """Apply Router-owned hard switches without mutating the sys publication."""
+    if not settings.equipment_enabled:
+        snapshot = snapshot.model_copy(
+            update={
+                "requests": [
+                    request.model_copy(update={"required_equipment": None})
+                    for request in snapshot.requests
+                ]
+            }
+        )
     if settings.lunches_enabled:
         return snapshot
     engineers = []
@@ -390,7 +407,9 @@ def _search(
         ]
         routing.VehicleVar(index).SetValues([-1] + allowed)
         lower = max(0, request.window_start_at - origin)
-        upper = min(horizon, request.window_end_at - origin)
+        upper = min(
+            horizon, request.window_end_at + settings.window_lateness_tolerance_sec - origin
+        )
         if not allowed or lower > upper or request.service_duration_sec > horizon:
             routing.ActiveVar(index).SetValue(0)
         else:
@@ -562,6 +581,16 @@ def _search(
     return plan
 
 
+def official_roster(snapshot: RouterTaskSnapshot) -> RouterTaskSnapshot:
+    """Exclude synthesized covering crews from fixed-roster strategy comparisons."""
+    engineers = [e for e in snapshot.engineers if not e.engineer_id.startswith("covering-")]
+    return (
+        snapshot.model_copy(update={"engineers": engineers})
+        if len(engineers) != len(snapshot.engineers)
+        else snapshot
+    )
+
+
 _COVERING_SKILLS: tuple[str, ...] = ("local", "connection", "emergency")
 
 
@@ -646,15 +675,11 @@ def _cover_leftovers(
     Baseline append-only search is enough here: leftover VRP is what blew the
     live rebuild window on the official 205-request day.
     """
-    leftover_ids = {
-        item.request_id for item in first.assignments if item.status == "unassigned"
-    }
+    leftover_ids = {item.request_id for item in first.assignments if item.status == "unassigned"}
     leftover_requests = [
         request for request in snapshot.requests if request.request_id in leftover_ids
     ]
-    busy_ids = {
-        route.engineer_id for route in first.routes if route.metrics.assigned_count > 0
-    }
+    busy_ids = {route.engineer_id for route in first.routes if route.metrics.assigned_count > 0}
     idle = [engineer for engineer in snapshot.engineers if engineer.engineer_id not in busy_ids]
     extras = _covering_extra_engineers(snapshot, len(leftover_requests))
     leftover_snapshot = snapshot.model_copy(
@@ -695,7 +720,8 @@ def _cover_leftovers(
         [
             engineer
             for engineer in [*snapshot.engineers, *extras]
-            if not engineer.engineer_id.startswith("covering-") or engineer.engineer_id in used_extra_ids
+            if not engineer.engineer_id.startswith("covering-")
+            or engineer.engineer_id in used_extra_ids
         ]
     )
     by_id = {route.engineer_id: route for route in merged}
@@ -759,7 +785,9 @@ def _solve_covering(
         if len(kept) != len(aligned.engineers):
             covered = aligned.model_copy(update={"engineers": kept})
             kept_routes = [
-                route for route in first_main.routes if route.engineer_id in {item.engineer_id for item in kept}
+                route
+                for route in first_main.routes
+                if route.engineer_id in {item.engineer_id for item in kept}
             ]
             main = assemble_plan(covered, kept_routes)
             validate_plan(covered, main, travel)
@@ -776,9 +804,7 @@ def _solve_covering(
             EngineMemory(aligned.model_copy(deep=True), first_main, context_version or ""),
         )
     covered_engineers, merged_routes = _cover_leftovers(aligned, first_main, travel)
-    covered = aligned.model_copy(
-        update={"engineers": covered_engineers, "policy": snapshot.policy}
-    )
+    covered = aligned.model_copy(update={"engineers": covered_engineers, "policy": snapshot.policy})
     main = assemble_plan(covered, merged_routes)
     validate_plan(covered, main, travel)
     return EngineOutput(
@@ -810,7 +836,7 @@ def solve(
         return _solve_covering(
             snapshot, travel, settings, memory, context_version or default_context_version
         )
-    return _solve_prepared(snapshot, travel, settings, memory, context_version)
+    return _solve_prepared(official_roster(snapshot), travel, settings, memory, context_version)
 
 
 def _solve_prepared(
@@ -830,7 +856,11 @@ def _solve_prepared(
     context_version = context_version or default_context_version
     base = baseline(snapshot, travel)
     validate_plan(snapshot, base, travel)
-    compatible = memory is not None and memory.context_version == context_version
+    compatible = (
+        memory is not None
+        and memory.context_version == context_version
+        and memory.snapshot.policy == snapshot.policy
+    )
     projected = (
         _project(snapshot, memory.plan, travel) if compatible and memory.plan.is_usable else None
     )
@@ -863,7 +893,16 @@ def _solve_prepared(
         min(candidates, key=lambda plan: score(search_snapshot, plan)) if candidates else None
     )
     deadline = time.monotonic() + settings.time_limit_ms / 1000
-    for i, stage in enumerate(policy.search_stages):
+    # Static OR-Tools remains a seed generator only when forecast traffic is disabled.
+    # Departure-dependent routes are optimized by exact whole-route evaluation.
+    stages = policy.search_stages if not settings.traffic_enabled else ()
+    stages = tuple(
+        stage
+        for stage in stages
+        if stage
+        not in ("total_lateness", "window_end_risk", "max_workload_ratio", "workload_spread")
+    )
+    for i, stage in enumerate(stages):
         remaining = int((deadline - time.monotonic()) * 1000)
         if remaining <= 0:
             break
@@ -873,15 +912,25 @@ def _solve_prepared(
             settings,
             stage,
             incumbent,
-            remaining // (len(policy.search_stages) - i),
-            tuple(policy.search_stages[1:i]),
+            remaining // (len(stages) - i),
+            tuple(stages[1:i]),
         )
         if candidate is not None and (
             incumbent is None
             or score(search_snapshot, candidate) < score(search_snapshot, incumbent)
         ):
             incumbent = candidate
-    search_main = incumbent or search_base
+    candidates = improve_routes(
+        search_snapshot,
+        travel,
+        [plan for plan in (search_base, incumbent) if plan is not None and plan.is_usable],
+        settings.time_limit_ms,
+    )
+    search_main = (
+        min(candidates, key=lambda plan: score(search_snapshot, plan))
+        if candidates
+        else search_base
+    )
     if search_snapshot is snapshot:
         main = search_main
     else:

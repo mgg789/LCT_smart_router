@@ -6,6 +6,12 @@ export interface RouterTechnicalSettings {
   readonly lunchesEnabled: boolean;
   readonly departureLatenessToleranceSec: number;
   readonly taskStartLatenessToleranceSec: number;
+  /** Allowed lateness measured against the customer's original service window. */
+  readonly windowLatenessToleranceSec?: number;
+  /** Whether Router may use traffic-aware travel times. */
+  readonly trafficEnabled?: boolean;
+  /** Whether Router must enforce equipment compatibility. */
+  readonly equipmentEnabled?: boolean;
   /** How Router converts a graph quote into the planning duration of a road leg. */
   readonly travelTimeMode: 'graph_with_access_buffer' | 'fixed_normative';
   /** Parking, building access and ascent added to a non-zero graph journey. */
@@ -54,6 +60,11 @@ export interface PolicyComparisonMetrics {
   readonly workTimeSec: number;
   readonly waitingTimeSec: number;
   readonly lunchTimeSec: number;
+  readonly lateAssignedCount: number;
+  readonly totalLatenessSec: number;
+  readonly minWindowSlackSec: number | null;
+  readonly workloadSpreadSec: number;
+  readonly maxWorkloadSec: number;
 }
 
 export interface PolicyComparison {

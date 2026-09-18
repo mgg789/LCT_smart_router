@@ -706,3 +706,9 @@ HTTP `409`; некорректные тела — `422`.
 
 Проверяемые интеграционные артефакты лежат в `core/schemas/`. Перегенерация — командой
 `python -m core.schema`; CI/тесты должны считать diff схемы изменением контракта.
+
+## Настройки и показатели сравнения (18.09.2026)
+
+Техническая ревизия Router расширена `windowLatenessToleranceSec` (0…1200 секунд, default 0), `trafficEnabled` и `equipmentEnabled` (default true); Python использует snake_case. Передача — через существующие endpoint технических настроек и CAS contextVersion. Предыдущие поля обязательны и сохраняются. Окно клиента остаётся исходным, новая настройка допуска отличается от старого допуска дрейфа начала работы.
+
+Метрики сравнения дополнены `lateAssignedCount`, `totalLatenessSec`, `minWindowSlackSec` (null без назначений), `workloadSpreadSec`, `maxWorkloadSec`. Отсутствующие поля старых записей читаются с defaults 0/null; такие записи не доказывают измерение новых показателей. Полный смысл и формулы — `docs/solver.md`, сверочные значения — `docs/policy-efficiency.md`.

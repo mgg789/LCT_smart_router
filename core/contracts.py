@@ -128,6 +128,9 @@ class RouterTechnicalSettings(Record):
     """Persisted Router-owned controls that version the calculation context."""
 
     lunches_enabled: bool = False
+    traffic_enabled: bool = True
+    equipment_enabled: bool = True
+    window_lateness_tolerance_sec: int = Field(default=0, ge=0, le=1200)
     departure_lateness_tolerance_sec: int = Field(default=0, ge=0, le=86400)
     task_start_lateness_tolerance_sec: int = Field(default=0, ge=0, le=86400)
     travel_time_mode: TravelTimeMode = "graph_with_access_buffer"
@@ -277,6 +280,11 @@ class PlanMetrics(RouteMetrics):
     urgent_total: int = 0
     urgent_assigned_count: int = 0
     engineers_used: int = 0
+    late_assigned_count: int = 0
+    total_lateness_sec: int = 0
+    min_window_slack_sec: int | None = None
+    workload_spread_sec: int = 0
+    max_workload_sec: int = 0
 
 
 class EngineerRoute(Record):
@@ -402,7 +410,7 @@ class PolicyComparison(Record):
     input_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     router_context_version: ID
     computed_at: Seconds
-    search_budget_ms: int = Field(gt=0, le=2000)
+    search_budget_ms: int = Field(gt=0, le=8000)
     rows: list[PolicyComparisonRow] = Field(min_length=6, max_length=6)
 
     @model_validator(mode="after")

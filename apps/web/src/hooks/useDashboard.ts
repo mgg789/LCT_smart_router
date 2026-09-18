@@ -8,8 +8,8 @@ import {
   selectRoutingPolicy,
   setDispatchMode,
   setEngineerAvailability,
-  setLunchesEnabled,
   signOutDispatcher,
+  updateRouterTechnicalSettings,
   uploadDataPackage,
 } from '../api/client';
 import type {
@@ -20,6 +20,7 @@ import type {
   PlanDelta,
   PolicyComparisonResponse,
   PolicyId,
+  RouterTechnicalSettings,
 } from '../api/types';
 import { demoScenarios, recordedScenario } from '../demo/scenarios';
 import {
@@ -57,6 +58,7 @@ interface RoutingBaseline {
   readonly snapshot: DashboardSnapshot;
   readonly policyId: PolicyId;
   readonly lunchesEnabled: boolean;
+  readonly routerSettings: RouterTechnicalSettings | null;
 }
 
 /** Owns authentication and the live Dashboard-to-backend state flow. */
@@ -374,7 +376,7 @@ export function useDashboard() {
   const rebuild = useCallback(
     async (
       nextPolicy: PolicyId,
-      lunchesEnabled: boolean,
+      nextSettings: RouterTechnicalSettings,
       reason: string,
       keepBaseline: boolean,
     ) => {
@@ -404,6 +406,7 @@ export function useDashboard() {
           snapshot: previous,
           policyId: previous.policyId,
           lunchesEnabled: previous.lunchesEnabled,
+          routerSettings: previous.routerSettings ?? null,
         });
       }
       try {
@@ -411,8 +414,12 @@ export function useDashboard() {
           await setDispatchMode(token, 'auto');
           pushEvent('Для перестроения включён авторежим — иначе Router не применит новый план.');
         }
-        if (lunchesEnabled !== previous.lunchesEnabled) {
-          expectedContextVersion = await setLunchesEnabled(token, lunchesEnabled);
+        if (previous.routerSettings && !sameRouterSettings(previous.routerSettings, nextSettings)) {
+          const updated = await updateRouterTechnicalSettings(token, {
+            ...nextSettings,
+            routerContextVersion: expectedContextVersion,
+          });
+          expectedContextVersion = updated.routerContextVersion;
         }
         if (generation !== readGeneration.current) return false;
         if (nextPolicy !== previous.policyId) {
@@ -425,7 +432,7 @@ export function useDashboard() {
             previousRevision,
             previousResultId,
             policyId: nextPolicy,
-            lunchesEnabled,
+            lunchesEnabled: nextSettings.lunchesEnabled,
             inputHash: expectedInputHash,
             routerContextVersion: expectedContextVersion,
           },
@@ -474,20 +481,37 @@ export function useDashboard() {
   );
 
   const applyRoutingSettings = useCallback(
-    (policyId: PolicyId, lunchesEnabled: boolean) => {
+    (policyId: PolicyId, nextSettings: RouterTechnicalSettings) => {
       if (!snapshot) {
         return;
       }
       const changes = [
         policyId !== snapshot.policyId ? `политика ${policyId}` : null,
-        lunchesEnabled !== snapshot.lunchesEnabled
-          ? lunchesEnabled
+        nextSettings.lunchesEnabled !== snapshot.lunchesEnabled
+          ? nextSettings.lunchesEnabled
             ? 'обеды включены'
             : 'обеды выключены'
           : null,
+        snapshot.routerSettings &&
+        nextSettings.windowLatenessToleranceSec !==
+          snapshot.routerSettings.windowLatenessToleranceSec
+          ? 'допуск окна обновлён'
+          : null,
+        snapshot.routerSettings &&
+        nextSettings.accessBufferSec !== snapshot.routerSettings.accessBufferSec
+          ? 'буфер доступа обновлён'
+          : null,
+        snapshot.routerSettings &&
+        nextSettings.trafficEnabled !== snapshot.routerSettings.trafficEnabled
+          ? 'режим пробок обновлён'
+          : null,
+        snapshot.routerSettings &&
+        nextSettings.equipmentEnabled !== snapshot.routerSettings.equipmentEnabled
+          ? 'режим оборудования обновлён'
+          : null,
       ].filter((item): item is string => item !== null);
       if (changes.length > 0) {
-        void rebuild(policyId, lunchesEnabled, changes.join(', '), true);
+        void rebuild(policyId, nextSettings, changes.join(', '), true);
       }
     },
     [rebuild, snapshot],
@@ -507,7 +531,7 @@ export function useDashboard() {
     setPendingDelta(null);
     void rebuild(
       baseline.policyId,
-      baseline.lunchesEnabled,
+      baseline.routerSettings ?? defaultRouterSettings(baseline.snapshot),
       'возвращаем прежние настройки',
       false,
     ).then((restored) => {
@@ -815,6 +839,44 @@ export function useDashboard() {
 /** Covering leftover is FIFO on idle crews; one compact solve must finish in this window. */
 function rebuildTimeoutMs(_policyId: PolicyId): number {
   return DEFAULT_REBUILD_TIMEOUT_MS;
+}
+
+/** Compares persisted routing controls while ignoring the context revision itself. */
+function sameRouterSettings(
+  left: RouterTechnicalSettings,
+  right: RouterTechnicalSettings,
+): boolean {
+  return (
+    left.lunchesEnabled === right.lunchesEnabled &&
+    left.departureLatenessToleranceSec === right.departureLatenessToleranceSec &&
+    left.taskStartLatenessToleranceSec === right.taskStartLatenessToleranceSec &&
+    left.windowLatenessToleranceSec === right.windowLatenessToleranceSec &&
+    left.trafficEnabled === right.trafficEnabled &&
+    left.equipmentEnabled === right.equipmentEnabled &&
+    left.travelTimeMode === right.travelTimeMode &&
+    left.accessBufferSec === right.accessBufferSec &&
+    left.fixedTravelTimeSec === right.fixedTravelTimeSec &&
+    left.earlyFinishReplanThresholdSec === right.earlyFinishReplanThresholdSec &&
+    left.taskOverrunToleranceSec === right.taskOverrunToleranceSec
+  );
+}
+
+/** Supplies compatibility defaults for cached snapshots created before settings were exposed. */
+function defaultRouterSettings(snapshot: DashboardSnapshot): RouterTechnicalSettings {
+  return {
+    lunchesEnabled: snapshot.lunchesEnabled,
+    departureLatenessToleranceSec: 0,
+    taskStartLatenessToleranceSec: 0,
+    windowLatenessToleranceSec: 0,
+    trafficEnabled: true,
+    equipmentEnabled: true,
+    travelTimeMode: 'graph_with_access_buffer',
+    accessBufferSec: 600,
+    fixedTravelTimeSec: 1_200,
+    earlyFinishReplanThresholdSec: 900,
+    taskOverrunToleranceSec: 600,
+    routerContextVersion: snapshot.routerContextVersion,
+  };
 }
 
 async function waitForRebuild(

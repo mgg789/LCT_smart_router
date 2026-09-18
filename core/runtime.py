@@ -21,12 +21,20 @@ from core.contracts import (
     RouterTaskSnapshot,
     RouterTechnicalSettings,
 )
-from core.engine import EngineMemory, EngineOutput, SearchSettings, apply_system_policy, solve
+from core.engine import (
+    EngineMemory,
+    EngineOutput,
+    SearchSettings,
+    apply_system_policy,
+    official_roster,
+    solve,
+)
 from core.evidence import build_plan_evidence
 from core.geo import GraphTravel, RoadGraph, configure_travel, content_hash
 from core.osrm import OSRMTravel, attach_live_roads
 from core.policy import POLICY_CATALOG_VERSION, compile_policy
-from core.schedule import baseline, validate_plan
+from core.route_search import improve_routes
+from core.schedule import baseline, score, validate_plan
 from core.settings import StoredTechnicalSettingsOperation, TechnicalSettingsStore
 
 MAX_SNAPSHOT_BYTES = 16 * 1024 * 1024
@@ -225,7 +233,9 @@ def calculate_policy_comparison(
     graph: RoadGraph | OSRMTravel,
     settings: SearchSettings,
     context_version: str,
-    search_budget_ms: int = 2000,
+    search_budget_ms: int = 8000,
+    *,
+    offline: bool = False,
 ) -> PolicyComparison:
     """Calculate all catalog policies and FIFO on one immutable snapshot.
 
@@ -233,13 +243,16 @@ def calculate_policy_comparison(
     gets the same cold-start snapshot and bounded budget, and no candidate can
     affect the active plan or the next replanning anchor.
     """
-    if not 1 <= search_budget_ms <= 2000:
+    if not 1 <= search_budget_ms <= 8000:
         raise ValueError("COMPARISON_BUDGET_INVALID")
-    snapshot = apply_system_policy(parse_snapshot(raw), settings)
+    snapshot = apply_system_policy(official_roster(parse_snapshot(raw)), settings)
     provider = GraphTravel(graph) if isinstance(graph, RoadGraph) else graph
-    provider = attach_live_roads(provider)
+    if not offline:
+        provider = attach_live_roads(provider)
     provider = configure_travel(provider, settings.technical(), snapshot.planning_as_of)
-    comparison_settings = replace(settings, time_limit_ms=search_budget_ms)
+    comparison_settings = replace(
+        settings, time_limit_ms=search_budget_ms, solution_limit=max(settings.solution_limit, 10000)
+    )
     rows: list[PolicyComparisonRow] = []
 
     started = time.monotonic()
@@ -252,6 +265,7 @@ def calculate_policy_comparison(
         calculation_ms=max(0, round((time.monotonic() - started) * 1000)),
         summary=fifo.summary,
     )
+    candidates = [fifo]
     for policy_id in COMPARISON_POLICY_IDS:
         candidate_snapshot = snapshot.model_copy(
             update={"policy": Policy(policy_id=policy_id, parameters={})}
@@ -264,6 +278,8 @@ def calculate_policy_comparison(
             memory=None,
             context_version=context_version,
         )
+        if output.main.is_usable:
+            candidates.append(output.main)
         rows.append(
             PolicyComparisonRow(
                 strategy_id=policy_id,
@@ -273,6 +289,32 @@ def calculate_policy_comparison(
                 summary=output.main.summary,
             )
         )
+    # Refine each objective from the common coverage frontier, rather than letting
+    # independently weaker coverage hide all resource-policy differences.
+    shared = list(candidates)
+    for policy_id in COMPARISON_POLICY_IDS:
+        candidate_snapshot = snapshot.model_copy(
+            update={"policy": Policy(policy_id=policy_id, parameters={})}
+        )
+        started = time.monotonic()
+        candidates.extend(
+            improve_routes(candidate_snapshot, provider, shared, search_budget_ms, construct=False)
+        )
+        index = next(i for i, row in enumerate(rows) if row.strategy_id == policy_id)
+        rows[index] = rows[index].model_copy(
+            update={
+                "calculation_ms": rows[index].calculation_ms
+                + round((time.monotonic() - started) * 1000)
+            }
+        )
+    # Each strategy selects from the same immutable, validated candidate portfolio.
+    # FIFO is never optimized, replaced, or supplied with additional engineers.
+    for index, row in enumerate(rows):
+        candidate_snapshot = snapshot.model_copy(
+            update={"policy": Policy(policy_id=row.strategy_id, parameters={})}
+        )
+        best = min(candidates, key=lambda plan: score(candidate_snapshot, plan))
+        rows[index] = row.model_copy(update={"is_usable": best.is_usable, "summary": best.summary})
     rows.append(baseline_row)
     return PolicyComparison(
         input_publication_id=publication_id,
@@ -312,6 +354,9 @@ class RouterRuntime:
             self.settings = replace(
                 self.settings,
                 lunches_enabled=saved.lunches_enabled,
+                traffic_enabled=saved.traffic_enabled,
+                equipment_enabled=saved.equipment_enabled,
+                window_lateness_tolerance_sec=saved.window_lateness_tolerance_sec,
                 departure_lateness_tolerance_sec=saved.departure_lateness_tolerance_sec,
                 task_start_lateness_tolerance_sec=saved.task_start_lateness_tolerance_sec,
                 travel_time_mode=saved.travel_time_mode,
@@ -365,7 +410,7 @@ class RouterRuntime:
 
     def compare_policies(self, search_budget_ms: int | None = None) -> PolicyComparison:
         """Compare six strategies on the ready publication without mutating Runtime."""
-        if search_budget_ms is not None and not 1 <= search_budget_ms <= 2000:
+        if search_budget_ms is not None and not 1 <= search_budget_ms <= 8000:
             raise ValueError("COMPARISON_BUDGET_INVALID")
         try:
             publication = self.reader.read()
@@ -498,6 +543,9 @@ class RouterRuntime:
             updated_settings = replace(
                 self.settings,
                 lunches_enabled=requested.lunches_enabled,
+                traffic_enabled=requested.traffic_enabled,
+                equipment_enabled=requested.equipment_enabled,
+                window_lateness_tolerance_sec=requested.window_lateness_tolerance_sec,
                 departure_lateness_tolerance_sec=requested.departure_lateness_tolerance_sec,
                 task_start_lateness_tolerance_sec=requested.task_start_lateness_tolerance_sec,
                 travel_time_mode=requested.travel_time_mode,

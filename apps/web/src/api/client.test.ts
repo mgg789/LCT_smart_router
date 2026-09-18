@@ -232,6 +232,9 @@ describe('live dashboard client', () => {
       travelTimeMode: 'graph_with_access_buffer',
       accessBufferSec: 600,
       taskOverrunToleranceSec: 600,
+      windowLatenessToleranceSec: 0,
+      trafficEnabled: true,
+      equipmentEnabled: true,
     });
     expect(contextVersion).toBe('context-2');
   });
@@ -285,6 +288,7 @@ describe('live dashboard client', () => {
               workTimeSec: 10_800,
               waitingTimeSec: 600,
               lunchTimeSec: 0,
+              minWindowSlackSec: -600,
             },
           })),
         }),
@@ -293,6 +297,7 @@ describe('live dashboard client', () => {
 
     const comparison = await loadPolicyComparison('session-token');
     expect(comparison.inputPublicationId).toBe('publication-1');
+    expect(comparison.rows[0]?.metrics.minWindowSlackSec).toBe(-600);
     expect(comparison.rows.map((row) => row.strategyId)).toEqual(strategies);
   });
 

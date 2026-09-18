@@ -67,8 +67,8 @@ def test_catalog_is_strict_and_versioned(snapshot):
     expected = {
         "fast": "travel_time",
         "compact": "engineers_used",
-        "sla": "window_start_delay",
-        "balanced": "max_jobs_per_engineer",
+        "sla": "window_end_risk",
+        "balanced": "max_workload_ratio",
         "eco": "distance",
         "covering": "engineers_used",
     }

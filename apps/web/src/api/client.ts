@@ -223,6 +223,9 @@ const technicalSettingsSchema = z.object({
   lunchesEnabled: z.boolean(),
   departureLatenessToleranceSec: z.number().int().nonnegative(),
   taskStartLatenessToleranceSec: z.number().int().nonnegative(),
+  windowLatenessToleranceSec: z.number().int().nonnegative().max(1_200).default(0),
+  trafficEnabled: z.boolean().default(true),
+  equipmentEnabled: z.boolean().default(true),
   travelTimeMode: z.enum(['graph_with_access_buffer', 'fixed_normative']),
   accessBufferSec: z.number().int().nonnegative(),
   fixedTravelTimeSec: z.number().int().positive(),
@@ -257,7 +260,7 @@ const policyComparisonSchema = z.object({
   inputHash: z.string().min(1),
   routerContextVersion: z.string().min(1),
   computedAt: z.number().int(),
-  searchBudgetMs: z.number().int().nonnegative(),
+  searchBudgetMs: z.number().int().positive().max(8_000),
   rows: z
     .array(
       z.object({
@@ -277,6 +280,11 @@ const policyComparisonSchema = z.object({
           workTimeSec: z.number().int().nonnegative(),
           waitingTimeSec: z.number().int().nonnegative(),
           lunchTimeSec: z.number().int().nonnegative(),
+          lateAssignedCount: z.number().int().nonnegative().default(0),
+          totalLatenessSec: z.number().int().nonnegative().default(0),
+          minWindowSlackSec: z.number().int().nullable().default(null),
+          workloadSpreadSec: z.number().int().nonnegative().default(0),
+          maxWorkloadSec: z.number().int().nonnegative().default(0),
         }),
       }),
     )
@@ -369,6 +377,7 @@ const snapshotSchema = z.object({
   nowAt: z.number().int(),
   policyId: policyIdSchema,
   lunchesEnabled: z.boolean(),
+  routerSettings: technicalSettingsSchema.optional(),
   routerContextVersion: z.string(),
   policies: policiesSchema.shape.policies,
   engineers: z.array(engineerSchema),
@@ -453,6 +462,7 @@ export async function loadDashboardSnapshot(token: string): Promise<DashboardSna
     nowAt: Math.floor(Date.now() / 1000),
     policyId: policies.active.policyId,
     lunchesEnabled: settings.lunchesEnabled,
+    routerSettings: settings,
     routerContextVersion: settings.routerContextVersion,
     policies: policies.policies,
     engineers: engineers.engineers,
@@ -479,9 +489,11 @@ export function getRouterTechnicalSettings(token: string): Promise<RouterTechnic
   return requestJson('/api/v1/dispatch/router/technical-settings', technicalSettingsSchema, token);
 }
 
-/** Replaces only the lunch choice while preserving every other Router-owned setting. */
-export async function setLunchesEnabled(token: string, enabled: boolean): Promise<string> {
-  const current = await getRouterTechnicalSettings(token);
+/** Replaces the complete Router-owned settings revision through the backend CAS boundary. */
+export async function updateRouterTechnicalSettings(
+  token: string,
+  settings: RouterTechnicalSettings,
+): Promise<RouterTechnicalSettings> {
   const updated = await requestJson(
     '/api/v1/dispatch/router/technical-settings',
     technicalSettingsUpdateSchema,
@@ -490,18 +502,31 @@ export async function setLunchesEnabled(token: string, enabled: boolean): Promis
       method: 'PUT',
       body: JSON.stringify({
         operationId: crypto.randomUUID(),
-        expectedContextVersion: current.routerContextVersion,
-        lunchesEnabled: enabled,
-        departureLatenessToleranceSec: current.departureLatenessToleranceSec,
-        taskStartLatenessToleranceSec: current.taskStartLatenessToleranceSec,
-        travelTimeMode: current.travelTimeMode,
-        accessBufferSec: current.accessBufferSec,
-        fixedTravelTimeSec: current.fixedTravelTimeSec,
-        earlyFinishReplanThresholdSec: current.earlyFinishReplanThresholdSec,
-        taskOverrunToleranceSec: current.taskOverrunToleranceSec,
+        expectedContextVersion: settings.routerContextVersion,
+        lunchesEnabled: settings.lunchesEnabled,
+        departureLatenessToleranceSec: settings.departureLatenessToleranceSec,
+        taskStartLatenessToleranceSec: settings.taskStartLatenessToleranceSec,
+        windowLatenessToleranceSec: settings.windowLatenessToleranceSec,
+        trafficEnabled: settings.trafficEnabled,
+        equipmentEnabled: settings.equipmentEnabled,
+        travelTimeMode: settings.travelTimeMode,
+        accessBufferSec: settings.accessBufferSec,
+        fixedTravelTimeSec: settings.fixedTravelTimeSec,
+        earlyFinishReplanThresholdSec: settings.earlyFinishReplanThresholdSec,
+        taskOverrunToleranceSec: settings.taskOverrunToleranceSec,
       }),
     },
   );
+  return updated;
+}
+
+/** Replaces only the lunch choice while preserving every other Router-owned setting. */
+export async function setLunchesEnabled(token: string, enabled: boolean): Promise<string> {
+  const current = await getRouterTechnicalSettings(token);
+  const updated = await updateRouterTechnicalSettings(token, {
+    ...current,
+    lunchesEnabled: enabled,
+  });
   return updated.routerContextVersion;
 }
 

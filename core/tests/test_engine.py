@@ -259,6 +259,11 @@ def test_deterministic_golden(snapshot, graph):
         "urgent_total": 0,
         "urgent_assigned_count": 0,
         "engineers_used": 1,
+        "late_assigned_count": 0,
+        "total_lateness_sec": 0,
+        "min_window_slack_sec": 23757,
+        "max_workload_sec": 2043,
+        "workload_spread_sec": 0,
     }
 
 

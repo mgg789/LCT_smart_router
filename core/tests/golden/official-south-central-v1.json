@@ -9,16 +9,22 @@
     "urgent_requests": 16
   },
   "baseline": {
-    "plan_sha256": "e17a1dca973297d076d851db463f16af4241554800670cc61e59d5a2c3adc9b6",
+    "plan_sha256": "8c1833214a945cf2d8b9ef4c38314264cbbb8a5c0430e27e513be129f7e49139",
     "assigned_count": 33,
     "urgent_assigned_count": 2,
     "travel_time_sec": 65473
   },
   "main": {
-    "plan_sha256": "f4005d2985e25ef9f21c0c13a2812e1c058f8f9183bdf6a073041a40b70a2f49",
-    "assigned_count": 50,
-    "urgent_assigned_count": 16,
-    "travel_time_sec": 57945,
-    "unassigned_request_ids": ["32840", "97770", "6185", "94575", "52576", "78036"]
+    "plan_sha256": "74b6523f6d4db7a1fa999a7d7b39d739f0eafebfa87b1edbe510fc5ae704f57e",
+    "assigned_count": 51,
+    "urgent_assigned_count": 15,
+    "travel_time_sec": 60294,
+    "unassigned_request_ids": [
+      "97770",
+      "94575",
+      "52576",
+      "78036",
+      "95501"
+    ]
   }
 }
