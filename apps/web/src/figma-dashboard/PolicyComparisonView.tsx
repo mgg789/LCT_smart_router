@@ -129,13 +129,13 @@ export function PolicyComparisonView({
         ) : null}
 
         {comparison ? (
-          <table className="w-full min-w-[1480px] border-collapse text-left">
+          <table className="w-full min-w-[1480px] border-separate border-spacing-x-0 border-spacing-y-[16px] text-left">
             <thead>
               <tr>
                 {COLUMNS.map((column) => (
                   <th
                     key={column}
-                    className="px-[12px] pb-[14px] font-semibold text-[14px] tracking-[-0.2px] text-figma-muted"
+                    className="px-[12px] pb-[2px] font-semibold text-[14px] tracking-[-0.2px] text-figma-muted"
                   >
                     {column}
                   </th>
