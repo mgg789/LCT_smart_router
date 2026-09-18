@@ -14,16 +14,26 @@ Criterion = Literal[
     "travel_time",
     "distance",
     "engineers_used",
+    "additional_engineers",
     "window_start_delay",
     "max_jobs_per_engineer",
+    "total_lateness",
+    "window_end_risk",
+    "max_workload_ratio",
+    "workload_spread",
 ]
 SearchStage = Literal[
     "coverage",
+    "additional_engineers",
     "travel_time",
     "distance",
     "engineers_used",
     "window_start_delay",
     "max_jobs_per_engineer",
+    "total_lateness",
+    "window_end_risk",
+    "max_workload_ratio",
+    "workload_spread",
 ]
 
 
@@ -41,6 +51,7 @@ _COVERAGE: tuple[Criterion, ...] = (
     "urgent_unassigned",
     "unassigned",
     "missed_optional_lunches",
+    "total_lateness",
 )
 _CATALOG: dict[str, PolicySpec] = {
     "fast": PolicySpec(
@@ -57,12 +68,12 @@ _CATALOG: dict[str, PolicySpec] = {
     ),
     "sla": PolicySpec(
         policy_id="sla",
-        definition_version="sla-1",
+        definition_version="sla-2",
         ordered_criteria=_COVERAGE
-        + ("window_start_delay", "travel_time", "distance", "engineers_used"),
+        + ("window_end_risk", "travel_time", "distance", "engineers_used"),
         search_stages=(
             "coverage",
-            "window_start_delay",
+            "window_end_risk",
             "travel_time",
             "distance",
             "engineers_used",
@@ -70,12 +81,13 @@ _CATALOG: dict[str, PolicySpec] = {
     ),
     "balanced": PolicySpec(
         policy_id="balanced",
-        definition_version="balanced-1",
+        definition_version="balanced-2",
         ordered_criteria=_COVERAGE
-        + ("max_jobs_per_engineer", "travel_time", "distance", "engineers_used"),
+        + ("max_workload_ratio", "workload_spread", "travel_time", "distance", "engineers_used"),
         search_stages=(
             "coverage",
-            "max_jobs_per_engineer",
+            "max_workload_ratio",
+            "workload_spread",
             "travel_time",
             "distance",
             "engineers_used",
@@ -89,9 +101,9 @@ _CATALOG: dict[str, PolicySpec] = {
     ),
     "covering": PolicySpec(
         policy_id="covering",
-        definition_version="covering-1",
-        ordered_criteria=_COVERAGE + ("engineers_used", "distance", "travel_time"),
-        search_stages=("coverage", "engineers_used", "distance", "travel_time"),
+        definition_version="covering-2",
+        ordered_criteria=_COVERAGE + ("additional_engineers", "engineers_used", "distance", "travel_time"),
+        search_stages=("coverage", "additional_engineers", "engineers_used", "distance", "travel_time"),
     ),
 }
 POLICY_CATALOG_VERSION = sha256(
@@ -129,13 +141,33 @@ def criterion_values(snapshot: RouterTaskSnapshot, plan: Plan) -> dict[Criterion
         for stop in route.stops
         if stop.kind == "job" and stop.request_id is not None
     ]
+    workloads = []
+    for engineer in snapshot.engineers:
+        route = next((r for r in plan.routes if r.engineer_id == engineer.engineer_id), None)
+        if route is not None and route.start_at is not None:
+            available = max(1, min(engineer.shift_end_at, snapshot.horizon_end_at) - route.start_at)
+            busy = (
+                route.metrics.work_time_sec
+                + route.metrics.travel_time_sec
+                + route.metrics.waiting_time_sec
+                + route.metrics.lunch_time_sec
+            )
+            workloads.append((busy * 10000 + available - 1) // available)
     return {
+        "total_lateness": summary.total_lateness_sec,
+        "window_end_risk": -(summary.min_window_slack_sec or 0),
+        "max_workload_ratio": max(workloads, default=0),
+        "workload_spread": summary.workload_spread_sec,
         "urgent_unassigned": summary.urgent_total - summary.urgent_assigned_count,
         "unassigned": summary.unassigned_count,
         "missed_optional_lunches": missed,
         "travel_time": summary.travel_time_sec,
         "distance": round(summary.distance_km * 1000),
         "engineers_used": summary.engineers_used,
+        "additional_engineers": sum(
+            route.engineer_id.startswith("covering-") and route.metrics.assigned_count > 0
+            for route in plan.routes
+        ),
         "window_start_delay": sum(
             stop.start_at - requests[stop.request_id].window_start_at for stop in job_stops
         ),

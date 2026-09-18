@@ -154,6 +154,7 @@ def test_real_process_and_http_api(snapshot, graph):
             "sla",
             "balanced",
             "eco",
+            "covering",
             "baseline",
         ]
         assert client.get("/v1/result").json()["result_id"] == result["result_id"]
@@ -302,6 +303,7 @@ def test_policy_comparison_uses_same_input_and_does_not_mutate_runtime(snapshot,
         "sla",
         "balanced",
         "eco",
+        "covering",
         "baseline",
     ]
     assert comparison.input_publication_id == before.input_publication_id
@@ -325,3 +327,22 @@ def test_policy_comparison_api_requires_ready_publication(snapshot, graph):
         response = client.get("/v1/policy-comparison")
     assert response.status_code == 503
     assert response.json()["detail"] == "ACTIVE_PUBLICATION_UNAVAILABLE"
+
+
+def test_covering_comparison_does_not_leak_extra_crews_into_other_policies(snapshot, graph):
+    """Expanded capacity is reported explicitly and never improves the fixed-roster pool."""
+    from core.runtime import calculate_policy_comparison
+
+    job = snapshot.requests[0].model_copy(update={"required_skill": "emergency"})
+    task = snapshot.model_copy(update={"requests": [job]})
+    comparison = calculate_policy_comparison(
+        task.model_dump_json().encode(), "covering-isolation", graph,
+        SearchSettings(time_limit_ms=100), "fixture", 100, offline=True,
+    )
+    rows = {row.strategy_id: row for row in comparison.rows}
+    assert rows["covering"].summary.assigned_count == 1
+    assert rows["covering"].additional_engineers == 1
+    assert all(
+        row.summary.assigned_count == 0 and row.additional_engineers == 0
+        for name, row in rows.items() if name != "covering"
+    )

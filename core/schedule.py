@@ -184,7 +184,8 @@ def schedule_steps(
         arrival = clock + quote.duration_sec
         start = max(arrival, request.window_start_at)
         end = start + request.service_duration_sec
-        if start > request.window_end_at or end > end_limit:
+        tolerance = getattr(getattr(travel, "settings", None), "window_lateness_tolerance_sec", 0)
+        if start > request.window_end_at + tolerance or end > end_limit:
             return None
         previous_stop = stops[-1].stop_id if stops else None
         if start > arrival:
@@ -472,7 +473,29 @@ def assemble_plan(
         name: sum(getattr(r.metrics, name) for r in routes) for name in RouteMetrics.model_fields
     }
     totals["distance_km"] = sum(round(r.metrics.distance_km * 1000) for r in routes) / 1000
+    windows = {request.request_id: request.window_end_at for request in snapshot.requests}
+    slacks = [
+        windows[stop.request_id] - stop.start_at
+        for route in routes
+        for stop in route.stops
+        if stop.kind == "job"
+    ]
+    # Include all available engineers, including idle ones: excluding idle crews
+    # would make a one-person overloaded plan appear perfectly balanced.
+    loads = [
+        route.metrics.work_time_sec
+        + route.metrics.travel_time_sec
+        + route.metrics.waiting_time_sec
+        + route.metrics.lunch_time_sec
+        for route in routes
+        if release_at(snapshot, engineers[route.engineer_id]) is not None
+    ]
     summary = PlanMetrics(
+        late_assigned_count=sum(slack < 0 for slack in slacks),
+        total_lateness_sec=sum(max(0, -slack) for slack in slacks),
+        min_window_slack_sec=min(slacks, default=None),
+        workload_spread_sec=max(loads, default=0) - min(loads, default=0),
+        max_workload_sec=max(loads, default=0),
         **totals,
         requests_total=len(snapshot.requests),
         unassigned_count=len(snapshot.requests) - len(assigned),

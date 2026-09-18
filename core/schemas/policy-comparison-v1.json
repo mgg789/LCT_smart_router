@@ -19,14 +19,41 @@
           "title": "Engineers Used",
           "type": "integer"
         },
+        "late_assigned_count": {
+          "default": 0,
+          "title": "Late Assigned Count",
+          "type": "integer"
+        },
         "lunch_time_sec": {
           "default": 0,
           "title": "Lunch Time Sec",
           "type": "integer"
         },
+        "max_workload_sec": {
+          "default": 0,
+          "title": "Max Workload Sec",
+          "type": "integer"
+        },
+        "min_window_slack_sec": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Window Slack Sec"
+        },
         "requests_total": {
           "default": 0,
           "title": "Requests Total",
+          "type": "integer"
+        },
+        "total_lateness_sec": {
+          "default": 0,
+          "title": "Total Lateness Sec",
           "type": "integer"
         },
         "travel_time_sec": {
@@ -58,6 +85,11 @@
           "default": 0,
           "title": "Work Time Sec",
           "type": "integer"
+        },
+        "workload_spread_sec": {
+          "default": 0,
+          "title": "Workload Spread Sec",
+          "type": "integer"
         }
       },
       "title": "PlanMetrics",
@@ -67,6 +99,12 @@
       "additionalProperties": false,
       "description": "One independently calculated strategy on the shared comparison snapshot.",
       "properties": {
+        "additional_engineers": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Additional Engineers",
+          "type": "integer"
+        },
         "calculation_ms": {
           "minimum": 0,
           "title": "Calculation Ms",
@@ -91,6 +129,7 @@
             "sla",
             "balanced",
             "eco",
+            "covering",
             "baseline"
           ],
           "title": "Strategy Id",
@@ -112,7 +151,7 @@
     }
   },
   "additionalProperties": false,
-  "description": "Fair, cached six-strategy comparison tied to one immutable publication.",
+  "description": "Cached comparison; covering explicitly reports its additional workforce.",
   "properties": {
     "computed_at": {
       "minimum": 0,
@@ -138,14 +177,14 @@
       "items": {
         "$ref": "#/$defs/PolicyComparisonRow"
       },
-      "maxItems": 6,
-      "minItems": 6,
+      "maxItems": 7,
+      "minItems": 7,
       "title": "Rows",
       "type": "array"
     },
     "search_budget_ms": {
       "exclusiveMinimum": 0,
-      "maximum": 2000,
+      "maximum": 8000,
       "title": "Search Budget Ms",
       "type": "integer"
     }

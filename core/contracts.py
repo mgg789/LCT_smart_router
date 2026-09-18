@@ -128,6 +128,9 @@ class RouterTechnicalSettings(Record):
     """Persisted Router-owned controls that version the calculation context."""
 
     lunches_enabled: bool = False
+    traffic_enabled: bool = True
+    equipment_enabled: bool = True
+    window_lateness_tolerance_sec: int = Field(default=0, ge=0, le=1200)
     departure_lateness_tolerance_sec: int = Field(default=0, ge=0, le=86400)
     task_start_lateness_tolerance_sec: int = Field(default=0, ge=0, le=86400)
     travel_time_mode: TravelTimeMode = "graph_with_access_buffer"
@@ -277,6 +280,11 @@ class PlanMetrics(RouteMetrics):
     urgent_total: int = 0
     urgent_assigned_count: int = 0
     engineers_used: int = 0
+    late_assigned_count: int = 0
+    total_lateness_sec: int = 0
+    min_window_slack_sec: int | None = None
+    workload_spread_sec: int = 0
+    max_workload_sec: int = 0
 
 
 class EngineerRoute(Record):
@@ -388,27 +396,28 @@ class PlanEvidence(Record):
 class PolicyComparisonRow(Record):
     """One independently calculated strategy on the shared comparison snapshot."""
 
-    strategy_id: Literal["fast", "compact", "sla", "balanced", "eco", "baseline"]
+    strategy_id: Literal["fast", "compact", "sla", "balanced", "eco", "covering", "baseline"]
     kind: Literal["policy", "baseline"]
+    additional_engineers: int = Field(default=0, ge=0)
     is_usable: bool
     calculation_ms: int = Field(ge=0)
     summary: PlanMetrics
 
 
 class PolicyComparison(Record):
-    """Fair, cached six-strategy comparison tied to one immutable publication."""
+    """Cached comparison; covering explicitly reports its additional workforce."""
 
     input_publication_id: ID
     input_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     router_context_version: ID
     computed_at: Seconds
-    search_budget_ms: int = Field(gt=0, le=2000)
-    rows: list[PolicyComparisonRow] = Field(min_length=6, max_length=6)
+    search_budget_ms: int = Field(gt=0, le=8000)
+    rows: list[PolicyComparisonRow] = Field(min_length=7, max_length=7)
 
     @model_validator(mode="after")
     def check_rows(self) -> Self:
         """Require the complete catalog exactly once, including the FIFO baseline."""
-        expected = {"fast", "compact", "sla", "balanced", "eco", "baseline"}
+        expected = {"fast", "compact", "sla", "balanced", "eco", "covering", "baseline"}
         observed = [row.strategy_id for row in self.rows]
         if set(observed) != expected or len(set(observed)) != len(observed):
             raise ValueError("comparison must contain every strategy exactly once")

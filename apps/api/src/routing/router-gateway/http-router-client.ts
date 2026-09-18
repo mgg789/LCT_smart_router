@@ -23,6 +23,11 @@ const comparisonMetricsSchema = z.object({
   work_time_sec: z.number().int().nonnegative(),
   waiting_time_sec: z.number().int().nonnegative(),
   lunch_time_sec: z.number().int().nonnegative(),
+  late_assigned_count: z.number().int().nonnegative().optional().default(0),
+  total_lateness_sec: z.number().int().nonnegative().optional().default(0),
+  min_window_slack_sec: z.number().int().nullable().optional().default(null),
+  workload_spread_sec: z.number().int().nonnegative().optional().default(0),
+  max_workload_sec: z.number().int().nonnegative().optional().default(0),
 });
 
 const policyComparisonSchema = z.object({
@@ -30,11 +35,12 @@ const policyComparisonSchema = z.object({
   input_hash: z.string().length(64),
   router_context_version: z.string().min(1),
   computed_at: z.number().int().nonnegative(),
-  search_budget_ms: z.number().int().positive(),
+  search_budget_ms: z.number().int().positive().max(8_000),
   rows: z.array(
     z.object({
       strategy_id: z.enum(COMPARISON_STRATEGIES),
       kind: z.enum(['policy', 'baseline']),
+      additional_engineers: z.number().int().nonnegative().default(0),
       is_usable: z.boolean(),
       calculation_ms: z.number().int().nonnegative(),
       summary: comparisonMetricsSchema,
@@ -46,6 +52,9 @@ const technicalSettingsSchema = z.object({
   lunches_enabled: z.boolean(),
   departure_lateness_tolerance_sec: z.number().int().nonnegative().max(86_400),
   task_start_lateness_tolerance_sec: z.number().int().nonnegative().max(86_400),
+  window_lateness_tolerance_sec: z.number().int().nonnegative().max(1_200).optional(),
+  traffic_enabled: z.boolean().optional(),
+  equipment_enabled: z.boolean().optional(),
   travel_time_mode: z.enum(['graph_with_access_buffer', 'fixed_normative']),
   access_buffer_sec: z.number().int().nonnegative().max(86_400),
   fixed_travel_time_sec: z.number().int().positive().max(86_400),
@@ -128,6 +137,13 @@ export class HttpRouterClient extends RouterClient {
         lunches_enabled: input.lunchesEnabled,
         departure_lateness_tolerance_sec: input.departureLatenessToleranceSec,
         task_start_lateness_tolerance_sec: input.taskStartLatenessToleranceSec,
+        ...(input.windowLatenessToleranceSec === undefined
+          ? {}
+          : { window_lateness_tolerance_sec: input.windowLatenessToleranceSec }),
+        ...(input.trafficEnabled === undefined ? {} : { traffic_enabled: input.trafficEnabled }),
+        ...(input.equipmentEnabled === undefined
+          ? {}
+          : { equipment_enabled: input.equipmentEnabled }),
         travel_time_mode: input.travelTimeMode,
         access_buffer_sec: input.accessBufferSec,
         fixed_travel_time_sec: input.fixedTravelTimeSec,
@@ -150,13 +166,12 @@ export class HttpRouterClient extends RouterClient {
 
   /** Runs or reads Router's cached same-snapshot policy comparison. */
   override async getPolicyComparison(): Promise<PolicyComparison> {
-    // A cold comparison computes six policies (up to two seconds each), so the ordinary
-    // single-request timeout is too short. Keep a finite ceiling while allowing the
-    // documented cold-cache budget to complete.
+    // A cold comparison includes fixed-roster refinement and expanded-workforce
+    // covering. Keep its timeout separate from ordinary status requests.
     const raw = await this.fetchJson(
       '/v1/policy-comparison',
       {},
-      Math.max(this.options.requestTimeoutMs, 15_000),
+      Math.max(this.options.requestTimeoutMs, 60_000),
     );
     const parsed = policyComparisonSchema.safeParse(raw);
     if (!parsed.success) {
@@ -171,6 +186,7 @@ export class HttpRouterClient extends RouterClient {
       rows: parsed.data.rows.map((row) => ({
         strategyId: row.strategy_id,
         kind: row.kind,
+        additionalEngineers: row.additional_engineers,
         isUsable: row.is_usable,
         calculationMs: row.calculation_ms,
         metrics: {
@@ -185,6 +201,11 @@ export class HttpRouterClient extends RouterClient {
           workTimeSec: row.summary.work_time_sec,
           waitingTimeSec: row.summary.waiting_time_sec,
           lunchTimeSec: row.summary.lunch_time_sec,
+          lateAssignedCount: row.summary.late_assigned_count,
+          totalLatenessSec: row.summary.total_lateness_sec,
+          minWindowSlackSec: row.summary.min_window_slack_sec,
+          workloadSpreadSec: row.summary.workload_spread_sec,
+          maxWorkloadSec: row.summary.max_workload_sec,
         },
       })),
     };
@@ -255,6 +276,13 @@ function toTechnicalSettings(
     lunchesEnabled: settings.lunches_enabled,
     departureLatenessToleranceSec: settings.departure_lateness_tolerance_sec,
     taskStartLatenessToleranceSec: settings.task_start_lateness_tolerance_sec,
+    ...(settings.window_lateness_tolerance_sec === undefined
+      ? {}
+      : { windowLatenessToleranceSec: settings.window_lateness_tolerance_sec }),
+    ...(settings.traffic_enabled === undefined ? {} : { trafficEnabled: settings.traffic_enabled }),
+    ...(settings.equipment_enabled === undefined
+      ? {}
+      : { equipmentEnabled: settings.equipment_enabled }),
     travelTimeMode: settings.travel_time_mode,
     accessBufferSec: settings.access_buffer_sec,
     fixedTravelTimeSec: settings.fixed_travel_time_sec,

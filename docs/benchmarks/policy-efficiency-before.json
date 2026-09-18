@@ -1,0 +1,639 @@
+{
+  "commit": "aa983bf7bb81fae65d7c5e241793ff3e0cedacff",
+  "python": "3.14.6",
+  "search_budget_ms": 2000,
+  "solution_limit": 64,
+  "settings": {
+    "lunches_enabled": false,
+    "departure_lateness_tolerance_sec": 0,
+    "task_start_lateness_tolerance_sec": 0,
+    "travel_time_mode": "graph_with_access_buffer",
+    "access_buffer_sec": 600,
+    "fixed_travel_time_sec": 1200,
+    "early_finish_replan_threshold_sec": 900,
+    "task_overrun_tolerance_sec": 600
+  },
+  "method": "Five independent cold solve calls per official scenario; FIFO evaluated by the unchanged baseline; no external providers.",
+  "rows": [
+    {
+      "scenario": "east",
+      "policy": "fast",
+      "elapsed_ms": 926,
+      "metrics": {
+        "distance_km": 252.302,
+        "travel_time_sec": 77530,
+        "work_time_sec": 228600,
+        "waiting_time_sec": 82622,
+        "lunch_time_sec": 0,
+        "assigned_count": 64,
+        "requests_total": 66,
+        "unassigned_count": 2,
+        "urgent_total": 13,
+        "urgent_assigned_count": 12,
+        "engineers_used": 11
+      },
+      "fifo": {
+        "distance_km": 222.286,
+        "travel_time_sec": 65640,
+        "work_time_sec": 130800,
+        "waiting_time_sec": 223845,
+        "lunch_time_sec": 0,
+        "assigned_count": 36,
+        "requests_total": 66,
+        "unassigned_count": 30,
+        "urgent_total": 13,
+        "urgent_assigned_count": 2,
+        "engineers_used": 12
+      }
+    },
+    {
+      "scenario": "east",
+      "policy": "compact",
+      "elapsed_ms": 2100,
+      "metrics": {
+        "distance_km": 238.756,
+        "travel_time_sec": 73439,
+        "work_time_sec": 228600,
+        "waiting_time_sec": 58246,
+        "lunch_time_sec": 0,
+        "assigned_count": 64,
+        "requests_total": 66,
+        "unassigned_count": 2,
+        "urgent_total": 13,
+        "urgent_assigned_count": 12,
+        "engineers_used": 10
+      },
+      "fifo": {
+        "distance_km": 222.286,
+        "travel_time_sec": 65640,
+        "work_time_sec": 130800,
+        "waiting_time_sec": 223845,
+        "lunch_time_sec": 0,
+        "assigned_count": 36,
+        "requests_total": 66,
+        "unassigned_count": 30,
+        "urgent_total": 13,
+        "urgent_assigned_count": 2,
+        "engineers_used": 12
+      }
+    },
+    {
+      "scenario": "east",
+      "policy": "sla",
+      "elapsed_ms": 939,
+      "metrics": {
+        "distance_km": 325.872,
+        "travel_time_sec": 96515,
+        "work_time_sec": 228600,
+        "waiting_time_sec": 79971,
+        "lunch_time_sec": 0,
+        "assigned_count": 64,
+        "requests_total": 66,
+        "unassigned_count": 2,
+        "urgent_total": 13,
+        "urgent_assigned_count": 12,
+        "engineers_used": 12
+      },
+      "fifo": {
+        "distance_km": 222.286,
+        "travel_time_sec": 65640,
+        "work_time_sec": 130800,
+        "waiting_time_sec": 223845,
+        "lunch_time_sec": 0,
+        "assigned_count": 36,
+        "requests_total": 66,
+        "unassigned_count": 30,
+        "urgent_total": 13,
+        "urgent_assigned_count": 2,
+        "engineers_used": 12
+      }
+    },
+    {
+      "scenario": "east",
+      "policy": "balanced",
+      "elapsed_ms": 1259,
+      "metrics": {
+        "distance_km": 403.218,
+        "travel_time_sec": 108640,
+        "work_time_sec": 228600,
+        "waiting_time_sec": 76476,
+        "lunch_time_sec": 0,
+        "assigned_count": 64,
+        "requests_total": 66,
+        "unassigned_count": 2,
+        "urgent_total": 13,
+        "urgent_assigned_count": 12,
+        "engineers_used": 12
+      },
+      "fifo": {
+        "distance_km": 222.286,
+        "travel_time_sec": 65640,
+        "work_time_sec": 130800,
+        "waiting_time_sec": 223845,
+        "lunch_time_sec": 0,
+        "assigned_count": 36,
+        "requests_total": 66,
+        "unassigned_count": 30,
+        "urgent_total": 13,
+        "urgent_assigned_count": 2,
+        "engineers_used": 12
+      }
+    },
+    {
+      "scenario": "east",
+      "policy": "eco",
+      "elapsed_ms": 2110,
+      "metrics": {
+        "distance_km": 242.177,
+        "travel_time_sec": 75484,
+        "work_time_sec": 228600,
+        "waiting_time_sec": 118453,
+        "lunch_time_sec": 0,
+        "assigned_count": 64,
+        "requests_total": 66,
+        "unassigned_count": 2,
+        "urgent_total": 13,
+        "urgent_assigned_count": 12,
+        "engineers_used": 12
+      },
+      "fifo": {
+        "distance_km": 222.286,
+        "travel_time_sec": 65640,
+        "work_time_sec": 130800,
+        "waiting_time_sec": 223845,
+        "lunch_time_sec": 0,
+        "assigned_count": 36,
+        "requests_total": 66,
+        "unassigned_count": 30,
+        "urgent_total": 13,
+        "urgent_assigned_count": 2,
+        "engineers_used": 12
+      }
+    },
+    {
+      "scenario": "southeast",
+      "policy": "fast",
+      "elapsed_ms": 1678,
+      "metrics": {
+        "distance_km": 65.852,
+        "travel_time_sec": 41152,
+        "work_time_sec": 172800,
+        "waiting_time_sec": 95402,
+        "lunch_time_sec": 0,
+        "assigned_count": 44,
+        "requests_total": 83,
+        "unassigned_count": 39,
+        "urgent_total": 31,
+        "urgent_assigned_count": 18,
+        "engineers_used": 10
+      },
+      "fifo": {
+        "distance_km": 483.029,
+        "travel_time_sec": 115960,
+        "work_time_sec": 160800,
+        "waiting_time_sec": 127425,
+        "lunch_time_sec": 0,
+        "assigned_count": 44,
+        "requests_total": 83,
+        "unassigned_count": 39,
+        "urgent_total": 31,
+        "urgent_assigned_count": 7,
+        "engineers_used": 12
+      }
+    },
+    {
+      "scenario": "southeast",
+      "policy": "compact",
+      "elapsed_ms": 2136,
+      "metrics": {
+        "distance_km": 82.896,
+        "travel_time_sec": 38144,
+        "work_time_sec": 167400,
+        "waiting_time_sec": 97924,
+        "lunch_time_sec": 0,
+        "assigned_count": 44,
+        "requests_total": 83,
+        "unassigned_count": 39,
+        "urgent_total": 31,
+        "urgent_assigned_count": 15,
+        "engineers_used": 10
+      },
+      "fifo": {
+        "distance_km": 483.029,
+        "travel_time_sec": 115960,
+        "work_time_sec": 160800,
+        "waiting_time_sec": 127425,
+        "lunch_time_sec": 0,
+        "assigned_count": 44,
+        "requests_total": 83,
+        "unassigned_count": 39,
+        "urgent_total": 31,
+        "urgent_assigned_count": 7,
+        "engineers_used": 12
+      }
+    },
+    {
+      "scenario": "southeast",
+      "policy": "sla",
+      "elapsed_ms": 1208,
+      "metrics": {
+        "distance_km": 87.15,
+        "travel_time_sec": 44124,
+        "work_time_sec": 167400,
+        "waiting_time_sec": 79540,
+        "lunch_time_sec": 0,
+        "assigned_count": 44,
+        "requests_total": 83,
+        "unassigned_count": 39,
+        "urgent_total": 31,
+        "urgent_assigned_count": 13,
+        "engineers_used": 9
+      },
+      "fifo": {
+        "distance_km": 483.029,
+        "travel_time_sec": 115960,
+        "work_time_sec": 160800,
+        "waiting_time_sec": 127425,
+        "lunch_time_sec": 0,
+        "assigned_count": 44,
+        "requests_total": 83,
+        "unassigned_count": 39,
+        "urgent_total": 31,
+        "urgent_assigned_count": 7,
+        "engineers_used": 12
+      }
+    },
+    {
+      "scenario": "southeast",
+      "policy": "balanced",
+      "elapsed_ms": 1563,
+      "metrics": {
+        "distance_km": 82.019,
+        "travel_time_sec": 42329,
+        "work_time_sec": 177600,
+        "waiting_time_sec": 108819,
+        "lunch_time_sec": 0,
+        "assigned_count": 44,
+        "requests_total": 83,
+        "unassigned_count": 39,
+        "urgent_total": 31,
+        "urgent_assigned_count": 15,
+        "engineers_used": 11
+      },
+      "fifo": {
+        "distance_km": 483.029,
+        "travel_time_sec": 115960,
+        "work_time_sec": 160800,
+        "waiting_time_sec": 127425,
+        "lunch_time_sec": 0,
+        "assigned_count": 44,
+        "requests_total": 83,
+        "unassigned_count": 39,
+        "urgent_total": 31,
+        "urgent_assigned_count": 7,
+        "engineers_used": 12
+      }
+    },
+    {
+      "scenario": "southeast",
+      "policy": "eco",
+      "elapsed_ms": 2134,
+      "metrics": {
+        "distance_km": 82.896,
+        "travel_time_sec": 38144,
+        "work_time_sec": 167400,
+        "waiting_time_sec": 97924,
+        "lunch_time_sec": 0,
+        "assigned_count": 44,
+        "requests_total": 83,
+        "unassigned_count": 39,
+        "urgent_total": 31,
+        "urgent_assigned_count": 15,
+        "engineers_used": 10
+      },
+      "fifo": {
+        "distance_km": 483.029,
+        "travel_time_sec": 115960,
+        "work_time_sec": 160800,
+        "waiting_time_sec": 127425,
+        "lunch_time_sec": 0,
+        "assigned_count": 44,
+        "requests_total": 83,
+        "unassigned_count": 39,
+        "urgent_total": 31,
+        "urgent_assigned_count": 7,
+        "engineers_used": 12
+      }
+    },
+    {
+      "scenario": "south_central",
+      "policy": "fast",
+      "elapsed_ms": 1471,
+      "metrics": {
+        "distance_km": 99.412,
+        "travel_time_sec": 51802,
+        "work_time_sec": 189000,
+        "waiting_time_sec": 107496,
+        "lunch_time_sec": 0,
+        "assigned_count": 50,
+        "requests_total": 56,
+        "unassigned_count": 6,
+        "urgent_total": 16,
+        "urgent_assigned_count": 16,
+        "engineers_used": 10
+      },
+      "fifo": {
+        "distance_km": 182.136,
+        "travel_time_sec": 65473,
+        "work_time_sec": 121800,
+        "waiting_time_sec": 194564,
+        "lunch_time_sec": 0,
+        "assigned_count": 33,
+        "requests_total": 56,
+        "unassigned_count": 23,
+        "urgent_total": 16,
+        "urgent_assigned_count": 2,
+        "engineers_used": 11
+      }
+    },
+    {
+      "scenario": "south_central",
+      "policy": "compact",
+      "elapsed_ms": 2072,
+      "metrics": {
+        "distance_km": 113.236,
+        "travel_time_sec": 51192,
+        "work_time_sec": 189000,
+        "waiting_time_sec": 74329,
+        "lunch_time_sec": 0,
+        "assigned_count": 50,
+        "requests_total": 56,
+        "unassigned_count": 6,
+        "urgent_total": 16,
+        "urgent_assigned_count": 16,
+        "engineers_used": 9
+      },
+      "fifo": {
+        "distance_km": 182.136,
+        "travel_time_sec": 65473,
+        "work_time_sec": 121800,
+        "waiting_time_sec": 194564,
+        "lunch_time_sec": 0,
+        "assigned_count": 33,
+        "requests_total": 56,
+        "unassigned_count": 23,
+        "urgent_total": 16,
+        "urgent_assigned_count": 2,
+        "engineers_used": 11
+      }
+    },
+    {
+      "scenario": "south_central",
+      "policy": "sla",
+      "elapsed_ms": 1050,
+      "metrics": {
+        "distance_km": 250.049,
+        "travel_time_sec": 85048,
+        "work_time_sec": 189000,
+        "waiting_time_sec": 101325,
+        "lunch_time_sec": 0,
+        "assigned_count": 50,
+        "requests_total": 56,
+        "unassigned_count": 6,
+        "urgent_total": 16,
+        "urgent_assigned_count": 16,
+        "engineers_used": 11
+      },
+      "fifo": {
+        "distance_km": 182.136,
+        "travel_time_sec": 65473,
+        "work_time_sec": 121800,
+        "waiting_time_sec": 194564,
+        "lunch_time_sec": 0,
+        "assigned_count": 33,
+        "requests_total": 56,
+        "unassigned_count": 23,
+        "urgent_total": 16,
+        "urgent_assigned_count": 2,
+        "engineers_used": 11
+      }
+    },
+    {
+      "scenario": "south_central",
+      "policy": "balanced",
+      "elapsed_ms": 1234,
+      "metrics": {
+        "distance_km": 165.496,
+        "travel_time_sec": 65331,
+        "work_time_sec": 189000,
+        "waiting_time_sec": 111920,
+        "lunch_time_sec": 0,
+        "assigned_count": 50,
+        "requests_total": 56,
+        "unassigned_count": 6,
+        "urgent_total": 16,
+        "urgent_assigned_count": 16,
+        "engineers_used": 11
+      },
+      "fifo": {
+        "distance_km": 182.136,
+        "travel_time_sec": 65473,
+        "work_time_sec": 121800,
+        "waiting_time_sec": 194564,
+        "lunch_time_sec": 0,
+        "assigned_count": 33,
+        "requests_total": 56,
+        "unassigned_count": 23,
+        "urgent_total": 16,
+        "urgent_assigned_count": 2,
+        "engineers_used": 11
+      }
+    },
+    {
+      "scenario": "south_central",
+      "policy": "eco",
+      "elapsed_ms": 2069,
+      "metrics": {
+        "distance_km": 118.106,
+        "travel_time_sec": 52567,
+        "work_time_sec": 192000,
+        "waiting_time_sec": 64502,
+        "lunch_time_sec": 0,
+        "assigned_count": 50,
+        "requests_total": 56,
+        "unassigned_count": 6,
+        "urgent_total": 16,
+        "urgent_assigned_count": 16,
+        "engineers_used": 9
+      },
+      "fifo": {
+        "distance_km": 182.136,
+        "travel_time_sec": 65473,
+        "work_time_sec": 121800,
+        "waiting_time_sec": 194564,
+        "lunch_time_sec": 0,
+        "assigned_count": 33,
+        "requests_total": 56,
+        "unassigned_count": 23,
+        "urgent_total": 16,
+        "urgent_assigned_count": 2,
+        "engineers_used": 11
+      }
+    },
+    {
+      "scenario": "all",
+      "policy": "fast",
+      "elapsed_ms": 2411,
+      "metrics": {
+        "distance_km": 627.801,
+        "travel_time_sec": 226937,
+        "work_time_sec": 648600,
+        "waiting_time_sec": 232087,
+        "lunch_time_sec": 0,
+        "assigned_count": 173,
+        "requests_total": 205,
+        "unassigned_count": 32,
+        "urgent_total": 60,
+        "urgent_assigned_count": 47,
+        "engineers_used": 33
+      },
+      "fifo": {
+        "distance_km": 887.451,
+        "travel_time_sec": 247073,
+        "work_time_sec": 413400,
+        "waiting_time_sec": 545834,
+        "lunch_time_sec": 0,
+        "assigned_count": 113,
+        "requests_total": 205,
+        "unassigned_count": 92,
+        "urgent_total": 60,
+        "urgent_assigned_count": 11,
+        "engineers_used": 35
+      }
+    },
+    {
+      "scenario": "all",
+      "policy": "compact",
+      "elapsed_ms": 2209,
+      "metrics": {
+        "distance_km": 617.986,
+        "travel_time_sec": 235780,
+        "work_time_sec": 637200,
+        "waiting_time_sec": 267097,
+        "lunch_time_sec": 0,
+        "assigned_count": 171,
+        "requests_total": 205,
+        "unassigned_count": 34,
+        "urgent_total": 60,
+        "urgent_assigned_count": 47,
+        "engineers_used": 35
+      },
+      "fifo": {
+        "distance_km": 887.451,
+        "travel_time_sec": 247073,
+        "work_time_sec": 413400,
+        "waiting_time_sec": 545834,
+        "lunch_time_sec": 0,
+        "assigned_count": 113,
+        "requests_total": 205,
+        "unassigned_count": 92,
+        "urgent_total": 60,
+        "urgent_assigned_count": 11,
+        "engineers_used": 35
+      }
+    },
+    {
+      "scenario": "all",
+      "policy": "sla",
+      "elapsed_ms": 2284,
+      "metrics": {
+        "distance_km": 574.725,
+        "travel_time_sec": 188679,
+        "work_time_sec": 532800,
+        "waiting_time_sec": 333433,
+        "lunch_time_sec": 0,
+        "assigned_count": 139,
+        "requests_total": 205,
+        "unassigned_count": 66,
+        "urgent_total": 60,
+        "urgent_assigned_count": 47,
+        "engineers_used": 32
+      },
+      "fifo": {
+        "distance_km": 887.451,
+        "travel_time_sec": 247073,
+        "work_time_sec": 413400,
+        "waiting_time_sec": 545834,
+        "lunch_time_sec": 0,
+        "assigned_count": 113,
+        "requests_total": 205,
+        "unassigned_count": 92,
+        "urgent_total": 60,
+        "urgent_assigned_count": 11,
+        "engineers_used": 35
+      }
+    },
+    {
+      "scenario": "all",
+      "policy": "balanced",
+      "elapsed_ms": 2359,
+      "metrics": {
+        "distance_km": 654.81,
+        "travel_time_sec": 217025,
+        "work_time_sec": 594600,
+        "waiting_time_sec": 250988,
+        "lunch_time_sec": 0,
+        "assigned_count": 158,
+        "requests_total": 205,
+        "unassigned_count": 47,
+        "urgent_total": 60,
+        "urgent_assigned_count": 47,
+        "engineers_used": 31
+      },
+      "fifo": {
+        "distance_km": 887.451,
+        "travel_time_sec": 247073,
+        "work_time_sec": 413400,
+        "waiting_time_sec": 545834,
+        "lunch_time_sec": 0,
+        "assigned_count": 113,
+        "requests_total": 205,
+        "unassigned_count": 92,
+        "urgent_total": 60,
+        "urgent_assigned_count": 11,
+        "engineers_used": 35
+      }
+    },
+    {
+      "scenario": "all",
+      "policy": "eco",
+      "elapsed_ms": 2201,
+      "metrics": {
+        "distance_km": 602.527,
+        "travel_time_sec": 230541,
+        "work_time_sec": 637200,
+        "waiting_time_sec": 262375,
+        "lunch_time_sec": 0,
+        "assigned_count": 171,
+        "requests_total": 205,
+        "unassigned_count": 34,
+        "urgent_total": 60,
+        "urgent_assigned_count": 47,
+        "engineers_used": 35
+      },
+      "fifo": {
+        "distance_km": 887.451,
+        "travel_time_sec": 247073,
+        "work_time_sec": 413400,
+        "waiting_time_sec": 545834,
+        "lunch_time_sec": 0,
+        "assigned_count": 113,
+        "requests_total": 205,
+        "unassigned_count": 92,
+        "urgent_total": 60,
+        "urgent_assigned_count": 11,
+        "engineers_used": 35
+      }
+    }
+  ]
+}

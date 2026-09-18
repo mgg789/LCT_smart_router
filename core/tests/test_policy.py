@@ -1,10 +1,18 @@
 """Policy catalog compilation and observable planning trade-off tests."""
 
 import pytest
-from core.contracts import RouterTaskSnapshot
-from core.engine import SearchSettings, solve
+from core.contracts import Engineer, Policy, RouterTaskSnapshot
+from core.engine import (
+    EngineMemory,
+    SearchSettings,
+    _covering_clone,
+    _covering_extra_engineers,
+    _union_memory_engineers,
+    solve,
+)
 from core.geo import GraphTravel, RoadGraph
 from core.policy import POLICY_CATALOG_VERSION, compile_policy
+from core.schedule import assemble_plan, fixed_order
 
 SETTINGS = SearchSettings(
     time_limit_ms=1600,
@@ -67,10 +75,10 @@ def test_catalog_is_strict_and_versioned(snapshot):
     expected = {
         "fast": "travel_time",
         "compact": "engineers_used",
-        "sla": "window_start_delay",
-        "balanced": "max_jobs_per_engineer",
+        "sla": "window_end_risk",
+        "balanced": "max_workload_ratio",
         "eco": "distance",
-        "covering": "engineers_used",
+        "covering": "additional_engineers",
     }
     for policy_id, first_resource in expected.items():
         data = snapshot.model_dump()
@@ -317,6 +325,55 @@ def test_covering_uses_idle_same_region_engineer_before_extras(snapshot, graph):
     assert not any(engineer.engineer_id.startswith("covering-") for engineer in engineers)
 
 
+def test_covering_extras_match_transport_equipment_region_and_shift(snapshot, graph):
+    """Synthetic crews inherit only a template that can serve the demand."""
+    data = snapshot.model_dump()
+    engineer = data["engineers"][0]
+    engineer.update(
+        region="east",
+        transport_type="walk",
+        equipment_stock={"router": 1, "set_top_box": 0, "smart_speaker": 0},
+    )
+    data["engineers"] = [engineer]
+    request = data["requests"][0]
+    request.update(
+        request_id="walk-router",
+        location=graph.nodes[1].location.model_dump(),
+        required_transport="walk",
+        required_equipment="router",
+        region="east",
+    )
+    task = RouterTaskSnapshot.model_validate(data)
+    extra = _covering_extra_engineers(task, [task.requests[0]], GraphTravel(graph))
+    assert len(extra) == 1
+    assert extra[0].region == "east"
+    assert extra[0].transport_type == "walk"
+    assert extra[0].equipment_stock.quantity("router") == 1
+    assert extra[0].shift_end_at == task.engineers[0].shift_end_at
+
+    late = task.requests[0].model_copy(
+        update={"window_start_at": task.engineers[0].shift_end_at, "window_end_at": task.engineers[0].shift_end_at}
+    )
+    assert _covering_extra_engineers(task, [late], GraphTravel(graph)) == []
+
+
+def test_covering_memory_does_not_revive_removed_original_engineer(snapshot, graph):
+    """Removing a roster template also invalidates its synthetic capacity."""
+    removed = Engineer.model_validate(
+        {**snapshot.engineers[0].model_dump(), "engineer_id": "removed"}
+    )
+    extra = _covering_clone(removed, 1)
+    memory_snapshot = snapshot.model_copy(update={"engineers": [removed, extra]})
+    routes = [
+        fixed_order(memory_snapshot, removed, [], GraphTravel(graph)),
+        fixed_order(memory_snapshot, extra, ["job-1"], GraphTravel(graph)),
+    ]
+    assert all(route is not None for route in routes)
+    memory_plan = assemble_plan(memory_snapshot, routes)
+    aligned = _union_memory_engineers(snapshot, EngineMemory(memory_snapshot, memory_plan, ""))
+    assert [engineer.engineer_id for engineer in aligned.engineers] == ["eng-1"]
+
+
 def test_required_skill_changes_who_receives_the_job(snapshot, graph):
     """Skill is a hard constraint: the same address goes to a different crew when the skill changes."""
     data = snapshot.model_dump()
@@ -365,3 +422,24 @@ def test_required_skill_changes_who_receives_the_job(snapshot, graph):
     ).main
     assert local_plan.assignments[0].engineer_id == "local-crew"
     assert emergency_plan.assignments[0].engineer_id == "emergency-crew"
+
+
+def test_covering_rebuild_keeps_unique_ids_and_discards_stale_capacity(snapshot, graph):
+    """Warm extras remain unique; changed roster equipment invalidates old clones."""
+    task = snapshot.model_copy(update={
+        "policy": Policy(policy_id="covering", parameters={}),
+        "requests": [r.model_copy(update={"required_skill": "emergency"}) for r in snapshot.requests],
+    })
+    first = solve(task, GraphTravel(graph), SETTINGS)
+    warm = solve(task, GraphTravel(graph), SETTINGS, memory=first.memory)
+    ids = [e.engineer_id for e in warm.memory.snapshot.engineers]
+    assert len(ids) == len(set(ids))
+    assert warm.main.summary.assigned_count == len(task.requests)
+    used = {r.engineer_id for r in warm.main.routes if r.metrics.assigned_count}
+    assert all(not e.startswith("covering-") or e in used for e in ids)
+    changed = task.model_copy(update={"engineers": [task.engineers[0].model_copy(
+        update={"shift_end_at": task.planning_as_of + 1}
+    )]})
+    rebuilt = solve(changed, GraphTravel(graph), SETTINGS, memory=warm.memory)
+    assert rebuilt.main.summary.assigned_count == 0
+    assert not any(e.engineer_id.startswith("covering-") for e in rebuilt.memory.snapshot.engineers)
