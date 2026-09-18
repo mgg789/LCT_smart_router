@@ -142,6 +142,7 @@ export class SmtpGatewayService implements OnModuleInit, OnModuleDestroy {
       subject: rendered.subject,
       text: rendered.text,
       html: rendered.html,
+      attachments: rendered.attachments,
     });
     await this.recordOutcome(intent, now, outcome, redactPayload(payload));
   }
