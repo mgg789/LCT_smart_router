@@ -430,11 +430,38 @@ export function parsePolicyComparison(value: unknown): PolicyComparisonResponse 
   return policyComparisonSchema.parse(value);
 }
 
+const dispatcherLoginCodeSchema = z.object({
+  email: z.email(),
+  expiresAt: z.number().int(),
+  devCode: z.string().optional(),
+});
+
 /** Authenticates a dispatcher without exposing configured credentials to the bundle. */
 export async function loginDispatcher(email: string, password: string): Promise<AuthSession> {
   return requestJson('/api/v1/auth/dispatcher/password', authSessionSchema, undefined, {
     method: 'POST',
     body: JSON.stringify({ email, password }),
+  });
+}
+
+/** Asks the public login-code contour to mail a one-time dispatcher code. */
+export function requestDispatcherLoginCode(
+  email: string,
+): Promise<z.infer<typeof dispatcherLoginCodeSchema>> {
+  return requestJson('/api/v1/auth/login-code', dispatcherLoginCodeSchema, undefined, {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+}
+
+/**
+ * Exchanges a mailed code for the dispatcher session. The role must already
+ * belong to the configured dispatcher account; verifying does not grant it.
+ */
+export function verifyDispatcherLoginCode(email: string, code: string): Promise<AuthSession> {
+  return requestJson('/api/v1/auth/login-code/verify', authSessionSchema, undefined, {
+    method: 'POST',
+    body: JSON.stringify({ email, code, role: 'dispatcher' }),
   });
 }
 

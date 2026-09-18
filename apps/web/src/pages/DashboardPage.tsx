@@ -66,7 +66,13 @@ export function DashboardPage() {
   if (!dash.authenticated) {
     return (
       <div>
-        <LoginScreen loading={dash.loading} error={dash.error} onSubmit={dash.signIn} />
+        <LoginScreen
+          loading={dash.loading}
+          error={dash.error}
+          onPassword={dash.signIn}
+          onRequestCode={dash.requestLoginCode}
+          onCode={dash.signInWithCode}
+        />
         <div className="fixed bottom-8 inset-x-0 text-center">
           <button
             type="button"
@@ -481,12 +487,19 @@ export function DashboardPage() {
 interface LoginScreenProps {
   readonly loading: boolean;
   readonly error: string | null;
-  readonly onSubmit: (email: string, password: string) => Promise<void>;
+  readonly onPassword: (email: string, password: string) => Promise<void>;
+  readonly onRequestCode: (
+    email: string,
+  ) => Promise<{ email: string; expiresAt: number; devCode?: string } | null>;
+  readonly onCode: (email: string, code: string) => Promise<void>;
 }
 
-function LoginScreen({ loading, error, onSubmit }: LoginScreenProps) {
+function LoginScreen({ loading, error, onPassword, onRequestCode, onCode }: LoginScreenProps) {
+  const [method, setMethod] = useState<'password' | 'code'>('code');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
+  const [issued, setIssued] = useState<{ email: string; devCode?: string } | null>(null);
 
   return (
     <main className="flex h-full items-center justify-center bg-canvas p-6 text-ink">
@@ -494,13 +507,30 @@ function LoginScreen({ loading, error, onSubmit }: LoginScreenProps) {
         className="w-full max-w-sm rounded-3xl bg-white p-7 shadow-sm"
         onSubmit={(event) => {
           event.preventDefault();
-          void onSubmit(email, password);
+          if (method === 'password') {
+            void onPassword(email, password);
+            return;
+          }
+          if (issued) {
+            void onCode(issued.email, code);
+            return;
+          }
+          void onRequestCode(email).then((next) => {
+            if (next) {
+              setIssued({
+                email: next.email,
+                ...(next.devCode ? { devCode: next.devCode } : {}),
+              });
+            }
+          });
         }}
       >
         <img src="/beeline-symbol.png" alt="Beeline" className="mx-auto h-10 w-10" />
         <h1 className="mt-6 text-center text-2xl font-semibold">План дня</h1>
         <p className="mt-2 text-center text-sm text-muted">
-          Войдите как диспетчер, чтобы открыть актуальный план.
+          {method === 'code'
+            ? 'Код придёт на почту диспетчера. Пароль остаётся запасным входом.'
+            : 'Войдите как диспетчер, чтобы открыть актуальный план.'}
         </p>
         <label className="mt-6 block text-sm font-medium" htmlFor="dispatcher-email">
           Email
@@ -511,29 +541,79 @@ function LoginScreen({ loading, error, onSubmit }: LoginScreenProps) {
           required
           autoComplete="username"
           value={email}
+          disabled={method === 'code' && issued !== null}
           onChange={(event) => setEmail(event.target.value)}
-          className="mt-2 w-full rounded-xl border border-line px-3 py-2.5 outline-none focus:border-ink"
+          className="mt-2 w-full rounded-xl border border-line px-3 py-2.5 outline-none focus:border-ink disabled:opacity-60"
         />
-        <label className="mt-4 block text-sm font-medium" htmlFor="dispatcher-password">
-          Пароль
-        </label>
-        <input
-          id="dispatcher-password"
-          type="password"
-          required
-          autoComplete="current-password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          className="mt-2 w-full rounded-xl border border-line px-3 py-2.5 outline-none focus:border-ink"
-        />
+        {method === 'password' ? (
+          <>
+            <label className="mt-4 block text-sm font-medium" htmlFor="dispatcher-password">
+              Пароль
+            </label>
+            <input
+              id="dispatcher-password"
+              type="password"
+              required
+              autoComplete="current-password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              className="mt-2 w-full rounded-xl border border-line px-3 py-2.5 outline-none focus:border-ink"
+            />
+          </>
+        ) : issued ? (
+          <>
+            <label className="mt-4 block text-sm font-medium" htmlFor="dispatcher-code">
+              Код из письма
+            </label>
+            <input
+              id="dispatcher-code"
+              inputMode="numeric"
+              pattern="[0-9]{6}"
+              maxLength={6}
+              required
+              autoComplete="one-time-code"
+              value={code}
+              onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+              className="mt-2 w-full rounded-xl border border-line px-3 py-2.5 tracking-widest outline-none focus:border-ink"
+            />
+            {issued.devCode ? (
+              <p className="mt-2 text-xs text-muted">Код для локальной отладки: {issued.devCode}</p>
+            ) : null}
+          </>
+        ) : null}
         {error ? <p className="mt-3 text-sm text-red-700">{error}</p> : null}
         <button
           type="submit"
           disabled={loading}
           className="mt-6 w-full rounded-full bg-bee py-3 text-sm font-semibold disabled:opacity-50"
         >
-          {loading ? 'Входим…' : 'Войти'}
+          {loading ? 'Входим…' : method === 'password' || issued ? 'Войти' : 'Получить код'}
         </button>
+        {method === 'code' && issued ? (
+          <button
+            type="button"
+            onClick={() => {
+              setIssued(null);
+              setCode('');
+            }}
+            className="mt-3 w-full text-sm text-muted underline"
+          >
+            Другая почта
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              setMethod(method === 'code' ? 'password' : 'code');
+              setIssued(null);
+              setCode('');
+              setPassword('');
+            }}
+            className="mt-3 w-full text-sm text-muted underline"
+          >
+            {method === 'code' ? 'Войти паролем' : 'Войти по коду из письма'}
+          </button>
+        )}
       </form>
     </main>
   );

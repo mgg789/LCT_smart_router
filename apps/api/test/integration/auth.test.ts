@@ -191,6 +191,22 @@ describe('auth-engine', () => {
     assert.equal(withCorrect.status, 401, 'an exhausted code must stay unusable');
   });
 
+  it('signs the dispatcher in by email code on the same account as the password path', async () => {
+    const email = String(process.env.DISPATCHER_EMAIL);
+    const code = await codeFor(email);
+    const response = await post('/api/v1/auth/login-code/verify', {
+      email,
+      code,
+      role: 'dispatcher',
+    });
+    assert.equal(response.status, 201);
+    const body = (await response.json()) as { token: string; role: string };
+    assert.equal(body.role, 'dispatcher');
+
+    const session = await get('/api/v1/auth/session', body.token);
+    assert.equal(((await session.json()) as { role: string }).role, 'dispatcher');
+  });
+
   it('signs the dispatcher in by password without touching SMTP', async () => {
     const response = await post('/api/v1/auth/dispatcher/password', {
       email: process.env.DISPATCHER_EMAIL,
