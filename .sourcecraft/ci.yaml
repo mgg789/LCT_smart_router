@@ -46,6 +46,21 @@ workflows:
               - apk add --no-cache openssh-client bash python3
               - chmod +x scripts/ci/ssh-deploy.sh
               - ./scripts/ci/ssh-deploy.sh
+      - name: deploy-smtp
+        needs: [lint, test-js, test-core, secrets, mojibake]
+        env:
+          SMTP_DEPLOY_SSH_KEY: ${{ secrets.SMTP_DEPLOY_SSH_KEY }}
+          SMTP_DEPLOY_HOST: "194.87.202.172"
+          SMTP_DEPLOY_USER: "deploy"
+          SMTP_DEPLOY_PORT: "22"
+          SMTP_APP_DIR: "/home/deploy/smtp"
+        cubes:
+          - name: deploy-smtp-host
+            image: docker.io/library/alpine:3.21
+            script:
+              - apk add --no-cache openssh-client bash python3 tar
+              - chmod +x scripts/ci/ssh-deploy-smtp.sh scripts/ci/deploy-smtp-remote.sh
+              - ./scripts/ci/ssh-deploy-smtp.sh
 
 tasks:
   - name: lint

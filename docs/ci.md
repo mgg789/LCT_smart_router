@@ -35,12 +35,19 @@ pull request не запускаются.
 
 ## Deploy
 
-`cd` по SSH заходит на хост MGG с тем же compose-путём, что и скилл
-`mgg-server-deploy`: fast-forward `main` в `/home/mgg/navix`, затем
+`cd` по SSH заходит на два хоста одним push в `main`:
+
+1. MGG — тот же compose-путь, что и скилл `mgg-server-deploy`: fast-forward
+   `main` в `/home/mgg/navix`, затем
 
 ```bash
 docker compose -f docker-compose.yml up -d --build --remove-orphans
 ```
+
+2. SMTP — `scripts/ci/ssh-deploy-smtp.sh` заливает `infra/smtp/` на
+   `deploy@194.87.202.172` и вызывает идемпотентный apply. Полный clone
+   монорепы на почтовом хосте не нужен. Если раннер SourceCraft не достучится
+   до `:22` SMTP-хоста, деплой идёт прыжком `SourceCraft → MGG:2222 → SMTP:22`.
 
 Корневой [docker-compose.yml](../docker-compose.yml) включает
 `infra/docker-compose.yml`, чтобы скилл находил контур, не зная про `infra/`.
@@ -65,10 +72,16 @@ docker compose -f docker-compose.yml up -d --build --remove-orphans
 
 ### Секреты и разовые настройки хоста
 
-Создайте в SourceCraft секрет репозитория с именем **`MGG_DEPLOY_SSH_KEY`**: приватная
-половина deploy-only SSH-ключа, публичная половина которого лежит в
-`mgg@178.140.207.217` → `~/.ssh/authorized_keys`. Ключ не коммитить, на доску не
-класть, в командную память не писать.
+Создайте в SourceCraft секреты репозитория:
+
+- **`MGG_DEPLOY_SSH_KEY`** — приватная половина deploy-only SSH-ключа, публичная
+  половина которого лежит в `mgg@178.140.207.217` → `~/.ssh/authorized_keys`.
+- **`SMTP_DEPLOY_SSH_KEY`** — отдельный deploy-only ключ
+  (`~/.ssh/navix_smtp_ci` на машине, которая его создала). Публичная половина
+  уже в `deploy@194.87.202.172` → `~/.ssh/authorized_keys`. Не используйте
+  личный ключ ноутбука и не пароль root.
+
+Ключи не коммитить, на доску не класть, в командную память не писать.
 
 Поле Value в UI SourceCraft часто схлопывает переносы строк. Тогда CD пишет
 `Load key … error in libcrypto` и дальше `Permission denied` — это не пароль

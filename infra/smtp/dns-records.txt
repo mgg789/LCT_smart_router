@@ -1,0 +1,9 @@
+# Publish these at Timeweb for mail.droidje.com. A/PTR/MX already exist.
+# mail.droidje.com. TXT
+v=spf1 ip4:194.87.202.172 -all
+
+# navix._domainkey.mail.droidje.com. TXT
+v=DKIM1; h=sha256; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAu2fyYIenrsiVWrax6SZRpOd81jUX2lzYu0eViIHPE6Kc2E7LXck5QnE45qcSIzoTLuII/9n2jg+dAhx/hVM4sDmWgtkxY7P77uA6kkfIgZziPJrvmqD2Q5uPzDS4Tt6BwTD9pXZUgriPw+WHyZvt7Y0LjZtaiHdKcwmiOEowvyDc/ZYVibMBSX0YD0qbf7YFFh2gqmI8Sbo/IcfV2mzCN+Hnd4jJa5PTeKOKDKed+QZCVUk3t+43/LlW/hhMQc94qh9y/E//1XCjEkLIPhqS457ftzQE16I4+3ViDND2ek34aIvw3++9M1ZixbSCiS7taWqFX3jqF5HgFmtYxo0D1wIDAQAB
+
+# _dmarc.mail.droidje.com. TXT
+v=DMARC1; p=quarantine; adkim=s; aspf=s;

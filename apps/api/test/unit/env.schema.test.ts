@@ -49,6 +49,14 @@ describe('environment validation', () => {
     assert.throws(() => validateEnv({ DATABASE_URL: REQUIRED.DATABASE_URL }), /DISPATCHER_EMAIL/);
   });
 
+  it('refuses a partial SMTP configuration', () => {
+    assert.throws(
+      () => validateEnv({ ...REQUIRED, SMTP_HOST: '127.0.0.1', SMTP_USER: 'navix-sys' }),
+      /SMTP_PASSWORD/,
+    );
+    assert.doesNotThrow(() => validateEnv({ ...REQUIRED }));
+  });
+
   it('refuses to expose login codes in production', () => {
     // An exposed code is a complete authentication bypass, so this is a hard stop rather
     // than a warning.
