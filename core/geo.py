@@ -7,6 +7,7 @@ explicitly; walking or driving is never silently substituted for public transpor
 import hashlib
 import heapq
 import json
+import logging
 import math
 import unicodedata
 from dataclasses import dataclass
@@ -132,6 +133,10 @@ class TravelSource(Protocol):
     ) -> TravelQuote | None:
         """Return one route quote or ``None`` when the route is unreachable."""
         ...
+
+
+class TravelUnavailable(ValueError):
+    """Provider failure with a safe diagnostic code, distinct from a proven NoRoute."""
 
 
 def quote_at(
@@ -390,6 +395,7 @@ class MixedTravel:
             ).encode("utf-8")
         )
         self.provenance: TravelProvenance = getattr(overlay, "provenance", "route_api")
+        self._warned_profiles: set[Transport] = set()
 
     def _needs_overlay(
         self, origin: GeoPoint, destination: GeoPoint, quote: TravelQuote | None
@@ -411,10 +417,21 @@ class MixedTravel:
     ) -> TravelQuote | None:
         """Prefer exact road-graph costs; overlay only the legs that are not road-quality."""
         base = self.travel.quote(origin, destination, profile)
-        if not self._needs_overlay(origin, destination, base):
+        if (base is not None and base.distance_m == 0) or not self._needs_overlay(
+            origin, destination, base
+        ):
             return base
-        upgraded = self.overlay.quote(origin, destination, profile)
-        return upgraded if upgraded is not None else base
+        try:
+            return self.overlay.quote(origin, destination, profile)
+        except TravelUnavailable as exc:
+            if profile not in self._warned_profiles:
+                logging.getLogger(__name__).warning(
+                    "TRAVEL_OVERLAY_UNAVAILABLE profile=%s code=%s; using local travel",
+                    profile,
+                    exc,
+                )
+                self._warned_profiles.add(profile)
+            return base
 
 
 class AddressCandidate(Record):
