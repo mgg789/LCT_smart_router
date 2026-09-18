@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   DEMO_TOASTS,
+  TOAST_CARD_HEIGHT,
+  TOAST_GAP,
+  TOAST_STACK_BOTTOM,
+  TOAST_STACK_TOP,
   clampProgress,
   dismissToast,
   getToasts,
@@ -11,6 +15,7 @@ import {
   toastFromAlert,
   updateToast,
   upsertNewToasts,
+  visibleToastLimit,
 } from './toasts';
 
 afterEach(() => {
@@ -44,18 +49,18 @@ describe('toast stack', () => {
 
   it('does not revive a dismissed id on upsert, and seeds the six Figma kinds', () => {
     seedDemoToasts();
-    expect(getToasts().map((item) => item.kind)).toEqual([
-      'alert',
-      'system',
-      'progress',
-      'ai',
-      'chat',
-      'route',
-    ]);
-    expect(DEMO_TOASTS).toHaveLength(6);
+    expect(getToasts()[0]?.kind).toBe('alert');
+    expect(getToasts().length).toBeGreaterThan(visibleToastLimit());
+    expect(new Set(DEMO_TOASTS.map((item) => item.kind)).size).toBe(6);
     dismissToast('demo-alert');
     upsertNewToasts(DEMO_TOASTS);
     expect(getToasts().some((item) => item.id === 'demo-alert')).toBe(false);
+  });
+
+  it('fits an exact stack of cards to the main content bottom edge', () => {
+    const limit = visibleToastLimit();
+    expect(limit).toBe(6);
+    expect(TOAST_STACK_TOP + limit * TOAST_CARD_HEIGHT + (limit - 1) * TOAST_GAP).toBe(TOAST_STACK_BOTTOM);
   });
 
   it('maps an open alert onto a yellow toast', () => {

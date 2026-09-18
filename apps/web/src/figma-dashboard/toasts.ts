@@ -4,6 +4,14 @@ import { factorLabel } from '../lib/reasons';
 
 export type ToastKind = 'system' | 'progress' | 'ai' | 'chat' | 'route' | 'alert';
 
+export const TOAST_CARD_HEIGHT = 132;
+export const TOAST_GAP = 28;
+export const TOAST_STACK_TOP = 115;
+export const TOAST_STACK_BOTTOM = 1047;
+export const TOAST_LEFT = 1465;
+export const TOAST_WIDTH = 425;
+export const TOAST_EXIT_X = 520;
+
 export type ToastNotification = {
   id: string;
   kind: ToastKind;
@@ -77,6 +85,20 @@ export const DEMO_TOASTS: readonly ToastDraft[] = [
     body: 'Выбранная политика покрывает на 4 заявки меньше, чем прошлая',
     createdAt: 6,
   },
+  {
+    id: 'demo-system-2',
+    kind: 'system',
+    title: 'Системное сообщение',
+    body: 'План опубликован. Сравнение политик можно пересчитать без смены активного.',
+    createdAt: 7,
+  },
+  {
+    id: 'demo-route-2',
+    kind: 'route',
+    title: 'Маршрут обновлён',
+    body: 'Бригада 2 получила новый порядок остановок после пересчёта.',
+    createdAt: 8,
+  },
 ];
 
 function emit(): void {
@@ -87,6 +109,14 @@ function emit(): void {
 export function clampProgress(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Math.min(100, Math.max(0, value));
+}
+
+/**
+ * How many cards fit between the stack top and the main content bottom edge.
+ */
+export function visibleToastLimit(): number {
+  const span = TOAST_STACK_BOTTOM - TOAST_STACK_TOP;
+  return Math.max(1, Math.floor((span + TOAST_GAP) / (TOAST_CARD_HEIGHT + TOAST_GAP)));
 }
 
 /**

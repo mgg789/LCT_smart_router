@@ -82,13 +82,7 @@ export function PolicyComparisonView({
           className="flex h-[67px] items-center justify-center rounded-[20px] bg-figma-bee px-[28px] transition-transform duration-150 hover:scale-[1.01] disabled:opacity-50"
         >
           <span className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
-            {recorded
-              ? 'Показать записанное сравнение'
-              : loading
-                ? 'Считаем…'
-                : comparison
-                  ? 'Пересчитать'
-                  : 'Сравнить'}
+            {loading ? 'Считаем…' : comparison ? 'Пересчитать' : 'Сравнить'}
           </span>
         </button>
       </div>

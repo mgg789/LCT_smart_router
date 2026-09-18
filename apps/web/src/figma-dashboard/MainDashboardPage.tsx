@@ -535,7 +535,7 @@ function NotificationControl({
   return (
     <div
       data-notif-panel
-      className="pointer-events-none absolute z-50"
+      className="pointer-events-none absolute z-[90]"
       style={{ left: NOTIF_PANEL_LEFT, top: NOTIF_PANEL_TOP, width: 363, height: 51 }}
     >
       <motion.button
