@@ -12,7 +12,6 @@ import {
 } from '../domain/regions';
 import { useDashboard } from '../hooks/useDashboard';
 import { type CaseExplanation, explainSelection } from '../lib/explanations';
-import { skillLabel } from '../lib/reasons';
 import { formatDurationMin } from '../lib/time';
 import { FIGMA_ASSETS } from './assets';
 import {
@@ -37,6 +36,7 @@ import {
   nextRouterSettings,
   notificationsFromSnapshot,
   policyLabel,
+  requestUrgency,
   rightPanelMode,
 } from './fromSnapshot';
 import { FigmaIcon, FigmaText } from './primitives';
@@ -200,6 +200,7 @@ export function MainDashboardPage() {
   const lunchOn = dash.snapshot?.lunchesEnabled ?? false;
   const trafficOn = dash.snapshot?.routerSettings?.trafficEnabled ?? false;
   const requestCount = view?.requestCount ?? MAIN_DASHBOARD.engineers.reduce((sum, item) => sum + item.requestCount, 0);
+  const totalKm = view?.totalKm ?? MAIN_DASHBOARD.engineers.reduce((sum, item) => sum + item.km, 0);
   const planLabel =
     view?.planLabel ??
     `${MAIN_DASHBOARD.unassigned.title.replace('заявки без назначения', 'без назначения')} - план от 11:42`;
@@ -358,6 +359,7 @@ export function MainDashboardPage() {
           engineers={visibleEngineers}
           totalCount={roster.length}
           requestCount={requestCount}
+          totalKm={totalKm}
           planLabel={planLabel}
           unassignedTitle={view?.unassignedTitle ?? MAIN_DASHBOARD.unassigned.title}
           unassignedReason={view?.unassignedReason ?? MAIN_DASHBOARD.unassigned.reason}
@@ -1053,6 +1055,7 @@ function EngineersColumn({
   engineers,
   totalCount,
   requestCount,
+  totalKm,
   planLabel,
   unassignedTitle,
   unassignedReason,
@@ -1068,6 +1071,7 @@ function EngineersColumn({
   engineers: EngineerCard[];
   totalCount: number;
   requestCount: number;
+  totalKm: number;
   planLabel: string;
   unassignedTitle: string;
   unassignedReason: string;
@@ -1091,9 +1095,21 @@ function EngineersColumn({
       className="absolute left-[180px] w-[411px] overflow-hidden rounded-[20px] bg-white"
       style={{ top: PANEL_TOP, height: PANEL_HEIGHT }}
     >
-      <FigmaText className="figma-nowrap absolute left-[30px] top-[30px] z-0 font-extrabold text-[28px] tracking-[-0.476px] text-figma-ink">
-        {requestCountLabel(requestCount)}
-      </FigmaText>
+      <div className="absolute left-[30px] top-[30px] z-0 flex items-center">
+        <FigmaText className="figma-nowrap font-extrabold text-[28px] tracking-[-0.476px] text-figma-ink">
+          {requestCountLabel(requestCount)}
+        </FigmaText>
+        <FigmaIcon
+          src={FIGMA_ASSETS.dotEngineers}
+          alt=""
+          width={5}
+          height={5}
+          className="mx-[10px]"
+        />
+        <FigmaText className="figma-nowrap font-extrabold text-[28px] tracking-[-0.476px] text-figma-ink">
+          {totalKm} км
+        </FigmaText>
+      </div>
       <FigmaText className="figma-nowrap absolute left-[30px] top-[68px] z-0 font-semibold text-[18px] tracking-[-0.306px] text-figma-muted">
         {planLabel}
       </FigmaText>
@@ -1360,14 +1376,15 @@ function RegionSwitch({
   onToggle: () => void;
   onSelect: (id: RegionSelection) => void;
 }) {
-  const extra = Math.max(0, regions.length - 1) * 40;
+  const listMax = 220;
+  const listHeight = Math.min(regions.length * 40, listMax);
   return (
     <motion.div
       data-region-panel
       className="absolute left-[16px] top-[16px] z-30 w-max overflow-hidden rounded-[27px] bg-white"
       initial={false}
       animate={{
-        height: open ? 51 + extra + 16 : 51,
+        height: open ? 51 + listHeight + 8 : 51,
         boxShadow: open ? '0 22px 48px rgba(39, 41, 48, 0.18)' : '0 8px 22px rgba(39, 41, 48, 0.12)',
       }}
       transition={
@@ -1409,14 +1426,17 @@ function RegionSwitch({
           </motion.span>
         </motion.button>
       </div>
-      <div className={`relative ${open ? '' : 'pointer-events-none'}`}>
-        {regions.map((region, index) => (
+      <div
+        className={`overflow-y-auto [scrollbar-width:thin] ${open ? '' : 'pointer-events-none'}`}
+        style={{ height: listHeight }}
+        onWheel={(event) => event.stopPropagation()}
+      >
+        {regions.map((region) => (
           <motion.button
             key={region.id}
             type="button"
             onClick={() => onSelect(region.id)}
             className="flex h-[40px] w-full items-center px-[16px] text-left"
-            style={{ display: index === 0 && region.id === selectedId && !open ? 'none' : undefined }}
             whileHover={motionOn ? { x: 4 } : undefined}
             transition={{ duration: 0.16 }}
           >
@@ -1562,7 +1582,7 @@ function RouteStopTopic({
       <FigmaText className="figma-nowrap absolute left-0 top-[46px] w-[240px] text-center font-semibold text-[24px] tracking-[-0.408px] text-black">
         {stop.time}
       </FigmaText>
-      <p className="absolute left-0 top-[78px] w-[240px] text-center font-semibold text-[18px] leading-[22px] tracking-[-0.306px] text-figma-muted">
+      <p className="absolute left-0 top-[78px] h-[44px] w-[240px] overflow-hidden text-center font-semibold text-[18px] leading-[22px] tracking-[-0.306px] text-figma-muted line-clamp-2">
         {stop.place}
       </p>
       <FigmaText
@@ -1589,7 +1609,7 @@ function DetailPanel({
   motionOn: boolean;
   onClose: () => void;
 }) {
-  const skill = request?.requiredSkill ? skillLabel(request.requiredSkill) : null;
+  const urgency = request ? requestUrgency(request) : null;
   const equipment = request
     ? request.requiredEquipment
       ? 'С оборудованием'
@@ -1628,7 +1648,7 @@ function DetailPanel({
               {request.id}
             </p>
             <div className="mt-[16px] flex flex-wrap gap-[12px]">
-              {skill ? <PanelTag label={skill} /> : null}
+              {urgency ? <PanelTag label={urgency.label} tone={urgency.tone} /> : null}
               {equipment ? <PanelTag label={equipment} /> : null}
             </div>
             <div className="mt-[16px] flex min-h-[67px] w-full items-center rounded-[20px] bg-figma-dim px-[20px] py-[16px]">
@@ -1693,10 +1713,17 @@ function DetailPanel({
   );
 }
 
-function PanelTag({ label }: { label: string }) {
+function PanelTag({
+  label,
+  tone = 'neutral',
+}: {
+  label: string;
+  tone?: 'neutral' | 'urgent' | 'emergency';
+}) {
+  const textClass = tone === 'emergency' ? 'text-figma-danger' : 'text-figma-ink';
   return (
     <div className="flex items-center justify-center rounded-[20px] bg-figma-track px-[20px] py-[12px]">
-      <FigmaText className="figma-nowrap font-medium text-[20px] tracking-[-0.34px] text-figma-ink">
+      <FigmaText className={`figma-nowrap font-medium text-[20px] tracking-[-0.34px] ${textClass}`}>
         {label}
       </FigmaText>
     </div>

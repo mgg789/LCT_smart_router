@@ -8,7 +8,9 @@ import {
   notificationFromAlert,
   notificationsFromSnapshot,
   policyLabel,
+  requestUrgency,
   rightPanelMode,
+  routeStopAddress,
 } from './fromSnapshot';
 
 describe('Figma MAIN snapshot mapper', () => {
@@ -37,6 +39,18 @@ describe('Figma MAIN snapshot mapper', () => {
     expect(rightPanelMode(FOCUS_ENGINEER_ID, null)).toBe('plan');
     expect(rightPanelMode(FOCUS_ENGINEER_ID, 'req-1')).toBe('request');
     expect(rightPanelMode(null, null)).toBeNull();
+    expect(view.totalKm).toBeGreaterThan(0);
+    const jobStop = view.engineers.find((item) => item.id === FOCUS_ENGINEER_ID)?.stops.find(
+      (stop) => stop.requestId,
+    );
+    expect(jobStop?.place).not.toMatch(/Подключение|Авария|локальн/i);
+    expect(routeStopAddress('Город Москва, ул. Международная, д. 28')).toBe('ул. Международная, д. 28');
+    expect(requestUrgency({ priority: 'normal', requiredSkill: 'connection' }).label).toBe('Базовая');
+    expect(requestUrgency({ priority: 'urgent', requiredSkill: 'connection' }).label).toBe('Срочная');
+    expect(requestUrgency({ priority: 'normal', requiredSkill: 'emergency' })).toEqual({
+      label: 'Экстренная',
+      tone: 'emergency',
+    });
     expect(view.displayedRequest.number).toMatch(/^Заявка № /);
     expect(view.unassignedTitle).toMatch(/без назначения/);
     expect(alerts.count).toBe(1);

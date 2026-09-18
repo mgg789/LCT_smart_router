@@ -153,6 +153,7 @@ export function dashboardViewFromSnapshot(
   unassignedReason: string;
   firstUnassignedId: string | null;
   engineers: EngineerCard[];
+  totalKm: number;
   displayedEngineerId: string | null;
   displayedRequest: EngineerRequest;
 } {
@@ -197,6 +198,7 @@ export function dashboardViewFromSnapshot(
           : 'Все заявки назначены',
     firstUnassignedId: firstUnassigned?.id ?? null,
     engineers,
+    totalKm: engineers.reduce((sum, item) => sum + item.km, 0),
     displayedEngineerId,
     displayedRequest: request
       ? requestPanelFromSnapshot(request, assignment, explanation?.title ?? null)
@@ -291,14 +293,35 @@ function stopToCard(snapshot: DashboardSnapshot, stop: PlanStopView): RouteStop 
     return { time: formatClock(stop.startAt), place: 'Ожидание окна', status: 'ожидание окна', requestId: null };
   }
   const request = stop.requestId ? requestById(snapshot, stop.requestId) : null;
-  const title = request?.workTypeTitle ?? 'Заявка';
-  const place = request ? `${title} - ${shortAddress(request.addressText)}` : title;
   return {
     time: formatClock(stop.startAt),
-    place,
+    place: request ? routeStopAddress(request.addressText) : 'Заявка',
     status: stopStatus(request),
     requestId: stop.requestId,
   };
+}
+
+/**
+ * Street address for a route topic: no work-type prefix, city prefix dropped.
+ */
+export function routeStopAddress(address: string): string {
+  return address.replace(/^Город\s+[^,]+,\s*/i, '').trim() || address;
+}
+
+/**
+ * Dispatcher urgency chip. Emergency skill is the only third signal in the contract.
+ */
+export function requestUrgency(request: Pick<RequestView, 'priority' | 'requiredSkill'>): {
+  label: 'Базовая' | 'Срочная' | 'Экстренная';
+  tone: 'neutral' | 'urgent' | 'emergency';
+} {
+  if (request.requiredSkill === 'emergency') {
+    return { label: 'Экстренная', tone: 'emergency' };
+  }
+  if (request.priority === 'urgent') {
+    return { label: 'Срочная', tone: 'urgent' };
+  }
+  return { label: 'Базовая', tone: 'neutral' };
 }
 
 function stopStatus(request: RequestView | null): string {
