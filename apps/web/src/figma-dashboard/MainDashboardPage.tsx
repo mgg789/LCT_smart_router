@@ -39,6 +39,7 @@ import {
   requestUrgency,
   rightPanelMode,
 } from './fromSnapshot';
+import { PolicyComparisonView } from './PolicyComparisonView';
 import { FigmaIcon, FigmaText } from './primitives';
 
 const NAV_ICONS = {
@@ -287,15 +288,12 @@ export function MainDashboardPage() {
           motionOn={motionOn}
           onSelect={(id) => {
             setActiveNav(id);
-            if (id === 'policy') {
-              setNotifOpen(false);
-              setUserMenuOpen(false);
-              setPolicyOpen(true);
-            }
+            setPolicyOpen(false);
             if (id === 'alerts') {
-              setPolicyOpen(false);
               setUserMenuOpen(false);
               setNotifOpen(true);
+            } else {
+              setNotifOpen(false);
             }
           }}
         />
@@ -355,6 +353,19 @@ export function MainDashboardPage() {
         >
           {view?.dateLabel ?? MAIN_DASHBOARD.dateLabel}
         </FigmaText>
+        {activeNav === 'policy' ? (
+          <PolicyComparisonView
+            snapshot={dash.snapshot}
+            comparison={dash.policyComparison}
+            loading={dash.policyComparisonLoading}
+            error={dash.policyComparisonError}
+            recorded={dash.isDemo}
+            readOnly={dash.source === 'cached'}
+            onRefresh={() => void dash.refreshPolicyComparison()}
+          />
+        ) : null}
+        {activeNav !== 'policy' ? (
+        <>
         <EngineersColumn
           engineers={visibleEngineers}
           totalCount={roster.length}
@@ -430,6 +441,8 @@ export function MainDashboardPage() {
             />
           ) : null}
         </AnimatePresence>
+        </>
+        ) : null}
       </div>
     </div>
   );
@@ -1381,7 +1394,7 @@ function RegionSwitch({
   return (
     <motion.div
       data-region-panel
-      className="absolute left-[16px] top-[16px] z-30 w-max overflow-hidden rounded-[27px] bg-white"
+      className="absolute left-[16px] top-[16px] z-30 flex w-max min-w-max flex-col overflow-hidden rounded-[27px] bg-white"
       initial={false}
       animate={{
         height: open ? 51 + listHeight + 8 : 51,
@@ -1396,11 +1409,11 @@ function RegionSwitch({
           : { duration: 0 }
       }
     >
-      <div className="relative h-[51px] w-full">
+      <div className="flex h-[51px] w-max min-w-full shrink-0 items-center gap-[8px] pl-[16px] pr-[4px]">
         <motion.button
           type="button"
           onClick={onToggle}
-          className="absolute inset-y-0 left-0 right-[48px] px-[16px] text-left"
+          className="shrink-0 text-left"
           whileHover={motionOn ? { x: 2 } : undefined}
           transition={{ duration: 0.16 }}
         >
@@ -1411,7 +1424,7 @@ function RegionSwitch({
         <motion.button
           type="button"
           onClick={onToggle}
-          className="absolute right-[4px] top-[4px] size-[43px]"
+          className="size-[43px] shrink-0"
           whileHover={motionOn ? { scale: 1.08 } : undefined}
           whileTap={motionOn ? { scale: 0.96 } : undefined}
           transition={{ duration: 0.16 }}
@@ -1426,30 +1439,32 @@ function RegionSwitch({
           </motion.span>
         </motion.button>
       </div>
-      <div
-        className={`overflow-y-auto [scrollbar-width:thin] ${open ? '' : 'pointer-events-none'}`}
-        style={{ height: listHeight }}
-        onWheel={(event) => event.stopPropagation()}
-      >
-        {regions.map((region) => (
-          <motion.button
-            key={region.id}
-            type="button"
-            onClick={() => onSelect(region.id)}
-            className="flex h-[40px] w-full items-center px-[16px] text-left"
-            whileHover={motionOn ? { x: 4 } : undefined}
-            transition={{ duration: 0.16 }}
-          >
-            <FigmaText
-              className={`figma-nowrap font-medium text-[18px] ${
-                region.id === selectedId ? 'text-figma-ink' : 'text-figma-muted'
-              }`}
+      {open ? (
+        <div
+          className="w-max min-w-full overflow-x-hidden overflow-y-auto [scrollbar-width:thin]"
+          style={{ height: listHeight }}
+          onWheel={(event) => event.stopPropagation()}
+        >
+          {regions.map((region) => (
+            <motion.button
+              key={region.id}
+              type="button"
+              onClick={() => onSelect(region.id)}
+              className="flex h-[40px] w-max min-w-full items-center px-[16px] text-left"
+              whileHover={motionOn ? { x: 4 } : undefined}
+              transition={{ duration: 0.16 }}
             >
-              {region.label}
-            </FigmaText>
-          </motion.button>
-        ))}
-      </div>
+              <FigmaText
+                className={`figma-nowrap font-medium text-[18px] ${
+                  region.id === selectedId ? 'text-figma-ink' : 'text-figma-muted'
+                }`}
+              >
+                {region.label}
+              </FigmaText>
+            </motion.button>
+          ))}
+        </div>
+      ) : null}
     </motion.div>
   );
 }
@@ -1464,7 +1479,18 @@ function RouteCard({
   onSelectRequest: (requestId: string) => void;
 }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
+  const skipClick = useRef(false);
+  const drag = useRef<{
+    kind: 'panel' | 'thumb';
+    startX: number;
+    startScroll: number;
+    scale: number;
+    overflow: number;
+    track: number;
+    thumbWidth: number;
+  } | null>(null);
   const [thumb, setThumb] = useState({ left: 174, width: 321, visible: false });
+  const [grabbing, setGrabbing] = useState(false);
 
   const updateThumb = () => {
     const el = scrollerRef.current;
@@ -1493,13 +1519,67 @@ function RouteCard({
     };
   }, [engineer.id, engineer.stops.length]);
 
+  const beginDrag = (kind: 'panel' | 'thumb', clientX: number) => {
+    const el = scrollerRef.current;
+    if (!el) return false;
+    const overflow = el.scrollWidth - el.clientWidth;
+    if (overflow <= 0) return false;
+    const scale = el.getBoundingClientRect().width / el.offsetWidth || 1;
+    skipClick.current = false;
+    drag.current = {
+      kind,
+      startX: clientX,
+      startScroll: el.scrollLeft,
+      scale,
+      overflow,
+      track: 691,
+      thumbWidth: thumb.width,
+    };
+    setGrabbing(true);
+    return true;
+  };
+
+  useEffect(() => {
+    if (!grabbing) return;
+    const onMove = (event: PointerEvent) => {
+      const state = drag.current;
+      const el = scrollerRef.current;
+      if (!state || !el) return;
+      const dx = (event.clientX - state.startX) / state.scale;
+      if (Math.abs(dx) > 4) skipClick.current = true;
+      if (state.kind === 'thumb') {
+        const travel = state.track - state.thumbWidth;
+        el.scrollLeft = state.startScroll + (dx / Math.max(1, travel)) * state.overflow;
+      } else {
+        el.scrollLeft = state.startScroll - dx;
+      }
+    };
+    const onUp = () => {
+      drag.current = null;
+      setGrabbing(false);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+    };
+  }, [grabbing]);
+
   return (
     <motion.section
-      className="absolute left-[623px] top-[768px] h-[279px] w-[751px] overflow-hidden rounded-[20px] bg-white"
+      className={`absolute left-[623px] top-[768px] h-[279px] w-[751px] overflow-hidden rounded-[20px] bg-white ${
+        grabbing ? 'cursor-grabbing select-none' : thumb.visible ? 'cursor-grab' : ''
+      }`}
       initial={motionOn ? { opacity: 0, y: 20 } : false}
       animate={{ opacity: 1, y: 0 }}
       exit={motionOn ? { opacity: 0, y: 28 } : undefined}
       transition={motionOn ? { duration: 0.38, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
+      onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        if ((event.target as HTMLElement).closest('[data-route-thumb]')) return;
+        if (beginDrag('panel', event.clientX)) event.preventDefault();
+      }}
     >
       <AnimatePresence mode="wait">
         <motion.div
@@ -1510,10 +1590,10 @@ function RouteCard({
           transition={fadeSoft}
           className="absolute inset-0"
         >
-          <FigmaText className="figma-nowrap absolute left-[30px] top-[30px] font-bold text-[28px] tracking-[-0.476px] text-figma-ink">
+          <FigmaText className="figma-nowrap pointer-events-none absolute left-[30px] top-[30px] font-bold text-[28px] tracking-[-0.476px] text-figma-ink">
             Маршрут {engineer.name.split(' ')[0]} {engineer.name.split(' ')[1]}
           </FigmaText>
-          <FigmaText className="figma-nowrap absolute left-[30px] top-[68px] font-semibold text-[18px] tracking-[-0.306px] text-figma-muted">
+          <FigmaText className="figma-nowrap pointer-events-none absolute left-[30px] top-[68px] font-semibold text-[18px] tracking-[-0.306px] text-figma-muted">
             {engineer.routeUpdated}
           </FigmaText>
           <div ref={scrollerRef} className="route-scroll absolute inset-x-0 top-[110px] bottom-[22px] overflow-x-auto">
@@ -1532,7 +1612,10 @@ function RouteCard({
                     stop={stop}
                     index={index}
                     motionOn={motionOn}
-                    onSelectRequest={onSelectRequest}
+                    onSelectRequest={(requestId) => {
+                      if (skipClick.current) return;
+                      onSelectRequest(requestId);
+                    }}
                   />
                 ))}
               </div>
@@ -1541,10 +1624,20 @@ function RouteCard({
         </motion.div>
       </AnimatePresence>
       {thumb.visible ? (
-        <div
-          className="pointer-events-none absolute top-[267px] h-[6px] rounded-[13px] bg-figma-hint"
-          style={{ left: thumb.left, width: thumb.width }}
-        />
+        <button
+          type="button"
+          data-route-thumb
+          aria-label="Прокрутить маршрут"
+          className="absolute top-[258px] flex h-[21px] items-start justify-center"
+          style={{ left: thumb.left, width: thumb.width, cursor: grabbing ? 'grabbing' : 'grab' }}
+          onPointerDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            beginDrag('thumb', event.clientX);
+          }}
+        >
+          <span className="mt-[9px] h-[6px] w-full rounded-[13px] bg-figma-hint" />
+        </button>
       ) : null}
     </motion.section>
   );

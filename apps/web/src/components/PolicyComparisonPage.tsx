@@ -1,5 +1,11 @@
-import type { DashboardSnapshot, PolicyComparisonResponse, StrategyId } from '../api/types';
-import { POLICY_DESCRIPTIONS, POLICY_LABELS } from '../lib/reasons';
+import type { DashboardSnapshot, PolicyComparisonResponse } from '../api/types';
+import {
+  perAssignmentDuration,
+  perAssignmentKm,
+  percentVsFifo,
+  strategyDescription,
+  strategyLabel,
+} from '../lib/policyComparison';
 import { formatClock, formatDurationMin, formatKm } from '../lib/time';
 
 interface PolicyComparisonPageProps {
@@ -290,30 +296,3 @@ function MetricWithSubline({ value, subline }: MetricWithSublineProps) {
   );
 }
 
-function perAssignmentKm(distanceKm: number, assignedCount: number): string {
-  return assignedCount > 0
-    ? `${(distanceKm / assignedCount).toFixed(1).replace('.', ',')} км/назначение`
-    : '— км/назначение';
-}
-
-function perAssignmentDuration(durationSec: number, assignedCount: number): string {
-  return assignedCount > 0
-    ? `${formatDurationMin(durationSec / assignedCount)}/назначение`
-    : '— мин/назначение';
-}
-
-function percentVsFifo(value: number | null, baseline: number | null | undefined): string | null {
-  if (value === null || baseline === null || baseline === undefined || baseline === 0) {
-    return null;
-  }
-  const percent = Math.round(((value - baseline) / baseline) * 100);
-  return `${percent > 0 ? '+' : ''}${percent}%`;
-}
-
-function strategyLabel(strategyId: StrategyId): string {
-  return strategyId === 'baseline' ? 'Базовая из ТЗ' : (POLICY_LABELS[strategyId] ?? strategyId);
-}
-
-function strategyDescription(strategyId: StrategyId): string {
-  return POLICY_DESCRIPTIONS[strategyId] ?? strategyId;
-}

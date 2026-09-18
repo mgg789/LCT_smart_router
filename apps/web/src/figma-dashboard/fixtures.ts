@@ -21,7 +21,7 @@ export const NAV_ITEMS = [
   { id: 'requests', label: 'Заявки', icon: 'navRequests' },
   { id: 'engineers', label: 'Инженеры', icon: 'navEngineers' },
   { id: 'alerts', label: 'Алерты', icon: 'navAlerts' },
-  { id: 'policy', label: 'Политика', icon: 'navPolicy' },
+  { id: 'policy', label: 'Политики', icon: 'navPolicy' },
   { id: 'chats', label: 'Чаты', icon: 'navChats' },
   { id: 'ai', label: 'AI', icon: 'navAi' },
 ] as const;
