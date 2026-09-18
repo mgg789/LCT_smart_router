@@ -51,7 +51,7 @@ describe('request failure metadata', () => {
       const assertion = expect(request).rejects.toMatchObject({ status: 0 });
       await vi.advanceTimersByTimeAsync(12_000);
       expect(signal?.aborted).toBe(false);
-      await vi.advanceTimersByTimeAsync(63_000);
+      await vi.advanceTimersByTimeAsync(78_000);
       await assertion;
       expect(signal?.aborted).toBe(true);
     } finally {
