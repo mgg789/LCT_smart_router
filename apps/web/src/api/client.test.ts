@@ -127,6 +127,7 @@ const engineer = {
   homeLat: 55.74,
   homeLon: 37.6,
   hasAccount: false,
+  email: null,
   day: {
     engineerId: 'engineer-1',
     workDate: '2026-09-17',

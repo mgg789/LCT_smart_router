@@ -92,6 +92,7 @@ const engineerSchema = z.object({
   homeLat: z.number().nullable(),
   homeLon: z.number().nullable(),
   hasAccount: z.boolean(),
+  email: z.string().nullable(),
   day: engineerDaySchema.nullable(),
 });
 

@@ -11,6 +11,8 @@ export interface EngineerView {
   readonly homeLat: number | null;
   readonly homeLon: number | null;
   readonly hasAccount: boolean;
+  /** The login address, when the profile has one linked; null on imported brigades. */
+  readonly email: string | null;
 }
 
 /**
@@ -45,7 +47,9 @@ export interface EngineerDayView {
   };
 }
 
-export function toEngineerView(engineer: Engineer): EngineerView {
+export function toEngineerView(
+  engineer: Engineer & { account?: { email: string } | null },
+): EngineerView {
   return {
     id: engineer.id,
     version: engineer.version,
@@ -59,6 +63,7 @@ export function toEngineerView(engineer: Engineer): EngineerView {
     // A routing profile can exist without a login: the dispatcher may have imported the
     // engineer before an address was known (context/37 section 3.1).
     hasAccount: engineer.accountId !== null,
+    email: engineer.account?.email ?? null,
   };
 }
 
