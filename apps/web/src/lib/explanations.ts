@@ -55,11 +55,15 @@ function explainAssigned(
   const facts = assignment ? firstFactorFacts(assignment.reasons) : undefined;
   const stop = route?.stops.find((item) => item.requestId === request.id);
   const previousJob = previousRequest(snapshot, route, request.id);
-  const travelMin = minutesFromFacts(facts, 'travel_time_sec', stop && route ? inboundTravelSec(route, stop.sequence) : null);
-  const travelKm = numberFromFacts(facts, 'distance_km') ?? inboundDistanceKm(route, stop?.sequence ?? null);
+  const travelMin = minutesFromFacts(
+    facts,
+    'travel_time_sec',
+    stop && route ? inboundTravelSec(route, stop.sequence) : null,
+  );
+  const travelKm =
+    numberFromFacts(facts, 'distance_km') ?? inboundDistanceKm(route, stop?.sequence ?? null);
   const marginSec = numberFromFacts(facts, 'window_end_margin_sec');
-  const margin =
-    marginSec ?? (stop ? request.windowEndAt - stop.startAt : null);
+  const margin = marginSec ?? (stop ? request.windowEndAt - stop.startAt : null);
   const sameRegionIdle = idleInRegion(snapshot, request.region).filter(
     (item) => item.engineerId !== chosen?.id,
   );
@@ -142,7 +146,11 @@ function explainUnassigned(
           ? `Покрывающая политика сначала отдаёт остаток свободным в зоне, и только потом добавляет смены. ${idleNames.join(', ')} свободен, но в его смену заявка всё равно не встала — окно, доезд или уже занятый день не дали допустимого слота.`
           : `Свободный ${idleNames.join(', ')} не получил заявку: навык формально есть, но слот в смене не сошёлся по окну или доезду.`;
   } else if (idle.length) {
-    influence = `Свободные ${idle.map((item) => item.displayName).join(', ')} не подходят по навыку: заявка просит «${skillLabel(request.requiredSkill)}», у них ${unique(idle.flatMap((item) => item.skills)).map(skillLabel).join(', ') || 'нет нужных навыков'}.`;
+    influence = `Свободные ${idle.map((item) => item.displayName).join(', ')} не подходят по навыку: заявка просит «${skillLabel(request.requiredSkill)}», у них ${
+      unique(idle.flatMap((item) => item.skills))
+        .map(skillLabel)
+        .join(', ') || 'нет нужных навыков'
+    }.`;
   } else {
     influence = `Все, у кого есть «${skillLabel(request.requiredSkill)}», уже ведут маршрут, и bounded-поиск не нашёл, куда вставить ещё одну точку без поломки окна.`;
   }
@@ -168,7 +176,10 @@ function explainRoute(
     .map((stop) => requestById(snapshot, stop.requestId as string))
     .filter((item): item is RequestView => item !== null);
   const sequence = jobs
-    .map((job, index) => `${index + 1}) №${job.id} «${job.workTypeTitle ?? skillLabel(job.requiredSkill)}»`)
+    .map(
+      (job, index) =>
+        `${index + 1}) №${job.id} «${job.workTypeTitle ?? skillLabel(job.requiredSkill)}»`,
+    )
     .join('; ');
   const travelMin = Math.round(route.travelTimeSec / 60);
   const facts = [
@@ -240,7 +251,9 @@ function idleInRegion(snapshot: DashboardSnapshot, region: string | null) {
   const summaries = new Map(engineerSummaries(snapshot).map((item) => [item.engineerId, item]));
   return engineersInRegion(snapshot, region)
     .map((item) => summaries.get(item.id))
-    .filter((item): item is NonNullable<typeof item> => item !== undefined && item.assignedCount === 0);
+    .filter(
+      (item): item is NonNullable<typeof item> => item !== undefined && item.assignedCount === 0,
+    );
 }
 
 function previousRequest(
@@ -285,10 +298,7 @@ function firstFactorFacts(reasons: AssignmentReasons): Record<string, unknown> |
   return reasons.assignment?.factors[0]?.facts;
 }
 
-function numberFromFacts(
-  facts: Record<string, unknown> | undefined,
-  key: string,
-): number | null {
+function numberFromFacts(facts: Record<string, unknown> | undefined, key: string): number | null {
   const value = facts?.[key];
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }

@@ -12,7 +12,7 @@ pull request не запускаются.
 | Воркфлоу | Когда | Что |
 |---|---|---|
 | `ci` | push в `dev`; pull request в `dev` или `main` | lint, тесты, скан секретов, mojibake |
-| `cd` | push в `main` (после мержа) | те же проверки, затем compose build + deploy |
+| `cd` | push в `main` (после мержа) | те же проверки, затем compose + SMTP deploy, затем health сервисов |
 
 Красный прогон `ci` на pull request в `main` — условие мержа. Защита веток в
 [`.sourcecraft/branches.yaml`](../.sourcecraft/branches.yaml) блокирует прямой push
@@ -52,12 +52,20 @@ docker compose -f docker-compose.yml up -d --build --remove-orphans
 Корневой [docker-compose.yml](../docker-compose.yml) включает
 `infra/docker-compose.yml`, чтобы скилл находил контур, не зная про `infra/`.
 
-Хелсчеки после `up`:
+Хелсчеки сразу после `up` (внутри `deploy` / `deploy-smtp`):
 
 - публичный гейт `https://navix.droidje.com/`
 - loopback `http://127.0.0.1:18080/health/live` (этот хост уже публикует другое
   приложение на `:8000`; System Layer остаётся в сети compose на `api:8000`,
   изменился только хостовый порт публикации)
+- watchdog SMTP `http://127.0.0.1:8587/health` на почтовом хосте
+
+После обоих деплоев отдельная задача `health` ждёт 20 с и ещё раз проверяет
+публичный гейт плюс loopback `/health/live`, `/health/ready` и `/health/services`.
+Пайплайн красный, если `database`, `router` или `smtp` не `ok`. `ai` по-прежнему
+`not_configured` и в гейт не входит. Скрипты:
+`scripts/ci/ssh-check-health.sh`, `scripts/ci/check-deploy-health.sh`,
+`scripts/ci/evaluate_health_services.py`.
 
 Дашборд — контейнер `web` на `127.0.0.1:5173`; хостовый nginx терминирует TLS для
 `navix.droidje.com` и проксирует туда. `web` уже проксирует `/api/` на `api:8000`.

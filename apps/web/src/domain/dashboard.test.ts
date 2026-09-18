@@ -8,12 +8,12 @@ import {
 import {
   computePlanDelta,
   engineerSummaries,
-  regionalDistanceKm,
   equipmentLoadout,
   isExpectedRebuildApplied,
   plannedActivity,
   planWithLunches,
   reconcileDashboardFocus,
+  regionalDistanceKm,
   requestById,
   routeVertices,
   unassignedRequests,

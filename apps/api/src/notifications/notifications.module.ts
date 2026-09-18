@@ -4,7 +4,7 @@ import { HealthRegistry } from '../common/health';
 import { Clock } from '../common/time';
 import { PrismaService } from '../persistence';
 import { NotificationsService } from './notifications.service';
-import { SmtpGatewayService, createConfiguredTransports } from './smtp-gateway.service';
+import { createConfiguredTransports, SmtpGatewayService } from './smtp-gateway.service';
 import { SmtpHealthProbe } from './smtp-health.probe';
 
 /**
@@ -26,7 +26,13 @@ import { SmtpHealthProbe } from './smtp-health.probe';
         clock: Clock,
       ): SmtpGatewayService => {
         const transports = createConfiguredTransports(config);
-        return new SmtpGatewayService(config, prisma, clock, transports.primary, transports.fallback);
+        return new SmtpGatewayService(
+          config,
+          prisma,
+          clock,
+          transports.primary,
+          transports.fallback,
+        );
       },
     },
     SmtpHealthProbe,
