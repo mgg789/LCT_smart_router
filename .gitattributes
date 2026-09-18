@@ -23,5 +23,8 @@ docs/contracts/fixtures/*.json text eol=lf
 *.csv   -text
 *.zip   -text
 *.png   -text
+*.jpg   -text
+*.jpeg  -text
+*.mp4   -text
 *.pdf   -text
 *.pptx  -text
