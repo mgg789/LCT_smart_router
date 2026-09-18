@@ -87,6 +87,21 @@ export const envSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((value) => value === 'true'),
+
+  /**
+   * External SMTP submission. Absent host means the gateway stays `not_configured`
+   * and login codes are not sent. When the host is set, user and password are required.
+   */
+  SMTP_HOST: z.string().min(1).optional(),
+  SMTP_PORT: z.coerce.number().int().min(1).max(65535).default(2525),
+  SMTP_USER: z.string().min(1).optional(),
+  SMTP_PASSWORD: z.string().min(1).optional(),
+  SMTP_FROM: z.string().min(1).default('Navix <noreply@mail.droidje.com>'),
+  SMTP_FALLBACK_HOST: z.string().min(1).optional(),
+  SMTP_FALLBACK_PORT: z.coerce.number().int().min(1).max(65535).default(587),
+  SMTP_HEALTH_URL: z.url().optional(),
+  SMTP_POLL_INTERVAL_MS: z.coerce.number().int().min(1_000).max(120_000).default(15_000),
+  SMTP_APP_BASE_URL: z.url().default('https://navix.droidje.com'),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -107,6 +122,12 @@ export function validateEnv(raw: Record<string, unknown>): Env {
     throw new Error(
       'Invalid environment configuration: AUTH_DEV_EXPOSE_CODES must not be enabled in ' +
         'production. Returning login codes over the API bypasses authentication entirely.',
+    );
+  }
+  if (parsed.data.SMTP_HOST && (!parsed.data.SMTP_USER || !parsed.data.SMTP_PASSWORD)) {
+    throw new Error(
+      'Invalid environment configuration: SMTP_HOST is set but SMTP_USER or SMTP_PASSWORD ' +
+        'is missing. Leave SMTP_HOST unset to keep mail unconfigured.',
     );
   }
   return parsed.data;
