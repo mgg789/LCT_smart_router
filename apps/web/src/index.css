@@ -93,6 +93,27 @@ body {
   line-height: normal;
 }
 
+.figma-nowrap {
+  white-space: nowrap;
+  word-break: normal;
+}
+
+.nav-glyph-on {
+  filter: brightness(0) invert(1);
+}
+
+.nav-glyph-off {
+  filter: brightness(0) invert(46%);
+}
+
+.route-scroll {
+  scrollbar-width: none;
+}
+
+.route-scroll::-webkit-scrollbar {
+  display: none;
+}
+
 .maplibregl-ctrl-bottom-right,
 .maplibregl-ctrl-bottom-left {
   display: none;
