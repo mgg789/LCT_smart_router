@@ -1,13 +1,14 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { PolicyId } from '../api/types';
+import { DayMap } from '../components/DayMap';
+import { useDashboard } from '../hooks/useDashboard';
 import { FIGMA_ASSETS } from './assets';
 import {
   FIGMA_ARTBOARD,
   MAIN_DASHBOARD,
-  MAIN_REQUEST_COUNT,
   NAV_ITEMS,
-  POLICY_OPTIONS,
   filterEngineers,
   formatNotificationCount,
   isCompletedStop,
@@ -16,11 +17,17 @@ import {
   visibleNotifications,
   type DashboardNotification,
   type EngineerCard,
+  type EngineerRequest,
   type NavItemId,
   type NotificationIconKey,
   type NotificationTone,
-  type PolicyOption,
 } from './fixtures';
+import {
+  dashboardViewFromSnapshot,
+  nextRouterSettings,
+  notificationsFromSnapshot,
+  policyLabel,
+} from './fromSnapshot';
 import { FigmaIcon, FigmaText } from './primitives';
 
 const NAV_ICONS = {
@@ -87,32 +94,93 @@ const FALLBACK_ENGINEER: EngineerCard = MAIN_DASHBOARD.engineers[0] as EngineerC
  */
 export function MainDashboardPage() {
   const reduceMotion = useReducedMotion();
+  const dash = useDashboard();
   const [policyOpen, setPolicyOpen] = useState(false);
-  const [policy, setPolicy] = useState<PolicyOption>(MAIN_DASHBOARD.defaultPolicy);
-  const [lunchOn, setLunchOn] = useState(true);
-  const [trafficOn, setTrafficOn] = useState(false);
   const [activeNav, setActiveNav] = useState<NavItemId>('day');
-  const [selectedEngineerId, setSelectedEngineerId] = useState(FALLBACK_ENGINEER.id);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [mapExpanded, setMapExpanded] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
-  const visibleEngineers = useMemo(
-    () => filterEngineers(MAIN_DASHBOARD.engineers, searchQuery),
-    [searchQuery],
+  useEffect(() => {
+    if (dash.snapshot || dash.loading || dash.authenticated) return;
+    dash.selectDemoScenario('initial');
+  }, [dash.authenticated, dash.loading, dash.selectDemoScenario, dash.snapshot]);
+
+  const view = useMemo(
+    () =>
+      dash.snapshot
+        ? dashboardViewFromSnapshot(dash.snapshot, {
+            engineerId: dash.selectedEngineerId,
+            requestId: dash.selectedRequest?.id ?? null,
+          })
+        : null,
+    [dash.selectedEngineerId, dash.selectedRequest, dash.snapshot],
   );
+  const roster = view?.engineers ?? MAIN_DASHBOARD.engineers;
+  const visibleEngineers = useMemo(() => filterEngineers(roster, searchQuery), [roster, searchQuery]);
   const selectedEngineer =
-    visibleEngineers.find((item) => item.id === selectedEngineerId) ??
+    visibleEngineers.find((item) => item.id === (dash.selectedEngineerId ?? view?.displayedEngineerId)) ??
     visibleEngineers[0] ??
     FALLBACK_ENGINEER;
-
-  useEffect(() => {
-    if (!visibleEngineers.some((item) => item.id === selectedEngineerId) && visibleEngineers[0]) {
-      setSelectedEngineerId(visibleEngineers[0].id);
+  const inbox = useMemo(() => {
+    if (!dash.snapshot) {
+      return {
+        count: MAIN_DASHBOARD.notification.count,
+        tone: MAIN_DASHBOARD.notification.tone,
+        items: visibleNotifications(MAIN_DASHBOARD.notifications),
+      };
     }
-  }, [selectedEngineerId, visibleEngineers]);
+    const fromAlerts = notificationsFromSnapshot(dash.snapshot);
+    if (fromAlerts.items.length > 0) return fromAlerts;
+    return {
+      count: dash.events.length,
+      tone: 'gray' as const,
+      items: visibleNotifications(
+        dash.events.map((event) => ({
+          id: event.id,
+          tone: 'plain' as const,
+          icon: 'route' as const,
+          text: event.text,
+        })),
+      ),
+    };
+  }, [dash.events, dash.snapshot]);
+  const policies = (dash.snapshot?.policies ?? []).map((item) => ({
+    id: item.policyId,
+    label: policyLabel(item.policyId, item.title),
+  }));
+  const policyId = dash.snapshot?.policyId ?? 'fast';
+  const policyTitle = policyLabel(policyId, dash.snapshot?.policies.find((item) => item.policyId === policyId)?.title);
+  const lunchOn = dash.snapshot?.lunchesEnabled ?? false;
+  const trafficOn = dash.snapshot?.routerSettings?.trafficEnabled ?? false;
+  const displayedRequest = view?.displayedRequest ?? selectedEngineer.request;
+  const requestCount = view?.requestCount ?? MAIN_DASHBOARD.engineers.reduce((sum, item) => sum + item.requestCount, 0);
+  const planLabel =
+    view?.planLabel ??
+    `${MAIN_DASHBOARD.unassigned.title.replace('заявки без назначения', 'без назначения')} - план от 11:42`;
+
+  const applyPolicy = (nextPolicy: PolicyId) => {
+    if (!dash.snapshot) return;
+    dash.applyRoutingSettings(nextPolicy, nextRouterSettings(dash.snapshot, {}));
+  };
+  const applyLunch = () => {
+    if (!dash.snapshot) return;
+    dash.applyRoutingSettings(
+      dash.snapshot.policyId,
+      nextRouterSettings(dash.snapshot, { lunchesEnabled: !dash.snapshot.lunchesEnabled }),
+    );
+  };
+  const applyTraffic = () => {
+    if (!dash.snapshot) return;
+    dash.applyRoutingSettings(
+      dash.snapshot.policyId,
+      nextRouterSettings(dash.snapshot, {
+        trafficEnabled: !(dash.snapshot.routerSettings?.trafficEnabled ?? false),
+      }),
+    );
+  };
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -165,10 +233,28 @@ export function MainDashboardPage() {
           if (policyOpen && !target.closest('[data-policy-panel]')) setPolicyOpen(false);
         }}
       >
-        <SidebarNav activeNav={activeNav} onSelect={setActiveNav} motionOn={motionOn} />
+        <SidebarNav
+          activeNav={activeNav}
+          motionOn={motionOn}
+          onSelect={(id) => {
+            setActiveNav(id);
+            if (id === 'policy') {
+              setNotifOpen(false);
+              setUserMenuOpen(false);
+              setPolicyOpen(true);
+            }
+            if (id === 'alerts') {
+              setPolicyOpen(false);
+              setUserMenuOpen(false);
+              setNotifOpen(true);
+            }
+          }}
+        />
         <PolicyControl
           open={policyOpen}
-          policy={policy}
+          policyLabel={policyTitle}
+          policies={policies}
+          selectedId={policyId}
           lunchOn={lunchOn}
           trafficOn={trafficOn}
           motionOn={motionOn}
@@ -177,12 +263,19 @@ export function MainDashboardPage() {
             setUserMenuOpen(false);
             setPolicyOpen((value) => !value);
           }}
-          onSelect={setPolicy}
-          onLunchToggle={() => setLunchOn((value) => !value)}
-          onTrafficToggle={() => setTrafficOn((value) => !value)}
+          onSelect={applyPolicy}
+          onLunchToggle={applyLunch}
+          onTrafficToggle={applyTraffic}
+          onManualMode={() => {
+            if (!dash.snapshot) return;
+            void dash.setMode(dash.snapshot.plan.mode === 'auto' ? 'manual' : 'auto');
+          }}
         />
         <NotificationControl
           open={notifOpen}
+          items={inbox.items}
+          count={inbox.count}
+          tone={inbox.tone}
           motionOn={motionOn}
           onToggle={() => {
             setPolicyOpen(false);
@@ -198,17 +291,29 @@ export function MainDashboardPage() {
             setNotifOpen(false);
             setUserMenuOpen((value) => !value);
           }}
+          onReset={() => {
+            dash.selectDemoScenario('initial');
+            setUserMenuOpen(false);
+          }}
+          onSignOut={() => {
+            void dash.signOut();
+            setUserMenuOpen(false);
+          }}
         />
         <FigmaText
           className="figma-nowrap absolute left-[180px] font-murs text-[32px] tracking-[-0.544px] text-figma-ink"
           style={{ top: DATE_TOP }}
         >
-          {MAIN_DASHBOARD.dateLabel}
+          {view?.dateLabel ?? MAIN_DASHBOARD.dateLabel}
         </FigmaText>
         <EngineersColumn
           engineers={visibleEngineers}
-          totalCount={MAIN_DASHBOARD.engineers.length}
-          selectedEngineerId={selectedEngineer.id}
+          totalCount={roster.length}
+          requestCount={requestCount}
+          planLabel={planLabel}
+          unassignedTitle={view?.unassignedTitle ?? MAIN_DASHBOARD.unassigned.title}
+          unassignedReason={view?.unassignedReason ?? MAIN_DASHBOARD.unassigned.reason}
+          selectedEngineerId={dash.selectedEngineerId ?? selectedEngineer.id}
           searchOpen={searchOpen}
           searchQuery={searchQuery}
           motionOn={motionOn}
@@ -222,13 +327,25 @@ export function MainDashboardPage() {
           }}
           onSearchChange={setSearchQuery}
           onSelect={(id) => {
-            setSelectedEngineerId(id);
+            const card = roster.find((item) => item.id === id);
+            if (card?.primaryRequestId) dash.selectRequest(card.primaryRequestId);
+            else dash.selectEngineer(id);
             setSearchOpen(false);
             setSearchQuery('');
             setMapExpanded(false);
           }}
+          onSelectUnassigned={() => {
+            if (view?.firstUnassignedId) dash.selectRequest(view.firstUnassignedId);
+          }}
         />
-        <MapCard engineerId={selectedEngineer.id} expanded={mapExpanded} motionOn={motionOn} />
+        <MapCard
+          snapshot={dash.snapshot}
+          selectedEngineerId={dash.selectedEngineerId}
+          selectedRequestId={dash.selectedRequest?.id ?? null}
+          expanded={mapExpanded}
+          motionOn={motionOn}
+          onSelectRequest={dash.selectRequest}
+        />
         <AnimatePresence>
           {mapExpanded ? null : (
             <RouteCard key="route-card" engineer={selectedEngineer} motionOn={motionOn} />
@@ -238,9 +355,14 @@ export function MainDashboardPage() {
           {mapExpanded ? null : (
             <RequestCard
               key="request-card"
-              request={selectedEngineer.request}
+              request={displayedRequest}
+              mode={dash.snapshot?.plan.mode ?? 'auto'}
               motionOn={motionOn}
               onExpandMap={() => setMapExpanded(true)}
+              onReassign={() => {
+                if (!dash.snapshot) return;
+                void dash.setMode(dash.snapshot.plan.mode === 'auto' ? 'manual' : 'auto');
+              }}
             />
           )}
         </AnimatePresence>
@@ -337,19 +459,23 @@ const NOTIF_ICONS: Record<NotificationIconKey, string> = {
  */
 function NotificationControl({
   open,
+  items,
+  count,
+  tone,
   motionOn,
   onToggle,
 }: {
   open: boolean;
+  items: DashboardNotification[];
+  count: number;
+  tone: NotificationTone;
   motionOn: boolean;
   onToggle: () => void;
 }) {
   const [dismissedIds, setDismissedIds] = useState<string[]>([]);
   const ignoreOutsideClick = useRef(false);
-  const items = visibleNotifications(MAIN_DASHBOARD.notifications).filter(
-    (item) => !dismissedIds.includes(item.id),
-  );
-  const badgeCount = Math.max(0, MAIN_DASHBOARD.notification.count - dismissedIds.length);
+  const visibleItems = items.filter((item) => !dismissedIds.includes(item.id));
+  const badgeCount = Math.max(0, count - dismissedIds.length);
 
   useEffect(() => {
     const blockClick = (event: MouseEvent) => {
@@ -395,15 +521,16 @@ function NotificationControl({
               exit={motionOn ? { opacity: 0 } : undefined}
               transition={fadeSoft}
             >
-              <FigmaText className="figma-nowrap absolute left-[16px] top-[19px] font-murs text-[20px] text-figma-ink">
+              <FigmaText className="figma-nowrap absolute left-[16px] top-[19px] z-0 font-murs text-[20px] text-figma-ink">
                 Алерты и уведомления
               </FigmaText>
-              <div className="absolute left-[16px] top-[63px] flex h-[331px] w-[331px] flex-col gap-[19px] overflow-hidden">
+              <div className="absolute inset-x-[16px] top-[48px] bottom-[44px] z-20 flex flex-col gap-[19px] overflow-visible pt-[15px] pb-[14px]">
                 <AnimatePresence initial={false}>
-                  {items.map((item) => (
+                  {visibleItems.map((item, index) => (
                     <NotificationRow
                       key={item.id}
                       item={item}
+                      elevate={index === 0 || index === visibleItems.length - 1}
                       motionOn={motionOn}
                       onSwipeStart={() => {
                         ignoreOutsideClick.current = true;
@@ -420,7 +547,7 @@ function NotificationControl({
               </div>
               <button
                 type="button"
-                className="group absolute left-[16px] top-[410px] flex h-[25px] w-[331px] items-center justify-center gap-[2px]"
+                className="group absolute left-[16px] top-[410px] z-10 flex h-[25px] w-[331px] items-center justify-center gap-[2px]"
               >
                 <span className="transition-transform duration-150 group-hover:-translate-x-1.5">
                   <FigmaText className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
@@ -466,10 +593,7 @@ function NotificationControl({
                   exit={motionOn ? { opacity: 0, scale: 0.85 } : undefined}
                   transition={fadeSoft}
                 >
-                  <NotificationBadge
-                    count={badgeCount}
-                    tone={MAIN_DASHBOARD.notification.tone}
-                  />
+                  <NotificationBadge count={badgeCount} tone={tone} />
                 </motion.span>
               )}
             </AnimatePresence>
@@ -482,11 +606,13 @@ function NotificationControl({
 
 function NotificationRow({
   item,
+  elevate,
   motionOn,
   onSwipeStart,
   onDismiss,
 }: {
   item: DashboardNotification;
+  elevate: boolean;
   motionOn: boolean;
   onSwipeStart: () => void;
   onDismiss: () => void;
@@ -543,7 +669,9 @@ function NotificationRow({
           ? { opacity: 0, x: exitX.current, height: 0, marginBottom: 0, transition: { duration: 0.22 } }
           : { opacity: 0 }
       }
-      className="shrink-0"
+      className={`relative shrink-0 ${elevate ? 'z-30' : 'z-10'}`}
+      style={{ zIndex: elevate ? 30 : 10 }}
+      whileHover={{ zIndex: 40 }}
     >
       <motion.div
         onPointerDown={(event) => {
@@ -590,10 +718,14 @@ function UserMenu({
   open,
   motionOn,
   onToggle,
+  onReset,
+  onSignOut,
 }: {
   open: boolean;
   motionOn: boolean;
   onToggle: () => void;
+  onReset: () => void;
+  onSignOut: () => void;
 }) {
   return (
     <div data-user-menu className="absolute z-50" style={{ left: HEADER_AVATAR_LEFT, top: HEADER_AVATAR_TOP }}>
@@ -634,6 +766,7 @@ function UserMenu({
           >
             <motion.button
               type="button"
+              onClick={onReset}
               className="flex h-[44px] w-full items-center justify-center rounded-[12px] bg-figma-danger font-semibold text-[16px] text-white"
               whileHover={motionOn ? { scale: 1.03, filter: 'brightness(1.08)' } : undefined}
               whileTap={motionOn ? { scale: 0.98 } : undefined}
@@ -643,6 +776,7 @@ function UserMenu({
             </motion.button>
             <motion.button
               type="button"
+              onClick={onSignOut}
               className="flex h-[44px] w-full items-center justify-center rounded-[12px] bg-figma-danger font-semibold text-[16px] text-white"
               whileHover={motionOn ? { scale: 1.03, filter: 'brightness(1.08)' } : undefined}
               whileTap={motionOn ? { scale: 0.98 } : undefined}
@@ -676,7 +810,9 @@ function NotificationBadge({ count, tone }: { count: number; tone: NotificationT
 
 function PolicyControl({
   open,
-  policy,
+  policyLabel: selectedLabel,
+  policies,
+  selectedId,
   lunchOn,
   trafficOn,
   motionOn,
@@ -684,17 +820,29 @@ function PolicyControl({
   onSelect,
   onLunchToggle,
   onTrafficToggle,
+  onManualMode,
 }: {
   open: boolean;
-  policy: PolicyOption;
+  policyLabel: string;
+  policies: { id: PolicyId; label: string }[];
+  selectedId: PolicyId;
   lunchOn: boolean;
   trafficOn: boolean;
   motionOn: boolean;
   onToggle: () => void;
-  onSelect: (policy: PolicyOption) => void;
+  onSelect: (policy: PolicyId) => void;
   onLunchToggle: () => void;
   onTrafficToggle: () => void;
+  onManualMode: () => void;
 }) {
+  const options =
+    policies.length > 0
+      ? policies
+      : (['fast', 'compact', 'sla', 'balanced', 'eco', 'covering'] as const).map((id) => ({
+          id,
+          label: policyLabel(id),
+        }));
+  const extra = Math.max(0, options.length - 6) * 44;
   return (
     <motion.div
       data-policy-panel
@@ -702,7 +850,7 @@ function PolicyControl({
       style={{ left: POLICY_LEFT, top: POLICY_TOP }}
       initial={false}
       animate={{
-        height: open ? POLICY_OPEN_HEIGHT : 51,
+        height: open ? POLICY_OPEN_HEIGHT + extra : 51,
         boxShadow: open ? '0 22px 48px rgba(39, 41, 48, 0.18)' : '0 0 0 rgba(39, 41, 48, 0)',
       }}
       transition={
@@ -723,7 +871,7 @@ function PolicyControl({
           transition={{ duration: 0.16 }}
         >
           <FigmaText className="figma-nowrap font-semibold text-[18px] tracking-[-0.306px] text-figma-ink">
-            {open ? 'Выбери свою политику' : `Политика: ${policy}`}
+            {open ? 'Выбери свою политику' : `Политика: ${selectedLabel}`}
           </FigmaText>
         </motion.button>
         <motion.button
@@ -744,46 +892,48 @@ function PolicyControl({
           </motion.span>
         </motion.button>
       </div>
-      <div className={`relative h-[460px] w-[363px] ${open ? '' : 'pointer-events-none'}`}>
-        {POLICY_OPTIONS.map((option, index) => (
+      <div className={`relative w-[363px] ${open ? '' : 'pointer-events-none'}`} style={{ height: 460 + extra }}>
+        {options.map((option, index) => (
           <motion.button
-            key={option}
+            key={option.id}
             type="button"
-            onClick={() => onSelect(option)}
+            onClick={() => onSelect(option.id)}
             className="absolute left-0 h-[32px] w-full"
             style={{ top: 14 + index * 44 }}
             whileHover={motionOn ? { x: 4 } : undefined}
             transition={{ duration: 0.16 }}
           >
             <FigmaIcon
-              src={option === policy ? FIGMA_ASSETS.radioFilled : FIGMA_ASSETS.radioEmpty}
+              src={option.id === selectedId ? FIGMA_ASSETS.radioFilled : FIGMA_ASSETS.radioEmpty}
               alt=""
               width={24}
               height={24}
               className="absolute left-[16px] top-0"
             />
             <FigmaText className="figma-nowrap absolute left-[50px] top-[4px] font-medium text-[20px] text-figma-ink">
-              {option}
+              {option.label}
             </FigmaText>
           </motion.button>
         ))}
         <PolicySwitch
           on={lunchOn}
           label="Рассчитать обеды"
-          top={274}
+          top={274 + extra}
           motionOn={motionOn}
           onToggle={onLunchToggle}
         />
         <PolicySwitch
           on={trafficOn}
           label="Прогнозировать пробки"
-          top={318}
+          top={318 + extra}
           motionOn={motionOn}
           onToggle={onTrafficToggle}
         />
         <button
           type="button"
-          className="absolute left-[16px] top-[363px] flex h-[67px] w-[331px] items-center justify-center rounded-[20px] bg-figma-bee p-[20px] transition-transform duration-150 hover:scale-[1.01]"
+          onClick={onManualMode}
+          className="absolute left-[16px] flex h-[67px] w-[331px] items-center justify-center rounded-[20px] bg-figma-bee p-[20px] transition-transform duration-150 hover:scale-[1.01]"
+          style={{ top: 363 + extra }}
         >
           <span className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
             Ручное управление
@@ -840,6 +990,10 @@ function PolicySwitch({
 function EngineersColumn({
   engineers,
   totalCount,
+  requestCount,
+  planLabel,
+  unassignedTitle,
+  unassignedReason,
   selectedEngineerId,
   searchOpen,
   searchQuery,
@@ -847,9 +1001,14 @@ function EngineersColumn({
   onSearchToggle,
   onSearchChange,
   onSelect,
+  onSelectUnassigned,
 }: {
   engineers: EngineerCard[];
   totalCount: number;
+  requestCount: number;
+  planLabel: string;
+  unassignedTitle: string;
+  unassignedReason: string;
   selectedEngineerId: string;
   searchOpen: boolean;
   searchQuery: string;
@@ -857,6 +1016,7 @@ function EngineersColumn({
   onSearchToggle: () => void;
   onSearchChange: (value: string) => void;
   onSelect: (id: string) => void;
+  onSelectUnassigned: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -870,10 +1030,10 @@ function EngineersColumn({
       style={{ top: PANEL_TOP, height: PANEL_HEIGHT }}
     >
       <FigmaText className="figma-nowrap absolute left-[30px] top-[30px] z-0 font-extrabold text-[28px] tracking-[-0.476px] text-figma-ink">
-        {requestCountLabel(MAIN_REQUEST_COUNT)}
+        {requestCountLabel(requestCount)}
       </FigmaText>
       <FigmaText className="figma-nowrap absolute left-[30px] top-[68px] z-0 font-semibold text-[18px] tracking-[-0.306px] text-figma-muted">
-        {MAIN_DASHBOARD.unassigned.title.replace('заявки без назначения', 'без назначения')} - план от 11:42
+        {planLabel}
       </FigmaText>
       <div className="absolute left-[30px] right-[30px] top-[114px] z-0 h-[48px]" data-engineer-search>
         <AnimatePresence initial={false}>
@@ -971,21 +1131,23 @@ function EngineersColumn({
           ) : null}
         </div>
       </div>
-      <motion.div
-        className="absolute left-[30px] z-30 w-[351px] overflow-clip rounded-[20px] bg-figma-bee px-[29px] py-[25px]"
+      <motion.button
+        type="button"
+        onClick={onSelectUnassigned}
+        className="absolute left-[30px] z-30 w-[351px] overflow-clip rounded-[20px] bg-figma-bee px-[29px] py-[25px] text-left"
         style={{ top: UNASSIGNED_TOP }}
         whileHover={motionOn ? { scale: 1.01 } : undefined}
         transition={{ duration: 0.16 }}
       >
         <div className="relative h-[46px]">
           <FigmaText className="figma-nowrap font-murs text-[20px] tracking-[0.2px] text-figma-ink">
-            {MAIN_DASHBOARD.unassigned.title}
+            {unassignedTitle}
           </FigmaText>
           <FigmaText className="figma-nowrap absolute left-[6px] top-[30px] font-semibold text-[16px] tracking-[0.16px] text-figma-sub">
-            {MAIN_DASHBOARD.unassigned.reason}
+            {unassignedReason}
           </FigmaText>
         </div>
-      </motion.div>
+      </motion.button>
     </section>
   );
 }
@@ -1051,13 +1213,19 @@ function EngineerRow({
 }
 
 function MapCard({
-  engineerId,
+  snapshot,
+  selectedEngineerId,
+  selectedRequestId,
   expanded,
   motionOn,
+  onSelectRequest,
 }: {
-  engineerId: string;
+  snapshot: ReturnType<typeof useDashboard>['snapshot'];
+  selectedEngineerId: string | null;
+  selectedRequestId: string | null;
   expanded: boolean;
   motionOn: boolean;
+  onSelectRequest: (requestId: string) => void;
 }) {
   const frame = expanded ? MAP_EXPANDED : MAP_COMPACT;
   return (
@@ -1067,15 +1235,23 @@ function MapCard({
       animate={frame}
       transition={motionOn ? { duration: 0.45, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
     >
-      <motion.img
-        key={engineerId}
-        alt="Карта Москвы"
-        src={FIGMA_ASSETS.map}
-        className="absolute inset-0 size-full max-w-none object-cover"
-        initial={motionOn ? { opacity: 0.72, scale: 1.012 } : false}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={fadeSoft}
-      />
+      {snapshot ? (
+        <DayMap
+          snapshot={snapshot}
+          selectedEngineerId={selectedEngineerId}
+          selectedRequestId={selectedRequestId}
+          onSelectRequest={onSelectRequest}
+        />
+      ) : (
+        <motion.img
+          alt="Карта Москвы"
+          src={FIGMA_ASSETS.map}
+          className="absolute inset-0 size-full max-w-none object-cover"
+          initial={motionOn ? { opacity: 0.72, scale: 1.012 } : false}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={fadeSoft}
+        />
+      )}
     </motion.section>
   );
 }
@@ -1178,12 +1354,16 @@ function RouteCard({ engineer, motionOn }: { engineer: EngineerCard; motionOn: b
 
 function RequestCard({
   request,
+  mode,
   motionOn,
   onExpandMap,
+  onReassign,
 }: {
-  request: EngineerCard['request'];
+  request: EngineerRequest;
+  mode: 'auto' | 'manual';
   motionOn: boolean;
   onExpandMap: () => void;
+  onReassign: () => void;
 }) {
   return (
     <motion.aside
@@ -1291,15 +1471,17 @@ function RequestCard({
       </AnimatePresence>
       <button
         type="button"
+        onClick={onReassign}
         className="absolute left-[27px] top-[711px] flex h-[67px] w-[430px] items-center justify-center rounded-[20px] bg-figma-bee p-[20px] transition-transform duration-150 hover:scale-[1.01]"
       >
         <span className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
-          Переназначить
+          {mode === 'auto' ? 'Переназначить' : 'Вернуть авто'}
         </span>
       </button>
       <button
         type="button"
-        className="absolute left-[27px] top-[794px] flex h-[67px] w-[430px] items-center justify-center rounded-[20px] border border-solid border-white bg-figma-ink px-[8px] transition-transform duration-150 hover:scale-[1.01]"
+        disabled
+        className="absolute left-[27px] top-[794px] flex h-[67px] w-[430px] items-center justify-center rounded-[20px] border border-solid border-white bg-figma-ink px-[8px] opacity-60"
       >
         <span className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-white">
           Разобрать с AI ассистентом

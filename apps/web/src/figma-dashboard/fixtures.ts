@@ -59,6 +59,8 @@ export type EngineerCard = {
   routeUpdated: string;
   stops: RouteStop[];
   request: EngineerRequest;
+  /** First assigned request, when the snapshot has one. */
+  primaryRequestId?: string;
 };
 
 export type NotificationTone = 'gray' | 'yellow';
