@@ -71,6 +71,8 @@ export interface EngineerView {
   readonly homeLat: number | null;
   readonly homeLon: number | null;
   readonly hasAccount: boolean;
+  /** The login address, when the profile has one linked; null on imported brigades. */
+  readonly email: string | null;
 }
 
 export interface EngineerDayView {

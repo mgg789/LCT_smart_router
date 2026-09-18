@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { AppConfigService } from '../../common/config';
 import { SysError } from '../../common/errors';
 import type {
+  Account,
   Availability,
   Engineer,
   EngineerDay,
@@ -40,6 +41,13 @@ export interface WorkdayInput {
   readonly lunchRequired?: boolean;
 }
 
+/**
+ * A routing profile together with its login, when one has been linked to it. A profile
+ * that arrived with an import has `account: null` until the dispatcher links an address
+ * (context/37 section 3.1).
+ */
+export type EngineerWithAccount = Engineer & { account: Account | null };
+
 /** Technical stop. The initial duration is 15 minutes (context/32 section 5.2). */
 export const TECHNICAL_BREAK_SEC = 15 * 60;
 
@@ -66,7 +74,10 @@ export class EngineersService {
    * import or an explicit entry; missing values are never filled with invented norms
    * (context/42 DF-03).
    */
-  async create(context: OperationContext, input: CreateEngineerInput): Promise<Engineer> {
+  async create(
+    context: OperationContext,
+    input: CreateEngineerInput,
+  ): Promise<EngineerWithAccount> {
     const email = input.email.trim().toLowerCase();
     const now = BigInt(context.now);
 
@@ -83,7 +94,10 @@ export class EngineersService {
       create: { accountId: account.id, role: 'engineer', grantedAt: now },
     });
 
-    const existing = await context.tx.engineer.findUnique({ where: { accountId: account.id } });
+    const existing = await context.tx.engineer.findUnique({
+      where: { accountId: account.id },
+      include: { account: true },
+    });
     if (existing) {
       return existing;
     }
@@ -112,7 +126,66 @@ export class EngineersService {
       context.now,
       PUBLICATION_TRIGGERS.ENGINEER_CREATED,
     );
-    return created;
+    return context.tx.engineer.findUniqueOrThrow({
+      where: { id: created.id },
+      include: { account: true },
+    });
+  }
+
+  /**
+   * Gives a routing profile that exists without a login its address.
+   *
+   * A brigade that arrived with an import is a calculation profile with no account
+   * (context/37 section 3.1); this explicit dispatcher act is what lets that person sign
+   * in by email code afterwards. The role is granted here and never claimed by typing the
+   * address on the sign-in screen (context/36 section 7.2). No planning parameter changes,
+   * so there is nothing to republish to Router.
+   */
+  async linkAccount(
+    context: OperationContext,
+    engineerId: string,
+    email: string,
+  ): Promise<EngineerWithAccount> {
+    const engineer = await this.load(context.tx, engineerId);
+    if (engineer.accountId !== null) {
+      throw new SysError('VALIDATION_FAILED', 'This engineer already has a login', {
+        details: { engineerId },
+      });
+    }
+
+    const normalized = email.trim().toLowerCase();
+    const now = BigInt(context.now);
+    const account = await context.tx.account.upsert({
+      where: { email: normalized },
+      update: {},
+      create: { email: normalized, createdAt: now, updatedAt: now },
+    });
+    const taken = await context.tx.engineer.findUnique({ where: { accountId: account.id } });
+    if (taken && taken.id !== engineerId) {
+      throw new SysError(
+        'VALIDATION_FAILED',
+        'This address is already the login of another engineer',
+        { details: { engineerId, linkedEngineerId: taken.id } },
+      );
+    }
+    await context.tx.accountRole.upsert({
+      where: { accountId_role: { accountId: account.id, role: 'engineer' } },
+      update: {},
+      create: { accountId: account.id, role: 'engineer', grantedAt: now },
+    });
+
+    // The `accountId: null` guard makes a concurrent second link match nothing instead of
+    // pointing two profiles at one login.
+    const updated = await context.tx.engineer.updateMany({
+      where: { id: engineerId, accountId: null },
+      data: { accountId: account.id, updatedAt: now, version: { increment: 1 } },
+    });
+    assertWriteApplied('Engineer', updated.count, engineer.version, engineer.version);
+
+    return context.tx.engineer.findUniqueOrThrow({
+      where: { id: engineerId },
+      include: { account: true },
+    });
   }
 
   /**
@@ -129,7 +202,7 @@ export class EngineersService {
     engineerId: string,
     expectedVersion: number | null | undefined,
     input: UpdateEngineerInput,
-  ): Promise<Engineer> {
+  ): Promise<EngineerWithAccount> {
     const current = await this.load(context.tx, engineerId);
     if (input.skills) {
       assertSkills(input.skills);
@@ -158,7 +231,10 @@ export class EngineersService {
       context.now,
       PUBLICATION_TRIGGERS.ENGINEER_PROFILE_CHANGED,
     );
-    return context.tx.engineer.findUniqueOrThrow({ where: { id: engineerId } });
+    return context.tx.engineer.findUniqueOrThrow({
+      where: { id: engineerId },
+      include: { account: true },
+    });
   }
 
   /** Sets or replaces the shift and lunch conditions of one working day. */
@@ -331,8 +407,11 @@ export class EngineersService {
     });
   }
 
-  async byAccount(tx: Tx, accountId: string): Promise<Engineer> {
-    const engineer = await tx.engineer.findUnique({ where: { accountId } });
+  async byAccount(tx: Tx, accountId: string): Promise<EngineerWithAccount> {
+    const engineer = await tx.engineer.findUnique({
+      where: { accountId },
+      include: { account: true },
+    });
     if (!engineer) {
       throw SysError.notFound('Engineer profile', { accountId });
     }
