@@ -77,7 +77,7 @@ export function MainDashboardPage() {
           }}
           onLunchToggle={() => setLunchOn((value) => !value)}
         />
-        <FigmaText className="absolute left-[180px] top-[100px] font-display text-[32px] tracking-[-0.544px] text-figma-ink">
+        <FigmaText className="absolute left-[180px] top-[100px] font-murs text-[32px] tracking-[-0.544px] text-figma-ink">
           {MAIN_DASHBOARD.dateLabel}
         </FigmaText>
         <EngineersColumn
@@ -127,7 +127,7 @@ function SidebarNav({
   onSelect: (id: NavItemId) => void;
 }) {
   return (
-    <aside className="absolute left-0 top-0 z-20 h-[1080px] w-[150px] overflow-clip rounded-br-[20px] rounded-tr-[20px] border-r-[0.5px] border-solid border-[rgba(158,158,158,0.3)] bg-white">
+    <aside className="absolute left-0 top-0 z-20 h-[1080px] w-[150px] overflow-visible rounded-br-[20px] rounded-tr-[20px] border-r-[0.5px] border-solid border-[rgba(158,158,158,0.3)] bg-white">
       <div className="absolute left-[73.25px] top-[52px] -translate-x-1/2 -translate-y-1/2">
         <FigmaIcon src={FIGMA_ASSETS.logo} alt="Beeline" width={44} height={44} />
       </div>
@@ -139,7 +139,7 @@ function SidebarNav({
               key={item.id}
               type="button"
               onClick={() => onSelect(item.id)}
-              className={`relative h-[74px] w-full overflow-clip rounded-[10px] ${
+              className={`relative h-[74px] w-full overflow-visible rounded-[10px] ${
                 active ? 'bg-figma-ink' : 'bg-white'
               }`}
             >
@@ -264,7 +264,7 @@ function PolicyControl({
             transition={{ duration: 0.15 }}
             className="relative h-[451px] w-[363px]"
           >
-            <FigmaText className="absolute left-[16px] top-[19px] font-display text-[20px] text-figma-ink">
+            <FigmaText className="absolute left-[16px] top-[19px] font-murs text-[20px] text-figma-ink">
               Выбери свою политику
             </FigmaText>
             <button type="button" onClick={onToggle} className="absolute right-[4px] top-[4px]">
@@ -379,7 +379,7 @@ function EngineersColumn({
       ))}
       <div className="absolute left-[30px] top-[778px] w-[351px] overflow-clip rounded-[20px] bg-figma-bee px-[29px] py-[25px]">
         <div className="relative h-[46px]">
-          <FigmaText className="font-display text-[20px] tracking-[0.2px] text-figma-ink">
+          <FigmaText className="font-murs text-[20px] tracking-[0.2px] text-figma-ink">
             {MAIN_DASHBOARD.unassigned.title}
           </FigmaText>
           <FigmaText className="absolute left-[6px] top-[30px] font-semibold text-[16px] tracking-[0.16px] text-figma-sub">
@@ -426,7 +426,7 @@ function EngineerRow({
         style={{ top: avatarTop }}
       />
       <FigmaText
-        className="absolute font-display text-[20px] tracking-[0.2px] text-black"
+        className="absolute font-murs text-[20px] tracking-[0.2px] text-black"
         style={{ left: nameLeft, top: nameTop }}
       >
         {engineer.name}
@@ -531,7 +531,7 @@ function RequestCard() {
   const request = MAIN_DASHBOARD.request;
   return (
     <aside className="absolute left-[1406px] top-[154px] h-[893px] w-[484px] overflow-clip rounded-[20px] bg-figma-ink">
-      <FigmaText className="absolute left-[30px] top-[30px] font-display text-[32px] tracking-[-0.544px] text-white">
+      <FigmaText className="absolute left-[30px] top-[30px] font-murs text-[32px] tracking-[-0.544px] text-white">
         {request.number}
       </FigmaText>
       <FigmaIcon

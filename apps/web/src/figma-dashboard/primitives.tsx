@@ -11,16 +11,18 @@ type FigmaIconProps = {
 
 /**
  * Renders a Figma-exported asset at an exact pixel box.
- * The leaf image always fills the box so intrinsic SVG size cannot blow up.
+ * Overflow stays visible so stroked SVG icons are not clipped.
  */
 export function FigmaIcon({ src, alt, width, height, className, style }: FigmaIconProps) {
   return (
-    <span
-      className={`relative block overflow-clip ${className ?? ''}`}
+    <img
+      alt={alt}
+      src={src}
+      width={width}
+      height={height}
+      className={`block max-w-none ${className ?? ''}`}
       style={{ width, height, ...style }}
-    >
-      <img alt={alt} src={src} className="absolute inset-0 block size-full max-w-none" />
-    </span>
+    />
   );
 }
 

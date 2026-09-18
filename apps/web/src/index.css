@@ -3,15 +3,54 @@
 
 @font-face {
   font-family: "Murs Gothic";
-  src: url("./assets/fonts/mursgothic-widedark.otf") format("opentype");
-  font-weight: 400 900;
+  src: url("/fonts/mursgothic-widedark.otf") format("opentype");
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter-ExtraBold.woff2") format("woff2");
+  font-weight: 800;
   font-style: normal;
   font-display: swap;
 }
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Murs Gothic", "Inter", sans-serif;
   --color-bee: #fed305;
   --color-ink: #202124;
   --color-muted: #5f6368;
@@ -39,7 +78,12 @@ body {
   margin: 0;
   background: var(--color-figma-canvas);
   color: var(--color-figma-ink);
-  font-family: var(--font-sans);
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+.font-murs {
+  font-family: "Murs Gothic", sans-serif;
+  font-weight: 800;
 }
 
 .figma-text {
