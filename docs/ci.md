@@ -44,10 +44,13 @@ pull request не запускаются.
 docker compose -f docker-compose.yml up -d --build --remove-orphans
 ```
 
-2. SMTP — `scripts/ci/ssh-deploy-smtp.sh` заливает `infra/smtp/` на
-   `deploy@194.87.202.172` и вызывает идемпотентный apply. Полный clone
-   монорепы на почтовом хосте не нужен. Если раннер SourceCraft не достучится
-   до `:22` SMTP-хоста, деплой идёт прыжком `SourceCraft → MGG:2222 → SMTP:22`.
+2. SMTP — `scripts/ci/ssh-deploy-smtp.sh` заливает `infra/smtp/` во
+   временный `/tmp/navix-smtp.*` на `deploy@194.87.202.172` и вызывает
+   идемпотентный apply. Распаковка не в `/home/deploy/smtp`: тот каталог
+   после первого ручного apply часто принадлежит root, и повторный `tar`
+   падает с `File exists`. Полный clone монорепы на почтовом хосте не нужен.
+   Если раннер SourceCraft не достучится до `:22` SMTP-хоста, деплой идёт
+   прыжком `SourceCraft → MGG:2222 → SMTP:22`.
 
 Корневой [docker-compose.yml](../docker-compose.yml) включает
 `infra/docker-compose.yml`, чтобы скилл находил контур, не зная про `infra/`.

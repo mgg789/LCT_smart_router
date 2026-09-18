@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
-# SourceCraft CD cube: rsync infra/smtp to the mail host and run apply.
+# SourceCraft CD cube: stream infra/smtp to the mail host and run apply.
 set -euo pipefail
 
 : "${SMTP_DEPLOY_SSH_KEY:?SMTP_DEPLOY_SSH_KEY is required}"
 host="${SMTP_DEPLOY_HOST:-194.87.202.172}"
 user="${SMTP_DEPLOY_USER:-deploy}"
 port="${SMTP_DEPLOY_PORT:-22}"
-remote_dir="${SMTP_APP_DIR:-/home/deploy/smtp}"
+ssh_opts=()
 
 key_file="$(mktemp)"
+remote_tmp=""
 cleanup() {
   rm -f "$key_file"
+  if [ -n "${remote_tmp:-}" ] && [ "${#ssh_opts[@]}" -gt 0 ]; then
+    ssh "${ssh_opts[@]}" "${user}@${host}" "rm -rf $(printf %q "$remote_tmp")" >/dev/null 2>&1 || true
+  fi
 }
 trap cleanup EXIT
 
@@ -87,10 +91,21 @@ ssh_opts=(
   -o IdentitiesOnly=yes
 )
 
-# Alpine cubes have OpenSSH but not rsync. Stream the tree over the same session.
+# Alpine cubes have OpenSSH but not rsync. Stream into a fresh /tmp tree so a
+# previous root-owned /home/deploy/smtp cannot fail the extract with EEXIST.
+remote_tmp="$(
+  ssh "${ssh_opts[@]}" "${user}@${host}" \
+    'mktemp -d /tmp/navix-smtp.XXXXXX'
+)"
+remote_tmp="${remote_tmp//$'\r'/}"
+if [ -z "$remote_tmp" ] || [ "$remote_tmp" = "${remote_tmp#/tmp/navix-smtp.}" ]; then
+  echo "SMTP host did not return a /tmp/navix-smtp.XXXXXX directory" >&2
+  exit 2
+fi
+
 tar -C infra/smtp -cf - . | ssh "${ssh_opts[@]}" "${user}@${host}" \
-  "mkdir -p $(printf %q "$remote_dir") && tar -C $(printf %q "$remote_dir") -xf -"
+  "tar -C $(printf %q "$remote_tmp") --no-same-owner --overwrite -xf -"
 
 ssh "${ssh_opts[@]}" "${user}@${host}" \
-  "SMTP_APP_DIR=$(printf %q "$remote_dir") bash -s" \
+  "SMTP_APP_DIR=$(printf %q "$remote_tmp") bash -s" \
   < scripts/ci/deploy-smtp-remote.sh
