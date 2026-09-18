@@ -39,6 +39,8 @@ import {
 import {
   type CreateEngineerDto,
   createEngineerSchema,
+  type LinkEngineerAccountDto,
+  linkEngineerAccountSchema,
   operationOnlySchema,
   type SetAvailabilityDto,
   type SetWorkdayDto,
@@ -311,6 +313,26 @@ export class DispatchController {
             homeLon: dto.homeLon ?? null,
           }),
         ),
+    );
+    return { engineer: outcome.result };
+  }
+
+  @Post('engineers/link-account')
+  @ApiOperation({ summary: 'Give an engineer profile that has no login its email address' })
+  async linkEngineerAccount(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(linkEngineerAccountSchema)) dto: LinkEngineerAccountDto,
+  ): Promise<{ engineer: EngineerView }> {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'engineer.link_account',
+        targetRef: dto.engineerId,
+        payload: dto,
+      },
+      async (context) =>
+        toEngineerView(await this.engineers.linkAccount(context, dto.engineerId, dto.email)),
     );
     return { engineer: outcome.result };
   }

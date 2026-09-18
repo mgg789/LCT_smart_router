@@ -169,6 +169,7 @@ Authorization: Bearer <token>
   "inputOrder": 0, "skills": ["connection", "emergency"],
   "transportType": "car", "region": "east",
   "homeLat": 55.77, "homeLon": 37.65, "hasAccount": false,
+  "email": null,
   "day": {
     "engineerId": "eng-…", "workDate": "2026-09-17", "version": 5,
     "shiftStartAt": 1789455600, "shiftEndAt": 1789488000,
@@ -182,9 +183,12 @@ Authorization: Bearer <token>
 ```
 
 `day` — последний известный рабочий день (может быть `null`). Профиль, доступность
-и прогресс работы — три разных вещи, не смешивать в один статус.
+и прогресс работы — три разных вещи, не смешивать в один статус. `email` — адрес
+входа, когда он привязан (`hasAccount: true`); у импортированных бригад `null`.
 
 **POST `/dispatch/engineers`** — `{operationId, email, displayName, skills[1..3], transportType, region?, homeLat?, homeLon?}` → `{engineer}`.
+
+**POST `/dispatch/engineers/link-account`** — `{operationId, engineerId, email}` → `{engineer}`. Выдать логин профилю без адреса (бригада из импорта): аккаунт создаётся, роль инженера выдаётся, параметры планирования не меняются. Повторная привязка и адрес, уже являющийся логином другого инженера, — `VALIDATION_FAILED`. После привязки инженер входит через `POST /auth/login-code` + `verify` с `role: "engineer"`.
 
 **PATCH `/dispatch/engineers/:id`** — `{operationId, expectedVersion?, displayName?, skills?, transportType?, region?, homeLat?, homeLon?}` → `{engineer}`.
 

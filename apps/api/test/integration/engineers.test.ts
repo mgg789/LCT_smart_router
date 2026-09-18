@@ -19,7 +19,14 @@ interface ErrorBody {
 }
 
 interface EngineerBody {
-  engineer: { id: string; version: number; skills: string[]; transportType: string };
+  engineer: {
+    id: string;
+    version: number;
+    skills: string[];
+    transportType: string;
+    hasAccount?: boolean;
+    email?: string | null;
+  };
 }
 
 interface DayBody {
@@ -515,5 +522,46 @@ describe('engineers and working days', () => {
     const untouched = await prisma.engineer.findUniqueOrThrow({ where: { id: crew.id } });
     assert.equal(untouched.accountId, null);
     assert.equal(untouched.version, crew.version, 'a refused link leaves no trace');
+  });
+
+  it('links a login through the dispatch route and signs the brigade in by code', async () => {
+    const crew = await createCrew(['connection']);
+    const email = `${unique('crew')}@example.test`;
+    emails.push(email);
+
+    const response = await call(
+      'POST',
+      '/api/v1/dispatch/engineers/link-account',
+      dispatcherToken,
+      { operationId: randomUUID(), engineerId: crew.id, email },
+    );
+    assert.equal(response.status, 201, await response.clone().text());
+    const view = ((await response.json()) as EngineerBody).engineer;
+    assert.equal(view.hasAccount, true);
+    assert.equal(view.email, email);
+
+    // The linked brigade signs in through the same public code path as everyone else;
+    // the role was granted by the dispatcher at link time (context/36 section 7.2).
+    const token = await signIn(email);
+    const profile = await call('GET', '/api/v1/engineer/profile', token);
+    assert.equal(profile.status, 200);
+    const own = ((await profile.json()) as { engineer: EngineerBody['engineer'] }).engineer;
+    assert.equal(own.id, crew.id);
+    assert.equal(own.email, email);
+  });
+
+  it('lets only the dispatcher link logins to engineers', async () => {
+    const { email } = await createEngineer();
+    const engineerToken = await signIn(email);
+    const crew = await createCrew();
+
+    const response = await call('POST', '/api/v1/dispatch/engineers/link-account', engineerToken, {
+      operationId: randomUUID(),
+      engineerId: crew.id,
+      email: `${unique('x')}@example.test`,
+    });
+    assert.equal(response.status, 403);
+    const untouched = await prisma.engineer.findUniqueOrThrow({ where: { id: crew.id } });
+    assert.equal(untouched.accountId, null);
   });
 });
