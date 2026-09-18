@@ -145,7 +145,12 @@ describe('request lifecycle', () => {
       await prisma.requestConditionHistory.deleteMany({ where: { requestId: { in: requestIds } } });
       await prisma.requestFact.deleteMany({ where: { requestId: { in: requestIds } } });
       await prisma.notificationIntent.deleteMany({
-        where: { businessEventKey: { in: requestIds.map((id) => `request_received:${id}`) } },
+        where: {
+          OR: requestIds.flatMap((id) => [
+            { businessEventKey: { startsWith: `request_received:${id}` } },
+            { businessEventKey: { startsWith: `visit_change_required:${id}:` } },
+          ]),
+        },
       });
       await prisma.request.deleteMany({ where: { id: { in: requestIds } } });
     }
@@ -331,6 +336,75 @@ describe('request lifecycle', () => {
     const [entry] = history;
     assert.ok(entry, 'moving the window must leave a history entry');
     assert.equal((entry.previous as { windowStartAt: number }).windowStartAt, DAY + 10 * HOUR);
+
+    // The previously agreed window can no longer be guaranteed, so the customer is asked
+    // to agree to a new one. The intent is recorded, not delivered: transport belongs to
+    // the SMTP-gateway (context/36 section 10).
+    const changeIntents = await prisma.notificationIntent.findMany({
+      where: {
+        businessEventKey: `visit_change_required:${draft.id}:${DAY + 14 * HOUR}:${DAY + 16 * HOUR}`,
+      },
+    });
+    assert.equal(changeIntents.length, 1);
+    assert.equal(changeIntents[0]?.category, 'visit_change_required');
+    assert.equal(changeIntents[0]?.state, 'pending_submission');
+  });
+
+  it('asks the customer about a new window once per proposed window', async () => {
+    const draft = await prepare();
+    const submitted = ((await (await submit(draft.id, draft.version)).json()) as RequestBody)
+      .request;
+    const keyOf = (start: number, end: number) =>
+      `visit_change_required:${draft.id}:${start}:${end}`;
+    const intentCount = async (key: string) =>
+      (await prisma.notificationIntent.findMany({ where: { businessEventKey: key } })).length;
+
+    const first = await call(
+      'POST',
+      `/api/v1/client/requests/${draft.id}/reschedule`,
+      clientToken,
+      {
+        operationId: randomUUID(),
+        expectedVersion: submitted.version,
+        windowStartAt: DAY + 14 * HOUR,
+        windowEndAt: DAY + 16 * HOUR,
+      },
+    );
+    assert.equal(first.status, 201, await first.clone().text());
+    assert.equal(await intentCount(keyOf(DAY + 14 * HOUR, DAY + 16 * HOUR)), 1);
+
+    // Repeating the same change is the same transition, not a second letter
+    // (context/36 section 10).
+    const current = ((await first.json()) as RequestBody).request;
+    const repeat = await call(
+      'POST',
+      `/api/v1/client/requests/${draft.id}/reschedule`,
+      clientToken,
+      {
+        operationId: randomUUID(),
+        expectedVersion: current.version,
+        windowStartAt: DAY + 14 * HOUR,
+        windowEndAt: DAY + 16 * HOUR,
+      },
+    );
+    assert.equal(repeat.status, 201, await repeat.clone().text());
+    assert.equal(await intentCount(keyOf(DAY + 14 * HOUR, DAY + 16 * HOUR)), 1);
+
+    // A different proposed window is a new question to the customer.
+    const moved = ((await repeat.json()) as RequestBody).request;
+    const other = await call(
+      'POST',
+      `/api/v1/client/requests/${draft.id}/reschedule`,
+      clientToken,
+      {
+        operationId: randomUUID(),
+        expectedVersion: moved.version,
+        windowStartAt: DAY + 18 * HOUR,
+        windowEndAt: DAY + 20 * HOUR,
+      },
+    );
+    assert.equal(other.status, 201, await other.clone().text());
+    assert.equal(await intentCount(keyOf(DAY + 18 * HOUR, DAY + 20 * HOUR)), 1);
   });
 
   it('reports a conflict when the screen the customer confirmed is out of date', async () => {

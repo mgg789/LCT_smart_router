@@ -32,6 +32,18 @@ export const createEngineerSchema = operationEnvelopeSchema.extend({
 });
 export type CreateEngineerDto = z.infer<typeof createEngineerSchema>;
 
+/**
+ * Links a login address to an engineer profile that exists without one, such as a brigade
+ * that arrived with an import (context/37 section 3.1). The dispatcher grants the access;
+ * typing the address on the sign-in screen never creates it. The profile is named in the
+ * body, like the plan/reassign actions do.
+ */
+export const linkEngineerAccountSchema = operationEnvelopeSchema.extend({
+  engineerId: z.string().min(1),
+  email: z.email(),
+});
+export type LinkEngineerAccountDto = z.infer<typeof linkEngineerAccountSchema>;
+
 export const updateEngineerSchema = operationEnvelopeSchema.extend({
   displayName: z.string().min(1).max(200).optional(),
   skills: skills.optional(),

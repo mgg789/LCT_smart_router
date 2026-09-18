@@ -6,9 +6,12 @@ import { after, before, describe, it } from 'node:test';
 import type { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../../src/app.module';
+import { type Actor } from '../../src/auth';
 import { AllExceptionsFilter } from '../../src/common/errors';
 import { BigIntGuardInterceptor } from '../../src/common/serialization';
 import type { PrismaClient } from '../../src/generated/prisma/client';
+import { OperationsService } from '../../src/operations';
+import { EngineersService } from '../../src/orchestrator/engineers';
 import { createTestClient, databaseUrl, unique } from '../support/database';
 
 interface ErrorBody {
@@ -16,7 +19,14 @@ interface ErrorBody {
 }
 
 interface EngineerBody {
-  engineer: { id: string; version: number; skills: string[]; transportType: string };
+  engineer: {
+    id: string;
+    version: number;
+    skills: string[];
+    transportType: string;
+    hasAccount?: boolean;
+    email?: string | null;
+  };
 }
 
 interface DayBody {
@@ -47,6 +57,9 @@ describe('engineers and working days', () => {
   let prisma: PrismaClient;
   let baseUrl: string;
   let dispatcherToken: string;
+  let engineersService: EngineersService;
+  let operations: OperationsService;
+  let dispatcherActor: Actor;
   const emails: string[] = [];
   const engineerIds: string[] = [];
 
@@ -119,6 +132,22 @@ describe('engineers and working days', () => {
       }),
     });
     dispatcherToken = ((await dispatcher.json()) as { token: string }).token;
+
+    // The link operation is exercised through the system layer it belongs to; the HTTP
+    // route for it is covered once it exists.
+    engineersService = app.get(EngineersService);
+    operations = app.get(OperationsService);
+    const dispatcherAccount = await prisma.account.findUniqueOrThrow({
+      where: { email: String(process.env.DISPATCHER_EMAIL).toLowerCase() },
+    });
+    dispatcherActor = {
+      kind: 'account',
+      source: 'ui',
+      id: dispatcherAccount.id,
+      role: 'dispatcher',
+      tokenCategory: null,
+      accountId: dispatcherAccount.id,
+    };
   });
 
   after(async () => {
@@ -421,5 +450,118 @@ describe('engineers and working days', () => {
     // field in which to name someone else (context/42 DF-06).
     const other = await prisma.engineer.findUniqueOrThrow({ where: { id: second.engineer.id } });
     assert.equal(other.transportType, 'car');
+  });
+
+  /** A routing profile as an import leaves it: no account, no invented parameters. */
+  const createCrew = async (skills: ('local' | 'connection' | 'emergency')[] = ['local']) => {
+    const crew = await prisma.engineer.create({
+      data: {
+        displayName: unique('brigade'),
+        inputOrder: 1_000_000 + engineerIds.length,
+        skills,
+        transportType: 'car',
+        origin: 'synthesized',
+        createdAt: BigInt(DAY),
+        updatedAt: BigInt(DAY),
+      },
+    });
+    engineerIds.push(crew.id);
+    return crew;
+  };
+
+  const link = (engineerId: string, email: string) =>
+    operations.execute(
+      {
+        operationId: randomUUID(),
+        actor: dispatcherActor,
+        action: 'engineer.link_account',
+        targetRef: engineerId,
+        payload: { engineerId, email },
+      },
+      (context) => engineersService.linkAccount(context, engineerId, email),
+    );
+
+  it('links a login to a brigade that exists only as a routing profile', async () => {
+    const crew = await createCrew();
+    const email = `${unique('crew')}@example.test`;
+    emails.push(email);
+
+    const outcome = await link(crew.id, email);
+
+    assert.ok(outcome.result.accountId, 'the profile now has a login');
+    assert.equal(outcome.result.account?.email, email);
+    assert.equal(outcome.result.version, crew.version + 1);
+    const roles = await prisma.accountRole.findMany({
+      where: { accountId: outcome.result.accountId as string },
+    });
+    assert.deepEqual(
+      roles.map((role) => role.role),
+      ['engineer'],
+      'the dispatcher granted the role, exactly as when creating an engineer by address',
+    );
+    // Linking is an access grant, not a profile edit: what Router plans on is untouched.
+    assert.deepEqual(outcome.result.skills, ['local']);
+  });
+
+  it('refuses a second link and an address another engineer already owns', async () => {
+    const { email, engineer } = await createEngineer();
+    const crew = await createCrew(['connection']);
+
+    await assert.rejects(
+      link(engineer.id, email),
+      (error: unknown) => (error as { code?: string }).code === 'VALIDATION_FAILED',
+      'an engineer with a login cannot be linked again',
+    );
+
+    await assert.rejects(
+      link(crew.id, email),
+      (error: unknown) => (error as { code?: string }).code === 'VALIDATION_FAILED',
+      'the address is already the login of another engineer',
+    );
+
+    const untouched = await prisma.engineer.findUniqueOrThrow({ where: { id: crew.id } });
+    assert.equal(untouched.accountId, null);
+    assert.equal(untouched.version, crew.version, 'a refused link leaves no trace');
+  });
+
+  it('links a login through the dispatch route and signs the brigade in by code', async () => {
+    const crew = await createCrew(['connection']);
+    const email = `${unique('crew')}@example.test`;
+    emails.push(email);
+
+    const response = await call(
+      'POST',
+      '/api/v1/dispatch/engineers/link-account',
+      dispatcherToken,
+      { operationId: randomUUID(), engineerId: crew.id, email },
+    );
+    assert.equal(response.status, 201, await response.clone().text());
+    const view = ((await response.json()) as EngineerBody).engineer;
+    assert.equal(view.hasAccount, true);
+    assert.equal(view.email, email);
+
+    // The linked brigade signs in through the same public code path as everyone else;
+    // the role was granted by the dispatcher at link time (context/36 section 7.2).
+    const token = await signIn(email);
+    const profile = await call('GET', '/api/v1/engineer/profile', token);
+    assert.equal(profile.status, 200);
+    const own = ((await profile.json()) as { engineer: EngineerBody['engineer'] }).engineer;
+    assert.equal(own.id, crew.id);
+    assert.equal(own.email, email);
+  });
+
+  it('lets only the dispatcher link logins to engineers', async () => {
+    const { email } = await createEngineer();
+    const engineerToken = await signIn(email);
+    const crew = await createCrew();
+
+    const response = await call('POST', '/api/v1/dispatch/engineers/link-account', engineerToken, {
+      operationId: randomUUID(),
+      engineerId: crew.id,
+      email: `${unique('x')}@example.test`,
+    });
+    assert.equal(response.status, 403);
+    const untouched = await prisma.engineer.findUniqueOrThrow({ where: { id: crew.id } });
+    assert.equal(untouched.accountId, null);
   });
 });

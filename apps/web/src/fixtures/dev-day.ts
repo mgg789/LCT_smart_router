@@ -465,6 +465,7 @@ function engineer(
     homeLat: home[0],
     homeLon: home[1],
     hasAccount: true,
+    email: `${id}@navix.example`,
     day: {
       engineerId: id,
       workDate: DEV_WORK_DATE,
