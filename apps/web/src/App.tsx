@@ -1,5 +1,5 @@
-import { DashboardPage } from './pages/DashboardPage';
+import { MainDashboardPage } from './figma-dashboard/MainDashboardPage';
 
 export function App() {
-  return <DashboardPage />;
+  return <MainDashboardPage />;
 }

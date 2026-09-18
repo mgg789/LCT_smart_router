@@ -1,14 +1,32 @@
 @import "tailwindcss";
 @import "maplibre-gl/dist/maplibre-gl.css";
 
+@font-face {
+  font-family: "Murs Gothic";
+  src: url("./assets/fonts/mursgothic-widedark.otf") format("opentype");
+  font-weight: 400 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Murs Gothic", "Inter", sans-serif;
   --color-bee: #fed305;
   --color-ink: #202124;
   --color-muted: #5f6368;
   --color-line: #e4e5e7;
   --color-canvas: #fafaf8;
   --color-panel: #171717;
+  --color-figma-canvas: #f1f1f1;
+  --color-figma-ink: #272930;
+  --color-figma-muted: #727478;
+  --color-figma-dim: #555555;
+  --color-figma-bee: #ffc72c;
+  --color-figma-track: #ededed;
+  --color-figma-hint: #b0b0b0;
+  --color-figma-soft: #f4f6f8;
+  --color-figma-sub: #2d2d2d;
 }
 
 html,
@@ -19,9 +37,16 @@ body,
 
 body {
   margin: 0;
-  background: var(--color-canvas);
-  color: var(--color-ink);
+  background: var(--color-figma-canvas);
+  color: var(--color-figma-ink);
   font-family: var(--font-sans);
+}
+
+.figma-text {
+  text-box-trim: trim-both;
+  text-box-edge: cap alphabetic;
+  word-break: break-word;
+  line-height: normal;
 }
 
 .maplibregl-ctrl-bottom-right,
