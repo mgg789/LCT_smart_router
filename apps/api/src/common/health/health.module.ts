@@ -17,8 +17,7 @@ export class HealthModule implements OnModuleInit {
   constructor(private readonly registry: HealthRegistry) {}
 
   onModuleInit(): void {
-    this.registry.registerNotConfigured('router', 'Router Core client is not wired yet');
     this.registry.registerNotConfigured('ai', 'AI-gateway is out of scope of this build');
-    this.registry.registerNotConfigured('smtp', 'SMTP-gateway is out of scope of this build');
+    // router and smtp register their own probes from their feature modules.
   }
 }

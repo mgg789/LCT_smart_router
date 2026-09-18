@@ -175,6 +175,7 @@ export function DashboardPage() {
             open={policyOpen}
             policyId={snapshot.policyId}
             lunchesEnabled={snapshot.lunchesEnabled}
+            routerSettings={snapshot.routerSettings}
             policies={snapshot.policies}
             onClose={() => setPolicyOpen(false)}
             onApply={dash.applyRoutingSettings}

@@ -1,0 +1,15 @@
+[Unit]
+Description=Navix Hysteria 2 client (SMTP submission tunnel)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/home/mgg/.local/bin/hysteria client -c /home/mgg/hysteria/client.yaml
+Restart=always
+RestartSec=3
+User=mgg
+Group=mgg
+
+[Install]
+WantedBy=default.target

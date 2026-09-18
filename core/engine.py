@@ -11,16 +11,19 @@ from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 
 from core.contracts import (
     Engineer,
+    EngineerRoute,
     EquipmentType,
     GeoPoint,
     Plan,
     Policy,
+    Request,
     RouterTaskSnapshot,
     RouterTechnicalSettings,
     TravelTimeMode,
 )
 from core.geo import configure_travel, routing_context_version
 from core.policy import Criterion, PolicySpec, compile_policy, criterion_values
+from core.route_search import improve_routes
 from core.schedule import (
     TravelProvider,
     assemble_plan,
@@ -39,8 +42,11 @@ class SearchSettings:
     """Technical budget, independent of business policy; one seed/thread by design."""
 
     time_limit_ms: int = 3000
-    solution_limit: int = 64
+    solution_limit: int = 10000
     lunches_enabled: bool = False
+    traffic_enabled: bool = True
+    equipment_enabled: bool = True
+    window_lateness_tolerance_sec: int = 0
     departure_lateness_tolerance_sec: int = 0
     task_start_lateness_tolerance_sec: int = 0
     travel_time_mode: TravelTimeMode = "graph_with_access_buffer"
@@ -57,7 +63,8 @@ class SearchSettings:
             object.__setattr__(self, "departure_lateness_tolerance_sec", self.tolerance_sec)
             object.__setattr__(self, "task_start_lateness_tolerance_sec", self.tolerance_sec)
         if (
-            self.time_limit_ms < 1
+            not 0 <= self.window_lateness_tolerance_sec <= 1200
+            or self.time_limit_ms < 1
             or self.solution_limit < 1
             or self.departure_lateness_tolerance_sec < 0
             or self.task_start_lateness_tolerance_sec < 0
@@ -77,6 +84,9 @@ class SearchSettings:
         """Expose only persisted context controls, excluding per-run search budgets."""
         return RouterTechnicalSettings(
             lunches_enabled=self.lunches_enabled,
+            traffic_enabled=self.traffic_enabled,
+            equipment_enabled=self.equipment_enabled,
+            window_lateness_tolerance_sec=self.window_lateness_tolerance_sec,
             departure_lateness_tolerance_sec=self.departure_lateness_tolerance_sec,
             task_start_lateness_tolerance_sec=self.task_start_lateness_tolerance_sec,
             travel_time_mode=self.travel_time_mode,
@@ -167,6 +177,15 @@ def apply_system_policy(
     snapshot: RouterTaskSnapshot, settings: SearchSettings
 ) -> RouterTaskSnapshot:
     """Apply Router-owned hard switches without mutating the sys publication."""
+    if not settings.equipment_enabled:
+        snapshot = snapshot.model_copy(
+            update={
+                "requests": [
+                    request.model_copy(update={"required_equipment": None})
+                    for request in snapshot.requests
+                ]
+            }
+        )
     if settings.lunches_enabled:
         return snapshot
     engineers = []
@@ -389,7 +408,9 @@ def _search(
         ]
         routing.VehicleVar(index).SetValues([-1] + allowed)
         lower = max(0, request.window_start_at - origin)
-        upper = min(horizon, request.window_end_at - origin)
+        upper = min(
+            horizon, request.window_end_at + settings.window_lateness_tolerance_sec - origin
+        )
         if not allowed or lower > upper or request.service_duration_sec > horizon:
             routing.ActiveVar(index).SetValue(0)
         else:
@@ -561,34 +582,32 @@ def _search(
     return plan
 
 
+def official_roster(snapshot: RouterTaskSnapshot) -> RouterTaskSnapshot:
+    """Exclude synthesized covering crews from fixed-roster strategy comparisons."""
+    engineers = [e for e in snapshot.engineers if not e.engineer_id.startswith("covering-")]
+    return (
+        snapshot.model_copy(update={"engineers": engineers})
+        if len(engineers) != len(snapshot.engineers)
+        else snapshot
+    )
+
+
 _COVERING_SKILLS: tuple[str, ...] = ("local", "connection", "emergency")
 
 
-def official_roster(snapshot: RouterTaskSnapshot) -> RouterTaskSnapshot:
-    """Drop synthesized covering extras so working policies stay on the real crew.
-
-    Persisted ``covering-*`` people must not leak into compact/fast/sla/eco/FIFO:
-    that made every strategy assign the full day with the same 57-person roster.
-    """
-    official = [
-        engineer
-        for engineer in snapshot.engineers
-        if not engineer.engineer_id.startswith("covering-")
-    ]
-    if len(official) == len(snapshot.engineers):
-        return snapshot
-    return snapshot.model_copy(update={"engineers": official})
-
-
 def _covering_clone(template: Engineer, index: int) -> Engineer:
-    """Clone a regional template as a synthesized extra engineer with every skill."""
+    """Clone a compatible roster template as an online covering engineer.
+
+    The template's transport, equipment, location and shift are retained.  A
+    covering crew therefore cannot silently cross a region, change transport,
+    or work outside the source roster's shift just because it is synthetic.
+    """
     region = template.region or "any"
     return template.model_copy(
         update={
             "engineer_id": f"covering-{region}-{index}",
             "input_order": 10_000 + index,
             "skills": list(_COVERING_SKILLS),
-            "transport_type": "car",
             "availability": "online",
             "expected_online_at": None,
             "lunch_taken": False,
@@ -596,20 +615,271 @@ def _covering_clone(template: Engineer, index: int) -> Engineer:
     )
 
 
-def _covering_extra_engineers(snapshot: RouterTaskSnapshot, extra: int) -> list[Engineer]:
-    """Synthesize ``extra`` engineers, round-robin across regional templates."""
-    if extra <= 0 or not snapshot.engineers:
-        return []
-    templates: dict[str, Engineer] = {}
-    for engineer in snapshot.engineers:
-        key = engineer.region or "any"
-        if key not in templates:
-            templates[key] = engineer
-    regions = sorted(templates)
-    return [
-        _covering_clone(templates[regions[index % len(regions)]], index + 1)
-        for index in range(extra)
+def _next_covering_index(engineers: list[Engineer]) -> int:
+    """Continue covering-N ids after any extras already present on the snapshot."""
+    highest = 0
+    for engineer in engineers:
+        prefix, _sep, tail = engineer.engineer_id.rpartition("-")
+        if prefix.startswith("covering-") and tail.isdigit():
+            highest = max(highest, int(tail))
+    return highest + 1
+
+
+def _covering_template_can_serve(
+    snapshot: RouterTaskSnapshot, engineer: Engineer, request: Request
+) -> bool:
+    """Check static demand compatibility before cloning a covering template."""
+    if request.region is not None and engineer.region not in (None, request.region):
+        return False
+    if request.required_transport not in (None, engineer.transport_type):
+        return False
+    if (
+        request.required_equipment is not None
+        and engineer.equipment_stock.quantity(request.required_equipment) < 1
+    ):
+        return False
+    release = release_at(snapshot, engineer)
+    if release is None:
+        return False
+    finish = min(engineer.shift_end_at, snapshot.horizon_end_at)
+    return max(release, request.window_start_at) + request.service_duration_sec <= finish
+
+
+def _covering_extra_engineers(
+    snapshot: RouterTaskSnapshot,
+    requests: list[Request],
+    travel: TravelProvider | None = None,
+) -> list[Engineer]:
+    """Create deterministic extras matched to demand and hard constraints."""
+    demands = list(requests)
+    templates = [
+        engineer
+        for engineer in snapshot.engineers
+        if not engineer.engineer_id.startswith("covering-")
     ]
+    if not demands or not templates:
+        return []
+    templates.sort(key=lambda engineer: (engineer.input_order, engineer.engineer_id))
+    start = _next_covering_index(snapshot.engineers)
+    extras: list[Engineer] = []
+    for offset, request in enumerate(demands):
+        candidates: list[tuple[Engineer, EngineerRoute | None]] = []
+        for template in templates:
+            if not _covering_template_can_serve(snapshot, template, request):
+                continue
+            clone = _covering_clone(template, start + offset)
+            route = (
+                fixed_order(snapshot, clone, [request.request_id], travel)
+                if travel is not None
+                else None
+            )
+            if travel is None:
+                # The static checks above remain the safe fallback for direct
+                # helper callers that do not have a travel provider.
+                candidates.append((clone, None))
+            elif route is not None:
+                candidates.append((clone, route))
+        if not candidates:
+            continue
+        # Prefer actual route cost when available, then stable roster order.
+        extras.append(
+            min(
+                candidates,
+                key=lambda item: (
+                    item[1].metrics.travel_time_sec if item[1] is not None else 0,
+                    round(item[1].metrics.distance_km * 1000) if item[1] is not None else 0,
+                    item[0].input_order,
+                    item[0].engineer_id,
+                ),
+            )[0]
+        )
+    return extras
+
+
+def _union_memory_engineers(
+    snapshot: RouterTaskSnapshot, memory: EngineMemory | None
+) -> RouterTaskSnapshot:
+    """Reuse only assigned covering extras; never resurrect removed originals."""
+    snapshot = official_roster(snapshot)
+    if memory is None or not memory.plan.is_usable:
+        return snapshot
+    # Synthetic capacity comes from roster templates. Recreate it when shifts,
+    # equipment or availability change instead of retaining stale capacity.
+    if official_roster(memory.snapshot).engineers != snapshot.engineers:
+        return snapshot
+    known = {engineer.engineer_id for engineer in snapshot.engineers}
+    used = {
+        route.engineer_id
+        for route in memory.plan.routes
+        if route.engineer_id.startswith("covering-") and route.metrics.assigned_count > 0
+    }
+    extras = [
+        engineer for engineer in memory.snapshot.engineers if engineer.engineer_id not in known
+        and engineer.engineer_id in used
+        and engineer.engineer_id.startswith("covering-")
+        and any(
+            _covering_template_can_serve(snapshot, engineer, request)
+            for request in snapshot.requests
+        )
+    ]
+    if not extras:
+        return snapshot
+    return snapshot.model_copy(update={"engineers": [*snapshot.engineers, *extras]})
+
+
+def _canonical_plan(
+    snapshot: RouterTaskSnapshot,
+    routes: list[EngineerRoute],
+    travel: TravelProvider,
+) -> Plan:
+    """Materialize one route per input engineer in canonical roster order."""
+    by_id = {route.engineer_id: route for route in routes}
+    ordered: list[EngineerRoute] = []
+    for engineer in snapshot.engineers:
+        route = by_id.get(engineer.engineer_id)
+        if route is None:
+            route = fixed_order(snapshot, engineer, [], travel)
+        if route is None:
+            raise ValueError(f"RESULT_INVALID: no canonical route for {engineer.engineer_id}")
+        ordered.append(route)
+    plan = assemble_plan(snapshot, ordered)
+    validate_plan(snapshot, plan, travel)
+    return plan
+
+
+def _covering_search_snapshot(snapshot: RouterTaskSnapshot) -> RouterTaskSnapshot:
+    """Use covering's extra-aware resource ordering for heuristic search."""
+    return snapshot.model_copy(update={"policy": Policy(policy_id="covering", parameters={})})
+
+
+def _improve_covering(
+    snapshot: RouterTaskSnapshot,
+    seed: Plan | None,
+    travel: TravelProvider,
+    effort: int = 3000,
+    construct: bool = True,
+) -> Plan:
+    """Improve all routes together, retaining exact canonical validation."""
+    search_snapshot = _covering_search_snapshot(snapshot)
+    projected = _project(search_snapshot, seed, travel) if seed is not None else None
+    if projected is None or not projected.is_usable:
+        projected = baseline(search_snapshot, travel)
+    if not projected.is_usable:
+        return projected
+    candidates = improve_routes(
+        search_snapshot, travel, [projected], effort, construct=construct
+    )
+    usable = [candidate for candidate in candidates if candidate.is_usable]
+    chosen = (
+        min(usable, key=lambda candidate: score(search_snapshot, candidate))
+        if usable
+        else projected
+    )
+    return _canonical_plan(search_snapshot, chosen.routes, travel)
+
+
+def _cover_leftovers(
+    snapshot: RouterTaskSnapshot,
+    first: Plan,
+    travel: TravelProvider,
+    effort: int = 3000,
+) -> tuple[list[Engineer], list[EngineerRoute]]:
+    """Cover leftovers with demand-matched extras and a bounded global improve.
+
+    The heuristic first optimizes the complete original roster, then adds one
+    feasible template per remaining demand.  It subsequently tries removing
+    each used extra and re-optimizing, so an extra is retained only when the
+    current plan still needs it.  This is deterministic and explicitly makes
+    no global optimality claim.
+    """
+    leftover_ids = {item.request_id for item in first.assignments if item.status == "unassigned"}
+    leftover_requests = [
+        request for request in snapshot.requests if request.request_id in leftover_ids
+    ]
+    if not leftover_requests:
+        canonical = _canonical_plan(snapshot, first.routes, travel)
+        return snapshot.engineers, canonical.routes
+
+    original = official_roster(snapshot)
+    existing_extras = [
+        engineer
+        for engineer in snapshot.engineers
+        if engineer.engineer_id.startswith("covering-")
+    ]
+    extras = _covering_extra_engineers(snapshot, leftover_requests, travel)
+    expanded = original.model_copy(
+        update={"engineers": [*original.engineers, *existing_extras, *extras]}
+    )
+    seed = _project(expanded, first, travel)
+    improved = _improve_covering(expanded, seed, travel, effort)
+
+    # Remove unused extras before trying the more expensive greedy reduction.
+    used = {
+        route.engineer_id
+        for route in improved.routes
+        if route.engineer_id.startswith("covering-") and route.metrics.assigned_count > 0
+    }
+    current_snapshot = expanded.model_copy(
+        update={
+            "engineers": [
+                engineer
+                for engineer in expanded.engineers
+                if not engineer.engineer_id.startswith("covering-")
+                or engineer.engineer_id in used
+            ]
+        }
+    )
+    current = (
+        _canonical_plan(current_snapshot, improved.routes, travel)
+        if improved.is_usable
+        else improved
+    )
+    for extra_id in sorted(used):
+        if extra_id not in {e.engineer_id for e in current_snapshot.engineers}:
+            continue
+        trial_snapshot = current_snapshot.model_copy(
+            update={
+                "engineers": [
+                    engineer
+                    for engineer in current_snapshot.engineers
+                    if engineer.engineer_id != extra_id
+                ]
+            }
+        )
+        try:
+            trial_seed = _project(trial_snapshot, current, travel)
+            trial = _improve_covering(
+                trial_snapshot,
+                trial_seed,
+                travel,
+                max(100, min(effort, 300)),
+                construct=False,
+            )
+        except ValueError:
+            continue
+        current_score = (
+            score(_covering_search_snapshot(current_snapshot), current)
+            if current.is_usable
+            else None
+        )
+        trial_score = score(_covering_search_snapshot(trial_snapshot), trial)
+        # Preserve the senior coverage/lateness criteria exactly while reducing
+        # the number of used extras.  Remaining impossible jobs therefore do
+        # not block a safe reduction attempt.
+        if (
+            current_score is not None
+            and trial_score[:4] == current_score[:4]
+            and trial_score[4] <= current_score[4]
+        ):
+            current_snapshot, current = trial_snapshot, trial
+    final_used = {r.engineer_id for r in current.routes if r.metrics.assigned_count > 0}
+    current_snapshot = current_snapshot.model_copy(update={"engineers": [
+        e for e in current_snapshot.engineers
+        if not e.engineer_id.startswith("covering-") or e.engineer_id in final_used
+    ]})
+    final = _canonical_plan(current_snapshot, current.routes, travel) if current.is_usable else current
+    validate_plan(current_snapshot, final, travel)
+    return current_snapshot.engineers, final.routes
 
 
 def _solve_covering(
@@ -619,57 +889,71 @@ def _solve_covering(
     memory: EngineMemory | None,
     context_version: str | None,
 ) -> EngineOutput:
-    """Cover leftovers with the fewest extras; do not re-solve already assigned work.
+    """Optimize the original roster, then cover remaining demand heuristically.
 
-    Compact keeps the current coverage on the official roster, then one compact
-    solve runs only on unassigned requests plus synthesized extras. Unused extras
-    are dropped so ``n`` is the crew that actually received work.
+    A prior usable plan is projected when possible, while only persisted
+    ``covering-*`` crews are reused.  The FIFO baseline always stays on the
+    original roster, and the final route list follows that roster before any
+    retained extras.
     """
-    del memory
-    snapshot = official_roster(snapshot)
-    compact = snapshot.model_copy(update={"policy": Policy(policy_id="compact", parameters={})})
-    first = _solve_prepared(compact, travel, settings, None, context_version)
+    original = official_roster(snapshot)
+    if memory is not None and memory.context_version != context_version:
+        memory = None
+    aligned = _union_memory_engineers(original, memory)
+    first_baseline = baseline(original, travel)
+    validate_plan(original, first_baseline, travel)
+    path = "COVERING_COLD"
+    first_main: Plan | None = None
+    if memory is not None and memory.plan.is_usable:
+        try:
+            projected = _project(aligned, memory.plan, travel)
+        except ValueError:
+            projected = None
+        if projected is not None and projected.is_usable:
+            first_main = projected
+            path = "COVERING_FROM_MEMORY"
+    if first_main is None:
+        compact = original.model_copy(update={"policy": Policy(policy_id="compact", parameters={})})
+        first = _solve_prepared(compact, travel, settings, None, context_version)
+        first_main = first.main
+        path = first.path
+        aligned = original
+
+    # A memory plan may contain only the original roster while aligned has
+    # reusable extras.  Projecting into the aligned snapshot gives improve_routes
+    # a complete seed without changing any already known route order.
+    aligned_seed = _project(aligned, first_main, travel)
+    first_main = _improve_covering(aligned, aligned_seed, travel, settings.time_limit_ms)
     leftover_ids = {
-        item.request_id for item in first.main.assignments if item.status == "unassigned"
+        item.request_id for item in first_main.assignments if item.status == "unassigned"
     }
     if not leftover_ids:
+        used = {
+            route.engineer_id for route in first_main.routes if route.metrics.assigned_count > 0
+        }
+        kept = [
+            engineer
+            for engineer in aligned.engineers
+            if not engineer.engineer_id.startswith("covering-") or engineer.engineer_id in used
+        ]
+        covered = aligned.model_copy(update={"engineers": kept, "policy": snapshot.policy})
+        main = _canonical_plan(covered, first_main.routes, travel)
         return EngineOutput(
-            first.main,
-            first.baseline,
-            first.path,
-            EngineMemory(snapshot.model_copy(deep=True), first.main, first.memory.context_version),
+            main,
+            first_baseline,
+            path,
+            EngineMemory(covered, main, context_version or ""),
         )
-    leftover_requests = [request for request in snapshot.requests if request.request_id in leftover_ids]
-    extras = _covering_extra_engineers(snapshot, len(leftover_requests))
-    leftover_snapshot = snapshot.model_copy(
-        update={
-            "requests": leftover_requests,
-            "engineers": extras,
-            "policy": Policy(policy_id="compact", parameters={}),
-        }
+    covered_engineers, merged_routes = _cover_leftovers(
+        aligned, first_main, travel, settings.time_limit_ms
     )
-    leftover = _solve_prepared(leftover_snapshot, travel, settings, None, context_version)
-    used_extra_ids = {
-        route.engineer_id
-        for route in leftover.main.routes
-        if route.engineer_id.startswith("covering-") and route.metrics.assigned_count > 0
-    }
-    extra_routes = [route for route in leftover.main.routes if route.engineer_id in used_extra_ids]
-    covered = snapshot.model_copy(
-        update={
-            "engineers": [
-                *snapshot.engineers,
-                *[engineer for engineer in extras if engineer.engineer_id in used_extra_ids],
-            ]
-        }
-    )
-    main = assemble_plan(covered, [*first.main.routes, *extra_routes])
-    validate_plan(covered, main, travel)
+    covered = aligned.model_copy(update={"engineers": covered_engineers, "policy": snapshot.policy})
+    main = _canonical_plan(covered, merged_routes, travel)
     return EngineOutput(
         main,
-        first.baseline,
-        leftover.path,
-        EngineMemory(covered, main, first.memory.context_version),
+        first_baseline,
+        path,
+        EngineMemory(covered, main, context_version or ""),
     )
 
 
@@ -685,10 +969,8 @@ def solve(
     Policy stages preserve achieved coverage/lunch criteria before their resource order.
     Fast keeps engineer count as a final candidate tie-break; compact optimizes it first.
     Covering first adds the fewest extra engineers that assign every remaining request.
-    Working policies never see persisted covering extras.
     """
     settings = settings or SearchSettings()
-    snapshot = official_roster(snapshot)
     if snapshot.policy.policy_id == "covering":
         default_context_version = routing_context_version(travel, settings.technical())
         travel = configure_travel(travel, settings.technical(), snapshot.planning_as_of)
@@ -696,7 +978,7 @@ def solve(
         return _solve_covering(
             snapshot, travel, settings, memory, context_version or default_context_version
         )
-    return _solve_prepared(snapshot, travel, settings, memory, context_version)
+    return _solve_prepared(official_roster(snapshot), travel, settings, memory, context_version)
 
 
 def _solve_prepared(
@@ -708,10 +990,6 @@ def _solve_prepared(
 ) -> EngineOutput:
     """Run the existing baseline + staged search on an already expanded snapshot."""
     settings = settings or SearchSettings()
-    if memory is not None and memory.snapshot.policy.policy_id != snapshot.policy.policy_id:
-        # A new objective is not a small repair of the previous policy's routes.
-        # Reusing them made every preset collapse onto the last applied plan.
-        memory = None
     default_context_version = routing_context_version(travel, settings.technical())
     travel = configure_travel(travel, settings.technical(), snapshot.planning_as_of)
     snapshot = apply_system_policy(snapshot, settings)
@@ -720,7 +998,11 @@ def _solve_prepared(
     context_version = context_version or default_context_version
     base = baseline(snapshot, travel)
     validate_plan(snapshot, base, travel)
-    compatible = memory is not None and memory.context_version == context_version
+    compatible = (
+        memory is not None
+        and memory.context_version == context_version
+        and memory.snapshot.policy == snapshot.policy
+    )
     projected = (
         _project(snapshot, memory.plan, travel) if compatible and memory.plan.is_usable else None
     )
@@ -753,7 +1035,16 @@ def _solve_prepared(
         min(candidates, key=lambda plan: score(search_snapshot, plan)) if candidates else None
     )
     deadline = time.monotonic() + settings.time_limit_ms / 1000
-    for i, stage in enumerate(policy.search_stages):
+    # Static OR-Tools remains a seed generator only when forecast traffic is disabled.
+    # Departure-dependent routes are optimized by exact whole-route evaluation.
+    stages = policy.search_stages if not settings.traffic_enabled else ()
+    stages = tuple(
+        stage
+        for stage in stages
+        if stage
+        not in ("total_lateness", "window_end_risk", "max_workload_ratio", "workload_spread")
+    )
+    for i, stage in enumerate(stages):
         remaining = int((deadline - time.monotonic()) * 1000)
         if remaining <= 0:
             break
@@ -763,15 +1054,25 @@ def _solve_prepared(
             settings,
             stage,
             incumbent,
-            remaining // (len(policy.search_stages) - i),
-            tuple(policy.search_stages[1:i]),
+            remaining // (len(stages) - i),
+            tuple(stages[1:i]),
         )
         if candidate is not None and (
             incumbent is None
             or score(search_snapshot, candidate) < score(search_snapshot, incumbent)
         ):
             incumbent = candidate
-    search_main = incumbent or search_base
+    candidates = improve_routes(
+        search_snapshot,
+        travel,
+        [plan for plan in (search_base, incumbent) if plan is not None and plan.is_usable],
+        settings.time_limit_ms,
+    )
+    search_main = (
+        min(candidates, key=lambda plan: score(search_snapshot, plan))
+        if candidates
+        else search_base
+    )
     if search_snapshot is snapshot:
         main = search_main
     else:

@@ -19,9 +19,9 @@ export interface NotificationIntentInput {
 /**
  * Records what sys has decided to send.
  *
- * sys composes the letter; the external SMTP server delivers it. This build has no
- * SMTP-gateway, so intents are stored and stay `pending_submission` -- which is the
- * honest state, not a pretended success (context/42 DF-20).
+ * sys composes the letter; SMTP-gateway submits it. Until the external server
+ * accepts the message the row stays `pending_submission` -- that is the honest
+ * state, not a pretended success (context/42 DF-20).
  *
  * There is deliberately no `delivered` state anywhere in this model. Our control ends
  * when the mail server accepts a message; whether it reached a mailbox is outside it.

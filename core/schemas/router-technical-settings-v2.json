@@ -23,6 +23,11 @@
       "title": "Early Finish Replan Threshold Sec",
       "type": "integer"
     },
+    "equipment_enabled": {
+      "default": true,
+      "title": "Equipment Enabled",
+      "type": "boolean"
+    },
     "fixed_travel_time_sec": {
       "default": 1200,
       "exclusiveMinimum": 0,
@@ -49,6 +54,11 @@
       "title": "Task Start Lateness Tolerance Sec",
       "type": "integer"
     },
+    "traffic_enabled": {
+      "default": true,
+      "title": "Traffic Enabled",
+      "type": "boolean"
+    },
     "travel_time_mode": {
       "default": "graph_with_access_buffer",
       "enum": [
@@ -57,6 +67,13 @@
       ],
       "title": "Travel Time Mode",
       "type": "string"
+    },
+    "window_lateness_tolerance_sec": {
+      "default": 0,
+      "maximum": 1200,
+      "minimum": 0,
+      "title": "Window Lateness Tolerance Sec",
+      "type": "integer"
     }
   },
   "title": "RouterTechnicalSettings",

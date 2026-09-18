@@ -234,6 +234,8 @@ export interface DashboardSnapshot {
   readonly nowAt: number;
   readonly policyId: PolicyId;
   readonly lunchesEnabled: boolean;
+  /** Full Router-owned settings when the snapshot came from the live API. */
+  readonly routerSettings?: RouterTechnicalSettings;
   readonly routerContextVersion: string;
   readonly policies: readonly PolicySpec[];
   readonly engineers: Array<EngineerView & { day: EngineerDayView | null }>;
@@ -246,6 +248,10 @@ export interface RouterTechnicalSettings {
   readonly lunchesEnabled: boolean;
   readonly departureLatenessToleranceSec: number;
   readonly taskStartLatenessToleranceSec: number;
+  /** Customer-window lateness allowance, measured from the original window. */
+  readonly windowLatenessToleranceSec: number;
+  readonly trafficEnabled: boolean;
+  readonly equipmentEnabled: boolean;
   readonly travelTimeMode: 'graph_with_access_buffer' | 'fixed_normative';
   readonly accessBufferSec: number;
   readonly fixedTravelTimeSec: number;
@@ -281,11 +287,17 @@ export interface PolicyComparisonMetrics {
   readonly workTimeSec: number;
   readonly waitingTimeSec: number;
   readonly lunchTimeSec: number;
+  readonly lateAssignedCount: number;
+  readonly totalLatenessSec: number;
+  readonly minWindowSlackSec: number | null;
+  readonly workloadSpreadSec: number;
+  readonly maxWorkloadSec: number;
 }
 
 export interface PolicyComparisonRow {
   readonly strategyId: StrategyId;
   readonly kind: 'policy' | 'baseline';
+  readonly additionalEngineers?: number;
   readonly isUsable: boolean;
   readonly calculationMs: number;
   readonly metrics: PolicyComparisonMetrics;

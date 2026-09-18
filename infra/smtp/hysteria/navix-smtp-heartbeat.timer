@@ -1,0 +1,11 @@
+[Unit]
+Description=Navix SMTP tunnel heartbeat every 15s
+
+[Timer]
+OnBootSec=20s
+OnUnitActiveSec=15s
+AccuracySec=1s
+Unit=navix-smtp-heartbeat.service
+
+[Install]
+WantedBy=timers.target

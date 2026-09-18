@@ -3,7 +3,9 @@ import { AppConfigService } from '../common/config';
 import { SysError } from '../common/errors';
 import { Clock } from '../common/time';
 import type { Role } from '../generated/prisma/client';
-import { PrismaService } from '../persistence';
+import { NotificationsService } from '../notifications';
+import { SmtpGatewayService } from '../notifications/smtp-gateway.service';
+import { PrismaService, UnitOfWork } from '../persistence';
 import type { Actor } from './actor';
 import { ApiTokenService } from './api-token.service';
 import { type IssuedLoginCode, LoginCodeService } from './login-code.service';
@@ -31,6 +33,9 @@ export class AuthService implements OnModuleInit {
     private readonly loginCodes: LoginCodeService,
     private readonly sessions: SessionService,
     private readonly apiTokens: ApiTokenService,
+    private readonly notifications: NotificationsService,
+    private readonly smtp: SmtpGatewayService,
+    private readonly uow: UnitOfWork,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -48,7 +53,19 @@ export class AuthService implements OnModuleInit {
 
   /** Step one of the email path. Issuing a code says nothing about who may sign in. */
   async requestLoginCode(email: string): Promise<IssuedLoginCode> {
-    return this.loginCodes.issue(email);
+    const issued = await this.uow.run(async (tx) => {
+      const created = await this.loginCodes.issueIn(tx, email);
+      await this.notifications.record(tx, created.issuedAt, {
+        category: 'account_login_code',
+        businessEventKey: `account_login_code:${created.email}:${created.issuedAt}`,
+        recipientEmail: created.email,
+        payload: { code: created.code, expiresAt: created.expiresAt },
+      });
+      return created;
+    });
+    // Transport stays outside the transaction: a mail failure must not undo the code.
+    void this.smtp.submitPending();
+    return this.loginCodes.toPublic(issued);
   }
 
   /**

@@ -85,6 +85,17 @@ describe('auth-engine', () => {
     await app?.close();
   });
 
+  it('records a login-code mail intent without pretending it was accepted', async () => {
+    const email = `${unique('mail')}@example.test`;
+    createdEmails.push(email);
+    await codeFor(email);
+    const intent = await prisma.notificationIntent.findFirst({
+      where: { recipientEmail: email, category: 'account_login_code' },
+    });
+    assert.ok(intent);
+    assert.equal(intent.state, 'pending_submission');
+  });
+
   it('creates a client account on the first successful verification', async () => {
     const email = `${unique('client')}@example.test`;
     createdEmails.push(email);

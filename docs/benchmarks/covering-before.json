@@ -1,0 +1,118 @@
+{
+  "commit": "1f096bd",
+  "rows": [
+    {
+      "region": "east",
+      "input_sha256": "13d37de61a6e9f9c9e2cfd64734fa8da5879850bb3dda1b6da2134741b340a81",
+      "metrics": {
+        "distance_km": 234.523,
+        "travel_time_sec": 80748,
+        "work_time_sec": 225600,
+        "waiting_time_sec": 74221,
+        "lunch_time_sec": 0,
+        "assigned_count": 64,
+        "requests_total": 66,
+        "unassigned_count": 2,
+        "urgent_total": 13,
+        "urgent_assigned_count": 12,
+        "engineers_used": 11,
+        "late_assigned_count": 0,
+        "total_lateness_sec": 0,
+        "min_window_slack_sec": 476,
+        "workload_spread_sec": 42581,
+        "max_workload_sec": 42581
+      },
+      "extras": 0,
+      "calculation_ms": 526
+    },
+    {
+      "region": "southeast",
+      "input_sha256": "b3781d5ee0dcec251882ba76760032bf012c9076bf9e4543598b67101fbbb32f",
+      "metrics": {
+        "distance_km": 1062.45,
+        "travel_time_sec": 235785,
+        "work_time_sec": 291000,
+        "waiting_time_sec": 49125,
+        "lunch_time_sec": 0,
+        "assigned_count": 74,
+        "requests_total": 83,
+        "unassigned_count": 9,
+        "urgent_total": 31,
+        "urgent_assigned_count": 30,
+        "engineers_used": 20,
+        "late_assigned_count": 0,
+        "total_lateness_sec": 0,
+        "min_window_slack_sec": 168,
+        "workload_spread_sec": 30430,
+        "max_workload_sec": 38830
+      },
+      "extras": 8,
+      "calculation_ms": 565
+    },
+    {
+      "region": "south_central",
+      "input_sha256": "e5001f5757d0dd46f86a3fc096ca5f73121ff8bb9f998eeda57f07b98e22cb8d",
+      "metrics": {
+        "distance_km": 147.852,
+        "travel_time_sec": 60294,
+        "work_time_sec": 192600,
+        "waiting_time_sec": 66094,
+        "lunch_time_sec": 0,
+        "assigned_count": 51,
+        "requests_total": 56,
+        "unassigned_count": 5,
+        "urgent_total": 16,
+        "urgent_assigned_count": 15,
+        "engineers_used": 9,
+        "late_assigned_count": 0,
+        "total_lateness_sec": 0,
+        "min_window_slack_sec": 36,
+        "workload_spread_sec": 39527,
+        "max_workload_sec": 39527
+      },
+      "extras": 0,
+      "calculation_ms": 337
+    },
+    {
+      "region": "all",
+      "input_sha256": "84813b27df111fbcced7bb9933b6c0072a1e1603e27ea8686a0b960a3f8afc78",
+      "metrics": {
+        "distance_km": 1357.504,
+        "travel_time_sec": 364600,
+        "work_time_sec": 705000,
+        "waiting_time_sec": 181955,
+        "lunch_time_sec": 0,
+        "assigned_count": 188,
+        "requests_total": 205,
+        "unassigned_count": 17,
+        "urgent_total": 60,
+        "urgent_assigned_count": 57,
+        "engineers_used": 38,
+        "late_assigned_count": 0,
+        "total_lateness_sec": 0,
+        "min_window_slack_sec": 36,
+        "workload_spread_sec": 42581,
+        "max_workload_sec": 42581
+      },
+      "extras": 6,
+      "calculation_ms": 1446
+    }
+  ],
+  "settings": {
+    "lunches_enabled": false,
+    "traffic_enabled": true,
+    "equipment_enabled": true,
+    "window_lateness_tolerance_sec": 0,
+    "departure_lateness_tolerance_sec": 0,
+    "task_start_lateness_tolerance_sec": 0,
+    "travel_time_mode": "graph_with_access_buffer",
+    "access_buffer_sec": 600,
+    "fixed_travel_time_sec": 1200,
+    "early_finish_replan_threshold_sec": 900,
+    "task_overrun_tolerance_sec": 600
+  },
+  "search_budget_ms": 2000,
+  "solution_limit": 64,
+  "python": "3.13.14",
+  "ortools": "9.15.6755"
+}

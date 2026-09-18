@@ -1,0 +1,20 @@
+# MGG Hysteria 2 client. Copy to the host (not the repo) and fill secrets.
+# Server already listens on UDP/443 with salamander obfuscation.
+server: mail.droidje.com:443
+auth: REPLACE_ME
+obfs:
+  type: salamander
+  salamander:
+    password: REPLACE_ME
+tls:
+  # Use the existing Hysteria server certificate CN, not the mail hostname.
+  sni: REPLACE_WITH_SERVER_CERT_CN
+  insecure: true
+bandwidth:
+  up: 50 mbps
+  down: 50 mbps
+tcpForwarding:
+  - listen: 127.0.0.1:2525
+    remote: 127.0.0.1:587
+  - listen: 127.0.0.1:8587
+    remote: 127.0.0.1:8587

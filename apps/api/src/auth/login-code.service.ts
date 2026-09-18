@@ -2,15 +2,22 @@ import { Injectable, Logger } from '@nestjs/common';
 import { AppConfigService } from '../common/config';
 import { SysError } from '../common/errors';
 import { Clock } from '../common/time';
-import { PrismaService } from '../persistence';
+import { PrismaService, type Tx } from '../persistence';
 import { generateLoginCode, hashLoginCode, normalizeEmail } from './secrets';
+
+export interface IssuedLoginCodeInternal {
+  readonly email: string;
+  readonly expiresAt: number;
+  readonly issuedAt: number;
+  readonly code: string;
+}
 
 export interface IssuedLoginCode {
   readonly email: string;
   readonly expiresAt: number;
   /**
-   * Present only when `AUTH_DEV_EXPOSE_CODES` is on, which production refuses. It exists
-   * because this build has no SMTP-gateway to deliver the code (context/42 DF-02).
+   * Present only when `AUTH_DEV_EXPOSE_CODES` is on, which production refuses. The
+   * SMTP-gateway delivers the same code by mail when `SMTP_HOST` is configured.
    */
   readonly devCode?: string;
 }
@@ -33,6 +40,15 @@ export class LoginCodeService {
   ) {}
 
   async issue(rawEmail: string): Promise<IssuedLoginCode> {
+    const issued = await this.issueIn(this.prisma, rawEmail);
+    return this.toPublic(issued);
+  }
+
+  /**
+   * Issues a code inside the caller's transaction so the mail intent can be stored
+   * with the hash in one commit. The plaintext code is returned only to that caller.
+   */
+  async issueIn(tx: Pick<Tx, 'loginCode'>, rawEmail: string): Promise<IssuedLoginCodeInternal> {
     const email = normalizeEmail(rawEmail);
     const now = this.clock.nowSeconds();
     const expiresAt = now + this.config.get('LOGIN_CODE_TTL_SEC');
@@ -40,12 +56,12 @@ export class LoginCodeService {
 
     // Any code still outstanding for this address is retired first, so a request for a
     // new code cannot leave two valid ones in circulation.
-    await this.prisma.loginCode.updateMany({
+    await tx.loginCode.updateMany({
       where: { email, consumedAt: null },
       data: { consumedAt: BigInt(now) },
     });
 
-    await this.prisma.loginCode.create({
+    await tx.loginCode.create({
       data: {
         email,
         codeHash: hashLoginCode(email, code),
@@ -56,9 +72,14 @@ export class LoginCodeService {
 
     // The code is never written to the log: logs are the one place it would survive.
     this.logger.log(`Login code issued for ${email}`);
+    return { email, expiresAt, issuedAt: now, code };
+  }
 
+  toPublic(issued: IssuedLoginCodeInternal): IssuedLoginCode {
     const exposeCodes = this.config.get('AUTH_DEV_EXPOSE_CODES');
-    return exposeCodes ? { email, expiresAt, devCode: code } : { email, expiresAt };
+    return exposeCodes
+      ? { email: issued.email, expiresAt: issued.expiresAt, devCode: issued.code }
+      : { email: issued.email, expiresAt: issued.expiresAt };
   }
 
   /**

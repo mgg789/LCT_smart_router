@@ -67,6 +67,7 @@ def test_official_east_golden(official_east_scenario, official_east_run):
         "urgent_unassigned",
         "unassigned",
         "missed_optional_lunches",
+        "total_lateness",
         "engineers_used",
         "distance",
         "travel_time",

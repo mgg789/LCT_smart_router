@@ -1,13 +1,51 @@
-import { Global, Module } from '@nestjs/common';
+import { Global, Module, type OnModuleInit } from '@nestjs/common';
+import { AppConfigService } from '../common/config';
+import { HealthRegistry } from '../common/health';
+import { Clock } from '../common/time';
+import { PrismaService } from '../persistence';
 import { NotificationsService } from './notifications.service';
+import { createConfiguredTransports, SmtpGatewayService } from './smtp-gateway.service';
+import { SmtpHealthProbe } from './smtp-health.probe';
 
 /**
- * Mail intents sys prepares. Transport belongs to the external SMTP server and is not part
- * of this build, so nothing here sends anything.
+ * Mail intents and the SMTP-gateway that submits them.
+ *
+ * Transport is optional: without SMTP_* the probe stays `not_configured` and the
+ * dispatcher password path is unaffected.
  */
 @Global()
 @Module({
-  providers: [NotificationsService],
-  exports: [NotificationsService],
+  providers: [
+    NotificationsService,
+    {
+      provide: SmtpGatewayService,
+      inject: [AppConfigService, PrismaService, Clock],
+      useFactory: (
+        config: AppConfigService,
+        prisma: PrismaService,
+        clock: Clock,
+      ): SmtpGatewayService => {
+        const transports = createConfiguredTransports(config);
+        return new SmtpGatewayService(
+          config,
+          prisma,
+          clock,
+          transports.primary,
+          transports.fallback,
+        );
+      },
+    },
+    SmtpHealthProbe,
+  ],
+  exports: [NotificationsService, SmtpGatewayService],
 })
-export class NotificationsModule {}
+export class NotificationsModule implements OnModuleInit {
+  constructor(
+    private readonly registry: HealthRegistry,
+    private readonly probe: SmtpHealthProbe,
+  ) {}
+
+  onModuleInit(): void {
+    this.registry.register('smtp', this.probe);
+  }
+}
