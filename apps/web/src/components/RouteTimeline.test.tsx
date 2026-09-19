@@ -34,7 +34,7 @@ describe('LIVE timeline history', () => {
     const snapshot = createDevSnapshot();
     const route = snapshot.plan.plan?.routes[0];
     expect(route).toBeDefined();
-    if (!route) throw new Error('Fixture requires a route');
+    if (!route || route.startAt === null) throw new Error('Fixture requires a route start');
     const html = renderToStaticMarkup(
       <RouteTimeline
         snapshot={snapshot}
