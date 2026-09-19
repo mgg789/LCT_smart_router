@@ -12,6 +12,8 @@ export interface PopoverProps {
    */
   closeIcon: ReactNode;
   closeLabel?: string;
+  /** Panel width in pixels; the header panels are the mockup's 363. */
+  width?: number;
   className?: string;
 }
 
@@ -32,6 +34,7 @@ export function Popover({
   children,
   closeIcon,
   closeLabel = 'Закрыть',
+  width = 363,
   className,
 }: PopoverProps) {
   const titleId = useId();
@@ -64,9 +67,10 @@ export function Popover({
   return (
     <div
       aria-labelledby={titleId}
-      className={cn('absolute z-20 w-[363px] rounded-[27px] bg-surface p-4 shadow-xl', className)}
+      className={cn('absolute z-20 rounded-[27px] bg-surface p-4 shadow-xl', className)}
       ref={panelRef}
       role="dialog"
+      style={{ width }}
     >
       <div className="flex items-start justify-between">
         <h2 className="pt-[3px] font-display text-[20px] text-ink" id={titleId}>

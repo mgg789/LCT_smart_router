@@ -17,7 +17,6 @@ export interface RequestRow {
   engineerName: string | null;
   statusTitle: string;
   statusTone: StatusTone;
-  urgent: boolean;
 }
 
 function toneOf(request: RequestView): StatusTone {
@@ -68,7 +67,6 @@ export function buildRequestRows(
         engineerName: engineerId ? (engineerById.get(engineerId) ?? null) : null,
         statusTitle: requestStatusTitle(request),
         statusTone: toneOf(request),
-        urgent: request.priority === 'urgent',
       };
     });
 }

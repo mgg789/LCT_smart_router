@@ -1,10 +1,10 @@
-import { ArrowUpRight, Bell, ChevronDown, Search } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { ArrowUpRight, Bell, ChevronDown, ChevronUp, Search } from 'lucide-react';
+import { useState } from 'react';
 import { countUnseen, useAlerts } from '@/entities/alert';
 import { activePolicyTitle, usePolicies } from '@/entities/policy';
 import { useSessionStore } from '@/entities/session';
 import { useSignOut } from '@/features/auth/sign-out';
-import { Monogram } from '@/shared/ui';
+import { Monogram, Popover } from '@/shared/ui';
 import { AlertsPopover } from './AlertsPopover';
 import { PolicyPopover } from './PolicyPopover';
 
@@ -38,20 +38,10 @@ export function AppHeader() {
   const signOut = useSignOut();
 
   const [panel, setPanel] = useState<OpenPanel>(null);
-  const accountRef = useRef<HTMLDivElement>(null);
 
   const toggle = (next: Exclude<OpenPanel, null>) =>
     setPanel((current) => (current === next ? null : next));
   const close = () => setPanel(null);
-
-  useEffect(() => {
-    if (panel !== 'account') return;
-    const closeOnOutside = (event: MouseEvent) => {
-      if (!accountRef.current?.contains(event.target as Node)) setPanel(null);
-    };
-    document.addEventListener('mousedown', closeOnOutside);
-    return () => document.removeEventListener('mousedown', closeOnOutside);
-  }, [panel]);
 
   return (
     <header className="flex shrink-0 items-center justify-end gap-7 pr-[34px] pt-8 pb-[31px]">
@@ -103,30 +93,42 @@ export function AppHeader() {
         {panel === 'alerts' ? <AlertsPopover onClose={close} /> : null}
       </div>
 
-      <div className="relative flex items-center gap-2" ref={accountRef}>
+      <div className="relative flex items-center gap-2">
         <Monogram name={email} size={48} />
         <button
           aria-expanded={panel === 'account'}
           aria-label="Меню аккаунта"
-          className="text-ink"
+          className="flex size-[43px] items-center justify-center text-ink"
           onClick={() => toggle('account')}
           type="button"
         >
-          <ChevronDown aria-hidden size={20} />
+          {/* The arrow turns over while the panel is open, as the drawing does. */}
+          {panel === 'account' ? (
+            <ChevronUp aria-hidden size={20} />
+          ) : (
+            <ChevronDown aria-hidden size={20} />
+          )}
         </button>
 
         {panel === 'account' ? (
-          <div className="absolute top-[56px] right-0 z-10 w-[240px] rounded-2xl bg-surface p-4 shadow-lg">
-            <p className="truncate text-[13px] text-ink/60">{email}</p>
+          <Popover
+            className="-top-1 -right-1"
+            closeIcon={<ChevronUp aria-hidden size={20} />}
+            closeLabel="Закрыть меню аккаунта"
+            onClose={close}
+            title="Аккаунт"
+            width={280}
+          >
+            <p className="truncate text-[16px] text-ink/60">{email}</p>
             <button
-              className="mt-3 w-full rounded-xl bg-ink px-4 py-2 text-[14px] text-white disabled:opacity-50"
+              className="mt-4 h-[52px] w-full rounded-[20px] bg-ink text-[18px] font-semibold text-white disabled:opacity-50"
               disabled={signOut.isPending}
               onClick={() => signOut.mutate()}
               type="button"
             >
               {signOut.isPending ? 'Выходим…' : 'Выйти'}
             </button>
-          </div>
+          </Popover>
         ) : null}
       </div>
     </header>

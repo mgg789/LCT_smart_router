@@ -1,10 +1,10 @@
-import { Search } from 'lucide-react';
+import { ChevronDown, ChevronUp, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useEngineers } from '@/entities/engineer';
 import { useDispatchState } from '@/entities/plan';
 import { unassignedRequests, useRequests } from '@/entities/request';
-import { formatRange } from '@/shared/lib';
-import { StatusPill } from '@/shared/ui';
+import { cn, formatDayTitle, formatRange } from '@/shared/lib';
+import { Popover, StatusPill } from '@/shared/ui';
 import type { RequestSort } from '../model/requestRows';
 import { buildRequestRows, filterRows, sortRows } from '../model/requestRows';
 
@@ -16,7 +16,7 @@ const SORT_OPTIONS: { value: RequestSort; label: string }[] = [
 ];
 
 /** Column layout of the mockup's table. */
-const COLUMNS = 'grid-cols-[130px_1fr_1fr_150px_1fr_260px]';
+const COLUMNS = 'grid-cols-[130px_1fr_1fr_150px_1fr_220px]';
 
 /**
  * The day's requests as a table: number, address, service, window, crew, status.
@@ -31,21 +31,20 @@ export function RequestsPage() {
 
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<RequestSort>('window');
+  const [sortOpen, setSortOpen] = useState(false);
 
   const requests = requestsQuery.data?.requests ?? [];
+  const plan = stateQuery.data?.plan ?? null;
   const rows = useMemo(
-    () =>
-      buildRequestRows(
-        requests,
-        stateQuery.data?.plan ?? null,
-        engineersQuery.data?.engineers ?? [],
-      ),
-    [requests, stateQuery.data?.plan, engineersQuery.data?.engineers],
+    () => buildRequestRows(requests, plan, engineersQuery.data?.engineers ?? []),
+    [requests, plan, engineersQuery.data?.engineers],
   );
   const visible = useMemo(() => sortRows(filterRows(rows, query), sort), [rows, query, sort]);
 
   const failed = requestsQuery.isError || stateQuery.isError || engineersQuery.isError;
   const loading = requestsQuery.isPending || stateQuery.isPending || engineersQuery.isPending;
+  const dayAnchor = plan?.planAsOf ?? requests[0]?.windowStartAt ?? null;
+  const sortLabel = SORT_OPTIONS.find((option) => option.value === sort)?.label ?? '';
 
   if (failed) {
     return (
@@ -57,8 +56,12 @@ export function RequestsPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex flex-wrap items-center gap-6">
-        <h1 className="font-display text-[40px] text-ink">Заявки</h1>
+      <h1 className="font-display text-[32px] text-ink">
+        {dayAnchor === null ? 'День' : formatDayTitle(dayAnchor)}
+      </h1>
+
+      <div className="mt-[26px] flex flex-wrap items-center gap-6">
+        <h2 className="font-display text-[40px] text-ink">Заявки</h2>
         <p className="text-[18px] text-ink/50">
           Всего {rows.length} · {unassignedRequests(requests).length} без назначения
         </p>
@@ -80,27 +83,72 @@ export function RequestsPage() {
           </span>
         </label>
 
-        <label className="ml-auto flex items-center gap-2 text-[18px] text-ink">
-          Сортировка:
-          <select
-            className="cursor-pointer bg-transparent text-[18px] text-ink outline-none"
-            onChange={(event) => setSort(event.target.value as RequestSort)}
-            value={sort}
+        <div className="relative ml-auto">
+          <button
+            aria-expanded={sortOpen}
+            aria-haspopup="dialog"
+            className="flex h-[43px] items-center gap-2 pr-1 text-[18px] text-ink"
+            onClick={() => setSortOpen((open) => !open)}
+            type="button"
           >
-            {SORT_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
+            Сортировка: {sortLabel}
+            {/* The arrow turns over while the panel is open, as the drawing does. */}
+            {sortOpen ? <ChevronUp aria-hidden size={20} /> : <ChevronDown aria-hidden size={20} />}
+          </button>
+
+          {sortOpen ? (
+            <Popover
+              className="-top-1 -right-1"
+              closeIcon={<ChevronUp aria-hidden size={20} />}
+              closeLabel="Закрыть сортировку"
+              onClose={() => setSortOpen(false)}
+              title="Сортировка"
+              width={280}
+            >
+              <fieldset className="border-0 p-0">
+                <legend className="sr-only">Порядок заявок</legend>
+                {SORT_OPTIONS.map((option) => (
+                  <label
+                    className="flex h-[44px] cursor-pointer items-center gap-[10px]"
+                    key={option.value}
+                  >
+                    <span className="relative inline-flex size-[24px] shrink-0">
+                      <input
+                        checked={sort === option.value}
+                        className="peer size-[24px] cursor-pointer appearance-none rounded-full border-2 border-ink"
+                        name="requests-sort"
+                        onChange={() => {
+                          setSort(option.value);
+                          setSortOpen(false);
+                        }}
+                        type="radio"
+                      />
+                      <span
+                        aria-hidden
+                        className="pointer-events-none absolute inset-0 m-auto hidden size-[12px] rounded-full bg-ink peer-checked:block"
+                      />
+                    </span>
+                    <span
+                      className={cn(
+                        'text-[18px] font-medium text-ink',
+                        sort === option.value && 'font-semibold',
+                      )}
+                    >
+                      {option.label}
+                    </span>
+                  </label>
+                ))}
+              </fieldset>
+            </Popover>
+          ) : null}
+        </div>
       </div>
 
       <div className="mt-6 min-h-0 flex-1 overflow-y-auto rounded-[20px] bg-surface">
         <div
           className={`sticky top-0 z-10 grid ${COLUMNS} items-center gap-4 border-ink/10 border-b bg-surface px-8 py-5 text-center text-[20px] text-ink/50`}
         >
-          <span className="text-left">Номер</span>
+          <span>Номер</span>
           <span>Адрес</span>
           <span>Услуга</span>
           <span>Окно</span>
@@ -122,17 +170,12 @@ export function RequestsPage() {
               className={`grid ${COLUMNS} items-center gap-4 border-ink/10 border-b px-8 py-4 text-center text-[18px] text-ink last:border-b-0`}
               key={row.id}
             >
-              <span className="text-left font-semibold text-[22px]">{row.number}</span>
+              <span className="font-bold text-[26px] text-ink">{row.number}</span>
               <span>{row.addressText}</span>
               <span>{row.serviceTitle}</span>
               <span>{formatRange(row.windowStartAt, row.windowEndAt)}</span>
               <span>{row.engineerName ?? '—'}</span>
-              <span className="flex flex-wrap items-center justify-center gap-2 whitespace-nowrap">
-                {row.urgent ? (
-                  <span className="rounded-full bg-accent px-3 py-1 text-[14px] font-semibold">
-                    Срочная
-                  </span>
-                ) : null}
+              <span className="flex justify-center">
                 <StatusPill tone={row.statusTone}>{row.statusTitle}</StatusPill>
               </span>
             </li>
