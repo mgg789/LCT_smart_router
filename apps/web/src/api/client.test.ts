@@ -3,11 +3,30 @@ import {
   DashboardApiError,
   loadDashboardSnapshot,
   loadPolicyComparison,
+  resolveApiUrl,
   selectRoutingPolicy,
   setEngineerAvailability,
   setLunchesEnabled,
   uploadDataPackage,
 } from './client';
+
+describe('resolveApiUrl', () => {
+  it('keeps API requests inside the /api namespace on the configured origin', () => {
+    expect(resolveApiUrl('/api/v1/dispatch/plan')).toBe('/api/v1/dispatch/plan');
+  });
+
+  it('rejects paths that could point the client at another host or scheme', () => {
+    for (const hostile of [
+      '//evil.example.com/api',
+      'https://evil.example.com/api/v1',
+      '/apiv1/dispatch/plan',
+      '/api/v1/dispatch/plan\r\nX-Injected: 1',
+      '/api/v1/dispatch/plan\n',
+    ]) {
+      expect(() => resolveApiUrl(hostile)).toThrow(DashboardApiError);
+    }
+  });
+});
 
 describe('request failure metadata', () => {
   it('bounds a stalled request without replaying it', async () => {

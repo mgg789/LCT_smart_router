@@ -17,14 +17,14 @@ export function InboxButton({
 }) {
   const tone =
     variant === 'bee'
-      ? 'bg-figma-bee text-figma-ink'
+      ? 'bg-figma-bee text-figma-ink hover:brightness-105'
       : variant === 'outline'
-        ? 'border border-figma-ink bg-white text-figma-ink'
-        : 'border border-white bg-figma-ink text-white';
+        ? 'border border-figma-ink bg-white text-figma-ink hover:bg-figma-soft'
+        : 'border border-white bg-figma-ink text-white hover:brightness-125';
   return (
     <button
       type="button"
-      className={`flex items-center justify-center overflow-clip rounded-[20px] px-[32px] py-[16px] font-semibold text-[20px] tracking-[-0.6px] ${tone}`}
+      className={`flex items-center justify-center overflow-clip rounded-[20px] px-[32px] py-[16px] font-semibold text-[20px] tracking-[-0.6px] transition-[transform,filter,background-color] duration-150 ease-out hover:scale-[1.03] active:scale-[0.98] ${tone}`}
       onClick={onClick}
     >
       {children}
@@ -59,14 +59,14 @@ export function InboxAlertCardView({
         engineerName={engineerName}
         afterTitle={
           badge ? (
-            <span className="inline-flex items-center rounded-[20px] bg-figma-track px-[20px] py-[12px] font-medium text-[20px] tracking-[-0.34px] text-figma-ink">
+            <span className="inline-flex h-[42px] items-center rounded-full bg-figma-track px-[20px] font-medium text-[20px] tracking-[-0.34px] text-figma-ink">
               {badge}
             </span>
           ) : null
         }
         titleClass="text-black"
       />
-      <p className="mt-[24px] max-w-[1234px] font-semibold text-[20px] tracking-[-0.34px] text-figma-muted">
+      <p className="mt-[16px] max-w-[1234px] font-semibold text-[20px] tracking-[-0.34px] text-figma-muted">
         {body}
       </p>
       <div className="mt-auto flex flex-wrap items-center gap-[20px]">
@@ -83,7 +83,7 @@ export function InboxAlertCardView({
 }
 
 /**
- * Same 49:5696 shell as the alert: icon instead of the tip, blue fill, one Hide button.
+ * Same 49:5696 shell as the alert: icon instead of the tip, dark ink fill, one Hide button.
  */
 export function InboxNoticeCardView({
   title,
@@ -97,18 +97,24 @@ export function InboxNoticeCardView({
   onHide: () => void;
 }) {
   return (
-    <article className="flex h-[211px] w-full flex-col overflow-clip rounded-[20px] bg-figma-notice px-[30px] pt-[19px] pb-[24px]">
+    <article className="flex h-[211px] w-full flex-col overflow-clip rounded-[20px] bg-figma-ink px-[30px] pt-[19px] pb-[24px]">
       <InboxCardHeader
         title={title}
         engineerName={null}
         afterTitle={
           <span className="flex size-[36px] items-center justify-center">
-            <FigmaIcon src={icon.src} alt="" width={icon.width} height={icon.height} className="brightness-0 invert" />
+            <FigmaIcon
+              src={icon.src}
+              alt=""
+              width={icon.width}
+              height={icon.height}
+              className="brightness-0 invert"
+            />
           </span>
         }
         titleClass="text-white"
       />
-      <p className="mt-[24px] max-w-[1234px] font-semibold text-[20px] tracking-[-0.34px] text-white">
+      <p className="mt-[16px] max-w-[1234px] font-semibold text-[20px] tracking-[-0.34px] text-white">
         {body}
       </p>
       <div className="mt-auto flex items-center gap-[20px]">
@@ -118,6 +124,11 @@ export function InboxNoticeCardView({
       </div>
     </article>
   );
+}
+
+/** Display-level normalization: card titles always open with a capital letter. */
+function capitalizeFirst(value: string): string {
+  return value ? value.charAt(0).toUpperCase() + value.slice(1) : value;
 }
 
 function InboxCardHeader({
@@ -133,10 +144,13 @@ function InboxCardHeader({
 }) {
   return (
     <div className="flex flex-wrap items-center gap-[16px]">
-      <p className={`font-bold text-[24px] leading-none ${titleClass}`}>{title}</p>
+      <p className={`font-bold text-[24px] leading-none ${titleClass}`}>{capitalizeFirst(title)}</p>
       {engineerName ? (
         <>
-          <span className={`size-[5px] rounded-full ${titleClass === 'text-white' ? 'bg-white' : 'bg-figma-ink'}`} aria-hidden />
+          <span
+            className={`size-[5px] rounded-full ${titleClass === 'text-white' ? 'bg-white' : 'bg-figma-ink'}`}
+            aria-hidden
+          />
           <p className={`font-bold text-[24px] leading-none ${titleClass}`}>{engineerName}</p>
         </>
       ) : null}
@@ -149,17 +163,19 @@ function InboxAiLink({ tone }: { tone: 'ink' | 'white' }) {
   return (
     <button
       type="button"
-      className={`flex items-center gap-[8px] font-semibold text-[18px] tracking-[-0.54px] ${
+      className={`group flex items-center gap-[8px] font-semibold text-[18px] tracking-[-0.54px] transition-opacity duration-150 hover:opacity-80 ${
         tone === 'white' ? 'text-white' : 'text-figma-ink'
       }`}
     >
       Разобрать в AI
       <FigmaIcon
-        src={FIGMA_ASSETS.iconSparkles}
+        src={FIGMA_ASSETS.iconArrowCircle}
         alt=""
-        width={20}
-        height={20}
-        className={tone === 'white' ? 'brightness-0 invert' : undefined}
+        width={22}
+        height={22}
+        className={`transition-transform duration-150 ease-out group-hover:translate-x-[3px] ${
+          tone === 'white' ? 'brightness-0 invert' : undefined
+        }`}
       />
     </button>
   );

@@ -8,6 +8,9 @@ import { dismissToast, type ToastKind, type ToastNotification } from './toasts';
 
 const HEADER_LIFT = 16;
 const TITLE_TOP = 184 - HEADER_LIFT;
+/** The AI pill ends at y=231; the fade zone starts a few px below it. */
+const LIST_FADE_TOP = 235;
+const LIST_FADE_HEIGHT = 64;
 const fadeSoft = { duration: 0.28, ease: [0.22, 1, 0.36, 1] as const };
 
 const NOTICE_ICON: Record<ToastKind, { src: string; width: number; height: number }> = {
@@ -22,7 +25,9 @@ const NOTICE_ICON: Record<ToastKind, { src: string; width: number; height: numbe
 
 /**
  * Figma ALERTS (49:5629 / 49:5696): unresolved alerts first, then notices
- * built from the same 211px card with a blue restyle and one Hide button.
+ * built from the same 211px card with a dark ink fill and one Hide button.
+ * Below the header the list passes under a canvas-to-transparent blur gradient
+ * (same trick as the toast veil) instead of clipping on a hard edge.
  */
 export function AlertsView({
   snapshot,
@@ -80,54 +85,69 @@ export function AlertsView({
 
       <div
         className="absolute left-[180px] w-[1710px] overflow-y-auto [scrollbar-width:thin]"
-        style={{ top: 265 - HEADER_LIFT, bottom: 28 }}
+        style={{ top: LIST_FADE_TOP, bottom: 28 }}
       >
-        {inbox.alerts.length === 0 && inbox.notices.length === 0 ? (
-          <p className="pt-[40px] text-center font-medium text-[18px] text-figma-muted">
-            Открытых алертов и уведомлений нет
-          </p>
-        ) : null}
+        <div className="pt-[64px]">
+          {inbox.alerts.length === 0 && inbox.notices.length === 0 ? (
+            <p className="pt-[40px] text-center font-medium text-[18px] text-figma-muted">
+              Открытых алертов и уведомлений нет
+            </p>
+          ) : null}
 
-        <div className="flex flex-col gap-[20px]">
-          {inbox.alerts.map((card, index) => (
-            <motion.div
-              key={card.id}
-              initial={animate ? { opacity: 0, y: 16 } : false}
-              animate={{ opacity: 1, y: 0 }}
-              transition={animate ? { ...fadeSoft, delay: index * 0.04 } : { duration: 0 }}
-            >
-              <InboxAlertCardView
-                title={card.title}
-                engineerName={card.engineerName}
-                badge={card.badge}
-                body={card.body}
-                primaryLabel={card.primaryLabel}
-                secondaryLabel={card.secondaryLabel}
-                onPrimary={card.requestId ? () => onOpenRequest(card.requestId!) : undefined}
-              />
-            </motion.div>
-          ))}
-        </div>
+          <div className="flex flex-col gap-[20px]">
+            {inbox.alerts.map((card, index) => (
+              <motion.div
+                key={card.id}
+                initial={animate ? { opacity: 0, y: 16 } : false}
+                animate={{ opacity: 1, y: 0 }}
+                transition={animate ? { ...fadeSoft, delay: index * 0.04 } : { duration: 0 }}
+              >
+                <InboxAlertCardView
+                  title={card.title}
+                  engineerName={card.engineerName}
+                  badge={card.badge}
+                  body={card.body}
+                  primaryLabel={card.primaryLabel}
+                  secondaryLabel={card.secondaryLabel}
+                  onPrimary={card.requestId ? () => onOpenRequest(card.requestId!) : undefined}
+                />
+              </motion.div>
+            ))}
+          </div>
 
-        {inbox.notices.length > 0 ? (
-          <FigmaText className="mt-[36px] mb-[16px] font-bold text-[24px] text-figma-ink">
-            Уведомления
-          </FigmaText>
-        ) : null}
+          {inbox.notices.length > 0 ? (
+            <FigmaText className="mb-[16px] mt-[36px] font-bold text-[24px] text-figma-ink">
+              Уведомления
+            </FigmaText>
+          ) : null}
 
-        <div className="flex flex-col gap-[20px] pb-[24px]">
-          {inbox.notices.map((card, index) => (
-            <motion.div
-              key={card.id}
-              initial={animate ? { opacity: 0, y: 12 } : false}
-              animate={{ opacity: 1, y: 0 }}
-              transition={animate ? { ...fadeSoft, delay: 0.04 * (inbox.alerts.length + index) } : { duration: 0 }}
-            >
-              <NoticeCard card={card} />
-            </motion.div>
-          ))}
+          <div className="flex flex-col gap-[20px] pb-[24px]">
+            {inbox.notices.map((card, index) => (
+              <motion.div
+                key={card.id}
+                initial={animate ? { opacity: 0, y: 12 } : false}
+                animate={{ opacity: 1, y: 0 }}
+                transition={animate ? { ...fadeSoft, delay: 0.04 * (inbox.alerts.length + index) } : { duration: 0 }}
+              >
+                <NoticeCard card={card} />
+              </motion.div>
+            ))}
+          </div>
         </div>
       </div>
+      <div
+        aria-hidden
+        className="pointer-events-none absolute left-[180px] w-[1710px]"
+        style={{
+          top: LIST_FADE_TOP,
+          height: LIST_FADE_HEIGHT,
+          background: 'linear-gradient(to bottom, var(--color-figma-canvas) 30%, transparent)',
+          backdropFilter: 'blur(10px)',
+          WebkitBackdropFilter: 'blur(10px)',
+          maskImage: 'linear-gradient(to bottom, #000 30%, transparent)',
+          WebkitMaskImage: 'linear-gradient(to bottom, #000 30%, transparent)',
+        }}
+      />
     </section>
   );
 }

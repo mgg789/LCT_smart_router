@@ -56,6 +56,8 @@ export type ToastNotification = {
   createdAt: number;
   progress?: number;
   etaLabel?: string;
+  /** Request the toast is anchored to, when the event names one («К заявке» navigation). */
+  requestId?: string | null;
 };
 
 export type ToastDraft = {
@@ -66,6 +68,7 @@ export type ToastDraft = {
   createdAt?: number;
   progress?: number;
   etaLabel?: string;
+  requestId?: string | null;
 };
 
 type ToastListener = () => void;
@@ -174,6 +177,7 @@ export const DEMO_TOASTS: readonly ToastDraft[] = [
     title: 'Алёрт: непокрытие заявок',
     body: 'Выбранная политика покрывает на 4 заявки меньше, чем прошлая',
     createdAt: 6,
+    requestId: '18754',
   },
   {
     id: 'demo-system-2',
@@ -193,8 +197,9 @@ export const DEMO_TOASTS: readonly ToastDraft[] = [
     id: 'demo-alert-window',
     kind: 'alert',
     title: 'Алёрт: окно заявки',
-    body: 'Заявка №4400b62a не укладывается в окно 11:27–13:27 при текущем порядке смены.',
+    body: 'Заявка №86160 не укладывается в окно 11:27–13:27 при текущем порядке смены.',
     createdAt: 9,
+    requestId: '86160',
   },
   {
     id: 'demo-alert-skill',
@@ -202,12 +207,13 @@ export const DEMO_TOASTS: readonly ToastDraft[] = [
     title: 'Алёрт: нет навыка',
     body: 'На «подключение» в восточном секторе свободно только 2 бригады, 5 заявок без назначения.',
     createdAt: 10,
+    requestId: '50104',
   },
   {
     id: 'demo-alert-lunch',
-    kind: 'alert',
-    title: 'Алёрт: обед сдвинут',
-    body: 'Бригада Соколов потеряет обед, если оставить заявку №1077 на 13:00.',
+    kind: 'system',
+    title: 'Обед сдвинут',
+    body: 'Бригаде Соколова обед перенесён на 13:00, заявка №1077 стартует после него.',
     createdAt: 11,
   },
   {
@@ -216,6 +222,7 @@ export const DEMO_TOASTS: readonly ToastDraft[] = [
     title: 'Алёрт: риск SLA',
     body: '3 срочные заявки выходят за расчётное окно при политике «Полное покрытие».',
     createdAt: 12,
+    requestId: '74198',
   },
   {
     id: 'demo-chat-2',
@@ -288,6 +295,7 @@ function normalizeToast(draft: ToastDraft): ToastNotification | null {
     createdAt: draft.createdAt ?? Date.now(),
     progress,
     etaLabel: draft.kind === 'progress' ? draft.etaLabel : undefined,
+    requestId: draft.requestId ?? null,
   };
 }
 
@@ -397,6 +405,7 @@ export function toastFromAlert(alert: AlertView): ToastDraft {
     title: `Алёрт: ${factorLabel(alert.code)}`,
     body: alert.reasons[0] ?? factorLabel(alert.code),
     createdAt: alert.createdAt,
+    requestId: alert.requestIds[0] ?? null,
   };
 }
 

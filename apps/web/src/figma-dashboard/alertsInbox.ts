@@ -26,7 +26,10 @@ export type InboxNoticeCard = {
   toastKind: ToastKind;
 };
 
-/** Alert toasts stay in the alert block; everything else is a dismissible notice. */
+/**
+ * Alert toasts demand a dispatcher decision; every other kind is an informational
+ * notice (definition: context/39 §4.1 — an alert requires action, a notice does not).
+ */
 export function isInboxAlertKind(kind: ToastKind): boolean {
   return kind === 'alert' || kind === 'error';
 }
@@ -136,8 +139,8 @@ function alertCardFromToast(toast: ToastNotification): InboxAlertCard {
     body: formatAlertReason(toast.body),
     badge: 'Срочная',
     engineerName: null,
-    requestId: null,
-    primaryLabel: 'К заявке',
+    requestId: toast.requestId ?? null,
+    primaryLabel: toast.requestId ? 'К заявке' : null,
     secondaryLabel: 'Сменить окно',
   };
 }

@@ -47,12 +47,28 @@ describe('ALERTS inbox', () => {
     expect(formatAlertReason('нет инженера')).toBe('Причина: нет инженера');
     expect(formatAlertReason('Причина: окно')).toBe('Причина: окно');
     const inbox = inboxFromSources(null, [
-      { id: 'demo-alert', kind: 'alert', title: 'Алёрт: окно заявки', body: 'не укладывается', createdAt: 1 },
+      {
+        id: 'demo-alert',
+        kind: 'alert',
+        title: 'Алёрт: окно заявки',
+        body: 'не укладывается',
+        createdAt: 1,
+        requestId: '10441',
+      },
     ]);
     expect(inbox.alerts[0]?.title).toBe('окно заявки');
     expect(inbox.alerts[0]?.badge).toBe('Срочная');
+    expect(inbox.alerts[0]?.requestId).toBe('10441');
     expect(inbox.alerts[0]?.primaryLabel).toBe('К заявке');
     expect(inbox.alerts[0]?.secondaryLabel).toBe('Сменить окно');
+  });
+
+  it('keeps the «К заявке» action only when the alert names a request', () => {
+    const inbox = inboxFromSources(null, [
+      { id: 'sector-alert', kind: 'alert', title: 'Алёрт: риск SLA', body: '3 заявки в зоне риска', createdAt: 2 },
+    ]);
+    expect(inbox.alerts[0]?.requestId).toBeNull();
+    expect(inbox.alerts[0]?.primaryLabel).toBeNull();
   });
 
   it('treats only alert/error as inbox alerts and normalizes ms timestamps', () => {

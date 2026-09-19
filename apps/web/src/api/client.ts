@@ -15,6 +15,22 @@ import type {
 } from './types';
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
+
+/**
+ * Resolves the request target for the Dashboard API. The origin comes only from
+ * the build-time API_BASE; the path must stay inside the /api namespace, so
+ * request data can never point the client at another host or scheme.
+ */
+export function resolveApiUrl(path: string): string {
+  if (!path.startsWith('/api/')) {
+    throw new DashboardApiError('Запрос вне пространства /api запрещён', 0, path);
+  }
+  if (/[\r\n\u0000]/.test(path)) {
+    throw new DashboardApiError('Недопустимые символы в пути запроса', 0, path);
+  }
+  return `${API_BASE}${path}`;
+}
+
 const policyIdSchema = z.enum(['compact', 'fast', 'sla', 'balanced', 'eco', 'covering']);
 
 const requestSchema = z.object({
@@ -744,7 +760,7 @@ async function requestJson<T>(
   const controller = new AbortController();
   const timeout = globalThis.setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(`${API_BASE}${path}`, {
+    const response = await fetch(resolveApiUrl(path), {
       ...init,
       signal: controller.signal,
       headers: {

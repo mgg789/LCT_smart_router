@@ -1,6 +1,7 @@
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { FIGMA_ASSETS } from './assets';
+import { FIGMA_ARTBOARD } from './fixtures';
 import { FigmaIcon } from './primitives';
 import {
   TOAST_CARD_HEIGHT,
@@ -20,6 +21,11 @@ import {
 const SWIPE_DISMISS = 64;
 const STACK_EASE = [0.22, 1, 0.36, 1] as const;
 const STRIDE = TOAST_CARD_HEIGHT + TOAST_GAP;
+const VEIL_WIDTH = 680;
+const COLLAPSE_BUBBLE_SIZE = 43;
+/** Cards end 30px before the artboard right edge; the bubble shares that margin. */
+const COLLAPSE_BUBBLE_RIGHT = 30;
+const COLLAPSE_BUBBLE_TOP = 4;
 
 const TOAST_ICON: Record<ToastKind, { src: string; width: number; height: number }> = {
   system: { src: FIGMA_ASSETS.toastSystem, width: 24, height: 24 },
@@ -39,7 +45,35 @@ type ToastGhost = {
 };
 
 /**
+ * Viewport letterbox around the scaled artboard, in artboard units. The veil
+ * stretches into it so the dim/blur sheet is not cut by the page margins.
+ */
+function useLetterboxInsets(scale: number): { x: number; y: number } {
+  const [insets, setInsets] = useState(() => measureLetterbox(scale));
+
+  useEffect(() => {
+    const update = () => setInsets(measureLetterbox(scale));
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, [scale]);
+
+  return insets;
+}
+
+function measureLetterbox(scale: number): { x: number; y: number } {
+  const fit = Math.max(scale, 0.01);
+  return {
+    x: Math.max(0, (window.innerWidth - FIGMA_ARTBOARD.width * fit) / (2 * fit)),
+    y: Math.max(0, (window.innerHeight - FIGMA_ARTBOARD.height * fit) / (2 * fit)),
+  };
+}
+
+/**
  * Right-hand toast stack. Swipe/close travel past the artboard edge, not a clip box.
+ * The whole sheet (veil, bubble, cards) mounts into the slide-in and stays mounted
+ * through the slide-out via AnimatePresence — collapsing unpins the store instantly,
+ * so without it the close would blink off instead of matching the open motion.
  */
 export function ToastColumn({
   open,
@@ -55,6 +89,7 @@ export function ToastColumn({
   const visible = useVisibleColumnToasts();
   const shown = open || visible.length > 0;
   const [ghosts, setGhosts] = useState<ToastGhost[]>([]);
+  const letterbox = useLetterboxInsets(scale);
   const wheelX = useRef(0);
   const wheelReset = useRef<number | null>(null);
   const onCollapseRef = useRef(onCollapse);
@@ -104,41 +139,69 @@ export function ToastColumn({
   };
 
   return (
-    <motion.div
-      data-toast-column
-      className="pointer-events-none absolute inset-0 z-[80] overflow-visible"
-      initial={false}
-      animate={{ x: shown ? 0 : TOAST_EXIT_X }}
-      transition={motionOn ? { duration: 0.34, ease: STACK_EASE } : { duration: 0 }}
-    >
-      {shown ? (
-        <div
-          aria-hidden
-          className="absolute inset-y-0 right-0 w-[680px]"
-          style={{
-            background:
-              'linear-gradient(to left, rgba(15,16,20,0.55), rgba(15,16,20,0.22) 52%, transparent)',
-            backdropFilter: 'blur(22px)',
-            WebkitBackdropFilter: 'blur(22px)',
-            maskImage: 'linear-gradient(to left, #000 55%, transparent)',
-            WebkitMaskImage: 'linear-gradient(to left, #000 55%, transparent)',
-          }}
-        />
-      ) : null}
-      {visible.map((toast, index) => {
-        const top = TOAST_STACK_TOP + index * STRIDE;
-        return (
-          <ToastCard
-            key={toast.id}
-            toast={toast}
-            top={top}
-            motionOn={motionOn}
-            scale={scale}
-            interactive={shown}
-            onLeave={(startX) => beginLeave(toast, top, startX)}
-          />
-        );
-      })}
+    <div data-toast-column className="pointer-events-none absolute inset-0 z-[80] overflow-visible">
+      <AnimatePresence initial={false}>
+        {shown ? (
+          <motion.div
+            key="toast-sheet"
+            className="absolute inset-0"
+            initial={{ x: TOAST_EXIT_X }}
+            animate={{ x: 0 }}
+            exit={{ x: TOAST_EXIT_X }}
+            transition={motionOn ? { duration: 0.34, ease: STACK_EASE } : { duration: 0 }}
+          >
+            <motion.div
+              aria-hidden
+              className="absolute right-0"
+              style={{
+                top: -letterbox.y,
+                bottom: -letterbox.y,
+                right: -letterbox.x,
+                width: VEIL_WIDTH + letterbox.x,
+                background:
+                  'linear-gradient(to left, rgba(15,16,20,0.28), rgba(15,16,20,0.10) 52%, transparent)',
+                backdropFilter: 'blur(14px)',
+                WebkitBackdropFilter: 'blur(14px)',
+                maskImage: 'linear-gradient(to left, #000 55%, transparent)',
+                WebkitMaskImage: 'linear-gradient(to left, #000 55%, transparent)',
+              }}
+              exit={{ opacity: 0, transition: { duration: 0.26, ease: 'easeOut' } }}
+            />
+            <motion.button
+              type="button"
+              aria-label="Свернуть уведомления"
+              onClick={onCollapse}
+              className="pointer-events-auto absolute flex items-center justify-center rounded-full bg-white shadow-[0_10px_24px_rgba(15,16,20,0.20)]"
+              style={{
+                top: COLLAPSE_BUBBLE_TOP,
+                right: COLLAPSE_BUBBLE_RIGHT,
+                width: COLLAPSE_BUBBLE_SIZE,
+                height: COLLAPSE_BUBBLE_SIZE,
+              }}
+              whileHover={motionOn ? { scale: 1.08 } : undefined}
+              whileTap={motionOn ? { scale: 0.94 } : undefined}
+              transition={{ duration: 0.16 }}
+              exit={{ opacity: 0, transition: { duration: 0.16 } }}
+            >
+              <FigmaIcon src={FIGMA_ASSETS.arrowRight} alt="" width={22} height={22} />
+            </motion.button>
+            {visible.map((toast, index) => {
+              const top = TOAST_STACK_TOP + index * STRIDE;
+              return (
+                <ToastCard
+                  key={toast.id}
+                  toast={toast}
+                  top={top}
+                  motionOn={motionOn}
+                  scale={scale}
+                  interactive={shown}
+                  onLeave={(startX) => beginLeave(toast, top, startX)}
+                />
+              );
+            })}
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
       {ghosts.map((ghost) => (
         <ToastFace
           key={`ghost-${ghost.id}`}
@@ -150,7 +213,7 @@ export function ToastColumn({
           onLeft={() => setGhosts((current) => current.filter((item) => item.id !== ghost.id))}
         />
       ))}
-    </motion.div>
+    </div>
   );
 }
 
@@ -276,13 +339,27 @@ function ToastFace({
       } ${danger ? 'bg-figma-danger' : alert ? 'bg-figma-bee' : 'bg-figma-ink'} ${
         dragging ? 'cursor-grabbing' : interactive ? 'cursor-grab' : ''
       }`}
-      initial={leaving ? { x, top, left: TOAST_LEFT, opacity: 1 } : motionOn ? { opacity: 0, y: 28, top, left: TOAST_LEFT, x: 0 } : { top, left: TOAST_LEFT, x: 0 }}
-      animate={leaving ? { x: TOAST_EXIT_X, top, left: TOAST_LEFT, opacity: 1 } : { opacity: 1, x, y: 0, top, left: TOAST_LEFT }}
+      initial={
+        leaving
+          ? { x, top, left: TOAST_LEFT, opacity: 1 }
+          : motionOn
+            ? { opacity: 0, y: 28, top, left: TOAST_LEFT, x: 0 }
+            : { top, left: TOAST_LEFT, x: 0 }
+      }
+      animate={
+        leaving
+          ? { x: TOAST_EXIT_X, top, left: TOAST_LEFT, opacity: 1 }
+          : { opacity: 1, x, y: 0, top, left: TOAST_LEFT }
+      }
       transition={
         leaving
           ? { duration: motionOn ? 0.32 : 0, ease: STACK_EASE }
           : dragging
-            ? { x: { duration: 0 }, top: { duration: 0.32, ease: STACK_EASE }, y: { duration: 0.32, ease: STACK_EASE } }
+            ? {
+                x: { duration: 0 },
+                top: { duration: 0.32, ease: STACK_EASE },
+                y: { duration: 0.32, ease: STACK_EASE },
+              }
             : { duration: 0.32, ease: STACK_EASE }
       }
       style={{ width: TOAST_WIDTH, touchAction: 'pan-x' }}
@@ -308,24 +385,24 @@ function ToastFace({
         {toast.title}
       </p>
       {leaving ? null : (
-      <button
-        type="button"
-        data-toast-close
-        aria-label="Закрыть уведомление"
-        className="absolute right-[16px] top-[13px] flex size-[29px] items-center justify-center transition-transform duration-150 hover:scale-110"
-        onPointerDown={(event) => event.stopPropagation()}
-        onClick={() => onClose?.()}
-      >
-        <span className="-rotate-45">
-          <FigmaIcon
-            src={alert && !danger ? FIGMA_ASSETS.toastCloseInk : FIGMA_ASSETS.toastClose}
-            alt=""
-            width={20}
-            height={20}
-            className={danger ? 'brightness-0 invert' : undefined}
-          />
-        </span>
-      </button>
+        <button
+          type="button"
+          data-toast-close
+          aria-label="Закрыть уведомление"
+          className="absolute right-[16px] top-[13px] flex size-[29px] items-center justify-center transition-transform duration-150 hover:scale-110"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={() => onClose?.()}
+        >
+          <span className="-rotate-45">
+            <FigmaIcon
+              src={alert && !danger ? FIGMA_ASSETS.toastCloseInk : FIGMA_ASSETS.toastClose}
+              alt=""
+              width={20}
+              height={20}
+              className={danger ? 'brightness-0 invert' : undefined}
+            />
+          </span>
+        </button>
       )}
       {toast.kind === 'progress' ? (
         <>

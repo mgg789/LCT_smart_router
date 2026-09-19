@@ -38,6 +38,7 @@ export const FIGMA_ASSETS = {
   notifMessage: '/figma/icon-notif-message.svg',
   arrowRight: '/figma/icon-arrow-right.svg',
   arrowRightWhite: '/figma/icon-arrow-right-white.svg',
+  iconArrowCircle: '/figma/icon-arrow-circle.svg',
   iconBack: '/figma/icon-back.svg',
   iconSparkles: '/figma/icon-sparkles.svg',
   toastSystem: '/figma/icon-toast-wrench.svg',
