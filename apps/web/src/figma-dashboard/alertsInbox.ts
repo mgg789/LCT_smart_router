@@ -4,7 +4,7 @@ import { factorLabel } from '../lib/reasons';
 import { formatClock } from '../lib/time';
 import { requestUrgency } from './fromSnapshot';
 import { shortRequestId } from './requestsTable';
-import type { ToastKind, ToastNotification } from './toasts';
+import { DEMO_TOASTS, type ToastKind, type ToastNotification } from './toasts';
 
 export type InboxAlertCard = {
   id: string;
@@ -52,15 +52,16 @@ export function inboxFromSources(
   toasts: readonly ToastNotification[],
 ): { alerts: InboxAlertCard[]; notices: InboxNoticeCard[] } {
   const openAlerts = (snapshot?.alerts ?? []).filter((alert) => alert.resolvedAt === null);
+  const sourceToasts = openAlerts.length === 0 && toasts.length === 0 ? demoInboxToasts() : toasts;
   const covered = new Set(openAlerts.map((alert) => `alert:${alert.id}`));
   const alerts = sortByArrival([
     ...openAlerts.map((alert) => alertCardFromSnapshot(snapshot!, alert)),
-    ...toasts
+    ...sourceToasts
       .filter((toast) => isInboxAlertKind(toast.kind) && !covered.has(toast.id))
       .map(alertCardFromToast),
   ]);
   const notices = sortByArrival(
-    toasts.filter((toast) => !isInboxAlertKind(toast.kind)).map((toast) => ({
+    sourceToasts.filter((toast) => !isInboxAlertKind(toast.kind)).map((toast) => ({
       id: toast.id,
       createdAt: toast.createdAt,
       title: toast.title,
@@ -69,6 +70,19 @@ export function inboxFromSources(
     })),
   );
   return { alerts, notices };
+}
+
+/** Review copies when the live snapshot and toast store are both empty. */
+function demoInboxToasts(): ToastNotification[] {
+  return DEMO_TOASTS.map((draft) => ({
+    id: draft.id,
+    kind: draft.kind,
+    title: draft.title,
+    body: draft.body ?? draft.etaLabel ?? '',
+    createdAt: draft.createdAt ?? 0,
+    progress: draft.progress,
+    etaLabel: draft.etaLabel,
+  }));
 }
 
 function alertCardFromSnapshot(snapshot: DashboardSnapshot, alert: AlertView): InboxAlertCard {

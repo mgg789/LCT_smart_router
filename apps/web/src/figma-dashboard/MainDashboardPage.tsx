@@ -180,8 +180,9 @@ export function MainDashboardPage() {
     panelMode,
   ]);
   useEffect(() => {
-    if (dash.isDemo) seedDemoToasts();
-  }, [dash.isDemo]);
+    const openAlerts = (dash.snapshot?.alerts ?? []).filter((alert) => alert.resolvedAt === null);
+    if (dash.isDemo || openAlerts.length === 0) seedDemoToasts();
+  }, [dash.isDemo, dash.snapshot]);
 
   useEffect(() => {
     const openAlerts = (dash.snapshot?.alerts ?? []).filter((alert) => alert.resolvedAt === null);

@@ -35,6 +35,13 @@ describe('ALERTS inbox', () => {
     expect(inbox.notices).toEqual([]);
   });
 
+  it('fills an empty live inbox from demo toasts so the tab can be reviewed', () => {
+    const inbox = inboxFromSources(null, []);
+    expect(inbox.alerts.length).toBeGreaterThan(0);
+    expect(inbox.notices.length).toBeGreaterThan(0);
+    expect(inbox.alerts.every((item) => item.title.length > 0)).toBe(true);
+  });
+
   it('treats only alert/error as inbox alerts and normalizes ms timestamps', () => {
     expect(isInboxAlertKind('alert')).toBe(true);
     expect(isInboxAlertKind('error')).toBe(true);

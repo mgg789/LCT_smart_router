@@ -123,3 +123,32 @@ body {
 .maplibregl-ctrl-bottom-left {
   display: none;
 }
+
+@keyframes copy-icon-blink {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.15;
+    transform: scale(1.18);
+  }
+}
+
+.copy-icon-blink {
+  animation: copy-icon-blink 0.32s ease-in-out 3;
+}
+
+@keyframes copy-row-flash {
+  0% {
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.6);
+  }
+  100% {
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0);
+  }
+}
+
+.copy-row-flash {
+  animation: copy-row-flash 0.55s ease-out;
+}
