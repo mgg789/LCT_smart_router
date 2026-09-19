@@ -41,6 +41,8 @@ export interface LiveRoutePoint {
 /** Durable movement fact, kept when a route revision changes planned stops. */
 export interface LiveRouteProgress {
   readonly phase: 'not_started' | 'traveling' | 'on_site' | 'lunch' | 'finished';
+  /** Immutable start-of-day point; it never follows a route rebuild. */
+  readonly origin: LiveRoutePoint;
   readonly anchor: LiveRoutePoint;
   readonly lunch: LiveRoutePoint | null;
   readonly next: LiveRoutePoint | null;
@@ -172,6 +174,7 @@ const progressPointSchema: z.ZodType<LiveRoutePoint> = z.object({
 });
 const progressSchema: z.ZodType<LiveRouteProgress> = z.object({
   phase: z.enum(['not_started', 'traveling', 'on_site', 'lunch', 'finished']),
+  origin: progressPointSchema,
   anchor: progressPointSchema,
   lunch: progressPointSchema.nullable(),
   next: progressPointSchema.nullable(),

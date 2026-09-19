@@ -55,7 +55,7 @@ describe('LIVE timeline history', () => {
         ]}
       />,
     );
-    expect(html.indexOf('Старт смены')).toBeLessThan(html.indexOf('Тех. перерыв'));
+    expect(html.indexOf('Начало дня')).toBeLessThan(html.indexOf('Тех. перерыв'));
   });
 
   it('orders finished visits by factual terminal time and keeps the live position visible', () => {
@@ -87,6 +87,7 @@ describe('LIVE timeline history', () => {
         breaks={[]}
         progress={{
           phase: 'traveling',
+          origin: { kind: 'start', requestId: null, lat: 55.74, lon: 37.59, at: 0 },
           anchor: { kind: 'job', requestId: second.id, lat: 55.75, lon: 37.6, at: 1_000 },
           lunch: null,
           next: { kind: 'job', requestId: first.id, lat: 55.76, lon: 37.61, at: 2_000 },
@@ -96,9 +97,9 @@ describe('LIVE timeline history', () => {
         onSelectRequest={() => undefined}
       />,
     );
-    expect(html.indexOf('Завершена раньше')).toBeLessThan(html.indexOf('Завершена позже'));
-    expect(html).toContain('Текущая позиция');
-    expect(html).toContain('В пути к следующей заявке');
+    expect(html.indexOf(second.addressText)).toBeLessThan(html.indexOf(first.addressText));
+    expect(html).not.toContain('Текущая позиция');
+    expect(html).toContain('Начало дня');
     expect(html).toContain(first.addressText);
   });
 
@@ -116,6 +117,13 @@ describe('LIVE timeline history', () => {
         breaks={[]}
         progress={{
           phase: 'traveling',
+          origin: {
+            kind: 'start',
+            requestId: null,
+            lat: route.startLat,
+            lon: route.startLon,
+            at: route.startAt,
+          },
           anchor: {
             kind: 'start',
             requestId: null,
@@ -131,6 +139,77 @@ describe('LIVE timeline history', () => {
         onSelectRequest={() => undefined}
       />,
     );
-    expect(html).toContain('Старт смены');
+    expect(html).toContain('Начало дня');
+  });
+
+  it('renders a completed factual anchor only once after it leaves the current route', () => {
+    const snapshot = createDevSnapshot();
+    const request = snapshot.requests[0];
+    if (!request) throw new Error('Fixture requires a request');
+    const html = renderToStaticMarkup(
+      <RouteTimeline
+        snapshot={snapshot}
+        engineerName="Engineer"
+        engineerId="engineer"
+        route={null}
+        history={[
+          {
+            request,
+            engineerId: 'engineer',
+            stop: null,
+            outcome: 'completed',
+            terminalAt: 1_000,
+          },
+        ]}
+        breaks={[]}
+        progress={{
+          phase: 'traveling',
+          origin: { kind: 'start', requestId: null, lat: 55.74, lon: 37.59, at: 0 },
+          anchor: { kind: 'job', requestId: request.id, lat: 55.75, lon: 37.6, at: 1_000 },
+          lunch: null,
+          next: null,
+          occurredAt: 1_100,
+        }}
+        selectedRequestId={null}
+        onSelectRequest={() => undefined}
+      />,
+    );
+    expect(html.split(request.addressText)).toHaveLength(2);
+  });
+
+  it('keeps Start day first even when retained factual history has an earlier timestamp', () => {
+    const snapshot = createDevSnapshot();
+    const request = snapshot.requests[0];
+    if (!request) throw new Error('Fixture requires a request');
+    const origin = { kind: 'start' as const, requestId: null, lat: 55.74, lon: 37.6, at: 1_000 };
+    const html = renderToStaticMarkup(
+      <RouteTimeline
+        snapshot={snapshot}
+        engineerName="Engineer"
+        engineerId="engineer"
+        route={null}
+        history={[
+          {
+            request: { ...request, addressText: 'Историческая точка' },
+            engineerId: 'engineer',
+            stop: null,
+            outcome: 'completed',
+            terminalAt: 1,
+          },
+        ]}
+        breaks={[]}
+        progress={{
+          phase: 'not_started',
+          origin,
+          anchor: origin,
+          lunch: null,
+          next: null,
+          occurredAt: 1_000,
+        }}
+        selectedRequestId={null}
+        onSelectRequest={() => undefined}
+      />,
+    );
+    expect(html.indexOf('Начало дня')).toBeLessThan(html.indexOf('Историческая точка'));
   });
 });

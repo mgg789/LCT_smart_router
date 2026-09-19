@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { LiveBreak, LiveHistoryItem, LiveRouteProgress } from '../api/live';
 import type { DashboardSnapshot, PlanRouteView, RequestView } from '../api/types';
-import { requestById, routeVertices } from '../domain/dashboard';
+import { requestById } from '../domain/dashboard';
+import { projectLiveGraph, segmentKey } from '../domain/liveGraph';
 import { engineerColor } from '../lib/reasons';
 import { formatClock } from '../lib/time';
 
@@ -20,7 +21,7 @@ interface RouteTimelineProps {
 
 function stopStatus(request: RequestView | null, kind: string): string {
   if (kind === 'start') {
-    return 'старт смены';
+    return 'начало дня';
   }
   if (kind === 'lunch') {
     return 'обед';
@@ -98,28 +99,14 @@ export function RouteTimeline({
   }
 
   const color = engineerColor(focusedEngineerId);
-  const vertices = route
-    ? routeVertices(route).filter(
-        (vertex) =>
-          progress === null ||
-          progress.anchor.kind === 'start' ||
-          (vertex.kind !== 'start' && vertex.requestId !== progress.anchor.requestId),
-      )
-    : [];
-  const plannedRequestIds = new Set(
+  const graph = projectLiveGraph(route, progress);
+  const vertices = graph.timelineNodes;
+  const visibleRequestIds = new Set(
     vertices.flatMap((vertex) => (vertex.requestId ? [vertex.requestId] : [])),
   );
   const retainedHistory = history.filter(
-    (item) => item.engineerId === focusedEngineerId && !plannedRequestIds.has(item.request.id),
+    (item) => item.engineerId === focusedEngineerId && !visibleRequestIds.has(item.request.id),
   );
-  const progressRequestId =
-    progress?.phase === 'on_site'
-      ? progress.anchor.requestId
-      : progress?.phase === 'traveling'
-        ? progress.next?.requestId
-        : null;
-  const progressRequest = progressRequestId ? requestById(snapshot, progressRequestId) : null;
-
   const scrollBy = (direction: -1 | 1) => {
     scrollerRef.current?.scrollBy({ left: direction * 220, behavior: 'smooth' });
   };
@@ -161,6 +148,7 @@ export function RouteTimeline({
             ...breaks
               .filter((item) => item.engineerId === focusedEngineerId)
               .map((item) => ({
+                rank: 1,
                 at: item.startedAt,
                 content: (
                   <li
@@ -187,6 +175,7 @@ export function RouteTimeline({
                     ? 'Отменена'
                     : 'Выполнена';
               return {
+                rank: 1,
                 at,
                 content: (
                   <li key={`history-${item.request.id}`} className="w-40 shrink-0">
@@ -224,21 +213,25 @@ export function RouteTimeline({
             ...vertices.map((vertex, index) => {
               const request = vertex.requestId ? requestById(snapshot, vertex.requestId) : null;
               const selected = vertex.requestId !== null && vertex.requestId === selectedRequestId;
+              const active = graph.activeNodeKeys.has(vertex.key);
+              const following = vertices[index + 1];
+              const activeConnector =
+                following !== undefined &&
+                graph.activeSegmentKeys.has(segmentKey(vertex, following));
               const title =
                 vertex.kind === 'start'
-                  ? 'Старт смены'
+                  ? 'Начало дня'
                   : vertex.kind === 'lunch'
                     ? 'Обед'
-                    : vertex.kind === 'wait'
-                      ? 'Ожидание'
-                      : (request?.workTypeTitle ?? 'Остановка');
+                    : (request?.workTypeTitle ?? 'Остановка');
               return {
-                at: vertex.startAt,
+                rank: vertex.kind === 'start' ? 0 : 1,
+                at: vertex.at,
                 content: (
-                  <li key={`${vertex.kind}-${vertex.sequence}`} className="w-40 shrink-0">
+                  <li key={vertex.key} className="w-40 shrink-0">
                     <button
                       type="button"
-                      data-current={selected ? 'true' : 'false'}
+                      data-current={active || selected ? 'true' : 'false'}
                       onClick={() => {
                         if (vertex.requestId) {
                           onSelectRequest(vertex.requestId);
@@ -250,30 +243,41 @@ export function RouteTimeline({
                         <span
                           className="z-10 h-3 w-3 rounded-full border-2 border-white"
                           style={{
-                            background: selected
-                              ? color
-                              : request?.lifecycle === 'completed'
-                                ? '#1F9D68'
-                                : request?.lifecycle === 'cancelled'
-                                  ? '#D9534F'
-                                  : vertex.kind === 'lunch'
-                                    ? '#E07A2F'
-                                    : '#D4D4D4',
+                            background:
+                              active || selected
+                                ? color
+                                : request?.lifecycle === 'completed'
+                                  ? '#1F9D68'
+                                  : request?.lifecycle === 'cancelled'
+                                    ? '#D9534F'
+                                    : vertex.kind === 'lunch'
+                                      ? '#E07A2F'
+                                      : '#D4D4D4',
                             borderRadius: vertex.kind === 'start' ? '2px' : '999px',
                           }}
                         />
-                        {index < vertices.length - 1 ? (
-                          <span className="h-px flex-1 bg-line" />
+                        {following !== undefined ? (
+                          <span
+                            className={
+                              activeConnector ? 'h-1 flex-1 bg-bee' : 'h-px flex-1 bg-line'
+                            }
+                          />
                         ) : null}
                       </div>
-                      <span className="text-sm font-semibold">{formatClock(vertex.startAt)}</span>
-                      <span className="mt-1 text-[13px] leading-5 text-ink">{title}</span>
+                      <span className={active ? 'text-sm font-bold' : 'text-sm font-semibold'}>
+                        {formatClock(vertex.at)}
+                      </span>
+                      <span
+                        className={
+                          active
+                            ? 'mt-1 text-[13px] leading-5 font-bold text-ink'
+                            : 'mt-1 text-[13px] leading-5 text-ink'
+                        }
+                      >
+                        {title}
+                      </span>
                       <span className="text-[12px] text-muted">
-                        {vertex.kind === 'start'
-                          ? 'точка выезда'
-                          : vertex.kind === 'wait'
-                            ? 'до начала окна'
-                            : request?.addressText}
+                        {vertex.kind === 'start' ? 'точка выезда' : request?.addressText}
                       </span>
                       <span className="mt-1 text-[12px] text-muted">
                         {stopStatus(request, vertex.kind)}
@@ -283,50 +287,11 @@ export function RouteTimeline({
                 ),
               };
             }),
-            ...(progress
-              ? [
-                  {
-                    at: progress.occurredAt,
-                    content: (
-                      <li
-                        key={`position-${progress.occurredAt}`}
-                        data-current="true"
-                        className="w-44 shrink-0 rounded-xl border-2 border-bee bg-amber-50 p-3 mr-3"
-                      >
-                        <p className="text-xs font-medium uppercase tracking-wide text-amber-800">
-                          Текущая позиция
-                        </p>
-                        <p className="mt-1 text-sm font-semibold">{progressLabel(progress)}</p>
-                        {progressRequest ? (
-                          <>
-                            <p className="mt-1 text-[13px] leading-5 text-ink">
-                              {progressRequest.workTypeTitle ?? 'Заявка'}
-                            </p>
-                            <p className="text-[12px] text-muted">{progressRequest.addressText}</p>
-                          </>
-                        ) : null}
-                        <p className="mt-1 text-xs text-muted">
-                          {formatClock(progress.occurredAt)}
-                        </p>
-                      </li>
-                    ),
-                  },
-                ]
-              : []),
           ]
-            .sort((a, b) => a.at - b.at)
+            .sort((a, b) => a.rank - b.rank || a.at - b.at)
             .map((item) => item.content)}
         </ol>
       </div>
     </section>
   );
-}
-
-/** Text for the factual marker, kept short enough for the horizontal LIVE pipeline. */
-function progressLabel(progress: LiveRouteProgress): string {
-  if (progress.phase === 'lunch') return 'Обед · на маршруте';
-  if (progress.phase === 'traveling') return 'В пути к следующей заявке';
-  if (progress.phase === 'on_site') return 'На текущей заявке';
-  if (progress.phase === 'finished') return 'Смена завершена';
-  return 'Готов к выезду';
 }
