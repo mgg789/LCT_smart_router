@@ -3,6 +3,11 @@ import { MAIL_ASSETS, type MailInlineImage } from './mail-assets';
 
 export interface MailTemplateContext {
   readonly appBaseUrl: string;
+  /**
+   * IANA zone letters render times in. Absolute times stay Unix seconds everywhere in
+   * the payload; only this rendering edge applies a zone (context/33 section 4).
+   */
+  readonly timeZone: string;
 }
 
 export interface RenderedMail {
@@ -74,6 +79,37 @@ const DARK: MailTheme = {
 
 function asString(value: unknown): string {
   return typeof value === 'string' ? value : '';
+}
+
+function asCount(value: unknown): number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : 0;
+}
+
+/**
+ * Renders stored seconds in the letter's zone, e.g. «21.09.2026, 10:00».
+ *
+ * The zone is applied by the formatter at the rendering edge; the stored value is never
+ * shifted (context/43 section 5.3).
+ */
+function formatDateTime(seconds: number, timeZone: string): string {
+  if (!Number.isSafeInteger(seconds)) {
+    return '';
+  }
+  return new Intl.DateTimeFormat('ru-RU', {
+    timeZone,
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(seconds * 1000));
+}
+
+function formatWindow(startSec: unknown, endSec: unknown, timeZone: string): string | null {
+  if (typeof startSec !== 'number' || typeof endSec !== 'number') {
+    return null;
+  }
+  return `${formatDateTime(startSec, timeZone)} — ${formatDateTime(endSec, timeZone)}`;
 }
 
 function appLink(base: string, path: string): string {
@@ -178,6 +214,16 @@ function buttonPill(href: string, label: string): string {
     </td>
   </tr>
 </table>`;
+}
+
+/** One or two action pills, stacked with a fixed gap between them. */
+function buttonsRow(buttons: readonly { readonly href: string; readonly label: string }[]): string {
+  return buttons.map((button) => `${buttonPill(button.href, button.label)}`).join(spacer(16));
+}
+
+/** A day-summary block: one quiet line per stat, no table borders. */
+function statsLine(label: string, value: string): string {
+  return `<p style="margin:0 0 12px;">${escapeHtml(label)}: <strong>${escapeHtml(value)}</strong></p>`;
 }
 
 function loginInner(theme: MailTheme, code: string, base: string): string {
@@ -302,6 +348,7 @@ export function renderMail(
   context: MailTemplateContext,
 ): RenderedMail {
   const base = context.appBaseUrl;
+  const zone = context.timeZone;
   switch (category) {
     case 'account_login_code': {
       const code = asString(payload.code) || '------';
@@ -327,13 +374,82 @@ export function renderMail(
         base,
       );
     }
-    case 'visit_change_required': {
+    case 'engineer_confirmed': {
       const requestId = asString(payload.requestId);
       const href = appLink(base, requestId ? `/client/requests/${requestId}` : '/');
       return genericMail(
-        'Нужно согласовать новое окно',
-        `<p style="margin:0 0 20px;">Приезд в ранее согласованное окно обеспечить нельзя. Выберите другую дату и окно в карточке заявки.</p>${buttonPill(href, 'Выбрать новое окно')}`,
-        `Приезд в согласованное окно обеспечить нельзя. Выберите новое окно:\n${href}`,
+        'Мастер приступил к работе',
+        `<p style="margin:0 0 20px;">Мастер подтвердил отметкой, что на месте и начал работу по вашей заявке.</p>${buttonPill(href, 'Открыть заявку')}`,
+        `Мастер на месте и приступил к работе по заявке.\n${href}`,
+        base,
+      );
+    }
+    case 'visit_change_required': {
+      // The office can no longer keep the agreed conditions: the customer answers with a
+      // new window or cancels. Both answers are links into their request card (2026-09-20
+      // product decision, card #65); the card performs them under the customer's session.
+      const requestId = asString(payload.requestId);
+      const card = `/client/requests/${requestId}`;
+      return genericMail(
+        'Нужно согласовать новое время',
+        `<p style="margin:0 0 20px;">Приезд в ранее согласованное время обеспечить нельзя. Выберите другое время или отмените заявку.</p>${buttonsRow(
+          [
+            { href: appLink(base, card), label: 'Выбрать новое время' },
+            { href: appLink(base, `${card}?action=cancel`), label: 'Отменить заявку' },
+          ],
+        )}`,
+        `Приезд в согласованное время обеспечить нельзя. Выберите новое время или отмените заявку:\n${appLink(base, card)}`,
+        base,
+      );
+    }
+    case 'request_rescheduled': {
+      const requestId = asString(payload.requestId);
+      const window = formatWindow(payload.windowStartAt, payload.windowEndAt, zone);
+      const href = appLink(base, requestId ? `/client/requests/${requestId}` : '/');
+      const when = window
+        ? `<p style="margin:0 0 20px;">Время заявки изменено. Новое время: <strong>${escapeHtml(window)}</strong>.</p>`
+        : `<p style="margin:0 0 20px;">Время заявки изменено. Точное время смотрите в карточке заявки.</p>`;
+      return genericMail(
+        'Время заявки изменено',
+        `${when}${buttonPill(href, 'Открыть заявку')}`,
+        `Время заявки изменено.${window ? ` Новое время: ${window}.` : ''}\n${href}`,
+        base,
+      );
+    }
+    case 'request_cancelled': {
+      const requestId = asString(payload.requestId);
+      const href = appLink(base, requestId ? `/client/requests/${requestId}` : '/');
+      return genericMail(
+        'Заявка отменена',
+        `<p style="margin:0 0 20px;">Заявка отменена. История заявки останется доступной в карточке.</p>${buttonPill(href, 'Открыть заявку')}`,
+        `Заявка отменена. История доступна в карточке заявки.\n${href}`,
+        base,
+      );
+    }
+    case 'request_completed': {
+      const requestId = asString(payload.requestId);
+      const href = appLink(base, requestId ? `/client/requests/${requestId}` : '/');
+      return genericMail(
+        'Заявка выполнена',
+        `<p style="margin:0 0 20px;">Работа по вашей заявке завершена. Если что-то не так, сообщите нам через приложение.</p>${buttonPill(href, 'Открыть заявку')}`,
+        `Работа по заявке завершена.\n${href}`,
+        base,
+      );
+    }
+    case 'engineer_day_summary': {
+      const finished = asCount(payload.finishedCount);
+      const started = asCount(payload.startedCount);
+      const problems = asCount(payload.problemCount);
+      const minutes = asCount(payload.workMinutes);
+      const workDate = asString(payload.workDate);
+      const hours = Math.floor(minutes / 60);
+      const workTime =
+        minutes > 0 ? (hours > 0 ? `${hours} ч ${minutes % 60} мин` : `${minutes} мин`) : '0 мин';
+      const title = workDate ? `Итоги дня ${workDate}` : 'Итоги дня';
+      return genericMail(
+        title,
+        `${statsLine('Заявок взято в работу', String(started))}${statsLine('Выполнено', String(finished))}${statsLine('Отмечено проблем', String(problems))}${statsLine('Время в работе', workTime)}`,
+        `Итоги дня${workDate ? ` ${workDate}` : ''}: взято в работу ${started}, выполнено ${finished}, проблем ${problems}, время в работе ${workTime}.`,
         base,
       );
     }

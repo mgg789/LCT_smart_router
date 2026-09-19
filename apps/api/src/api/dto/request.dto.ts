@@ -96,3 +96,8 @@ export const cancelRequestSchema = operationEnvelopeSchema.extend({
   reason: z.string().max(500).nullish(),
 });
 export type CancelRequestDto = z.infer<typeof cancelRequestSchema>;
+
+export const notificationSettingsSchema = operationEnvelopeSchema.extend({
+  enabled: z.boolean(),
+});
+export type NotificationSettingsDto = z.infer<typeof notificationSettingsSchema>;

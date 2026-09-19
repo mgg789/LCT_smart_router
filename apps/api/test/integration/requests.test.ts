@@ -149,6 +149,10 @@ describe('request lifecycle', () => {
           OR: requestIds.flatMap((id) => [
             { businessEventKey: { startsWith: `request_received:${id}` } },
             { businessEventKey: { startsWith: `visit_change_required:${id}:` } },
+            { businessEventKey: { startsWith: `request_rescheduled:${id}:` } },
+            { businessEventKey: { startsWith: `engineer_confirmed:${id}` } },
+            { businessEventKey: { startsWith: `request_completed:${id}` } },
+            { businessEventKey: { startsWith: `request_cancelled:${id}` } },
           ]),
         },
       });
@@ -337,25 +341,24 @@ describe('request lifecycle', () => {
     assert.ok(entry, 'moving the window must leave a history entry');
     assert.equal((entry.previous as { windowStartAt: number }).windowStartAt, DAY + 10 * HOUR);
 
-    // The previously agreed window can no longer be guaranteed, so the customer is asked
-    // to agree to a new one. The intent is recorded, not delivered: transport belongs to
-    // the SMTP-gateway (context/36 section 10).
+    // The customer moved the window themselves, so the letter confirms the new time. The
+    // intent is recorded, not delivered: transport belongs to the SMTP-gateway
+    // (context/36 section 10).
     const changeIntents = await prisma.notificationIntent.findMany({
       where: {
-        businessEventKey: `visit_change_required:${draft.id}:${DAY + 14 * HOUR}:${DAY + 16 * HOUR}`,
+        businessEventKey: `request_rescheduled:${draft.id}:${DAY + 14 * HOUR}:${DAY + 16 * HOUR}`,
       },
     });
     assert.equal(changeIntents.length, 1);
-    assert.equal(changeIntents[0]?.category, 'visit_change_required');
+    assert.equal(changeIntents[0]?.category, 'request_rescheduled');
     assert.equal(changeIntents[0]?.state, 'pending_submission');
   });
 
-  it('asks the customer about a new window once per proposed window', async () => {
+  it('confirms a customer-initiated move once per proposed window', async () => {
     const draft = await prepare();
     const submitted = ((await (await submit(draft.id, draft.version)).json()) as RequestBody)
       .request;
-    const keyOf = (start: number, end: number) =>
-      `visit_change_required:${draft.id}:${start}:${end}`;
+    const keyOf = (start: number, end: number) => `request_rescheduled:${draft.id}:${start}:${end}`;
     const intentCount = async (key: string) =>
       (await prisma.notificationIntent.findMany({ where: { businessEventKey: key } })).length;
 
@@ -390,7 +393,7 @@ describe('request lifecycle', () => {
     assert.equal(repeat.status, 201, await repeat.clone().text());
     assert.equal(await intentCount(keyOf(DAY + 14 * HOUR, DAY + 16 * HOUR)), 1);
 
-    // A different proposed window is a new question to the customer.
+    // A different proposed window is a new confirmation to the customer.
     const moved = ((await repeat.json()) as RequestBody).request;
     const other = await call(
       'POST',
@@ -405,6 +408,38 @@ describe('request lifecycle', () => {
     );
     assert.equal(other.status, 201, await other.clone().text());
     assert.equal(await intentCount(keyOf(DAY + 18 * HOUR, DAY + 20 * HOUR)), 1);
+  });
+
+  it('asks the customer to re-agree when the dispatcher moves the window', async () => {
+    const draft = await prepare();
+    const submitted = ((await (await submit(draft.id, draft.version)).json()) as RequestBody)
+      .request;
+    const keyOf = (start: number, end: number) =>
+      `visit_change_required:${draft.id}:${start}:${end}`;
+    const intentCount = async (key: string) =>
+      (await prisma.notificationIntent.findMany({ where: { businessEventKey: key } })).length;
+
+    // The office takes the agreed window away, so the customer gets the letter with the
+    // two answers: pick a new time or cancel (card #65, 2026-09-20 decision).
+    const moved = await call('PATCH', `/api/v1/dispatch/requests/${draft.id}`, dispatcherToken, {
+      operationId: randomUUID(),
+      expectedVersion: submitted.version,
+      windowStartAt: DAY + 9 * HOUR,
+      windowEndAt: DAY + 11 * HOUR,
+    });
+    assert.equal(moved.status, 200, await moved.clone().text());
+    assert.equal(await intentCount(keyOf(DAY + 9 * HOUR, DAY + 11 * HOUR)), 1);
+
+    // An edit that keeps the agreed window asks no new question.
+    const current = ((await moved.json()) as RequestBody).request;
+    const urgentOnly = await call(
+      'PATCH',
+      `/api/v1/dispatch/requests/${draft.id}`,
+      dispatcherToken,
+      { operationId: randomUUID(), expectedVersion: current.version, urgent: true },
+    );
+    assert.equal(urgentOnly.status, 200, await urgentOnly.clone().text());
+    assert.equal(await intentCount(keyOf(DAY + 9 * HOUR, DAY + 11 * HOUR)), 1);
   });
 
   it('reports a conflict when the screen the customer confirmed is out of date', async () => {
@@ -500,6 +535,50 @@ describe('request lifecycle', () => {
     const stored = await prisma.request.findUnique({ where: { id: draft.id } });
     assert.ok(stored, 'the record must survive cancellation');
     assert.notEqual(stored.cancelledAt, null);
+
+    // The customer learns the work will not happen from sys, not from silence.
+    const cancelIntents = await prisma.notificationIntent.findMany({
+      where: { businessEventKey: `request_cancelled:${draft.id}` },
+    });
+    assert.equal(cancelIntents.length, 1);
+    assert.equal(cancelIntents[0]?.category, 'request_cancelled');
+  });
+
+  it("lets a customer cancel their own request and hides another customer's", async () => {
+    const draft = await prepare();
+    const submitted = ((await (await submit(draft.id, draft.version)).json()) as RequestBody)
+      .request;
+    const otherEmail = `${unique('other')}@example.test`;
+    const codeResponse = await fetch(`${baseUrl}/api/v1/auth/login-code`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: otherEmail }),
+    });
+    const { devCode } = (await codeResponse.json()) as { devCode: string };
+    const verify = await fetch(`${baseUrl}/api/v1/auth/login-code/verify`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: otherEmail, code: devCode, role: 'client' }),
+    });
+    const otherToken = ((await verify.json()) as { token: string }).token;
+
+    // Someone else's request is reported as absent, not forbidden: confirming that it
+    // exists is itself a disclosure.
+    const foreign = await call('POST', `/api/v1/client/requests/${draft.id}/cancel`, otherToken, {
+      operationId: randomUUID(),
+      expectedVersion: submitted.version,
+    });
+    assert.equal(foreign.status, 404);
+
+    const own = await call('POST', `/api/v1/client/requests/${draft.id}/cancel`, clientToken, {
+      operationId: randomUUID(),
+      expectedVersion: submitted.version,
+      reason: 'plans changed',
+    });
+    assert.equal(own.status, 201, await own.clone().text());
+    assert.equal(((await own.json()) as RequestBody).request.lifecycle, 'cancelled');
+
+    await prisma.account.deleteMany({ where: { email: otherEmail } });
   });
 
   it("does not show one customer another customer's request", async () => {
@@ -524,6 +603,45 @@ describe('request lifecycle', () => {
     assert.equal(response.status, 404);
 
     await prisma.account.deleteMany({ where: { email: otherEmail } });
+  });
+
+  it('stops event letters when the customer silences them, but never login codes', async () => {
+    const draft = await prepare();
+    await submit(draft.id, draft.version);
+    const receivedIntents = async (id: string) =>
+      prisma.notificationIntent.findMany({
+        where: { businessEventKey: `request_received:${id}` },
+      });
+    assert.equal((await receivedIntents(draft.id)).length, 1);
+
+    const off = await call('PATCH', '/api/v1/client/notifications', clientToken, {
+      operationId: randomUUID(),
+      enabled: false,
+    });
+    assert.equal(off.status, 200, await off.clone().text());
+
+    // A new request still enters distribution, but writes no letter.
+    const silenced = await prepare();
+    await submit(silenced.id, silenced.version);
+    assert.equal((await receivedIntents(silenced.id)).length, 0);
+
+    // A way in must not be silenceable: the login-code letter still goes out.
+    const codeResponse = await fetch(`${baseUrl}/api/v1/auth/login-code`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: clientEmail }),
+    });
+    assert.equal(codeResponse.status, 201);
+    assert.ok(((await codeResponse.json()) as { devCode?: string }).devCode !== undefined);
+
+    const on = await call('PATCH', '/api/v1/client/notifications', clientToken, {
+      operationId: randomUUID(),
+      enabled: true,
+    });
+    assert.equal(on.status, 200, await on.clone().text());
+    const resubscribed = await prepare();
+    await submit(resubscribed.id, resubscribed.version);
+    assert.equal((await receivedIntents(resubscribed.id)).length, 1);
   });
 
   it('rejects a window that ends before it starts', async () => {

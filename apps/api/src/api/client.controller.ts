@@ -1,13 +1,17 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { type Actor, CurrentActor, Roles } from '../auth';
 import { SysError } from '../common/errors';
 import { Clock } from '../common/time';
 import { zodBody } from '../common/validation';
-import { OperationsService } from '../operations';
+import { assertWriteApplied, OperationsService } from '../operations';
 import { RequestsService, WORK_TYPES } from '../orchestrator/requests';
 import { PrismaService, type Tx } from '../persistence';
 import {
+  type CancelRequestDto,
+  cancelRequestSchema,
+  type NotificationSettingsDto,
+  notificationSettingsSchema,
   type PrepareRequestDto,
   prepareRequestSchema,
   type RescheduleRequestDto,
@@ -135,8 +139,74 @@ export class ClientController {
     return { request: outcome.result };
   }
 
+  @Post('requests/:id/cancel')
+  @ApiOperation({ summary: 'Cancel own request that has not started' })
+  async cancel(
+    @CurrentActor() actor: Actor,
+    @Param('id') id: string,
+    @Body(zodBody(cancelRequestSchema)) dto: CancelRequestDto,
+  ): Promise<{ request: RequestView }> {
+    await this.assertOwned(actor, id);
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'request.cancel',
+        targetRef: id,
+        expectedVersion: dto.expectedVersion ?? null,
+        payload: dto,
+      },
+      async (context) =>
+        toRequestView(
+          await this.requests.cancel(context, id, dto.expectedVersion ?? null, dto.reason ?? null),
+        ),
+    );
+    return { request: outcome.result };
+  }
+
+  @Patch('notifications')
+  @ApiOperation({ summary: 'Turn event letters to this address on or off; login codes stay on' })
+  async setNotificationSettings(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(notificationSettingsSchema)) dto: NotificationSettingsDto,
+  ): Promise<{ enabled: boolean }> {
+    // Silence is a decision of a person, not of a machine: a session decides for its own
+    // address, an integration key has no address of its own to silence.
+    if (!actor.accountId) {
+      throw SysError.forbidden('An integration key has no address to silence');
+    }
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'client.notification_settings',
+        targetRef: actor.accountId,
+        expectedVersion: dto.expectedVersion ?? null,
+        payload: dto,
+      },
+      async (context) => {
+        const current = await context.tx.account.findUniqueOrThrow({
+          where: { id: actor.accountId as string },
+        });
+        const updated = await context.tx.account.updateMany({
+          where: { id: actor.accountId as string, version: dto.expectedVersion ?? current.version },
+          data: {
+            mailNotificationsEnabled: dto.enabled,
+            updatedAt: BigInt(context.now),
+            version: { increment: 1 },
+          },
+        });
+        assertWriteApplied('Account', updated.count, dto.expectedVersion, current.version);
+        return { enabled: dto.enabled };
+      },
+    );
+    return outcome.result;
+  }
+
   @Get('requests')
-  @ApiOperation({ summary: 'Active requests of the signed-in customer, or of the clientEmail a key names' })
+  @ApiOperation({
+    summary: 'Active requests of the signed-in customer, or of the clientEmail a key names',
+  })
   async list(
     @CurrentActor() actor: Actor,
     @Query('clientEmail') clientEmail?: string,

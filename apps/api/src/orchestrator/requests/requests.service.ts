@@ -208,14 +208,18 @@ export class RequestsService {
     });
     assertWriteApplied('Request', updated.count, expectedVersion, current.version);
 
-    // The previously agreed window can no longer be guaranteed, so the customer is asked
-    // to pick a new one. One letter per proposed window: repeating the same change stays
-    // a no-op, moving to another window asks again (context/36 section 10).
+    // The customer moved the window themselves, so the letter confirms the new time rather
+    // than asking to pick one. One letter per proposed window: repeating the same change
+    // stays a no-op, moving to another window confirms again (context/36 section 10).
     await this.notifications.record(context.tx, context.now, {
-      category: 'visit_change_required',
-      businessEventKey: `visit_change_required:${requestId}:${input.windowStartAt}:${input.windowEndAt}`,
+      category: 'request_rescheduled',
+      businessEventKey: `request_rescheduled:${requestId}:${input.windowStartAt}:${input.windowEndAt}`,
       recipientAccountId: current.clientAccountId,
-      payload: { requestId },
+      payload: {
+        requestId,
+        windowStartAt: input.windowStartAt,
+        windowEndAt: input.windowEndAt,
+      },
     });
 
     await this.publisher.publishIfChanged(
@@ -269,6 +273,21 @@ export class RequestsService {
     });
     assertWriteApplied('Request', updated.count, expectedVersion, current.version);
 
+    // When the office moves the agreed window, the customer must re-agree or cancel; an
+    // address-only edit asks for no letter. One letter per proposed window (context/36
+    // section 10), with the two answer buttons the letter template provides.
+    if (
+      windowStartAt !== Number(current.windowStartAt) ||
+      windowEndAt !== Number(current.windowEndAt)
+    ) {
+      await this.notifications.record(context.tx, context.now, {
+        category: 'visit_change_required',
+        businessEventKey: `visit_change_required:${requestId}:${windowStartAt}:${windowEndAt}`,
+        recipientAccountId: current.clientAccountId,
+        payload: { requestId },
+      });
+    }
+
     await this.publisher.publishIfChanged(
       context.tx,
       context.now,
@@ -317,6 +336,15 @@ export class RequestsService {
         previous: conditionsOf(current),
         reason: reason ?? 'cancelled by dispatcher',
       },
+    });
+
+    // The customer learns the work will not happen from sys, not from silence
+    // (card #65, 2026-09-20 decision). One letter per cancelled request.
+    await this.notifications.record(context.tx, context.now, {
+      category: 'request_cancelled',
+      businessEventKey: `request_cancelled:${requestId}`,
+      recipientAccountId: current.clientAccountId,
+      payload: { requestId, reason: reason ?? null },
     });
 
     // The free pool changed, so the task changed.

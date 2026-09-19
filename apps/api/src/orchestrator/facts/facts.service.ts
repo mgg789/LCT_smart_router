@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { SysError } from '../../common/errors';
 import type { FactKind, Request } from '../../generated/prisma/client';
+import { NotificationsService } from '../../notifications';
 import type { OperationContext } from '../../operations';
 import type { Tx } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
@@ -27,6 +28,7 @@ export class FactsService {
     private readonly plans: AppliedPlanService,
     private readonly publisher: SnapshotPublisher,
     private readonly timingPolicy: ExecutionTimingPolicy,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /** Reads the Router-owned variance thresholds before opening a database transaction. */
@@ -117,6 +119,15 @@ export class FactsService {
         version: { increment: 1 },
       },
     });
+
+    // The engineer's own start mark is the confirmation the customer waits for after the
+    // assignment letter (card #65, 2026-09-20 decision). One letter per started request.
+    await this.notifications.record(context.tx, context.now, {
+      category: 'engineer_confirmed',
+      businessEventKey: `engineer_confirmed:${request.id}`,
+      recipientAccountId: request.clientAccountId,
+      payload: { requestId: request.id, engineerId },
+    });
     await this.publisher.publishIfChanged(
       context.tx,
       context.now,
@@ -186,6 +197,16 @@ export class FactsService {
         PUBLICATION_TRIGGERS.REQUEST_EXECUTION_VARIANCE,
       );
     }
+
+    // The confirmed finish closes the loop the request-received letter opened (card #65,
+    // 2026-09-20 decision). One letter per completed request, regardless of variance.
+    await this.notifications.record(context.tx, context.now, {
+      category: 'request_completed',
+      businessEventKey: `request_completed:${request.id}`,
+      recipientAccountId: request.clientAccountId,
+      payload: { requestId: request.id, engineerId, completedAt: occurredAt },
+    });
+
     return this.reload(context.tx, request.id);
   }
 

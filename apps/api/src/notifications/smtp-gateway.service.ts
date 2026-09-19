@@ -134,6 +134,7 @@ export class SmtpGatewayService implements OnModuleInit, OnModuleDestroy {
     const payload = asRecord(intent.payload);
     const rendered = renderMail(intent.category, payload, {
       appBaseUrl: this.config.get('SMTP_APP_BASE_URL'),
+      timeZone: this.config.get('APP_TIME_ZONE'),
     });
     const transport = await this.chooseTransport();
     const outcome = await transport.send({

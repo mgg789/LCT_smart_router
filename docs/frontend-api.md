@@ -405,8 +405,16 @@ SPA `/engineer/` (вход по коду, список заявок и обед�
 `GET /client/work-types` → `{workTypes: [{code, title}]}` — каталог типов работ (выбор
 в форме; код = ключ для `POST .../requests {workType}`). `POST /client/requests`
 (черновик) → `POST /client/requests/:id/submit` (подтверждение) → заявка становится
-задачей; `POST /client/requests/:id/reschedule`; `GET /client/requests`,
-`GET /client/requests/:id` — только свои заявки. Тела — как §6.1 минус `clientEmail`.
+задачей; `POST /client/requests/:id/reschedule`; `POST /client/requests/:id/cancel`
+(`{operationId, expectedVersion?, reason?}` → `{request}`) — отмена своей неначатой
+заявки; `GET /client/requests`, `GET /client/requests/:id` — только свои заявки.
+Тела — как §6.1 минус `clientEmail`.
+
+`PATCH /client/notifications` — `{operationId, enabled}` → `{enabled}`: выключает
+событийные письма адреса (каталог писем — `docs/api.md` §5); коды входа приходят
+всегда. Кнопки из писем («Выбрать новое время» / «Отменить заявку») ведут в карточку
+заявки (`/client/requests/:id`, отмена — с `?action=cancel`) и выполняются живой
+сессией заказчика.
 
 ## 9. Health (вне `/api/v1`, без авторизации)
 

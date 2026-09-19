@@ -159,13 +159,22 @@ enum OperationState {
   outcome_unknown
 }
 
-/// Mail catalogue of context/36 section 10. There is deliberately no completion mail and
-/// no pre-visit reminder.
+/// Mail catalogue of context/36 section 10.
+///
+/// The 2026-09-20 product decision supersedes the earlier "no completion mail" rule:
+/// every customer-visible transition of a request now has a letter, and an engineer
+/// gets one day-summary mail when their day is closed. There is deliberately still no
+/// pre-visit reminder (nothing in the system observes time passing for a customer).
 enum NotificationCategory {
   account_login_code
   request_received
   engineer_assigned
+  engineer_confirmed
   visit_change_required
+  request_rescheduled
+  request_cancelled
+  request_completed
+  engineer_day_summary
 }
 
 /// Lifecycle of a mail intent. There is no `delivered` state: our control ends when the
@@ -207,6 +216,9 @@ model Account {
   id        String @id @default(uuid())
   /// Stored lower-cased; the application normalises before writing.
   email     String @unique
+  /// The customer's right to silence (card #65, 2026-09-20): when false, event letters
+  /// stop. Login codes ignore this flag -- a way in must never be silenceable.
+  mailNotificationsEnabled Boolean @default(true) @map("mail_notifications_enabled")
   createdAt BigInt @map("created_at")
   updatedAt BigInt @map("updated_at")
   version   Int    @default(1)
