@@ -1,7 +1,7 @@
 import maplibregl from 'maplibre-gl';
 import { useEffect, useRef, useState } from 'react';
 import type { DashboardSnapshot } from '../api/types';
-import { unassignedRequests } from '../domain/dashboard';
+import { remainingRouteForLiveMap, unassignedRequests } from '../domain/dashboard';
 import { localMapStyle } from '../domain/localBasemap';
 import { regionStyle, requestRegion, routeRegion } from '../domain/regions';
 import { mapRouteSegments } from '../domain/travel';
@@ -106,9 +106,24 @@ export function DayMap({
         return false;
       }
       const allRoutes = snapshot.plan.plan?.routes ?? [];
-      const routes = selectedEngineerId
+      const selectedRoutes = selectedEngineerId
         ? allRoutes.filter((route) => route.engineerId === selectedEngineerId)
         : allRoutes;
+      const visibleRequestIds = new Set(
+        snapshot.requests
+          .filter(
+            (request) =>
+              request.lifecycle !== 'completed' &&
+              request.lifecycle !== 'cancelled' &&
+              (request.assumedCompletedAt === null || request.assumedCompletedAt === undefined),
+          )
+          .map((request) => request.id),
+      );
+      // The map is a live forward-looking graph. Completed and cancelled vertices
+      // stay in the dispatcher timeline/history but are not shown as future map points.
+      const routes = selectedRoutes
+        .map((route) => remainingRouteForLiveMap(snapshot, route))
+        .filter((route): route is NonNullable<typeof route> => route !== null);
       const viewingUnassigned = unassignedRequests(snapshot).some(
         (request) => request.id === selectedRequestId,
       );
@@ -195,8 +210,9 @@ export function DayMap({
       const lunchFeatures = stopFeatures.filter((feature) => !('requestId' in feature.properties));
       const jobFeatures = stopFeatures.filter((feature) => 'requestId' in feature.properties);
 
-      const unassignedFeatures = (showUnassigned ? unassignedRequests(snapshot) : []).flatMap(
-        (request) => {
+      const unassignedFeatures = (showUnassigned ? unassignedRequests(snapshot) : [])
+        .filter((request) => visibleRequestIds.has(request.id))
+        .flatMap((request) => {
           if (request.lat === null || request.lon === null) {
             return [];
           }
@@ -215,8 +231,7 @@ export function DayMap({
               },
             },
           ];
-        },
-      );
+        });
 
       upsert(map, 'routes', { type: 'FeatureCollection', features: lineFeatures }, () => {
         map.addLayer({

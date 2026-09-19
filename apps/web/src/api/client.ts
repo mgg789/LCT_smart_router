@@ -58,6 +58,8 @@ const requestSchema = z.object({
   expectedCompletionAt: z.number().int().nullable(),
   continuationAvailableAt: z.number().int().nullable(),
   overrunDetectedAt: z.number().int().nullable(),
+  assumedStartedAt: z.number().int().nullable().optional().default(null),
+  assumedCompletedAt: z.number().int().nullable().optional().default(null),
   completedAt: z.number().int().nullable(),
   cancelledAt: z.number().int().nullable(),
 });

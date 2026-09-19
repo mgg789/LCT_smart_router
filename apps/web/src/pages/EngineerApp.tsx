@@ -14,6 +14,12 @@ import {
   updateEngineerProfile,
   verifyEngineerLoginCode,
 } from '../api/engineer';
+import {
+  type EngineerLiveAction,
+  type EngineerLiveView,
+  loadEngineerLive,
+  sendEngineerLiveAction,
+} from '../api/live';
 import type {
   EngineerDayView,
   EngineerPlanResponse,
@@ -23,6 +29,7 @@ import type {
 } from '../api/types';
 import { EngineerMap } from '../components/engineer/EngineerMap';
 import { formatWindow, formatWindowCountdown } from '../engineer/format';
+import { formatLiveCountdown, liveNowAt, moscowTimeInputAt } from '../engineer/live';
 import { mapsDirectionsUrl } from '../engineer/maps';
 import {
   clearEngineerSession,
@@ -30,7 +37,7 @@ import {
   writeEngineerSession,
 } from '../engineer/session';
 import { skillLabel } from '../lib/reasons';
-import { formatClock } from '../lib/time';
+import { formatClock, formatDayTitle } from '../lib/time';
 
 type EngineerPath =
   | { readonly name: 'list' }
@@ -127,39 +134,115 @@ function EngineerSignedIn({
 }) {
   const [profile, setProfile] = useState<EngineerView | null>(null);
   const [day, setDay] = useState<EngineerDayView | null>(null);
-  const [plan, setPlan] = useState<EngineerPlanResponse | null>(null);
+  const [storedPlan, setPlan] = useState<EngineerPlanResponse | null>(null);
+  const [live, setLive] = useState<EngineerLiveView | null>(null);
+  const [liveReceivedAtMs, setLiveReceivedAtMs] = useState<number | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [checkingIn, setCheckingIn] = useState(false);
   const [attendanceError, setAttendanceError] = useState<string | null>(null);
   const checkInOperation = useRef<string | null>(null);
+  const plan = useMemo<EngineerPlanResponse | null>(() => {
+    if (!storedPlan || !live || live.workday.status === 'pending') return storedPlan;
+    const current = live.current?.request;
+    return {
+      ...storedPlan,
+      route: live.route,
+      requests: current
+        ? [...storedPlan.requests.filter((request) => request.id !== current.id), current]
+        : storedPlan.requests,
+    };
+  }, [storedPlan, live]);
+  const businessNowAt = useLiveNow(live, liveReceivedAtMs);
+  const readVersion = useRef(0);
+  const reading = useRef(false);
+  const writing = useRef(false);
 
-  const reload = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [nextProfile, nextDay, nextPlan] = await Promise.all([
-        loadEngineerProfile(token),
-        loadEngineerDay(token),
-        loadEngineerPlan(token),
-      ]);
-      setProfile(nextProfile);
-      setDay(nextDay);
-      setPlan(nextPlan);
-    } catch (cause) {
-      if (cause instanceof DashboardApiError && cause.status === 401) {
-        onSessionExpired();
-        return;
+  const reload = useCallback(
+    async (initial = false) => {
+      if (reading.current || writing.current) return;
+      reading.current = true;
+      const version = ++readVersion.current;
+      if (initial) setLoading(true);
+      try {
+        const [nextProfile, nextDay, nextPlan, nextLive] = await Promise.all([
+          loadEngineerProfile(token),
+          loadEngineerDay(token),
+          loadEngineerPlan(token),
+          loadEngineerLive(token),
+        ]);
+        if (version !== readVersion.current) return;
+        setProfile(nextProfile);
+        setDay(nextDay);
+        setPlan(nextPlan);
+        setLive(nextLive);
+        setLiveReceivedAtMs(performance.now());
+        setError(null);
+      } catch (cause) {
+        if (version !== readVersion.current) return;
+        if (cause instanceof DashboardApiError && cause.status === 401) {
+          onSessionExpired();
+          return;
+        }
+        setError(cause instanceof Error ? cause.message : 'Не удалось загрузить день');
+      } finally {
+        if (version === readVersion.current) {
+          reading.current = false;
+          if (initial) setLoading(false);
+        }
       }
-      setError(cause instanceof Error ? cause.message : 'Не удалось загрузить день');
-    } finally {
-      setLoading(false);
-    }
-  }, [onSessionExpired, token]);
+    },
+    [onSessionExpired, token],
+  );
 
   useEffect(() => {
-    void reload();
+    void reload(true);
+    return () => {
+      readVersion.current += 1;
+      reading.current = false;
+    };
   }, [reload]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => void reload(), 2_000);
+    return () => window.clearInterval(interval);
+  }, [reload]);
+
+  const applyLiveAction = useCallback(
+    async (action: EngineerLiveAction) => {
+      if (writing.current) return false;
+      writing.current = true;
+      setActionError(null);
+      readVersion.current += 1;
+      reading.current = false;
+      try {
+        const next = await sendEngineerLiveAction(token, action);
+        setLive(next);
+        setLiveReceivedAtMs(performance.now());
+        setError(null);
+        if (
+          path.name === 'request' &&
+          (action.kind === 'finish' ||
+            (action.kind === 'problem' && action.problemKind !== 'delay'))
+        ) {
+          navigate({ name: 'list' });
+        }
+        return true;
+      } catch (cause) {
+        if (cause instanceof DashboardApiError && cause.status === 401) {
+          onSessionExpired();
+          return false;
+        }
+        setActionError(cause instanceof Error ? cause.message : 'Не удалось сохранить отметку');
+        return false;
+      } finally {
+        writing.current = false;
+        void reload();
+      }
+    },
+    [navigate, onSessionExpired, path.name, reload, token],
+  );
 
   return (
     <div className="flex min-h-full flex-col bg-canvas text-ink">
@@ -172,6 +255,11 @@ function EngineerSignedIn({
           <img src="/beeline-symbol.png" alt="Beeline" className="h-8 w-8" />
           <span className="text-sm font-semibold">Инженер</span>
         </button>
+        {live ? (
+          <span className="ml-auto mr-2 rounded-full bg-emerald-50 px-2.5 py-1 text-[12px] font-medium text-emerald-800">
+            Время дня · {formatClock(businessNowAt)}
+          </span>
+        ) : null}
         <button
           type="button"
           aria-label="Меню"
@@ -233,6 +321,19 @@ function EngineerSignedIn({
             )}
           </section>
         )}
+        {live &&
+        (path.name === 'list' ||
+          live.engineer.lineStatus !== 'online' ||
+          live.workday.status !== 'running' ||
+          (path.name === 'request' && live.current?.request.id === path.requestId)) ? (
+          <EngineerLivePanel
+            live={live}
+            receivedAtMs={liveReceivedAtMs ?? performance.now()}
+            onAction={applyLiveAction}
+            actionError={actionError}
+            onOpenRequest={(requestId) => navigate({ name: 'request', requestId })}
+          />
+        ) : null}
         {loading && profile === null ? (
           <p className="text-sm text-muted">Загружаем смену…</p>
         ) : error && profile === null ? (
@@ -240,13 +341,15 @@ function EngineerSignedIn({
             <p>{error}</p>
             <button
               type="button"
-              onClick={() => void reload()}
+              onClick={() => void reload(true)}
               className="mt-3 rounded-full bg-bee px-4 py-2 font-semibold"
             >
               Повторить
             </button>
           </div>
-        ) : path.name === 'settings' && profile ? (
+        ) : live &&
+          (live.engineer.lineStatus !== 'online' ||
+            live.workday.status !== 'running') ? null : path.name === 'settings' && profile ? (
           <EngineerSettingsPage
             token={token}
             profile={profile}
@@ -254,25 +357,29 @@ function EngineerSignedIn({
             onSessionExpired={onSessionExpired}
           />
         ) : path.name === 'route' && plan && profile ? (
-          <EngineerRoutePage plan={plan} profile={profile} />
+          <EngineerRoutePage plan={plan} profile={profile} nowAt={businessNowAt} />
         ) : path.name === 'request' && profile ? (
           <EngineerRequestPage
             token={token}
             requestId={path.requestId}
             profile={profile}
             plan={plan}
+            nowAt={businessNowAt}
             onBack={() => navigate({ name: 'list' })}
             onSessionExpired={onSessionExpired}
           />
-        ) : (
+        ) : live === null ||
+          (live.workday.status === 'running' && live.engineer.lineStatus === 'online') ? (
           <EngineerDayPage
             profile={profile}
             day={day}
             plan={plan}
+            nowAt={businessNowAt}
+            live={live}
             error={error}
             onOpenRequest={(requestId) => navigate({ name: 'request', requestId })}
           />
-        )}
+        ) : null}
       </main>
     </div>
   );
@@ -388,20 +495,478 @@ function EngineerLoginPage({
   );
 }
 
+/** Live work controls. The API remains authoritative; this component only renders its snapshot. */
+function EngineerLivePanel({
+  live,
+  receivedAtMs,
+  onAction,
+  actionError,
+  onOpenRequest,
+}: {
+  readonly live: EngineerLiveView;
+  readonly receivedAtMs: number;
+  readonly onAction: (action: EngineerLiveAction) => Promise<boolean>;
+  readonly actionError: string | null;
+  readonly onOpenRequest: (requestId: string) => void;
+}) {
+  const nowAt = useLiveNow(live, receivedAtMs);
+  const [busy, setBusy] = useState(false);
+  const [etaOpen, setEtaOpen] = useState(false);
+  const [eta, setEta] = useState('');
+  const [problemOpen, setProblemOpen] = useState(false);
+  const [problemKind, setProblemKind] = useState<
+    'delay' | 'missing_equipment' | 'other' | 'impossible'
+  >('delay');
+  const [note, setNote] = useState('');
+  const [delayMinutes, setDelayMinutes] = useState('');
+  const [equipment, setEquipment] = useState('');
+
+  const submit = (action: EngineerLiveAction, onSuccess?: () => void) => {
+    setBusy(true);
+    void onAction(action)
+      .then((saved) => {
+        if (saved) onSuccess?.();
+      })
+      .finally(() => setBusy(false));
+  };
+  const current = live.current;
+  const breakState = live.engineer.technicalBreak;
+  const lunch = live.lunch;
+  const deadlinePassed = nowAt >= live.workday.engineerStartDeadlineAt;
+
+  if (breakState) {
+    const overdue = nowAt >= breakState.overdueAt;
+    return (
+      <section className="fixed inset-0 z-30 flex items-center justify-center bg-ink/70 px-5 text-center text-ink">
+        <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-xl">
+          {actionError ? (
+            <p role="alert" className="text-sm text-red-700">
+              {actionError}
+            </p>
+          ) : null}
+          <p className="text-sm text-muted">Технический перерыв</p>
+          <h1 className="mt-2 text-2xl font-semibold">
+            {overdue ? 'Перерыв превысил 20 минут' : '15 минут на восстановление'}
+          </h1>
+          <p className="mt-5 font-mono text-4xl tabular-nums">
+            {formatLiveCountdown(
+              (overdue ? breakState.overdueAt : breakState.plannedEndAt) - nowAt,
+            )}
+          </p>
+          <p className="mt-3 text-sm text-muted">
+            {overdue
+              ? 'Диспетчеру передана проблема: перерыв затянулся.'
+              : 'Экран вернётся к маршруту после завершения.'}
+          </p>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => submit({ kind: 'break_finish' })}
+            className="mt-6 w-full rounded-full bg-bee py-3 text-sm font-semibold disabled:opacity-50"
+          >
+            Завершить перерыв
+          </button>
+          <button
+            type="button"
+            disabled
+            className="mt-3 w-full rounded-full border border-line py-3 text-sm text-muted"
+          >
+            Проблема
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  if (live.workday.status !== 'running') {
+    return (
+      <section className="rounded-3xl bg-white p-6 text-center shadow-sm">
+        <p className="text-sm text-muted">{formatDayTitle(live.workday.workDate)}</p>
+        <h1 className="mt-2 text-xl font-semibold">
+          {live.workday.status === 'finished'
+            ? 'Рабочий день завершён'
+            : 'Диспетчер ещё не начал рабочий день'}
+        </h1>
+        <p className="mt-3 text-sm text-muted">
+          После старта появится кнопка выхода на линию и маршрут.
+        </p>
+      </section>
+    );
+  }
+
+  if (live.engineer.lineStatus !== 'online') {
+    return (
+      <section className="rounded-3xl bg-white p-6 text-center shadow-sm">
+        <p className="text-sm text-muted">
+          До старта линии осталось{' '}
+          {formatLiveCountdown(live.workday.engineerStartDeadlineAt - nowAt)}
+        </p>
+        <h1 className="mt-2 text-xl font-semibold">
+          {live.engineer.lineStatus === 'no_show_offline' || deadlinePassed
+            ? 'Вы не вышли на линию вовремя'
+            : 'Маршрут готов'}
+        </h1>
+        <p className="mt-3 text-sm text-muted">
+          {live.engineer.lineStatus === 'no_show_offline' || deadlinePassed
+            ? 'План перераспределяется без вашей бригады. Можно выйти сейчас — оставшаяся работа будет пересчитана.'
+            : 'Подтвердите готовность, чтобы открыть список заявок.'}
+        </p>
+        {actionError ? (
+          <p role="alert" className="mt-3 text-sm text-red-700">
+            {actionError}
+          </p>
+        ) : null}
+        {live.engineer.lineStatus === 'pending' ||
+        live.engineer.lineStatus === 'no_show_offline' ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => submit({ kind: 'online' })}
+            className="mt-6 w-full rounded-full bg-bee py-3 text-sm font-semibold disabled:opacity-50"
+          >
+            Выйти на линию
+          </button>
+        ) : null}
+      </section>
+    );
+  }
+
+  return (
+    <section className="space-y-3">
+      {actionError ? (
+        <p role="alert" className="rounded-xl bg-white p-3 text-sm text-red-700">
+          {actionError}
+        </p>
+      ) : null}
+      {lunch ? (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4">
+          <p className="text-xs font-medium uppercase tracking-wide text-amber-800">Обед</p>
+          <p className="mt-1 font-semibold">
+            До окончания {formatLiveCountdown(lunch.endAt - nowAt)}
+          </p>
+          <p className="mt-1 text-sm text-muted">
+            Ничего отмечать не нужно — маршрут продолжится автоматически.
+          </p>
+        </div>
+      ) : null}
+      {current ? (
+        <div className="rounded-2xl bg-white p-4 shadow-sm">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted">Ближайшая заявка</p>
+          <h2 className="mt-1 font-semibold">{current.request.addressText}</h2>
+          {current.phase === 'awaiting_window' ? (
+            <div className="mt-4 space-y-2">
+              <p className="text-sm text-muted">
+                Начало по плану в{' '}
+                {current.stop
+                  ? formatClock(current.stop.startAt)
+                  : formatClock(current.request.windowStartAt)}
+                .
+              </p>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => submit({ kind: 'on_time', requestId: current.request.id })}
+                className="w-full rounded-full bg-bee py-2.5 text-sm font-semibold disabled:opacity-50"
+              >
+                Буду вовремя
+              </button>
+              {etaOpen ? (
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const etaAt = moscowTimeInputAt(live.workday.workDate, eta);
+                    if (etaAt !== null)
+                      submit({ kind: 'eta', requestId: current.request.id, etaAt });
+                  }}
+                  className="flex gap-2"
+                >
+                  <input
+                    type="time"
+                    aria-label="Время приезда"
+                    required
+                    value={eta}
+                    onChange={(event) => setEta(event.target.value)}
+                    onInput={(event) => setEta(event.currentTarget.value)}
+                    className="min-w-0 flex-1 rounded-full border border-line px-3 py-2 text-sm"
+                  />
+                  <button
+                    type="submit"
+                    disabled={busy || moscowTimeInputAt(live.workday.workDate, eta) === null}
+                    className="rounded-full border border-line px-4 text-sm font-semibold disabled:opacity-50"
+                  >
+                    Отправить
+                  </button>
+                </form>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setEtaOpen(true)}
+                  className="w-full rounded-full border border-line py-2.5 text-sm font-semibold"
+                >
+                  Буду в…
+                </button>
+              )}
+            </div>
+          ) : current.phase === 'ready_to_start' ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => submit({ kind: 'start', requestId: current.request.id })}
+              className="mt-4 w-full rounded-full bg-bee py-3 text-sm font-semibold disabled:opacity-50"
+            >
+              Приступить
+            </button>
+          ) : (
+            <div className="mt-4 space-y-2">
+              <p className="text-sm text-muted">
+                Выполнение: {formatLiveCountdown(nowAt - (current.request.startedAt ?? nowAt))}
+              </p>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => submit({ kind: 'finish', requestId: current.request.id })}
+                className="w-full rounded-full bg-bee py-3 text-sm font-semibold disabled:opacity-50"
+              >
+                Завершить
+              </button>
+              <button
+                type="button"
+                onClick={() => setProblemOpen(true)}
+                className={`w-full rounded-full border py-2.5 text-sm font-semibold ${current.overrunAt !== null && nowAt >= current.overrunAt ? 'border-red-500 text-red-700' : 'border-line'}`}
+              >
+                Проблема
+              </button>
+            </div>
+          )}
+          {live.engineer.pendingDelayProblem ? (
+            <div className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
+              <p>Задержка передана диспетчеру: {live.engineer.pendingDelayProblem.note}</p>
+              <button
+                type="button"
+                onClick={() => setProblemOpen(true)}
+                className="mt-2 font-semibold underline"
+              >
+                Перейти к проблеме
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <p className="rounded-2xl bg-white p-4 text-sm text-muted">Сейчас нет активной заявки.</p>
+      )}
+      {current ? (
+        <button
+          type="button"
+          onClick={() => onOpenRequest(current.request.id)}
+          className="text-sm font-semibold underline"
+        >
+          Открыть заявку
+        </button>
+      ) : null}
+      {!lunch && current?.phase !== 'in_progress' ? (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => submit({ kind: 'break_start' })}
+          className="w-full rounded-full border border-line bg-white py-3 text-sm font-semibold disabled:opacity-50"
+        >
+          Технический перерыв · 15 мин
+        </button>
+      ) : null}
+      {problemOpen && current ? (
+        <ProblemForm
+          kind={problemKind}
+          note={note}
+          delayMinutes={delayMinutes}
+          equipment={equipment}
+          onKind={setProblemKind}
+          onNote={setNote}
+          onDelayMinutes={setDelayMinutes}
+          onEquipment={setEquipment}
+          onCancel={() => setProblemOpen(false)}
+          onSubmit={() => {
+            const additionalDurationSec = Number(delayMinutes) * 60;
+            if (
+              problemKind === 'delay' &&
+              (!Number.isInteger(additionalDurationSec) || additionalDurationSec <= 0)
+            )
+              return;
+            submit(
+              {
+                kind: 'problem',
+                requestId: current.request.id,
+                problemKind,
+                note:
+                  note.trim() ||
+                  (problemKind === 'missing_equipment' ? `Нет оборудования: ${equipment}` : note),
+                ...(problemKind === 'delay' ? { additionalDurationSec } : {}),
+                ...(problemKind === 'missing_equipment'
+                  ? { missingEquipment: equipment as 'router' | 'set_top_box' | 'smart_speaker' }
+                  : {}),
+              },
+              () => setProblemOpen(false),
+            );
+          }}
+          busy={busy}
+          error={actionError}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+/** Keeps every engineer-facing countdown on the server's accelerated business clock. */
+function useLiveNow(live: EngineerLiveView | null, receivedAtMs: number | null): number {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const interval = window.setInterval(() => setTick((value) => value + 1), 1_000);
+    return () => window.clearInterval(interval);
+  }, []);
+  if (live === null || receivedAtMs === null) {
+    return Math.floor(Date.now() / 1000) + tick * 0;
+  }
+  return (
+    liveNowAt({
+      liveNow: live.workday.liveNow,
+      speedFactor: live.workday.speedFactor,
+      receivedAtMs,
+    }) +
+    tick * 0
+  );
+}
+
+function ProblemForm({
+  kind,
+  note,
+  delayMinutes,
+  equipment,
+  onKind,
+  onNote,
+  onDelayMinutes,
+  onEquipment,
+  onCancel,
+  onSubmit,
+  busy,
+  error,
+}: {
+  readonly kind: 'delay' | 'missing_equipment' | 'other' | 'impossible';
+  readonly note: string;
+  readonly delayMinutes: string;
+  readonly equipment: string;
+  readonly onKind: (value: 'delay' | 'missing_equipment' | 'other' | 'impossible') => void;
+  readonly onNote: (value: string) => void;
+  readonly onDelayMinutes: (value: string) => void;
+  readonly onEquipment: (value: string) => void;
+  readonly onCancel: () => void;
+  readonly onSubmit: () => void;
+  readonly busy: boolean;
+  readonly error: string | null;
+}) {
+  const needsNote = kind !== 'missing_equipment';
+  const valid =
+    (!needsNote || note.trim().length > 2) &&
+    (kind !== 'delay' || Number(delayMinutes) > 0) &&
+    (kind !== 'missing_equipment' || equipment.length > 0);
+  return (
+    <div className="fixed inset-0 z-20 flex items-end bg-ink/40 p-4 sm:items-center sm:justify-center">
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit();
+        }}
+        className="w-full max-w-md rounded-3xl bg-white p-5 shadow-xl"
+      >
+        <h2 className="text-lg font-semibold">Сообщить о проблеме</h2>
+        {error ? (
+          <p role="alert" className="mt-3 text-sm text-red-700">
+            {error}
+          </p>
+        ) : null}
+        <label className="mt-4 block text-sm">
+          Тип
+          <select
+            value={kind}
+            onChange={(event) => onKind(event.target.value as typeof kind)}
+            className="mt-1 w-full rounded-xl border border-line px-3 py-2"
+          >
+            <option value="delay">Задержка</option>
+            <option value="missing_equipment">Нет оборудования</option>
+            <option value="other">Другая проблема</option>
+            <option value="impossible">Невозможно выполнить</option>
+          </select>
+        </label>
+        {kind === 'delay' ? (
+          <label className="mt-3 block text-sm">
+            Нужно ещё минут
+            <input
+              inputMode="numeric"
+              value={delayMinutes}
+              onChange={(event) => onDelayMinutes(event.target.value.replace(/\D/g, ''))}
+              className="mt-1 w-full rounded-xl border border-line px-3 py-2"
+            />
+          </label>
+        ) : null}
+        {kind === 'missing_equipment' ? (
+          <label className="mt-3 block text-sm">
+            Чего нет
+            <select
+              value={equipment}
+              onChange={(event) => onEquipment(event.target.value)}
+              className="mt-1 w-full rounded-xl border border-line px-3 py-2"
+            >
+              <option value="">Выберите оборудование</option>
+              <option value="router">Роутер</option>
+              <option value="set_top_box">ТВ-приставка</option>
+              <option value="smart_speaker">Умная колонка</option>
+            </select>
+          </label>
+        ) : null}
+        <label className="mt-3 block text-sm">
+          {needsNote ? 'Опишите ситуацию' : 'Комментарий (необязательно)'}
+          <textarea
+            value={note}
+            onChange={(event) => onNote(event.target.value)}
+            className="mt-1 min-h-24 w-full rounded-xl border border-line px-3 py-2"
+          />
+        </label>
+        <div className="mt-5 flex gap-2">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex-1 rounded-full border border-line py-2.5 text-sm"
+          >
+            Отмена
+          </button>
+          <button
+            type="submit"
+            disabled={!valid || busy}
+            className="flex-1 rounded-full bg-bee py-2.5 text-sm font-semibold disabled:opacity-50"
+          >
+            Отправить
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function EngineerDayPage({
   profile,
   day,
   plan,
+  nowAt,
+  live,
   error,
   onOpenRequest,
 }: {
   readonly profile: EngineerView | null;
   readonly day: EngineerDayView | null;
   readonly plan: EngineerPlanResponse | null;
+  readonly nowAt: number;
+  readonly live: EngineerLiveView | null;
   readonly error: string | null;
   readonly onOpenRequest: (requestId: string) => void;
 }) {
-  const nowAt = Math.floor(Date.now() / 1000);
   const items = useMemo(() => dayItems(plan), [plan]);
 
   return (
@@ -413,6 +978,9 @@ function EngineerDayPage({
             ? `${formatClock(day.shiftStartAt)}–${formatClock(day.shiftEndAt)}`
             : 'ещё не открыта'}
         </p>
+        {live ? (
+          <p className="text-sm text-muted">Время рабочего дня: {formatClock(nowAt)}</p>
+        ) : null}
         <h1 className="text-xl font-semibold">{profile?.displayName ?? 'Бригада'}</h1>
       </div>
       {error ? (
@@ -459,6 +1027,7 @@ function EngineerRequestPage({
   requestId,
   profile,
   plan,
+  nowAt,
   onBack,
   onSessionExpired,
 }: {
@@ -466,6 +1035,7 @@ function EngineerRequestPage({
   readonly requestId: string;
   readonly profile: EngineerView;
   readonly plan: EngineerPlanResponse | null;
+  readonly nowAt: number;
   readonly onBack: () => void;
   readonly onSessionExpired: () => void;
 }) {
@@ -515,7 +1085,6 @@ function EngineerRequestPage({
     return <p className="text-sm text-muted">Открываем заявку…</p>;
   }
 
-  const nowAt = Math.floor(Date.now() / 1000);
   const markers =
     request.lat !== null && request.lon !== null
       ? [
@@ -557,9 +1126,11 @@ function EngineerRequestPage({
 function EngineerRoutePage({
   plan,
   profile,
+  nowAt,
 }: {
   readonly plan: EngineerPlanResponse;
   readonly profile: EngineerView;
+  readonly nowAt: number;
 }) {
   const route = plan.route;
   const markers = (route?.stops ?? [])
@@ -585,6 +1156,7 @@ function EngineerRoutePage({
       <div>
         <p className="text-sm text-muted">{profile.displayName}</p>
         <h1 className="text-xl font-semibold">Маршрут на день</h1>
+        <p className="mt-1 text-sm text-muted">Время рабочего дня: {formatClock(nowAt)}</p>
       </div>
       {markers.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-line bg-white p-6 text-sm text-muted">
