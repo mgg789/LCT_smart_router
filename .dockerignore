@@ -6,6 +6,9 @@
 **/dist-test
 **/*.tsbuildinfo
 .pnpm-store
+**/artifacts
+test-results/
+playwright-report/
 
 .git
 .gitignore

@@ -119,7 +119,7 @@
 | Скоуп-споры «делаем/не делаем» | 18 §3, 29, 32 §1.1 |
 | Официальные уточнения условий задачи (QA 16.09) | 47, 48; наш разбор — 49; правки концепции — 50 |
 | Питч и демо | [docs/tz-acceptance.md](../docs/tz-acceptance.md) (7 шагов в UI), [docs/release-v0.1.md](../docs/release-v0.1.md), 13, 03, 17; цифры — только из 18 |
-| CI/CD, деплой на MGG и SMTP, публичный гейт | [docs/ci.md](../docs/ci.md), [docs/smtp.md](../docs/smtp.md), runbook §2 |
+| CI/CD, сквозная регрессия перед main, деплой на MGG и SMTP, публичный гейт | [docs/ci.md](../docs/ci.md) (DRO-81: изолированный smoke + браузер + остановка Router), [docs/smtp.md](../docs/smtp.md), runbook §2 |
 
 ## Статусные поправки к старым файлам
 

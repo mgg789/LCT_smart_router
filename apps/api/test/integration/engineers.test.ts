@@ -5,6 +5,7 @@ import type { AddressInfo } from 'node:net';
 import { after, before, describe, it } from 'node:test';
 import type { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { z } from 'zod';
 import { AppModule } from '../../src/app.module';
 import { type Actor } from '../../src/auth';
 import { AllExceptionsFilter } from '../../src/common/errors';
@@ -183,6 +184,22 @@ describe('engineers and working days', () => {
     const token = await signIn(email);
     const profile = await call('GET', '/api/v1/engineer/profile', token);
     assert.equal(profile.status, 200);
+  });
+
+  it('lists the linked login address instead of presenting the engineer as unlinked', async () => {
+    const { email, engineer } = await createEngineer();
+    const response = await call('GET', '/api/v1/dispatch/engineers', dispatcherToken);
+    assert.equal(response.status, 200);
+    const body = z
+      .object({
+        engineers: z.array(
+          z.object({ id: z.string(), email: z.string().nullable(), hasAccount: z.boolean() }),
+        ),
+      })
+      .parse(await response.json());
+    const listed = body.engineers.find((item) => item.id === engineer.id);
+    assert.equal(listed?.hasAccount, true);
+    assert.equal(listed?.email, email);
   });
 
   it('gives each engineer their own input order', async () => {

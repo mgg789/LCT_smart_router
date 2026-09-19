@@ -277,7 +277,10 @@ export class DispatchController {
     const engineers = await this.prisma.engineer.findMany({
       where: { archivedAt: null },
       orderBy: { inputOrder: 'asc' },
-      include: { days: { orderBy: { workDate: 'desc' }, take: 1 } },
+      include: {
+        account: { select: { email: true } },
+        days: { orderBy: { workDate: 'desc' }, take: 1 },
+      },
     });
     return {
       engineers: engineers.map((engineer) => ({

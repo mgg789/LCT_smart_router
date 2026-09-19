@@ -103,7 +103,7 @@ export function EngineersPage({
                             aria-checked={isOnline}
                             aria-label={`${isOnline ? 'Отключить' : 'Включить'} ${engineer.displayName}`}
                             checked={isOnline}
-                            disabled={!day || rebuilding}
+                            disabled={!day || rebuilding || writesDisabled}
                             onChange={(event) =>
                               onAvailabilityChange(
                                 engineer.id,

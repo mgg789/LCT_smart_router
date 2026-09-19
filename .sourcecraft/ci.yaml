@@ -4,7 +4,10 @@ on:
   pull_request:
     - workflows: [ci]
       filter:
-        target_branches: ["dev", "main"]
+        target_branches: ["dev"]
+    - workflows: [ci, regression]
+      filter:
+        target_branches: ["main"]
   push:
     - workflows: [ci]
       filter:
@@ -14,6 +17,11 @@ on:
         branches: ["main"]
 
 workflows:
+  regression:
+    settings:
+      max_cube_duration: 30m
+    tasks:
+      - test-regression
   ci:
     tasks:
       - lint
@@ -80,6 +88,19 @@ workflows:
               - ./scripts/ci/ssh-check-health.sh
 
 tasks:
+  - name: test-regression
+    cubes:
+      - name: full-app
+        script:
+          - bash scripts/ci/run-regression.sh
+      - name: regression-artifacts
+        if: always()
+        script:
+          - test -d artifacts/regression
+          - tar -czf artifacts/regression.tar.gz -C artifacts regression
+        artifacts:
+          paths:
+            - artifacts/regression.tar.gz
   - name: lint
     cubes:
       - name: biome

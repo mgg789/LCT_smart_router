@@ -16,13 +16,20 @@
     "lint": "biome check .",
     "format": "biome format --write .",
     "smoke": "pnpm --filter api smoke",
+    "test:regression": "bash scripts/ci/run-regression.sh",
+    "test:e2e": "playwright test --config tests/e2e/playwright.config.ts",
+    "test:e2e:types": "tsc -p tests/e2e/tsconfig.json",
     "compose:up": "docker compose -f infra/docker-compose.yml up -d --build",
     "compose:down": "docker compose -f infra/docker-compose.yml down",
     "compose:logs": "docker compose -f infra/docker-compose.yml logs -f --tail=100",
     "compose:ps": "docker compose -f infra/docker-compose.yml ps"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.13"
+    "@biomejs/biome": "2.5.13",
+    "@playwright/test": "1.63.0",
+    "@types/node": "24.13.4",
+    "typescript": "5.9.3",
+    "zod": "4.6.5"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
