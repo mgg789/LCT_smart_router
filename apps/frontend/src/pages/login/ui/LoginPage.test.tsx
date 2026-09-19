@@ -51,6 +51,25 @@ describe('LoginPage', () => {
     expect(init?.body).toBe(JSON.stringify({ email: 'dispatcher@navix.test' }));
   });
 
+  it('surfaces the code when the server answers with one instead of mailing it', async () => {
+    const user = userEvent.setup();
+    stubApi({
+      '/auth/login-code': () =>
+        jsonResponse({
+          email: 'dispatcher@navix.test',
+          expiresAt: nowSeconds() + 600,
+          devCode: '424242',
+        }),
+    });
+    renderPage();
+
+    await user.type(screen.getByLabelText('Email'), 'dispatcher@navix.test');
+    await user.click(screen.getByRole('checkbox'));
+    await user.click(screen.getByRole('button', { name: 'Новый код' }));
+
+    expect(await screen.findByText('424242')).toBeInTheDocument();
+  });
+
   it('verifies the six-digit code as a dispatcher and stores the session', async () => {
     const user = userEvent.setup();
     const expiresAt = nowSeconds() + 86_400;

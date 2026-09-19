@@ -92,6 +92,14 @@ export function LoginPage() {
                 {format(new Date(sent.expiresAt * 1000), 'HH:mm')}.
               </p>
             ) : null}
+            {sent?.devCode ? (
+              // Shown only because the server itself put the code in the answer
+              // (AUTH_DEV_EXPOSE_CODES). Without SMTP that is the only way in, and
+              // the demo contour has to work offline.
+              <p className="mt-1 text-[11px] text-ink/60">
+                Почта не настроена, сервер вернул код: <b className="text-ink">{sent.devCode}</b>
+              </p>
+            ) : null}
             {requestError ? <p className="mt-2 text-[11px] text-danger">{requestError}</p> : null}
           </div>
 
