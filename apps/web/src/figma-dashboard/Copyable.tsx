@@ -1,12 +1,13 @@
 import { Copy } from 'lucide-react';
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
 import { copyableValue, copyText } from './copyText';
 
-const COPIED_MS = 1400;
+const COPIED_MS = 700;
 
 /**
  * Click-to-copy wrapper for request facts. Disabled when the value is empty.
- * On success the row flashes and a copy icon blinks in so the click is obvious.
+ * On success the icon flashes once — bright and large, then eases back to its
+ * hover state.
  */
 export function Copyable({
   value,
@@ -20,6 +21,7 @@ export function Copyable({
   label?: string;
 }) {
   const [copied, setCopied] = useState(false);
+  const timer = useRef<number | null>(null);
   const text = copyableValue(value);
   return (
     <button
@@ -34,7 +36,8 @@ export function Copyable({
         const ok = await copyText(value);
         if (!ok) return;
         setCopied(true);
-        window.setTimeout(() => setCopied(false), COPIED_MS);
+        if (timer.current !== null) window.clearTimeout(timer.current);
+        timer.current = window.setTimeout(() => setCopied(false), COPIED_MS);
       }}
     >
       <span className="min-w-0 flex-1">{children}</span>
@@ -43,7 +46,9 @@ export function Copyable({
           size={18}
           strokeWidth={2.25}
           aria-hidden
-          className={`shrink-0 text-white ${copied ? 'copy-icon-blink' : 'opacity-0 group-hover:opacity-50'}`}
+          className={`shrink-0 text-white transition-[opacity,transform] duration-300 ease-out ${
+            copied ? 'scale-[1.18] opacity-100' : 'opacity-0 group-hover:opacity-50'
+          }`}
         />
       ) : null}
       <span aria-live="polite" className="sr-only">

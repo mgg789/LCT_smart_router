@@ -1103,7 +1103,7 @@ function EngineersColumn({
       <motion.button
         type="button"
         onClick={onSelectUnassigned}
-        className="absolute left-[30px] z-30 flex w-[351px] flex-col items-start justify-center overflow-clip rounded-[20px] bg-figma-bee px-[29px] py-[25px] text-left"
+        className="absolute left-[30px] z-30 flex w-[351px] flex-col items-center justify-center overflow-clip rounded-[20px] bg-figma-bee px-[29px] py-[25px]"
         style={{ top: UNASSIGNED_TOP }}
         whileHover={motionOn ? { scale: 1.01 } : undefined}
         transition={{ duration: 0.16 }}
@@ -1111,7 +1111,7 @@ function EngineersColumn({
         <FigmaText className="figma-nowrap font-murs text-[20px] tracking-[0.2px] text-figma-ink">
           {unassignedTitle}
         </FigmaText>
-        <FigmaText className="figma-nowrap mt-[6px] pl-[6px] font-semibold text-[16px] tracking-[0.16px] text-figma-sub">
+        <FigmaText className="figma-nowrap mt-[6px] font-semibold text-[16px] tracking-[0.16px] text-figma-sub">
           {unassignedReason}
         </FigmaText>
       </motion.button>

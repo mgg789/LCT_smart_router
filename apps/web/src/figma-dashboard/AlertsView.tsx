@@ -8,9 +8,13 @@ import { dismissToast, type ToastKind, type ToastNotification } from './toasts';
 
 const HEADER_LIFT = 16;
 const TITLE_TOP = 184 - HEADER_LIFT;
-/** The AI pill ends at y=231; the fade zone starts a few px below it. */
-const LIST_FADE_TOP = 235;
-const LIST_FADE_HEIGHT = 64;
+/**
+ * The blur zone is tucked 4px under the header pill (z above the list, below the
+ * header) so its top edge sits over solid canvas — a flush start would leave a
+ * 1px anti-aliasing seam at the scroller's clip line on the scaled artboard.
+ */
+const LIST_FADE_TOP = 231;
+const LIST_FADE_HEIGHT = 76;
 const fadeSoft = { duration: 0.28, ease: [0.22, 1, 0.36, 1] as const };
 
 const NOTICE_ICON: Record<ToastKind, { src: string; width: number; height: number }> = {
@@ -48,14 +52,14 @@ export function AlertsView({
   return (
     <section className="absolute inset-0" aria-label="Алерты и уведомления">
       <FigmaText
-        className="figma-nowrap absolute left-[180px] font-extrabold text-[48px] tracking-[-0.816px] text-figma-ink"
+        className="figma-nowrap absolute left-[180px] z-20 font-extrabold text-[48px] tracking-[-0.816px] text-figma-ink"
         style={{ top: TITLE_TOP }}
       >
         Алерты
       </FigmaText>
       <motion.button
         type="button"
-        className="absolute left-[430px] flex h-[79px] w-[426px] items-center rounded-full bg-figma-ink pl-[10px] pr-[10px]"
+        className="absolute left-[430px] z-20 flex h-[79px] w-[426px] items-center rounded-full bg-figma-ink pl-[10px] pr-[10px]"
         style={{ top: TITLE_TOP - 16 }}
         whileHover={animate ? { scale: 1.02 } : undefined}
         whileTap={animate ? { scale: 0.98 } : undefined}
@@ -137,15 +141,18 @@ export function AlertsView({
       </div>
       <div
         aria-hidden
-        className="pointer-events-none absolute left-[180px] w-[1710px]"
+        className="pointer-events-none absolute left-[180px] z-10 w-[1710px]"
         style={{
           top: LIST_FADE_TOP,
           height: LIST_FADE_HEIGHT,
-          background: 'linear-gradient(to bottom, var(--color-figma-canvas) 30%, transparent)',
+          background:
+            'linear-gradient(to bottom, var(--color-figma-canvas) 0, var(--color-figma-canvas) 12px, rgba(241, 241, 241, 0) 62px)',
           backdropFilter: 'blur(10px)',
           WebkitBackdropFilter: 'blur(10px)',
-          maskImage: 'linear-gradient(to bottom, #000 30%, transparent)',
-          WebkitMaskImage: 'linear-gradient(to bottom, #000 30%, transparent)',
+          maskImage:
+            'linear-gradient(to bottom, #000 0, #000 12px, transparent 62px)',
+          WebkitMaskImage:
+            'linear-gradient(to bottom, #000 0, #000 12px, transparent 62px)',
         }}
       />
     </section>

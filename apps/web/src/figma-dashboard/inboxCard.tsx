@@ -24,7 +24,7 @@ export function InboxButton({
   return (
     <button
       type="button"
-      className={`flex items-center justify-center overflow-clip rounded-[20px] px-[32px] py-[16px] font-semibold text-[20px] tracking-[-0.6px] transition-[transform,filter,background-color] duration-150 ease-out hover:scale-[1.03] active:scale-[0.98] ${tone}`}
+      className={`flex items-center justify-center overflow-clip rounded-[20px] px-[32px] py-[16px] font-semibold text-[20px] tracking-[-0.6px] transition duration-300 ease-out hover:scale-[1.02] active:scale-[0.97] ${tone}`}
       onClick={onClick}
     >
       {children}
@@ -163,7 +163,7 @@ function InboxAiLink({ tone }: { tone: 'ink' | 'white' }) {
   return (
     <button
       type="button"
-      className={`group flex items-center gap-[8px] font-semibold text-[18px] tracking-[-0.54px] transition-opacity duration-150 hover:opacity-80 ${
+      className={`group flex items-center gap-[8px] font-semibold text-[18px] tracking-[-0.54px] transition-opacity duration-300 ease-out hover:opacity-80 ${
         tone === 'white' ? 'text-white' : 'text-figma-ink'
       }`}
     >
@@ -173,7 +173,7 @@ function InboxAiLink({ tone }: { tone: 'ink' | 'white' }) {
         alt=""
         width={22}
         height={22}
-        className={`transition-transform duration-150 ease-out group-hover:translate-x-[3px] ${
+        className={`transition-transform duration-300 ease-out group-hover:translate-x-[2px] ${
           tone === 'white' ? 'brightness-0 invert' : undefined
         }`}
       />
