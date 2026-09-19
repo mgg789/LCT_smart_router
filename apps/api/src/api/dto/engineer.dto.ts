@@ -44,6 +44,15 @@ export const linkEngineerAccountSchema = operationEnvelopeSchema.extend({
 });
 export type LinkEngineerAccountDto = z.infer<typeof linkEngineerAccountSchema>;
 
+/**
+ * Removes the login the dispatcher previously granted. The routing profile stays;
+ * only the address, the engineer role and live engineer sessions are taken away.
+ */
+export const unlinkEngineerAccountSchema = operationEnvelopeSchema.extend({
+  engineerId: z.string().min(1),
+});
+export type UnlinkEngineerAccountDto = z.infer<typeof unlinkEngineerAccountSchema>;
+
 export const updateEngineerSchema = operationEnvelopeSchema.extend({
   displayName: z.string().min(1).max(200).optional(),
   skills: skills.optional(),
@@ -63,6 +72,17 @@ export const updateOwnProfileSchema = operationEnvelopeSchema.extend({
   homeLon: longitude.nullish(),
 });
 export type UpdateOwnProfileDto = z.infer<typeof updateOwnProfileSchema>;
+
+export const requestEmailChangeSchema = z.object({
+  email: z.email(),
+});
+export type RequestEmailChangeDto = z.infer<typeof requestEmailChangeSchema>;
+
+export const confirmEmailChangeSchema = z.object({
+  email: z.email(),
+  code: z.string().regex(/^\d{6}$/, 'The code is six digits'),
+});
+export type ConfirmEmailChangeDto = z.infer<typeof confirmEmailChangeSchema>;
 
 export const setAvailabilitySchema = operationEnvelopeSchema.extend({
   availability: z.enum(['online', 'offline']),

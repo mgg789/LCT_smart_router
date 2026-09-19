@@ -94,8 +94,8 @@ const engineerSchema = z.object({
   region: z.string().nullable(),
   homeLat: z.number().nullable(),
   homeLon: z.number().nullable(),
-  hasAccount: z.boolean(),
-  email: z.string().nullable(),
+  hasAccount: z.boolean().optional().default(false),
+  email: z.string().nullable().optional().default(null),
   day: engineerDaySchema.nullable(),
 });
 
@@ -430,11 +430,38 @@ export function parsePolicyComparison(value: unknown): PolicyComparisonResponse 
   return policyComparisonSchema.parse(value);
 }
 
+const dispatcherLoginCodeSchema = z.object({
+  email: z.email(),
+  expiresAt: z.number().int(),
+  devCode: z.string().optional(),
+});
+
 /** Authenticates a dispatcher without exposing configured credentials to the bundle. */
 export async function loginDispatcher(email: string, password: string): Promise<AuthSession> {
   return requestJson('/api/v1/auth/dispatcher/password', authSessionSchema, undefined, {
     method: 'POST',
     body: JSON.stringify({ email, password }),
+  });
+}
+
+/** Asks the public login-code contour to mail a one-time dispatcher code. */
+export function requestDispatcherLoginCode(
+  email: string,
+): Promise<z.infer<typeof dispatcherLoginCodeSchema>> {
+  return requestJson('/api/v1/auth/login-code', dispatcherLoginCodeSchema, undefined, {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+}
+
+/**
+ * Exchanges a mailed code for the dispatcher session. The role must already
+ * belong to the configured dispatcher account; verifying does not grant it.
+ */
+export function verifyDispatcherLoginCode(email: string, code: string): Promise<AuthSession> {
+  return requestJson('/api/v1/auth/login-code/verify', authSessionSchema, undefined, {
+    method: 'POST',
+    body: JSON.stringify({ email, code, role: 'dispatcher' }),
   });
 }
 
@@ -492,6 +519,41 @@ export async function revokeApiToken(sessionToken: string, id: string): Promise<
     z.object({ revoked: z.boolean() }),
     sessionToken,
     { method: 'DELETE' },
+  );
+}
+
+const engineerProfileSchema = engineerSchema.omit({ day: true });
+
+/** Removes the login from a brigade. The routing profile stays; live sessions die. */
+export function unlinkEngineerAccount(
+  token: string,
+  engineerId: string,
+): Promise<{ engineer: z.infer<typeof engineerProfileSchema> }> {
+  return requestJson(
+    '/api/v1/dispatch/engineers/unlink-account',
+    z.object({ engineer: engineerProfileSchema }),
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({ operationId: crypto.randomUUID(), engineerId }),
+    },
+  );
+}
+
+/** Grants a login address to an imported brigade that still has none. */
+export function linkEngineerAccount(
+  token: string,
+  engineerId: string,
+  email: string,
+): Promise<{ engineer: z.infer<typeof engineerProfileSchema> }> {
+  return requestJson(
+    '/api/v1/dispatch/engineers/link-account',
+    z.object({ engineer: engineerProfileSchema }),
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({ operationId: crypto.randomUUID(), engineerId, email }),
+    },
   );
 }
 
@@ -757,7 +819,7 @@ function formatUnknownReason(reason: unknown): string {
   return parsed.success ? parsed.data.text : 'Подробности доступны в структурированных данных';
 }
 
-async function requestJson<T>(
+export async function requestJson<T>(
   path: string,
   schema: z.ZodType<T>,
   token?: string,

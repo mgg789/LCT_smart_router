@@ -32,15 +32,17 @@ Authorization: Bearer <token>
 
 | Метод | Путь | Тело | Ответ | Заметки |
 |---|---|---|---|---|
-| POST | `/api/v1/auth/dispatcher/password` | `{email, password}` | `{token, role: "dispatcher", expiresAt}` | Публичный. Пароль диспетчера задаётся в `.env` (`DISPATCHER_EMAIL`/`DISPATCHER_PASSWORD`); SMTP не нужен |
+| POST | `/api/v1/auth/dispatcher/password` | `{email, password}` | `{token, role: "dispatcher", expiresAt}` | Публичный запасной вход. Пароль диспетчера задаётся в `.env` (`DISPATCHER_EMAIL`/`DISPATCHER_PASSWORD`); SMTP не нужен. Основной путь дашборда — `login-code` + `verify` с `role: "dispatcher"` |
 | POST | `/api/v1/auth/login-code` | `{email}` | `{email, expiresAt, devCode?}` | Публичный. Ответ одинаковый для известного и неизвестного адреса. `devCode` появляется только при `AUTH_DEV_EXPOSE_CODES=true`; при настроенном SMTP код уходит письмом |
 | POST | `/api/v1/auth/login-code/verify` | `{email, code: "123456", role}` | `{token, role, expiresAt}` | `role` ∈ `client/engineer/dispatcher`; роль `engineer` выдаётся только существующему инженеру |
 | GET | `/api/v1/auth/session` | — | `{kind, source, role, accountId, tokenCategory}` | Кто за предъявленным токеном |
 | DELETE | `/api/v1/auth/session` | — | `{signedOut: true}` | Идемпотентный выход |
 
-Токен — bearer-сессия; храните в памяти/`sessionStorage`, уважайте `expiresAt`.
-Интеграционные ключи (`POST /auth/tokens`, категории `client/eng/master`) фронтенду
-не нужны — это машинный доступ.
+Токен — bearer-сессия; уважайте `expiresAt`. Дашборд диспетчера хранит сессию в
+`sessionStorage` (`SESSION_TTL_SEC`, по умолчанию сутки). Приложение инженера на
+`/engineer/` хранит сессию в `localStorage` на устройстве (`ENGINEER_SESSION_TTL_SEC`,
+по умолчанию 30 суток). Интеграционные ключи (`POST /auth/tokens`, категории
+`client/eng/master`) фронтенду не нужны — это машинный доступ.
 
 ## 3. Ошибки: один конверт
 
@@ -189,6 +191,8 @@ Authorization: Bearer <token>
 **POST `/dispatch/engineers`** — `{operationId, email, displayName, skills[1..3], transportType, region?, homeLat?, homeLon?}` → `{engineer}`.
 
 **POST `/dispatch/engineers/link-account`** — `{operationId, engineerId, email}` → `{engineer}`. Выдать логин профилю без адреса (бригада из импорта): аккаунт создаётся, роль инженера выдаётся, параметры планирования не меняются. Повторная привязка и адрес, уже являющийся логином другого инженера, — `VALIDATION_FAILED`. После привязки инженер входит через `POST /auth/login-code` + `verify` с `role: "engineer"`.
+
+**POST `/dispatch/engineers/unlink-account`** — `{operationId, engineerId}` → `{engineer}`. Снимает логин: `hasAccount: false`, `email: null`, роль инженера удаляется, живые сессии инженера отзываются. Профиль и план не меняются. Новый `verify` с `role: "engineer"` на этот адрес — `401`.
 
 **PATCH `/dispatch/engineers/:id`** — `{operationId, expectedVersion?, displayName?, skills?, transportType?, region?, homeLat?, homeLon?}` → `{engineer}`.
 
@@ -384,12 +388,17 @@ CAS по `expectedContextVersion`: устарели — 409 `VERSION_CONFLICT`, 
 |---|---|---|
 | GET | `/engineer/profile` | → `{engineer: EngineerView}` |
 | PATCH | `/engineer/profile` | `{operationId, expectedVersion?, displayName?, skills?, transportType?, homeLat?, homeLon?}` → `{engineer}` |
+| POST | `/engineer/email-change` | `{email}` → `{email, expiresAt, devCode?}` — код на **новый** адрес; текущий логин не меняется, пока код не подтверждён. Занятый адрес — `VALIDATION_FAILED` |
+| POST | `/engineer/email-change/confirm` | `{email, code}` → `{engineer}` — переносит логин на подтверждённый адрес |
 | GET | `/engineer/day` | → `{day: EngineerDayView}` |
 | POST | `/engineer/availability` | `{operationId, availability, expectedOnlineAt?}` → `{day}` |
 | POST | `/engineer/technical-break` | `{operationId}` → `{day}` |
 | POST | `/engineer/lunch/start` · `/finish` | `{operationId}` → `{day}` |
-| GET | `/engineer/plan` | → `{planAsOf, origin, revision, route: PlanRouteView|null}` — свой маршрут применённого плана |
+| GET | `/engineer/plan` | → `{planAsOf, origin, revision, route: PlanRouteView|null, requests: RequestView[]}` — свой маршрут применённого плана и карточки заявок этого маршрута |
+| GET | `/engineer/requests/:id` | → `{request: RequestView, stop: PlanStopView}` — только если заявка стоит в применённом маршруте этого инженера; иначе `NOT_FOUND` |
 | POST | `/engineer/requests/:id/facts` | `{operationId, kind: "arrived"\|"arrived_blocked"\|"started"\|"finished"\|"problem", occurredAt?, note?}` → факт исполнения; отмечать можно только то, что назначено применённым планом; финиш без старта — 422 |
+
+SPA `/engineer/` (вход по коду, список заявок и обеда, карточка/карта точки, маршрут на день, настройки имени/транспорта/почты) живёт в том же `apps/web`, что и дашборд. Почту бригаде без логина задаёт диспетчер через `POST /dispatch/engineers/link-account` на вкладке «Инженеры»; снять её можно через `unlink-account`. Вход только живой сессией по коду, без локального обхода.
 
 ## 8. Контур клиента `/api/v1/client/...` (роль `client`)
 
@@ -425,7 +434,8 @@ CAS по `expectedContextVersion`: устарели — 409 `VERSION_CONFLICT`, 
 
 ## 11. Типовой поток дашборда
 
-1. `POST /auth/dispatcher/password` → токен; `GET /health/services` — баннер состояния.
+1. `POST /auth/login-code` + `verify` с `role: "dispatcher"` (или запасной
+   `POST /auth/dispatcher/password`) → токен; `GET /health/services` — баннер состояния.
 2. `GET /dispatch/data/state` → если `initialized: false` — экран импорта
    (`POST /dispatch/data/import {regions:"all"}`).
 3. `GET /dispatch/requests` + `GET /dispatch/engineers` + `GET /dispatch/plan` — день.

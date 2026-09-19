@@ -550,6 +550,50 @@ describe('engineers and working days', () => {
     assert.equal(own.email, email);
   });
 
+  it('unlinks a login so the same address can no longer open the Engineer App', async () => {
+    const crew = await createCrew(['connection']);
+    const email = `${unique('gone')}@example.test`;
+    emails.push(email);
+
+    const linked = await call('POST', '/api/v1/dispatch/engineers/link-account', dispatcherToken, {
+      operationId: randomUUID(),
+      engineerId: crew.id,
+      email,
+    });
+    assert.equal(linked.status, 201, await linked.clone().text());
+    const token = await signIn(email);
+    const before = await call('GET', '/api/v1/engineer/profile', token);
+    assert.equal(before.status, 200);
+
+    const unlinked = await call(
+      'POST',
+      '/api/v1/dispatch/engineers/unlink-account',
+      dispatcherToken,
+      { operationId: randomUUID(), engineerId: crew.id },
+    );
+    assert.equal(unlinked.status, 201, await unlinked.clone().text());
+    const view = ((await unlinked.json()) as EngineerBody).engineer;
+    assert.equal(view.hasAccount, false);
+    assert.equal(view.email, null);
+
+    const stale = await call('GET', '/api/v1/engineer/profile', token);
+    assert.equal(stale.status, 401);
+
+    const codeResponse = await fetch(`${baseUrl}/api/v1/auth/login-code`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const { devCode } = (await codeResponse.json()) as { devCode?: string };
+    assert.ok(devCode);
+    const verify = await fetch(`${baseUrl}/api/v1/auth/login-code/verify`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, code: devCode, role: 'engineer' }),
+    });
+    assert.equal(verify.status, 401);
+  });
+
   it('lets only the dispatcher link logins to engineers', async () => {
     const { email } = await createEngineer();
     const engineerToken = await signIn(email);
@@ -563,5 +607,96 @@ describe('engineers and working days', () => {
     assert.equal(response.status, 403);
     const untouched = await prisma.engineer.findUniqueOrThrow({ where: { id: crew.id } });
     assert.equal(untouched.accountId, null);
+  });
+
+  it('issues a 30-day engineer session without extending the dispatcher TTL', async () => {
+    const { email } = await createEngineer();
+    const codeResponse = await fetch(`${baseUrl}/api/v1/auth/login-code`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const { devCode } = (await codeResponse.json()) as { devCode: string };
+    const verify = await fetch(`${baseUrl}/api/v1/auth/login-code/verify`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, code: devCode, role: 'engineer' }),
+    });
+    assert.equal(verify.status, 201, await verify.clone().text());
+    const engineerSession = (await verify.json()) as { expiresAt: number; role: string };
+    const now = Math.floor(Date.now() / 1000);
+    assert.equal(engineerSession.role, 'engineer');
+    assert.ok(
+      engineerSession.expiresAt - now >= 29 * 86_400,
+      'an engineer session must last a working month on the device',
+    );
+    assert.ok(engineerSession.expiresAt - now <= 31 * 86_400);
+
+    const dispatcher = await fetch(`${baseUrl}/api/v1/auth/dispatcher/password`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        email: process.env.DISPATCHER_EMAIL,
+        password: process.env.DISPATCHER_PASSWORD,
+      }),
+    });
+    const dispatcherSession = (await dispatcher.json()) as { expiresAt: number };
+    assert.ok(
+      dispatcherSession.expiresAt - now <= 2 * 86_400,
+      'the Dashboard session stays on the ordinary one-day TTL',
+    );
+  });
+
+  it('returns an empty request list when no working plan is applied', async () => {
+    const { email } = await createEngineer();
+    const token = await signIn(email);
+    const response = await call('GET', '/api/v1/engineer/plan', token);
+    assert.equal(response.status, 200);
+    const body = (await response.json()) as { route: unknown; requests: unknown[] };
+    assert.equal(body.route, null);
+    assert.deepEqual(body.requests, []);
+  });
+
+  it('lets an engineer change their own login after confirming a code', async () => {
+    const { email } = await createEngineer();
+    const token = await signIn(email);
+    const next = `${unique('next')}@example.test`;
+    emails.push(next);
+
+    const requested = await call('POST', '/api/v1/engineer/email-change', token, { email: next });
+    assert.equal(requested.status, 201, await requested.clone().text());
+    const { devCode } = (await requested.json()) as { devCode: string };
+    assert.ok(devCode);
+
+    const same = await call('POST', '/api/v1/engineer/email-change', token, { email });
+    assert.equal(same.status, 422);
+
+    const confirmed = await call('POST', '/api/v1/engineer/email-change/confirm', token, {
+      email: next,
+      code: devCode,
+    });
+    assert.equal(confirmed.status, 201, await confirmed.clone().text());
+    const updated = ((await confirmed.json()) as EngineerBody).engineer;
+    assert.equal(updated.email, next);
+
+    const profile = await call('GET', '/api/v1/engineer/profile', token);
+    assert.equal(((await profile.json()) as EngineerBody).engineer.email, next);
+
+    const oldSignIn = await fetch(`${baseUrl}/api/v1/auth/login-code`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const oldCode = (await oldSignIn.json()) as { devCode: string };
+    const oldVerify = await fetch(`${baseUrl}/api/v1/auth/login-code/verify`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, code: oldCode.devCode, role: 'engineer' }),
+    });
+    assert.equal(oldVerify.status, 401);
+
+    const newToken = await signIn(next);
+    const nextProfile = await call('GET', '/api/v1/engineer/profile', newToken);
+    assert.equal(nextProfile.status, 200);
   });
 });

@@ -59,6 +59,12 @@ export const envSchema = z.object({
    * (context/36 section 11).
    */
   SESSION_TTL_SEC: z.coerce.number().int().positive().default(86_400),
+  /**
+   * Engineer App sessions live on the device for a working month. Dispatcher
+   * sessions stay on `SESSION_TTL_SEC` so a shared Dashboard console does not
+   * remain signed in for 30 days.
+   */
+  ENGINEER_SESSION_TTL_SEC: z.coerce.number().int().positive().default(2_592_000),
   LOGIN_CODE_TTL_SEC: z.coerce.number().int().positive().default(600),
   LOGIN_CODE_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
 

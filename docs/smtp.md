@@ -69,6 +69,13 @@ _dmarc.mail.droidje.com.        TXT  "v=DMARC1; p=quarantine; adkim=s; aspf=s;"
 Каталог писем: `account_login_code`, `request_received`, `engineer_assigned`,
 `visit_change_required`. UI ввода кода — карточка DRO-39.
 
+HTML писем — карточка 578×363 из Figma (`32:2931` светлая, `32:2930` тёмная).
+Логотип в письме — 64×64 в обеих темах (исходник обрезан по контуру знака).
+Тема переключается через
+`prefers-color-scheme`. Логотип и вордмарк — обычные HTTPS-картинки
+(`{SMTP_APP_BASE_URL}/mail/*.png?v=5`), 4× экспорт из Figma: в теле письма, не во вложениях.
+Жёлтый акцент в письме — `#FFC72C` по макету, не `#FED305`.
+
 ## Деплой SMTP-хоста
 
 Конфиги — [`infra/smtp/`](../infra/smtp/). CD после push в `main` заливает дерево

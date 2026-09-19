@@ -2,15 +2,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DashboardApiError,
   importOfficialDataset,
+  linkEngineerAccount,
   loadDashboardSnapshot,
   loadPolicyComparison,
   loginDispatcher,
+  requestDispatcherLoginCode,
   selectRoutingPolicy,
   setDispatchMode,
   setEngineerAvailability,
   signOutDispatcher,
+  unlinkEngineerAccount,
   updateRouterTechnicalSettings,
   uploadDataPackage,
+  verifyDispatcherLoginCode,
 } from '../api/client';
 import type {
   DashboardSnapshot,
@@ -232,20 +236,26 @@ export function useDashboard() {
     ]);
   }, []);
 
+  const acceptSession = useCallback(
+    (session: Awaited<ReturnType<typeof loginDispatcher>>, generation: number) => {
+      if (generation !== readGeneration.current) return;
+      invalidateAsyncReads();
+      sessionStorage.setItem(SESSION_KEY, session.token);
+      startRecoverySession(sessionStorage, session.expiresAt);
+      setSource('live');
+      setSnapshot(null);
+      setToken(session.token);
+    },
+    [invalidateAsyncReads, setSnapshot, setSource],
+  );
+
   const signIn = useCallback(
     async (email: string, password: string) => {
       const generation = readGeneration.current;
       setLoading(true);
       setError(null);
       try {
-        const session = await loginDispatcher(email, password);
-        if (generation !== readGeneration.current) return;
-        invalidateAsyncReads();
-        sessionStorage.setItem(SESSION_KEY, session.token);
-        startRecoverySession(sessionStorage, session.expiresAt);
-        setSource('live');
-        setSnapshot(null);
-        setToken(session.token);
+        acceptSession(await loginDispatcher(email, password), generation);
       } catch (cause) {
         if (generation !== readGeneration.current) return;
         reportFailure(cause);
@@ -253,7 +263,45 @@ export function useDashboard() {
         setLoading(false);
       }
     },
-    [invalidateAsyncReads, setSnapshot, setSource, reportFailure],
+    [acceptSession, reportFailure],
+  );
+
+  const requestLoginCode = useCallback(
+    async (email: string) => {
+      const generation = readGeneration.current;
+      setLoading(true);
+      setError(null);
+      try {
+        const issued = await requestDispatcherLoginCode(email);
+        if (generation !== readGeneration.current) return null;
+        setLoading(false);
+        return issued;
+      } catch (cause) {
+        if (generation !== readGeneration.current) return null;
+        reportFailure(cause);
+        setError(errorMessage(cause));
+        setLoading(false);
+        return null;
+      }
+    },
+    [reportFailure],
+  );
+
+  const signInWithCode = useCallback(
+    async (email: string, code: string) => {
+      const generation = readGeneration.current;
+      setLoading(true);
+      setError(null);
+      try {
+        acceptSession(await verifyDispatcherLoginCode(email, code), generation);
+      } catch (cause) {
+        if (generation !== readGeneration.current) return;
+        reportFailure(cause);
+        setError(errorMessage(cause));
+        setLoading(false);
+      }
+    },
+    [acceptSession, reportFailure],
   );
 
   const signOut = useCallback(async () => {
@@ -692,6 +740,30 @@ export function useDashboard() {
     ],
   );
 
+  /** Grants a login address to a brigade that arrived without one. Does not republish. */
+  const linkEngineerLogin = useCallback(
+    async (engineerId: string, email: string) => {
+      if (!token || sourceRef.current !== 'live') {
+        throw new Error('Привязка почты доступна только в живом контуре');
+      }
+      await linkEngineerAccount(token, engineerId, email);
+      await refresh();
+    },
+    [refresh, token],
+  );
+
+  /** Takes the login away so the Engineer App can no longer verify that address. */
+  const unlinkEngineerLogin = useCallback(
+    async (engineerId: string) => {
+      if (!token || sourceRef.current !== 'live') {
+        throw new Error('Снятие почты доступно только в живом контуре');
+      }
+      await unlinkEngineerAccount(token, engineerId);
+      await refresh();
+    },
+    [refresh, token],
+  );
+
   const uploadDataset = useCallback(
     async (file: DataUploadFile): Promise<DataUploadSummary> => {
       if (!token || sourceRef.current !== 'live' || uploadingData) {
@@ -822,6 +894,8 @@ export function useDashboard() {
     policyComparisonError,
     events,
     signIn,
+    requestLoginCode,
+    signInWithCode,
     signOut,
     refresh,
     selectEngineer,
@@ -834,6 +908,8 @@ export function useDashboard() {
     setMode,
     refreshPolicyComparison,
     updateEngineerAvailability,
+    linkEngineerLogin,
+    unlinkEngineerLogin,
     uploadDataset,
     importOfficialTzDataset,
   };

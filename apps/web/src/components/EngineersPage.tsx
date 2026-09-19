@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { DashboardSnapshot, EquipmentType } from '../api/types';
 import { equipmentLoadout } from '../domain/dashboard';
 import { initials, skillLabel } from '../lib/reasons';
@@ -7,7 +8,10 @@ interface EngineersPageProps {
   readonly snapshot: DashboardSnapshot;
   readonly pendingEngineerId: string | null;
   readonly rebuilding: boolean;
+  readonly writesDisabled: boolean;
   readonly onAvailabilityChange: (engineerId: string, availability: 'online' | 'offline') => void;
+  readonly onLinkAccount: (engineerId: string, email: string) => Promise<void>;
+  readonly onUnlinkAccount: (engineerId: string) => Promise<void>;
 }
 
 /** Shows the day roster, issued equipment, and live engineer availability controls. */
@@ -15,7 +19,10 @@ export function EngineersPage({
   snapshot,
   pendingEngineerId,
   rebuilding,
+  writesDisabled,
   onAvailabilityChange,
+  onLinkAccount,
+  onUnlinkAccount,
 }: EngineersPageProps) {
   const engineers = [...snapshot.engineers].sort(
     (left, right) => left.inputOrder - right.inputOrder,
@@ -118,6 +125,13 @@ export function EngineersPage({
                           </span>
                         ))}
                       </div>
+                      <EngineerLoginField
+                        engineerId={engineer.id}
+                        email={engineer.email}
+                        disabled={writesDisabled}
+                        onLinkAccount={onLinkAccount}
+                        onUnlinkAccount={onUnlinkAccount}
+                      />
                     </div>
                   </div>
 
@@ -154,6 +168,83 @@ export function EngineersPage({
         )}
       </section>
     </main>
+  );
+}
+
+function EngineerLoginField({
+  engineerId,
+  email,
+  disabled,
+  onLinkAccount,
+  onUnlinkAccount,
+}: {
+  readonly engineerId: string;
+  readonly email: string | null;
+  readonly disabled: boolean;
+  readonly onLinkAccount: (engineerId: string, email: string) => Promise<void>;
+  readonly onUnlinkAccount: (engineerId: string) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (email) {
+    return (
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <p className="text-[12px] text-muted">Вход: {email}</p>
+        <button
+          type="button"
+          disabled={disabled || busy}
+          onClick={() => {
+            setBusy(true);
+            setError(null);
+            void onUnlinkAccount(engineerId)
+              .catch((cause) => {
+                setError(cause instanceof Error ? cause.message : 'Не удалось снять почту');
+              })
+              .finally(() => setBusy(false));
+          }}
+          className="text-[12px] text-muted underline disabled:opacity-50"
+        >
+          Снять почту
+        </button>
+        {error ? <p className="w-full text-[12px] text-red-700">{error}</p> : null}
+      </div>
+    );
+  }
+
+  return (
+    <form
+      className="mt-3 flex flex-wrap items-center gap-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        setBusy(true);
+        setError(null);
+        void onLinkAccount(engineerId, draft)
+          .catch((cause) => {
+            setError(cause instanceof Error ? cause.message : 'Не удалось привязать почту');
+          })
+          .finally(() => setBusy(false));
+      }}
+    >
+      <input
+        type="email"
+        required
+        value={draft}
+        disabled={disabled || busy}
+        placeholder="Почта бригады"
+        onChange={(event) => setDraft(event.target.value)}
+        className="min-w-48 flex-1 rounded-xl border border-line px-3 py-1.5 text-sm"
+      />
+      <button
+        type="submit"
+        disabled={disabled || busy || draft.length === 0}
+        className="rounded-full bg-bee px-3 py-1.5 text-sm font-semibold disabled:opacity-50"
+      >
+        Привязать
+      </button>
+      {error ? <p className="w-full text-[12px] text-red-700">{error}</p> : null}
+    </form>
   );
 }
 

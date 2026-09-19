@@ -189,6 +189,42 @@ export class EngineersService {
   }
 
   /**
+   * Removes the login from a brigade without deleting the routing profile.
+   *
+   * The engineer role and live sessions go with the address, so a code sent to that
+   * mailbox can no longer open the Engineer App. Planning parameters stay as they are:
+   * this is the inverse of `linkAccount`, not a profile edit.
+   */
+  async unlinkAccount(context: OperationContext, engineerId: string): Promise<EngineerWithAccount> {
+    const engineer = await this.load(context.tx, engineerId);
+    if (engineer.accountId === null) {
+      throw new SysError('VALIDATION_FAILED', 'This engineer has no login', {
+        details: { engineerId },
+      });
+    }
+
+    const now = BigInt(context.now);
+    const accountId = engineer.accountId;
+    await context.tx.session.updateMany({
+      where: { accountId, role: 'engineer', revokedAt: null },
+      data: { revokedAt: now },
+    });
+    await context.tx.accountRole.deleteMany({
+      where: { accountId, role: 'engineer' },
+    });
+    const updated = await context.tx.engineer.updateMany({
+      where: { id: engineerId, accountId },
+      data: { accountId: null, updatedAt: now, version: { increment: 1 } },
+    });
+    assertWriteApplied('Engineer', updated.count, engineer.version, engineer.version);
+
+    return context.tx.engineer.findUniqueOrThrow({
+      where: { id: engineerId },
+      include: { account: true },
+    });
+  }
+
+  /**
    * Edits a profile.
    *
    * Both the engineer and the dispatcher reach this one handler, so their concurrent
