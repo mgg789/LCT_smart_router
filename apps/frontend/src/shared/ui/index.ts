@@ -13,6 +13,8 @@ export type { PopoverProps } from './popover/Popover';
 export { Popover } from './popover/Popover';
 export type { SectionPlaceholderProps } from './section-placeholder/SectionPlaceholder';
 export { SectionPlaceholder } from './section-placeholder/SectionPlaceholder';
+export type { StatusPillProps, StatusTone } from './status-pill/StatusPill';
+export { StatusPill } from './status-pill/StatusPill';
 export type { SwitchProps } from './switch/Switch';
 export { Switch } from './switch/Switch';
 export type { TextFieldProps } from './text-field/TextField';
