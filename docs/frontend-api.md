@@ -320,6 +320,11 @@ CAS по `expectedContextVersion`: устарели — 409 `VERSION_CONFLICT`, 
 `POST /dispatch/regions` — офисы и новые регионы из той же модалки живут
 в сессии фронта, пока их не появят в API. `POST /dispatch/engineers`
 сейчас требует `email`; форма считает почту необязательной.
+Часы смены диспетчера и ключ 2ГИС/Яндекс в «Настройках» — только
+`localStorage` (`lct.dispatcher.settings`): нет `PUT /dispatch/settings`
+и нет контракта на токен карт. Допуск опоздания 0–15 мин мапится на
+`windowLatenessToleranceSec` (и те же секунды в departure/task-start)
+через существующий `PUT /dispatch/router/technical-settings`.
 
 ### 6.7 Данные: импорт, догрузка, сброс
 
@@ -389,12 +394,13 @@ CAS по `expectedContextVersion`: устарели — 409 `VERSION_CONFLICT`, 
 | Метод | Путь | Тело → ответ |
 |---|---|---|
 | GET | `/engineer/profile` | → `{engineer: EngineerView}` |
-| PATCH | `/engineer/profile` | `{operationId, expectedVersion?, displayName?, skills?, transportType?, homeLat?, homeLon?}` → `{engineer}` |
+| PATCH | `/engineer/profile` | `{operationId, expectedVersion?, displayName?, skills?, transportType?, homeLat?, homeLon?}` → `{engineer}` — настройки инженера пишут имя и транспорт; **email в PATCH нет** (форма показывает поле, смена почты — отдельный недостающий контракт) |
 | GET | `/engineer/day` | → `{day: EngineerDayView}` |
 | POST | `/engineer/availability` | `{operationId, availability, expectedOnlineAt?}` → `{day}` |
 | POST | `/engineer/technical-break` | `{operationId}` → `{day}` |
 | POST | `/engineer/lunch/start` · `/finish` | `{operationId}` → `{day}` |
-| GET | `/engineer/plan` | → `{planAsOf, origin, revision, route: PlanRouteView|null}` — свой маршрут применённого плана |
+| GET | `/engineer/plan` | → `{planAsOf, origin, revision, route: PlanRouteView|null, requests?: RequestView[]}` — свой маршрут применённого плана; если `requests` нет, карточки добираются через `GET /engineer/requests/:id` |
+| GET | `/engineer/requests/:id` | → `{request: RequestView, stop: PlanStopView}` — одна точка своего маршрута |
 | POST | `/engineer/requests/:id/facts` | `{operationId, kind: "arrived"\|"arrived_blocked"\|"started"\|"finished"\|"problem", occurredAt?, note?}` → факт исполнения; отмечать можно только то, что назначено применённым планом; финиш без старта — 422 |
 
 ## 8. Контур клиента `/api/v1/client/...` (роль `client`)

@@ -44,6 +44,11 @@ import { ConfirmDangerModal } from './ConfirmDangerModal';
 import { SettingsModal } from './SettingsModal';
 import { WelcomeScreen } from './WelcomeScreen';
 import type { DangerActionId } from './confirmPhrase';
+import {
+  latenessMinFromSec,
+  readDispatcherSettings,
+  writeDispatcherSettings,
+} from './dispatcherSettings';
 import { clearWorkDayStarted, hasStartedWorkDay, markWorkDayStarted, moscowWorkDate } from './welcomeDay';
 import { PolicyComparisonView } from './PolicyComparisonView';
 import { AlertsView } from './AlertsView';
@@ -489,10 +494,25 @@ export function MainDashboardPage() {
         <SettingsModal
           open={settingsOpen}
           motionOn={motionOn}
-          dateLabel={view?.dateLabel ?? MAIN_DASHBOARD.dateLabel}
-          sourceLabel={dash.isDemo ? 'Демо' : dash.source === 'cached' ? 'Кэш' : 'Живой контур'}
-          policyTitle={policyTitle}
+          latenessMin={latenessMinFromSec(dash.snapshot?.routerSettings?.windowLatenessToleranceSec ?? readDispatcherSettings(window.localStorage).latenessMin * 60)}
+          submitting={dash.busy}
           onClose={() => setSettingsOpen(false)}
+          onSave={(settings) => {
+            writeDispatcherSettings(window.localStorage, settings);
+            const liveMin = latenessMinFromSec(dash.snapshot?.routerSettings?.windowLatenessToleranceSec ?? 0);
+            if (dash.snapshot && settings.latenessMin !== liveMin) {
+              const latenessSec = settings.latenessMin * 60;
+              dash.applyRoutingSettings(
+                dash.snapshot.policyId,
+                nextRouterSettings(dash.snapshot, {
+                  windowLatenessToleranceSec: latenessSec,
+                  departureLatenessToleranceSec: latenessSec,
+                  taskStartLatenessToleranceSec: latenessSec,
+                }),
+              );
+            }
+            setSettingsOpen(false);
+          }}
         />
         <ConfirmDangerModal
           actionId={dangerAction}
@@ -789,11 +809,11 @@ function UserMenu({
   onSignOut: () => void;
 }) {
   return (
-    <div data-user-menu className="absolute z-[90]" style={{ left: HEADER_AVATAR_LEFT, top: HEADER_AVATAR_TOP }}>
+    <div data-user-menu className="absolute" style={{ left: HEADER_AVATAR_LEFT, top: HEADER_AVATAR_TOP }}>
       <motion.button
         type="button"
         onClick={onToggle}
-        className="flex items-center gap-[20px]"
+        className="relative z-50 flex items-center gap-[20px]"
         aria-label="Меню пользователя"
         whileHover={motionOn ? { scale: 1.04 } : undefined}
         whileTap={motionOn ? { scale: 0.98 } : undefined}
@@ -818,7 +838,7 @@ function UserMenu({
       <AnimatePresence>
         {open ? (
           <motion.div
-            className="absolute right-0 top-[62px] flex w-[230px] flex-col rounded-[16px] bg-white p-[10px]"
+            className="absolute right-0 top-[62px] z-[90] flex w-[230px] flex-col rounded-[16px] bg-white p-[10px]"
             initial={motionOn ? { opacity: 0, y: -8, scale: 0.96 } : false}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={motionOn ? { opacity: 0, y: -8, scale: 0.96 } : undefined}
@@ -830,7 +850,7 @@ function UserMenu({
                 Настройки
               </MenuAction>
             </div>
-            <div className="mx-[2px] my-[8px] h-px bg-figma-ink/15" />
+            <div className="mx-auto my-[8px] h-px w-[40px] bg-figma-ink/20" />
             <div className="flex flex-col gap-[8px]">
               <MenuAction motionOn={motionOn} tone="bee" onClick={onEndDay}>
                 Завершить день
@@ -839,7 +859,7 @@ function UserMenu({
                 День заново
               </MenuAction>
             </div>
-            <div className="mx-[2px] my-[8px] h-px bg-figma-ink/15" />
+            <div className="mx-auto my-[8px] h-px w-[40px] bg-figma-ink/20" />
             <div className="flex flex-col gap-[8px]">
               <MenuAction motionOn={motionOn} tone="danger" onClick={onReset}>
                 Сбросить данные
@@ -1314,13 +1334,13 @@ function EngineerRow({
         src={FIGMA_ASSETS.avatarEngineer}
         className="absolute left-[15px] top-[20px] size-[44px] max-w-none rounded-full object-cover"
       />
-      <div className="absolute left-[69px] right-[15px] top-[20px] z-20 flex items-baseline justify-between gap-[10px] overflow-hidden">
-        <FigmaText
-          className="figma-nowrap min-w-0 flex-1 overflow-hidden font-murs text-[20px] leading-[24px] tracking-[0.1px] text-ellipsis text-black"
+      <div className="absolute left-[69px] right-[15px] top-[20px] z-20 flex items-center justify-between gap-[10px]">
+        <span
+          className="figma-nowrap min-w-0 flex-1 overflow-hidden font-murs text-[20px] leading-[26px] tracking-[0.1px] text-ellipsis text-black"
           title={engineer.name}
         >
           {truncateEnd(engineer.name)}
-        </FigmaText>
+        </span>
         <FigmaText className="figma-nowrap shrink-0 font-bold text-[16px] tracking-[0.16px] text-black">
           {engineer.km} км
         </FigmaText>

@@ -809,7 +809,8 @@ function formatUnknownReason(reason: unknown): string {
   return parsed.success ? parsed.data.text : 'Подробности доступны в структурированных данных';
 }
 
-async function requestJson<T>(
+/** Shared JSON fetch used by the dispatcher client and the engineer contour. */
+export async function requestJson<T>(
   path: string,
   schema: z.ZodType<T>,
   token?: string,

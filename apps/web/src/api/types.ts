@@ -134,6 +134,17 @@ export interface PlanRouteView {
   readonly legs: PlanLegView[];
 }
 
+/** Applied day route for the signed-in engineer, plus request cards on that route. */
+export interface EngineerPlanResponse {
+  readonly planAsOf: number | null;
+  readonly origin: 'auto' | 'manual' | null;
+  readonly revision: number | null;
+  readonly route: PlanRouteView | null;
+  readonly requests: RequestView[];
+}
+
+export type EngineerFactKind = 'arrived' | 'arrived_blocked' | 'started' | 'finished' | 'problem';
+
 export type TravelSource = 'approximate' | 'road_matrix' | 'route_api' | 'traffic_api';
 
 export interface PlanLegView {

@@ -136,3 +136,14 @@ body {
 .copy-row-flash {
   animation: copy-row-flash 0.55s ease-out;
 }
+
+/**
+ * Engineer phone column: layout width is the device (or 430px on desktop).
+ * `--eu` is one Figma artboard pixel so 670-wide tokens fit without transform/zoom.
+ */
+.engineer-phone {
+  width: min(100%, 430px);
+  min-height: 100%;
+  margin-inline: auto;
+  --eu: calc(min(100vw, 430px) / 670);
+}
