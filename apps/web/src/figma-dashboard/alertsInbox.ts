@@ -1,0 +1,120 @@
+import type { AlertView, DashboardSnapshot } from '../api/types';
+import { requestById } from '../domain/dashboard';
+import { factorLabel } from '../lib/reasons';
+import { formatClock } from '../lib/time';
+import { requestUrgency } from './fromSnapshot';
+import { shortRequestId } from './requestsTable';
+import type { ToastKind, ToastNotification } from './toasts';
+
+export type InboxAlertCard = {
+  id: string;
+  createdAt: number;
+  title: string;
+  body: string;
+  badge: string | null;
+  engineerName: string | null;
+  requestId: string | null;
+  primaryLabel: string | null;
+  secondaryLabel: string | null;
+};
+
+export type InboxNoticeCard = {
+  id: string;
+  createdAt: number;
+  title: string;
+  body: string;
+  toastKind: ToastKind;
+};
+
+/** Alert toasts stay in the alert block; everything else is a dismissible notice. */
+export function isInboxAlertKind(kind: ToastKind): boolean {
+  return kind === 'alert' || kind === 'error';
+}
+
+/**
+ * Unix seconds for sort. Live toasts may store Date.now() milliseconds.
+ */
+export function arrivalSeconds(at: number): number {
+  return at > 1_000_000_000_000 ? Math.floor(at / 1000) : at;
+}
+
+/** Newest arrival first — same clock for alerts and notices. */
+export function sortByArrival<T extends { createdAt: number }>(items: readonly T[]): T[] {
+  return [...items].sort((left, right) => arrivalSeconds(right.createdAt) - arrivalSeconds(left.createdAt));
+}
+
+/**
+ * Builds the ALERTS inbox: unresolved snapshot alerts, then leftover alert toasts,
+ * then dismissible notices. Alert toasts that already mirror a snapshot row are skipped.
+ */
+export function inboxFromSources(
+  snapshot: DashboardSnapshot | null,
+  toasts: readonly ToastNotification[],
+): { alerts: InboxAlertCard[]; notices: InboxNoticeCard[] } {
+  const openAlerts = (snapshot?.alerts ?? []).filter((alert) => alert.resolvedAt === null);
+  const covered = new Set(openAlerts.map((alert) => `alert:${alert.id}`));
+  const alerts = sortByArrival([
+    ...openAlerts.map((alert) => alertCardFromSnapshot(snapshot!, alert)),
+    ...toasts
+      .filter((toast) => isInboxAlertKind(toast.kind) && !covered.has(toast.id))
+      .map(alertCardFromToast),
+  ]);
+  const notices = sortByArrival(
+    toasts.filter((toast) => !isInboxAlertKind(toast.kind)).map((toast) => ({
+      id: toast.id,
+      createdAt: toast.createdAt,
+      title: toast.title,
+      body: toast.body || toast.etaLabel || '',
+      toastKind: toast.kind,
+    })),
+  );
+  return { alerts, notices };
+}
+
+function alertCardFromSnapshot(snapshot: DashboardSnapshot, alert: AlertView): InboxAlertCard {
+  const request = alert.requestIds[0] ? requestById(snapshot, alert.requestIds[0]) : null;
+  const engineer = alert.engineerIds[0]
+    ? (snapshot.engineers.find((item) => item.id === alert.engineerIds[0]) ?? null)
+    : null;
+  const lunch = alert.code.includes('LUNCH');
+  const unassigned =
+    !lunch &&
+    Boolean(
+      request &&
+        (request.assignmentState === 'unassigned' ||
+          request.assignmentState === 'pending' ||
+          alert.code.includes('UNASSIGNED') ||
+          alert.code.includes('NO_SKILL') ||
+          alert.code.includes('NO_FEASIBLE') ||
+          alert.code.includes('NO_AVAILABLE')),
+    );
+  return {
+    id: `alert:${alert.id}`,
+    createdAt: alert.createdAt,
+    title: request && unassigned
+      ? `Заявка № ${shortRequestId(request.id)} без назначения`
+      : factorLabel(alert.code),
+    body: alert.reasons.filter(Boolean).join(' · ') || factorLabel(alert.code),
+    badge: request && requestUrgency(request).tone !== 'neutral'
+      ? requestUrgency(request).label
+      : `Результат в ${formatClock(alert.createdAt)}`,
+    engineerName: engineer?.displayName ?? null,
+    requestId: request?.id ?? null,
+    primaryLabel: lunch ? 'Оставить без обеда' : request ? 'К заявке' : null,
+    secondaryLabel: lunch ? 'Исключить заявку' : request ? (unassigned ? 'Сменить окно' : 'Изменить условия') : null,
+  };
+}
+
+function alertCardFromToast(toast: ToastNotification): InboxAlertCard {
+  return {
+    id: toast.id,
+    createdAt: toast.createdAt,
+    title: toast.title,
+    body: toast.body,
+    badge: null,
+    engineerName: null,
+    requestId: null,
+    primaryLabel: null,
+    secondaryLabel: null,
+  };
+}

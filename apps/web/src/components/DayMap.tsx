@@ -4,6 +4,7 @@ import type { DashboardSnapshot } from '../api/types';
 import { unassignedRequests } from '../domain/dashboard';
 import { localMapStyle } from '../domain/localBasemap';
 import {
+  MAP_BEE,
   MAP_CANVAS,
   MAP_INK,
   MAP_LUNCH_FILL,
@@ -17,12 +18,15 @@ import {
 } from '../domain/mapPaint';
 import { regionStyle, requestRegion, routeRegion } from '../domain/regions';
 import { mapRouteSegments } from '../domain/travel';
+import { requestMapPoint } from '../domain/requestPoint';
 import { engineerColor, skillMark } from '../lib/reasons';
 
 interface DayMapProps {
   readonly snapshot: DashboardSnapshot;
   readonly selectedEngineerId: string | null;
   readonly selectedRequestId: string | null;
+  /** When set, the map shows only this request's pin — no routes or other stops. */
+  readonly soloRequestId?: string | null;
   readonly onSelectRequest: (requestId: string) => void;
 }
 
@@ -32,6 +36,7 @@ export function DayMap({
   snapshot,
   selectedEngineerId,
   selectedRequestId,
+  soloRequestId = null,
   onSelectRequest,
 }: DayMapProps) {
   const [forceLocal, setForceLocal] = useState(!navigator.onLine);
@@ -47,6 +52,7 @@ export function DayMap({
   }, []);
   const containerRef = useRef<HTMLElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  const soloMarkerRef = useRef<maplibregl.Marker | null>(null);
   const onSelectRef = useRef(onSelectRequest);
   const fittedKeyRef = useRef<string | null>(null);
   const [localMap, setLocalMap] = useState(forceLocal);
@@ -94,7 +100,10 @@ export function DayMap({
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
     map.on('click', 'stops-circle', (event) => pickRequest(event, onSelectRef));
     map.on('click', 'unassigned-circle', (event) => pickRequest(event, onSelectRef));
-    const observer = new ResizeObserver(() => map.resize());
+    const observer = new ResizeObserver(() => {
+      map.resize();
+      fittedKeyRef.current = null;
+    });
     observer.observe(container);
     mapRef.current = map;
     return () => {
@@ -117,14 +126,16 @@ export function DayMap({
       if (mapRef.current !== map || !map.getStyle()) {
         return false;
       }
-      const allRoutes = snapshot.plan.plan?.routes ?? [];
+      const soloPoint = soloRequestId ? requestMapPoint(snapshot, soloRequestId) : null;
+      const allRoutes = soloRequestId ? [] : (snapshot.plan.plan?.routes ?? []);
       const routes = selectedEngineerId
         ? allRoutes.filter((route) => route.engineerId === selectedEngineerId)
         : allRoutes;
       const viewingUnassigned = unassignedRequests(snapshot).some(
         (request) => request.id === selectedRequestId,
       );
-      const showUnassigned = selectedEngineerId === null || viewingUnassigned;
+      const showUnassigned =
+        !soloRequestId && (selectedEngineerId === null || viewingUnassigned);
 
       const zoom = map.getZoom();
       const sampleLat = routes[0]?.startLat ?? 55.75;
@@ -234,6 +245,10 @@ export function DayMap({
         feature.properties.showLabel = shownLabels.has(id) ? 1 : 0;
       }
 
+      if (soloRequestId) {
+        jobFeatures.length = 0;
+      }
+
       const unassignedFeatures = (showUnassigned ? unassignedRequests(snapshot) : []).flatMap(
         (request) => {
           if (request.lat === null || request.lon === null) {
@@ -324,9 +339,16 @@ export function DayMap({
           type: 'circle',
           source: 'stops',
           paint: {
-            'circle-radius': ['case', ['==', ['get', 'selected'], 1], 16, 13],
+            'circle-radius': [
+              'case',
+              ['==', ['get', 'solo'], 1],
+              18,
+              ['==', ['get', 'selected'], 1],
+              16,
+              13,
+            ],
             'circle-color': ['get', 'color'],
-            'circle-stroke-width': ['case', ['==', ['get', 'selected'], 1], 4, 2.5],
+            'circle-stroke-width': ['case', ['==', ['get', 'solo'], 1], 4, ['==', ['get', 'selected'], 1], 4, 2.5],
             'circle-stroke-color': ['get', 'regionColor'],
             'circle-sort-key': ['get', 'z'],
           },
@@ -399,24 +421,29 @@ export function DayMap({
       });
       syncOverlayPaint(map);
 
-      const fitKey = `${retry}:${forceLocal}:${selectedEngineerId ?? 'all'}:${selectedRequestId ?? ''}`;
+      const fitKey = `${retry}:${forceLocal}:${selectedEngineerId ?? 'all'}:${selectedRequestId ?? ''}:${soloRequestId ?? ''}`;
       if (fittedKeyRef.current !== fitKey) {
         fittedKeyRef.current = fitKey;
-        const bounds = new maplibregl.LngLatBounds();
-        const fitRoutes = selectedEngineerId
-          ? routes.filter((route) => route.engineerId === selectedEngineerId)
-          : routes;
-        for (const route of fitRoutes) {
-          bounds.extend([route.startLon, route.startLat]);
-          for (const stop of route.stops) {
-            bounds.extend([stop.lon, stop.lat]);
+        if (soloPoint) {
+          map.resize();
+          map.easeTo({ center: [soloPoint.lon, soloPoint.lat], zoom: 14.2, duration: 400 });
+        } else {
+          const bounds = new maplibregl.LngLatBounds();
+          const fitRoutes = selectedEngineerId
+            ? routes.filter((route) => route.engineerId === selectedEngineerId)
+            : routes;
+          for (const route of fitRoutes) {
+            bounds.extend([route.startLon, route.startLat]);
+            for (const stop of route.stops) {
+              bounds.extend([stop.lon, stop.lat]);
+            }
           }
-        }
-        for (const feature of unassignedFeatures) {
-          bounds.extend(feature.geometry.coordinates as [number, number]);
-        }
-        if (!bounds.isEmpty()) {
-          map.fitBounds(bounds, { padding: 72, maxZoom: 13, duration: 400 });
+          for (const feature of unassignedFeatures) {
+            bounds.extend(feature.geometry.coordinates as [number, number]);
+          }
+          if (!bounds.isEmpty()) {
+            map.fitBounds(bounds, { padding: 72, maxZoom: 13, duration: 400 });
+          }
         }
       }
       return true;
@@ -439,7 +466,32 @@ export function DayMap({
       map.off('zoomend', onZoom);
       map.off('moveend', onZoom);
     };
-  }, [selectedEngineerId, selectedRequestId, snapshot, forceLocal, retry]);
+  }, [selectedEngineerId, selectedRequestId, soloRequestId, snapshot, forceLocal, retry]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    soloMarkerRef.current?.remove();
+    soloMarkerRef.current = null;
+    if (!map || !soloRequestId) return;
+    const point = requestMapPoint(snapshot, soloRequestId);
+    if (!point) return;
+    const pin = document.createElement('div');
+    pin.setAttribute('aria-hidden', 'true');
+    pin.style.width = '22px';
+    pin.style.height = '22px';
+    pin.style.borderRadius = '50%';
+    pin.style.background = MAP_BEE;
+    pin.style.border = `3px solid ${MAP_INK}`;
+    pin.style.boxShadow = '0 2px 8px rgba(39,41,48,0.28)';
+    const marker = new maplibregl.Marker({ element: pin, anchor: 'center' })
+      .setLngLat([point.lon, point.lat])
+      .addTo(map);
+    soloMarkerRef.current = marker;
+    return () => {
+      marker.remove();
+      if (soloMarkerRef.current === marker) soloMarkerRef.current = null;
+    };
+  }, [mapReady, snapshot, soloRequestId]);
 
   return (
     <>
@@ -450,12 +502,12 @@ export function DayMap({
         data-map-ready={mapReady}
         className="absolute inset-0 h-full w-full"
       />
-      {!mapReady && !mapFailed ? (
+      {!soloRequestId && !mapReady && !mapFailed ? (
         <div className="absolute top-14 left-3 rounded-xl bg-white px-3 py-2 text-xs text-muted">
           Загружаем карту…
         </div>
       ) : null}
-      {localMap || mapFailed ? (
+      {!soloRequestId && (localMap || mapFailed) ? (
         <div
           role="status"
           className="absolute top-3 left-3 right-3 rounded-xl bg-white px-3 py-2 text-xs text-ink shadow"
@@ -474,11 +526,13 @@ export function DayMap({
           ) : null}
         </div>
       ) : null}
+      {soloRequestId ? null : (
       <div className="pointer-events-none absolute bottom-3 left-3 rounded-xl bg-white/90 px-3 py-2 text-[11px] text-muted shadow">
         {selectedEngineerId
           ? 'Показан план выбранного инженера.'
           : 'План дня без live-позиции инженеров.'}
       </div>
+      )}
       <div className="absolute right-2 bottom-1 rounded bg-white/90 px-2 text-[10px] text-muted">
         ©{' '}
         <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">

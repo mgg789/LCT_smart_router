@@ -36,6 +36,8 @@ export const FIGMA_ASSETS = {
   notifRoute: '/figma/icon-notif-route.svg',
   notifMessage: '/figma/icon-notif-message.svg',
   arrowRight: '/figma/icon-arrow-right.svg',
+  iconBack: '/figma/icon-back.svg',
+  iconSparkles: '/figma/icon-sparkles.svg',
   toastSystem: '/figma/icon-toast-wrench.svg',
   toastProgress: '/figma/icon-toast-progress.png',
   toastAi: '/figma/icon-toast-robot.svg',

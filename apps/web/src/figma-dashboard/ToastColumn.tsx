@@ -298,7 +298,7 @@ function ToastFace({
         type="button"
         data-toast-close
         aria-label="Закрыть уведомление"
-        className="absolute right-[16px] top-[13px] flex size-[29px] items-center justify-center transition-transform duration-150 hover:scale-110 hover:rotate-90"
+        className="absolute right-[16px] top-[13px] flex size-[29px] items-center justify-center transition-transform duration-150 hover:scale-110"
         onPointerDown={(event) => event.stopPropagation()}
         onClick={() => onClose?.()}
       >

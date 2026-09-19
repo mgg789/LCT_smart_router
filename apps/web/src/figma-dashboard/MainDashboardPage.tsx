@@ -39,6 +39,8 @@ import {
 import { DataUploadModal } from './DataUploadModal';
 import { DispatcherAuthPage } from './DispatcherAuthPage';
 import { PolicyComparisonView } from './PolicyComparisonView';
+import { AlertsView } from './AlertsView';
+import { RequestDetailView } from './RequestDetailView';
 import { RequestsView } from './RequestsView';
 import { shortRequestId } from './requestsTable';
 import { ToastColumn } from './ToastColumn';
@@ -117,6 +119,7 @@ export function MainDashboardPage() {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [regionOpen, setRegionOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [openedRequestId, setOpenedRequestId] = useState<string | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<RegionSelection>(ALL_REGIONS);
 
   const visibleSnapshot = useMemo(
@@ -310,11 +313,14 @@ export function MainDashboardPage() {
           activeNav={activeNav}
           motionOn={motionOn}
           onSelect={(id) => {
+            if (id === 'requests' && activeNav === 'requests') {
+              setOpenedRequestId(null);
+            }
             setActiveNav(id);
             setPolicyOpen(false);
             if (id === 'alerts') {
               setUserMenuOpen(false);
-              setNotifOpen(true);
+              setNotifOpen(false);
             }
           }}
           onUpload={() => {
@@ -355,7 +361,7 @@ export function MainDashboardPage() {
           }}
         />
         <ToastColumn
-          open={notifOpen}
+          open={notifOpen && activeNav !== 'alerts'}
           motionOn={motionOn}
           scale={scale}
           onCollapse={() => {
@@ -391,12 +397,14 @@ export function MainDashboardPage() {
             setUserMenuOpen(false);
           }}
         />
+        {activeNav === 'requests' && openedRequestId ? null : (
         <FigmaText
           className="figma-nowrap absolute left-[180px] font-murs text-[32px] tracking-[-0.544px] text-figma-ink"
           style={{ top: DATE_TOP }}
         >
           {view?.dateLabel ?? MAIN_DASHBOARD.dateLabel}
         </FigmaText>
+        )}
         {activeNav === 'policy' ? (
           <PolicyComparisonView
             snapshot={dash.snapshot}
@@ -408,14 +416,40 @@ export function MainDashboardPage() {
             onRefresh={() => void dash.refreshPolicyComparison()}
           />
         ) : null}
-        {activeNav === 'requests' ? (
+        {activeNav === 'requests' && openedRequestId ? (
+          <RequestDetailView
+            snapshot={dash.snapshot}
+            requestId={openedRequestId}
+            motionOn={motionOn}
+            onBack={() => {
+              setOpenedRequestId(null);
+              dash.clearFocus();
+            }}
+          />
+        ) : null}
+        {activeNav === 'requests' && !openedRequestId ? (
           <RequestsView
             snapshot={dash.snapshot}
             selectedRequestId={dash.selectedRequest?.id ?? null}
-            onSelect={dash.selectRequest}
+            onSelect={(requestId) => {
+              setOpenedRequestId(requestId);
+              dash.selectRequest(requestId);
+            }}
           />
         ) : null}
-        {activeNav !== 'policy' && activeNav !== 'requests' ? (
+        {activeNav === 'alerts' ? (
+          <AlertsView
+            snapshot={dash.snapshot}
+            toasts={toasts}
+            motionOn={motionOn}
+            onOpenRequest={(requestId) => {
+              setActiveNav('requests');
+              setOpenedRequestId(requestId);
+              dash.selectRequest(requestId);
+            }}
+          />
+        ) : null}
+        {activeNav !== 'policy' && activeNav !== 'requests' && activeNav !== 'alerts' ? (
         <>
         <EngineersColumn
           engineers={visibleEngineers}
@@ -577,7 +611,7 @@ function SidebarNav({
         aria-label="Загрузить данные"
         onClick={onUpload}
         className="absolute bottom-[28px] left-[12px] flex h-[56px] w-[134px] items-center justify-center rounded-full"
-        whileHover={motionOn ? { scale: 1.12, rotate: 90 } : undefined}
+        whileHover={motionOn ? { scale: 1.12 } : undefined}
         whileTap={motionOn ? { scale: 0.94 } : undefined}
         transition={{ duration: 0.16 }}
       >
@@ -1570,7 +1604,7 @@ function DetailPanel({
         onClick={onClose}
         className="absolute right-[16px] top-[16px] z-20 flex items-center justify-center rounded-full bg-white"
         style={{ width: CLOSE_PANEL_SIZE, height: CLOSE_PANEL_SIZE }}
-        whileHover={motionOn ? { scale: 1.12, rotate: 90 } : undefined}
+        whileHover={motionOn ? { scale: 1.12 } : undefined}
         whileTap={motionOn ? { scale: 0.94 } : undefined}
         transition={{ duration: 0.16 }}
       >
