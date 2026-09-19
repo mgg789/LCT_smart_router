@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import { type Actor, effectiveRoles } from '../../src/auth/actor';
 import type { ApiTokenCategory, Role } from '../../src/generated/prisma/client';
-import { effectiveRoles, type Actor } from '../../src/auth/actor';
 
 /** A minimal integration-key actor; only `tokenCategory` matters for the mapping. */
 const keyActor = (category: ApiTokenCategory): Actor => ({
@@ -33,11 +33,7 @@ describe('token category to role mapping', () => {
   });
 
   it('maps the master key onto every contour including the dispatcher', () => {
-    assert.deepEqual(effectiveRoles(keyActor('master')), [
-      'dispatcher',
-      'client',
-      'engineer',
-    ]);
+    assert.deepEqual(effectiveRoles(keyActor('master')), ['dispatcher', 'client', 'engineer']);
   });
 
   it('never lets a token category raise a session role', () => {

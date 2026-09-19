@@ -1,8 +1,8 @@
 import { motion } from 'framer-motion';
 import { Copy, KeyRound, Plus } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import type { ApiTokenCategory, ApiTokenSummary, CreatedApiToken } from '../api/types';
 import { createApiToken, listApiTokens, revokeApiToken } from '../api/client';
+import type { ApiTokenCategory, ApiTokenSummary, CreatedApiToken } from '../api/types';
 import { formatMoscowDate, moscowAt } from '../lib/time';
 
 /** Human-readable category names, ordered the way the dispatcher thinks about them. */
@@ -118,8 +118,8 @@ export function ApiTokensPage({ token }: ApiTokensPageProps) {
         <h1 className="mt-1 text-2xl font-semibold">Настройки · API-токены</h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-muted">
           Токен даёт программный доступ без интерфейса в объёме своей категории: клиентское
-          приложение, приложение инженера, оба сразу или всё вместе с дашбордом и
-          отладочными запросами. Секрет показывается один раз, в базе хранится только хэш.
+          приложение, приложение инженера, оба сразу или всё вместе с дашбордом и отладочными
+          запросами. Секрет показывается один раз, в базе хранится только хэш.
         </p>
 
         {error ? (
@@ -219,8 +219,8 @@ export function ApiTokensPage({ token }: ApiTokensPageProps) {
 
         {tokens.length === 0 && !loading ? (
           <div className="mt-3 rounded-2xl border border-dashed border-line p-8 text-center text-sm text-muted">
-            Пока нет ни одного токена. Создайте первый, чтобы внешний клиент мог работать с
-            системой по API.
+            Пока нет ни одного токена. Создайте первый, чтобы внешний клиент мог работать с системой
+            по API.
           </div>
         ) : (
           <ul className="mt-3 space-y-2">
