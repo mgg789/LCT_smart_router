@@ -322,6 +322,20 @@ describe('LIVE workday', () => {
     });
     assert.equal(state.additionalDurationSec, 40 * 60);
     assert.equal(state.reservedEngineerId, engineer.id);
+    const remaining = await liveSnapshot();
+    await liveFeed(
+      buildRouterResult({
+        resultId: unique('active-detail'),
+        inputHash: remaining.inputHash,
+        contextVersion: 'live-test',
+        planningAsOf: remaining.planningAsOf,
+      }),
+    );
+    const detail = await call('GET', `/api/v1/engineer/requests/${request.id}`, engineer.token);
+    assert.equal(detail.status, 200, await detail.clone().text());
+    assert.ok(
+      (await liveView(engineer.token)).route?.stops.some((stop) => stop.requestId === request.id),
+    );
   });
 
   it('requires line entry, blocks legacy fact writes, and accepts a late return after no-show', async () => {
@@ -622,5 +636,13 @@ describe('LIVE workday', () => {
     );
     assert.equal((await liveAction(engineer.token, { kind: 'break_finish' })).status, 201);
     assert.ok((await prisma.alert.findUniqueOrThrow({ where: { id: alert.id } })).resolvedAt);
+    const dispatch = await call('GET', '/api/v1/dispatch/live', dispatcherToken);
+    const view = (await dispatch.json()) as {
+      breaks: Array<{ engineerId: string; endedAt: number | null }>;
+    };
+    assert.ok(
+      view.breaks.some((stop) => stop.engineerId === engineer.id && stop.endedAt !== null),
+      'finished technical stops remain in dispatcher history',
+    );
   });
 });

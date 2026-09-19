@@ -36,6 +36,14 @@ export interface LiveEngineerStateView {
 export interface DispatchLiveView {
   readonly workday: LiveWorkdayView;
   readonly engineers: LiveEngineerStateView[];
+  /** Technical-stop markers reconstructed from the durable operation journal. */
+  readonly breaks: ReadonlyArray<{
+    readonly id: string;
+    readonly engineerId: string;
+    readonly startedAt: number;
+    readonly plannedEndAt: number;
+    readonly endedAt: number | null;
+  }>;
   /** Finished/cancelled/silently elapsed visits retained after a remaining-day replan. */
   readonly history: ReadonlyArray<{
     readonly request: RequestView;

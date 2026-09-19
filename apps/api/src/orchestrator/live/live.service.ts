@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { z } from 'zod';
 import type { LiveActionDto } from '../../api/dto/live.dto';
 import type {
   DispatchLiveView,
@@ -312,8 +313,57 @@ export class LiveService {
     return {
       workday: this.toWorkdayView(full, wallNow, requestCount),
       engineers: await this.engineerStatesView(tx, full, wallNow),
+      breaks: await this.breakHistory(tx, full),
       history: await this.historyView(tx, full),
     };
+  }
+
+  private async breakHistory(tx: Tx, day: LiveWorkday): Promise<DispatchLiveView['breaks']> {
+    if (day.startedAtWallSec === null) return [];
+    const rows = await tx.operation.findMany({
+      where: {
+        state: 'applied',
+        action: { in: ['live.engineer.break_start', 'live.engineer.break_finish'] },
+        createdAt: { gte: day.startedAtWallSec },
+      },
+      orderBy: { createdAt: 'asc' },
+      select: { operationId: true, action: true, response: true },
+    });
+    const schema = z.object({
+      value: z.object({
+        workday: z.object({ id: z.string(), liveNow: z.number() }),
+        engineer: z.object({
+          id: z.string(),
+          technicalBreak: z.object({ startedAt: z.number(), plannedEndAt: z.number() }).nullable(),
+        }),
+      }),
+    });
+    const events = rows.flatMap((row) => {
+      const parsed = schema.safeParse(row.response);
+      return parsed.success && parsed.data.value.workday.id === day.id
+        ? [{ ...row, value: parsed.data.value }]
+        : [];
+    });
+    return events.flatMap((event) => {
+      const stop = event.value.engineer.technicalBreak;
+      if (event.action !== 'live.engineer.break_start' || !stop) return [];
+      const finish = events
+        .filter(
+          (other) =>
+            other.action === 'live.engineer.break_finish' &&
+            other.value.engineer.id === event.value.engineer.id &&
+            other.value.workday.liveNow >= stop.startedAt,
+        )
+        .sort((a, b) => a.value.workday.liveNow - b.value.workday.liveNow)[0];
+      return [
+        {
+          id: event.operationId,
+          engineerId: event.value.engineer.id,
+          ...stop,
+          endedAt: finish?.value.workday.liveNow ?? null,
+        },
+      ];
+    });
   }
 
   private async engineerViewIn(
@@ -632,7 +682,43 @@ export class LiveService {
       orderBy: { startedAt: 'desc' },
     });
     if (active) {
-      const stop = route?.stops.find((item) => item.requestId === active.id) ?? null;
+      const startedAt = Number(active.startedAt);
+      const stop: PlanStopView | null =
+        route?.stops.find((item) => item.requestId === active.id) ??
+        (active.lat !== null && active.lon !== null
+          ? {
+              sequence: 0,
+              kind: 'job',
+              requestId: active.id,
+              lat: active.lat,
+              lon: active.lon,
+              arrivalAt: startedAt,
+              startAt: startedAt,
+              endAt: Number(
+                active.expectedCompletionAt ?? BigInt(startedAt + active.serviceDurationSec),
+              ),
+            }
+          : null);
+      if (stop && !route?.stops.some((item) => item.requestId === active.id)) {
+        route = route
+          ? { ...route, stops: [stop, ...route.stops] }
+          : {
+              engineerId,
+              startLat: stop.lat,
+              startLon: stop.lon,
+              startAt: stop.startAt,
+              finishAt: stop.endAt,
+              distanceKm: 0,
+              travelTimeSec: 0,
+              workTimeSec: active.serviceDurationSec,
+              waitingTimeSec: 0,
+              lunchTimeSec: 0,
+              assignedCount: 1,
+              lunchStatus: 'none',
+              legs: [],
+              stops: [stop],
+            };
+      }
       return {
         route,
         stop,

@@ -398,6 +398,17 @@ export class EngineerController {
     @Query('engineerId') engineerId?: string,
   ) {
     const engineer = await this.subjectOf(actor, engineerId);
+    if (
+      await this.prisma.liveWorkday.findFirst({
+        where: { status: 'running' },
+        select: { id: true },
+      })
+    ) {
+      const live = await this.live.engineerView(engineer.id);
+      if (live.current?.request.id === requestId && live.current.stop) {
+        return { request: live.current.request, stop: live.current.stop };
+      }
+    }
     const plan = await this.plans.current(this.prisma);
     if (!plan) {
       throw SysError.notFound('Request');
