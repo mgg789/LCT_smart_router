@@ -3,6 +3,17 @@ import { useEffect, useRef, useState } from 'react';
 import type { DashboardSnapshot } from '../api/types';
 import { unassignedRequests } from '../domain/dashboard';
 import { localMapStyle } from '../domain/localBasemap';
+import {
+  MAP_CANVAS,
+  MAP_INK,
+  MAP_LUNCH_FILL,
+  MAP_LUNCH_STROKE,
+  MAP_ROUTE_DASH_PX,
+  MAP_ROUTE_GAP_PX,
+  mapPaintColor,
+  metersPerPixel,
+  pillDashLine,
+} from '../domain/mapPaint';
 import { regionStyle, requestRegion, routeRegion } from '../domain/regions';
 import { mapRouteSegments } from '../domain/travel';
 import { engineerColor, skillMark } from '../lib/reasons';
@@ -114,23 +125,32 @@ export function DayMap({
       );
       const showUnassigned = selectedEngineerId === null || viewingUnassigned;
 
+      const zoom = map.getZoom();
+      const sampleLat = routes[0]?.startLat ?? 55.75;
+      const dashMeters = metersPerPixel(sampleLat, zoom) * MAP_ROUTE_DASH_PX;
+      const gapMeters = metersPerPixel(sampleLat, zoom) * MAP_ROUTE_GAP_PX;
       const lineFeatures = routes.flatMap((route) => {
         const region = routeRegion(snapshot, route);
-        return mapRouteSegments(route).map((segment) => ({
-          type: 'Feature' as const,
-          properties: {
-            engineerId: route.engineerId,
-            selected: !selectedEngineerId || route.engineerId === selectedEngineerId ? 1 : 0,
-            approximate: segment.approximate ? 1 : 0,
-            color: engineerColor(route.engineerId),
-            regionColor: regionStyle(region).color,
-            travelSource: segment.source,
-          },
-          geometry: {
-            type: 'LineString' as const,
-            coordinates: segment.coordinates,
-          },
-        }));
+        return mapRouteSegments(route).flatMap((segment) => {
+          const paths = segment.approximate
+            ? pillDashLine(segment.coordinates, dashMeters, gapMeters)
+            : [segment.coordinates.map((point) => [point[0], point[1]] as [number, number])];
+          return paths.map((coordinates) => ({
+            type: 'Feature' as const,
+            properties: {
+              engineerId: route.engineerId,
+              selected: !selectedEngineerId || route.engineerId === selectedEngineerId ? 1 : 0,
+              approximate: segment.approximate ? 1 : 0,
+              color: mapPaintColor(engineerColor(route.engineerId)),
+              regionColor: mapPaintColor(regionStyle(region).color),
+              travelSource: segment.source,
+            },
+            geometry: {
+              type: 'LineString' as const,
+              coordinates,
+            },
+          }));
+        });
       });
 
       const startFeatures = routes.map((route) => ({
@@ -138,8 +158,8 @@ export function DayMap({
         properties: {
           engineerId: route.engineerId,
           selected: !selectedEngineerId || route.engineerId === selectedEngineerId ? 1 : 0,
-          color: engineerColor(route.engineerId),
-          regionColor: regionStyle(routeRegion(snapshot, route)).color,
+          color: mapPaintColor(engineerColor(route.engineerId)),
+          regionColor: mapPaintColor(regionStyle(routeRegion(snapshot, route)).color),
         },
         geometry: {
           type: 'Point' as const,
@@ -180,8 +200,10 @@ export function DayMap({
                 skillMark: request ? skillMark(request.requiredSkill) : '',
                 engineerId: route.engineerId,
                 selected: stop.requestId === selectedRequestId ? 1 : 0,
-                color: engineerColor(route.engineerId),
-                regionColor: regionStyle(request ? requestRegion(snapshot, request) : null).color,
+                color: mapPaintColor(engineerColor(route.engineerId)),
+                regionColor: mapPaintColor(
+                  regionStyle(request ? requestRegion(snapshot, request) : null).color,
+                ),
               },
               geometry: {
                 type: 'Point' as const,
@@ -207,7 +229,7 @@ export function DayMap({
                 requestId: request.id,
                 skillMark: skillMark(request.requiredSkill),
                 selected: request.id === selectedRequestId ? 1 : 0,
-                regionColor: regionStyle(requestRegion(snapshot, request)).color,
+                regionColor: mapPaintColor(regionStyle(requestRegion(snapshot, request)).color),
               },
               geometry: {
                 type: 'Point' as const,
@@ -223,24 +245,26 @@ export function DayMap({
           id: 'routes-casing',
           type: 'line',
           source: 'routes',
+          layout: {
+            'line-cap': 'round',
+            'line-join': 'round',
+          },
           paint: {
-            'line-color': '#ffffff',
-            'line-width': ['case', ['==', ['get', 'selected'], 1], 7, 5],
+            'line-color': MAP_CANVAS,
+            'line-width': ['case', ['==', ['get', 'selected'], 1], 9, 7],
           },
         });
         map.addLayer({
           id: 'routes-line',
           type: 'line',
           source: 'routes',
+          layout: {
+            'line-cap': 'round',
+            'line-join': 'round',
+          },
           paint: {
             'line-color': ['get', 'color'],
-            'line-width': ['case', ['==', ['get', 'selected'], 1], 3.5, 2],
-            'line-dasharray': [
-              'case',
-              ['==', ['get', 'approximate'], 1],
-              ['literal', [2, 2]],
-              ['literal', [1, 0]],
-            ],
+            'line-width': ['case', ['==', ['get', 'selected'], 1], 5, 3.5],
             'line-opacity': ['case', ['==', ['get', 'selected'], 1], 0.9, 0.35],
           },
         });
@@ -253,7 +277,7 @@ export function DayMap({
           source: 'starts',
           paint: {
             'circle-radius': 11,
-            'circle-color': '#ffffff',
+            'circle-color': MAP_CANVAS,
             'circle-stroke-width': 3,
             'circle-stroke-color': ['get', 'regionColor'],
           },
@@ -270,8 +294,8 @@ export function DayMap({
               'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
             },
             paint: {
-              'text-color': '#202124',
-              'text-halo-color': '#ffffff',
+              'text-color': MAP_INK,
+              'text-halo-color': MAP_CANVAS,
               'text-halo-width': 1.2,
             },
           });
@@ -299,7 +323,7 @@ export function DayMap({
               'text-size': 14,
               'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
             },
-            paint: { 'text-color': '#ffffff' },
+            paint: { 'text-color': MAP_CANVAS },
           });
       });
 
@@ -310,9 +334,9 @@ export function DayMap({
           source: 'lunches',
           paint: {
             'circle-radius': 12,
-            'circle-color': '#FFE7C2',
+            'circle-color': MAP_LUNCH_FILL,
             'circle-stroke-width': 3,
-            'circle-stroke-color': '#E07A2F',
+            'circle-stroke-color': MAP_LUNCH_STROKE,
           },
         });
         if (map.getStyle().glyphs)
@@ -328,7 +352,7 @@ export function DayMap({
             },
             paint: {
               'text-color': '#8A4B12',
-              'text-halo-color': '#ffffff',
+              'text-halo-color': MAP_CANVAS,
               'text-halo-width': 1.2,
             },
           });
@@ -343,10 +367,11 @@ export function DayMap({
             'circle-radius': ['case', ['==', ['get', 'selected'], 1], 16, 13],
             'circle-color': ['get', 'regionColor'],
             'circle-stroke-width': 2,
-            'circle-stroke-color': '#202124',
+            'circle-stroke-color': MAP_INK,
           },
         });
       });
+      syncOverlayPaint(map);
 
       const fitKey = `${retry}:${forceLocal}:${selectedEngineerId ?? 'all'}:${selectedRequestId ?? ''}`;
       if (fittedKeyRef.current !== fitKey) {
@@ -375,11 +400,16 @@ export function DayMap({
     const onStyle = () => {
       apply();
     };
+    const onZoom = () => {
+      apply();
+    };
     map.on('style.load', onStyle);
     map.once('load', onStyle);
+    map.on('zoomend', onZoom);
     return () => {
       map.off('style.load', onStyle);
       map.off('load', onStyle);
+      map.off('zoomend', onZoom);
     };
   }, [selectedEngineerId, selectedRequestId, snapshot, forceLocal, retry]);
 
@@ -448,6 +478,52 @@ function pickRequest(
   const id = event.features?.[0]?.properties?.requestId;
   if (typeof id === 'string') {
     onSelectRef.current(id);
+  }
+}
+
+/** Keeps overlay paint/layout current after the first addLayer. */
+function syncOverlayPaint(map: maplibregl.Map): void {
+  for (const layer of ['routes-casing', 'routes-line'] as const) {
+    if (!map.getLayer(layer)) continue;
+    map.setLayoutProperty(layer, 'line-cap', 'round');
+    map.setLayoutProperty(layer, 'line-join', 'round');
+  }
+  if (map.getLayer('routes-casing')) {
+    map.setPaintProperty('routes-casing', 'line-color', MAP_CANVAS);
+    map.setPaintProperty('routes-casing', 'line-width', [
+      'case',
+      ['==', ['get', 'selected'], 1],
+      9,
+      7,
+    ]);
+  }
+  if (map.getLayer('routes-line')) {
+    map.setPaintProperty('routes-line', 'line-width', [
+      'case',
+      ['==', ['get', 'selected'], 1],
+      5,
+      3.5,
+    ]);
+  }
+  if (map.getLayer('starts-square')) {
+    map.setPaintProperty('starts-square', 'circle-color', MAP_CANVAS);
+  }
+  if (map.getLayer('starts-label')) {
+    map.setPaintProperty('starts-label', 'text-color', MAP_INK);
+    map.setPaintProperty('starts-label', 'text-halo-color', MAP_CANVAS);
+  }
+  if (map.getLayer('stops-label')) {
+    map.setPaintProperty('stops-label', 'text-color', MAP_CANVAS);
+  }
+  if (map.getLayer('lunch-circle')) {
+    map.setPaintProperty('lunch-circle', 'circle-color', MAP_LUNCH_FILL);
+    map.setPaintProperty('lunch-circle', 'circle-stroke-color', MAP_LUNCH_STROKE);
+  }
+  if (map.getLayer('lunch-label')) {
+    map.setPaintProperty('lunch-label', 'text-halo-color', MAP_CANVAS);
+  }
+  if (map.getLayer('unassigned-circle')) {
+    map.setPaintProperty('unassigned-circle', 'circle-stroke-color', MAP_INK);
   }
 }
 
