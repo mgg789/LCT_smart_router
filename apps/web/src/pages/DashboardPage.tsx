@@ -3,6 +3,7 @@ import { HardHat, Map as MapIcon, Plus, ShieldCog } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { EquipmentType } from '../api/types';
 import { DataUploadModal } from '../components/DataUploadModal';
+import { DispatcherAuthPage } from '../figma-dashboard/DispatcherAuthPage';
 import { DayMap } from '../components/DayMap';
 import { EngineersPage } from '../components/EngineersPage';
 import { PolicyComparisonPage } from '../components/PolicyComparisonPage';
@@ -63,18 +64,11 @@ export function DashboardPage() {
 
   if (!dash.authenticated) {
     return (
-      <div>
-        <LoginScreen loading={dash.loading} error={dash.error} onSubmit={dash.signIn} />
-        <div className="fixed bottom-8 inset-x-0 text-center">
-          <button
-            type="button"
-            onClick={() => dash.selectDemoScenario('initial')}
-            className="rounded-full bg-bee px-5 py-3 font-semibold"
-          >
-            Открыть автономный демо-сценарий
-          </button>
-        </div>
-      </div>
+      <DispatcherAuthPage
+        submitting={dash.loading}
+        onSession={dash.acceptSession}
+        onPassword={dash.signIn}
+      />
     );
   }
 
@@ -469,67 +463,6 @@ export function DashboardPage() {
         ) : null}
       </div>
     </div>
-  );
-}
-
-interface LoginScreenProps {
-  readonly loading: boolean;
-  readonly error: string | null;
-  readonly onSubmit: (email: string, password: string) => Promise<void>;
-}
-
-function LoginScreen({ loading, error, onSubmit }: LoginScreenProps) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-
-  return (
-    <main className="flex h-full items-center justify-center bg-canvas p-6 text-ink">
-      <form
-        className="w-full max-w-sm rounded-3xl bg-white p-7 shadow-sm"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void onSubmit(email, password);
-        }}
-      >
-        <img src="/beeline-symbol.png" alt="Beeline" className="mx-auto h-10 w-10" />
-        <h1 className="mt-6 text-center text-2xl font-semibold">План дня</h1>
-        <p className="mt-2 text-center text-sm text-muted">
-          Войдите как диспетчер, чтобы открыть актуальный план.
-        </p>
-        <label className="mt-6 block text-sm font-medium" htmlFor="dispatcher-email">
-          Email
-        </label>
-        <input
-          id="dispatcher-email"
-          type="email"
-          required
-          autoComplete="username"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          className="mt-2 w-full rounded-xl border border-line px-3 py-2.5 outline-none focus:border-ink"
-        />
-        <label className="mt-4 block text-sm font-medium" htmlFor="dispatcher-password">
-          Пароль
-        </label>
-        <input
-          id="dispatcher-password"
-          type="password"
-          required
-          autoComplete="current-password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          className="mt-2 w-full rounded-xl border border-line px-3 py-2.5 outline-none focus:border-ink"
-        />
-        {error ? <p className="mt-3 text-sm text-red-700">{error}</p> : null}
-        <button
-          type="submit"
-          disabled={loading}
-          className="mt-6 w-full rounded-full bg-bee py-3 text-sm font-semibold disabled:opacity-50"
-        >
-          {loading ? 'Входим…' : 'Войти'}
-        </button>
-      </form>
-    </main>
   );
 }
 

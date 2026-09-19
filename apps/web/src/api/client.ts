@@ -1,8 +1,10 @@
 import { z } from 'zod';
 import type {
   AssignmentReasons,
+  AuthRole,
   AuthSession,
   DashboardSnapshot,
+  LoginCodeIssued,
   DataUploadFile,
   DataUploadSummary,
   OfficialImportSummary,
@@ -250,10 +252,18 @@ const policySelectionSchema = z.object({
   }),
 });
 
+const authRoleSchema = z.enum(['client', 'engineer', 'dispatcher']);
+
 const authSessionSchema = z.object({
   token: z.string().min(1),
-  role: z.literal('dispatcher'),
+  role: authRoleSchema,
   expiresAt: z.number().int(),
+});
+
+const loginCodeIssuedSchema = z.object({
+  email: z.string().min(1),
+  expiresAt: z.number().int(),
+  devCode: z.string().optional(),
 });
 
 const policyComparisonSchema = z.object({
@@ -432,6 +442,26 @@ export async function loginDispatcher(email: string, password: string): Promise<
   return requestJson('/api/v1/auth/dispatcher/password', authSessionSchema, undefined, {
     method: 'POST',
     body: JSON.stringify({ email, password }),
+  });
+}
+
+/** Asks for a one-time email code. The reply never says whether the address is known. */
+export async function requestLoginCode(email: string): Promise<LoginCodeIssued> {
+  return requestJson('/api/v1/auth/login-code', loginCodeIssuedSchema, undefined, {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+}
+
+/** Exchanges a six-digit code for a session of the requested role. */
+export async function verifyLoginCode(
+  email: string,
+  code: string,
+  role: AuthRole,
+): Promise<AuthSession> {
+  return requestJson('/api/v1/auth/login-code/verify', authSessionSchema, undefined, {
+    method: 'POST',
+    body: JSON.stringify({ email, code, role }),
   });
 }
 

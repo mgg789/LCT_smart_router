@@ -232,7 +232,8 @@ export function DataUploadModal({
             </div>
 
             <div className="mt-[20px] flex items-center justify-between gap-[16px]">
-              <GhostButton
+              <button
+                type="button"
                 disabled={submitting}
                 onClick={() => {
                   if (readOnly) {
@@ -250,9 +251,12 @@ export function DataUploadModal({
                       ),
                     );
                 }}
+                className="flex h-[56px] items-center justify-center rounded-[20px] bg-figma-bee px-[24px] transition-transform duration-150 hover:scale-[1.01] disabled:opacity-50"
               >
-                Использовать сет из ТЗ
-              </GhostButton>
+                <span className="figma-nowrap font-semibold text-[18px] tracking-[-0.4px] text-figma-ink">
+                  Использовать сет из ТЗ
+                </span>
+              </button>
               <div className="flex items-center gap-[10px]">
                 <GhostButton disabled={submitting} onClick={onClose}>
                   Отмена

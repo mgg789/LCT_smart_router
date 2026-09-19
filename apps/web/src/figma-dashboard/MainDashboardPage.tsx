@@ -36,6 +36,7 @@ import {
   rightPanelMode,
 } from './fromSnapshot';
 import { DataUploadModal } from './DataUploadModal';
+import { DispatcherAuthPage } from './DispatcherAuthPage';
 import { PolicyComparisonView } from './PolicyComparisonView';
 import { ToastColumn } from './ToastColumn';
 import { FigmaIcon, FigmaText } from './primitives';
@@ -76,7 +77,7 @@ const POLICY_LEFT = 1329;
 const POLICY_TOP = 26 - HEADER_LIFT;
 const POLICY_OPEN_HEIGHT = 497;
 const NOTIF_PANEL_LEFT = 1407;
-const NOTIF_PANEL_TOP = 29 - HEADER_LIFT;
+const NOTIF_PANEL_TOP = 26 - HEADER_LIFT;
 const HEADER_AVATAR_LEFT = 1800;
 const HEADER_AVATAR_TOP = 28 - HEADER_LIFT;
 const DATE_TOP = 100 - HEADER_LIFT;
@@ -113,11 +114,6 @@ export function MainDashboardPage() {
   const [regionOpen, setRegionOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [selectedRegion, setSelectedRegion] = useState<RegionSelection>(ALL_REGIONS);
-
-  useEffect(() => {
-    if (dash.snapshot || dash.loading || dash.authenticated) return;
-    dash.selectDemoScenario('initial');
-  }, [dash.authenticated, dash.loading, dash.selectDemoScenario, dash.snapshot]);
 
   const visibleSnapshot = useMemo(
     () => (dash.snapshot ? filterSnapshotByRegion(dash.snapshot, selectedRegion) : null),
@@ -263,6 +259,16 @@ export function MainDashboardPage() {
 
   const scale = useArtboardScale();
   const motionOn = !reduceMotion;
+
+  if (!dash.authenticated) {
+    return (
+      <DispatcherAuthPage
+        submitting={dash.loading}
+        onSession={dash.acceptSession}
+        onPassword={dash.signIn}
+      />
+    );
+  }
 
   return (
     <div className="flex h-full w-full items-center justify-center overflow-hidden bg-figma-canvas">

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { AlertView } from '../api/types';
 import { factorLabel } from '../lib/reasons';
 
-export type ToastKind = 'system' | 'progress' | 'ai' | 'chat' | 'route' | 'alert';
+export type ToastKind = 'system' | 'progress' | 'ai' | 'chat' | 'route' | 'alert' | 'error';
 
 export const TOAST_CARD_HEIGHT = 132;
 export const TOAST_GAP = 28;
@@ -158,7 +158,8 @@ export function visibleToastLimit(): number {
  */
 export function sortToasts(items: readonly ToastNotification[]): ToastNotification[] {
   return [...items].sort((left, right) => {
-    const alertDelta = Number(right.kind === 'alert') - Number(left.kind === 'alert');
+    const weight = (kind: ToastKind) => Number(kind === 'alert' || kind === 'error');
+    const alertDelta = weight(right.kind) - weight(left.kind);
     if (alertDelta !== 0) return alertDelta;
     return left.createdAt - right.createdAt;
   });
@@ -272,6 +273,19 @@ export function toastFromAlert(alert: AlertView): ToastDraft {
     body: alert.reasons[0] ?? factorLabel(alert.code),
     createdAt: alert.createdAt,
   };
+}
+
+/**
+ * Login and other blocking failures use the alert card painted danger-red.
+ * @param body Short Russian explanation shown under the title.
+ */
+export function pushAuthErrorToast(body: string): void {
+  pushToast({
+    id: 'auth-error',
+    kind: 'error',
+    title: 'Ошибка входа',
+    body,
+  });
 }
 
 /** Maps a day event onto a dark system toast. */

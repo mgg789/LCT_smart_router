@@ -29,6 +29,7 @@ const TOAST_ICON: Record<ToastKind, { src: string; width: number; height: number
   chat: { src: FIGMA_ASSETS.toastChat, width: 25, height: 25 },
   route: { src: FIGMA_ASSETS.toastRoute, width: 24, height: 24 },
   alert: { src: FIGMA_ASSETS.toastAlert, width: 25, height: 25 },
+  error: { src: FIGMA_ASSETS.toastAlert, width: 25, height: 25 },
 };
 
 type ToastGhost = {
@@ -249,6 +250,7 @@ function ToastFace({
   onPointerDown?: (event: ReactPointerEvent<HTMLElement>) => void;
 }) {
   const alert = toast.kind === 'alert';
+  const danger = toast.kind === 'error';
   const icon = TOAST_ICON[toast.kind];
 
   return (
@@ -258,7 +260,7 @@ function ToastFace({
       aria-label={leaving ? undefined : `${toast.title}. ${toast.body || toast.etaLabel || ''}`}
       className={`absolute h-[132px] w-[425px] overflow-hidden rounded-[20px] select-none ${
         leaving ? 'pointer-events-none' : 'pointer-events-auto'
-      } ${alert ? 'bg-figma-bee' : 'bg-figma-ink'} ${
+      } ${danger ? 'bg-figma-danger' : alert ? 'bg-figma-bee' : 'bg-figma-ink'} ${
         dragging ? 'cursor-grabbing' : interactive ? 'cursor-grab' : ''
       }`}
       initial={leaving ? { x, top, left: TOAST_LEFT, opacity: 1 } : motionOn ? { opacity: 0, y: 28, top, left: TOAST_LEFT, x: 0 } : { top, left: TOAST_LEFT, x: 0 }}
@@ -277,11 +279,17 @@ function ToastFace({
       }}
     >
       <div className="absolute left-[15px] top-[8px] flex h-[42px] w-[43px] items-center justify-center rounded-[10px]">
-        <FigmaIcon src={icon.src} alt="" width={icon.width} height={icon.height} />
+        <FigmaIcon
+          src={icon.src}
+          alt=""
+          width={icon.width}
+          height={icon.height}
+          className={danger ? 'brightness-0 invert' : undefined}
+        />
       </div>
       <p
         className={`figma-nowrap absolute left-[68px] top-[19px] max-w-[300px] overflow-hidden font-semibold text-[20px] leading-none text-ellipsis ${
-          alert ? 'text-figma-ink' : 'text-white'
+          danger || !alert ? 'text-white' : 'text-figma-ink'
         }`}
       >
         {toast.title}
@@ -297,10 +305,11 @@ function ToastFace({
       >
         <span className="-rotate-45">
           <FigmaIcon
-            src={alert ? FIGMA_ASSETS.toastCloseInk : FIGMA_ASSETS.toastClose}
+            src={alert && !danger ? FIGMA_ASSETS.toastCloseInk : FIGMA_ASSETS.toastClose}
             alt=""
             width={20}
             height={20}
+            className={danger ? 'brightness-0 invert' : undefined}
           />
         </span>
       </button>
@@ -322,7 +331,7 @@ function ToastFace({
       ) : (
         <p
           className={`absolute left-[68px] top-[48px] w-[327px] font-medium text-[18px] leading-[22px] tracking-[-0.3px] ${
-            alert ? 'text-[#484343]' : 'text-[#838383]'
+            danger ? 'text-white' : alert ? 'text-[#484343]' : 'text-[#838383]'
           }`}
         >
           {toast.body}

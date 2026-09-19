@@ -262,10 +262,19 @@ export interface RouterTechnicalSettings {
   readonly routerContextVersion: string;
 }
 
+export type AuthRole = 'client' | 'engineer' | 'dispatcher';
+
 export interface AuthSession {
   readonly token: string;
-  readonly role: 'dispatcher';
+  readonly role: AuthRole;
   readonly expiresAt: number;
+}
+
+/** Public reply after asking for a one-time email code. */
+export interface LoginCodeIssued {
+  readonly email: string;
+  readonly expiresAt: number;
+  readonly devCode?: string;
 }
 
 export interface PlanDelta {

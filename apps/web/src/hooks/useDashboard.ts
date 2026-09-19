@@ -232,6 +232,19 @@ export function useDashboard() {
     ]);
   }, []);
 
+  const acceptSession = useCallback(
+    (nextToken: string, expiresAt: number) => {
+      invalidateAsyncReads();
+      sessionStorage.setItem(SESSION_KEY, nextToken);
+      startRecoverySession(sessionStorage, expiresAt);
+      setSource('live');
+      setSnapshot(null);
+      setToken(nextToken);
+      setError(null);
+    },
+    [invalidateAsyncReads, setSnapshot, setSource],
+  );
+
   const signIn = useCallback(
     async (email: string, password: string) => {
       const generation = readGeneration.current;
@@ -240,20 +253,16 @@ export function useDashboard() {
       try {
         const session = await loginDispatcher(email, password);
         if (generation !== readGeneration.current) return;
-        invalidateAsyncReads();
-        sessionStorage.setItem(SESSION_KEY, session.token);
-        startRecoverySession(sessionStorage, session.expiresAt);
-        setSource('live');
-        setSnapshot(null);
-        setToken(session.token);
+        acceptSession(session.token, session.expiresAt);
       } catch (cause) {
         if (generation !== readGeneration.current) return;
         reportFailure(cause);
         setError(errorMessage(cause));
         setLoading(false);
+        throw cause;
       }
     },
-    [invalidateAsyncReads, setSnapshot, setSource, reportFailure],
+    [acceptSession, reportFailure],
   );
 
   const signOut = useCallback(async () => {
@@ -818,6 +827,7 @@ export function useDashboard() {
     policyComparisonLoading,
     policyComparisonError,
     events,
+    acceptSession,
     signIn,
     signOut,
     refresh,
