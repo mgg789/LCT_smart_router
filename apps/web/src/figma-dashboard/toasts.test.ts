@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   accumulateSwipeCollapse,
+  invertToastSwipe,
   DEMO_TOASTS,
   TOAST_CARD_HEIGHT,
   TOAST_GAP,
@@ -88,5 +89,12 @@ describe('toast stack', () => {
     expect(accumulateSwipeCollapse(70, 8, 20)).toEqual({ accumulated: 0, collapse: true });
     expect(accumulateSwipeCollapse(12, 40, 30)).toEqual({ accumulated: 0, collapse: false });
     expect(accumulateSwipeCollapse(-30, 0, 40)).toEqual({ accumulated: 0, collapse: false });
+  });
+
+  it('inverts the collapse direction on macOS trackpads', () => {
+    expect(invertToastSwipe('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)', 'MacIntel')).toBe(true);
+    expect(invertToastSwipe('Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Win32')).toBe(false);
+    expect(accumulateSwipeCollapse(-70, 4, 20, 80, true)).toEqual({ accumulated: 0, collapse: true });
+    expect(accumulateSwipeCollapse(70, 4, 20, 80, true)).toEqual({ accumulated: 0, collapse: false });
   });
 });

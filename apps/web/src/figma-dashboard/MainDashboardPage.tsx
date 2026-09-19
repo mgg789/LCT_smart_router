@@ -35,6 +35,7 @@ import {
   requestUrgency,
   rightPanelMode,
 } from './fromSnapshot';
+import { DataUploadModal } from './DataUploadModal';
 import { PolicyComparisonView } from './PolicyComparisonView';
 import { ToastColumn } from './ToastColumn';
 import { FigmaIcon, FigmaText } from './primitives';
@@ -110,6 +111,7 @@ export function MainDashboardPage() {
   const toasts = useToasts();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [regionOpen, setRegionOpen] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
   const [selectedRegion, setSelectedRegion] = useState<RegionSelection>(ALL_REGIONS);
 
   useEffect(() => {
@@ -228,6 +230,10 @@ export function MainDashboardPage() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
+      if (uploadOpen) {
+        if (!dash.uploadingData) setUploadOpen(false);
+        return;
+      }
       if (searchOpen) {
         setSearchOpen(false);
         setSearchQuery('');
@@ -253,7 +259,7 @@ export function MainDashboardPage() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [dash, notifOpen, policyOpen, regionOpen, searchOpen, showRightPanel, userMenuOpen]);
+  }, [dash, notifOpen, policyOpen, regionOpen, searchOpen, showRightPanel, uploadOpen, userMenuOpen]);
 
   const scale = useArtboardScale();
   const motionOn = !reduceMotion;
@@ -290,6 +296,11 @@ export function MainDashboardPage() {
               setUserMenuOpen(false);
               setNotifOpen(true);
             }
+          }}
+          onUpload={() => {
+            setPolicyOpen(false);
+            setUserMenuOpen(false);
+            setUploadOpen(true);
           }}
         />
         <PolicyControl
@@ -328,6 +339,18 @@ export function MainDashboardPage() {
           motionOn={motionOn}
           scale={scale}
           onCollapse={() => setNotifOpen(false)}
+        />
+        <DataUploadModal
+          open={uploadOpen}
+          submitting={dash.uploadingData}
+          readOnly={dash.writesDisabled}
+          existingRegions={regions.map((region) => region.id)}
+          motionOn={motionOn}
+          onClose={() => {
+            if (!dash.uploadingData) setUploadOpen(false);
+          }}
+          onUpload={dash.uploadDataset}
+          onImportOfficial={dash.importOfficialTzDataset}
         />
         <UserMenu
           open={userMenuOpen}
@@ -467,18 +490,20 @@ function useArtboardScale(): number {
 function SidebarNav({
   activeNav,
   onSelect,
+  onUpload,
   motionOn,
 }: {
   activeNav: NavItemId;
   onSelect: (id: NavItemId) => void;
+  onUpload: () => void;
   motionOn: boolean;
 }) {
   const activeIndex = NAV_ITEMS.findIndex((item) => item.id === activeNav);
 
   return (
     <aside className="absolute left-0 top-0 z-20 h-[1080px] w-[158px] overflow-visible rounded-br-[20px] rounded-tr-[20px] border-r-[0.5px] border-solid border-[rgba(158,158,158,0.3)] bg-white">
-      <div className="absolute left-[79px] top-[52px] -translate-x-1/2 -translate-y-1/2">
-        <FigmaIcon src={FIGMA_ASSETS.logo} alt="LCT Smart Router" width={44} height={44} />
+      <div className="absolute left-[79px] top-[56px] -translate-x-1/2 -translate-y-1/2">
+        <FigmaIcon src={FIGMA_ASSETS.logo} alt="LCT Smart Router" width={64} height={64} />
       </div>
       <nav className="absolute left-[12px] top-[110px] w-[134px]">
         <motion.div
@@ -517,6 +542,14 @@ function SidebarNav({
           );
         })}
       </nav>
+      <button
+        type="button"
+        aria-label="Загрузить данные"
+        onClick={onUpload}
+        className="absolute bottom-[28px] left-[12px] flex h-[56px] w-[134px] items-center justify-center rounded-[16px] transition-transform duration-200 ease-out hover:scale-[1.04]"
+      >
+        <FigmaIcon src={FIGMA_ASSETS.iconPlus} alt="" width={28} height={28} />
+      </button>
     </aside>
   );
 }

@@ -11,6 +11,7 @@ import {
   TOAST_WIDTH,
   accumulateSwipeCollapse,
   dismissToast,
+  invertToastSwipe,
   type ToastKind,
   type ToastNotification,
   useToasts,
@@ -67,7 +68,13 @@ export function ToastColumn({
     const onWheel = (event: WheelEvent) => {
       const overCard = (event.target as HTMLElement | null)?.closest?.('[data-toast-card]');
       if (!overCard) return;
-      const next = accumulateSwipeCollapse(event.deltaX, event.deltaY, wheelX.current);
+      const next = accumulateSwipeCollapse(
+        event.deltaX,
+        event.deltaY,
+        wheelX.current,
+        undefined,
+        invertToastSwipe(),
+      );
       wheelX.current = next.accumulated;
       if (next.collapse) {
         event.preventDefault();

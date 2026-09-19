@@ -32,7 +32,7 @@ export function metersPerPixel(latitude: number, zoom: number): number {
   return (40075016.686 * Math.cos((latitude * Math.PI) / 180)) / (256 * 2 ** zoom);
 }
 
-function haversineMeters(from: readonly number[], to: readonly number[]): number {
+function haversineMeters(from: readonly [number, number], to: readonly [number, number]): number {
   const radius = 6371000;
   const toRad = (degrees: number) => (degrees * Math.PI) / 180;
   const dLat = toRad(to[1] - from[1]);
@@ -45,8 +45,8 @@ function haversineMeters(from: readonly number[], to: readonly number[]): number
 }
 
 function interpolate(
-  from: readonly number[],
-  to: readonly number[],
+  from: readonly [number, number],
+  to: readonly [number, number],
   t: number,
 ): [number, number] {
   return [from[0] + (to[0] - from[0]) * t, from[1] + (to[1] - from[1]) * t];
@@ -56,6 +56,13 @@ function interpolate(
  * Splits a line into short segments so MapLibre round caps become capsules.
  * Native `line-dasharray` always draws square dashes.
  */
+function asPoint(value: readonly number[] | undefined): readonly [number, number] | null {
+  const lon = value?.[0];
+  const lat = value?.[1];
+  if (lon === undefined || lat === undefined) return null;
+  return [lon, lat];
+}
+
 export function pillDashLine(
   coordinates: ReadonlyArray<readonly number[]>,
   dashMeters: number,
@@ -69,8 +76,8 @@ export function pillDashLine(
   let current: [number, number][] = [];
 
   for (let index = 0; index < coordinates.length - 1; index += 1) {
-    const from = coordinates[index];
-    const to = coordinates[index + 1];
+    const from = asPoint(coordinates[index]);
+    const to = asPoint(coordinates[index + 1]);
     if (!from || !to) continue;
     const length = haversineMeters(from, to);
     if (length <= 0) continue;

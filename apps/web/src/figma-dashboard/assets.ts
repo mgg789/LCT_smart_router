@@ -4,6 +4,7 @@
  */
 export const FIGMA_ASSETS = {
   logo: '/figma/logo-dark.png',
+  iconPlus: '/figma/icon-plus.svg',
   navHome: '/figma/nav-home.svg',
   navRequests: '/figma/nav-requests.svg',
   navEngineers: '/figma/nav-engineers.svg',

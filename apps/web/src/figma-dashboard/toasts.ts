@@ -14,22 +14,34 @@ export const TOAST_EXIT_X = 520;
 export const TOAST_SWIPE_COLLAPSE = 80;
 
 /**
- * Two-finger trackpad swipe arrives as a horizontal wheel. Accumulate rightward
- * delta and collapse the column once it crosses the same intent as the bell.
+ * macOS natural scrolling flips wheel delta versus Windows/Linux trackpads.
+ */
+export function invertToastSwipe(
+  userAgent = typeof navigator === 'undefined' ? '' : navigator.userAgent,
+  platform = typeof navigator === 'undefined' ? '' : navigator.platform,
+): boolean {
+  return /Mac|iPhone|iPad|iPod/.test(platform) || /Macintosh|Mac OS X/.test(userAgent);
+}
+
+/**
+ * Two-finger trackpad swipe arrives as a horizontal wheel. Accumulate the
+ * collapse direction (right on ordinary laptops, left on macOS).
  */
 export function accumulateSwipeCollapse(
   deltaX: number,
   deltaY: number,
   accumulated: number,
   threshold = TOAST_SWIPE_COLLAPSE,
+  invert = false,
 ): { accumulated: number; collapse: boolean } {
   if (!Number.isFinite(deltaX) || !Number.isFinite(deltaY)) {
     return { accumulated: 0, collapse: false };
   }
-  if (deltaX <= 0 || Math.abs(deltaX) <= Math.abs(deltaY)) {
+  const signed = invert ? -deltaX : deltaX;
+  if (signed <= 0 || Math.abs(deltaX) <= Math.abs(deltaY)) {
     return { accumulated: 0, collapse: false };
   }
-  const next = accumulated + deltaX;
+  const next = accumulated + signed;
   if (next >= threshold) return { accumulated: 0, collapse: true };
   return { accumulated: next, collapse: false };
 }
