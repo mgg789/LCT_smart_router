@@ -1,4 +1,5 @@
 export { getDispatchState } from './api/getDispatchState';
+export { reasonIsProof, reasonText } from './lib/reasonText';
 export type {
   AssignmentReason,
   DispatchMode,

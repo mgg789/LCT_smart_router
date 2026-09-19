@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { LoginPage } from '@/pages/login';
+import { PlanPage } from '@/pages/plan';
 import { SectionPlaceholder } from '@/shared/ui';
 import { AppLayout } from '@/widgets/app-shell';
 import { ROUTES } from './paths';
@@ -10,7 +11,6 @@ import { RequireSession } from './RequireSession';
  * plainly rather than showing invented content.
  */
 const PENDING_SECTIONS = [
-  { path: ROUTES.plan, title: 'План дня', note: 'Экран собирается следующим.' },
   { path: ROUTES.requests, title: 'Заявки', note: 'Экран ещё не собран.' },
   { path: ROUTES.engineers, title: 'Инженеры', note: 'Экран ещё не собран.' },
   { path: ROUTES.alerts, title: 'Алерты', note: 'Экран ещё не собран.' },
@@ -37,6 +37,7 @@ export function AppRoutes() {
       <Route element={<LoginPage />} path={ROUTES.login} />
       <Route element={<RequireSession />}>
         <Route element={<AppLayout />}>
+          <Route element={<PlanPage />} path={ROUTES.plan} />
           {PENDING_SECTIONS.map((section) => (
             <Route
               element={<SectionPlaceholder note={section.note} title={section.title} />}
