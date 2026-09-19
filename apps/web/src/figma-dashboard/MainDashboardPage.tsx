@@ -478,7 +478,7 @@ function SidebarNav({
   return (
     <aside className="absolute left-0 top-0 z-20 h-[1080px] w-[158px] overflow-visible rounded-br-[20px] rounded-tr-[20px] border-r-[0.5px] border-solid border-[rgba(158,158,158,0.3)] bg-white">
       <div className="absolute left-[79px] top-[52px] -translate-x-1/2 -translate-y-1/2">
-        <FigmaIcon src={FIGMA_ASSETS.logo} alt="Beeline" width={44} height={44} />
+        <FigmaIcon src={FIGMA_ASSETS.logo} alt="LCT Smart Router" width={44} height={44} />
       </div>
       <nav className="absolute left-[12px] top-[110px] w-[134px]">
         <motion.div

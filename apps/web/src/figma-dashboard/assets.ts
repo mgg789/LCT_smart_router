@@ -3,7 +3,7 @@
  * Paths are public URLs so the static mock page stays backend-free.
  */
 export const FIGMA_ASSETS = {
-  logo: '/figma/logo-beeline.svg',
+  logo: '/figma/logo-dark.png',
   navHome: '/figma/nav-home.svg',
   navRequests: '/figma/nav-requests.svg',
   navEngineers: '/figma/nav-engineers.svg',
