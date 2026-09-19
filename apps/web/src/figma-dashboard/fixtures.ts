@@ -107,6 +107,24 @@ export function routeStopStatusLabel(status: string): string {
 }
 
 /**
+ * Compact card names sit next to «N км»; longer labels are cut at the end.
+ * 16 glyphs leave room for a 3-digit kilometre suffix at 20px Murs Gothic.
+ */
+export const ENGINEER_NAME_MAX = 16;
+
+/**
+ * Truncates a display name at the end so it cannot paint over a trailing metric.
+ *
+ * @param value - Engineer, brigade, or other roster label
+ * @param max - Inclusive glyph budget before the ellipsis
+ */
+export function truncateEnd(value: string, max = ENGINEER_NAME_MAX): string {
+  const text = value.trim();
+  if (text.length <= max) return text;
+  return `${text.slice(0, max).trimEnd()}…`;
+}
+
+/**
  * Filters engineers by a case-insensitive name query.
  */
 export function filterEngineers(engineers: readonly EngineerCard[], query: string): EngineerCard[] {

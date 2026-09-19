@@ -23,6 +23,7 @@ import {
   isCompletedStop,
   requestCountLabel,
   routeStopStatusLabel,
+  truncateEnd,
   type EngineerCard,
   type NavItemId,
   type NotificationTone,
@@ -1086,9 +1087,12 @@ function EngineerRow({
         src={FIGMA_ASSETS.avatarEngineer}
         className="absolute left-[15px] top-[20px] size-[44px] max-w-none rounded-full object-cover"
       />
-      <div className="absolute left-[69px] right-[15px] top-[20px] z-20 flex items-baseline justify-between gap-[10px] overflow-visible">
-        <FigmaText className="figma-nowrap relative z-20 min-w-0 overflow-visible font-murs text-[20px] leading-[24px] tracking-[0.1px] text-black">
-          {engineer.name}
+      <div className="absolute left-[69px] right-[15px] top-[20px] z-20 flex items-baseline justify-between gap-[10px] overflow-hidden">
+        <FigmaText
+          className="figma-nowrap min-w-0 flex-1 overflow-hidden font-murs text-[20px] leading-[24px] tracking-[0.1px] text-ellipsis text-black"
+          title={engineer.name}
+        >
+          {truncateEnd(engineer.name)}
         </FigmaText>
         <FigmaText className="figma-nowrap shrink-0 font-bold text-[16px] tracking-[0.16px] text-black">
           {engineer.km} км
@@ -1403,8 +1407,11 @@ function RouteCard({
           transition={fadeSoft}
           className="absolute inset-0"
         >
-          <FigmaText className="figma-nowrap pointer-events-none absolute left-[30px] top-[30px] font-bold text-[28px] tracking-[-0.476px] text-figma-ink">
-            Маршрут {engineer.name.split(' ')[0]} {engineer.name.split(' ')[1]}
+          <FigmaText
+            className="figma-nowrap pointer-events-none absolute left-[30px] right-[30px] top-[30px] overflow-hidden font-bold text-[28px] tracking-[-0.476px] text-ellipsis text-figma-ink"
+            title={`Маршрут ${engineer.name}`}
+          >
+            Маршрут {truncateEnd(engineer.name, 22)}
           </FigmaText>
           <FigmaText className="figma-nowrap pointer-events-none absolute left-[30px] top-[68px] font-semibold text-[18px] tracking-[-0.306px] text-figma-muted">
             {engineer.routeUpdated}

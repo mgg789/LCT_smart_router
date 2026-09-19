@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ENGINEER_NAME_MAX,
   MAIN_DASHBOARD,
   MAIN_REQUEST_COUNT,
   POLICY_OPTIONS,
@@ -8,6 +9,7 @@ import {
   isCompletedStop,
   requestCountLabel,
   routeStopStatusLabel,
+  truncateEnd,
   visibleNotifications,
 } from './fixtures';
 
@@ -36,6 +38,14 @@ describe('Figma MAIN fixture', () => {
     expect(routeStopStatusLabel('выполнено')).toBe('ВЫПОЛНЕНО');
     expect(isCompletedStop('сейчас - визит 45 мин')).toBe(false);
     expect(routeStopStatusLabel('в пути 18 мин')).toBe('в пути 18 мин');
+  });
+
+  it('cuts long display names at the end so they cannot cover the km suffix', () => {
+    expect(truncateEnd('Алексей Соколов')).toBe('Алексей Соколов');
+    expect(truncateEnd('Бригада Мельниково')).toBe('Бригада Мельнико…');
+    expect(truncateEnd('Бригада Восточная 7')).toBe('Бригада Восточна…');
+    expect(truncateEnd('Бригада Восточная 7').length).toBe(ENGINEER_NAME_MAX + 1);
+    expect(truncateEnd('  Ольга Белова  ')).toBe('Ольга Белова');
   });
 
   it('filters engineers by a case-insensitive name fragment', () => {

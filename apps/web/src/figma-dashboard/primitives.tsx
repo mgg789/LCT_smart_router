@@ -30,14 +30,15 @@ type FigmaTextProps = {
   children: ReactNode;
   className?: string;
   style?: CSSProperties;
+  title?: string;
 };
 
 /**
  * Applies Figma's cap-height text box so absolute `top` values land on the mockup.
  */
-export function FigmaText({ children, className, style }: FigmaTextProps) {
+export function FigmaText({ children, className, style, title }: FigmaTextProps) {
   return (
-    <span className={`figma-text block ${className ?? ''}`} style={style}>
+    <span className={`figma-text block ${className ?? ''}`} style={style} title={title}>
       {children}
     </span>
   );
