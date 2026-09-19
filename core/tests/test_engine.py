@@ -15,6 +15,10 @@ SETTINGS = SearchSettings(
 )
 
 
+def test_default_completion_window_grace_is_ten_minutes():
+    assert SearchSettings().window_lateness_tolerance_sec == 600
+
+
 def changed(snapshot, edit):
     data = snapshot.model_dump()
     edit(data)
@@ -261,7 +265,7 @@ def test_deterministic_golden(snapshot, graph):
         "engineers_used": 1,
         "late_assigned_count": 0,
         "total_lateness_sec": 0,
-        "min_window_slack_sec": 23757,
+        "min_window_slack_sec": 23157,
         "max_workload_sec": 2043,
         "workload_spread_sec": 0,
     }

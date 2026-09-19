@@ -67,7 +67,7 @@ def build_plan_evidence(
             arrival, start, end = stop.arrival_at, stop.start_at, stop.end_at
             waiting = stop.start_at - stop.arrival_at
             start_offset = stop.start_at - request.window_start_at
-            end_margin = request.window_end_at - stop.start_at
+            end_margin = request.window_end_at - stop.end_at
             for prior in reversed(route.stops[:stop_index]):
                 if prior.kind == "job":
                     predecessor = prior.request_id

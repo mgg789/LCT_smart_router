@@ -46,7 +46,10 @@ class SearchSettings:
     lunches_enabled: bool = False
     traffic_enabled: bool = True
     equipment_enabled: bool = True
-    window_lateness_tolerance_sec: int = 0
+    # A customer visit is feasible when its *completion* is within this grace after
+    # the promised window.  LIVE uses ten minutes by default; callers may still make
+    # the Router stricter or relax it explicitly within the bounded product limit.
+    window_lateness_tolerance_sec: int = 600
     departure_lateness_tolerance_sec: int = 0
     task_start_lateness_tolerance_sec: int = 0
     travel_time_mode: TravelTimeMode = "graph_with_access_buffer"
@@ -408,8 +411,15 @@ def _search(
         ]
         routing.VehicleVar(index).SetValues([-1] + allowed)
         lower = max(0, request.window_start_at - origin)
+        # Time is the service start cumul.  Bound it by completion rather than arrival:
+        # scheduling a 30-minute job at 10:18 for a window ending 10:20 must not pass
+        # merely because its start fits.
         upper = min(
-            horizon, request.window_end_at + settings.window_lateness_tolerance_sec - origin
+            horizon,
+            request.window_end_at
+            + settings.window_lateness_tolerance_sec
+            - request.service_duration_sec
+            - origin,
         )
         if not allowed or lower > upper or request.service_duration_sec > horizon:
             routing.ActiveVar(index).SetValue(0)

@@ -95,7 +95,7 @@ class RouteEvaluator:
                 return None
             start = max(clock + road.duration_sec, request.window_start_at)
             clock = start + request.service_duration_sec
-            margin = request.window_end_at - start
+            margin = request.window_end_at - clock
             if margin < -self.tolerance or clock > self.ends[index]:
                 return None
             travel += road.duration_sec
@@ -113,7 +113,7 @@ class RouteEvaluator:
     def from_route(self, route: EngineerRoute) -> RouteState:
         """Convert canonical lunch/baseline routes to the same score representation."""
         stops = [s for s in route.stops if s.kind == "job"]
-        slacks = [self.requests[s.request_id].window_end_at - s.start_at for s in stops]
+        slacks = [self.requests[s.request_id].window_end_at - s.end_at for s in stops]
         m = route.metrics
         engineer = next(e for e in self.engineers if e.engineer_id == route.engineer_id)
         missed = int(

@@ -185,7 +185,10 @@ def schedule_steps(
         start = max(arrival, request.window_start_at)
         end = start + request.service_duration_sec
         tolerance = getattr(getattr(travel, "settings", None), "window_lateness_tolerance_sec", 0)
-        if start > request.window_end_at + tolerance or end > end_limit:
+        # The customer window covers the end of the normative work, not only arrival.
+        # This is intentionally the same predicate used by the OR-Tools seed and the
+        # fast neighbourhood evaluator.
+        if end > request.window_end_at + tolerance or end > end_limit:
             return None
         previous_stop = stops[-1].stop_id if stops else None
         if start > arrival:
@@ -429,7 +432,7 @@ def assigned_reason(
         start_at=None if stop is None else stop.start_at,
         window_start_at=request.window_start_at,
         window_end_at=request.window_end_at,
-        window_end_margin_sec=None if stop is None else request.window_end_at - stop.start_at,
+        window_end_margin_sec=None if stop is None else request.window_end_at - stop.end_at,
         window_start_offset_sec=None if stop is None else stop.start_at - request.window_start_at,
         assigned_count=None if route is None else route.metrics.assigned_count,
         service_duration_sec=request.service_duration_sec,
@@ -475,7 +478,7 @@ def assemble_plan(
     totals["distance_km"] = sum(round(r.metrics.distance_km * 1000) for r in routes) / 1000
     windows = {request.request_id: request.window_end_at for request in snapshot.requests}
     slacks = [
-        windows[stop.request_id] - stop.start_at
+        windows[stop.request_id] - stop.end_at
         for route in routes
         for stop in route.stops
         if stop.kind == "job"
