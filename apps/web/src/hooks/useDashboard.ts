@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DashboardApiError,
+  createDispatcherEngineer,
+  createDispatcherRequest,
   importOfficialDataset,
   loadDashboardSnapshot,
   loadPolicyComparison,
@@ -104,6 +106,7 @@ export function useDashboard() {
   const [rebuilding, setRebuilding] = useState(false);
   const [availabilityPendingId, setAvailabilityPendingId] = useState<string | null>(null);
   const [uploadingData, setUploadingData] = useState(false);
+  const [creatingEntity, setCreatingEntity] = useState(false);
   const [pendingDelta, setPendingDelta] = useState<PlanDelta | null>(null);
   const [baseline, setBaseline] = useState<RoutingBaseline | null>(null);
   const [policyComparison, setPolicyComparison] = useState<PolicyComparisonResponse | null>(null);
@@ -792,6 +795,55 @@ export function useDashboard() {
     }
   }, [invalidateAsyncReads, pushEvent, token, uploadingData, reportFailure, setSnapshot]);
 
+  const createRequest = useCallback(
+    async (input: {
+      workType: string;
+      addressText: string;
+      windowStartAt: number;
+      windowEndAt: number;
+    }) => {
+      if (!token) return;
+      setCreatingEntity(true);
+      try {
+        const created = await createDispatcherRequest(token, input);
+        const next = await loadDashboardSnapshot(token);
+        setSnapshot(next);
+        pushEvent(`Создана заявка ${created.request.id}`);
+      } finally {
+        setCreatingEntity(false);
+      }
+    },
+    [pushEvent, setSnapshot, token],
+  );
+
+  const createEngineer = useCallback(
+    async (input: {
+      displayName: string;
+      skills: Array<'local' | 'connection' | 'emergency'>;
+      transportType: 'car' | 'walk' | 'bike' | 'transit';
+      region: string;
+      email: string | null;
+    }) => {
+      if (!token) return;
+      if (!input.email) {
+        throw new Error('Живой API требует почту при создании инженера.');
+      }
+      setCreatingEntity(true);
+      try {
+        const created = await createDispatcherEngineer(token, {
+          ...input,
+          email: input.email,
+        });
+        const next = await loadDashboardSnapshot(token);
+        setSnapshot(next);
+        pushEvent(`Добавлен инженер ${created.engineer.id}`);
+      } finally {
+        setCreatingEntity(false);
+      }
+    },
+    [pushEvent, setSnapshot, token],
+  );
+
   return {
     authenticated: token !== null || source === 'demo',
     source,
@@ -805,7 +857,7 @@ export function useDashboard() {
     leaveDemo,
     demoScenarios,
     writesDisabled: source !== 'live' || loading || operationWarning !== null,
-    busy: rebuilding || uploadingData,
+    busy: rebuilding || uploadingData || creatingEntity,
     isDemo: source === 'demo',
     loading,
     error,
@@ -821,6 +873,7 @@ export function useDashboard() {
     rebuilding,
     availabilityPendingId,
     uploadingData,
+    creatingEntity,
     pendingDelta,
     canRejectDelta: baseline !== null,
     policyComparison,
@@ -843,6 +896,8 @@ export function useDashboard() {
     updateEngineerAvailability,
     uploadDataset,
     importOfficialTzDataset,
+    createRequest,
+    createEngineer,
   };
 }
 

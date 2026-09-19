@@ -1,10 +1,13 @@
 /**
- * Local copies of Figma MAIN exports (nodes 28:614 / 29:2552).
+ * Local copies of Figma MAIN / Welcome exports (28:614 / 29:2552 / 49:6785).
  * Paths are public URLs so the static mock page stays backend-free.
  */
 export const FIGMA_ASSETS = {
   logo: '/figma/logo-dark.png',
+  welcomeMark: '/figma/welcome-mark.png',
+  welcomeGlobe: '/figma/welcome-globe.png',
   iconPlus: '/figma/icon-plus.svg',
+  iconPlusWhite: '/figma/icon-plus-white.svg',
   iconUpload: '/figma/icon-upload.svg',
   navHome: '/figma/nav-home.svg',
   navRequests: '/figma/nav-requests.svg',

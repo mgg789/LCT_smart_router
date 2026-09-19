@@ -9,12 +9,16 @@ import { dismissToast, type ToastKind, type ToastNotification } from './toasts';
 const HEADER_LIFT = 16;
 const TITLE_TOP = 184 - HEADER_LIFT;
 /**
- * The blur zone is tucked 4px under the header pill (z above the list, below the
- * header) so its top edge sits over solid canvas — a flush start would leave a
- * 1px anti-aliasing seam at the scroller's clip line on the scaled artboard.
+ * List clip sits flush under the AI pill. A single masked backdrop-filter
+ * starting on that clip line leaves a 1–2px fully transparent hairline
+ * (Chromium filter crop + artboard scale). The fade is two layers: an
+ * unmasked solid canvas stitch that straddles the clip, then a blur that
+ * starts inside the stitch so its fringe never sits over the cards.
  */
-const LIST_FADE_TOP = 231;
-const LIST_FADE_HEIGHT = 76;
+const LIST_TOP = 231;
+const FADE_TUCK = 8;
+const STITCH_HEIGHT = 20;
+const FADE_HEIGHT = 76;
 const fadeSoft = { duration: 0.28, ease: [0.22, 1, 0.36, 1] as const };
 
 const NOTICE_ICON: Record<ToastKind, { src: string; width: number; height: number }> = {
@@ -89,7 +93,7 @@ export function AlertsView({
 
       <div
         className="absolute left-[180px] w-[1710px] overflow-y-auto [scrollbar-width:thin]"
-        style={{ top: LIST_FADE_TOP, bottom: 28 }}
+        style={{ top: LIST_TOP, bottom: 28 }}
       >
         <div className="pt-[64px]">
           {inbox.alerts.length === 0 && inbox.notices.length === 0 ? (
@@ -142,19 +146,26 @@ export function AlertsView({
       <div
         aria-hidden
         className="pointer-events-none absolute left-[180px] z-10 w-[1710px]"
-        style={{
-          top: LIST_FADE_TOP,
-          height: LIST_FADE_HEIGHT,
-          background:
-            'linear-gradient(to bottom, var(--color-figma-canvas) 0, var(--color-figma-canvas) 12px, rgba(241, 241, 241, 0) 62px)',
-          backdropFilter: 'blur(10px)',
-          WebkitBackdropFilter: 'blur(10px)',
-          maskImage:
-            'linear-gradient(to bottom, #000 0, #000 12px, transparent 62px)',
-          WebkitMaskImage:
-            'linear-gradient(to bottom, #000 0, #000 12px, transparent 62px)',
-        }}
-      />
+        style={{ top: LIST_TOP - FADE_TUCK, height: FADE_TUCK + FADE_HEIGHT }}
+      >
+        <div
+          className="absolute inset-x-0 top-0 bg-figma-canvas"
+          style={{ height: STITCH_HEIGHT }}
+        />
+        <div
+          className="absolute inset-x-0"
+          style={{
+            top: FADE_TUCK,
+            height: FADE_HEIGHT,
+            background:
+              'linear-gradient(to bottom, var(--color-figma-canvas) 0, var(--color-figma-canvas) 10px, rgba(241, 241, 241, 0) 100%)',
+            backdropFilter: 'blur(10px)',
+            WebkitBackdropFilter: 'blur(10px)',
+            maskImage: 'linear-gradient(to bottom, #000 0, #000 10px, transparent 100%)',
+            WebkitMaskImage: 'linear-gradient(to bottom, #000 0, #000 10px, transparent 100%)',
+          }}
+        />
+      </div>
     </section>
   );
 }

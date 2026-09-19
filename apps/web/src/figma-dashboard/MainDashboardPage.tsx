@@ -36,8 +36,12 @@ import {
   requestUrgency,
   rightPanelMode,
 } from './fromSnapshot';
+import { AddEntityModal } from './AddEntityModal';
+import { useArtboardScale } from './artboardScale';
 import { DataUploadModal } from './DataUploadModal';
 import { DispatcherAuthPage } from './DispatcherAuthPage';
+import { WelcomeScreen } from './WelcomeScreen';
+import { hasStartedWorkDay, markWorkDayStarted, moscowWorkDate } from './welcomeDay';
 import { PolicyComparisonView } from './PolicyComparisonView';
 import { AlertsView } from './AlertsView';
 import { RequestDetailView } from './RequestDetailView';
@@ -82,6 +86,10 @@ const SEARCH_OPEN_WIDTH = 351;
 const HEADER_LIFT = 16;
 const POLICY_LEFT = 1329;
 const POLICY_TOP = 26 - HEADER_LIFT;
+const ADD_BUTTON_SIZE = 43;
+const ADD_BUTTON_GAP = 16;
+const ADD_BUTTON_LEFT = POLICY_LEFT - ADD_BUTTON_GAP - ADD_BUTTON_SIZE;
+const ADD_BUTTON_TOP = POLICY_TOP + (51 - ADD_BUTTON_SIZE) / 2;
 const POLICY_OPEN_HEIGHT = 497;
 const NOTIF_PANEL_LEFT = 1407;
 const NOTIF_PANEL_TOP = 26 - HEADER_LIFT;
@@ -120,8 +128,22 @@ export function MainDashboardPage() {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [regionOpen, setRegionOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [welcomeOpen, setWelcomeOpen] = useState(
+    () => !hasStartedWorkDay(window.localStorage, moscowWorkDate()),
+  );
   const [openedRequestId, setOpenedRequestId] = useState<string | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<RegionSelection>(ALL_REGIONS);
+
+  useEffect(() => {
+    const syncWelcome = () => {
+      if (!hasStartedWorkDay(window.localStorage, moscowWorkDate())) {
+        setWelcomeOpen(true);
+      }
+    };
+    const timer = window.setInterval(syncWelcome, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const visibleSnapshot = useMemo(
     () => (dash.snapshot ? filterSnapshotByRegion(dash.snapshot, selectedRegion) : null),
@@ -249,6 +271,10 @@ export function MainDashboardPage() {
         if (!dash.uploadingData) setUploadOpen(false);
         return;
       }
+      if (addOpen) {
+        if (!dash.creatingEntity) setAddOpen(false);
+        return;
+      }
       if (searchOpen) {
         setSearchOpen(false);
         setSearchQuery('');
@@ -274,7 +300,7 @@ export function MainDashboardPage() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [dash, notifOpen, policyOpen, regionOpen, searchOpen, showRightPanel, uploadOpen, userMenuOpen]);
+  }, [addOpen, dash, notifOpen, policyOpen, regionOpen, searchOpen, showRightPanel, uploadOpen, userMenuOpen]);
 
   const scale = useArtboardScale();
   const motionOn = !reduceMotion;
@@ -285,6 +311,19 @@ export function MainDashboardPage() {
         submitting={dash.loading}
         onSession={dash.acceptSession}
         onPassword={dash.signIn}
+      />
+    );
+  }
+
+  if (welcomeOpen) {
+    return (
+      <WelcomeScreen
+        requestCount={dash.snapshot ? dash.snapshot.requests.length : null}
+        motionOn={motionOn}
+        onStart={() => {
+          markWorkDayStarted(window.localStorage, moscowWorkDate());
+          setWelcomeOpen(false);
+        }}
       />
     );
   }
@@ -331,6 +370,28 @@ export function MainDashboardPage() {
             setUploadOpen(true);
           }}
         />
+        <AddEntityButton
+          motionOn={motionOn}
+          onOpen={() => {
+            setPolicyOpen(false);
+            setUserMenuOpen(false);
+            setNotifOpen(false);
+            setUploadOpen(false);
+            setAddOpen(true);
+          }}
+        />
+        <AddEntityModal
+          open={addOpen}
+          snapshot={dash.snapshot}
+          motionOn={motionOn}
+          live={dash.source === 'live'}
+          submitting={dash.creatingEntity}
+          onClose={() => {
+            if (!dash.creatingEntity) setAddOpen(false);
+          }}
+          onCreateRequest={dash.createRequest}
+          onCreateEngineer={dash.createEngineer}
+        />
         <PolicyControl
           open={policyOpen}
           policyLabel={policyTitle}
@@ -341,6 +402,7 @@ export function MainDashboardPage() {
           motionOn={motionOn}
           onToggle={() => {
             setUserMenuOpen(false);
+            setAddOpen(false);
             setPolicyOpen((value) => !value);
           }}
           onSelect={applyPolicy}
@@ -532,25 +594,6 @@ export function MainDashboardPage() {
       </div>
     </div>
   );
-}
-
-/**
- * Fits the 1920×1080 mockup into the viewport without changing its internal layout.
- * At exactly 1920×1080 the scale is 1, so browser screenshots stay pixel-identical.
- */
-function useArtboardScale(): number {
-  const [scale, setScale] = useState(1);
-
-  useEffect(() => {
-    const update = () => {
-      setScale(Math.min(window.innerWidth / FIGMA_ARTBOARD.width, window.innerHeight / FIGMA_ARTBOARD.height));
-    };
-    update();
-    window.addEventListener('resize', update);
-    return () => window.removeEventListener('resize', update);
-  }, []);
-
-  return scale;
 }
 
 function SidebarNav({
@@ -760,6 +803,31 @@ function NotificationBadge({ count, tone }: { count: number; tone: NotificationT
     >
       {label}
     </span>
+  );
+}
+
+/**
+ * Dark plus in the MAIN header, left of the policy chip. Opens the add-entity dialog.
+ */
+function AddEntityButton({ motionOn, onOpen }: { motionOn: boolean; onOpen: () => void }) {
+  return (
+    <motion.button
+      type="button"
+      aria-label="Добавить"
+      onClick={onOpen}
+      className="absolute z-50 flex items-center justify-center rounded-full bg-figma-ink"
+      style={{
+        left: ADD_BUTTON_LEFT,
+        top: ADD_BUTTON_TOP,
+        width: ADD_BUTTON_SIZE,
+        height: ADD_BUTTON_SIZE,
+      }}
+      whileHover={motionOn ? { scale: 1.08 } : undefined}
+      whileTap={motionOn ? { scale: 0.96 } : undefined}
+      transition={{ duration: 0.16 }}
+    >
+      <FigmaIcon src={FIGMA_ASSETS.iconPlusWhite} alt="" width={22} height={22} />
+    </motion.button>
   );
 }
 

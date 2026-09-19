@@ -315,6 +315,12 @@ CAS по `expectedContextVersion`: устарели — 409 `VERSION_CONFLICT`, 
 **GET `/dispatch/alerts`** → `{alerts: [{id, code, severity, engineerIds, requestIds, reasons, restoreOption, createdAt, seenAt, resolvedAt}]}` (до 200, свежие сверху).
 **POST `/dispatch/alerts/:id/seen`** → `{seen: true}`. «Seen» ≠ «resolved»: состояние исчезнет, когда уйдёт причина.
 
+Нет контракта на создание: диспетчерская модалка «Добавить → Алёрт» пишет
+только в локальный инбокс. Также нет `GET/POST /dispatch/depots` и
+`POST /dispatch/regions` — офисы и новые регионы из той же модалки живут
+в сессии фронта, пока их не появят в API. `POST /dispatch/engineers`
+сейчас требует `email`; форма считает почту необязательной.
+
 ### 6.7 Данные: импорт, догрузка, сброс
 
 **GET `/dispatch/data/state`** →

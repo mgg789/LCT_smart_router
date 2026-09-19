@@ -663,6 +663,65 @@ export function importOfficialDataset(token: string): Promise<OfficialImportSumm
   });
 }
 
+const createdRequestSchema = z.object({ request: z.object({ id: z.string() }).passthrough() });
+const createdEngineerSchema = z.object({ engineer: z.object({ id: z.string() }).passthrough() });
+
+/** Placeholder client for dispatcher-created requests — the form does not collect one. */
+export const DISPATCH_CREATED_CLIENT_EMAIL = 'dispatcher.created@lct.local';
+
+/**
+ * Creates a submitted request from the dispatcher add-entity dialog.
+ */
+export function createDispatcherRequest(
+  token: string,
+  input: {
+    workType: string;
+    addressText: string;
+    windowStartAt: number;
+    windowEndAt: number;
+  },
+): Promise<{ request: { id: string } }> {
+  return requestJson('/api/v1/dispatch/requests', createdRequestSchema, token, {
+    method: 'POST',
+    body: JSON.stringify({
+      operationId: crypto.randomUUID(),
+      clientEmail: DISPATCH_CREATED_CLIENT_EMAIL,
+      contactName: 'Клиент',
+      addressText: input.addressText,
+      workType: input.workType,
+      windowStartAt: input.windowStartAt,
+      windowEndAt: input.windowEndAt,
+      urgent: false,
+    }),
+  });
+}
+
+/**
+ * Creates an engineer profile. The live contract requires email at creation.
+ */
+export function createDispatcherEngineer(
+  token: string,
+  input: {
+    displayName: string;
+    skills: readonly string[];
+    transportType: 'car' | 'walk' | 'bike' | 'transit';
+    region: string;
+    email: string;
+  },
+): Promise<{ engineer: { id: string } }> {
+  return requestJson('/api/v1/dispatch/engineers', createdEngineerSchema, token, {
+    method: 'POST',
+    body: JSON.stringify({
+      operationId: crypto.randomUUID(),
+      email: input.email,
+      displayName: input.displayName,
+      skills: input.skills,
+      transportType: input.transportType,
+      region: input.region,
+    }),
+  });
+}
+
 function normalizeAssignment(raw: z.infer<typeof rawAssignmentSchema>): PlanAssignmentView {
   return {
     requestId: raw.requestId,
