@@ -15,6 +15,8 @@ export function transportTitle(transport: TransportType): string {
 }
 
 export interface ProfileStop {
+  /** Position in the plan; stable, unlike an array index. */
+  sequence: number;
   requestId: string | null;
   title: string;
   startAt: number;
@@ -66,6 +68,7 @@ export function buildEngineerProfile(
   const stops: ProfileStop[] = (route?.stops ?? []).map((stop) => {
     const request = stop.requestId ? byId.get(stop.requestId) : undefined;
     return {
+      sequence: stop.sequence,
       requestId: stop.requestId,
       title: request?.addressText ?? (stop.kind === 'lunch' ? 'Обед' : 'Ожидание'),
       startAt: stop.startAt,

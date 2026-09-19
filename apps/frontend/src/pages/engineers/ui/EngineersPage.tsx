@@ -191,7 +191,7 @@ export function EngineersPage() {
           <h3 className="font-display text-[24px] text-ink">План дня бригады</h3>
           <ol className="mt-4 flex flex-wrap gap-x-10 gap-y-4">
             {profile.stops.map((stop, index) => (
-              <li className="min-w-[220px]" key={`${index}-${stop.requestId ?? stop.startAt}`}>
+              <li className="min-w-[220px]" key={stop.sequence}>
                 <span className="flex items-center gap-3">
                   <span
                     className={cn(
