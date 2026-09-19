@@ -57,7 +57,9 @@ export function RouteTimeline({
 
       {!route ? (
         <p className="mt-6 text-[15px] text-ink/55">
-          У этой бригады нет маршрута в применённом плане.
+          {engineerName
+            ? 'У этой бригады нет маршрута в применённом плане.'
+            : 'Выберите бригаду слева, чтобы увидеть её маршрут.'}
         </p>
       ) : (
         <ol className="mt-7 flex overflow-x-auto pb-2">

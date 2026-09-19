@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { EngineerView } from '@/entities/engineer';
 import type { PlanView } from '@/entities/plan';
-import type { RequestView } from '@/entities/request';
 import { buildEngineerRows } from './engineerRows';
 
 function engineer(id: string, name: string): EngineerView {
@@ -40,45 +39,6 @@ function engineer(id: string, name: string): EngineerView {
   };
 }
 
-function request(id: string, lifecycle: RequestView['lifecycle']): RequestView {
-  return {
-    id,
-    version: 1,
-    lifecycle,
-    assignmentState: 'assigned',
-    addressText: 'Москва',
-    region: 'east',
-    lat: 55.7,
-    lon: 37.7,
-    needsGeocoding: false,
-    geocodeQuality: null,
-    workType: 'convergence',
-    workTypeTitle: 'Конвергенция абонента',
-    requiredSkill: 'connection',
-    requiredEquipment: null,
-    normProfileCode: null,
-    normativeTravelDurationSec: null,
-    technicalDurationSec: null,
-    documentationDurationSec: null,
-    serviceDurationSec: null,
-    actualDurationSec: null,
-    durationVarianceSec: null,
-    windowStartAt: 1_789_865_812,
-    windowEndAt: 1_789_873_012,
-    priority: 'normal',
-    contactName: null,
-    problemText: null,
-    createdAt: 1,
-    submittedAt: 1,
-    startedAt: null,
-    expectedCompletionAt: null,
-    continuationAvailableAt: null,
-    overrunDetectedAt: null,
-    completedAt: null,
-    cancelledAt: null,
-  };
-}
-
 const PLAN: PlanView = {
   revision: 1,
   origin: 'auto',
@@ -110,32 +70,34 @@ const PLAN: PlanView = {
 };
 
 describe('buildEngineerRows', () => {
-  it('counts progress from the requests, not from the plan', () => {
-    const rows = buildEngineerRows([engineer('e1', 'Бригада Соколов')], PLAN, [
-      request('r1', 'completed'),
-      request('r2', 'completed'),
-      request('r3', 'in_progress'),
-    ]);
+  it('reports the work still ahead of the crew', () => {
+    const rows = buildEngineerRows([engineer('e1', 'Бригада Соколов')], PLAN);
 
-    expect(rows[0]).toMatchObject({ assignedCount: 3, doneCount: 2, distanceKm: 16.4 });
+    expect(rows[0]).toMatchObject({ assignedCount: 3, distanceKm: 16.4 });
   });
 
-  it('never blames a crew for an unassigned request', () => {
-    const rows = buildEngineerRows([engineer('e1', 'Соколов')], PLAN, [request('r4', 'submitted')]);
+  it('never counts an unassigned request against a crew', () => {
+    const rows = buildEngineerRows([engineer('e1', 'Соколов')], PLAN);
 
     expect(rows[0]?.assignedCount).toBe(3);
-    expect(rows[0]?.doneCount).toBe(0);
   });
 
   it('shows a crew with no route instead of hiding it', () => {
-    const rows = buildEngineerRows([engineer('e9', 'Бригада Попов')], PLAN, []);
+    const rows = buildEngineerRows([engineer('e9', 'Бригада Попов')], PLAN);
 
     expect(rows[0]).toMatchObject({ name: 'Бригада Попов', distanceKm: null, assignedCount: 0 });
   });
 
   it('survives a day with no applied plan at all', () => {
-    const rows = buildEngineerRows([engineer('e1', 'Соколов')], null, [request('r1', 'completed')]);
+    const rows = buildEngineerRows([engineer('e1', 'Соколов')], null);
 
-    expect(rows[0]).toMatchObject({ distanceKm: null, assignedCount: 0, doneCount: 0 });
+    expect(rows[0]).toMatchObject({ distanceKm: null, assignedCount: 0 });
+  });
+
+  it('carries the shift so the card can show it', () => {
+    const rows = buildEngineerRows([engineer('e1', 'Соколов')], PLAN);
+
+    expect(rows[0]?.shiftStartAt).toBe(1_789_829_812);
+    expect(rows[0]?.availability).toBe('online');
   });
 });

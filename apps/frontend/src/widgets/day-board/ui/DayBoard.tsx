@@ -27,8 +27,6 @@ function EngineerCard({
   selected: boolean;
   onSelect: () => void;
 }) {
-  const progress = row.assignedCount > 0 ? row.doneCount / row.assignedCount : 0;
-
   return (
     <button
       aria-pressed={selected}
@@ -53,19 +51,13 @@ function EngineerCard({
         {row.availability === 'offline' ? 'не на смене' : 'в работе'} · {row.assignedCount} заявок
       </p>
 
-      <div className="mt-3 h-[6px] w-full overflow-hidden rounded-full bg-muted">
-        <div className="h-full rounded-full bg-ink" style={{ width: `${progress * 100}%` }} />
-      </div>
-
-      <div className="mt-2 flex items-center justify-between text-[14px] text-ink/55">
+      <div className="mt-3 flex items-center justify-between text-[14px] text-ink/55">
         <span>
           {row.shiftStartAt !== null && row.shiftEndAt !== null
             ? formatRange(row.shiftStartAt, row.shiftEndAt)
             : 'смена не задана'}
         </span>
-        <span>
-          выполнено {row.doneCount}/{row.assignedCount}
-        </span>
+        <span>в маршруте {row.assignedCount}</span>
       </div>
     </button>
   );
@@ -88,10 +80,7 @@ export function DayBoard({
 }: DayBoardProps) {
   const [query, setQuery] = useState('');
 
-  const rows = useMemo(
-    () => buildEngineerRows(engineers, plan, requests),
-    [engineers, plan, requests],
-  );
+  const rows = useMemo(() => buildEngineerRows(engineers, plan), [engineers, plan]);
   const visibleRows = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return rows;
@@ -100,6 +89,9 @@ export function DayBoard({
 
   const dayRequests = activeRequests(requests);
   const unassigned = unassignedRequests(requests);
+  // Counted from the requests, not the plan: finished work leaves the plan.
+  const done = dayRequests.filter((request) => request.lifecycle === 'completed');
+  const running = dayRequests.filter((request) => request.lifecycle === 'in_progress');
 
   return (
     <section // 411px is the drawn width; below the 1920 the mockup assumes, the column
@@ -108,7 +100,7 @@ export function DayBoard({
     >
       <h2 className="font-display text-[24px] text-ink">{dayRequests.length} заявки</h2>
       <p className="mt-1 text-[14px] text-ink/55">
-        {unassigned.length} без назначения
+        {done.length} выполнено · {running.length} в работе · {unassigned.length} без назначения
         {plan ? ` · план от ${formatTime(plan.planAsOf)}` : ' · план ещё не применён'}
       </p>
 

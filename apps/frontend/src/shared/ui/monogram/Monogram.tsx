@@ -4,8 +4,11 @@ export interface MonogramProps {
   /** Full name, or an e-mail when that is all the API gives. */
   name: string;
   size?: number;
-  /** The profile screen wants the photo's rounded square, not the avatar circle. */
-  shape?: 'circle' | 'tile';
+  /**
+   * `circle` for avatars, `tile` for a rounded square, `fill` when the caller
+   * sizes the block itself — the profile card bleeds the portrait to its edges.
+   */
+  shape?: 'circle' | 'tile' | 'fill';
   className?: string;
 }
 
@@ -27,10 +30,15 @@ export function Monogram({ name, size = 48, shape = 'circle', className }: Monog
       aria-hidden
       className={cn(
         'inline-flex shrink-0 items-center justify-center bg-ink font-semibold text-white',
-        shape === 'circle' ? 'rounded-full' : 'rounded-[20px]',
+        shape === 'circle' && 'rounded-full',
+        shape === 'tile' && 'rounded-[20px]',
         className,
       )}
-      style={{ width: size, height: size, fontSize: Math.round(size * 0.36) }}
+      style={
+        shape === 'fill'
+          ? { fontSize: Math.round(size * 0.36) }
+          : { width: size, height: size, fontSize: Math.round(size * 0.36) }
+      }
     >
       {initialsOf(name)}
     </span>

@@ -25,9 +25,10 @@ export function PlanPage() {
     [requests],
   );
 
-  // Nothing is chosen for the dispatcher: the first crew of the plan is simply
-  // the one whose route is on screen until they pick another.
-  const activeEngineerId = selectedEngineerId ?? plan?.routes[0]?.engineerId ?? null;
+  // Nothing is chosen for the dispatcher. The day opens showing every request and
+  // no route; a crew becomes active only when it is picked, and picking it again
+  // clears it.
+  const activeEngineerId = selectedEngineerId;
   const activeEngineer = engineers.find((engineer) => engineer.id === activeEngineerId) ?? null;
   const activeRoute = plan?.routes.find((route) => route.engineerId === activeEngineerId) ?? null;
 
@@ -67,7 +68,9 @@ export function PlanPage() {
         <div className="mt-[26px] flex min-h-0 flex-1 gap-8">
           <DayBoard
             engineers={engineers}
-            onSelectEngineer={(id) => setSelectedEngineerId(id)}
+            onSelectEngineer={(id) =>
+              setSelectedEngineerId((current) => (current === id ? null : id))
+            }
             onShowUnassigned={showFirstUnassigned}
             plan={plan}
             requests={requests}
