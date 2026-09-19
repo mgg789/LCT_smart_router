@@ -48,7 +48,9 @@ def test_dynamic_search_never_uses_planning_time_quotes(snapshot, graph):
 
 
 @pytest.mark.parametrize("minutes,assigned", [(0, 0), (5, 0), (10, 0), (15, 0), (20, 1)])
-def test_window_lateness_is_explicit_and_does_not_extend_shifts(snapshot, graph, minutes, assigned):
+def test_regular_window_lateness_is_explicit_and_does_not_extend_shifts(
+    snapshot, graph, minutes, assigned
+):
     start = snapshot.planning_as_of
     request = snapshot.requests[0].model_copy(
         update={
@@ -57,8 +59,25 @@ def test_window_lateness_is_explicit_and_does_not_extend_shifts(snapshot, graph,
             "window_end_at": start - 600,
         }
     )
-    task = snapshot.model_copy(update={"requests": [request]})
-    settings = SearchSettings(access_buffer_sec=0, window_lateness_tolerance_sec=minutes * 60)
+    engineer = snapshot.engineers[0].model_copy(
+        update={
+            "lunch": snapshot.engineers[0].lunch.model_copy(
+                update={
+                    "enabled": True,
+                    "required": True,
+                    "duration_sec": 300,
+                    "window_start_at": start + 1000,
+                    "window_end_at": start + 1400,
+                }
+            )
+        }
+    )
+    task = snapshot.model_copy(update={"requests": [request], "engineers": [engineer]})
+    settings = SearchSettings(
+        access_buffer_sec=0,
+        lunches_enabled=True,
+        window_lateness_tolerance_sec=minutes * 60,
+    )
     result = solve(task, GraphTravel(graph), settings)
     for plan in (result.main, result.baseline):
         assert plan.summary.assigned_count == assigned

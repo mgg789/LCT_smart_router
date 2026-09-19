@@ -5,7 +5,8 @@ from core.contracts import RouterTaskSnapshot
 from core.engine import SearchSettings, solve
 from core.evidence import build_plan_evidence
 from core.geo import GraphTravel, configure_travel
-from core.schedule import baseline, score, validate_plan
+from core.route_search import RouteEvaluator
+from core.schedule import baseline, schedule_steps, score, validate_plan
 
 SETTINGS = SearchSettings(
     time_limit_ms=1200,
@@ -64,13 +65,107 @@ def test_travel_mode_applies_to_baseline_and_main(snapshot, graph):
     )
 
 
-def test_final_service_must_finish_in_shift(snapshot, graph):
-    task = changed(
-        snapshot, lambda d: d["engineers"][0].update(shift_end_at=d["planning_as_of"] + 650)
+def terminal_overtime_task(snapshot, *, offset_sec: int = 0, horizon_at_shift: bool = False):
+    """Make one stationary job finish exactly at terminal shift overtime boundary."""
+    start = snapshot.planning_as_of
+    engineer = snapshot.engineers[0].model_copy(update={"shift_end_at": start + 600})
+    request = snapshot.requests[0].model_copy(
+        update={
+            "location": engineer.start_location,
+            "window_start_at": start + 1200 + offset_sec,
+            "window_end_at": start + 10_000,
+            "service_duration_sec": 600,
+        }
     )
+    update = {"engineers": [engineer], "requests": [request]}
+    if horizon_at_shift:
+        update["horizon_end_at"] = engineer.shift_end_at
+    return snapshot.model_copy(update=update)
+
+
+def test_terminal_service_may_overrun_shift_by_twenty_minutes(snapshot, graph):
+    task = terminal_overtime_task(snapshot)
+    first = solve(task, GraphTravel(graph), SETTINGS)
+    second = solve(task, GraphTravel(graph), SETTINGS)
+    stop = next(stop for route in first.main.routes for stop in route.stops if stop.kind == "job")
+    assert first.main.summary.assigned_count == 1
+    assert stop.end_at == task.engineers[0].shift_end_at + 1200
+    assert first.main == second.main
+
+
+def test_terminal_service_rejects_shift_overtime_beyond_twenty_minutes(snapshot, graph):
+    task = terminal_overtime_task(snapshot, offset_sec=1)
     result = solve(task, GraphTravel(graph), SETTINGS)
     assert result.main.summary.assigned_count == 0
-    assert result.main.is_usable
+
+
+def test_terminal_overtime_extends_live_horizon_boundary(snapshot, graph):
+    task = terminal_overtime_task(snapshot, horizon_at_shift=True)
+    result = solve(task, GraphTravel(graph), SETTINGS)
+    stop = next(stop for route in result.main.routes for stop in route.stops if stop.kind == "job")
+    assert stop.start_at > task.horizon_end_at
+    assert stop.end_at == task.horizon_end_at + 1200
+
+
+def test_late_engineer_may_receive_only_terminal_recovery_visit(snapshot, graph):
+    task = terminal_overtime_task(snapshot)
+    task = task.model_copy(
+        update={"planning_as_of": task.engineers[0].shift_end_at + 300}
+    )
+    result = solve(task, GraphTravel(graph), SETTINGS)
+    stop = next(stop for route in result.main.routes for stop in route.stops if stop.kind == "job")
+    assert stop.start_at >= task.planning_as_of
+    assert stop.end_at == task.engineers[0].shift_end_at + 1200
+
+
+def test_intermediate_service_cannot_use_terminal_shift_overtime(snapshot, graph):
+    task = terminal_overtime_task(snapshot)
+    second = task.requests[0].model_copy(
+        update={
+            "request_id": "job-terminal",
+            "arrival_order": 99,
+            "window_start_at": task.planning_as_of + 1801,
+        }
+    )
+    task = task.model_copy(update={"requests": [task.requests[0], second]})
+    travel = GraphTravel(graph)
+    assert schedule_steps(
+        task, task.engineers[0], [task.requests[0].request_id, second.request_id], travel
+    ) is None
+    assert RouteEvaluator(task, travel).evaluate(0, (task.requests[0].request_id, second.request_id)) is None
+    result = solve(task, travel, SETTINGS)
+    assert result.main.summary.assigned_count == 1
+
+
+def test_terminal_service_may_finish_twenty_minutes_after_customer_window(snapshot, graph):
+    task = terminal_overtime_task(snapshot)
+    request = task.requests[0].model_copy(
+        update={
+            "window_start_at": task.planning_as_of,
+            "window_end_at": task.planning_as_of + 600,
+            "service_duration_sec": 1800,
+        }
+    )
+    task = task.model_copy(update={"requests": [request]})
+    result = solve(task, GraphTravel(graph), SETTINGS)
+    assert result.main.summary.assigned_count == 1
+
+
+def test_terminal_service_rejects_customer_window_lateness_beyond_twenty_minutes(snapshot, graph):
+    task = terminal_overtime_task(snapshot)
+    engineer = task.engineers[0].model_copy(
+        update={"shift_end_at": task.planning_as_of + 1000}
+    )
+    request = task.requests[0].model_copy(
+        update={
+            "window_start_at": task.planning_as_of,
+            "window_end_at": task.planning_as_of + 600,
+            "service_duration_sec": 1801,
+        }
+    )
+    task = task.model_copy(update={"engineers": [engineer], "requests": [request]})
+    result = solve(task, GraphTravel(graph), SETTINGS)
+    assert result.main.summary.assigned_count == 0
 
 
 @pytest.mark.parametrize(
@@ -290,7 +385,7 @@ def test_urgent_dominates_ordinary_coverage(snapshot, graph):
     task = changed(snapshot, edit)
     result = solve(task, GraphTravel(graph), SETTINGS)
     assert result.main.summary.urgent_assigned_count == 1
-    assert result.main.summary.assigned_count == 1
+    assert result.main.summary.assigned_count == 2
     assert result.baseline.summary.urgent_assigned_count == 0
     assert result.baseline.summary.assigned_count == 2
 
@@ -307,7 +402,7 @@ def test_revalidate_cannot_silently_drop_previous_assignment(snapshot, graph):
         access_buffer_sec=0,
     )
     first = solve(task, travel, settings)
-    assert first.main.summary.assigned_count == 1
+    assert first.main.summary.assigned_count == 2
     late = changed(
         task, lambda d: d["engineers"][0].update(available_from=d["planning_as_of"] + 661)
     )

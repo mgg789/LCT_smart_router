@@ -25,14 +25,19 @@ from core.geo import configure_travel, routing_context_version
 from core.policy import Criterion, PolicySpec, compile_policy, criterion_values
 from core.route_search import improve_routes
 from core.schedule import (
+    TERMINAL_SHIFT_OVERTIME_SEC,
+    TERMINAL_WINDOW_LATENESS_TOLERANCE_SEC,
     TravelProvider,
     assemble_plan,
     baseline,
     eligible,
     fixed_order,
+    job_completion_limit,
     release_at,
     schedule_steps,
     score,
+    terminal_eligible,
+    terminal_release_at,
     validate_plan,
 )
 
@@ -261,6 +266,7 @@ def _search(
         return assemble_plan(snapshot, [])
     origin = snapshot.horizon_start_at
     horizon = snapshot.horizon_end_at - origin
+    time_horizon = horizon + TERMINAL_SHIFT_OVERTIME_SEC
     if horizon > 31 * 86400:
         raise ValueError("HORIZON_RANGE: v1 supports at most 31 days per snapshot")
     nodes: list[_Node] = []
@@ -346,6 +352,8 @@ def _search(
             return nodes[a].service if metric == "clock" else 0
         road = quote(a, b, e)
         if road is None:
+            if metric == "clock":
+                return time_horizon + 1
             return horizon + 1 if metric != "distance" else distance_bound + 1
         if metric == "distance":
             return road.distance_m
@@ -359,7 +367,9 @@ def _search(
             )
             for e in range(len(engineers))
         ]
-    routing.AddDimensionWithVehicleTransits(callbacks["clock"], horizon, horizon, False, "Time")
+    routing.AddDimensionWithVehicleTransits(
+        callbacks["clock"], time_horizon, time_horizon, False, "Time"
+    )
     routing.AddDimensionWithVehicleTransits(callbacks["travel"], 0, horizon, True, "Travel")
     routing.AddDimensionWithVehicleTransits(
         callbacks["distance"], 0, distance_bound, True, "Distance"
@@ -388,14 +398,15 @@ def _search(
         )
     time_dimension = routing.GetDimensionOrDie("Time")
     for e, engineer in enumerate(engineers):
-        release = release_at(snapshot, engineer)
+        release = release_at(snapshot, engineer) or terminal_release_at(snapshot, engineer)
         if release is None:
             time_dimension.CumulVar(routing.Start(e)).SetRange(0, 0)
             time_dimension.CumulVar(routing.End(e)).SetRange(0, 0)
         else:
             time_dimension.CumulVar(routing.Start(e)).SetRange(release - origin, release - origin)
             time_dimension.CumulVar(routing.End(e)).SetRange(
-                release - origin, min(engineer.shift_end_at, snapshot.horizon_end_at) - origin
+                release - origin,
+                job_completion_limit(snapshot, engineer, terminal=True) - origin,
             )
         routing.AddVariableMinimizedByFinalizer(time_dimension.CumulVar(routing.End(e)))
 
@@ -407,24 +418,61 @@ def _search(
     for request in snapshot.requests:
         index = manager.NodeToIndex(jobs[request.request_id])
         allowed = [
-            e for e, engineer in enumerate(engineers) if eligible(snapshot, engineer, request)
+            e
+            for e, engineer in enumerate(engineers)
+            if eligible(snapshot, engineer, request) or terminal_eligible(snapshot, engineer, request)
         ]
         routing.VehicleVar(index).SetValues([-1] + allowed)
         lower = max(0, request.window_start_at - origin)
         # Time is the service start cumul.  Bound it by completion rather than arrival:
         # scheduling a 30-minute job at 10:18 for a window ending 10:20 must not pass
         # merely because its start fits.
-        upper = min(
+        normal_upper = min(
             horizon,
             request.window_end_at
             + settings.window_lateness_tolerance_sec
             - request.service_duration_sec
             - origin,
         )
-        if not allowed or lower > upper or request.service_duration_sec > horizon:
+        terminal_upper = min(
+            time_horizon,
+            request.window_end_at
+            + max(
+                settings.window_lateness_tolerance_sec,
+                TERMINAL_WINDOW_LATENESS_TOLERANCE_SEC,
+            )
+            - request.service_duration_sec
+            - origin,
+        )
+        if not allowed or lower > terminal_upper or request.service_duration_sec > time_horizon:
             routing.ActiveVar(index).SetValue(0)
         else:
-            time_dimension.CumulVar(index).SetRange(lower, upper)
+            time_dimension.CumulVar(index).SetRange(lower, terminal_upper)
+            # The end cumul includes service at this node.  The extended shift
+            # cap applies only when this exact job is directly followed by the
+            # vehicle end, which also excludes a later lunch or another job.
+            for e, engineer in enumerate(engineers):
+                on_vehicle = solver.IsEqualCstVar(routing.VehicleVar(index), e)
+                next_is_end = solver.IsEqualCstVar(routing.NextVar(index), routing.End(e))
+                normal_limit = job_completion_limit(snapshot, engineer, terminal=False) - origin
+                normal_window_limit = min(normal_upper, horizon)
+                terminal_window_limit = terminal_upper
+                inactive_time_slack = max(
+                    time_horizon * 2, time_horizon - normal_window_limit
+                )
+                solver.Add(
+                    time_dimension.CumulVar(index)
+                    + request.service_duration_sec
+                    <= normal_limit
+                    + TERMINAL_SHIFT_OVERTIME_SEC * next_is_end
+                    + inactive_time_slack * (1 - on_vehicle)
+                )
+                solver.Add(
+                    time_dimension.CumulVar(index)
+                    <= normal_window_limit
+                    + (terminal_window_limit - normal_window_limit) * next_is_end
+                    + inactive_time_slack * (1 - on_vehicle)
+                )
             if stage == "window_start_delay":
                 time_dimension.SetCumulVarSoftUpperBound(index, lower, 1)
         penalty = coverage_weight + (urgent_weight if request.priority == "urgent" else 0)
