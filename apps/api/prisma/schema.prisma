@@ -550,6 +550,8 @@ model LiveWorkday {
   logicalStartAt   BigInt            @map("logical_start_at")
   logicalEndAt     BigInt            @map("logical_end_at")
   startedAtWallSec BigInt?           @map("started_at_wall_sec")
+  finishedAt       BigInt?           @map("finished_at")
+  completionReason String?           @map("completion_reason")
   speedDurationSec Int?              @map("speed_duration_sec")
   createdAt        BigInt            @map("created_at")
   updatedAt        BigInt            @map("updated_at")
@@ -575,6 +577,15 @@ model LiveEngineerState {
   technicalBreakStartedAt BigInt?              @map("technical_break_started_at")
   technicalBreakPlannedEndAt BigInt?           @map("technical_break_planned_end_at")
   technicalBreakOverdueAt BigInt?              @map("technical_break_overdue_at")
+  /// Last request vertex that the engineer explicitly or silently reached. It remains
+  /// visible after finish/cancellation until the next request is started.
+  routeAnchorRequestId    String?                @map("route_anchor_request_id")
+  routeAnchorReachedAt    BigInt?                @map("route_anchor_reached_at")
+  routeAnchorDepartedAt   BigInt?                @map("route_anchor_departed_at")
+  /// Coordinates of an entered automatic lunch. They outlive a remaining-day replan
+  /// that correctly removes the consumed lunch stop from Router input.
+  activeLunchLat          Float?                 @map("active_lunch_lat")
+  activeLunchLon          Float?                 @map("active_lunch_lon")
   createdAt             BigInt                 @map("created_at")
   updatedAt             BigInt                 @map("updated_at")
   version               Int                    @default(1)
@@ -584,6 +595,7 @@ model LiveEngineerState {
 
   @@unique([workdayId, engineerId])
   @@index([engineerId])
+  @@index([routeAnchorRequestId])
   @@map("live_engineer_states")
 }
 
@@ -599,6 +611,11 @@ model LiveRequestState {
   reportedEtaAt         BigInt?         @map("reported_eta_at")
   /// Original plan owner pinned by an explicit ETA while Router rebuilds the remainder.
   reservedEngineerId    String?         @map("reserved_engineer_id")
+  /// An infeasible ETA invalidates this engineer's current accepted route until a newer
+  /// plan revision arrives. The request itself remains available to every Router candidate.
+  replanPendingEngineerId String?        @map("replan_pending_engineer_id")
+  replanPendingPlanRevision Int?         @map("replan_pending_plan_revision")
+  replanRequestedAt      BigInt?         @map("replan_requested_at")
   problemKind           LiveProblemKind? @map("problem_kind")
   problemNote           String?         @map("problem_note")
   additionalDurationSec Int?            @map("additional_duration_sec")

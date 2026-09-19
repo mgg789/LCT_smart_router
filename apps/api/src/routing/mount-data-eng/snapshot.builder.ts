@@ -78,6 +78,10 @@ export class SnapshotBuilder {
     // removes that one stop from the free pool and restarts its owner at the known job
     // location once the reported arrival plus service time has elapsed.
     const reservations = await this.liveReservations(tx);
+    const liveAnchors = await this.liveRouteAnchors(
+      tx,
+      days.map((day) => day.engineerId),
+    );
     const equipmentByEngineer = await this.remainingEquipment(tx, days, horizon);
 
     const engineers: SnapshotEngineer[] = [];
@@ -114,6 +118,7 @@ export class SnapshotBuilder {
         execution,
         equipmentByEngineer.get(day.engineerId) ?? equipmentStockOf(day),
         reservations.get(day.engineerId) ?? null,
+        liveAnchors.get(day.engineerId) ?? null,
       );
       if (!projected) {
         engineersWithoutStartLocation += 1;
@@ -237,12 +242,21 @@ export class SnapshotBuilder {
     execution: Request | null,
     equipmentStock: { router: number; set_top_box: number; smart_speaker: number },
     reservation: { request: Request; etaAt: number } | null,
+    liveAnchor: { request: Request; availableFrom: number } | null,
   ): SnapshotEngineer | null {
     const activeExecution = execution?.lifecycle === 'in_progress' ? execution : null;
     const lat =
-      activeExecution?.lat ?? reservation?.request.lat ?? execution?.lat ?? engineer.homeLat;
+      activeExecution?.lat ??
+      reservation?.request.lat ??
+      liveAnchor?.request.lat ??
+      execution?.lat ??
+      engineer.homeLat;
     const lon =
-      activeExecution?.lon ?? reservation?.request.lon ?? execution?.lon ?? engineer.homeLon;
+      activeExecution?.lon ??
+      reservation?.request.lon ??
+      liveAnchor?.request.lon ??
+      execution?.lon ??
+      engineer.homeLon;
     if (lat === null || lon === null) {
       return null;
     }
@@ -265,7 +279,9 @@ export class SnapshotBuilder {
       activeExecution?.continuationAvailableAt ??
       (reservation
         ? BigInt(reservation.etaAt + reservation.request.serviceDurationSec)
-        : (execution?.continuationAvailableAt ?? null));
+        : liveAnchor
+          ? BigInt(liveAnchor.availableFrom)
+          : (execution?.continuationAvailableAt ?? null));
     const availableFrom = continuation === null ? shiftStart : Number(continuation);
 
     return {
@@ -315,6 +331,44 @@ export class SnapshotBuilder {
         const etaAt = state.reportedEtaAt ?? state.assumedStartedAt;
         if (etaAt !== null)
           result.set(state.reservedEngineerId, { request: state.request, etaAt: Number(etaAt) });
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Projects the last LIVE vertex reached in the running workday.
+   *
+   * A cancellation has no `finished` fact by design, but the engineer still departed
+   * from that request vertex. Keeping this separate from execution facts lets the next
+   * route start at the factual location without pretending that cancelled work finished.
+   */
+  private async liveRouteAnchors(
+    tx: Tx,
+    engineerIds: string[],
+  ): Promise<Map<string, { request: Request; availableFrom: number }>> {
+    if (engineerIds.length === 0) return new Map();
+    const states = await tx.liveEngineerState.findMany({
+      where: {
+        engineerId: { in: engineerIds },
+        routeAnchorRequestId: { not: null },
+        routeAnchorReachedAt: { not: null },
+        workday: { status: 'running' },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+    const requestIds = states.flatMap((state) =>
+      state.routeAnchorRequestId ? [state.routeAnchorRequestId] : [],
+    );
+    const requests = await tx.request.findMany({ where: { id: { in: requestIds } } });
+    const requestsById = new Map(requests.map((request) => [request.id, request]));
+    const result = new Map<string, { request: Request; availableFrom: number }>();
+    for (const state of states) {
+      if (result.has(state.engineerId) || !state.routeAnchorRequestId) continue;
+      const request = requestsById.get(state.routeAnchorRequestId);
+      const availableFrom = state.routeAnchorDepartedAt ?? state.routeAnchorReachedAt;
+      if (request && availableFrom !== null) {
+        result.set(state.engineerId, { request, availableFrom: Number(availableFrom) });
       }
     }
     return result;

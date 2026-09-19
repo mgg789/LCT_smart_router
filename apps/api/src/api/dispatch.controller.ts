@@ -578,6 +578,9 @@ export class DispatchController {
       // the intent first, then releases the sys transaction before this private HTTP call.
       () => this.router.updateTechnicalSettings(requested),
     );
+    // Router's switch only permits lunch nodes. Daily engineer conditions provide the
+    // actual lunch contract, including when a dispatcher enables it after LIVE started.
+    await this.live.synchronizeGlobalLunchSwitch(dto.lunchesEnabled);
     return outcome.result;
   }
 

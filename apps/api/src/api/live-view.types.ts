@@ -8,11 +8,39 @@ export interface LiveWorkdayView {
   readonly logicalStartAt: number;
   readonly logicalEndAt: number;
   readonly startedAtWallSec: number | null;
+  readonly finishedAt: number | null;
+  readonly completionReason: 'schedule_exhausted' | 'logical_end' | null;
   readonly liveNow: number;
   readonly speedDurationSec: number | null;
   readonly speedFactor: number;
   readonly engineerStartDeadlineAt: number;
   readonly requestCount: number;
+  readonly stats: LiveStatsView;
+}
+
+export interface LiveStatsView {
+  readonly completedCount: number;
+  readonly cancelledCount: number;
+  readonly assumedCompletedCount: number;
+  readonly problemCount: number;
+  readonly technicalBreakCount: number;
+}
+
+export interface LiveRoutePointView {
+  readonly kind: 'start' | 'job' | 'lunch';
+  readonly requestId: string | null;
+  readonly lat: number;
+  readonly lon: number;
+  readonly at: number;
+}
+
+/** Factual traversal projection; a route revision never moves this anchor by itself. */
+export interface LiveRouteProgressView {
+  readonly phase: 'not_started' | 'traveling' | 'on_site' | 'lunch' | 'finished';
+  readonly anchor: LiveRoutePointView;
+  readonly lunch: LiveRoutePointView | null;
+  readonly next: LiveRoutePointView | null;
+  readonly occurredAt: number;
 }
 
 export interface LiveEngineerStateView {
@@ -31,6 +59,9 @@ export interface LiveEngineerStateView {
     readonly note: string;
     readonly additionalDurationSec: number;
   } | null;
+  readonly routeState: 'active' | 'awaiting_plan' | 'exhausted';
+  readonly progress: LiveRouteProgressView | null;
+  readonly stats: LiveStatsView;
 }
 
 export interface DispatchLiveView {
@@ -50,6 +81,7 @@ export interface DispatchLiveView {
     readonly engineerId: string | null;
     readonly stop: PlanStopView | null;
     readonly outcome: 'completed' | 'cancelled' | 'assumed_completed';
+    readonly terminalAt: number;
   }>;
 }
 
