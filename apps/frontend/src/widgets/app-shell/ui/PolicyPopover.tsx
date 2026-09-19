@@ -83,7 +83,7 @@ export function PolicyPopover({ onClose }: PolicyPopoverProps) {
 
   return (
     <Popover
-      className="top-0 left-0"
+      className="-top-1 right-[1px]"
       closeIcon={<ArrowDownLeft aria-hidden size={20} />}
       onClose={onClose}
       title="Выбери свою политику"

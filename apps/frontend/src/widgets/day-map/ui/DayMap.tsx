@@ -5,7 +5,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PlanRouteView } from '@/entities/plan';
 import type { RequestView } from '@/entities/request';
 import { BRIGHT_STYLE_URL, blankStyle } from '../lib/mapStyle';
-import { boundsOf, buildRequestPoints, buildRouteLine } from '../model/mapFeatures';
+import {
+  boundsOf,
+  buildRequestPoints,
+  buildRouteLine,
+  buildRouteStopPoints,
+  buildStartPoint,
+  extendBounds,
+} from '../model/mapFeatures';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
 export interface DayMapProps {
@@ -17,6 +24,11 @@ export interface DayMapProps {
 
 const POINTS_SOURCE = 'day-requests';
 const ROUTE_SOURCE = 'day-route';
+const STOPS_SOURCE = 'day-route-stops';
+const START_SOURCE = 'day-route-start';
+
+/** Present in this style's glyph set; the default font is not, and 404s. */
+const MAP_FONT = ['Noto Sans Bold'];
 
 /** Colours match the day's language elsewhere on the screen. */
 const STATE_COLOR: maplibregl.ExpressionSpecification = [
@@ -70,6 +82,8 @@ export function DayMap({ requests, route, selectedRequestId, onSelectRequest }: 
   const basemap = useBasemapStyle();
   const points = useMemo(() => buildRequestPoints(requests), [requests]);
   const line = useMemo(() => buildRouteLine(route), [route]);
+  const stops = useMemo(() => buildRouteStopPoints(route), [route]);
+  const start = useMemo(() => buildStartPoint(route), [route]);
   /** The stops of the selected route, so the camera can frame just that crew. */
   const routeRequests = useMemo(() => {
     if (!route) return [];
@@ -99,6 +113,14 @@ export function DayMap({ requests, route, selectedRequestId, onSelectRequest }: 
         data: { type: 'FeatureCollection', features: [] },
       });
       map.addSource(POINTS_SOURCE, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      map.addSource(STOPS_SOURCE, {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: [] },
+      });
+      map.addSource(START_SOURCE, {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] },
       });
@@ -138,6 +160,74 @@ export function DayMap({ requests, route, selectedRequestId, onSelectRequest }: 
           paint: { 'text-color': '#272930', 'text-halo-color': '#ffffff', 'text-halo-width': 1.5 },
         });
       }
+
+      // The crew's own stops sit above the day's other points: numbered dots for
+      // the plan order, and a hollow marker for where the day begins.
+      map.addLayer({
+        id: 'day-stop-circles',
+        type: 'circle',
+        source: STOPS_SOURCE,
+        paint: {
+          'circle-radius': 12,
+          'circle-color': '#272930',
+          'circle-stroke-color': '#ffffff',
+          'circle-stroke-width': 2,
+        },
+      });
+      map.addLayer({
+        id: 'day-start-circle',
+        type: 'circle',
+        source: START_SOURCE,
+        paint: {
+          'circle-radius': 9,
+          'circle-color': '#ffffff',
+          'circle-stroke-color': '#272930',
+          'circle-stroke-width': 3,
+        },
+      });
+      if (hasGlyphs) {
+        map.addLayer({
+          id: 'day-stop-numbers',
+          type: 'symbol',
+          source: STOPS_SOURCE,
+          layout: {
+            'text-field': ['to-string', ['get', 'order']],
+            'text-font': MAP_FONT,
+            'text-size': 12,
+            'text-allow-overlap': true,
+          },
+          paint: { 'text-color': '#ffffff' },
+        });
+        map.addLayer({
+          id: 'day-start-label',
+          type: 'symbol',
+          source: START_SOURCE,
+          layout: {
+            'text-field': ['get', 'label'],
+            'text-font': MAP_FONT,
+            'text-size': 12,
+            'text-offset': [0, 1.4],
+            'text-anchor': 'top',
+            'text-allow-overlap': true,
+          },
+          paint: {
+            'text-color': '#272930',
+            'text-halo-color': '#ffffff',
+            'text-halo-width': 2,
+          },
+        });
+      }
+
+      map.on('click', 'day-stop-circles', (event) => {
+        const id = event.features?.[0]?.properties?.requestId;
+        if (typeof id === 'string') selectRef.current(id);
+      });
+      map.on('mouseenter', 'day-stop-circles', () => {
+        map.getCanvas().style.cursor = 'pointer';
+      });
+      map.on('mouseleave', 'day-stop-circles', () => {
+        map.getCanvas().style.cursor = '';
+      });
 
       map.on('click', 'day-request-circles', (event) => {
         const id = event.features?.[0]?.properties?.requestId;
@@ -180,7 +270,9 @@ export function DayMap({ requests, route, selectedRequestId, onSelectRequest }: 
 
     (map.getSource(POINTS_SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData(marked);
     (map.getSource(ROUTE_SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData(line);
-  }, [layersReady, points, line, selectedRequestId]);
+    (map.getSource(STOPS_SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData(stops);
+    (map.getSource(START_SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData(start);
+  }, [layersReady, points, line, stops, start, selectedRequestId]);
 
   // Frame the crew being looked at; with no route, frame the whole day. Re-framing
   // is keyed on the route, so polling the plan does not yank the camera around.
@@ -192,7 +284,10 @@ export function DayMap({ requests, route, selectedRequestId, onSelectRequest }: 
     const key = route?.engineerId ?? 'all';
     if (framedRef.current === key) return;
 
-    const bounds = route ? boundsOf(buildRequestPoints(routeRequests)) : boundsOf(points);
+    // The crew's start belongs in the frame too, or the «Старт» marker can sit
+    // just outside the view the camera picks for its stops.
+    let bounds = route ? boundsOf(buildRequestPoints(routeRequests)) : boundsOf(points);
+    if (route) bounds = extendBounds(bounds, route.startLon, route.startLat);
     if (!bounds) return;
 
     framedRef.current = key;

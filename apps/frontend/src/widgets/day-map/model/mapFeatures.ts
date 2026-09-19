@@ -74,6 +74,23 @@ export function buildRouteLine(route: PlanRouteView | null): LineCollection {
   };
 }
 
+export type MapBounds = [[number, number], [number, number]];
+
+/** Grows a box to include one more coordinate. */
+export function extendBounds(bounds: MapBounds | null, lon: number, lat: number): MapBounds {
+  if (!bounds) {
+    return [
+      [lon, lat],
+      [lon, lat],
+    ];
+  }
+  const [[west, south], [east, north]] = bounds;
+  return [
+    [Math.min(west, lon), Math.min(south, lat)],
+    [Math.max(east, lon), Math.max(north, lat)],
+  ];
+}
+
 /** Bounding box of the points to fit, or `null` when there is nothing to show. */
 export function boundsOf(points: PointCollection): [[number, number], [number, number]] | null {
   if (points.features.length === 0) return null;
@@ -93,4 +110,51 @@ export function boundsOf(points: PointCollection): [[number, number], [number, n
     [west, south],
     [east, north],
   ];
+}
+
+export interface RouteStopProps extends Record<string, unknown> {
+  requestId: string | null;
+  /** Position in the crew's day, starting at 1; the start point is not numbered. */
+  order: number;
+}
+
+export type RouteStopCollection = FeatureCollection<Point, RouteStopProps>;
+
+/**
+ * The crew's stops as numbered points.
+ *
+ * Numbering follows the plan's own order, so what the map shows and what the
+ * timeline lists below it cannot drift apart.
+ */
+export function buildRouteStopPoints(route: PlanRouteView | null): RouteStopCollection {
+  if (!route) return { type: 'FeatureCollection', features: [] };
+
+  return {
+    type: 'FeatureCollection',
+    features: route.stops
+      .filter((stop) => Number.isFinite(stop.lon) && Number.isFinite(stop.lat))
+      .map((stop, index) => ({
+        type: 'Feature' as const,
+        geometry: { type: 'Point' as const, coordinates: [stop.lon, stop.lat] },
+        properties: { requestId: stop.requestId, order: index + 1 },
+      })),
+  };
+}
+
+/** Where the crew begins the day — drawn apart from the numbered stops. */
+export function buildStartPoint(route: PlanRouteView | null): FeatureCollection<Point> {
+  if (!route || !Number.isFinite(route.startLon) || !Number.isFinite(route.startLat)) {
+    return { type: 'FeatureCollection', features: [] };
+  }
+
+  return {
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: [route.startLon, route.startLat] },
+        properties: { label: 'Старт' },
+      },
+    ],
+  };
 }

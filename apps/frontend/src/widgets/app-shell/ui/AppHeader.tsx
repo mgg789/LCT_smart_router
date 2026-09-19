@@ -59,13 +59,16 @@ export function AppHeader() {
         <button
           aria-expanded={panel === 'policy'}
           aria-haspopup="dialog"
-          className="flex h-10 items-center gap-[22px] rounded-full bg-surface pr-[3px] pl-[18px] text-[18px] text-ink"
+          // The mockup's box: 363×44 with a 48px circle at the right. The width is
+          // fixed so the pill — and the panel anchored to it — stop moving when a
+          // longer policy name arrives.
+          className="flex h-11 w-[363px] items-center gap-[18px] rounded-full bg-surface pr-[3px] pl-[20px] text-[19px] text-ink"
           onClick={() => toggle('policy')}
           type="button"
         >
-          {policyLabel}
-          <span className="flex size-11 items-center justify-center rounded-full bg-ink text-white">
-            <ArrowUpRight aria-hidden size={20} />
+          <span className="min-w-0 flex-1 truncate text-left">{policyLabel}</span>
+          <span className="flex size-12 shrink-0 items-center justify-center rounded-full bg-ink text-white">
+            <ArrowUpRight aria-hidden size={22} />
           </span>
         </button>
         {panel === 'policy' ? <PolicyPopover onClose={close} /> : null}
