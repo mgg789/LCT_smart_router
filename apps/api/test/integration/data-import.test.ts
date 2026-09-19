@@ -246,7 +246,7 @@ describe('official dataset import', () => {
     assert.ok(payload.engineers.every((engineer) => 'router' in engineer.equipment_stock));
   });
 
-  it('prepares optional 45-minute lunches in the 11:20-15:00 local window', async () => {
+  it('prepares optional 30-minute lunches in the 11:20-15:00 local window', async () => {
     const day = await prisma.engineerDay.findFirstOrThrow({
       include: { engineer: true },
       where: { engineer: { region: 'east' } },
@@ -254,7 +254,7 @@ describe('official dataset import', () => {
     const midnightUtc = Date.parse(`${day.workDate}T00:00:00.000Z`) / 1000 - 3 * 3600;
     assert.equal(day.lunchEnabled, true);
     assert.equal(day.lunchRequired, false);
-    assert.equal(day.lunchDurationSec, 2700);
+    assert.equal(day.lunchDurationSec, 1800);
     assert.equal(Number(day.lunchWindowStartAt), midnightUtc + 11 * 3600 + 20 * 60);
     assert.equal(Number(day.lunchWindowEndAt), midnightUtc + 15 * 3600);
   });
@@ -301,7 +301,7 @@ describe('official dataset import', () => {
     assert.equal(await prisma.request.count({}), requestsBefore);
     const updated = await prisma.engineerDay.findUniqueOrThrow({ where: { id: day.id } });
     assert.equal(updated.lunchEnabled, true);
-    assert.equal(updated.lunchDurationSec, 2700);
+    assert.equal(updated.lunchDurationSec, 1800);
     const manualDay = await prisma.engineerDay.findUniqueOrThrow({
       where: {
         engineerId_workDate: { engineerId: manual.id, workDate: day.workDate },

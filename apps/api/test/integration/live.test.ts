@@ -29,14 +29,25 @@ interface LiveEngineerView {
     technicalBreak: { overdueAt: number } | null;
     progress: {
       phase: string;
-      lunch: { lat: number; lon: number } | null;
+      origin: { lat: number; lon: number };
+      anchor: { requestId: string | null };
+      lunch: { kind: string; lat: number; lon: number } | null;
       next: { requestId: string | null } | null;
     } | null;
     routeState: 'active' | 'awaiting_plan' | 'exhausted';
   };
   current: { request: { id: string }; phase: string } | null;
   lunch: { startedAt: number; endAt: number } | null;
-  route: { stops: Array<{ kind: string; requestId: string | null; startAt: number }> } | null;
+  route: {
+    stops: Array<{
+      kind: string;
+      requestId: string | null;
+      startAt: number;
+      endAt: number;
+      lat: number;
+      lon: number;
+    }>;
+  } | null;
 }
 
 /** Regression coverage for the durable LIVE clock and its API boundaries. */
@@ -592,6 +603,115 @@ describe('LIVE workday', () => {
     assert.ok(body.history.some((item) => item.request.id === request.id && item.terminalAt > 0));
   });
 
+  it('keeps the captured day origin when a remaining-day revision replaces the route', async () => {
+    const engineer = await liveCreateEngineer();
+    const request = await liveCreateRequest();
+    await liveApplyPlan(engineer.id, [request]);
+    await liveStart();
+    const initial = await liveView(engineer.token);
+    const before = initial.engineer.progress?.origin;
+    assert.ok(before, 'a started day exposes its stable depot vertex before line entry');
+    const state = await prisma.liveEngineerState.findFirstOrThrow({
+      where: { workdayId: initial.workday.id, engineerId: engineer.id },
+    });
+    assert.equal(state.routeOriginLat, before.lat);
+    assert.equal(state.routeOriginLon, before.lon);
+    assert.ok(state.routeOriginAt);
+    // The live route start will normally change to the factual anchor on replan. This
+    // sentinel makes the no-overwrite rule explicit without inventing a second route API.
+    await prisma.liveEngineerState.update({
+      where: { id: state.id },
+      data: { routeOriginLat: 55.701, routeOriginLon: 37.501 },
+    });
+    await liveApplyPlan(engineer.id, [request]);
+    const after = (await liveView(engineer.token)).engineer.progress?.origin;
+    assert.deepEqual(after && { lat: after.lat, lon: after.lon }, { lat: 55.701, lon: 37.501 });
+  });
+
+  it('exposes a planned lunch as one compound edge immediately after the preceding finish', async () => {
+    const engineer = await liveCreateEngineer(true);
+    const first = await liveCreateRequest();
+    const second = await liveCreateRequest(15_000);
+    const snapshot = await liveSnapshot();
+    await liveFeed(
+      buildRouterResult({
+        resultId: unique('lunch-between-jobs'),
+        inputHash: snapshot.inputHash,
+        contextVersion: 'live-test',
+        planningAsOf: snapshot.planningAsOf,
+        assigned: [
+          {
+            requestId: first.id,
+            engineerId: engineer.id,
+            lat: first.lat,
+            lon: first.lon,
+            startAt: snapshot.planningAsOf + 900,
+            durationSec: 900,
+          },
+          {
+            requestId: second.id,
+            engineerId: engineer.id,
+            lat: second.lat,
+            lon: second.lon,
+            startAt: snapshot.planningAsOf + 15_000,
+            durationSec: 900,
+          },
+        ],
+        scheduledLunchFor: [engineer.id],
+        lunchAfterAssignedIndex: 0,
+      }),
+    );
+    await liveStart();
+    const started = await liveView(engineer.token);
+    await prisma.request.update({
+      where: { id: first.id },
+      data: { windowStartAt: BigInt(started.workday.logicalStartAt) },
+    });
+    assert.equal((await liveAction(engineer.token, { kind: 'online' })).status, 201);
+    assert.equal(
+      (await liveAction(engineer.token, { kind: 'start', requestId: first.id })).status,
+      201,
+    );
+    assert.equal(
+      (await liveAction(engineer.token, { kind: 'finish', requestId: first.id })).status,
+      201,
+    );
+    assert.equal(
+      (await prisma.request.findUniqueOrThrow({ where: { id: first.id } })).lifecycle,
+      'completed',
+    );
+    const afterFinish = await liveView(engineer.token);
+    assert.equal(afterFinish.engineer.progress?.phase, 'traveling', JSON.stringify(afterFinish));
+    assert.equal(afterFinish.engineer.progress?.anchor.requestId, first.id);
+    assert.equal(afterFinish.engineer.progress?.lunch?.kind, 'lunch');
+    assert.equal(afterFinish.engineer.progress?.next?.requestId, second.id);
+    const remaining = await liveSnapshot();
+    await liveFeed(
+      buildRouterResult({
+        resultId: unique('lunch-after-anchor-replan'),
+        inputHash: remaining.inputHash,
+        contextVersion: 'live-test',
+        planningAsOf: remaining.planningAsOf,
+        assigned: [
+          {
+            requestId: second.id,
+            engineerId: engineer.id,
+            lat: second.lat,
+            lon: second.lon,
+            startAt: remaining.planningAsOf + 3600,
+            durationSec: 900,
+          },
+        ],
+        scheduledLunchFor: [engineer.id],
+        lunchAfterAssignedIndex: -1,
+      }),
+    );
+    const afterReplan = await liveView(engineer.token);
+    assert.equal(afterReplan.engineer.progress?.anchor.requestId, first.id);
+    assert.equal(afterReplan.engineer.progress?.lunch?.kind, 'lunch');
+    assert.equal(afterReplan.engineer.progress?.next?.requestId, second.id);
+  });
+
   it('keeps automatic lunch blocking after the plan is rebuilt without a second lunch', async () => {
     const engineer = await liveCreateEngineer(true);
     const request = await liveCreateRequest();
@@ -628,6 +748,151 @@ describe('LIVE workday', () => {
       'the persisted lunch coordinates keep the highlighted traversal after replan',
     );
     assert.equal(afterReplan.current, null, 'no work action is available during automatic lunch');
+  });
+
+  it('projects an active lunch as the Router start point until its durable end time', async () => {
+    const engineer = await liveCreateEngineer(true);
+    const request = await liveCreateRequest();
+    await liveApplyPlan(engineer.id, [request], true);
+    await liveStart();
+    assert.equal((await liveAction(engineer.token, { kind: 'online' })).status, 201);
+    const started = await liveView(engineer.token);
+    const lunchStop = started.route?.stops.find((stop) => stop.kind === 'lunch');
+    assert.ok(lunchStop);
+    await prisma.engineerDay.update({
+      where: { engineerId_workDate: { engineerId: engineer.id, workDate: workDate() } },
+      data: { lunchDurationSec: 1800 },
+    });
+    await liveSetLogicalNow(
+      started.workday.id,
+      started.workday.logicalStartAt,
+      started.workday.logicalEndAt,
+      lunchStop.startAt + 10,
+      started.workday.speedDurationSec,
+    );
+    const duringLunch = await liveView(engineer.token);
+    assert.equal(duringLunch.engineer.progress?.phase, 'lunch');
+    assert.ok(duringLunch.engineer.progress?.lunch);
+    const snapshot = await liveSnapshot();
+    const projected = snapshot.snapshot.engineers.find((item) => item.engineer_id === engineer.id);
+    assert.deepEqual(projected?.start_location, { lat: lunchStop.lat, lon: lunchStop.lon });
+    assert.equal(
+      projected?.available_from,
+      Number(
+        (
+          await prisma.liveEngineerState.findFirstOrThrow({
+            where: { workdayId: started.workday.id, engineerId: engineer.id },
+          })
+        ).activeLunchStartedAt,
+      ) + 1800,
+    );
+  });
+
+  it('holds the first post-lunch visit for five logical minutes and clears lunch on explicit start', async () => {
+    const engineer = await liveCreateEngineer(true);
+    const first = await liveCreateRequest();
+    const second = await liveCreateRequest(4200);
+    const snapshot = await liveSnapshot();
+    await liveFeed(
+      buildRouterResult({
+        resultId: unique('post-lunch-handoff'),
+        inputHash: snapshot.inputHash,
+        contextVersion: 'live-test',
+        planningAsOf: snapshot.planningAsOf,
+        assigned: [
+          {
+            requestId: first.id,
+            engineerId: engineer.id,
+            lat: first.lat,
+            lon: first.lon,
+            startAt: snapshot.planningAsOf + 900,
+            durationSec: 900,
+          },
+          {
+            requestId: second.id,
+            engineerId: engineer.id,
+            lat: second.lat,
+            lon: second.lon,
+            startAt: snapshot.planningAsOf + 4200,
+            durationSec: 900,
+          },
+        ],
+        scheduledLunchFor: [engineer.id],
+        lunchAfterAssignedIndex: 0,
+      }),
+    );
+    await liveStart();
+    const started = await liveView(engineer.token);
+    const lunchStop = started.route?.stops.find((stop) => stop.kind === 'lunch');
+    assert.ok(lunchStop);
+    await prisma.engineerDay.update({
+      where: { engineerId_workDate: { engineerId: engineer.id, workDate: workDate() } },
+      data: { lunchDurationSec: 1800 },
+    });
+    await prisma.request.update({
+      where: { id: first.id },
+      data: { windowStartAt: BigInt(started.workday.logicalStartAt) },
+    });
+    assert.equal((await liveAction(engineer.token, { kind: 'online' })).status, 201);
+    assert.equal(
+      (await liveAction(engineer.token, { kind: 'start', requestId: first.id })).status,
+      201,
+    );
+    assert.equal(
+      (await liveAction(engineer.token, { kind: 'finish', requestId: first.id })).status,
+      201,
+    );
+    await liveSetLogicalNow(
+      started.workday.id,
+      started.workday.logicalStartAt,
+      started.workday.logicalEndAt,
+      lunchStop.startAt + 1,
+      started.workday.speedDurationSec,
+    );
+    await liveView(engineer.token);
+    const actualLunchEndAt = lunchStop.startAt + 1 + 1800;
+    await liveSetLogicalNow(
+      started.workday.id,
+      started.workday.logicalStartAt,
+      started.workday.logicalEndAt,
+      actualLunchEndAt,
+      started.workday.speedDurationSec,
+    );
+    const atEnd = await liveView(engineer.token);
+    assert.equal(atEnd.current?.request.id, second.id, JSON.stringify(atEnd));
+    assert.equal(atEnd.current?.phase, 'ready_to_start');
+    assert.equal(atEnd.engineer.progress?.lunch?.kind, 'lunch');
+    assert.equal(
+      (await prisma.liveRequestState.findFirst({ where: { requestId: second.id } }))
+        ?.assumedStartedAt ?? null,
+      null,
+    );
+    const atEndSnapshot = await liveSnapshot();
+    assert.deepEqual(
+      atEndSnapshot.snapshot.engineers.find((item) => item.engineer_id === engineer.id)
+        ?.start_location,
+      { lat: lunchStop.lat, lon: lunchStop.lon },
+    );
+    await liveSetLogicalNow(
+      started.workday.id,
+      started.workday.logicalStartAt,
+      started.workday.logicalEndAt,
+      actualLunchEndAt + 299,
+      started.workday.speedDurationSec,
+    );
+    const beforeGraceEnd = await liveView(engineer.token);
+    assert.equal(beforeGraceEnd.current?.request.id, second.id);
+    assert.equal(beforeGraceEnd.engineer.progress?.lunch?.kind, 'lunch');
+    assert.equal(
+      (await liveAction(engineer.token, { kind: 'start', requestId: second.id })).status,
+      201,
+    );
+    const state = await prisma.liveEngineerState.findFirstOrThrow({
+      where: { workdayId: started.workday.id, engineerId: engineer.id },
+    });
+    assert.equal(state.activeLunchLat, null);
+    assert.equal(state.activeLunchLon, null);
+    assert.equal(state.activeLunchStartedAt, null);
   });
 
   it('does not enter a stale planned lunch after the dispatcher disables it', async () => {

@@ -37,6 +37,8 @@ export interface LiveRoutePointView {
 /** Factual traversal projection; a route revision never moves this anchor by itself. */
 export interface LiveRouteProgressView {
   readonly phase: 'not_started' | 'traveling' | 'on_site' | 'lunch' | 'finished';
+  /** Immutable depot/start vertex captured when the dispatcher starts this LIVE day. */
+  readonly origin: LiveRoutePointView;
   readonly anchor: LiveRoutePointView;
   readonly lunch: LiveRoutePointView | null;
   readonly next: LiveRoutePointView | null;

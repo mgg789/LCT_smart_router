@@ -35,6 +35,7 @@ const NO_SHOW_SEC = 30 * 60;
 const TECHNICAL_BREAK_SEC = 15 * 60;
 const TECHNICAL_BREAK_OVERDUE_SEC = 20 * 60;
 const WINDOW_COMPLETION_GRACE_SEC = 10 * 60;
+const POST_LUNCH_HANDOFF_GRACE_SEC = 5 * 60;
 
 type DayWithStates = LiveWorkday & {
   engineers: Array<LiveEngineerState & { engineer: Engineer }>;
@@ -84,6 +85,7 @@ export class LiveService {
         },
       });
       await this.ensureEngineerStates(context.tx, day.id, context.now);
+      await this.captureRouteOrigins(context.tx, day.id, Number(day.logicalStartAt), context.now);
       // Import may already have published an identical task. Day start is deliberately
       // the sole exception: Router needs a publication stamped with logical t=0.
       await this.publisher.publishIfChanged(
@@ -130,7 +132,7 @@ export class LiveService {
         data: enabled
           ? {
               lunchEnabled: true,
-              lunchDurationSec: 45 * 60,
+              lunchDurationSec: 30 * 60,
               lunchWindowStartAt: BigInt(lunch.startAt),
               lunchWindowEndAt: BigInt(lunch.endAt),
               updatedAt: BigInt(wallNow),
@@ -335,6 +337,9 @@ export class LiveService {
             routeAnchorRequestId: input.requestId,
             routeAnchorReachedAt: BigInt(liveNow),
             routeAnchorDepartedAt: null,
+            activeLunchLat: null,
+            activeLunchLon: null,
+            activeLunchStartedAt: null,
             updatedAt: BigInt(context.now),
             version: { increment: 1 },
           },
@@ -575,6 +580,44 @@ export class LiveService {
     }
   }
 
+  /**
+   * Persists the depot vertex that started this LIVE day.
+   *
+   * The accepted Router plan is allowed to be replaced during the day; using its current
+   * route start for the UI cursor made the historical beginning of the route jump after
+   * a replan. The first accepted route is therefore copied exactly once into LIVE state.
+   */
+  private async captureRouteOrigins(
+    tx: Tx,
+    workdayId: string,
+    logicalStartAt: number,
+    wallNow: number,
+  ): Promise<void> {
+    const plan = await this.plans.current(tx);
+    if (!plan) return;
+    const routes = new Map(toPlanView(plan).routes.map((route) => [route.engineerId, route]));
+    const states = await tx.liveEngineerState.findMany({
+      where: {
+        workdayId,
+        OR: [{ routeOriginLat: null }, { routeOriginLon: null }, { routeOriginAt: null }],
+      },
+    });
+    for (const state of states) {
+      const route = routes.get(state.engineerId);
+      if (!route || route.startLat === undefined || route.startLon === undefined) continue;
+      await tx.liveEngineerState.update({
+        where: { id: state.id },
+        data: {
+          routeOriginLat: route.startLat,
+          routeOriginLon: route.startLon,
+          routeOriginAt: BigInt(route.startAt ?? logicalStartAt),
+          updatedAt: BigInt(wallNow),
+          version: { increment: 1 },
+        },
+      });
+    }
+  }
+
   private async requireEngineerState(
     tx: Tx,
     workdayId: string,
@@ -678,10 +721,11 @@ export class LiveService {
     const liveNow = this.liveNow(day, wallNow);
     return Promise.all(
       day.engineers.map(async (state) => {
+        const activeRequestId = activeByEngineer.get(state.engineerId) ?? null;
         const pendingDelay = [...byRequest.values()].find(
           (item) =>
             item.reservedEngineerId === state.engineerId &&
-            item.requestId === activeByEngineer.get(state.engineerId) &&
+            item.requestId === activeRequestId &&
             item.problemKind === 'delay' &&
             item.problemNote &&
             item.additionalDurationSec,
@@ -702,17 +746,17 @@ export class LiveService {
             : replanPending
               ? 'awaiting_plan'
               : current.current ||
-                current.route?.stops.some((stop) => stop.kind === 'job' && stop.endAt >= liveNow)
-              ? 'active'
-              : viableDemand
-                ? 'awaiting_plan'
-                : 'exhausted';
+                  current.route?.stops.some((stop) => stop.kind === 'job' && stop.endAt >= liveNow)
+                ? 'active'
+                : viableDemand
+                  ? 'awaiting_plan'
+                  : 'exhausted';
         return {
           id: state.engineerId,
           name: state.engineer.displayName,
           lineStatus: state.lineStatus,
           availability: availability.get(state.engineerId) ?? 'offline',
-          activeRequestId: activeByEngineer.get(state.engineerId) ?? null,
+          activeRequestId,
           technicalBreak:
             state.technicalBreakStartedAt === null ||
             state.technicalBreakPlannedEndAt === null ||
@@ -736,7 +780,7 @@ export class LiveService {
             tx,
             state,
             current.route,
-            current.current?.request.id ?? null,
+            activeRequestId,
             lunch,
             liveNow,
             replanPending,
@@ -881,10 +925,7 @@ export class LiveService {
     liveNow: number,
     suppressNext: boolean,
   ): Promise<LiveEngineerStateView['progress']> {
-    const pointFor = async (
-      requestId: string | null,
-      fallback?: LiveEngineerStateView['progress'],
-    ) => {
+    const pointFor = async (requestId: string | null) => {
       if (requestId) {
         const request = await tx.request.findUnique({
           where: { id: requestId },
@@ -894,21 +935,33 @@ export class LiveService {
           return { kind: 'job' as const, requestId, lat: request.lat, lon: request.lon };
         }
       }
-      if (route?.startLat !== undefined && route?.startLon !== undefined) {
-        return {
-          kind: 'start' as const,
-          requestId: null,
-          lat: route.startLat,
-          lon: route.startLon,
-        };
-      }
-      return fallback?.anchor ?? null;
+      return null;
     };
-    const anchorBase = await pointFor(state.routeAnchorRequestId);
-    if (!anchorBase) return null;
+    const originBase =
+      state.routeOriginLat !== null && state.routeOriginLon !== null
+        ? {
+            kind: 'start' as const,
+            requestId: null,
+            lat: state.routeOriginLat,
+            lon: state.routeOriginLon,
+          }
+        : route?.startLat !== undefined && route.startLon !== undefined
+          ? {
+              kind: 'start' as const,
+              requestId: null,
+              lat: route.startLat,
+              lon: route.startLon,
+            }
+          : null;
+    if (!originBase) return null;
+    const origin = {
+      ...originBase,
+      at: nullableNumber(state.routeOriginAt) ?? route?.startAt ?? liveNow,
+    };
+    const anchorBase = (await pointFor(state.routeAnchorRequestId)) ?? originBase;
     const anchor = {
       ...anchorBase,
-      at: nullableNumber(state.routeAnchorReachedAt) ?? route?.startAt ?? liveNow,
+      at: nullableNumber(state.routeAnchorReachedAt) ?? origin.at,
     };
     const routeJobs = (suppressNext ? [] : (route?.stops ?? [])).filter(
       (stop): stop is PlanStopView & { requestId: string } =>
@@ -945,9 +998,39 @@ export class LiveService {
           at: nextStop.startAt,
         }
       : null;
-    if (lunch) {
+    // Lunch is a structural part of the traversed edge as soon as the preceding job is
+    // left. It is not a waiting vertex: the UI must highlight job→lunch→next before the
+    // clock enters the break, and keep that compound edge until the next job is reached.
+    const structuralLunch =
+      state.routeAnchorDepartedAt === null || activeRequestId !== null || nextStop === undefined
+        ? null
+        : (route?.stops.find(
+            (stop) =>
+              stop.kind === 'lunch' &&
+              stop.sequence < nextStop.sequence &&
+              (anchorSequence === undefined || stop.sequence > anchorSequence),
+          ) ?? null);
+    const persistedLunch =
+      state.activeLunchLat !== null &&
+      state.activeLunchLon !== null &&
+      state.activeLunchStartedAt !== null
+        ? {
+            kind: 'lunch' as const,
+            requestId: null,
+            lat: state.activeLunchLat,
+            lon: state.activeLunchLon,
+            at: Number(state.activeLunchStartedAt),
+          }
+        : null;
+    if (lunch || persistedLunch || structuralLunch) {
       const lunchStop = route?.stops.find(
-        (stop) => stop.kind === 'lunch' && stop.startAt <= liveNow && liveNow < stop.endAt,
+        (stop) =>
+          stop.kind === 'lunch' &&
+          (lunch
+            ? stop.startAt <= lunch.startedAt && lunch.startedAt < stop.endAt
+            : persistedLunch !== null
+              ? stop.lat === persistedLunch.lat && stop.lon === persistedLunch.lon
+              : stop === structuralLunch),
       );
       const lunchPoint = lunchStop
         ? {
@@ -957,20 +1040,22 @@ export class LiveService {
             lon: lunchStop.lon,
             at: lunchStop.startAt,
           }
-        : state.activeLunchLat !== null && state.activeLunchLon !== null
-          ? {
-              kind: 'lunch' as const,
-              requestId: null,
-              lat: state.activeLunchLat,
-              lon: state.activeLunchLon,
-              at: lunch.startedAt,
-            }
-          : null;
+        : (persistedLunch ??
+          (structuralLunch
+            ? {
+                kind: 'lunch' as const,
+                requestId: null,
+                lat: structuralLunch.lat,
+                lon: structuralLunch.lon,
+                at: structuralLunch.startAt,
+              }
+            : null));
       const afterLunch = possibleNext.find(
-        (stop) => stop.startAt >= lunch.endAt && viableIds.has(stop.requestId),
+        (stop) => viableIds.has(stop.requestId) && (!lunch || stop.startAt >= lunch.endAt),
       );
       return {
-        phase: 'lunch',
+        phase: lunch ? 'lunch' : 'traveling',
+        origin,
         anchor,
         lunch: lunchPoint,
         next: afterLunch?.requestId
@@ -982,7 +1067,9 @@ export class LiveService {
               at: afterLunch.startAt,
             }
           : next,
-        occurredAt: lunch.startedAt,
+        occurredAt:
+          lunch?.startedAt ??
+          Number(state.routeAnchorDepartedAt ?? state.activeLunchStartedAt ?? BigInt(liveNow)),
       };
     }
     if (activeRequestId) {
@@ -991,6 +1078,7 @@ export class LiveService {
         const reachedAt = nullableNumber(state.routeAnchorReachedAt) ?? liveNow;
         return {
           phase: 'on_site',
+          origin,
           anchor: { ...active, at: reachedAt },
           lunch: null,
           next,
@@ -1001,6 +1089,7 @@ export class LiveService {
     if (state.routeAnchorDepartedAt !== null) {
       return {
         phase: 'traveling',
+        origin,
         anchor,
         lunch: null,
         next,
@@ -1012,6 +1101,7 @@ export class LiveService {
       // only as the origin of the highlighted first edge until the first explicit or
       // silent job start reaches its vertex.
       phase: state.lineStartedAt === null ? 'not_started' : 'traveling',
+      origin,
       anchor,
       lunch: null,
       next,
@@ -1619,6 +1709,7 @@ export class LiveService {
           data: {
             activeLunchLat: lunch.lat,
             activeLunchLon: lunch.lon,
+            activeLunchStartedAt: BigInt(liveNow),
             updatedAt: BigInt(wallNow),
             version: { increment: 1 },
           },
@@ -1676,6 +1767,38 @@ export class LiveService {
         where: { workdayId_engineerId: { workdayId: day.id, engineerId: route.engineerId } },
       });
       if (liveState?.lineStatus !== 'online') continue;
+      const dayState = await tx.engineerDay.findUnique({
+        where: { engineerId_workDate: { engineerId: route.engineerId, workDate: day.workDate } },
+        select: { lunchDurationSec: true },
+      });
+      const lunchDurationSec = dayState?.lunchDurationSec ?? null;
+      const lunchEndsAt =
+        liveState.activeLunchStartedAt !== null && lunchDurationSec !== null
+          ? Number(liveState.activeLunchStartedAt) + lunchDurationSec
+          : null;
+      // While the automatic lunch interval is live, the schedule must not manufacture
+      // a job arrival or completion. The snapshot separately keeps this engineer at
+      // the lunch point until that durable release moment.
+      if (lunchEndsAt !== null && liveNow < lunchEndsAt) continue;
+      const postLunchHandoffEndsAt =
+        lunchEndsAt === null ? null : lunchEndsAt + POST_LUNCH_HANDOFF_GRACE_SEC;
+      const firstJobAfterLunch =
+        liveState.activeLunchLat === null || liveState.activeLunchLon === null
+          ? null
+          : (() => {
+              const lunchStop = route.stops.find(
+                (stop) =>
+                  stop.kind === 'lunch' &&
+                  stop.lat === liveState.activeLunchLat &&
+                  stop.lon === liveState.activeLunchLon,
+              );
+              return route.stops.find(
+                (stop) =>
+                  stop.kind === 'job' &&
+                  stop.requestId !== null &&
+                  (lunchStop === undefined || stop.sequence > lunchStop.sequence),
+              );
+            })();
       const activeVisit = await tx.request.findFirst({
         where: {
           lifecycle: 'in_progress',
@@ -1690,6 +1813,16 @@ export class LiveService {
           !stop.requestId ||
           already.has(stop.requestId) ||
           protectedIds.has(stop.requestId)
+        )
+          continue;
+        // The next visit stays interactive just after lunch. It gives the engineer a
+        // deterministic chance to confirm arrival and keeps the compound lunch edge
+        // visible; once five logical minutes pass, the normal silent-schedule rule
+        // resumes and may advance that same visit.
+        if (
+          postLunchHandoffEndsAt !== null &&
+          liveNow < postLunchHandoffEndsAt &&
+          stop.requestId === firstJobAfterLunch?.requestId
         )
           continue;
         const eta = etaByRequest.get(stop.requestId);
@@ -1715,6 +1848,9 @@ export class LiveService {
                 routeAnchorRequestId: stop.requestId,
                 routeAnchorReachedAt: BigInt(assumedStartAt),
                 routeAnchorDepartedAt: null,
+                activeLunchLat: null,
+                activeLunchLon: null,
+                activeLunchStartedAt: null,
                 updatedAt: BigInt(wallNow),
                 version: { increment: 1 },
               },
@@ -1735,6 +1871,9 @@ export class LiveService {
               routeAnchorRequestId: stop.requestId,
               routeAnchorReachedAt: BigInt(assumedStartAt),
               routeAnchorDepartedAt: BigInt(assumedEndAt),
+              activeLunchLat: null,
+              activeLunchLon: null,
+              activeLunchStartedAt: null,
               updatedAt: BigInt(wallNow),
               version: { increment: 1 },
             },
@@ -1775,6 +1914,9 @@ export class LiveService {
             routeAnchorRequestId: requestId,
             routeAnchorReachedAt: BigInt(eta),
             routeAnchorDepartedAt: BigInt(endAt),
+            activeLunchLat: null,
+            activeLunchLon: null,
+            activeLunchStartedAt: null,
             updatedAt: BigInt(wallNow),
             version: { increment: 1 },
           },

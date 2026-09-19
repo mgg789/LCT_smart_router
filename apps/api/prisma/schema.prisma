@@ -582,10 +582,15 @@ model LiveEngineerState {
   routeAnchorRequestId    String?                @map("route_anchor_request_id")
   routeAnchorReachedAt    BigInt?                @map("route_anchor_reached_at")
   routeAnchorDepartedAt   BigInt?                @map("route_anchor_departed_at")
+  /// Immutable first vertex of the LIVE workday. Replans must never relocate it.
+  routeOriginLat          Float?                 @map("route_origin_lat")
+  routeOriginLon          Float?                 @map("route_origin_lon")
+  routeOriginAt           BigInt?                @map("route_origin_at")
   /// Coordinates of an entered automatic lunch. They outlive a remaining-day replan
   /// that correctly removes the consumed lunch stop from Router input.
   activeLunchLat          Float?                 @map("active_lunch_lat")
   activeLunchLon          Float?                 @map("active_lunch_lon")
+  activeLunchStartedAt    BigInt?                @map("active_lunch_started_at")
   createdAt             BigInt                 @map("created_at")
   updatedAt             BigInt                 @map("updated_at")
   version               Int                    @default(1)
