@@ -10,8 +10,13 @@ test('LIVE fixture supplies 14 valid requests and two crews over an eleven-hour 
   assert.equal(uploadDataPackageSchema.safeParse(input).success, true);
   assert.equal(input.requests.length, 14);
   assert.equal(input.engineers?.length, 2);
-  assert.equal(input.engineers?.[0]?.shiftEndAt! - input.engineers?.[0]?.shiftStartAt!, 11 * 3600);
-  assert.equal(new Date(input.engineers![0]!.shiftStartAt * 1000).toISOString(), '2026-09-19T06:00:00.000Z');
+  const firstEngineer = input.engineers?.[0];
+  assert.ok(firstEngineer);
+  assert.equal(firstEngineer.shiftEndAt - firstEngineer.shiftStartAt, 11 * 3600);
+  assert.equal(
+    new Date(firstEngineer.shiftStartAt * 1000).toISOString(),
+    '2026-09-19T06:00:00.000Z',
+  );
   assert.equal(new Set(input.requests.map((request) => request.externalId)).size, 14);
   const second = buildLiveDemo('2026-09-19', root);
   assert.deepEqual(input, second);
