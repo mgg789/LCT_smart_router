@@ -2,18 +2,19 @@ import { motion, useReducedMotion } from 'framer-motion';
 import type { DashboardSnapshot } from '../api/types';
 import { DayMap } from '../components/DayMap';
 import { FIGMA_ASSETS } from './assets';
+import { Copyable } from './Copyable';
 import { FigmaIcon, FigmaText } from './primitives';
 import {
   requestDetailFromRow,
   requestDetailFromSnapshot,
   type RequestDetailModel,
 } from './requestDetail';
-import { DEMO_REQUEST_ROWS } from './requestsTable';
+import { DEMO_REQUEST_ROWS, shortRequestId } from './requestsTable';
 
 const HEADER_LIFT = 16;
 const DATE_TOP = 100 - HEADER_LIFT;
-const TITLE_TOP = DATE_TOP + 8;
-const PANEL_TOP = 154 - HEADER_LIFT;
+const TITLE_ROW_HEIGHT = 48;
+const PANEL_TOP = 154 - HEADER_LIFT + 10;
 const PANEL_HEIGHT = 893 + HEADER_LIFT;
 const MAP_HEIGHT = 894 + HEADER_LIFT;
 const fadeSoft = { duration: 0.28, ease: [0.22, 1, 0.36, 1] as const };
@@ -42,25 +43,28 @@ export function RequestDetailView({
 
   return (
     <>
-      <motion.button
-        type="button"
-        aria-label="Назад к заявкам"
-        onClick={onBack}
-        className="absolute left-[180px] z-20 flex size-[43px] items-center justify-center"
-        style={{ top: TITLE_TOP }}
-        whileHover={animate ? { scale: 1.08 } : undefined}
-        whileTap={animate ? { scale: 0.94 } : undefined}
-        transition={{ duration: 0.16 }}
+      <div
+        className="absolute left-[180px] z-30 flex items-center gap-[17px]"
+        style={{ top: DATE_TOP, height: TITLE_ROW_HEIGHT, width: 1194 }}
       >
-        <FigmaIcon src={FIGMA_ASSETS.iconBack} alt="" width={43} height={43} />
-      </motion.button>
-      <FigmaText
-        className="figma-nowrap absolute left-[240px] max-w-[1040px] overflow-hidden font-murs text-[32px] tracking-[-0.544px] text-ellipsis text-figma-ink"
-        style={{ top: TITLE_TOP }}
-        title={model.title}
-      >
-        {model.title}
-      </FigmaText>
+        <motion.button
+          type="button"
+          aria-label="Назад к заявкам"
+          onClick={onBack}
+          className="flex size-[43px] shrink-0 items-center justify-center"
+          whileHover={animate ? { scale: 1.08 } : undefined}
+          whileTap={animate ? { scale: 0.94 } : undefined}
+          transition={{ duration: 0.16 }}
+        >
+          <FigmaIcon src={FIGMA_ASSETS.iconBack} alt="" width={43} height={43} />
+        </motion.button>
+        <h1
+          className="min-w-0 flex-1 truncate font-murs text-[32px] leading-[36px] tracking-[-0.544px] text-figma-ink"
+          title={model.title}
+        >
+          {model.title}
+        </h1>
+      </div>
 
       <motion.section
         className="absolute overflow-hidden rounded-[20px] bg-white"
@@ -110,12 +114,18 @@ function RequestDetailPanel({ model }: { model: RequestDetailModel }) {
 
   return (
     <div className="flex h-full flex-col px-[27px] pt-[24px] pb-[24px]">
-      <FigmaText
-        className="font-murs text-[32px] leading-[36px] tracking-[-0.544px] text-white"
-        title={model.id}
+      <Copyable
+        value={shortRequestId(model.id)}
+        label="Скопировать номер заявки"
+        className="text-left"
       >
-        {model.numberLabel}
-      </FigmaText>
+        <FigmaText
+          className="font-murs text-[32px] leading-[36px] tracking-[-0.544px] text-white"
+          title={model.id}
+        >
+          {model.numberLabel}
+        </FigmaText>
+      </Copyable>
       <div className="mt-[16px] flex flex-wrap gap-[12px]">
         {model.primaryTags.map((tag) => (
           <DetailTag key={tag} label={tag} />
@@ -130,14 +140,15 @@ function RequestDetailPanel({ model }: { model: RequestDetailModel }) {
       ) : null}
       <div className="mt-[30px] flex flex-col gap-[16px]">
         {facts.map((value, index) => (
-          <div
+          <Copyable
             key={`${index}-${value}`}
-            className="flex h-[67px] w-[430px] items-center rounded-[20px] bg-white/10 px-[20px]"
+            value={value}
+            className="flex h-[67px] w-[430px] items-center rounded-[20px] bg-white/10 px-[20px] text-left transition-colors hover:bg-white/15 disabled:cursor-default disabled:hover:bg-white/10"
           >
             <p className="figma-nowrap overflow-hidden font-medium text-[20px] text-ellipsis text-white">
               {value}
             </p>
-          </div>
+          </Copyable>
         ))}
       </div>
       <div className="mt-auto flex flex-col gap-[16px]">

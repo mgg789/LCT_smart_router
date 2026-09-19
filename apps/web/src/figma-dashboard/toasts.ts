@@ -189,6 +189,62 @@ export const DEMO_TOASTS: readonly ToastDraft[] = [
     body: 'Бригада 2 получила новый порядок остановок после пересчёта.',
     createdAt: 8,
   },
+  {
+    id: 'demo-alert-window',
+    kind: 'alert',
+    title: 'Алёрт: окно заявки',
+    body: 'Заявка №4400b62a не укладывается в окно 11:27–13:27 при текущем порядке смены.',
+    createdAt: 9,
+  },
+  {
+    id: 'demo-alert-skill',
+    kind: 'alert',
+    title: 'Алёрт: нет навыка',
+    body: 'На «подключение» в восточном секторе свободно только 2 бригады, 5 заявок без назначения.',
+    createdAt: 10,
+  },
+  {
+    id: 'demo-alert-lunch',
+    kind: 'alert',
+    title: 'Алёрт: обед сдвинут',
+    body: 'Бригада Соколов потеряет обед, если оставить заявку №1077 на 13:00.',
+    createdAt: 11,
+  },
+  {
+    id: 'demo-alert-sla',
+    kind: 'alert',
+    title: 'Алёрт: риск SLA',
+    body: '3 срочные заявки выходят за расчётное окно при политике «Полное покрытие».',
+    createdAt: 12,
+  },
+  {
+    id: 'demo-chat-2',
+    kind: 'chat',
+    title: 'Сообщение от Петрова',
+    body: 'На адресе Самаркандский бульвар нет доступа в подъезд, клиент спускается.',
+    createdAt: 13,
+  },
+  {
+    id: 'demo-ai-2',
+    kind: 'ai',
+    title: 'Сообщение от AI',
+    body: 'Бригада Мельников ближе на 8 минут к заявке №1024, чем текущее назначение.',
+    createdAt: 14,
+  },
+  {
+    id: 'demo-system-3',
+    kind: 'system',
+    title: 'Системное сообщение',
+    body: 'Загружен пакет восточного округа: 48 заявок, 7 бригад.',
+    createdAt: 15,
+  },
+  {
+    id: 'demo-route-3',
+    kind: 'route',
+    title: 'Перерасчет завершен',
+    body: 'Политика «Быстрее» сократила пробег на 14 км, 1 заявка осталась без назначения.',
+    createdAt: 16,
+  },
 ];
 
 function emit(): void {
@@ -328,7 +384,7 @@ export function upsertNewToasts(drafts: readonly ToastDraft[]): void {
   if (changed) emit();
 }
 
-/** Seeds the six Figma examples once so the column can be reviewed offline. */
+/** Seeds Figma examples plus extra demo alerts/notices for the inbox review. */
 export function seedDemoToasts(): void {
   upsertNewToasts(DEMO_TOASTS);
 }

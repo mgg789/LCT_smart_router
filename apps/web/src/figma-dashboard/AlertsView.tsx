@@ -37,6 +37,7 @@ export function AlertsView({
   const reduceMotion = useReducedMotion();
   const animate = motionOn && !reduceMotion;
   const inbox = inboxFromSources(snapshot, toasts);
+  const glassArrow = inbox.alerts.length > 0;
 
   return (
     <section className="absolute inset-0" aria-label="Алерты и уведомления">
@@ -60,8 +61,19 @@ export function AlertsView({
         <span className="figma-nowrap ml-[15px] font-semibold text-[18px] text-[#ededed]">
           Разобрать все в AI
         </span>
-        <span className="ml-auto flex size-[63px] items-center justify-center rounded-full bg-white/10">
-          <FigmaIcon src={FIGMA_ASSETS.arrowRight} alt="" width={30} height={31} />
+        <span
+          className={
+            glassArrow
+              ? 'ml-auto flex size-[63px] items-center justify-center rounded-full bg-gradient-to-b from-white/20 to-white/[0.05] shadow-[inset_0_1px_0_rgba(255,255,255,0.45),inset_0_-8px_16px_rgba(255,255,255,0.06)] ring-1 ring-white/20 backdrop-blur-[100px]'
+              : 'ml-auto flex size-[63px] items-center justify-center rounded-full bg-white/10'
+          }
+        >
+          <FigmaIcon
+            src={glassArrow ? FIGMA_ASSETS.arrowRightWhite : FIGMA_ASSETS.arrowRight}
+            alt=""
+            width={30}
+            height={31}
+          />
         </span>
       </motion.button>
 

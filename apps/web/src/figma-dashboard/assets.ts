@@ -5,6 +5,7 @@
 export const FIGMA_ASSETS = {
   logo: '/figma/logo-dark.png',
   iconPlus: '/figma/icon-plus.svg',
+  iconUpload: '/figma/icon-upload.svg',
   navHome: '/figma/nav-home.svg',
   navRequests: '/figma/nav-requests.svg',
   navEngineers: '/figma/nav-engineers.svg',
@@ -36,6 +37,7 @@ export const FIGMA_ASSETS = {
   notifRoute: '/figma/icon-notif-route.svg',
   notifMessage: '/figma/icon-notif-message.svg',
   arrowRight: '/figma/icon-arrow-right.svg',
+  arrowRightWhite: '/figma/icon-arrow-right-white.svg',
   iconBack: '/figma/icon-back.svg',
   iconSparkles: '/figma/icon-sparkles.svg',
   toastSystem: '/figma/icon-toast-wrench.svg',

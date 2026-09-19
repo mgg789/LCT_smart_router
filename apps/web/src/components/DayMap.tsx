@@ -510,18 +510,16 @@ export function DayMap({
       {!soloRequestId && (localMap || mapFailed) ? (
         <div
           role="status"
-          className="absolute top-3 left-3 right-3 rounded-xl bg-white px-3 py-2 text-xs text-ink shadow"
+          className="absolute top-3 right-3 z-10 max-w-[148px] rounded-lg bg-white/90 px-2 py-1.5 text-[10px] leading-tight text-ink shadow"
         >
-          {mapFailed
-            ? 'Карта недоступна в этом браузере. Используйте список заявок и таймлайн.'
-            : 'Сохранённая карта района демо · улицы, парки и водоёмы'}
+          {mapFailed ? 'Карта недоступна' : 'Офлайн-карта'}
           {localMap && !forceLocal && !mapFailed ? (
             <button
               type="button"
-              className="ml-2 underline"
+              className="ml-1 underline"
               onClick={() => setRetry((value) => value + 1)}
             >
-              Повторить онлайн-карту
+              Онлайн
             </button>
           ) : null}
         </div>

@@ -42,6 +42,7 @@ import { PolicyComparisonView } from './PolicyComparisonView';
 import { AlertsView } from './AlertsView';
 import { RequestDetailView } from './RequestDetailView';
 import { RequestsView } from './RequestsView';
+import { Copyable } from './Copyable';
 import { shortRequestId } from './requestsTable';
 import { ToastColumn } from './ToastColumn';
 import { FigmaIcon, FigmaText } from './primitives';
@@ -615,7 +616,7 @@ function SidebarNav({
         whileTap={motionOn ? { scale: 0.94 } : undefined}
         transition={{ duration: 0.16 }}
       >
-        <FigmaIcon src={FIGMA_ASSETS.iconPlus} alt="" width={28} height={28} />
+        <FigmaIcon src={FIGMA_ASSETS.iconUpload} alt="" width={28} height={28} />
       </motion.button>
     </aside>
   );
@@ -1620,18 +1621,28 @@ function DetailPanel({
             <FigmaText className="font-murs text-[32px] leading-[36px] tracking-[-0.544px] text-white">
               {request.workTypeTitle || 'Заявка'}
             </FigmaText>
-            <p className="mt-[8px] font-semibold text-[20px] tracking-[-0.34px] text-white/60" title={request.id}>
-              {shortRequestId(request.id)}
-            </p>
+            <Copyable
+              value={shortRequestId(request.id)}
+              label="Скопировать номер заявки"
+              className="mt-[8px] text-left"
+            >
+              <p className="font-semibold text-[20px] tracking-[-0.34px] text-white/60" title={request.id}>
+                {shortRequestId(request.id)}
+              </p>
+            </Copyable>
             <div className="mt-[16px] flex flex-wrap gap-[12px]">
               {urgency ? <PanelTag label={urgency.label} tone={urgency.tone} /> : null}
               {equipment ? <PanelTag label={equipment} /> : null}
             </div>
-            <div className="mt-[16px] flex min-h-[67px] w-full items-center rounded-[20px] bg-figma-dim px-[20px] py-[16px]">
+            <Copyable
+              value={request.addressText}
+              label="Скопировать адрес"
+              className="mt-[16px] flex min-h-[67px] w-full items-center rounded-[20px] bg-figma-dim px-[20px] py-[16px] text-left transition-colors hover:bg-white/10"
+            >
               <p className="font-medium text-[20px] leading-[24px] tracking-[-0.6px] text-white">
                 {request.addressText}
               </p>
-            </div>
+            </Copyable>
           </div>
         ) : (
           <div className="h-[36px]" />
