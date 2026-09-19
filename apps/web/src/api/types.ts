@@ -268,6 +268,26 @@ export interface AuthSession {
   readonly expiresAt: number;
 }
 
+/** Which interface an integration key replaces (context/41 §5, D-31). */
+export type ApiTokenCategory = 'client' | 'eng' | 'client_eng' | 'master';
+
+/** Non-secret record of an integration key; the secret itself is never listed. */
+export interface ApiTokenSummary {
+  readonly id: string;
+  readonly name: string;
+  readonly category: ApiTokenCategory;
+  readonly createdAt: number;
+  /** Unix-epoch seconds, or null for a key that never expires. */
+  readonly expiresAt: number | null;
+  readonly revokedAt: number | null;
+}
+
+/** The creation response: the only moment the secret is ever visible. A fresh key
+ * cannot be revoked yet, so the record carries no revocation stamp. */
+export type CreatedApiToken = Omit<ApiTokenSummary, 'revokedAt'> & {
+  readonly token: string;
+};
+
 export interface PlanDelta {
   readonly transferred: number;
   readonly shifted: number;

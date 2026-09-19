@@ -791,6 +791,9 @@ export function useDashboard() {
     diagnostic,
     scenarioId,
     operationWarning,
+    /** Live session credential; null in the demo and cached contours. Screens that call
+     * the live API directly (token management) read it rather than guessing the source. */
+    token,
     dismissOperationWarning: () => setOperationWarning(null),
     selectDemoScenario,
     leaveDemo,

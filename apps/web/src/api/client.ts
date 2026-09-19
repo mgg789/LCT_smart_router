@@ -1,7 +1,10 @@
 import { z } from 'zod';
 import type {
+  ApiTokenCategory,
+  ApiTokenSummary,
   AssignmentReasons,
   AuthSession,
+  CreatedApiToken,
   DashboardSnapshot,
   DataUploadFile,
   DataUploadSummary,
@@ -440,6 +443,56 @@ export async function signOutDispatcher(token: string): Promise<void> {
   await requestJson('/api/v1/auth/session', z.object({ signedOut: z.boolean() }), token, {
     method: 'DELETE',
   });
+}
+
+const apiTokenCategorySchema = z.enum(['client', 'eng', 'client_eng', 'master']);
+
+const apiTokenSummarySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  category: apiTokenCategorySchema,
+  createdAt: z.number().int(),
+  expiresAt: z.number().int().nullable(),
+  revokedAt: z.number().int().nullable(),
+});
+
+const createdApiTokenSchema = apiTokenSummarySchema.omit({ revokedAt: true }).extend({
+  token: z.string().min(1),
+});
+
+/** Lists the integration keys without ever re-revealing their secrets. */
+export async function listApiTokens(sessionToken: string): Promise<ApiTokenSummary[]> {
+  const listed = await requestJson(
+    '/api/v1/auth/tokens',
+    z.object({ tokens: z.array(apiTokenSummarySchema) }),
+    sessionToken,
+  );
+  return listed.tokens;
+}
+
+/** Creates an integration key; the returned secret is shown once and never again. */
+export function createApiToken(
+  sessionToken: string,
+  input: { name: string; category: ApiTokenCategory; expiresAt: number | null },
+): Promise<CreatedApiToken> {
+  return requestJson('/api/v1/auth/tokens', createdApiTokenSchema, sessionToken, {
+    method: 'POST',
+    body: JSON.stringify({
+      name: input.name,
+      category: input.category,
+      ...(input.expiresAt === null ? {} : { expiresAt: input.expiresAt }),
+    }),
+  });
+}
+
+/** Revokes an integration key; created requests and applied changes stay. */
+export async function revokeApiToken(sessionToken: string, id: string): Promise<void> {
+  await requestJson(
+    `/api/v1/auth/tokens/${encodeURIComponent(id)}`,
+    z.object({ revoked: z.boolean() }),
+    sessionToken,
+    { method: 'DELETE' },
+  );
 }
 
 /** Loads and validates all resources required by the dispatcher day screen. */
