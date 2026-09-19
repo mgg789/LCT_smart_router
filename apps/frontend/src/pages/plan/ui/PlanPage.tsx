@@ -4,12 +4,9 @@ import { useDispatchState } from '@/entities/plan';
 import { unassignedRequests, useRequests } from '@/entities/request';
 import { formatDayTitle } from '@/shared/lib';
 import { DayBoard } from '@/widgets/day-board';
+import { DayMap } from '@/widgets/day-map';
 import { RequestPanel } from '@/widgets/request-panel';
 import { RouteTimeline } from '@/widgets/route-timeline';
-
-/** Column widths measured off the mockup frame, which is drawn at 1:1. */
-const MAP_PLACEHOLDER =
-  'Карта появится следующим шагом: нужно решить, на какой подложке её рисовать.';
 
 export function PlanPage() {
   const engineersQuery = useEngineers();
@@ -78,9 +75,12 @@ export function PlanPage() {
           />
 
           <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-8">
-            <div className="grid min-h-[280px] flex-1 place-items-center rounded-[20px] bg-surface p-6 text-center">
-              <p className="max-w-[420px] text-[15px] text-ink/55">{MAP_PLACEHOLDER}</p>
-            </div>
+            <DayMap
+              onSelectRequest={(id) => setSelectedRequestId(id)}
+              requests={requests}
+              route={activeRoute}
+              selectedRequestId={selectedRequestId}
+            />
 
             <RouteTimeline
               engineerName={activeEngineer?.displayName ?? null}
