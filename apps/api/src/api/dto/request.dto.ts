@@ -28,6 +28,10 @@ const longitude = z.number().min(-180).max(180);
 const equipmentType = z.enum(['router', 'set_top_box', 'smart_speaker']);
 
 export const prepareRequestSchema = operationEnvelopeSchema.extend({
+  /** Required for an integration key, refused for a session: a session prepares the
+   * request for its own account, a key names the customer by address
+   * (context/41 sections 3.2 and 10). */
+  clientEmail: z.email().optional(),
   contactName: z.string().min(1).max(200),
   addressText: z.string().min(1).max(500),
   /**

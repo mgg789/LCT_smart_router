@@ -1,17 +1,18 @@
-import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { type Actor, AuthService, CurrentActor, Roles } from '../auth';
 import { SysError } from '../common/errors';
 import { zodBody } from '../common/validation';
 import { OperationsService } from '../operations';
-import { EngineersService } from '../orchestrator/engineers';
+import { EngineersService, type EngineerWithAccount } from '../orchestrator/engineers';
 import { FactsService } from '../orchestrator/facts';
 import { PrismaService } from '../persistence';
 import { AppliedPlanService } from '../routing/router-gateway';
 import {
   type ConfirmEmailChangeDto,
   confirmEmailChangeSchema,
-  operationOnlySchema,
+  engineerActionSchema,
+  type EngineerActionDto,
   type RequestEmailChangeDto,
   requestEmailChangeSchema,
   type SetAvailabilityDto,
@@ -32,11 +33,10 @@ import { toRequestView } from './request-view';
 /**
  * Engineer App contour.
  *
- * Everything here acts on the signed-in engineer and no one else: the subject comes from
- * the session, never from the payload (context/42 DF-06).
- *
- * The day's plan is not served here yet -- it is the applied working plan, which arrives
- * with the ROUTER-gateway branch.
+ * A session acts on its own engineer and no one else: the subject comes from the
+ * credential, never from the payload (context/42 DF-06). An integration key has no
+ * account to act as: it names the engineer object explicitly with `engineerId`, and the
+ * key's category -- not the object -- decides what it may do (context/41 section 3.2).
  */
 @Roles('engineer')
 @ApiTags('engineer')
@@ -52,9 +52,12 @@ export class EngineerController {
   ) {}
 
   @Get('profile')
-  @ApiOperation({ summary: 'Profile of the signed-in engineer' })
-  async profile(@CurrentActor() actor: Actor): Promise<{ engineer: EngineerView }> {
-    const engineer = await this.engineers.byAccount(this.prisma, this.accountOf(actor));
+  @ApiOperation({ summary: 'Profile of the signed-in engineer, or of the engineerId a key names' })
+  async profile(
+    @CurrentActor() actor: Actor,
+    @Query('engineerId') engineerId?: string,
+  ): Promise<{ engineer: EngineerView }> {
+    const engineer = await this.subjectOf(actor, engineerId);
     return { engineer: toEngineerView(engineer) };
   }
 
@@ -64,7 +67,7 @@ export class EngineerController {
     @CurrentActor() actor: Actor,
     @Body(zodBody(updateOwnProfileSchema)) dto: UpdateOwnProfileDto,
   ): Promise<{ engineer: EngineerView }> {
-    const engineer = await this.engineers.byAccount(this.prisma, this.accountOf(actor));
+    const engineer = await this.subjectOf(actor, dto.engineerId);
     const outcome = await this.operations.execute(
       {
         operationId: dto.operationId,
@@ -94,7 +97,7 @@ export class EngineerController {
     @CurrentActor() actor: Actor,
     @Body(zodBody(requestEmailChangeSchema)) dto: RequestEmailChangeDto,
   ) {
-    const issued = await this.auth.requestOwnedEmailChange(this.accountOf(actor), dto.email);
+    const issued = await this.auth.requestOwnedEmailChange(this.sessionAccountOf(actor), dto.email);
     return {
       email: issued.email,
       expiresAt: issued.expiresAt,
@@ -108,15 +111,18 @@ export class EngineerController {
     @CurrentActor() actor: Actor,
     @Body(zodBody(confirmEmailChangeSchema)) dto: ConfirmEmailChangeDto,
   ): Promise<{ engineer: EngineerView }> {
-    await this.auth.confirmOwnedEmailChange(this.accountOf(actor), dto.email, dto.code);
-    const engineer = await this.engineers.byAccount(this.prisma, this.accountOf(actor));
+    await this.auth.confirmOwnedEmailChange(this.sessionAccountOf(actor), dto.email, dto.code);
+    const engineer = await this.engineers.byAccount(this.prisma, this.sessionAccountOf(actor));
     return { engineer: toEngineerView(engineer) };
   }
 
   @Get('day')
   @ApiOperation({ summary: 'Shift, availability and lunch state of the current working day' })
-  async day(@CurrentActor() actor: Actor): Promise<{ day: EngineerDayView }> {
-    const engineer = await this.engineers.byAccount(this.prisma, this.accountOf(actor));
+  async day(
+    @CurrentActor() actor: Actor,
+    @Query('engineerId') engineerId?: string,
+  ): Promise<{ day: EngineerDayView }> {
+    const engineer = await this.subjectOf(actor, engineerId);
     const outcome = await this.operations.execute(
       {
         // Reading the day may create it, which is why it goes through an operation; the
@@ -138,7 +144,7 @@ export class EngineerController {
     @CurrentActor() actor: Actor,
     @Body(zodBody(setAvailabilitySchema)) dto: SetAvailabilityDto,
   ): Promise<{ day: EngineerDayView }> {
-    const engineer = await this.engineers.byAccount(this.prisma, this.accountOf(actor));
+    const engineer = await this.subjectOf(actor, dto.engineerId);
     const outcome = await this.operations.execute(
       {
         operationId: dto.operationId,
@@ -164,9 +170,9 @@ export class EngineerController {
   @ApiOperation({ summary: 'Start a technical stop with an expected return' })
   async technicalBreak(
     @CurrentActor() actor: Actor,
-    @Body(zodBody(operationOnlySchema)) dto: { operationId: string },
+    @Body(zodBody(engineerActionSchema)) dto: EngineerActionDto,
   ): Promise<{ day: EngineerDayView }> {
-    const engineer = await this.engineers.byAccount(this.prisma, this.accountOf(actor));
+    const engineer = await this.subjectOf(actor, dto.engineerId);
     const outcome = await this.operations.execute(
       {
         operationId: dto.operationId,
@@ -184,9 +190,9 @@ export class EngineerController {
   @ApiOperation({ summary: 'Record the actual start of lunch' })
   async startLunch(
     @CurrentActor() actor: Actor,
-    @Body(zodBody(operationOnlySchema)) dto: { operationId: string },
+    @Body(zodBody(engineerActionSchema)) dto: EngineerActionDto,
   ): Promise<{ day: EngineerDayView }> {
-    const engineer = await this.engineers.byAccount(this.prisma, this.accountOf(actor));
+    const engineer = await this.subjectOf(actor, dto.engineerId);
     const outcome = await this.operations.execute(
       {
         operationId: dto.operationId,
@@ -204,9 +210,9 @@ export class EngineerController {
   @ApiOperation({ summary: 'Record the return to work after lunch' })
   async finishLunch(
     @CurrentActor() actor: Actor,
-    @Body(zodBody(operationOnlySchema)) dto: { operationId: string },
+    @Body(zodBody(engineerActionSchema)) dto: EngineerActionDto,
   ): Promise<{ day: EngineerDayView }> {
-    const engineer = await this.engineers.byAccount(this.prisma, this.accountOf(actor));
+    const engineer = await this.subjectOf(actor, dto.engineerId);
     const outcome = await this.operations.execute(
       {
         operationId: dto.operationId,
@@ -220,13 +226,44 @@ export class EngineerController {
     return { day: outcome.result };
   }
 
-  private accountOf(actor: Actor): string {
+  /**
+   * The account of a session, for actions that manage the login itself.
+   *
+   * Changing the login address has no object-selection form: an integration key carries
+   * no account, so there is nothing for it to change (context/41 section 3.2).
+   */
+  private sessionAccountOf(actor: Actor): string {
     if (!actor.accountId) {
-      throw SysError.forbidden(
-        'This action needs an engineer session; an integration key has no account to act as',
-      );
+      throw SysError.forbidden('The login address belongs to a session; a key has no account');
     }
     return actor.accountId;
+  }
+
+  /**
+   * Which engineer this call acts on.
+   *
+   * A session acts on its own engineer: the subject comes from the credential, so an
+   * explicit id is refused even when it names the caller's own profile -- one rule, no
+   * exceptions to poke holes in (context/42 DF-06). An integration key has no account:
+   * it must name the engineer, and the named object must exist (context/41 section 3.2).
+   */
+  private async subjectOf(
+    actor: Actor,
+    explicitEngineerId: string | null | undefined,
+  ): Promise<EngineerWithAccount> {
+    if (actor.accountId) {
+      if (explicitEngineerId !== undefined && explicitEngineerId !== null && explicitEngineerId !== '') {
+        throw SysError.forbidden('A session acts on its own engineer; do not pass engineerId');
+      }
+      return this.engineers.byAccount(this.prisma, actor.accountId);
+    }
+    if (explicitEngineerId === undefined || explicitEngineerId === null || explicitEngineerId === '') {
+      throw SysError.validationFailed(
+        'An integration key must name the engineer: pass engineerId',
+        { engineerId: 'required' },
+      );
+    }
+    return this.engineers.byId(this.prisma, explicitEngineerId);
   }
 
   /**
@@ -255,9 +292,9 @@ export class EngineerController {
   }
 
   @Get('plan')
-  @ApiOperation({ summary: 'The working plan for the signed-in engineer' })
-  async plan(@CurrentActor() actor: Actor) {
-    const engineer = await this.engineers.byAccount(this.prisma, this.accountOf(actor));
+  @ApiOperation({ summary: 'The working plan for the signed-in engineer, or the engineerId a key names' })
+  async plan(@CurrentActor() actor: Actor, @Query('engineerId') engineerId?: string) {
+    const engineer = await this.subjectOf(actor, engineerId);
     const plan = await this.plans.current(this.prisma);
     if (!plan) {
       // A truthful empty state, not an error: no plan has been applied yet.
@@ -286,8 +323,12 @@ export class EngineerController {
 
   @Get('requests/:id')
   @ApiOperation({ summary: 'One assigned request from the working plan' })
-  async request(@CurrentActor() actor: Actor, @Param('id') requestId: string) {
-    const engineer = await this.engineers.byAccount(this.prisma, this.accountOf(actor));
+  async request(
+    @CurrentActor() actor: Actor,
+    @Param('id') requestId: string,
+    @Query('engineerId') engineerId?: string,
+  ) {
+    const engineer = await this.subjectOf(actor, engineerId);
     const plan = await this.plans.current(this.prisma);
     if (!plan) {
       throw SysError.notFound('Request');
@@ -312,7 +353,7 @@ export class EngineerController {
     @Param('id') requestId: string,
     @Body(zodBody(reportFactSchema)) dto: ReportFactDto,
   ) {
-    const engineer = await this.engineers.byAccount(this.prisma, this.accountOf(actor));
+    const engineer = await this.subjectOf(actor, dto.engineerId);
     // Router owns the thresholds. Read them before the operation opens its database
     // transaction; a private-network call must never hold a business transaction open.
     const timing = await this.facts.timing();
