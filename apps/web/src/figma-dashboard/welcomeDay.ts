@@ -29,3 +29,8 @@ export function hasStartedWorkDay(storage: Pick<Storage, 'getItem'>, date: strin
 export function markWorkDayStarted(storage: Pick<Storage, 'setItem'>, date: string): void {
   storage.setItem(WORKDAY_STARTED_KEY, date);
 }
+
+/** Closes the dispatcher shift so Welcome is shown again. */
+export function clearWorkDayStarted(storage: Pick<Storage, 'removeItem'>): void {
+  storage.removeItem(WORKDAY_STARTED_KEY);
+}

@@ -40,8 +40,11 @@ import { AddEntityModal } from './AddEntityModal';
 import { useArtboardScale } from './artboardScale';
 import { DataUploadModal } from './DataUploadModal';
 import { DispatcherAuthPage } from './DispatcherAuthPage';
+import { ConfirmDangerModal } from './ConfirmDangerModal';
+import { SettingsModal } from './SettingsModal';
 import { WelcomeScreen } from './WelcomeScreen';
-import { hasStartedWorkDay, markWorkDayStarted, moscowWorkDate } from './welcomeDay';
+import type { DangerActionId } from './confirmPhrase';
+import { clearWorkDayStarted, hasStartedWorkDay, markWorkDayStarted, moscowWorkDate } from './welcomeDay';
 import { PolicyComparisonView } from './PolicyComparisonView';
 import { AlertsView } from './AlertsView';
 import { RequestDetailView } from './RequestDetailView';
@@ -132,6 +135,8 @@ export function MainDashboardPage() {
   const [welcomeOpen, setWelcomeOpen] = useState(
     () => !hasStartedWorkDay(window.localStorage, moscowWorkDate()),
   );
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [dangerAction, setDangerAction] = useState<DangerActionId | null>(null);
   const [openedRequestId, setOpenedRequestId] = useState<string | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<RegionSelection>(ALL_REGIONS);
 
@@ -267,6 +272,14 @@ export function MainDashboardPage() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
+      if (dangerAction) {
+        setDangerAction(null);
+        return;
+      }
+      if (settingsOpen) {
+        setSettingsOpen(false);
+        return;
+      }
       if (uploadOpen) {
         if (!dash.uploadingData) setUploadOpen(false);
         return;
@@ -300,7 +313,7 @@ export function MainDashboardPage() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [addOpen, dash, notifOpen, policyOpen, regionOpen, searchOpen, showRightPanel, uploadOpen, userMenuOpen]);
+  }, [addOpen, dangerAction, dash, notifOpen, policyOpen, regionOpen, searchOpen, settingsOpen, showRightPanel, uploadOpen, userMenuOpen]);
 
   const scale = useArtboardScale();
   const motionOn = !reduceMotion;
@@ -452,13 +465,57 @@ export function MainDashboardPage() {
             setPolicyOpen(false);
             setUserMenuOpen((value) => !value);
           }}
-          onReset={() => {
-            dash.selectDemoScenario('initial');
+          onSettings={() => {
             setUserMenuOpen(false);
+            setSettingsOpen(true);
+          }}
+          onEndDay={() => {
+            setUserMenuOpen(false);
+            setDangerAction('endDay');
+          }}
+          onRestartDay={() => {
+            setUserMenuOpen(false);
+            setDangerAction('restartDay');
+          }}
+          onReset={() => {
+            setUserMenuOpen(false);
+            setDangerAction('resetData');
           }}
           onSignOut={() => {
-            void dash.signOut();
             setUserMenuOpen(false);
+            setDangerAction('signOut');
+          }}
+        />
+        <SettingsModal
+          open={settingsOpen}
+          motionOn={motionOn}
+          dateLabel={view?.dateLabel ?? MAIN_DASHBOARD.dateLabel}
+          sourceLabel={dash.isDemo ? 'Демо' : dash.source === 'cached' ? 'Кэш' : 'Живой контур'}
+          policyTitle={policyTitle}
+          onClose={() => setSettingsOpen(false)}
+        />
+        <ConfirmDangerModal
+          actionId={dangerAction}
+          motionOn={motionOn}
+          onCancel={() => setDangerAction(null)}
+          onConfirm={(id) => {
+            setDangerAction(null);
+            if (id === 'endDay') {
+              clearWorkDayStarted(window.localStorage);
+              setWelcomeOpen(true);
+              return;
+            }
+            if (id === 'restartDay') {
+              dash.selectDemoScenario('initial');
+              clearWorkDayStarted(window.localStorage);
+              setWelcomeOpen(true);
+              return;
+            }
+            if (id === 'resetData') {
+              dash.selectDemoScenario('initial');
+              return;
+            }
+            void dash.signOut();
           }}
         />
         {activeNav === 'requests' && openedRequestId ? null : (
@@ -716,17 +773,23 @@ function UserMenu({
   open,
   motionOn,
   onToggle,
+  onSettings,
+  onEndDay,
+  onRestartDay,
   onReset,
   onSignOut,
 }: {
   open: boolean;
   motionOn: boolean;
   onToggle: () => void;
+  onSettings: () => void;
+  onEndDay: () => void;
+  onRestartDay: () => void;
   onReset: () => void;
   onSignOut: () => void;
 }) {
   return (
-    <div data-user-menu className="absolute z-50" style={{ left: HEADER_AVATAR_LEFT, top: HEADER_AVATAR_TOP }}>
+    <div data-user-menu className="absolute z-[90]" style={{ left: HEADER_AVATAR_LEFT, top: HEADER_AVATAR_TOP }}>
       <motion.button
         type="button"
         onClick={onToggle}
@@ -755,37 +818,71 @@ function UserMenu({
       <AnimatePresence>
         {open ? (
           <motion.div
-            className="absolute right-0 top-[62px] flex w-[214px] flex-col gap-[8px] rounded-[16px] bg-white p-[10px]"
+            className="absolute right-0 top-[62px] flex w-[230px] flex-col rounded-[16px] bg-white p-[10px]"
             initial={motionOn ? { opacity: 0, y: -8, scale: 0.96 } : false}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={motionOn ? { opacity: 0, y: -8, scale: 0.96 } : undefined}
             transition={motionOn ? { duration: 0.28, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
             style={{ boxShadow: '0 16px 36px rgba(39, 41, 48, 0.16)' }}
           >
-            <motion.button
-              type="button"
-              onClick={onReset}
-              className="flex h-[44px] w-full items-center justify-center rounded-[12px] bg-figma-danger font-semibold text-[16px] text-white"
-              whileHover={motionOn ? { scale: 1.03, filter: 'brightness(1.08)' } : undefined}
-              whileTap={motionOn ? { scale: 0.98 } : undefined}
-              transition={{ duration: 0.16 }}
-            >
-              Сбросить данные
-            </motion.button>
-            <motion.button
-              type="button"
-              onClick={onSignOut}
-              className="flex h-[44px] w-full items-center justify-center rounded-[12px] bg-figma-danger font-semibold text-[16px] text-white"
-              whileHover={motionOn ? { scale: 1.03, filter: 'brightness(1.08)' } : undefined}
-              whileTap={motionOn ? { scale: 0.98 } : undefined}
-              transition={{ duration: 0.16 }}
-            >
-              Выйти
-            </motion.button>
+            <div className="flex flex-col gap-[8px]">
+              <MenuAction motionOn={motionOn} tone="ink" onClick={onSettings}>
+                Настройки
+              </MenuAction>
+            </div>
+            <div className="mx-[2px] my-[8px] h-px bg-figma-ink/15" />
+            <div className="flex flex-col gap-[8px]">
+              <MenuAction motionOn={motionOn} tone="bee" onClick={onEndDay}>
+                Завершить день
+              </MenuAction>
+              <MenuAction motionOn={motionOn} tone="danger" onClick={onRestartDay}>
+                День заново
+              </MenuAction>
+            </div>
+            <div className="mx-[2px] my-[8px] h-px bg-figma-ink/15" />
+            <div className="flex flex-col gap-[8px]">
+              <MenuAction motionOn={motionOn} tone="danger" onClick={onReset}>
+                Сбросить данные
+              </MenuAction>
+              <MenuAction motionOn={motionOn} tone="danger" onClick={onSignOut}>
+                Выйти
+              </MenuAction>
+            </div>
           </motion.div>
         ) : null}
       </AnimatePresence>
     </div>
+  );
+}
+
+function MenuAction({
+  tone,
+  motionOn,
+  onClick,
+  children,
+}: {
+  tone: 'ink' | 'bee' | 'danger';
+  motionOn: boolean;
+  onClick: () => void;
+  children: string;
+}) {
+  const palette =
+    tone === 'bee'
+      ? 'bg-figma-bee text-figma-ink'
+      : tone === 'ink'
+        ? 'bg-figma-ink text-white'
+        : 'bg-figma-danger text-white';
+  return (
+    <motion.button
+      type="button"
+      onClick={onClick}
+      className={`flex h-[44px] w-full items-center justify-center rounded-[12px] font-semibold text-[16px] ${palette}`}
+      whileHover={motionOn ? { scale: 1.03, filter: 'brightness(1.08)' } : undefined}
+      whileTap={motionOn ? { scale: 0.98 } : undefined}
+      transition={{ duration: 0.16 }}
+    >
+      {children}
+    </motion.button>
   );
 }
 

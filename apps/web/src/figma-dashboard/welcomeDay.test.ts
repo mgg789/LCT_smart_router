@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   WORKDAY_STARTED_KEY,
+  clearWorkDayStarted,
   hasStartedWorkDay,
   markWorkDayStarted,
   moscowClockLabel,
@@ -23,11 +24,16 @@ describe('welcomeDay', () => {
       setItem: (key: string, value: string) => {
         memory.set(key, value);
       },
+      removeItem: (key: string) => {
+        memory.delete(key);
+      },
     };
     expect(hasStartedWorkDay(storage, '2026-09-19')).toBe(false);
     markWorkDayStarted(storage, '2026-09-19');
     expect(memory.get(WORKDAY_STARTED_KEY)).toBe('2026-09-19');
     expect(hasStartedWorkDay(storage, '2026-09-19')).toBe(true);
     expect(hasStartedWorkDay(storage, '2026-09-20')).toBe(false);
+    clearWorkDayStarted(storage);
+    expect(hasStartedWorkDay(storage, '2026-09-19')).toBe(false);
   });
 });
