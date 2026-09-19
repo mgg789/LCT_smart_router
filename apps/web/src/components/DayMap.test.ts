@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import type { PlanRouteView } from '../api/types';
 import { projectLiveGraph } from '../domain/liveGraph';
-import { liveProgressPoints, liveProgressSegments, visiblePlannedSegments } from './DayMap';
+import {
+  liveProgressPoints,
+  liveProgressSegments,
+  lunchMarkerCoordinates,
+  visiblePlannedSegments,
+} from './DayMap';
 
 describe('LIVE map factual projection', () => {
   const anchor = { kind: 'job' as const, requestId: 'done', lat: 55.75, lon: 37.61, at: 100 };
@@ -29,6 +34,37 @@ describe('LIVE map factual projection', () => {
       { from: lunch, to: next },
     ]);
     expect(liveProgressPoints(progress)).toEqual([anchor, lunch]);
+  });
+
+  it('moves a collocated lunch marker between its adjacent visits', () => {
+    const graph = projectLiveGraph(null, {
+      phase: 'traveling',
+      origin,
+      anchor,
+      lunch: { kind: 'lunch', requestId: null, lat: anchor.lat, lon: anchor.lon, at: 150 },
+      next,
+      occurredAt: 150,
+    });
+    const lunchIndex = graph.mapNodes.findIndex((node) => node.kind === 'lunch');
+
+    const [lon, lat] = lunchMarkerCoordinates(graph.mapNodes, lunchIndex);
+    expect(lon).toBeCloseTo(37.615);
+    expect(lat).toBeCloseTo(55.755);
+  });
+
+  it('keeps a distinct lunch marker at its Router position', () => {
+    const lunch = { kind: 'lunch' as const, requestId: null, lat: 55.757, lon: 37.617, at: 150 };
+    const graph = projectLiveGraph(null, {
+      phase: 'traveling',
+      origin,
+      anchor,
+      lunch,
+      next,
+      occurredAt: 150,
+    });
+    const lunchIndex = graph.mapNodes.findIndex((node) => node.kind === 'lunch');
+
+    expect(lunchMarkerCoordinates(graph.mapNodes, lunchIndex)).toEqual([lunch.lon, lunch.lat]);
   });
 
   it('marks the current vertex without retaining a past connector after next job starts', () => {

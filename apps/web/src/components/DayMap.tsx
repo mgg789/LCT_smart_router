@@ -34,6 +34,30 @@ export interface VisiblePlannedSegment extends MapRouteSegment {
 }
 
 /**
+ * Keeps a lunch marker visible when Router anchors the break at the preceding
+ * or following visit. The factual route coordinates stay untouched; only the
+ * marker is placed halfway between its adjacent drawable vertices.
+ */
+export function lunchMarkerCoordinates(
+  nodes: readonly LiveGraphNode[],
+  lunchIndex: number,
+): readonly [number, number] {
+  const lunch = nodes[lunchIndex];
+  if (lunch?.kind !== 'lunch') {
+    throw new RangeError('lunchIndex must reference a lunch node');
+  }
+  const previous = nodes.slice(0, lunchIndex).findLast((node) => node.kind !== 'lunch');
+  const following = nodes.slice(lunchIndex + 1).find((node) => node.kind !== 'lunch');
+  if (!previous || !following) return [lunch.lon, lunch.lat];
+  const overlapsAdjacent =
+    (lunch.lat === previous.lat && lunch.lon === previous.lon) ||
+    (lunch.lat === following.lat && lunch.lon === following.lon);
+  return overlapsAdjacent
+    ? [(previous.lon + following.lon) / 2, (previous.lat + following.lat) / 2]
+    : [lunch.lon, lunch.lat];
+}
+
+/**
  * Keeps Router geometry only when both of its factual endpoints remain in the
  * current map projection. A wait is not a drawable vertex, but it may share a
  * coordinate with the following visit and then resolves to that visit.
@@ -330,6 +354,7 @@ export function DayMap({
         graph.mapNodes.flatMap((node, index) => {
           if (node.kind === 'start') return [];
           if (node.kind === 'lunch') {
+            const coordinates = lunchMarkerCoordinates(graph.mapNodes, index);
             return [
               {
                 type: 'Feature' as const,
@@ -340,7 +365,7 @@ export function DayMap({
                 },
                 geometry: {
                   type: 'Point' as const,
-                  coordinates: [node.lon, node.lat],
+                  coordinates,
                 },
               },
             ];
@@ -367,7 +392,7 @@ export function DayMap({
               },
               geometry: {
                 type: 'Point' as const,
-                coordinates: [node.lon, node.lat],
+                coordinates: [node.lon, node.lat] as const,
               },
             },
           ];
