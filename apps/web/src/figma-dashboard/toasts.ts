@@ -11,6 +11,28 @@ export const TOAST_STACK_BOTTOM = 1047;
 export const TOAST_LEFT = 1465;
 export const TOAST_WIDTH = 425;
 export const TOAST_EXIT_X = 520;
+export const TOAST_SWIPE_COLLAPSE = 80;
+
+/**
+ * Two-finger trackpad swipe arrives as a horizontal wheel. Accumulate rightward
+ * delta and collapse the column once it crosses the same intent as the bell.
+ */
+export function accumulateSwipeCollapse(
+  deltaX: number,
+  deltaY: number,
+  accumulated: number,
+  threshold = TOAST_SWIPE_COLLAPSE,
+): { accumulated: number; collapse: boolean } {
+  if (!Number.isFinite(deltaX) || !Number.isFinite(deltaY)) {
+    return { accumulated: 0, collapse: false };
+  }
+  if (deltaX <= 0 || Math.abs(deltaX) <= Math.abs(deltaY)) {
+    return { accumulated: 0, collapse: false };
+  }
+  const next = accumulated + deltaX;
+  if (next >= threshold) return { accumulated: 0, collapse: true };
+  return { accumulated: next, collapse: false };
+}
 
 export type ToastNotification = {
   id: string;

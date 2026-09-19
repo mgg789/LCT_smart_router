@@ -9,6 +9,7 @@ import {
   TOAST_LEFT,
   TOAST_STACK_TOP,
   TOAST_WIDTH,
+  accumulateSwipeCollapse,
   dismissToast,
   type ToastKind,
   type ToastNotification,
@@ -43,14 +44,48 @@ export function ToastColumn({
   open,
   motionOn,
   scale,
+  onCollapse,
 }: {
   open: boolean;
   motionOn: boolean;
   scale: number;
+  onCollapse: () => void;
 }) {
   const toasts = useToasts();
   const visible = toasts.slice(0, visibleToastLimit());
   const [ghosts, setGhosts] = useState<ToastGhost[]>([]);
+  const wheelX = useRef(0);
+  const wheelReset = useRef<number | null>(null);
+  const onCollapseRef = useRef(onCollapse);
+  onCollapseRef.current = onCollapse;
+
+  useEffect(() => {
+    if (!open) {
+      wheelX.current = 0;
+      return;
+    }
+    const onWheel = (event: WheelEvent) => {
+      const overCard = (event.target as HTMLElement | null)?.closest?.('[data-toast-card]');
+      if (!overCard) return;
+      const next = accumulateSwipeCollapse(event.deltaX, event.deltaY, wheelX.current);
+      wheelX.current = next.accumulated;
+      if (next.collapse) {
+        event.preventDefault();
+        onCollapseRef.current();
+      } else if (next.accumulated > 0) {
+        event.preventDefault();
+      }
+      if (wheelReset.current !== null) window.clearTimeout(wheelReset.current);
+      wheelReset.current = window.setTimeout(() => {
+        wheelX.current = 0;
+      }, 180);
+    };
+    window.addEventListener('wheel', onWheel, { passive: false, capture: true });
+    return () => {
+      window.removeEventListener('wheel', onWheel, true);
+      if (wheelReset.current !== null) window.clearTimeout(wheelReset.current);
+    };
+  }, [open]);
 
   const beginLeave = (toast: ToastNotification, top: number, startX: number) => {
     setGhosts((current) =>

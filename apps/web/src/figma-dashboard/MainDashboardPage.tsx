@@ -323,7 +323,12 @@ export function MainDashboardPage() {
             setNotifOpen((value) => !value);
           }}
         />
-        <ToastColumn open={notifOpen} motionOn={motionOn} scale={scale} />
+        <ToastColumn
+          open={notifOpen}
+          motionOn={motionOn}
+          scale={scale}
+          onCollapse={() => setNotifOpen(false)}
+        />
         <UserMenu
           open={userMenuOpen}
           motionOn={motionOn}

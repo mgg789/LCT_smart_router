@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  accumulateSwipeCollapse,
   DEMO_TOASTS,
   TOAST_CARD_HEIGHT,
   TOAST_GAP,
@@ -80,5 +81,12 @@ describe('toast stack', () => {
     expect(toast.id).toBe('alert:al-1');
     expect(toast.title).toContain('Алёрт');
     expect(toast.body).toContain('навыком');
+  });
+
+  it('collapses the column on a rightward two-finger wheel swipe', () => {
+    expect(accumulateSwipeCollapse(20, 4, 0)).toEqual({ accumulated: 20, collapse: false });
+    expect(accumulateSwipeCollapse(70, 8, 20)).toEqual({ accumulated: 0, collapse: true });
+    expect(accumulateSwipeCollapse(12, 40, 30)).toEqual({ accumulated: 0, collapse: false });
+    expect(accumulateSwipeCollapse(-30, 0, 40)).toEqual({ accumulated: 0, collapse: false });
   });
 });
