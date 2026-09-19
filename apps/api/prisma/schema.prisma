@@ -188,9 +188,14 @@ enum DataOrigin {
   synthesized
 }
 
+/// Which interface an integration key replaces. `client_eng` covers integrations that
+/// speak to both the client and the engineer contours with one key (2026-09-19 amendment
+/// to context/41 section 5); `master` covers those plus the dispatcher contour and the
+/// system/debug functions.
 enum ApiTokenCategory {
   client
   eng
+  client_eng
   master
 }
 
@@ -269,6 +274,9 @@ model ApiToken {
   category  ApiTokenCategory
   tokenHash String           @unique @map("token_hash")
   createdAt BigInt @map("created_at")
+  /// Unix-epoch seconds. NULL is the deliberate never-expiring key; a passed date stops
+  /// new calls exactly like a revocation (2026-09-19 amendment to context/41 section 4.2).
+  expiresAt BigInt? @map("expires_at")
   revokedAt BigInt? @map("revoked_at")
 
   @@map("api_tokens")

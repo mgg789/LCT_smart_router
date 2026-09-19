@@ -1,7 +1,8 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { HardHat, Map as MapIcon, Plus, ShieldCog } from 'lucide-react';
+import { HardHat, Map as MapIcon, Plus, Settings, ShieldCog } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { EquipmentType } from '../api/types';
+import { ApiTokensPage } from '../components/ApiTokensPage';
 import { DataUploadModal } from '../components/DataUploadModal';
 import { DayMap } from '../components/DayMap';
 import { EngineersPage } from '../components/EngineersPage';
@@ -36,6 +37,7 @@ const NAV = [
   { id: 'day', label: 'План дня', icon: MapIcon },
   { id: 'policies', label: 'Политики', icon: ShieldCog },
   { id: 'engineers', label: 'Инженеры', icon: HardHat },
+  { id: 'settings', label: 'Настройки', icon: Settings },
 ] as const;
 
 type DashboardTab = (typeof NAV)[number]['id'];
@@ -466,6 +468,8 @@ export function DashboardPage() {
               void dash.updateEngineerAvailability(engineerId, availability)
             }
           />
+        ) : activeTab === 'settings' ? (
+          <ApiTokensPage token={dash.token} />
         ) : null}
       </div>
     </div>

@@ -4,7 +4,7 @@ import type { Request } from 'express';
 import { PUBLIC_ROUTE, REQUIRED_ROLES } from '../../common/access';
 import { SysError } from '../../common/errors';
 import type { Role } from '../../generated/prisma/client';
-import { type Actor, effectiveRole } from '../actor';
+import { type Actor, effectiveRoles } from '../actor';
 import { AuthService } from '../auth.service';
 
 /**
@@ -57,11 +57,13 @@ export class ActorGuard implements CanActivate {
       return true;
     }
 
-    const role = effectiveRole(actor);
-    if (!role || !required.includes(role)) {
+    // An actor may carry several roles (a `client_eng` or `master` key): the endpoint
+    // admits the actor when any of them satisfies the requirement.
+    const roles = effectiveRoles(actor);
+    if (!roles.some((role) => required.includes(role))) {
       throw SysError.forbidden('This action does not belong to your role', {
         requiredRoles: required,
-        actorRole: role,
+        actorRoles: roles,
       });
     }
     return true;
