@@ -238,6 +238,16 @@ describe('auth-engine', () => {
   describe('integration keys', () => {
     let dispatcherToken: string;
 
+    /** Unix-epoch seconds, the same edge format the API itself uses. */
+    const nowSeconds = (): number => Math.floor(Date.now() / 1000);
+
+    const deleteToken = async (id: string): Promise<void> => {
+      await fetch(target(`/api/v1/auth/tokens/${id}`), {
+        method: 'DELETE',
+        headers: { authorization: `Bearer ${dispatcherToken}` },
+      });
+    };
+
     before(async () => {
       const response = await post('/api/v1/auth/dispatcher/password', {
         email: process.env.DISPATCHER_EMAIL,
@@ -358,6 +368,86 @@ describe('auth-engine', () => {
           headers: { authorization: `Bearer ${dispatcherToken}` },
         });
       }
+    });
+    it('gives a client_eng key both app contours but not the dispatcher contour', async () => {
+      const created = await post(
+        '/api/v1/auth/tokens',
+        { name: unique('both-apps'), category: 'client_eng', expiresAt: null },
+        dispatcherToken,
+      );
+      assert.equal(created.status, 201);
+      const key = (await created.json()) as { id: string; token: string; expiresAt: number | null };
+      assert.equal(key.expiresAt, null);
+
+      const session = await get('/api/v1/auth/session', key.token);
+      const described = (await session.json()) as { role: string; roles: string[] };
+      assert.equal(described.role, 'client');
+      assert.deepEqual(described.roles, ['client', 'engineer']);
+
+      // The client contour admits the key...
+      const workTypes = await get('/api/v1/client/work-types', key.token);
+      assert.equal(workTypes.status, 200);
+      // ...the dispatcher contour does not: the both-app key is not a dashboard key.
+      const dispatch = await get('/api/v1/dispatch/requests', key.token);
+      assert.equal(dispatch.status, 403);
+      assert.equal(((await dispatch.json()) as ErrorBody).error.code, 'FORBIDDEN');
+
+      await deleteToken(key.id);
+    });
+
+    it('lets a master key reach the app contours and the dispatcher contour', async () => {
+      const created = await post(
+        '/api/v1/auth/tokens',
+        { name: unique('everything'), category: 'master' },
+        dispatcherToken,
+      );
+      const key = (await created.json()) as { id: string; token: string };
+
+      assert.equal((await get('/api/v1/client/work-types', key.token)).status, 200);
+      assert.equal((await get('/api/v1/dispatch/requests', key.token)).status, 200);
+
+      await deleteToken(key.id);
+    });
+
+    it('stops accepting an expired key like a revoked one', async () => {
+      const created = await post(
+        '/api/v1/auth/tokens',
+        { name: unique('dying'), category: 'client', expiresAt: nowSeconds() + 3_600 },
+        dispatcherToken,
+      );
+      assert.equal(created.status, 201);
+      const key = (await created.json()) as { id: string; token: string; expiresAt: number };
+      assert.equal(key.expiresAt, nowSeconds() + 3_600);
+
+      const listed = await get('/api/v1/auth/tokens', dispatcherToken);
+      const entry = (
+        (await listed.json()) as { tokens: Array<{ id: string; expiresAt: number | null }> }
+      ).tokens.find((item) => item.id === key.id);
+      assert.equal(entry?.expiresAt, key.expiresAt);
+
+      assert.equal((await get('/api/v1/auth/session', key.token)).status, 200);
+
+      // Simulate the date passing without waiting for it: expiry is a statement about
+      // stored state, exactly like revocation.
+      await prisma.apiToken.update({
+        where: { id: key.id },
+        data: { expiresAt: BigInt(nowSeconds() - 10) },
+      });
+      const expired = await get('/api/v1/auth/session', key.token);
+      assert.equal(expired.status, 401);
+      assert.equal(((await expired.json()) as ErrorBody).error.code, 'UNAUTHENTICATED');
+
+      await deleteToken(key.id);
+    });
+
+    it('refuses a key whose expiry date is already in the past', async () => {
+      const created = await post(
+        '/api/v1/auth/tokens',
+        { name: unique('born-dead'), category: 'client', expiresAt: nowSeconds() - 10 },
+        dispatcherToken,
+      );
+      assert.equal(created.status, 422);
+      assert.equal(((await created.json()) as ErrorBody).error.code, 'VALIDATION_FAILED');
     });
   });
 });

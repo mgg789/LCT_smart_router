@@ -26,25 +26,37 @@ export interface Actor {
 /**
  * Roles an endpoint may require.
  *
- * A token category is mapped onto the role whose UI actions it replaces: `client` and
- * `eng` keys get the corresponding role, `master` gets the dispatcher's. `client` and
- * `eng` never gain dispatcher functions just because the same person owns the key
- * (context/41 section 5).
+ * A token category is mapped onto the roles whose UI actions it replaces: `client` and
+ * `eng` keys get the corresponding role, `client_eng` gets both, `master` gets the
+ * dispatcher's plus both app contours and the system/debug functions that travel with
+ * them (context/41 section 5, 2026-09-19 amendment). `client` and `eng` never gain
+ * dispatcher functions just because the same person owns the key.
  */
-export function effectiveRole(actor: Actor): Role | null {
+export function effectiveRoles(actor: Actor): Role[] {
   if (actor.role) {
-    return actor.role;
+    return [actor.role];
   }
   switch (actor.tokenCategory) {
     case 'client':
-      return 'client';
+      return ['client'];
     case 'eng':
-      return 'engineer';
+      return ['engineer'];
+    case 'client_eng':
+      return ['client', 'engineer'];
     case 'master':
-      return 'dispatcher';
+      return ['dispatcher', 'client', 'engineer'];
     default:
-      return null;
+      return [];
   }
+}
+
+/**
+ * The primary role of an actor, kept for the session description and the journal: the
+ * first role of the category mapping. Access decisions use [[effectiveRoles]] instead,
+ * because a category may legitimately carry more than one role.
+ */
+export function effectiveRole(actor: Actor): Role | null {
+  return effectiveRoles(actor)[0] ?? null;
 }
 
 export function describeActor(actor: Actor): string {
