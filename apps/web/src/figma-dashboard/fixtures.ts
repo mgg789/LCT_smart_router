@@ -6,7 +6,7 @@
 export const FIGMA_ARTBOARD = { width: 1920, height: 1080 } as const;
 
 export const POLICY_OPTIONS = [
-  'Быстрее до клиента',
+  'Быстрее',
   'Меньше инженеров',
   'Бережнее к окнам',
   'Ровнее загрузка',
@@ -135,7 +135,7 @@ export function filterEngineers(engineers: readonly EngineerCard[], query: strin
 
 export const MAIN_DASHBOARD = {
   dateLabel: '15 сентября, 2026',
-  defaultPolicy: 'Быстрее до клиента' satisfies PolicyOption,
+  defaultPolicy: 'Быстрее' satisfies PolicyOption,
   notification: { count: 12, tone: 'yellow' as NotificationTone },
   notifications: [
     {

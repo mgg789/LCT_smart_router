@@ -16,7 +16,7 @@ import {
 describe('Figma MAIN snapshot mapper', () => {
   it('formats the header date and policy the same way as the live day page', () => {
     expect(figmaDateLabel('2026-09-15')).toBe('15 сентября, 2026');
-    expect(policyLabel('fast')).toBe('Быстрее до клиента');
+    expect(policyLabel('fast')).toBe('Быстрее');
     expect(policyLabel('compact')).toBe('Экономичнее');
   });
 
@@ -51,7 +51,7 @@ describe('Figma MAIN snapshot mapper', () => {
       label: 'Экстренная',
       tone: 'emergency',
     });
-    expect(view.displayedRequest.number).toMatch(/^Заявка № /);
+    expect(view.displayedRequest.number).toMatch(/^Заявка № \S{1,8}$/);
     expect(view.unassignedTitle).toMatch(/без назначения/);
     expect(alerts.count).toBe(1);
     expect(alerts.items[0]?.text).toContain('навыком');

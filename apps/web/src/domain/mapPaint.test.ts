@@ -9,6 +9,8 @@ import {
   mapLunchColor,
   mapPaintColor,
   pillDashLine,
+  stopRadiusPx,
+  visibleStopLabelIds,
 } from './mapPaint';
 
 describe('map paint tokens', () => {
@@ -27,6 +29,28 @@ describe('map paint tokens', () => {
     expect(mapLunchColor('#FFE6BD')).toBe(MAP_LUNCH_FILL);
     expect(mapLunchColor('#E07A2F')).toBe(MAP_LUNCH_STROKE);
     expect(mapLunchColor('#FFE7C2')).toBe(MAP_LUNCH_FILL);
+  });
+
+  it('hides the lower stop number when two circles overlap', () => {
+    const radius = stopRadiusPx(false);
+    const visible = visibleStopLabelIds([
+      { id: 'four', x: 0, y: 0, selected: false, z: 1 },
+      { id: 'six', x: radius, y: 0, selected: false, z: 2 },
+    ]);
+    expect([...visible]).toEqual(['six']);
+  });
+
+  it('keeps both numbers when circles do not touch, and prefers the selected stop', () => {
+    const far = visibleStopLabelIds([
+      { id: 'a', x: 0, y: 0, selected: false, z: 1 },
+      { id: 'b', x: 80, y: 0, selected: false, z: 2 },
+    ]);
+    expect([...far].sort()).toEqual(['a', 'b']);
+    const selectedOnTop = visibleStopLabelIds([
+      { id: 'under', x: 0, y: 0, selected: false, z: 1 },
+      { id: 'pick', x: 8, y: 0, selected: true, z: 99 },
+    ]);
+    expect([...selectedOnTop]).toEqual(['pick']);
   });
 
   it('splits a long schematic hop into rounded dash capsules', () => {

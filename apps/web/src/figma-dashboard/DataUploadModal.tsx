@@ -143,7 +143,7 @@ export function DataUploadModal({
                 aria-label="Закрыть"
                 disabled={submitting}
                 onClick={onClose}
-                className="flex size-[36px] items-center justify-center disabled:opacity-50"
+                className="flex size-[36px] items-center justify-center transition-transform duration-150 hover:scale-110 hover:rotate-90 disabled:opacity-50"
               >
                 <span className="-rotate-45">
                   <FigmaIcon src={FIGMA_ASSETS.toastCloseInk} alt="" width={20} height={20} />

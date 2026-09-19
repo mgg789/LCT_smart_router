@@ -14,8 +14,7 @@ import {
   invertToastSwipe,
   type ToastKind,
   type ToastNotification,
-  useToasts,
-  visibleToastLimit,
+  useVisibleColumnToasts,
 } from './toasts';
 
 const SWIPE_DISMISS = 64;
@@ -53,8 +52,8 @@ export function ToastColumn({
   scale: number;
   onCollapse: () => void;
 }) {
-  const toasts = useToasts();
-  const visible = toasts.slice(0, visibleToastLimit());
+  const visible = useVisibleColumnToasts();
+  const shown = open || visible.length > 0;
   const [ghosts, setGhosts] = useState<ToastGhost[]>([]);
   const wheelX = useRef(0);
   const wheelReset = useRef<number | null>(null);
@@ -62,7 +61,7 @@ export function ToastColumn({
   onCollapseRef.current = onCollapse;
 
   useEffect(() => {
-    if (!open) {
+    if (!shown) {
       wheelX.current = 0;
       return;
     }
@@ -93,7 +92,7 @@ export function ToastColumn({
       window.removeEventListener('wheel', onWheel, true);
       if (wheelReset.current !== null) window.clearTimeout(wheelReset.current);
     };
-  }, [open]);
+  }, [shown]);
 
   const beginLeave = (toast: ToastNotification, top: number, startX: number) => {
     setGhosts((current) =>
@@ -109,7 +108,7 @@ export function ToastColumn({
       data-toast-column
       className="pointer-events-none absolute inset-0 z-[80] overflow-visible"
       initial={false}
-      animate={{ x: open ? 0 : TOAST_EXIT_X }}
+      animate={{ x: shown ? 0 : TOAST_EXIT_X }}
       transition={motionOn ? { duration: 0.34, ease: STACK_EASE } : { duration: 0 }}
     >
       {visible.map((toast, index) => {
@@ -121,7 +120,7 @@ export function ToastColumn({
             top={top}
             motionOn={motionOn}
             scale={scale}
-            interactive={open}
+            interactive={shown}
             onLeave={(startX) => beginLeave(toast, top, startX)}
           />
         );
@@ -299,7 +298,7 @@ function ToastFace({
         type="button"
         data-toast-close
         aria-label="Закрыть уведомление"
-        className="absolute right-[16px] top-[13px] flex size-[29px] items-center justify-center"
+        className="absolute right-[16px] top-[13px] flex size-[29px] items-center justify-center transition-transform duration-150 hover:scale-110 hover:rotate-90"
         onPointerDown={(event) => event.stopPropagation()}
         onClick={() => onClose?.()}
       >

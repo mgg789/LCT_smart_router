@@ -117,7 +117,7 @@ export function transportLabel(transport: string): string {
 
 export const POLICY_LABELS: Record<string, string> = {
   compact: 'Экономичнее',
-  fast: 'Быстрее до клиента',
+  fast: 'Быстрее',
   sla: 'Бережнее к окнам',
   balanced: 'Ровнее загрузка',
   eco: 'Короче пробег',

@@ -13,6 +13,7 @@ import {
   mapPaintColor,
   metersPerPixel,
   pillDashLine,
+  visibleStopLabelIds,
 } from '../domain/mapPaint';
 import { regionStyle, requestRegion, routeRegion } from '../domain/regions';
 import { mapRouteSegments } from '../domain/travel';
@@ -216,6 +217,22 @@ export function DayMap({
 
       const lunchFeatures = stopFeatures.filter((feature) => !('requestId' in feature.properties));
       const jobFeatures = stopFeatures.filter((feature) => 'requestId' in feature.properties);
+      const labeledStops = jobFeatures.flatMap((feature, index) => {
+        const requestId = feature.properties.requestId;
+        if (typeof requestId !== 'string') return [];
+        const [lon, lat] = feature.geometry.coordinates;
+        const point = map.project([lon, lat]);
+        const selected = feature.properties.selected === 1;
+        const z = (selected ? 10_000 : 0) + index;
+        feature.properties.z = z;
+        return [{ id: `${feature.properties.engineerId}:${requestId}`, x: point.x, y: point.y, selected, z }];
+      });
+      const shownLabels = visibleStopLabelIds(labeledStops);
+      for (const feature of jobFeatures) {
+        const requestId = feature.properties.requestId;
+        const id = typeof requestId === 'string' ? `${feature.properties.engineerId}:${requestId}` : '';
+        feature.properties.showLabel = shownLabels.has(id) ? 1 : 0;
+      }
 
       const unassignedFeatures = (showUnassigned ? unassignedRequests(snapshot) : []).flatMap(
         (request) => {
@@ -311,6 +328,7 @@ export function DayMap({
             'circle-color': ['get', 'color'],
             'circle-stroke-width': ['case', ['==', ['get', 'selected'], 1], 4, 2.5],
             'circle-stroke-color': ['get', 'regionColor'],
+            'circle-sort-key': ['get', 'z'],
           },
         });
         if (map.getStyle().glyphs)
@@ -319,9 +337,17 @@ export function DayMap({
             type: 'symbol',
             source: 'stops',
             layout: {
-              'text-field': ['to-string', ['get', 'sequence']],
+              'text-field': [
+                'case',
+                ['==', ['get', 'showLabel'], 1],
+                ['to-string', ['get', 'sequence']],
+                '',
+              ],
               'text-size': 14,
               'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
+              'symbol-sort-key': ['get', 'z'],
+              'text-allow-overlap': true,
+              'text-ignore-placement': true,
             },
             paint: { 'text-color': MAP_CANVAS },
           });
@@ -406,10 +432,12 @@ export function DayMap({
     map.on('style.load', onStyle);
     map.once('load', onStyle);
     map.on('zoomend', onZoom);
+    map.on('moveend', onZoom);
     return () => {
       map.off('style.load', onStyle);
       map.off('load', onStyle);
       map.off('zoomend', onZoom);
+      map.off('moveend', onZoom);
     };
   }, [selectedEngineerId, selectedRequestId, snapshot, forceLocal, retry]);
 

@@ -39,10 +39,13 @@ import {
 import { DataUploadModal } from './DataUploadModal';
 import { DispatcherAuthPage } from './DispatcherAuthPage';
 import { PolicyComparisonView } from './PolicyComparisonView';
+import { RequestsView } from './RequestsView';
+import { shortRequestId } from './requestsTable';
 import { ToastColumn } from './ToastColumn';
 import { FigmaIcon, FigmaText } from './primitives';
 import {
   seedDemoToasts,
+  setToastColumnPinned,
   toastFromAlert,
   toastFromEvent,
   upsertNewToasts,
@@ -181,6 +184,16 @@ export function MainDashboardPage() {
     upsertNewToasts(openAlerts.map(toastFromAlert));
     if (!dash.isDemo) upsertNewToasts(dash.events.map(toastFromEvent));
   }, [dash.events, dash.isDemo, dash.snapshot]);
+
+  useEffect(() => {
+    setToastColumnPinned(notifOpen);
+  }, [notifOpen]);
+
+  const hadToasts = useRef(false);
+  useEffect(() => {
+    if (toasts.length > 0) hadToasts.current = true;
+    if (hadToasts.current && toasts.length === 0) setNotifOpen(false);
+  }, [toasts.length]);
 
   const inbox = useMemo(
     () => ({
@@ -345,7 +358,10 @@ export function MainDashboardPage() {
           open={notifOpen}
           motionOn={motionOn}
           scale={scale}
-          onCollapse={() => setNotifOpen(false)}
+          onCollapse={() => {
+            setNotifOpen(false);
+            setToastColumnPinned(false);
+          }}
         />
         <DataUploadModal
           open={uploadOpen}
@@ -392,7 +408,14 @@ export function MainDashboardPage() {
             onRefresh={() => void dash.refreshPolicyComparison()}
           />
         ) : null}
-        {activeNav !== 'policy' ? (
+        {activeNav === 'requests' ? (
+          <RequestsView
+            snapshot={dash.snapshot}
+            selectedRequestId={dash.selectedRequest?.id ?? null}
+            onSelect={dash.selectRequest}
+          />
+        ) : null}
+        {activeNav !== 'policy' && activeNav !== 'requests' ? (
         <>
         <EngineersColumn
           engineers={visibleEngineers}
@@ -549,14 +572,17 @@ function SidebarNav({
           );
         })}
       </nav>
-      <button
+      <motion.button
         type="button"
         aria-label="Загрузить данные"
         onClick={onUpload}
-        className="absolute bottom-[28px] left-[12px] flex h-[56px] w-[134px] items-center justify-center rounded-[16px] transition-transform duration-200 ease-out hover:scale-[1.04]"
+        className="absolute bottom-[28px] left-[12px] flex h-[56px] w-[134px] items-center justify-center rounded-full"
+        whileHover={motionOn ? { scale: 1.12, rotate: 90 } : undefined}
+        whileTap={motionOn ? { scale: 0.94 } : undefined}
+        transition={{ duration: 0.16 }}
       >
         <FigmaIcon src={FIGMA_ASSETS.iconPlus} alt="" width={28} height={28} />
-      </button>
+      </motion.button>
     </aside>
   );
 }
@@ -1538,15 +1564,18 @@ function DetailPanel({
       exit={motionOn ? { opacity: 0, x: 36 } : undefined}
       transition={motionOn ? { duration: 0.38, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
     >
-      <button
+      <motion.button
         type="button"
         aria-label="Закрыть панель"
         onClick={onClose}
         className="absolute right-[16px] top-[16px] z-20 flex items-center justify-center rounded-full bg-white"
         style={{ width: CLOSE_PANEL_SIZE, height: CLOSE_PANEL_SIZE }}
+        whileHover={motionOn ? { scale: 1.12, rotate: 90 } : undefined}
+        whileTap={motionOn ? { scale: 0.94 } : undefined}
+        transition={{ duration: 0.16 }}
       >
         <X size={22} strokeWidth={2.25} className="text-figma-ink" />
-      </button>
+      </motion.button>
       <div
         className={`absolute inset-x-0 top-0 overflow-y-auto px-[27px] pt-[24px] [scrollbar-width:thin] ${
           mode === 'plan' ? 'bottom-[110px]' : 'bottom-[24px]'
@@ -1557,8 +1586,8 @@ function DetailPanel({
             <FigmaText className="font-murs text-[32px] leading-[36px] tracking-[-0.544px] text-white">
               {request.workTypeTitle || 'Заявка'}
             </FigmaText>
-            <p className="mt-[8px] font-semibold text-[20px] tracking-[-0.34px] text-white/60">
-              {request.id}
+            <p className="mt-[8px] font-semibold text-[20px] tracking-[-0.34px] text-white/60" title={request.id}>
+              {shortRequestId(request.id)}
             </p>
             <div className="mt-[16px] flex flex-wrap gap-[12px]">
               {urgency ? <PanelTag label={urgency.label} tone={urgency.tone} /> : null}

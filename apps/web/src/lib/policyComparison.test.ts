@@ -10,6 +10,7 @@ import {
 describe('policy comparison labels', () => {
   it('names compact and the TZ baseline the way the dispatcher page does', () => {
     expect(strategyLabel('compact')).toBe('Экономичнее');
+    expect(strategyLabel('fast')).toBe('Быстрее');
     expect(strategyLabel('baseline')).toBe('Базовая из ТЗ');
     expect(strategyDescription('baseline')).toContain('очереди');
   });

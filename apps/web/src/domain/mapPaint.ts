@@ -27,6 +27,56 @@ const LUNCH: Record<string, string> = {
 export const MAP_ROUTE_DASH_PX = 14;
 export const MAP_ROUTE_GAP_PX = 10;
 
+/** Job-stop circle, matching DayMap `stops-circle` radii plus stroke. */
+export const STOP_RADIUS_PX = 13;
+export const STOP_RADIUS_SELECTED_PX = 16;
+export const STOP_STROKE_PX = 2.5;
+export const STOP_STROKE_SELECTED_PX = 4;
+
+export type StopLabelAnchor = {
+  id: string;
+  x: number;
+  y: number;
+  selected: boolean;
+  /** Higher paints on top; the lower number is hidden when circles overlap. */
+  z: number;
+};
+
+/**
+ * Screen-pixel radius of a job stop, including the yellow ring.
+ */
+export function stopRadiusPx(selected: boolean): number {
+  return selected
+    ? STOP_RADIUS_SELECTED_PX + STOP_STROKE_SELECTED_PX
+    : STOP_RADIUS_PX + STOP_STROKE_PX;
+}
+
+/**
+ * Keeps the number on the topmost overlapping circle. MapLibre draws every
+ * label above every circle, so a lower digit would otherwise sit on the upper
+ * marker — hide it instead of showing both or the wrong one.
+ */
+export function visibleStopLabelIds(stops: readonly StopLabelAnchor[]): Set<string> {
+  const ranked = [...stops]
+    .map((stop) => ({ ...stop, r: stopRadiusPx(stop.selected) }))
+    .sort((left, right) => left.z - right.z);
+  const hidden = new Set<string>();
+  for (let index = 0; index < ranked.length; index += 1) {
+    const lower = ranked[index];
+    if (!lower) continue;
+    for (let above = index + 1; above < ranked.length; above += 1) {
+      const upper = ranked[above];
+      if (!upper) continue;
+      const dist = Math.hypot(upper.x - lower.x, upper.y - lower.y);
+      if (dist < lower.r + upper.r) {
+        hidden.add(lower.id);
+        break;
+      }
+    }
+  }
+  return new Set(stops.map((stop) => stop.id).filter((id) => !hidden.has(id)));
+}
+
 /** Equirectangular meters-per-pixel at a latitude and MapLibre zoom. */
 export function metersPerPixel(latitude: number, zoom: number): number {
   return (40075016.686 * Math.cos((latitude * Math.PI) / 180)) / (256 * 2 ** zoom);

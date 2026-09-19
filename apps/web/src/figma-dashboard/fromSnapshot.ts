@@ -24,6 +24,7 @@ import {
   transportLabel,
 } from '../lib/reasons';
 import { formatClock, formatDayTitle, formatDurationMin } from '../lib/time';
+import { shortRequestId } from './requestsTable';
 import {
   visibleNotifications,
   type DashboardNotification,
@@ -251,7 +252,7 @@ function requestPanelFromSnapshot(
     skill && skill !== request.workTypeTitle ? skill : null,
   ].filter((item): item is string => Boolean(item));
   return {
-    number: `Заявка № ${request.id}`,
+    number: `Заявка № ${shortRequestId(request.id)}`,
     title: request.workTypeTitle ?? 'Заявка',
     tags: tags.slice(0, 2),
     company: request.contactName ?? 'Клиент',

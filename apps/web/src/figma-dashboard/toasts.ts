@@ -12,6 +12,8 @@ export const TOAST_LEFT = 1465;
 export const TOAST_WIDTH = 425;
 export const TOAST_EXIT_X = 520;
 export const TOAST_SWIPE_COLLAPSE = 80;
+/** How long a peek card stays after the column was collapsed. Progress ignores this. */
+export const TOAST_PEEK_MS = 4000;
 
 /**
  * macOS natural scrolling flips wheel delta versus Windows/Linux trackpads.
@@ -71,6 +73,60 @@ type ToastListener = () => void;
 let toasts: ToastNotification[] = [];
 const dismissed = new Set<string>();
 const listeners = new Set<ToastListener>();
+const peekIds = new Set<string>();
+const peekTimers = new Map<string, ReturnType<typeof setTimeout>>();
+let columnPinned = true;
+
+function clearPeekTimer(id: string): void {
+  const timer = peekTimers.get(id);
+  if (timer !== undefined) {
+    clearTimeout(timer);
+    peekTimers.delete(id);
+  }
+}
+
+function clearAllPeeks(): void {
+  for (const id of peekTimers.keys()) clearPeekTimer(id);
+  peekIds.clear();
+}
+
+function beginPeek(toast: ToastNotification): void {
+  peekIds.add(toast.id);
+  clearPeekTimer(toast.id);
+  if (toast.kind === 'progress') return;
+  peekTimers.set(
+    toast.id,
+    setTimeout(() => {
+      peekTimers.delete(toast.id);
+      peekIds.delete(toast.id);
+      emit();
+    }, TOAST_PEEK_MS),
+  );
+}
+
+/**
+ * Bell / two-finger swipe pin the full stack. Collapsing drops any peek so
+ * hidden cards do not come back with the next arrival.
+ */
+export function setToastColumnPinned(open: boolean): void {
+  columnPinned = open;
+  clearAllPeeks();
+  emit();
+}
+
+/** Whether the dispatcher currently pinned the toast column open. */
+export function isToastColumnPinned(): boolean {
+  return columnPinned;
+}
+
+/**
+ * Cards actually drawn: the full stack when pinned, otherwise only peeks.
+ */
+export function visibleToastsForColumn(): ToastNotification[] {
+  const all = getToasts();
+  if (columnPinned) return all.slice(0, visibleToastLimit());
+  return all.filter((item) => peekIds.has(item.id)).slice(0, visibleToastLimit());
+}
 
 /**
  * Demo copies from Figma NOTIFICATIONS (49:6790). Alerts still sort first.
@@ -154,14 +210,14 @@ export function visibleToastLimit(): number {
 }
 
 /**
- * Alerts stay at the top; the rest keep arrival order.
+ * Alerts stay at the top; newer cards come first so a peek lands at the head.
  */
 export function sortToasts(items: readonly ToastNotification[]): ToastNotification[] {
   return [...items].sort((left, right) => {
     const weight = (kind: ToastKind) => Number(kind === 'alert' || kind === 'error');
     const alertDelta = weight(right.kind) - weight(left.kind);
     if (alertDelta !== 0) return alertDelta;
-    return left.createdAt - right.createdAt;
+    return right.createdAt - left.createdAt;
   });
 }
 
@@ -199,6 +255,13 @@ export function useToasts(): ToastNotification[] {
   return items;
 }
 
+/** Cards the column should paint right now (pinned stack or transient peeks). */
+export function useVisibleColumnToasts(): ToastNotification[] {
+  const [items, setItems] = useState(visibleToastsForColumn);
+  useEffect(() => subscribeToasts(() => setItems(visibleToastsForColumn())), []);
+  return items;
+}
+
 /**
  * Inserts or replaces a toast. Progress at 100% removes the card instead.
  */
@@ -208,6 +271,8 @@ export function pushToast(draft: ToastDraft): ToastNotification | null {
   const without = toasts.filter((item) => item.id !== draft.id);
   if (!next) {
     dismissed.add(draft.id);
+    clearPeekTimer(draft.id);
+    peekIds.delete(draft.id);
     if (without.length !== toasts.length) {
       toasts = without;
       emit();
@@ -216,6 +281,7 @@ export function pushToast(draft: ToastDraft): ToastNotification | null {
   }
   const existing = toasts.find((item) => item.id === draft.id);
   toasts = [...without, { ...next, createdAt: existing?.createdAt ?? next.createdAt }];
+  if (!existing && !columnPinned) beginPeek(next);
   emit();
   return next;
 }
@@ -240,6 +306,8 @@ export function updateToast(
 /** Removes one toast. Silent if the id is already gone. */
 export function dismissToast(id: string): void {
   dismissed.add(id);
+  clearPeekTimer(id);
+  peekIds.delete(id);
   const next = toasts.filter((item) => item.id !== id);
   if (next.length === toasts.length) return;
   toasts = next;
@@ -254,6 +322,7 @@ export function upsertNewToasts(drafts: readonly ToastDraft[]): void {
     const next = normalizeToast(draft);
     if (!next) continue;
     toasts = [...toasts, next];
+    if (!columnPinned) beginPeek(next);
     changed = true;
   }
   if (changed) emit();
@@ -303,5 +372,7 @@ export function toastFromEvent(event: { id: string; at: number; text: string }):
 export function resetToastsForTests(): void {
   toasts = [];
   dismissed.clear();
+  columnPinned = true;
+  clearAllPeeks();
   emit();
 }

@@ -44,4 +44,11 @@ export const FIGMA_ASSETS = {
   toastAlert: '/figma/icon-toast-alert.svg',
   toastClose: '/figma/icon-toast-close.svg',
   toastCloseInk: '/figma/icon-toast-close-ink.svg',
+  requestSearchBg: '/figma/icon-request-search-bg.svg',
+  requestSearchGlyph: '/figma/icon-request-search-glyph.svg',
+  sortChevron: '/figma/icon-sort-chevron.svg',
+  statusWork: '/figma/status-dot-work.svg',
+  statusAssigned: '/figma/status-dot-assigned.svg',
+  statusDone: '/figma/status-dot-done.svg',
+  statusUnassigned: '/figma/status-dot-unassigned.svg',
 } as const;
