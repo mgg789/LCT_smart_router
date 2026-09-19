@@ -44,6 +44,15 @@ export function sortByArrival<T extends { createdAt: number }>(items: readonly T
 }
 
 /**
+ * Figma ALERTS body always starts with «Причина:».
+ */
+export function formatAlertReason(body: string): string {
+  const text = body.trim();
+  if (!text) return 'Причина: не указана';
+  return text.startsWith('Причина:') ? text : `Причина: ${text}`;
+}
+
+/**
  * Builds the ALERTS inbox: unresolved snapshot alerts, then leftover alert toasts,
  * then dismissible notices. Alert toasts that already mirror a snapshot row are skipped.
  */
@@ -108,7 +117,7 @@ function alertCardFromSnapshot(snapshot: DashboardSnapshot, alert: AlertView): I
     title: request && unassigned
       ? `Заявка № ${shortRequestId(request.id)} без назначения`
       : factorLabel(alert.code),
-    body: alert.reasons.filter(Boolean).join(' · ') || factorLabel(alert.code),
+    body: formatAlertReason(alert.reasons.filter(Boolean).join(' · ') || factorLabel(alert.code)),
     badge: request && requestUrgency(request).tone !== 'neutral'
       ? requestUrgency(request).label
       : `Результат в ${formatClock(alert.createdAt)}`,
@@ -123,12 +132,12 @@ function alertCardFromToast(toast: ToastNotification): InboxAlertCard {
   return {
     id: toast.id,
     createdAt: toast.createdAt,
-    title: toast.title,
-    body: toast.body,
-    badge: null,
+    title: toast.title.replace(/^Алёрт:\s*/u, ''),
+    body: formatAlertReason(toast.body),
+    badge: 'Срочная',
     engineerName: null,
     requestId: null,
-    primaryLabel: null,
-    secondaryLabel: null,
+    primaryLabel: 'К заявке',
+    secondaryLabel: 'Сменить окно',
   };
 }

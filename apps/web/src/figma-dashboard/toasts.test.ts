@@ -92,10 +92,11 @@ describe('toast stack', () => {
     expect(getToasts().some((item) => item.id === 'demo-alert')).toBe(false);
   });
 
-  it('fits an exact stack of cards to the main content bottom edge', () => {
+  it('fits the stack under the content bottom after the column starts higher', () => {
     const limit = visibleToastLimit();
     expect(limit).toBe(6);
-    expect(TOAST_STACK_TOP + limit * TOAST_CARD_HEIGHT + (limit - 1) * TOAST_GAP).toBe(TOAST_STACK_BOTTOM);
+    expect(TOAST_STACK_TOP).toBeLessThan(80);
+    expect(TOAST_STACK_TOP + limit * TOAST_CARD_HEIGHT + (limit - 1) * TOAST_GAP).toBeLessThanOrEqual(TOAST_STACK_BOTTOM);
   });
 
   it('maps an open alert onto a yellow toast', () => {

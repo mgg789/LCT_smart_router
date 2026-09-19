@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createDevSnapshot } from '../fixtures/dev-day';
-import { arrivalSeconds, inboxFromSources, isInboxAlertKind, sortByArrival } from './alertsInbox';
+import { arrivalSeconds, formatAlertReason, inboxFromSources, isInboxAlertKind, sortByArrival } from './alertsInbox';
 import type { ToastNotification } from './toasts';
 
 describe('ALERTS inbox', () => {
@@ -17,6 +17,7 @@ describe('ALERTS inbox', () => {
     expect(inbox.notices.map((item) => item.id)).toEqual(['n-new', 'n-old']);
     expect(inbox.alerts[0]?.requestId).toBe('10490');
     expect(inbox.alerts[0]?.primaryLabel).toBe('К заявке');
+    expect(inbox.alerts[0]?.body.startsWith('Причина:')).toBe(true);
     expect(inbox.alerts.every((item) => item.id.startsWith('alert:') || item.id === 'demo-alert')).toBe(true);
   });
 
@@ -40,6 +41,18 @@ describe('ALERTS inbox', () => {
     expect(inbox.alerts.length).toBeGreaterThan(0);
     expect(inbox.notices.length).toBeGreaterThan(0);
     expect(inbox.alerts.every((item) => item.title.length > 0)).toBe(true);
+  });
+
+  it('prefixes Figma reason copy and paints toast alerts like 49:5696', () => {
+    expect(formatAlertReason('нет инженера')).toBe('Причина: нет инженера');
+    expect(formatAlertReason('Причина: окно')).toBe('Причина: окно');
+    const inbox = inboxFromSources(null, [
+      { id: 'demo-alert', kind: 'alert', title: 'Алёрт: окно заявки', body: 'не укладывается', createdAt: 1 },
+    ]);
+    expect(inbox.alerts[0]?.title).toBe('окно заявки');
+    expect(inbox.alerts[0]?.badge).toBe('Срочная');
+    expect(inbox.alerts[0]?.primaryLabel).toBe('К заявке');
+    expect(inbox.alerts[0]?.secondaryLabel).toBe('Сменить окно');
   });
 
   it('treats only alert/error as inbox alerts and normalizes ms timestamps', () => {

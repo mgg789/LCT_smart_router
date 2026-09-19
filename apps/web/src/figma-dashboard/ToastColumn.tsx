@@ -111,6 +111,20 @@ export function ToastColumn({
       animate={{ x: shown ? 0 : TOAST_EXIT_X }}
       transition={motionOn ? { duration: 0.34, ease: STACK_EASE } : { duration: 0 }}
     >
+      {shown ? (
+        <div
+          aria-hidden
+          className="absolute inset-y-0 right-0 w-[680px]"
+          style={{
+            background:
+              'linear-gradient(to left, rgba(15,16,20,0.55), rgba(15,16,20,0.22) 52%, transparent)',
+            backdropFilter: 'blur(22px)',
+            WebkitBackdropFilter: 'blur(22px)',
+            maskImage: 'linear-gradient(to left, #000 55%, transparent)',
+            WebkitMaskImage: 'linear-gradient(to left, #000 55%, transparent)',
+          }}
+        />
+      ) : null}
       {visible.map((toast, index) => {
         const top = TOAST_STACK_TOP + index * STRIDE;
         return (
@@ -257,7 +271,7 @@ function ToastFace({
       data-toast-card={leaving ? undefined : true}
       aria-hidden={leaving || undefined}
       aria-label={leaving ? undefined : `${toast.title}. ${toast.body || toast.etaLabel || ''}`}
-      className={`absolute h-[132px] w-[425px] overflow-hidden rounded-[20px] select-none ${
+      className={`absolute h-[132px] w-[425px] overflow-hidden rounded-[20px] shadow-[0_18px_40px_rgba(15,16,20,0.32)] select-none ${
         leaving ? 'pointer-events-none' : 'pointer-events-auto'
       } ${danger ? 'bg-figma-danger' : alert ? 'bg-figma-bee' : 'bg-figma-ink'} ${
         dragging ? 'cursor-grabbing' : interactive ? 'cursor-grab' : ''

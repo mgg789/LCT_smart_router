@@ -6,7 +6,7 @@ export type ToastKind = 'system' | 'progress' | 'ai' | 'chat' | 'route' | 'alert
 
 export const TOAST_CARD_HEIGHT = 132;
 export const TOAST_GAP = 28;
-export const TOAST_STACK_TOP = 115;
+export const TOAST_STACK_TOP = 56;
 export const TOAST_STACK_BOTTOM = 1047;
 export const TOAST_LEFT = 1465;
 export const TOAST_WIDTH = 425;
