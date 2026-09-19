@@ -16,7 +16,9 @@ export default defineConfig({
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   webServer: {
-    command: 'pnpm dev',
+    // Vite is invoked directly rather than through `pnpm dev`: a globally
+    // installed pnpm of another version refuses to run the workspace script.
+    command: 'npx vite --host 127.0.0.1 --port 5174',
     url: 'http://127.0.0.1:5174',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

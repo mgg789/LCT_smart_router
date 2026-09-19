@@ -8,8 +8,8 @@ import { AppHeader } from './AppHeader';
 
 const POLICIES = {
   policies: [
-    { policyId: 'fast', title: 'Быстрее до клиента', description: '', isDefault: false },
-    { policyId: 'compact', title: 'Меньше инженеров', description: '', isDefault: true },
+    { policyId: 'fast', title: 'Fast', description: '', isDefault: false },
+    { policyId: 'compact', title: 'Compact', description: '', isDefault: true },
   ],
   active: { policyId: 'compact', version: 2, changedAt: 1_789_460_000 },
 };
@@ -59,7 +59,7 @@ afterEach(() => {
 });
 
 describe('AppHeader', () => {
-  it('names the policy in force using the title the API gave', async () => {
+  it('names the policy in force in Russian, not with the English API label', async () => {
     stubApi({
       '/dispatch/policies': () => jsonResponse(POLICIES),
       '/dispatch/alerts': () => jsonResponse(alertsWith(0)),

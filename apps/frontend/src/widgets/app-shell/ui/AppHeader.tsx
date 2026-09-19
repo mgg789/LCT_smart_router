@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ROUTES } from '@/app/routes/paths';
 import { countUnseen, useAlerts } from '@/entities/alert';
-import { usePolicies } from '@/entities/policy';
+import { activePolicyTitle, usePolicies } from '@/entities/policy';
 import { useSessionStore } from '@/entities/session';
 import { useSignOut } from '@/features/auth/sign-out';
 import { Monogram } from '@/shared/ui';
@@ -15,8 +15,7 @@ function usePolicyLabel(): string {
   if (isPending) return 'Политика: загружаем…';
   if (isError || !data) return 'Политика: нет связи';
 
-  const active = data.policies.find((policy) => policy.policyId === data.active.policyId);
-  return `Политика: ${active?.title ?? data.active.policyId}`;
+  return `Политика: ${activePolicyTitle(data)}`;
 }
 
 /**
