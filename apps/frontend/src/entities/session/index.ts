@@ -1,3 +1,4 @@
+export { authorizedRequest } from './api/authorizedRequest';
 export type { SessionState } from './model/session.store';
 export {
   isSessionAlive,

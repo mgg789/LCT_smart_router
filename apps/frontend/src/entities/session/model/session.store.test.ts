@@ -9,7 +9,12 @@ afterEach(() => {
 
 describe('session store', () => {
   it('keeps the session that was signed in', () => {
-    const session = { token: 'tok', role: 'dispatcher' as const, expiresAt: nowSeconds() + 3600 };
+    const session = {
+      token: 'tok',
+      role: 'dispatcher' as const,
+      expiresAt: nowSeconds() + 3600,
+      email: 'dispatcher@navix.test',
+    };
 
     useSessionStore.getState().signIn(session);
 
@@ -17,9 +22,12 @@ describe('session store', () => {
   });
 
   it('drops the session on sign-out', () => {
-    useSessionStore
-      .getState()
-      .signIn({ token: 'tok', role: 'dispatcher', expiresAt: nowSeconds() + 3600 });
+    useSessionStore.getState().signIn({
+      token: 'tok',
+      role: 'dispatcher',
+      expiresAt: nowSeconds() + 3600,
+      email: 'd@navix.test',
+    });
 
     useSessionStore.getState().signOut();
 
@@ -33,14 +41,24 @@ describe('isSessionAlive', () => {
   });
 
   it('treats an expired token as dead — expiresAt is Unix seconds', () => {
-    expect(isSessionAlive({ token: 'tok', role: 'dispatcher', expiresAt: nowSeconds() - 1 })).toBe(
-      false,
-    );
+    expect(
+      isSessionAlive({
+        token: 'tok',
+        role: 'dispatcher',
+        expiresAt: nowSeconds() - 1,
+        email: 'd@navix.test',
+      }),
+    ).toBe(false);
   });
 
   it('accepts a token that still has time left', () => {
-    expect(isSessionAlive({ token: 'tok', role: 'dispatcher', expiresAt: nowSeconds() + 60 })).toBe(
-      true,
-    );
+    expect(
+      isSessionAlive({
+        token: 'tok',
+        role: 'dispatcher',
+        expiresAt: nowSeconds() + 60,
+        email: 'd@navix.test',
+      }),
+    ).toBe(true);
   });
 });

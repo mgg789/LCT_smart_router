@@ -7,4 +7,9 @@ export interface Session {
   role: SessionRole;
   /** Unix seconds; the token is worthless past this moment. */
   expiresAt: number;
+  /**
+   * Address this session signed in with. The API exposes no profile for the
+   * dispatcher, so this is the only name the UI honestly has for them.
+   */
+  email: string;
 }

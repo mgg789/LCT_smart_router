@@ -7,6 +7,9 @@ import { verifyLoginCode } from '../api/verifyLoginCode';
 /**
  * Verifying the code is the moment the session appears, so the store is written
  * here rather than in the page: any caller of this feature gets the same effect.
+ *
+ * The address comes from the request, not the answer — the API does not echo it,
+ * and the UI needs it to name the signed-in dispatcher.
  */
 export function useVerifyLoginCode() {
   const signIn = useSessionStore((state) => state.signIn);
@@ -14,6 +17,6 @@ export function useVerifyLoginCode() {
   return useMutation<VerifyLoginCodeResult, ApiError, VerifyLoginCodeInput>({
     mutationFn: verifyLoginCode,
     retry: false,
-    onSuccess: (session) => signIn(session),
+    onSuccess: (result, variables) => signIn({ ...result, email: variables.email }),
   });
 }

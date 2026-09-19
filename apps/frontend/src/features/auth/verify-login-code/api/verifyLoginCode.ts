@@ -1,4 +1,4 @@
-import type { Session, SessionRole } from '@/entities/session';
+import type { SessionRole } from '@/entities/session';
 import { apiRequest } from '@/shared/api';
 
 export interface VerifyLoginCodeInput {
@@ -8,8 +8,12 @@ export interface VerifyLoginCodeInput {
   role: SessionRole;
 }
 
-/** The API answers with exactly the fields of a session. */
-export type VerifyLoginCodeResult = Session;
+/** The API answers with the token, the granted role and its expiry. */
+export interface VerifyLoginCodeResult {
+  token: string;
+  role: SessionRole;
+  expiresAt: number;
+}
 
 export function verifyLoginCode(input: VerifyLoginCodeInput): Promise<VerifyLoginCodeResult> {
   return apiRequest<VerifyLoginCodeResult>('/auth/login-code/verify', {

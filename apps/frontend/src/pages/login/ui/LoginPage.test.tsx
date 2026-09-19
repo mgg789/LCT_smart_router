@@ -3,28 +3,10 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useSessionStore } from '@/entities/session';
 import { renderWithProviders } from '@/test/renderWithProviders';
+import { jsonResponse, stubApi } from '@/test/stubApi';
 import { LoginPage } from './LoginPage';
 
 const nowSeconds = () => Math.floor(Date.now() / 1000);
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json' },
-  });
-}
-
-/** Routes calls by path so a test can answer both auth endpoints at once. */
-function stubApi(handlers: Record<string, () => Response>) {
-  const fetchMock = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => {
-    const url = typeof input === 'string' ? input : input.toString();
-    const handler = Object.entries(handlers).find(([path]) => url.endsWith(path));
-    if (!handler) throw new Error(`Unexpected call to ${url}`);
-    return Promise.resolve(handler[1]());
-  });
-  vi.stubGlobal('fetch', fetchMock);
-  return fetchMock;
-}
 
 function renderPage() {
   return renderWithProviders(<LoginPage />);
@@ -88,6 +70,7 @@ describe('LoginPage', () => {
         token: 'tok-42',
         role: 'dispatcher',
         expiresAt,
+        email: 'dispatcher@navix.test',
       });
     });
     const [, init] = fetchMock.mock.calls[0] ?? [];
