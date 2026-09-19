@@ -1,5 +1,29 @@
 # API — эндпоинты, конвенции и недостающие контракты
 
+## LIVE-день
+
+Правила и приёмка: [live.md](./live.md). Все времена в ответах — целые Unix-секунды.
+`liveNow` — рабочее время, `startedAtWallSec` — реальное время начала сеанса.
+
+| Метод | Путь `/api/v1` | Назначение |
+|---|---|---|
+| GET | `/dispatch/live` | Рабочий день, счётчик заявок, состояния инженеров |
+| POST | `/dispatch/live/start` | Идемпотентный старт (`operationId`) |
+| GET | `/engineer/live` | Свой рабочий день, ближайшая заявка, маршрут и перерывы |
+| POST | `/engineer/live/actions` | Действие инженера под серверными рабочими часами |
+
+Тело действия: `operationId` (UUID), `kind`; для интеграционного ключа также
+`engineerId`, для сессии субъект определяется авторизацией. Значения `kind`:
+`online`, `on_time`, `eta`, `start`, `finish`, `problem`, `break_start`, `break_finish`.
+Действия с заявкой принимают `requestId`; `eta` — `etaAt`.
+`problem` принимает `problemKind` (`delay`, `missing_equipment`, `other`, `impossible`),
+обязательный `note`; задержка — `additionalDurationSec`, оборудование —
+`missingEquipment` (`router`, `set_top_box`, `smart_speaker`).
+Время факта клиент не передаёт. Действия возвращают актуальное представление LIVE.
+
+Клиенты опрашивают состояние раз в две секунды и интерполируют часы по
+`speedFactor`; окончательное разрешение каждого перехода проверяет сервер.
+
 > Обновляется тем же коммитом, что и описываемый код (AGENTS.md §8.2).
 > Сгенерированная схема: <http://localhost:8000/docs/openapi.json>; интерактивная: `/docs`.
 > Архитектура: [architecture.md](./architecture.md). Модель данных: [data.md](./data.md).

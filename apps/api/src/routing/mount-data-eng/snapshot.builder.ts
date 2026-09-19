@@ -73,6 +73,11 @@ export class SnapshotBuilder {
       days.map((day) => day.engineerId),
       horizon,
     );
+    // An explicit ETA reserves the next currently assigned stop while the remaining
+    // plan is rebuilt. It is neither a GPS point nor a new Router contract field: sys
+    // removes that one stop from the free pool and restarts its owner at the known job
+    // location once the reported arrival plus service time has elapsed.
+    const reservations = await this.liveReservations(tx);
     const equipmentByEngineer = await this.remainingEquipment(tx, days, horizon);
 
     const engineers: SnapshotEngineer[] = [];
@@ -108,6 +113,7 @@ export class SnapshotBuilder {
         day,
         execution,
         equipmentByEngineer.get(day.engineerId) ?? equipmentStockOf(day),
+        reservations.get(day.engineerId) ?? null,
       );
       if (!projected) {
         engineersWithoutStartLocation += 1;
@@ -126,6 +132,19 @@ export class SnapshotBuilder {
         lifecycle: 'submitted',
         assignmentState: { in: ['pending', 'assigned', 'unassigned'] },
         startedAt: null,
+        // LIVE keeps its "silently completed by schedule" assumption outside the
+        // request lifecycle so it never fabricates an execution fact. Router must still
+        // omit those elapsed stops from a subsequent remaining-day replan.
+        liveStates: {
+          none: {
+            OR: [
+              { assumedCompletedAt: { not: null } },
+              { assumedStartedAt: { not: null } },
+              { reportedEtaAt: { not: null } },
+            ],
+            workday: { status: 'running' },
+          },
+        },
       },
       orderBy: { arrivalOrder: 'asc' },
     });
@@ -217,9 +236,13 @@ export class SnapshotBuilder {
     day: EngineerDay,
     execution: Request | null,
     equipmentStock: { router: number; set_top_box: number; smart_speaker: number },
+    reservation: { request: Request; etaAt: number } | null,
   ): SnapshotEngineer | null {
-    const lat = execution?.lat ?? engineer.homeLat;
-    const lon = execution?.lon ?? engineer.homeLon;
+    const activeExecution = execution?.lifecycle === 'in_progress' ? execution : null;
+    const lat =
+      activeExecution?.lat ?? reservation?.request.lat ?? execution?.lat ?? engineer.homeLat;
+    const lon =
+      activeExecution?.lon ?? reservation?.request.lon ?? execution?.lon ?? engineer.homeLon;
     if (lat === null || lon === null) {
       return null;
     }
@@ -238,7 +261,11 @@ export class SnapshotBuilder {
      * context/33 section 7 forbids. This is a property of the engineer's state, not of the
      * moment we happen to publish.
      */
-    const continuation = execution?.continuationAvailableAt ?? null;
+    const continuation =
+      activeExecution?.continuationAvailableAt ??
+      (reservation
+        ? BigInt(reservation.etaAt + reservation.request.serviceDurationSec)
+        : (execution?.continuationAvailableAt ?? null));
     const availableFrom = continuation === null ? shiftStart : Number(continuation);
 
     return {
@@ -265,6 +292,32 @@ export class SnapshotBuilder {
         required: day.lunchTaken ? false : day.lunchRequired,
       },
     };
+  }
+
+  /** Durable owner of an ETA or silently active visit, one reservation per engineer. */
+  private async liveReservations(
+    tx: Tx,
+  ): Promise<Map<string, { request: Request; etaAt: number }>> {
+    const states = await tx.liveRequestState.findMany({
+      where: {
+        reservedEngineerId: { not: null },
+        assumedCompletedAt: null,
+        workday: { status: 'running' },
+        request: { lifecycle: 'submitted' },
+        OR: [{ reportedEtaAt: { not: null } }, { assumedStartedAt: { not: null } }],
+      },
+      include: { request: true },
+      orderBy: { updatedAt: 'desc' },
+    });
+    const result = new Map<string, { request: Request; etaAt: number }>();
+    for (const state of states) {
+      if (state.reservedEngineerId && !result.has(state.reservedEngineerId)) {
+        const etaAt = state.reportedEtaAt ?? state.assumedStartedAt;
+        if (etaAt !== null)
+          result.set(state.reservedEngineerId, { request: state.request, etaAt: Number(etaAt) });
+      }
+    }
+    return result;
   }
 
   /**

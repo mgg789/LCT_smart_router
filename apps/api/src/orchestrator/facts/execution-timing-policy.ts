@@ -41,6 +41,11 @@ export class ExecutionTimingPolicy {
     }
     return this.cached;
   }
+
+  /** Last validated Router policy, safe inside an already-open DB transaction. */
+  current(): ExecutionTimingPolicyValue {
+    return this.cached;
+  }
 }
 
 function fromRouterSettings(settings: RouterTechnicalSettings): ExecutionTimingPolicyValue {

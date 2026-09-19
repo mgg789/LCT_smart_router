@@ -6,6 +6,7 @@ import { zodBody } from '../common/validation';
 import { OperationsService } from '../operations';
 import { EngineersService, type EngineerWithAccount } from '../orchestrator/engineers';
 import { FactsService } from '../orchestrator/facts';
+import { LiveService } from '../orchestrator/live';
 import { PrismaService } from '../persistence';
 import { AppliedPlanService } from '../routing/router-gateway';
 import { type AttendanceDto, attendanceSchema } from './dto/alert.dto';
@@ -21,6 +22,7 @@ import {
   type UpdateOwnProfileDto,
   updateOwnProfileSchema,
 } from './dto/engineer.dto';
+import { type LiveActionDto, liveActionSchema } from './dto/live.dto';
 import { type ReportFactDto, reportFactSchema } from './dto/plan.dto';
 import {
   type EngineerDayView,
@@ -28,6 +30,7 @@ import {
   toDayView,
   toEngineerView,
 } from './engineer-view';
+import { type EngineerLiveView } from './live-view.types';
 import { type PlanRouteView, toPlanView } from './plan-view';
 import { toRequestView } from './request-view';
 
@@ -50,7 +53,38 @@ export class EngineerController {
     private readonly operations: OperationsService,
     private readonly prisma: PrismaService,
     private readonly auth: AuthService,
+    private readonly live: LiveService,
   ) {}
+
+  @Get('live')
+  @ApiOperation({ summary: 'LIVE state for the signed-in engineer' })
+  async liveView(
+    @CurrentActor() actor: Actor,
+    @Query('engineerId') engineerId?: string,
+  ): Promise<EngineerLiveView> {
+    const engineer = await this.subjectOf(actor, engineerId);
+    return this.live.engineerView(engineer.id);
+  }
+
+  @Post('live/actions')
+  @ApiOperation({ summary: 'Record one LIVE engineer action using the business clock' })
+  async liveAction(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(liveActionSchema)) dto: LiveActionDto,
+  ): Promise<EngineerLiveView> {
+    const engineer = await this.subjectOf(actor, dto.engineerId);
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: `live.engineer.${dto.kind}`,
+        targetRef: engineer.id,
+        payload: dto,
+      },
+      async (context) => this.live.act(context, engineer.id, dto),
+    );
+    return outcome.result;
+  }
 
   @Get('profile')
   @ApiOperation({ summary: 'Profile of the signed-in engineer, or of the engineerId a key names' })
@@ -166,6 +200,7 @@ export class EngineerController {
     @Body(zodBody(setAvailabilitySchema)) dto: SetAvailabilityDto,
   ): Promise<{ day: EngineerDayView }> {
     const engineer = await this.subjectOf(actor, dto.engineerId);
+    await this.live.assertLegacyMutationAllowed();
     const outcome = await this.operations.execute(
       {
         operationId: dto.operationId,
@@ -194,6 +229,7 @@ export class EngineerController {
     @Body(zodBody(engineerActionSchema)) dto: EngineerActionDto,
   ): Promise<{ day: EngineerDayView }> {
     const engineer = await this.subjectOf(actor, dto.engineerId);
+    await this.live.assertLegacyMutationAllowed();
     const outcome = await this.operations.execute(
       {
         operationId: dto.operationId,
@@ -214,6 +250,7 @@ export class EngineerController {
     @Body(zodBody(engineerActionSchema)) dto: EngineerActionDto,
   ): Promise<{ day: EngineerDayView }> {
     const engineer = await this.subjectOf(actor, dto.engineerId);
+    await this.live.assertLegacyMutationAllowed();
     const outcome = await this.operations.execute(
       {
         operationId: dto.operationId,
@@ -234,6 +271,7 @@ export class EngineerController {
     @Body(zodBody(engineerActionSchema)) dto: EngineerActionDto,
   ): Promise<{ day: EngineerDayView }> {
     const engineer = await this.subjectOf(actor, dto.engineerId);
+    await this.live.assertLegacyMutationAllowed();
     const outcome = await this.operations.execute(
       {
         operationId: dto.operationId,
@@ -385,6 +423,7 @@ export class EngineerController {
     @Body(zodBody(reportFactSchema)) dto: ReportFactDto,
   ) {
     const engineer = await this.subjectOf(actor, dto.engineerId);
+    await this.live.assertLegacyMutationAllowed();
     // Router owns the thresholds. Read them before the operation opens its database
     // transaction; a private-network call must never hold a business transaction open.
     const timing = await this.facts.timing();

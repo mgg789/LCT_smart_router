@@ -225,7 +225,7 @@ export class ClientController {
       },
       orderBy: { createdAt: 'desc' },
     });
-    return { requests: requests.map(toRequestView) };
+    return { requests: requests.map((request) => toRequestView(request)) };
   }
 
   @Get('requests/:id')

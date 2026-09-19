@@ -66,6 +66,9 @@ export class ExecutionOverrunCoordinator implements OnModuleInit, OnModuleDestro
             lifecycle: 'in_progress',
             expectedCompletionAt: { lt: expectedBefore },
             overrunDetectedAt: null,
+            // LIVE uses the persistent business clock in LiveService.  Wall-clock
+            // polling would otherwise immediately overrun an accelerated demo.
+            liveStates: { none: { workday: { status: 'running' } } },
           },
           data: {
             overrunDetectedAt: BigInt(now),

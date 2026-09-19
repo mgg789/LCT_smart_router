@@ -13,6 +13,7 @@ import {
   DatasetImportService,
   UploadImportService,
 } from '../orchestrator/imports';
+import { LiveService } from '../orchestrator/live';
 import { PolicyService } from '../orchestrator/policy';
 import { RequestsService } from '../orchestrator/requests';
 import { ResetService } from '../orchestrator/reset';
@@ -58,6 +59,7 @@ import {
   unlinkEngineerAccountSchema,
   updateEngineerSchema,
 } from './dto/engineer.dto';
+import { type StartLiveWorkdayDto, startLiveWorkdaySchema } from './dto/live.dto';
 import {
   type ReassignDto,
   type ReorderDto,
@@ -87,6 +89,7 @@ import {
   toDayView,
   toEngineerView,
 } from './engineer-view';
+import type { DispatchLiveView } from './live-view.types';
 import { toPlanView } from './plan-view';
 import { type RequestView, toRequestView } from './request-view';
 
@@ -120,7 +123,27 @@ export class DispatchController {
     private readonly operations: OperationsService,
     private readonly prisma: PrismaService,
     private readonly clock: Clock,
+    private readonly live: LiveService,
   ) {}
+
+  @Get('live')
+  @ApiOperation({ summary: 'Durable LIVE workday state for the dispatcher dashboard' })
+  async liveView(): Promise<DispatchLiveView> {
+    return this.live.dispatchView();
+  }
+
+  @Post('live/start')
+  @ApiOperation({ summary: 'Start the current LIVE workday and publish its t=0 task' })
+  async startLive(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(startLiveWorkdaySchema)) dto: StartLiveWorkdayDto,
+  ): Promise<DispatchLiveView> {
+    const outcome = await this.operations.execute(
+      { operationId: dto.operationId, actor, action: 'live.workday.start', payload: dto },
+      async (context) => this.live.start(context),
+    );
+    return outcome.result;
+  }
 
   @Get('requests')
   @ApiOperation({ summary: 'Requests of the day, including started, finished and cancelled' })
@@ -137,7 +160,14 @@ export class DispatchController {
       },
       orderBy: [{ arrivalOrder: 'asc' }, { createdAt: 'asc' }],
     });
-    return { requests: requests.map(toRequestView) };
+    const live = await this.prisma.liveRequestState.findMany({
+      where: { workday: { status: 'running' } },
+      select: { requestId: true, assumedStartedAt: true, assumedCompletedAt: true },
+    });
+    const states = new Map(live.map((item) => [item.requestId, item]));
+    return {
+      requests: requests.map((request) => toRequestView(request, states.get(request.id) ?? null)),
+    };
   }
 
   @Post('requests')
@@ -457,7 +487,7 @@ export class DispatchController {
       // reassign it (context/42 DF-06).
       async (context) =>
         toDayView(
-          await this.engineers.setAvailability(
+          await this.live.setDispatcherAvailability(
             context,
             id,
             dto.availability,
@@ -488,6 +518,7 @@ export class DispatchController {
     @Param('id') id: string,
     @Body(zodBody(operationOnlySchema)) dto: { operationId: string },
   ): Promise<{ day: EngineerDayView }> {
+    await this.live.assertLegacyMutationAllowed();
     const outcome = await this.operations.execute(
       {
         operationId: dto.operationId,
