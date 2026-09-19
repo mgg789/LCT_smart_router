@@ -64,6 +64,13 @@ export function DashboardPage() {
     () => new Map(dash.liveWorkday?.engineers.map((engineer) => [engineer.id, engineer]) ?? []),
     [dash.liveWorkday],
   );
+  const liveProgress = useMemo(
+    () =>
+      new Map(
+        dash.liveWorkday?.engineers.map((engineer) => [engineer.id, engineer.progress]) ?? [],
+      ),
+    [dash.liveWorkday],
+  );
 
   useEffect(() => {
     if (selectedRegion !== ALL_REGIONS && !regions.some((region) => region.id === selectedRegion)) {
@@ -458,6 +465,7 @@ export function DashboardPage() {
                   snapshot={visibleSnapshot}
                   selectedEngineerId={dash.selectedEngineerId}
                   selectedRequestId={dash.selectedRequest?.id ?? null}
+                  progressByEngineer={liveProgress}
                   onSelectRequest={dash.selectRequest}
                 />
                 <AnimatePresence>
@@ -518,6 +526,11 @@ export function DashboardPage() {
                 selectedRequestId={dash.selectedRequest?.id ?? null}
                 history={dash.liveWorkday?.history ?? []}
                 breaks={dash.liveWorkday?.breaks ?? []}
+                progress={
+                  dash.selectedEngineerId
+                    ? (liveEngineers.get(dash.selectedEngineerId)?.progress ?? null)
+                    : null
+                }
                 onSelectRequest={dash.selectRequest}
               />
             </section>
@@ -567,6 +580,41 @@ export function DashboardPage() {
           onOpen={() => setActiveTab('alerts')}
         />
       )}
+      {dash.liveWorkday?.workday.status === 'finished' ? (
+        <WorkdayFinishedPanel workday={dash.liveWorkday.workday} />
+      ) : null}
+      </div>
+    );
+  }
+
+/** Dispatcher completion panel uses server totals so it cannot disagree with engineer facts. */
+function WorkdayFinishedPanel({ workday }: { readonly workday: LiveWorkday }) {
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/50 p-5">
+      <section className="w-full max-w-md rounded-3xl bg-white p-6 text-center shadow-xl">
+        <p className="text-sm text-muted">{formatDayTitle(workday.workDate)}</p>
+        <h1 className="mt-2 text-2xl font-semibold">Рабочий день завершён</h1>
+        <p className="mt-2 text-sm text-muted">
+          {workday.completionReason === 'schedule_exhausted'
+            ? 'Подходящих заявок с будущим окном больше нет.'
+            : 'Плановое время рабочего дня завершилось.'}
+        </p>
+        <div className="mt-5 grid grid-cols-2 gap-3 text-left text-sm">
+          <Stat label="Выполнено" value={workday.stats.completedCount} />
+          <Stat label="Отменено" value={workday.stats.cancelledCount} />
+          <Stat label="По графику" value={workday.stats.assumedCompletedCount} />
+          <Stat label="Проблемы" value={workday.stats.problemCount} />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { readonly label: string; readonly value: number }) {
+  return (
+    <div className="rounded-2xl bg-canvas p-3">
+      <p className="text-xs text-muted">{label}</p>
+      <strong className="mt-1 block text-xl">{value}</strong>
     </div>
   );
 }

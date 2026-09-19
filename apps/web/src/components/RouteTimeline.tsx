@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { LiveBreak, LiveHistoryItem } from '../api/live';
+import type { LiveBreak, LiveHistoryItem, LiveRouteProgress } from '../api/live';
 import type { DashboardSnapshot, PlanRouteView, RequestView } from '../api/types';
 import { requestById, routeVertices } from '../domain/dashboard';
 import { engineerColor } from '../lib/reasons';
@@ -13,6 +13,8 @@ interface RouteTimelineProps {
   readonly selectedRequestId: string | null;
   readonly history: readonly LiveHistoryItem[];
   readonly breaks: readonly LiveBreak[];
+  /** Factual movement state, independent of the latest solver route revision. */
+  readonly progress?: LiveRouteProgress | null;
   readonly onSelectRequest: (requestId: string) => void;
 }
 
@@ -52,6 +54,7 @@ export function RouteTimeline({
   selectedRequestId,
   history,
   breaks,
+  progress = null,
   onSelectRequest,
 }: RouteTimelineProps) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
@@ -95,13 +98,27 @@ export function RouteTimeline({
   }
 
   const color = engineerColor(focusedEngineerId);
-  const vertices = route ? routeVertices(route) : [];
+  const vertices = route
+    ? routeVertices(route).filter(
+        (vertex) =>
+          progress === null ||
+          progress.anchor.kind === 'start' ||
+          (vertex.kind !== 'start' && vertex.requestId !== progress.anchor.requestId),
+      )
+    : [];
   const plannedRequestIds = new Set(
     vertices.flatMap((vertex) => (vertex.requestId ? [vertex.requestId] : [])),
   );
   const retainedHistory = history.filter(
     (item) => item.engineerId === focusedEngineerId && !plannedRequestIds.has(item.request.id),
   );
+  const progressRequestId =
+    progress?.phase === 'on_site'
+      ? progress.anchor.requestId
+      : progress?.phase === 'traveling'
+        ? progress.next?.requestId
+        : null;
+  const progressRequest = progressRequestId ? requestById(snapshot, progressRequestId) : null;
 
   const scrollBy = (direction: -1 | 1) => {
     scrollerRef.current?.scrollBy({ left: direction * 220, behavior: 'smooth' });
@@ -162,12 +179,7 @@ export function RouteTimeline({
               })),
             ...retainedHistory.map((item) => {
               const selected = item.request.id === selectedRequestId;
-              const at =
-                item.stop?.endAt ??
-                item.request.completedAt ??
-                item.request.cancelledAt ??
-                item.request.assumedCompletedAt ??
-                item.request.windowEndAt;
+              const at = item.terminalAt;
               const label =
                 item.outcome === 'assumed_completed'
                   ? 'По графику'
@@ -271,6 +283,36 @@ export function RouteTimeline({
                 ),
               };
             }),
+            ...(progress
+              ? [
+                  {
+                    at: progress.occurredAt,
+                    content: (
+                      <li
+                        key={`position-${progress.occurredAt}`}
+                        data-current="true"
+                        className="w-44 shrink-0 rounded-xl border-2 border-bee bg-amber-50 p-3 mr-3"
+                      >
+                        <p className="text-xs font-medium uppercase tracking-wide text-amber-800">
+                          Текущая позиция
+                        </p>
+                        <p className="mt-1 text-sm font-semibold">{progressLabel(progress)}</p>
+                        {progressRequest ? (
+                          <>
+                            <p className="mt-1 text-[13px] leading-5 text-ink">
+                              {progressRequest.workTypeTitle ?? 'Заявка'}
+                            </p>
+                            <p className="text-[12px] text-muted">{progressRequest.addressText}</p>
+                          </>
+                        ) : null}
+                        <p className="mt-1 text-xs text-muted">
+                          {formatClock(progress.occurredAt)}
+                        </p>
+                      </li>
+                    ),
+                  },
+                ]
+              : []),
           ]
             .sort((a, b) => a.at - b.at)
             .map((item) => item.content)}
@@ -278,4 +320,13 @@ export function RouteTimeline({
       </div>
     </section>
   );
+}
+
+/** Text for the factual marker, kept short enough for the horizontal LIVE pipeline. */
+function progressLabel(progress: LiveRouteProgress): string {
+  if (progress.phase === 'lunch') return 'Обед · на маршруте';
+  if (progress.phase === 'traveling') return 'В пути к следующей заявке';
+  if (progress.phase === 'on_site') return 'На текущей заявке';
+  if (progress.phase === 'finished') return 'Смена завершена';
+  return 'Готов к выезду';
 }

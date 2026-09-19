@@ -579,17 +579,32 @@ function EngineerLivePanel({
   }
 
   if (live.workday.status !== 'running') {
+    const finished = live.workday.status === 'finished';
     return (
       <section className="rounded-3xl bg-white p-6 text-center shadow-sm">
         <p className="text-sm text-muted">{formatDayTitle(live.workday.workDate)}</p>
         <h1 className="mt-2 text-xl font-semibold">
-          {live.workday.status === 'finished'
-            ? 'Рабочий день завершён'
-            : 'Диспетчер ещё не начал рабочий день'}
+          {finished ? 'Рабочий день завершён' : 'Диспетчер ещё не начал рабочий день'}
         </h1>
-        <p className="mt-3 text-sm text-muted">
-          После старта появится кнопка выхода на линию и маршрут.
-        </p>
+        {finished ? (
+          <>
+            <p className="mt-3 text-sm text-muted">
+              {live.workday.completionReason === 'schedule_exhausted'
+                ? 'На сегодня больше нет заявок, в которые можно успеть.'
+                : 'Плановое время рабочего дня завершилось.'}
+            </p>
+            <div className="mt-5 grid grid-cols-2 gap-3 text-left text-sm">
+              <LiveStat label="Выполнено" value={live.engineer.stats.completedCount} />
+              <LiveStat label="Отменено" value={live.engineer.stats.cancelledCount} />
+              <LiveStat label="Проблемы" value={live.engineer.stats.problemCount} />
+              <LiveStat label="Тех. перерывы" value={live.engineer.stats.technicalBreakCount} />
+            </div>
+          </>
+        ) : (
+          <p className="mt-3 text-sm text-muted">
+            После старта появится кнопка выхода на линию и маршрут.
+          </p>
+        )}
       </section>
     );
   }
@@ -653,15 +668,17 @@ function EngineerLivePanel({
         <div className="rounded-2xl bg-white p-4 shadow-sm">
           <p className="text-xs font-medium uppercase tracking-wide text-muted">Ближайшая заявка</p>
           <h2 className="mt-1 font-semibold">{current.request.addressText}</h2>
-          {current.phase === 'awaiting_window' ? (
+          {current.phase !== 'in_progress' ? (
             <div className="mt-4 space-y-2">
-              <p className="text-sm text-muted">
-                Начало по плану в{' '}
-                {current.stop
-                  ? formatClock(current.stop.startAt)
-                  : formatClock(current.request.windowStartAt)}
-                .
-              </p>
+              {current.phase === 'awaiting_window' ? (
+                <p className="text-sm text-muted">
+                  Начало по плану в{' '}
+                  {current.stop
+                    ? formatClock(current.stop.startAt)
+                    : formatClock(current.request.windowStartAt)}
+                  .
+                </p>
+              ) : null}
               <button
                 type="button"
                 disabled={busy}
@@ -706,16 +723,17 @@ function EngineerLivePanel({
                   Буду в…
                 </button>
               )}
+              {current.phase === 'ready_to_start' ? (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => submit({ kind: 'start', requestId: current.request.id })}
+                  className="w-full rounded-full bg-bee py-3 text-sm font-semibold disabled:opacity-50"
+                >
+                  Приступить
+                </button>
+              ) : null}
             </div>
-          ) : current.phase === 'ready_to_start' ? (
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => submit({ kind: 'start', requestId: current.request.id })}
-              className="mt-4 w-full rounded-full bg-bee py-3 text-sm font-semibold disabled:opacity-50"
-            >
-              Приступить
-            </button>
           ) : (
             <div className="mt-4 space-y-2">
               <p className="text-sm text-muted">
@@ -752,7 +770,11 @@ function EngineerLivePanel({
           ) : null}
         </div>
       ) : (
-        <p className="rounded-2xl bg-white p-4 text-sm text-muted">Сейчас нет активной заявки.</p>
+        <p className="rounded-2xl bg-white p-4 text-sm text-muted">
+          {live.engineer.routeState === 'awaiting_plan'
+            ? 'План пересчитывается. Рабочий день продолжается — ожидайте новые заявки.'
+            : 'Сейчас нет активной заявки.'}
+        </p>
       )}
       {current ? (
         <button
@@ -812,6 +834,15 @@ function EngineerLivePanel({
         />
       ) : null}
     </section>
+  );
+}
+
+function LiveStat({ label, value }: { readonly label: string; readonly value: number }) {
+  return (
+    <div className="rounded-2xl bg-canvas p-3">
+      <p className="text-xs text-muted">{label}</p>
+      <strong className="mt-1 block text-xl">{value}</strong>
+    </div>
   );
 }
 
@@ -988,7 +1019,9 @@ function EngineerDayPage({
       ) : null}
       {items.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-line bg-white p-6 text-center text-sm text-muted">
-          На сегодня нет назначенных заявок.
+          {live?.engineer.routeState === 'awaiting_plan'
+            ? 'Рабочий день продолжается. Дождитесь обновлённого плана.'
+            : 'На сегодня нет назначенных заявок.'}
         </div>
       ) : (
         <ul className="space-y-3">

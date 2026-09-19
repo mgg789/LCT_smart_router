@@ -1,5 +1,6 @@
 import maplibregl from 'maplibre-gl';
 import { useEffect, useRef, useState } from 'react';
+import type { LiveRouteProgress } from '../api/live';
 import type { DashboardSnapshot } from '../api/types';
 import { remainingRouteForLiveMap, unassignedRequests } from '../domain/dashboard';
 import { localMapStyle } from '../domain/localBasemap';
@@ -11,7 +12,40 @@ interface DayMapProps {
   readonly snapshot: DashboardSnapshot;
   readonly selectedEngineerId: string | null;
   readonly selectedRequestId: string | null;
+  /** Server-owned positions survive a remaining-day route rebuild. */
+  readonly progressByEngineer?: ReadonlyMap<string, LiveRouteProgress | null>;
   readonly onSelectRequest: (requestId: string) => void;
+}
+
+export interface LiveProgressSegment {
+  readonly from: LiveRouteProgress['anchor'];
+  readonly to: LiveRouteProgress['anchor'];
+}
+
+/**
+ * Projects the factual part of a LIVE route. A completed job remains the edge
+ * anchor until the next job is explicitly started; lunch is a two-leg span.
+ */
+export function liveProgressSegments(progress: LiveRouteProgress): LiveProgressSegment[] {
+  if (progress.phase === 'lunch' && progress.lunch && progress.next) {
+    return [
+      { from: progress.anchor, to: progress.lunch },
+      { from: progress.lunch, to: progress.next },
+    ];
+  }
+  if (progress.phase === 'traveling' && progress.next) {
+    return [{ from: progress.anchor, to: progress.next }];
+  }
+  return [];
+}
+
+/** Current factual vertices: job anchor and the lunch point while lunch is active. */
+export function liveProgressPoints(
+  progress: LiveRouteProgress,
+): readonly LiveRouteProgress['anchor'][] {
+  return progress.phase === 'lunch' && progress.lunch
+    ? [progress.anchor, progress.lunch]
+    : [progress.anchor];
 }
 
 const STYLE_URL = 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json';
@@ -20,6 +54,7 @@ export function DayMap({
   snapshot,
   selectedEngineerId,
   selectedRequestId,
+  progressByEngineer,
   onSelectRequest,
 }: DayMapProps) {
   const [forceLocal, setForceLocal] = useState(!navigator.onLine);
@@ -148,19 +183,47 @@ export function DayMap({
         }));
       });
 
-      const startFeatures = routes.map((route) => ({
-        type: 'Feature' as const,
-        properties: {
-          engineerId: route.engineerId,
-          selected: !selectedEngineerId || route.engineerId === selectedEngineerId ? 1 : 0,
-          color: engineerColor(route.engineerId),
-          regionColor: regionStyle(routeRegion(snapshot, route)).color,
-        },
-        geometry: {
-          type: 'Point' as const,
-          coordinates: [route.startLon, route.startLat],
-        },
-      }));
+      const progressLines = [...(progressByEngineer ?? [])].flatMap(([engineerId, progress]) => {
+        if (
+          !progress ||
+          progress.phase === 'not_started' ||
+          progress.phase === 'on_site' ||
+          (selectedEngineerId !== null && selectedEngineerId !== engineerId)
+        )
+          return [];
+        return liveProgressSegments(progress).map((segment) => {
+          const { from: point, to: next } = segment;
+          return {
+            type: 'Feature' as const,
+            properties: { engineerId, color: engineerColor(engineerId) },
+            geometry: {
+              type: 'LineString' as const,
+              coordinates: [[point.lon, point.lat] as const, [next.lon, next.lat] as const],
+            },
+          };
+        });
+      });
+
+      const startFeatures = routes.flatMap((route) => {
+        const progress = progressByEngineer?.get(route.engineerId) ?? null;
+        if (progress && progress.anchor.kind !== 'start') return [];
+        const start = progress?.anchor;
+        return [
+          {
+            type: 'Feature' as const,
+            properties: {
+              engineerId: route.engineerId,
+              selected: !selectedEngineerId || route.engineerId === selectedEngineerId ? 1 : 0,
+              color: engineerColor(route.engineerId),
+              regionColor: regionStyle(routeRegion(snapshot, route)).color,
+            },
+            geometry: {
+              type: 'Point' as const,
+              coordinates: start ? [start.lon, start.lat] : [route.startLon, route.startLat],
+            },
+          },
+        ];
+      });
 
       const stopFeatures = routes.flatMap((route) =>
         route.stops.flatMap((stop, index) => {
@@ -207,8 +270,77 @@ export function DayMap({
         }),
       );
 
-      const lunchFeatures = stopFeatures.filter((feature) => !('requestId' in feature.properties));
-      const jobFeatures = stopFeatures.filter((feature) => 'requestId' in feature.properties);
+      const progressFeatures = routes.flatMap((route) => {
+        const progress = progressByEngineer?.get(route.engineerId) ?? null;
+        if (!progress) return [];
+        const points = liveProgressPoints(progress);
+        return points.flatMap((point) => {
+          if (point.kind === 'start') return [];
+          const request = point.requestId
+            ? snapshot.requests.find((item) => item.id === point.requestId)
+            : null;
+          return [
+            {
+              type: 'Feature' as const,
+              properties: {
+                ...(point.requestId ? { requestId: point.requestId } : {}),
+                engineerId: route.engineerId,
+                sequence: '•',
+                skillMark:
+                  point.kind === 'lunch' ? 'Обед' : request ? skillMark(request.requiredSkill) : '',
+                color: point.kind === 'lunch' ? '#E07A2F' : engineerColor(route.engineerId),
+                regionColor: '#ffffff',
+                current: 1,
+                lunch: point.kind === 'lunch' ? 1 : 0,
+              },
+              geometry: { type: 'Point' as const, coordinates: [point.lon, point.lat] },
+            },
+          ];
+        });
+      });
+
+      // A replan can temporarily omit an engineer's route while that engineer is
+      // still on a confirmed job. The progress record is sufficient to keep the
+      // current vertex on the map in that narrow gap.
+      const orphanProgressFeatures = [...(progressByEngineer ?? [])].flatMap(
+        ([engineerId, progress]) => {
+          if (
+            !progress ||
+            routes.some((route) => route.engineerId === engineerId) ||
+            (selectedEngineerId !== null && selectedEngineerId !== engineerId)
+          ) {
+            return [];
+          }
+          return liveProgressPoints(progress).flatMap((point) => {
+            if (point.kind === 'start') return [];
+            return [
+              {
+                type: 'Feature' as const,
+                properties: {
+                  ...(point.requestId ? { requestId: point.requestId } : {}),
+                  engineerId,
+                  sequence: '•',
+                  skillMark: point.kind === 'lunch' ? 'Обед' : '',
+                  color: point.kind === 'lunch' ? '#E07A2F' : engineerColor(engineerId),
+                  regionColor: '#ffffff',
+                  current: 1,
+                  lunch: point.kind === 'lunch' ? 1 : 0,
+                },
+                geometry: { type: 'Point' as const, coordinates: [point.lon, point.lat] },
+              },
+            ];
+          });
+        },
+      );
+
+      const lunchFeatures = [
+        ...stopFeatures,
+        ...progressFeatures,
+        ...orphanProgressFeatures,
+      ].filter((feature) => !('requestId' in feature.properties));
+      const jobFeatures = [...stopFeatures, ...progressFeatures, ...orphanProgressFeatures].filter(
+        (feature) => 'requestId' in feature.properties,
+      );
 
       const unassignedFeatures = (showUnassigned ? unassignedRequests(snapshot) : [])
         .filter((request) => visibleRequestIds.has(request.id))
@@ -261,6 +393,20 @@ export function DayMap({
         });
       });
 
+      upsert(
+        map,
+        'live-progress-lines',
+        { type: 'FeatureCollection', features: progressLines },
+        () => {
+          map.addLayer({
+            id: 'live-progress-lines',
+            type: 'line',
+            source: 'live-progress-lines',
+            paint: { 'line-color': ['get', 'color'], 'line-width': 6, 'line-opacity': 0.95 },
+          });
+        },
+      );
+
       upsert(map, 'starts', { type: 'FeatureCollection', features: startFeatures }, () => {
         map.addLayer({
           id: 'starts-square',
@@ -298,9 +444,23 @@ export function DayMap({
           type: 'circle',
           source: 'stops',
           paint: {
-            'circle-radius': ['case', ['==', ['get', 'selected'], 1], 10, 8],
+            'circle-radius': [
+              'case',
+              ['==', ['get', 'current'], 1],
+              12,
+              ['==', ['get', 'selected'], 1],
+              10,
+              8,
+            ],
             'circle-color': ['get', 'color'],
-            'circle-stroke-width': ['case', ['==', ['get', 'selected'], 1], 4, 2.5],
+            'circle-stroke-width': [
+              'case',
+              ['==', ['get', 'current'], 1],
+              5,
+              ['==', ['get', 'selected'], 1],
+              4,
+              2.5,
+            ],
             'circle-stroke-color': ['get', 'regionColor'],
           },
         });
@@ -401,7 +561,7 @@ export function DayMap({
       map.off('style.load', onStyle);
       map.off('load', onStyle);
     };
-  }, [selectedEngineerId, selectedRequestId, snapshot, forceLocal, retry]);
+  }, [selectedEngineerId, selectedRequestId, snapshot, progressByEngineer, forceLocal, retry]);
 
   return (
     <>

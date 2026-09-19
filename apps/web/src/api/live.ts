@@ -12,11 +12,39 @@ export interface LiveWorkday {
   readonly logicalStartAt: number;
   readonly logicalEndAt: number;
   readonly startedAtWallSec: number | null;
+  readonly finishedAt: number | null;
+  readonly completionReason: 'schedule_exhausted' | 'logical_end' | null;
   readonly liveNow: number;
   readonly speedDurationSec: number | null;
   readonly speedFactor: number;
   readonly engineerStartDeadlineAt: number;
   readonly requestCount: number;
+  readonly stats: LiveStats;
+}
+
+export interface LiveStats {
+  readonly completedCount: number;
+  readonly cancelledCount: number;
+  readonly assumedCompletedCount: number;
+  readonly problemCount: number;
+  readonly technicalBreakCount: number;
+}
+
+export interface LiveRoutePoint {
+  readonly kind: 'start' | 'job' | 'lunch';
+  readonly requestId: string | null;
+  readonly lat: number;
+  readonly lon: number;
+  readonly at: number;
+}
+
+/** Durable movement fact, kept when a route revision changes planned stops. */
+export interface LiveRouteProgress {
+  readonly phase: 'not_started' | 'traveling' | 'on_site' | 'lunch' | 'finished';
+  readonly anchor: LiveRoutePoint;
+  readonly lunch: LiveRoutePoint | null;
+  readonly next: LiveRoutePoint | null;
+  readonly occurredAt: number;
 }
 
 export interface LiveEngineerState {
@@ -25,6 +53,9 @@ export interface LiveEngineerState {
   readonly lineStatus: LiveLineStatus;
   readonly availability: string;
   readonly activeRequestId: string | null;
+  readonly routeState: 'active' | 'awaiting_plan' | 'exhausted';
+  readonly progress: LiveRouteProgress | null;
+  readonly stats: LiveStats;
   readonly technicalBreak: {
     readonly startedAt: number;
     readonly plannedEndAt: number;
@@ -74,6 +105,7 @@ export interface LiveHistoryItem {
   readonly engineerId: string | null;
   readonly stop: PlanStopView | null;
   readonly outcome: 'completed' | 'cancelled' | 'assumed_completed';
+  readonly terminalAt: number;
 }
 
 const requestSchema: z.ZodType<RequestView> = z.object({
@@ -124,6 +156,27 @@ const stopSchema: z.ZodType<PlanStopView> = z.object({
   startAt: z.number().int(),
   endAt: z.number().int(),
 });
+const liveStatsSchema: z.ZodType<LiveStats> = z.object({
+  completedCount: z.number().int().nonnegative(),
+  cancelledCount: z.number().int().nonnegative(),
+  assumedCompletedCount: z.number().int().nonnegative(),
+  problemCount: z.number().int().nonnegative(),
+  technicalBreakCount: z.number().int().nonnegative(),
+});
+const progressPointSchema: z.ZodType<LiveRoutePoint> = z.object({
+  kind: z.enum(['start', 'job', 'lunch']),
+  requestId: z.string().nullable(),
+  lat: z.number(),
+  lon: z.number(),
+  at: z.number().int(),
+});
+const progressSchema: z.ZodType<LiveRouteProgress> = z.object({
+  phase: z.enum(['not_started', 'traveling', 'on_site', 'lunch', 'finished']),
+  anchor: progressPointSchema,
+  lunch: progressPointSchema.nullable(),
+  next: progressPointSchema.nullable(),
+  occurredAt: z.number().int(),
+});
 const workdaySchema: z.ZodType<LiveWorkday> = z.object({
   id: z.string().nullable(),
   status: z.enum(['pending', 'running', 'finished']),
@@ -131,11 +184,14 @@ const workdaySchema: z.ZodType<LiveWorkday> = z.object({
   logicalStartAt: z.number().int(),
   logicalEndAt: z.number().int(),
   startedAtWallSec: z.number().int().nullable(),
+  finishedAt: z.number().int().nullable(),
+  completionReason: z.enum(['schedule_exhausted', 'logical_end']).nullable(),
   liveNow: z.number().int(),
   speedDurationSec: z.number().int().nullable(),
   speedFactor: z.number().positive(),
   engineerStartDeadlineAt: z.number().int(),
   requestCount: z.number().int().nonnegative(),
+  stats: liveStatsSchema,
 });
 const engineerSchema: z.ZodType<LiveEngineerState> = z.object({
   id: z.string(),
@@ -143,6 +199,9 @@ const engineerSchema: z.ZodType<LiveEngineerState> = z.object({
   lineStatus: z.enum(['pending', 'online', 'no_show_offline', 'technical_break']),
   availability: z.string(),
   activeRequestId: z.string().nullable(),
+  routeState: z.enum(['active', 'awaiting_plan', 'exhausted']),
+  progress: progressSchema.nullable(),
+  stats: liveStatsSchema,
   technicalBreak: z
     .object({
       startedAt: z.number().int(),
@@ -194,6 +253,7 @@ const dispatchLiveSchema: z.ZodType<DispatchLiveView> = z.object({
         engineerId: z.string().nullable(),
         stop: stopSchema.nullable(),
         outcome: z.enum(['completed', 'cancelled', 'assumed_completed']),
+        terminalAt: z.number().int(),
       }),
     )
     .optional()

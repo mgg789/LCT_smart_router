@@ -16,11 +16,14 @@ describe('dispatcher live client', () => {
             logicalStartAt: 1_790_000_000,
             logicalEndAt: 1_790_036_000,
             startedAtWallSec: 1_790_000_000,
+            finishedAt: null,
+            completionReason: null,
             liveNow: 1_790_001_800,
             speedDurationSec: 3_600,
             speedFactor: 10,
             engineerStartDeadlineAt: 1_790_001_800,
             requestCount: 2,
+            stats: stats,
           },
           engineers: [engineer],
           history: [
@@ -29,6 +32,7 @@ describe('dispatcher live client', () => {
               engineerId: 'engineer-1',
               stop: null,
               outcome: 'assumed_completed',
+              terminalAt: 1_790_001_200,
             },
           ],
         }),
@@ -51,8 +55,25 @@ const engineer = {
   lineStatus: 'online',
   availability: 'online',
   activeRequestId: null,
+  routeState: 'active',
+  progress: null,
+  stats: {
+    completedCount: 0,
+    cancelledCount: 0,
+    assumedCompletedCount: 0,
+    problemCount: 0,
+    technicalBreakCount: 0,
+  },
   technicalBreak: null,
   pendingDelayProblem: null,
+} as const;
+
+const stats = {
+  completedCount: 0,
+  cancelledCount: 0,
+  assumedCompletedCount: 0,
+  problemCount: 0,
+  technicalBreakCount: 0,
 } as const;
 
 const request = {
