@@ -36,6 +36,13 @@ export function RouteTimeline({
   selectedRequestId,
   onSelectRequest,
 }: RouteTimelineProps) {
+  // Only the visits are listed. A `wait` stop shares its coordinates and its
+  // place in the day with the job that follows it, so showing both would number
+  // the same visit twice — the map now draws them the same way.
+  const visits = (route?.stops ?? []).filter(
+    (stop) => stop.requestId !== null || stop.kind === 'lunch',
+  );
+
   return (
     <section className="flex min-h-0 min-w-0 flex-col rounded-[20px] bg-surface p-5">
       <h2 className="font-display text-[24px] text-ink">
@@ -54,7 +61,7 @@ export function RouteTimeline({
         </p>
       ) : (
         <ol className="mt-7 flex overflow-x-auto pb-2">
-          {route.stops.map((stop, index) => {
+          {visits.map((stop, index) => {
             const request = stop.requestId ? requestsById.get(stop.requestId) : undefined;
             const done = request?.lifecycle === 'completed';
             const running = request?.lifecycle === 'in_progress';
@@ -68,12 +75,12 @@ export function RouteTimeline({
               >
                 {/* One rule runs behind every dot, so the line reads as continuous. */}
                 <div className="relative flex h-4 items-center">
-                  <span aria-hidden className="absolute inset-x-0 h-[2px] bg-ink" />
+                  <span aria-hidden className="absolute inset-x-0 h-[3px] bg-ink" />
                   <span
                     aria-hidden
                     className={cn(
-                      'relative size-4 rounded-full ring-4 ring-surface',
-                      done ? 'bg-ink' : running ? 'bg-success' : 'bg-ink/30',
+                      'relative size-4 rounded-full',
+                      running ? 'bg-success' : 'bg-ink',
                     )}
                   />
                 </div>

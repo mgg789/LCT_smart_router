@@ -62,6 +62,7 @@ export function buildRouteLine(route: PlanRouteView | null): LineCollection {
   const coordinates: [number, number][] = [
     [route.startLon, route.startLat],
     ...route.stops
+      .filter((stop) => stop.requestId !== null)
       .filter((stop) => Number.isFinite(stop.lon) && Number.isFinite(stop.lat))
       .map((stop) => [stop.lon, stop.lat] as [number, number]),
   ];
@@ -129,15 +130,20 @@ export type RouteStopCollection = FeatureCollection<Point, RouteStopProps>;
 export function buildRouteStopPoints(route: PlanRouteView | null): RouteStopCollection {
   if (!route) return { type: 'FeatureCollection', features: [] };
 
+  // Only the visits are numbered. A `wait` stop sits at the coordinates of the
+  // job that follows it, so numbering it too put two markers on one point and
+  // the visit ended up wearing the wait's number.
+  const visits = route.stops.filter(
+    (stop) => stop.requestId !== null && Number.isFinite(stop.lon) && Number.isFinite(stop.lat),
+  );
+
   return {
     type: 'FeatureCollection',
-    features: route.stops
-      .filter((stop) => Number.isFinite(stop.lon) && Number.isFinite(stop.lat))
-      .map((stop, index) => ({
-        type: 'Feature' as const,
-        geometry: { type: 'Point' as const, coordinates: [stop.lon, stop.lat] },
-        properties: { requestId: stop.requestId, order: index + 1 },
-      })),
+    features: visits.map((stop, index) => ({
+      type: 'Feature' as const,
+      geometry: { type: 'Point' as const, coordinates: [stop.lon, stop.lat] },
+      properties: { requestId: stop.requestId, order: index + 1 },
+    })),
   };
 }
 

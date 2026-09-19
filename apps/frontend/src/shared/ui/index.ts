@@ -1,5 +1,7 @@
 export type { ButtonProps, ButtonVariant } from './button/Button';
 export { Button } from './button/Button';
+export type { CarouselProps } from './carousel/Carousel';
+export { Carousel } from './carousel/Carousel';
 export type { CheckboxProps } from './checkbox/Checkbox';
 export { Checkbox } from './checkbox/Checkbox';
 export type { CodeInputProps } from './code-input/CodeInput';

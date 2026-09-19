@@ -41,7 +41,7 @@ function EngineerCard({
     >
       <div className="flex items-center gap-3">
         <Monogram name={row.name} size={40} />
-        <span className="min-w-0 flex-1 truncate font-semibold text-[18px] text-ink">
+        <span className="min-w-0 flex-1 truncate font-display text-[18px] text-ink">
           {row.name}
         </span>
         <span className="shrink-0 text-[16px] text-ink">
@@ -147,7 +147,7 @@ export function DayBoard({
           onClick={onShowUnassigned}
           type="button"
         >
-          <span className="block font-semibold text-[18px] text-ink">
+          <span className="block font-display text-[18px] text-ink">
             {unassigned.length} заявок без назначения
           </span>
           <span className="mt-1 block text-[14px] text-ink/70">Посмотреть причины</span>

@@ -4,7 +4,7 @@ import { useEngineers } from '@/entities/engineer';
 import { useDispatchState } from '@/entities/plan';
 import { useRequests } from '@/entities/request';
 import { cn, formatDayTitle, formatKm, formatRange, formatTime } from '@/shared/lib';
-import { Monogram } from '@/shared/ui';
+import { Carousel, Monogram } from '@/shared/ui';
 import type { EngineerProfile } from '../model/engineerProfile';
 import { buildEngineerProfile } from '../model/engineerProfile';
 
@@ -240,9 +240,9 @@ export function EngineersPage() {
           </label>
         </div>
 
-        <ul className="mt-5 flex flex-wrap gap-5">
+        <Carousel aria-label="Другие бригады" className="mt-5">
           {deck.map((engineer, index) => (
-            <li key={engineer.id}>
+            <div className="shrink-0" key={engineer.id}>
               <button
                 className={cn(
                   'flex w-[230px] flex-col items-start gap-3 rounded-[20px] bg-ink p-5 text-left text-white transition-transform',
@@ -252,7 +252,7 @@ export function EngineersPage() {
                 type="button"
               >
                 <Monogram className="bg-white text-ink" name={engineer.displayName} size={44} />
-                <span className="w-full truncate font-semibold text-[18px]">
+                <span className="w-full truncate font-display text-[18px]">
                   {engineer.displayName}
                 </span>
                 <span className="text-[14px] text-white/60">
@@ -261,10 +261,10 @@ export function EngineersPage() {
                   заявок
                 </span>
               </button>
-            </li>
+            </div>
           ))}
-          {deck.length === 0 ? <li className="text-[16px] text-ink/55">Никто не найден.</li> : null}
-        </ul>
+          {deck.length === 0 ? <p className="text-[16px] text-ink/55">Никто не найден.</p> : null}
+        </Carousel>
       </section>
     </div>
   );

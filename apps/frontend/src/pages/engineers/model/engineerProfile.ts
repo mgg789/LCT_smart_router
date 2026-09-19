@@ -1,17 +1,12 @@
 import type { EngineerView, TransportType } from '@/entities/engineer';
+import { transportTitleOf } from '@/entities/engineer';
 import type { PlanView } from '@/entities/plan';
 import type { RequestView } from '@/entities/request';
 import { skillTitle } from '@/entities/request';
 
-const TRANSPORT_TITLES: Record<TransportType, string> = {
-  car: 'Легковой автомобиль',
-  walk: 'Пешком',
-  bike: 'Велосипед',
-  transit: 'Общественный транспорт',
-};
-
+/** Re-exported so the profile screen keeps one import for its labels. */
 export function transportTitle(transport: TransportType): string {
-  return TRANSPORT_TITLES[transport] ?? transport;
+  return transportTitleOf(transport);
 }
 
 export interface ProfileStop {

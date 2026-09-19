@@ -1,4 +1,5 @@
 export { getEngineers } from './api/getEngineers';
+export { transportTitleOf } from './lib/transportTitle';
 export type {
   Availability,
   EngineerDayView,

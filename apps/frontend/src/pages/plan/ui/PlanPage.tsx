@@ -95,7 +95,13 @@ export function PlanPage() {
           <RequestPanel
             assignment={selectedAssignment}
             engineer={assignedEngineer}
+            engineers={engineers}
+            mode={stateQuery.data?.mode ?? null}
             request={selectedRequest}
+            route={
+              plan?.routes.find((route) => route.engineerId === selectedAssignment?.engineerId) ??
+              null
+            }
           />
         </div>
       )}
