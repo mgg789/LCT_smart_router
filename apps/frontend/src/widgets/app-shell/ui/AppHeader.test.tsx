@@ -110,6 +110,64 @@ describe('AppHeader', () => {
     await waitFor(() => expect(useSessionStore.getState().session).toBeNull());
   });
 
+  it('opens the policy popover instead of leaving the day', async () => {
+    const user = userEvent.setup();
+    stubApi({
+      '/dispatch/policies': () => jsonResponse(POLICIES),
+      '/dispatch/alerts': () => jsonResponse(alertsWith(0)),
+      '/dispatch/router/technical-settings': () =>
+        jsonResponse({ lunchesEnabled: false, routerContextVersion: 'ctx-1' }),
+      '/dispatch/plan': () =>
+        jsonResponse({
+          mode: 'auto',
+          modeVersion: 1,
+          plan: null,
+          appliedResult: null,
+          lastResult: null,
+        }),
+    });
+    renderWithProviders(<AppHeader />);
+    await settle();
+
+    await user.click(screen.getByRole('button', { name: /^Политика: / }));
+
+    expect(await screen.findByRole('dialog', { name: 'Выбери свою политику' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/');
+  });
+
+  it('opens the alerts popover instead of leaving the day', async () => {
+    const user = userEvent.setup();
+    stubApi({
+      '/dispatch/policies': () => jsonResponse(POLICIES),
+      '/dispatch/alerts': () => jsonResponse(alertsWith(2)),
+    });
+    renderWithProviders(<AppHeader />);
+    await settle();
+
+    await user.click(screen.getByLabelText('Алерты, непросмотренных: 2'));
+
+    expect(await screen.findByRole('dialog', { name: 'Алерты и уведомления' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/');
+  });
+
+  it('keeps only one panel open at a time', async () => {
+    const user = userEvent.setup();
+    stubApi({
+      '/dispatch/policies': () => jsonResponse(POLICIES),
+      '/dispatch/alerts': () => jsonResponse(alertsWith(0)),
+    });
+    renderWithProviders(<AppHeader />);
+    await settle();
+
+    await user.click(screen.getByLabelText('Алерты'));
+    await screen.findByRole('dialog', { name: 'Алерты и уведомления' });
+
+    await user.click(screen.getByLabelText('Меню аккаунта'));
+
+    expect(screen.queryByRole('dialog', { name: 'Алерты и уведомления' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Выйти' })).toBeInTheDocument();
+  });
+
   it('does not offer a search it cannot run yet', async () => {
     stubApi({
       '/dispatch/policies': () => jsonResponse(POLICIES),
