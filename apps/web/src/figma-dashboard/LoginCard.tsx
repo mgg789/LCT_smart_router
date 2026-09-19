@@ -8,8 +8,10 @@ import {
   DISPATCHER_LOGIN_TITLE,
   ENGINEER_LOGIN_LEAD,
   ENGINEER_LOGIN_TITLE,
+  formatCodeCountdown,
   isLoginEmail,
   loginErrorMessage,
+  remainingCodeSeconds,
 } from './loginCopy';
 import { applyOtpBackspace, applyOtpInput, emptyOtpCells, OTP_LENGTH, otpValue } from './otp';
 import { FigmaIcon } from './primitives';
@@ -43,10 +45,19 @@ export function LoginCard({
   const [password, setPassword] = useState('');
   const [cells, setCells] = useState(emptyOtpCells);
   const [devCode, setDevCode] = useState<string | undefined>();
+  const [expiresAt, setExpiresAt] = useState<number | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
   const inFlight = useRef(false);
   const code = otpValue(cells);
   const locked = busy || submitting;
+  const remaining = expiresAt === null ? 0 : remainingCodeSeconds(expiresAt, nowMs);
+
+  useEffect(() => {
+    if (step !== 'code' || expiresAt === null || remaining <= 0) return;
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [expiresAt, remaining, step]);
 
   const showError = (cause: unknown) => {
     pushAuthErrorToast(loginErrorMessage(cause));
@@ -62,7 +73,9 @@ export function LoginCard({
     try {
       const issued = await requestLoginCode(nextEmail);
       setEmail(issued.email);
-      setDevCode(issued.devCode);
+      if (issued.devCode) setDevCode(issued.devCode);
+      setExpiresAt(issued.expiresAt);
+      setNowMs(Date.now());
       setCells(emptyOtpCells());
       setStep('code');
       dismissToast('auth-error');
@@ -177,7 +190,20 @@ export function LoginCard({
               <p className="mt-[12px] text-center font-medium text-[14px] text-figma-muted">
                 Код для локальной отладки: {devCode}
               </p>
-            ) : null}
+            ) : remaining > 0 ? (
+              <p className="mt-[12px] text-center font-medium text-[14px] text-figma-muted">
+                {formatCodeCountdown(remaining)}
+              </p>
+            ) : (
+              <button
+                type="button"
+                disabled={locked}
+                onClick={() => void requestCode()}
+                className="mt-[12px] mx-auto block font-medium text-[14px] text-figma-muted underline underline-offset-4"
+              >
+                Получить новый код
+              </button>
+            )}
             <PrimaryButton
               disabled={locked || code.length !== OTP_LENGTH}
               label={locked ? 'Входим…' : 'Войти'}
@@ -189,6 +215,7 @@ export function LoginCard({
                 setStep('email');
                 setCells(emptyOtpCells());
                 setDevCode(undefined);
+                setExpiresAt(null);
                 setPassword('');
               }}
               className="mt-[16px] mx-auto block font-semibold text-[16px] text-figma-muted underline underline-offset-4"

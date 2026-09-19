@@ -10,6 +10,19 @@ export interface IssuedLoginCodeInternal {
   readonly expiresAt: number;
   readonly issuedAt: number;
   readonly code: string;
+  /** True when a still-live code was reused instead of rotated. */
+  readonly reused?: boolean;
+}
+
+/** Outstanding codes stay valid until this many seconds after issue. */
+export const LOGIN_CODE_TTL_SEC = 90;
+
+/**
+ * A live unused code must not be rotated: the client countdown and the SMTP
+ * letter would otherwise disagree.
+ */
+export function loginCodeStillLive(expiresAt: number, nowSec: number): boolean {
+  return Number.isFinite(expiresAt) && expiresAt > nowSec;
 }
 
 export interface IssuedLoginCode {
@@ -51,11 +64,24 @@ export class LoginCodeService {
   async issueIn(tx: Pick<Tx, 'loginCode'>, rawEmail: string): Promise<IssuedLoginCodeInternal> {
     const email = normalizeEmail(rawEmail);
     const now = this.clock.nowSeconds();
+    const outstanding = await tx.loginCode.findFirst({
+      where: { email, consumedAt: null },
+      orderBy: { issuedAt: 'desc' },
+    });
+    if (outstanding && loginCodeStillLive(Number(outstanding.expiresAt), now)) {
+      return {
+        email,
+        expiresAt: Number(outstanding.expiresAt),
+        issuedAt: Number(outstanding.issuedAt),
+        code: '',
+        reused: true,
+      };
+    }
     const expiresAt = now + this.config.get('LOGIN_CODE_TTL_SEC');
     const code = generateLoginCode();
 
-    // Any code still outstanding for this address is retired first, so a request for a
-    // new code cannot leave two valid ones in circulation.
+    // Any leftover row (expired or consumed) is retired first so a later request
+    // cannot leave two valid hashes in circulation.
     await tx.loginCode.updateMany({
       where: { email, consumedAt: null },
       data: { consumedAt: BigInt(now) },
@@ -77,9 +103,10 @@ export class LoginCodeService {
 
   toPublic(issued: IssuedLoginCodeInternal): IssuedLoginCode {
     const exposeCodes = this.config.get('AUTH_DEV_EXPOSE_CODES');
-    return exposeCodes
-      ? { email: issued.email, expiresAt: issued.expiresAt, devCode: issued.code }
-      : { email: issued.email, expiresAt: issued.expiresAt };
+    if (exposeCodes && issued.code) {
+      return { email: issued.email, expiresAt: issued.expiresAt, devCode: issued.code };
+    }
+    return { email: issued.email, expiresAt: issued.expiresAt };
   }
 
   /**

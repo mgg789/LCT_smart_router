@@ -59,7 +59,7 @@ export const envSchema = z.object({
    * (context/36 section 11).
    */
   SESSION_TTL_SEC: z.coerce.number().int().positive().default(86_400),
-  LOGIN_CODE_TTL_SEC: z.coerce.number().int().positive().default(600),
+  LOGIN_CODE_TTL_SEC: z.coerce.number().int().positive().default(90),
   LOGIN_CODE_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
 
   /**

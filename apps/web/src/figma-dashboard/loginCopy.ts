@@ -6,6 +6,9 @@ export const ENGINEER_LOGIN_LEAD =
 export const DISPATCHER_LOGIN_LEAD =
   'Код придёт на почту диспетчера. Пароль остаётся запасным входом.';
 
+/** Matches the API default `LOGIN_CODE_TTL_SEC`. */
+export const LOGIN_CODE_TTL_SEC = 90;
+
 /** Lightweight client check before we hit the login-code endpoint. */
 export function isLoginEmail(value: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
@@ -40,4 +43,18 @@ export function loginErrorMessage(cause: unknown): string {
   }
   if (/[А-Яа-яЁё]/.test(text)) return text;
   return 'Не удалось войти. Попробуйте ещё раз.';
+}
+
+/** Seconds left until `expiresAt` (unix seconds). Never negative. */
+export function remainingCodeSeconds(expiresAt: number, nowMs = Date.now()): number {
+  if (!Number.isFinite(expiresAt)) return 0;
+  return Math.max(0, expiresAt - Math.floor(nowMs / 1000));
+}
+
+/** Production hint under the OTP cells while a code is still live. */
+export function formatCodeCountdown(remainingSec: number): string {
+  const clamped = Math.max(0, Math.floor(remainingSec));
+  const minutes = Math.floor(clamped / 60);
+  const seconds = clamped % 60;
+  return `Новый код через ${minutes}:${seconds.toString().padStart(2, '0')}`;
 }

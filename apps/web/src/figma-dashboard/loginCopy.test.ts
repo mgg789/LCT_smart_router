@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   DISPATCHER_LOGIN_TITLE,
   ENGINEER_LOGIN_TITLE,
+  formatCodeCountdown,
+  LOGIN_CODE_TTL_SEC,
   isLoginEmail,
   loginErrorMessage,
+  remainingCodeSeconds,
 } from './loginCopy';
 
 describe('login copy', () => {
@@ -21,5 +24,13 @@ describe('login copy', () => {
     );
     expect(isLoginEmail('mail@mail.izz')).toBe(true);
     expect(isLoginEmail('not-mail')).toBe(false);
+  });
+
+  it('formats the production resend countdown from expiresAt', () => {
+    expect(LOGIN_CODE_TTL_SEC).toBe(90);
+    expect(formatCodeCountdown(90)).toBe('Новый код через 1:30');
+    expect(formatCodeCountdown(5)).toBe('Новый код через 0:05');
+    expect(remainingCodeSeconds(1_000, 1_000_000)).toBe(0);
+    expect(remainingCodeSeconds(1_010, 1_000_000)).toBe(10);
   });
 });

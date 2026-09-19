@@ -55,12 +55,14 @@ export class AuthService implements OnModuleInit {
   async requestLoginCode(email: string): Promise<IssuedLoginCode> {
     const issued = await this.uow.run(async (tx) => {
       const created = await this.loginCodes.issueIn(tx, email);
-      await this.notifications.record(tx, created.issuedAt, {
-        category: 'account_login_code',
-        businessEventKey: `account_login_code:${created.email}:${created.issuedAt}`,
-        recipientEmail: created.email,
-        payload: { code: created.code, expiresAt: created.expiresAt },
-      });
+      if (!created.reused) {
+        await this.notifications.record(tx, created.issuedAt, {
+          category: 'account_login_code',
+          businessEventKey: `account_login_code:${created.email}:${created.issuedAt}`,
+          recipientEmail: created.email,
+          payload: { code: created.code, expiresAt: created.expiresAt },
+        });
+      }
       return created;
     });
     // Transport stays outside the transaction: a mail failure must not undo the code.

@@ -145,27 +145,27 @@ describe('auth-engine', () => {
     assert.equal(replay.status, 401);
   });
 
-  it('retires an outstanding code when a new one is requested', async () => {
+  it('keeps a still-live code instead of rotating it', async () => {
     const email = `${unique('reissue')}@example.test`;
     createdEmails.push(email);
 
-    const first = await codeFor(email);
-    const second = await codeFor(email);
-    assert.notEqual(first, second);
+    const firstResponse = await post('/api/v1/auth/login-code', { email });
+    assert.equal(firstResponse.status, 201);
+    const first = (await firstResponse.json()) as { devCode?: string; expiresAt: number };
+    assert.ok(first.devCode);
 
-    const withOld = await post('/api/v1/auth/login-code/verify', {
+    const secondResponse = await post('/api/v1/auth/login-code', { email });
+    assert.equal(secondResponse.status, 201);
+    const second = (await secondResponse.json()) as { devCode?: string; expiresAt: number };
+    assert.equal(second.expiresAt, first.expiresAt);
+    assert.equal(second.devCode, undefined);
+
+    const withFirst = await post('/api/v1/auth/login-code/verify', {
       email,
-      code: first,
+      code: first.devCode,
       role: 'client',
     });
-    assert.equal(withOld.status, 401);
-
-    const withNew = await post('/api/v1/auth/login-code/verify', {
-      email,
-      code: second,
-      role: 'client',
-    });
-    assert.equal(withNew.status, 201);
+    assert.equal(withFirst.status, 201);
   });
 
   it('stops accepting a code after too many wrong attempts', async () => {
