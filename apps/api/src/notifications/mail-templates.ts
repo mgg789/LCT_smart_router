@@ -273,7 +273,12 @@ function loginMail(code: string, base: string): RenderedMail {
   );
 }
 
-function genericMail(title: string, bodyHtml: string, bodyText: string, base: string): RenderedMail {
+function genericMail(
+  title: string,
+  bodyHtml: string,
+  bodyText: string,
+  base: string,
+): RenderedMail {
   return rendered(
     title,
     bodyText,
