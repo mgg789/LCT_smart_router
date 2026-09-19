@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import { ArrowRight, ClipboardClock, MessageCircle, TriangleAlert } from 'lucide-react';
+import { ArrowRight, Bell, ClipboardClock, MessageCircle, TriangleAlert } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { ROUTES } from '@/app/routes/paths';
 import type { AlertSeverity, AlertView } from '@/entities/alert';
@@ -53,7 +53,12 @@ export function AlertsPopover({ onClose }: AlertsPopoverProps) {
   const pending = alerts.data ? unseenAlerts(alerts.data.alerts).slice(0, PREVIEW_COUNT) : [];
 
   return (
-    <Popover onClose={onClose} title="Алерты и уведомления">
+    <Popover
+      className="-top-1 -right-1"
+      closeIcon={<Bell aria-hidden size={20} />}
+      onClose={onClose}
+      title="Алерты и уведомления"
+    >
       {alerts.isPending ? <p className="text-[14px] text-ink/60">Загружаем алерты…</p> : null}
       {alerts.isError ? (
         <p className="text-[14px] text-danger">Не удалось прочитать алерты.</p>

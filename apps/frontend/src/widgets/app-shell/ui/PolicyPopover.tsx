@@ -1,3 +1,4 @@
+import { ArrowDownLeft } from 'lucide-react';
 import { useDispatchState } from '@/entities/plan';
 import type { PolicyId } from '@/entities/policy';
 import { policyTitle, usePolicies } from '@/entities/policy';
@@ -81,7 +82,12 @@ export function PolicyPopover({ onClose }: PolicyPopoverProps) {
   };
 
   return (
-    <Popover className="right-auto left-0" onClose={onClose} title="Выбери свою политику">
+    <Popover
+      className="top-0 left-0"
+      closeIcon={<ArrowDownLeft aria-hidden size={20} />}
+      onClose={onClose}
+      title="Выбери свою политику"
+    >
       {policies.isPending ? <p className="text-[14px] text-ink/60">Загружаем политики…</p> : null}
       {policies.isError ? (
         <p className="text-[14px] text-danger">Не удалось прочитать список политик.</p>

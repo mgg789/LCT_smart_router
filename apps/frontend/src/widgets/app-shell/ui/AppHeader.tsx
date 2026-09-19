@@ -86,13 +86,13 @@ export function AppHeader() {
           aria-expanded={panel === 'alerts'}
           aria-haspopup="dialog"
           aria-label={unseen > 0 ? `Алерты, непросмотренных: ${unseen}` : 'Алерты'}
-          className="relative block text-ink"
+          className="relative flex size-[43px] items-center justify-center text-ink"
           onClick={() => toggle('alerts')}
           type="button"
         >
           <Bell aria-hidden size={24} />
           {unseen > 0 ? (
-            <span className="-top-1.5 -right-2 absolute min-w-[18px] rounded-full bg-ink px-1 text-center text-[11px] text-white leading-[18px]">
+            <span className="absolute top-[3px] right-[4px] min-w-[18px] rounded-full bg-ink px-1 text-center text-[11px] text-white leading-[18px]">
               {unseen > 99 ? '99+' : unseen}
             </span>
           ) : null}

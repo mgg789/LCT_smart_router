@@ -31,7 +31,7 @@ export function SidebarRail() {
               }
               to={item.to}
             >
-              <item.icon aria-hidden size={24} strokeWidth={1.75} />
+              <item.icon aria-hidden size={24} />
               <span className="mt-[4px] text-[16px] leading-tight">{item.label}</span>
             </NavLink>
           </li>

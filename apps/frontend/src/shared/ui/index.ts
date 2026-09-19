@@ -4,6 +4,7 @@ export type { CheckboxProps } from './checkbox/Checkbox';
 export { Checkbox } from './checkbox/Checkbox';
 export type { CodeInputProps } from './code-input/CodeInput';
 export { CodeInput } from './code-input/CodeInput';
+export { AiIcon } from './icons/AiIcon';
 export type { LogoProps } from './logo/Logo';
 export { Logo } from './logo/Logo';
 export type { MonogramProps } from './monogram/Monogram';
