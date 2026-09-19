@@ -6,6 +6,9 @@ export const operationIdSchema = z.object({ operationId: z.uuid() });
 
 export const reportFactSchema = z.object({
   operationId: z.uuid(),
+  /** Required for an integration key, refused for a session: a session reports facts as
+   * its own engineer (context/41 section 3.2, context/42 DF-06). */
+  engineerId: z.string().min(1).optional(),
   /**
    * Arrival and start stay separate events. Being on site is not performing the work, so
    * an engineer who cannot begin reports `arrived_blocked` and nothing moves to

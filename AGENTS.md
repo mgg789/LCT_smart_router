@@ -139,7 +139,8 @@ Examples: `feat(solver): add lunch-break intervals to routing model`,
    constraints, not mechanics.
 2. `/docs` — living per-subsystem documentation, same commit as the code: `mcp-kanban.md` (exists),
    `architecture.md`, `api.md`, `solver.md` (exists), `data.md`, `runbook.md`, `ragconnect.md` (exists),
-   `ci.md` (SourceCraft pipeline and the `navix.droidje.com` gate), `frontend-api.md` (frontend↔backend contract for a new frontend).
+   `ci.md` (SourceCraft pipeline and the `navix.droidje.com` gate), `frontend-api.md` (frontend↔backend contract for a new frontend),
+   `integration-guide.md` (how external client/engineer apps connect: API tokens «by id» or our sessions).
 3. Docs are part of Definition of Done: code without its docs update is incomplete. Update the relevant
    `context/` files in the same commit when behavior deviates from them.
 4. Every schema/contract change is documented in `docs/api.md` / `docs/data.md` **and** reflected in

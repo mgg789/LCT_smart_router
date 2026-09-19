@@ -1,11 +1,12 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { type Actor, CurrentActor, Roles } from '../auth';
 import { SysError } from '../common/errors';
+import { Clock } from '../common/time';
 import { zodBody } from '../common/validation';
 import { OperationsService } from '../operations';
 import { RequestsService, WORK_TYPES } from '../orchestrator/requests';
-import { PrismaService } from '../persistence';
+import { PrismaService, type Tx } from '../persistence';
 import {
   type PrepareRequestDto,
   prepareRequestSchema,
@@ -22,6 +23,11 @@ import { type RequestView, toRequestView } from './request-view';
  * The customer describes a problem, a place and a convenient window. Qualification codes,
  * durations and transport restrictions are formed by the system and never typed here
  * (context/32 section 4.1).
+ *
+ * Who the request belongs to follows the same two-way rule as the engineer contour: a
+ * session prepares and lists its own requests, an integration key names the customer by
+ * address -- the object is selected by the payload, the key's category decides what may
+ * be done (context/41 sections 3.2 and 10).
  */
 @Roles('client')
 @ApiTags('client')
@@ -31,6 +37,7 @@ export class ClientController {
     private readonly requests: RequestsService,
     private readonly operations: OperationsService,
     private readonly prisma: PrismaService,
+    private readonly clock: Clock,
   ) {}
 
   @Get('work-types')
@@ -47,7 +54,6 @@ export class ClientController {
     @CurrentActor() actor: Actor,
     @Body(zodBody(prepareRequestSchema)) dto: PrepareRequestDto,
   ): Promise<{ request: RequestView }> {
-    const clientAccountId = this.accountOf(actor);
     const outcome = await this.operations.execute(
       {
         operationId: dto.operationId,
@@ -55,8 +61,9 @@ export class ClientController {
         action: 'request.prepare',
         payload: dto,
       },
-      async (context) =>
-        toRequestView(
+      async (context) => {
+        const clientAccountId = await this.clientAccountOf(context.tx, actor, dto.clientEmail);
+        return toRequestView(
           await this.requests.prepare(context, clientAccountId, {
             contactName: dto.contactName,
             addressText: dto.addressText,
@@ -71,7 +78,8 @@ export class ClientController {
             urgent: dto.urgent,
             problemText: dto.problemText ?? null,
           }),
-        ),
+        );
+      },
     );
     return { request: outcome.result };
   }
@@ -128,9 +136,16 @@ export class ClientController {
   }
 
   @Get('requests')
-  @ApiOperation({ summary: 'Active requests of the signed-in customer' })
-  async list(@CurrentActor() actor: Actor): Promise<{ requests: RequestView[] }> {
-    const clientAccountId = this.accountOf(actor);
+  @ApiOperation({ summary: 'Active requests of the signed-in customer, or of the clientEmail a key names' })
+  async list(
+    @CurrentActor() actor: Actor,
+    @Query('clientEmail') clientEmail?: string,
+  ): Promise<{ requests: RequestView[] }> {
+    const clientAccountId = await this.existingClientAccountOf(actor, clientEmail);
+    if (clientAccountId === null) {
+      // A never-seen address owns no requests; a read does not create the account.
+      return { requests: [] };
+    }
     const requests = await this.prisma.request.findMany({
       // A completed request leaves the active list but stays in the database and in the
       // history (context/32 section 4.4).
@@ -154,19 +169,70 @@ export class ClientController {
   }
 
   /**
-   * A session acts for one account, so a client session may only reach its own requests.
+   * Which customer account this call acts for, creating the address's account on a write
+   * the same way the dispatcher's own create does.
    *
-   * An integration key is different by design: it belongs to the dispatcher and selects an
-   * object rather than identifying its owner (context/41 section 3.2), so it is not given
-   * an account to act as here.
+   * A session acts for its own account: passing `clientEmail` is refused, because the
+   * subject comes from the credential (context/42 DF-06). An integration key has no
+   * account: it must name the customer by address (context/41 sections 3.2 and 10), and
+   * the machine call never proves that the address owner confirmed anything.
    */
-  private accountOf(actor: Actor): string {
-    if (!actor.accountId) {
-      throw SysError.forbidden(
-        'This action needs a customer session; an integration key has no account to act as',
+  private async clientAccountOf(
+    tx: Tx,
+    actor: Actor,
+    explicitEmail: string | null | undefined,
+  ): Promise<string> {
+    if (actor.accountId) {
+      if (explicitEmail !== undefined && explicitEmail !== null && explicitEmail !== '') {
+        throw SysError.forbidden('A session acts for its own account; do not pass clientEmail');
+      }
+      return actor.accountId;
+    }
+    if (explicitEmail === undefined || explicitEmail === null || explicitEmail === '') {
+      throw SysError.validationFailed(
+        'An integration key must name the customer: pass clientEmail',
+        { clientEmail: 'required' },
       );
     }
-    return actor.accountId;
+    const email = explicitEmail.trim().toLowerCase();
+    const now = BigInt(this.clock.nowSeconds());
+    const account = await tx.account.upsert({
+      where: { email },
+      update: {},
+      create: { email, createdAt: now, updatedAt: now },
+    });
+    await tx.accountRole.upsert({
+      where: { accountId_role: { accountId: account.id, role: 'client' } },
+      update: {},
+      create: { accountId: account.id, role: 'client', grantedAt: now },
+    });
+    return account.id;
+  }
+
+  /**
+   * Same two-way resolution for reads: an unknown address owns nothing, so a missing
+   * account is an empty list rather than a created row.
+   */
+  private async existingClientAccountOf(
+    actor: Actor,
+    explicitEmail: string | null | undefined,
+  ): Promise<string | null> {
+    if (actor.accountId) {
+      if (explicitEmail !== undefined && explicitEmail !== null && explicitEmail !== '') {
+        throw SysError.forbidden('A session acts for its own account; do not pass clientEmail');
+      }
+      return actor.accountId;
+    }
+    if (explicitEmail === undefined || explicitEmail === null || explicitEmail === '') {
+      throw SysError.validationFailed(
+        'An integration key must name the customer: pass clientEmail',
+        { clientEmail: 'required' },
+      );
+    }
+    const account = await this.prisma.account.findUnique({
+      where: { email: explicitEmail.trim().toLowerCase() },
+    });
+    return account?.id ?? null;
   }
 
   private async assertOwned(actor: Actor, requestId: string) {

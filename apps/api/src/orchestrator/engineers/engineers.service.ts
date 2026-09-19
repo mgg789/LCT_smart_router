@@ -454,6 +454,22 @@ export class EngineersService {
     return engineer;
   }
 
+  /**
+   * Loads an engineer by explicit id, for a caller that names its object instead of
+   * signing in as it (context/41 section 3.2): an integration key has no account, so the
+   * request carries the `engineerId` and this is the existence check on it.
+   */
+  async byId(tx: Tx, engineerId: string): Promise<EngineerWithAccount> {
+    const engineer = await tx.engineer.findUnique({
+      where: { id: engineerId },
+      include: { account: true },
+    });
+    if (!engineer) {
+      throw SysError.notFound('Engineer', { engineerId });
+    }
+    return engineer;
+  }
+
   private async load(tx: Tx, engineerId: string): Promise<Engineer> {
     const engineer = await tx.engineer.findUnique({ where: { id: engineerId } });
     if (!engineer) {

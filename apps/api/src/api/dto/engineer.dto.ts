@@ -13,8 +13,18 @@ const skills = z
 
 const transportType = z.enum(['car', 'walk', 'bike', 'transit']);
 
-/** For actions that carry no arguments beyond the intention itself. */
+/** For actions that carry no arguments beyond the intention itself, on the caller's own
+ * engineer. An integration key instead extends the body with `engineerId`
+ * (context/41 section 3.2). */
 export const operationOnlySchema = z.object({ operationId: z.uuid() });
+
+/** Same as [[operationOnlySchema]], but an integration key names the engineer object. */
+export const engineerActionSchema = operationOnlySchema.extend({
+  /** Required for an integration key, refused for a session (the subject is the session's
+   * own engineer, context/42 DF-06). */
+  engineerId: z.string().min(1).optional(),
+});
+export type EngineerActionDto = z.infer<typeof engineerActionSchema>;
 
 export const createEngineerSchema = operationEnvelopeSchema.extend({
   email: z.email(),
@@ -63,8 +73,11 @@ export const updateEngineerSchema = operationEnvelopeSchema.extend({
 });
 export type UpdateEngineerDto = z.infer<typeof updateEngineerSchema>;
 
-/** The engineer's own edit. Region is not here: it is not theirs to choose. */
+/** The engineer's own edit. Region is not here: it is not theirs to choose. An
+ * integration key adds `engineerId` to name the profile it edits. */
 export const updateOwnProfileSchema = operationEnvelopeSchema.extend({
+  /** Required for an integration key, refused for a session (context/41 section 3.2). */
+  engineerId: z.string().min(1).optional(),
   displayName: z.string().min(1).max(200).optional(),
   skills: skills.optional(),
   transportType: transportType.optional(),
@@ -85,6 +98,8 @@ export const confirmEmailChangeSchema = z.object({
 export type ConfirmEmailChangeDto = z.infer<typeof confirmEmailChangeSchema>;
 
 export const setAvailabilitySchema = operationEnvelopeSchema.extend({
+  /** Required for an integration key, refused for a session (context/41 section 3.2). */
+  engineerId: z.string().min(1).optional(),
   availability: z.enum(['online', 'offline']),
   /**
    * Expected return from a technical stop. A forecast only: reaching this moment creates
