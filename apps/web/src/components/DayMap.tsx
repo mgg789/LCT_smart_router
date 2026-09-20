@@ -23,8 +23,18 @@ import {
 } from '../domain/mapPaint';
 import { regionStyle, requestRegion, routeRegion } from '../domain/regions';
 import { requestMapPoint } from '../domain/requestPoint';
-import { type MapRouteSegment, mapRouteSegments } from '../domain/travel';
+import { type MapRouteSegment, mapRouteSegments, routeLineKind } from '../domain/travel';
 import { engineerColor, skillMark } from '../lib/reasons';
+
+const OSRM_LINE = '#8A8F98';
+const MAP_API_LINE = '#16A34A';
+
+function routeStroke(segment: Pick<MapRouteSegment, 'approximate' | 'source' | 'geometryProvider'>, engineerId: string) {
+  const kind = routeLineKind(segment);
+  if (kind === 'map') return mapPaintColor(MAP_API_LINE);
+  if (kind === 'osrm') return mapPaintColor(OSRM_LINE);
+  return mapPaintColor(engineerColor(engineerId));
+}
 
 interface DayMapProps {
   readonly snapshot: DashboardSnapshot;
@@ -323,6 +333,7 @@ export function DayMap({
           ...planned.map((segment) => ({
             approximate: segment.approximate,
             source: segment.source,
+            geometryProvider: segment.geometryProvider,
             coordinates: segment.coordinates,
           })),
           ...graph.mapSegments
@@ -346,7 +357,7 @@ export function DayMap({
               engineerId,
               selected: !selectedEngineerId || engineerId === selectedEngineerId ? 1 : 0,
               approximate: segment.approximate ? 1 : 0,
-              color: mapPaintColor(engineerColor(engineerId)),
+              color: routeStroke(segment, engineerId),
               regionColor: mapPaintColor(regionStyle(region).color),
               travelSource: segment.source,
             },
@@ -760,8 +771,8 @@ export function DayMap({
       {soloRequestId ? null : (
         <div className="pointer-events-none absolute bottom-3 left-3 rounded-xl bg-white/90 px-3 py-2 text-[11px] text-muted shadow">
           {selectedEngineerId
-            ? 'Показан план выбранного инженера. Пунктир — схематичная связь точек, сплошная линия — геометрия дороги.'
-            : 'План дня без live-позиции инженеров. Пунктир — схематичная связь точек, сплошная линия — геометрия дороги.'}
+            ? 'Показан план выбранного инженера. Пунктир — геоцентры, серая линия — OSRM, зелёная — маршрут 2ГИС или Яндекс.'
+            : 'План дня без live-позиции инженеров. Пунктир — геоцентры, серая линия — OSRM, зелёная — маршрут 2ГИС или Яндекс.'}
         </div>
       )}
       <div className="absolute right-2 bottom-1 rounded bg-white/90 px-2 text-[10px] text-muted">
