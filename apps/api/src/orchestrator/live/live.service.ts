@@ -50,6 +50,8 @@ type DayWithStates = LiveWorkday & {
  */
 @Injectable()
 export class LiveService {
+  private advanceInFlight: Promise<void> | null = null;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly uow: UnitOfWork,
@@ -377,7 +379,16 @@ export class LiveService {
   }
 
   /** Invoked by the coordinator and reads. It is safe to call concurrently. */
-  async advanceOnce(): Promise<void> {
+  advanceOnce(): Promise<void> {
+    if (this.advanceInFlight) return this.advanceInFlight;
+    const pending = this.advanceShared().finally(() => {
+      if (this.advanceInFlight === pending) this.advanceInFlight = null;
+    });
+    this.advanceInFlight = pending;
+    return pending;
+  }
+
+  private async advanceShared(): Promise<void> {
     const wallNow = this.clock.nowSeconds();
     const timing = await this.timing.read();
     await this.uow.run(async (tx) => {
@@ -466,7 +477,14 @@ export class LiveService {
     await this.requireEngineerState(tx, day.id, engineerId, wallNow);
     const full = await this.dayWithStates(tx, day.id);
     const liveNow = this.liveNow(full, wallNow);
-    const views = await this.engineerStatesView(tx, full, wallNow);
+    const views = await this.engineerStatesView(
+      tx,
+      {
+        ...full,
+        engineers: full.engineers.filter((state) => state.engineerId === engineerId),
+      },
+      wallNow,
+    );
     const engineer = views.find((item) => item.id === engineerId);
     if (!engineer) throw SysError.notFound('Engineer', { engineerId });
     const current = await this.currentFor(tx, full, engineerId, liveNow);

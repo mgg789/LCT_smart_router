@@ -390,7 +390,11 @@ describe('LIVE workday', () => {
       initial.workday.speedDurationSec,
     );
     const publicationCountBefore = await prisma.routingSnapshot.count();
-    const noShow = await liveView(engineer.token);
+    const [noShow, concurrent] = await Promise.all([
+      liveView(engineer.token),
+      liveView(engineer.token),
+    ]);
+    assert.equal(concurrent.engineer.lineStatus, 'no_show_offline');
     const publicationCountAfter = await prisma.routingSnapshot.count();
     assert.equal(noShow.engineer.lineStatus, 'no_show_offline');
     assert.equal(
@@ -885,7 +889,8 @@ describe('LIVE workday', () => {
       started.workday.id,
       started.workday.logicalStartAt,
       started.workday.logicalEndAt,
-      actualLunchEndAt + 299,
+      // Leave wall-clock headroom: HTTP/SQL can cross the last second of the grace.
+      actualLunchEndAt + 240,
       started.workday.speedDurationSec,
     );
     const beforeGraceEnd = await liveView(engineer.token);
