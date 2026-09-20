@@ -40,6 +40,7 @@ const NOTICE_ICON: Record<ToastKind, { src: string; width: number; height: numbe
  * (same trick as the toast veil) instead of clipping on a hard edge.
  */
 export function AlertsView({
+  token,
   snapshot,
   toasts,
   demoMode,
@@ -49,6 +50,7 @@ export function AlertsView({
   onResolve,
   writesDisabled,
 }: {
+  token?: string;
   snapshot: DashboardSnapshot | null;
   toasts: readonly ToastNotification[];
   demoMode: boolean;
@@ -153,6 +155,7 @@ export function AlertsView({
                   primaryLabel={card.requestId ? 'К заявке' : null}
                   actions={
                     <AlertActions
+                      token={token}
                       alert={card.sourceAlert}
                       snapshot={snapshot}
                       disabled={writesDisabled}

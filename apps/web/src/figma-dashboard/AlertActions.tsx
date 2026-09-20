@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { DashboardApiError } from '../api/client';
+import { DashboardApiError, loadAlertWindowProposal } from '../api/client';
 import type { AlertResolutionInput, AlertView, DashboardSnapshot } from '../api/types';
 import {
   ALERT_ACTION_SPECS,
@@ -48,11 +48,13 @@ const ACTION_ICONS: Record<AlertActionId, LucideIcon> = {
 
 /** Server-authorized choices with accessible explanations and real resolution forms. */
 export function AlertActions({
+  token,
   alert,
   snapshot,
   disabled,
   onResolve,
 }: {
+  token?: string;
   alert: AlertView | null;
   snapshot: DashboardSnapshot | null;
   disabled: boolean;
@@ -104,8 +106,14 @@ export function AlertActions({
           сервера.
         </p>
       ) : null}
+      {alert?.resolutionAction === 'move_window' && alert.resolvedAt === null ? (
+        <p role="status" className="mt-[12px] text-[16px] text-figma-muted">
+          Окно изменено. Алерт останется открытым, пока заявка не получит назначение.
+        </p>
+      ) : null}
       {selected && alert && snapshot && !waiting ? (
         <ResolutionForm
+          token={token}
           key={`${alert.id}:${selected}`}
           action={selected}
           alert={alert}
@@ -230,6 +238,7 @@ function ExplainedAction({
 }
 
 function ResolutionForm({
+  token,
   action,
   alert,
   snapshot,
@@ -238,6 +247,7 @@ function ResolutionForm({
   onClose,
   onPending,
 }: {
+  token?: string;
   action: AlertActionId;
   alert: AlertView;
   snapshot: DashboardSnapshot;
@@ -248,8 +258,46 @@ function ResolutionForm({
 }) {
   const spec = ALERT_ACTION_SPECS[action];
   const request = snapshot.requests.find((item) => item.id === alert.requestIds[0]);
-  const [start, setStart] = useState(request ? alertWindowInput(request.windowStartAt) : '');
-  const [end, setEnd] = useState(request ? alertWindowInput(request.windowEndAt) : '');
+  const [start, setStart] = useState('');
+  const [end, setEnd] = useState('');
+  const [expectedRequestVersion, setExpectedRequestVersion] = useState(request?.version);
+  const [proposalStatus, setProposalStatus] = useState('loading');
+  const [proposalText, setProposalText] = useState('Подбираем выполнимое окно через Router…');
+  useEffect(() => {
+    if (action !== 'move_window') return;
+    let active = true;
+    if (!token) {
+      setProposalStatus('unavailable');
+      setProposalText('Подбор доступен только при подключении к рабочему серверу.');
+      return;
+    }
+    void loadAlertWindowProposal(token, alert.id)
+      .then((result) => {
+        if (!active) return;
+        setExpectedRequestVersion(result.requestVersion);
+        setProposalStatus(result.status);
+        if (result.proposal) {
+          setStart(alertWindowInput(result.proposal.windowStartAt));
+          setEnd(alertWindowInput(result.proposal.windowEndAt));
+          setProposalText(
+            'Найдено выполнимое окно с учётом дороги и текущего маршрута инженера. Это расчёт, не резервирование; алёрт останется до подтверждённого назначения.',
+          );
+        } else
+          setProposalText(
+            'В текущих маршрутах на сегодня выполнимое окно не найдено. Рекомендуем «На завтра». Можно задать окно вручную — алёрт останется до назначения.',
+          );
+      })
+      .catch(() => {
+        if (!active) return;
+        setProposalStatus('unavailable');
+        setProposalText(
+          'Не удалось проверить окно через Router. Это не означает, что окна нет. Закройте и повторите подбор или укажите окно вручную.',
+        );
+      });
+    return () => {
+      active = false;
+    };
+  }, [action, alert.id, token]);
   const [reason, setReason] = useState('');
   const [engineerId, setEngineerId] = useState('');
   const [minutes, setMinutes] = useState(15);
@@ -281,7 +329,11 @@ function ResolutionForm({
         action,
         ...(reason.trim() ? { reason: reason.trim() } : {}),
         ...(action === 'move_window'
-          ? { windowStartAt: alertWindowSeconds(start), windowEndAt: alertWindowSeconds(end) }
+          ? {
+              windowStartAt: alertWindowSeconds(start),
+              windowEndAt: alertWindowSeconds(end),
+              expectedRequestVersion,
+            }
           : {}),
         ...(action === 'add_engineer' ? { engineerId } : {}),
         ...(action === 'extend' ? { minutes: alert.code === 'shift_no_show' ? 15 : minutes } : {}),
@@ -332,11 +384,15 @@ function ResolutionForm({
       <fieldset disabled={disabled || pending} className="mt-[16px] space-y-[16px]">
         {spec.input === 'window' ? (
           <div className="flex flex-wrap gap-[20px]">
+            <p role="status" className="w-full text-figma-muted">
+              {proposalText}
+            </p>
             <label>
               Начало окна (Москва)
               <input
                 required
                 type="datetime-local"
+                disabled={proposalStatus === 'loading'}
                 value={start}
                 onChange={(e) => setStart(e.target.value)}
                 className={fieldClass}
@@ -347,6 +403,7 @@ function ResolutionForm({
               <input
                 required
                 type="datetime-local"
+                disabled={proposalStatus === 'loading'}
                 value={end}
                 onChange={(e) => setEnd(e.target.value)}
                 className={fieldClass}
@@ -418,7 +475,10 @@ function ResolutionForm({
         <div className="flex gap-[12px]">
           <button
             type="submit"
-            disabled={action === 'add_engineer' && candidates.length === 0}
+            disabled={
+              (action === 'add_engineer' && candidates.length === 0) ||
+              (action === 'move_window' && proposalStatus === 'loading')
+            }
             className="rounded-[20px] bg-figma-bee px-[32px] py-[16px] font-semibold disabled:opacity-45"
           >
             {pending ? 'Применяем…' : 'Применить решение'}

@@ -839,6 +839,12 @@ export class DispatchController {
     return { alert: outcome.result };
   }
 
+  @Get('alerts/:id/window-proposal')
+  @ApiOperation({ summary: 'Preview a feasible same-day customer window without applying it' })
+  async proposeAlertWindow(@Param('id') id: string) {
+    return this.alertsService.proposeWindow(id);
+  }
+
   @Get('shift')
   @ApiOperation({ summary: 'Day close status; open alerts are a hard close gate' })
   async shift(@Query('workDate') workDate?: string) {

@@ -5,6 +5,7 @@ import { lunchCoverageWitness, policyCoverageRegressed } from './coverage-policy
 export { lunchCoverageWitness, policyCoverageRegressed } from './coverage-policy';
 
 import { SysError } from '../../common/errors';
+import { canonicalHash } from '../../common/json';
 import { Clock } from '../../common/time';
 import { Prisma } from '../../generated/prisma/client';
 import { NotificationsService } from '../../notifications';
@@ -16,7 +17,11 @@ import {
   type Tx,
   UnitOfWork,
 } from '../../persistence';
-import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
+import {
+  PUBLICATION_TRIGGERS,
+  SnapshotBuilder,
+  SnapshotPublisher,
+} from '../../routing/mount-data-eng';
 import { RouterClient } from '../../routing/router-gateway/router-client.port';
 import {
   DEFAULT_EXECUTION_TIMING_POLICY,
@@ -52,6 +57,7 @@ export interface ResolveAlertInput {
   readonly minutes?: number;
   readonly windowStartAt?: number;
   readonly windowEndAt?: number;
+  readonly expectedRequestVersion?: number;
   readonly engineerId?: string;
 }
 
@@ -91,7 +97,85 @@ export class AlertsService {
     private readonly router: RouterClient,
     @Optional() private readonly timing?: ExecutionTimingPolicy,
     @Optional() private readonly dispatcherSettings?: DispatcherSettingsService,
+    @Optional() private readonly snapshotBuilder?: SnapshotBuilder,
   ) {}
+
+  private readonly windowCache = new Map<
+    string,
+    { expiresAt: number; value: ReturnType<RouterClient['proposeWindow']> }
+  >();
+
+  /** Builds a fresh, unpublished preview; network work never holds a DB transaction. */
+  async proposeWindow(id: string) {
+    const builder = this.snapshotBuilder;
+    if (!builder) throw SysError.notConfigured('Router snapshot builder');
+    const prepare = (planningAt?: number) =>
+      this.uow.run(async (tx) => {
+        const alert = await tx.alert.findUnique({ where: { id } });
+        if (!alert || alert.resolvedAt !== null || !alert.requestIds[0])
+          throw new SysError('VALIDATION_FAILED', 'An open request alert is required');
+        const request = await tx.request.findUnique({ where: { id: alert.requestIds[0] } });
+        if (request?.lifecycle !== 'submitted')
+          throw new SysError('WORK_ALREADY_STARTED', 'Only submitted work can change windows');
+        const now = planningAt ?? (await businessNow(tx, this.clock.nowSeconds()));
+        const built = await builder.build(tx, now);
+        const current = await tx.appliedPlanCurrent.findUnique({
+          where: { id: 'singleton' },
+          include: {
+            plan: { include: { routes: { include: { stops: { orderBy: { sequence: 'asc' } } } } } },
+          },
+        });
+        const ids = new Set(built.snapshot.requests.map((item) => item.request_id));
+        if (!ids.has(request.id))
+          throw new SysError(
+            'VALIDATION_FAILED',
+            'Request is outside the current planning horizon',
+          );
+        const engineers = new Set(built.snapshot.engineers.map((item) => item.engineer_id));
+        const routes = Object.fromEntries(
+          (current?.plan.routes ?? [])
+            .filter((route) => engineers.has(route.engineerId))
+            .map((route) => [
+              route.engineerId,
+              route.stops.flatMap((stop) =>
+                stop.requestId && ids.has(stop.requestId) ? [stop.requestId] : [],
+              ),
+            ]),
+        );
+        const date = new Date((now + 10800) * 1000).toISOString().slice(0, 10);
+        return {
+          requestVersion: request.version,
+          input: {
+            snapshot: built.snapshot,
+            request_id: request.id,
+            routes,
+            day_end_at: Date.parse(`${date}T00:00:00+03:00`) / 1000 + 86400,
+          },
+          identity: canonicalHash({
+            task: built.taskFingerprint,
+            plan: current?.planId ?? null,
+            version: request.version,
+          }),
+        };
+      });
+    const prepared = await prepare();
+    const key = canonicalHash(prepared.input);
+    const cached = this.windowCache.get(key);
+    let value = cached && cached.expiresAt > Date.now() ? cached.value : null;
+    if (!value) {
+      if (this.windowCache.size >= 32) this.windowCache.clear();
+      value = this.router.proposeWindow(prepared.input);
+      this.windowCache.set(key, { expiresAt: Date.now() + 10_000, value });
+      value.catch(() => this.windowCache.delete(key));
+    }
+    const result = await value;
+    if ((await prepare(prepared.input.snapshot.planning_as_of)).identity !== prepared.identity)
+      throw new SysError(
+        'VALIDATION_FAILED',
+        'The plan changed while calculating; request a fresh window',
+      );
+    return { ...result, requestVersion: prepared.requestVersion };
+  }
 
   private async thresholds(db: PrismaService | Tx = this.prisma) {
     if (!this.dispatcherSettings) {
@@ -313,6 +397,7 @@ export class AlertsService {
         sourceResultId: { not: resultId },
         resolvedAt: null,
         invalidatedAt: null,
+        OR: [{ resolutionAction: null }, { resolutionAction: { not: 'move_window' } }],
       },
       data: { invalidatedAt: BigInt(now), resolvedAt: BigInt(now), resolutionAction: 'superseded' },
     });
@@ -459,14 +544,14 @@ export class AlertsService {
       });
     }
     await this.applyAction(context, alert, input);
-    if (input.action === 'restore_auto') {
-      // The bus applies a still-current package after commit. Keep the hard blocker until
-      // that application actually replaces the manual revision; an outage is not success.
+    if (input.action === 'restore_auto' || input.action === 'move_window') {
+      // Saving a window or requesting AUTO is not proof of a feasible assignment.
+      // Keep the blocker until a subsequent accepted plan confirms the outcome.
       return this.view(
         await context.tx.alert.update({
           where: { id },
           data: {
-            resolutionAction: 'restore_auto',
+            resolutionAction: input.action,
             resolutionReason: input.reason ?? null,
           },
         }),
@@ -548,6 +633,10 @@ export class AlertsService {
       if (!request || request.lifecycle !== 'submitted') {
         throw new SysError('WORK_ALREADY_STARTED', 'Only a submitted request can be rescheduled');
       }
+      if (input.action === 'move_window' && input.expectedRequestVersion !== request.version)
+        throw new SysError('VERSION_CONFLICT', 'Request changed; reopen the window form', {
+          details: { currentVersion: request.version },
+        });
       const start =
         input.action === 'reschedule'
           ? Number(request.windowStartAt) + 86_400
@@ -593,8 +682,8 @@ export class AlertsService {
           reason: input.reason ?? input.action,
         },
       });
-      await context.tx.request.update({
-        where: { id: requestId },
+      const changed = await context.tx.request.updateMany({
+        where: { id: requestId, version: request.version },
         data: {
           windowStartAt: BigInt(start),
           windowEndAt: BigInt(end),
@@ -603,6 +692,8 @@ export class AlertsService {
           version: { increment: 1 },
         },
       });
+      if (changed.count !== 1)
+        throw new SysError('VERSION_CONFLICT', 'Request changed during resolution');
       if (!deferFreeWork)
         await this.publisher.publishIfChanged(
           context.tx,
@@ -818,6 +909,27 @@ export class AlertsService {
     now = await businessNow(tx, now, scopeDate);
     const thresholds = await this.thresholds(tx);
     const active = new Set<string>();
+    const windowChanges = await tx.alert.findMany({
+      where: { resolutionAction: 'move_window', resolvedAt: null, invalidatedAt: null },
+      select: { id: true, requestIds: true, createdAt: true },
+    });
+    const awaitingWindow = new Set<string>();
+    for (const alert of windowChanges) {
+      const request = alert.requestIds[0]
+        ? await tx.request.findUnique({ where: { id: alert.requestIds[0] } })
+        : null;
+      if (request?.lifecycle === 'submitted' && request.assignmentState !== 'assigned') {
+        awaitingWindow.add(alert.id);
+      } else {
+        await tx.alert.update({
+          where: { id: alert.id },
+          data: {
+            resolvedAt: BigInt(now),
+            resolutionDelaySec: resolutionDelay(now - Number(alert.createdAt)),
+          },
+        });
+      }
+    }
     // Router and system episodes both become obsolete once the request is no
     // longer free work. Preserve the audit row, but remove it from the open queue.
     const unassignedAlerts = await tx.alert.findMany({
@@ -825,6 +937,7 @@ export class AlertsService {
       select: { id: true, requestIds: true },
     });
     for (const alert of unassignedAlerts) {
+      if (awaitingWindow.has(alert.id)) continue;
       if (alert.requestIds.length === 0) continue;
       const remaining = await tx.request.count({
         where: {
@@ -1205,6 +1318,7 @@ export class AlertsService {
       },
     });
     for (const alert of openSystem) {
+      if (awaitingWindow.has(alert.id)) continue;
       const dedupKey = alert.dedupKey;
       if (dedupKey?.startsWith('system:plan_degraded:policy:')) {
         const reasons = z.object({ expiresAt: z.number().nullable() }).safeParse(alert.reasons);
@@ -1298,6 +1412,17 @@ export class AlertsService {
       return;
     }
     if (latest?.resolvedAt != null && latest.invalidatedAt === null) {
+      if (latest.resolutionAction === 'move_window') {
+        await tx.alert.update({
+          where: { id: latest.id },
+          data: {
+            resolvedAt: null,
+            resolutionDelaySec: null,
+            reasons: input.reasons,
+          },
+        });
+        return;
+      }
       if (!['shift_no_show', 'engineer_overdue'].includes(input.code)) return;
       if (
         latest.resolutionAction === 'message' &&

@@ -296,6 +296,7 @@ export interface AlertView {
 
 /** A dispatcher decision; absolute window bounds use Unix seconds. */
 export interface AlertResolutionInput {
+  readonly expectedRequestVersion?: number;
   readonly operationId: string;
   readonly action: string;
   readonly reason?: string;

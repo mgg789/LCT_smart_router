@@ -12,6 +12,7 @@ import { OperationsService } from '../../src/operations';
 import { AlertsService } from '../../src/orchestrator/alerts';
 import { EngineersService } from '../../src/orchestrator/engineers';
 import { UnitOfWork } from '../../src/persistence';
+import { RouterClient } from '../../src/routing/router-gateway/router-client.port';
 import { createTestClient, databaseUrl, unique } from '../support/database';
 
 /** Exercises the durable queue against PostgreSQL: seen is not a resolution and a
@@ -299,6 +300,68 @@ describe('dispatcher alert lifecycle', () => {
     assert.deepEqual(
       open.map((item) => item.id),
       [first.id],
+    );
+    const operationId = randomUUID();
+    opIds.push(operationId);
+    const beforePreview = await prisma.routingSnapshot.count();
+    const transport = mock.method(app.get(RouterClient), 'proposeWindow', async (preview) => {
+      assert.ok(preview.snapshot.requests.some((item) => item.request_id === request.id));
+      assert.equal(preview.request_id, request.id);
+      return { status: 'none' as const, proposal: null };
+    });
+    try {
+      const preview = await alerts.proposeWindow(first.id);
+      assert.equal(preview.status, 'none');
+      assert.equal(preview.requestVersion, request.version);
+      assert.equal(await prisma.routingSnapshot.count(), beforePreview, 'preview must not publish');
+    } finally {
+      transport.mock.restore();
+    }
+    const input = {
+      action: 'move_window' as const,
+      expectedRequestVersion: request.version,
+      windowStartAt: Number(now) + 600,
+      windowEndAt: Number(now) + 1200,
+    };
+    await operations.execute(
+      { operationId, actor, action: 'alert.resolve', targetRef: first.id, payload: input },
+      (context) => alerts.resolve(context, first.id, input),
+    );
+    const staleId = randomUUID();
+    opIds.push(staleId);
+    await assert.rejects(
+      () =>
+        operations.execute(
+          {
+            operationId: staleId,
+            actor,
+            action: 'alert.resolve',
+            targetRef: first.id,
+            payload: input,
+          },
+          (context) => alerts.resolve(context, first.id, input),
+        ),
+      (error: unknown) => error instanceof SysError && error.code === 'VERSION_CONFLICT',
+    );
+    await alerts.refreshAll();
+    assert.equal(
+      (await prisma.alert.findUniqueOrThrow({ where: { id: first.id } })).resolvedAt,
+      null,
+      'changing the window is not a successful assignment',
+    );
+    assert.equal(
+      (await prisma.request.findUniqueOrThrow({ where: { id: request.id } })).assignmentState,
+      'pending',
+    );
+    await prisma.request.update({
+      where: { id: request.id },
+      data: { assignmentState: 'unassigned' },
+    });
+    await alerts.refreshAll();
+    assert.equal(
+      (await prisma.alert.findUniqueOrThrow({ where: { id: first.id } })).resolvedAt,
+      null,
+      'an infeasible Router result keeps the same alert open',
     );
     // A Router episode for the exact same request is reused without adding
     // another system card on every refresh.

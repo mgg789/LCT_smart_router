@@ -1,9 +1,32 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { closeDispatchShift, markDispatchNoticeSeen, resolveDispatchAlert } from './client';
+import {
+  closeDispatchShift,
+  loadAlertWindowProposal,
+  markDispatchNoticeSeen,
+  resolveDispatchAlert,
+} from './client';
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe('dispatcher decision requests', () => {
+  it('distinguishes no feasible insertion from an unavailable calculation', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json({ status: 'none', proposal: null, requestVersion: 3 })),
+    );
+    expect(await loadAlertWindowProposal('session', 'alert')).toEqual({
+      status: 'none',
+      proposal: null,
+      requestVersion: 3,
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json({ message: 'Router unavailable' }, { status: 503 })),
+    );
+    await expect(loadAlertWindowProposal('session', 'alert')).rejects.toMatchObject({
+      status: 503,
+    });
+  });
   it('preserves operation identity across retries and sends exact decision parameters', async () => {
     const fetcher = vi.fn(
       async () =>

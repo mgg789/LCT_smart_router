@@ -712,6 +712,7 @@ export function MainDashboardPage() {
               ) : null}
               {stackViewKey(stackNav) === 'alerts' ? (
                 <AlertsView
+                  token={dash.token ?? undefined}
                   snapshot={dash.snapshot}
                   toasts={toasts}
                   demoMode={dash.isDemo}

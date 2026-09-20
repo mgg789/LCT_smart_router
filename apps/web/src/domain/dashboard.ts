@@ -86,14 +86,14 @@ export function routeForEngineer(
 }
 
 export function unassignedRequests(snapshot: DashboardSnapshot): RequestView[] {
-  const plan = snapshot.plan.plan;
-  if (!plan) {
-    return snapshot.requests.filter((item) => item.assignmentState === 'unassigned');
-  }
-  const unassignedIds = new Set(
-    plan.assignments.filter((item) => item.status === 'unassigned').map((item) => item.requestId),
+  const dayStart = Date.parse(`${snapshot.workDate}T00:00:00+03:00`) / 1000;
+  return snapshot.requests.filter(
+    (item) =>
+      item.lifecycle === 'submitted' &&
+      item.assignmentState !== 'assigned' &&
+      item.windowStartAt < dayStart + 86400 &&
+      item.windowEndAt >= dayStart,
   );
-  return snapshot.requests.filter((item) => unassignedIds.has(item.id));
 }
 
 /** Sum planned mileage of the engineers currently shown for the selected region. */

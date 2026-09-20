@@ -1094,6 +1094,30 @@ function formatUnknownReason(reason: unknown): string {
   return 'Подробности доступны в структурированных данных';
 }
 
+/** Read-only same-day insertion preview; none is distinct from unavailable Router. */
+export function loadAlertWindowProposal(token: string, alertId: string) {
+  return requestJson(
+    `/api/v1/dispatch/alerts/${encodeURIComponent(alertId)}/window-proposal`,
+    z.discriminatedUnion('status', [
+      z.object({ status: z.literal('none'), proposal: z.null(), requestVersion: z.number().int() }),
+      z.object({
+        status: z.literal('available'),
+        requestVersion: z.number().int(),
+        proposal: z.object({
+          engineerId: z.string(),
+          windowStartAt: z.number(),
+          windowEndAt: z.number(),
+          serviceStartAt: z.number(),
+          serviceEndAt: z.number(),
+        }),
+      }),
+    ]),
+    token,
+    {},
+    35_000,
+  );
+}
+
 export async function requestJson<T>(
   path: string,
   schema: z.ZodType<T>,
