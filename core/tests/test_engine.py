@@ -223,6 +223,18 @@ def test_lunch_inside_model_and_no_second_lunch(snapshot, graph):
     assert taken.main.routes[0].lunch.status == "already_taken"
 
 
+def test_lunch_prefers_a_field_stop_over_the_shared_depot(snapshot, graph):
+    """A feasible lunch follows a visit instead of becoming a shared depot hub."""
+    result = solve(lunch_task(snapshot, required=True), GraphTravel(graph), SETTINGS)
+    route = result.main.routes[0]
+    lunch_index = next(index for index, stop in enumerate(route.stops) if stop.kind == "lunch")
+
+    assert lunch_index > 0
+    previous_job = next(stop for stop in reversed(route.stops[:lunch_index]) if stop.kind == "job")
+    lunch = route.stops[lunch_index]
+    assert lunch.location == previous_job.location
+
+
 def test_system_policy_disables_even_required_lunch(snapshot, graph):
     """The Router hard switch overrides per-engineer lunch input for both plans."""
     task = lunch_task(snapshot, required=True)

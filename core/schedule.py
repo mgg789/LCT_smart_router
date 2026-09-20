@@ -307,7 +307,11 @@ def fixed_order(
 ) -> EngineerRoute | None:
     """Try permitted lunch anchors without reordering jobs; prefer a feasible lunch."""
     if engineer.lunch.enabled and not engineer.lunch_taken:
-        for position in range(len(jobs) + 1):
+        # Prefer an actual field stop once work has begun. Position zero remains a
+        # feasibility fallback (and the only choice for a lunch-only route), but trying it
+        # first placed every engineer's lunch at the shared regional depot.
+        positions = [*range(1, len(jobs) + 1), 0] if jobs else [0]
+        for position in positions:
             route = schedule_steps(
                 snapshot, engineer, jobs[:position] + [None] + jobs[position:], travel
             )
