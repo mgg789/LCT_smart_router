@@ -8,8 +8,8 @@ import type { OperationContext } from '../../operations';
 import { lockAlertQueue, PrismaService, type Tx, UnitOfWork } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import { RouterClient } from '../../routing/router-gateway/router-client.port';
+import { type AlertAction, alertActionsFor, resolutionDelay } from './alert-policy';
 
-const GRACE_SECONDS = 180;
 const NO_SHOW_SECONDS = 30 * 60;
 const OVERDUE_SECONDS = 5 * 60;
 // Router's exact tolerance is contextual; before it is exposed in a plan result, a five
@@ -35,19 +35,6 @@ const manualEvidenceSchema = z.object({
   inputHash: z.string().min(1),
   evaluation: manualEvaluationSchema.nullable(),
 });
-
-export type AlertAction =
-  | 'reschedule'
-  | 'move_window'
-  | 'add_engineer'
-  | 'keep_manual'
-  | 'restore_auto'
-  | 'skip_lunch'
-  | 'keep_lunch'
-  | 'message'
-  | 'remove_shift'
-  | 'message_remove'
-  | 'extend';
 
 export interface ResolveAlertInput {
   readonly action: AlertAction;
@@ -1067,27 +1054,6 @@ export class AlertsService {
   }
 }
 
-export function alertActionsFor(code: string): AlertAction[] {
-  switch (code) {
-    case 'time_risk':
-    case 'unassigned':
-      return ['reschedule', 'move_window', 'add_engineer'];
-    case 'plan_degraded':
-    case 'plan_review_required':
-      return ['keep_manual', 'restore_auto'];
-    case 'lunch_conflict':
-      return ['skip_lunch', 'keep_lunch'];
-    case 'engineer_overdue':
-      return ['message', 'remove_shift', 'extend'];
-    case 'shift_no_show':
-      return ['message_remove', 'remove_shift', 'extend'];
-    default:
-      return [];
-  }
-}
-export function resolutionDelay(elapsedSeconds: number): number | null {
-  return elapsedSeconds > GRACE_SECONDS ? elapsedSeconds - GRACE_SECONDS : null;
-}
 function canonicalRouterCode(code: string): string {
   const normalized = code.toLowerCase();
   if (normalized === 'routing_fail') return 'unassigned';

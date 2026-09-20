@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { alertActionsFor, resolutionDelay } from '../../src/orchestrator/alerts/alerts.service';
+import { alertActionsFor, resolutionDelay } from '../../src/orchestrator/alerts/alert-policy';
 
 test('alert action catalogue exposes only dispatcher-approved actions', () => {
   assert.deepEqual(alertActionsFor('time_risk'), ['reschedule', 'move_window', 'add_engineer']);
