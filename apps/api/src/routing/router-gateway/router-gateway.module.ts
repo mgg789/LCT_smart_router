@@ -1,6 +1,8 @@
 import { Global, Module, type OnModuleInit } from '@nestjs/common';
 import { AppConfigService } from '../../common/config';
 import { HealthRegistry } from '../../common/health';
+import { AlertsModule } from '../../orchestrator/alerts';
+import { PrismaService } from '../../persistence';
 import { AppliedPlanService } from './applied-plan.service';
 import { ControlStateService } from './control-state.service';
 import { HttpRouterClient } from './http-router-client';
@@ -19,6 +21,7 @@ import { RouterResultCoordinator } from './router-result-coordinator';
  */
 @Global()
 @Module({
+  imports: [AlertsModule],
   providers: [
     {
       provide: RouterClient,
@@ -39,13 +42,19 @@ import { RouterResultCoordinator } from './router-result-coordinator';
     ResultAcceptanceService,
     {
       provide: RouterResultCoordinator,
-      inject: [RouterClient, ResultAcceptanceService, AppConfigService],
+      inject: [RouterClient, ResultAcceptanceService, PrismaService, AppConfigService],
       useFactory: (
         client: RouterClient,
         acceptance: ResultAcceptanceService,
+        prisma: PrismaService,
         config: AppConfigService,
       ): RouterResultCoordinator =>
-        new RouterResultCoordinator(client, acceptance, config.get('ROUTER_POLL_INTERVAL_MS')),
+        new RouterResultCoordinator(
+          client,
+          acceptance,
+          config.get('ROUTER_POLL_INTERVAL_MS'),
+          prisma,
+        ),
     },
     RouterHealthProbe,
   ],

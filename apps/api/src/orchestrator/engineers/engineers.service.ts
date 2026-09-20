@@ -40,6 +40,7 @@ export interface WorkdayInput {
   readonly shiftEndAt: number;
   readonly lunch?: LunchConditions;
   readonly lunchRequired?: boolean;
+  readonly attendanceOptOut?: boolean;
 }
 
 /**
@@ -295,6 +296,7 @@ export class EngineersService {
       lunchWindowStartAt: lunch.enabled ? bigIntOrNull(lunch.windowStartAt) : null,
       lunchWindowEndAt: lunch.enabled ? bigIntOrNull(lunch.windowEndAt) : null,
       lunchRequired: input.lunchRequired ?? false,
+      ...(input.attendanceOptOut === undefined ? {} : { attendanceOptOut: input.attendanceOptOut }),
     };
 
     const day = await context.tx.engineerDay.upsert({
@@ -368,6 +370,7 @@ export class EngineersService {
         // A forecast, not a promise: reaching this moment creates no online fact
         // (context/33 section 5).
         expectedOnlineAt: availability === 'offline' ? bigIntOrNull(expectedOnlineAt) : null,
+        ...(context.actor.role === 'engineer' ? { lastAttendanceAt: BigInt(context.now) } : {}),
         updatedAt: BigInt(context.now),
         version: { increment: 1 },
       },
@@ -495,6 +498,7 @@ export class EngineersService {
       data: {
         lunchTaken: true,
         lunchStartedAt: BigInt(context.now),
+        lastAttendanceAt: BigInt(context.now),
         updatedAt: BigInt(context.now),
         version: { increment: 1 },
       },
@@ -522,7 +526,11 @@ export class EngineersService {
     }
     return context.tx.engineerDay.update({
       where: { id: day.id },
-      data: { updatedAt: BigInt(context.now), version: { increment: 1 } },
+      data: {
+        lastAttendanceAt: BigInt(context.now),
+        updatedAt: BigInt(context.now),
+        version: { increment: 1 },
+      },
     });
   }
 
@@ -551,6 +559,22 @@ export class EngineersService {
         shiftEndAt: now,
         createdAt: now,
         updatedAt: now,
+      },
+    });
+  }
+
+  /** Explicit app heartbeat/check-in. Reading a screen never becomes an attendance fact. */
+  async recordAttendance(context: OperationContext, engineerId: string): Promise<EngineerDay> {
+    const day = await this.currentDay(context, engineerId);
+    if (context.now < Number(day.shiftStartAt) || context.now > Number(day.shiftEndAt)) {
+      throw new SysError('VALIDATION_FAILED', 'Attendance can only be recorded during the shift');
+    }
+    return context.tx.engineerDay.update({
+      where: { id: day.id },
+      data: {
+        lastAttendanceAt: BigInt(context.now),
+        updatedAt: BigInt(context.now),
+        version: { increment: 1 },
       },
     });
   }

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { DashboardSnapshot, EquipmentType } from '../api/types';
+import type { DashboardSnapshot, EngineerDayView, EquipmentType } from '../api/types';
 import { equipmentLoadout } from '../domain/dashboard';
 import { initials, skillLabel } from '../lib/reasons';
 import { formatClock } from '../lib/time';
@@ -12,6 +12,7 @@ interface EngineersPageProps {
   readonly onAvailabilityChange: (engineerId: string, availability: 'online' | 'offline') => void;
   readonly onLinkAccount: (engineerId: string, email: string) => Promise<void>;
   readonly onUnlinkAccount: (engineerId: string) => Promise<void>;
+  readonly onAttendanceOptOut?: (day: EngineerDayView, optOut: boolean) => Promise<void>;
 }
 
 /** Shows the day roster, issued equipment, and live engineer availability controls. */
@@ -23,6 +24,7 @@ export function EngineersPage({
   onAvailabilityChange,
   onLinkAccount,
   onUnlinkAccount,
+  onAttendanceOptOut,
 }: EngineersPageProps) {
   const engineers = [...snapshot.engineers].sort(
     (left, right) => left.inputOrder - right.inputOrder,
@@ -132,6 +134,13 @@ export function EngineersPage({
                         onLinkAccount={onLinkAccount}
                         onUnlinkAccount={onUnlinkAccount}
                       />
+                      {day && engineer.email && onAttendanceOptOut && (
+                        <AttendanceChoice
+                          day={day}
+                          disabled={writesDisabled || rebuilding}
+                          onChange={onAttendanceOptOut}
+                        />
+                      )}
                     </div>
                   </div>
 
@@ -168,6 +177,51 @@ export function EngineersPage({
         )}
       </section>
     </main>
+  );
+}
+
+function AttendanceChoice({
+  day,
+  disabled,
+  onChange,
+}: {
+  readonly day: EngineerDayView;
+  readonly disabled: boolean;
+  readonly onChange: (day: EngineerDayView, optOut: boolean) => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <div className="mt-3 text-xs text-muted">
+      <label className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={day.attendanceOptOut ?? false}
+          disabled={disabled || busy}
+          onChange={async (event) => {
+            const checked = event.target.checked;
+            setBusy(true);
+            setError(null);
+            try {
+              await onChange(day, checked);
+            } catch (cause) {
+              setError(cause instanceof Error ? cause.message : 'Не удалось сохранить');
+            } finally {
+              setBusy(false);
+            }
+          }}
+        />
+        Сегодня работает без отметок в приложении
+      </label>
+      {day.lastAttendanceAt && (
+        <p className="mt-1">Последняя отметка: {formatClock(day.lastAttendanceAt)}</p>
+      )}
+      {error && (
+        <p role="alert" className="mt-1">
+          {error}
+        </p>
+      )}
+    </div>
   );
 }
 

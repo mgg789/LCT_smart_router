@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { SysError } from '../../common/errors';
 import { type AppliedPlan, Prisma } from '../../generated/prisma/client';
+import { AlertsService } from '../../orchestrator/alerts';
+import { workDateOf } from '../../orchestrator/engineers/workday';
 import type { Tx } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../mount-data-eng';
 import type { RouterPlan, RouterResult } from './result.types';
@@ -19,7 +21,10 @@ import type { RouterPlan, RouterResult } from './result.types';
  */
 @Injectable()
 export class AppliedPlanService {
-  constructor(private readonly publisher: SnapshotPublisher) {}
+  constructor(
+    private readonly publisher: SnapshotPublisher,
+    private readonly alerts: AlertsService,
+  ) {}
 
   /** Stores an accepted automatic result as the new working plan. */
   async applyAutomatic(
@@ -56,7 +61,15 @@ export class AppliedPlanService {
     await this.issueMorningEquipment(tx, now, main);
     await this.syncAssignmentStates(tx, now, main);
     await this.movePointer(tx, now, plan.id);
-    await this.storeAlerts(tx, now, main, result.result_id);
+    await this.storeAlerts(
+      tx,
+      now,
+      main,
+      result.result_id,
+      workDateOf(result.planning_as_of ?? now, 'Europe/Moscow'),
+    );
+    await this.alerts.invalidateOtherRouterConditions(tx, now, result.result_id);
+    await this.alerts.recordPlanRebuilt(tx, now, result.result_id);
 
     return plan;
   }
@@ -356,27 +369,19 @@ export class AppliedPlanService {
     now: number,
     plan: RouterPlan,
     resultId: string | null,
+    workDate: string,
   ): Promise<void> {
     for (const alert of plan.alerts) {
-      const existing = await tx.alert.findFirst({ where: { id: alert.alert_id } });
-      if (existing) {
-        continue;
-      }
-      await tx.alert.create({
-        data: {
-          id: alert.alert_id,
-          code: alert.code,
-          severity: alert.severity,
-          engineerIds: alert.engineer_ids,
-          requestIds: alert.request_ids,
-          reasons: alert.reasons as object,
-          // Absent unless Router actually verified a way out. A guess is never presented
-          // as a guaranteed fix, and Prisma's DbNull is how "no verified option" is
-          // stored rather than an empty object that would read as one (context/33 §6).
-          restoreOption: alert.restore_option ?? Prisma.DbNull,
-          sourceResultId: resultId,
-          createdAt: BigInt(now),
-        },
+      await this.alerts.ingestRouter(tx, now, {
+        id: alert.alert_id,
+        code: alert.code,
+        severity: alert.severity,
+        engineerIds: alert.engineer_ids,
+        requestIds: alert.request_ids,
+        reasons: alert.reasons as object,
+        restoreOption: alert.restore_option ?? null,
+        sourceResultId: resultId,
+        workDate,
       });
     }
   }

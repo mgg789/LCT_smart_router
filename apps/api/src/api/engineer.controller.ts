@@ -8,6 +8,7 @@ import { EngineersService, type EngineerWithAccount } from '../orchestrator/engi
 import { FactsService } from '../orchestrator/facts';
 import { PrismaService } from '../persistence';
 import { AppliedPlanService } from '../routing/router-gateway';
+import { type AttendanceDto, attendanceSchema } from './dto/alert.dto';
 import {
   type ConfirmEmailChangeDto,
   confirmEmailChangeSchema,
@@ -134,6 +135,26 @@ export class EngineerController {
         payload: { engineerId: engineer.id },
       },
       async (context) => toDayView(await this.engineers.currentDay(context, engineer.id)),
+    );
+    return { day: outcome.result };
+  }
+
+  @Post('attendance')
+  @ApiOperation({ summary: 'Record an explicit engineer app check-in for silence monitoring' })
+  async attendance(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(attendanceSchema)) dto: AttendanceDto,
+  ): Promise<{ day: EngineerDayView }> {
+    const engineer = await this.subjectOf(actor, undefined);
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'engineer.attendance',
+        targetRef: engineer.id,
+        payload: dto,
+      },
+      async (context) => toDayView(await this.engineers.recordAttendance(context, engineer.id)),
     );
     return { day: outcome.result };
   }

@@ -129,5 +129,7 @@ export const setWorkdaySchema = operationEnvelopeSchema.extend({
     .optional(),
   /** Set by the dispatcher's explicit "restore lunch" decision, not by ordinary planning. */
   lunchRequired: z.boolean().optional(),
+  /** Day-specific opt-out from silence monitoring; it never changes routing availability. */
+  attendanceOptOut: z.boolean().optional(),
 });
 export type SetWorkdayDto = z.infer<typeof setWorkdaySchema>;

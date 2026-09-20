@@ -1,5 +1,5 @@
 import { Menu } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DashboardApiError } from '../api/client';
 import {
   confirmEngineerEmailChange,
@@ -7,6 +7,7 @@ import {
   loadEngineerPlan,
   loadEngineerProfile,
   loadEngineerRequest,
+  recordEngineerAttendance,
   requestEngineerEmailChange,
   requestEngineerLoginCode,
   signOutEngineer,
@@ -129,6 +130,9 @@ function EngineerSignedIn({
   const [plan, setPlan] = useState<EngineerPlanResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [checkingIn, setCheckingIn] = useState(false);
+  const [attendanceError, setAttendanceError] = useState<string | null>(null);
+  const checkInOperation = useRef<string | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true);
@@ -189,6 +193,46 @@ function EngineerSignedIn({
       </header>
 
       <main className="mx-auto w-full max-w-xl flex-1 px-4 py-4">
+        {day && (
+          <section className="mb-4 rounded-2xl bg-white p-4">
+            <button
+              type="button"
+              disabled={checkingIn}
+              onClick={async () => {
+                setCheckingIn(true);
+                setAttendanceError(null);
+                checkInOperation.current ??= crypto.randomUUID();
+                try {
+                  setDay(await recordEngineerAttendance(token, checkInOperation.current));
+                  checkInOperation.current = null;
+                } catch (cause) {
+                  setAttendanceError(
+                    cause instanceof Error ? cause.message : 'Не удалось сохранить отметку',
+                  );
+                } finally {
+                  setCheckingIn(false);
+                }
+              }}
+              className="rounded-full bg-bee px-4 py-2 text-sm font-semibold disabled:opacity-50"
+            >
+              {checkingIn
+                ? 'Сохраняем…'
+                : day.lastAttendanceAt
+                  ? 'Я на связи — отметиться'
+                  : 'Я вышел на смену'}
+            </button>
+            {day.lastAttendanceAt && (
+              <p className="mt-2 text-xs text-muted">
+                Последняя отметка: {formatClock(day.lastAttendanceAt)}
+              </p>
+            )}
+            {attendanceError && (
+              <p role="alert" className="mt-2 text-sm">
+                {attendanceError}
+              </p>
+            )}
+          </section>
+        )}
         {loading && profile === null ? (
           <p className="text-sm text-muted">Загружаем смену…</p>
         ) : error && profile === null ? (

@@ -25,11 +25,11 @@ Data Layer из `context/37` §2.
 | Область | Таблицы |
 |---|---|
 | Идентичность и доступ | `accounts`, `account_roles`, `login_codes`, `sessions`, `api_tokens` |
-| Инженеры | `engineers` (стабильный профиль), `engineer_days` (один рабочий день), `depots` |
+| Инженеры | `engineers` (стабильный профиль), `engineer_days` (один рабочий день, явная отметка и opt-out мониторинга), `depots` |
 | Заявки | `requests`, `request_condition_history`, `request_facts` |
 | Опубликованный сектор | `routing_snapshots` (payload, `input_hash`, `task_fingerprint`), `routing_current` |
 | План | `router_results`, `applied_plans`, `applied_plan_routes`, `applied_plan_stops`, `applied_plan_assignments`, `applied_plan_current`, `control_state` |
-| Каталоги диспетчера | `policies`, `active_policy`, `alerts` |
+| Каталоги диспетчера | `policies`, `active_policy`, `alerts`, `shift_closures` |
 | Служебная книга системы | `operations`, `audit_log`, `notification_intents`, `app_state`, `import_packages`, `external_id_map` |
 
 Области телеметрии нет: таблица `gps_observations` удалена (миграция
@@ -64,6 +64,11 @@ Data Layer из `context/37` §2.
   время изменено заказчиком, заявка выполнена, заявка отменена, итоги дня инженеру
   (см. таблицу триггеров в `docs/api.md` §5). Адрес может отключить письма-события
   (`accounts.mail_notifications_enabled`), код входа — никогда.
+- **Алерт против уведомления.** `alerts.kind="alert"` хранит решение диспетчера,
+  дедупликационный ключ, дату смены, просмотр, резолв и время сверх 180 секунд;
+  `kind="notice"` остаётся информационным. Устаревшая системная причина получает
+  `invalidated_at`, а не исчезает без следа. `shift_closures` фиксирует успешное
+  закрытие только после проверки всех открытых блокирующих алертов.
 
 ## 3. Модель привилегий
 

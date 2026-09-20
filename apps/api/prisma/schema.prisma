@@ -175,6 +175,8 @@ enum NotificationCategory {
   request_cancelled
   request_completed
   engineer_day_summary
+  engineer_attention_required
+  plan_rebuilt
 }
 
 /// Lifecycle of a mail intent. There is no `delivered` state: our control ends when the
@@ -357,6 +359,13 @@ model EngineerDay {
   /// True means the single lunch of the day is used up, not that it has finished.
   lunchTaken         Boolean      @default(false) @map("lunch_taken")
   lunchStartedAt     BigInt? @map("lunch_started_at")
+  /// An engineer may explicitly opt out of silence monitoring for this day. This does
+  /// not take them off the line and is visible to the dispatcher.
+  attendanceOptOut   Boolean @default(false) @map("attendance_opt_out")
+  /// Confirmed app activity/check-in. A timer never invents this fact.
+  lastAttendanceAt   BigInt? @map("last_attendance_at")
+  /// Explicit call-in grace for an additional engineer, never inferred from silence.
+  attendanceGraceUntil BigInt? @map("attendance_grace_until")
   /// Morning stock already including the one spare unit for every used equipment kind.
   equipmentRouter       Int @default(0) @map("equipment_router")
   equipmentSetTopBox    Int @default(0) @map("equipment_set_top_box")
@@ -735,6 +744,10 @@ model ActivePolicy {
 model Alert {
   id String @id @default(uuid())
 
+  /// `alert` needs a dispatcher decision; `notice` is informational and never blocks
+  /// closing the day.
+  kind           String @default("alert")
+  dedupKey       String? @unique @map("dedup_key")
   code           String
   severity       AlertSeverity
   engineerIds    String[] @map("engineer_ids")
@@ -744,12 +757,30 @@ model Alert {
   /// (context/33 section 6).
   restoreOption  Json? @map("restore_option")
   sourceResultId String? @map("source_result_id")
+  workDate       String? @map("work_date")
+  isBlocking     Boolean @default(true) @map("is_blocking")
   createdAt      BigInt @map("created_at")
   seenAt         BigInt? @map("seen_at")
   resolvedAt     BigInt? @map("resolved_at")
+  invalidatedAt  BigInt? @map("invalidated_at")
+  resolutionAction String? @map("resolution_action")
+  resolutionReason String? @map("resolution_reason")
+  resolutionDelaySec Int? @map("resolution_delay_sec")
 
   @@index([createdAt])
+  @@index([workDate, resolvedAt, invalidatedAt])
   @@map("alerts")
+}
+
+/// A dispatcher closes a local work day only after every decision-required alert has a
+/// recorded outcome. The row is retained as an audit fact rather than inferred later.
+model ShiftClosure {
+  workDate  String @id @map("work_date")
+  closedAt  BigInt @map("closed_at")
+  closedBy  String? @map("closed_by")
+  operationId String @unique @map("operation_id")
+
+  @@map("shift_closures")
 }
 
 // ---------------------------------------------------------------------------

@@ -76,6 +76,9 @@ export interface EngineerView {
 }
 
 export interface EngineerDayView {
+  /** Day-specific exemption from attendance alerts, independent of login access. */
+  readonly attendanceOptOut?: boolean;
+  readonly lastAttendanceAt?: number | null;
   readonly engineerId: string;
   readonly workDate: string;
   readonly version: number;
@@ -205,10 +208,35 @@ export interface AlertView {
   readonly engineerIds: string[];
   readonly requestIds: string[];
   readonly reasons: string[];
-  readonly restoreOption: string | null;
+  readonly restoreOption: string | { engineer_id: string; reject_request_ids: string[] } | null;
   readonly createdAt: number;
   readonly seenAt: number | null;
   readonly resolvedAt: number | null;
+  /** Optional only for saved snapshots recorded before the alert lifecycle existed. */
+  readonly kind?: 'alert' | 'notice';
+  readonly actions?: string[];
+  readonly workDate?: string | null;
+  readonly resolutionAction?: string | null;
+  readonly resolutionReason?: string | null;
+  readonly resolutionDelaySec?: number | null;
+}
+
+/** A dispatcher decision; absolute window bounds use Unix seconds. */
+export interface AlertResolutionInput {
+  readonly operationId: string;
+  readonly action: string;
+  readonly reason?: string;
+  readonly minutes?: number;
+  readonly windowStartAt?: number;
+  readonly windowEndAt?: number;
+  readonly engineerId?: string;
+}
+
+/** Persisted dispatcher close state, checked against all open alerts on the server. */
+export interface DispatchShiftView {
+  readonly workDate: string;
+  readonly closedAt: number | null;
+  readonly unresolvedCount: number;
 }
 
 export interface DispatchPlanResponse {
@@ -244,6 +272,7 @@ export interface DashboardSnapshot {
   readonly requests: RequestView[];
   readonly plan: DispatchPlanResponse;
   readonly alerts: AlertView[];
+  readonly shift?: DispatchShiftView;
 }
 
 export interface RouterTechnicalSettings {

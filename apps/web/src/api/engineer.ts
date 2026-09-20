@@ -136,6 +136,8 @@ const routeSchema = z.object({
 });
 
 const daySchema = z.object({
+  attendanceOptOut: z.boolean().default(false),
+  lastAttendanceAt: z.number().int().nullable().default(null),
   engineerId: z.string(),
   workDate: z.string(),
   version: z.number().int(),
@@ -167,6 +169,23 @@ const planSchema = z.object({
   route: routeSchema.nullable(),
   requests: z.array(requestSchema).optional().default([]),
 });
+
+/** Records an explicit check-in; retries retain the same operation id. */
+export async function recordEngineerAttendance(
+  token: string,
+  operationId: string,
+): Promise<EngineerDayView> {
+  const body = await requestJson(
+    '/api/v1/engineer/attendance',
+    z.object({ day: daySchema }),
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({ operationId }),
+    },
+  );
+  return body.day;
+}
 
 /** Asks the public login-code contour to mail a one-time code. */
 export function requestEngineerLoginCode(email: string): Promise<z.infer<typeof loginCodeSchema>> {
