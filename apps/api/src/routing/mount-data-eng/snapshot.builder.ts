@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { AppConfigService } from '../../common/config';
 import { canonicalHash } from '../../common/json';
 import type { Engineer, EngineerDay, Request } from '../../generated/prisma/client';
-import { workDateOf } from '../../orchestrator/engineers';
+import { workDateOf } from '../../orchestrator/engineers/workday';
 import { DEFAULT_POLICY_ID } from '../../orchestrator/policy/policy.catalog';
 import type { Tx } from '../../persistence';
 import {

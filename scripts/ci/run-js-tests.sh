@@ -33,6 +33,7 @@ docker run --rm --network host \
   -v "$PWD:/app" \
   -w /app \
   -e DATABASE_URL="$database_url" \
+  -e TEST_DATABASE_URL="$database_url" \
   -e MIGRATE_DATABASE_URL="$database_url" \
   -e NODE_ENV=test \
   -e AUTH_DEV_EXPOSE_CODES=true \

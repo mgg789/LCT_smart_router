@@ -23,7 +23,9 @@ pull request не запускаются.
 
 - **lint** — `pnpm lint` (Biome) и `ruff check core`.
 - **test-js** — Vitest веба + typecheck; `node:test` API против одноразового
-  контейнера `pgvector/pgvector:pg17` (`scripts/ci/run-js-tests.sh`).
+  контейнера `pgvector/pgvector:pg17` (`scripts/ci/run-js-tests.sh`). Одноразовый
+  DSN передаётся и как `TEST_DATABASE_URL`, чтобы тесты, защищённые от случайного
+  запуска на локальной рабочей БД, выполнялись внутри этого изолированного контура.
 - **test-core** — `pytest core/tests`, включая golden-проверки официальных регионов:
   команда в YAML не исключает их маркерами или фильтрами.
 - **secrets** — `gitleaks detect` с [`.gitleaks.toml`](../.gitleaks.toml).

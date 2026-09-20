@@ -7,6 +7,7 @@ import { RequestContextMiddleware } from './common/logging';
 import { TimeModule } from './common/time';
 import { NotificationsModule } from './notifications';
 import { OperationsModule } from './operations';
+import { AlertsModule } from './orchestrator/alerts';
 import { EngineersModule } from './orchestrator/engineers';
 import { FactsModule } from './orchestrator/facts';
 import { ImportsModule } from './orchestrator/imports';
@@ -38,6 +39,7 @@ import { RouterGatewayModule } from './routing/router-gateway';
     PolicyModule,
     RequestsModule,
     EngineersModule,
+    AlertsModule,
     FactsModule,
     ImportsModule,
     ResetModule,

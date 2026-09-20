@@ -17,6 +17,14 @@ class ToleranceRequest(Record):
     expected_context_version: str = Field(min_length=1)
 
 
+class ManualEvaluationRequest(Record):
+    """Explicit orders and immutable context, never a request for a new plan."""
+
+    input_hash: str = Field(min_length=64, max_length=64)
+    router_context_version: str = Field(min_length=1)
+    routes: dict[str, list[str]] = Field(max_length=1000)
+
+
 class TechnicalSettingsRequest(RouterTechnicalSettings):
     """Complete idempotent replacement of Router-owned technical controls."""
 
@@ -63,6 +71,20 @@ def create_app(runtime: RouterRuntime) -> FastAPI:
             if str(exc) == "PUBLICATION_CHANGED":
                 raise HTTPException(status_code=409, detail=str(exc)) from exc
             raise
+
+    @app.post("/v1/manual-evaluation")
+    def manual_evaluation(request: ManualEvaluationRequest) -> dict:
+        """Return real fixed-order policy evidence without applying or optimizing it."""
+        if sum(len(order) for order in request.routes.values()) > 10000:
+            raise HTTPException(status_code=422, detail="MANUAL_PLAN_TOO_LARGE")
+        try:
+            return runtime.evaluate_manual(
+                request.input_hash, request.router_context_version, request.routes
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="ACTIVE_PUBLICATION_UNAVAILABLE") from exc
 
     @app.put("/v1/config/tolerance")
     def tolerance(body: ToleranceRequest) -> dict:

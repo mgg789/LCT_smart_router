@@ -4,6 +4,8 @@ import type { RouterResult } from './result.types';
 import { routerResultSchema } from './result.types';
 import {
   COMPARISON_STRATEGIES,
+  type ManualEvaluation,
+  type ManualEvaluationInput,
   type PolicyComparison,
   RouterClient,
   type RouterTechnicalSettingsState,
@@ -162,6 +164,27 @@ export class HttpRouterClient extends RouterClient {
       status: parsed.data.status,
       ...toTechnicalSettings(parsed.data.technical_settings, parsed.data.router_context_version),
     };
+  }
+
+  /** Runs or reads Router's cached same-snapshot policy comparison. */
+  override async evaluateManual(input: ManualEvaluationInput): Promise<ManualEvaluation> {
+    const raw = await this.fetchJson('/v1/manual-evaluation', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    return z
+      .object({
+        input_hash: z.string().length(64),
+        router_context_version: z.string(),
+        policy_id: z.string(),
+        feasible: z.boolean(),
+        degraded: z.boolean(),
+        criterion: z.string().nullable(),
+        before: z.array(z.number()),
+        after: z.array(z.number()).nullable(),
+      })
+      .parse(raw);
   }
 
   /** Runs or reads Router's cached same-snapshot policy comparison. */

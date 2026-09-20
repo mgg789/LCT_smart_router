@@ -108,6 +108,7 @@ export class ResetService {
     await tx.appliedPlan.deleteMany({});
     await tx.routerResult.deleteMany({});
     await tx.alert.deleteMany({});
+    await tx.shiftClosure.deleteMany({});
 
     await tx.routingCurrent.deleteMany({});
     await tx.routingSnapshot.deleteMany({});

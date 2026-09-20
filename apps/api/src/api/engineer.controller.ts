@@ -8,11 +8,12 @@ import { EngineersService, type EngineerWithAccount } from '../orchestrator/engi
 import { FactsService } from '../orchestrator/facts';
 import { PrismaService } from '../persistence';
 import { AppliedPlanService } from '../routing/router-gateway';
+import { type AttendanceDto, attendanceSchema } from './dto/alert.dto';
 import {
   type ConfirmEmailChangeDto,
   confirmEmailChangeSchema,
-  engineerActionSchema,
   type EngineerActionDto,
+  engineerActionSchema,
   type RequestEmailChangeDto,
   requestEmailChangeSchema,
   type SetAvailabilityDto,
@@ -138,6 +139,26 @@ export class EngineerController {
     return { day: outcome.result };
   }
 
+  @Post('attendance')
+  @ApiOperation({ summary: 'Record an explicit engineer app check-in for silence monitoring' })
+  async attendance(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(attendanceSchema)) dto: AttendanceDto,
+  ): Promise<{ day: EngineerDayView }> {
+    const engineer = await this.subjectOf(actor, undefined);
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'engineer.attendance',
+        targetRef: engineer.id,
+        payload: dto,
+      },
+      async (context) => toDayView(await this.engineers.recordAttendance(context, engineer.id)),
+    );
+    return { day: outcome.result };
+  }
+
   @Post('availability')
   @ApiOperation({ summary: 'Go online or offline' })
   async setAvailability(
@@ -252,12 +273,20 @@ export class EngineerController {
     explicitEngineerId: string | null | undefined,
   ): Promise<EngineerWithAccount> {
     if (actor.accountId) {
-      if (explicitEngineerId !== undefined && explicitEngineerId !== null && explicitEngineerId !== '') {
+      if (
+        explicitEngineerId !== undefined &&
+        explicitEngineerId !== null &&
+        explicitEngineerId !== ''
+      ) {
         throw SysError.forbidden('A session acts on its own engineer; do not pass engineerId');
       }
       return this.engineers.byAccount(this.prisma, actor.accountId);
     }
-    if (explicitEngineerId === undefined || explicitEngineerId === null || explicitEngineerId === '') {
+    if (
+      explicitEngineerId === undefined ||
+      explicitEngineerId === null ||
+      explicitEngineerId === ''
+    ) {
       throw SysError.validationFailed(
         'An integration key must name the engineer: pass engineerId',
         { engineerId: 'required' },
@@ -292,7 +321,9 @@ export class EngineerController {
   }
 
   @Get('plan')
-  @ApiOperation({ summary: 'The working plan for the signed-in engineer, or the engineerId a key names' })
+  @ApiOperation({
+    summary: 'The working plan for the signed-in engineer, or the engineerId a key names',
+  })
   async plan(@CurrentActor() actor: Actor, @Query('engineerId') engineerId?: string) {
     const engineer = await this.subjectOf(actor, engineerId);
     const plan = await this.plans.current(this.prisma);

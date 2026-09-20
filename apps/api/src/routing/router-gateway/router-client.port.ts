@@ -95,6 +95,10 @@ export interface PolicyComparison {
  * A port keeps the optional null transport and private-network HTTP transport interchangeable.
  */
 export abstract class RouterClient {
+  /** Evaluates explicit manual orders without changing or optimizing the plan. */
+  evaluateManual(_input: ManualEvaluationInput): Promise<ManualEvaluation> {
+    throw SysError.notConfigured('Router manual evaluation');
+  }
   /** The current result, whatever its status. */
   abstract getResult(): Promise<RouterResult>;
 
@@ -125,6 +129,25 @@ export abstract class RouterClient {
   }
 
   abstract isConfigured(): boolean;
+}
+
+/** Identity-bound fixed-order evaluation request. */
+export interface ManualEvaluationInput {
+  readonly input_hash: string;
+  readonly router_context_version: string;
+  readonly routes: Record<string, string[]>;
+}
+
+/** Exact lexicographic policy evidence on the same snapshot and travel resources. */
+export interface ManualEvaluation {
+  readonly input_hash: string;
+  readonly router_context_version: string;
+  readonly policy_id: string;
+  readonly feasible: boolean;
+  readonly degraded: boolean;
+  readonly criterion: string | null;
+  readonly before: number[];
+  readonly after: number[] | null;
 }
 
 /**

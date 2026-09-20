@@ -29,6 +29,9 @@ export interface EngineerDayView {
   readonly shiftEndAt: number;
   readonly availability: string;
   readonly expectedOnlineAt: number | null;
+  readonly attendanceOptOut: boolean;
+  readonly lastAttendanceAt: number | null;
+  readonly attendanceGraceUntil: number | null;
   readonly equipmentStock: {
     readonly router: number;
     readonly setTopBox: number;
@@ -76,6 +79,9 @@ export function toDayView(day: EngineerDay): EngineerDayView {
     shiftEndAt: Number(day.shiftEndAt),
     availability: day.availability,
     expectedOnlineAt: nullableNumber(day.expectedOnlineAt),
+    attendanceOptOut: day.attendanceOptOut,
+    lastAttendanceAt: nullableNumber(day.lastAttendanceAt),
+    attendanceGraceUntil: nullableNumber(day.attendanceGraceUntil),
     equipmentStock: {
       router: day.equipmentRouter,
       setTopBox: day.equipmentSetTopBox,
