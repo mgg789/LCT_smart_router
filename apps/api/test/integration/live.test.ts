@@ -367,6 +367,7 @@ describe('LIVE workday', () => {
 
   it('requires line entry, blocks legacy fact writes, and accepts a late return after no-show', async () => {
     const engineer = await liveCreateEngineer();
+    await liveCreateEngineer();
     const request = await liveCreateRequest();
     await liveApplyPlan(engineer.id, [request]);
     await liveStart();
@@ -388,8 +389,15 @@ describe('LIVE workday', () => {
       initial.workday.logicalStartAt + 30 * 60 + 1,
       initial.workday.speedDurationSec,
     );
+    const publicationCountBefore = await prisma.routingSnapshot.count();
     const noShow = await liveView(engineer.token);
+    const publicationCountAfter = await prisma.routingSnapshot.count();
     assert.equal(noShow.engineer.lineStatus, 'no_show_offline');
+    assert.equal(
+      publicationCountAfter - publicationCountBefore,
+      1,
+      'one no-show boundary must publish one snapshot for the whole engineer batch',
+    );
     const later = await liveAction(engineer.token, { kind: 'online' });
     assert.equal(later.status, 201, await later.clone().text());
     assert.equal((await liveView(engineer.token)).engineer.lineStatus, 'online');

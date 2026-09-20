@@ -1602,6 +1602,7 @@ export class LiveService {
     // this, two tabs crossing the no-show boundary could publish competing snapshots.
     await tx.$queryRaw`SELECT id FROM live_workdays WHERE id = ${day.id} FOR UPDATE`;
     await this.ensureEngineerStates(tx, day.id, wallNow);
+    let availabilityChanged = false;
     if (liveNow >= Number(day.logicalStartAt) + NO_SHOW_SEC) {
       const pending = await tx.liveEngineerState.findMany({
         where: { workdayId: day.id, lineStatus: 'pending' },
@@ -1630,7 +1631,10 @@ export class LiveService {
           },
           operationId: `live-no-show-${day.id}-${state.engineerId}`,
         };
-        await this.engineers.setAvailability(operation, state.engineerId, 'offline', null);
+        await this.engineers.setAvailability(operation, state.engineerId, 'offline', null, {
+          publish: false,
+        });
+        availabilityChanged = true;
       }
     }
     const overdueBreaks = await tx.liveEngineerState.findMany({
@@ -1678,8 +1682,19 @@ export class LiveService {
           },
           operationId: `live-break-overdue-${day.id}-${state.engineerId}-${state.technicalBreakStartedAt}`,
         };
-        await this.engineers.setAvailability(operation, state.engineerId, 'offline', null);
+        await this.engineers.setAvailability(operation, state.engineerId, 'offline', null, {
+          publish: false,
+        });
+        availabilityChanged = true;
       }
+    }
+    if (availabilityChanged) {
+      await this.publisher.publishIfChanged(
+        tx,
+        liveNow,
+        PUBLICATION_TRIGGERS.ENGINEER_AVAILABILITY_CHANGED,
+        { businessTime: true },
+      );
     }
     const plan = await this.plans.current(tx);
     let lunchChanged = false;

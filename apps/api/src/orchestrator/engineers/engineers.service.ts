@@ -295,7 +295,11 @@ export class EngineersService {
         details: { engineerId },
       });
     }
-    if (expectedVersion !== null && expectedVersion !== undefined && expectedVersion !== engineer.version) {
+    if (
+      expectedVersion !== null &&
+      expectedVersion !== undefined &&
+      expectedVersion !== engineer.version
+    ) {
       assertWriteApplied('Engineer', 0, expectedVersion, engineer.version);
     }
 
@@ -510,9 +514,11 @@ export class EngineersService {
     engineerId: string,
     availability: Availability,
     expectedOnlineAt: number | null,
+    options: { readonly publish?: boolean } = {},
   ): Promise<EngineerDay> {
     return this.applyAvailability(context, engineerId, availability, expectedOnlineAt, {
       daySummary: true,
+      publish: options.publish ?? true,
     });
   }
 
@@ -529,7 +535,7 @@ export class EngineersService {
     engineerId: string,
     availability: Availability,
     expectedOnlineAt: number | null,
-    options: { readonly daySummary: boolean },
+    options: { readonly daySummary: boolean; readonly publish: boolean },
   ): Promise<EngineerDay> {
     const day = await this.currentDay(context, engineerId);
     const updated = await context.tx.engineerDay.update({
@@ -545,12 +551,14 @@ export class EngineersService {
       },
     });
 
-    await this.publisher.publishIfChanged(
-      context.tx,
-      context.now,
-      PUBLICATION_TRIGGERS.ENGINEER_AVAILABILITY_CHANGED,
-      { businessTime: context.businessTime },
-    );
+    if (options.publish) {
+      await this.publisher.publishIfChanged(
+        context.tx,
+        context.now,
+        PUBLICATION_TRIGGERS.ENGINEER_AVAILABILITY_CHANGED,
+        { businessTime: context.businessTime },
+      );
+    }
 
     if (availability === 'offline' && options.daySummary) {
       await this.recordDaySummary(context, engineerId, day.workDate);
@@ -645,6 +653,7 @@ export class EngineersService {
       context.now + TECHNICAL_BREAK_SEC,
       {
         daySummary: false,
+        publish: true,
       },
     );
   }
