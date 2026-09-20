@@ -7,7 +7,10 @@ import {
   parseDispatcherSettings,
   toDispatcherSettingsView,
 } from '../../src/orchestrator/settings/dispatcher-settings';
-import { parseAddressParts } from '../../src/orchestrator/settings/geocoding.service';
+import {
+  autocompleteQuery,
+  hitsFromAutocomplete,
+} from '../../src/orchestrator/settings/geocoding.service';
 
 describe('dispatcher settings', () => {
   it('fills missing persisted fields with previous hardcoded defaults', () => {
@@ -43,25 +46,28 @@ describe('dispatcher settings', () => {
   });
 });
 
-describe('LocationIQ address parts', () => {
-  it('keeps city then street when the city is named first', () => {
-    assert.deepEqual(parseAddressParts({ q: 'Москва, Тверская 1' }), {
-      city: 'Москва',
-      street: 'Тверская 1',
-    });
+describe('LocationIQ autocomplete query', () => {
+  it('keeps a messy free-form address as a single q', () => {
+    assert.equal(
+      autocompleteQuery({ q: 'Проспект маршала жукова 78 4' }),
+      'Проспект маршала жукова 78 4',
+    );
   });
 
-  it('reorders street-first Russian input into structured fields', () => {
-    assert.deepEqual(parseAddressParts({ q: 'Тверская 1, Москва' }), {
-      city: 'Москва',
-      street: 'Тверская 1',
-    });
+  it('joins explicit street and city when q is empty', () => {
+    assert.equal(autocompleteQuery({ city: 'Москва', street: 'Тверская 1' }), 'Тверская 1, Москва');
   });
 
-  it('uses explicit city and street without a free-form query', () => {
-    assert.deepEqual(parseAddressParts({ city: 'Казань', street: 'Баумана 5' }), {
-      city: 'Казань',
-      street: 'Баумана 5',
-    });
+  it('reads display_name from an autocomplete payload', () => {
+    const hits = hitsFromAutocomplete([
+      {
+        lat: '55.777',
+        lon: '37.456',
+        display_name: 'проспект Маршала Жукова, 78 к4, Москва',
+      },
+    ]);
+    assert.equal(hits.length, 1);
+    assert.equal(hits[0]?.displayName, 'проспект Маршала Жукова, 78 к4, Москва');
+    assert.equal(hits[0]?.lat, 55.777);
   });
 });

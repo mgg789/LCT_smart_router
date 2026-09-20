@@ -3,9 +3,12 @@ import { Injectable } from '@nestjs/common';
 import { AppConfigService } from '../../common/config';
 import { SysError } from '../../common/errors';
 
-const LOCATIONIQ_STRUCTURED = 'https://us1.locationiq.com/v1/search/structured';
+const LOCATIONIQ_AUTOCOMPLETE = 'https://us1.locationiq.com/v1/autocomplete';
 const CACHE_LIMIT = 200;
 const FETCH_TIMEOUT_MS = 4_000;
+const MIN_QUERY_LENGTH = 3;
+/** Moscow metro bias: west,south,east,north. Autocomplete stays unbounded. */
+const MOSCOW_VIEWBOX = '36.80,55.14,38.35,56.05';
 
 export interface GeocodeHit {
   readonly displayName: string;
@@ -20,50 +23,50 @@ export interface GeocodeQuery {
 }
 
 /**
- * Splits a Russian free-form address into LocationIQ structured fields.
+ * Builds the free-form LocationIQ autocomplete query.
  *
- * LocationIQ structured search wants `street` (house + street) then `city`, not a
- * single `q` string and not the spoken "город, улица" order left as one blob.
+ * Autocomplete wants a single `q` and tolerates missing commas and mixed order.
+ * Explicit city/street are joined only when `q` is empty.
  */
-export function parseAddressParts(input: { q?: string; city?: string; street?: string }): {
-  readonly city: string;
-  readonly street: string;
-} {
-  const city = input.city?.trim() ?? '';
-  const street = input.street?.trim() ?? '';
-  if (city && street) {
-    return { city, street };
+export function autocompleteQuery(input: GeocodeQuery): string {
+  const free = input.q?.trim() ?? '';
+  if (free) {
+    return free;
   }
+  return [input.street?.trim(), input.city?.trim()].filter((part) => part).join(', ');
+}
 
-  const raw = (input.q ?? '').trim();
-  if (!raw) {
-    return { city, street };
+/** Maps a LocationIQ autocomplete payload into dispatcher hits. */
+export function hitsFromAutocomplete(body: unknown): GeocodeHit[] {
+  if (!Array.isArray(body)) {
+    return [];
   }
-
-  const parts = raw
-    .split(',')
-    .map((part) => part.trim())
-    .filter((part) => part.length > 0);
-
-  if (parts.length >= 2) {
-    const first = parts[0] ?? '';
-    const last = parts[parts.length - 1] ?? '';
-    if (looksLikeCity(first)) {
-      return { city: first, street: parts.slice(1).join(', ') };
-    }
-    if (looksLikeCity(last)) {
-      return { city: last, street: parts.slice(0, -1).join(', ') };
-    }
-    return { city: first, street: parts.slice(1).join(', ') };
-  }
-
-  return { city: city || 'Москва', street: street || raw };
+  return body.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const row = item as {
+      lat?: unknown;
+      lon?: unknown;
+      display_name?: unknown;
+      display_place?: unknown;
+      display_address?: unknown;
+    };
+    const lat = Number(row.lat);
+    const lon = Number(row.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return [];
+    const displayName =
+      typeof row.display_name === 'string' && row.display_name.trim()
+        ? row.display_name
+        : [row.display_place, row.display_address]
+            .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
+            .join(', ') || `${lat}, ${lon}`;
+    return [{ displayName, lat, lon }];
+  });
 }
 
 /**
- * LocationIQ forward geocoding for the dispatcher create-request form.
+ * LocationIQ autocomplete for the dispatcher create-request form.
  *
- * Calls the structured endpoint only: street + city + country, never mixed with `q`.
+ * Uses `/v1/autocomplete` so a messy typed address still yields house-level hits.
  * Results are cached; a missing token is a configuration error, not a guessed point.
  */
 @Injectable()
@@ -77,29 +80,26 @@ export class GeocodingService {
     if (!token) {
       throw SysError.notConfigured('LocationIQ');
     }
-    const parts = parseAddressParts(query);
-    if (!parts.street) {
-      throw new SysError('VALIDATION_FAILED', 'An address needs a street');
+    const q = autocompleteQuery(query);
+    if (q.length < MIN_QUERY_LENGTH) {
+      throw new SysError('VALIDATION_FAILED', 'An address needs at least three characters');
     }
-    const cacheKey = createHash('sha256')
-      .update(JSON.stringify({ city: parts.city, street: parts.street }))
-      .digest('hex');
+    const cacheKey = createHash('sha256').update(q.toLowerCase()).digest('hex');
     const cached = this.cache.get(cacheKey);
     if (cached) {
       return cached;
     }
 
-    const url = new URL(LOCATIONIQ_STRUCTURED);
+    const url = new URL(LOCATIONIQ_AUTOCOMPLETE);
     url.searchParams.set('key', token);
-    url.searchParams.set('street', parts.street);
-    url.searchParams.set('city', parts.city);
-    url.searchParams.set('country', 'Russia');
+    url.searchParams.set('q', q);
     url.searchParams.set('countrycodes', 'ru');
-    url.searchParams.set('format', 'json');
-    url.searchParams.set('addressdetails', '1');
-    url.searchParams.set('normalizeaddress', '1');
-    url.searchParams.set('limit', '5');
+    url.searchParams.set('limit', '8');
     url.searchParams.set('accept-language', 'ru');
+    url.searchParams.set('normalizeaddress', '1');
+    url.searchParams.set('normalizecity', '1');
+    url.searchParams.set('viewbox', MOSCOW_VIEWBOX);
+    url.searchParams.set('bounded', '0');
 
     const hits = await this.request(url);
     this.remember(cacheKey, hits);
@@ -119,24 +119,7 @@ export class GeocodingService {
           details: { status: response.status },
         });
       }
-      const body: unknown = await response.json();
-      if (!Array.isArray(body)) {
-        return [];
-      }
-      return body.flatMap((item) => {
-        if (!item || typeof item !== 'object') return [];
-        const row = item as { lat?: unknown; lon?: unknown; display_name?: unknown };
-        const lat = Number(row.lat);
-        const lon = Number(row.lon);
-        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return [];
-        return [
-          {
-            displayName: typeof row.display_name === 'string' ? row.display_name : `${lat}, ${lon}`,
-            lat,
-            lon,
-          },
-        ];
-      });
+      return hitsFromAutocomplete(await response.json());
     } catch (error) {
       if (error instanceof SysError) {
         throw error;
@@ -157,32 +140,4 @@ export class GeocodingService {
       this.cache.delete(first);
     }
   }
-}
-
-const CITY_HINTS = [
-  'москва',
-  'moscow',
-  'санкт-петербург',
-  'петербург',
-  'спб',
-  'saint petersburg',
-  'краснодар',
-  'казань',
-  'новосибирск',
-  'екатеринбург',
-  'нижний',
-  'самара',
-  'ростов',
-  'уфа',
-  'воронеж',
-  'пермь',
-  'волгоград',
-];
-
-function looksLikeCity(value: string): boolean {
-  const lowered = value.toLowerCase();
-  if (lowered.startsWith('г.') || lowered.startsWith('город ')) {
-    return true;
-  }
-  return CITY_HINTS.some((hint) => lowered === hint || lowered.startsWith(`${hint} `));
 }

@@ -1093,7 +1093,7 @@ export class DispatchController {
   }
 
   @Get('geocode')
-  @ApiOperation({ summary: 'Structured LocationIQ search for a dispatcher address' })
+  @ApiOperation({ summary: 'LocationIQ autocomplete for a dispatcher address' })
   async geocode(
     @Query('q') q?: string,
     @Query('city') city?: string,

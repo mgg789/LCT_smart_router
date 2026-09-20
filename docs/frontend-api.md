@@ -163,8 +163,9 @@ Authorization: Bearer <token>
 `clientEmail` и `contactName` необязательны для компактной диспетчерской формы. Если
 адрес не передан, заявка остаётся без клиентского аккаунта и событийные письма не
 создаются; адрес и имя не заменяются фиктивными значениями. Компактная форма Figma
-передаёт `lat`/`lon` из LocationIQ (`GET /dispatch/geocode`) или клика по OSM;
-без точки заявка не создаётся.
+передаёт `lat`/`lon` из LocationIQ autocomplete (`GET /dispatch/geocode`) или
+клика по OSM; без точки заявка не создаётся. `region` на сервере ставится
+ближайшим геоцентром уже существующих заявок региона.
 
 **PATCH `/dispatch/requests/:id`** — изменить условия неначатой заявки:
 `{operationId, expectedVersion?, windowStartAt?, windowEndAt?, addressText?, lat?, lon?, urgent?, requiredEquipment?}` (хотя бы одно поле) → `{request}`.
@@ -348,9 +349,13 @@ twogis: {provider, configured, ok, message}, yandex: {…}}`. Проба идё�
 если отвечают оба — `active=twogis`.
 
 **GET `/dispatch/geocode?q=`** или `?city=&street=` → `{hits: [{displayName, lat, lon}]}`.
-Сервер режет свободный `q` на `street`+`city`+`country=Russia` и зовёт LocationIQ
-structured search, никогда смешанный `q`. Без `LOCATION_IQ_TOKEN` — `NOT_CONFIGURED`;
-точку тогда задают кликом по карте.
+Сервер зовёт LocationIQ **autocomplete** (`/v1/autocomplete`) с одним `q` — так
+находятся криво набранные адреса. `city`+`street` склеиваются в `q`, если его нет.
+Без `LOCATION_IQ_TOKEN` — `NOT_CONFIGURED`; точку тогда задают кликом по карте.
+
+Новая заявка с `lat`/`lon` получает `region` ближайшего геоцентра уже существующих
+заявок этого региона. Если у региона ещё нет точек — геоцентр считают по домам
+инженеров, затем по депо.
 
 ### 6.5 План дня и режим управления
 

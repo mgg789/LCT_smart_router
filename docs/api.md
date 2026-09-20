@@ -509,8 +509,9 @@ profile`, `availability`, `technical-break`, `lunch/*`, `requests/:id/facts`)
 /api/v1/dispatch/settings`. Секреты карт не читаются обратно. `GET /plan`
 параллельно зовёт 2ГИС и Яндекс, если ключи заданы: при двух ответах берётся 2ГИС,
 иначе Яндекс; нога получает `geometryProvider`. Без ключей остаётся геометрия
-Router (геоцентры / OSRM). `GET /dispatch/geocode` — структурный LocationIQ
-(`LOCATION_IQ_TOKEN`); точка заявки иначе задаётся кликом на карте.
+Router (геоцентры / OSRM). `GET /dispatch/geocode` — LocationIQ autocomplete (`LOCATION_IQ_TOKEN`);
+точка заявки иначе задаётся кликом на карте. Заявка с координатами получает
+`region` ближайшего геоцентра уже существующих заявок региона.
 
 - `GET /api/v1/dispatch/router/technical-settings` читает их из `GET /v1/context` Router
   вместе с активной `router_context_version`; read-through не кешируется как состояние.

@@ -5,6 +5,7 @@ import { NotificationsService } from '../../notifications';
 import { assertWriteApplied, type OperationContext } from '../../operations';
 import type { Tx } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
+import { nearestRegion, regionCenters, type RegionPoint } from './region-geocenter';
 import { findWorkType } from './work-type.catalog';
 
 export interface PrepareRequestInput {
@@ -75,7 +76,10 @@ export class RequestsService {
     }
     assertWindow(input.windowStartAt, input.windowEndAt);
 
-    const hasPoint = typeof input.lat === 'number' && typeof input.lon === 'number';
+    const lat = input.lat ?? null;
+    const lon = input.lon ?? null;
+    const hasPoint = typeof lat === 'number' && typeof lon === 'number';
+    const region = hasPoint ? await resolveRegion(context.tx, { lat, lon }) : null;
 
     return context.tx.request.create({
       data: {
@@ -84,8 +88,9 @@ export class RequestsService {
         arrivalOrder: 0,
         contactName: input.contactName,
         addressText: input.addressText,
-        lat: input.lat ?? null,
-        lon: input.lon ?? null,
+        region,
+        lat,
+        lon,
         // A request without a point is excluded from the published snapshot with a
         // counted diagnostic rather than given invented coordinates.
         needsGeocoding: !hasPoint,
@@ -248,8 +253,12 @@ export class RequestsService {
     await this.archiveConditions(context, current);
 
     const movingPoint = input.lat !== undefined || input.lon !== undefined;
-    const lat = input.lat ?? current.lat;
-    const lon = input.lon ?? current.lon;
+    const lat = input.lat === undefined ? current.lat : input.lat;
+    const lon = input.lon === undefined ? current.lon : input.lon;
+    const region =
+      typeof lat === 'number' && typeof lon === 'number'
+        ? await resolveRegion(context.tx, { lat, lon }, current.id)
+        : current.region;
 
     const updated = await context.tx.request.updateMany({
       where: { id: requestId, version: expectedVersion ?? current.version },
@@ -257,6 +266,7 @@ export class RequestsService {
         windowStartAt: BigInt(windowStartAt),
         windowEndAt: BigInt(windowEndAt),
         addressText: input.addressText ?? current.addressText,
+        region,
         lat,
         lon,
         needsGeocoding: movingPoint ? lat === null || lon === null : current.needsGeocoding,
@@ -463,6 +473,64 @@ function defaultEquipment(workType: string): EquipmentType | null {
 
 function numberOrNull(value: bigint | null): number | null {
   return value === null ? null : Number(value);
+}
+
+/**
+ * Picks the planning region whose existing-request geocenter is closest to the
+ * new point. Regions without request points fall back to engineer homes, then depots.
+ */
+async function resolveRegion(
+  tx: Tx,
+  point: { lat: number; lon: number },
+  excludeRequestId?: string,
+): Promise<string | null> {
+  const requestRows = await tx.request.findMany({
+    where: {
+      region: { not: null },
+      lat: { not: null },
+      lon: { not: null },
+      lifecycle: { not: 'cancelled' },
+      ...(excludeRequestId ? { id: { not: excludeRequestId } } : {}),
+    },
+    select: { region: true, lat: true, lon: true },
+  });
+  let centers = regionCenters(toRegionPoints(requestRows));
+  if (centers.size === 0) {
+    const engineerRows = await tx.engineer.findMany({
+      where: {
+        archivedAt: null,
+        region: { not: null },
+        homeLat: { not: null },
+        homeLon: { not: null },
+      },
+      select: { region: true, homeLat: true, homeLon: true },
+    });
+    centers = regionCenters(
+      engineerRows.flatMap((row) =>
+        row.region && row.homeLat !== null && row.homeLon !== null
+          ? [{ region: row.region, lat: row.homeLat, lon: row.homeLon }]
+          : [],
+      ),
+    );
+  }
+  if (centers.size === 0) {
+    const depotRows = await tx.depot.findMany({
+      where: { lat: { not: null }, lon: { not: null } },
+      select: { region: true, lat: true, lon: true },
+    });
+    centers = regionCenters(toRegionPoints(depotRows));
+  }
+  return nearestRegion(point, centers);
+}
+
+function toRegionPoints(
+  rows: ReadonlyArray<{ region: string | null; lat: number | null; lon: number | null }>,
+): RegionPoint[] {
+  return rows.flatMap((row) =>
+    row.region && row.lat !== null && row.lon !== null
+      ? [{ region: row.region, lat: row.lat, lon: row.lon }]
+      : [],
+  );
 }
 
 async function nextArrivalOrder(tx: Tx): Promise<number> {
