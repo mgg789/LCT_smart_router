@@ -1,17 +1,144 @@
 import maplibregl from 'maplibre-gl';
 import { useEffect, useRef, useState } from 'react';
-import type { DashboardSnapshot } from '../api/types';
-import { unassignedRequests } from '../domain/dashboard';
+import type { LiveRouteProgress } from '../api/live';
+import type { DashboardSnapshot, PlanRouteView } from '../api/types';
+import { routeVertices, unassignedRequests } from '../domain/dashboard';
+import {
+  type LiveGraphNode,
+  type LiveGraphProjection,
+  projectLiveGraph,
+} from '../domain/liveGraph';
 import { localMapStyle } from '../domain/localBasemap';
 import { regionStyle, requestRegion, routeRegion } from '../domain/regions';
-import { mapRouteSegments } from '../domain/travel';
+import { type MapRouteSegment, mapRouteSegments } from '../domain/travel';
 import { engineerColor, skillMark } from '../lib/reasons';
 
 interface DayMapProps {
   readonly snapshot: DashboardSnapshot;
   readonly selectedEngineerId: string | null;
   readonly selectedRequestId: string | null;
+  /** Server-owned positions survive a remaining-day route rebuild. */
+  readonly progressByEngineer?: ReadonlyMap<string, LiveRouteProgress | null>;
   readonly onSelectRequest: (requestId: string) => void;
+}
+
+export interface LiveProgressSegment {
+  readonly from: LiveRouteProgress['anchor'];
+  readonly to: LiveRouteProgress['anchor'];
+}
+
+/** Router geometry retained for a visible planned edge. */
+export interface VisiblePlannedSegment extends MapRouteSegment {
+  readonly fromKey: string;
+  readonly toKey: string;
+}
+
+/**
+ * Keeps a lunch marker visible when Router anchors the break at the preceding
+ * or following visit. The factual route coordinates stay untouched; only the
+ * marker is placed halfway between its adjacent drawable vertices.
+ */
+export function lunchMarkerCoordinates(
+  nodes: readonly LiveGraphNode[],
+  lunchIndex: number,
+): readonly [number, number] {
+  const lunch = nodes[lunchIndex];
+  if (lunch?.kind !== 'lunch') {
+    throw new RangeError('lunchIndex must reference a lunch node');
+  }
+  const previous = nodes.slice(0, lunchIndex).findLast((node) => node.kind !== 'lunch');
+  const following = nodes.slice(lunchIndex + 1).find((node) => node.kind !== 'lunch');
+  if (!previous || !following) return [lunch.lon, lunch.lat];
+  const overlapsAdjacent =
+    (lunch.lat === previous.lat && lunch.lon === previous.lon) ||
+    (lunch.lat === following.lat && lunch.lon === following.lon);
+  return overlapsAdjacent
+    ? [(previous.lon + following.lon) / 2, (previous.lat + following.lat) / 2]
+    : [lunch.lon, lunch.lat];
+}
+
+/**
+ * Keeps Router geometry only when both of its factual endpoints remain in the
+ * current map projection. A wait is not a drawable vertex, but it may share a
+ * coordinate with the following visit and then resolves to that visit.
+ */
+export function visiblePlannedSegments(
+  route: PlanRouteView,
+  graph: LiveGraphProjection,
+): readonly VisiblePlannedSegment[] {
+  return mapRouteSegments(route).flatMap((segment) => {
+    const first = segment.coordinates[0];
+    const last = segment.coordinates[segment.coordinates.length - 1];
+    if (!first || !last) return [];
+    const from = resolveVisibleEndpoint(route, graph.mapNodes, first);
+    const to = resolveVisibleEndpoint(route, graph.mapNodes, last);
+    if (!from || !to || from.key === to.key) return [];
+    return [{ ...segment, fromKey: from.key, toKey: to.key }];
+  });
+}
+
+function resolveVisibleEndpoint(
+  route: PlanRouteView,
+  visibleNodes: readonly LiveGraphNode[],
+  coordinate: readonly [number, number],
+): LiveGraphNode | null {
+  const direct = visibleNodes.find((node) => hasCoordinate(node, coordinate));
+  if (direct) return direct;
+  const vertices = routeVertices(route);
+  const waitIndex = vertices.findIndex(
+    (vertex) => vertex.kind === 'wait' && hasCoordinate(vertex, coordinate),
+  );
+  if (waitIndex < 0) return null;
+  const following = vertices
+    .slice(waitIndex + 1)
+    .find((vertex) => vertex.kind !== 'wait' && hasCoordinate(vertex, coordinate));
+  return following
+    ? (visibleNodes.find(
+        (node) => node.kind === following.kind && hasCoordinate(node, coordinate),
+      ) ?? null)
+    : null;
+}
+
+function hasCoordinate(
+  point: Pick<LiveGraphNode, 'lat' | 'lon'>,
+  coordinate: readonly [number, number],
+): boolean {
+  return point.lon === coordinate[0] && point.lat === coordinate[1];
+}
+
+/**
+ * Projects the factual part of a LIVE route. A completed job remains the edge
+ * anchor until the next job is explicitly started; lunch is a two-leg span.
+ */
+export function liveProgressSegments(progress: LiveRouteProgress): readonly LiveProgressSegment[] {
+  return projectLiveGraph(null, progress).activeSegments.map((segment) => ({
+    from: pointWithoutProjectionFields(segment.from),
+    to: pointWithoutProjectionFields(segment.to),
+  }));
+}
+
+/** Current factual vertices: job anchor and the lunch point while lunch is active. */
+export function liveProgressPoints(
+  progress: LiveRouteProgress,
+): readonly LiveRouteProgress['anchor'][] {
+  const graph = projectLiveGraph(null, progress);
+  return graph.mapNodes
+    .filter((node) =>
+      node.kind === progress.anchor.kind && node.requestId === progress.anchor.requestId
+        ? true
+        : progress.lunch !== null && node.kind === 'lunch',
+    )
+    .map(pointWithoutProjectionFields);
+}
+
+function pointWithoutProjectionFields(point: LiveRouteProgress['anchor']) {
+  return {
+    kind: point.kind,
+    requestId: point.requestId,
+    lat: point.lat,
+    lon: point.lon,
+    at: point.at,
+  };
 }
 
 const STYLE_URL = 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json';
@@ -20,6 +147,7 @@ export function DayMap({
   snapshot,
   selectedEngineerId,
   selectedRequestId,
+  progressByEngineer,
   onSelectRequest,
 }: DayMapProps) {
   const [forceLocal, setForceLocal] = useState(!navigator.onLine);
@@ -106,23 +234,75 @@ export function DayMap({
         return false;
       }
       const allRoutes = snapshot.plan.plan?.routes ?? [];
-      const routes = selectedEngineerId
+      const selectedRoutes = selectedEngineerId
         ? allRoutes.filter((route) => route.engineerId === selectedEngineerId)
         : allRoutes;
+      const visibleRequestIds = new Set(
+        snapshot.requests
+          .filter(
+            (request) =>
+              request.lifecycle !== 'completed' &&
+              request.lifecycle !== 'cancelled' &&
+              (request.assumedCompletedAt === null || request.assumedCompletedAt === undefined),
+          )
+          .map((request) => request.id),
+      );
+      // A projection starts at a factual anchor and never draws the synthetic
+      // start of a freshly rebuilt remaining route.
+      const routeByEngineer = new Map(selectedRoutes.map((route) => [route.engineerId, route]));
+      const projectedEngineerIds = new Set(routeByEngineer.keys());
+      for (const [engineerId, progress] of progressByEngineer ?? []) {
+        if (progress && (selectedEngineerId === null || selectedEngineerId === engineerId)) {
+          projectedEngineerIds.add(engineerId);
+        }
+      }
+      const projections = [...projectedEngineerIds].map((engineerId) => {
+        const route = routeByEngineer.get(engineerId) ?? null;
+        return {
+          engineerId,
+          route,
+          graph: projectLiveGraph(
+            route,
+            progressByEngineer?.get(engineerId) ?? null,
+            visibleRequestIds,
+          ),
+        };
+      });
       const viewingUnassigned = unassignedRequests(snapshot).some(
         (request) => request.id === selectedRequestId,
       );
       const showUnassigned = selectedEngineerId === null || viewingUnassigned;
 
-      const lineFeatures = routes.flatMap((route) => {
-        const region = routeRegion(snapshot, route);
-        return mapRouteSegments(route).map((segment) => ({
+      const lineFeatures = projections.flatMap(({ engineerId, route, graph }) => {
+        const region = route ? routeRegion(snapshot, route) : null;
+        const planned = route ? visiblePlannedSegments(route, graph) : [];
+        const geometryKeys = new Set(
+          planned.map((segment) => `${segment.fromKey}->${segment.toKey}`),
+        );
+        const segments = [
+          ...planned.map((segment) => ({
+            approximate: segment.approximate,
+            source: segment.source,
+            coordinates: segment.coordinates,
+          })),
+          ...graph.mapSegments
+            .filter((segment) => !geometryKeys.has(segment.key))
+            .map((segment) => ({
+              approximate: true,
+              source: 'approximate' as const,
+              coordinates: [
+                [segment.from.lon, segment.from.lat] as const,
+                [segment.to.lon, segment.to.lat] as const,
+              ],
+            })),
+        ];
+        return segments.map((segment) => ({
           type: 'Feature' as const,
           properties: {
-            engineerId: route.engineerId,
-            selected: !selectedEngineerId || route.engineerId === selectedEngineerId ? 1 : 0,
+            engineerId,
+            selected: !selectedEngineerId || engineerId === selectedEngineerId ? 1 : 0,
             approximate: segment.approximate ? 1 : 0,
-            color: engineerColor(route.engineerId),
+            color: engineerColor(engineerId),
             regionColor: regionStyle(region).color,
             travelSource: segment.source,
           },
@@ -133,70 +313,97 @@ export function DayMap({
         }));
       });
 
-      const startFeatures = routes.map((route) => ({
-        type: 'Feature' as const,
-        properties: {
-          engineerId: route.engineerId,
-          selected: !selectedEngineerId || route.engineerId === selectedEngineerId ? 1 : 0,
-          color: engineerColor(route.engineerId),
-          regionColor: regionStyle(routeRegion(snapshot, route)).color,
-        },
-        geometry: {
-          type: 'Point' as const,
-          coordinates: [route.startLon, route.startLat],
-        },
-      }));
+      const progressLines = projections.flatMap(({ engineerId, graph }) =>
+        graph.activeSegments.map((segment) => {
+          return {
+            type: 'Feature' as const,
+            properties: { engineerId, color: engineerColor(engineerId) },
+            geometry: {
+              type: 'LineString' as const,
+              coordinates: [
+                [segment.from.lon, segment.from.lat] as const,
+                [segment.to.lon, segment.to.lat] as const,
+              ],
+            },
+          };
+        }),
+      );
 
-      const stopFeatures = routes.flatMap((route) =>
-        route.stops.flatMap((stop, index) => {
-          if (stop.kind === 'lunch') {
+      const startFeatures = projections.flatMap(({ engineerId, route, graph }) => {
+        const start = graph.mapNodes.find((node) => node.kind === 'start');
+        if (!start) return [];
+        return [
+          {
+            type: 'Feature' as const,
+            properties: {
+              engineerId,
+              selected: !selectedEngineerId || engineerId === selectedEngineerId ? 1 : 0,
+              color: engineerColor(engineerId),
+              regionColor: regionStyle(route ? routeRegion(snapshot, route) : null).color,
+              current: graph.activeNodeKeys.has(start.key) ? 1 : 0,
+            },
+            geometry: {
+              type: 'Point' as const,
+              coordinates: [start.lon, start.lat],
+            },
+          },
+        ];
+      });
+
+      const stopFeatures = projections.flatMap(({ engineerId, graph }) =>
+        graph.mapNodes.flatMap((node, index) => {
+          if (node.kind === 'start') return [];
+          if (node.kind === 'lunch') {
+            const coordinates = lunchMarkerCoordinates(graph.mapNodes, index);
             return [
               {
                 type: 'Feature' as const,
                 properties: {
-                  engineerId: route.engineerId,
-                  selected: !selectedEngineerId || route.engineerId === selectedEngineerId ? 1 : 0,
+                  engineerId,
+                  selected: !selectedEngineerId || engineerId === selectedEngineerId ? 1 : 0,
+                  current: graph.activeNodeKeys.has(node.key) ? 1 : 0,
                 },
                 geometry: {
                   type: 'Point' as const,
-                  coordinates: [stop.lon, stop.lat],
+                  coordinates,
                 },
               },
             ];
           }
-          if (!stop.requestId) {
+          if (!node.requestId) {
             return [];
           }
-          const request = snapshot.requests.find((item) => item.id === stop.requestId);
-          const sequence = route.stops
+          const request = snapshot.requests.find((item) => item.id === node.requestId);
+          const sequence = graph.mapNodes
             .slice(0, index + 1)
             .filter((item) => item.kind === 'job').length;
           return [
             {
               type: 'Feature' as const,
               properties: {
-                requestId: stop.requestId,
+                requestId: node.requestId,
                 sequence,
                 skillMark: request ? skillMark(request.requiredSkill) : '',
-                engineerId: route.engineerId,
-                selected: stop.requestId === selectedRequestId ? 1 : 0,
-                color: engineerColor(route.engineerId),
+                engineerId,
+                selected: node.requestId === selectedRequestId ? 1 : 0,
+                color: engineerColor(engineerId),
                 regionColor: regionStyle(request ? requestRegion(snapshot, request) : null).color,
+                current: graph.activeNodeKeys.has(node.key) ? 1 : 0,
               },
               geometry: {
                 type: 'Point' as const,
-                coordinates: [stop.lon, stop.lat],
+                coordinates: [node.lon, node.lat] as const,
               },
             },
           ];
         }),
       );
-
       const lunchFeatures = stopFeatures.filter((feature) => !('requestId' in feature.properties));
       const jobFeatures = stopFeatures.filter((feature) => 'requestId' in feature.properties);
 
-      const unassignedFeatures = (showUnassigned ? unassignedRequests(snapshot) : []).flatMap(
-        (request) => {
+      const unassignedFeatures = (showUnassigned ? unassignedRequests(snapshot) : [])
+        .filter((request) => visibleRequestIds.has(request.id))
+        .flatMap((request) => {
           if (request.lat === null || request.lon === null) {
             return [];
           }
@@ -215,8 +422,7 @@ export function DayMap({
               },
             },
           ];
-        },
-      );
+        });
 
       upsert(map, 'routes', { type: 'FeatureCollection', features: lineFeatures }, () => {
         map.addLayer({
@@ -246,6 +452,20 @@ export function DayMap({
         });
       });
 
+      upsert(
+        map,
+        'live-progress-lines',
+        { type: 'FeatureCollection', features: progressLines },
+        () => {
+          map.addLayer({
+            id: 'live-progress-lines',
+            type: 'line',
+            source: 'live-progress-lines',
+            paint: { 'line-color': ['get', 'color'], 'line-width': 6, 'line-opacity': 0.95 },
+          });
+        },
+      );
+
       upsert(map, 'starts', { type: 'FeatureCollection', features: startFeatures }, () => {
         map.addLayer({
           id: 'starts-square',
@@ -254,8 +474,13 @@ export function DayMap({
           paint: {
             'circle-radius': 7,
             'circle-color': '#ffffff',
-            'circle-stroke-width': 3,
-            'circle-stroke-color': ['get', 'regionColor'],
+            'circle-stroke-width': ['case', ['==', ['get', 'current'], 1], 5, 3],
+            'circle-stroke-color': [
+              'case',
+              ['==', ['get', 'current'], 1],
+              '#FFD100',
+              ['get', 'regionColor'],
+            ],
           },
         });
         if (map.getStyle().glyphs)
@@ -264,7 +489,7 @@ export function DayMap({
             type: 'symbol',
             source: 'starts',
             layout: {
-              'text-field': 'Старт плана',
+              'text-field': 'Начало дня',
               'text-size': 11,
               'text-offset': [0, 1.2],
               'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
@@ -283,9 +508,23 @@ export function DayMap({
           type: 'circle',
           source: 'stops',
           paint: {
-            'circle-radius': ['case', ['==', ['get', 'selected'], 1], 10, 8],
+            'circle-radius': [
+              'case',
+              ['==', ['get', 'current'], 1],
+              12,
+              ['==', ['get', 'selected'], 1],
+              10,
+              8,
+            ],
             'circle-color': ['get', 'color'],
-            'circle-stroke-width': ['case', ['==', ['get', 'selected'], 1], 4, 2.5],
+            'circle-stroke-width': [
+              'case',
+              ['==', ['get', 'current'], 1],
+              5,
+              ['==', ['get', 'selected'], 1],
+              4,
+              2.5,
+            ],
             'circle-stroke-color': ['get', 'regionColor'],
           },
         });
@@ -314,10 +553,10 @@ export function DayMap({
           type: 'circle',
           source: 'lunches',
           paint: {
-            'circle-radius': 8,
+            'circle-radius': ['case', ['==', ['get', 'current'], 1], 11, 8],
             'circle-color': '#FFE7C2',
-            'circle-stroke-width': 3,
-            'circle-stroke-color': '#E07A2F',
+            'circle-stroke-width': ['case', ['==', ['get', 'current'], 1], 5, 3],
+            'circle-stroke-color': ['case', ['==', ['get', 'current'], 1], '#FFD100', '#E07A2F'],
           },
         });
         if (map.getStyle().glyphs)
@@ -357,13 +596,12 @@ export function DayMap({
       if (fittedKeyRef.current !== fitKey) {
         fittedKeyRef.current = fitKey;
         const bounds = new maplibregl.LngLatBounds();
-        const fitRoutes = selectedEngineerId
-          ? routes.filter((route) => route.engineerId === selectedEngineerId)
-          : routes;
-        for (const route of fitRoutes) {
-          bounds.extend([route.startLon, route.startLat]);
-          for (const stop of route.stops) {
-            bounds.extend([stop.lon, stop.lat]);
+        const fitProjections = selectedEngineerId
+          ? projections.filter((projection) => projection.engineerId === selectedEngineerId)
+          : projections;
+        for (const projection of fitProjections) {
+          for (const node of projection.graph.mapNodes) {
+            bounds.extend([node.lon, node.lat]);
           }
         }
         for (const feature of unassignedFeatures) {
@@ -386,7 +624,7 @@ export function DayMap({
       map.off('style.load', onStyle);
       map.off('load', onStyle);
     };
-  }, [selectedEngineerId, selectedRequestId, snapshot, forceLocal, retry]);
+  }, [selectedEngineerId, selectedRequestId, snapshot, progressByEngineer, forceLocal, retry]);
 
   return (
     <>

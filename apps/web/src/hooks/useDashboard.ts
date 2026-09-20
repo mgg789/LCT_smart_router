@@ -20,6 +20,12 @@ import {
   uploadDataPackage,
   verifyDispatcherLoginCode,
 } from '../api/client';
+import {
+  type DispatchLiveView,
+  type LiveEngineerState,
+  loadDispatchLive,
+  startLiveWorkday,
+} from '../api/live';
 import type {
   AlertResolutionInput,
   DashboardSnapshot,
@@ -120,15 +126,22 @@ export function useDashboard() {
   const [policyComparisonLoading, setPolicyComparisonLoading] = useState(false);
   const [policyComparisonError, setPolicyComparisonError] = useState<string | null>(null);
   const [events, setEvents] = useState<DayEvent[]>([]);
+  const [liveWorkday, setLiveWorkday] = useState<DispatchLiveView | null>(null);
+  const [liveLoading, setLiveLoading] = useState(token !== null);
+  const [startingWorkday, setStartingWorkday] = useState(false);
   const refreshInFlight = useRef(false);
+  const liveRefreshInFlight = useRef(false);
   const comparisonInFlight = useRef(false);
   const readGeneration = useRef(0);
+  const liveReadGeneration = useRef(0);
   const comparisonRequestId = useRef(0);
 
   const invalidateAsyncReads = useCallback(() => {
     readGeneration.current += 1;
+    liveReadGeneration.current += 1;
     comparisonRequestId.current += 1;
     refreshInFlight.current = false;
+    liveRefreshInFlight.current = false;
     comparisonInFlight.current = false;
     setPolicyComparison(null);
     setPolicyComparisonLoading(false);
@@ -150,6 +163,9 @@ export function useDashboard() {
       setSnapshot(null);
       setFocus({ engineerId: null, requestId: null });
       setLoading(false);
+      setLiveLoading(false);
+      setStartingWorkday(false);
+      setLiveWorkday(null);
       setError(reason);
     },
     [invalidateAsyncReads, setSnapshot, setSource],
@@ -205,17 +221,62 @@ export function useDashboard() {
     }
   }, [handleSessionFailure, token, reportFailure, setSnapshot]);
 
+  /** Reads the authoritative workday clock and engineer event projection. */
+  const refreshLive = useCallback(async () => {
+    if (!token || sourceRef.current === 'demo' || liveRefreshInFlight.current) {
+      return null;
+    }
+    const generation = liveReadGeneration.current;
+    liveRefreshInFlight.current = true;
+    try {
+      const next = await loadDispatchLive(token);
+      if (generation !== liveReadGeneration.current) return null;
+      setLiveWorkday(next);
+      return next;
+    } catch (cause) {
+      if (generation !== liveReadGeneration.current) return null;
+      reportFailure(cause);
+      if (cause instanceof DashboardApiError && (cause.status === 401 || cause.status === 403)) {
+        handleSessionFailure('Сессия закончилась. Войдите снова.');
+        return null;
+      }
+      setError(errorMessage(cause));
+      return null;
+    } finally {
+      if (generation === liveReadGeneration.current) {
+        liveRefreshInFlight.current = false;
+        setLiveLoading(false);
+      }
+    }
+  }, [handleSessionFailure, reportFailure, token]);
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
   useEffect(() => {
-    if (!token || source === 'demo' || rebuilding) {
+    void refreshLive();
+  }, [refreshLive]);
+
+  useEffect(() => {
+    if (!token || source === 'demo' || rebuilding || liveWorkday?.workday.status === 'running') {
       return;
     }
     const interval = window.setInterval(() => void refresh(), 10_000);
     return () => window.clearInterval(interval);
-  }, [rebuilding, refresh, token, source]);
+  }, [rebuilding, refresh, token, source, liveWorkday?.workday.status]);
+
+  useEffect(() => {
+    if (!token || source === 'demo' || rebuilding || liveWorkday?.workday.status !== 'running') {
+      return;
+    }
+    const poll = () => {
+      void refreshLive();
+      void refresh();
+    };
+    const interval = window.setInterval(poll, 2_000);
+    return () => window.clearInterval(interval);
+  }, [liveWorkday?.workday.status, rebuilding, refresh, refreshLive, source, token]);
 
   const engineers = useMemo(() => (snapshot ? engineerSummaries(snapshot) : []), [snapshot]);
   const unassigned = useMemo(() => (snapshot ? unassignedRequests(snapshot) : []), [snapshot]);
@@ -242,6 +303,31 @@ export function useDashboard() {
     ]);
   }, []);
 
+  const previousLiveEngineers = useRef<Map<string, string>>(new Map());
+  useEffect(() => {
+    if (liveWorkday?.workday.status !== 'running') {
+      previousLiveEngineers.current = new Map();
+      return;
+    }
+    const next = new Map(
+      liveWorkday.engineers.map((engineer) => [
+        engineer.id,
+        `${engineer.lineStatus}:${engineer.activeRequestId ?? ''}:${engineer.pendingDelayProblem?.requestId ?? ''}`,
+      ]),
+    );
+    const previous = previousLiveEngineers.current;
+    if (previous.size > 0) {
+      for (const engineer of liveWorkday.engineers) {
+        const before = previous.get(engineer.id);
+        const after = next.get(engineer.id);
+        if (before !== undefined && before !== after) {
+          pushEvent(`LIVE: ${engineer.name} — ${liveEngineerEvent(engineer)}.`);
+        }
+      }
+    }
+    previousLiveEngineers.current = next;
+  }, [liveWorkday, pushEvent]);
+
   const acceptSession = useCallback(
     (session: Awaited<ReturnType<typeof loginDispatcher>>, generation: number) => {
       if (generation !== readGeneration.current) return;
@@ -250,6 +336,8 @@ export function useDashboard() {
       startRecoverySession(sessionStorage, session.expiresAt);
       setSource('live');
       setSnapshot(null);
+      setLiveWorkday(null);
+      setLiveLoading(true);
       setToken(session.token);
     },
     [invalidateAsyncReads, setSnapshot, setSource],
@@ -330,6 +418,9 @@ export function useDashboard() {
     setPolicyComparisonError(null);
     setError(null);
     setOperationWarning(null);
+    setLiveWorkday(null);
+    setLiveLoading(false);
+    setStartingWorkday(false);
     if (remoteToken) await signOutDispatcher(remoteToken).catch(() => undefined);
   }, [invalidateAsyncReads, token, setSnapshot, setSource]);
 
@@ -342,6 +433,8 @@ export function useDashboard() {
       setSource('demo');
       setScenarioId(id);
       setSnapshot(recorded.snapshot);
+      setLiveWorkday(null);
+      setLiveLoading(false);
       setPolicyComparison(recorded.comparison);
       setLoading(false);
       setError(null);
@@ -369,6 +462,8 @@ export function useDashboard() {
     setBaseline(null);
     setFocus({ engineerId: null, requestId: null });
     setEvents([]);
+    setLiveWorkday(null);
+    setLiveLoading(token !== null);
     setLoading(token !== null);
     void refresh();
   }, [invalidateAsyncReads, refresh, setSource, token]);
@@ -576,6 +671,30 @@ export function useDashboard() {
     setBaseline(null);
     pushEvent('Изменения плана просмотрены.');
   }, [pushEvent]);
+
+  /** Starts the day once; the following refresh is read-only confirmation. */
+  const startWorkday = useCallback(async () => {
+    if (!token || sourceRef.current !== 'live' || startingWorkday) return false;
+    const generation = ++liveReadGeneration.current;
+    liveRefreshInFlight.current = false;
+    setStartingWorkday(true);
+    setError(null);
+    try {
+      const next = await startLiveWorkday(token);
+      if (generation !== liveReadGeneration.current) return false;
+      setLiveWorkday(next);
+      pushEvent('Рабочий день запущен. План и статусы инженеров обновляются в LIVE-режиме.');
+      await refresh();
+      return true;
+    } catch (cause) {
+      if (generation !== liveReadGeneration.current) return false;
+      reportFailure(cause);
+      setError(errorMessage(cause));
+      return false;
+    } finally {
+      if (generation === liveReadGeneration.current) setStartingWorkday(false);
+    }
+  }, [pushEvent, refresh, reportFailure, startingWorkday, token]);
 
   const rejectDelta = useCallback(() => {
     if (!baseline) {
@@ -841,6 +960,7 @@ export function useDashboard() {
         }
         setFocus({ engineerId: null, requestId: null });
         setPolicyComparison(null);
+        await refreshLive();
         pushEvent(
           summary.applied
             ? `Регион ${summary.region}: добавлено ${summary.requestsCreated} заявок.`
@@ -860,7 +980,15 @@ export function useDashboard() {
         setUploadingData(false);
       }
     },
-    [invalidateAsyncReads, pushEvent, token, uploadingData, reportFailure, setSnapshot],
+    [
+      invalidateAsyncReads,
+      pushEvent,
+      refreshLive,
+      token,
+      uploadingData,
+      reportFailure,
+      setSnapshot,
+    ],
   );
 
   const importOfficialTzDataset = useCallback(async (): Promise<OfficialImportSummary> => {
@@ -888,6 +1016,7 @@ export function useDashboard() {
       }
       setFocus({ engineerId: null, requestId: null });
       setPolicyComparison(null);
+      await refreshLive();
       pushEvent(
         summary.applied
           ? `Датасет из ТЗ: ${summary.requestsCreated} заявок, ${summary.engineersCreated} инженеров.`
@@ -904,7 +1033,23 @@ export function useDashboard() {
     } finally {
       setUploadingData(false);
     }
-  }, [invalidateAsyncReads, pushEvent, token, uploadingData, reportFailure, setSnapshot]);
+  }, [
+    invalidateAsyncReads,
+    pushEvent,
+    refreshLive,
+    token,
+    uploadingData,
+    reportFailure,
+    setSnapshot,
+  ]);
+
+  const displaySnapshot = useMemo(
+    () =>
+      snapshot && liveWorkday?.workday.status === 'running'
+        ? { ...snapshot, nowAt: liveWorkday.workday.liveNow }
+        : snapshot,
+    [liveWorkday, snapshot],
+  );
 
   return {
     authenticated: token !== null || source === 'demo',
@@ -926,7 +1071,10 @@ export function useDashboard() {
     isDemo: source === 'demo',
     loading,
     error,
-    snapshot,
+    snapshot: displaySnapshot,
+    liveWorkday,
+    liveLoading,
+    startingWorkday,
     engineers,
     unassigned,
     selectedEngineerId,
@@ -949,6 +1097,8 @@ export function useDashboard() {
     signInWithCode,
     signOut,
     refresh,
+    refreshLive,
+    startWorkday,
     selectEngineer,
     clearFocus,
     selectRequest,
@@ -1041,4 +1191,13 @@ function errorMessage(cause: unknown): string {
 
 function engineerName(snapshot: DashboardSnapshot, engineerId: string): string {
   return snapshot.engineers.find((item) => item.id === engineerId)?.displayName ?? engineerId;
+}
+
+function liveEngineerEvent(engineer: LiveEngineerState): string {
+  if (engineer.pendingDelayProblem) return 'сообщил о задержке';
+  if (engineer.lineStatus === 'technical_break') return 'на техническом перерыве';
+  if (engineer.lineStatus === 'no_show_offline') return 'не вышел на линию';
+  if (engineer.activeRequestId) return `работает с заявкой №${engineer.activeRequestId}`;
+  if (engineer.lineStatus === 'online') return 'вышел на линию';
+  return 'ожидает выхода на линию';
 }

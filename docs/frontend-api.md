@@ -237,6 +237,16 @@ Authorization: Bearer <token>
 
 ### 6.4 Технастройки Router (обеды, допуски, дорога)
 
+В LIVE-ответах `workday` дополнен `finishedAt`, `completionReason` и `stats`.
+Каждый инженер получает `routeState` (`active`, `awaiting_plan`, `exhausted`), свои
+`stats` и фактический `progress`. У `progress` есть фаза, неизменяемая точка начала дня
+`origin`, последняя достигнутая точка `anchor`, следующая точка `next` и опциональная
+точка `lunch`. `lunch` задаёт составной путь `anchor → lunch → next` до начала следующей
+заявки. Карта и пайплайн строят активные вершины и рёбра из одной проекции этих полей,
+не показывают `wait` отдельной вершиной и не используют синтетический `route.start`.
+Элемент истории содержит `terminalAt`; сортировка завершённых и отменённых заявок
+выполняется по этому фактическому времени.
+
 **GET `/dispatch/router/technical-settings`** →
 
 ```json
@@ -466,7 +476,7 @@ SPA `/engineer/` (вход по коду, список заявок и обед�
 
 ## Настройки и показатели сравнения (18.09.2026)
 
-Техническая ревизия Router расширена `windowLatenessToleranceSec` (0…1200 секунд, default 0), `trafficEnabled` и `equipmentEnabled` (default true); Python использует snake_case. Передача — через существующие endpoint технических настроек и CAS contextVersion. Предыдущие поля обязательны и сохраняются. Окно клиента остаётся исходным, новая настройка допуска отличается от старого допуска дрейфа начала работы.
+Техническая ревизия Router содержит `windowLatenessToleranceSec` (0…1200 секунд, продуктовый default 600), `trafficEnabled` и `equipmentEnabled` (default true); Python использует snake_case. Передача — через существующие endpoint технических настроек и CAS contextVersion. Предыдущие поля обязательны и сохраняются. Окно клиента остаётся исходным; допуск ограничивает нормативное завершение после закрытия окна и отличается от допусков revalidation.
 
 Метрики сравнения дополнены `lateAssignedCount`, `totalLatenessSec`, `minWindowSlackSec` (null без назначений), `workloadSpreadSec`, `maxWorkloadSec`. Отсутствующие поля старых записей читаются с defaults 0/null; такие записи не доказывают измерение новых показателей. Полный смысл и формулы — `docs/solver.md`, сверочные значения — `docs/policy-efficiency.md`.
 

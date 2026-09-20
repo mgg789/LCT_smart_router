@@ -73,6 +73,16 @@ export class SnapshotBuilder {
       days.map((day) => day.engineerId),
       horizon,
     );
+    // An explicit ETA reserves the next currently assigned stop while the remaining
+    // plan is rebuilt. It is neither a GPS point nor a new Router contract field: sys
+    // removes that one stop from the free pool and restarts its owner at the known job
+    // location once the reported arrival plus service time has elapsed.
+    const reservations = await this.liveReservations(tx);
+    const liveAnchors = await this.liveRouteAnchors(
+      tx,
+      days.map((day) => day.engineerId),
+    );
+    const liveLunches = await this.activeLiveLunches(tx, days);
     const equipmentByEngineer = await this.remainingEquipment(tx, days, horizon);
 
     const engineers: SnapshotEngineer[] = [];
@@ -108,6 +118,9 @@ export class SnapshotBuilder {
         day,
         execution,
         equipmentByEngineer.get(day.engineerId) ?? equipmentStockOf(day),
+        reservations.get(day.engineerId) ?? null,
+        liveAnchors.get(day.engineerId) ?? null,
+        liveLunches.get(day.engineerId) ?? null,
       );
       if (!projected) {
         engineersWithoutStartLocation += 1;
@@ -126,6 +139,19 @@ export class SnapshotBuilder {
         lifecycle: 'submitted',
         assignmentState: { in: ['pending', 'assigned', 'unassigned'] },
         startedAt: null,
+        // LIVE keeps its "silently completed by schedule" assumption outside the
+        // request lifecycle so it never fabricates an execution fact. Router must still
+        // omit those elapsed stops from a subsequent remaining-day replan.
+        liveStates: {
+          none: {
+            OR: [
+              { assumedCompletedAt: { not: null } },
+              { assumedStartedAt: { not: null } },
+              { reportedEtaAt: { not: null } },
+            ],
+            workday: { status: 'running' },
+          },
+        },
       },
       orderBy: { arrivalOrder: 'asc' },
     });
@@ -217,9 +243,25 @@ export class SnapshotBuilder {
     day: EngineerDay,
     execution: Request | null,
     equipmentStock: { router: number; set_top_box: number; smart_speaker: number },
+    reservation: { request: Request; etaAt: number } | null,
+    liveAnchor: { request: Request; availableFrom: number } | null,
+    liveLunch: { lat: number; lon: number; availableFrom: number } | null,
   ): SnapshotEngineer | null {
-    const lat = execution?.lat ?? engineer.homeLat;
-    const lon = execution?.lon ?? engineer.homeLon;
+    const activeExecution = execution?.lifecycle === 'in_progress' ? execution : null;
+    const lat =
+      liveLunch?.lat ??
+      activeExecution?.lat ??
+      reservation?.request.lat ??
+      liveAnchor?.request.lat ??
+      execution?.lat ??
+      engineer.homeLat;
+    const lon =
+      liveLunch?.lon ??
+      activeExecution?.lon ??
+      reservation?.request.lon ??
+      liveAnchor?.request.lon ??
+      execution?.lon ??
+      engineer.homeLon;
     if (lat === null || lon === null) {
       return null;
     }
@@ -238,7 +280,13 @@ export class SnapshotBuilder {
      * context/33 section 7 forbids. This is a property of the engineer's state, not of the
      * moment we happen to publish.
      */
-    const continuation = execution?.continuationAvailableAt ?? null;
+    const continuation =
+      (liveLunch ? BigInt(liveLunch.availableFrom) : activeExecution?.continuationAvailableAt) ??
+      (reservation
+        ? BigInt(reservation.etaAt + reservation.request.serviceDurationSec)
+        : liveAnchor
+          ? BigInt(liveAnchor.availableFrom)
+          : (execution?.continuationAvailableAt ?? null));
     const availableFrom = continuation === null ? shiftStart : Number(continuation);
 
     return {
@@ -265,6 +313,117 @@ export class SnapshotBuilder {
         required: day.lunchTaken ? false : day.lunchRequired,
       },
     };
+  }
+
+  /** Durable owner of an ETA or silently active visit, one reservation per engineer. */
+  private async liveReservations(
+    tx: Tx,
+  ): Promise<Map<string, { request: Request; etaAt: number }>> {
+    const states = await tx.liveRequestState.findMany({
+      where: {
+        reservedEngineerId: { not: null },
+        assumedCompletedAt: null,
+        workday: { status: 'running' },
+        request: { lifecycle: 'submitted' },
+        OR: [{ reportedEtaAt: { not: null } }, { assumedStartedAt: { not: null } }],
+      },
+      include: { request: true },
+      orderBy: { updatedAt: 'desc' },
+    });
+    const result = new Map<string, { request: Request; etaAt: number }>();
+    for (const state of states) {
+      if (state.reservedEngineerId && !result.has(state.reservedEngineerId)) {
+        const etaAt = state.reportedEtaAt ?? state.assumedStartedAt;
+        if (etaAt !== null)
+          result.set(state.reservedEngineerId, { request: state.request, etaAt: Number(etaAt) });
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Projects the last LIVE vertex reached in the running workday.
+   *
+   * A cancellation has no `finished` fact by design, but the engineer still departed
+   * from that request vertex. Keeping this separate from execution facts lets the next
+   * route start at the factual location without pretending that cancelled work finished.
+   */
+  private async liveRouteAnchors(
+    tx: Tx,
+    engineerIds: string[],
+  ): Promise<Map<string, { request: Request; availableFrom: number }>> {
+    if (engineerIds.length === 0) return new Map();
+    const states = await tx.liveEngineerState.findMany({
+      where: {
+        engineerId: { in: engineerIds },
+        routeAnchorRequestId: { not: null },
+        routeAnchorReachedAt: { not: null },
+        workday: { status: 'running' },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+    const requestIds = states.flatMap((state) =>
+      state.routeAnchorRequestId ? [state.routeAnchorRequestId] : [],
+    );
+    const requests = await tx.request.findMany({ where: { id: { in: requestIds } } });
+    const requestsById = new Map(requests.map((request) => [request.id, request]));
+    const result = new Map<string, { request: Request; availableFrom: number }>();
+    for (const state of states) {
+      if (result.has(state.engineerId) || !state.routeAnchorRequestId) continue;
+      const request = requestsById.get(state.routeAnchorRequestId);
+      const availableFrom = state.routeAnchorDepartedAt ?? state.routeAnchorReachedAt;
+      if (request && availableFrom !== null) {
+        result.set(state.engineerId, { request, availableFrom: Number(availableFrom) });
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Keeps a replan from assigning work while an automatic lunch is still running.
+   *
+   * The start point and release time are a pair: after lunch begins, Router sees the
+   * persisted lunch vertex and cannot treat the previous request vertex as available.
+   */
+  private async activeLiveLunches(
+    tx: Tx,
+    days: EngineerDay[],
+  ): Promise<Map<string, { lat: number; lon: number; availableFrom: number }>> {
+    if (days.length === 0) return new Map();
+    const durationByEngineer = new Map(days.map((day) => [day.engineerId, day.lunchDurationSec]));
+    const states = await tx.liveEngineerState.findMany({
+      where: {
+        engineerId: { in: days.map((day) => day.engineerId) },
+        workday: { status: 'running' },
+        activeLunchLat: { not: null },
+        activeLunchLon: { not: null },
+        activeLunchStartedAt: { not: null },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+    const result = new Map<string, { lat: number; lon: number; availableFrom: number }>();
+    for (const state of states) {
+      if (result.has(state.engineerId)) continue;
+      const duration = durationByEngineer.get(state.engineerId);
+      if (
+        duration === null ||
+        duration === undefined ||
+        state.activeLunchLat === null ||
+        state.activeLunchLon === null ||
+        state.activeLunchStartedAt === null
+      )
+        continue;
+      const availableFrom = Number(state.activeLunchStartedAt) + duration;
+      // The vertex stays factual after the timer ends. A replan before the engineer
+      // reaches the next job must still start at lunch; Router combines this release
+      // value with planning_as_of itself.
+      result.set(state.engineerId, {
+        lat: state.activeLunchLat,
+        lon: state.activeLunchLon,
+        availableFrom,
+      });
+    }
+    return result;
   }
 
   /**

@@ -47,8 +47,10 @@ def test_dynamic_search_never_uses_planning_time_quotes(snapshot, graph):
     assert len({leg.travel_time_sec for route in output.main.routes for leg in route.legs}) > 1
 
 
-@pytest.mark.parametrize("minutes,assigned", [(0, 0), (5, 0), (10, 1), (15, 1), (20, 1)])
-def test_window_lateness_is_explicit_and_does_not_extend_shifts(snapshot, graph, minutes, assigned):
+@pytest.mark.parametrize("minutes,assigned", [(0, 0), (5, 0), (10, 0), (15, 0), (20, 1)])
+def test_regular_window_lateness_is_explicit_and_does_not_extend_shifts(
+    snapshot, graph, minutes, assigned
+):
     start = snapshot.planning_as_of
     request = snapshot.requests[0].model_copy(
         update={
@@ -57,14 +59,31 @@ def test_window_lateness_is_explicit_and_does_not_extend_shifts(snapshot, graph,
             "window_end_at": start - 600,
         }
     )
-    task = snapshot.model_copy(update={"requests": [request]})
-    settings = SearchSettings(access_buffer_sec=0, window_lateness_tolerance_sec=minutes * 60)
+    engineer = snapshot.engineers[0].model_copy(
+        update={
+            "lunch": snapshot.engineers[0].lunch.model_copy(
+                update={
+                    "enabled": True,
+                    "required": True,
+                    "duration_sec": 300,
+                    "window_start_at": start + 1000,
+                    "window_end_at": start + 1400,
+                }
+            )
+        }
+    )
+    task = snapshot.model_copy(update={"requests": [request], "engineers": [engineer]})
+    settings = SearchSettings(
+        access_buffer_sec=0,
+        lunches_enabled=True,
+        window_lateness_tolerance_sec=minutes * 60,
+    )
     result = solve(task, GraphTravel(graph), settings)
     for plan in (result.main, result.baseline):
         assert plan.summary.assigned_count == assigned
         assert plan.summary.late_assigned_count == assigned
-        assert plan.summary.total_lateness_sec == assigned * 600
-        assert plan.summary.min_window_slack_sec == (-600 if assigned else None)
+        assert plan.summary.total_lateness_sec == assigned * 1200
+        assert plan.summary.min_window_slack_sec == (-1200 if assigned else None)
     assert task.requests[0].window_end_at == start - 600
     short = task.engineers[0].model_copy(update={"shift_end_at": start + 1})
     result = solve(task.model_copy(update={"engineers": [short]}), GraphTravel(graph), settings)
@@ -85,6 +104,34 @@ def test_search_score_matches_independent_public_metrics(snapshot, graph, policy
     assert internal[1] + plan.summary.requests_total == public[1]
     state = evaluator.evaluate(0, tuple(r.request_id for r in task.requests))
     assert state == evaluator.from_route(routes[0])
+
+
+def test_completion_window_grace_tries_another_engineer(snapshot, graph):
+    """A late arrival must not consume a trip when only another crew can finish in time."""
+    start = snapshot.planning_as_of
+    request = snapshot.requests[0].model_copy(
+        update={
+            "window_start_at": start,
+            "window_end_at": start + 100,
+            "service_duration_sec": 600,
+        }
+    )
+    first = snapshot.engineers[0].model_copy(update={"available_from": start + 200})
+    second = snapshot.engineers[0].model_copy(
+        update={
+            "engineer_id": "eng-2",
+            "input_order": 1,
+            "start_location": request.location,
+            "available_from": start,
+        }
+    )
+    task = snapshot.model_copy(update={"requests": [request], "engineers": [first, second]})
+    output = solve(task, GraphTravel(graph), SearchSettings(access_buffer_sec=0))
+    assignment = output.main.assignments[0]
+    assert assignment.status == "assigned"
+    assert assignment.engineer_id == "eng-2"
+    stop = next(stop for route in output.main.routes for stop in route.stops if stop.request_id == request.request_id)
+    assert stop.end_at <= request.window_end_at + 600
 
 
 def test_comparison_preserves_fifo_and_no_policy_misses_a_better_shared_candidate(snapshot, graph):
@@ -188,6 +235,6 @@ def test_sla_protects_tight_window_when_total_start_delays_tie(snapshot, graph):
     a, b = [r.request_id for r in requests]
     early = assemble_plan(task, [fixed_order(task, task.engineers[0], [a, b], travel)])
     risky = assemble_plan(task, [fixed_order(task, task.engineers[0], [b, a], travel)])
-    assert early.summary.min_window_slack_sec == 1000
-    assert risky.summary.min_window_slack_sec == 700
+    assert early.summary.min_window_slack_sec == 700
+    assert risky.summary.min_window_slack_sec == 400
     assert policy_score(task, early) < policy_score(task, risky)

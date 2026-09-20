@@ -132,6 +132,7 @@ export class FactsService {
       context.tx,
       context.now,
       PUBLICATION_TRIGGERS.REQUEST_EXECUTION_STARTED,
+      { businessTime: context.businessTime },
     );
     return this.reload(context.tx, request.id);
   }
@@ -195,6 +196,7 @@ export class FactsService {
         context.tx,
         context.now,
         PUBLICATION_TRIGGERS.REQUEST_EXECUTION_VARIANCE,
+        { businessTime: context.businessTime },
       );
     }
 
@@ -240,10 +242,22 @@ export class FactsService {
       throw new SysError('NOT_FOUND', 'There is no working plan yet', { details: { requestId } });
     }
     const assignment = plan.assignments.find((item) => item.requestId === requestId);
-    if (assignment?.status !== 'assigned' || assignment.engineerId !== engineerId) {
-      throw SysError.forbidden('This work is not in your plan', { requestId });
+    if (assignment?.status === 'assigned' && assignment.engineerId === engineerId) {
+      return request;
     }
-    return request;
+    // An ETA is excluded from Router's free pool during a replan, but the engineer who
+    // reported it remains the owner until the visit is explicitly started or closes.
+    const reservation = await tx.liveRequestState.findFirst({
+      where: {
+        requestId,
+        reservedEngineerId: engineerId,
+        assumedCompletedAt: null,
+        workday: { status: 'running' },
+      },
+      select: { id: true },
+    });
+    if (reservation) return request;
+    throw SysError.forbidden('This work is not in your plan', { requestId });
   }
 
   private async write(

@@ -11,6 +11,7 @@ import { AlertsModule } from './orchestrator/alerts';
 import { EngineersModule } from './orchestrator/engineers';
 import { FactsModule } from './orchestrator/facts';
 import { ImportsModule } from './orchestrator/imports';
+import { LiveModule } from './orchestrator/live';
 import { PolicyModule } from './orchestrator/policy';
 import { RequestsModule } from './orchestrator/requests';
 import { ResetModule } from './orchestrator/reset';
@@ -43,6 +44,7 @@ import { RouterGatewayModule } from './routing/router-gateway';
     FactsModule,
     ImportsModule,
     ResetModule,
+    LiveModule,
     ApiModule,
   ],
 })

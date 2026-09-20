@@ -56,6 +56,10 @@ export interface RequestView {
   readonly expectedCompletionAt?: number | null;
   readonly continuationAvailableAt?: number | null;
   readonly overrunDetectedAt?: number | null;
+  /** Server-derived start inferred from an untouched plan; it is not an engineer confirmation. */
+  readonly assumedStartedAt?: number | null;
+  /** Server-derived completion inferred from an untouched plan; it is not an engineer confirmation. */
+  readonly assumedCompletedAt?: number | null;
   readonly completedAt: number | null;
   readonly cancelledAt: number | null;
 }

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import type { LiveEngineerState } from '../api/live';
 import type { DashboardSnapshot, EngineerDayView, EquipmentType } from '../api/types';
 import { equipmentLoadout } from '../domain/dashboard';
 import { initials, skillLabel } from '../lib/reasons';
@@ -9,6 +10,8 @@ interface EngineersPageProps {
   readonly pendingEngineerId: string | null;
   readonly rebuilding: boolean;
   readonly writesDisabled: boolean;
+  /** Optional for roster consumers that do not subscribe to the LIVE workday. */
+  readonly liveStates?: readonly LiveEngineerState[];
   readonly onAvailabilityChange: (engineerId: string, availability: 'online' | 'offline') => void;
   readonly onLinkAccount: (engineerId: string, email: string) => Promise<void>;
   readonly onUnlinkAccount: (engineerId: string) => Promise<void>;
@@ -21,6 +24,7 @@ export function EngineersPage({
   pendingEngineerId,
   rebuilding,
   writesDisabled,
+  liveStates,
   onAvailabilityChange,
   onLinkAccount,
   onUnlinkAccount,
@@ -30,6 +34,7 @@ export function EngineersPage({
     (left, right) => left.inputOrder - right.inputOrder,
   );
   const teamEquipment = engineers.flatMap((engineer) => equipmentLoadout(snapshot, engineer.id));
+  const liveByEngineerId = new Map((liveStates ?? []).map((state) => [state.id, state]));
   const totals = (['router', 'set_top_box', 'smart_speaker'] as const).map((type) => {
     const lines = teamEquipment.filter((line) => line.type === type);
     return {
@@ -73,6 +78,7 @@ export function EngineersPage({
               const day = engineer.day;
               const isOnline = day?.availability === 'online';
               const isPending = pendingEngineerId === engineer.id;
+              const liveState = liveByEngineerId.get(engineer.id);
               const loadout = equipmentLoadout(snapshot, engineer.id);
               return (
                 <li key={engineer.id} className="rounded-2xl border border-line p-4">
@@ -95,9 +101,7 @@ export function EngineersPage({
                           <span>
                             {isPending
                               ? 'Перестраиваем…'
-                              : isOnline
-                                ? 'На линии'
-                                : availabilityLabel(day?.availability ?? 'offline')}
+                              : liveLineLabel(liveState, day?.availability ?? 'offline')}
                           </span>
                           <input
                             type="checkbox"
@@ -344,4 +348,12 @@ function availabilityLabel(availability: string): string {
     return 'Техперерыв';
   }
   return 'Не на линии';
+}
+
+function liveLineLabel(state: LiveEngineerState | undefined, availability: string): string {
+  if (state?.lineStatus === 'pending') return 'Ожидает выхода';
+  if (state?.lineStatus === 'no_show_offline') return 'Не вышел на линию';
+  if (state?.lineStatus === 'technical_break') return 'Техперерыв';
+  if (state?.lineStatus === 'online') return 'На линии';
+  return availabilityLabel(availability);
 }

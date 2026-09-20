@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { BellRing, HardHat, Map as MapIcon, Plus, Settings, ShieldCog } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import type { LiveEngineerState, LiveWorkday } from '../api/live';
 import type { EquipmentType } from '../api/types';
 import { AlertsPage } from '../components/AlertsPage';
 import { AlertToasts } from '../components/AlertToasts';
@@ -59,6 +60,17 @@ export function DashboardPage() {
     () => (snapshot ? filterSnapshotByRegion(snapshot, selectedRegion) : null),
     [selectedRegion, snapshot],
   );
+  const liveEngineers = useMemo(
+    () => new Map(dash.liveWorkday?.engineers.map((engineer) => [engineer.id, engineer]) ?? []),
+    [dash.liveWorkday],
+  );
+  const liveProgress = useMemo(
+    () =>
+      new Map(
+        dash.liveWorkday?.engineers.map((engineer) => [engineer.id, engineer.progress]) ?? [],
+      ),
+    [dash.liveWorkday],
+  );
 
   useEffect(() => {
     if (selectedRegion !== ALL_REGIONS && !regions.some((region) => region.id === selectedRegion)) {
@@ -87,6 +99,37 @@ export function DashboardPage() {
           </button>
         </div>
       </div>
+    );
+  }
+
+  if (dash.liveLoading && !dash.liveWorkday) {
+    return (
+      <div className="flex h-full items-center justify-center bg-canvas text-sm text-muted">
+        Загружаем состояние рабочего дня…
+      </div>
+    );
+  }
+
+  if (dash.liveWorkday?.workday.status === 'pending') {
+    return (
+      <>
+        <WorkdayStartScreen
+          workday={dash.liveWorkday.workday}
+          loading={dash.startingWorkday}
+          error={dash.error}
+          onStart={() => void dash.startWorkday()}
+          onPrepare={() => setUploadOpen(true)}
+          onSignOut={() => void dash.signOut()}
+        />
+        <DataUploadModal
+          open={uploadOpen}
+          submitting={dash.uploadingData}
+          existingRegions={regions.map((region) => region.id)}
+          onClose={() => setUploadOpen(false)}
+          onUpload={dash.uploadDataset}
+          onImportOfficial={dash.importOfficialTzDataset}
+        />
+      </>
     );
   }
 
@@ -176,6 +219,13 @@ export function DashboardPage() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex items-center justify-end gap-3 px-5 py-3 max-sm:flex-wrap">
+          {dash.liveWorkday?.workday.status === 'running' ? (
+            <div className="mr-auto flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1.5 text-sm text-emerald-800">
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              LIVE · {formatClock(dash.liveWorkday.workday.liveNow)}
+              {dash.liveWorkday.workday.speedDurationSec ? ' · ускоренный день' : ''}
+            </div>
+          ) : null}
           <button
             type="button"
             onClick={() => setPolicyOpen(true)}
@@ -284,8 +334,14 @@ export function DashboardPage() {
                   План от {formatClock(snapshot.plan.plan?.planAsOf ?? snapshot.nowAt)}
                   {dash.rebuilding ? ' · перестраивается' : ''}
                 </p>
-                {dash.events[0] ? (
-                  <p className="mt-2 text-[12px] text-muted">{dash.events[0].text}</p>
+                {dash.events.length > 0 ? (
+                  <div className="mt-2 space-y-1" aria-live="polite">
+                    {dash.events.slice(0, 3).map((event) => (
+                      <p key={event.id} className="text-[12px] text-muted">
+                        {event.text}
+                      </p>
+                    ))}
+                  </div>
                 ) : null}
                 {projectedCoordinateCount > 0 ? (
                   <div className="mt-3 rounded-xl bg-canvas px-3 py-2 text-[12px] leading-5 text-muted">
@@ -311,6 +367,13 @@ export function DashboardPage() {
                 <ul className="mt-2 space-y-1">
                   {visibleEngineers.map((engineer) => {
                     const selected = engineer.engineerId === dash.selectedEngineerId;
+                    const liveState = liveEngineers.get(engineer.engineerId);
+                    const completedCount = dash.liveWorkday
+                      ? dash.liveWorkday.history.filter(
+                          (item) =>
+                            item.engineerId === engineer.engineerId && item.outcome === 'completed',
+                        ).length
+                      : engineer.doneCount;
                     return (
                       <li key={engineer.engineerId}>
                         <button
@@ -341,8 +404,9 @@ export function DashboardPage() {
                               {engineer.shiftStartAt && engineer.shiftEndAt
                                 ? `${formatClock(engineer.shiftStartAt)}–${formatClock(engineer.shiftEndAt)}`
                                 : 'смена не задана'}{' '}
-                              · выполнено {engineer.doneCount}/{engineer.assignedCount}
+                              · выполнено {completedCount}
                             </span>
+                            {liveState ? <LiveEngineerPipeline state={liveState} /> : null}
                           </span>
                         </button>
                       </li>
@@ -401,6 +465,7 @@ export function DashboardPage() {
                   snapshot={visibleSnapshot}
                   selectedEngineerId={dash.selectedEngineerId}
                   selectedRequestId={dash.selectedRequest?.id ?? null}
+                  progressByEngineer={liveProgress}
                   onSelectRequest={dash.selectRequest}
                 />
                 <AnimatePresence>
@@ -456,8 +521,16 @@ export function DashboardPage() {
               <RouteTimeline
                 snapshot={visibleSnapshot}
                 engineerName={dash.selectedEngineer?.displayName ?? 'инженера'}
+                engineerId={dash.selectedEngineerId}
                 route={dash.selectedRoute}
                 selectedRequestId={dash.selectedRequest?.id ?? null}
+                history={dash.liveWorkday?.history ?? []}
+                breaks={dash.liveWorkday?.breaks ?? []}
+                progress={
+                  dash.selectedEngineerId
+                    ? (liveEngineers.get(dash.selectedEngineerId)?.progress ?? null)
+                    : null
+                }
                 onSelectRequest={dash.selectRequest}
               />
             </section>
@@ -480,6 +553,7 @@ export function DashboardPage() {
             pendingEngineerId={dash.availabilityPendingId}
             rebuilding={dash.rebuilding || dash.writesDisabled}
             writesDisabled={dash.writesDisabled}
+            liveStates={dash.liveWorkday?.engineers ?? []}
             onAvailabilityChange={(engineerId, availability) =>
               void dash.updateEngineerAvailability(engineerId, availability)
             }
@@ -506,8 +580,153 @@ export function DashboardPage() {
           onOpen={() => setActiveTab('alerts')}
         />
       )}
+      {dash.liveWorkday?.workday.status === 'finished' ? (
+        <WorkdayFinishedPanel workday={dash.liveWorkday.workday} />
+      ) : null}
     </div>
   );
+}
+
+/** Dispatcher completion panel uses server totals so it cannot disagree with engineer facts. */
+function WorkdayFinishedPanel({ workday }: { readonly workday: LiveWorkday }) {
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/50 p-5">
+      <section className="w-full max-w-md rounded-3xl bg-white p-6 text-center shadow-xl">
+        <p className="text-sm text-muted">{formatDayTitle(workday.workDate)}</p>
+        <h1 className="mt-2 text-2xl font-semibold">Рабочий день завершён</h1>
+        <p className="mt-2 text-sm text-muted">
+          {workday.completionReason === 'schedule_exhausted'
+            ? 'Подходящих заявок с будущим окном больше нет.'
+            : 'Плановое время рабочего дня завершилось.'}
+        </p>
+        <div className="mt-5 grid grid-cols-2 gap-3 text-left text-sm">
+          <Stat label="Выполнено" value={workday.stats.completedCount} />
+          <Stat label="Отменено" value={workday.stats.cancelledCount} />
+          <Stat label="По графику" value={workday.stats.assumedCompletedCount} />
+          <Stat label="Проблемы" value={workday.stats.problemCount} />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { readonly label: string; readonly value: number }) {
+  return (
+    <div className="rounded-2xl bg-canvas p-3">
+      <p className="text-xs text-muted">{label}</p>
+      <strong className="mt-1 block text-xl">{value}</strong>
+    </div>
+  );
+}
+
+function WorkdayStartScreen({
+  workday,
+  loading,
+  error,
+  onStart,
+  onPrepare,
+  onSignOut,
+}: {
+  readonly workday: LiveWorkday;
+  readonly loading: boolean;
+  readonly error: string | null;
+  readonly onStart: () => void;
+  readonly onPrepare: () => void;
+  readonly onSignOut: () => void;
+}) {
+  return (
+    <main className="flex h-full items-center justify-center bg-canvas p-6 text-ink">
+      <section className="w-full max-w-xl rounded-3xl bg-white p-8 shadow-sm">
+        <span className="inline-flex rounded-full bg-bee/20 px-3 py-1 text-sm font-medium">
+          Диспетчерская
+        </span>
+        <h1 className="mt-5 text-3xl font-semibold">Рабочий день готов к запуску</h1>
+        <p className="mt-3 text-lg text-muted">
+          {formatDayTitle(workday.workDate)} · {formatClock(workday.liveNow)}
+        </p>
+        <div className="mt-6 grid grid-cols-2 gap-3">
+          <div className="rounded-2xl bg-canvas p-4">
+            <span className="block text-[12px] font-medium uppercase tracking-wide text-muted">
+              Заявки сегодня
+            </span>
+            <strong className="mt-1 block text-3xl">{workday.requestCount}</strong>
+          </div>
+          <div className="rounded-2xl bg-canvas p-4">
+            <span className="block text-[12px] font-medium uppercase tracking-wide text-muted">
+              Плановый старт
+            </span>
+            <strong className="mt-1 block text-3xl">{formatClock(workday.logicalStartAt)}</strong>
+          </div>
+        </div>
+        <p className="mt-5 text-sm leading-6 text-muted">
+          После запуска включится единое время дня. У инженеров будет 30 минут планового времени,
+          чтобы выйти на линию; далее не вышедшие будут исключены из следующей перестройки.
+        </p>
+        {error ? (
+          <p role="alert" className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </p>
+        ) : null}
+        <div className="mt-7 flex flex-wrap gap-3">
+          <button
+            type="button"
+            disabled={loading}
+            onClick={onStart}
+            className="rounded-full bg-bee px-5 py-3 font-semibold disabled:opacity-50"
+          >
+            {loading ? 'Запускаем…' : 'Начать рабочий день'}
+          </button>
+          <button
+            type="button"
+            disabled={loading}
+            onClick={onPrepare}
+            className="rounded-full border border-line px-5 py-3 text-sm font-medium disabled:opacity-50"
+          >
+            Подготовить данные
+          </button>
+          <button
+            type="button"
+            disabled={loading}
+            onClick={onSignOut}
+            className="px-3 py-3 text-sm text-muted underline disabled:opacity-50"
+          >
+            Выйти
+          </button>
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function LiveEngineerPipeline({ state }: { readonly state: LiveEngineerState }) {
+  const pipeline = livePipelineLabel(state);
+  return (
+    <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] ${pipeline.className}`}>
+      {pipeline.label}
+    </span>
+  );
+}
+
+function livePipelineLabel(state: LiveEngineerState): { label: string; className: string } {
+  if (state.pendingDelayProblem) {
+    return { label: 'Проблема: задержка', className: 'bg-red-50 text-red-700' };
+  }
+  if (state.lineStatus === 'technical_break') {
+    return { label: 'Тех. перерыв', className: 'bg-amber-50 text-amber-800' };
+  }
+  if (state.lineStatus === 'no_show_offline') {
+    return { label: 'Не вышел на линию', className: 'bg-red-50 text-red-700' };
+  }
+  if (state.activeRequestId) {
+    return {
+      label: `В заявке №${state.activeRequestId}`,
+      className: 'bg-emerald-50 text-emerald-800',
+    };
+  }
+  if (state.lineStatus === 'online') {
+    return { label: 'На линии · по плану', className: 'bg-emerald-50 text-emerald-800' };
+  }
+  return { label: 'Ожидает выхода на линию', className: 'bg-canvas text-muted' };
 }
 
 interface LoginScreenProps {

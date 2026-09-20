@@ -39,6 +39,10 @@ export const PUBLICATION_TRIGGERS = {
   LUNCH_RESTORED: 'lunch.restored',
   DATA_IMPORTED: 'data.imported',
   DATA_RESET: 'data.reset',
+  /** Dispatcher explicitly started a durable LIVE day and needs a t=0 Router result. */
+  LIVE_WORKDAY_STARTED: 'live.workday_started',
+  /** The no-marking policy advanced completed scheduled stops without fabricating facts. */
+  LIVE_SILENT_SCHEDULE_PROGRESS: 'live.silent_schedule_progress',
 } as const;
 
 export type PublicationTrigger = (typeof PUBLICATION_TRIGGERS)[keyof typeof PUBLICATION_TRIGGERS];

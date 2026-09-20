@@ -380,6 +380,7 @@ export class EngineersService {
       context.tx,
       context.now,
       PUBLICATION_TRIGGERS.ENGINEER_AVAILABILITY_CHANGED,
+      { businessTime: context.businessTime },
     );
 
     if (availability === 'offline' && options.daySummary) {

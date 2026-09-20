@@ -11,11 +11,15 @@ from core.contracts import EngineerRoute, Plan, RouterTaskSnapshot
 from core.geo import quote_at
 from core.policy import compile_policy
 from core.schedule import (
+    TERMINAL_WINDOW_LATENESS_TOLERANCE_SEC,
     TravelProvider,
     assemble_plan,
     eligible,
     fixed_order,
+    job_completion_limit,
     release_at,
+    terminal_eligible,
+    terminal_release_at,
     validate_plan,
 )
 
@@ -49,10 +53,15 @@ class RouteEvaluator:
         self.requests = {r.request_id: r for r in snapshot.requests}
         self.engineers = sorted(snapshot.engineers, key=lambda e: e.engineer_id)
         self.allowed = {
-            r.request_id: [i for i, e in enumerate(self.engineers) if eligible(snapshot, e, r)]
+            r.request_id: [
+                i
+                for i, e in enumerate(self.engineers)
+                if eligible(snapshot, e, r) or terminal_eligible(snapshot, e, r)
+            ]
             for r in snapshot.requests
         }
         self.releases = [release_at(snapshot, e) for e in self.engineers]
+        self.terminal_releases = [terminal_release_at(snapshot, e) for e in self.engineers]
         self.ends = [min(e.shift_end_at, snapshot.horizon_end_at) for e in self.engineers]
         self.cache: dict[tuple[int, tuple[str, ...]], RouteState | None] = {}
         self.evaluations = 0
@@ -73,6 +82,8 @@ class RouteEvaluator:
     def _evaluate(self, index: int, jobs: tuple[str, ...]) -> RouteState | None:
         engineer = self.engineers[index]
         release = self.releases[index]
+        if release is None and len(jobs) == 1:
+            release = self.terminal_releases[index]
         if release is None:
             return None if jobs else RouteState(jobs)
         if any(index not in self.allowed[job] for job in jobs):
@@ -84,7 +95,7 @@ class RouteEvaluator:
         travel = distance = urgent = late = lateness = delay = 0
         slack = None
         stock = engineer.equipment_stock.model_dump()
-        for job in jobs:
+        for position, job in enumerate(jobs):
             request = self.requests[job]
             if request.required_equipment is not None:
                 stock[request.required_equipment] -= 1
@@ -95,8 +106,18 @@ class RouteEvaluator:
                 return None
             start = max(clock + road.duration_sec, request.window_start_at)
             clock = start + request.service_duration_sec
-            margin = request.window_end_at - start
-            if margin < -self.tolerance or clock > self.ends[index]:
+            margin = request.window_end_at - clock
+            window_tolerance = max(
+                self.tolerance,
+                TERMINAL_WINDOW_LATENESS_TOLERANCE_SEC if position == len(jobs) - 1 else 0,
+            )
+            if (
+                margin < -window_tolerance
+                or clock
+                > job_completion_limit(
+                    self.snapshot, engineer, terminal=position == len(jobs) - 1
+                )
+            ):
                 return None
             travel += road.duration_sec
             distance += road.distance_m
@@ -113,7 +134,7 @@ class RouteEvaluator:
     def from_route(self, route: EngineerRoute) -> RouteState:
         """Convert canonical lunch/baseline routes to the same score representation."""
         stops = [s for s in route.stops if s.kind == "job"]
-        slacks = [self.requests[s.request_id].window_end_at - s.start_at for s in stops]
+        slacks = [self.requests[s.request_id].window_end_at - s.end_at for s in stops]
         m = route.metrics
         engineer = next(e for e in self.engineers if e.engineer_id == route.engineer_id)
         missed = int(

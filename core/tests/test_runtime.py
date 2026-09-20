@@ -202,6 +202,7 @@ def test_lunches_are_disabled_by_default():
     """The system policy must require an explicit operator opt-in for lunches."""
     assert SearchSettings().lunches_enabled is False
     assert RouterTechnicalSettings().lunches_enabled is False
+    assert RouterTechnicalSettings().window_lateness_tolerance_sec == 600
 
 
 def test_v2_settings_api_updates_complete_revision(tmp_path, snapshot, graph):

@@ -367,7 +367,7 @@ def load_official_region(
                 "lunch_taken": False,
                 "lunch": {
                     "enabled": True,
-                    "duration_sec": 45 * 60,
+                    "duration_sec": 30 * 60,
                     "window_start_at": _epoch(local_day, "11:20", zone),
                     "window_end_at": _epoch(local_day, "15:00", zone),
                     "required": False,

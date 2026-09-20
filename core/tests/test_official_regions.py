@@ -83,14 +83,14 @@ def test_all_official_work_types_use_normative_on_site_duration_only():
 
 
 def test_official_import_emits_regions_and_optional_lunch_window():
-    """Every official pool carries isolation and the agreed 45-minute lunch input."""
+    """Every official pool carries isolation and the agreed 30-minute lunch input."""
     for region in ("east", "southeast", "south_central"):
         scenario = load_official_region(DATASET, region)
         assert {request.region for request in scenario.snapshot.requests} == {region}
         assert {engineer.region for engineer in scenario.snapshot.engineers} == {region}
         for engineer in scenario.snapshot.engineers:
             assert engineer.lunch.enabled and not engineer.lunch.required
-            assert engineer.lunch.duration_sec == 45 * 60
+            assert engineer.lunch.duration_sec == 30 * 60
             assert (
                 engineer.lunch.window_end_at - engineer.lunch.window_start_at == 3 * 3600 + 40 * 60
             )

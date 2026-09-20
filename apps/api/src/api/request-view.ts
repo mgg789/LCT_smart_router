@@ -46,9 +46,15 @@ export interface RequestView {
   readonly overrunDetectedAt: number | null;
   readonly completedAt: number | null;
   readonly cancelledAt: number | null;
+  /** LIVE's schedule-based assumption, distinct from confirmed lifecycle/facts. */
+  readonly assumedStartedAt: number | null;
+  readonly assumedCompletedAt: number | null;
 }
 
-export function toRequestView(request: Request): RequestView {
+export function toRequestView(
+  request: Request,
+  live: { assumedStartedAt: bigint | null; assumedCompletedAt: bigint | null } | null = null,
+): RequestView {
   const workType = request.workTypeHd === null ? null : findWorkType(request.workTypeHd);
   const actualDurationSec = actualDuration(request.startedAt, request.completedAt);
   return {
@@ -89,6 +95,8 @@ export function toRequestView(request: Request): RequestView {
     overrunDetectedAt: nullableNumber(request.overrunDetectedAt),
     completedAt: nullableNumber(request.completedAt),
     cancelledAt: nullableNumber(request.cancelledAt),
+    assumedStartedAt: live === null ? null : nullableNumber(live.assumedStartedAt),
+    assumedCompletedAt: live === null ? null : nullableNumber(live.assumedCompletedAt),
   };
 }
 
