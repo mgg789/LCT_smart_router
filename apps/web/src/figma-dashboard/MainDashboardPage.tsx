@@ -59,6 +59,8 @@ import { Copyable } from './Copyable';
 import { shortRequestId } from './requestsTable';
 import { ToastColumn } from './ToastColumn';
 import {
+  isNavLocked,
+  sidebarWheelNav,
   stackSlideDir,
   stackSlideEnter,
   stackSlideExit,
@@ -383,6 +385,7 @@ export function MainDashboardPage() {
           activeNav={activeNav}
           motionOn={motionOn}
           onSelect={(id) => {
+            if (isNavLocked(id)) return;
             if (id === 'requests' && activeNav === 'requests') {
               setOpenedRequestId(null);
             }
@@ -623,12 +626,6 @@ export function MainDashboardPage() {
                   onSetAvailability={(engineerId, availability) => {
                     void dash.updateEngineerAvailability(engineerId, availability);
                   }}
-                  onOpenChat={(engineerId) => {
-                    dash.selectEngineer(engineerId);
-                    setStackDir(stackSlideDir(stackNav, 'chats'));
-                    setStackNav('chats');
-                    setActiveNav('chats');
-                  }}
                 />
               ) : null}
               {stackViewKey(stackNav) === 'main' ? (
@@ -751,9 +748,26 @@ function SidebarNav({
   motionOn: boolean;
 }) {
   const activeIndex = NAV_ITEMS.findIndex((item) => item.id === activeNav);
+  const railRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    const rail = railRef.current;
+    if (!rail) return;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const next = sidebarWheelNav(activeNav, event.deltaY);
+      if (next) onSelect(next);
+    };
+    rail.addEventListener('wheel', onWheel, { passive: false });
+    return () => rail.removeEventListener('wheel', onWheel);
+  }, [activeNav, onSelect]);
 
   return (
-    <aside className="absolute left-0 top-0 z-20 h-[1080px] w-[158px] overflow-visible rounded-br-[20px] rounded-tr-[20px] border-r-[0.5px] border-solid border-[rgba(158,158,158,0.3)] bg-white">
+    <aside
+      ref={railRef}
+      className="absolute left-0 top-0 z-20 h-[1080px] w-[158px] overflow-visible rounded-br-[20px] rounded-tr-[20px] border-r-[0.5px] border-solid border-[rgba(158,158,158,0.3)] bg-white"
+    >
       <div className="absolute left-[79px] top-[56px] -translate-x-1/2 -translate-y-1/2">
         <FigmaIcon src={FIGMA_ASSETS.logo} alt="LCT Smart Router" width={64} height={64} />
       </div>
@@ -767,13 +781,19 @@ function SidebarNav({
         />
         {NAV_ITEMS.map((item) => {
           const active = item.id === activeNav;
+          const locked = isNavLocked(item.id);
           const icon = NAV_ICON_BOX[item.id];
           return (
             <button
               key={item.id}
               type="button"
+              disabled={locked}
+              aria-disabled={locked}
+              title={locked ? 'Скоро' : undefined}
               onClick={() => onSelect(item.id)}
-              className="relative flex h-[74px] w-full items-end justify-center pb-[12px] transition-transform duration-200 ease-out hover:scale-[1.02]"
+              className={`relative flex h-[74px] w-full items-end justify-center pb-[12px] transition-transform duration-200 ease-out ${
+                locked ? 'cursor-not-allowed opacity-35' : 'hover:scale-[1.02]'
+              }`}
               style={{ marginBottom: NAV_ITEM_GAP }}
             >
               <FigmaIcon
@@ -1928,7 +1948,10 @@ function DetailPanel({
             </div>
             <button
               type="button"
-              className="flex h-[67px] flex-1 items-center justify-center rounded-[20px] bg-figma-bee px-[16px] transition-transform duration-150 hover:scale-[1.01]"
+              disabled
+              aria-disabled
+              title="Скоро"
+              className="flex h-[67px] flex-1 cursor-not-allowed items-center justify-center rounded-[20px] bg-figma-bee px-[16px] opacity-45"
             >
               <span className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
                 Написать

@@ -63,11 +63,11 @@ export function AlertsView({
       </FigmaText>
       <motion.button
         type="button"
-        className="absolute left-[430px] z-20 flex h-[79px] w-[426px] items-center rounded-full bg-figma-ink pl-[10px] pr-[10px]"
+        disabled
+        aria-disabled
+        title="Скоро"
+        className="absolute left-[430px] z-20 flex h-[79px] w-[426px] cursor-not-allowed items-center rounded-full bg-figma-ink pl-[10px] pr-[10px] opacity-45"
         style={{ top: TITLE_TOP - 16 }}
-        whileHover={animate ? { scale: 1.02 } : undefined}
-        whileTap={animate ? { scale: 0.98 } : undefined}
-        transition={{ duration: 0.2 }}
       >
         <span className="flex size-[60px] items-center justify-center rounded-full bg-figma-bee">
           <FigmaIcon src={FIGMA_ASSETS.iconSparkles} alt="" width={26} height={26} />

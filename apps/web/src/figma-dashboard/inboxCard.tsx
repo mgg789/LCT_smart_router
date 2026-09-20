@@ -163,7 +163,10 @@ function InboxAiLink({ tone }: { tone: 'ink' | 'white' }) {
   return (
     <button
       type="button"
-      className={`group flex items-center gap-[8px] font-semibold text-[18px] tracking-[-0.54px] transition-opacity duration-300 ease-out hover:opacity-80 ${
+      disabled
+      aria-disabled
+      title="Скоро"
+      className={`flex cursor-not-allowed items-center gap-[8px] font-semibold text-[18px] tracking-[-0.54px] opacity-45 ${
         tone === 'white' ? 'text-white' : 'text-figma-ink'
       }`}
     >
@@ -173,9 +176,7 @@ function InboxAiLink({ tone }: { tone: 'ink' | 'white' }) {
         alt=""
         width={22}
         height={22}
-        className={`transition-transform duration-300 ease-out group-hover:translate-x-[2px] ${
-          tone === 'white' ? 'brightness-0 invert' : undefined
-        }`}
+        className={tone === 'white' ? 'brightness-0 invert' : undefined}
       />
     </button>
   );

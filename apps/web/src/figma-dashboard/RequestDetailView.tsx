@@ -175,11 +175,10 @@ function RequestDetailPanel({
       <div className="mt-auto flex flex-col gap-[16px]">
         <motion.button
           type="button"
-          disabled={!model.email}
-          className="flex h-[61px] w-[430px] items-center justify-center rounded-[20px] border-[0.5px] border-white bg-figma-ink font-medium text-[20px] text-white transition-colors hover:bg-white/10 disabled:opacity-50 disabled:hover:bg-figma-ink"
-          whileHover={motionOn && model.email ? { scale: 1.03, filter: 'brightness(1.08)' } : undefined}
-          whileTap={motionOn && model.email ? { scale: 0.98 } : undefined}
-          transition={{ duration: 0.16 }}
+          disabled
+          aria-disabled
+          title="Скоро"
+          className="flex h-[61px] w-[430px] cursor-not-allowed items-center justify-center rounded-[20px] border-[0.5px] border-white bg-figma-ink font-medium text-[20px] text-white opacity-45"
         >
           Написать клиенту
         </motion.button>

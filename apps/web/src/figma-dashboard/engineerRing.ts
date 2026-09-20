@@ -24,7 +24,7 @@ export const RING_ORIGIN = {
   y: RING_CENTER.y + RING_RADIUS,
 } as const;
 
-const LEAN_MAX_DEG = 22;
+const LEAN_MAX_DEG = 34;
 const OUTER_BLUR_PX = 16;
 
 /** Pause after a key tap before hold-spin starts. */
@@ -76,14 +76,15 @@ export type RingCardPose = {
 export function ringPose(slot: number): RingCardPose {
   const angleDeg = slot * RING_ANGLE_STEP_DEG;
   const angleRad = (angleDeg * Math.PI) / 180;
-  const t = Math.min(1, Math.abs(slot) / RING_SLOT_SPAN);
-  const outer = Math.max(0, (Math.abs(slot) - 1) / RING_SLOT_SPAN);
+  const abs = Math.abs(slot);
+  const t = Math.min(1, abs / RING_SLOT_SPAN);
+  const outer = Math.max(0, (abs - 1) / RING_SLOT_SPAN);
   return {
     slot,
     x: RING_ORIGIN.x + RING_RADIUS * Math.sin(angleRad),
     y: RING_ORIGIN.y - RING_RADIUS * Math.cos(angleRad),
     rotateZ: angleDeg * 1.75,
-    lean: LEAN_MAX_DEG * t,
+    lean: abs < 0.08 ? 0 : LEAN_MAX_DEG * Math.min(1, abs),
     blur: OUTER_BLUR_PX * outer,
     zIndex: Math.round(24 - Math.abs(slot) * 6),
     photo: t,

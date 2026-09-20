@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isNavLocked,
   isStackNav,
+  sidebarWheelNav,
   stackNavIndex,
   stackSlideDir,
   stackSlideEnter,
@@ -38,5 +40,15 @@ describe('dashboardSlide', () => {
     expect(stackSlideEnter(-1)).toEqual({ y: '-100%' });
     expect(stackSlideExit(-1)).toEqual({ y: '100%' });
     expect(stackSlideEnter(0)).toEqual({ y: '0%' });
+  });
+
+  it('skips locked chats / AI when the sidebar wheel steps', () => {
+    expect(isNavLocked('chats')).toBe(true);
+    expect(isNavLocked('ai')).toBe(true);
+    expect(isNavLocked('engineers')).toBe(false);
+    expect(sidebarWheelNav('policy', 80)).toBe('day');
+    expect(sidebarWheelNav('day', -40)).toBe('policy');
+    expect(sidebarWheelNav('alerts', 10)).toBe('policy');
+    expect(sidebarWheelNav('policy', 0)).toBeNull();
   });
 });

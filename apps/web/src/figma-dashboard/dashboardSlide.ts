@@ -10,6 +10,30 @@ export type StackNavId = (typeof STACK_NAV)[number];
 
 export type StackViewKey = 'main' | 'requests' | 'engineers' | 'alerts' | 'policy';
 
+/** Sidebar tabs parked until chats / AI ship. */
+export const LOCKED_NAV = new Set<NavItemId>(['chats', 'ai']);
+
+/**
+ * True while chats / AI stay out of the demo.
+ */
+export function isNavLocked(id: NavItemId): boolean {
+  return LOCKED_NAV.has(id);
+}
+
+/**
+ * Next unlocked sidebar tab. Wheel-forward (positive deltaY) goes down the list.
+ */
+export function sidebarWheelNav(current: NavItemId, deltaY: number): NavItemId | null {
+  if (deltaY === 0) return null;
+  const unlocked = STACK_NAV.filter((id) => !LOCKED_NAV.has(id));
+  if (unlocked.length === 0) return null;
+  const step = deltaY > 0 ? 1 : -1;
+  const from = unlocked.indexOf(current as StackNavId);
+  const start = from >= 0 ? from : 0;
+  const next = unlocked[(start + step + unlocked.length) % unlocked.length];
+  return next && next !== current ? next : null;
+}
+
 /**
  * True when the nav item lives in the vertical stack.
  */

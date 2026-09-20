@@ -151,31 +151,27 @@ body {
 }
 
 .engineer-ring-stage {
-  perspective: 1400px;
-  perspective-origin: 50% 42%;
+  perspective: 1600px;
+  perspective-origin: 50% 28%;
+  transform-style: preserve-3d;
   touch-action: none;
 }
 
 .engineer-ring-card {
   visibility: hidden;
   transform-origin: 50% 50%;
+  transform-style: preserve-3d;
+  perspective: 620px;
 }
 
 .engineer-ring-card-face {
   transform-origin: 50% 100%;
+  transform-style: preserve-3d;
   backface-visibility: hidden;
 }
 
 .engineer-ring-card-fog {
   filter: blur(16px);
-}
-
-.engineer-ring-card-shade {
-  opacity: 0;
-}
-
-.engineer-ring-card-center .engineer-ring-card-shade {
-  opacity: 1;
 }
 
 .engineer-ring-fog {

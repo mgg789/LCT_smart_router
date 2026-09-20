@@ -52,7 +52,6 @@ export function EngineersView({
   onSelectEngineer,
   onLinkEmail,
   onSetAvailability,
-  onOpenChat,
 }: {
   snapshot: DashboardSnapshot | null;
   selectedEngineerId: string | null;
@@ -61,7 +60,6 @@ export function EngineersView({
   onSelectEngineer: (engineerId: string) => void;
   onLinkEmail: (engineerId: string, email: string) => Promise<void>;
   onSetAvailability: (engineerId: string, availability: 'online' | 'offline') => void;
-  onOpenChat: (engineerId: string) => void;
 }) {
   const reduceMotion = useReducedMotion();
   const roster = useMemo(() => engineerProfilesFromSnapshot(snapshot), [snapshot]);
@@ -69,6 +67,7 @@ export function EngineersView({
   const [focusedIndex, setFocusedIndex] = useState(0);
   const [ringAnchor, setRingAnchor] = useState(0);
   const [query, setQuery] = useState('');
+  const [searchFocused, setSearchFocused] = useState(false);
   const [searchHeld, setSearchHeld] = useState<number | null>(null);
   const [emailOpen, setEmailOpen] = useState(false);
   const [emailDraft, setEmailDraft] = useState('');
@@ -129,14 +128,12 @@ export function EngineersView({
         continue;
       }
       const pose = ringPose(slot);
-      const selected = Math.abs(slot) < 0.5;
       bind.root.style.visibility = 'visible';
       bind.root.style.pointerEvents = 'auto';
       bind.root.style.zIndex = String(pose.zIndex);
       bind.root.style.transform = `translate3d(${pose.x - RING_CARD.width / 2}px, ${pose.y - RING_CARD.height / 2}px, 0) rotate(${pose.rotateZ}deg)`;
       bind.inner.style.transform = `rotateX(${pose.lean}deg)`;
       bind.root.classList.toggle('engineer-ring-card-fog', pose.blur > 0);
-      bind.root.classList.toggle('engineer-ring-card-center', selected);
     }
   }
 
@@ -454,7 +451,6 @@ export function EngineersView({
               key={mount.key}
               logical={mount.key}
               engineer={item}
-              selected={Math.abs(mount.slot) < 0.5}
               onBind={(bind) => {
                 if (bind) bindsRef.current.set(String(bind.logical), bind);
                 else bindsRef.current.delete(String(mount.key));
@@ -469,12 +465,11 @@ export function EngineersView({
           <motion.button
             type="button"
             data-eng-chrome
-            className="absolute flex h-[51px] w-[225px] items-center rounded-[27px] bg-figma-bee px-[16px]"
+            disabled
+            aria-disabled
+            title="Скоро"
+            className="absolute flex h-[51px] w-[225px] cursor-not-allowed items-center rounded-[27px] bg-figma-bee px-[16px] opacity-45"
             style={{ left: RING_CENTER.x - 112.5, top: 614 }}
-            whileHover={motionOn ? { scale: 1.03, filter: 'brightness(1.08)' } : undefined}
-            whileTap={motionOn ? { scale: 0.98 } : undefined}
-            transition={tap}
-            onClick={() => onOpenChat(focused.id)}
           >
             <FigmaText className="font-bold text-[20px] text-figma-ink">Перейти в чат</FigmaText>
             <FigmaIcon
@@ -487,27 +482,39 @@ export function EngineersView({
           </motion.button>
         ) : null}
 
-        <label
+        <motion.label
           data-eng-chrome
-          className="absolute flex h-[51px] w-[284px] items-center rounded-[27px] bg-white px-[16px]"
+          className="absolute flex h-[51px] w-[284px] origin-center items-center rounded-[27px] bg-white px-[16px] pr-[54px]"
           style={{ left: 895, top: 960 }}
+          animate={
+            !motionOn || reduceMotion
+              ? undefined
+              : searchFocused
+                ? { scale: 1.045, boxShadow: '0 10px 28px rgba(39,41,48,0.12)' }
+                : { scale: 1, boxShadow: '0 0 0 rgba(39,41,48,0)' }
+          }
+          transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
         >
           <input
             ref={searchInputRef}
             value={query}
             onChange={(event) => onSearchChange(event.target.value)}
+            onFocus={() => setSearchFocused(true)}
+            onBlur={() => setSearchFocused(false)}
             placeholder="Найти инженера"
-            className="w-[220px] bg-transparent font-medium text-[16px] text-figma-ink outline-none placeholder:text-figma-ink"
+            className="w-full bg-transparent font-medium text-[16px] text-figma-ink outline-none placeholder:text-figma-ink"
           />
-          <button
+          <motion.button
             type="button"
             className="absolute right-[4px] top-1/2 size-[43px] -translate-y-1/2"
             aria-label="Найти инженера"
             onClick={() => searchInputRef.current?.focus()}
+            animate={!motionOn || reduceMotion ? undefined : { scale: searchFocused ? 1.1 : 1 }}
+            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
           >
             <FigmaIcon src={FIGMA_ASSETS.engSearch} alt="" width={43} height={43} />
-          </button>
-        </label>
+          </motion.button>
+        </motion.label>
       </div>
     </section>
   );
@@ -727,12 +734,10 @@ function EngineerActivityPane({ engineer }: { engineer: EngineerProfile }) {
 function EngineerRingCard({
   logical,
   engineer,
-  selected,
   onBind,
 }: {
   logical: number;
   engineer: EngineerProfile;
-  selected: boolean;
   onBind: (bind: CardBind | null) => void;
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -765,10 +770,9 @@ function EngineerRingCard({
         <img
           src={portrait}
           alt=""
-          className="pointer-events-none absolute left-[91px] top-[-12px] size-[254px] object-cover blur-[15px]"
-          style={{ opacity: selected ? 0.22 : 0.75 }}
+          className="pointer-events-none absolute left-[91px] top-[-12px] size-[254px] object-cover blur-[15px] opacity-75"
         />
-        <div className="engineer-ring-card-shade pointer-events-none absolute inset-0 bg-[#272930]/70" />
+        <div className="pointer-events-none absolute inset-0 bg-[#272930]/25" />
         <div className="absolute bottom-[16px] left-[26px] right-[26px]">
           <FigmaText className="figma-nowrap overflow-hidden text-ellipsis font-murs text-[24px] tracking-[0.48px] text-white">
             {engineer.givenName}

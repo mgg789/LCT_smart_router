@@ -90,10 +90,19 @@ export function engineerOfficeLabel(region: string | null): string {
 }
 
 /**
- * Stable portrait slot so the same engineer keeps the same photo on the ring.
+ * Portrait slot stays with the engineer: brigade number when present, else id hash.
  */
-export function engineerPhotoIndex(engineerId: string, portraitCount: number): number {
+export function engineerPhotoIndex(
+  engineerId: string,
+  portraitCount: number,
+  displayName = '',
+): number {
   if (portraitCount <= 0) return 0;
+  const match = displayName.match(/Бригада\s+(\d+)/i);
+  if (match) {
+    const n = Number(match[1]);
+    if (Number.isFinite(n) && n > 0) return (n - 1) % portraitCount;
+  }
   let hash = 0;
   for (let i = 0; i < engineerId.length; i += 1) {
     hash = (hash * 31 + engineerId.charCodeAt(i)) >>> 0;
@@ -170,7 +179,7 @@ export function engineerProfilesFromSnapshot(snapshot: DashboardSnapshot | null)
         officeLabel: engineerOfficeLabel(engineer.region),
         assignedCount,
         cardStatus: cardStatus(activity, engineer.day?.availability ?? null, assignedCount),
-        photoIndex: engineerPhotoIndex(engineer.id, 3),
+        photoIndex: engineerPhotoIndex(engineer.id, 3, engineer.displayName),
         availability: engineer.day?.availability ?? null,
         activity,
       };
