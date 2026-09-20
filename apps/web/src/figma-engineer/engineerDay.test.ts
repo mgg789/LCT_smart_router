@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import type { EngineerDayView, EngineerPlanResponse, PlanStopView, RequestView } from '../api/types';
+import type {
+  EngineerDayView,
+  EngineerPlanResponse,
+  PlanStopView,
+  RequestView,
+} from '../api/types';
 import { DESIGN_PREVIEW_DAY, DESIGN_PREVIEW_PLAN } from './designPreview';
-import { engineerListItems, engineerLunchWindow, isOpenJob, missingRequestIds } from './engineerDay';
+import {
+  engineerListItems,
+  engineerLunchWindow,
+  isOpenJob,
+  missingRequestIds,
+} from './engineerDay';
 
 function stop(partial: Partial<PlanStopView> & Pick<PlanStopView, 'kind'>): PlanStopView {
   return {
@@ -142,8 +152,16 @@ describe('engineerDay', () => {
     );
 
     expect(items).toHaveLength(2);
-    expect(items[0]).toMatchObject({ kind: 'job', variant: 'regular', request: { id: 'req-done' } });
-    expect(items[1]).toMatchObject({ kind: 'job', variant: 'upcoming', request: { id: 'req-next' } });
+    expect(items[0]).toMatchObject({
+      kind: 'job',
+      variant: 'regular',
+      request: { id: 'req-done' },
+    });
+    expect(items[1]).toMatchObject({
+      kind: 'job',
+      variant: 'upcoming',
+      request: { id: 'req-next' },
+    });
   });
 
   it('appends the day lunch window when the route has no lunch stop', () => {
@@ -159,10 +177,21 @@ describe('engineerDay', () => {
     });
   });
 
+  it('uses actual lunch time consistently and can suppress a completed planned lunch', () => {
+    const stale = plan([stop({ kind: 'lunch', startAt: 500, endAt: 650 })], []);
+    const actual = engineerLunchWindow(stale, day, { startAt: 600, endAt: 750 });
+    expect(actual).toEqual({ kind: 'lunch', startAt: 600, endAt: 750 });
+    expect(engineerListItems(stale, day, actual)).toEqual([actual]);
+    expect(engineerListItems(stale, day, null)).toEqual([]);
+  });
+
   it('lists request ids that still need a fetch', () => {
     expect(
       missingRequestIds(
-        plan([stop({ kind: 'job', requestId: 'req-missing', sequence: 1 })], [request({ id: 'req-1' })]),
+        plan(
+          [stop({ kind: 'job', requestId: 'req-missing', sequence: 1 })],
+          [request({ id: 'req-1' })],
+        ),
       ),
     ).toEqual(['req-missing']);
   });

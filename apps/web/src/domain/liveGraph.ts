@@ -42,7 +42,10 @@ export function projectLiveGraph(
   progress: LiveRouteProgress | null,
   visibleRequestIds?: ReadonlySet<string>,
 ): LiveGraphProjection {
-  const routeNodes = stableRouteNodes(route);
+  // A durable lunch fact supersedes the mutable plan, including its coordinates.
+  const routeNodes = stableRouteNodes(route).map((node) =>
+    node.kind === 'lunch' && progress?.lunch ? nodeFromPoint(progress.lunch, node.sequence) : node,
+  );
   const origin = progress ? nodeFromPoint(progress.origin, 0) : (routeNodes[0] ?? null);
   const planned = routeNodes.filter((node) => node.kind !== 'start');
   const factual = progress ? [progress.anchor, progress.lunch, progress.next].filter(isPoint) : [];
@@ -201,7 +204,7 @@ function projectMapNodes(
             node.kind !== 'lunch' || progress.lunch !== null || node.at > progress.occurredAt,
         );
   const prefix = anchor.kind === 'start' ? [origin ?? anchor] : [anchor];
-  const activeSpan = lunch && next ? [lunch, next] : next ? [next] : [];
+  const activeSpan = lunch ? [lunch, ...(next ? [next] : [])] : next ? [next] : [];
   return dedupeNodes([...prefix, ...activeSpan, ...afterAnchor]);
 }
 

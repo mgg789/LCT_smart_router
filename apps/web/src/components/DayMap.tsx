@@ -9,6 +9,7 @@ import {
   projectLiveGraph,
 } from '../domain/liveGraph';
 import { localMapStyle } from '../domain/localBasemap';
+import { ONLINE_MAP_STYLE, watchMapStartup } from '../domain/mapAvailability';
 import {
   MAP_CANVAS,
   MAP_INK,
@@ -66,11 +67,7 @@ export interface VisiblePlannedSegment extends MapRouteSegment {
   readonly toKey: string;
 }
 
-/**
- * Keeps a lunch marker visible when Router anchors the break at the preceding
- * or following visit. The factual route coordinates stay untouched; only the
- * marker is placed halfway between its adjacent drawable vertices.
- */
+/** Keeps lunch at its real location, including a location shared with a job. */
 export function lunchMarkerCoordinates(
   nodes: readonly LiveGraphNode[],
   lunchIndex: number,
@@ -79,15 +76,7 @@ export function lunchMarkerCoordinates(
   if (lunch?.kind !== 'lunch') {
     throw new RangeError('lunchIndex must reference a lunch node');
   }
-  const previous = nodes.slice(0, lunchIndex).findLast((node) => node.kind !== 'lunch');
-  const following = nodes.slice(lunchIndex + 1).find((node) => node.kind !== 'lunch');
-  if (!previous || !following) return [lunch.lon, lunch.lat];
-  const overlapsAdjacent =
-    (lunch.lat === previous.lat && lunch.lon === previous.lon) ||
-    (lunch.lat === following.lat && lunch.lon === following.lon);
-  return overlapsAdjacent
-    ? [(previous.lon + following.lon) / 2, (previous.lat + following.lat) / 2]
-    : [lunch.lon, lunch.lat];
+  return [lunch.lon, lunch.lat];
 }
 
 /**
@@ -190,8 +179,6 @@ function pointWithoutProjectionFields(point: LiveRouteProgress['anchor']) {
   };
 }
 
-const STYLE_URL = 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json';
-
 export function DayMap({
   snapshot,
   selectedEngineerId,
@@ -236,7 +223,7 @@ export function DayMap({
     try {
       map = new maplibregl.Map({
         container,
-        style: forceLocal ? localMapStyle() : STYLE_URL,
+        style: forceLocal ? localMapStyle() : ONLINE_MAP_STYLE,
         center: [37.62, 55.75],
         zoom: 11.4,
         attributionControl: false,
@@ -255,10 +242,7 @@ export function DayMap({
       setLocalMap(true);
       map.setStyle(localMapStyle());
     };
-    const timeout = window.setTimeout(() => {
-      if (!map.isStyleLoaded()) activateLocalMap();
-    }, 6000);
-    map.on('error', activateLocalMap);
+    const stopWatching = watchMapStartup(map, activateLocalMap);
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
     map.on('click', 'stops-circle', (event) => pickRequest(event, onSelectRef));
     map.on('click', 'unassigned-circle', (event) => pickRequest(event, onSelectRef));
@@ -267,8 +251,7 @@ export function DayMap({
     mapRef.current = map;
     return () => {
       observer.disconnect();
-      window.clearTimeout(timeout);
-      map.off('error', activateLocalMap);
+      stopWatching();
       map.off('idle', markReady);
       map.remove();
       mapRef.current = null;

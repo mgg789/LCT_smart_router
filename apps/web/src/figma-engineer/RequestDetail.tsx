@@ -1,6 +1,5 @@
 import { motion } from 'framer-motion';
 import type { ReactNode } from 'react';
-import { RequestMap } from './RequestMap';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { skillLabel } from '../lib/reasons';
 import { ENGINEER_ASSETS } from './assets';
@@ -8,6 +7,7 @@ import { arrivalHeadline, formatPlanWindow } from './engineerClock';
 import type { EngineerJobItem } from './engineerDay';
 import { equipmentLabel } from './engineerRoute';
 import { eu } from './engineerScale';
+import { RequestMap } from './RequestMap';
 
 /**
  * Figma REQUEST 78:9734 — back + time-until, map with «Построить маршрут»,
@@ -62,7 +62,7 @@ export function RequestDetail({
       </header>
 
       <div
-        className="relative overflow-hidden bg-white"
+        className="relative shrink-0 overflow-hidden bg-white"
         style={{ marginTop: eu(36), height: eu(287), borderRadius: eu(26) }}
       >
         <RequestMap
@@ -73,12 +73,11 @@ export function RequestDetail({
           type="button"
           onClick={onRoute}
           whileTap={{ scale: 0.98 }}
-          className="absolute flex items-center bg-figma-ink"
+          className="absolute flex items-center rounded-full bg-figma-ink"
           style={{
             right: eu(20),
             bottom: eu(20),
             gap: eu(10),
-            borderRadius: eu(27),
             padding: `${eu(14)} ${eu(16)} ${eu(14)} ${eu(20)}`,
           }}
         >
@@ -107,7 +106,11 @@ export function RequestDetail({
         {equipment ? <Chip>{equipment}</Chip> : null}
       </div>
 
-      {actions}
+      {actions ? (
+        <div className="mt-auto" style={{ paddingTop: eu(24) }}>
+          {actions}
+        </div>
+      ) : null}
       {actions ? null : (
         <button
           type="button"

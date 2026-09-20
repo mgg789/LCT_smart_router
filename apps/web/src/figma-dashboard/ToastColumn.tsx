@@ -348,13 +348,24 @@ function ToastFace({
       }}
     >
       <div className="absolute left-[15px] top-[8px] flex h-[42px] w-[43px] items-center justify-center rounded-[10px]">
-        <FigmaIcon
-          src={icon.src}
-          alt=""
-          width={icon.width}
-          height={icon.height}
-          className={danger ? 'brightness-0 invert' : undefined}
-        />
+        {toast.kind === 'progress' ? (
+          <span className="relative block h-[21px] w-[21px] overflow-hidden" aria-hidden="true">
+            <img
+              src={icon.src}
+              alt=""
+              className="absolute max-w-none"
+              style={{ width: '128.4%', height: '191.86%', left: '-13.23%', top: '-48.06%' }}
+            />
+          </span>
+        ) : (
+          <FigmaIcon
+            src={icon.src}
+            alt=""
+            width={icon.width}
+            height={icon.height}
+            className={danger ? 'brightness-0 invert' : undefined}
+          />
+        )}
       </div>
       <p
         className={`figma-nowrap absolute left-[68px] top-[19px] max-w-[300px] overflow-hidden font-semibold text-[20px] leading-none text-ellipsis ${

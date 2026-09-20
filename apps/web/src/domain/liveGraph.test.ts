@@ -17,6 +17,38 @@ interface ExactStateScenario {
 }
 
 describe('LIVE graph projection', () => {
+  it('replaces a stale planned lunch with its single durable location and time', () => {
+    const points = pointsForExactState();
+    const lunch = { kind: 'lunch' as const, requestId: null, lat: 55.77, lon: 37.64, at: 250 };
+    const graph = projectLiveGraph(exactStateRoute(), {
+      phase: 'lunch',
+      origin: points.start,
+      anchor: points.j1,
+      lunch,
+      next: points.j2,
+      occurredAt: 260,
+    });
+    for (const nodes of [graph.mapNodes, graph.timelineNodes]) {
+      const lunches = nodes.filter((node) => node.kind === 'lunch');
+      expect(lunches).toHaveLength(1);
+      expect(lunches[0]).toMatchObject(lunch);
+    }
+  });
+  it('keeps an actual lunch without requiring a following job or a stale route', () => {
+    const points = pointsForExactState();
+    const lunch = { kind: 'lunch' as const, requestId: null, lat: 55.77, lon: 37.64, at: 250 };
+    const graph = projectLiveGraph(null, {
+      phase: 'lunch',
+      origin: points.start,
+      anchor: points.j1,
+      lunch,
+      next: null,
+      occurredAt: 260,
+    });
+    expect(graph.mapNodes.filter((node) => node.kind === 'lunch')).toHaveLength(1);
+    expect(graph.activeNodeKeys.has('lunch:55.770000:37.640000')).toBe(true);
+  });
+
   it('does not restore past lunch after completed anchors are hidden', () => {
     const points = pointsForExactState();
     const graph = projectLiveGraph(

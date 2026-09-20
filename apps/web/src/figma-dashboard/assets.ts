@@ -45,7 +45,7 @@ export const FIGMA_ASSETS = {
   iconBack: '/figma/icon-back.svg',
   iconSparkles: '/figma/icon-sparkles.svg',
   toastSystem: '/figma/icon-toast-wrench.svg',
-  toastProgress: '/figma/icon-toast-progress.svg',
+  toastProgress: '/figma/toast-progress-source.png',
   toastAi: '/figma/icon-toast-robot.svg',
   toastChat: '/figma/icon-toast-message.svg',
   toastRoute: '/figma/icon-toast-route.svg',

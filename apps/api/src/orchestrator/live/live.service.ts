@@ -1076,11 +1076,26 @@ export class LiveService {
           at: nextStop.startAt,
         }
       : null;
+    const workday = await tx.liveWorkday.findUnique({
+      where: { id: state.workdayId },
+      select: { workDate: true },
+    });
+    const engineerDay = workday
+      ? await tx.engineerDay.findUnique({
+          where: {
+            engineerId_workDate: { engineerId: state.engineerId, workDate: workday.workDate },
+          },
+          select: { lunchTaken: true },
+        })
+      : null;
     // Lunch is a structural part of the traversed edge as soon as the preceding job is
     // left. It is not a waiting vertex: the UI must highlight job→lunch→next before the
     // clock enters the break, and keep that compound edge until the next job is reached.
     const structuralLunch =
-      state.routeAnchorDepartedAt === null || activeRequestId !== null || nextStop === undefined
+      engineerDay?.lunchTaken ||
+      state.routeAnchorDepartedAt === null ||
+      activeRequestId !== null ||
+      nextStop === undefined
         ? null
         : (route?.stops.find(
             (stop) =>
@@ -1110,16 +1125,19 @@ export class LiveService {
               ? stop.lat === persistedLunch.lat && stop.lon === persistedLunch.lon
               : stop === structuralLunch),
       );
-      const lunchPoint = lunchStop
-        ? {
-            kind: 'lunch' as const,
-            requestId: null,
-            lat: lunchStop.lat,
-            lon: lunchStop.lon,
-            at: lunchStop.startAt,
-          }
-        : (persistedLunch ??
-          (structuralLunch
+      const lunchPoint =
+        persistedLunch ??
+        (lunch
+          ? lunchStop
+            ? {
+                kind: 'lunch' as const,
+                requestId: null,
+                lat: lunchStop.lat,
+                lon: lunchStop.lon,
+                at: lunch.startedAt,
+              }
+            : null
+          : structuralLunch
             ? {
                 kind: 'lunch' as const,
                 requestId: null,
@@ -1127,7 +1145,7 @@ export class LiveService {
                 lon: structuralLunch.lon,
                 at: structuralLunch.startAt,
               }
-            : null));
+            : null);
       const afterLunch = possibleNext.find(
         (stop) => viableIds.has(stop.requestId) && (!lunch || stop.startAt >= lunch.endAt),
       );

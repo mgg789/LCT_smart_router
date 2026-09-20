@@ -2,7 +2,7 @@ import '../support/env';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
-import { after, afterEach, before, describe, it } from 'node:test';
+import { after, afterEach, before, describe, it, mock } from 'node:test';
 import type { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../../src/app.module';
@@ -27,6 +27,7 @@ interface LiveEngineerView {
   };
   engineer: {
     lineStatus: string;
+    lunchInterval: { startAt: number; endAt: number } | null;
     technicalBreak: { overdueAt: number } | null;
     progress: {
       phase: string;
@@ -255,6 +256,11 @@ describe('LIVE workday', () => {
   };
 
   before(async () => {
+    // Fixtures span several logical hours. A late-night wall-clock run must not
+    // move them into tomorrow's EngineerDay midway through an otherwise same-day test.
+    const morning = new Date();
+    morning.setUTCHours(6, 0, 0, 0);
+    mock.timers.enable({ apis: ['Date'], now: morning });
     databaseUrl();
     prisma = createTestClient();
     await prisma.$connect();
@@ -305,6 +311,7 @@ describe('LIVE workday', () => {
     await prisma.account.deleteMany({ where: { email: { in: emails } } });
     await app.close();
     await prisma.$disconnect();
+    mock.timers.reset();
   });
 
   afterEach(async () => {
@@ -314,6 +321,10 @@ describe('LIVE workday', () => {
     await prisma.appliedPlanCurrent.deleteMany({});
     await prisma.appliedPlan.deleteMany({});
     await prisma.routerResult.deleteMany({});
+    await prisma.liveRequestState.deleteMany({ where: { requestId: { in: requestIds } } });
+    await prisma.requestFact.deleteMany({ where: { requestId: { in: requestIds } } });
+    await prisma.requestConditionHistory.deleteMany({ where: { requestId: { in: requestIds } } });
+    await prisma.request.deleteMany({ where: { id: { in: requestIds } } });
     await prisma.engineerDay.deleteMany({ where: { engineerId: { in: engineerIds } } });
     await prisma.alert.deleteMany({
       where: { code: { in: ['LIVE_TECHNICAL_BREAK_OVERRUN', 'LIVE_WINDOW_COMPLETION_RISK'] } },
@@ -584,6 +595,111 @@ describe('LIVE workday', () => {
     assert.equal(after.route?.stops.find((stop) => stop.requestId === first.id)?.startAt, etaAt);
   });
 
+  it('publishes actual capacity after an on-time finish when future demand is unassigned', async () => {
+    const engineer = await liveCreateEngineer();
+    const first = await liveCreateRequest();
+    const future = await liveCreateRequest(7200);
+    await liveApplyPlan(engineer.id, [first]);
+    await prisma.request.update({
+      where: { id: future.id },
+      data: { assignmentState: 'unassigned' },
+    });
+    await liveStart();
+    assert.equal((await liveAction(engineer.token, { kind: 'online' })).status, 201);
+    const before = await liveView(engineer.token);
+    const stop = before.route?.stops.find((item) => item.requestId === first.id);
+    assert.ok(stop);
+    await liveSetLogicalNow(
+      before.workday.id,
+      before.workday.logicalStartAt,
+      before.workday.logicalEndAt,
+      stop.startAt,
+      before.workday.speedDurationSec,
+    );
+    assert.equal(
+      (await liveAction(engineer.token, { kind: 'start', requestId: first.id })).status,
+      201,
+    );
+    const startedRequest = await prisma.request.findUniqueOrThrow({ where: { id: first.id } });
+    const countBefore = await prisma.routingSnapshot.count();
+    const beforePointer = await prisma.routingCurrent.findUniqueOrThrow({
+      where: { id: 'singleton' },
+      include: { snapshot: true },
+    });
+    await liveSetLogicalNow(
+      before.workday.id,
+      before.workday.logicalStartAt,
+      before.workday.logicalEndAt,
+      Number(startedRequest.startedAt) + startedRequest.serviceDurationSec,
+      before.workday.speedDurationSec,
+    );
+    assert.equal(
+      (await liveAction(engineer.token, { kind: 'finish', requestId: first.id })).status,
+      201,
+    );
+    const countAfter = await prisma.routingSnapshot.count();
+    assert.equal(countAfter, countBefore + 1);
+    const snapshot = (await liveSnapshot()).snapshot;
+    assert.ok(!snapshot.requests.some((item) => item.request_id === first.id));
+    assert.ok(snapshot.requests.some((item) => item.request_id === future.id));
+    const projected = snapshot.engineers.find((item) => item.engineer_id === engineer.id);
+    assert.deepEqual(projected?.start_location, { lat: first.lat, lon: first.lon });
+    const availableFrom = projected?.available_from;
+    assert.ok(availableFrom !== null && availableFrom !== undefined);
+    assert.ok(availableFrom <= snapshot.planning_as_of);
+  });
+
+  it('does not publish a replan for an on-time finish without future demand', async () => {
+    const engineer = await liveCreateEngineer();
+    const request = await liveCreateRequest();
+    await liveApplyPlan(engineer.id, [request]);
+    await liveStart();
+    assert.equal((await liveAction(engineer.token, { kind: 'online' })).status, 201);
+    const before = await liveView(engineer.token);
+    const stop = before.route?.stops.find((item) => item.requestId === request.id);
+    assert.ok(stop);
+    await liveSetLogicalNow(
+      before.workday.id,
+      before.workday.logicalStartAt,
+      before.workday.logicalEndAt,
+      stop.startAt,
+      before.workday.speedDurationSec,
+    );
+    assert.equal(
+      (await liveAction(engineer.token, { kind: 'start', requestId: request.id })).status,
+      201,
+    );
+    const startedRequest = await prisma.request.findUniqueOrThrow({ where: { id: request.id } });
+    assert.equal(startedRequest.assignmentState, 'assigned');
+    const beforePointer = await prisma.routingCurrent.findUniqueOrThrow({
+      where: { id: 'singleton' },
+      include: { snapshot: true },
+    });
+    await liveSetLogicalNow(
+      before.workday.id,
+      before.workday.logicalStartAt,
+      before.workday.logicalEndAt,
+      Number(startedRequest.startedAt) + startedRequest.serviceDurationSec,
+      before.workday.speedDurationSec,
+    );
+    assert.equal(
+      (await liveAction(engineer.token, { kind: 'finish', requestId: request.id })).status,
+      201,
+    );
+    const afterPointer = await prisma.routingCurrent.findUniqueOrThrow({
+      where: { id: 'singleton' },
+      include: { snapshot: true },
+    });
+    assert.equal(
+      afterPointer.snapshotId,
+      beforePointer.snapshotId,
+      JSON.stringify({
+        before: { id: beforePointer.snapshotId, trigger: beforePointer.snapshot.trigger },
+        after: { id: afterPointer.snapshotId, trigger: afterPointer.snapshot.trigger },
+      }),
+    );
+  });
+
   it('releases an ETA that cannot finish inside the completion grace and raises one alert', async () => {
     const engineer = await liveCreateEngineer();
     const request = await liveCreateRequest();
@@ -837,6 +953,18 @@ describe('LIVE workday', () => {
     assert.equal(afterReplan.engineer.progress?.anchor.requestId, first.id);
     assert.equal(afterReplan.engineer.progress?.lunch?.kind, 'lunch');
     assert.equal(afterReplan.engineer.progress?.next?.requestId, second.id);
+    // A completed break from a previous revision must not be reconstructed from
+    // the still-visible future lunch stop once its durable movement span is gone.
+    await prisma.engineerDay.update({
+      where: { engineerId_workDate: { engineerId: engineer.id, workDate: workDate() } },
+      data: { lunchTaken: true, lunchStartedAt: BigInt(started.workday.logicalStartAt - 1800) },
+    });
+    await prisma.liveEngineerState.update({
+      where: { workdayId_engineerId: { workdayId: started.workday.id, engineerId: engineer.id } },
+      data: { activeLunchLat: null, activeLunchLon: null, activeLunchStartedAt: null },
+    });
+    const afterTaken = await liveView(engineer.token);
+    assert.equal(afterTaken.engineer.progress?.lunch, null);
   });
 
   it('keeps automatic lunch blocking after the plan is rebuilt without a second lunch', async () => {
@@ -858,6 +986,24 @@ describe('LIVE workday', () => {
     );
     const duringLunch = await liveView(engineer.token);
     assert.ok(duringLunch.lunch, 'the scheduled interval is visible');
+    assert.ok(
+      duringLunch.engineer.lunchInterval,
+      'the engineer response exposes the actual interval',
+    );
+    const actualLunch = { lat: 55.611, lon: 37.611 };
+    await prisma.liveEngineerState.update({
+      where: { workdayId_engineerId: { workdayId: started.workday.id, engineerId: engineer.id } },
+      data: { activeLunchLat: actualLunch.lat, activeLunchLon: actualLunch.lon },
+    });
+    const actualDuringLunch = await liveView(engineer.token);
+    assert.deepEqual(
+      actualDuringLunch.engineer.progress?.lunch && {
+        lat: actualDuringLunch.engineer.progress.lunch.lat,
+        lon: actualDuringLunch.engineer.progress.lunch.lon,
+      },
+      actualLunch,
+      'persisted actual lunch coordinates outrank the planned stop',
+    );
     const lunchSnapshot = await liveSnapshot();
     await liveFeed(
       buildRouterResult({
@@ -873,6 +1019,13 @@ describe('LIVE workday', () => {
     assert.ok(
       afterReplan.engineer.progress?.lunch,
       'the persisted lunch coordinates keep the highlighted traversal after replan',
+    );
+    assert.deepEqual(
+      afterReplan.engineer.progress?.lunch && {
+        lat: afterReplan.engineer.progress.lunch.lat,
+        lon: afterReplan.engineer.progress.lunch.lon,
+      },
+      actualLunch,
     );
     assert.equal(afterReplan.current, null, 'no work action is available during automatic lunch');
   });
@@ -977,7 +1130,8 @@ describe('LIVE workday', () => {
       lunchStop.startAt + 1,
       started.workday.speedDurationSec,
     );
-    await liveView(engineer.token);
+    const factualLunch = (await liveView(engineer.token)).engineer.progress?.lunch;
+    assert.ok(factualLunch, 'the live cursor exposes the factual lunch vertex');
     const actualLunchEndAt = lunchStop.startAt + 1 + 1800;
     await liveSetLogicalNow(
       started.workday.id,
@@ -999,7 +1153,7 @@ describe('LIVE workday', () => {
     assert.deepEqual(
       atEndSnapshot.snapshot.engineers.find((item) => item.engineer_id === engineer.id)
         ?.start_location,
-      { lat: lunchStop.lat, lon: lunchStop.lon },
+      { lat: factualLunch.lat, lon: factualLunch.lon },
     );
     await liveSetLogicalNow(
       started.workday.id,
@@ -1106,6 +1260,8 @@ describe('LIVE workday', () => {
   it('keeps explicit overdue work active, accepts more time, and cancels with equipment detail', async () => {
     const engineer = await liveCreateEngineer();
     const request = await liveCreateRequest();
+    // Keep this continuation test independent from previous cases' leftover demand.
+    await liveCreateRequest(4 * HOUR);
     await liveApplyPlan(engineer.id, [request]);
     await liveStart();
     assert.equal((await liveAction(engineer.token, { kind: 'online' })).status, 201);

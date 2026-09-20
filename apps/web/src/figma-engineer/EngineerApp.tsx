@@ -217,9 +217,17 @@ export function EngineerApp({
     };
   }, [live, storedPlan]);
 
+  const lunch = useMemo(() => {
+    const actual = live?.lunch
+      ? { startAt: live.lunch.startedAt, endAt: live.lunch.endAt }
+      : live?.engineer.lunchInterval;
+    const planned = engineerLunchWindow(plan, live ? null : day, actual);
+    return planned && (!live || planned.endAt > logicalNow) ? planned : null;
+  }, [day, live, logicalNow, plan]);
+
   const items = useMemo(
     () =>
-      engineerListItems(plan, live ? null : day)
+      engineerListItems(plan, live ? null : day, lunch)
         .filter((item) =>
           item.kind === 'lunch'
             ? !live || item.endAt > logicalNow
@@ -238,12 +246,8 @@ export function EngineerApp({
               }
             : item,
         ),
-    [day, live, logicalNow, plan],
+    [day, live, logicalNow, plan, lunch],
   );
-  const lunch = useMemo(() => {
-    const planned = engineerLunchWindow(plan, live ? null : day);
-    return planned && (!live || planned.endAt > logicalNow) ? planned : null;
-  }, [day, live, logicalNow, plan]);
 
   const applyLiveAction = async (action: EngineerLiveAction): Promise<boolean> => {
     if (liveActionPending.current) return false;
@@ -340,9 +344,7 @@ export function EngineerApp({
     try {
       const kind = live?.engineer.technicalBreak ? 'break_finish' : 'break_start';
       if (await applyLiveAction({ kind })) {
-        setNotice(
-          kind === 'break_start' ? 'Технический перерыв начат.' : 'Технический перерыв завершён.',
-        );
+        setNotice(null);
         setMenuOpen(false);
       }
     } finally {
@@ -441,7 +443,7 @@ export function EngineerApp({
             </motion.button>
             <p
               className="min-w-0 font-murs tracking-[-0.02em] text-figma-ink"
-              style={{ fontSize: eu(32) }}
+              style={{ fontSize: eu(32), position: 'relative', top: 2 }}
             >
               {engineerHeaderStamp(live ? logicalNow * 1000 : nowMs)}
             </p>

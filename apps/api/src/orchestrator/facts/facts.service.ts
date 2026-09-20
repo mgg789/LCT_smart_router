@@ -196,6 +196,16 @@ export class FactsService {
           next ? Number(next.startAt) : null,
         )
       : materialEarly || materialLate || request.overrunDetectedAt !== null;
+    const openUnassignedDemand =
+      context.businessTime &&
+      (await context.tx.request.count({
+        where: {
+          lifecycle: 'submitted',
+          assignmentState: 'unassigned',
+          windowEndAt: { gte: BigInt(occurredAt) },
+        },
+      })) > 0;
+    const shouldReplan = materialVariance || openUnassignedDemand;
 
     await this.write(context, engineerId, request.id, 'finished', occurredAt, note);
     await context.tx.request.update({
@@ -205,12 +215,16 @@ export class FactsService {
         completedAt: BigInt(occurredAt),
         // Small deviations are deliberately absorbed by the existing route. Material
         // variance releases the route from the confirmed finish at the task location.
-        continuationAvailableAt: BigInt(materialVariance ? occurredAt : expectedCompletionAt),
+        continuationAvailableAt: BigInt(shouldReplan ? occurredAt : expectedCompletionAt),
         updatedAt: BigInt(context.now),
         version: { increment: 1 },
       },
     });
-    if (materialVariance) {
+    // A normal finish still releases capacity. If the current LIVE pool contains work
+    // waiting for assignment, publish once so Router can use that capacity. The
+    // continuation is also moved to the actual finish above, avoiding the old forecast
+    // pinning the engineer in the next snapshot.
+    if (shouldReplan) {
       await this.publisher.publishIfChanged(
         context.tx,
         context.now,

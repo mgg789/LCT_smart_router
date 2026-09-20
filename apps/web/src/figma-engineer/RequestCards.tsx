@@ -271,7 +271,10 @@ function LunchCard({ item }: { item: EngineerLunchItem }) {
         height={32}
         style={{ width: eu(32), height: eu(32) }}
       />
-      <p className="font-murs tracking-[-0.03em] text-figma-ink" style={{ fontSize: eu(28) }}>
+      <p
+        className="font-murs tracking-[-0.03em] text-figma-ink"
+        style={{ fontSize: eu(28), position: 'relative', top: 2 }}
+      >
         Обед
       </p>
       <p

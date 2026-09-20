@@ -1,4 +1,9 @@
-import type { EngineerDayView, EngineerPlanResponse, PlanStopView, RequestView } from '../api/types';
+import type {
+  EngineerDayView,
+  EngineerPlanResponse,
+  PlanStopView,
+  RequestView,
+} from '../api/types';
 
 export type EngineerJobVariant = 'upcoming' | 'regular';
 
@@ -35,14 +40,16 @@ export function isOpenJob(request: RequestView): boolean {
 export function engineerListItems(
   plan: EngineerPlanResponse | null,
   day: EngineerDayView | null,
+  lunchOverride?: EngineerLunchItem | null,
 ): EngineerListItem[] {
   const items: EngineerListItem[] = [];
   const byId = new Map((plan?.requests ?? []).map((request) => [request.id, request]));
   let upcomingAssigned = false;
+  const lunch = lunchOverride === undefined ? engineerLunchWindow(plan, day) : lunchOverride;
 
   for (const stop of plan?.route?.stops ?? []) {
     if (stop.kind === 'lunch') {
-      items.push({ kind: 'lunch', startAt: stop.startAt, endAt: stop.endAt });
+      if (lunch && !items.some((item) => item.kind === 'lunch')) items.push(lunch);
       continue;
     }
     if (stop.kind !== 'job' || stop.requestId === null) continue;
@@ -59,18 +66,19 @@ export function engineerListItems(
   }
 
   if (!items.some((item) => item.kind === 'lunch')) {
-    const lunch = lunchFromDay(day);
     if (lunch) items.push(lunch);
   }
 
   return items;
 }
 
-/** Lunch window for the menu row — planned stop first, then the day's window. */
+/** Actual lunch overrides the planned stop; the day window is a non-LIVE fallback. */
 export function engineerLunchWindow(
   plan: EngineerPlanResponse | null,
   day: EngineerDayView | null,
+  actual?: { readonly startAt: number; readonly endAt: number } | null,
 ): EngineerLunchItem | null {
+  if (actual) return { kind: 'lunch', ...actual };
   const planned = plan?.route?.stops.find((stop) => stop.kind === 'lunch');
   if (planned) {
     return { kind: 'lunch', startAt: planned.startAt, endAt: planned.endAt };

@@ -66,6 +66,47 @@ def test_latest_wins_and_same_result_id(snapshot, graph):
     runtime.close()
 
 
+def test_latest_publication_is_the_only_result_exposed(snapshot, graph):
+    """A publication that changes while solving cannot leave an older plan active."""
+    first_raw = snapshot.model_dump_json().encode()
+    second_raw = (
+        snapshot.model_copy(update={"planning_as_of": snapshot.planning_as_of + 60})
+        .model_dump_json()
+        .encode()
+    )
+
+    class PublicationReader:
+        def __init__(self):
+            self.current = SnapshotPublication(
+                "publication-1", 1, first_raw, content_hash(first_raw), snapshot.planning_as_of
+            )
+
+        def read(self):
+            return self.current
+
+    reader, executor = PublicationReader(), ControlledExecutor()
+    runtime = RouterRuntime(
+        reader, graph, SearchSettings(time_limit_ms=500, solution_limit=4), executor=executor
+    )
+    runtime.tick()
+    reader.current = SnapshotPublication(
+        "publication-2", 2, second_raw, content_hash(second_raw), snapshot.planning_as_of + 60
+    )
+    runtime.tick()
+    executor.complete(0)
+    runtime.tick()
+    assert runtime.read_result().status == "pending"
+    assert len(executor.tasks) == 2
+    assert executor.tasks[1][2][-1] == "publication-2"
+    executor.complete(1)
+    runtime.tick()
+    result = runtime.read_result()
+    assert result.status == "ready"
+    assert result.input_publication_id == "publication-2"
+    assert result.input_hash == content_hash(second_raw)
+    runtime.close()
+
+
 def test_context_change_rejects_inflight_result(tmp_path, snapshot, graph):
     executor = ControlledExecutor()
     runtime = RouterRuntime(
@@ -337,13 +378,19 @@ def test_covering_comparison_does_not_leak_extra_crews_into_other_policies(snaps
     job = snapshot.requests[0].model_copy(update={"required_skill": "emergency"})
     task = snapshot.model_copy(update={"requests": [job]})
     comparison = calculate_policy_comparison(
-        task.model_dump_json().encode(), "covering-isolation", graph,
-        SearchSettings(time_limit_ms=100), "fixture", 100, offline=True,
+        task.model_dump_json().encode(),
+        "covering-isolation",
+        graph,
+        SearchSettings(time_limit_ms=100),
+        "fixture",
+        100,
+        offline=True,
     )
     rows = {row.strategy_id: row for row in comparison.rows}
     assert rows["covering"].summary.assigned_count == 1
     assert rows["covering"].additional_engineers == 1
     assert all(
         row.summary.assigned_count == 0 and row.additional_engineers == 0
-        for name, row in rows.items() if name != "covering"
+        for name, row in rows.items()
+        if name != "covering"
     )
