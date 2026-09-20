@@ -133,7 +133,6 @@ export function EngineersView({
       bind.root.style.zIndex = String(pose.zIndex);
       bind.root.style.transform = `translate3d(${pose.x - RING_CARD.width / 2}px, ${pose.y - RING_CARD.height / 2}px, 0) rotate(${pose.rotateZ}deg)`;
       bind.inner.style.transform = `rotateX(${pose.lean}deg)`;
-      bind.root.classList.toggle('engineer-ring-card-fog', pose.blur > 0);
     }
   }
 
@@ -459,6 +458,8 @@ export function EngineersView({
             />
           );
         })}
+        <div className="engineer-ring-blur-veil engineer-ring-blur-veil-left" />
+        <div className="engineer-ring-blur-veil engineer-ring-blur-veil-right" />
         <div className="engineer-ring-fog absolute inset-0" />
 
         {focused ? (
@@ -468,7 +469,7 @@ export function EngineersView({
             disabled
             aria-disabled
             title="Скоро"
-            className="absolute flex h-[51px] w-[225px] cursor-not-allowed items-center rounded-[27px] bg-figma-bee px-[16px] opacity-45"
+            className="absolute z-20 flex h-[51px] w-[225px] cursor-not-allowed items-center rounded-[27px] bg-figma-bee px-[16px] opacity-45"
             style={{ left: RING_CENTER.x - 112.5, top: 614 }}
           >
             <FigmaText className="font-bold text-[20px] text-figma-ink">Перейти в чат</FigmaText>
@@ -484,7 +485,7 @@ export function EngineersView({
 
         <motion.label
           data-eng-chrome
-          className="absolute flex h-[51px] w-[284px] origin-center items-center rounded-[27px] bg-white px-[16px] pr-[54px]"
+          className="absolute z-20 flex h-[51px] w-[284px] origin-center items-center rounded-[27px] bg-white px-[16px] pr-[54px]"
           style={{ left: 895, top: 960 }}
           animate={
             !motionOn || reduceMotion
@@ -773,11 +774,11 @@ function EngineerRingCard({
           className="pointer-events-none absolute left-[91px] top-[-12px] size-[254px] object-cover blur-[15px] opacity-75"
         />
         <div className="pointer-events-none absolute inset-0 bg-[#272930]/25" />
-        <div className="absolute bottom-[16px] left-[26px] right-[26px]">
-          <FigmaText className="figma-nowrap overflow-hidden text-ellipsis font-murs text-[24px] tracking-[0.48px] text-white">
+        <div className="absolute bottom-[14px] left-[26px] right-[26px] pb-[4px]">
+          <FigmaText className="figma-text-keep-descenders figma-nowrap overflow-x-hidden text-ellipsis font-murs text-[24px] leading-[30px] tracking-[0.48px] text-white">
             {engineer.givenName}
           </FigmaText>
-          <p className="figma-nowrap mt-[6px] overflow-hidden text-ellipsis font-extrabold text-[18px] tracking-[0.36px] text-[#ededed]">
+          <p className="figma-nowrap mt-[4px] overflow-x-hidden text-ellipsis font-extrabold text-[18px] leading-[22px] tracking-[0.36px] text-[#ededed]">
             {engineer.cardStatus}
           </p>
         </div>

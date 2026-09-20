@@ -170,8 +170,27 @@ body {
   backface-visibility: hidden;
 }
 
-.engineer-ring-card-fog {
-  filter: blur(16px);
+.engineer-ring-blur-veil {
+  pointer-events: none;
+  position: absolute;
+  top: 690px;
+  width: 680px;
+  height: 560px;
+  z-index: 16;
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.engineer-ring-blur-veil-left {
+  left: -140px;
+  mask-image: radial-gradient(ellipse 80% 90% at 16% 90%, #000 0% 40%, transparent 72%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 90% at 16% 90%, #000 0% 40%, transparent 72%);
+}
+
+.engineer-ring-blur-veil-right {
+  right: -140px;
+  mask-image: radial-gradient(ellipse 80% 90% at 84% 90%, #000 0% 40%, transparent 72%);
+  -webkit-mask-image: radial-gradient(ellipse 80% 90% at 84% 90%, #000 0% 40%, transparent 72%);
 }
 
 .engineer-ring-fog {

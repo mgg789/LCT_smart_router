@@ -49,7 +49,8 @@ describe('engineerRing', () => {
     const outer = ringPose(2);
     expect(center.lean).toBe(0);
     expect(center.blur).toBe(0);
-    expect(inner.lean).toBeGreaterThan(25);
+    expect(inner.lean).toBeGreaterThan(12);
+    expect(inner.lean).toBeLessThan(22);
     expect(outer.lean).toBeGreaterThanOrEqual(inner.lean);
     expect(inner.blur).toBe(0);
     expect(outer.blur).toBeGreaterThan(0);

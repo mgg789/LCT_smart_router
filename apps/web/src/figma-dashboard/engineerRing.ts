@@ -24,7 +24,7 @@ export const RING_ORIGIN = {
   y: RING_CENTER.y + RING_RADIUS,
 } as const;
 
-const LEAN_MAX_DEG = 34;
+const LEAN_MAX_DEG = 18;
 const OUTER_BLUR_PX = 16;
 
 /** Pause after a key tap before hold-spin starts. */
@@ -71,7 +71,8 @@ export type RingCardPose = {
 
 /**
  * Places one card on the upper arc. `lean` is a backward rotateX; the card's
- * bottom stays put and the top recedes. Outer pair also pick up a blur.
+ * bottom stays put and the top recedes. `blur` is the strength of the
+ * location veil at that slot — it is not painted on the card itself.
  */
 export function ringPose(slot: number): RingCardPose {
   const angleDeg = slot * RING_ANGLE_STEP_DEG;
