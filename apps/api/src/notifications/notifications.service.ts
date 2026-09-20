@@ -36,15 +36,29 @@ export class NotificationsService {
    *
    * Repeating the same business event is a no-op: the key is unique, and a retry of the
    * operation must not produce a second message to the customer.
+   *
+   * A recipient who silenced their letters stops event mail, but never a login code: a
+   * way in must not be silenceable (card #65, 2026-09-20).
    */
   async record(tx: Tx, now: number, input: NotificationIntentInput): Promise<void> {
-    const recipientEmail =
-      input.recipientEmail ?? (await this.emailOf(tx, input.recipientAccountId));
+    const account =
+      input.recipientAccountId === null || input.recipientAccountId === undefined
+        ? null
+        : await tx.account.findUnique({ where: { id: input.recipientAccountId } });
+    const recipientEmail = input.recipientEmail ?? account?.email ?? null;
     if (!recipientEmail) {
       // Without a real address there is nothing to send. Recording an intent with an
       // invented recipient would be worse than recording none: context/41 section 10
       // requires real contact data before sending anything.
       this.logger.warn(`No recipient address for ${input.category}; no intent recorded`);
+      return;
+    }
+    if (
+      account !== null &&
+      !account.mailNotificationsEnabled &&
+      input.category !== 'account_login_code'
+    ) {
+      this.logger.log(`Recipient ${recipientEmail} silenced ${input.category}; no intent recorded`);
       return;
     }
 
@@ -65,13 +79,5 @@ export class NotificationsService {
         createdAt: BigInt(now),
       },
     });
-  }
-
-  private async emailOf(tx: Tx, accountId: string | null | undefined): Promise<string | null> {
-    if (!accountId) {
-      return null;
-    }
-    const account = await tx.account.findUnique({ where: { id: accountId } });
-    return account?.email ?? null;
   }
 }

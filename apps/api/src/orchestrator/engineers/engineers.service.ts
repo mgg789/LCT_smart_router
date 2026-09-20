@@ -9,6 +9,7 @@ import type {
   Skill,
   TransportType,
 } from '../../generated/prisma/client';
+import { NotificationsService } from '../../notifications';
 import { assertWriteApplied, type OperationContext } from '../../operations';
 import type { Tx } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
@@ -65,6 +66,7 @@ export class EngineersService {
   constructor(
     private readonly config: AppConfigService,
     private readonly publisher: SnapshotPublisher,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /**
@@ -340,6 +342,26 @@ export class EngineersService {
     availability: Availability,
     expectedOnlineAt: number | null,
   ): Promise<EngineerDay> {
+    return this.applyAvailability(context, engineerId, availability, expectedOnlineAt, {
+      daySummary: true,
+    });
+  }
+
+  /**
+   * The shared offline/online write.
+   *
+   * A technical stop is also an offline transition, but it is not the end of the working
+   * day, so it closes without the day-summary letter; only a direct switch off does
+   * (card #65, 2026-09-20 decision). The letter is deduplicated per work date, so
+   * toggling offline and back on during the day never writes twice.
+   */
+  private async applyAvailability(
+    context: OperationContext,
+    engineerId: string,
+    availability: Availability,
+    expectedOnlineAt: number | null,
+    options: { readonly daySummary: boolean },
+  ): Promise<EngineerDay> {
     const day = await this.currentDay(context, engineerId);
     const updated = await context.tx.engineerDay.update({
       where: { id: day.id },
@@ -359,12 +381,102 @@ export class EngineersService {
       context.now,
       PUBLICATION_TRIGGERS.ENGINEER_AVAILABILITY_CHANGED,
     );
+
+    if (availability === 'offline' && options.daySummary) {
+      await this.recordDaySummary(context, engineerId, day.workDate);
+    }
     return updated;
+  }
+
+  /**
+   * Composes the day-summary letter from confirmed execution facts only.
+   *
+   * Every number is a count of explicit marks the engineer made today; nothing is
+   * inferred from schedules or timers (context/42 DF-07). The candidate window reaches
+   * back 36 hours so that one calendar day in any configured zone is fully covered
+   * without ever reading the whole table.
+   */
+  private async recordDaySummary(
+    context: OperationContext,
+    engineerId: string,
+    workDate: string,
+  ): Promise<void> {
+    const engineer = await this.load(context.tx, engineerId);
+    if (engineer.accountId === null) {
+      // No login means no address and no letter; the day still closed normally.
+      return;
+    }
+    const timeZone = this.config.get('APP_TIME_ZONE');
+    const windowStart = context.now - 36 * 60 * 60;
+    const facts = await context.tx.requestFact.findMany({
+      where: {
+        engineerId,
+        kind: { in: ['started', 'finished', 'problem'] },
+        occurredAt: { gte: BigInt(windowStart), lte: BigInt(context.now) },
+      },
+      orderBy: [{ occurredAt: 'asc' }, { recordedAt: 'asc' }],
+    });
+
+    let startedCount = 0;
+    let finishedCount = 0;
+    let problemCount = 0;
+    let workSec = 0;
+    const lastStartByRequest = new Map<string, number>();
+    for (const fact of facts) {
+      if (workDateOf(Number(fact.occurredAt), timeZone) !== workDate) {
+        continue;
+      }
+      switch (fact.kind) {
+        case 'started':
+          if (!lastStartByRequest.has(fact.requestId)) {
+            startedCount += 1;
+          }
+          lastStartByRequest.set(fact.requestId, Number(fact.occurredAt));
+          break;
+        case 'finished': {
+          finishedCount += 1;
+          const startedAt = lastStartByRequest.get(fact.requestId);
+          if (startedAt !== undefined && Number(fact.occurredAt) > startedAt) {
+            workSec += Number(fact.occurredAt) - startedAt;
+          }
+          break;
+        }
+        case 'problem':
+          problemCount += 1;
+          break;
+        default:
+          break;
+      }
+    }
+
+    await this.notifications.record(context.tx, context.now, {
+      category: 'engineer_day_summary',
+      businessEventKey: `engineer_day_summary:${engineerId}:${workDate}`,
+      recipientAccountId: engineer.accountId,
+      payload: {
+        engineerId,
+        displayName: engineer.displayName,
+        workDate,
+        startedCount,
+        finishedCount,
+        problemCount,
+        workMinutes: Math.round(workSec / 60),
+      },
+    });
   }
 
   /** A technical stop with an expected return, which is not a lunch. */
   async startTechnicalBreak(context: OperationContext, engineerId: string): Promise<EngineerDay> {
-    return this.setAvailability(context, engineerId, 'offline', context.now + TECHNICAL_BREAK_SEC);
+    // Offline without the day summary: a stop expects to return the same day.
+    return this.applyAvailability(
+      context,
+      engineerId,
+      'offline',
+      context.now + TECHNICAL_BREAK_SEC,
+      {
+        daySummary: false,
+      },
+    );
   }
 
   /**

@@ -428,6 +428,102 @@ describe('engineers and working days', () => {
     assert.equal(day.expectedOnlineAt, null);
   });
 
+  it('mails one day summary per day when the engineer goes offline, and none on a break', async () => {
+    const { email, engineer } = await createEngineer();
+    const token = await signIn(email);
+    const now = Math.floor(Date.now() / 1000);
+    const workDate = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Moscow',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date(now * 1000));
+    const keyOf = () => `engineer_day_summary:${engineer.id}:${workDate}`;
+    const intents = async () =>
+      prisma.notificationIntent.findMany({ where: { businessEventKey: keyOf() } });
+
+    // One started, finished and problem-marked visit today: an hour of confirmed work.
+    const request = await prisma.request.create({
+      data: {
+        arrivalOrder: 9_900_001,
+        addressText: 'Москва, ул. Тестовая, д. 3',
+        needsGeocoding: false,
+        lat: 55.76,
+        lon: 37.64,
+        normProfileCode: 'base',
+        normativeTravelDurationSec: 1800,
+        technicalDurationSec: 600,
+        documentationDurationSec: 600,
+        // The database check requires service time to equal technical plus documentation.
+        serviceDurationSec: 1200,
+        windowStartAt: BigInt(now - 3 * HOUR),
+        windowEndAt: BigInt(now - HOUR),
+        requiredSkill: 'connection',
+        lifecycle: 'completed',
+        origin: 'manual',
+        createdAt: BigInt(now - 4 * HOUR),
+        updatedAt: BigInt(now - HOUR),
+      },
+    });
+    await prisma.requestFact.createMany({
+      data: (
+        [
+          { kind: 'started', occurredAt: now - 2 * HOUR },
+          { kind: 'finished', occurredAt: now - HOUR },
+          { kind: 'problem', occurredAt: now - 30 * 60 },
+        ] as const
+      ).map((fact) => ({
+        requestId: request.id,
+        engineerId: engineer.id,
+        kind: fact.kind,
+        occurredAt: BigInt(fact.occurredAt),
+        recordedAt: BigInt(fact.occurredAt),
+        operationId: randomUUID(),
+      })),
+    });
+
+    const offline = await call('POST', '/api/v1/engineer/availability', token, {
+      operationId: randomUUID(),
+      availability: 'offline',
+    });
+    assert.equal(offline.status, 201, await offline.clone().text());
+    const recorded = await intents();
+    assert.equal(recorded.length, 1);
+    const payload = recorded[0]?.payload as { workMinutes: number; finishedCount: number };
+    assert.equal(payload.finishedCount, 1);
+    assert.equal(payload.workMinutes, 60);
+
+    // The summary is once per work date, not once per switch: coming back online and
+    // leaving again repeats the same business day, not a new letter.
+    await call('POST', '/api/v1/engineer/availability', token, {
+      operationId: randomUUID(),
+      availability: 'online',
+    });
+    await call('POST', '/api/v1/engineer/availability', token, {
+      operationId: randomUUID(),
+      availability: 'offline',
+    });
+    assert.equal((await intents()).length, 1);
+
+    // A technical stop is an offline too, but it is not the end of the day.
+    const other = await createEngineer();
+    const otherToken = await signIn(other.email);
+    await call('POST', '/api/v1/engineer/technical-break', otherToken, {
+      operationId: randomUUID(),
+    });
+    const otherKey = `engineer_day_summary:${other.engineer.id}:${workDate}`;
+    assert.equal(
+      (await prisma.notificationIntent.findMany({ where: { businessEventKey: otherKey } })).length,
+      0,
+    );
+
+    await prisma.notificationIntent.deleteMany({
+      where: { businessEventKey: { startsWith: 'engineer_day_summary:' } },
+    });
+    await prisma.requestFact.deleteMany({ where: { requestId: request.id } });
+    await prisma.request.delete({ where: { id: request.id } });
+  });
+
   it('reports a conflict when the engineer and the dispatcher edit the same profile', async () => {
     const { email, engineer } = await createEngineer();
     const token = await signIn(email);

@@ -190,11 +190,45 @@ def _profile_duration(distance_m: float, speed_kmh: float) -> int:
     return max(1, math.ceil(distance_m / (speed_kmh * 1000 / 3600)))
 
 
+def _edge_geometry(
+    prepared: dict | None, source_id: str, target_id: str, road: list[GeoPoint]
+) -> list[GeoPoint] | None:
+    """Attach the prepared road polyline, pinned to its exact endpoint nodes.
+
+    OSRM snaps to the road, so the returned shape may start a few metres from the
+    address node. The node coordinates are pinned on both ends (and repeated points
+    dropped) so the graph validator's endpoint identity holds and the rendered line
+    really begins and ends at the request addresses. Matrices prepared without
+    geometry keep ``None``: absent shape stays a disclosed absence, never an
+    invented straight route (core/README "Подготовка OSRM и кеша").
+    """
+    raw = (prepared or {}).get(f"{source_id}>{target_id}")
+    if not raw or len(raw) < 2:
+        return None
+    source_location, target_location = road[0], road[-1]
+    points = [
+        GeoPoint(lat=float(point[1]), lon=float(point[0]))
+        for point in raw
+    ]
+    if points[0] != source_location:
+        points.insert(0, source_location)
+    if points[-1] != target_location:
+        points.append(target_location)
+    return [
+        point
+        for index, point in enumerate(points)
+        if index == 0 or point != points[index - 1]
+    ]
+
+
 def _load_graph(path: Path, locations: dict[str, GeoPoint], costs: TransportCostSpec) -> RoadGraph:
     payload = json.loads(path.read_text(encoding="utf-8"))
     node_ids = payload["node_ids"]
     durations = payload["durations_sec"]
     distances = payload["distances_m"]
+    # Optional per-pair road polylines added by core/prepare_road_geometry.py. Their
+    # presence changes the rendered shape and the stored plan bytes, never the costs.
+    prepared_geometries = payload.get("geometries") or {}
     if (
         len(node_ids) != len(locations)
         or set(node_ids) != set(locations)
@@ -213,6 +247,7 @@ def _load_graph(path: Path, locations: dict[str, GeoPoint], costs: TransportCost
             if distance is None or car is None:
                 continue
             metres = math.ceil(distance)
+            road = [locations[source_id], locations[target_id]]
             edges.append(
                 GraphEdge(
                     source=source_id,
@@ -225,6 +260,7 @@ def _load_graph(path: Path, locations: dict[str, GeoPoint], costs: TransportCost
                         "transit": costs.transit_access_sec
                         + _profile_duration(distance, costs.transit_speed_kmh),
                     },
+                    geometry=_edge_geometry(prepared_geometries, source_id, target_id, road),
                 )
             )
     return RoadGraph(
