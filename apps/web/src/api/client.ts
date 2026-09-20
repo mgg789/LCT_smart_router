@@ -697,6 +697,23 @@ export function createDispatcherRequest(
 }
 
 /**
+ * Binds a login address to a roster profile that still has none.
+ */
+export function linkEngineerAccount(
+  token: string,
+  input: { engineerId: string; email: string },
+): Promise<{ engineer: { id: string } }> {
+  return requestJson('/api/v1/dispatch/engineers/link-account', createdEngineerSchema, token, {
+    method: 'POST',
+    body: JSON.stringify({
+      operationId: crypto.randomUUID(),
+      engineerId: input.engineerId,
+      email: input.email,
+    }),
+  });
+}
+
+/**
  * Creates an engineer profile. The live contract requires email at creation.
  */
 export function createDispatcherEngineer(

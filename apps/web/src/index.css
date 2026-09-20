@@ -98,6 +98,10 @@ body {
   line-height: normal;
 }
 
+.figma-text-keep-descenders {
+  text-box-trim: trim-start;
+}
+
 .figma-nowrap {
   white-space: nowrap;
   word-break: normal;
@@ -141,6 +145,46 @@ body {
  * Engineer phone column: layout width is the device (or 430px on desktop).
  * `--eu` is one Figma artboard pixel so 670-wide tokens fit without transform/zoom.
  */
+.engineer-ring-page,
+.engineer-ring-stage {
+  overflow: visible;
+}
+
+.engineer-ring-stage {
+  perspective: 1400px;
+  perspective-origin: 50% 42%;
+  touch-action: none;
+}
+
+.engineer-ring-card {
+  visibility: hidden;
+  transform-origin: 50% 50%;
+}
+
+.engineer-ring-card-face {
+  transform-origin: 50% 100%;
+  backface-visibility: hidden;
+}
+
+.engineer-ring-card-fog {
+  filter: blur(16px);
+}
+
+.engineer-ring-card-shade {
+  opacity: 0;
+}
+
+.engineer-ring-card-center .engineer-ring-card-shade {
+  opacity: 1;
+}
+
+.engineer-ring-fog {
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 42% 56% at 4% 112%, #f1f1f1 0%, rgba(241, 241, 241, 0.92) 38%, transparent 70%),
+    radial-gradient(ellipse 42% 56% at 96% 112%, #f1f1f1 0%, rgba(241, 241, 241, 0.92) 38%, transparent 70%);
+}
+
 .engineer-phone {
   width: min(100%, 430px);
   min-height: 100%;

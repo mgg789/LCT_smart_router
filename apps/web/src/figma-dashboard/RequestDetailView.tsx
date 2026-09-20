@@ -1,4 +1,5 @@
 import { motion, useReducedMotion } from 'framer-motion';
+import { X } from 'lucide-react';
 import type { DashboardSnapshot } from '../api/types';
 import { DayMap } from '../components/DayMap';
 import { FIGMA_ASSETS } from './assets';
@@ -17,6 +18,8 @@ const TITLE_ROW_HEIGHT = 48;
 const PANEL_TOP = 154 - HEADER_LIFT + 10;
 const PANEL_HEIGHT = 893 + HEADER_LIFT;
 const MAP_HEIGHT = 894 + HEADER_LIFT;
+const CLOSE_SIZE = 43;
+const CLOSE_INSET = 16;
 const fadeSoft = { duration: 0.28, ease: [0.22, 1, 0.36, 1] as const };
 
 /**
@@ -97,13 +100,31 @@ export function RequestDetailView({
         animate={{ opacity: 1, x: 0 }}
         transition={animate ? { duration: 0.38, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
       >
-        <RequestDetailPanel model={model} />
+        <motion.button
+          type="button"
+          aria-label="Закрыть заявку"
+          onClick={onBack}
+          className="absolute z-20 flex items-center justify-center rounded-full bg-white"
+          style={{ top: CLOSE_INSET, right: CLOSE_INSET, width: CLOSE_SIZE, height: CLOSE_SIZE }}
+          whileHover={animate ? { scale: 1.12 } : undefined}
+          whileTap={animate ? { scale: 0.94 } : undefined}
+          transition={{ duration: 0.16 }}
+        >
+          <X size={22} strokeWidth={2.25} className="text-figma-ink" />
+        </motion.button>
+        <RequestDetailPanel model={model} motionOn={animate} />
       </motion.aside>
     </>
   );
 }
 
-function RequestDetailPanel({ model }: { model: RequestDetailModel }) {
+function RequestDetailPanel({
+  model,
+  motionOn,
+}: {
+  model: RequestDetailModel;
+  motionOn: boolean;
+}) {
   const facts = [
     model.address,
     model.email ?? '—',
@@ -117,7 +138,7 @@ function RequestDetailPanel({ model }: { model: RequestDetailModel }) {
       <Copyable
         value={shortRequestId(model.id)}
         label="Скопировать номер заявки"
-        className="text-left"
+        className="pr-[52px] text-left"
       >
         <FigmaText
           className="font-murs text-[32px] leading-[36px] tracking-[-0.544px] text-white"
@@ -152,25 +173,34 @@ function RequestDetailPanel({ model }: { model: RequestDetailModel }) {
         ))}
       </div>
       <div className="mt-auto flex flex-col gap-[16px]">
-        <button
+        <motion.button
           type="button"
           disabled={!model.email}
-          className="flex h-[61px] w-[430px] items-center justify-center rounded-[20px] border-[0.5px] border-white bg-figma-ink font-medium text-[20px] text-white disabled:opacity-50"
+          className="flex h-[61px] w-[430px] items-center justify-center rounded-[20px] border-[0.5px] border-white bg-figma-ink font-medium text-[20px] text-white transition-colors hover:bg-white/10 disabled:opacity-50 disabled:hover:bg-figma-ink"
+          whileHover={motionOn && model.email ? { scale: 1.03, filter: 'brightness(1.08)' } : undefined}
+          whileTap={motionOn && model.email ? { scale: 0.98 } : undefined}
+          transition={{ duration: 0.16 }}
         >
           Написать клиенту
-        </button>
-        <button
+        </motion.button>
+        <motion.button
           type="button"
           className="flex h-[61px] w-[430px] items-center justify-center rounded-[20px] bg-figma-bee font-medium text-[20px] text-figma-ink"
+          whileHover={motionOn ? { scale: 1.03, filter: 'brightness(1.08)' } : undefined}
+          whileTap={motionOn ? { scale: 0.98 } : undefined}
+          transition={{ duration: 0.16 }}
         >
           Переназначить инженера
-        </button>
-        <button
+        </motion.button>
+        <motion.button
           type="button"
           className="flex h-[61px] w-[430px] items-center justify-center rounded-[20px] bg-figma-cancel font-medium text-[20px] text-white"
+          whileHover={motionOn ? { scale: 1.03, filter: 'brightness(1.08)' } : undefined}
+          whileTap={motionOn ? { scale: 0.98 } : undefined}
+          transition={{ duration: 0.16 }}
         >
           Отменить визит
-        </button>
+        </motion.button>
       </div>
     </div>
   );

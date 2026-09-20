@@ -1,6 +1,7 @@
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useEffect, useId, useRef, useState } from 'react';
 import { FIGMA_ASSETS } from './assets';
+import { ModalLayer, ModalScrim } from './modalLayer';
 import { DANGER_ACTIONS, isManualConfirmInput, phraseMatches, type DangerActionId } from './confirmPhrase';
 import { FigmaIcon } from './primitives';
 
@@ -21,7 +22,10 @@ export function ConfirmDangerModal({
   onCancel: () => void;
   onConfirm: (id: DangerActionId) => void;
 }) {
-  const action = actionId ? DANGER_ACTIONS[actionId] : null;
+  const liveAction = actionId ? DANGER_ACTIONS[actionId] : null;
+  const heldAction = useRef(liveAction);
+  if (liveAction) heldAction.current = liveAction;
+  const action = liveAction ?? heldAction.current;
   const titleId = useId();
   const inputId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -37,16 +41,10 @@ export function ConfirmDangerModal({
   const ready = action ? phraseMatches(typed, action.word) : false;
 
   return (
-    <AnimatePresence>
-      {action ? (
-        <motion.div
-          className="absolute inset-0 z-[110] flex items-center justify-center"
-          initial={motionOn ? { opacity: 0 } : false}
-          animate={{ opacity: 1 }}
-          exit={motionOn ? { opacity: 0 } : undefined}
-          transition={{ duration: 0.2 }}
-        >
-          <button type="button" className="absolute inset-0 bg-figma-ink/40" aria-label="Закрыть подтверждение" onClick={onCancel} />
+    <ModalLayer open={actionId !== null} motionOn={motionOn} zClass="z-[110]">
+          {action ? (
+          <>
+          <ModalScrim label="Закрыть подтверждение" onClose={onCancel} />
           <motion.div
             role="dialog"
             aria-modal="true"
@@ -128,8 +126,8 @@ export function ConfirmDangerModal({
               </button>
             </div>
           </motion.div>
-        </motion.div>
-      ) : null}
-    </AnimatePresence>
+          </>
+          ) : null}
+    </ModalLayer>
   );
 }

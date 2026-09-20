@@ -1,9 +1,10 @@
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { type ChangeEvent, type DragEvent, useEffect, useId, useRef, useState } from 'react';
 import type { DataUploadFile, DataUploadSummary, OfficialImportSummary } from '../api/types';
 import { parseDataUpload } from '../domain/dataUpload';
 import { regionStyle } from '../domain/regions';
 import { FIGMA_ASSETS } from './assets';
+import { ModalLayer, ModalScrim } from './modalLayer';
 import { FigmaIcon } from './primitives';
 
 export const DATA_UPLOAD_TITLE = 'Загрузить данные';
@@ -105,22 +106,8 @@ export function DataUploadModal({
   const applyLit = hasFiles && !submitting;
 
   return (
-    <AnimatePresence>
-      {open ? (
-        <motion.div
-          className="absolute inset-0 z-[100] flex items-center justify-center"
-          initial={motionOn ? { opacity: 0 } : false}
-          animate={{ opacity: 1 }}
-          exit={motionOn ? { opacity: 0 } : undefined}
-          transition={{ duration: 0.2 }}
-        >
-          <button
-            type="button"
-            className="absolute inset-0 bg-figma-ink/40"
-            aria-label="Закрыть загрузку данных"
-            disabled={submitting}
-            onClick={onClose}
-          />
+    <ModalLayer open={open} motionOn={motionOn}>
+          <ModalScrim label="Закрыть загрузку данных" disabled={submitting} onClose={onClose} />
           <motion.div
             role="dialog"
             aria-modal="true"
@@ -303,9 +290,7 @@ export function DataUploadModal({
               </div>
             </div>
           </motion.div>
-        </motion.div>
-      ) : null}
-    </AnimatePresence>
+    </ModalLayer>
   );
 }
 

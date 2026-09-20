@@ -4,6 +4,7 @@ import {
   createDispatcherEngineer,
   createDispatcherRequest,
   importOfficialDataset,
+  linkEngineerAccount,
   loadDashboardSnapshot,
   loadPolicyComparison,
   loginDispatcher,
@@ -844,6 +845,37 @@ export function useDashboard() {
     [pushEvent, setSnapshot, token],
   );
 
+  /** First-bind of a login address. Changing an already linked email has no contract. */
+  const linkEngineerEmail = useCallback(
+    async (engineerId: string, email: string) => {
+      if (sourceRef.current === 'demo' && snapshotRef.current) {
+        const current = snapshotRef.current;
+        const next: DashboardSnapshot = {
+          ...current,
+          engineers: current.engineers.map((item) =>
+            item.id === engineerId ? { ...item, email, hasAccount: true } : item,
+          ),
+        };
+        setSnapshot(next);
+        pushEvent(`Почта ${engineerName(next, engineerId)} обновлена.`);
+        return;
+      }
+      if (!token || sourceRef.current !== 'live') {
+        throw new Error('Привязка почты доступна только в живой сессии.');
+      }
+      setCreatingEntity(true);
+      try {
+        await linkEngineerAccount(token, { engineerId, email });
+        const next = await loadDashboardSnapshot(token);
+        setSnapshot(next);
+        pushEvent(`Почта ${engineerName(next, engineerId)} привязана.`);
+      } finally {
+        setCreatingEntity(false);
+      }
+    },
+    [pushEvent, setSnapshot, token],
+  );
+
   return {
     authenticated: token !== null || source === 'demo',
     source,
@@ -898,6 +930,7 @@ export function useDashboard() {
     importOfficialTzDataset,
     createRequest,
     createEngineer,
+    linkEngineerEmail,
   };
 }
 

@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useEffect, useId, useState } from 'react';
 import type { DashboardSnapshot } from '../api/types';
 import { FIGMA_ASSETS } from './assets';
@@ -25,6 +25,7 @@ import {
   validateRequestDraft,
   windowFromClocks,
 } from './addEntity';
+import { ModalLayer, ModalScrim } from './modalLayer';
 import { FigmaIcon } from './primitives';
 import { pushToast } from './toasts';
 
@@ -85,22 +86,8 @@ export function AddEntityModal({
   }, [open]);
 
   return (
-    <AnimatePresence>
-      {open ? (
-        <motion.div
-          className="absolute inset-0 z-[100] flex items-center justify-center"
-          initial={motionOn ? { opacity: 0 } : false}
-          animate={{ opacity: 1 }}
-          exit={motionOn ? { opacity: 0 } : undefined}
-          transition={{ duration: 0.2 }}
-        >
-          <button
-            type="button"
-            className="absolute inset-0 bg-figma-ink/40"
-            aria-label="Закрыть добавление"
-            disabled={submitting}
-            onClick={onClose}
-          />
+    <ModalLayer open={open} motionOn={motionOn}>
+          <ModalScrim label="Закрыть добавление" disabled={submitting} onClose={onClose} />
           <motion.div
             role="dialog"
             aria-modal="true"
@@ -193,9 +180,7 @@ export function AddEntityModal({
             </div>
             ) : null}
           </motion.div>
-        </motion.div>
-      ) : null}
-    </AnimatePresence>
+    </ModalLayer>
   );
 }
 

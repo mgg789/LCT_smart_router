@@ -54,9 +54,16 @@ import { PolicyComparisonView } from './PolicyComparisonView';
 import { AlertsView } from './AlertsView';
 import { RequestDetailView } from './RequestDetailView';
 import { RequestsView } from './RequestsView';
+import { EngineersView } from './EngineersView';
 import { Copyable } from './Copyable';
 import { shortRequestId } from './requestsTable';
 import { ToastColumn } from './ToastColumn';
+import {
+  stackSlideDir,
+  stackSlideEnter,
+  stackSlideExit,
+  stackViewKey,
+} from './dashboardSlide';
 import { FigmaIcon, FigmaText } from './primitives';
 import {
   seedDemoToasts,
@@ -120,15 +127,19 @@ const PROGRESS_TRACK = 321;
 
 const springQuick = { type: 'spring' as const, stiffness: 420, damping: 36, mass: 0.8 };
 const fadeSoft = { duration: 0.28, ease: [0.22, 1, 0.36, 1] as const };
+const slideEase = [0.22, 1, 0.36, 1] as const;
+const slide = { duration: 0.34, ease: slideEase };
 /**
  * Dispatcher MAIN screen from Figma 28:614 / 29:2552.
- * Static first pass: mock copy only, no dispatch API.
+ * Stack tabs (including the Requests table) slide vertically; a single request enters from the right.
  */
 export function MainDashboardPage() {
   const reduceMotion = useReducedMotion();
   const dash = useDashboard();
   const [policyOpen, setPolicyOpen] = useState(false);
   const [activeNav, setActiveNav] = useState<NavItemId>('day');
+  const [stackNav, setStackNav] = useState<NavItemId>('day');
+  const [stackDir, setStackDir] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [notifOpen, setNotifOpen] = useState(true);
@@ -375,6 +386,11 @@ export function MainDashboardPage() {
             if (id === 'requests' && activeNav === 'requests') {
               setOpenedRequestId(null);
             }
+            if (id !== 'requests') {
+              setOpenedRequestId(null);
+            }
+            setStackDir(stackSlideDir(stackNav, id));
+            setStackNav(id);
             setActiveNav(id);
             setPolicyOpen(false);
             if (id === 'alerts') {
@@ -538,136 +554,186 @@ export function MainDashboardPage() {
             void dash.signOut();
           }}
         />
-        {activeNav === 'requests' && openedRequestId ? null : (
+        {activeNav === 'engineers' || (activeNav === 'requests' && openedRequestId) ? null : (
         <FigmaText
-          className="figma-nowrap absolute left-[180px] font-murs text-[32px] tracking-[-0.544px] text-figma-ink"
+          className="figma-nowrap absolute left-[180px] z-[15] font-murs text-[32px] tracking-[-0.544px] text-figma-ink"
           style={{ top: DATE_TOP }}
         >
           {view?.dateLabel ?? MAIN_DASHBOARD.dateLabel}
         </FigmaText>
         )}
-        {activeNav === 'policy' ? (
-          <PolicyComparisonView
-            snapshot={dash.snapshot}
-            comparison={dash.policyComparison}
-            loading={dash.policyComparisonLoading}
-            error={dash.policyComparisonError}
-            recorded={dash.isDemo}
-            readOnly={dash.source === 'cached'}
-            onRefresh={() => void dash.refreshPolicyComparison()}
-          />
-        ) : null}
-        {activeNav === 'requests' && openedRequestId ? (
-          <RequestDetailView
-            snapshot={dash.snapshot}
-            requestId={openedRequestId}
-            motionOn={motionOn}
-            onBack={() => {
-              setOpenedRequestId(null);
-              dash.clearFocus();
-            }}
-          />
-        ) : null}
-        {activeNav === 'requests' && !openedRequestId ? (
-          <RequestsView
-            snapshot={dash.snapshot}
-            selectedRequestId={dash.selectedRequest?.id ?? null}
-            onSelect={(requestId) => {
-              setOpenedRequestId(requestId);
-              dash.selectRequest(requestId);
-            }}
-          />
-        ) : null}
-        {activeNav === 'alerts' ? (
-          <AlertsView
-            snapshot={dash.snapshot}
-            toasts={toasts}
-            motionOn={motionOn}
-            onOpenRequest={(requestId) => {
-              setActiveNav('requests');
-              setOpenedRequestId(requestId);
-              dash.selectRequest(requestId);
-            }}
-          />
-        ) : null}
-        {activeNav !== 'policy' && activeNav !== 'requests' && activeNav !== 'alerts' ? (
-        <>
-        <EngineersColumn
-          engineers={visibleEngineers}
-          totalCount={roster.length}
-          requestCount={requestCount}
-          totalKm={totalKm}
-          planLabel={planLabel}
-          unassignedTitle={view?.unassignedTitle ?? MAIN_DASHBOARD.unassigned.title}
-          unassignedReason={view?.unassignedReason ?? MAIN_DASHBOARD.unassigned.reason}
-          selectedEngineerId={dash.selectedEngineerId}
-          searchOpen={searchOpen}
-          searchQuery={searchQuery}
-          motionOn={motionOn}
-          onSearchToggle={() => {
-            if (searchOpen) {
-              setSearchOpen(false);
-              setSearchQuery('');
-              return;
-            }
-            setSearchOpen(true);
-          }}
-          onSearchChange={setSearchQuery}
-          onSelect={(id) => {
-            dash.selectEngineer(id);
-            setSearchOpen(false);
-            setSearchQuery('');
-          }}
-          onSelectUnassigned={() => {
-            if (view?.firstUnassignedId) dash.selectRequest(view.firstUnassignedId);
-          }}
-        />
-        <MapCard
-          snapshot={visibleSnapshot}
-          selectedEngineerId={dash.selectedEngineerId}
-          selectedRequestId={dash.selectedRequest?.id ?? null}
-          frame={mapFrame}
-          regionLabel={regionLabel}
-          regions={[{ id: ALL_REGIONS, label: 'Все регионы' }, ...regions.map((item) => ({ id: item.id, label: item.label }))]}
-          selectedRegion={selectedRegion}
-          regionOpen={regionOpen}
-          motionOn={motionOn}
-          onSelectRequest={dash.selectRequest}
-          onToggleRegion={() => {
-            setPolicyOpen(false);
-            setUserMenuOpen(false);
-            setRegionOpen((value) => !value);
-          }}
-          onSelectRegion={(id) => {
-            setSelectedRegion(id);
-            setRegionOpen(false);
-            dash.clearFocus();
-          }}
-        />
-        <AnimatePresence>
-          {showRouteCard && selectedEngineer ? (
-            <RouteCard
-              key="route-card"
-              engineer={selectedEngineer}
-              motionOn={motionOn}
-              onSelectRequest={dash.selectRequest}
-            />
-          ) : null}
-        </AnimatePresence>
-        <AnimatePresence>
-          {showRightPanel ? (
-            <DetailPanel
-              key={panelMode === 'request' ? dash.selectedRequest?.id ?? 'request' : dash.selectedEngineerId ?? 'plan'}
-              mode={panelMode === 'request' ? 'request' : 'plan'}
-              request={dash.selectedRequest}
-              explanation={panelExplanation}
-              motionOn={motionOn}
-              onClose={() => dash.clearFocus()}
-            />
-          ) : null}
-        </AnimatePresence>
-        </>
-        ) : null}
+        <div
+          className={`absolute inset-0 ${
+            stackViewKey(stackNav) === 'engineers' ? 'overflow-visible' : 'overflow-hidden'
+          }`}
+        >
+          <AnimatePresence initial={false} custom={stackDir}>
+            <motion.div
+              key={stackViewKey(stackNav)}
+              custom={stackDir}
+              className="absolute inset-0 isolate bg-figma-canvas"
+              initial={motionOn && stackDir !== 0 ? stackSlideEnter(stackDir) : false}
+              animate={{ x: 0, y: 0 }}
+              exit={motionOn && stackDir !== 0 ? stackSlideExit(stackDir) : undefined}
+              transition={motionOn && stackDir !== 0 ? slide : { duration: 0 }}
+            >
+              {stackViewKey(stackNav) === 'policy' ? (
+                <PolicyComparisonView
+                  snapshot={dash.snapshot}
+                  comparison={dash.policyComparison}
+                  loading={dash.policyComparisonLoading}
+                  error={dash.policyComparisonError}
+                  recorded={dash.isDemo}
+                  readOnly={dash.source === 'cached'}
+                  onRefresh={() => void dash.refreshPolicyComparison()}
+                />
+              ) : null}
+              {stackViewKey(stackNav) === 'alerts' ? (
+                <AlertsView
+                  snapshot={dash.snapshot}
+                  toasts={toasts}
+                  motionOn={motionOn}
+                  onOpenRequest={(requestId) => {
+                    setStackDir(stackSlideDir(stackNav, 'requests'));
+                    setStackNav('requests');
+                    setActiveNav('requests');
+                    setOpenedRequestId(requestId);
+                    dash.selectRequest(requestId);
+                  }}
+                />
+              ) : null}
+              {stackViewKey(stackNav) === 'requests' ? (
+                <RequestsView
+                  snapshot={dash.snapshot}
+                  selectedRequestId={dash.selectedRequest?.id ?? null}
+                  onSelect={(requestId) => {
+                    setOpenedRequestId(requestId);
+                    dash.selectRequest(requestId);
+                  }}
+                />
+              ) : null}
+              {stackViewKey(stackNav) === 'engineers' ? (
+                <EngineersView
+                  snapshot={visibleSnapshot}
+                  selectedEngineerId={dash.selectedEngineerId}
+                  motionOn={motionOn}
+                  busy={dash.busy}
+                  onSelectEngineer={dash.selectEngineer}
+                  onLinkEmail={dash.linkEngineerEmail}
+                  onSetAvailability={(engineerId, availability) => {
+                    void dash.updateEngineerAvailability(engineerId, availability);
+                  }}
+                  onOpenChat={(engineerId) => {
+                    dash.selectEngineer(engineerId);
+                    setStackDir(stackSlideDir(stackNav, 'chats'));
+                    setStackNav('chats');
+                    setActiveNav('chats');
+                  }}
+                />
+              ) : null}
+              {stackViewKey(stackNav) === 'main' ? (
+                <>
+                  <EngineersColumn
+                    engineers={visibleEngineers}
+                    totalCount={roster.length}
+                    requestCount={requestCount}
+                    totalKm={totalKm}
+                    planLabel={planLabel}
+                    unassignedTitle={view?.unassignedTitle ?? MAIN_DASHBOARD.unassigned.title}
+                    unassignedReason={view?.unassignedReason ?? MAIN_DASHBOARD.unassigned.reason}
+                    selectedEngineerId={dash.selectedEngineerId}
+                    searchOpen={searchOpen}
+                    searchQuery={searchQuery}
+                    motionOn={motionOn}
+                    onSearchToggle={() => {
+                      if (searchOpen) {
+                        setSearchOpen(false);
+                        setSearchQuery('');
+                        return;
+                      }
+                      setSearchOpen(true);
+                    }}
+                    onSearchChange={setSearchQuery}
+                    onSelect={(id) => {
+                      dash.selectEngineer(id);
+                      setSearchOpen(false);
+                      setSearchQuery('');
+                    }}
+                    onSelectUnassigned={() => {
+                      if (view?.firstUnassignedId) dash.selectRequest(view.firstUnassignedId);
+                    }}
+                  />
+                  <MapCard
+                    snapshot={visibleSnapshot}
+                    selectedEngineerId={dash.selectedEngineerId}
+                    selectedRequestId={dash.selectedRequest?.id ?? null}
+                    frame={mapFrame}
+                    regionLabel={regionLabel}
+                    regions={[{ id: ALL_REGIONS, label: 'Все регионы' }, ...regions.map((item) => ({ id: item.id, label: item.label }))]}
+                    selectedRegion={selectedRegion}
+                    regionOpen={regionOpen}
+                    motionOn={motionOn}
+                    onSelectRequest={dash.selectRequest}
+                    onToggleRegion={() => {
+                      setPolicyOpen(false);
+                      setUserMenuOpen(false);
+                      setRegionOpen((value) => !value);
+                    }}
+                    onSelectRegion={(id) => {
+                      setSelectedRegion(id);
+                      setRegionOpen(false);
+                      dash.clearFocus();
+                    }}
+                  />
+                  <AnimatePresence>
+                    {showRouteCard && selectedEngineer ? (
+                      <RouteCard
+                        key="route-card"
+                        engineer={selectedEngineer}
+                        motionOn={motionOn}
+                        onSelectRequest={dash.selectRequest}
+                      />
+                    ) : null}
+                  </AnimatePresence>
+                  <AnimatePresence>
+                    {showRightPanel ? (
+                      <DetailPanel
+                        key={panelMode === 'request' ? dash.selectedRequest?.id ?? 'request' : dash.selectedEngineerId ?? 'plan'}
+                        mode={panelMode === 'request' ? 'request' : 'plan'}
+                        request={dash.selectedRequest}
+                        explanation={panelExplanation}
+                        motionOn={motionOn}
+                        onClose={() => dash.clearFocus()}
+                      />
+                    ) : null}
+                  </AnimatePresence>
+                </>
+              ) : null}
+            </motion.div>
+          </AnimatePresence>
+          <AnimatePresence initial={false}>
+            {activeNav === 'requests' && openedRequestId ? (
+              <motion.div
+                key={openedRequestId}
+                className="absolute inset-0 isolate z-10 bg-figma-canvas"
+                initial={motionOn ? { x: '100%' } : false}
+                animate={{ x: 0 }}
+                exit={motionOn ? { x: '100%' } : undefined}
+                transition={motionOn ? slide : { duration: 0 }}
+              >
+                <RequestDetailView
+                  snapshot={dash.snapshot}
+                  requestId={openedRequestId}
+                  motionOn={motionOn}
+                  onBack={() => {
+                    setOpenedRequestId(null);
+                    dash.clearFocus();
+                  }}
+                />
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        </div>
       </div>
     </div>
   );
@@ -1655,12 +1721,12 @@ function RouteCard({
           className="absolute inset-0"
         >
           <FigmaText
-            className="figma-nowrap pointer-events-none absolute left-[30px] right-[30px] top-[30px] overflow-hidden font-bold text-[28px] tracking-[-0.476px] text-ellipsis text-figma-ink"
+            className="figma-text-keep-descenders figma-nowrap pointer-events-none absolute left-[30px] right-[30px] top-[30px] overflow-x-hidden font-bold text-[28px] tracking-[-0.476px] text-ellipsis text-figma-ink"
             title={`Маршрут ${engineer.name}`}
           >
             Маршрут {truncateEnd(engineer.name, 22)}
           </FigmaText>
-          <FigmaText className="figma-nowrap pointer-events-none absolute left-[30px] top-[68px] font-semibold text-[18px] tracking-[-0.306px] text-figma-muted">
+          <FigmaText className="figma-text-keep-descenders figma-nowrap pointer-events-none absolute left-[30px] top-[68px] font-semibold text-[18px] tracking-[-0.306px] text-figma-muted">
             {engineer.routeUpdated}
           </FigmaText>
           <div ref={scrollerRef} className="route-scroll absolute inset-x-0 top-[110px] bottom-[22px] overflow-x-auto">

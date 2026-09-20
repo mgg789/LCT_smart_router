@@ -45,7 +45,7 @@ export const FIGMA_ASSETS = {
   iconBack: '/figma/icon-back.svg',
   iconSparkles: '/figma/icon-sparkles.svg',
   toastSystem: '/figma/icon-toast-wrench.svg',
-  toastProgress: '/figma/icon-toast-progress.png',
+  toastProgress: '/figma/icon-toast-progress.svg',
   toastAi: '/figma/icon-toast-robot.svg',
   toastChat: '/figma/icon-toast-message.svg',
   toastRoute: '/figma/icon-toast-route.svg',
@@ -59,4 +59,20 @@ export const FIGMA_ASSETS = {
   statusAssigned: '/figma/status-dot-assigned.svg',
   statusDone: '/figma/status-dot-done.svg',
   statusUnassigned: '/figma/status-dot-unassigned.svg',
+  engPortrait1: '/figma/eng-portrait-1.png',
+  engPortrait2: '/figma/eng-portrait-2.png',
+  engPortrait3: '/figma/eng-portrait-3.png',
+  engEdit: '/figma/icon-eng-edit.svg',
+  engTransport: '/figma/icon-eng-transport.svg',
+  engOffice: '/figma/icon-eng-office.svg',
+  engChat: '/figma/icon-eng-chat.svg',
+  engSearch: '/figma/icon-eng-search.svg',
+  engDot: '/figma/icon-eng-dot.svg',
 } as const;
+
+/** Three Figma portraits cycled on the Engineers ring when the API has no photo. */
+export const ENGINEER_PORTRAITS = [
+  FIGMA_ASSETS.engPortrait1,
+  FIGMA_ASSETS.engPortrait2,
+  FIGMA_ASSETS.engPortrait3,
+] as const;

@@ -108,7 +108,7 @@ export function InboxNoticeCardView({
               alt=""
               width={icon.width}
               height={icon.height}
-              className="brightness-0 invert"
+              className={icon.src.endsWith('.png') ? undefined : 'brightness-0 invert'}
             />
           </span>
         }

@@ -1,10 +1,12 @@
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useEffect, useState, type ReactNode } from 'react';
 import { FIGMA_ASSETS } from './assets';
 import { type DispatcherSettings, readDispatcherSettings, validateDispatcherSettings } from './dispatcherSettings';
+import { ModalLayer, ModalScrim } from './modalLayer';
 import { FigmaIcon } from './primitives';
 
 const fade = { duration: 0.22, ease: [0.22, 1, 0.36, 1] as const };
+const CAPSULE_SPRING = { type: 'spring' as const, stiffness: 320, damping: 30, mass: 0.72 };
 const FIELD =
   'mt-[8px] h-[56px] w-full rounded-[20px] border border-figma-ink/15 bg-white px-[18px] font-medium text-[18px] tracking-[-0.3px] text-figma-ink outline-none placeholder:text-figma-hint focus:border-figma-ink';
 
@@ -42,22 +44,8 @@ export function SettingsModal({
   };
 
   return (
-    <AnimatePresence>
-      {open ? (
-        <motion.div
-          className="absolute inset-0 z-[100] flex items-center justify-center"
-          initial={motionOn ? { opacity: 0 } : false}
-          animate={{ opacity: 1 }}
-          exit={motionOn ? { opacity: 0 } : undefined}
-          transition={{ duration: 0.2 }}
-        >
-          <button
-            type="button"
-            className="absolute inset-0 bg-figma-ink/40"
-            aria-label="Закрыть настройки"
-            disabled={submitting}
-            onClick={onClose}
-          />
+    <ModalLayer open={open} motionOn={motionOn}>
+          <ModalScrim label="Закрыть настройки" disabled={submitting} onClose={onClose} />
           <motion.div
             role="dialog"
             aria-modal="true"
@@ -140,20 +128,11 @@ export function SettingsModal({
               </Field>
 
               <p className="mt-[20px] font-semibold text-[16px] text-figma-ink">API карт</p>
-              <div className="mt-[8px] flex rounded-[20px] bg-figma-track p-[4px]">
-                <ProviderChip
-                  active={draft.mapProvider === '2gis'}
-                  onClick={() => setField('mapProvider', '2gis')}
-                >
-                  2ГИС
-                </ProviderChip>
-                <ProviderChip
-                  active={draft.mapProvider === 'yandex'}
-                  onClick={() => setField('mapProvider', 'yandex')}
-                >
-                  Яндекс
-                </ProviderChip>
-              </div>
+              <ProviderSwitch
+                value={draft.mapProvider}
+                motionOn={motionOn}
+                onChange={(next) => setField('mapProvider', next)}
+              />
 
               <Field
                 label={draft.mapProvider === 'yandex' ? 'Токен Яндекс' : 'Токен 2ГИС'}
@@ -193,9 +172,7 @@ export function SettingsModal({
               </button>
             </form>
           </motion.div>
-        </motion.div>
-      ) : null}
-    </AnimatePresence>
+    </ModalLayer>
   );
 }
 
@@ -216,24 +193,51 @@ function Field({
   );
 }
 
-function ProviderChip({
-  active,
-  onClick,
-  children,
+function ProviderSwitch({
+  value,
+  motionOn,
+  onChange,
 }: {
-  active: boolean;
-  onClick: () => void;
-  children: string;
+  value: DispatcherSettings['mapProvider'];
+  motionOn: boolean;
+  onChange: (value: DispatcherSettings['mapProvider']) => void;
 }) {
+  const index = value === '2gis' ? 0 : 1;
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex h-[48px] flex-1 items-center justify-center rounded-[16px] font-semibold text-[16px] transition-colors duration-150 ${
-        active ? 'bg-white text-figma-ink shadow-[0_4px_12px_rgba(39,41,48,0.08)]' : 'text-figma-muted'
-      }`}
-    >
-      {children}
-    </button>
+    <div className="mt-[8px] h-[56px] rounded-[20px] bg-figma-track p-[4px]">
+      <div className="relative grid h-full grid-cols-2">
+        <motion.span
+          aria-hidden
+          className="pointer-events-none absolute inset-y-0 left-0 w-1/2 rounded-[16px] bg-white shadow-[0_4px_12px_rgba(39,41,48,0.08)]"
+          initial={false}
+          animate={{ x: `${index * 100}%` }}
+          transition={motionOn ? CAPSULE_SPRING : { duration: 0 }}
+        />
+        {(
+          [
+            ['2gis', '2ГИС'],
+            ['yandex', 'Яндекс'],
+          ] as const
+        ).map(([id, label]) => {
+          const active = value === id;
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => onChange(id)}
+              className="relative z-10 flex h-full items-center justify-center rounded-[16px]"
+            >
+              <span
+                className={`font-semibold text-[16px] transition-colors duration-300 ease-out ${
+                  active ? 'text-figma-ink' : 'text-figma-muted'
+                }`}
+              >
+                {label}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }

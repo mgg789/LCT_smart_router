@@ -320,6 +320,9 @@ CAS по `expectedContextVersion`: устарели — 409 `VERSION_CONFLICT`, 
 `POST /dispatch/regions` — офисы и новые регионы из той же модалки живут
 в сессии фронта, пока их не появят в API. `POST /dispatch/engineers`
 сейчас требует `email`; форма считает почту необязательной.
+Вкладки «Инженеры» не хватает `DELETE /dispatch/engineers/:id` и смены уже
+привязанной почты (есть только `POST /dispatch/engineers/link-account` для
+профиля без адреса).
 Часы смены диспетчера и ключ 2ГИС/Яндекс в «Настройках» — только
 `localStorage` (`lct.dispatcher.settings`): нет `PUT /dispatch/settings`
 и нет контракта на токен карт. Допуск опоздания 0–15 мин мапится на

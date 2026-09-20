@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useLetterboxInsets } from './artboardScale';
 import { FIGMA_ASSETS } from './assets';
-import { FIGMA_ARTBOARD } from './fixtures';
 import { FigmaIcon } from './primitives';
 import {
   TOAST_CARD_HEIGHT,
@@ -43,31 +43,6 @@ type ToastGhost = {
   top: number;
   startX: number;
 };
-
-/**
- * Viewport letterbox around the scaled artboard, in artboard units. The veil
- * stretches into it so the dim/blur sheet is not cut by the page margins.
- */
-function useLetterboxInsets(scale: number): { x: number; y: number } {
-  const [insets, setInsets] = useState(() => measureLetterbox(scale));
-
-  useEffect(() => {
-    const update = () => setInsets(measureLetterbox(scale));
-    update();
-    window.addEventListener('resize', update);
-    return () => window.removeEventListener('resize', update);
-  }, [scale]);
-
-  return insets;
-}
-
-function measureLetterbox(scale: number): { x: number; y: number } {
-  const fit = Math.max(scale, 0.01);
-  return {
-    x: Math.max(0, (window.innerWidth - FIGMA_ARTBOARD.width * fit) / (2 * fit)),
-    y: Math.max(0, (window.innerHeight - FIGMA_ARTBOARD.height * fit) / (2 * fit)),
-  };
-}
 
 /**
  * Right-hand toast stack. Swipe/close travel past the artboard edge, not a clip box.
