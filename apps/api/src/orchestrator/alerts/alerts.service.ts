@@ -224,20 +224,23 @@ export class AlertsService {
     const workDate = input.workDate ?? (await this.workDateForEngineer(tx, input.engineerIds[0]));
     // Router reuses e.g. lunch:{engineer} across dates. A condition, not a transient
     // result id, is the durable identity of the alert episode.
-    const dedupKey = `router:${code}:${workDate ?? 'unknown'}:${input.engineerIds.join(',')}:${input.requestIds.join(',')}:${input.id}`;
-    const existing = await tx.alert.findUnique({ where: { dedupKey } });
-    if (existing) {
-      if (
-        (existing.invalidatedAt !== null && existing.resolvedAt === null) ||
-        existing.sourceResultId !== input.sourceResultId
-      ) {
-        await tx.alert.update({
-          where: { id: existing.id },
-          data: { invalidatedAt: null, sourceResultId: input.sourceResultId },
-        });
-      }
+    const conditionKey = `router:${code}:${workDate ?? 'unknown'}:${[...input.engineerIds].sort().join(',')}:${[...input.requestIds].sort().join(',')}:${input.id}`;
+    const existing = await tx.alert.findFirst({
+      where: {
+        OR: [{ dedupKey: conditionKey }, { dedupKey: { startsWith: `${conditionKey}:episode:` } }],
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (existing?.invalidatedAt === null) {
+      await tx.alert.update({
+        where: { id: existing.id },
+        data: { sourceResultId: input.sourceResultId },
+      });
       return;
     }
+    const dedupKey = existing
+      ? `${conditionKey}:episode:${input.sourceResultId ?? now}`
+      : conditionKey;
     await tx.alert.create({
       data: {
         dedupKey,
@@ -271,6 +274,15 @@ export class AlertsService {
         invalidatedAt: null,
       },
       data: { invalidatedAt: BigInt(now), resolvedAt: BigInt(now), resolutionAction: 'superseded' },
+    });
+    await tx.alert.updateMany({
+      where: {
+        dedupKey: { startsWith: 'router:' },
+        sourceResultId: { not: resultId },
+        resolvedAt: { not: null },
+        invalidatedAt: null,
+      },
+      data: { invalidatedAt: BigInt(now) },
     });
   }
 
@@ -435,6 +447,7 @@ export class AlertsService {
         data: {
           windowStartAt: BigInt(start),
           windowEndAt: BigInt(end),
+          assignmentState: 'pending',
           updatedAt: BigInt(context.now),
           version: { increment: 1 },
         },
@@ -470,7 +483,11 @@ export class AlertsService {
       if (
         !request ||
         request.lifecycle !== 'submitted' ||
-        day.availability === 'online' ||
+        day.availability !== 'offline' ||
+        day.engineer.archivedAt !== null ||
+        (request.region !== null && day.engineer.region !== request.region) ||
+        (request.requiredTransport !== null &&
+          day.engineer.transportType !== request.requiredTransport) ||
         !day.engineer.skills.includes(request.requiredSkill) ||
         Number(day.shiftStartAt) > Number(request.windowStartAt) ||
         Number(day.shiftEndAt) < Number(request.windowEndAt)
@@ -485,6 +502,14 @@ export class AlertsService {
           availability: 'online',
           attendanceOptOut: false,
           attendanceGraceUntil: BigInt(context.now + NO_SHOW_SECONDS),
+          updatedAt: BigInt(context.now),
+          version: { increment: 1 },
+        },
+      });
+      await context.tx.request.update({
+        where: { id: requestId },
+        data: {
+          assignmentState: 'pending',
           updatedAt: BigInt(context.now),
           version: { increment: 1 },
         },
@@ -590,7 +615,12 @@ export class AlertsService {
         category: 'engineer_attention_required',
         businessEventKey: `engineer_attention:${alert.code}:${alert.id}`,
         recipientEmail: day.engineer.account?.email ?? null,
-        payload: { engineerId, alertCode: alert.code },
+        payload: {
+          engineerId,
+          alertCode: alert.code,
+          action: input.action,
+          message: input.reason ?? null,
+        },
       });
     }
     if (input.action === 'remove_shift' || input.action === 'message_remove') {
@@ -759,6 +789,7 @@ export class AlertsService {
           const request = requestsById.get(stop.requestId);
           if (
             !request ||
+            request.assignmentState !== 'assigned' ||
             request.lifecycle !== 'submitted' ||
             pointer.plan.origin !== 'auto' ||
             Number(stop.startAt) <= Number(request.windowEndAt) + TIME_RISK_SECONDS
@@ -832,7 +863,14 @@ export class AlertsService {
         }
       }
       for (const day of days) {
-        if (!day.lunchRequired || day.lunchTaken) continue;
+        if (
+          !day.lunchEnabled ||
+          !day.lunchRequired ||
+          day.lunchTaken ||
+          day.availability !== 'online' ||
+          day.workDate !== workDateForMoment(Number(pointer.plan.planAsOf), days)
+        )
+          continue;
         const route = pointer.plan.routes.find((x) => x.engineerId === day.engineerId);
         if (!route || route.lunchStatus !== 'scheduled') {
           const key = `system:lunch_conflict:${day.id}`;

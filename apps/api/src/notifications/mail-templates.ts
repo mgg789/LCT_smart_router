@@ -339,10 +339,19 @@ export function renderMail(
     }
     case 'engineer_attention_required': {
       const href = appLink(base, '/engineer');
+      const calledIn = payload.alertCode === 'called_in';
+      const removed = payload.action === 'message_remove';
+      const title = calledIn ? 'Вызов на смену' : removed ? 'Изменение смены' : 'Нужно отметиться';
+      const message = calledIn
+        ? 'Диспетчер вызвал вас на смену. Откройте приложение и подтвердите выход.'
+        : removed
+          ? 'Диспетчер снял вас со смены из-за отсутствия отметки о выходе. Свяжитесь с диспетчером.'
+          : 'Диспетчер ожидает подтверждение вашего статуса. Откройте приложение и отметьтесь.';
+      const note = asString(payload.message);
       return genericMail(
-        'Нужно отметиться',
-        `<p style="margin:0 0 20px;">Диспетчер ожидает подтверждение вашего статуса. Откройте приложение и отметьтесь.</p>${buttonPill(href, 'Открыть приложение')}`,
-        `Диспетчер ожидает подтверждение статуса. Откройте приложение:\n${href}`,
+        title,
+        `<p style="margin:0 0 20px;">${escapeHtml(message)}</p>${note ? `<p>${escapeHtml(note)}</p>` : ''}${buttonPill(href, 'Открыть приложение')}`,
+        `${message}${note ? `\n${note}` : ''}\n${href}`,
         base,
       );
     }

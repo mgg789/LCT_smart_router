@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { SysError } from '../../common/errors';
 import { type AppliedPlan, Prisma } from '../../generated/prisma/client';
 import { AlertsService } from '../../orchestrator/alerts';
+import { workDateOf } from '../../orchestrator/engineers/workday';
 import type { Tx } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../mount-data-eng';
 import type { RouterPlan, RouterResult } from './result.types';
@@ -60,7 +61,13 @@ export class AppliedPlanService {
     await this.issueMorningEquipment(tx, now, main);
     await this.syncAssignmentStates(tx, now, main);
     await this.movePointer(tx, now, plan.id);
-    await this.storeAlerts(tx, now, main, result.result_id);
+    await this.storeAlerts(
+      tx,
+      now,
+      main,
+      result.result_id,
+      workDateOf(result.planning_as_of ?? now, 'Europe/Moscow'),
+    );
     await this.alerts.invalidateOtherRouterConditions(tx, now, result.result_id);
     await this.alerts.recordPlanRebuilt(tx, now, result.result_id);
 
@@ -362,6 +369,7 @@ export class AppliedPlanService {
     now: number,
     plan: RouterPlan,
     resultId: string | null,
+    workDate: string,
   ): Promise<void> {
     for (const alert of plan.alerts) {
       await this.alerts.ingestRouter(tx, now, {
@@ -373,7 +381,7 @@ export class AppliedPlanService {
         reasons: alert.reasons as object,
         restoreOption: alert.restore_option ?? null,
         sourceResultId: resultId,
-        workDate: null,
+        workDate,
       });
     }
   }
