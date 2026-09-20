@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  changeEngineerEmail,
   closeDispatchShift,
   createDispatchEngineer,
   createDispatchRequest,
@@ -884,13 +885,18 @@ export function useDashboard() {
     ],
   );
 
-  /** Grants a login address to a brigade that arrived without one. Does not republish. */
-  const linkEngineerLogin = useCallback(
+  /** Grants or replaces an Engineer App login without changing routing parameters. */
+  const saveEngineerLogin = useCallback(
     async (engineerId: string, email: string) => {
       if (!token || sourceRef.current !== 'live') {
-        throw new Error('Привязка почты доступна только в живом контуре');
+        throw new Error('Изменение почты доступно только в живом контуре');
       }
-      await linkEngineerAccount(token, engineerId, email);
+      const engineer = snapshotRef.current?.engineers.find((item) => item.id === engineerId);
+      if (engineer?.hasAccount) {
+        await changeEngineerEmail(token, engineerId, email, engineer.version);
+      } else {
+        await linkEngineerAccount(token, engineerId, email);
+      }
       await refresh();
     },
     [refresh, token],
@@ -1213,7 +1219,7 @@ export function useDashboard() {
     setMode,
     refreshPolicyComparison,
     updateEngineerAvailability,
-    linkEngineerLogin,
+    saveEngineerLogin,
     unlinkEngineerLogin,
     createRequest,
     createEngineer,

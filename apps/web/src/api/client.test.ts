@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  changeEngineerEmail,
   createDispatchEngineer,
   createDispatchRequest,
   DashboardApiError,
@@ -381,7 +382,7 @@ describe('live dashboard client', () => {
     expect(inputHash).toBe('availability-input');
   });
 
-  it('sends the compact create and archive contracts used by the Figma dashboard', async () => {
+  it('sends the compact create, email change and archive contracts used by the Figma dashboard', async () => {
     const calls: Array<{ path: string; method: string; body: Record<string, unknown> }> = [];
     vi.stubGlobal(
       'fetch',
@@ -411,6 +412,7 @@ describe('live dashboard client', () => {
       region: 'east',
       email: null,
     });
+    await changeEngineerEmail('session-token', 'engineer/1', 'new@example.test', 6);
     await deleteDispatchEngineer('session-token', 'engineer/1', 7);
 
     expect(calls[0]).toMatchObject({
@@ -424,6 +426,15 @@ describe('live dashboard client', () => {
       body: { operationId: expect.any(String), email: null },
     });
     expect(calls[2]).toMatchObject({
+      path: expect.stringContaining('/api/v1/dispatch/engineers/engineer%2F1/email'),
+      method: 'PUT',
+      body: {
+        operationId: expect.any(String),
+        email: 'new@example.test',
+        expectedVersion: 6,
+      },
+    });
+    expect(calls[3]).toMatchObject({
       path: expect.stringContaining('/api/v1/dispatch/engineers/engineer%2F1'),
       method: 'DELETE',
       body: { operationId: expect.any(String), expectedVersion: 7 },

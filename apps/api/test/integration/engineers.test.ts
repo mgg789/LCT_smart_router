@@ -747,6 +747,56 @@ describe('engineers and working days', () => {
     assert.equal(verify.status, 401);
   });
 
+  it('lets the dispatcher replace an engineer login without deleting the profile', async () => {
+    const { email, engineer } = await createEngineer();
+    const oldToken = await signIn(email);
+    const nextEmail = `${unique('changed')}@example.test`;
+    emails.push(nextEmail);
+
+    const changed = await call(
+      'PUT',
+      `/api/v1/dispatch/engineers/${engineer.id}/email`,
+      dispatcherToken,
+      {
+        operationId: randomUUID(),
+        expectedVersion: engineer.version,
+        email: nextEmail,
+      },
+    );
+    assert.equal(changed.status, 200, await changed.clone().text());
+    const view = ((await changed.json()) as EngineerBody).engineer;
+    assert.equal(view.id, engineer.id);
+    assert.equal(view.email, nextEmail);
+    assert.equal(view.version, engineer.version + 1);
+
+    assert.equal((await call('GET', '/api/v1/engineer/profile', oldToken)).status, 401);
+    const nextToken = await signIn(nextEmail);
+    const profile = await call('GET', '/api/v1/engineer/profile', nextToken);
+    assert.equal(profile.status, 200);
+    assert.equal(
+      ((await profile.json()) as { engineer: EngineerBody['engineer'] }).engineer.id,
+      engineer.id,
+    );
+
+    const oldAccount = await prisma.account.findUniqueOrThrow({
+      where: { email },
+      include: { roles: true },
+    });
+    assert.equal(oldAccount.roles.some((role) => role.role === 'engineer'), false);
+
+    const staleNoOp = await call(
+      'PUT',
+      `/api/v1/dispatch/engineers/${engineer.id}/email`,
+      dispatcherToken,
+      {
+        operationId: randomUUID(),
+        expectedVersion: engineer.version,
+        email: nextEmail,
+      },
+    );
+    assert.equal(staleNoOp.status, 409, await staleNoOp.clone().text());
+  });
+
   it('lets only the dispatcher link logins to engineers', async () => {
     const { email } = await createEngineer();
     const engineerToken = await signIn(email);

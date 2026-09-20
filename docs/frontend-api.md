@@ -197,6 +197,8 @@ Authorization: Bearer <token>
 
 **POST `/dispatch/engineers/link-account`** — `{operationId, engineerId, email}` → `{engineer}`. Выдать логин профилю без адреса (бригада из импорта): аккаунт создаётся, роль инженера выдаётся, параметры планирования не меняются. Повторная привязка и адрес, уже являющийся логином другого инженера, — `VALIDATION_FAILED`. После привязки инженер входит через `POST /auth/login-code` + `verify` с `role: "engineer"`.
 
+**PUT `/dispatch/engineers/:id/email`** — `{operationId, expectedVersion?, email}` → `{engineer}`. Диспетчер заменяет привязанный логин из основной панели инженера. Сессии и роль старого адреса отзываются, новый адрес получает роль инженера; профиль, планы и параметры маршрутизации не меняются.
+
 **POST `/dispatch/engineers/unlink-account`** — `{operationId, engineerId}` → `{engineer}`. Снимает логин: `hasAccount: false`, `email: null`, роль инженера удаляется, живые сессии инженера отзываются. Профиль и план не меняются. Новый `verify` с `role: "engineer"` на этот адрес — `401`.
 
 **PATCH `/dispatch/engineers/:id`** — `{operationId, expectedVersion?, displayName?, skills?, transportType?, region?, homeLat?, homeLon?}` → `{engineer}`.

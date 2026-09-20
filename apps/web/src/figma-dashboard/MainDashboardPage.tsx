@@ -705,7 +705,7 @@ export function MainDashboardPage() {
                   motionOn={motionOn}
                   busy={dash.busy}
                   onSelectEngineer={dash.selectEngineer}
-                  onLinkEmail={dash.linkEngineerLogin}
+                  onLinkEmail={dash.saveEngineerLogin}
                   onDeleteEngineer={dash.deleteEngineer}
                   onSetAvailability={(engineerId, availability) => {
                     void dash.updateEngineerAvailability(engineerId, availability);

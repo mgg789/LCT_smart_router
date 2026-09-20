@@ -278,6 +278,89 @@ export class EngineersService {
   }
 
   /**
+   * Replaces the login address the dispatcher granted to an engineer profile.
+   *
+   * The old engineer role and its live sessions are revoked atomically. Planning data
+   * does not change, so the Router input is deliberately not republished.
+   */
+  async changeEmail(
+    context: OperationContext,
+    engineerId: string,
+    expectedVersion: number | null | undefined,
+    email: string,
+  ): Promise<EngineerWithAccount> {
+    const engineer = await this.load(context.tx, engineerId);
+    if (engineer.accountId === null) {
+      throw new SysError('VALIDATION_FAILED', 'This engineer has no login to replace', {
+        details: { engineerId },
+      });
+    }
+    if (expectedVersion !== null && expectedVersion !== undefined && expectedVersion !== engineer.version) {
+      assertWriteApplied('Engineer', 0, expectedVersion, engineer.version);
+    }
+
+    const normalized = email.trim().toLowerCase();
+    const currentAccount = await context.tx.account.findUniqueOrThrow({
+      where: { id: engineer.accountId },
+    });
+    if (currentAccount.email === normalized) {
+      return context.tx.engineer.findUniqueOrThrow({
+        where: { id: engineerId },
+        include: { account: true },
+      });
+    }
+
+    const now = BigInt(context.now);
+    const nextAccount = await context.tx.account.upsert({
+      where: { email: normalized },
+      update: {},
+      create: { email: normalized, createdAt: now, updatedAt: now },
+    });
+    const taken = await context.tx.engineer.findUnique({
+      where: { accountId: nextAccount.id },
+    });
+    if (taken && taken.id !== engineerId) {
+      throw new SysError(
+        'VALIDATION_FAILED',
+        'This address is already the login of another engineer',
+        { details: { engineerId, linkedEngineerId: taken.id } },
+      );
+    }
+
+    await context.tx.accountRole.upsert({
+      where: { accountId_role: { accountId: nextAccount.id, role: 'engineer' } },
+      update: {},
+      create: { accountId: nextAccount.id, role: 'engineer', grantedAt: now },
+    });
+    const updated = await context.tx.engineer.updateMany({
+      where: {
+        id: engineerId,
+        accountId: engineer.accountId,
+        version: expectedVersion ?? engineer.version,
+      },
+      data: {
+        accountId: nextAccount.id,
+        updatedAt: now,
+        version: { increment: 1 },
+      },
+    });
+    assertWriteApplied('Engineer', updated.count, expectedVersion, engineer.version);
+
+    await context.tx.session.updateMany({
+      where: { accountId: engineer.accountId, role: 'engineer', revokedAt: null },
+      data: { revokedAt: now },
+    });
+    await context.tx.accountRole.deleteMany({
+      where: { accountId: engineer.accountId, role: 'engineer' },
+    });
+
+    return context.tx.engineer.findUniqueOrThrow({
+      where: { id: engineerId },
+      include: { account: true },
+    });
+  }
+
+  /**
    * Removes the login from a brigade without deleting the routing profile.
    *
    * The engineer role and live sessions go with the address, so a code sent to that

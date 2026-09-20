@@ -59,6 +59,12 @@ export const linkEngineerAccountSchema = operationEnvelopeSchema.extend({
 });
 export type LinkEngineerAccountDto = z.infer<typeof linkEngineerAccountSchema>;
 
+/** Replaces the login address of an existing engineer profile. */
+export const changeEngineerEmailSchema = operationEnvelopeSchema.extend({
+  email: z.email(),
+});
+export type ChangeEngineerEmailDto = z.infer<typeof changeEngineerEmailSchema>;
+
 /**
  * Removes the login the dispatcher previously granted. The routing profile stays;
  * only the address, the engineer role and live engineer sessions are taken away.

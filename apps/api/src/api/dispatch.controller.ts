@@ -47,6 +47,8 @@ import {
 import {
   type ArchiveEngineerDto,
   archiveEngineerSchema,
+  type ChangeEngineerEmailDto,
+  changeEngineerEmailSchema,
   type CreateEngineerDto,
   createEngineerSchema,
   type LinkEngineerAccountDto,
@@ -404,6 +406,30 @@ export class DispatchController {
       },
       async (context) =>
         toEngineerView(await this.engineers.linkAccount(context, dto.engineerId, dto.email)),
+    );
+    return { engineer: outcome.result };
+  }
+
+  @Put('engineers/:id/email')
+  @ApiOperation({ summary: 'Replace the login address of an engineer profile' })
+  async changeEngineerEmail(
+    @CurrentActor() actor: Actor,
+    @Param('id') id: string,
+    @Body(zodBody(changeEngineerEmailSchema)) dto: ChangeEngineerEmailDto,
+  ): Promise<{ engineer: EngineerView }> {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'engineer.change_email',
+        targetRef: id,
+        expectedVersion: dto.expectedVersion ?? null,
+        payload: dto,
+      },
+      async (context) =>
+        toEngineerView(
+          await this.engineers.changeEmail(context, id, dto.expectedVersion ?? null, dto.email),
+        ),
     );
     return { engineer: outcome.result };
   }

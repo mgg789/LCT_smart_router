@@ -696,6 +696,28 @@ export function linkEngineerAccount(
   );
 }
 
+/** Replaces an existing Engineer App login and revokes sessions of the old address. */
+export function changeEngineerEmail(
+  token: string,
+  engineerId: string,
+  email: string,
+  expectedVersion?: number,
+): Promise<{ engineer: z.infer<typeof engineerProfileSchema> }> {
+  return requestJson(
+    `/api/v1/dispatch/engineers/${encodeURIComponent(engineerId)}/email`,
+    z.object({ engineer: engineerProfileSchema }),
+    token,
+    {
+      method: 'PUT',
+      body: JSON.stringify({
+        operationId: crypto.randomUUID(),
+        email,
+        ...(expectedVersion === undefined ? {} : { expectedVersion }),
+      }),
+    },
+  );
+}
+
 /** Loads and validates all resources required by the dispatcher day screen. */
 export async function loadDashboardSnapshot(token: string): Promise<DashboardSnapshot> {
   const [requests, engineers, planResponse, alerts, policies, settings] = await Promise.all([
