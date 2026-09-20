@@ -1,4 +1,5 @@
 import { type MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
+import { AiModule } from './ai';
 import { ApiModule } from './api/api.module';
 import { AuthModule } from './auth';
 import { AppConfigModule } from './common/config';
@@ -45,6 +46,7 @@ import { RouterGatewayModule } from './routing/router-gateway';
     ImportsModule,
     ResetModule,
     LiveModule,
+    AiModule,
     ApiModule,
   ],
 })
