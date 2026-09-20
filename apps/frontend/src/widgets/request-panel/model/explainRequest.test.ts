@@ -78,7 +78,7 @@ const ROUTE = {
 } as PlanRouteView;
 
 describe('explainRequest', () => {
-  it('states the demand, the crew and the slack in the window', () => {
+  it('states the demand and the slack in the window, in short lines', () => {
     const assignment: PlanAssignmentView = {
       requestId: 'r1',
       status: 'assigned',
@@ -88,13 +88,40 @@ describe('explainRequest', () => {
 
     const explanation = explainRequest(REQUEST, assignment, ENGINEER, ROUTE, [ENGINEER]);
 
-    expect(explanation.title).toBe('Почему Бригада Соколов?');
-    expect(explanation.facts[0]).toContain('навык «Подключение»');
-    expect(explanation.facts[1]).toContain('Легковой автомобиль');
-    expect(explanation.facts[2]).toContain('первая работа');
-    expect(explanation.facts[3]).toContain('запас до конца окна');
-    expect(explanation.result).toBe('Заявка назначена: Бригада Соколов.');
+    expect(explanation.title).toBe('Почему эта бригада?');
+    expect(explanation.points).toContain('Навык: Подключение');
+    expect(explanation.points).toContain('Первая работа после старта смены');
+    expect(explanation.points).toContain('Запас до конца окна: 150 мин');
+    expect(explanation.points).toContain('Ограничения выполнены');
     expect(explanation.fromSearchOnly).toBe(false);
+    expect(explanation.note).toBeNull();
+  });
+
+  it('names no crew: the panel answers on what grounds, not who', () => {
+    const assignment: PlanAssignmentView = {
+      requestId: 'r1',
+      status: 'assigned',
+      engineerId: 'e1',
+      reasons: [],
+    };
+
+    const explanation = explainRequest(REQUEST, assignment, ENGINEER, ROUTE, [ENGINEER]);
+
+    const text = [explanation.title, ...explanation.points].join(' ');
+    expect(text).not.toContain('Соколов');
+  });
+
+  it('keeps every line short enough to read at a glance', () => {
+    const assignment: PlanAssignmentView = {
+      requestId: 'r1',
+      status: 'assigned',
+      engineerId: 'e1',
+      reasons: [{ code: 'skill_match', text: 'ok', basis: 'constraint_check' }],
+    };
+
+    const explanation = explainRequest(REQUEST, assignment, ENGINEER, ROUTE, [ENGINEER]);
+
+    for (const point of explanation.points) expect(point.length).toBeLessThanOrEqual(46);
   });
 
   it('refuses to call a limited search a proof', () => {
@@ -121,7 +148,7 @@ describe('explainRequest', () => {
 
     expect(explanation.title).toBe('Почему без назначения?');
     expect(explanation.fromSearchOnly).toBe(true);
-    expect(explanation.influence).toContain('не доказательство невозможности');
+    expect(explanation.note).toContain('не доказательство');
   });
 
   it('counts the crews of the region that could have taken it', () => {
@@ -133,8 +160,8 @@ describe('explainRequest', () => {
       [ENGINEER, { ...ENGINEER, id: 'e2', skills: ['local'] } as EngineerView],
     );
 
-    expect(explanation.facts[1]).toContain('2 бригад');
-    expect(explanation.facts[1]).toContain('1 с нужным навыком');
+    expect(explanation.points).toContain('Бригад в регионе: 2');
+    expect(explanation.points).toContain('С нужным навыком: 1');
   });
 
   it('says plainly when the solver sent no reasons at all', () => {
@@ -146,7 +173,7 @@ describe('explainRequest', () => {
       [ENGINEER],
     );
 
-    expect(explanation.facts[2]).toContain('не прислал причин');
+    expect(explanation.points).toContain('Решатель не прислал причин');
     expect(explanation.fromSearchOnly).toBe(false);
   });
 });

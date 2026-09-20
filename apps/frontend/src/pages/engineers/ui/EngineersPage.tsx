@@ -13,15 +13,24 @@ import { buildEngineerProfile, routeElapsedShare } from '../model/engineerProfil
 
 /**
  * The canvas the screen is drawn on: what the mockup's 1920×1080 frame leaves a
- * section once the rail, the header and the page gutters are taken out. The
- * screen is laid out at exactly this size and then fitted to the window, so the
- * drawing keeps its proportions instead of spilling out of a shorter one.
+ * section once the rail and the header are taken out. The screen is laid out at
+ * exactly this size and then fitted to the window, so the drawing keeps its
+ * proportions instead of spilling out of a shorter one.
+ *
+ * The page gutters are part of the canvas rather than of the layout around it,
+ * because the deck has to reach through them: it is the whole width of the
+ * screen that the ring curves across.
  */
-const DESIGN = { width: 1706, height: 937 };
+const DESIGN = { width: 1771, height: 937 };
 /** Below this the drawing would be unreadable; the page scrolls instead. */
 const MIN_FIT = 0.62;
 /** Distance between two stops on the day's line. */
 const STOP_WIDTH = 276;
+/** Gutters of the drawing, kept by everything on the canvas except the deck. */
+const GUTTER = 'ml-[31px] mr-[34px]';
+const SEARCH_PLACEHOLDER = 'Найти инженера';
+/** Keeps the field usable while it is empty and the placeholder is short. */
+const MIN_SEARCH_WIDTH = 120;
 
 /** One row of the profile's detail list: icon, dark label, grey value. */
 function Detail({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
@@ -114,6 +123,8 @@ export function EngineersPage() {
   // not the box the fit itself produced.
   const frameRef = useRef<HTMLDivElement>(null);
   const frame = useElementSize(frameRef);
+  const sizerRef = useRef<HTMLSpanElement>(null);
+  const sizer = useElementSize(sizerRef);
   const fit =
     frame.width > 0 && frame.height > 0
       ? Math.max(MIN_FIT, Math.min(1, frame.width / DESIGN.width, frame.height / DESIGN.height))
@@ -160,23 +171,30 @@ export function EngineersPage() {
   }
 
   return (
-    <div className="h-full min-h-0 overflow-auto" ref={frameRef}>
+    <div
+      className="-mr-[34px] -ml-[31px] h-full min-h-0 overflow-y-auto overflow-x-hidden"
+      ref={frameRef}
+    >
       {/*
        * `zoom` fits the drawing to the window: unlike a transform it takes part
        * in layout, so the canvas below is laid out at the mockup's size and ends
        * up filling this frame exactly — no leftover space and no scrollbars.
        */}
       <div className="flex h-full min-h-0 flex-col" style={{ zoom: fit }}>
-        {loading ? <p className="pt-10 text-[16px] text-ink-soft">Загружаем инженеров…</p> : null}
+        {loading ? (
+          <p className={cn(GUTTER, 'pt-10 text-[16px] text-ink-soft')}>Загружаем инженеров…</p>
+        ) : null}
 
         {!loading && !profile ? (
-          <p className="pt-10 text-[16px] text-ink-soft">
+          <p className={cn(GUTTER, 'pt-10 text-[16px] text-ink-soft')}>
             {engineers.length === 0 ? 'Инженеров в этом дне нет.' : 'По запросу никто не найден.'}
           </p>
         ) : null}
 
         {profile ? (
-          <section className="flex shrink-0 overflow-hidden rounded-[20px] bg-surface">
+          <section
+            className={cn(GUTTER, 'flex shrink-0 overflow-hidden rounded-[20px] bg-surface')}
+          >
             {/* The drawing bleeds the portrait to the card's edges. */}
             <Monogram
               className="w-[286px] shrink-0 self-stretch"
@@ -277,8 +295,9 @@ export function EngineersPage() {
                             )}
                             onWheel={wheelAsHorizontal}
                             style={{
-                              // The day runs on past the card's edge, so it fades there.
-                              maskImage: 'linear-gradient(to right, #000 82%, transparent)',
+                              // The day runs on past both ends of the strip.
+                              maskImage:
+                                'linear-gradient(to right, transparent, #000 7%, #000 82%, transparent)',
                             }}
                           >
                             <ol className="relative flex w-max">
@@ -344,7 +363,7 @@ export function EngineersPage() {
           </span>
         </div>
 
-        {/* The deck takes whatever height is left, and the arc is cut to fit it. */}
+        {/* The deck spans the canvas edge to edge, gutters included. */}
         <div className="mt-[22px] min-h-0 flex-1">
           <ArcCarousel
             activeIndex={activeIndex}
@@ -368,10 +387,23 @@ export function EngineersPage() {
         <label className="-mt-[38px] relative z-10 flex shrink-0 items-center justify-center gap-4 pb-1 text-ink">
           <Search aria-hidden size={28} strokeWidth={2.2} />
           <span className="sr-only">Найти инженера</span>
+          {/*
+           * The field is cut to the width of what it holds. A fixed width would
+           * leave slack to the right of the text, and the row would read as
+           * shifted left however carefully the box itself is centred.
+           */}
+          <span
+            aria-hidden
+            className="pointer-events-none absolute whitespace-pre font-display text-[25px] opacity-0"
+            ref={sizerRef}
+          >
+            {query || SEARCH_PLACEHOLDER}
+          </span>
           <input
-            className="w-[300px] bg-transparent font-display text-[25px] text-ink outline-none placeholder:text-ink"
+            className="bg-transparent font-display text-[25px] text-ink outline-none placeholder:text-ink"
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Найти инженера"
+            placeholder={SEARCH_PLACEHOLDER}
+            style={{ width: Math.max(MIN_SEARCH_WIDTH, Math.ceil(sizer.width) + 2) }}
             type="search"
             value={query}
           />

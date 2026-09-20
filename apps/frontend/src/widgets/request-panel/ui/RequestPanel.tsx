@@ -101,20 +101,21 @@ export function RequestPanel({
         <h3 className="font-display text-[20px] text-white">{explanation.title}</h3>
 
         <ul className="mt-3 space-y-2">
-          {explanation.facts.map((fact) => (
-            <li className="flex items-start gap-3 text-[15px] text-white" key={fact}>
+          {explanation.points.map((point) => (
+            <li className="flex items-center gap-3 text-[15px] text-white" key={point}>
               {explanation.fromSearchOnly ? (
-                <CircleHelp aria-hidden className="mt-1 shrink-0 text-white/60" size={16} />
+                <CircleHelp aria-hidden className="shrink-0 text-white/60" size={16} />
               ) : (
-                <Check aria-hidden className="mt-1 shrink-0" size={16} />
+                <Check aria-hidden className="shrink-0" size={16} />
               )}
-              <span>{fact}</span>
+              <span>{point}</span>
             </li>
           ))}
         </ul>
 
-        <p className="mt-4 text-[15px] text-white/75">{explanation.influence}</p>
-        <p className="mt-3 font-semibold text-[16px] text-white">{explanation.result}</p>
+        {explanation.note ? (
+          <p className="mt-4 text-[13px] text-white/60">{explanation.note}</p>
+        ) : null}
       </div>
 
       <div className="mt-auto flex flex-col gap-3 pt-2">
