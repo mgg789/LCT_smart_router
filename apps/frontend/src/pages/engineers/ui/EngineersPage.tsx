@@ -1,21 +1,22 @@
 import type { LucideIcon } from 'lucide-react';
 import { ArrowUpRight, Car, Clock, MapPin, Search, Utensils } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import type { EngineerView } from '@/entities/engineer';
 import { useEngineers } from '@/entities/engineer';
 import { useDispatchState } from '@/entities/plan';
 import { useRequests } from '@/entities/request';
 import { cn, formatKm, formatRange, formatTime } from '@/shared/lib';
-import { Carousel, Monogram } from '@/shared/ui';
-import type { EngineerProfile } from '../model/engineerProfile';
-import { buildEngineerProfile } from '../model/engineerProfile';
+import { ArcCarousel, initialsOf, Monogram } from '@/shared/ui';
+import type { EngineerProfile, ProfileStop } from '../model/engineerProfile';
+import { buildEngineerProfile, routeElapsedShare } from '../model/engineerProfile';
 
-/** One row of the profile's detail list: icon, label, value. */
+/** One row of the profile's detail list: icon, dark label, grey value. */
 function Detail({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
   return (
-    <div className="flex items-center gap-4 border-ink/10 border-b py-4 last:border-b-0">
-      <Icon aria-hidden className="shrink-0 text-ink" size={20} />
-      <span className="w-[120px] shrink-0 text-[18px] text-ink">{label}</span>
-      <span className="text-[18px] text-ink/60">{value}</span>
+    <div className="flex h-[55px] items-center gap-2 border-muted border-b">
+      <Icon aria-hidden className="shrink-0 text-ink" size={22} strokeWidth={1.8} />
+      <span className="w-[134px] shrink-0 font-semibold text-[19px] text-ink">{label}</span>
+      <span className="truncate text-[19px] text-ink-soft">{value}</span>
     </div>
   );
 }
@@ -29,17 +30,56 @@ function lunchText(profile: EngineerProfile): string {
 }
 
 function baseText(profile: EngineerProfile): string {
-  if (profile.baseLat === null || profile.baseLon === null) return 'не задана';
+  if (profile.baseLat === null || profile.baseLon === null) return 'не задан';
   // The contract carries no address for a crew's base, only its coordinates.
   return `${profile.baseLat.toFixed(4)}, ${profile.baseLon.toFixed(4)}`;
 }
 
+function stopStatus(stop: ProfileStop): string {
+  if (stop.done) return 'выполнено';
+  if (stop.running) return 'в работе';
+  return 'по плану';
+}
+
+/** Heading line of the current stop: where, for whom, when the plan expects arrival. */
+function currentSubtitle(stop: ProfileStop): string {
+  return [
+    stop.title,
+    stop.contactName ? `клиент «${stop.contactName}»` : null,
+    `прибытие по плану в ${formatTime(stop.arrivalAt)}`,
+  ]
+    .filter(Boolean)
+    .join('  •  ');
+}
+
+/** Face of a deck card: a monogram plate, darkened towards the name. */
+function CrewCard({ engineer, assigned }: { engineer: EngineerView; assigned: number }) {
+  return (
+    <span className="relative block h-full w-full bg-ink text-left">
+      <span className="absolute inset-0 flex items-center justify-center font-display text-[84px] text-white/15">
+        {initialsOf(engineer.displayName)}
+      </span>
+      <span className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-ink to-transparent" />
+      <span className="absolute right-6 bottom-6 left-6 block">
+        <span className="block truncate font-display text-[22px] text-white">
+          {engineer.displayName}
+        </span>
+        <span className="mt-1 block text-[15px] text-white/70">в работе — {assigned} заявок</span>
+      </span>
+    </span>
+  );
+}
+
 /**
- * The crews of the day: one profile in full, then a deck of the others.
+ * The crews of the day: one profile card in full, then the deck of all of them
+ * curved along an arc.
  *
- * The mockup fronts this screen with photographs. There are none in the data, so
- * every face is a monogram — the shape of the screen is the drawing's, the
- * content is only what the API actually knows.
+ * The mockup fronts this screen with photographs and a «выполнено 2/6» tally.
+ * There are no photographs in the data, so every face is a monogram; and the
+ * tally has nothing behind it — the plan holds only the work still ahead, and no
+ * dispatcher endpoint attributes finished work to a crew. The bar therefore
+ * measures the one thing the plan does state: how much of the route is behind by
+ * the clock.
  */
 export function EngineersPage() {
   const engineersQuery = useEngineers();
@@ -53,19 +93,30 @@ export function EngineersPage() {
   const requests = requestsQuery.data?.requests ?? [];
   const plan = stateQuery.data?.plan ?? null;
 
-  const activeId = selectedId ?? plan?.routes[0]?.engineerId ?? engineers[0]?.id ?? null;
-  const active = engineers.find((engineer) => engineer.id === activeId) ?? null;
-  const profile = useMemo(
-    () => (active ? buildEngineerProfile(active, plan, requests) : null),
-    [active, plan, requests],
-  );
-
   const deck = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return needle
       ? engineers.filter((engineer) => engineer.displayName.toLowerCase().includes(needle))
       : engineers;
   }, [engineers, query]);
+
+  // The front card of the deck is the profile: a search that hides the current
+  // crew moves the screen to the first match instead of showing an absent one.
+  const activeIndex = Math.max(
+    0,
+    deck.findIndex((engineer) => engineer.id === selectedId),
+  );
+  const active = deck[activeIndex] ?? null;
+  const profile = useMemo(
+    () => (active ? buildEngineerProfile(active, plan, requests) : null),
+    [active, plan, requests],
+  );
+
+  const elapsed = profile ? routeElapsedShare(profile, Math.floor(Date.now() / 1000)) : 0;
+  const current = profile?.current ?? null;
+  const upcoming = current
+    ? (profile?.stops ?? []).filter((stop) => stop.sequence > current.sequence).slice(0, 3)
+    : [];
 
   const failed = engineersQuery.isError || requestsQuery.isError || stateQuery.isError;
   const loading = engineersQuery.isPending || requestsQuery.isPending || stateQuery.isPending;
@@ -79,58 +130,72 @@ export function EngineersPage() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-y-auto pb-6">
-      {loading ? <p className="pt-10 text-[16px] text-ink/55">Загружаем инженеров…</p> : null}
+    <div className="flex h-full min-h-0 flex-col overflow-y-auto">
+      {loading ? <p className="pt-10 text-[16px] text-ink-soft">Загружаем инженеров…</p> : null}
 
       {!loading && !profile ? (
-        <p className="pt-10 text-[16px] text-ink/55">Инженеров в этом дне нет.</p>
+        <p className="pt-10 text-[16px] text-ink-soft">
+          {engineers.length === 0 ? 'Инженеров в этом дне нет.' : 'По запросу никто не найден.'}
+        </p>
       ) : null}
 
       {profile ? (
-        <section className="flex overflow-hidden rounded-[20px] bg-surface">
+        <section className="flex h-[418px] shrink-0 overflow-hidden rounded-[20px] bg-surface">
           {/* The drawing bleeds the portrait to the card's edges. */}
           <Monogram
-            className="w-[293px] shrink-0 self-stretch"
+            className="w-[286px] shrink-0 self-stretch"
             name={profile.name}
             shape="fill"
             size={200}
           />
 
-          <div className="flex min-w-0 flex-1 flex-col p-7">
-            <div className="flex flex-wrap items-center gap-8">
+          <div className="flex min-w-0 flex-1 flex-col pt-7 pr-7 pb-[34px] pl-5">
+            <div className="flex items-start gap-8">
               <div className="min-w-0">
-                <h2 className="truncate font-display text-[36px] text-ink">{profile.name}</h2>
-                <p className="mt-1 text-[16px] text-ink/50">
+                <h2 className="truncate font-display text-[31px] text-ink leading-none">
+                  {profile.name}
+                </h2>
+                <p className="mt-3 truncate text-[17px] text-ink-soft">
                   {profile.email ?? 'вход не привязан'}
                 </p>
               </div>
-              <div className="min-w-[240px] flex-1">
-                <div className="h-[8px] w-full overflow-hidden rounded-full bg-muted">
-                  <div className="h-full w-full rounded-full bg-ink/15" />
+
+              <div className="mt-4 w-[320px] shrink-0">
+                <div
+                  className="h-2 w-full overflow-hidden rounded-full bg-muted"
+                  title="Доля маршрута, которая уже прошла по времени. Сколько заявок бригада закрыла, контракт не отдаёт: начатая работа уходит из плана."
+                >
+                  <div
+                    className="h-full rounded-full bg-ink"
+                    style={{ width: `${Math.round(elapsed * 100)}%` }}
+                  />
                 </div>
-                <p className="mt-2 flex items-baseline gap-3 text-[16px] text-ink/55">
-                  в маршруте {profile.assignedCount} заявок
-                  {profile.distanceKm === null ? null : (
-                    <span className="font-display text-[20px] text-ink">
-                      {formatKm(profile.distanceKm)}
-                    </span>
-                  )}
+                <p className="mt-2 flex items-baseline justify-end gap-3">
+                  <span className="text-[15px] text-ink">
+                    осталось {profile.assignedCount} заявок
+                  </span>
+                  <span className="font-display text-[24px] text-ink">
+                    {profile.distanceKm === null ? '— км' : formatKm(profile.distanceKm)}
+                  </span>
                 </p>
               </div>
             </div>
 
-            <div className="mt-5 flex flex-wrap gap-3">
+            <div className="mt-4 flex flex-wrap gap-3">
               {profile.skills.map((skill) => (
-                <span className="rounded-full bg-muted px-5 py-2 text-[18px] text-ink" key={skill}>
+                <span
+                  className="flex h-[39px] items-center rounded-full bg-muted px-6 text-[19px] text-ink"
+                  key={skill}
+                >
                   {skill}
                 </span>
               ))}
             </div>
 
-            <div className="mt-6 flex flex-1 gap-8">
-              <div className="min-w-0 flex-1">
+            <div className="mt-3 flex min-h-0 flex-1">
+              <div className="flex-[572_1_0%]">
                 <Detail icon={Car} label="Транспорт" value={profile.transport} />
-                <Detail icon={MapPin} label="Старт смены" value={baseText(profile)} />
+                <Detail icon={MapPin} label="Офис" value={baseText(profile)} />
                 <Detail
                   icon={Clock}
                   label="Смена"
@@ -143,54 +208,69 @@ export function EngineersPage() {
                 <Detail icon={Utensils} label="Обед" value={lunchText(profile)} />
               </div>
 
-              <div className="w-px shrink-0 self-stretch bg-ink/10" />
+              <div className="mx-5 w-[2px] shrink-0 bg-muted" />
 
-              <div className="min-w-0 flex-1">
-                {profile.current ? (
+              <div className="min-w-0 flex-[810_1_0%] pt-1">
+                {current ? (
                   <>
-                    <h3 className="font-display text-[28px] text-ink">Текущий пункт плана</h3>
-                    <p className="mt-1 text-[16px] text-ink/55">{profile.current.title}</p>
+                    <h3 className="truncate font-display text-[32px] text-ink">
+                      {current.number ? `Заявка № ${current.number}` : current.title}
+                    </h3>
+                    <p className="mt-2 truncate text-[18px] text-ink-soft">
+                      {currentSubtitle(current)}
+                    </p>
 
-                    <div className="mt-5 flex gap-8">
+                    <div className="mt-6 flex gap-10">
                       <div className="shrink-0">
-                        <p className="font-display text-[64px] text-ink leading-none">
-                          {formatTime(profile.current.endAt)}
+                        <p className="font-display text-[64px] text-ink leading-[0.8]">
+                          {formatTime(current.endAt)}
                         </p>
-                        <p className="mt-3 text-[16px] text-ink/55">
-                          Ожидаемое завершение
+                        <p className="mt-5 text-[18px] text-ink">Ожидаемое завершение &nbsp;•</p>
+                        <p className="mt-1 text-[18px] text-ink">
                           {profile.nextStartAt === null
-                            ? ''
-                            : ` · следующая в ${formatTime(profile.nextStartAt)}`}
+                            ? 'Следующей заявки в плане нет'
+                            : `Следующая заявка в ${formatTime(profile.nextStartAt)}`}
                         </p>
                       </div>
 
-                      <ol className="flex min-w-0 flex-1 gap-6 overflow-x-auto">
-                        {profile.stops.slice(0, 4).map((stop) => (
-                          <li className="min-w-[160px] shrink-0" key={stop.sequence}>
-                            <div className="relative flex h-4 items-center">
-                              <span aria-hidden className="absolute inset-x-0 h-[3px] bg-ink" />
-                              <span
-                                aria-hidden
-                                className={cn(
-                                  'relative size-4 rounded-full',
-                                  stop.running ? 'bg-success' : 'bg-ink',
-                                )}
-                              />
-                            </div>
-                            <p className="mt-3 font-semibold text-[20px] text-ink">
-                              {formatTime(stop.startAt)}
-                            </p>
-                            <p className="mt-1 truncate text-[15px] text-ink">{stop.title}</p>
-                            <p className="text-[13px] text-ink/50">
-                              {stop.done ? 'выполнено' : stop.running ? 'сейчас' : 'по плану'}
-                            </p>
-                          </li>
-                        ))}
-                      </ol>
+                      {upcoming.length > 0 ? (
+                        <div className="relative min-w-0 flex-1 overflow-hidden">
+                          <span
+                            aria-hidden
+                            className="absolute top-[7px] right-0 left-[138px] h-[3px]"
+                            style={{
+                              background:
+                                'linear-gradient(to right, var(--color-ink) 0%, var(--color-ink) 66%, transparent 100%)',
+                            }}
+                          />
+                          <ol className="flex">
+                            {upcoming.map((stop) => (
+                              <li className="w-[276px] shrink-0 text-center" key={stop.sequence}>
+                                <span
+                                  aria-hidden
+                                  className={cn(
+                                    'mx-auto block size-[17px] rounded-full',
+                                    stop.running ? 'bg-success' : 'bg-ink',
+                                  )}
+                                />
+                                <p className="mt-3 font-semibold text-[24px] text-ink">
+                                  {formatTime(stop.startAt)}
+                                </p>
+                                <p className="mt-1 truncate px-2 text-[18px] text-ink">
+                                  {stop.title}
+                                </p>
+                                <p className="mt-1 text-[15px] text-ink-faint">
+                                  {stopStatus(stop)}
+                                </p>
+                              </li>
+                            ))}
+                          </ol>
+                        </div>
+                      ) : null}
                     </div>
                   </>
                 ) : (
-                  <p className="text-[16px] text-ink/55">
+                  <p className="text-[18px] text-ink-soft">
                     У этой бригады нет маршрута в применённом плане.
                   </p>
                 )}
@@ -200,68 +280,54 @@ export function EngineersPage() {
         </section>
       ) : null}
 
-      <div className="mt-8 flex flex-col items-center gap-2">
+      <div className="mt-[67px] flex shrink-0 flex-col items-center gap-2">
         <button
-          className="flex h-[52px] items-center gap-4 rounded-full bg-accent pr-1 pl-7 font-semibold text-[18px] text-ink disabled:opacity-45"
+          className="flex h-[47px] items-center gap-4 rounded-full bg-accent pr-[2px] pl-7 font-semibold text-[19px] text-ink disabled:cursor-not-allowed"
           disabled
           title="Чаты появятся вместе с контрактом на переписку"
           type="button"
         >
           Перейти в чат
-          <span className="flex size-11 items-center justify-center rounded-full bg-ink text-white">
-            <ArrowUpRight aria-hidden size={20} />
+          <span className="flex size-[43px] items-center justify-center rounded-full bg-ink text-accent">
+            <ArrowUpRight aria-hidden size={22} strokeWidth={2.4} />
           </span>
         </button>
-        <span className="text-[13px] text-ink/45">
+        <span className="text-[13px] text-ink-faint">
           Чатов пока нет: System Layer не отдаёт переписку.
         </span>
       </div>
 
-      <Carousel aria-label="Бригады" className="mt-8 items-center justify-center px-6 py-6">
-        {deck.map((engineer, index) => {
-          const isActive = engineer.id === activeId;
-          const assigned =
-            plan?.routes.find((route) => route.engineerId === engineer.id)?.assignedCount ?? 0;
-          return (
-            <div className="shrink-0" key={engineer.id}>
-              <button
-                className={cn(
-                  'relative flex h-[210px] w-[305px] items-end overflow-hidden rounded-[20px] bg-ink p-6 text-left text-white transition-transform',
-                  isActive ? 'z-10 scale-105 rotate-0' : index % 2 === 0 ? '-rotate-6' : 'rotate-6',
-                  'hover:rotate-0',
-                )}
-                onClick={() => setSelectedId(engineer.id)}
-                type="button"
-              >
-                <Monogram
-                  className="absolute top-5 right-5 bg-white/15"
-                  name={engineer.displayName}
-                  size={48}
-                />
-                <span>
-                  <span className="block font-display text-[22px]">{engineer.displayName}</span>
-                  <span className="mt-1 block text-[16px] text-white/60">
-                    в работе — {assigned} заявок
-                  </span>
-                </span>
-              </button>
-            </div>
-          );
-        })}
-        {deck.length === 0 ? <p className="text-[16px] text-ink/55">Никто не найден.</p> : null}
-      </Carousel>
-
-      <label className="mt-6 flex items-center justify-center gap-3 text-ink">
-        <Search aria-hidden size={26} />
-        <span className="sr-only">Найти инженера</span>
-        <input
-          className="w-[260px] border-ink/20 border-b bg-transparent pb-1 font-display text-[24px] text-ink outline-none placeholder:text-ink"
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Найти инженера"
-          type="search"
-          value={query}
+      <div className="relative mt-[22px] shrink-0">
+        <ArcCarousel
+          activeIndex={activeIndex}
+          aria-label="Бригады"
+          className="-mx-[31px]"
+          items={deck}
+          keyOf={(engineer) => engineer.id}
+          labelOf={(engineer) => engineer.displayName}
+          onActiveIndexChange={(index) => setSelectedId(deck[index]?.id ?? null)}
+          renderCard={(engineer) => (
+            <CrewCard
+              assigned={
+                plan?.routes.find((route) => route.engineerId === engineer.id)?.assignedCount ?? 0
+              }
+              engineer={engineer}
+            />
+          )}
         />
-      </label>
+
+        <label className="-translate-x-1/2 absolute top-[260px] left-1/2 z-10 flex items-center gap-4 text-ink">
+          <Search aria-hidden size={28} strokeWidth={2.2} />
+          <span className="sr-only">Найти инженера</span>
+          <input
+            className="w-[300px] bg-transparent font-display text-[25px] text-ink outline-none placeholder:text-ink"
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Найти инженера"
+            type="search"
+            value={query}
+          />
+        </label>
+      </div>
     </div>
   );
 }

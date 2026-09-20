@@ -28,6 +28,8 @@
   --color-canvas: #f1f1f1;
   --color-surface: #ffffff;
   --color-muted: #ededed;
+  /* Secondary text on white: values in a list, a caption under a heading. */
+  --color-ink-soft: #727478;
   --color-ink-faint: #b0b0b0;
 
   --color-accent: #ffc72c;
@@ -53,4 +55,12 @@ body {
   color: var(--color-ink);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+}
+
+/*
+ * Chrome paints its own blue clear button inside `type="search"`. The mockup has
+ * none and the colour cannot be overridden, so it is turned off everywhere.
+ */
+input[type="search"]::-webkit-search-cancel-button {
+  appearance: none;
 }

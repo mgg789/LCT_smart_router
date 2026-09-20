@@ -127,12 +127,20 @@ const REQUESTS = [
 ];
 
 describe('buildEngineerProfile', () => {
-  it("counts only this crew's finished work", () => {
+  it('reports the work the route still has for this crew', () => {
     const profile = buildEngineerProfile(engineer(), PLAN, REQUESTS);
 
     expect(profile.assignedCount).toBe(3);
-    expect(profile.doneCount).toBe(1);
     expect(profile.distanceKm).toBe(16.4);
+    expect(profile.routeStartAt).toBe(1);
+    expect(profile.routeFinishAt).toBe(9_000);
+  });
+
+  it('carries a short number for a stop that stands on a request', () => {
+    const profile = buildEngineerProfile(engineer(), PLAN, REQUESTS);
+
+    expect(profile.stops[0]?.number).toBe('r1');
+    expect(profile.stops[2]?.number).toBeNull();
   });
 
   it('calls the stop under way the current one', () => {
