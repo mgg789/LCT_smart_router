@@ -19,6 +19,13 @@ export function alertActionsFor(code: string): AlertAction[] {
   switch (code) {
     case 'time_risk':
     case 'unassigned':
+    // An engineer's own forecast said the visit cannot finish inside the customer window,
+    // so LIVE released the reservation and the work is back in the free pool. That is the
+    // same decision as `time_risk` -- renegotiate the window, move the day, or bring in
+    // someone who can still make it. It is listed here because the code is raised directly
+    // by LIVE rather than through `refresh`, so without an entry it reached the dispatcher
+    // as a blocking alert with no button, and a day carrying one could never be closed.
+    case 'LIVE_WINDOW_COMPLETION_RISK':
       return ['reschedule', 'move_window', 'add_engineer'];
     case 'plan_degraded':
     case 'plan_review_required':
