@@ -11,7 +11,6 @@ import {
 import {
   type EngineerLiveAction,
   type EngineerLiveView,
-  loadEngineerLive,
   sendEngineerLiveAction,
 } from '../api/live';
 import type { EngineerDayView, EngineerPlanResponse, EngineerView } from '../api/types';
@@ -31,6 +30,7 @@ import type { EngineerJobItem } from './engineerDay';
 import { engineerListItems, engineerLunchWindow, missingRequestIds } from './engineerDay';
 import { engineerMapsUrl } from './engineerRoute';
 import { eu } from './engineerScale';
+import { loadEngineerSessionLive } from './liveSession';
 import { EngineerListCard } from './RequestCards';
 import { RequestDetail } from './RequestDetail';
 import {
@@ -125,7 +125,7 @@ export function EngineerApp({
           loadEngineerProfile(token),
           loadEngineerDay(token),
           loadEngineerPlan(token),
-          loadEngineerLive(token),
+          loadEngineerSessionLive(token),
         ]);
         const missing = missingRequestIds(nextPlan);
         if (missing.length === 0) {
@@ -158,7 +158,7 @@ export function EngineerApp({
     const refreshLive = async () => {
       if (liveActionPending.current) return;
       try {
-        setLive(await loadEngineerLive(token));
+        setLive(await loadEngineerSessionLive(token));
         setError(null);
       } catch (cause) {
         if (!failSession(cause)) {
