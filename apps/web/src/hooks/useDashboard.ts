@@ -360,6 +360,18 @@ export function useDashboard() {
     [acceptSession, reportFailure],
   );
 
+  /** Adopts the dispatcher session returned by the Figma login card without
+   * duplicating the hook's session, cache, and LIVE reset semantics. */
+  const acceptLoginSession = useCallback(
+    (session: { readonly token: string; readonly expiresAt: number }) => {
+      acceptSession(
+        { token: session.token, expiresAt: session.expiresAt, role: 'dispatcher' },
+        readGeneration.current,
+      );
+    },
+    [acceptSession],
+  );
+
   const requestLoginCode = useCallback(
     async (email: string) => {
       const generation = readGeneration.current;
@@ -1092,6 +1104,7 @@ export function useDashboard() {
     policyComparisonLoading,
     policyComparisonError,
     events,
+    acceptLoginSession,
     signIn,
     requestLoginCode,
     signInWithCode,
