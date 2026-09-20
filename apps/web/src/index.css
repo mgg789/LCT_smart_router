@@ -161,43 +161,60 @@ body {
   visibility: hidden;
   transform-origin: 50% 50%;
   transform-style: preserve-3d;
-  perspective: 620px;
+  perspective: 900px;
 }
 
 .engineer-ring-card-face {
   transform-origin: 50% 100%;
   transform-style: preserve-3d;
-  backface-visibility: hidden;
+}
+
+.engineer-ring-blur-layer {
+  pointer-events: none;
+  position: absolute;
+  z-index: 16;
 }
 
 .engineer-ring-blur-veil {
-  pointer-events: none;
   position: absolute;
-  top: 690px;
-  width: 680px;
-  height: 560px;
-  z-index: 16;
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  top: 560px;
+  bottom: 0;
+  width: 860px;
+  backdrop-filter: blur(64px) saturate(1.08);
+  -webkit-backdrop-filter: blur(64px) saturate(1.08);
 }
 
 .engineer-ring-blur-veil-left {
-  left: -140px;
-  mask-image: radial-gradient(ellipse 80% 90% at 16% 90%, #000 0% 40%, transparent 72%);
-  -webkit-mask-image: radial-gradient(ellipse 80% 90% at 16% 90%, #000 0% 40%, transparent 72%);
+  left: -220px;
+  mask-image:
+    linear-gradient(to top, #000 0% 42%, rgba(0, 0, 0, 0.85) 62%, transparent 88%),
+    radial-gradient(ellipse 130% 150% at 0% 100%, #000 0% 62%, transparent 88%);
+  mask-composite: intersect;
+  -webkit-mask-image:
+    linear-gradient(to top, #000 0% 42%, rgba(0, 0, 0, 0.85) 62%, transparent 88%),
+    radial-gradient(ellipse 130% 150% at 0% 100%, #000 0% 62%, transparent 88%);
+  -webkit-mask-composite: source-in;
 }
 
 .engineer-ring-blur-veil-right {
-  right: -140px;
-  mask-image: radial-gradient(ellipse 80% 90% at 84% 90%, #000 0% 40%, transparent 72%);
-  -webkit-mask-image: radial-gradient(ellipse 80% 90% at 84% 90%, #000 0% 40%, transparent 72%);
+  right: -220px;
+  mask-image:
+    linear-gradient(to top, #000 0% 42%, rgba(0, 0, 0, 0.85) 62%, transparent 88%),
+    radial-gradient(ellipse 130% 150% at 100% 100%, #000 0% 62%, transparent 88%);
+  mask-composite: intersect;
+  -webkit-mask-image:
+    linear-gradient(to top, #000 0% 42%, rgba(0, 0, 0, 0.85) 62%, transparent 88%),
+    radial-gradient(ellipse 130% 150% at 100% 100%, #000 0% 62%, transparent 88%);
+  -webkit-mask-composite: source-in;
 }
 
 .engineer-ring-fog {
   pointer-events: none;
+  position: absolute;
+  z-index: 17;
   background:
-    radial-gradient(ellipse 42% 56% at 4% 112%, #f1f1f1 0%, rgba(241, 241, 241, 0.92) 38%, transparent 70%),
-    radial-gradient(ellipse 42% 56% at 96% 112%, #f1f1f1 0%, rgba(241, 241, 241, 0.92) 38%, transparent 70%);
+    radial-gradient(ellipse 220px 180px at 0% 100%, rgba(241, 241, 241, 0.72) 0%, transparent 72%),
+    radial-gradient(ellipse 220px 180px at 100% 100%, rgba(241, 241, 241, 0.72) 0%, transparent 72%);
 }
 
 .engineer-phone {

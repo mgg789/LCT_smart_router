@@ -8,6 +8,8 @@ import {
   pointerAngleDeg,
   ringMounts,
   ringPose,
+  ringSlotKeys,
+  selectionSpinTarget,
   rotationDeltaFromPointer,
   scoreEngineerMatch,
   shortestTurn,
@@ -31,6 +33,7 @@ describe('engineerRing', () => {
     ]);
     expect(visible.every((card) => isRenderedSlot(card.slot))).toBe(true);
     expect(visibleRingCards(items, 2).some((card) => card.item === 'g')).toBe(false);
+    expect(ringSlotKeys(3)).toEqual([-3, -2, -1, 0, 1, 2, 3]);
   });
 
   it('clones a short roster into the off-screen extra slots', () => {
@@ -49,8 +52,8 @@ describe('engineerRing', () => {
     const outer = ringPose(2);
     expect(center.lean).toBe(0);
     expect(center.blur).toBe(0);
-    expect(inner.lean).toBeGreaterThan(12);
-    expect(inner.lean).toBeLessThan(22);
+    expect(inner.lean).toBeGreaterThan(3);
+    expect(inner.lean).toBeLessThan(6);
     expect(outer.lean).toBeGreaterThanOrEqual(inner.lean);
     expect(inner.blur).toBe(0);
     expect(outer.blur).toBeGreaterThan(0);
@@ -66,6 +69,9 @@ describe('engineerRing', () => {
     expect(arrowSpinDelta('ArrowLeft')).toBe(1);
     expect(arrowSpinDelta('Escape')).toBeNull();
     expect(wrappedSlot(0, -1, 8)).toBe(1);
+    expect(selectionSpinTarget(-1, 4, 5)).toBeNull();
+    expect(selectionSpinTarget(0, 4, 5)).toBe(-1);
+    expect(selectionSpinTarget(0, 1, 5)).toBe(1);
     const delta = rotationDeltaFromPointer({ x: 900, y: 800 }, { x: 1100, y: 800 });
     expect(delta).toBeLessThan(0);
     expect(pointerAngleDeg(1037, 0)).toBeCloseTo(0, 5);

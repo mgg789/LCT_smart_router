@@ -9,18 +9,21 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import type { DashboardSnapshot } from '../api/types';
+import { useArtboardScale, useLetterboxInsets } from './artboardScale';
 import { ENGINEER_PORTRAITS, FIGMA_ASSETS } from './assets';
 import {
   RING_CARD,
   RING_CENTER,
   RING_HOLD_CARDS_PER_SEC,
   RING_HOLD_DELAY_MS,
+  RING_RENDER_SPAN,
   arrowSpinDelta,
   bestEngineerIndex,
   isRenderedSlot,
-  ringMounts,
   ringPose,
+  ringSlotKeys,
   rotationDeltaFromPointer,
+  selectionSpinTarget,
   shortestTurn,
   wheelStep,
   wrapIndex,
@@ -36,10 +39,17 @@ const slideEase = [0.22, 1, 0.36, 1] as const;
 const tap = { duration: 0.16 };
 
 type CardBind = {
+  poolKey: number;
   logical: number;
   root: HTMLDivElement;
   inner: HTMLDivElement;
+  title: HTMLElement;
+  status: HTMLElement;
+  photos: HTMLImageElement[];
 };
+
+const RING_POOL = ringSlotKeys();
+const RING_POOL_SIZE = RING_RENDER_SPAN * 2 + 1;
 
 /**
  * Figma ENGINEERS (49:5129): selected-engineer dossier plus the five-card ring.
@@ -62,10 +72,11 @@ export function EngineersView({
   onSetAvailability: (engineerId: string, availability: 'online' | 'offline') => void;
 }) {
   const reduceMotion = useReducedMotion();
+  const scale = useArtboardScale();
+  const letterbox = useLetterboxInsets(scale);
   const roster = useMemo(() => engineerProfilesFromSnapshot(snapshot), [snapshot]);
   const centerMv = useMotionValue(0);
   const [focusedIndex, setFocusedIndex] = useState(0);
-  const [ringAnchor, setRingAnchor] = useState(0);
   const [query, setQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchHeld, setSearchHeld] = useState<number | null>(null);
@@ -78,7 +89,7 @@ export function EngineersView({
   const centerRef = useRef(0);
   const targetRef = useRef(0);
   const focusedRef = useRef(0);
-  const anchorRef = useRef(0);
+  const tapTargetRef = useRef<number | null>(null);
   const pointerRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
   const stageRef = useRef<HTMLElement | null>(null);
   const ringRef = useRef<HTMLDivElement | null>(null);
@@ -86,6 +97,7 @@ export function EngineersView({
   const animRef = useRef<ReturnType<typeof animate> | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const appliedIdRef = useRef<string | null>(null);
+  const prevSelectedRef = useRef<string | null | undefined>(undefined);
   const goGenRef = useRef(0);
   const holdTimerRef = useRef<number | null>(null);
   const holdRafRef = useRef<number | null>(null);
@@ -111,28 +123,39 @@ export function EngineersView({
       focusedRef.current = nearest;
       setFocusedIndex(nearest);
     }
-    const anchor = Math.round(center);
-    if (anchor !== anchorRef.current) {
-      anchorRef.current = anchor;
-      setRingAnchor(anchor);
-    }
     for (const bind of bindsRef.current.values()) {
       if (count === 0) {
         bind.root.style.visibility = 'hidden';
         continue;
       }
-      const slot = bind.logical - center;
+      let slot = bind.logical - center;
+      if (slot > RING_RENDER_SPAN + 0.5) {
+        bind.logical -= RING_POOL_SIZE;
+        slot = bind.logical - center;
+      } else if (slot < -(RING_RENDER_SPAN + 0.5)) {
+        bind.logical += RING_POOL_SIZE;
+        slot = bind.logical - center;
+      }
       if (!isRenderedSlot(slot)) {
         bind.root.style.visibility = 'hidden';
         bind.root.style.pointerEvents = 'none';
         continue;
       }
       const pose = ringPose(slot);
+      const item = items[wrapIndex(bind.logical, count)];
       bind.root.style.visibility = 'visible';
       bind.root.style.pointerEvents = 'auto';
       bind.root.style.zIndex = String(pose.zIndex);
       bind.root.style.transform = `translate3d(${pose.x - RING_CARD.width / 2}px, ${pose.y - RING_CARD.height / 2}px, 0) rotate(${pose.rotateZ}deg)`;
       bind.inner.style.transform = `rotateX(${pose.lean}deg)`;
+      if (item) {
+        bind.root.dataset.engCard = item.id;
+        if (bind.title.textContent !== item.givenName) bind.title.textContent = item.givenName;
+        if (bind.status.textContent !== item.cardStatus) bind.status.textContent = item.cardStatus;
+        bind.photos.forEach((photo, photoIndex) => {
+          photo.style.opacity = photoIndex === item.photoIndex ? '0.75' : '0';
+        });
+      }
     }
   }
 
@@ -175,11 +198,12 @@ export function EngineersView({
 
   function settle(value: number) {
     if (rosterRef.current.length === 0) return;
-    const index = wrapIndex(Math.round(value), rosterRef.current.length);
-    targetRef.current = index;
-    centerMv.set(index);
-    centerRef.current = index;
-    paint(index);
+    const snapped = Math.round(value);
+    const index = wrapIndex(snapped, rosterRef.current.length);
+    targetRef.current = snapped;
+    centerMv.set(snapped);
+    centerRef.current = snapped;
+    paint(snapped);
     const id = rosterRef.current[index]?.id;
     if (id) {
       appliedIdRef.current = id;
@@ -189,7 +213,9 @@ export function EngineersView({
 
   function spinBy(delta: number) {
     if (rosterRef.current.length === 0 || delta === 0) return;
-    goTo(Math.round(targetRef.current + delta), true);
+    const target = Math.round(targetRef.current + delta);
+    tapTargetRef.current = target;
+    goTo(target, true);
   }
 
   function stopHold() {
@@ -208,8 +234,14 @@ export function EngineersView({
     stopHold();
     holdTimerRef.current = window.setTimeout(() => {
       holdDirRef.current = delta;
-      holdLastRef.current = performance.now();
+      goGenRef.current += 1;
+      const from = tapTargetRef.current ?? targetRef.current;
       stopAnim();
+      centerMv.set(from);
+      centerRef.current = from;
+      targetRef.current = from;
+      paint(from);
+      holdLastRef.current = performance.now();
       const tick = (now: number) => {
         if (holdDirRef.current === 0) return;
         const dt = Math.min(0.05, (now - holdLastRef.current) / 1000);
@@ -224,13 +256,17 @@ export function EngineersView({
   }
 
   useEffect(() => {
+    const prevSelected = prevSelectedRef.current;
+    prevSelectedRef.current = selectedEngineerId;
     if (roster.length === 0) return;
     if (query.trim() || searchHeld !== null || draggingRef.current) return;
-    if (selectedEngineerId && selectedEngineerId === appliedIdRef.current) return;
+    if (holdDirRef.current !== 0 || animRef.current) return;
+    if (prevSelected === selectedEngineerId && prevSelected !== undefined) return;
     const index = selectedEngineerId ? roster.findIndex((item) => item.id === selectedEngineerId) : 0;
-    if (index < 0 || Math.round(centerRef.current) === index) return;
-    appliedIdRef.current = roster[index]?.id ?? null;
-    goTo(index, false);
+    const target = selectionSpinTarget(centerRef.current, index < 0 ? 0 : index, roster.length);
+    if (target === null) return;
+    appliedIdRef.current = roster[index < 0 ? 0 : index]?.id ?? null;
+    goTo(target, false);
   }, [query, roster, searchHeld, selectedEngineerId]);
 
   useEffect(() => {
@@ -269,9 +305,15 @@ export function EngineersView({
     };
     const onKeyUp = (event: KeyboardEvent) => {
       if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
-      const wasHolding = holdDirRef.current !== 0;
+      const dir = holdDirRef.current;
+      const tapTarget = tapTargetRef.current;
       actionsRef.current.stopHold();
-      if (wasHolding) actionsRef.current.settle(centerRef.current);
+      if (dir === 0) return;
+      let value = centerRef.current;
+      if (tapTarget !== null) {
+        value = dir < 0 ? Math.min(value, tapTarget) : Math.max(value, tapTarget);
+      }
+      actionsRef.current.settle(value);
     };
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
@@ -442,81 +484,84 @@ export function EngineersView({
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
       >
-        {ringMounts(ringAnchor, roster.length).map((mount) => {
-          const item = roster[mount.index];
-          if (!item) return null;
-          return (
-            <EngineerRingCard
-              key={mount.key}
-              logical={mount.key}
-              engineer={item}
-              onBind={(bind) => {
-                if (bind) bindsRef.current.set(String(bind.logical), bind);
-                else bindsRef.current.delete(String(mount.key));
-                paint(centerRef.current);
-              }}
-            />
-          );
-        })}
+        {RING_POOL.map((slotKey) => (
+          <EngineerRingCard
+            key={slotKey}
+            slotKey={slotKey}
+            onBind={(bind) => {
+              if (bind) bindsRef.current.set(String(bind.poolKey), bind);
+              else bindsRef.current.delete(String(slotKey));
+              paint(centerRef.current);
+            }}
+          />
+        ))}
+      </div>
+      <div
+        className="engineer-ring-blur-layer"
+        style={{ top: 0, right: -80, bottom: -letterbox.y, left: -80 }}
+      >
         <div className="engineer-ring-blur-veil engineer-ring-blur-veil-left" />
         <div className="engineer-ring-blur-veil engineer-ring-blur-veil-right" />
-        <div className="engineer-ring-fog absolute inset-0" />
+      </div>
+      <div
+        className="engineer-ring-fog"
+        style={{ top: 0, right: -40, bottom: -letterbox.y, left: -40 }}
+      />
 
-        {focused ? (
-          <motion.button
-            type="button"
-            data-eng-chrome
-            disabled
-            aria-disabled
-            title="Скоро"
-            className="absolute z-20 flex h-[51px] w-[225px] cursor-not-allowed items-center rounded-[27px] bg-figma-bee px-[16px] opacity-45"
-            style={{ left: RING_CENTER.x - 112.5, top: 614 }}
-          >
-            <FigmaText className="font-bold text-[20px] text-figma-ink">Перейти в чат</FigmaText>
-            <FigmaIcon
-              src={FIGMA_ASSETS.engChat}
-              alt=""
-              width={43}
-              height={43}
-              className="absolute right-[4px] top-1/2 -translate-y-1/2"
-            />
-          </motion.button>
-        ) : null}
-
-        <motion.label
+      {focused ? (
+        <motion.button
+          type="button"
           data-eng-chrome
-          className="absolute z-20 flex h-[51px] w-[284px] origin-center items-center rounded-[27px] bg-white px-[16px] pr-[54px]"
-          style={{ left: 895, top: 960 }}
-          animate={
-            !motionOn || reduceMotion
-              ? undefined
-              : searchFocused
-                ? { scale: 1.045, boxShadow: '0 10px 28px rgba(39,41,48,0.12)' }
-                : { scale: 1, boxShadow: '0 0 0 rgba(39,41,48,0)' }
-          }
+          disabled
+          aria-disabled
+          title="Скоро"
+          className="absolute z-20 flex h-[51px] w-[225px] cursor-not-allowed items-center rounded-[27px] bg-figma-bee px-[16px] opacity-45"
+          style={{ left: RING_CENTER.x - 112.5, top: 614 }}
+        >
+          <FigmaText className="font-bold text-[20px] text-figma-ink">Перейти в чат</FigmaText>
+          <FigmaIcon
+            src={FIGMA_ASSETS.engChat}
+            alt=""
+            width={43}
+            height={43}
+            className="absolute right-[4px] top-1/2 -translate-y-1/2"
+          />
+        </motion.button>
+      ) : null}
+
+      <motion.label
+        data-eng-chrome
+        className="absolute z-20 flex h-[51px] w-[284px] origin-center items-center rounded-[27px] bg-white px-[16px] pr-[54px]"
+        style={{ left: 895, top: 960 }}
+        animate={
+          !motionOn || reduceMotion
+            ? undefined
+            : searchFocused
+              ? { scale: 1.045, boxShadow: '0 10px 28px rgba(39,41,48,0.12)' }
+              : { scale: 1, boxShadow: '0 0 0 rgba(39,41,48,0)' }
+        }
+        transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+      >
+        <input
+          ref={searchInputRef}
+          value={query}
+          onChange={(event) => onSearchChange(event.target.value)}
+          onFocus={() => setSearchFocused(true)}
+          onBlur={() => setSearchFocused(false)}
+          placeholder="Найти инженера"
+          className="w-full bg-transparent font-medium text-[16px] text-figma-ink outline-none placeholder:text-figma-ink"
+        />
+        <motion.button
+          type="button"
+          className="absolute right-[4px] top-1/2 size-[43px] -translate-y-1/2"
+          aria-label="Найти инженера"
+          onClick={() => searchInputRef.current?.focus()}
+          animate={!motionOn || reduceMotion ? undefined : { scale: searchFocused ? 1.1 : 1 }}
           transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
         >
-          <input
-            ref={searchInputRef}
-            value={query}
-            onChange={(event) => onSearchChange(event.target.value)}
-            onFocus={() => setSearchFocused(true)}
-            onBlur={() => setSearchFocused(false)}
-            placeholder="Найти инженера"
-            className="w-full bg-transparent font-medium text-[16px] text-figma-ink outline-none placeholder:text-figma-ink"
-          />
-          <motion.button
-            type="button"
-            className="absolute right-[4px] top-1/2 size-[43px] -translate-y-1/2"
-            aria-label="Найти инженера"
-            onClick={() => searchInputRef.current?.focus()}
-            animate={!motionOn || reduceMotion ? undefined : { scale: searchFocused ? 1.1 : 1 }}
-            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-          >
-            <FigmaIcon src={FIGMA_ASSETS.engSearch} alt="" width={43} height={43} />
-          </motion.button>
-        </motion.label>
-      </div>
+          <FigmaIcon src={FIGMA_ASSETS.engSearch} alt="" width={43} height={43} />
+        </motion.button>
+      </motion.label>
     </section>
   );
 }
@@ -733,30 +778,42 @@ function EngineerActivityPane({ engineer }: { engineer: EngineerProfile }) {
 }
 
 function EngineerRingCard({
-  logical,
-  engineer,
+  slotKey,
   onBind,
 }: {
-  logical: number;
-  engineer: EngineerProfile;
+  slotKey: number;
   onBind: (bind: CardBind | null) => void;
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const innerRef = useRef<HTMLDivElement | null>(null);
-  const portrait = ENGINEER_PORTRAITS[engineer.photoIndex] ?? ENGINEER_PORTRAITS[0];
+  const titleRef = useRef<HTMLParagraphElement | null>(null);
+  const statusRef = useRef<HTMLParagraphElement | null>(null);
+  const photosRef = useRef<HTMLImageElement[]>([]);
+  const onBindRef = useRef(onBind);
+  onBindRef.current = onBind;
 
   useLayoutEffect(() => {
     const root = rootRef.current;
     const inner = innerRef.current;
-    if (!root || !inner) return;
-    onBind({ logical, root, inner });
-    return () => onBind(null);
-  }, [logical, onBind]);
+    const title = titleRef.current;
+    const status = statusRef.current;
+    if (!root || !inner || !title || !status) return;
+    onBindRef.current({
+      poolKey: slotKey,
+      logical: slotKey,
+      root,
+      inner,
+      title,
+      status,
+      photos: photosRef.current,
+    });
+    return () => onBindRef.current(null);
+  }, [slotKey]);
 
   return (
     <div
       ref={rootRef}
-      data-eng-card={engineer.id}
+      data-eng-card=""
       className="engineer-ring-card absolute left-0 top-0"
       style={{
         width: RING_CARD.width,
@@ -768,19 +825,27 @@ function EngineerRingCard({
         ref={innerRef}
         className="engineer-ring-card-face relative h-full w-full overflow-hidden rounded-[20px] bg-[#2c2c2c]"
       >
-        <img
-          src={portrait}
-          alt=""
-          className="pointer-events-none absolute left-[91px] top-[-12px] size-[254px] object-cover blur-[15px] opacity-75"
-        />
+        {ENGINEER_PORTRAITS.map((src, photoIndex) => (
+          <img
+            key={src}
+            ref={(node) => {
+              if (node) photosRef.current[photoIndex] = node;
+            }}
+            src={src}
+            alt=""
+            className="pointer-events-none absolute left-[91px] top-[-12px] size-[254px] object-cover blur-[15px] opacity-0"
+          />
+        ))}
         <div className="pointer-events-none absolute inset-0 bg-[#272930]/25" />
         <div className="absolute bottom-[14px] left-[26px] right-[26px] pb-[4px]">
-          <FigmaText className="figma-text-keep-descenders figma-nowrap overflow-x-hidden text-ellipsis font-murs text-[24px] leading-[30px] tracking-[0.48px] text-white">
-            {engineer.givenName}
-          </FigmaText>
-          <p className="figma-nowrap mt-[4px] overflow-x-hidden text-ellipsis font-extrabold text-[18px] leading-[22px] tracking-[0.36px] text-[#ededed]">
-            {engineer.cardStatus}
-          </p>
+          <p
+            ref={titleRef}
+            className="figma-text figma-text-keep-descenders figma-nowrap overflow-x-hidden text-ellipsis font-murs text-[24px] leading-[30px] tracking-[0.48px] text-white"
+          />
+          <p
+            ref={statusRef}
+            className="figma-nowrap mt-[4px] overflow-x-hidden text-ellipsis font-extrabold text-[18px] leading-[22px] tracking-[0.36px] text-[#ededed]"
+          />
         </div>
       </div>
     </div>

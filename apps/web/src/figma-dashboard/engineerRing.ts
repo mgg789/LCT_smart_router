@@ -24,8 +24,17 @@ export const RING_ORIGIN = {
   y: RING_CENTER.y + RING_RADIUS,
 } as const;
 
-const LEAN_MAX_DEG = 18;
+const LEAN_MAX_DEG = 4.5;
 const OUTER_BLUR_PX = 16;
+
+/**
+ * Persistent slot offsets around the centre. These DOM nodes never remount.
+ */
+export function ringSlotKeys(span = RING_RENDER_SPAN): number[] {
+  const keys: number[] = [];
+  for (let k = -span; k <= span; k += 1) keys.push(k);
+  return keys;
+}
 
 /** Pause after a key tap before hold-spin starts. */
 export const RING_HOLD_DELAY_MS = 320;
@@ -157,6 +166,21 @@ export function arrowSpinDelta(key: string): number | null {
   if (key === 'ArrowRight') return -1;
   if (key === 'ArrowLeft') return 1;
   return null;
+}
+
+/**
+ * Unbounded centre that shows `selectedIndex`, or null if the ring already does.
+ * Comparing the raw centre to a wrapped roster index (e.g. −1 vs 4) would
+ * spin the ring the long way and look like a one-card rollback.
+ */
+export function selectionSpinTarget(
+  center: number,
+  selectedIndex: number,
+  count: number,
+): number | null {
+  if (count <= 0 || selectedIndex < 0 || selectedIndex >= count) return null;
+  if (wrapIndex(Math.round(center), count) === selectedIndex) return null;
+  return center + shortestTurn(center, selectedIndex, count);
 }
 
 /**
