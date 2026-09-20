@@ -130,7 +130,9 @@ export function sortRequestRows(
       return left.number.localeCompare(right.number, 'ru', { numeric: true });
     }
     if (sort === 'window') {
-      return left.windowStartAt - right.windowStartAt || left.number.localeCompare(right.number, 'ru');
+      return (
+        left.windowStartAt - right.windowStartAt || left.number.localeCompare(right.number, 'ru')
+      );
     }
     const usage = USAGE_RANK[left.status] - USAGE_RANK[right.status];
     if (usage !== 0) return usage;

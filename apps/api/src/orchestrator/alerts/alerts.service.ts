@@ -1,6 +1,9 @@
 import { Injectable, Optional } from '@nestjs/common';
-import { businessNow } from '../live/business-clock';
 import { z } from 'zod';
+import { lunchCoverageWitness, policyCoverageRegressed } from './coverage-policy';
+
+export { lunchCoverageWitness, policyCoverageRegressed } from './coverage-policy';
+
 import { SysError } from '../../common/errors';
 import { Clock } from '../../common/time';
 import { Prisma } from '../../generated/prisma/client';
@@ -13,8 +16,10 @@ import {
   DEFAULT_EXECUTION_TIMING_POLICY,
   ExecutionTimingPolicy,
 } from '../facts/execution-timing-policy';
-import { type AlertAction, alertActionsFor, resolutionDelay } from './alert-policy';
+import { businessNow } from '../live/business-clock';
 import { DispatcherSettingsService } from '../settings/dispatcher-settings.service';
+import { type AlertAction, alertActionsFor, resolutionDelay } from './alert-policy';
+
 /** Router's immutable comparison evidence for one manual plan on one exact input. */
 const manualEvaluationSchema = z.object({
   input_hash: z.string().min(1),
@@ -1048,7 +1053,8 @@ export class AlertsService {
           (lateStop.requestId
             ? (liveStateByRequest.get(lateStop.requestId)?.reportedEtaAt ?? null) === null
             : false) &&
-          now > Number(lateStop.startAt) + (thresholds.overdueSec || timing.taskOverrunToleranceSec) &&
+          now >
+            Number(lateStop.startAt) + (thresholds.overdueSec || timing.taskOverrunToleranceSec) &&
           Number(day.lastAttendanceAt ?? 0n) < Number(lateStop.arrivalAt)
         ) {
           const key = `system:engineer_overdue:edge:${day.id}:${lateStop.requestId}`;
@@ -1302,14 +1308,6 @@ export class AlertsService {
   }
 }
 
-/** Returns whether a policy change reduced submitted-request coverage. */
-export function policyCoverageRegressed(
-  baselineSubmittedIds: readonly string[],
-  newAssignedSubmittedIds: readonly string[],
-): boolean {
-  return newAssignedSubmittedIds.length < baselineSubmittedIds.length;
-}
-
 function canonicalRouterCode(code: string): string {
   const normalized = code.toLowerCase();
   if (normalized === 'live_window_completion_risk') return 'time_risk';
@@ -1325,21 +1323,6 @@ function hasLunchCoverageWitness(reasons: object): boolean {
   return lunchCoverageWitness(reasons) !== null;
 }
 
-/** Accepts only Router's calculation-backed lunch coverage witness. */
-export function lunchCoverageWitness(reasons: unknown): { lunch_start_at: number } | null {
-  const schema = z.object({
-    code: z.literal('LUNCH_COVERAGE_GAIN'),
-    facts: z.object({
-      additional_assigned_count: z.number().int().min(1),
-      lunch_start_at: z.number().int(),
-    }),
-  });
-  for (const reason of Array.isArray(reasons) ? reasons : [reasons]) {
-    const parsed = schema.safeParse(reason);
-    if (parsed.success) return parsed.data.facts;
-  }
-  return null;
-}
 function workDateForMoment(
   moment: number,
   _days: Array<{ workDate: string; shiftStartAt: bigint; shiftEndAt: bigint }>,

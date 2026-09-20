@@ -10,7 +10,7 @@ import {
 import {
   autocompleteQuery,
   hitsFromAutocomplete,
-} from '../../src/orchestrator/settings/geocoding.service';
+} from '../../src/orchestrator/settings/geocoding-policy';
 
 describe('dispatcher settings', () => {
   it('fills missing persisted fields with previous hardcoded defaults', () => {

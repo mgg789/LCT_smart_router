@@ -108,6 +108,7 @@ function OsmPointMap({
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
   const pickRef = useRef(onPick);
+  const initialCenter = useRef<[number, number]>([lon ?? 37.6173, lat ?? 55.7558]);
   pickRef.current = onPick;
 
   useEffect(() => {
@@ -126,7 +127,7 @@ function OsmPointMap({
         },
         layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
       },
-      center: [lon ?? 37.6173, lat ?? 55.7558],
+      center: initialCenter.current,
       zoom: 11,
     });
     map.on('click', (event) => {
@@ -140,19 +141,25 @@ function OsmPointMap({
       mapRef.current = null;
     };
     // The map is created once for the field lifetime; marker updates follow lat/lon.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map || lat === null || lon === null) return;
     if (!markerRef.current) {
-      markerRef.current = new maplibregl.Marker({ color: '#FED305' }).setLngLat([lon, lat]).addTo(map);
+      markerRef.current = new maplibregl.Marker({ color: '#FED305' })
+        .setLngLat([lon, lat])
+        .addTo(map);
     } else {
       markerRef.current.setLngLat([lon, lat]);
     }
     map.easeTo({ center: [lon, lat], duration: 250 });
   }, [lat, lon]);
 
-  return <div ref={host} className="mt-[8px] h-[220px] w-full overflow-hidden rounded-[20px] bg-figma-canvas" />;
+  return (
+    <div
+      ref={host}
+      className="mt-[8px] h-[220px] w-full overflow-hidden rounded-[20px] bg-figma-canvas"
+    />
+  );
 }

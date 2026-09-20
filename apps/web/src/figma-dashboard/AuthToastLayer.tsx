@@ -1,6 +1,6 @@
-import { dismissToast, useToasts } from './toasts';
 import { FIGMA_ASSETS } from './assets';
 import { FigmaIcon } from './primitives';
+import { dismissToast, useToasts } from './toasts';
 
 function closeAuthToast(id: string, event?: { preventDefault(): void; stopPropagation(): void }) {
   event?.preventDefault();
@@ -25,7 +25,13 @@ export function AuthToastLayer() {
           className="pointer-events-auto relative h-[132px] w-[425px] overflow-hidden rounded-[20px] bg-figma-danger"
         >
           <div className="absolute left-[15px] top-[8px] flex h-[42px] w-[43px] items-center justify-center rounded-[10px]">
-            <FigmaIcon src={FIGMA_ASSETS.toastAlert} alt="" width={25} height={25} className="brightness-0 invert" />
+            <FigmaIcon
+              src={FIGMA_ASSETS.toastAlert}
+              alt=""
+              width={25}
+              height={25}
+              className="brightness-0 invert"
+            />
           </div>
           <p className="figma-nowrap absolute left-[68px] top-[19px] max-w-[280px] overflow-hidden font-semibold text-[20px] leading-none text-ellipsis text-white">
             {toast.title}
@@ -39,7 +45,13 @@ export function AuthToastLayer() {
             onClick={(event) => closeAuthToast(toast.id, event)}
           >
             <span className="-rotate-45">
-              <FigmaIcon src={FIGMA_ASSETS.toastClose} alt="" width={20} height={20} className="brightness-0 invert" />
+              <FigmaIcon
+                src={FIGMA_ASSETS.toastClose}
+                alt=""
+                width={20}
+                height={20}
+                className="brightness-0 invert"
+              />
             </span>
           </button>
           <p className="absolute left-[68px] top-[48px] w-[327px] font-medium text-[18px] leading-[22px] tracking-[-0.3px] text-white">

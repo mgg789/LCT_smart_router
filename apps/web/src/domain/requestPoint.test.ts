@@ -7,9 +7,10 @@ describe('requestMapPoint', () => {
     const snapshot = createDevSnapshot();
     const request = snapshot.requests.find((item) => item.lat != null && item.lon != null);
     expect(request).toBeTruthy();
-    expect(requestMapPoint(snapshot, request!.id)).toEqual({
-      lat: request!.lat,
-      lon: request!.lon,
+    if (!request) throw new Error('Fixture must include a geocoded request');
+    expect(requestMapPoint(snapshot, request.id)).toEqual({
+      lat: request.lat,
+      lon: request.lon,
     });
   });
 
@@ -19,7 +20,8 @@ describe('requestMapPoint', () => {
       .flatMap((route) => route.stops)
       .find((stop) => stop.requestId && stop.kind === 'job');
     expect(routed?.requestId).toBeTruthy();
-    const requestId = routed!.requestId!;
+    if (!routed?.requestId) throw new Error('Fixture must include a routed request');
+    const requestId = routed.requestId;
     const stripped = {
       ...snapshot,
       requests: snapshot.requests.map((item) =>
@@ -27,8 +29,8 @@ describe('requestMapPoint', () => {
       ),
     };
     expect(requestMapPoint(stripped, requestId)).toEqual({
-      lat: routed!.lat,
-      lon: routed!.lon,
+      lat: routed.lat,
+      lon: routed.lon,
     });
   });
 });

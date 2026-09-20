@@ -4,11 +4,7 @@ const MINUTES_IN_DAY = 24 * 60;
 
 const minuteOfDay = z.number().int().min(0).max(MINUTES_IN_DAY);
 const seconds = z.number().int().min(0).max(86_400);
-const secret = z
-  .string()
-  .max(200)
-  .nullable()
-  .optional();
+const secret = z.string().max(200).nullable().optional();
 
 /** Defaults match the previous hardcoded alert timers and a typical field shift. */
 export const DEFAULT_DISPATCHER_SETTINGS = {
@@ -86,7 +82,11 @@ export function parseDispatcherSettings(value: unknown): DispatcherSettings {
   }
   const next = parsed.data;
   if (next.dayEndMin <= next.dayStartMin) {
-    return { ...DEFAULT_DISPATCHER_SETTINGS, ...next, dayEndMin: DEFAULT_DISPATCHER_SETTINGS.dayEndMin };
+    return {
+      ...DEFAULT_DISPATCHER_SETTINGS,
+      ...next,
+      dayEndMin: DEFAULT_DISPATCHER_SETTINGS.dayEndMin,
+    };
   }
   return next;
 }
@@ -103,8 +103,10 @@ export function mergeDispatcherSettings(
     overdueSec: patch.overdueSec ?? current.overdueSec,
     timeRiskSec: patch.timeRiskSec ?? current.timeRiskSec,
     repeatAfterSec: patch.repeatAfterSec ?? current.repeatAfterSec,
-    twogisApiKey: patch.twogisApiKey === undefined ? current.twogisApiKey : normalizeSecret(patch.twogisApiKey),
-    yandexApiKey: patch.yandexApiKey === undefined ? current.yandexApiKey : normalizeSecret(patch.yandexApiKey),
+    twogisApiKey:
+      patch.twogisApiKey === undefined ? current.twogisApiKey : normalizeSecret(patch.twogisApiKey),
+    yandexApiKey:
+      patch.yandexApiKey === undefined ? current.yandexApiKey : normalizeSecret(patch.yandexApiKey),
   };
   if (next.dayEndMin <= next.dayStartMin) {
     throw new Error('The working day must end after it starts');

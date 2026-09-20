@@ -91,7 +91,9 @@ describe('addEntity catalog helpers', () => {
   });
 
   it('requires an alert title, type and reason', () => {
-    expect(validateAlertDraft({ title: 'Риск SLA', type: 'sla', reason: 'три срочные' })).toBeNull();
+    expect(
+      validateAlertDraft({ title: 'Риск SLA', type: 'sla', reason: 'три срочные' }),
+    ).toBeNull();
     expect(validateAlertDraft({ title: '', type: 'sla', reason: 'три срочные' })).toBe(
       'Укажите название',
     );

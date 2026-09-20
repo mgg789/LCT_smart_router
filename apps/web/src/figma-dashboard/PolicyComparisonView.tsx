@@ -1,4 +1,8 @@
-import type { DashboardSnapshot, PolicyComparisonResponse, PolicyComparisonRow } from '../api/types';
+import type {
+  DashboardSnapshot,
+  PolicyComparisonResponse,
+  PolicyComparisonRow,
+} from '../api/types';
 import {
   perAssignmentDuration,
   perAssignmentKm,
@@ -141,7 +145,9 @@ export function PolicyComparisonView({
                 <ComparisonRow
                   key={row.strategyId}
                   row={row}
-                  active={Boolean(snapshot && row.kind === 'policy' && row.strategyId === snapshot.policyId)}
+                  active={Boolean(
+                    snapshot && row.kind === 'policy' && row.strategyId === snapshot.policyId,
+                  )}
                   recorded={recorded}
                   baselineMetrics={baselineMetrics}
                 />
@@ -170,7 +176,9 @@ function ComparisonRow({
     <tr className={baseline ? 'bg-figma-soft' : active ? 'bg-[#fff6d8]' : ''}>
       <td className="rounded-l-[16px] px-[12px] py-[16px] align-top">
         <div className="flex flex-wrap items-center gap-[8px]">
-          <span className="font-semibold text-[16px] text-figma-ink">{strategyLabel(row.strategyId)}</span>
+          <span className="font-semibold text-[16px] text-figma-ink">
+            {strategyLabel(row.strategyId)}
+          </span>
           {baseline ? <RowBadge label="сравнение с ТЗ" /> : null}
           {active ? <RowBadge label="активная" /> : null}
         </div>

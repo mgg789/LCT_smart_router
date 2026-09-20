@@ -75,8 +75,7 @@ export function haversineMeters(from: GeoPoint, to: GeoPoint): number {
   const deltaLat = toRadians(to.lat - from.lat);
   const deltaLon = toRadians(to.lon - from.lon);
   const chord =
-    Math.sin(deltaLat / 2) ** 2 +
-    Math.cos(fromLat) * Math.cos(toLat) * Math.sin(deltaLon / 2) ** 2;
+    Math.sin(deltaLat / 2) ** 2 + Math.cos(fromLat) * Math.cos(toLat) * Math.sin(deltaLon / 2) ** 2;
   return 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(chord)));
 }
 

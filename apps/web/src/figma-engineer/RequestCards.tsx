@@ -87,6 +87,7 @@ function UpcomingCard({
 }) {
   const service = item.request.workTypeTitle ?? skillLabel(item.request.requiredSkill);
   return (
+    // biome-ignore lint/a11y/useSemanticElements: The keyboard-accessible card contains independent action buttons, which cannot be nested in a button.
     <div
       role="button"
       tabIndex={0}
@@ -206,6 +207,7 @@ function RegularCard({
 }) {
   const service = item.request.workTypeTitle ?? skillLabel(item.request.requiredSkill);
   return (
+    // biome-ignore lint/a11y/useSemanticElements: The keyboard-accessible card contains an independent route button, which cannot be nested in a button.
     <div
       role="button"
       tabIndex={0}

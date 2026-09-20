@@ -274,11 +274,7 @@ export function bestEngineerIndex(
     const score = scoreEngineerMatch(query, item.name, item.email);
     if (score <= 0) continue;
     const distance = Math.abs(shortestTurn(center, index, items.length));
-    if (
-      !best ||
-      score > best.score ||
-      (score === best.score && distance < best.distance)
-    ) {
+    if (!best || score > best.score || (score === best.score && distance < best.distance)) {
       best = { index, score, distance };
     }
   }

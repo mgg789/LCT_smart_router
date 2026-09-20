@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { moscowAt } from '../lib/time';
-import { arrivalHeadline, engineerHeaderStamp, formatMinutesRu, formatPlanTime, formatPlanWindow } from './engineerClock';
+import {
+  arrivalHeadline,
+  engineerHeaderStamp,
+  formatMinutesRu,
+  formatPlanTime,
+  formatPlanWindow,
+} from './engineerClock';
 
 describe('engineerClock', () => {
   it('builds the Figma header stamp in Moscow', () => {

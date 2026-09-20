@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { Copy, KeyRound, Plus } from 'lucide-react';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import {
   createApiToken,
   getDispatcherSettings,
@@ -188,7 +188,9 @@ export function SettingsModal({
 
         <div className="mt-[16px] min-h-0 flex-1 overflow-y-auto [scrollbar-width:thin]">
           {loading ? (
-            <p className="mt-[24px] font-medium text-[16px] text-figma-muted">Загружаем настройки…</p>
+            <p className="mt-[24px] font-medium text-[16px] text-figma-muted">
+              Загружаем настройки…
+            </p>
           ) : null}
           {tab === 'general' ? <GeneralForm draft={draft} setField={setField} /> : null}
           {tab === 'api' ? <ApiTokensTab token={token} /> : null}
@@ -233,8 +235,16 @@ export function SettingsModal({
                   overdueSec: draft.overdueMin * 60,
                   timeRiskSec: draft.timeRiskMin * 60,
                   repeatAfterSec: draft.repeatAfterMin * 60,
-                  ...(clearTwogis ? { twogisApiKey: null } : twogisKey ? { twogisApiKey: twogisKey } : {}),
-                  ...(clearYandex ? { yandexApiKey: null } : yandexKey ? { yandexApiKey: yandexKey } : {}),
+                  ...(clearTwogis
+                    ? { twogisApiKey: null }
+                    : twogisKey
+                      ? { twogisApiKey: twogisKey }
+                      : {}),
+                  ...(clearYandex
+                    ? { yandexApiKey: null }
+                    : yandexKey
+                      ? { yandexApiKey: yandexKey }
+                      : {}),
                 },
                 router: {
                   ...routerSettings,
@@ -532,7 +542,10 @@ function MapsForm({
       ) : null}
       {status ? (
         <div className="mt-[20px] rounded-[20px] bg-figma-canvas px-[18px] py-[16px] font-medium text-[15px] text-figma-ink">
-          <p>Активный провайдер: {status.active === 'none' ? 'нет' : status.active === 'twogis' ? '2ГИС' : 'Яндекс'}</p>
+          <p>
+            Активный провайдер:{' '}
+            {status.active === 'none' ? 'нет' : status.active === 'twogis' ? '2ГИС' : 'Яндекс'}
+          </p>
           <p className="mt-[6px] text-figma-muted">2ГИС — {status.twogis.message}</p>
           <p className="mt-[4px] text-figma-muted">Яндекс — {status.yandex.message}</p>
         </div>
@@ -554,7 +567,7 @@ function ApiTokensTab({ token }: { token: string | null }) {
   const [copied, setCopied] = useState(false);
   const [revokingId, setRevokingId] = useState<string | null>(null);
 
-  const reload = () => {
+  const reload = useCallback(() => {
     if (!token) return;
     setLoading(true);
     void listApiTokens(token)
@@ -566,20 +579,23 @@ function ApiTokensTab({ token }: { token: string | null }) {
         setError(cause instanceof Error ? cause.message : 'Не удалось загрузить токены');
       })
       .finally(() => setLoading(false));
-  };
+  }, [token]);
 
   useEffect(() => {
     reload();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [reload]);
 
   if (!token) {
-    return <p className="mt-[24px] font-medium text-[16px] text-figma-muted">Нужна сессия диспетчера.</p>;
+    return (
+      <p className="mt-[24px] font-medium text-[16px] text-figma-muted">Нужна сессия диспетчера.</p>
+    );
   }
 
   return (
     <div>
-      {error ? <p className="mb-[12px] font-medium text-[15px] text-figma-danger">{error}</p> : null}
+      {error ? (
+        <p className="mb-[12px] font-medium text-[15px] text-figma-danger">{error}</p>
+      ) : null}
       <div className="grid gap-[12px] md:grid-cols-[1fr_220px]">
         <Field label="Название" htmlFor="token-name">
           <input
@@ -608,11 +624,19 @@ function ApiTokensTab({ token }: { token: string | null }) {
       </div>
       <div className="mt-[16px] flex flex-wrap items-end gap-[12px]">
         <label className="flex items-center gap-[8px] font-medium text-[15px] text-figma-ink">
-          <input type="radio" checked={expiryMode === 'never'} onChange={() => setExpiryMode('never')} />
+          <input
+            type="radio"
+            checked={expiryMode === 'never'}
+            onChange={() => setExpiryMode('never')}
+          />
           Без срока
         </label>
         <label className="flex items-center gap-[8px] font-medium text-[15px] text-figma-ink">
-          <input type="radio" checked={expiryMode === 'date'} onChange={() => setExpiryMode('date')} />
+          <input
+            type="radio"
+            checked={expiryMode === 'date'}
+            onChange={() => setExpiryMode('date')}
+          />
           До даты
         </label>
         {expiryMode === 'date' ? (
@@ -682,7 +706,9 @@ function ApiTokensTab({ token }: { token: string | null }) {
         </button>
       </div>
       {tokens.length === 0 && !loading ? (
-        <p className="mt-[12px] font-medium text-[15px] text-figma-muted">Пока нет ни одного токена.</p>
+        <p className="mt-[12px] font-medium text-[15px] text-figma-muted">
+          Пока нет ни одного токена.
+        </p>
       ) : (
         <ul className="mt-[12px] space-y-[8px]">
           {tokens.map((item) => (

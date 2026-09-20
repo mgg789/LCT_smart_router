@@ -3,8 +3,18 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { requestEngineerLoginCode, verifyEngineerLoginCode } from '../api/engineer';
 import type { EngineerAuthSession } from '../api/types';
 import { FIGMA_ASSETS } from '../figma-dashboard/assets';
-import { isLoginEmail, loginErrorMessage, remainingCodeSeconds } from '../figma-dashboard/loginCopy';
-import { applyOtpBackspace, applyOtpInput, emptyOtpCells, OTP_LENGTH, otpValue } from '../figma-dashboard/otp';
+import {
+  isLoginEmail,
+  loginErrorMessage,
+  remainingCodeSeconds,
+} from '../figma-dashboard/loginCopy';
+import {
+  applyOtpBackspace,
+  applyOtpInput,
+  emptyOtpCells,
+  OTP_LENGTH,
+  otpValue,
+} from '../figma-dashboard/otp';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { dismissToast, pushAuthErrorToast } from '../figma-dashboard/toasts';
 import { eu } from './engineerScale';
@@ -85,10 +95,7 @@ export function EngineerLogin({
 
   return (
     <div className="engineer-phone relative flex h-dvh flex-col overflow-y-auto bg-figma-canvas">
-      <div
-        className="flex flex-1 flex-col"
-        style={{ padding: `${eu(80)} ${eu(52)} ${eu(40)}` }}
-      >
+      <div className="flex flex-1 flex-col" style={{ padding: `${eu(80)} ${eu(52)} ${eu(40)}` }}>
         <div className="flex flex-col items-center" style={{ gap: eu(32) }}>
           <FigmaIcon
             src={FIGMA_ASSETS.logo}
@@ -114,7 +121,11 @@ export function EngineerLogin({
             void requestCode();
           }}
         >
-          <label className="block font-murs text-figma-ink" htmlFor="eng-login-email" style={{ fontSize: eu(32) }}>
+          <label
+            className="block font-murs text-figma-ink"
+            htmlFor="eng-login-email"
+            style={{ fontSize: eu(32) }}
+          >
             Email
           </label>
           <input
@@ -225,6 +236,9 @@ function OtpRow({
   onChange: (cells: string[], complete: boolean) => void;
 }) {
   const baseId = useId();
+  const [slotIds] = useState(() =>
+    Array.from({ length: OTP_LENGTH }, (_, index) => `${baseId}-${index}`),
+  );
   const refs = useRef<Array<HTMLInputElement | null>>([]);
 
   useEffect(() => {
@@ -235,9 +249,9 @@ function OtpRow({
 
   return (
     <div className="flex" style={{ marginTop: eu(16), gap: eu(12) }}>
-      {cells.map((cell, index) => (
+      {slotIds.map((slotId, index) => (
         <input
-          key={`${baseId}-${index}`}
+          key={slotId}
           ref={(node) => {
             refs.current[index] = node;
           }}
@@ -246,7 +260,7 @@ function OtpRow({
           aria-label={`Цифра ${index + 1} из ${OTP_LENGTH}`}
           maxLength={OTP_LENGTH}
           disabled={disabled}
-          value={cell}
+          value={cells[index]}
           onChange={(event) => {
             const next = applyOtpInput(cells, index, event.target.value);
             refs.current[next.focus]?.focus();

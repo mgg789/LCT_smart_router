@@ -1,22 +1,22 @@
 import { motion } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import type { DashboardSnapshot } from '../api/types';
-import { FIGMA_ASSETS } from './assets';
+import { AddressPointField } from './AddressPointField';
 import {
   ADD_TAB_LABEL,
   ADD_TABS,
-  SKILL_OPTIONS,
-  TRANSPORT_OPTIONS,
-  WORK_TYPE_OPTIONS,
-  selectableRegions,
   type AddTab,
+  SKILL_OPTIONS,
   type SkillId,
+  selectableRegions,
+  TRANSPORT_OPTIONS,
   type TransportId,
   validateEngineerDraft,
   validateRequestDraft,
+  WORK_TYPE_OPTIONS,
   windowFromClocks,
 } from './addEntity';
-import { AddressPointField } from './AddressPointField';
+import { FIGMA_ASSETS } from './assets';
 import { ModalLayer, ModalScrim } from './modalLayer';
 import { FigmaIcon } from './primitives';
 
@@ -88,98 +88,98 @@ export function AddEntityModal({
 
   return (
     <ModalLayer open={open} motionOn={motionOn}>
-          <ModalScrim label="Закрыть добавление" disabled={submitting} onClose={onClose} />
-          <motion.div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="figma-add-entity-title"
-            className="relative flex w-[800px] flex-col overflow-hidden rounded-[20px] bg-white px-[30px] pb-[24px] pt-[28px]"
-            style={{ height: DIALOG_HEIGHT }}
-            initial={motionOn ? { opacity: 0, y: 12, scale: 0.98 } : false}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={motionOn ? { opacity: 0, y: 8, scale: 0.98 } : undefined}
-            transition={fade}
+      <ModalScrim label="Закрыть добавление" disabled={submitting} onClose={onClose} />
+      <motion.div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="figma-add-entity-title"
+        className="relative flex w-[800px] flex-col overflow-hidden rounded-[20px] bg-white px-[30px] pb-[24px] pt-[28px]"
+        style={{ height: DIALOG_HEIGHT }}
+        initial={motionOn ? { opacity: 0, y: 12, scale: 0.98 } : false}
+        animate={{ opacity: 1, y: 0, scale: 1 }}
+        exit={motionOn ? { opacity: 0, y: 8, scale: 0.98 } : undefined}
+        transition={fade}
+      >
+        <div className="flex items-center justify-between">
+          <h2
+            id="figma-add-entity-title"
+            className="figma-text figma-nowrap font-extrabold text-[28px] tracking-[-0.476px] text-figma-ink"
           >
-            <div className="flex items-center justify-between">
-              <h2
-                id="figma-add-entity-title"
-                className="figma-text figma-nowrap font-extrabold text-[28px] tracking-[-0.476px] text-figma-ink"
-              >
-                Добавить
-              </h2>
-              <button
-                type="button"
-                aria-label="Закрыть"
-                disabled={submitting}
-                onClick={onClose}
-                className="flex size-[36px] items-center justify-center transition-transform duration-150 hover:scale-110 disabled:opacity-50"
-              >
-                <span className="-rotate-45">
-                  <FigmaIcon src={FIGMA_ASSETS.toastCloseInk} alt="" width={20} height={20} />
-                </span>
-              </button>
-            </div>
+            Добавить
+          </h2>
+          <button
+            type="button"
+            aria-label="Закрыть"
+            disabled={submitting}
+            onClick={onClose}
+            className="flex size-[36px] items-center justify-center transition-transform duration-150 hover:scale-110 disabled:opacity-50"
+          >
+            <span className="-rotate-45">
+              <FigmaIcon src={FIGMA_ASSETS.toastCloseInk} alt="" width={20} height={20} />
+            </span>
+          </button>
+        </div>
 
-            <TabSwitch
-              tab={tab}
-              motionOn={motionOn}
-              onChange={(next) => {
-                setTab(next);
-                setError(null);
-                setStatus(null);
-              }}
+        <TabSwitch
+          tab={tab}
+          motionOn={motionOn}
+          onChange={(next) => {
+            setTab(next);
+            setError(null);
+            setStatus(null);
+          }}
+        />
+
+        <div className="mt-[24px] min-h-0 flex-1 overflow-y-auto [scrollbar-width:thin]">
+          {tab === 'request' ? (
+            <RequestForm
+              workDate={snapshot?.workDate ?? todayMoscow()}
+              live={live}
+              token={token}
+              onError={setError}
+              onStatus={setStatus}
+              onSubmit={onCreateRequest}
             />
+          ) : null}
+          {tab === 'engineer' ? (
+            <EngineerForm
+              snapshot={snapshot}
+              live={live}
+              token={token}
+              onError={setError}
+              onStatus={setStatus}
+              onSubmit={onCreateEngineer}
+            />
+          ) : null}
+          {tab === 'region' ? (
+            <p className="mt-[24px] font-medium text-[16px] leading-[24px] text-figma-muted">
+              Создание офиса и региона временно отключено.
+            </p>
+          ) : null}
+        </div>
 
-            <div className="mt-[24px] min-h-0 flex-1 overflow-y-auto [scrollbar-width:thin]">
-              {tab === 'request' ? (
-                <RequestForm
-                  workDate={snapshot?.workDate ?? todayMoscow()}
-                  live={live}
-                  token={token}
-                  onError={setError}
-                  onStatus={setStatus}
-                  onSubmit={onCreateRequest}
-                />
-              ) : null}
-              {tab === 'engineer' ? (
-                <EngineerForm
-                  snapshot={snapshot}
-                  live={live}
-                  token={token}
-                  onError={setError}
-                  onStatus={setStatus}
-                  onSubmit={onCreateEngineer}
-                />
-              ) : null}
-              {tab === 'region' ? (
-                <p className="mt-[24px] font-medium text-[16px] leading-[24px] text-figma-muted">
-                  Создание офиса и региона временно отключено.
-                </p>
-              ) : null}
-            </div>
-
-            {tab !== 'region' || error || status ? (
-            <div className="shrink-0 pt-[16px]">
-              {error ? (
-                <p role="alert" className="mb-[12px] font-medium text-[15px] text-figma-danger">
-                  {error}
-                </p>
-              ) : null}
-              {status ? (
-                <p role="status" className="mb-[12px] font-medium text-[15px] text-figma-muted">
-                  {status}
-                </p>
-              ) : null}
-              {tab !== 'region' ? (
-                <SubmitRow
-                  submitting={submitting}
-                  label={tab === 'request' ? 'Создать заявку' : 'Добавить инженера'}
-                  formId={`add-form-${tab}`}
-                />
-              ) : null}
-            </div>
+        {tab !== 'region' || error || status ? (
+          <div className="shrink-0 pt-[16px]">
+            {error ? (
+              <p role="alert" className="mb-[12px] font-medium text-[15px] text-figma-danger">
+                {error}
+              </p>
             ) : null}
-          </motion.div>
+            {status ? (
+              <p role="status" className="mb-[12px] font-medium text-[15px] text-figma-muted">
+                {status}
+              </p>
+            ) : null}
+            {tab !== 'region' ? (
+              <SubmitRow
+                submitting={submitting}
+                label={tab === 'request' ? 'Создать заявку' : 'Добавить инженера'}
+                formId={`add-form-${tab}`}
+              />
+            ) : null}
+          </div>
+        ) : null}
+      </motion.div>
     </ModalLayer>
   );
 }
@@ -197,37 +197,37 @@ function TabSwitch({
   return (
     <div className="mt-[22px] h-[56px] rounded-full bg-figma-canvas p-[4px]">
       <div className="relative grid h-full grid-cols-3">
-      <motion.span
-        aria-hidden
-        className="pointer-events-none absolute inset-y-0 left-0 w-1/3 rounded-full bg-figma-ink"
-        initial={false}
-        animate={{ x: `${index * 100}%` }}
-        transition={motionOn ? CAPSULE_SPRING : { duration: 0 }}
-      />
-      {ADD_TABS.map((item) => {
-        const active = item === tab;
-        const disabled = item === 'region';
-        return (
-          <button
-            key={item}
-            type="button"
-            disabled={disabled}
-            title={disabled ? 'Временно недоступно' : undefined}
-            onClick={() => {
-              if (!disabled) onChange(item);
-            }}
-            className="relative z-10 flex h-full items-center justify-center rounded-full disabled:cursor-not-allowed"
-          >
-            <span
+        <motion.span
+          aria-hidden
+          className="pointer-events-none absolute inset-y-0 left-0 w-1/3 rounded-full bg-figma-ink"
+          initial={false}
+          animate={{ x: `${index * 100}%` }}
+          transition={motionOn ? CAPSULE_SPRING : { duration: 0 }}
+        />
+        {ADD_TABS.map((item) => {
+          const active = item === tab;
+          const disabled = item === 'region';
+          return (
+            <button
+              key={item}
+              type="button"
+              disabled={disabled}
+              title={disabled ? 'Временно недоступно' : undefined}
+              onClick={() => {
+                if (!disabled) onChange(item);
+              }}
+              className="relative z-10 flex h-full items-center justify-center rounded-full disabled:cursor-not-allowed"
+            >
+              <span
                 className={`font-semibold text-[16px] tracking-[-0.3px] transition-colors duration-300 ease-out ${
                   disabled ? 'text-figma-hint' : active ? 'text-white' : 'text-figma-ink'
                 }`}
-            >
-              {ADD_TAB_LABEL[item]}
-            </span>
-          </button>
-        );
-      })}
+              >
+                {ADD_TAB_LABEL[item]}
+              </span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
@@ -269,7 +269,14 @@ function RequestForm({
         event.preventDefault();
         onError(null);
         onStatus(null);
-        const issue = validateRequestDraft({ workType, addressText, startClock, endClock, lat, lon });
+        const issue = validateRequestDraft({
+          workType,
+          addressText,
+          startClock,
+          endClock,
+          lat,
+          lon,
+        });
         if (issue) {
           onError(issue);
           return;
@@ -284,7 +291,11 @@ function RequestForm({
             setAddressText('');
             setLat(null);
             setLon(null);
-            onStatus(live ? 'Заявка создана и попала в план дня.' : 'Заявка сохранена только в этом сеансе.');
+            onStatus(
+              live
+                ? 'Заявка создана и попала в план дня.'
+                : 'Заявка сохранена только в этом сеансе.',
+            );
           })
           .catch((cause: unknown) => {
             onError(cause instanceof Error ? cause.message : 'Не удалось создать заявку');
@@ -292,7 +303,12 @@ function RequestForm({
       }}
     >
       <Field label="Тип" htmlFor="add-request-type">
-        <select id="add-request-type" value={workType} onChange={(event) => setWorkType(event.target.value)} className={FIELD}>
+        <select
+          id="add-request-type"
+          value={workType}
+          onChange={(event) => setWorkType(event.target.value)}
+          className={FIELD}
+        >
           {WORK_TYPE_OPTIONS.map((item) => (
             <option key={item.code} value={item.code}>
               {item.title}
@@ -423,7 +439,11 @@ function EngineerForm({
             setHomeAddress('');
             setHomeLat(null);
             setHomeLon(null);
-            onStatus(live ? 'Профиль инженера создан и поставлен в смену.' : 'Инженер сохранён только в этом сеансе.');
+            onStatus(
+              live
+                ? 'Профиль инженера создан и поставлен в смену.'
+                : 'Инженер сохранён только в этом сеансе.',
+            );
           })
           .catch((cause: unknown) => {
             onError(cause instanceof Error ? cause.message : 'Не удалось добавить инженера');
@@ -589,7 +609,9 @@ function SubmitRow({
       className={`flex h-[56px] w-full items-center justify-center rounded-[20px] font-semibold text-[18px] tracking-[-0.4px] transition-transform duration-150 ${
         formId ? '' : 'mt-[28px] '
       }${
-        submitting ? 'bg-figma-track text-figma-hint' : 'bg-figma-bee text-figma-ink hover:scale-[1.01]'
+        submitting
+          ? 'bg-figma-track text-figma-hint'
+          : 'bg-figma-bee text-figma-ink hover:scale-[1.01]'
       }`}
     >
       {submitting ? 'Сохраняем…' : label}

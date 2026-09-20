@@ -6,15 +6,15 @@ import { FIGMA_ASSETS } from './assets';
 import { FigmaIcon, FigmaText } from './primitives';
 import {
   DEMO_REQUEST_ROWS,
-  REQUEST_SORT_OPTIONS,
   filterRequestRows,
-  requestStatusLabel,
-  shortRequestId,
-  rowsFromSnapshot,
-  sortRequestRows,
+  REQUEST_SORT_OPTIONS,
   type RequestRowStatus,
   type RequestSortId,
   type RequestTableRow,
+  requestStatusLabel,
+  rowsFromSnapshot,
+  shortRequestId,
+  sortRequestRows,
 } from './requestsTable';
 
 const COLUMNS = [
@@ -59,7 +59,8 @@ export function RequestsView({
     () => sortRequestRows(filterRequestRows(source, query), sort),
     [query, sort, source],
   );
-  const sortLabel = REQUEST_SORT_OPTIONS.find((item) => item.id === sort)?.label ?? 'По использованию';
+  const sortLabel =
+    REQUEST_SORT_OPTIONS.find((item) => item.id === sort)?.label ?? 'По использованию';
 
   useEffect(() => {
     if (!sortOpen) return;
@@ -136,7 +137,9 @@ export function RequestsView({
           whileTap={reduceMotion ? undefined : { scale: 0.98 }}
           transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
         >
-          <span className="figma-nowrap font-medium text-[18px] text-black">Сортировка: {sortLabel}</span>
+          <span className="figma-nowrap font-medium text-[18px] text-black">
+            Сортировка: {sortLabel}
+          </span>
           <motion.span
             className="flex size-[32px] items-center justify-center overflow-hidden"
             animate={{ rotate: sortOpen ? 180 : 0 }}
@@ -271,7 +274,9 @@ function StatusChip({ status }: { status: RequestRowStatus }) {
             ? 'bg-figma-cancel text-white'
             : 'bg-figma-track text-figma-muted';
   return (
-    <span className={`inline-flex h-[42px] items-center justify-center gap-[8px] rounded-full px-[20px] ${tone}`}>
+    <span
+      className={`inline-flex h-[42px] items-center justify-center gap-[8px] rounded-full px-[20px] ${tone}`}
+    >
       <FigmaIcon src={STATUS_DOT[status]} alt="" width={11} height={11} />
       <span className="figma-nowrap font-medium text-[20px]">{label}</span>
     </span>

@@ -5,7 +5,7 @@ import { NotificationsService } from '../../notifications';
 import { assertWriteApplied, type OperationContext } from '../../operations';
 import type { Tx } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
-import { nearestRegion, regionCenters, type RegionPoint } from './region-geocenter';
+import { nearestRegion, type RegionPoint, regionCenters } from './region-geocenter';
 import { findWorkType } from './work-type.catalog';
 
 export interface PrepareRequestInput {

@@ -1,5 +1,11 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
+import {
+  type PointerEvent as ReactPointerEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { useLetterboxInsets } from './artboardScale';
 import { FIGMA_ASSETS } from './assets';
 import { FigmaIcon } from './primitives';
@@ -216,11 +222,14 @@ function ToastCard({
   const originX = useRef<number | null>(null);
   const left = useRef(false);
 
-  const leave = (startX: number) => {
-    if (left.current) return;
-    left.current = true;
-    onLeave(startX);
-  };
+  const leave = useCallback(
+    (startX: number) => {
+      if (left.current) return;
+      left.current = true;
+      onLeave(startX);
+    },
+    [onLeave],
+  );
 
   const beginSwipe = (clientX: number) => {
     if (!interactive || left.current) return;
@@ -228,23 +237,29 @@ function ToastCard({
     setDragging(true);
   };
 
-  const moveSwipe = (clientX: number) => {
-    if (originX.current === null) return;
-    const dx = (clientX - originX.current) / Math.max(scale, 0.01);
-    setOffsetX(Math.max(0, dx));
-  };
+  const moveSwipe = useCallback(
+    (clientX: number) => {
+      if (originX.current === null) return;
+      const dx = (clientX - originX.current) / Math.max(scale, 0.01);
+      setOffsetX(Math.max(0, dx));
+    },
+    [scale],
+  );
 
-  const endSwipe = (clientX: number) => {
-    if (originX.current === null) return;
-    const dx = (clientX - originX.current) / Math.max(scale, 0.01);
-    originX.current = null;
-    setDragging(false);
-    if (dx < SWIPE_DISMISS) {
-      setOffsetX(0);
-      return;
-    }
-    leave(dx);
-  };
+  const endSwipe = useCallback(
+    (clientX: number) => {
+      if (originX.current === null) return;
+      const dx = (clientX - originX.current) / Math.max(scale, 0.01);
+      originX.current = null;
+      setDragging(false);
+      if (dx < SWIPE_DISMISS) {
+        setOffsetX(0);
+        return;
+      }
+      leave(dx);
+    },
+    [scale, leave],
+  );
 
   useEffect(() => {
     if (!dragging) return;
@@ -256,7 +271,7 @@ function ToastCard({
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
     };
-  }, [dragging, scale, toast.id]);
+  }, [dragging, moveSwipe, endSwipe]);
 
   return (
     <ToastFace

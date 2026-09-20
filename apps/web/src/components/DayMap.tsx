@@ -29,7 +29,10 @@ import { engineerColor, skillMark } from '../lib/reasons';
 const OSRM_LINE = '#8A8F98';
 const MAP_API_LINE = '#16A34A';
 
-function routeStroke(segment: Pick<MapRouteSegment, 'approximate' | 'source' | 'geometryProvider'>, engineerId: string) {
+function routeStroke(
+  segment: Pick<MapRouteSegment, 'approximate' | 'source' | 'geometryProvider'>,
+  engineerId: string,
+) {
   const kind = routeLineKind(segment);
   if (kind === 'map') return mapPaintColor(MAP_API_LINE);
   if (kind === 'osrm') return mapPaintColor(OSRM_LINE);

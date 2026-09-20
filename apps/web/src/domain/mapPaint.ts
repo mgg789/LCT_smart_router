@@ -89,8 +89,7 @@ function haversineMeters(from: readonly [number, number], to: readonly [number, 
   const dLon = toRad(to[0] - from[0]);
   const lat1 = toRad(from[1]);
   const lat2 = toRad(to[1]);
-  const half =
-    Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  const half = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
   return 2 * radius * Math.asin(Math.min(1, Math.sqrt(half)));
 }
 

@@ -20,7 +20,7 @@ export function DispatcherAuthPage({
     <main className="flex min-h-full items-center justify-center bg-figma-canvas p-[32px]">
       <AuthToastLayer />
       <LoginCard
-        role="dispatcher"
+        loginRole="dispatcher"
         motionOn={motionOn}
         submitting={submitting}
         onSession={onSession}

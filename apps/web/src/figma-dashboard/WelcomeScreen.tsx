@@ -98,9 +98,7 @@ export function WelcomeScreen({
           whileTap={animate ? { scale: 0.98 } : undefined}
           transition={animate ? { ...reveal, delay: 0.26 } : { duration: 0 }}
         >
-          <span className="figma-nowrap font-medium text-[20px] text-figma-ink">
-            {buttonLabel}
-          </span>
+          <span className="figma-nowrap font-medium text-[20px] text-figma-ink">{buttonLabel}</span>
         </motion.button>
       </div>
     </div>
@@ -110,7 +108,9 @@ export function WelcomeScreen({
 function MiniField({ children }: { children: string }) {
   return (
     <div className="flex h-[56px] items-center rounded-[20px] border border-white/15 bg-white/10 px-[24px] backdrop-blur-[20px]">
-      <span className="figma-nowrap font-semibold text-[18px] tracking-[-0.3px] text-white">{children}</span>
+      <span className="figma-nowrap font-semibold text-[18px] tracking-[-0.3px] text-white">
+        {children}
+      </span>
     </div>
   );
 }

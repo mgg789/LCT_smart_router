@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createDevSnapshot, FOCUS_ENGINEER_ID } from '../fixtures/dev-day';
 import { moscowAt } from '../lib/time';
+import { resetAddedEntities } from './addEntity';
 import {
   bindEngineerEmailInSnapshot,
   dropEngineerFromSnapshot,
@@ -13,7 +14,6 @@ import {
   isPlausibleEmail,
   skillChipLabel,
 } from './engineerRoster';
-import { resetAddedEntities } from './addEntity';
 
 describe('engineerRoster', () => {
   it('maps skills as title-case chips and keeps email shape checks', () => {
@@ -81,7 +81,10 @@ describe('engineerRoster', () => {
         ...snapshot,
         engineers: snapshot.engineers.map((item) =>
           item.id === FOCUS_ENGINEER_ID && item.day
-            ? { ...item, day: { ...item.day, availability: 'technical_break', expectedOnlineAt: lunchAt } }
+            ? {
+                ...item,
+                day: { ...item.day, availability: 'technical_break', expectedOnlineAt: lunchAt },
+              }
             : item,
         ),
       },

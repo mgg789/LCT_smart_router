@@ -1,27 +1,29 @@
 import { animate, motion, useMotionValue, useReducedMotion } from 'framer-motion';
 import {
+  type FormEvent,
+  type PointerEvent as ReactPointerEvent,
+  useCallback,
   useEffect,
+  useEffectEvent,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
-  type FormEvent,
-  type PointerEvent as ReactPointerEvent,
 } from 'react';
 import type { DashboardSnapshot } from '../api/types';
 import { useArtboardScale, useLetterboxInsets } from './artboardScale';
 import { ENGINEER_PORTRAITS, FIGMA_ASSETS } from './assets';
 import {
-  RING_CARD,
-  RING_CENTER,
-  RING_CHAT_TOP,
-  RING_SEARCH_TOP,
-  RING_HOLD_CARDS_PER_SEC,
-  RING_HOLD_DELAY_MS,
-  RING_RENDER_SPAN,
   arrowSpinDelta,
   bestEngineerIndex,
   isRenderedSlot,
+  RING_CARD,
+  RING_CENTER,
+  RING_CHAT_TOP,
+  RING_HOLD_CARDS_PER_SEC,
+  RING_HOLD_DELAY_MS,
+  RING_RENDER_SPAN,
+  RING_SEARCH_TOP,
   ringPose,
   ringSlotKeys,
   rotationDeltaFromPointer,
@@ -31,9 +33,9 @@ import {
   wrapIndex,
 } from './engineerRing';
 import {
+  type EngineerProfile,
   engineerProfilesFromSnapshot,
   isPlausibleEmail,
-  type EngineerProfile,
 } from './engineerRoster';
 import { FigmaIcon, FigmaText } from './primitives';
 
@@ -119,15 +121,18 @@ export function EngineersView({
   searchHeldRef.current = searchHeld;
 
   const focused = roster[focusedIndex] ?? roster[0] ?? null;
+  const previousFocusedId = useRef(focused?.id);
 
   useEffect(() => {
+    if (previousFocusedId.current === focused?.id) return;
+    previousFocusedId.current = focused?.id;
     setDeleteAsk(false);
     setDeleteError(null);
     setEmailOpen(false);
     setEmailError(null);
   }, [focused?.id]);
 
-  function paint(center: number) {
+  const paint = useCallback((center: number) => {
     const items = rosterRef.current;
     const count = items.length;
     const nearest = count === 0 ? 0 : wrapIndex(Math.round(center), count);
@@ -169,16 +174,17 @@ export function EngineersView({
         });
       }
     }
-  }
+  }, []);
 
   useEffect(() => {
+    rosterRef.current = roster;
     const unsub = centerMv.on('change', (value) => {
       centerRef.current = value;
       paint(value);
     });
     paint(centerMv.get());
     return unsub;
-  }, [centerMv, roster]);
+  }, [centerMv, roster, paint]);
 
   function stopAnim() {
     animRef.current?.stop();
@@ -267,6 +273,9 @@ export function EngineersView({
     }, RING_HOLD_DELAY_MS);
   }
 
+  const syncSelection = useEffectEvent((target: number) => goTo(target, false));
+  const spinWheel = useEffectEvent((delta: number) => spinBy(delta));
+
   useEffect(() => {
     const prevSelected = prevSelectedRef.current;
     prevSelectedRef.current = selectedEngineerId;
@@ -274,11 +283,13 @@ export function EngineersView({
     if (query.trim() || searchHeld !== null || draggingRef.current) return;
     if (holdDirRef.current !== 0 || animRef.current) return;
     if (prevSelected === selectedEngineerId && prevSelected !== undefined) return;
-    const index = selectedEngineerId ? roster.findIndex((item) => item.id === selectedEngineerId) : 0;
+    const index = selectedEngineerId
+      ? roster.findIndex((item) => item.id === selectedEngineerId)
+      : 0;
     const target = selectionSpinTarget(centerRef.current, index < 0 ? 0 : index, roster.length);
     if (target === null) return;
     appliedIdRef.current = roster[index < 0 ? 0 : index]?.id ?? null;
-    goTo(target, false);
+    syncSelection(target);
   }, [query, roster, searchHeld, selectedEngineerId]);
 
   useEffect(() => {
@@ -287,7 +298,7 @@ export function EngineersView({
     const onNativeWheel = (event: WheelEvent) => {
       event.preventDefault();
       if (rosterRef.current.length === 0) return;
-      spinBy(wheelStep(event.deltaY));
+      spinWheel(wheelStep(event.deltaY));
     };
     ring.addEventListener('wheel', onNativeWheel, { passive: false });
     return () => ring.removeEventListener('wheel', onNativeWheel);
@@ -376,7 +387,9 @@ export function EngineersView({
     draggingRef.current = false;
     if (!prev) return;
     if (!prev.moved) {
-      const card = (event.target as HTMLElement).closest('[data-eng-card]')?.getAttribute('data-eng-card');
+      const card = (event.target as HTMLElement)
+        .closest('[data-eng-card]')
+        ?.getAttribute('data-eng-card');
       if (card) {
         const index = roster.findIndex((item) => item.id === card);
         if (index >= 0) {
@@ -482,7 +495,10 @@ export function EngineersView({
           onEmailDraft={setEmailDraft}
           onSubmitEmail={(event) => void submitEmail(event)}
           onAvailability={() => {
-            onSetAvailability(focused.id, focused.availability === 'offline' ? 'online' : 'offline');
+            onSetAvailability(
+              focused.id,
+              focused.availability === 'offline' ? 'online' : 'offline',
+            );
           }}
           onAskDelete={() => {
             setDeleteAsk(true);
@@ -655,7 +671,6 @@ function EngineerDossier({
           {emailOpen ? (
             <form className="flex min-w-0 items-center gap-[10px]" onSubmit={onSubmitEmail}>
               <input
-                autoFocus
                 value={emailDraft}
                 onChange={(event) => onEmailDraft(event.target.value)}
                 className="h-[32px] w-[320px] shrink-0 rounded-full bg-figma-track px-[14px] font-semibold text-[18px] text-figma-ink outline-none"
@@ -669,11 +684,17 @@ function EngineerDossier({
               >
                 Сохранить
               </button>
-              <button type="button" onClick={onToggleEmail} className="shrink-0 font-semibold text-[16px] text-figma-muted">
+              <button
+                type="button"
+                onClick={onToggleEmail}
+                className="shrink-0 font-semibold text-[16px] text-figma-muted"
+              >
                 Отмена
               </button>
               {emailError ? (
-                <p className="figma-nowrap min-w-0 truncate font-medium text-[14px] text-figma-cancel">{emailError}</p>
+                <p className="figma-nowrap min-w-0 truncate font-medium text-[14px] text-figma-cancel">
+                  {emailError}
+                </p>
               ) : null}
             </form>
           ) : (
@@ -701,7 +722,11 @@ function EngineerDossier({
 
         <div className="mt-auto grid h-[201px] grid-cols-2 gap-[48px]">
           <div className="flex h-full flex-col">
-            <FactRow icon={FIGMA_ASSETS.engTransport} label="Транспорт" value={engineer.transportLabel} />
+            <FactRow
+              icon={FIGMA_ASSETS.engTransport}
+              label="Транспорт"
+              value={engineer.transportLabel}
+            />
             <FactRow icon={FIGMA_ASSETS.engOffice} label="Офис" value={engineer.officeLabel} />
             <div className="mt-auto flex gap-[38px]">
               <motion.button
@@ -730,7 +755,9 @@ function EngineerDossier({
                       type="button"
                       disabled={busy}
                       className="flex h-[67px] w-[115px] items-center justify-center rounded-[20px] bg-figma-cancel font-semibold text-[16px] text-[#f1f1f1] disabled:opacity-50"
-                      whileHover={motionOn ? { scale: 1.03, filter: 'brightness(1.08)' } : undefined}
+                      whileHover={
+                        motionOn ? { scale: 1.03, filter: 'brightness(1.08)' } : undefined
+                      }
                       whileTap={motionOn ? { scale: 0.98 } : undefined}
                       transition={tap}
                       onClick={onConfirmDelete}
@@ -774,7 +801,9 @@ function FactRow({ icon, label, value }: { icon: string; label: string; value: s
       <FigmaText className="ml-[10px] w-[124px] font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
         {label}
       </FigmaText>
-      <FigmaText className="font-semibold text-[18px] tracking-[-0.54px] text-figma-muted">{value}</FigmaText>
+      <FigmaText className="font-semibold text-[18px] tracking-[-0.54px] text-figma-muted">
+        {value}
+      </FigmaText>
     </div>
   );
 }
@@ -786,7 +815,9 @@ function EngineerActivityPane({ engineer }: { engineer: EngineerProfile }) {
   if (activity.kind !== 'job') {
     return (
       <div className="flex h-full flex-col border-l border-[#e6e6e6] pl-[48px]">
-        <FigmaText className="font-murs text-[32px] tracking-[0.64px] text-black">{activity.title}</FigmaText>
+        <FigmaText className="font-murs text-[32px] tracking-[0.64px] text-black">
+          {activity.title}
+        </FigmaText>
         {activity.untilClock ? (
           <FigmaText className="mt-auto font-murs text-[64px] tracking-[1.28px] text-black">
             {activity.untilClock}
@@ -801,7 +832,9 @@ function EngineerActivityPane({ engineer }: { engineer: EngineerProfile }) {
 
   return (
     <div className="flex h-full flex-col border-l border-[#e6e6e6] pl-[48px]">
-      <FigmaText className="font-murs text-[32px] tracking-[0.64px] text-black">{activity.title}</FigmaText>
+      <FigmaText className="font-murs text-[32px] tracking-[0.64px] text-black">
+        {activity.title}
+      </FigmaText>
       <div className="mt-[8px] flex flex-wrap items-center gap-[8px] font-semibold text-[18px] tracking-[-0.306px] text-figma-muted">
         <span>{activity.address}</span>
         {activity.client ? (

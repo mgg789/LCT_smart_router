@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { EngineerView } from '../api/types';
-import {
-  emailChangePending,
-  profileFromSettings,
-  validateEngineerSettings,
-} from './settingsDraft';
+import { emailChangePending, profileFromSettings, validateEngineerSettings } from './settingsDraft';
 
 const profile: EngineerView = {
   id: 'eng-1',
@@ -32,9 +28,9 @@ describe('validateEngineerSettings', () => {
   });
 
   it('requires a name and a known transport', () => {
-    expect(
-      validateEngineerSettings({ displayName: '  ', email: '', transportType: 'walk' }),
-    ).toBe('Укажите имя');
+    expect(validateEngineerSettings({ displayName: '  ', email: '', transportType: 'walk' })).toBe(
+      'Укажите имя',
+    );
     expect(
       validateEngineerSettings({
         displayName: 'Алекс',

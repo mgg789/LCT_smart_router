@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
   ENGINEER_NAME_MAX,
-  MAIN_DASHBOARD,
-  MAIN_REQUEST_COUNT,
-  POLICY_OPTIONS,
   filterEngineers,
   formatNotificationCount,
   isCompletedStop,
+  MAIN_DASHBOARD,
+  MAIN_REQUEST_COUNT,
+  POLICY_OPTIONS,
   requestCountLabel,
   routeStopStatusLabel,
   truncateEnd,
@@ -30,7 +30,11 @@ describe('Figma MAIN fixture', () => {
     expect(formatNotificationCount(100)).toBe('99+');
     expect(requestCountLabel(MAIN_REQUEST_COUNT)).toMatch(/заявк/);
     expect(MAIN_DASHBOARD.notifications).toHaveLength(3);
-    expect(visibleNotifications([...MAIN_DASHBOARD.notifications, { ...MAIN_DASHBOARD.notifications[0]!, id: 'extra' }])).toHaveLength(3);
+    const first = MAIN_DASHBOARD.notifications[0];
+    if (!first) throw new Error('Fixture must include a notification');
+    expect(
+      visibleNotifications([...MAIN_DASHBOARD.notifications, { ...first, id: 'extra' }]),
+    ).toHaveLength(3);
   });
 
   it('renders completed route stops as a green uppercase label', () => {
@@ -52,6 +56,8 @@ describe('Figma MAIN fixture', () => {
     const found = filterEngineers(MAIN_DASHBOARD.engineers, 'волк');
     expect(found).toHaveLength(1);
     expect(found[0]?.id).toBe('volkova');
-    expect(filterEngineers(MAIN_DASHBOARD.engineers, '')).toHaveLength(MAIN_DASHBOARD.engineers.length);
+    expect(filterEngineers(MAIN_DASHBOARD.engineers, '')).toHaveLength(
+      MAIN_DASHBOARD.engineers.length,
+    );
   });
 });

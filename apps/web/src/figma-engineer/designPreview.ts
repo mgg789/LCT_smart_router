@@ -1,4 +1,10 @@
-import type { EngineerDayView, EngineerPlanResponse, EngineerView, PlanStopView, RequestView } from '../api/types';
+import type {
+  EngineerDayView,
+  EngineerPlanResponse,
+  EngineerView,
+  PlanStopView,
+  RequestView,
+} from '../api/types';
 import { moscowAt } from '../lib/time';
 
 const WORK_DATE = '2026-09-15';
@@ -16,7 +22,12 @@ function stop(
   };
 }
 
-function request(partial: Pick<RequestView, 'id' | 'addressText' | 'workTypeTitle' | 'serviceDurationSec' | 'windowStartAt' | 'windowEndAt'>): RequestView {
+function request(
+  partial: Pick<
+    RequestView,
+    'id' | 'addressText' | 'workTypeTitle' | 'serviceDurationSec' | 'windowStartAt' | 'windowEndAt'
+  >,
+): RequestView {
   return {
     version: 1,
     lifecycle: 'submitted',

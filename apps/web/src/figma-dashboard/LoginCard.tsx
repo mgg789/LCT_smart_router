@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { requestDispatcherLoginCode, verifyDispatcherLoginCode } from '../api/client';
 import { requestEngineerLoginCode, verifyEngineerLoginCode } from '../api/engineer';
 import type { AuthSession } from '../api/types';
@@ -29,13 +29,13 @@ const fade = { duration: 0.28, ease: [0.22, 1, 0.36, 1] as const };
  * dispatcher password fallback on a separate step.
  */
 export function LoginCard({
-  role,
+  loginRole: role,
   motionOn,
   submitting,
   onSession,
   onPassword,
 }: {
-  role: LoginRole;
+  loginRole: LoginRole;
   motionOn: boolean;
   submitting: boolean;
   onSession: (session: LoginSession, email: string) => void | Promise<void>;
@@ -136,152 +136,154 @@ export function LoginCard({
         {title}
       </h1>
       {step === 'email' ? (
-          <motion.form
-            key="email"
-            className="mt-[12px]"
-            initial={motionOn ? { opacity: 0, y: 8 } : false}
-            animate={{ opacity: 1, y: 0 }}
-            transition={fade}
-            onSubmit={(event) => {
-              event.preventDefault();
-              void requestCode();
-            }}
-          >
-            <p className="text-center font-medium text-[16px] leading-[22px] text-figma-muted">{lead}</p>
-            <Field label="Почта" htmlFor={`${role}-email`}>
-              <input
-                id={`${role}-email`}
-                type="email"
-                autoComplete="username"
-                value={email}
-                disabled={locked}
-                onChange={(event) => setEmail(event.target.value)}
-                className={fieldClass}
-              />
-            </Field>
-            <PrimaryButton disabled={locked} label={locked ? 'Отправляем…' : 'Получить код'} />
-            {role === 'dispatcher' && onPassword ? (
-              <button
-                type="button"
-                disabled={locked}
-                onClick={() => setStep('password')}
-                className="mt-[16px] mx-auto block font-semibold text-[16px] text-figma-muted underline underline-offset-4"
-              >
-                Войти паролем
-              </button>
-            ) : null}
-          </motion.form>
-        ) : null}
-        {step === 'code' ? (
-          <motion.form
-            key="code"
-            className="mt-[12px]"
-            initial={motionOn ? { opacity: 0, y: 8 } : false}
-            animate={{ opacity: 1, y: 0 }}
-            transition={fade}
-            onSubmit={(event) => {
-              event.preventDefault();
-              void verify();
-            }}
-          >
-            <p className="text-center font-semibold text-[18px] text-figma-ink">{email}</p>
-            <OtpRow
-              cells={cells}
+        <motion.form
+          key="email"
+          className="mt-[12px]"
+          initial={motionOn ? { opacity: 0, y: 8 } : false}
+          animate={{ opacity: 1, y: 0 }}
+          transition={fade}
+          onSubmit={(event) => {
+            event.preventDefault();
+            void requestCode();
+          }}
+        >
+          <p className="text-center font-medium text-[16px] leading-[22px] text-figma-muted">
+            {lead}
+          </p>
+          <Field label="Почта" htmlFor={`${role}-email`}>
+            <input
+              id={`${role}-email`}
+              type="email"
+              autoComplete="username"
+              value={email}
               disabled={locked}
-              onChange={(next, complete) => {
-                setCells(next);
-                if (complete) void verify(otpValue(next));
-              }}
+              onChange={(event) => setEmail(event.target.value)}
+              className={fieldClass}
             />
-            {devCode ? (
-              <p className="mt-[12px] text-center font-medium text-[14px] text-figma-muted">
-                Код для локальной отладки: {devCode}
-              </p>
-            ) : remaining > 0 ? (
-              <p className="mt-[12px] text-center font-medium text-[14px] text-figma-muted">
-                {formatCodeCountdown(remaining)}
-              </p>
-            ) : (
-              <button
-                type="button"
-                disabled={locked}
-                onClick={() => void requestCode()}
-                className="mt-[12px] mx-auto block font-medium text-[14px] text-figma-muted underline underline-offset-4"
-              >
-                Получить новый код
-              </button>
-            )}
-            <PrimaryButton
-              disabled={locked || code.length !== OTP_LENGTH}
-              label={locked ? 'Входим…' : 'Войти'}
-            />
+          </Field>
+          <PrimaryButton disabled={locked} label={locked ? 'Отправляем…' : 'Получить код'} />
+          {role === 'dispatcher' && onPassword ? (
             <button
               type="button"
               disabled={locked}
-              onClick={() => {
-                setStep('email');
-                setCells(emptyOtpCells());
-                setDevCode(undefined);
-                setExpiresAt(null);
-                setPassword('');
-              }}
+              onClick={() => setStep('password')}
               className="mt-[16px] mx-auto block font-semibold text-[16px] text-figma-muted underline underline-offset-4"
             >
-              Сменить почту
+              Войти паролем
             </button>
-          </motion.form>
-        ) : null}
-        {step === 'password' ? (
-          <motion.form
-            key="password"
-            className="mt-[12px]"
-            initial={motionOn ? { opacity: 0, y: 8 } : false}
-            animate={{ opacity: 1, y: 0 }}
-            transition={fade}
-            onSubmit={(event) => {
-              event.preventDefault();
-              void submitPassword();
+          ) : null}
+        </motion.form>
+      ) : null}
+      {step === 'code' ? (
+        <motion.form
+          key="code"
+          className="mt-[12px]"
+          initial={motionOn ? { opacity: 0, y: 8 } : false}
+          animate={{ opacity: 1, y: 0 }}
+          transition={fade}
+          onSubmit={(event) => {
+            event.preventDefault();
+            void verify();
+          }}
+        >
+          <p className="text-center font-semibold text-[18px] text-figma-ink">{email}</p>
+          <OtpRow
+            cells={cells}
+            disabled={locked}
+            onChange={(next, complete) => {
+              setCells(next);
+              if (complete) void verify(otpValue(next));
             }}
-          >
-            <p className="text-center font-medium text-[16px] leading-[22px] text-figma-muted">
-              Запасной вход по паролю диспетчера из окружения сервера.
+          />
+          {devCode ? (
+            <p className="mt-[12px] text-center font-medium text-[14px] text-figma-muted">
+              Код для локальной отладки: {devCode}
             </p>
-            <Field label="Почта" htmlFor={`${role}-password-email`}>
-              <input
-                id={`${role}-password-email`}
-                type="email"
-                autoComplete="username"
-                value={email}
-                disabled={locked}
-                onChange={(event) => setEmail(event.target.value)}
-                className={fieldClass}
-              />
-            </Field>
-            <Field label="Пароль" htmlFor={`${role}-password`}>
-              <input
-                id={`${role}-password`}
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                disabled={locked}
-                onChange={(event) => setPassword(event.target.value)}
-                className={fieldClass}
-              />
-            </Field>
-            <PrimaryButton disabled={locked} label={locked ? 'Входим…' : 'Войти'} />
+          ) : remaining > 0 ? (
+            <p className="mt-[12px] text-center font-medium text-[14px] text-figma-muted">
+              {formatCodeCountdown(remaining)}
+            </p>
+          ) : (
             <button
               type="button"
               disabled={locked}
-              onClick={() => {
-                setStep('email');
-                setPassword('');
-              }}
-              className="mt-[16px] mx-auto block font-semibold text-[16px] text-figma-muted underline underline-offset-4"
+              onClick={() => void requestCode()}
+              className="mt-[12px] mx-auto block font-medium text-[14px] text-figma-muted underline underline-offset-4"
             >
-              Войти по коду
+              Получить новый код
             </button>
-          </motion.form>
-        ) : null}
+          )}
+          <PrimaryButton
+            disabled={locked || code.length !== OTP_LENGTH}
+            label={locked ? 'Входим…' : 'Войти'}
+          />
+          <button
+            type="button"
+            disabled={locked}
+            onClick={() => {
+              setStep('email');
+              setCells(emptyOtpCells());
+              setDevCode(undefined);
+              setExpiresAt(null);
+              setPassword('');
+            }}
+            className="mt-[16px] mx-auto block font-semibold text-[16px] text-figma-muted underline underline-offset-4"
+          >
+            Сменить почту
+          </button>
+        </motion.form>
+      ) : null}
+      {step === 'password' ? (
+        <motion.form
+          key="password"
+          className="mt-[12px]"
+          initial={motionOn ? { opacity: 0, y: 8 } : false}
+          animate={{ opacity: 1, y: 0 }}
+          transition={fade}
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submitPassword();
+          }}
+        >
+          <p className="text-center font-medium text-[16px] leading-[22px] text-figma-muted">
+            Запасной вход по паролю диспетчера из окружения сервера.
+          </p>
+          <Field label="Почта" htmlFor={`${role}-password-email`}>
+            <input
+              id={`${role}-password-email`}
+              type="email"
+              autoComplete="username"
+              value={email}
+              disabled={locked}
+              onChange={(event) => setEmail(event.target.value)}
+              className={fieldClass}
+            />
+          </Field>
+          <Field label="Пароль" htmlFor={`${role}-password`}>
+            <input
+              id={`${role}-password`}
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              disabled={locked}
+              onChange={(event) => setPassword(event.target.value)}
+              className={fieldClass}
+            />
+          </Field>
+          <PrimaryButton disabled={locked} label={locked ? 'Входим…' : 'Войти'} />
+          <button
+            type="button"
+            disabled={locked}
+            onClick={() => {
+              setStep('email');
+              setPassword('');
+            }}
+            className="mt-[16px] mx-auto block font-semibold text-[16px] text-figma-muted underline underline-offset-4"
+          >
+            Войти по коду
+          </button>
+        </motion.form>
+      ) : null}
     </div>
   );
 }
@@ -330,6 +332,9 @@ function OtpRow({
   onChange: (cells: string[], complete: boolean) => void;
 }) {
   const baseId = useId();
+  const [slotIds] = useState(() =>
+    Array.from({ length: OTP_LENGTH }, (_, index) => `${baseId}-${index}`),
+  );
   const refs = useRef<Array<HTMLInputElement | null>>([]);
 
   useEffect(() => {
@@ -340,9 +345,9 @@ function OtpRow({
 
   return (
     <div className="mt-[20px] flex justify-center gap-[10px]">
-      {cells.map((cell, index) => (
+      {slotIds.map((slotId, index) => (
         <input
-          key={`${baseId}-${index}`}
+          key={slotId}
           ref={(node) => {
             refs.current[index] = node;
           }}
@@ -351,7 +356,7 @@ function OtpRow({
           aria-label={`Цифра ${index + 1} из ${OTP_LENGTH}`}
           maxLength={OTP_LENGTH}
           disabled={disabled}
-          value={cell}
+          value={cells[index]}
           onChange={(event) => {
             const next = applyOtpInput(cells, index, event.target.value);
             refs.current[next.focus]?.focus();

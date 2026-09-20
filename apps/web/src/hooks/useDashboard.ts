@@ -637,18 +637,14 @@ export function useDashboard() {
         nextSettings.taskStartLatenessToleranceSec !== current.taskStartLatenessToleranceSec
           ? 'допуск опоздания обновлён'
           : null,
-        nextSettings.accessBufferSec !== current.accessBufferSec
-          ? 'буфер доступа обновлён'
-          : null,
+        nextSettings.accessBufferSec !== current.accessBufferSec ? 'буфер доступа обновлён' : null,
         nextSettings.earlyFinishReplanThresholdSec !== current.earlyFinishReplanThresholdSec
           ? 'порог раннего финиша обновлён'
           : null,
         nextSettings.taskOverrunToleranceSec !== current.taskOverrunToleranceSec
           ? 'допуск переработки обновлён'
           : null,
-        nextSettings.trafficEnabled !== current.trafficEnabled
-          ? 'режим пробок обновлён'
-          : null,
+        nextSettings.trafficEnabled !== current.trafficEnabled ? 'режим пробок обновлён' : null,
         nextSettings.equipmentEnabled !== current.equipmentEnabled
           ? 'режим оборудования обновлён'
           : null,

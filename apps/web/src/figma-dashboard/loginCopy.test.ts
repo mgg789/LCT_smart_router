@@ -3,8 +3,8 @@ import {
   DISPATCHER_LOGIN_TITLE,
   ENGINEER_LOGIN_TITLE,
   formatCodeCountdown,
-  LOGIN_CODE_TTL_SEC,
   isLoginEmail,
+  LOGIN_CODE_TTL_SEC,
   loginErrorMessage,
   remainingCodeSeconds,
 } from './loginCopy';

@@ -182,7 +182,8 @@ export function validateRequestDraft(draft: {
   if (draft.lat == null || draft.lon == null) {
     return 'Выберите адрес из подсказки или точку на карте';
   }
-  if (!parseClock(draft.startClock) || !parseClock(draft.endClock)) return 'Укажите окно в формате ЧЧ:ММ';
+  if (!parseClock(draft.startClock) || !parseClock(draft.endClock))
+    return 'Укажите окно в формате ЧЧ:ММ';
   return null;
 }
 
@@ -197,7 +198,8 @@ export function validateEngineerDraft(draft: {
 }): string | null {
   if (!draft.displayName.trim()) return 'Укажите имя инженера';
   if (draft.skills.length === 0) return 'Выберите хотя бы один навык';
-  if (!TRANSPORT_OPTIONS.some((item) => item.id === draft.transportType)) return 'Выберите транспорт';
+  if (!TRANSPORT_OPTIONS.some((item) => item.id === draft.transportType))
+    return 'Выберите транспорт';
   if (!draft.region) return 'Выберите регион';
   if (draft.homeLat == null || draft.homeLon == null) {
     return 'Укажите адрес офиса из подсказки или точку на карте';

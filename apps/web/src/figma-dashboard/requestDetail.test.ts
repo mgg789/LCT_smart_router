@@ -35,17 +35,19 @@ describe('Figma REQUET detail model', () => {
     const snapshot = createDevSnapshot();
     const request = snapshot.requests[0];
     expect(request).toBeTruthy();
-    const detail = requestDetailFromSnapshot(snapshot, request!.id);
-    expect(detail?.numberLabel).toBe(`Заявка № ${shortRequestId(request!.id)}`);
-    expect(detail?.title).toBe(request!.workTypeTitle || 'Заявка');
-    expect(detail?.address).toBe(request!.addressText);
+    if (!request) throw new Error('Fixture must include a request');
+    const detail = requestDetailFromSnapshot(snapshot, request.id);
+    expect(detail?.numberLabel).toBe(`Заявка № ${shortRequestId(request.id)}`);
+    expect(detail?.title).toBe(request.workTypeTitle || 'Заявка');
+    expect(detail?.address).toBe(request.addressText);
     expect(detail?.email).toBeNull();
     expect(detail?.engineerLabel.startsWith('Инженер:')).toBe(true);
     expect(detail?.windowLabel).toMatch(/^\d{2}:\d{2}-\d{2}:\d{2}/);
   });
 
   it('keeps the offline table row readable when there is no snapshot', () => {
-    const row = DEMO_REQUEST_ROWS[0]!;
+    const row = DEMO_REQUEST_ROWS[0];
+    if (!row) throw new Error('Fixture must include a request row');
     const detail = requestDetailFromRow(row);
     expect(detail.numberLabel).toBe('Заявка № 1024');
     expect(detail.title).toBe(row.service);

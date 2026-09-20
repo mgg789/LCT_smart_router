@@ -1,7 +1,7 @@
 import '../support/env';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { after, before, describe, it } from 'node:test';
+import { after, before, describe, it, mock } from 'node:test';
 import type { INestApplicationContext } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../../src/app.module';
@@ -37,6 +37,9 @@ describe('dispatcher alert lifecycle', () => {
   const date = '2099-12-31';
 
   before(async () => {
+    const morning = new Date();
+    morning.setUTCHours(9, 0, 0, 0);
+    mock.timers.enable({ apis: ['Date'], now: morning });
     assert.ok(
       process.env.TEST_DATABASE_URL,
       'Use an isolated TEST_DATABASE_URL for alert integration tests',
@@ -66,6 +69,7 @@ describe('dispatcher alert lifecycle', () => {
     await prisma.auditLog.deleteMany({ where: { operationId: { in: opIds } } });
     await prisma.operation.deleteMany({ where: { operationId: { in: opIds } } });
     await prisma.$disconnect();
+    mock.timers.reset();
     await app?.close();
   });
 

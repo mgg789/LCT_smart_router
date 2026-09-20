@@ -4,7 +4,15 @@ import type { NavItemId } from './fixtures';
  * Vertical stack of MAIN sidebar tabs, in sidebar order.
  * A single request page sits to the right of this stack (not a tab).
  */
-export const STACK_NAV = ['day', 'requests', 'engineers', 'alerts', 'policy', 'chats', 'ai'] as const;
+export const STACK_NAV = [
+  'day',
+  'requests',
+  'engineers',
+  'alerts',
+  'policy',
+  'chats',
+  'ai',
+] as const;
 
 export type StackNavId = (typeof STACK_NAV)[number];
 

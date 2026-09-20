@@ -1,11 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { alertActionsFor, resolutionDelay } from '../../src/orchestrator/alerts/alert-policy';
 import {
-  alertActionsFor,
   lunchCoverageWitness,
   policyCoverageRegressed,
-  resolutionDelay,
-} from '../../src/orchestrator/alerts';
+} from '../../src/orchestrator/alerts/coverage-policy';
 
 test('alert action catalogue exposes only dispatcher-approved actions', () => {
   assert.deepEqual(alertActionsFor('time_risk'), [

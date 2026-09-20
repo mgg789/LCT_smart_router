@@ -6,9 +6,9 @@ import { FIGMA_ASSETS } from './assets';
 import { Copyable } from './Copyable';
 import { FigmaIcon, FigmaText } from './primitives';
 import {
+  type RequestDetailModel,
   requestDetailFromRow,
   requestDetailFromSnapshot,
-  type RequestDetailModel,
 } from './requestDetail';
 import { DEMO_REQUEST_ROWS, shortRequestId } from './requestsTable';
 
@@ -40,8 +40,7 @@ export function RequestDetailView({
   const reduceMotion = useReducedMotion();
   const animate = motionOn && !reduceMotion;
   const model =
-    (snapshot ? requestDetailFromSnapshot(snapshot, requestId) : null) ??
-    demoDetail(requestId);
+    (snapshot ? requestDetailFromSnapshot(snapshot, requestId) : null) ?? demoDetail(requestId);
   if (!model) return null;
 
   return (
@@ -118,19 +117,13 @@ export function RequestDetailView({
   );
 }
 
-function RequestDetailPanel({
-  model,
-  motionOn,
-}: {
-  model: RequestDetailModel;
-  motionOn: boolean;
-}) {
+function RequestDetailPanel({ model, motionOn }: { model: RequestDetailModel; motionOn: boolean }) {
   const facts = [
-    model.address,
-    model.email ?? '—',
-    model.contactName ?? '—',
-    model.windowLabel,
-    model.engineerLabel,
+    { id: 'address', value: model.address },
+    { id: 'email', value: model.email ?? '—' },
+    { id: 'contact', value: model.contactName ?? '—' },
+    { id: 'window', value: model.windowLabel },
+    { id: 'engineer', value: model.engineerLabel },
   ];
 
   return (
@@ -160,9 +153,9 @@ function RequestDetailPanel({
         </div>
       ) : null}
       <div className="mt-[30px] flex flex-col gap-[16px]">
-        {facts.map((value, index) => (
+        {facts.map(({ id, value }) => (
           <Copyable
-            key={`${index}-${value}`}
+            key={id}
             value={value}
             className="flex h-[67px] w-[430px] items-center rounded-[20px] bg-white/10 px-[20px] text-left transition-colors hover:bg-white/15 disabled:cursor-default disabled:hover:bg-white/10"
           >

@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  DISPATCHER_SETTINGS_KEY,
-  DEFAULT_DISPATCHER_SETTINGS,
   clampLatenessMin,
   clockFromMinutes,
+  DEFAULT_DISPATCHER_SETTINGS,
+  DISPATCHER_SETTINGS_KEY,
   latenessMinFromSec,
   minutesFromClock,
   readDispatcherSettings,
@@ -25,9 +25,15 @@ describe('dispatcherSettings', () => {
   });
 
   it('rejects an inverted shift and an out-of-range lateness', () => {
-    expect(validateDispatcherSettings({ ...DEFAULT_DISPATCHER_SETTINGS, shiftEnd: '08:00' })).toBeTruthy();
-    expect(validateDispatcherSettings({ ...DEFAULT_DISPATCHER_SETTINGS, latenessMin: 16 })).toBeTruthy();
-    expect(validateDispatcherSettings({ ...DEFAULT_DISPATCHER_SETTINGS, latenessMin: 5 })).toBeNull();
+    expect(
+      validateDispatcherSettings({ ...DEFAULT_DISPATCHER_SETTINGS, shiftEnd: '08:00' }),
+    ).toBeTruthy();
+    expect(
+      validateDispatcherSettings({ ...DEFAULT_DISPATCHER_SETTINGS, latenessMin: 16 }),
+    ).toBeTruthy();
+    expect(
+      validateDispatcherSettings({ ...DEFAULT_DISPATCHER_SETTINGS, latenessMin: 5 }),
+    ).toBeNull();
   });
 
   it('round-trips settings through storage', () => {

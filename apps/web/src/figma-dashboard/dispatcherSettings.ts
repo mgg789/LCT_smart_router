@@ -76,15 +76,25 @@ export function readDispatcherSettings(storage: Pick<Storage, 'getItem'>): Dispa
   try {
     const parsed = JSON.parse(raw) as Partial<DispatcherSettings>;
     const next: DispatcherSettings = {
-      shiftStart: typeof parsed.shiftStart === 'string' ? parsed.shiftStart : DEFAULT_DISPATCHER_SETTINGS.shiftStart,
-      shiftEnd: typeof parsed.shiftEnd === 'string' ? parsed.shiftEnd : DEFAULT_DISPATCHER_SETTINGS.shiftEnd,
+      shiftStart:
+        typeof parsed.shiftStart === 'string'
+          ? parsed.shiftStart
+          : DEFAULT_DISPATCHER_SETTINGS.shiftStart,
+      shiftEnd:
+        typeof parsed.shiftEnd === 'string'
+          ? parsed.shiftEnd
+          : DEFAULT_DISPATCHER_SETTINGS.shiftEnd,
       latenessMin: clampLatenessMin(
-        typeof parsed.latenessMin === 'number' ? parsed.latenessMin : DEFAULT_DISPATCHER_SETTINGS.latenessMin,
+        typeof parsed.latenessMin === 'number'
+          ? parsed.latenessMin
+          : DEFAULT_DISPATCHER_SETTINGS.latenessMin,
       ),
       mapProvider: parsed.mapProvider === 'yandex' ? 'yandex' : '2gis',
       mapToken: typeof parsed.mapToken === 'string' ? parsed.mapToken : '',
     };
-    return validateDispatcherSettings(next) ? { ...DEFAULT_DISPATCHER_SETTINGS, mapToken: next.mapToken } : next;
+    return validateDispatcherSettings(next)
+      ? { ...DEFAULT_DISPATCHER_SETTINGS, mapToken: next.mapToken }
+      : next;
   } catch {
     return { ...DEFAULT_DISPATCHER_SETTINGS };
   }

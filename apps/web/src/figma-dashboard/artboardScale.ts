@@ -13,7 +13,12 @@ export function useArtboardScale(): number {
 
   useEffect(() => {
     const update = () => {
-      setScale(Math.min(window.innerWidth / FIGMA_ARTBOARD.width, window.innerHeight / FIGMA_ARTBOARD.height));
+      setScale(
+        Math.min(
+          window.innerWidth / FIGMA_ARTBOARD.width,
+          window.innerHeight / FIGMA_ARTBOARD.height,
+        ),
+      );
     };
     update();
     window.addEventListener('resize', update);

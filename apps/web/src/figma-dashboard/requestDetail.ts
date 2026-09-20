@@ -3,7 +3,7 @@ import { assignmentFor, routeForEngineer } from '../domain/dashboard';
 import { skillLabel } from '../lib/reasons';
 import { formatClock } from '../lib/time';
 import { requestUrgency } from './fromSnapshot';
-import { shortRequestId, type RequestTableRow } from './requestsTable';
+import { type RequestTableRow, shortRequestId } from './requestsTable';
 
 export const EQUIPMENT_LABELS: Record<EquipmentType, string> = {
   router: 'Роутер',
@@ -73,9 +73,7 @@ export function requestDetailFromSnapshot(
   const engineer = assignment
     ? (snapshot.engineers.find((item) => item.id === assignment.engineerId) ?? null)
     : null;
-  const route = assignment?.engineerId
-    ? routeForEngineer(snapshot, assignment.engineerId)
-    : null;
+  const route = assignment?.engineerId ? routeForEngineer(snapshot, assignment.engineerId) : null;
   const stop = route?.stops.find((item) => item.requestId === request.id);
   const etaAt = stop?.arrivalAt ?? request.expectedCompletionAt ?? null;
   const tags = requestDetailTags(request);

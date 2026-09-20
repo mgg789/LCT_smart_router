@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
-  WORKDAY_STARTED_KEY,
   clearWorkDayStarted,
   hasStartedWorkDay,
   markWorkDayStarted,
   moscowClockLabel,
   moscowWorkDate,
   shouldShowStartWelcome,
+  WORKDAY_STARTED_KEY,
 } from './welcomeDay';
 
 describe('welcomeDay', () => {

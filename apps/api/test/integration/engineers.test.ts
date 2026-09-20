@@ -2,7 +2,7 @@ import '../support/env';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
-import { after, before, describe, it } from 'node:test';
+import { after, before, describe, it, mock } from 'node:test';
 import type { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { z } from 'zod';
@@ -109,6 +109,9 @@ describe('engineers and working days', () => {
   };
 
   before(async () => {
+    const morning = new Date();
+    morning.setUTCHours(9, 0, 0, 0);
+    mock.timers.enable({ apis: ['Date'], now: morning });
     process.env.NODE_ENV = 'test';
     process.env.AUTH_DEV_EXPOSE_CODES = 'true';
     databaseUrl();
@@ -163,6 +166,7 @@ describe('engineers and working days', () => {
       await prisma.account.deleteMany({ where: { email: { in: emails } } });
     }
     await prisma.$disconnect();
+    mock.timers.reset();
     await app?.close();
   });
 
@@ -232,14 +236,20 @@ describe('engineers and working days', () => {
 
     const listed = await call('GET', '/api/v1/dispatch/engineers', dispatcherToken);
     const body = (await listed.json()) as { engineers: Array<{ id: string }> };
-    assert.equal(body.engineers.some((item) => item.id === engineer.id), false);
+    assert.equal(
+      body.engineers.some((item) => item.id === engineer.id),
+      false,
+    );
     assert.equal((await call('GET', '/api/v1/engineer/profile', token)).status, 401);
 
     const account = await prisma.account.findUniqueOrThrow({
       where: { email },
       include: { roles: true },
     });
-    assert.equal(account.roles.some((role) => role.role === 'engineer'), false);
+    assert.equal(
+      account.roles.some((role) => role.role === 'engineer'),
+      false,
+    );
   });
 
   it('gives each engineer their own input order', async () => {
@@ -782,7 +792,10 @@ describe('engineers and working days', () => {
       where: { email },
       include: { roles: true },
     });
-    assert.equal(oldAccount.roles.some((role) => role.role === 'engineer'), false);
+    assert.equal(
+      oldAccount.roles.some((role) => role.role === 'engineer'),
+      false,
+    );
 
     const staleNoOp = await call(
       'PUT',

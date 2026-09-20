@@ -5,10 +5,7 @@ import { TRANSPORT_OPTIONS } from '../figma-dashboard/addEntity';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { ENGINEER_ASSETS } from './assets';
 import { eu } from './engineerScale';
-import {
-  type EngineerSettingsDraft,
-  validateEngineerSettings,
-} from './settingsDraft';
+import { type EngineerSettingsDraft, validateEngineerSettings } from './settingsDraft';
 
 const FIELD =
   'w-full border border-figma-ink/15 bg-white font-medium text-figma-ink outline-none placeholder:text-figma-hint focus:border-figma-ink';
@@ -33,7 +30,9 @@ export function EngineerSettings({
   onBack: () => void;
   onSave: (draft: EngineerSettingsDraft) => void;
 }) {
-  const [draft, setDraft] = useState<EngineerSettingsDraft>(() => draftFrom(profile, fallbackEmail));
+  const [draft, setDraft] = useState<EngineerSettingsDraft>(() =>
+    draftFrom(profile, fallbackEmail),
+  );
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -42,7 +41,10 @@ export function EngineerSettings({
   }, [fallbackEmail, profile]);
 
   return (
-    <section className="flex min-h-dvh flex-col" style={{ padding: `${eu(36)} ${eu(40)} ${eu(40)}` }}>
+    <section
+      className="flex min-h-dvh flex-col"
+      style={{ padding: `${eu(36)} ${eu(40)} ${eu(40)}` }}
+    >
       <header className="flex items-center" style={{ gap: eu(20) }}>
         <motion.button
           type="button"
@@ -62,7 +64,10 @@ export function EngineerSettings({
             style={{ width: eu(32), height: eu(29) }}
           />
         </motion.button>
-        <h1 className="min-w-0 font-extrabold tracking-[0.02em] text-figma-ink" style={{ fontSize: eu(36) }}>
+        <h1
+          className="min-w-0 font-extrabold tracking-[0.02em] text-figma-ink"
+          style={{ fontSize: eu(36) }}
+        >
           Настройки
         </h1>
       </header>
@@ -92,7 +97,9 @@ export function EngineerSettings({
             autoComplete="name"
             value={draft.displayName}
             disabled={submitting}
-            onChange={(event) => setDraft((current) => ({ ...current, displayName: event.target.value }))}
+            onChange={(event) =>
+              setDraft((current) => ({ ...current, displayName: event.target.value }))
+            }
             className={FIELD}
             style={{
               marginTop: eu(12),
@@ -157,7 +164,10 @@ export function EngineerSettings({
         </div>
 
         {error || saveError ? (
-          <p className="font-medium text-figma-muted" style={{ marginTop: eu(20), fontSize: eu(20) }}>
+          <p
+            className="font-medium text-figma-muted"
+            style={{ marginTop: eu(20), fontSize: eu(20) }}
+          >
             {error ?? saveError}
           </p>
         ) : null}

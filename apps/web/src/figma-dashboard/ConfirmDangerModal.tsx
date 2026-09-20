@@ -1,8 +1,13 @@
 import { motion } from 'framer-motion';
 import { useEffect, useId, useRef, useState } from 'react';
 import { FIGMA_ASSETS } from './assets';
+import {
+  DANGER_ACTIONS,
+  type DangerActionId,
+  isManualConfirmInput,
+  phraseMatches,
+} from './confirmPhrase';
 import { ModalLayer, ModalScrim } from './modalLayer';
-import { DANGER_ACTIONS, isManualConfirmInput, phraseMatches, type DangerActionId } from './confirmPhrase';
 import { FigmaIcon } from './primitives';
 
 const fade = { duration: 0.22, ease: [0.22, 1, 0.36, 1] as const };
@@ -42,8 +47,8 @@ export function ConfirmDangerModal({
 
   return (
     <ModalLayer open={actionId !== null} motionOn={motionOn} zClass="z-[110]">
-          {action ? (
-          <>
+      {action ? (
+        <>
           <ModalScrim label="Закрыть подтверждение" onClose={onCancel} />
           <motion.div
             role="dialog"
@@ -73,11 +78,15 @@ export function ConfirmDangerModal({
                 </span>
               </button>
             </div>
-            <p className="mt-[20px] font-medium text-[16px] leading-[22px] text-figma-dim">{action.warning}</p>
+            <p className="mt-[20px] font-medium text-[16px] leading-[22px] text-figma-dim">
+              {action.warning}
+            </p>
             <p className="mt-[22px] font-medium text-[16px] text-figma-ink">
               Введите слово{' '}
-              <span className="rounded-[8px] bg-figma-soft px-[8px] py-[2px] font-semibold tracking-[0.6px]">{action.word}</span>
-              {' '}в поле ниже.
+              <span className="rounded-[8px] bg-figma-soft px-[8px] py-[2px] font-semibold tracking-[0.6px]">
+                {action.word}
+              </span>{' '}
+              в поле ниже.
             </p>
             <label htmlFor={inputId} className="sr-only">
               Слово подтверждения
@@ -97,7 +106,9 @@ export function ConfirmDangerModal({
               onDrop={(event) => event.preventDefault()}
               onBeforeInput={(event) => {
                 const inputType =
-                  'inputType' in event.nativeEvent ? String(event.nativeEvent.inputType) : 'insertText';
+                  'inputType' in event.nativeEvent
+                    ? String(event.nativeEvent.inputType)
+                    : 'insertText';
                 if (!isManualConfirmInput(inputType)) event.preventDefault();
               }}
               onChange={(event) => setTyped(event.target.value)}
@@ -126,8 +137,8 @@ export function ConfirmDangerModal({
               </button>
             </div>
           </motion.div>
-          </>
-          ) : null}
+        </>
+      ) : null}
     </ModalLayer>
   );
 }

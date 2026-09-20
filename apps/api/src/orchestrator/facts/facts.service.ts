@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { finishNeedsReplan } from '../live/replan-policy';
 import { SysError } from '../../common/errors';
 import type { FactKind, Request } from '../../generated/prisma/client';
 import { NotificationsService } from '../../notifications';
@@ -7,6 +6,7 @@ import type { OperationContext } from '../../operations';
 import type { Tx } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import { AppliedPlanService } from '../../routing/router-gateway/applied-plan.service';
+import { finishNeedsReplan } from '../live/replan-policy';
 import { ExecutionTimingPolicy, type ExecutionTimingPolicyValue } from './execution-timing-policy';
 
 export type ReportableFact = 'arrived' | 'arrived_blocked' | 'started' | 'finished' | 'problem';

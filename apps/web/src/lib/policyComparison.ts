@@ -27,7 +27,10 @@ export function perAssignmentDuration(durationSec: number, assignedCount: number
 }
 
 /** Percent change versus the FIFO baseline; null when the baseline is missing or zero. */
-export function percentVsFifo(value: number | null, baseline: number | null | undefined): string | null {
+export function percentVsFifo(
+  value: number | null,
+  baseline: number | null | undefined,
+): string | null {
   if (value === null || baseline === null || baseline === undefined || baseline === 0) {
     return null;
   }

@@ -65,8 +65,12 @@ export class MapRoutingService {
             }
             return {
               ...leg,
-              geometry: { points: mapped.points.map((point) => ({ lat: point.lat, lon: point.lon })) },
-              travelSource: (mapped.traffic ? 'traffic_api' : 'route_api') as typeof leg.travelSource,
+              geometry: {
+                points: mapped.points.map((point) => ({ lat: point.lat, lon: point.lon })),
+              },
+              travelSource: (mapped.traffic
+                ? 'traffic_api'
+                : 'route_api') as typeof leg.travelSource,
               trafficFactor: mapped.traffic
                 ? Math.max(1, mapped.durationSec / Math.max(1, leg.travelTimeSec))
                 : leg.trafficFactor,
@@ -104,7 +108,13 @@ export class MapRoutingService {
       return cached;
     }
 
-    const fetched = await this.resolve(from, to, traffic, settings.twogisApiKey, settings.yandexApiKey);
+    const fetched = await this.resolve(
+      from,
+      to,
+      traffic,
+      settings.twogisApiKey,
+      settings.yandexApiKey,
+    );
     if (fetched) {
       this.remember(cacheKey, fetched);
     }
@@ -215,7 +225,7 @@ export class MapRoutingService {
     if (points.length < 2) {
       return null;
     }
-    const total = (first as { total_distance?: unknown; total_duration?: unknown });
+    const total = first as { total_distance?: unknown; total_duration?: unknown };
     return {
       provider: 'twogis',
       points,
@@ -246,9 +256,9 @@ export class MapRoutingService {
     if (points.length < 2) {
       return null;
     }
-    const distanceKm = Number(
-      (json as { route?: { distance?: { value?: unknown } } }).route?.distance?.value ?? 0,
-    ) / 1000;
+    const distanceKm =
+      Number((json as { route?: { distance?: { value?: unknown } } }).route?.distance?.value ?? 0) /
+      1000;
     const durationSec = Math.round(
       Number((json as { route?: { duration?: { value?: unknown } } }).route?.duration?.value ?? 0),
     );

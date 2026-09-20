@@ -1,5 +1,5 @@
-import { formatClock, formatDayTitle } from '../lib/time';
 import { moscowClockLabel, moscowWorkDate } from '../figma-dashboard/welcomeDay';
+import { formatClock, formatDayTitle } from '../lib/time';
 
 /** Header stamp from Figma MAIN 73:9536 — `15 сентября, 20:14`. */
 export function engineerHeaderStamp(nowMs = Date.now()): string {

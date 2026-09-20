@@ -60,5 +60,9 @@ export function phraseMatches(typed: string, expected: string): boolean {
  * Paste, drop, autocorrect and other inserted payloads are rejected.
  */
 export function isManualConfirmInput(inputType: string): boolean {
-  return inputType === 'insertText' || inputType === 'insertCompositionText' || inputType.startsWith('delete');
+  return (
+    inputType === 'insertText' ||
+    inputType === 'insertCompositionText' ||
+    inputType.startsWith('delete')
+  );
 }

@@ -1,6 +1,7 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { X } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { updateDispatcherSettings } from '../api/client';
 import type { LiveRouteProgress } from '../api/live';
 import type { PolicyId, RequestView } from '../api/types';
 import { DayMap } from '../components/DayMap';
@@ -31,7 +32,6 @@ import {
   stackSlideExit,
   stackViewKey,
 } from './dashboardSlide';
-import { updateDispatcherSettings } from '../api/client';
 import { EngineersView } from './EngineersView';
 import {
   type EngineerCard,
@@ -74,7 +74,12 @@ import {
   useToasts,
 } from './toasts';
 import { WelcomeScreen } from './WelcomeScreen';
-import { hasStartedWorkDay, markWorkDayStarted, moscowWorkDate, shouldShowStartWelcome } from './welcomeDay';
+import {
+  hasStartedWorkDay,
+  markWorkDayStarted,
+  moscowWorkDate,
+  shouldShowStartWelcome,
+} from './welcomeDay';
 
 const NAV_ICONS = {
   navHome: FIGMA_ASSETS.navHome,
@@ -285,7 +290,7 @@ export function MainDashboardPage() {
       peek,
     );
     toastHydrated.current = true;
-  }, [dash.events, dash.isDemo, dash.snapshot]);
+  }, [dash.snapshot]);
 
   useEffect(() => {
     setToastColumnPinned(notifOpen && activeNav !== 'alerts');
@@ -464,6 +469,7 @@ export function MainDashboardPage() {
 
   return (
     <div className="flex h-full w-full items-center justify-center overflow-hidden bg-figma-canvas">
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: Outside-pointer dismissal supplements the menus' keyboard-accessible controls; this artboard is not an extra focus target. */}
       <div
         className="relative shrink-0 bg-figma-canvas"
         data-name="MAIN"
@@ -1805,7 +1811,7 @@ function RouteCard({
   const [thumb, setThumb] = useState({ left: 174, width: 321, visible: false });
   const [grabbing, setGrabbing] = useState(false);
 
-  const updateThumb = () => {
+  const updateThumb = useCallback(() => {
     const el = scrollerRef.current;
     if (!el) return;
     const overflow = el.scrollWidth - el.clientWidth;
@@ -1817,7 +1823,7 @@ function RouteCard({
     const width = Math.max(96, Math.round((el.clientWidth / el.scrollWidth) * track));
     const left = 30 + (el.scrollLeft / overflow) * (track - width);
     setThumb({ left, width, visible: true });
-  };
+  }, [engineer.stops.length]);
 
   useEffect(() => {
     const el = scrollerRef.current;
@@ -1830,7 +1836,7 @@ function RouteCard({
       el.removeEventListener('scroll', updateThumb);
       observer.disconnect();
     };
-  }, [engineer.id, engineer.stops.length]);
+  }, [updateThumb]);
 
   const beginDrag = (kind: 'panel' | 'thumb', clientX: number) => {
     const el = scrollerRef.current;
@@ -1939,7 +1945,7 @@ function RouteCard({
               <div className="flex">
                 {engineer.stops.map((stop, index) => (
                   <RouteStopTopic
-                    key={`${engineer.id}-${stop.requestId ?? stop.place}-${stop.time}-${index}`}
+                    key={`${engineer.id}-${stop.requestId ?? stop.place}-${stop.time}`}
                     stop={stop}
                     index={index}
                     motionOn={motionOn}

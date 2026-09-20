@@ -9,10 +9,9 @@ export interface MapRouteSegment {
 }
 
 /** Visual class of a planned leg: dashed centroids, gray OSRM, green map APIs. */
-export function routeLineKind(segment: Pick<MapRouteSegment, 'approximate' | 'source' | 'geometryProvider'>):
-  | 'centroid'
-  | 'osrm'
-  | 'map' {
+export function routeLineKind(
+  segment: Pick<MapRouteSegment, 'approximate' | 'source' | 'geometryProvider'>,
+): 'centroid' | 'osrm' | 'map' {
   if (segment.approximate || segment.source === 'approximate') return 'centroid';
   if (segment.geometryProvider === 'twogis' || segment.geometryProvider === 'yandex') return 'map';
   return 'osrm';

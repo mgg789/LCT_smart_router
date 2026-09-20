@@ -34,7 +34,10 @@ export type EngineerPauseActivity = {
   readonly untilClock: string | null;
 };
 
-export type EngineerActivity = EngineerJobActivity | EngineerPauseActivity | { readonly kind: 'empty' };
+export type EngineerActivity =
+  | EngineerJobActivity
+  | EngineerPauseActivity
+  | { readonly kind: 'empty' };
 
 export type EngineerProfile = {
   readonly id: string;
@@ -187,7 +190,8 @@ export function engineerActivity(
     };
   }
 
-  const jobStop = current?.kind === 'job' ? current : inProgressJobStop(snapshot, engineerId, route?.stops ?? []);
+  const jobStop =
+    current?.kind === 'job' ? current : inProgressJobStop(snapshot, engineerId, route?.stops ?? []);
   if (jobStop?.requestId) {
     const request = requestById(snapshot, jobStop.requestId);
     if (request) {
@@ -201,15 +205,22 @@ export function engineerActivity(
 /**
  * Ordered roster for the Engineers tab. Input order stays cyclic on the ring.
  */
-export function engineerProfilesFromSnapshot(snapshot: DashboardSnapshot | null): EngineerProfile[] {
+export function engineerProfilesFromSnapshot(
+  snapshot: DashboardSnapshot | null,
+): EngineerProfile[] {
   if (!snapshot) return [];
   const nowAt = snapshot.nowAt;
   return [...snapshot.engineers]
-    .sort((left, right) => left.inputOrder - right.inputOrder || left.displayName.localeCompare(right.displayName, 'ru'))
+    .sort(
+      (left, right) =>
+        left.inputOrder - right.inputOrder ||
+        left.displayName.localeCompare(right.displayName, 'ru'),
+    )
     .map((engineer) => {
       const assignments =
         snapshot.plan.plan?.assignments.filter(
-          (assignment) => assignment.engineerId === engineer.id && assignment.status !== 'unassigned',
+          (assignment) =>
+            assignment.engineerId === engineer.id && assignment.status !== 'unassigned',
         ) ?? [];
       const assignedCount = assignments.length;
       const activity = engineerActivity(snapshot, engineer.id, nowAt);
@@ -260,7 +271,9 @@ function inProgressJobStop(
 ): PlanStopView | null {
   const inProgress = snapshot.requests.find((request) => {
     if (request.lifecycle !== 'in_progress') return false;
-    const assignment = snapshot.plan.plan?.assignments.find((item) => item.requestId === request.id);
+    const assignment = snapshot.plan.plan?.assignments.find(
+      (item) => item.requestId === request.id,
+    );
     return assignment?.engineerId === engineerId;
   });
   if (!inProgress) return null;
@@ -274,7 +287,11 @@ function jobActivity(
 ): EngineerJobActivity {
   const finishAt = request.expectedCompletionAt ?? stop.endAt;
   const next = stops.find(
-    (item) => item.kind === 'job' && item.requestId && item.startAt >= stop.endAt && item.requestId !== request.id,
+    (item) =>
+      item.kind === 'job' &&
+      item.requestId &&
+      item.startAt >= stop.endAt &&
+      item.requestId !== request.id,
   );
   return {
     kind: 'job',
@@ -289,7 +306,10 @@ function jobActivity(
 }
 
 function shortAddress(address: string): string {
-  const parts = address.split(',').map((part) => part.trim()).filter(Boolean);
+  const parts = address
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
   if (parts.length <= 2) return address;
   return parts.slice(-2).join(', ');
 }
