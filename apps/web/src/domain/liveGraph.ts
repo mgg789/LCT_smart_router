@@ -42,10 +42,16 @@ export function projectLiveGraph(
   progress: LiveRouteProgress | null,
   visibleRequestIds?: ReadonlySet<string>,
 ): LiveGraphProjection {
-  // A durable lunch fact supersedes the mutable plan, including its coordinates.
-  const routeNodes = stableRouteNodes(route).map((node) =>
-    node.kind === 'lunch' && progress?.lunch ? nodeFromPoint(progress.lunch, node.sequence) : node,
-  );
+  // LIVE arrival promises and actual arrivals supersede stale solver timestamps.
+  const overrides = progress
+    ? [progress.anchor, progress.lunch, progress.next].filter(isPoint)
+    : [];
+  const routeNodes = stableRouteNodes(route).map((node) => {
+    const actual = overrides.find((point) =>
+      node.kind === 'lunch' ? point.kind === 'lunch' : nodeKey(point) === node.key,
+    );
+    return actual ? nodeFromPoint(actual, node.sequence) : node;
+  });
   const origin = progress ? nodeFromPoint(progress.origin, 0) : (routeNodes[0] ?? null);
   const planned = routeNodes.filter((node) => node.kind !== 'start');
   const factual = progress ? [progress.anchor, progress.lunch, progress.next].filter(isPoint) : [];

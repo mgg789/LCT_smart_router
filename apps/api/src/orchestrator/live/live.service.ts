@@ -1232,7 +1232,7 @@ export class LiveService {
     });
     if (active) {
       const startedAt = Number(active.startedAt);
-      const stop: PlanStopView | null =
+      const plannedStop: PlanStopView | null =
         route?.stops.find((item) => item.requestId === active.id) ??
         (active.lat !== null && active.lon !== null
           ? {
@@ -1248,6 +1248,22 @@ export class LiveService {
               ),
             }
           : null);
+      const stop = plannedStop
+        ? {
+            ...plannedStop,
+            arrivalAt: startedAt,
+            startAt: startedAt,
+            endAt: Number(
+              active.expectedCompletionAt ?? BigInt(startedAt + active.serviceDurationSec),
+            ),
+          }
+        : null;
+      if (stop && route?.stops.some((item) => item.requestId === active.id)) {
+        route = {
+          ...route,
+          stops: route.stops.map((item) => (item.requestId === active.id ? stop : item)),
+        };
+      }
       if (stop && !route?.stops.some((item) => item.requestId === active.id)) {
         route = route
           ? { ...route, stops: [stop, ...route.stops] }

@@ -34,7 +34,7 @@ interface LiveEngineerView {
       origin: { lat: number; lon: number };
       anchor: { requestId: string | null };
       lunch: { kind: string; lat: number; lon: number } | null;
-      next: { requestId: string | null } | null;
+      next: { requestId: string | null; at: number } | null;
     } | null;
     routeState: 'active' | 'awaiting_plan' | 'exhausted';
   };
@@ -410,6 +410,21 @@ describe('LIVE workday', () => {
       201,
     );
     assert.equal(await prisma.routingSnapshot.count(), count, 'ETA within tolerance');
+    const promised = await liveView(engineer.token);
+    assert.equal(promised.engineer.progress?.next?.at, job.startAt + 60);
+    assert.equal(
+      promised.route?.stops.find((stop) => stop.requestId === request.id)?.startAt,
+      job.startAt + 60,
+    );
+    const dispatchPromise = await call('GET', '/api/v1/dispatch/live', dispatcherToken);
+    assert.equal(dispatchPromise.status, 200);
+    const dispatchView = (await dispatchPromise.json()) as {
+      engineers: Array<{ id: string; progress: { next: { at: number } | null } | null }>;
+    };
+    assert.equal(
+      dispatchView.engineers.find((item) => item.id === engineer.id)?.progress?.next?.at,
+      job.startAt + 60,
+    );
     await liveSetLogicalNow(
       before.workday.id,
       before.workday.logicalStartAt,
@@ -432,6 +447,16 @@ describe('LIVE workday', () => {
       ),
     );
     const started = await prisma.request.findUniqueOrThrow({ where: { id: request.id } });
+    const activeView = await liveView(engineer.token);
+    assert.equal(
+      activeView.route?.stops.find((stop) => stop.requestId === request.id)?.startAt,
+      Number(started.startedAt),
+    );
+    assert.equal(
+      (await prisma.liveRequestState.findFirstOrThrow({ where: { requestId: request.id } }))
+        .reportedEtaAt,
+      BigInt(job.startAt + 60),
+    );
     const normEnd = Number(started.startedAt) + started.serviceDurationSec;
     await liveSetLogicalNow(
       before.workday.id,

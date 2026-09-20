@@ -17,6 +17,21 @@ interface ExactStateScenario {
 }
 
 describe('LIVE graph projection', () => {
+  it('uses a reported arrival and then the actual start instead of stale planned times', () => {
+    const points = pointsForExactState();
+    for (const started of [false, true]) {
+      const arrival = { ...points.j2, at: 350 };
+      const graph = projectLiveGraph(exactStateRoute(), {
+        phase: started ? 'on_site' : 'traveling',
+        origin: points.start,
+        anchor: started ? arrival : points.j1,
+        lunch: null,
+        next: started ? points.j3 : arrival,
+        occurredAt: 350,
+      });
+      expect(graph.timelineNodes.find((node) => node.requestId === 'j2')?.at).toBe(350);
+    }
+  });
   it('replaces a stale planned lunch with its single durable location and time', () => {
     const points = pointsForExactState();
     const lunch = { kind: 'lunch' as const, requestId: null, lat: 55.77, lon: 37.64, at: 250 };
