@@ -31,11 +31,7 @@ import {
   stackSlideExit,
   stackViewKey,
 } from './dashboardSlide';
-import {
-  latenessMinFromSec,
-  readDispatcherSettings,
-  writeDispatcherSettings,
-} from './dispatcherSettings';
+import { updateDispatcherSettings } from '../api/client';
 import { EngineersView } from './EngineersView';
 import {
   type EngineerCard,
@@ -522,6 +518,7 @@ export function MainDashboardPage() {
           snapshot={dash.snapshot}
           motionOn={motionOn}
           live={dash.source === 'live'}
+          token={dash.token}
           submitting={dash.entityMutationPending}
           onClose={() => setAddOpen(false)}
           onCreateRequest={dash.createRequest}
@@ -611,28 +608,16 @@ export function MainDashboardPage() {
         <SettingsModal
           open={settingsOpen}
           motionOn={motionOn}
-          latenessMin={latenessMinFromSec(
-            dash.snapshot?.routerSettings?.windowLatenessToleranceSec ??
-              readDispatcherSettings(window.localStorage).latenessMin * 60,
-          )}
+          token={dash.token}
+          routerSettings={dash.snapshot?.routerSettings}
           submitting={dash.busy}
           onClose={() => setSettingsOpen(false)}
-          onSave={(settings) => {
-            writeDispatcherSettings(window.localStorage, settings);
-            const liveMin = latenessMinFromSec(
-              dash.snapshot?.routerSettings?.windowLatenessToleranceSec ?? 0,
-            );
-            if (dash.snapshot && settings.latenessMin !== liveMin) {
-              const latenessSec = settings.latenessMin * 60;
-              dash.applyRoutingSettings(
-                dash.snapshot.policyId,
-                nextRouterSettings(dash.snapshot, {
-                  windowLatenessToleranceSec: latenessSec,
-                  departureLatenessToleranceSec: latenessSec,
-                  taskStartLatenessToleranceSec: latenessSec,
-                }),
-              );
+          onSave={async ({ dispatcher, router }) => {
+            if (!dash.token || !dash.snapshot) {
+              throw new Error('Нужна живая сессия диспетчера');
             }
+            await updateDispatcherSettings(dash.token, dispatcher);
+            dash.applyRoutingSettings(dash.snapshot.policyId, router);
             setSettingsOpen(false);
           }}
         />

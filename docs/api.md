@@ -426,6 +426,10 @@ profile`, `availability`, `technical-break`, `lunch/*`, `requests/:id/facts`)
 | POST | `/api/v1/dispatch/policy` | Выбрать подготовленную политику |
 | GET | `/api/v1/dispatch/router/technical-settings` | Действующая техническая ревизия Router со своей версией контекста |
 | PUT | `/api/v1/dispatch/router/technical-settings` | Заменить ревизию целиком (конверт операций; см. ниже) |
+| GET | `/api/v1/dispatch/settings` | Часы дня диспетчера, пороги alert и признак ключей карт (секреты не отдаются) |
+| PUT | `/api/v1/dispatch/settings` | Частичная замена тех же полей; `null` на ключе карты снимает его |
+| GET | `/api/v1/dispatch/settings/maps/status` | Проба 2ГИС/Яндекс коротким московским маршрутом, активный провайдер |
+| GET | `/api/v1/dispatch/geocode` | Структурный поиск LocationIQ (`street`+`city` или свободный `q`) |
 | GET | `/api/v1/dispatch/debug/snapshot` | Опубликованная задача ровно так, как её читает Router |
 
 `mount-data-eng` публикует **всю текущую задачу**, никогда поток изменений. Завершённая,
@@ -499,6 +503,14 @@ profile`, `availability`, `technical-break`, `lunch/*`, `requests/:id/facts`)
 `travelTimeMode` (`graph_with_access_buffer` или `fixed_normative`), `accessBufferSec`,
 `fixedTravelTimeSec`, `earlyFinishReplanThresholdSec` и `taskOverrunToleranceSec` —
 читаются и заменяются как одна ревизия:
+
+Операционные часы дня, пороги LIVE-alert и ключи 2ГИС/Яндекс живут отдельно в
+`app_state` (`dispatcher.settings`) и не входят в ревизию Router: `GET`/`PUT
+/api/v1/dispatch/settings`. Секреты карт не читаются обратно. `GET /plan`
+параллельно зовёт 2ГИС и Яндекс, если ключи заданы: при двух ответах берётся 2ГИС,
+иначе Яндекс; нога получает `geometryProvider`. Без ключей остаётся геометрия
+Router (геоцентры / OSRM). `GET /dispatch/geocode` — структурный LocationIQ
+(`LOCATION_IQ_TOKEN`); точка заявки иначе задаётся кликом на карте.
 
 - `GET /api/v1/dispatch/router/technical-settings` читает их из `GET /v1/context` Router
   вместе с активной `router_context_version`; read-through не кешируется как состояние.

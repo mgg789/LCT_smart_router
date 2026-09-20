@@ -624,6 +624,7 @@ export function useDashboard() {
       if (!snapshot) {
         return;
       }
+      const current = snapshot.routerSettings ?? defaultRouterSettings(snapshot);
       const changes = [
         policyId !== snapshot.policyId ? `политика ${policyId}` : null,
         nextSettings.lunchesEnabled !== snapshot.lunchesEnabled
@@ -631,26 +632,34 @@ export function useDashboard() {
             ? 'обеды включены'
             : 'обеды выключены'
           : null,
-        snapshot.routerSettings &&
-        nextSettings.windowLatenessToleranceSec !==
-          snapshot.routerSettings.windowLatenessToleranceSec
-          ? 'допуск окна обновлён'
+        nextSettings.windowLatenessToleranceSec !== current.windowLatenessToleranceSec ||
+        nextSettings.departureLatenessToleranceSec !== current.departureLatenessToleranceSec ||
+        nextSettings.taskStartLatenessToleranceSec !== current.taskStartLatenessToleranceSec
+          ? 'допуск опоздания обновлён'
           : null,
-        snapshot.routerSettings &&
-        nextSettings.accessBufferSec !== snapshot.routerSettings.accessBufferSec
+        nextSettings.accessBufferSec !== current.accessBufferSec
           ? 'буфер доступа обновлён'
           : null,
-        snapshot.routerSettings &&
-        nextSettings.trafficEnabled !== snapshot.routerSettings.trafficEnabled
+        nextSettings.earlyFinishReplanThresholdSec !== current.earlyFinishReplanThresholdSec
+          ? 'порог раннего финиша обновлён'
+          : null,
+        nextSettings.taskOverrunToleranceSec !== current.taskOverrunToleranceSec
+          ? 'допуск переработки обновлён'
+          : null,
+        nextSettings.trafficEnabled !== current.trafficEnabled
           ? 'режим пробок обновлён'
           : null,
-        snapshot.routerSettings &&
-        nextSettings.equipmentEnabled !== snapshot.routerSettings.equipmentEnabled
+        nextSettings.equipmentEnabled !== current.equipmentEnabled
           ? 'режим оборудования обновлён'
           : null,
       ].filter((item): item is string => item !== null);
-      if (changes.length > 0) {
-        void rebuild(policyId, nextSettings, changes.join(', '), true);
+      if (changes.length > 0 || !sameRouterSettings(current, nextSettings)) {
+        void rebuild(
+          policyId,
+          nextSettings,
+          changes.join(', ') || 'технические настройки обновлены',
+          true,
+        );
       }
     },
     [rebuild, snapshot],
@@ -944,7 +953,7 @@ export function useDashboard() {
     (input: CreateDispatchRequestInput) =>
       performEntityMutation(async (session) => {
         await createDispatchRequest(session, input);
-      }, 'Создана новая заявка; адрес без координат ожидает геокодирования.'),
+      }, 'Создана новая заявка.'),
     [performEntityMutation],
   );
 

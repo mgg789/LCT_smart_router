@@ -162,7 +162,9 @@ Authorization: Bearer <token>
 → `{request: RequestView}`. Навык/длительность/профиль нормы выводятся из `workType`.
 `clientEmail` и `contactName` необязательны для компактной диспетчерской формы. Если
 адрес не передан, заявка остаётся без клиентского аккаунта и событийные письма не
-создаются; адрес и имя не заменяются фиктивными значениями.
+создаются; адрес и имя не заменяются фиктивными значениями. Компактная форма Figma
+передаёт `lat`/`lon` из LocationIQ (`GET /dispatch/geocode`) или клика по OSM;
+без точки заявка не создаётся.
 
 **PATCH `/dispatch/requests/:id`** — изменить условия неначатой заявки:
 `{operationId, expectedVersion?, windowStartAt?, windowEndAt?, addressText?, lat?, lon?, urgent?, requiredEquipment?}` (хотя бы одно поле) → `{request}`.
@@ -318,6 +320,38 @@ Polling не запускает второй запрос поверх неза�
 CAS по `expectedContextVersion`: устарели — 409 `VERSION_CONFLICT`, перечитать GET.
 Каждое поле ограничено 0…86400. Обеды включаются здесь же (`lunchesEnabled: true`).
 
+Модалка «Настройки» пишет сразу два контура: пороги Router — сюда, часы дня /
+alert-таймеры / ключи карт — в `/dispatch/settings`.
+
+**GET `/dispatch/settings`** →
+
+```json
+{
+  "dayStartMin": 540, "dayEndMin": 1260,
+  "noShowSec": 1800, "overdueSec": 300, "timeRiskSec": 300, "repeatAfterSec": 900,
+  "twogisApiKeySet": true, "twogisApiKeyLast4": "ab12",
+  "yandexApiKeySet": false, "yandexApiKeyLast4": null
+}
+```
+
+Минуты — от полуночи Москвы. Секреты карт никогда не возвращаются, только наличие
+и последние 4 символа.
+
+**PUT `/dispatch/settings`** — `{operationId, dayStartMin?, dayEndMin?, noShowSec?,
+overdueSec?, timeRiskSec?, repeatAfterSec?, twogisApiKey?, yandexApiKey?}` → тот же
+вид, что GET. Опущенное поле не меняется; `null` или пустая строка на ключе карты
+снимает его. Смена `dayStartMin`/`dayEndMin` переписывает смену сегодняшних
+`EngineerDay`, у которых ещё нет линии.
+
+**GET `/dispatch/settings/maps/status`** → `{active: "twogis"|"yandex"|"none",
+twogis: {provider, configured, ok, message}, yandex: {…}}`. Проба идёт параллельно;
+если отвечают оба — `active=twogis`.
+
+**GET `/dispatch/geocode?q=`** или `?city=&street=` → `{hits: [{displayName, lat, lon}]}`.
+Сервер режет свободный `q` на `street`+`city`+`country=Russia` и зовёт LocationIQ
+structured search, никогда смешанный `q`. Без `LOCATION_IQ_TOKEN` — `NOT_CONFIGURED`;
+точку тогда задают кликом по карте.
+
 ### 6.5 План дня и режим управления
 
 **GET `/dispatch/plan`** — главный эндпоинт экрана «день»:
@@ -359,6 +393,13 @@ CAS по `expectedContextVersion`: устарели — 409 `VERSION_CONFLICT`, 
 
 `kind` остановки: `job` / `lunch` / `wait`; `arrivalAt ≤ startAt ≤ endAt` — расчётные
 значения, не факты.
+
+Нога маршрута (`routes[].legs[]`) несёт `travelSource`
+(`approximate` | `road_matrix` | `route_api` | `traffic_api`) и, если sys подменил
+геометрию ответом карт, `geometryProvider: "twogis"|"yandex"`. Карта рисует геоцентры
+пунктиром цвета инженера, OSRM — серой сплошной, 2ГИС/Яндекс — зелёной сплошной
+(`#16A34A`). Без ключей карт план остаётся с геометрией Router; золотой план не
+меняется.
 
 **POST `/dispatch/mode`** — `{operationId, mode: "auto"|"manual"}` → `{control}`. В MANUAL автоматические результаты не применяются.
 

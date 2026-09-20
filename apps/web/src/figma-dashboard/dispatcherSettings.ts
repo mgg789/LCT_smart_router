@@ -18,6 +18,23 @@ export const DEFAULT_DISPATCHER_SETTINGS: DispatcherSettings = {
   mapToken: '',
 };
 
+/** `HH:MM` clock from minutes since Moscow midnight. */
+export function clockFromMinutes(minutes: number): string {
+  const safe = Math.max(0, Math.min(24 * 60, Math.round(minutes)));
+  const hours = Math.floor(safe / 60);
+  const mins = safe % 60;
+  return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+}
+
+/** Minutes since midnight from a `HH:MM` clock. */
+export function minutesFromClock(clock: string): number {
+  const [hoursText, minutesText] = clock.split(':');
+  const hours = Number(hoursText);
+  const minutes = Number(minutesText);
+  if (!Number.isInteger(hours) || !Number.isInteger(minutes)) return 0;
+  return hours * 60 + minutes;
+}
+
 const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 /** Clamps a minute count to the 0–15 dispatcher lateness field. */

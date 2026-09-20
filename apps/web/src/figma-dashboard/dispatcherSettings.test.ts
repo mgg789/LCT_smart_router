@@ -3,13 +3,20 @@ import {
   DISPATCHER_SETTINGS_KEY,
   DEFAULT_DISPATCHER_SETTINGS,
   clampLatenessMin,
+  clockFromMinutes,
   latenessMinFromSec,
+  minutesFromClock,
   readDispatcherSettings,
   validateDispatcherSettings,
   writeDispatcherSettings,
 } from './dispatcherSettings';
 
 describe('dispatcherSettings', () => {
+  it('converts Moscow minutes to HH:MM and back', () => {
+    expect(clockFromMinutes(9 * 60 + 30)).toBe('09:30');
+    expect(minutesFromClock('21:00')).toBe(21 * 60);
+  });
+
   it('clamps lateness to 0–15 minutes', () => {
     expect(clampLatenessMin(-3)).toBe(0);
     expect(clampLatenessMin(7.4)).toBe(7);
