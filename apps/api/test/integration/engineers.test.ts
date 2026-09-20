@@ -202,6 +202,46 @@ describe('engineers and working days', () => {
     assert.equal(listed?.email, email);
   });
 
+  it('creates a routing profile before a login email is known', async () => {
+    const { engineer } = await createEngineer({ email: undefined });
+    assert.equal(engineer.hasAccount, false);
+    assert.equal(engineer.email, null);
+
+    const stored = await prisma.engineer.findUniqueOrThrow({ where: { id: engineer.id } });
+    assert.equal(stored.accountId, null);
+  });
+
+  it('archives an offline engineer, revokes access and hides the profile from the roster', async () => {
+    const { email, engineer } = await createEngineer();
+    const token = await signIn(email);
+
+    const response = await call(
+      'DELETE',
+      `/api/v1/dispatch/engineers/${engineer.id}`,
+      dispatcherToken,
+      { operationId: randomUUID(), expectedVersion: engineer.version },
+    );
+    assert.equal(response.status, 200, await response.clone().text());
+    const archived = ((await response.json()) as EngineerBody).engineer;
+    assert.equal(archived.hasAccount, false);
+    assert.equal(archived.email, null);
+
+    const stored = await prisma.engineer.findUniqueOrThrow({ where: { id: engineer.id } });
+    assert.notEqual(stored.archivedAt, null);
+    assert.equal(stored.accountId, null);
+
+    const listed = await call('GET', '/api/v1/dispatch/engineers', dispatcherToken);
+    const body = (await listed.json()) as { engineers: Array<{ id: string }> };
+    assert.equal(body.engineers.some((item) => item.id === engineer.id), false);
+    assert.equal((await call('GET', '/api/v1/engineer/profile', token)).status, 401);
+
+    const account = await prisma.account.findUniqueOrThrow({
+      where: { email },
+      include: { roles: true },
+    });
+    assert.equal(account.roles.some((role) => role.role === 'engineer'), false);
+  });
+
   it('gives each engineer their own input order', async () => {
     const first = await createEngineer();
     const second = await createEngineer();

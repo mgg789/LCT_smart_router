@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   closeDispatchShift,
+  createDispatchEngineer,
+  createDispatchRequest,
   DashboardApiError,
+  deleteDispatchEngineer,
   importOfficialDataset,
   linkEngineerAccount,
   loadDashboardSnapshot,
@@ -28,6 +31,8 @@ import {
 } from '../api/live';
 import type {
   AlertResolutionInput,
+  CreateDispatchEngineerInput,
+  CreateDispatchRequestInput,
   DashboardSnapshot,
   DataUploadFile,
   DataUploadSummary,
@@ -120,6 +125,7 @@ export function useDashboard() {
   const [rebuilding, setRebuilding] = useState(false);
   const [availabilityPendingId, setAvailabilityPendingId] = useState<string | null>(null);
   const [uploadingData, setUploadingData] = useState(false);
+  const [entityMutationPending, setEntityMutationPending] = useState(false);
   const [pendingDelta, setPendingDelta] = useState<PlanDelta | null>(null);
   const [baseline, setBaseline] = useState<RoutingBaseline | null>(null);
   const [policyComparison, setPolicyComparison] = useState<PolicyComparisonResponse | null>(null);
@@ -159,6 +165,7 @@ export function useDashboard() {
       setToken(null);
       setRebuilding(false);
       setUploadingData(false);
+      setEntityMutationPending(false);
       setAvailabilityPendingId(null);
       setSnapshot(null);
       setFocus({ engineerId: null, requestId: null });
@@ -901,6 +908,88 @@ export function useDashboard() {
     [refresh, token],
   );
 
+  /** Runs one create/archive mutation and then reloads both dashboard projections. */
+  const performEntityMutation = useCallback(
+    async (operation: (session: string) => Promise<void>, eventText: string) => {
+      if (
+        !token ||
+        sourceRef.current !== 'live' ||
+        loading ||
+        entityMutationPending ||
+        operationWarning !== null
+      ) {
+        throw new Error('Изменение доступно только при подключении к рабочему серверу');
+      }
+      invalidateAsyncReads();
+      setEntityMutationPending(true);
+      setError(null);
+      try {
+        await operation(token);
+        const [next] = await Promise.all([refresh(), refreshLive()]);
+        if (!next) {
+          setOperationWarning(
+            'Изменение принято сервером, но обновление экрана не подтверждено. Не повторяйте операцию вслепую.',
+          );
+        }
+        pushEvent(eventText);
+      } catch (cause) {
+        const uncertain = !(cause instanceof DashboardApiError) || cause.status === 0;
+        if (
+          uncertain ||
+          (cause instanceof DashboardApiError && (cause.status === 401 || cause.status === 403))
+        ) {
+          reportFailure(cause);
+        }
+        if (uncertain) {
+          setOperationWarning(
+            'Результат изменения не подтверждён. Проверьте актуальный список перед повтором.',
+          );
+        }
+        setError(errorMessage(cause));
+        throw cause;
+      } finally {
+        setEntityMutationPending(false);
+      }
+    },
+    [
+      entityMutationPending,
+      invalidateAsyncReads,
+      loading,
+      operationWarning,
+      pushEvent,
+      refresh,
+      refreshLive,
+      reportFailure,
+      token,
+    ],
+  );
+
+  const createRequest = useCallback(
+    (input: CreateDispatchRequestInput) =>
+      performEntityMutation(async (session) => {
+        await createDispatchRequest(session, input);
+      }, 'Создана новая заявка и отправлена в планирование.'),
+    [performEntityMutation],
+  );
+
+  const createEngineer = useCallback(
+    (input: CreateDispatchEngineerInput) =>
+      performEntityMutation(async (session) => {
+        await createDispatchEngineer(session, input);
+      }, `Добавлен инженер ${input.displayName}.`),
+    [performEntityMutation],
+  );
+
+  const deleteEngineer = useCallback(
+    (engineerId: string) => {
+      const engineer = snapshotRef.current?.engineers.find((item) => item.id === engineerId);
+      return performEntityMutation(async (session) => {
+        await deleteDispatchEngineer(session, engineerId, engineer?.version);
+      }, `Инженер ${engineer?.displayName ?? engineerId} удалён из активного состава.`);
+    },
+    [performEntityMutation],
+  );
+
   const performAlertOperation = useCallback(
     async (operation: (session: string) => Promise<void>) => {
       if (!token || sourceRef.current !== 'live' || loading || operationWarning !== null) {
@@ -1078,8 +1167,9 @@ export function useDashboard() {
     selectDemoScenario,
     leaveDemo,
     demoScenarios,
-    writesDisabled: source !== 'live' || loading || operationWarning !== null,
-    busy: rebuilding || uploadingData,
+    writesDisabled:
+      source !== 'live' || loading || entityMutationPending || operationWarning !== null,
+    busy: rebuilding || uploadingData || entityMutationPending,
     isDemo: source === 'demo',
     loading,
     error,
@@ -1098,6 +1188,7 @@ export function useDashboard() {
     rebuilding,
     availabilityPendingId,
     uploadingData,
+    entityMutationPending,
     pendingDelta,
     canRejectDelta: baseline !== null,
     policyComparison,
@@ -1124,6 +1215,9 @@ export function useDashboard() {
     updateEngineerAvailability,
     linkEngineerLogin,
     unlinkEngineerLogin,
+    createRequest,
+    createEngineer,
+    deleteEngineer,
     uploadDataset,
     importOfficialTzDataset,
     resolveAlert,

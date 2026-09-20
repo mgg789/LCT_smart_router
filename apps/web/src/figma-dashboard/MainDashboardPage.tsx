@@ -482,19 +482,11 @@ export function MainDashboardPage() {
           open={addOpen}
           snapshot={dash.snapshot}
           motionOn={motionOn}
-          live={false}
-          submitting={false}
+          live={dash.source === 'live'}
+          submitting={dash.entityMutationPending}
           onClose={() => setAddOpen(false)}
-          onCreateRequest={async () => {
-            throw new Error(
-              'Создание заявки из Dashboard ещё не поддерживается API текущей системы.',
-            );
-          }}
-          onCreateEngineer={async () => {
-            throw new Error(
-              'Создание инженера из Dashboard ещё не поддерживается API текущей системы.',
-            );
-          }}
+          onCreateRequest={dash.createRequest}
+          onCreateEngineer={dash.createEngineer}
         />
         <PolicyControl
           open={policyOpen}
@@ -714,9 +706,7 @@ export function MainDashboardPage() {
                   busy={dash.busy}
                   onSelectEngineer={dash.selectEngineer}
                   onLinkEmail={dash.linkEngineerLogin}
-                  onDeleteEngineer={async () => {
-                    throw new Error('Удаление инженера не поддерживается API текущей системы.');
-                  }}
+                  onDeleteEngineer={dash.deleteEngineer}
                   onSetAvailability={(engineerId, availability) => {
                     void dash.updateEngineerAvailability(engineerId, availability);
                   }}

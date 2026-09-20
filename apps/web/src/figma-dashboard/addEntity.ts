@@ -194,7 +194,6 @@ export function validateEngineerDraft(draft: {
   if (draft.skills.length === 0) return 'Выберите хотя бы один навык';
   if (!TRANSPORT_OPTIONS.some((item) => item.id === draft.transportType)) return 'Выберите транспорт';
   if (!draft.region) return 'Выберите регион';
-  if (!draft.officeId) return 'Выберите офис';
   if (draft.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.email.trim())) {
     return 'Проверьте адрес почты';
   }

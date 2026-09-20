@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  createDispatchEngineer,
+  createDispatchRequest,
   DashboardApiError,
+  deleteDispatchEngineer,
   loadDashboardSnapshot,
   loadPolicyComparison,
   selectRoutingPolicy,
@@ -376,6 +379,55 @@ describe('live dashboard client', () => {
     const inputHash = await setEngineerAvailability('session-token', 'engineer/1', 'offline');
     expect(sentBody).toMatchObject({ availability: 'offline', expectedOnlineAt: null });
     expect(inputHash).toBe('availability-input');
+  });
+
+  it('sends the compact create and archive contracts used by the Figma dashboard', async () => {
+    const calls: Array<{ path: string; method: string; body: Record<string, unknown> }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const path = String(input);
+        calls.push({
+          path,
+          method: init?.method ?? 'GET',
+          body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+        });
+        return path.endsWith('/requests')
+          ? json({ request })
+          : json({ engineer: { ...engineer, day: undefined } });
+      }),
+    );
+
+    await createDispatchRequest('session-token', {
+      workType: 'monitoring',
+      addressText: 'Москва, ул. Новая, 2',
+      windowStartAt: 1_800_000_000,
+      windowEndAt: 1_800_003_600,
+    });
+    await createDispatchEngineer('session-token', {
+      displayName: 'Новый инженер',
+      skills: ['connection'],
+      transportType: 'car',
+      region: 'east',
+      email: null,
+    });
+    await deleteDispatchEngineer('session-token', 'engineer/1', 7);
+
+    expect(calls[0]).toMatchObject({
+      path: expect.stringContaining('/api/v1/dispatch/requests'),
+      method: 'POST',
+      body: { operationId: expect.any(String), workType: 'monitoring' },
+    });
+    expect(calls[1]).toMatchObject({
+      path: expect.stringContaining('/api/v1/dispatch/engineers'),
+      method: 'POST',
+      body: { operationId: expect.any(String), email: null },
+    });
+    expect(calls[2]).toMatchObject({
+      path: expect.stringContaining('/api/v1/dispatch/engineers/engineer%2F1'),
+      method: 'DELETE',
+      body: { operationId: expect.any(String), expectedVersion: 7 },
+    });
   });
 
   it('adds an idempotency key to a locally validated data package', async () => {

@@ -466,7 +466,7 @@ function EngineerForm({
           className={FIELD}
         >
           {offices.length === 0 ? (
-            <option value="">Добавьте офис во вкладке «Регион»</option>
+            <option value="">Офис можно привязать позже</option>
           ) : null}
           {offices.map((item) => (
             <option key={item.id} value={item.id}>
@@ -487,7 +487,7 @@ function EngineerForm({
       </Field>
       <p className="mt-[10px] font-medium text-[14px] text-figma-muted">
         {added.offices.length === 0
-          ? 'Список офисов появится после добавления во вкладке «Регион».'
+          ? 'Пока сохраняется регион; офис можно привязать после появления API.'
           : null}
       </p>
     </form>

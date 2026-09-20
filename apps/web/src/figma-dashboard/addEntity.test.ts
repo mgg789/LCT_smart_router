@@ -63,6 +63,7 @@ describe('addEntity catalog helpers', () => {
       email: '',
     };
     expect(validateEngineerDraft(base)).toBeNull();
+    expect(validateEngineerDraft({ ...base, officeId: '' })).toBeNull();
     expect(validateEngineerDraft({ ...base, email: 'not-mail' })).toBe('Проверьте адрес почты');
     expect(validateEngineerDraft({ ...base, skills: [] })).toBe('Выберите хотя бы один навык');
   });

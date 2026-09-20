@@ -7,6 +7,8 @@ import type {
   AssignmentReasons,
   AuthSession,
   CreatedApiToken,
+  CreateDispatchEngineerInput,
+  CreateDispatchRequestInput,
   DashboardSnapshot,
   DataUploadFile,
   DataUploadSummary,
@@ -613,6 +615,53 @@ export async function revokeApiToken(sessionToken: string, id: string): Promise<
 }
 
 const engineerProfileSchema = engineerSchema.omit({ day: true });
+
+/** Creates and immediately submits an unplanned request from the compact dashboard form. */
+export function createDispatchRequest(
+  token: string,
+  input: CreateDispatchRequestInput,
+): Promise<{ request: z.infer<typeof requestSchema> }> {
+  return requestJson('/api/v1/dispatch/requests', z.object({ request: requestSchema }), token, {
+    method: 'POST',
+    body: JSON.stringify({ operationId: crypto.randomUUID(), ...input }),
+  });
+}
+
+/** Adds a routing profile, with Engineer App access only when an email was supplied. */
+export function createDispatchEngineer(
+  token: string,
+  input: CreateDispatchEngineerInput,
+): Promise<{ engineer: z.infer<typeof engineerProfileSchema> }> {
+  return requestJson(
+    '/api/v1/dispatch/engineers',
+    z.object({ engineer: engineerProfileSchema }),
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({ operationId: crypto.randomUUID(), ...input }),
+    },
+  );
+}
+
+/** Archives a routing profile while preserving its historical plans and facts. */
+export function deleteDispatchEngineer(
+  token: string,
+  engineerId: string,
+  expectedVersion?: number,
+): Promise<{ engineer: z.infer<typeof engineerProfileSchema> }> {
+  return requestJson(
+    `/api/v1/dispatch/engineers/${encodeURIComponent(engineerId)}`,
+    z.object({ engineer: engineerProfileSchema }),
+    token,
+    {
+      method: 'DELETE',
+      body: JSON.stringify({
+        operationId: crypto.randomUUID(),
+        ...(expectedVersion === undefined ? {} : { expectedVersion }),
+      }),
+    },
+  );
+}
 
 /** Removes the login from a brigade. The routing profile stays; live sessions die. */
 export function unlinkEngineerAccount(

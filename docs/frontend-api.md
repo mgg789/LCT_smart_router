@@ -139,7 +139,7 @@ Authorization: Bearer <token>
 «начато», `overrunDetectedAt` — координатором превышений, `continuationAvailableAt` —
 когда инженер реально освободится.
 
-**POST `/dispatch/requests`** — создать заявку от имени клиента (сразу отправлена):
+**POST `/dispatch/requests`** — создать заявку с дашборда (сразу отправлена):
 
 ```json
 {
@@ -153,6 +153,9 @@ Authorization: Bearer <token>
 }
 ```
 → `{request: RequestView}`. Навык/длительность/профиль нормы выводятся из `workType`.
+`clientEmail` и `contactName` необязательны для компактной диспетчерской формы. Если
+адрес не передан, заявка остаётся без клиентского аккаунта и событийные письма не
+создаются; адрес и имя не заменяются фиктивными значениями.
 
 **PATCH `/dispatch/requests/:id`** — изменить условия неначатой заявки:
 `{operationId, expectedVersion?, windowStartAt?, windowEndAt?, addressText?, lat?, lon?, urgent?, requiredEquipment?}` (хотя бы одно поле) → `{request}`.
@@ -188,7 +191,9 @@ Authorization: Bearer <token>
 и прогресс работы — три разных вещи, не смешивать в один статус. `email` — адрес
 входа, когда он привязан (`hasAccount: true`); у импортированных бригад `null`.
 
-**POST `/dispatch/engineers`** — `{operationId, email, displayName, skills[1..3], transportType, region?, homeLat?, homeLon?}` → `{engineer}`.
+**POST `/dispatch/engineers`** — `{operationId, email?, displayName, skills[1..3], transportType, region?, homeLat?, homeLon?}` → `{engineer}`. Без `email` создаётся только профиль маршрутизации (`hasAccount: false`); логин можно выдать позже через `link-account`.
+
+**DELETE `/dispatch/engineers/:id`** — `{operationId, expectedVersion?}` → `{engineer}`. Мягко архивирует профиль, снимает роль инженера и отзывает его живые сессии. Исторические планы и факты сохраняют ссылку на профиль. Инженера на LIVE-линии или с незавершённой работой сначала нужно снять с линии и освободить.
 
 **POST `/dispatch/engineers/link-account`** — `{operationId, engineerId, email}` → `{engineer}`. Выдать логин профилю без адреса (бригада из импорта): аккаунт создаётся, роль инженера выдаётся, параметры планирования не меняются. Повторная привязка и адрес, уже являющийся логином другого инженера, — `VALIDATION_FAILED`. После привязки инженер входит через `POST /auth/login-code` + `verify` с `role: "engineer"`.
 

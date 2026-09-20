@@ -8,7 +8,7 @@ import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-dat
 import { findWorkType } from './work-type.catalog';
 
 export interface PrepareRequestInput {
-  readonly contactName: string;
+  readonly contactName: string | null;
   readonly addressText: string;
   readonly lat?: number | null;
   readonly lon?: number | null;
@@ -64,7 +64,7 @@ export class RequestsService {
    */
   async prepare(
     context: OperationContext,
-    clientAccountId: string,
+    clientAccountId: string | null,
     input: PrepareRequestInput,
   ): Promise<Request> {
     const spec = findWorkType(input.workType);

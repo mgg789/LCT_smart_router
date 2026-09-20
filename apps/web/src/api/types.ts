@@ -79,6 +79,23 @@ export interface EngineerView {
   readonly email: string | null;
 }
 
+/** Fields collected by the compact dispatcher request form. */
+export interface CreateDispatchRequestInput {
+  readonly workType: string;
+  readonly addressText: string;
+  readonly windowStartAt: number;
+  readonly windowEndAt: number;
+}
+
+/** A routing profile can be created before a login email is known. */
+export interface CreateDispatchEngineerInput {
+  readonly displayName: string;
+  readonly skills: Array<'local' | 'connection' | 'emergency'>;
+  readonly transportType: 'car' | 'walk' | 'bike' | 'transit';
+  readonly region: string;
+  readonly email: string | null;
+}
+
 export interface EngineerDayView {
   /** Day-specific exemption from attendance alerts, independent of login access. */
   readonly attendanceOptOut?: boolean;

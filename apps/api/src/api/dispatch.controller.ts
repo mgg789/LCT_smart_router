@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { type Actor, CurrentActor, Roles } from '../auth';
 import { AppConfigService } from '../common/config';
@@ -45,6 +45,8 @@ import {
   uploadDataPackageSchema,
 } from './dto/data.dto';
 import {
+  type ArchiveEngineerDto,
+  archiveEngineerSchema,
   type CreateEngineerDto,
   createEngineerSchema,
   type LinkEngineerAccountDto,
@@ -171,7 +173,7 @@ export class DispatchController {
   }
 
   @Post('requests')
-  @ApiOperation({ summary: 'Create a request on behalf of a customer' })
+  @ApiOperation({ summary: 'Create and submit an unplanned request' })
   async create(
     @CurrentActor() actor: Actor,
     @Body(zodBody(dispatcherCreateRequestSchema)) dto: DispatcherCreateRequestDto,
@@ -184,27 +186,31 @@ export class DispatchController {
         payload: dto,
       },
       async (context) => {
-        const email = dto.clientEmail.trim().toLowerCase();
-        const account = await context.tx.account.upsert({
-          where: { email },
-          update: {},
-          create: {
-            email,
-            createdAt: BigInt(context.now),
-            updatedAt: BigInt(context.now),
-          },
-        });
-        // The account exists so the request has an owner and a real address to write to.
-        // It is not marked as a verified address: only the customer's own login proves
-        // that (context/41 section 10).
-        await context.tx.accountRole.upsert({
-          where: { accountId_role: { accountId: account.id, role: 'client' } },
-          update: {},
-          create: { accountId: account.id, role: 'client', grantedAt: BigInt(context.now) },
-        });
+        let clientAccountId: string | null = null;
+        if (dto.clientEmail) {
+          const email = dto.clientEmail.trim().toLowerCase();
+          const account = await context.tx.account.upsert({
+            where: { email },
+            update: {},
+            create: {
+              email,
+              createdAt: BigInt(context.now),
+              updatedAt: BigInt(context.now),
+            },
+          });
+          // The account exists so the request has an owner and a real address to write to.
+          // It is not marked as a verified address: only the customer's own login proves
+          // that (context/41 section 10).
+          await context.tx.accountRole.upsert({
+            where: { accountId_role: { accountId: account.id, role: 'client' } },
+            update: {},
+            create: { accountId: account.id, role: 'client', grantedAt: BigInt(context.now) },
+          });
+          clientAccountId = account.id;
+        }
 
-        const prepared = await this.requests.prepare(context, account.id, {
-          contactName: dto.contactName,
+        const prepared = await this.requests.prepare(context, clientAccountId, {
+          contactName: dto.contactName ?? null,
           addressText: dto.addressText,
           lat: dto.lat ?? null,
           lon: dto.lon ?? null,
@@ -332,7 +338,7 @@ export class DispatchController {
   }
 
   @Post('engineers')
-  @ApiOperation({ summary: 'Add an engineer by email address' })
+  @ApiOperation({ summary: 'Add an engineer profile, optionally with a login address' })
   async createEngineer(
     @CurrentActor() actor: Actor,
     @Body(zodBody(createEngineerSchema)) dto: CreateEngineerDto,
@@ -347,7 +353,7 @@ export class DispatchController {
       async (context) =>
         toEngineerView(
           await this.engineers.create(context, {
-            email: dto.email,
+            email: dto.email ?? null,
             displayName: dto.displayName,
             skills: dto.skills,
             transportType: dto.transportType,
@@ -356,6 +362,28 @@ export class DispatchController {
             homeLon: dto.homeLon ?? null,
           }),
         ),
+    );
+    return { engineer: outcome.result };
+  }
+
+  @Delete('engineers/:id')
+  @ApiOperation({ summary: 'Archive an engineer profile and revoke its login' })
+  async archiveEngineer(
+    @CurrentActor() actor: Actor,
+    @Param('id') id: string,
+    @Body(zodBody(archiveEngineerSchema)) dto: ArchiveEngineerDto,
+  ): Promise<{ engineer: EngineerView }> {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'engineer.archive',
+        targetRef: id,
+        expectedVersion: dto.expectedVersion ?? null,
+        payload: dto,
+      },
+      async (context) =>
+        toEngineerView(await this.engineers.archive(context, id, dto.expectedVersion ?? null)),
     );
     return { engineer: outcome.result };
   }
