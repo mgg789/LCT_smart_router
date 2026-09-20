@@ -818,6 +818,7 @@ export class LiveService {
                   current.route?.stops.some((stop) => stop.kind === 'job' && stop.endAt >= liveNow)
                 ? 'active'
                 : 'awaiting_plan';
+        const canFinishDay = await this.canEngineerFinishDay(tx, day, state, liveNow);
         const lunchDay = rows.find((row) => row.engineerId === state.engineerId);
         return {
           id: state.engineerId,
@@ -853,6 +854,7 @@ export class LiveService {
                 }
               : null,
           routeState,
+          canFinishDay,
           progress: await this.routeProgress(
             tx,
             state,
@@ -865,6 +867,77 @@ export class LiveService {
           stats: await this.statsFor(tx, day, state.engineerId),
         };
       }),
+    );
+  }
+
+  /** Personal release never follows an empty route alone or dispatcher alert state. */
+  private async canEngineerFinishDay(
+    tx: Tx,
+    day: LiveWorkday,
+    state: LiveEngineerState,
+    liveNow: number,
+  ): Promise<boolean> {
+    const dayStart = Date.parse(`${day.workDate}T00:00:00+03:00`) / 1000;
+    if (
+      liveNow < dayStart + 17 * 3600 ||
+      state.lineStartedAt === null ||
+      state.lineStatus !== 'online'
+    )
+      return false;
+    const current = await this.currentFor(tx, day, state.engineerId, liveNow);
+    if (
+      current.current ||
+      ('replanPending' in current && current.replanPending) ||
+      (await this.activeLunch(tx, day.workDate, state.engineerId, current.route, liveNow))
+    )
+      return false;
+    const plan = await this.plans.current(tx);
+    if (!plan) return false;
+    const latestOwners = await tx.appliedPlanAssignment.findMany({
+      where: {
+        status: 'assigned',
+        engineerId: { not: null },
+        OR: [
+          { planId: plan.id },
+          { plan: { planAsOf: { gte: BigInt(dayStart), lt: BigInt(dayStart + 86400) } } },
+        ],
+      },
+      orderBy: { plan: { revision: 'desc' } },
+      distinct: ['requestId'],
+      select: { requestId: true, engineerId: true, status: true },
+    });
+    const otherOwners = latestOwners
+      .filter((item) => item.status === 'assigned' && item.engineerId !== state.engineerId)
+      .map((item) => item.requestId);
+    // Retain evidence of this engineer's unfinished work even when a broken replan
+    // drops its route. The latest witnessed reassignment releases the former owner
+    // even if a subsequent broken plan drops the new owner's route too.
+    const remaining = await tx.request.count({
+      where: {
+        id: { notIn: otherOwners },
+        lifecycle: { in: ['submitted', 'in_progress'] },
+        windowStartAt: { lt: BigInt(dayStart + 86400) },
+        windowEndAt: { gte: BigInt(dayStart) },
+        liveStates: { none: { workdayId: day.id, assumedCompletedAt: { not: null } } },
+        OR: [
+          { facts: { some: { engineerId: state.engineerId, kind: 'started' } } },
+          { liveStates: { some: { workdayId: day.id, reservedEngineerId: state.engineerId } } },
+          {
+            assignments: {
+              some: {
+                engineerId: state.engineerId,
+                status: 'assigned',
+                plan: { planAsOf: { gte: BigInt(dayStart), lt: BigInt(dayStart + 86400) } },
+              },
+            },
+          },
+        ],
+      },
+    });
+    const stats = await this.statsFor(tx, day, state.engineerId);
+    return (
+      remaining === 0 &&
+      stats.completedCount + stats.assumedCompletedCount + stats.cancelledCount > 0
     );
   }
 
@@ -2131,21 +2204,17 @@ export class LiveService {
       unresolved === 0 &&
       technicalBreak === 0 &&
       !activeLunch;
-    for (const route of canFinish ? (plan?.routes ?? []) : []) {
+    const finishingEngineers = await tx.liveEngineerState.findMany({
+      where: { workdayId: day.id },
+    });
+    for (const engineerState of finishingEngineers) {
+      if (!(await this.canEngineerFinishDay(tx, day, engineerState, liveNow))) continue;
+      const route = { engineerId: engineerState.engineerId };
       const line = await tx.liveEngineerState.findUnique({
         where: { workdayId_engineerId: { workdayId: day.id, engineerId: route.engineerId } },
         include: { engineer: true },
       });
       if (!line?.lineStartedAt || line.lineStatus !== 'online') continue;
-      const remaining = await tx.request.count({
-        where: {
-          id: { in: route.stops.flatMap((stop) => (stop.requestId ? [stop.requestId] : [])) },
-          lifecycle: { in: ['submitted', 'in_progress'] },
-          liveStates: { none: { workdayId: day.id, assumedCompletedAt: { not: null } } },
-        },
-      });
-      if (remaining !== 0 || (await this.statsFor(tx, day, route.engineerId)).completedCount === 0)
-        continue;
       const dedupKey = `notice:engineer-finished:${day.id}:${route.engineerId}`;
       await tx.alert.upsert({
         where: { dedupKey },

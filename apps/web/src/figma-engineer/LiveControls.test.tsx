@@ -45,6 +45,7 @@ const live: EngineerLiveView = {
     technicalBreak: null,
     progress: null,
     routeState: 'active',
+    canFinishDay: false,
     stats,
     pendingDelayProblem: null,
   },

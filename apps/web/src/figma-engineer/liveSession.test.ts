@@ -38,6 +38,7 @@ function liveView(
       technicalBreak: null,
       progress: null,
       routeState: 'awaiting_plan',
+      canFinishDay: false,
       stats: {
         completedCount: 0,
         cancelledCount: 0,
