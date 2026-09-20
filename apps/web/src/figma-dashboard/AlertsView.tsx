@@ -1,7 +1,7 @@
 import { motion, useReducedMotion } from 'framer-motion';
 import type { DashboardSnapshot } from '../api/types';
+import { type InboxNoticeCard, inboxFromSources } from './alertsInbox';
 import { FIGMA_ASSETS } from './assets';
-import { inboxFromSources, type InboxNoticeCard } from './alertsInbox';
 import { InboxAlertCardView, InboxNoticeCardView } from './inboxCard';
 import { FigmaIcon, FigmaText } from './primitives';
 import { dismissToast, type ToastKind, type ToastNotification } from './toasts';
@@ -40,17 +40,21 @@ const NOTICE_ICON: Record<ToastKind, { src: string; width: number; height: numbe
 export function AlertsView({
   snapshot,
   toasts,
+  demoMode,
   motionOn,
   onOpenRequest,
+  onMarkNoticeSeen,
 }: {
   snapshot: DashboardSnapshot | null;
   toasts: readonly ToastNotification[];
+  demoMode: boolean;
   motionOn: boolean;
   onOpenRequest: (requestId: string) => void;
+  onMarkNoticeSeen: (noticeId: string) => Promise<void>;
 }) {
   const reduceMotion = useReducedMotion();
   const animate = motionOn && !reduceMotion;
-  const inbox = inboxFromSources(snapshot, toasts);
+  const inbox = inboxFromSources(snapshot, toasts, demoMode);
   const glassArrow = inbox.alerts.length > 0;
 
   return (
@@ -117,7 +121,13 @@ export function AlertsView({
                   body={card.body}
                   primaryLabel={card.primaryLabel}
                   secondaryLabel={card.secondaryLabel}
-                  onPrimary={card.requestId ? () => onOpenRequest(card.requestId!) : undefined}
+                  onPrimary={
+                    card.requestId
+                      ? () => {
+                          if (card.requestId) onOpenRequest(card.requestId);
+                        }
+                      : undefined
+                  }
                 />
               </motion.div>
             ))}
@@ -135,9 +145,13 @@ export function AlertsView({
                 key={card.id}
                 initial={animate ? { opacity: 0, y: 12 } : false}
                 animate={{ opacity: 1, y: 0 }}
-                transition={animate ? { ...fadeSoft, delay: 0.04 * (inbox.alerts.length + index) } : { duration: 0 }}
+                transition={
+                  animate
+                    ? { ...fadeSoft, delay: 0.04 * (inbox.alerts.length + index) }
+                    : { duration: 0 }
+                }
               >
-                <NoticeCard card={card} />
+                <NoticeCard card={card} onMarkSeen={onMarkNoticeSeen} />
               </motion.div>
             ))}
           </div>
@@ -170,13 +184,24 @@ export function AlertsView({
   );
 }
 
-function NoticeCard({ card }: { card: InboxNoticeCard }) {
+function NoticeCard({
+  card,
+  onMarkSeen,
+}: {
+  card: InboxNoticeCard;
+  onMarkSeen: (noticeId: string) => Promise<void>;
+}) {
   return (
     <InboxNoticeCardView
       title={card.title}
       body={card.body}
       icon={NOTICE_ICON[card.toastKind]}
-      onHide={() => dismissToast(card.id)}
+      onHide={() => {
+        void (async () => {
+          if (card.sourceNoticeId) await onMarkSeen(card.sourceNoticeId);
+          dismissToast(card.id);
+        })().catch(() => undefined);
+      }}
     />
   );
 }

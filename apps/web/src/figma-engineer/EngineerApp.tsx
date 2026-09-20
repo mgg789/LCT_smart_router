@@ -1,5 +1,6 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { DashboardApiError } from '../api/client';
 import {
   loadEngineerDay,
   loadEngineerPlan,
@@ -7,36 +8,36 @@ import {
   loadEngineerRequest,
   updateEngineerProfile,
 } from '../api/engineer';
-import { sendEngineerLiveAction } from '../api/live';
-import { DashboardApiError } from '../api/client';
+import {
+  type EngineerLiveAction,
+  type EngineerLiveView,
+  loadEngineerLive,
+  sendEngineerLiveAction,
+} from '../api/live';
 import type { EngineerDayView, EngineerPlanResponse, EngineerView } from '../api/types';
 import { TRANSPORT_OPTIONS } from '../figma-dashboard/addEntity';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { ENGINEER_ASSETS } from './assets';
-import { engineerHeaderStamp } from './engineerClock';
-import {
-  engineerListItems,
-  engineerLunchWindow,
-  missingRequestIds,
-} from './engineerDay';
 import {
   DESIGN_PREVIEW_DAY,
   DESIGN_PREVIEW_NOW_MS,
   DESIGN_PREVIEW_PLAN,
   DESIGN_PREVIEW_PROFILE,
 } from './designPreview';
-import type { EngineerJobItem } from './engineerDay';
 import { EngineerMenu, type EngineerMenuId } from './EngineerMenu';
+import { EngineerSettings } from './EngineerSettings';
+import { engineerHeaderStamp } from './engineerClock';
+import type { EngineerJobItem } from './engineerDay';
+import { engineerListItems, engineerLunchWindow, missingRequestIds } from './engineerDay';
 import { engineerMapsUrl } from './engineerRoute';
 import { eu } from './engineerScale';
+import { EngineerListCard } from './RequestCards';
+import { RequestDetail } from './RequestDetail';
 import {
-  emailChangePending,
   type EngineerSettingsDraft,
+  emailChangePending,
   profileFromSettings,
 } from './settingsDraft';
-import { EngineerSettings } from './EngineerSettings';
-import { RequestDetail } from './RequestDetail';
-import { EngineerListCard } from './RequestCards';
 
 const slideEase = [0.22, 1, 0.36, 1] as const;
 const slide = { duration: 0.34, ease: slideEase };
@@ -66,12 +67,11 @@ export function EngineerApp({
   const [profile, setProfile] = useState<EngineerView | null>(
     designPreview ? DESIGN_PREVIEW_PROFILE : null,
   );
-  const [day, setDay] = useState<EngineerDayView | null>(
-    designPreview ? DESIGN_PREVIEW_DAY : null,
-  );
-  const [plan, setPlan] = useState<EngineerPlanResponse | null>(
+  const [day, setDay] = useState<EngineerDayView | null>(designPreview ? DESIGN_PREVIEW_DAY : null);
+  const [storedPlan, setStoredPlan] = useState<EngineerPlanResponse | null>(
     designPreview ? DESIGN_PREVIEW_PLAN : null,
   );
+  const [live, setLive] = useState<EngineerLiveView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(!designPreview);
   const [openedJob, setOpenedJob] = useState<EngineerJobItem | null>(null);
@@ -82,6 +82,7 @@ export function EngineerApp({
   const [notice, setNotice] = useState<string | null>(null);
   const [settingsSubmitting, setSettingsSubmitting] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const liveActionPending = useRef(false);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNowMs(Date.now()), 1_000);
@@ -108,47 +109,97 @@ export function EngineerApp({
     [onSessionExpired],
   );
 
-  const reload = useCallback(async () => {
-    if (designPreview) {
-      setProfile(DESIGN_PREVIEW_PROFILE);
-      setDay(DESIGN_PREVIEW_DAY);
-      setPlan(DESIGN_PREVIEW_PLAN);
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const [nextProfile, nextDay, nextPlan] = await Promise.all([
-        loadEngineerProfile(token),
-        loadEngineerDay(token),
-        loadEngineerPlan(token),
-      ]);
-      const missing = missingRequestIds(nextPlan);
-      if (missing.length === 0) {
-        setPlan(nextPlan);
-      } else {
-        const extras = await Promise.all(
-          missing.map((id) => loadEngineerRequest(token, id).then((body) => body.request)),
-        );
-        setPlan({ ...nextPlan, requests: [...nextPlan.requests, ...extras] });
+  const reload = useCallback(
+    async (initial = false) => {
+      if (designPreview) {
+        setProfile(DESIGN_PREVIEW_PROFILE);
+        setDay(DESIGN_PREVIEW_DAY);
+        setStoredPlan(DESIGN_PREVIEW_PLAN);
+        setLoading(false);
+        return;
       }
-      setProfile(nextProfile);
-      setDay(nextDay);
-    } catch (cause) {
-      if (failSession(cause)) return;
-      setError(cause instanceof Error ? cause.message : 'Не удалось загрузить смену');
-    } finally {
-      setLoading(false);
-    }
-  }, [designPreview, failSession, token]);
+      if (initial) setLoading(true);
+      setError(null);
+      try {
+        const [nextProfile, nextDay, nextPlan, nextLive] = await Promise.all([
+          loadEngineerProfile(token),
+          loadEngineerDay(token),
+          loadEngineerPlan(token),
+          loadEngineerLive(token),
+        ]);
+        const missing = missingRequestIds(nextPlan);
+        if (missing.length === 0) {
+          setStoredPlan(nextPlan);
+        } else {
+          const extras = await Promise.all(
+            missing.map((id) => loadEngineerRequest(token, id).then((body) => body.request)),
+          );
+          setStoredPlan({ ...nextPlan, requests: [...nextPlan.requests, ...extras] });
+        }
+        setProfile(nextProfile);
+        setDay(nextDay);
+        setLive(nextLive);
+      } catch (cause) {
+        if (failSession(cause)) return;
+        setError(cause instanceof Error ? cause.message : 'Не удалось загрузить смену');
+      } finally {
+        if (initial) setLoading(false);
+      }
+    },
+    [designPreview, failSession, token],
+  );
 
   useEffect(() => {
-    void reload();
+    void reload(true);
   }, [reload]);
+
+  useEffect(() => {
+    if (designPreview) return;
+    const refreshLive = async () => {
+      if (liveActionPending.current) return;
+      try {
+        setLive(await loadEngineerLive(token));
+        setError(null);
+      } catch (cause) {
+        if (!failSession(cause)) {
+          setError(cause instanceof Error ? cause.message : 'Не удалось обновить статус смены');
+        }
+      }
+    };
+    const timer = window.setInterval(() => void refreshLive(), 2_000);
+    return () => window.clearInterval(timer);
+  }, [designPreview, failSession, token]);
+
+  const plan = useMemo<EngineerPlanResponse | null>(() => {
+    if (!storedPlan || !live || live.workday.status === 'pending') return storedPlan;
+    const current = live.current?.request;
+    return {
+      ...storedPlan,
+      route: live.route,
+      requests: current
+        ? [...storedPlan.requests.filter((request) => request.id !== current.id), current]
+        : storedPlan.requests,
+    };
+  }, [live, storedPlan]);
 
   const items = useMemo(() => engineerListItems(plan, day), [day, plan]);
   const lunch = useMemo(() => engineerLunchWindow(plan, day), [day, plan]);
+
+  const applyLiveAction = async (action: EngineerLiveAction): Promise<boolean> => {
+    if (liveActionPending.current) return false;
+    liveActionPending.current = true;
+    try {
+      setLive(await sendEngineerLiveAction(token, action));
+      setError(null);
+      return true;
+    } catch (cause) {
+      if (failSession(cause)) return false;
+      setError(cause instanceof Error ? cause.message : 'Не удалось сохранить отметку');
+      return false;
+    } finally {
+      liveActionPending.current = false;
+    }
+  };
 
   const startJob = async (requestId: string) => {
     if (designPreview) {
@@ -158,11 +209,7 @@ export function EngineerApp({
     setStartPendingId(requestId);
     setNotice(null);
     try {
-      await sendEngineerLiveAction(token, { kind: 'start', requestId });
-      await reload();
-    } catch (cause) {
-      if (failSession(cause)) return;
-      setError(cause instanceof Error ? cause.message : 'Не удалось отметить старт');
+      await applyLiveAction({ kind: 'start', requestId });
     } finally {
       setStartPendingId(null);
     }
@@ -178,14 +225,19 @@ export function EngineerApp({
     setNotice('Отметка «опаздываю» пока только на устройстве — отдельного факта в API ещё нет.');
   };
 
-  const markOnTime = (requestId: string) => {
+  const markOnTime = async (requestId: string) => {
+    if (designPreview) {
+      setNotice('В макете отметка «буду вовремя» не отправляется.');
+      return;
+    }
+    if (!(await applyLiveAction({ kind: 'on_time', requestId }))) return;
     setOnTimeIds((current) => new Set(current).add(requestId));
     setLateIds((current) => {
       const next = new Set(current);
       next.delete(requestId);
       return next;
     });
-    setNotice('Отметка «буду вовремя» пока только на устройстве.');
+    setNotice('Статус «буду вовремя» передан диспетчеру.');
   };
 
   const openRoute = (job: EngineerJobItem) => {
@@ -206,12 +258,13 @@ export function EngineerApp({
     setBreakPending(true);
     setNotice(null);
     try {
-      await sendEngineerLiveAction(token, { kind: 'break_start' });
-      await reload();
-      setMenuOpen(false);
-    } catch (cause) {
-      if (failSession(cause)) return;
-      setError(cause instanceof Error ? cause.message : 'Не удалось начать перерыв');
+      const kind = live?.engineer.technicalBreak ? 'break_finish' : 'break_start';
+      if (await applyLiveAction({ kind })) {
+        setNotice(
+          kind === 'break_start' ? 'Технический перерыв начат.' : 'Технический перерыв завершён.',
+        );
+        setMenuOpen(false);
+      }
     } finally {
       setBreakPending(false);
     }
@@ -426,7 +479,7 @@ export function EngineerApp({
                   }}
                   onRoute={() => openRoute(openedJob)}
                   onLate={() => markLate(openedJob.request.id)}
-                  onOnTime={() => markOnTime(openedJob.request.id)}
+                  onOnTime={() => void markOnTime(openedJob.request.id)}
                 />
               </div>
             </motion.div>
@@ -477,6 +530,9 @@ export function EngineerApp({
             email={email || '—'}
             active={screen}
             lunch={lunch}
+            breakActive={
+              live?.engineer.technicalBreak !== null && live?.engineer.technicalBreak !== undefined
+            }
             breakPending={breakPending}
             onClose={() => setMenuOpen(false)}
             onNavigate={(id) => {

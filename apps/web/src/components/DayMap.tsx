@@ -9,6 +9,17 @@ import {
   projectLiveGraph,
 } from '../domain/liveGraph';
 import { localMapStyle } from '../domain/localBasemap';
+import {
+  MAP_CANVAS,
+  MAP_INK,
+  MAP_LUNCH_FILL,
+  MAP_LUNCH_STROKE,
+  MAP_ROUTE_DASH_PX,
+  MAP_ROUTE_GAP_PX,
+  mapPaintColor,
+  metersPerPixel,
+  pillDashLine,
+} from '../domain/mapPaint';
 import { regionStyle, requestRegion, routeRegion } from '../domain/regions';
 import { requestMapPoint } from '../domain/requestPoint';
 import { type MapRouteSegment, mapRouteSegments } from '../domain/travel';
@@ -278,6 +289,9 @@ export function DayMap({
         (request) => request.id === selectedRequestId,
       );
       const showUnassigned = !soloRequestId && (selectedEngineerId === null || viewingUnassigned);
+      const sampleLat = projections[0]?.graph.mapNodes[0]?.lat ?? 55.75;
+      const dashMeters = metersPerPixel(sampleLat, map.getZoom()) * MAP_ROUTE_DASH_PX;
+      const gapMeters = metersPerPixel(sampleLat, map.getZoom()) * MAP_ROUTE_GAP_PX;
 
       const lineFeatures = projections.flatMap(({ engineerId, route, graph }) => {
         const region = route ? routeRegion(snapshot, route) : null;
@@ -302,28 +316,33 @@ export function DayMap({
               ],
             })),
         ];
-        return segments.map((segment) => ({
-          type: 'Feature' as const,
-          properties: {
-            engineerId,
-            selected: !selectedEngineerId || engineerId === selectedEngineerId ? 1 : 0,
-            approximate: segment.approximate ? 1 : 0,
-            color: engineerColor(engineerId),
-            regionColor: regionStyle(region).color,
-            travelSource: segment.source,
-          },
-          geometry: {
-            type: 'LineString' as const,
-            coordinates: segment.coordinates,
-          },
-        }));
+        return segments.flatMap((segment) => {
+          const paths = segment.approximate
+            ? pillDashLine(segment.coordinates, dashMeters, gapMeters)
+            : [segment.coordinates.map((point) => [point[0], point[1]] as [number, number])];
+          return paths.map((coordinates) => ({
+            type: 'Feature' as const,
+            properties: {
+              engineerId,
+              selected: !selectedEngineerId || engineerId === selectedEngineerId ? 1 : 0,
+              approximate: segment.approximate ? 1 : 0,
+              color: mapPaintColor(engineerColor(engineerId)),
+              regionColor: mapPaintColor(regionStyle(region).color),
+              travelSource: segment.source,
+            },
+            geometry: {
+              type: 'LineString' as const,
+              coordinates,
+            },
+          }));
+        });
       });
 
       const progressLines = projections.flatMap(({ engineerId, graph }) =>
         graph.activeSegments.map((segment) => {
           return {
             type: 'Feature' as const,
-            properties: { engineerId, color: engineerColor(engineerId) },
+            properties: { engineerId, color: mapPaintColor(engineerColor(engineerId)) },
             geometry: {
               type: 'LineString' as const,
               coordinates: [
@@ -344,8 +363,10 @@ export function DayMap({
             properties: {
               engineerId,
               selected: !selectedEngineerId || engineerId === selectedEngineerId ? 1 : 0,
-              color: engineerColor(engineerId),
-              regionColor: regionStyle(route ? routeRegion(snapshot, route) : null).color,
+              color: mapPaintColor(engineerColor(engineerId)),
+              regionColor: mapPaintColor(
+                regionStyle(route ? routeRegion(snapshot, route) : null).color,
+              ),
               current: graph.activeNodeKeys.has(start.key) ? 1 : 0,
             },
             geometry: {
@@ -392,8 +413,10 @@ export function DayMap({
                 skillMark: request ? skillMark(request.requiredSkill) : '',
                 engineerId,
                 selected: node.requestId === selectedRequestId ? 1 : 0,
-                color: engineerColor(engineerId),
-                regionColor: regionStyle(request ? requestRegion(snapshot, request) : null).color,
+                color: mapPaintColor(engineerColor(engineerId)),
+                regionColor: mapPaintColor(
+                  regionStyle(request ? requestRegion(snapshot, request) : null).color,
+                ),
                 current: graph.activeNodeKeys.has(node.key) ? 1 : 0,
               },
               geometry: {
@@ -420,7 +443,7 @@ export function DayMap({
                 requestId: request.id,
                 skillMark: skillMark(request.requiredSkill),
                 selected: request.id === selectedRequestId ? 1 : 0,
-                regionColor: regionStyle(requestRegion(snapshot, request)).color,
+                regionColor: mapPaintColor(regionStyle(requestRegion(snapshot, request)).color),
               },
               geometry: {
                 type: 'Point' as const,
@@ -435,24 +458,20 @@ export function DayMap({
           id: 'routes-casing',
           type: 'line',
           source: 'routes',
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
           paint: {
-            'line-color': '#ffffff',
-            'line-width': ['case', ['==', ['get', 'selected'], 1], 7, 5],
+            'line-color': MAP_CANVAS,
+            'line-width': ['case', ['==', ['get', 'selected'], 1], 9, 7],
           },
         });
         map.addLayer({
           id: 'routes-line',
           type: 'line',
           source: 'routes',
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
           paint: {
             'line-color': ['get', 'color'],
-            'line-width': ['case', ['==', ['get', 'selected'], 1], 3.5, 2],
-            'line-dasharray': [
-              'case',
-              ['==', ['get', 'approximate'], 1],
-              ['literal', [2, 2]],
-              ['literal', [1, 0]],
-            ],
+            'line-width': ['case', ['==', ['get', 'selected'], 1], 5, 3.5],
             'line-opacity': ['case', ['==', ['get', 'selected'], 1], 0.9, 0.35],
           },
         });
@@ -467,6 +486,7 @@ export function DayMap({
             id: 'live-progress-lines',
             type: 'line',
             source: 'live-progress-lines',
+            layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: { 'line-color': ['get', 'color'], 'line-width': 6, 'line-opacity': 0.95 },
           });
         },
@@ -478,13 +498,13 @@ export function DayMap({
           type: 'circle',
           source: 'starts',
           paint: {
-            'circle-radius': 7,
-            'circle-color': '#ffffff',
+            'circle-radius': 11,
+            'circle-color': MAP_CANVAS,
             'circle-stroke-width': ['case', ['==', ['get', 'current'], 1], 5, 3],
             'circle-stroke-color': [
               'case',
               ['==', ['get', 'current'], 1],
-              '#FFD100',
+              '#FFC72C',
               ['get', 'regionColor'],
             ],
           },
@@ -501,8 +521,8 @@ export function DayMap({
               'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
             },
             paint: {
-              'text-color': '#202124',
-              'text-halo-color': '#ffffff',
+              'text-color': MAP_INK,
+              'text-halo-color': MAP_CANVAS,
               'text-halo-width': 1.2,
             },
           });
@@ -517,10 +537,10 @@ export function DayMap({
             'circle-radius': [
               'case',
               ['==', ['get', 'current'], 1],
-              12,
+              16,
               ['==', ['get', 'selected'], 1],
-              10,
-              8,
+              16,
+              13,
             ],
             'circle-color': ['get', 'color'],
             'circle-stroke-width': [
@@ -546,10 +566,10 @@ export function DayMap({
                 ' ',
                 ['get', 'skillMark'],
               ],
-              'text-size': 11,
+              'text-size': 14,
               'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
             },
-            paint: { 'text-color': '#ffffff' },
+            paint: { 'text-color': MAP_CANVAS },
           });
       });
 
@@ -559,10 +579,15 @@ export function DayMap({
           type: 'circle',
           source: 'lunches',
           paint: {
-            'circle-radius': ['case', ['==', ['get', 'current'], 1], 11, 8],
-            'circle-color': '#FFE7C2',
+            'circle-radius': ['case', ['==', ['get', 'current'], 1], 14, 12],
+            'circle-color': MAP_LUNCH_FILL,
             'circle-stroke-width': ['case', ['==', ['get', 'current'], 1], 5, 3],
-            'circle-stroke-color': ['case', ['==', ['get', 'current'], 1], '#FFD100', '#E07A2F'],
+            'circle-stroke-color': [
+              'case',
+              ['==', ['get', 'current'], 1],
+              '#FFC72C',
+              MAP_LUNCH_STROKE,
+            ],
           },
         });
         if (map.getStyle().glyphs)
@@ -578,7 +603,7 @@ export function DayMap({
             },
             paint: {
               'text-color': '#8A4B12',
-              'text-halo-color': '#ffffff',
+              'text-halo-color': MAP_CANVAS,
               'text-halo-width': 1.2,
             },
           });
@@ -590,10 +615,10 @@ export function DayMap({
           type: 'circle',
           source: 'unassigned',
           paint: {
-            'circle-radius': ['case', ['==', ['get', 'selected'], 1], 10, 8],
+            'circle-radius': ['case', ['==', ['get', 'selected'], 1], 16, 13],
             'circle-color': ['get', 'regionColor'],
             'circle-stroke-width': 2,
-            'circle-stroke-color': '#202124',
+            'circle-stroke-color': MAP_INK,
           },
         });
       });
@@ -631,17 +656,27 @@ export function DayMap({
     };
     map.on('style.load', onStyle);
     map.once('load', onStyle);
+    map.on('zoomend', onStyle);
     return () => {
       map.off('style.load', onStyle);
       map.off('load', onStyle);
+      map.off('zoomend', onStyle);
     };
-  }, [selectedEngineerId, selectedRequestId, soloRequestId, snapshot, progressByEngineer, forceLocal, retry]);
+  }, [
+    selectedEngineerId,
+    selectedRequestId,
+    soloRequestId,
+    snapshot,
+    progressByEngineer,
+    forceLocal,
+    retry,
+  ]);
 
   useEffect(() => {
     const map = mapRef.current;
     soloMarkerRef.current?.remove();
     soloMarkerRef.current = null;
-    if (!map || !soloRequestId) return;
+    if (!map || !soloRequestId || !mapReady) return;
     const point = requestMapPoint(snapshot, soloRequestId);
     if (!point) return;
     const pin = document.createElement('div');
@@ -690,11 +725,13 @@ export function DayMap({
           ) : null}
         </div>
       ) : null}
-      {soloRequestId ? null : <div className="pointer-events-none absolute bottom-3 left-3 rounded-xl bg-white/90 px-3 py-2 text-[11px] text-muted shadow">
-        {selectedEngineerId
-          ? 'Показан план выбранного инженера. Пунктир — схематичная связь точек, сплошная линия — геометрия дороги.'
-          : 'План дня без live-позиции инженеров. Пунктир — схематичная связь точек, сплошная линия — геометрия дороги.'}
-      </div>}
+      {soloRequestId ? null : (
+        <div className="pointer-events-none absolute bottom-3 left-3 rounded-xl bg-white/90 px-3 py-2 text-[11px] text-muted shadow">
+          {selectedEngineerId
+            ? 'Показан план выбранного инженера. Пунктир — схематичная связь точек, сплошная линия — геометрия дороги.'
+            : 'План дня без live-позиции инженеров. Пунктир — схематичная связь точек, сплошная линия — геометрия дороги.'}
+        </div>
+      )}
       <div className="absolute right-2 bottom-1 rounded bg-white/90 px-2 text-[10px] text-muted">
         ©{' '}
         <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">

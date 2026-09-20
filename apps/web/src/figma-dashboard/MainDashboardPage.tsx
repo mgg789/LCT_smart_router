@@ -6,27 +6,49 @@ import { DayMap } from '../components/DayMap';
 import {
   ALL_REGIONS,
   filterSnapshotByRegion,
+  type RegionSelection,
   regionOptions,
   regionStyle,
-  type RegionSelection,
 } from '../domain/regions';
 import { useDashboard } from '../hooks/useDashboard';
 import { type CaseExplanation, explainSelection } from '../lib/explanations';
 import { formatDurationMin } from '../lib/time';
+import { AddEntityModal } from './AddEntityModal';
+import { AlertsView } from './AlertsView';
+import { useArtboardScale } from './artboardScale';
 import { FIGMA_ASSETS } from './assets';
+import { ConfirmDangerModal } from './ConfirmDangerModal';
+import { Copyable } from './Copyable';
+import type { DangerActionId } from './confirmPhrase';
+import { DataUploadModal } from './DataUploadModal';
+import { DispatcherAuthPage } from './DispatcherAuthPage';
 import {
+  isNavLocked,
+  sidebarWheelNav,
+  stackSlideDir,
+  stackSlideEnter,
+  stackSlideExit,
+  stackViewKey,
+} from './dashboardSlide';
+import {
+  latenessMinFromSec,
+  readDispatcherSettings,
+  writeDispatcherSettings,
+} from './dispatcherSettings';
+import { EngineersView } from './EngineersView';
+import {
+  type EngineerCard,
   FIGMA_ARTBOARD,
-  NAV_ITEMS,
   filterEngineers,
   formatNotificationCount,
   isCompletedStop,
-  requestCountLabel,
-  routeStopStatusLabel,
-  truncateEnd,
-  type EngineerCard,
+  NAV_ITEMS,
   type NavItemId,
   type NotificationTone,
   type RouteStop,
+  requestCountLabel,
+  routeStopStatusLabel,
+  truncateEnd,
 } from './fixtures';
 import {
   dashboardViewFromSnapshot,
@@ -36,37 +58,13 @@ import {
   rightPanelMode,
   withTechnicalBreaks,
 } from './fromSnapshot';
-import { AddEntityModal } from './AddEntityModal';
-import { useArtboardScale } from './artboardScale';
-import { DataUploadModal } from './DataUploadModal';
-import { DispatcherAuthPage } from './DispatcherAuthPage';
-import { ConfirmDangerModal } from './ConfirmDangerModal';
-import { SettingsModal } from './SettingsModal';
-import { WelcomeScreen } from './WelcomeScreen';
-import type { DangerActionId } from './confirmPhrase';
-import {
-  latenessMinFromSec,
-  readDispatcherSettings,
-  writeDispatcherSettings,
-} from './dispatcherSettings';
-import { hasStartedWorkDay, markWorkDayStarted, moscowWorkDate } from './welcomeDay';
 import { PolicyComparisonView } from './PolicyComparisonView';
-import { AlertsView } from './AlertsView';
+import { FigmaIcon, FigmaText } from './primitives';
 import { RequestDetailView } from './RequestDetailView';
 import { RequestsView } from './RequestsView';
-import { EngineersView } from './EngineersView';
-import { Copyable } from './Copyable';
 import { shortRequestId } from './requestsTable';
+import { SettingsModal } from './SettingsModal';
 import { ToastColumn } from './ToastColumn';
-import {
-  isNavLocked,
-  sidebarWheelNav,
-  stackSlideDir,
-  stackSlideEnter,
-  stackSlideExit,
-  stackViewKey,
-} from './dashboardSlide';
-import { FigmaIcon, FigmaText } from './primitives';
 import {
   pushToast,
   seedDemoToasts,
@@ -76,6 +74,8 @@ import {
   upsertNewToasts,
   useToasts,
 } from './toasts';
+import { WelcomeScreen } from './WelcomeScreen';
+import { hasStartedWorkDay, markWorkDayStarted, moscowWorkDate } from './welcomeDay';
 
 const NAV_ICONS = {
   navHome: FIGMA_ASSETS.navHome,
@@ -173,7 +173,10 @@ export function MainDashboardPage() {
     () => (dash.snapshot ? filterSnapshotByRegion(dash.snapshot, selectedRegion) : null),
     [dash.snapshot, selectedRegion],
   );
-  const regions = useMemo(() => (dash.snapshot ? regionOptions(dash.snapshot) : []), [dash.snapshot]);
+  const regions = useMemo(
+    () => (dash.snapshot ? regionOptions(dash.snapshot) : []),
+    [dash.snapshot],
+  );
 
   useEffect(() => {
     if (selectedRegion !== ALL_REGIONS && !regions.some((region) => region.id === selectedRegion)) {
@@ -202,7 +205,10 @@ export function MainDashboardPage() {
       ),
     [dash.liveWorkday],
   );
-  const visibleEngineers = useMemo(() => filterEngineers(roster, searchQuery), [roster, searchQuery]);
+  const visibleEngineers = useMemo(
+    () => filterEngineers(roster, searchQuery),
+    [roster, searchQuery],
+  );
   const selectedEngineer = dash.selectedEngineerId
     ? (visibleEngineers.find((item) => item.id === dash.selectedEngineerId) ?? null)
     : null;
@@ -268,7 +274,10 @@ export function MainDashboardPage() {
     label: policyLabel(item.policyId, item.title),
   }));
   const policyId = dash.snapshot?.policyId ?? 'fast';
-  const policyTitle = policyLabel(policyId, dash.snapshot?.policies.find((item) => item.policyId === policyId)?.title);
+  const policyTitle = policyLabel(
+    policyId,
+    dash.snapshot?.policies.find((item) => item.policyId === policyId)?.title,
+  );
   const lunchOn = dash.snapshot?.lunchesEnabled ?? false;
   const trafficOn = dash.snapshot?.routerSettings?.trafficEnabled ?? false;
   const requestCount = view?.requestCount ?? 0;
@@ -340,7 +349,19 @@ export function MainDashboardPage() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [addOpen, dangerAction, dash, notifOpen, policyOpen, regionOpen, searchOpen, settingsOpen, showRightPanel, uploadOpen, userMenuOpen]);
+  }, [
+    addOpen,
+    dangerAction,
+    dash,
+    notifOpen,
+    policyOpen,
+    regionOpen,
+    searchOpen,
+    settingsOpen,
+    showRightPanel,
+    uploadOpen,
+    userMenuOpen,
+  ]);
 
   const scale = useArtboardScale();
   const motionOn = !reduceMotion;
@@ -369,10 +390,7 @@ export function MainDashboardPage() {
     );
   }
 
-  if (
-    dash.liveWorkday?.workday.status === 'pending' ||
-    (dash.source !== 'live' && welcomeOpen)
-  ) {
+  if (dash.liveWorkday?.workday.status === 'pending' || (dash.source !== 'live' && welcomeOpen)) {
     return (
       <WelcomeScreen
         requestCount={dash.snapshot ? dash.snapshot.requests.length : null}
@@ -468,10 +486,14 @@ export function MainDashboardPage() {
           submitting={false}
           onClose={() => setAddOpen(false)}
           onCreateRequest={async () => {
-            throw new Error('Создание заявки из Dashboard ещё не поддерживается API текущей системы.');
+            throw new Error(
+              'Создание заявки из Dashboard ещё не поддерживается API текущей системы.',
+            );
           }}
           onCreateEngineer={async () => {
-            throw new Error('Создание инженера из Dashboard ещё не поддерживается API текущей системы.');
+            throw new Error(
+              'Создание инженера из Dashboard ещё не поддерживается API текущей системы.',
+            );
           }}
         />
         <PolicyControl
@@ -558,12 +580,17 @@ export function MainDashboardPage() {
         <SettingsModal
           open={settingsOpen}
           motionOn={motionOn}
-          latenessMin={latenessMinFromSec(dash.snapshot?.routerSettings?.windowLatenessToleranceSec ?? readDispatcherSettings(window.localStorage).latenessMin * 60)}
+          latenessMin={latenessMinFromSec(
+            dash.snapshot?.routerSettings?.windowLatenessToleranceSec ??
+              readDispatcherSettings(window.localStorage).latenessMin * 60,
+          )}
           submitting={dash.busy}
           onClose={() => setSettingsOpen(false)}
           onSave={(settings) => {
             writeDispatcherSettings(window.localStorage, settings);
-            const liveMin = latenessMinFromSec(dash.snapshot?.routerSettings?.windowLatenessToleranceSec ?? 0);
+            const liveMin = latenessMinFromSec(
+              dash.snapshot?.routerSettings?.windowLatenessToleranceSec ?? 0,
+            );
             if (dash.snapshot && settings.latenessMin !== liveMin) {
               const latenessSec = settings.latenessMin * 60;
               dash.applyRoutingSettings(
@@ -620,12 +647,12 @@ export function MainDashboardPage() {
           }}
         />
         {activeNav === 'engineers' || (activeNav === 'requests' && openedRequestId) ? null : (
-        <FigmaText
-          className="figma-nowrap absolute left-[180px] z-[15] font-murs text-[32px] tracking-[-0.544px] text-figma-ink"
-          style={{ top: DATE_TOP }}
-        >
-          {view?.dateLabel ?? 'Рабочий день'}
-        </FigmaText>
+          <FigmaText
+            className="figma-nowrap absolute left-[180px] z-[15] font-murs text-[32px] tracking-[-0.544px] text-figma-ink"
+            style={{ top: DATE_TOP }}
+          >
+            {view?.dateLabel ?? 'Рабочий день'}
+          </FigmaText>
         )}
         <div
           className={`absolute inset-0 ${
@@ -657,7 +684,9 @@ export function MainDashboardPage() {
                 <AlertsView
                   snapshot={dash.snapshot}
                   toasts={toasts}
+                  demoMode={dash.isDemo}
                   motionOn={motionOn}
+                  onMarkNoticeSeen={dash.markNoticeSeen}
                   onOpenRequest={(requestId) => {
                     setStackDir(stackSlideDir(stackNav, 'requests'));
                     setStackNav('requests');
@@ -732,7 +761,10 @@ export function MainDashboardPage() {
                     progressByEngineer={liveProgress}
                     frame={mapFrame}
                     regionLabel={regionLabel}
-                    regions={[{ id: ALL_REGIONS, label: 'Все регионы' }, ...regions.map((item) => ({ id: item.id, label: item.label }))]}
+                    regions={[
+                      { id: ALL_REGIONS, label: 'Все регионы' },
+                      ...regions.map((item) => ({ id: item.id, label: item.label })),
+                    ]}
                     selectedRegion={selectedRegion}
                     regionOpen={regionOpen}
                     motionOn={motionOn}
@@ -761,7 +793,11 @@ export function MainDashboardPage() {
                   <AnimatePresence>
                     {showRightPanel ? (
                       <DetailPanel
-                        key={panelMode === 'request' ? dash.selectedRequest?.id ?? 'request' : dash.selectedEngineerId ?? 'plan'}
+                        key={
+                          panelMode === 'request'
+                            ? (dash.selectedRequest?.id ?? 'request')
+                            : (dash.selectedEngineerId ?? 'plan')
+                        }
                         mode={panelMode === 'request' ? 'request' : 'plan'}
                         request={dash.selectedRequest}
                         explanation={panelExplanation}
@@ -961,7 +997,11 @@ function UserMenu({
   onSignOut: () => void;
 }) {
   return (
-    <div data-user-menu className="absolute" style={{ left: HEADER_AVATAR_LEFT, top: HEADER_AVATAR_TOP }}>
+    <div
+      data-user-menu
+      className="absolute"
+      style={{ left: HEADER_AVATAR_LEFT, top: HEADER_AVATAR_TOP }}
+    >
       <motion.button
         type="button"
         onClick={onToggle}
@@ -1180,11 +1220,19 @@ function PolicyControl({
             animate={{ rotate: open ? 180 : 0 }}
             transition={motionOn ? { duration: 0.44, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
           >
-            <FigmaIcon src={FIGMA_ASSETS.policyArrowClosed} alt={open ? 'Свернуть' : 'Открыть политики'} width={43} height={43} />
+            <FigmaIcon
+              src={FIGMA_ASSETS.policyArrowClosed}
+              alt={open ? 'Свернуть' : 'Открыть политики'}
+              width={43}
+              height={43}
+            />
           </motion.span>
         </motion.button>
       </div>
-      <div className={`relative w-[363px] ${open ? '' : 'pointer-events-none'}`} style={{ height: 460 + extra }}>
+      <div
+        className={`relative w-[363px] ${open ? '' : 'pointer-events-none'}`}
+        style={{ height: 460 + extra }}
+      >
         {options.map((option, index) => (
           <motion.button
             key={option.id}
@@ -1341,7 +1389,10 @@ function EngineersColumn({
       <FigmaText className="figma-nowrap absolute left-[30px] top-[68px] z-0 font-semibold text-[18px] tracking-[-0.306px] text-figma-muted">
         {planLabel}
       </FigmaText>
-      <div className="absolute left-[30px] right-[30px] top-[114px] z-0 h-[48px]" data-engineer-search>
+      <div
+        className="absolute left-[30px] right-[30px] top-[114px] z-0 h-[48px]"
+        data-engineer-search
+      >
         <AnimatePresence initial={false}>
           {!searchOpen ? (
             <motion.div
@@ -1469,7 +1520,10 @@ function EngineerRow({
   motionOn: boolean;
   onSelect: () => void;
 }) {
-  const progress = Math.max(8, Math.round((engineer.doneCount / engineer.requestCount) * PROGRESS_TRACK));
+  const progress = Math.max(
+    8,
+    Math.round((engineer.doneCount / engineer.requestCount) * PROGRESS_TRACK),
+  );
 
   return (
     <motion.button
@@ -1617,7 +1671,9 @@ function RegionSwitch({
       initial={false}
       animate={{
         height: open ? 51 + listHeight + 8 : 51,
-        boxShadow: open ? '0 22px 48px rgba(39, 41, 48, 0.18)' : '0 8px 22px rgba(39, 41, 48, 0.12)',
+        boxShadow: open
+          ? '0 22px 48px rgba(39, 41, 48, 0.18)'
+          : '0 8px 22px rgba(39, 41, 48, 0.12)',
       }}
       transition={
         motionOn
@@ -1654,7 +1710,12 @@ function RegionSwitch({
             animate={{ rotate: open ? 180 : 0 }}
             transition={motionOn ? { duration: 0.36, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
           >
-            <FigmaIcon src={FIGMA_ASSETS.policyArrowClosed} alt={open ? 'Свернуть регионы' : 'Выбрать регион'} width={43} height={43} />
+            <FigmaIcon
+              src={FIGMA_ASSETS.policyArrowClosed}
+              alt={open ? 'Свернуть регионы' : 'Выбрать регион'}
+              width={43}
+              height={43}
+            />
           </motion.span>
         </motion.button>
       </div>
@@ -1818,8 +1879,14 @@ function RouteCard({
           <FigmaText className="figma-text-keep-descenders figma-nowrap pointer-events-none absolute left-[30px] top-[68px] font-semibold text-[18px] tracking-[-0.306px] text-figma-muted">
             {engineer.routeUpdated}
           </FigmaText>
-          <div ref={scrollerRef} className="route-scroll absolute inset-x-0 top-[110px] bottom-[22px] overflow-x-auto">
-            <div className="relative px-[30px]" style={{ width: 60 + engineer.stops.length * ROUTE_STOP_WIDTH }}>
+          <div
+            ref={scrollerRef}
+            className="route-scroll absolute inset-x-0 top-[110px] bottom-[22px] overflow-x-auto"
+          >
+            <div
+              className="relative px-[30px]"
+              style={{ width: 60 + engineer.stops.length * ROUTE_STOP_WIDTH }}
+            >
               <div
                 className="absolute top-[19px] h-[3px] bg-figma-ink"
                 style={{
@@ -1967,7 +2034,10 @@ function DetailPanel({
               label="Скопировать номер заявки"
               className="mt-[8px] text-left"
             >
-              <p className="font-semibold text-[20px] tracking-[-0.34px] text-white/60" title={request.id}>
+              <p
+                className="font-semibold text-[20px] tracking-[-0.34px] text-white/60"
+                title={request.id}
+              >
                 {shortRequestId(request.id)}
               </p>
             </Copyable>
@@ -1989,7 +2059,9 @@ function DetailPanel({
           <div className="h-[36px]" />
         )}
         <div className="mt-[16px] flex min-h-[216px] w-full flex-col rounded-[20px] bg-figma-dim px-[20px] py-[22px]">
-          <FigmaText className="font-medium text-[28px] tracking-[-0.84px] text-white">Факты</FigmaText>
+          <FigmaText className="font-medium text-[28px] tracking-[-0.84px] text-white">
+            Факты
+          </FigmaText>
           <p className="mt-[12px] font-medium text-[18px] leading-[24px] tracking-[-0.3px] text-white/70">
             {explanation?.facts.join(' ') || 'Нет фактов по этому выбору.'}
           </p>

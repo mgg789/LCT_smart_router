@@ -20,6 +20,7 @@ export function EngineerMenu({
   email,
   active,
   lunch,
+  breakActive,
   breakPending,
   onClose,
   onNavigate,
@@ -33,6 +34,7 @@ export function EngineerMenu({
   email: string;
   active: EngineerMenuId;
   lunch: EngineerLunchItem | null;
+  breakActive: boolean;
   breakPending: boolean;
   onClose: () => void;
   onNavigate: (id: EngineerMenuId) => void;
@@ -146,7 +148,10 @@ export function EngineerMenu({
                     height={32}
                     style={{ width: eu(32), height: eu(32) }}
                   />
-                  <p className="font-murs tracking-[-0.03em] text-figma-ink" style={{ fontSize: eu(28) }}>
+                  <p
+                    className="font-murs tracking-[-0.03em] text-figma-ink"
+                    style={{ fontSize: eu(28) }}
+                  >
                     Обед
                   </p>
                   <p
@@ -157,7 +162,10 @@ export function EngineerMenu({
                   </p>
                 </div>
               ) : null}
-              <div className="relative mt-auto flex flex-col" style={{ gap: eu(20), paddingTop: eu(28) }}>
+              <div
+                className="relative mt-auto flex flex-col"
+                style={{ gap: eu(20), paddingTop: eu(28) }}
+              >
                 <motion.button
                   type="button"
                   disabled={breakPending}
@@ -178,8 +186,11 @@ export function EngineerMenu({
                     height={32}
                     style={{ width: eu(32), height: eu(32) }}
                   />
-                  <span className="font-murs tracking-[-0.03em] text-figma-ink" style={{ fontSize: eu(28) }}>
-                    Тех. перерыв
+                  <span
+                    className="font-murs tracking-[-0.03em] text-figma-ink"
+                    style={{ fontSize: eu(28) }}
+                  >
+                    {breakActive ? 'Завершить перерыв' : 'Тех. перерыв'}
                   </span>
                 </motion.button>
                 <motion.button
@@ -250,10 +261,12 @@ function MenuItem({
           style={{ width: eu(iconWidth), height: eu(iconHeight) }}
         />
       </span>
-      <span className="font-semibold tracking-[-0.02em] text-figma-ink" style={{ fontSize: eu(26) }}>
+      <span
+        className="font-semibold tracking-[-0.02em] text-figma-ink"
+        style={{ fontSize: eu(26) }}
+      >
         {label}
       </span>
     </button>
   );
 }
-

@@ -20,6 +20,7 @@ export type InboxAlertCard = {
 
 export type InboxNoticeCard = {
   id: string;
+  sourceNoticeId: string | null;
   createdAt: number;
   title: string;
   body: string;
@@ -43,7 +44,9 @@ export function arrivalSeconds(at: number): number {
 
 /** Newest arrival first — same clock for alerts and notices. */
 export function sortByArrival<T extends { createdAt: number }>(items: readonly T[]): T[] {
-  return [...items].sort((left, right) => arrivalSeconds(right.createdAt) - arrivalSeconds(left.createdAt));
+  return [...items].sort(
+    (left, right) => arrivalSeconds(right.createdAt) - arrivalSeconds(left.createdAt),
+  );
 }
 
 /**
@@ -62,25 +65,43 @@ export function formatAlertReason(body: string): string {
 export function inboxFromSources(
   snapshot: DashboardSnapshot | null,
   toasts: readonly ToastNotification[],
+  demoMode = false,
 ): { alerts: InboxAlertCard[]; notices: InboxNoticeCard[] } {
-  const openAlerts = (snapshot?.alerts ?? []).filter((alert) => alert.resolvedAt === null);
-  const sourceToasts = snapshot === null && toasts.length === 0 ? demoInboxToasts() : toasts;
-  const covered = new Set(openAlerts.map((alert) => `alert:${alert.id}`));
+  const snapshotAlerts = snapshot?.alerts ?? [];
+  const openAlerts = snapshotAlerts.filter(
+    (alert) => alert.kind !== 'notice' && alert.resolvedAt === null,
+  );
+  const openNotices = snapshotAlerts.filter(
+    (alert) => alert.kind === 'notice' && alert.seenAt === null,
+  );
+  const sourceToasts = demoMode && snapshot === null && toasts.length === 0 ? demoInboxToasts() : toasts;
+  const covered = new Set([...openAlerts, ...openNotices].map((alert) => `alert:${alert.id}`));
   const alerts = sortByArrival([
-    ...openAlerts.map((alert) => alertCardFromSnapshot(snapshot!, alert)),
+    ...(snapshot ? openAlerts.map((alert) => alertCardFromSnapshot(snapshot, alert)) : []),
     ...sourceToasts
       .filter((toast) => isInboxAlertKind(toast.kind) && !covered.has(toast.id))
       .map(alertCardFromToast),
   ]);
-  const notices = sortByArrival(
-    sourceToasts.filter((toast) => !isInboxAlertKind(toast.kind)).map((toast) => ({
-      id: toast.id,
-      createdAt: toast.createdAt,
-      title: toast.title,
-      body: toast.body || toast.etaLabel || '',
-      toastKind: toast.kind,
+  const notices = sortByArrival([
+    ...openNotices.map((notice) => ({
+      id: `alert:${notice.id}`,
+      sourceNoticeId: notice.id,
+      createdAt: notice.createdAt,
+      title: factorLabel(notice.code),
+      body: notice.reasons.filter(Boolean).join(' · ') || factorLabel(notice.code),
+      toastKind: 'system' as const,
     })),
-  );
+    ...sourceToasts
+      .filter((toast) => !isInboxAlertKind(toast.kind) && !covered.has(toast.id))
+      .map((toast) => ({
+        id: toast.id,
+        sourceNoticeId: null,
+        createdAt: toast.createdAt,
+        title: toast.title,
+        body: toast.body || toast.etaLabel || '',
+        toastKind: toast.kind,
+      })),
+  ]);
   return { alerts, notices };
 }
 
@@ -117,17 +138,25 @@ function alertCardFromSnapshot(snapshot: DashboardSnapshot, alert: AlertView): I
   return {
     id: `alert:${alert.id}`,
     createdAt: alert.createdAt,
-    title: request && unassigned
-      ? `Заявка № ${shortRequestId(request.id)} без назначения`
-      : factorLabel(alert.code),
+    title:
+      request && unassigned
+        ? `Заявка № ${shortRequestId(request.id)} без назначения`
+        : factorLabel(alert.code),
     body: formatAlertReason(alert.reasons.filter(Boolean).join(' · ') || factorLabel(alert.code)),
-    badge: request && requestUrgency(request).tone !== 'neutral'
-      ? requestUrgency(request).label
-      : `Результат в ${formatClock(alert.createdAt)}`,
+    badge:
+      request && requestUrgency(request).tone !== 'neutral'
+        ? requestUrgency(request).label
+        : `Результат в ${formatClock(alert.createdAt)}`,
     engineerName: engineer?.displayName ?? null,
     requestId: request?.id ?? null,
     primaryLabel: lunch ? 'Оставить без обеда' : request ? 'К заявке' : null,
-    secondaryLabel: lunch ? 'Исключить заявку' : request ? (unassigned ? 'Сменить окно' : 'Изменить условия') : null,
+    secondaryLabel: lunch
+      ? 'Исключить заявку'
+      : request
+        ? unassigned
+          ? 'Сменить окно'
+          : 'Изменить условия'
+        : null,
   };
 }
 

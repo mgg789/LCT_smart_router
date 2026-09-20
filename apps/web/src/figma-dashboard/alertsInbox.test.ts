@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { createDevSnapshot } from '../fixtures/dev-day';
-import { arrivalSeconds, formatAlertReason, inboxFromSources, isInboxAlertKind, sortByArrival } from './alertsInbox';
+import {
+  arrivalSeconds,
+  formatAlertReason,
+  inboxFromSources,
+  isInboxAlertKind,
+  sortByArrival,
+} from './alertsInbox';
 import type { ToastNotification } from './toasts';
 
 describe('ALERTS inbox', () => {
@@ -18,7 +24,9 @@ describe('ALERTS inbox', () => {
     expect(inbox.alerts[0]?.requestId).toBe('10490');
     expect(inbox.alerts[0]?.primaryLabel).toBe('К заявке');
     expect(inbox.alerts[0]?.body.startsWith('Причина:')).toBe(true);
-    expect(inbox.alerts.every((item) => item.id.startsWith('alert:') || item.id === 'demo-alert')).toBe(true);
+    expect(
+      inbox.alerts.every((item) => item.id.startsWith('alert:') || item.id === 'demo-alert'),
+    ).toBe(true);
   });
 
   it('does not duplicate a toast that already mirrors a snapshot alert', () => {
@@ -36,8 +44,26 @@ describe('ALERTS inbox', () => {
     expect(inbox.notices).toEqual([]);
   });
 
+  it('keeps an unseen server notice dismissible without treating it as an alert', () => {
+    const snapshot = createDevSnapshot();
+    const source = snapshot.alerts[0];
+    if (!source) throw new Error('fixture must include an alert');
+    const notice = {
+      ...source,
+      id: 'notice-live',
+      kind: 'notice' as const,
+      seenAt: null,
+      resolvedAt: null,
+    };
+    const inbox = inboxFromSources({ ...snapshot, alerts: [notice] }, []);
+    expect(inbox.alerts).toEqual([]);
+    expect(inbox.notices).toEqual([
+      expect.objectContaining({ id: 'alert:notice-live', sourceNoticeId: 'notice-live' }),
+    ]);
+  });
+
   it('fills an empty live inbox from demo toasts so the tab can be reviewed', () => {
-    const inbox = inboxFromSources(null, []);
+    const inbox = inboxFromSources(null, [], true);
     expect(inbox.alerts.length).toBeGreaterThan(0);
     expect(inbox.notices.length).toBeGreaterThan(0);
     expect(inbox.alerts.every((item) => item.title.length > 0)).toBe(true);
@@ -65,7 +91,13 @@ describe('ALERTS inbox', () => {
 
   it('keeps the «К заявке» action only when the alert names a request', () => {
     const inbox = inboxFromSources(null, [
-      { id: 'sector-alert', kind: 'alert', title: 'Алёрт: риск SLA', body: '3 заявки в зоне риска', createdAt: 2 },
+      {
+        id: 'sector-alert',
+        kind: 'alert',
+        title: 'Алёрт: риск SLA',
+        body: '3 заявки в зоне риска',
+        createdAt: 2,
+      },
     ]);
     expect(inbox.alerts[0]?.requestId).toBeNull();
     expect(inbox.alerts[0]?.primaryLabel).toBeNull();
@@ -77,8 +109,10 @@ describe('ALERTS inbox', () => {
     expect(isInboxAlertKind('system')).toBe(false);
     expect(arrivalSeconds(1_700_000_000_000)).toBe(1_700_000_000);
     expect(arrivalSeconds(1_700_000_000)).toBe(1_700_000_000);
-    expect(sortByArrival([{ createdAt: 1 }, { createdAt: 3 }, { createdAt: 2 }]).map((item) => item.createdAt)).toEqual([
-      3, 2, 1,
-    ]);
+    expect(
+      sortByArrival([{ createdAt: 1 }, { createdAt: 3 }, { createdAt: 2 }]).map(
+        (item) => item.createdAt,
+      ),
+    ).toEqual([3, 2, 1]);
   });
 });
