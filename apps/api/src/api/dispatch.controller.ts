@@ -17,6 +17,13 @@ import { LiveService } from '../orchestrator/live';
 import { PolicyService } from '../orchestrator/policy';
 import { RequestsService } from '../orchestrator/requests';
 import { ResetService } from '../orchestrator/reset';
+import {
+  DispatcherSettingsService,
+  GeocodingService,
+  MapRoutingService,
+  moscowMinutesToUnix,
+} from '../orchestrator/settings';
+import { workDateOf } from '../orchestrator/engineers';
 import { APP_STATE_KEYS, PrismaService } from '../persistence';
 import {
   PUBLICATION_TRIGGERS,
@@ -88,6 +95,10 @@ import {
   updateRouterTechnicalSettingsSchema,
 } from './dto/router.dto';
 import {
+  type UpdateDispatcherSettingsDto,
+  updateDispatcherSettingsSchema,
+} from './dto/settings.dto';
+import {
   type EngineerDayView,
   type EngineerView,
   toDayView,
@@ -128,6 +139,9 @@ export class DispatchController {
     private readonly prisma: PrismaService,
     private readonly clock: Clock,
     private readonly live: LiveService,
+    private readonly dispatcherSettings: DispatcherSettingsService,
+    private readonly geocoding: GeocodingService,
+    private readonly mapRouting: MapRoutingService,
   ) {}
 
   @Get('live')
@@ -353,8 +367,8 @@ export class DispatchController {
         payload: dto,
       },
       async (context) =>
-        toEngineerView(
-          await this.engineers.create(context, {
+        await (async () => {
+          const created = await this.engineers.create(context, {
             email: dto.email ?? null,
             displayName: dto.displayName,
             skills: dto.skills,
@@ -362,8 +376,16 @@ export class DispatchController {
             region: dto.region ?? null,
             homeLat: dto.homeLat ?? null,
             homeLon: dto.homeLon ?? null,
-          }),
-        ),
+          });
+          const settings = await this.dispatcherSettings.read(context.tx);
+          const workDate = workDateOf(context.now, this.config.get('APP_TIME_ZONE'));
+          await this.engineers.setWorkday(context, created.id, {
+            workDate,
+            shiftStartAt: moscowMinutesToUnix(workDate, settings.dayStartMin),
+            shiftEndAt: moscowMinutesToUnix(workDate, settings.dayEndMin),
+          });
+          return toEngineerView(created);
+        })(),
     );
     return { engineer: outcome.result };
   }
@@ -753,7 +775,7 @@ export class DispatchController {
       // The moment the shown plan describes. While a recalculation is under way the
       // interface keeps this plan and says it is being rebuilt, rather than clearing the
       // day (context/36 section 6).
-      plan: plan ? toPlanView(plan) : null,
+      plan: plan ? await this.decoratePlan(toPlanView(plan)) : null,
       // Direct relation to the package that produced the working revision. Unlike the
       // diagnostic last package, this cannot be confused by another result received in
       // the same second.
@@ -1037,5 +1059,53 @@ export class DispatchController {
       async (context) => this.resetService.run(context, dto.kind, dto.confirmation),
     );
     return outcome.result;
+  }
+
+  @Get('settings')
+  @ApiOperation({ summary: 'Dispatcher-owned day clock, alert timers and map keys' })
+  async dispatcherSettingsView() {
+    return this.dispatcherSettings.view();
+  }
+
+  @Put('settings')
+  @ApiOperation({ summary: 'Replace dispatcher-owned operational settings' })
+  async updateDispatcherSettings(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(updateDispatcherSettingsSchema)) dto: UpdateDispatcherSettingsDto,
+  ) {
+    const { operationId, ...patch } = dto;
+    const outcome = await this.operations.execute(
+      {
+        operationId,
+        actor,
+        action: 'dispatch.settings.replace',
+        payload: dto,
+      },
+      async (context) => this.dispatcherSettings.replace(context, patch),
+    );
+    return outcome.result;
+  }
+
+  @Get('settings/maps/status')
+  @ApiOperation({ summary: 'Probe configured map providers with a short Moscow sample route' })
+  async mapStatus() {
+    return this.mapRouting.probe();
+  }
+
+  @Get('geocode')
+  @ApiOperation({ summary: 'Structured LocationIQ search for a dispatcher address' })
+  async geocode(
+    @Query('q') q?: string,
+    @Query('city') city?: string,
+    @Query('street') street?: string,
+  ) {
+    return { hits: await this.geocoding.search({ q, city, street }) };
+  }
+
+  private async decoratePlan(plan: ReturnType<typeof toPlanView>) {
+    const trafficEnabled = this.router.isConfigured()
+      ? ((await this.router.getTechnicalSettings()).trafficEnabled ?? true)
+      : true;
+    return this.mapRouting.enrichPlan(plan, trafficEnabled);
   }
 }

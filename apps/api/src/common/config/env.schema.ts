@@ -121,6 +121,12 @@ export const envSchema = z.object({
   SMTP_HEALTH_URL: z.url().optional(),
   SMTP_POLL_INTERVAL_MS: z.coerce.number().int().min(1_000).max(120_000).default(15_000),
   SMTP_APP_BASE_URL: z.url().default('https://navix.droidje.com'),
+
+  /**
+   * LocationIQ key for dispatcher address search. Absent means geocoding stays
+   * unavailable and the caller must pick a point on the map instead.
+   */
+  LOCATION_IQ_TOKEN: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

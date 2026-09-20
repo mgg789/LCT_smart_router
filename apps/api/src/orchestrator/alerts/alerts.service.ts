@@ -14,11 +14,7 @@ import {
   ExecutionTimingPolicy,
 } from '../facts/execution-timing-policy';
 import { type AlertAction, alertActionsFor, resolutionDelay } from './alert-policy';
-
-const NO_SHOW_SECONDS = 30 * 60;
-// Router's exact tolerance is contextual; before it is exposed in a plan result, a five
-// minute floor prevents a harmless one-second schedule variance becoming dispatcher work.
-const REPEAT_AFTER_SECONDS = 15 * 60;
+import { DispatcherSettingsService } from '../settings/dispatcher-settings.service';
 /** Router's immutable comparison evidence for one manual plan on one exact input. */
 const manualEvaluationSchema = z.object({
   input_hash: z.string().min(1),
@@ -83,7 +79,20 @@ export class AlertsService {
     private readonly notifications: NotificationsService,
     private readonly router: RouterClient,
     @Optional() private readonly timing?: ExecutionTimingPolicy,
+    @Optional() private readonly dispatcherSettings?: DispatcherSettingsService,
   ) {}
+
+  private async thresholds(db: PrismaService | Tx = this.prisma) {
+    if (!this.dispatcherSettings) {
+      return {
+        noShowSec: 30 * 60,
+        overdueSec: 5 * 60,
+        timeRiskSec: 5 * 60,
+        repeatAfterSec: 15 * 60,
+      };
+    }
+    return this.dispatcherSettings.read(db);
+  }
 
   /** Refreshes timer-derived conditions before a dashboard reads the queue. */
   async list(workDate?: string): Promise<AlertView[]> {
@@ -607,7 +616,7 @@ export class AlertsService {
         data: {
           availability: 'online',
           attendanceOptOut: false,
-          attendanceGraceUntil: BigInt(context.now + NO_SHOW_SECONDS),
+          attendanceGraceUntil: BigInt(context.now + (await this.thresholds(context.tx)).noShowSec),
           updatedAt: BigInt(context.now),
           version: { increment: 1 },
         },
@@ -769,6 +778,7 @@ export class AlertsService {
   private async refresh(tx: Tx, now: number, scopeDate?: string): Promise<void> {
     await lockAlertQueue(tx);
     now = await businessNow(tx, now, scopeDate);
+    const thresholds = await this.thresholds(tx);
     const active = new Set<string>();
     const liveRunning = await tx.liveWorkday.findFirst({
       where: {
@@ -873,7 +883,7 @@ export class AlertsService {
     for (const day of days) {
       if (day.attendanceOptOut) continue;
       if (
-        now >= Number(day.shiftStartAt) + NO_SHOW_SECONDS &&
+        now >= Number(day.shiftStartAt) + thresholds.noShowSec &&
         now <= Number(day.shiftEndAt) &&
         (day.attendanceGraceUntil === null || now >= Number(day.attendanceGraceUntil)) &&
         (day.lastAttendanceAt === null || day.lastAttendanceAt < day.shiftStartAt)
@@ -889,7 +899,7 @@ export class AlertsService {
           workDate: day.workDate,
           reasons: {
             shiftStartAt: Number(day.shiftStartAt),
-            thresholdAt: Number(day.shiftStartAt) + NO_SHOW_SECONDS,
+            thresholdAt: Number(day.shiftStartAt) + thresholds.noShowSec,
           },
         });
       }
@@ -1038,7 +1048,7 @@ export class AlertsService {
           (lateStop.requestId
             ? (liveStateByRequest.get(lateStop.requestId)?.reportedEtaAt ?? null) === null
             : false) &&
-          now > Number(lateStop.startAt) + timing.taskOverrunToleranceSec &&
+          now > Number(lateStop.startAt) + (thresholds.overdueSec || timing.taskOverrunToleranceSec) &&
           Number(day.lastAttendanceAt ?? 0n) < Number(lateStop.arrivalAt)
         ) {
           const key = `system:engineer_overdue:edge:${day.id}:${lateStop.requestId}`;
@@ -1221,7 +1231,7 @@ export class AlertsService {
       if (!['shift_no_show', 'engineer_overdue'].includes(input.code)) return;
       if (
         latest.resolutionAction === 'message' &&
-        now - Number(latest.resolvedAt) < REPEAT_AFTER_SECONDS
+        now - Number(latest.resolvedAt) < (await this.thresholds(tx)).repeatAfterSec
       )
         return;
     }
