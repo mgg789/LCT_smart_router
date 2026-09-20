@@ -11,8 +11,8 @@ import { AppliedPlanService } from '../routing/router-gateway';
 import {
   type ConfirmEmailChangeDto,
   confirmEmailChangeSchema,
-  engineerActionSchema,
   type EngineerActionDto,
+  engineerActionSchema,
   type RequestEmailChangeDto,
   requestEmailChangeSchema,
   type SetAvailabilityDto,
@@ -252,12 +252,20 @@ export class EngineerController {
     explicitEngineerId: string | null | undefined,
   ): Promise<EngineerWithAccount> {
     if (actor.accountId) {
-      if (explicitEngineerId !== undefined && explicitEngineerId !== null && explicitEngineerId !== '') {
+      if (
+        explicitEngineerId !== undefined &&
+        explicitEngineerId !== null &&
+        explicitEngineerId !== ''
+      ) {
         throw SysError.forbidden('A session acts on its own engineer; do not pass engineerId');
       }
       return this.engineers.byAccount(this.prisma, actor.accountId);
     }
-    if (explicitEngineerId === undefined || explicitEngineerId === null || explicitEngineerId === '') {
+    if (
+      explicitEngineerId === undefined ||
+      explicitEngineerId === null ||
+      explicitEngineerId === ''
+    ) {
       throw SysError.validationFailed(
         'An integration key must name the engineer: pass engineerId',
         { engineerId: 'required' },
@@ -292,7 +300,9 @@ export class EngineerController {
   }
 
   @Get('plan')
-  @ApiOperation({ summary: 'The working plan for the signed-in engineer, or the engineerId a key names' })
+  @ApiOperation({
+    summary: 'The working plan for the signed-in engineer, or the engineerId a key names',
+  })
   async plan(@CurrentActor() actor: Actor, @Query('engineerId') engineerId?: string) {
     const engineer = await this.subjectOf(actor, engineerId);
     const plan = await this.plans.current(this.prisma);

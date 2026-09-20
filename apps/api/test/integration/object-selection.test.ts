@@ -161,7 +161,10 @@ describe('external object selection', () => {
         key.token,
       );
       assert.equal(profile.status, 200);
-      assert.equal(((await profile.json()) as { engineer: { id: string } }).engineer.id, engineerId);
+      assert.equal(
+        ((await profile.json()) as { engineer: { id: string } }).engineer.id,
+        engineerId,
+      );
 
       // Without a named object a key has no subject: refused as a caller error.
       const anonymous = await request('GET', '/api/v1/engineer/profile', undefined, key.token);
@@ -207,16 +210,21 @@ describe('external object selection', () => {
       createdEmails.push(customerEmail);
       const key = await createKey(unique('client-key'), 'client');
 
-      const prepare = await request('POST', '/api/v1/client/requests', {
-        operationId: crypto.randomUUID(),
-        clientEmail: customerEmail,
-        contactName: 'Внешний клиент',
-        addressText: 'Москва, ул. Тверская, 1',
-        workType: 'connection_request',
-        windowStartAt: nowSeconds() + 3_600,
-        windowEndAt: nowSeconds() + 7_200,
-        urgent: false,
-      }, key.token);
+      const prepare = await request(
+        'POST',
+        '/api/v1/client/requests',
+        {
+          operationId: crypto.randomUUID(),
+          clientEmail: customerEmail,
+          contactName: 'Внешний клиент',
+          addressText: 'Москва, ул. Тверская, 1',
+          workType: 'connection_request',
+          windowStartAt: nowSeconds() + 3_600,
+          windowEndAt: nowSeconds() + 7_200,
+          urgent: false,
+        },
+        key.token,
+      );
       assert.equal(prepare.status, 201);
       const draft = ((await prepare.json()) as { request: { id: string; lifecycle: string } })
         .request;
@@ -244,12 +252,7 @@ describe('external object selection', () => {
       const { requests } = (await listed.json()) as { requests: Array<{ id: string }> };
       assert.ok(requests.some((item) => item.id === draft.id));
 
-      const anonymousList = await request(
-        'GET',
-        '/api/v1/client/requests',
-        undefined,
-        key.token,
-      );
+      const anonymousList = await request('GET', '/api/v1/client/requests', undefined, key.token);
       assert.equal(anonymousList.status, 422, 'a key without a named customer has nothing to list');
     });
 
@@ -269,15 +272,20 @@ describe('external object selection', () => {
       );
       assert.equal(profile.status, 200);
 
-      const prepare = await request('POST', '/api/v1/client/requests', {
-        operationId: crypto.randomUUID(),
-        clientEmail: customerEmail,
-        contactName: 'Комбинированный ключ',
-        addressText: 'Москва, ул. Мясницкая, 35',
-        workType: 'connection_request',
-        windowStartAt: nowSeconds() + 3_600,
-        windowEndAt: nowSeconds() + 7_200,
-      }, key.token);
+      const prepare = await request(
+        'POST',
+        '/api/v1/client/requests',
+        {
+          operationId: crypto.randomUUID(),
+          clientEmail: customerEmail,
+          contactName: 'Комбинированный ключ',
+          addressText: 'Москва, ул. Мясницкая, 35',
+          workType: 'connection_request',
+          windowStartAt: nowSeconds() + 3_600,
+          windowEndAt: nowSeconds() + 7_200,
+        },
+        key.token,
+      );
       assert.equal(prepare.status, 201);
     });
   });
@@ -288,26 +296,36 @@ describe('external object selection', () => {
       createdEmails.push(email);
       const token = await sessionFor(email, 'client');
 
-      const hijack = await request('POST', '/api/v1/client/requests', {
-        operationId: crypto.randomUUID(),
-        clientEmail: `${unique('victim')}@example.test`,
-        contactName: 'Не владелец сессии',
-        addressText: 'Москва, ул. Тверская, 1',
-        workType: 'connection_request',
-        windowStartAt: nowSeconds() + 3_600,
-        windowEndAt: nowSeconds() + 7_200,
-      }, token);
+      const hijack = await request(
+        'POST',
+        '/api/v1/client/requests',
+        {
+          operationId: crypto.randomUUID(),
+          clientEmail: `${unique('victim')}@example.test`,
+          contactName: 'Не владелец сессии',
+          addressText: 'Москва, ул. Тверская, 1',
+          workType: 'connection_request',
+          windowStartAt: nowSeconds() + 3_600,
+          windowEndAt: nowSeconds() + 7_200,
+        },
+        token,
+      );
       assert.equal(hijack.status, 403);
       assert.equal(((await hijack.json()) as ErrorBody).error.code, 'FORBIDDEN');
 
-      const own = await request('POST', '/api/v1/client/requests', {
-        operationId: crypto.randomUUID(),
-        contactName: 'Владелец сессии',
-        addressText: 'Москва, ул. Тверская, 1',
-        workType: 'connection_request',
-        windowStartAt: nowSeconds() + 3_600,
-        windowEndAt: nowSeconds() + 7_200,
-      }, token);
+      const own = await request(
+        'POST',
+        '/api/v1/client/requests',
+        {
+          operationId: crypto.randomUUID(),
+          contactName: 'Владелец сессии',
+          addressText: 'Москва, ул. Тверская, 1',
+          workType: 'connection_request',
+          windowStartAt: nowSeconds() + 3_600,
+          windowEndAt: nowSeconds() + 7_200,
+        },
+        token,
+      );
       assert.equal(own.status, 201);
     });
 
