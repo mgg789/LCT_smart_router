@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   alertActionsFor,
+  lunchCoverageWitness,
   policyCoverageRegressed,
   resolutionDelay,
 } from '../../src/orchestrator/alerts';
@@ -30,4 +31,18 @@ test('policy coverage compares counts, not request identity', () => {
   assert.equal(policyCoverageRegressed(['old-a', 'old-b'], ['new-a']), true);
   // Completed/cancelled requests are removed from the baseline before this helper is called.
   assert.equal(policyCoverageRegressed(['still-submitted'], []), true);
+});
+
+test('lunch conflict requires a future verified coverage-gain witness', () => {
+  assert.deepEqual(
+    lunchCoverageWitness({
+      code: 'LUNCH_COVERAGE_GAIN',
+      facts: { additional_assigned_count: 1, lunch_start_at: 10_000 },
+    }),
+    { additional_assigned_count: 1, lunch_start_at: 10_000 },
+  );
+  assert.equal(
+    lunchCoverageWitness({ code: 'LUNCH_NOT_PLACED', facts: { lunch_start_at: 10_000 } }),
+    null,
+  );
 });

@@ -9,6 +9,9 @@ export function RequestMap({ lat, lon }: { lat: number; lon: number }) {
   useEffect(() => {
     if (!container.current) return;
     let map: maplibregl.Map | undefined;
+    const resize = new ResizeObserver(() => map?.resize());
+    resize.observe(container.current);
+    setUnavailable(false);
     try {
       map = new maplibregl.Map({
         container: container.current,
@@ -21,7 +24,10 @@ export function RequestMap({ lat, lon }: { lat: number; lon: number }) {
     } catch {
       setUnavailable(true);
     }
-    return () => map?.remove();
+    return () => {
+      resize.disconnect();
+      map?.remove();
+    };
   }, [lat, lon]);
   return (
     <>

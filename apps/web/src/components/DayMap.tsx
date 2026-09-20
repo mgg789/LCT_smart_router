@@ -108,6 +108,7 @@ export function visiblePlannedSegments(
     const to = resolveVisibleEndpoint(route, graph.mapNodes, last);
     if (!from || !to || from.key === to.key) continue;
     const key = `${from.key}->${to.key}`;
+    if (!graph.mapSegments.some((edge) => edge.key === key)) continue;
     const rank = (value: MapRouteSegment) =>
       value.approximate
         ? 0

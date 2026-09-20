@@ -19,7 +19,7 @@ describe('ALERTS inbox', () => {
     ];
     const inbox = inboxFromSources(snapshot, toasts);
     expect(inbox.alerts[0]?.id).toBe('alert:alert-video');
-    expect(inbox.alerts.some((item) => item.id === 'demo-alert')).toBe(true);
+    expect(inbox.alerts.some((item) => item.id === 'demo-alert')).toBe(false);
     expect(inbox.notices.map((item) => item.id)).toEqual(['n-new', 'n-old']);
     expect(inbox.alerts[0]?.requestId).toBe('10490');
     expect(inbox.alerts[0]?.primaryLabel).toBe('К заявке');

@@ -1,8 +1,14 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { useState } from 'react';
+import { describe, expect, it, vi } from 'vitest';
 import type { EngineerLiveView } from '../api/live';
 import { DESIGN_PREVIEW_PLAN } from './designPreview';
 import { LiveControls, LiveDayOverlay } from './LiveControls';
+
+vi.mock('react', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react')>();
+  return { ...actual, useState: vi.fn(actual.useState) };
+});
 
 const stats = {
   completedCount: 1,
@@ -59,6 +65,15 @@ const overlay = (value: EngineerLiveView) =>
   renderToStaticMarkup(<LiveDayOverlay live={value} now={100} busy={false} send={send} />);
 
 describe('Figma engineer LIVE controls', () => {
+  it('replaces the window with one arrival label and aligned rectangular controls', () => {
+    vi.mocked(useState).mockReturnValueOnce(['eta', vi.fn()]);
+    const html = controls(live);
+    expect(html.match(/>Время прибытия</g)).toHaveLength(1);
+    expect(html).toContain('type="time"');
+    expect(html).toContain('Установить');
+    expect(html).not.toContain('Закрыть форму');
+    expect(html).toContain('height:calc(82 * var(--eu))');
+  });
   it('switches from arrival promises to start and then finish/problem', () => {
     const current = live.current;
     if (!current) throw new Error('Missing current visit');

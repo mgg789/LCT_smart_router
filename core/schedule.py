@@ -166,7 +166,7 @@ def schedule_steps(
     if len([x for x in steps if x is not None]) != len(set(x for x in steps if x is not None)):
         return None
     lunch_count = steps.count(None)
-    active_lunch = engineer.lunch.enabled and not engineer.lunch_taken
+    active_lunch = release is not None and engineer.lunch.enabled and not engineer.lunch_taken
     if lunch_count > 1 or (lunch_count and not active_lunch):
         return None
     if active_lunch and engineer.lunch.required and lunch_count != 1:
@@ -278,7 +278,7 @@ def schedule_steps(
             )
         )
         clock, location = end, request.location
-    if not engineer.lunch.enabled:
+    if not engineer.lunch.enabled or release is None:
         lunch_result = LunchResult(status="disabled")
     elif engineer.lunch_taken:
         lunch_result = LunchResult(status="already_taken")
@@ -312,17 +312,24 @@ def fixed_order(
     snapshot: RouterTaskSnapshot, engineer: Engineer, jobs: list[str], travel: TravelProvider
 ) -> EngineerRoute | None:
     """Try permitted lunch anchors without reordering jobs; prefer a feasible lunch."""
+    if release_at(snapshot, engineer) is None and not jobs:
+        return schedule_steps(snapshot, engineer, [], travel)
     if engineer.lunch.enabled and not engineer.lunch_taken:
         # Prefer an actual field stop once work has begun. Position zero remains a
         # feasibility fallback (and the only choice for a lunch-only route), but trying it
         # first placed every engineer's lunch at the shared regional depot.
         positions = [*range(1, len(jobs) + 1), 0] if jobs else [0]
+        candidates = []
         for position in positions:
             route = schedule_steps(
                 snapshot, engineer, jobs[:position] + [None] + jobs[position:], travel
             )
             if route is not None:
-                return route
+                candidates.append(route)
+        if candidates:
+            # Keep coverage/order fixed; place lunch where it consumes the least
+            # productive time. Stable ties retain the field-stop preference.
+            return min(candidates, key=lambda r: (r.finish_at or 0, r.metrics.waiting_time_sec))
         if engineer.lunch.required:
             return None
     route = schedule_steps(snapshot, engineer, jobs, travel)

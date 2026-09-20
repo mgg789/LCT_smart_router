@@ -10,6 +10,7 @@ import { AllExceptionsFilter } from '../../src/common/errors';
 import { BigIntGuardInterceptor } from '../../src/common/serialization';
 import type { PrismaClient } from '../../src/generated/prisma/client';
 import { LiveService } from '../../src/orchestrator/live/live.service';
+import { AlertsService } from '../../src/orchestrator/alerts/alerts.service';
 import type { RouterTaskSnapshot } from '../../src/routing/mount-data-eng';
 import { createTestClient, databaseUrl, unique } from '../support/database';
 import { buildRouterResult } from '../support/router-result';
@@ -610,6 +611,15 @@ describe('LIVE workday', () => {
     assert.equal(state.reportedEtaAt, null);
     assert.equal(state.replanPendingEngineerId, engineer.id);
     assert.ok(state.replanRequestedAt);
+    await app.get(AlertsService).refreshAll();
+    assert.equal(
+      (
+        await prisma.alert.findUniqueOrThrow({
+          where: { id: `live-window-infeasible-${view.workday.id}-${request.id}` },
+        })
+      ).resolvedAt,
+      null,
+    );
     assert.ok(
       await prisma.alert.findUnique({
         where: { id: `live-window-infeasible-${view.workday.id}-${request.id}` },
@@ -636,6 +646,15 @@ describe('LIVE workday', () => {
       (await liveView(engineer.token)).current?.request.id,
       request.id,
       'a newer accepted revision releases the revision-scoped waiting state',
+    );
+    await app.get(AlertsService).refreshAll();
+    assert.notEqual(
+      (
+        await prisma.alert.findUniqueOrThrow({
+          where: { id: `live-window-infeasible-${view.workday.id}-${request.id}` },
+        })
+      ).resolvedAt,
+      null,
     );
   });
 

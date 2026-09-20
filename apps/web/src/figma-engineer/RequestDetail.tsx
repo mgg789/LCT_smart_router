@@ -62,7 +62,7 @@ export function RequestDetail({
       </header>
 
       <div
-        className="relative overflow-hidden bg-black"
+        className="relative overflow-hidden bg-white"
         style={{ marginTop: eu(36), height: eu(287), borderRadius: eu(26) }}
       >
         <RequestMap

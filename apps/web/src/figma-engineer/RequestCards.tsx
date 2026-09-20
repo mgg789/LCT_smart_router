@@ -136,12 +136,14 @@ function UpcomingCard({
             />
             <span>{formatMinutesRu(item.request.serviceDurationSec)}</span>
           </div>
-          <span
-            className="inline-flex rounded-full bg-figma-ink font-semibold text-white"
-            style={{ marginTop: eu(16), padding: `${eu(14)} ${eu(24)}`, fontSize: eu(22) }}
-          >
-            {formatPlanWindow(item.request.windowStartAt, item.request.windowEndAt)}
-          </span>
+          {actions === undefined ? (
+            <span
+              className="inline-flex rounded-full bg-figma-ink font-semibold text-white"
+              style={{ marginTop: eu(16), padding: `${eu(7)} ${eu(30)}`, fontSize: eu(22) }}
+            >
+              {formatPlanWindow(item.request.windowStartAt, item.request.windowEndAt)}
+            </span>
+          ) : null}
         </div>
         <MapThumb onRoute={onRoute} />
       </div>
@@ -244,7 +246,7 @@ function RegularCard({
           className="inline-flex items-center rounded-full bg-figma-ink font-semibold text-white"
           style={{
             marginTop: eu(16),
-            padding: `${eu(14)} ${eu(24)}`,
+            padding: `${eu(7)} ${eu(30)}`,
             fontSize: eu(22),
           }}
         >

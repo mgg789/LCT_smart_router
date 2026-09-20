@@ -218,9 +218,31 @@ export class AlertsService {
     });
     const code = canonicalRouterCode(input.code);
     if (liveDay && ['time_risk', 'unassigned'].includes(code)) return;
-    if (liveDay && code === 'lunch_conflict' && !hasLunchCoverageWitness(input.reasons)) return;
     const workDate = input.workDate ?? (await this.workDateForEngineer(tx, input.engineerIds[0]));
     now = await businessNow(tx, now, workDate ?? undefined);
+    if (liveDay && code === 'lunch_conflict') {
+      const witness = lunchCoverageWitness(input.reasons);
+      const day = input.engineerIds[0]
+        ? await tx.engineerDay.findUnique({
+            where: {
+              engineerId_workDate: {
+                engineerId: input.engineerIds[0],
+                workDate: workDate ?? '',
+              },
+            },
+            select: { availability: true, lunchTaken: true, lunchWindowEndAt: true },
+          })
+        : null;
+      if (
+        !witness ||
+        witness.lunch_start_at <= now ||
+        !day ||
+        day.availability !== 'online' ||
+        day.lunchTaken ||
+        (day.lunchWindowEndAt !== null && now >= Number(day.lunchWindowEndAt))
+      )
+        return;
+    }
     // Router reuses e.g. lunch:{engineer} across dates. A condition, not a transient
     // result id, is the durable identity of the alert episode.
     const conditionKey = `router:${code}:${workDate ?? 'unknown'}:${[...input.engineerIds].sort().join(',')}:${[...input.requestIds].sort().join(',')}`;
@@ -749,15 +771,47 @@ export class AlertsService {
     now = await businessNow(tx, now, scopeDate);
     const active = new Set<string>();
     const liveRunning = await tx.liveWorkday.findFirst({
-      where: { status: 'running' },
+      where: {
+        status: { in: ['running', 'finished'] },
+        ...(scopeDate ? { workDate: scopeDate } : {}),
+      },
       orderBy: { startedAtWallSec: 'desc' },
       select: { id: true },
     });
     const routerAlerts = await tx.alert.findMany({
       where: { dedupKey: { startsWith: 'router:' }, invalidatedAt: null },
-      select: { id: true, reasons: true },
+      select: { id: true, code: true, reasons: true, engineerIds: true, workDate: true },
     });
     for (const alert of routerAlerts) {
+      const lunchDay =
+        alert.code === 'lunch_conflict' && alert.engineerIds[0] && alert.workDate
+          ? await tx.engineerDay.findUnique({
+              where: {
+                engineerId_workDate: { engineerId: alert.engineerIds[0], workDate: alert.workDate },
+              },
+              include: { engineer: true },
+            })
+          : null;
+      if (
+        alert.code === 'lunch_conflict' &&
+        ((liveRunning && lunchCoverageWitness(alert.reasons) === null) ||
+          (lunchDay &&
+            (lunchDay.engineer.archivedAt !== null ||
+              lunchDay.availability !== 'online' ||
+              lunchDay.lunchTaken ||
+              !lunchDay.lunchEnabled ||
+              now >= Number(lunchDay.lunchWindowEndAt ?? lunchDay.shiftEndAt))))
+      ) {
+        await tx.alert.update({
+          where: { id: alert.id },
+          data: {
+            invalidatedAt: BigInt(now),
+            resolvedAt: BigInt(now),
+            resolutionAction: 'superseded',
+          },
+        });
+        continue;
+      }
       const lunchStartAt = lunchCoverageWitness(alert.reasons)?.lunch_start_at ?? null;
       if (lunchStartAt !== null && now >= lunchStartAt) {
         await tx.alert.update({
@@ -770,9 +824,51 @@ export class AlertsService {
         });
       }
     }
+    const liveWindowAlerts = await tx.alert.findMany({
+      where: { code: 'LIVE_WINDOW_COMPLETION_RISK', resolvedAt: null, invalidatedAt: null },
+      select: { id: true, requestIds: true, engineerIds: true },
+    });
+    const accepted =
+      liveWindowAlerts.length > 0
+        ? await tx.appliedPlanCurrent.findUnique({
+            where: { id: 'singleton' },
+            select: { plan: { select: { revision: true } } },
+          })
+        : null;
+    for (const alert of liveWindowAlerts) {
+      const requestId = alert.requestIds[0];
+      const request = requestId ? await tx.request.findUnique({ where: { id: requestId } }) : null;
+      const state = requestId
+        ? await tx.liveRequestState.findFirst({
+            where: { requestId, workday: { status: 'running' } },
+          })
+        : null;
+      // Releasing an infeasible ETA clears reportedEtaAt intentionally. The
+      // incident belongs to the pending reassignment until the window expires.
+      const activeRisk =
+        request !== null &&
+        request.lifecycle === 'submitted' &&
+        now <= Number(request.windowEndAt) &&
+        state !== null &&
+        state.replanPendingEngineerId !== null &&
+        (accepted === null || accepted.plan.revision === state.replanPendingPlanRevision) &&
+        alert.engineerIds.includes(state.replanPendingEngineerId);
+      if (!activeRisk) {
+        await tx.alert.update({
+          where: { id: alert.id },
+          data: {
+            invalidatedAt: BigInt(now),
+            resolvedAt: BigInt(now),
+            resolutionAction: 'superseded',
+          },
+        });
+      }
+    }
     const days = await tx.engineerDay.findMany({
-      where: scopeDate ? { workDate: scopeDate } : {},
-      include: { engineer: { select: { accountId: true } } },
+      where: scopeDate
+        ? { workDate: scopeDate, engineer: { archivedAt: null } }
+        : { engineer: { archivedAt: null } },
+      include: { engineer: { select: { accountId: true, archivedAt: true } } },
     });
     for (const day of days) {
       if (day.attendanceOptOut) continue;
@@ -861,9 +957,13 @@ export class AlertsService {
           ? parsed.data.plannedStartAt
           : Number(stop?.startAt ?? request.startedAt ?? request.windowStartAt);
         const etaRisk =
+          request.lifecycle === 'submitted' &&
+          now <= Number(request.windowEndAt) &&
           state.reportedEtaAt !== null &&
           Number(state.reportedEtaAt) > plannedStartAt + timing.taskOverrunToleranceSec;
         const windowRisk =
+          request.lifecycle === 'submitted' &&
+          now <= Number(request.windowEndAt) &&
           state.reportedEtaAt !== null &&
           Number(state.reportedEtaAt) + request.serviceDurationSec >
             Number(request.windowEndAt) + timing.taskOverrunToleranceSec;
@@ -961,6 +1061,7 @@ export class AlertsService {
       for (const day of days) {
         if (
           !day.lunchEnabled ||
+          now >= Number(day.lunchWindowEndAt ?? day.shiftEndAt) ||
           !day.lunchRequired ||
           day.lunchTaken ||
           day.availability !== 'online' ||
@@ -1100,7 +1201,22 @@ export class AlertsService {
     });
     // A no-show is one attendance episode for one engineer-day. Resolution changes
     // the action state but must not make the same absence produce duplicate episodes.
-    if (latest?.code === 'shift_no_show') return;
+    if (latest?.code === 'shift_no_show') {
+      if (latest.resolutionAction === 'extend') {
+        await tx.alert.update({
+          where: { id: latest.id },
+          data: {
+            resolvedAt: null,
+            invalidatedAt: null,
+            resolutionAction: null,
+            resolutionReason: null,
+            resolutionDelaySec: null,
+            reasons: input.reasons,
+          },
+        });
+      }
+      return;
+    }
     if (latest?.resolvedAt != null && latest.invalidatedAt === null) {
       if (!['shift_no_show', 'engineer_overdue'].includes(input.code)) return;
       if (
@@ -1186,6 +1302,7 @@ export function policyCoverageRegressed(
 
 function canonicalRouterCode(code: string): string {
   const normalized = code.toLowerCase();
+  if (normalized === 'live_window_completion_risk') return 'time_risk';
   if (normalized === 'lunch_coverage_gain') return 'lunch_conflict';
   if (normalized === 'routing_fail') return 'unassigned';
   if (
@@ -1198,7 +1315,8 @@ function hasLunchCoverageWitness(reasons: object): boolean {
   return lunchCoverageWitness(reasons) !== null;
 }
 
-function lunchCoverageWitness(reasons: unknown): { lunch_start_at: number } | null {
+/** Accepts only Router's calculation-backed lunch coverage witness. */
+export function lunchCoverageWitness(reasons: unknown): { lunch_start_at: number } | null {
   const schema = z.object({
     code: z.literal('LUNCH_COVERAGE_GAIN'),
     facts: z.object({

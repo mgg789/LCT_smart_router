@@ -81,7 +81,9 @@ export function inboxFromSources(
   const alerts = sortByArrival([
     ...(snapshot ? openAlerts.map((alert) => alertCardFromSnapshot(snapshot, alert)) : []),
     ...sourceToasts
-      .filter((toast) => isInboxAlertKind(toast.kind) && !covered.has(toast.id))
+      .filter(
+        (toast) => snapshot === null && isInboxAlertKind(toast.kind) && !covered.has(toast.id),
+      )
       .map(alertCardFromToast),
   ]);
   const notices = sortByArrival([

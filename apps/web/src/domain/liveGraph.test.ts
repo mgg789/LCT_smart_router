@@ -17,6 +17,24 @@ interface ExactStateScenario {
 }
 
 describe('LIVE graph projection', () => {
+  it('does not restore past lunch after completed anchors are hidden', () => {
+    const points = pointsForExactState();
+    const graph = projectLiveGraph(
+      exactStateRoute(),
+      {
+        phase: 'finished',
+        origin: points.start,
+        anchor: points.j3,
+        lunch: null,
+        next: null,
+        occurredAt: 460,
+      },
+      new Set(),
+    );
+    expect(graph.mapNodes.map((node) => node.key)).toEqual(['job:j3']);
+    expect(graph.mapSegments).toEqual([]);
+    expect(graph.timelineNodes.some((node) => node.kind === 'lunch')).toBe(true);
+  });
   const origin = { kind: 'start' as const, requestId: null, lat: 55.74, lon: 37.6, at: 0 };
   const first = { kind: 'job' as const, requestId: 'first', lat: 55.75, lon: 37.61, at: 100 };
   const second = { kind: 'job' as const, requestId: 'second', lat: 55.76, lon: 37.62, at: 200 };

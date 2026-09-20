@@ -5,6 +5,7 @@ import { formatLiveCountdown, moscowTimeInputAt } from '../engineer/live';
 import { eu } from './engineerScale';
 import { shouldEnterLiveLine } from './liveSession';
 import { FIGMA_ASSETS } from '../figma-dashboard/assets';
+import { formatPlanWindow } from './engineerClock';
 
 const button =
   'min-h-[calc(82*var(--eu))] rounded-[calc(20*var(--eu))] bg-figma-bee px-4 py-3 font-semibold text-figma-ink disabled:opacity-50';
@@ -50,6 +51,16 @@ export function LiveControls({
   };
   return (
     <div className="flex flex-col gap-3" style={{ marginTop: eu(20), fontSize: eu(24) }}>
+      {!working ? (
+        <span
+          className="inline-flex self-start whitespace-nowrap rounded-full bg-figma-ink font-semibold text-white"
+          style={{ padding: `${eu(7)} ${eu(30)}`, fontSize: eu(22) }}
+        >
+          {form === 'eta'
+            ? 'Время прибытия'
+            : formatPlanWindow(current.request.windowStartAt, current.request.windowEndAt)}
+        </span>
+      ) : null}
       {form !== 'eta' ? (
         <div className="flex" style={{ gap: eu(28), fontSize: eu(28) }}>
           {working ? (
@@ -104,7 +115,8 @@ export function LiveControls({
       ) : null}
       {form === 'eta' ? (
         <form
-          className="flex gap-3"
+          className="flex items-stretch"
+          style={{ gap: eu(28) }}
           onSubmit={(event) => {
             event.preventDefault();
             const etaAt = moscowTimeInputAt(live.workday.workDate, time);
@@ -116,11 +128,14 @@ export function LiveControls({
           }}
         >
           <label className="min-w-0 flex-1">
-            <span className="mb-2 inline-flex rounded-full bg-figma-ink px-3 py-1 text-sm text-white">
-              Время прибытия
-            </span>
             <input
-              className={field}
+              className="w-full border border-figma-ink/20 bg-white text-center text-figma-ink"
+              style={{
+                height: eu(82),
+                borderRadius: eu(20),
+                fontSize: eu(28),
+                paddingInline: eu(16),
+              }}
               type="time"
               aria-label="Время прибытия (Москва)"
               required
@@ -267,18 +282,6 @@ export function LiveControls({
             document.body,
           )
         : null}
-      {form === 'eta' ? (
-        <button
-          type="button"
-          className="text-figma-muted"
-          onClick={() => {
-            setForm(null);
-            setError(null);
-          }}
-        >
-          Закрыть форму
-        </button>
-      ) : null}
       {error && form !== 'problem' ? (
         <p role="alert" className="text-figma-danger">
           {error}
