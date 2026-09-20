@@ -15,12 +15,12 @@
     "travel_time_sec": 56170
   },
   "main": {
-    "plan_sha256": "66b33ae3483f84519b3838a1fd1642738a91235d58b38ef78ee69a0c430c52db",
+    "plan_sha256": "a234b64c92e77581d783887a119d9d8e9a90f8e17f1436c4ae4460706211d373",
     "assigned_count": 48,
     "urgent_assigned_count": 15,
-    "travel_time_sec": 60795,
+    "travel_time_sec": 60320,
     "unassigned_request_ids": [
-      "78540",
+      "66376",
       "97770",
       "79707",
       "94575",

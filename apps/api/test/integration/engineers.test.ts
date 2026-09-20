@@ -2,7 +2,7 @@ import '../support/env';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
-import { after, before, describe, it } from 'node:test';
+import { after, before, describe, it, mock } from 'node:test';
 import type { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { z } from 'zod';
@@ -109,6 +109,9 @@ describe('engineers and working days', () => {
   };
 
   before(async () => {
+    const morning = new Date();
+    morning.setUTCHours(9, 0, 0, 0);
+    mock.timers.enable({ apis: ['Date'], now: morning });
     process.env.NODE_ENV = 'test';
     process.env.AUTH_DEV_EXPOSE_CODES = 'true';
     databaseUrl();
@@ -163,6 +166,7 @@ describe('engineers and working days', () => {
       await prisma.account.deleteMany({ where: { email: { in: emails } } });
     }
     await prisma.$disconnect();
+    mock.timers.reset();
     await app?.close();
   });
 
@@ -200,6 +204,52 @@ describe('engineers and working days', () => {
     const listed = body.engineers.find((item) => item.id === engineer.id);
     assert.equal(listed?.hasAccount, true);
     assert.equal(listed?.email, email);
+  });
+
+  it('creates a routing profile before a login email is known', async () => {
+    const { engineer } = await createEngineer({ email: undefined });
+    assert.equal(engineer.hasAccount, false);
+    assert.equal(engineer.email, null);
+
+    const stored = await prisma.engineer.findUniqueOrThrow({ where: { id: engineer.id } });
+    assert.equal(stored.accountId, null);
+  });
+
+  it('archives an offline engineer, revokes access and hides the profile from the roster', async () => {
+    const { email, engineer } = await createEngineer();
+    const token = await signIn(email);
+
+    const response = await call(
+      'DELETE',
+      `/api/v1/dispatch/engineers/${engineer.id}`,
+      dispatcherToken,
+      { operationId: randomUUID(), expectedVersion: engineer.version },
+    );
+    assert.equal(response.status, 200, await response.clone().text());
+    const archived = ((await response.json()) as EngineerBody).engineer;
+    assert.equal(archived.hasAccount, false);
+    assert.equal(archived.email, null);
+
+    const stored = await prisma.engineer.findUniqueOrThrow({ where: { id: engineer.id } });
+    assert.notEqual(stored.archivedAt, null);
+    assert.equal(stored.accountId, null);
+
+    const listed = await call('GET', '/api/v1/dispatch/engineers', dispatcherToken);
+    const body = (await listed.json()) as { engineers: Array<{ id: string }> };
+    assert.equal(
+      body.engineers.some((item) => item.id === engineer.id),
+      false,
+    );
+    assert.equal((await call('GET', '/api/v1/engineer/profile', token)).status, 401);
+
+    const account = await prisma.account.findUniqueOrThrow({
+      where: { email },
+      include: { roles: true },
+    });
+    assert.equal(
+      account.roles.some((role) => role.role === 'engineer'),
+      false,
+    );
   });
 
   it('gives each engineer their own input order', async () => {
@@ -705,6 +755,59 @@ describe('engineers and working days', () => {
       body: JSON.stringify({ email, code: devCode, role: 'engineer' }),
     });
     assert.equal(verify.status, 401);
+  });
+
+  it('lets the dispatcher replace an engineer login without deleting the profile', async () => {
+    const { email, engineer } = await createEngineer();
+    const oldToken = await signIn(email);
+    const nextEmail = `${unique('changed')}@example.test`;
+    emails.push(nextEmail);
+
+    const changed = await call(
+      'PUT',
+      `/api/v1/dispatch/engineers/${engineer.id}/email`,
+      dispatcherToken,
+      {
+        operationId: randomUUID(),
+        expectedVersion: engineer.version,
+        email: nextEmail,
+      },
+    );
+    assert.equal(changed.status, 200, await changed.clone().text());
+    const view = ((await changed.json()) as EngineerBody).engineer;
+    assert.equal(view.id, engineer.id);
+    assert.equal(view.email, nextEmail);
+    assert.equal(view.version, engineer.version + 1);
+
+    assert.equal((await call('GET', '/api/v1/engineer/profile', oldToken)).status, 401);
+    const nextToken = await signIn(nextEmail);
+    const profile = await call('GET', '/api/v1/engineer/profile', nextToken);
+    assert.equal(profile.status, 200);
+    assert.equal(
+      ((await profile.json()) as { engineer: EngineerBody['engineer'] }).engineer.id,
+      engineer.id,
+    );
+
+    const oldAccount = await prisma.account.findUniqueOrThrow({
+      where: { email },
+      include: { roles: true },
+    });
+    assert.equal(
+      oldAccount.roles.some((role) => role.role === 'engineer'),
+      false,
+    );
+
+    const staleNoOp = await call(
+      'PUT',
+      `/api/v1/dispatch/engineers/${engineer.id}/email`,
+      dispatcherToken,
+      {
+        operationId: randomUUID(),
+        expectedVersion: engineer.version,
+        email: nextEmail,
+      },
+    );
+    assert.equal(staleNoOp.status, 409, await staleNoOp.clone().text());
   });
 
   it('lets only the dispatcher link logins to engineers', async () => {

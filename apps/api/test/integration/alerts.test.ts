@@ -1,7 +1,7 @@
 import '../support/env';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { after, before, describe, it } from 'node:test';
+import { after, before, describe, it, mock } from 'node:test';
 import type { INestApplicationContext } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../../src/app.module';
@@ -37,6 +37,9 @@ describe('dispatcher alert lifecycle', () => {
   const date = '2099-12-31';
 
   before(async () => {
+    const morning = new Date();
+    morning.setUTCHours(9, 0, 0, 0);
+    mock.timers.enable({ apis: ['Date'], now: morning });
     assert.ok(
       process.env.TEST_DATABASE_URL,
       'Use an isolated TEST_DATABASE_URL for alert integration tests',
@@ -66,6 +69,7 @@ describe('dispatcher alert lifecycle', () => {
     await prisma.auditLog.deleteMany({ where: { operationId: { in: opIds } } });
     await prisma.operation.deleteMany({ where: { operationId: { in: opIds } } });
     await prisma.$disconnect();
+    mock.timers.reset();
     await app?.close();
   });
 
@@ -232,7 +236,7 @@ describe('dispatcher alert lifecycle', () => {
     await alerts.refreshAll();
   });
 
-  it('exempts missing email and opt-out days and honours an explicit no-show extension', async () => {
+  it('tracks no-show without email once and honours opt-out and an explicit extension', async () => {
     const now = Math.floor(Date.now() / 1000);
     const workDate = new Date((now + 10800) * 1000).toISOString().slice(0, 10);
     const engineer = await prisma.engineer.create({
@@ -260,7 +264,7 @@ describe('dispatcher alert lifecycle', () => {
     await alerts.refreshAll();
     assert.equal(
       await prisma.alert.count({ where: { engineerIds: { has: engineer.id }, resolvedAt: null } }),
-      0,
+      1,
     );
     const account = await prisma.account.create({
       data: {
@@ -278,6 +282,12 @@ describe('dispatcher alert lifecycle', () => {
     await alerts.refreshAll();
     assert.equal(
       await prisma.alert.count({ where: { engineerIds: { has: engineer.id }, resolvedAt: null } }),
+      1,
+    );
+    assert.equal(
+      await prisma.alert.count({
+        where: { engineerIds: { has: engineer.id }, code: 'shift_no_show' },
+      }),
       1,
     );
     const operationId = randomUUID();
@@ -327,6 +337,57 @@ describe('dispatcher alert lifecycle', () => {
               engineer.id,
             ),
         ),
+    );
+  });
+
+  it('removes stale direct LIVE window alerts and ignores archived engineer days', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const staleAlert = await prisma.alert.create({
+      data: {
+        code: 'LIVE_WINDOW_COMPLETION_RISK',
+        severity: 'warning',
+        engineerIds: [],
+        requestIds: [unique('finished-request')],
+        reasons: [{ code: 'LIVE_WINDOW_COMPLETION_RISK', facts: { completionGraceSec: 600 } }],
+        createdAt: BigInt(now - 60),
+      },
+    });
+    ids.push(staleAlert.id);
+    const archivedEngineer = await prisma.engineer.create({
+      data: {
+        displayName: 'Archived alert test crew',
+        inputOrder: 992,
+        skills: ['local'],
+        transportType: 'car',
+        origin: 'manual',
+        archivedAt: BigInt(now),
+        createdAt: BigInt(now),
+        updatedAt: BigInt(now),
+      },
+    });
+    engineerIds.push(archivedEngineer.id);
+    await prisma.engineerDay.create({
+      data: {
+        engineerId: archivedEngineer.id,
+        workDate: new Date((now + 10800) * 1000).toISOString().slice(0, 10),
+        shiftStartAt: BigInt(now - 3600),
+        shiftEndAt: BigInt(now + 3600),
+        createdAt: BigInt(now),
+        updatedAt: BigInt(now),
+      },
+    });
+    await alerts.refreshAll();
+    const refreshed = await prisma.alert.findUniqueOrThrow({ where: { id: staleAlert.id } });
+    assert.equal(refreshed.invalidatedAt === null, false);
+    assert.equal(
+      await prisma.alert.count({
+        where: {
+          engineerIds: { has: archivedEngineer.id },
+          code: 'shift_no_show',
+          resolvedAt: null,
+        },
+      }),
+      0,
     );
   });
 });

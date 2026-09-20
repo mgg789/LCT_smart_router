@@ -15,6 +15,7 @@ import { LiveModule } from './orchestrator/live';
 import { PolicyModule } from './orchestrator/policy';
 import { RequestsModule } from './orchestrator/requests';
 import { ResetModule } from './orchestrator/reset';
+import { DispatcherSettingsModule } from './orchestrator/settings';
 import { PersistenceModule } from './persistence';
 import { MountDataEngModule } from './routing/mount-data-eng';
 import { RouterGatewayModule } from './routing/router-gateway';
@@ -38,6 +39,7 @@ import { RouterGatewayModule } from './routing/router-gateway';
     MountDataEngModule,
     RouterGatewayModule,
     PolicyModule,
+    DispatcherSettingsModule,
     RequestsModule,
     EngineersModule,
     AlertsModule,

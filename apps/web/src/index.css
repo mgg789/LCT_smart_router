@@ -1,6 +1,54 @@
 @import "tailwindcss";
 @import "maplibre-gl/dist/maplibre-gl.css";
 
+@font-face {
+  font-family: "Murs Gothic";
+  src: url("/fonts/mursgothic-widedark.otf") format("opentype");
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter-SemiBold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("/fonts/Inter-ExtraBold.woff2") format("woff2");
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --color-bee: #fed305;
@@ -9,6 +57,20 @@
   --color-line: #e4e5e7;
   --color-canvas: #fafaf8;
   --color-panel: #171717;
+  --color-figma-canvas: #f1f1f1;
+  --color-figma-ink: #272930;
+  --color-figma-muted: #727478;
+  --color-figma-dim: #555555;
+  --color-figma-bee: #ffc72c;
+  --color-figma-track: #ededed;
+  --color-figma-hint: #b0b0b0;
+  --color-figma-soft: #f4f6f8;
+  --color-figma-sub: #2d2d2d;
+  --color-figma-done: #2f9e44;
+  --color-figma-work: #0a7347;
+  --color-figma-work-bg: #daffe6;
+  --color-figma-cancel: #f72030;
+  --color-figma-danger: #e23b3b;
 }
 
 html,
@@ -19,12 +81,140 @@ body,
 
 body {
   margin: 0;
-  background: var(--color-canvas);
-  color: var(--color-ink);
-  font-family: var(--font-sans);
+  background: var(--color-figma-canvas);
+  color: var(--color-figma-ink);
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Windows renders native scrollbar arrow buttons over compact Figma cards. */
+*::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.font-murs {
+  font-family: "Murs Gothic", sans-serif;
+  font-weight: 800;
+}
+
+.figma-text {
+  text-box-trim: trim-both;
+  text-box-edge: cap alphabetic;
+  word-break: break-word;
+  line-height: normal;
+}
+
+.figma-text-keep-descenders {
+  text-box-trim: trim-start;
+}
+
+.figma-nowrap {
+  white-space: nowrap;
+  word-break: normal;
+}
+
+.nav-glyph-on {
+  filter: brightness(0) invert(1);
+}
+
+.nav-glyph-off {
+  filter: brightness(0) invert(46%);
+}
+
+.route-scroll {
+  scrollbar-width: none;
+}
+
+.route-scroll::-webkit-scrollbar {
+  display: none;
 }
 
 .maplibregl-ctrl-bottom-right,
 .maplibregl-ctrl-bottom-left {
   display: none;
+}
+
+@keyframes copy-row-flash {
+  0% {
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.6);
+  }
+  100% {
+    box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0);
+  }
+}
+
+.copy-row-flash {
+  animation: copy-row-flash 0.55s ease-out;
+}
+
+/**
+ * Engineer phone column: layout width is the device (or 430px on desktop).
+ * `--eu` is one Figma artboard pixel so 670-wide tokens fit without transform/zoom.
+ */
+.engineer-ring-page,
+.engineer-ring-stage {
+  overflow: visible;
+}
+
+.engineer-ring-stage {
+  perspective: 1600px;
+  perspective-origin: 50% 28%;
+  transform-style: preserve-3d;
+  touch-action: none;
+}
+
+.engineer-ring-card {
+  visibility: hidden;
+  transform-origin: 50% 50%;
+  transform-style: preserve-3d;
+  perspective: 900px;
+}
+
+.engineer-ring-card-face {
+  transform-origin: 50% 100%;
+  transform-style: preserve-3d;
+}
+
+.engineer-ring-blur-layer {
+  pointer-events: none;
+  position: absolute;
+  z-index: 16;
+}
+
+.engineer-ring-blur-veil {
+  position: absolute;
+  top: 560px;
+  bottom: 0;
+  width: 780px;
+  backdrop-filter: blur(42px) saturate(1.04);
+  -webkit-backdrop-filter: blur(42px) saturate(1.04);
+}
+
+.engineer-ring-blur-veil-left {
+  left: -200px;
+  mask-image: radial-gradient(ellipse 108% 128% at 0% 100%, #000 0% 38%, transparent 86%);
+  -webkit-mask-image: radial-gradient(ellipse 108% 128% at 0% 100%, #000 0% 38%, transparent 86%);
+}
+
+.engineer-ring-blur-veil-right {
+  right: -200px;
+  mask-image: radial-gradient(ellipse 108% 128% at 100% 100%, #000 0% 38%, transparent 86%);
+  -webkit-mask-image: radial-gradient(ellipse 108% 128% at 100% 100%, #000 0% 38%, transparent 86%);
+}
+
+.engineer-ring-fog {
+  pointer-events: none;
+  position: absolute;
+  z-index: 17;
+  background:
+    radial-gradient(ellipse 240px 200px at 0% 100%, rgba(241, 241, 241, 0.5) 0%, transparent 78%),
+    radial-gradient(ellipse 240px 200px at 100% 100%, rgba(241, 241, 241, 0.5) 0%, transparent 78%);
+}
+
+.engineer-phone {
+  width: min(100%, 430px);
+  min-height: 100%;
+  margin-inline: auto;
+  --eu: calc(min(100vw, 430px) / 670);
 }

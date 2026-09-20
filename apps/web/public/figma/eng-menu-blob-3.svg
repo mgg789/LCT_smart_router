@@ -1,0 +1,21 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="512.819" height="682.508" viewBox="0 0 512.819 682.508" fill="none" xmlns="http://www.w3.org/2000/svg">
+<title>eng menu blob 3</title>
+<g id="Group 11935">
+<path id="Rectangle 9" d="M30.2654 212.01L482.795 78.4692L482.374 682.508L30.2654 682.508V212.01Z" fill="url(#paint0_linear_0_64)"/>
+<rect id="Rectangle 8" x="0.866041" width="429.266" height="160.875" rx="59.5" transform="matrix(0.866041 -0.499972 0.866041 0.499972 0.115914 215.555)" fill="url(#paint1_linear_0_64)" stroke="url(#paint2_linear_0_64)"/>
+</g>
+<defs>
+<linearGradient id="paint0_linear_0_64" x1="268.747" y1="41.0348" x2="711.717" y2="677.287" gradientUnits="userSpaceOnUse">
+<stop stop-color="#F5F5F5"/>
+<stop offset="1" stop-color="#A9A9A9"/>
+</linearGradient>
+<linearGradient id="paint1_linear_0_64" x1="215.133" y1="0" x2="215.133" y2="161.875" gradientUnits="userSpaceOnUse">
+<stop stop-color="#F2F2F2"/>
+<stop offset="1" stop-color="white"/>
+</linearGradient>
+<linearGradient id="paint2_linear_0_64" x1="430.266" y1="80.9376" x2="0" y2="80.9376" gradientUnits="userSpaceOnUse">
+<stop stop-color="white"/>
+<stop offset="1" stop-color="#D4D4D4"/>
+</linearGradient>
+</defs>
+</svg>

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { type Actor, CurrentActor, Roles } from '../auth';
 import { AppConfigService } from '../common/config';
@@ -7,7 +7,7 @@ import { Clock } from '../common/time';
 import { zodBody } from '../common/validation';
 import { OperationsService } from '../operations';
 import { AlertsService } from '../orchestrator/alerts';
-import { EngineersService } from '../orchestrator/engineers';
+import { EngineersService, workDateOf } from '../orchestrator/engineers';
 import {
   DATASET_REGIONS,
   DatasetImportService,
@@ -17,6 +17,12 @@ import { LiveService } from '../orchestrator/live';
 import { PolicyService } from '../orchestrator/policy';
 import { RequestsService } from '../orchestrator/requests';
 import { ResetService } from '../orchestrator/reset';
+import {
+  DispatcherSettingsService,
+  GeocodingService,
+  MapRoutingService,
+  moscowMinutesToUnix,
+} from '../orchestrator/settings';
 import { APP_STATE_KEYS, PrismaService } from '../persistence';
 import {
   PUBLICATION_TRIGGERS,
@@ -45,7 +51,11 @@ import {
   uploadDataPackageSchema,
 } from './dto/data.dto';
 import {
+  type ArchiveEngineerDto,
+  archiveEngineerSchema,
+  type ChangeEngineerEmailDto,
   type CreateEngineerDto,
+  changeEngineerEmailSchema,
   createEngineerSchema,
   type LinkEngineerAccountDto,
   linkEngineerAccountSchema,
@@ -83,6 +93,10 @@ import {
   type UpdateRouterTechnicalSettingsDto,
   updateRouterTechnicalSettingsSchema,
 } from './dto/router.dto';
+import {
+  type UpdateDispatcherSettingsDto,
+  updateDispatcherSettingsSchema,
+} from './dto/settings.dto';
 import {
   type EngineerDayView,
   type EngineerView,
@@ -124,6 +138,9 @@ export class DispatchController {
     private readonly prisma: PrismaService,
     private readonly clock: Clock,
     private readonly live: LiveService,
+    private readonly dispatcherSettings: DispatcherSettingsService,
+    private readonly geocoding: GeocodingService,
+    private readonly mapRouting: MapRoutingService,
   ) {}
 
   @Get('live')
@@ -171,7 +188,7 @@ export class DispatchController {
   }
 
   @Post('requests')
-  @ApiOperation({ summary: 'Create a request on behalf of a customer' })
+  @ApiOperation({ summary: 'Create and submit an unplanned request' })
   async create(
     @CurrentActor() actor: Actor,
     @Body(zodBody(dispatcherCreateRequestSchema)) dto: DispatcherCreateRequestDto,
@@ -184,27 +201,31 @@ export class DispatchController {
         payload: dto,
       },
       async (context) => {
-        const email = dto.clientEmail.trim().toLowerCase();
-        const account = await context.tx.account.upsert({
-          where: { email },
-          update: {},
-          create: {
-            email,
-            createdAt: BigInt(context.now),
-            updatedAt: BigInt(context.now),
-          },
-        });
-        // The account exists so the request has an owner and a real address to write to.
-        // It is not marked as a verified address: only the customer's own login proves
-        // that (context/41 section 10).
-        await context.tx.accountRole.upsert({
-          where: { accountId_role: { accountId: account.id, role: 'client' } },
-          update: {},
-          create: { accountId: account.id, role: 'client', grantedAt: BigInt(context.now) },
-        });
+        let clientAccountId: string | null = null;
+        if (dto.clientEmail) {
+          const email = dto.clientEmail.trim().toLowerCase();
+          const account = await context.tx.account.upsert({
+            where: { email },
+            update: {},
+            create: {
+              email,
+              createdAt: BigInt(context.now),
+              updatedAt: BigInt(context.now),
+            },
+          });
+          // The account exists so the request has an owner and a real address to write to.
+          // It is not marked as a verified address: only the customer's own login proves
+          // that (context/41 section 10).
+          await context.tx.accountRole.upsert({
+            where: { accountId_role: { accountId: account.id, role: 'client' } },
+            update: {},
+            create: { accountId: account.id, role: 'client', grantedAt: BigInt(context.now) },
+          });
+          clientAccountId = account.id;
+        }
 
-        const prepared = await this.requests.prepare(context, account.id, {
-          contactName: dto.contactName,
+        const prepared = await this.requests.prepare(context, clientAccountId, {
+          contactName: dto.contactName ?? null,
           addressText: dto.addressText,
           lat: dto.lat ?? null,
           lon: dto.lon ?? null,
@@ -332,7 +353,7 @@ export class DispatchController {
   }
 
   @Post('engineers')
-  @ApiOperation({ summary: 'Add an engineer by email address' })
+  @ApiOperation({ summary: 'Add an engineer profile, optionally with a login address' })
   async createEngineer(
     @CurrentActor() actor: Actor,
     @Body(zodBody(createEngineerSchema)) dto: CreateEngineerDto,
@@ -345,17 +366,47 @@ export class DispatchController {
         payload: dto,
       },
       async (context) =>
-        toEngineerView(
-          await this.engineers.create(context, {
-            email: dto.email,
+        await (async () => {
+          const created = await this.engineers.create(context, {
+            email: dto.email ?? null,
             displayName: dto.displayName,
             skills: dto.skills,
             transportType: dto.transportType,
             region: dto.region ?? null,
             homeLat: dto.homeLat ?? null,
             homeLon: dto.homeLon ?? null,
-          }),
-        ),
+          });
+          const settings = await this.dispatcherSettings.read(context.tx);
+          const workDate = workDateOf(context.now, this.config.get('APP_TIME_ZONE'));
+          await this.engineers.setWorkday(context, created.id, {
+            workDate,
+            shiftStartAt: moscowMinutesToUnix(workDate, settings.dayStartMin),
+            shiftEndAt: moscowMinutesToUnix(workDate, settings.dayEndMin),
+          });
+          return toEngineerView(created);
+        })(),
+    );
+    return { engineer: outcome.result };
+  }
+
+  @Delete('engineers/:id')
+  @ApiOperation({ summary: 'Archive an engineer profile and revoke its login' })
+  async archiveEngineer(
+    @CurrentActor() actor: Actor,
+    @Param('id') id: string,
+    @Body(zodBody(archiveEngineerSchema)) dto: ArchiveEngineerDto,
+  ): Promise<{ engineer: EngineerView }> {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'engineer.archive',
+        targetRef: id,
+        expectedVersion: dto.expectedVersion ?? null,
+        payload: dto,
+      },
+      async (context) =>
+        toEngineerView(await this.engineers.archive(context, id, dto.expectedVersion ?? null)),
     );
     return { engineer: outcome.result };
   }
@@ -376,6 +427,30 @@ export class DispatchController {
       },
       async (context) =>
         toEngineerView(await this.engineers.linkAccount(context, dto.engineerId, dto.email)),
+    );
+    return { engineer: outcome.result };
+  }
+
+  @Put('engineers/:id/email')
+  @ApiOperation({ summary: 'Replace the login address of an engineer profile' })
+  async changeEngineerEmail(
+    @CurrentActor() actor: Actor,
+    @Param('id') id: string,
+    @Body(zodBody(changeEngineerEmailSchema)) dto: ChangeEngineerEmailDto,
+  ): Promise<{ engineer: EngineerView }> {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'engineer.change_email',
+        targetRef: id,
+        expectedVersion: dto.expectedVersion ?? null,
+        payload: dto,
+      },
+      async (context) =>
+        toEngineerView(
+          await this.engineers.changeEmail(context, id, dto.expectedVersion ?? null, dto.email),
+        ),
     );
     return { engineer: outcome.result };
   }
@@ -699,7 +774,7 @@ export class DispatchController {
       // The moment the shown plan describes. While a recalculation is under way the
       // interface keeps this plan and says it is being rebuilt, rather than clearing the
       // day (context/36 section 6).
-      plan: plan ? toPlanView(plan) : null,
+      plan: plan ? await this.decoratePlan(toPlanView(plan)) : null,
       // Direct relation to the package that produced the working revision. Unlike the
       // diagnostic last package, this cannot be confused by another result received in
       // the same second.
@@ -983,5 +1058,53 @@ export class DispatchController {
       async (context) => this.resetService.run(context, dto.kind, dto.confirmation),
     );
     return outcome.result;
+  }
+
+  @Get('settings')
+  @ApiOperation({ summary: 'Dispatcher-owned day clock, alert timers and map keys' })
+  async dispatcherSettingsView() {
+    return this.dispatcherSettings.view();
+  }
+
+  @Put('settings')
+  @ApiOperation({ summary: 'Replace dispatcher-owned operational settings' })
+  async updateDispatcherSettings(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(updateDispatcherSettingsSchema)) dto: UpdateDispatcherSettingsDto,
+  ) {
+    const { operationId, ...patch } = dto;
+    const outcome = await this.operations.execute(
+      {
+        operationId,
+        actor,
+        action: 'dispatch.settings.replace',
+        payload: dto,
+      },
+      async (context) => this.dispatcherSettings.replace(context, patch),
+    );
+    return outcome.result;
+  }
+
+  @Get('settings/maps/status')
+  @ApiOperation({ summary: 'Probe configured map providers with a short Moscow sample route' })
+  async mapStatus() {
+    return this.mapRouting.probe();
+  }
+
+  @Get('geocode')
+  @ApiOperation({ summary: 'LocationIQ autocomplete for a dispatcher address' })
+  async geocode(
+    @Query('q') q?: string,
+    @Query('city') city?: string,
+    @Query('street') street?: string,
+  ) {
+    return { hits: await this.geocoding.search({ q, city, street }) };
+  }
+
+  private async decoratePlan(plan: ReturnType<typeof toPlanView>) {
+    const trafficEnabled = this.router.isConfigured()
+      ? ((await this.router.getTechnicalSettings()).trafficEnabled ?? true)
+      : true;
+    return this.mapRouting.enrichPlan(plan, trafficEnabled);
   }
 }

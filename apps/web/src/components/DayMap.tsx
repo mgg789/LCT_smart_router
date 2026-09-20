@@ -9,16 +9,45 @@ import {
   projectLiveGraph,
 } from '../domain/liveGraph';
 import { localMapStyle } from '../domain/localBasemap';
+import { ONLINE_MAP_STYLE, watchMapStartup } from '../domain/mapAvailability';
+import {
+  MAP_CANVAS,
+  MAP_INK,
+  MAP_LUNCH_FILL,
+  MAP_LUNCH_STROKE,
+  MAP_ROUTE_DASH_PX,
+  MAP_ROUTE_GAP_PX,
+  mapPaintColor,
+  metersPerPixel,
+  pillDashLine,
+} from '../domain/mapPaint';
 import { regionStyle, requestRegion, routeRegion } from '../domain/regions';
-import { type MapRouteSegment, mapRouteSegments } from '../domain/travel';
+import { requestMapPoint } from '../domain/requestPoint';
+import { type MapRouteSegment, mapRouteSegments, routeLineKind } from '../domain/travel';
 import { engineerColor, skillMark } from '../lib/reasons';
+
+const OSRM_LINE = '#8A8F98';
+const MAP_API_LINE = '#16A34A';
+
+function routeStroke(
+  segment: Pick<MapRouteSegment, 'approximate' | 'source' | 'geometryProvider'>,
+  engineerId: string,
+) {
+  const kind = routeLineKind(segment);
+  if (kind === 'map') return mapPaintColor(MAP_API_LINE);
+  if (kind === 'osrm') return mapPaintColor(OSRM_LINE);
+  return mapPaintColor(engineerColor(engineerId));
+}
 
 interface DayMapProps {
   readonly snapshot: DashboardSnapshot;
   readonly selectedEngineerId: string | null;
   readonly selectedRequestId: string | null;
+  /** When set, the map shows only this request pin. */
+  readonly soloRequestId?: string | null;
   /** Server-owned positions survive a remaining-day route rebuild. */
   readonly progressByEngineer?: ReadonlyMap<string, LiveRouteProgress | null>;
+  readonly completedByEngineer?: ReadonlyMap<string, number>;
   readonly onSelectRequest: (requestId: string) => void;
 }
 
@@ -27,17 +56,31 @@ export interface LiveProgressSegment {
   readonly to: LiveRouteProgress['anchor'];
 }
 
+/** Interpolated position on the current factual edge at the LIVE business time. */
+export function liveProgressPosition(
+  progress: LiveRouteProgress,
+): { readonly lat: number; readonly lon: number } | null {
+  if (progress.phase !== 'traveling' || !progress.next) return null;
+  const [from, to] = progress.lunch
+    ? progress.occurredAt < progress.lunch.at
+      ? [progress.anchor, progress.lunch]
+      : [progress.lunch, progress.next]
+    : [progress.anchor, progress.next];
+  const span = Math.max(1, to.at - from.at);
+  const ratio = Math.min(1, Math.max(0, (progress.occurredAt - from.at) / span));
+  return {
+    lat: from.lat + (to.lat - from.lat) * ratio,
+    lon: from.lon + (to.lon - from.lon) * ratio,
+  };
+}
+
 /** Router geometry retained for a visible planned edge. */
 export interface VisiblePlannedSegment extends MapRouteSegment {
   readonly fromKey: string;
   readonly toKey: string;
 }
 
-/**
- * Keeps a lunch marker visible when Router anchors the break at the preceding
- * or following visit. The factual route coordinates stay untouched; only the
- * marker is placed halfway between its adjacent drawable vertices.
- */
+/** Keeps lunch at its real location, including a location shared with a job. */
 export function lunchMarkerCoordinates(
   nodes: readonly LiveGraphNode[],
   lunchIndex: number,
@@ -46,15 +89,7 @@ export function lunchMarkerCoordinates(
   if (lunch?.kind !== 'lunch') {
     throw new RangeError('lunchIndex must reference a lunch node');
   }
-  const previous = nodes.slice(0, lunchIndex).findLast((node) => node.kind !== 'lunch');
-  const following = nodes.slice(lunchIndex + 1).find((node) => node.kind !== 'lunch');
-  if (!previous || !following) return [lunch.lon, lunch.lat];
-  const overlapsAdjacent =
-    (lunch.lat === previous.lat && lunch.lon === previous.lon) ||
-    (lunch.lat === following.lat && lunch.lon === following.lon);
-  return overlapsAdjacent
-    ? [(previous.lon + following.lon) / 2, (previous.lat + following.lat) / 2]
-    : [lunch.lon, lunch.lat];
+  return [lunch.lon, lunch.lat];
 }
 
 /**
@@ -66,15 +101,29 @@ export function visiblePlannedSegments(
   route: PlanRouteView,
   graph: LiveGraphProjection,
 ): readonly VisiblePlannedSegment[] {
-  return mapRouteSegments(route).flatMap((segment) => {
+  const preferred = new Map<string, VisiblePlannedSegment>();
+  for (const segment of mapRouteSegments(route)) {
     const first = segment.coordinates[0];
     const last = segment.coordinates[segment.coordinates.length - 1];
-    if (!first || !last) return [];
+    if (!first || !last) continue;
     const from = resolveVisibleEndpoint(route, graph.mapNodes, first);
     const to = resolveVisibleEndpoint(route, graph.mapNodes, last);
-    if (!from || !to || from.key === to.key) return [];
-    return [{ ...segment, fromKey: from.key, toKey: to.key }];
-  });
+    if (!from || !to || from.key === to.key) continue;
+    const key = `${from.key}->${to.key}`;
+    if (!graph.mapSegments.some((edge) => edge.key === key)) continue;
+    const rank = (value: MapRouteSegment) =>
+      value.approximate
+        ? 0
+        : value.source === 'traffic_api'
+          ? 3
+          : value.source === 'route_api'
+            ? 2
+            : 1;
+    const existing = preferred.get(key);
+    if (!existing || rank(segment) > rank(existing))
+      preferred.set(key, { ...segment, fromKey: from.key, toKey: to.key });
+  }
+  return [...preferred.values()];
 }
 
 function resolveVisibleEndpoint(
@@ -103,7 +152,9 @@ function hasCoordinate(
   point: Pick<LiveGraphNode, 'lat' | 'lon'>,
   coordinate: readonly [number, number],
 ): boolean {
-  return point.lon === coordinate[0] && point.lat === coordinate[1];
+  return (
+    Math.abs(point.lon - coordinate[0]) < 0.00001 && Math.abs(point.lat - coordinate[1]) < 0.00001
+  );
 }
 
 /**
@@ -141,13 +192,13 @@ function pointWithoutProjectionFields(point: LiveRouteProgress['anchor']) {
   };
 }
 
-const STYLE_URL = 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json';
-
 export function DayMap({
   snapshot,
   selectedEngineerId,
   selectedRequestId,
+  soloRequestId = null,
   progressByEngineer,
+  completedByEngineer,
   onSelectRequest,
 }: DayMapProps) {
   const [forceLocal, setForceLocal] = useState(!navigator.onLine);
@@ -163,6 +214,7 @@ export function DayMap({
   }, []);
   const containerRef = useRef<HTMLElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  const soloMarkerRef = useRef<maplibregl.Marker | null>(null);
   const onSelectRef = useRef(onSelectRequest);
   const fittedKeyRef = useRef<string | null>(null);
   const [localMap, setLocalMap] = useState(forceLocal);
@@ -184,7 +236,7 @@ export function DayMap({
     try {
       map = new maplibregl.Map({
         container,
-        style: forceLocal ? localMapStyle() : STYLE_URL,
+        style: forceLocal ? localMapStyle() : ONLINE_MAP_STYLE,
         center: [37.62, 55.75],
         zoom: 11.4,
         attributionControl: false,
@@ -203,10 +255,7 @@ export function DayMap({
       setLocalMap(true);
       map.setStyle(localMapStyle());
     };
-    const timeout = window.setTimeout(() => {
-      if (!map.isStyleLoaded()) activateLocalMap();
-    }, 6000);
-    map.on('error', activateLocalMap);
+    const stopWatching = watchMapStartup(map, activateLocalMap);
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
     map.on('click', 'stops-circle', (event) => pickRequest(event, onSelectRef));
     map.on('click', 'unassigned-circle', (event) => pickRequest(event, onSelectRef));
@@ -215,8 +264,7 @@ export function DayMap({
     mapRef.current = map;
     return () => {
       observer.disconnect();
-      window.clearTimeout(timeout);
-      map.off('error', activateLocalMap);
+      stopWatching();
       map.off('idle', markReady);
       map.remove();
       mapRef.current = null;
@@ -233,7 +281,8 @@ export function DayMap({
       if (mapRef.current !== map || !map.getStyle()) {
         return false;
       }
-      const allRoutes = snapshot.plan.plan?.routes ?? [];
+      const soloPoint = soloRequestId ? requestMapPoint(snapshot, soloRequestId) : null;
+      const allRoutes = soloRequestId ? [] : (snapshot.plan.plan?.routes ?? []);
       const selectedRoutes = selectedEngineerId
         ? allRoutes.filter((route) => route.engineerId === selectedEngineerId)
         : allRoutes;
@@ -258,35 +307,40 @@ export function DayMap({
       }
       const projections = [...projectedEngineerIds].map((engineerId) => {
         const route = routeByEngineer.get(engineerId) ?? null;
+        const progress = progressByEngineer?.get(engineerId) ?? null;
         return {
           engineerId,
           route,
-          graph: projectLiveGraph(
-            route,
-            progressByEngineer?.get(engineerId) ?? null,
-            visibleRequestIds,
-          ),
+          progress,
+          graph: projectLiveGraph(route, progress, visibleRequestIds),
         };
       });
       const viewingUnassigned = unassignedRequests(snapshot).some(
         (request) => request.id === selectedRequestId,
       );
-      const showUnassigned = selectedEngineerId === null || viewingUnassigned;
+      const showUnassigned = !soloRequestId && (selectedEngineerId === null || viewingUnassigned);
+      const sampleLat = projections[0]?.graph.mapNodes[0]?.lat ?? 55.75;
+      const dashMeters = metersPerPixel(sampleLat, map.getZoom()) * MAP_ROUTE_DASH_PX;
+      const gapMeters = metersPerPixel(sampleLat, map.getZoom()) * MAP_ROUTE_GAP_PX;
 
       const lineFeatures = projections.flatMap(({ engineerId, route, graph }) => {
         const region = route ? routeRegion(snapshot, route) : null;
         const planned = route ? visiblePlannedSegments(route, graph) : [];
-        const geometryKeys = new Set(
-          planned.map((segment) => `${segment.fromKey}->${segment.toKey}`),
-        );
+        const covered = (from: LiveGraphNode, to: LiveGraphNode) =>
+          planned.some((segment) => {
+            const first = segment.coordinates[0];
+            const last = segment.coordinates.at(-1);
+            return first && last && hasCoordinate(from, first) && hasCoordinate(to, last);
+          });
         const segments = [
           ...planned.map((segment) => ({
             approximate: segment.approximate,
             source: segment.source,
+            geometryProvider: segment.geometryProvider,
             coordinates: segment.coordinates,
           })),
           ...graph.mapSegments
-            .filter((segment) => !geometryKeys.has(segment.key))
+            .filter((segment) => !covered(segment.from, segment.to))
             .map((segment) => ({
               approximate: true,
               source: 'approximate' as const,
@@ -296,31 +350,48 @@ export function DayMap({
               ],
             })),
         ];
-        return segments.map((segment) => ({
-          type: 'Feature' as const,
-          properties: {
-            engineerId,
-            selected: !selectedEngineerId || engineerId === selectedEngineerId ? 1 : 0,
-            approximate: segment.approximate ? 1 : 0,
-            color: engineerColor(engineerId),
-            regionColor: regionStyle(region).color,
-            travelSource: segment.source,
-          },
-          geometry: {
-            type: 'LineString' as const,
-            coordinates: segment.coordinates,
-          },
-        }));
-      });
-
-      const progressLines = projections.flatMap(({ engineerId, graph }) =>
-        graph.activeSegments.map((segment) => {
-          return {
+        return segments.flatMap((segment) => {
+          const paths = segment.approximate
+            ? pillDashLine(segment.coordinates, dashMeters, gapMeters)
+            : [segment.coordinates.map((point) => [point[0], point[1]] as [number, number])];
+          return paths.map((coordinates) => ({
             type: 'Feature' as const,
-            properties: { engineerId, color: engineerColor(engineerId) },
+            properties: {
+              engineerId,
+              selected: !selectedEngineerId || engineerId === selectedEngineerId ? 1 : 0,
+              approximate: segment.approximate ? 1 : 0,
+              color: routeStroke(segment, engineerId),
+              regionColor: mapPaintColor(regionStyle(region).color),
+              travelSource: segment.source,
+            },
             geometry: {
               type: 'LineString' as const,
-              coordinates: [
+              coordinates,
+            },
+          }));
+        });
+      });
+
+      const progressLines = projections.flatMap(({ engineerId, route, graph }) =>
+        graph.activeSegments.map((segment) => {
+          const road = route
+            ? visiblePlannedSegments(route, graph).find((candidate) => {
+                const first = candidate.coordinates[0];
+                const last = candidate.coordinates.at(-1);
+                return (
+                  first &&
+                  last &&
+                  hasCoordinate(segment.from, first) &&
+                  hasCoordinate(segment.to, last)
+                );
+              })
+            : null;
+          return {
+            type: 'Feature' as const,
+            properties: { engineerId, color: mapPaintColor(engineerColor(engineerId)) },
+            geometry: {
+              type: 'LineString' as const,
+              coordinates: road?.coordinates ?? [
                 [segment.from.lon, segment.from.lat] as const,
                 [segment.to.lon, segment.to.lat] as const,
               ],
@@ -338,8 +409,10 @@ export function DayMap({
             properties: {
               engineerId,
               selected: !selectedEngineerId || engineerId === selectedEngineerId ? 1 : 0,
-              color: engineerColor(engineerId),
-              regionColor: regionStyle(route ? routeRegion(snapshot, route) : null).color,
+              color: mapPaintColor(engineerColor(engineerId)),
+              regionColor: mapPaintColor(
+                regionStyle(route ? routeRegion(snapshot, route) : null).color,
+              ),
               current: graph.activeNodeKeys.has(start.key) ? 1 : 0,
             },
             geometry: {
@@ -350,7 +423,7 @@ export function DayMap({
         ];
       });
 
-      const stopFeatures = projections.flatMap(({ engineerId, graph }) =>
+      const stopFeatures = projections.flatMap(({ engineerId, graph, progress }) =>
         graph.mapNodes.flatMap((node, index) => {
           if (node.kind === 'start') return [];
           if (node.kind === 'lunch') {
@@ -374,9 +447,13 @@ export function DayMap({
             return [];
           }
           const request = snapshot.requests.find((item) => item.id === node.requestId);
-          const sequence = graph.mapNodes
-            .slice(0, index + 1)
-            .filter((item) => item.kind === 'job').length;
+          const anchorAlreadyDone =
+            progress?.anchor.kind === 'job' &&
+            progress.phase !== 'on_site' &&
+            graph.mapNodes.some((item) => item.requestId === progress.anchor.requestId);
+          const sequence =
+            Math.max(0, (completedByEngineer?.get(engineerId) ?? 0) - (anchorAlreadyDone ? 1 : 0)) +
+            graph.mapNodes.slice(0, index + 1).filter((item) => item.kind === 'job').length;
           return [
             {
               type: 'Feature' as const,
@@ -386,8 +463,10 @@ export function DayMap({
                 skillMark: request ? skillMark(request.requiredSkill) : '',
                 engineerId,
                 selected: node.requestId === selectedRequestId ? 1 : 0,
-                color: engineerColor(engineerId),
-                regionColor: regionStyle(request ? requestRegion(snapshot, request) : null).color,
+                color: mapPaintColor(engineerColor(engineerId)),
+                regionColor: mapPaintColor(
+                  regionStyle(request ? requestRegion(snapshot, request) : null).color,
+                ),
                 current: graph.activeNodeKeys.has(node.key) ? 1 : 0,
               },
               geometry: {
@@ -414,7 +493,7 @@ export function DayMap({
                 requestId: request.id,
                 skillMark: skillMark(request.requiredSkill),
                 selected: request.id === selectedRequestId ? 1 : 0,
-                regionColor: regionStyle(requestRegion(snapshot, request)).color,
+                regionColor: mapPaintColor(regionStyle(requestRegion(snapshot, request)).color),
               },
               geometry: {
                 type: 'Point' as const,
@@ -429,24 +508,20 @@ export function DayMap({
           id: 'routes-casing',
           type: 'line',
           source: 'routes',
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
           paint: {
-            'line-color': '#ffffff',
-            'line-width': ['case', ['==', ['get', 'selected'], 1], 7, 5],
+            'line-color': MAP_CANVAS,
+            'line-width': ['case', ['==', ['get', 'selected'], 1], 9, 7],
           },
         });
         map.addLayer({
           id: 'routes-line',
           type: 'line',
           source: 'routes',
+          layout: { 'line-cap': 'round', 'line-join': 'round' },
           paint: {
             'line-color': ['get', 'color'],
-            'line-width': ['case', ['==', ['get', 'selected'], 1], 3.5, 2],
-            'line-dasharray': [
-              'case',
-              ['==', ['get', 'approximate'], 1],
-              ['literal', [2, 2]],
-              ['literal', [1, 0]],
-            ],
+            'line-width': ['case', ['==', ['get', 'selected'], 1], 5, 3.5],
             'line-opacity': ['case', ['==', ['get', 'selected'], 1], 0.9, 0.35],
           },
         });
@@ -461,6 +536,7 @@ export function DayMap({
             id: 'live-progress-lines',
             type: 'line',
             source: 'live-progress-lines',
+            layout: { 'line-cap': 'round', 'line-join': 'round' },
             paint: { 'line-color': ['get', 'color'], 'line-width': 6, 'line-opacity': 0.95 },
           });
         },
@@ -472,13 +548,13 @@ export function DayMap({
           type: 'circle',
           source: 'starts',
           paint: {
-            'circle-radius': 7,
-            'circle-color': '#ffffff',
+            'circle-radius': 11,
+            'circle-color': MAP_CANVAS,
             'circle-stroke-width': ['case', ['==', ['get', 'current'], 1], 5, 3],
             'circle-stroke-color': [
               'case',
               ['==', ['get', 'current'], 1],
-              '#FFD100',
+              '#FFC72C',
               ['get', 'regionColor'],
             ],
           },
@@ -495,8 +571,8 @@ export function DayMap({
               'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
             },
             paint: {
-              'text-color': '#202124',
-              'text-halo-color': '#ffffff',
+              'text-color': MAP_INK,
+              'text-halo-color': MAP_CANVAS,
               'text-halo-width': 1.2,
             },
           });
@@ -511,10 +587,10 @@ export function DayMap({
             'circle-radius': [
               'case',
               ['==', ['get', 'current'], 1],
-              12,
+              16,
               ['==', ['get', 'selected'], 1],
-              10,
-              8,
+              16,
+              13,
             ],
             'circle-color': ['get', 'color'],
             'circle-stroke-width': [
@@ -534,16 +610,11 @@ export function DayMap({
             type: 'symbol',
             source: 'stops',
             layout: {
-              'text-field': [
-                'concat',
-                ['to-string', ['get', 'sequence']],
-                ' ',
-                ['get', 'skillMark'],
-              ],
-              'text-size': 11,
+              'text-field': ['to-string', ['get', 'sequence']],
+              'text-size': 14,
               'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
             },
-            paint: { 'text-color': '#ffffff' },
+            paint: { 'text-color': MAP_CANVAS },
           });
       });
 
@@ -553,10 +624,15 @@ export function DayMap({
           type: 'circle',
           source: 'lunches',
           paint: {
-            'circle-radius': ['case', ['==', ['get', 'current'], 1], 11, 8],
-            'circle-color': '#FFE7C2',
+            'circle-radius': ['case', ['==', ['get', 'current'], 1], 14, 12],
+            'circle-color': MAP_LUNCH_FILL,
             'circle-stroke-width': ['case', ['==', ['get', 'current'], 1], 5, 3],
-            'circle-stroke-color': ['case', ['==', ['get', 'current'], 1], '#FFD100', '#E07A2F'],
+            'circle-stroke-color': [
+              'case',
+              ['==', ['get', 'current'], 1],
+              '#FFC72C',
+              MAP_LUNCH_STROKE,
+            ],
           },
         });
         if (map.getStyle().glyphs)
@@ -572,7 +648,7 @@ export function DayMap({
             },
             paint: {
               'text-color': '#8A4B12',
-              'text-halo-color': '#ffffff',
+              'text-halo-color': MAP_CANVAS,
               'text-halo-width': 1.2,
             },
           });
@@ -584,17 +660,22 @@ export function DayMap({
           type: 'circle',
           source: 'unassigned',
           paint: {
-            'circle-radius': ['case', ['==', ['get', 'selected'], 1], 10, 8],
+            'circle-radius': ['case', ['==', ['get', 'selected'], 1], 16, 13],
             'circle-color': ['get', 'regionColor'],
             'circle-stroke-width': 2,
-            'circle-stroke-color': '#202124',
+            'circle-stroke-color': MAP_INK,
           },
         });
       });
 
-      const fitKey = `${retry}:${forceLocal}:${selectedEngineerId ?? 'all'}:${selectedRequestId ?? ''}`;
+      const fitKey = `${retry}:${forceLocal}:${selectedEngineerId ?? 'all'}:${selectedRequestId ?? ''}:${soloRequestId ?? ''}`;
       if (fittedKeyRef.current !== fitKey) {
         fittedKeyRef.current = fitKey;
+        if (soloPoint) {
+          map.resize();
+          map.easeTo({ center: [soloPoint.lon, soloPoint.lat], zoom: 14.2, duration: 400 });
+          return true;
+        }
         const bounds = new maplibregl.LngLatBounds();
         const fitProjections = selectedEngineerId
           ? projections.filter((projection) => projection.engineerId === selectedEngineerId)
@@ -620,11 +701,42 @@ export function DayMap({
     };
     map.on('style.load', onStyle);
     map.once('load', onStyle);
+    map.on('zoomend', onStyle);
     return () => {
       map.off('style.load', onStyle);
       map.off('load', onStyle);
+      map.off('zoomend', onStyle);
     };
-  }, [selectedEngineerId, selectedRequestId, snapshot, progressByEngineer, forceLocal, retry]);
+  }, [
+    selectedEngineerId,
+    selectedRequestId,
+    soloRequestId,
+    snapshot,
+    progressByEngineer,
+    completedByEngineer,
+    forceLocal,
+    retry,
+  ]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    soloMarkerRef.current?.remove();
+    soloMarkerRef.current = null;
+    if (!map || !soloRequestId || !mapReady) return;
+    const point = requestMapPoint(snapshot, soloRequestId);
+    if (!point) return;
+    const pin = document.createElement('div');
+    pin.setAttribute('aria-hidden', 'true');
+    pin.className = 'size-[22px] rounded-full border-[3px] border-figma-ink bg-figma-bee shadow-lg';
+    const marker = new maplibregl.Marker({ element: pin, anchor: 'center' })
+      .setLngLat([point.lon, point.lat])
+      .addTo(map);
+    soloMarkerRef.current = marker;
+    return () => {
+      marker.remove();
+      if (soloMarkerRef.current === marker) soloMarkerRef.current = null;
+    };
+  }, [mapReady, snapshot, soloRequestId]);
 
   return (
     <>
@@ -635,12 +747,12 @@ export function DayMap({
         data-map-ready={mapReady}
         className="absolute inset-0 h-full w-full"
       />
-      {!mapReady && !mapFailed ? (
+      {!soloRequestId && !mapReady && !mapFailed ? (
         <div className="absolute top-14 left-3 rounded-xl bg-white px-3 py-2 text-xs text-muted">
           Загружаем карту…
         </div>
       ) : null}
-      {localMap || mapFailed ? (
+      {!soloRequestId && (localMap || mapFailed) ? (
         <div
           role="status"
           className="absolute top-3 left-3 right-3 rounded-xl bg-white px-3 py-2 text-xs text-ink shadow"
@@ -659,11 +771,13 @@ export function DayMap({
           ) : null}
         </div>
       ) : null}
-      <div className="pointer-events-none absolute bottom-3 left-3 rounded-xl bg-white/90 px-3 py-2 text-[11px] text-muted shadow">
-        {selectedEngineerId
-          ? 'Показан план выбранного инженера. Пунктир — схематичная связь точек, сплошная линия — геометрия дороги.'
-          : 'План дня без live-позиции инженеров. Пунктир — схематичная связь точек, сплошная линия — геометрия дороги.'}
-      </div>
+      {soloRequestId ? null : (
+        <div className="pointer-events-none absolute bottom-3 left-3 rounded-xl bg-white/90 px-3 py-2 text-[11px] text-muted shadow">
+          {selectedEngineerId
+            ? 'Показан план выбранного инженера. Пунктир — геоцентры, серая линия — OSRM, зелёная — маршрут 2ГИС или Яндекс.'
+            : 'План дня без live-позиции инженеров. Пунктир — геоцентры, серая линия — OSRM, зелёная — маршрут 2ГИС или Яндекс.'}
+        </div>
+      )}
       <div className="absolute right-2 bottom-1 rounded bg-white/90 px-2 text-[10px] text-muted">
         ©{' '}
         <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">

@@ -53,6 +53,9 @@ export interface LiveEngineerState {
   readonly id: string;
   readonly name: string;
   readonly lineStatus: LiveLineStatus;
+  readonly lineStartedAt?: number | null;
+  readonly noShowAt?: number | null;
+  readonly lunchInterval?: { readonly startAt: number; readonly endAt: number } | null;
   readonly availability: string;
   readonly activeRequestId: string | null;
   readonly routeState: 'active' | 'awaiting_plan' | 'exhausted';
@@ -200,6 +203,12 @@ const engineerSchema: z.ZodType<LiveEngineerState> = z.object({
   id: z.string(),
   name: z.string(),
   lineStatus: z.enum(['pending', 'online', 'no_show_offline', 'technical_break']),
+  lineStartedAt: z.number().int().nullable().optional(),
+  noShowAt: z.number().int().nullable().optional(),
+  lunchInterval: z
+    .object({ startAt: z.number().int(), endAt: z.number().int() })
+    .nullable()
+    .optional(),
   availability: z.string(),
   activeRequestId: z.string().nullable(),
   routeState: z.enum(['active', 'awaiting_plan', 'exhausted']),
@@ -265,7 +274,6 @@ const dispatchLiveSchema: z.ZodType<DispatchLiveView> = z.object({
 
 export type EngineerLiveAction =
   | { readonly kind: 'online' }
-  | { readonly kind: 'on_time'; readonly requestId: string }
   | { readonly kind: 'eta'; readonly requestId: string; readonly etaAt: number }
   | { readonly kind: 'start' | 'finish'; readonly requestId: string }
   | {

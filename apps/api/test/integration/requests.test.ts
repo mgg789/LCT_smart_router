@@ -227,6 +227,24 @@ describe('request lifecycle', () => {
     }
   });
 
+  it('accepts a compact dispatcher request before customer identity is known', async () => {
+    const response = await call('POST', '/api/v1/dispatch/requests', dispatcherToken, {
+      operationId: randomUUID(),
+      addressText: 'Москва, ул. Новая, д. 2',
+      workType: 'monitoring',
+      windowStartAt: DAY + 9 * HOUR,
+      windowEndAt: DAY + 11 * HOUR,
+    });
+    assert.equal(response.status, 201, await response.clone().text());
+    const request = ((await response.json()) as RequestBody).request;
+    requestIds.push(request.id);
+
+    const stored = await prisma.request.findUniqueOrThrow({ where: { id: request.id } });
+    assert.equal(stored.clientAccountId, null);
+    assert.equal(stored.contactName, null);
+    assert.equal(stored.lifecycle, 'submitted');
+  });
+
   it('marks a request without coordinates instead of inventing them', async () => {
     const withoutPoint = await prepare({ lat: null, lon: null });
     assert.equal(withoutPoint.needsGeocoding, true);

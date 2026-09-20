@@ -42,13 +42,16 @@ export function projectLiveGraph(
   progress: LiveRouteProgress | null,
   visibleRequestIds?: ReadonlySet<string>,
 ): LiveGraphProjection {
-  const routeNodes = stableRouteNodes(route).filter(
-    (node) =>
-      node.kind !== 'job' ||
-      visibleRequestIds === undefined ||
-      node.requestId === null ||
-      visibleRequestIds.has(node.requestId),
-  );
+  // LIVE arrival promises and actual arrivals supersede stale solver timestamps.
+  const overrides = progress
+    ? [progress.anchor, progress.lunch, progress.next].filter(isPoint)
+    : [];
+  const routeNodes = stableRouteNodes(route).map((node) => {
+    const actual = overrides.find((point) =>
+      node.kind === 'lunch' ? point.kind === 'lunch' : nodeKey(point) === node.key,
+    );
+    return actual ? nodeFromPoint(actual, node.sequence) : node;
+  });
   const origin = progress ? nodeFromPoint(progress.origin, 0) : (routeNodes[0] ?? null);
   const planned = routeNodes.filter((node) => node.kind !== 'start');
   const factual = progress ? [progress.anchor, progress.lunch, progress.next].filter(isPoint) : [];
@@ -64,7 +67,15 @@ export function projectLiveGraph(
       ]);
   const orderedTimeline = orderTimeline(timelineNodes);
 
-  const mapNodes = projectMapNodes(origin, planned, progress);
+  // Slice using the complete order before removing completed jobs. Otherwise a
+  // removed factual anchor makes an old lunch reappear behind the active span.
+  const mapNodes = projectMapNodes(origin, planned, progress).filter(
+    (node) =>
+      node.kind !== 'job' ||
+      !visibleRequestIds ||
+      node.requestId === progress?.anchor.requestId ||
+      (node.requestId !== null && visibleRequestIds.has(node.requestId)),
+  );
   const mapSegments = segmentsFor(mapNodes);
   const activeSegments = activePath(progress).flatMap(([from, to]) => {
     const fromNode = mapNodes.find((node) => samePoint(node, from));
@@ -191,9 +202,15 @@ function projectMapNodes(
     : null;
   const anchorIndex =
     anchor.kind === 'start' ? -1 : planned.findIndex((node) => samePoint(node, anchor));
-  const afterAnchor = anchorIndex >= 0 ? planned.slice(anchorIndex) : planned;
+  const afterAnchor =
+    anchorIndex >= 0
+      ? planned.slice(anchorIndex)
+      : planned.filter(
+          (node) =>
+            node.kind !== 'lunch' || progress.lunch !== null || node.at > progress.occurredAt,
+        );
   const prefix = anchor.kind === 'start' ? [origin ?? anchor] : [anchor];
-  const activeSpan = lunch && next ? [lunch, next] : next ? [next] : [];
+  const activeSpan = lunch ? [lunch, ...(next ? [next] : [])] : next ? [next] : [];
   return dedupeNodes([...prefix, ...activeSpan, ...afterAnchor]);
 }
 

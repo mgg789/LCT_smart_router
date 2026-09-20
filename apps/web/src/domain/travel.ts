@@ -5,6 +5,16 @@ export interface MapRouteSegment {
   readonly coordinates: ReadonlyArray<readonly [number, number]>;
   readonly source: TravelSource;
   readonly approximate: boolean;
+  readonly geometryProvider?: 'twogis' | 'yandex';
+}
+
+/** Visual class of a planned leg: dashed centroids, gray OSRM, green map APIs. */
+export function routeLineKind(
+  segment: Pick<MapRouteSegment, 'approximate' | 'source' | 'geometryProvider'>,
+): 'centroid' | 'osrm' | 'map' {
+  if (segment.approximate || segment.source === 'approximate') return 'centroid';
+  if (segment.geometryProvider === 'twogis' || segment.geometryProvider === 'yandex') return 'map';
+  return 'osrm';
 }
 
 /** Builds map line segments without presenting a straight approximation as road geometry. */
@@ -43,6 +53,7 @@ export function mapRouteSegments(route: PlanRouteView): MapRouteSegment[] {
           ],
         source: leg.travelSource,
         approximate: exactGeometry === null,
+        ...(leg.geometryProvider ? { geometryProvider: leg.geometryProvider } : {}),
       };
     });
   }

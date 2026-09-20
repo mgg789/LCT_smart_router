@@ -6,6 +6,7 @@ export const ALERT_ACTION_LABELS: Readonly<Record<string, string>> = {
   move_window: 'Подвинуть окно',
   add_engineer: 'Вызвать доп. инженера',
   keep_manual: 'Оставить так',
+  keep_as_is: 'Оставить так',
   restore_auto: 'Вернуть лучший auto-вариант',
   skip_lunch: 'Оставить без обеда',
   keep_lunch: 'Оставить обед',
@@ -18,7 +19,10 @@ export const ALERT_ACTION_LABELS: Readonly<Record<string, string>> = {
 /** Resolves known event codes without losing unknown server events. */
 export function alertTitle(code: string): string {
   const titles: Readonly<Record<string, string>> = {
-    time_risk: 'Риск сильного опоздания',
+    time_risk: 'Риск времени',
+    engineer_line_started: 'Инженер вышел на линию',
+    engineer_day_finished: 'Инженер завершил день',
+    workday_finished_with_alerts: 'Остались нерешённые алерты',
     unassigned: 'Заявка не назначена',
     plan_degraded: 'План деградировал',
     plan_review_required: 'Ручной план требует проверки',
@@ -26,6 +30,8 @@ export function alertTitle(code: string): string {
     engineer_overdue: 'Инженер задержался и не отмечается',
     shift_no_show: 'Не вышел на смену',
     plan_rebuilt: 'План перестроился',
+    LIVE_TECHNICAL_BREAK_OVERRUN: 'Риск времени',
+    LIVE_WINDOW_COMPLETION_RISK: 'Риск времени',
   };
   return titles[code] ?? code;
 }

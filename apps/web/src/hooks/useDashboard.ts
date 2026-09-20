@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  changeEngineerEmail,
   closeDispatchShift,
+  createDispatchEngineer,
+  createDispatchRequest,
   DashboardApiError,
+  deleteDispatchEngineer,
   importOfficialDataset,
   linkEngineerAccount,
   loadDashboardSnapshot,
@@ -20,14 +24,11 @@ import {
   uploadDataPackage,
   verifyDispatcherLoginCode,
 } from '../api/client';
-import {
-  type DispatchLiveView,
-  type LiveEngineerState,
-  loadDispatchLive,
-  startLiveWorkday,
-} from '../api/live';
+import { type DispatchLiveView, loadDispatchLive, startLiveWorkday } from '../api/live';
 import type {
   AlertResolutionInput,
+  CreateDispatchEngineerInput,
+  CreateDispatchRequestInput,
   DashboardSnapshot,
   DataUploadFile,
   DataUploadSummary,
@@ -120,6 +121,7 @@ export function useDashboard() {
   const [rebuilding, setRebuilding] = useState(false);
   const [availabilityPendingId, setAvailabilityPendingId] = useState<string | null>(null);
   const [uploadingData, setUploadingData] = useState(false);
+  const [entityMutationPending, setEntityMutationPending] = useState(false);
   const [pendingDelta, setPendingDelta] = useState<PlanDelta | null>(null);
   const [baseline, setBaseline] = useState<RoutingBaseline | null>(null);
   const [policyComparison, setPolicyComparison] = useState<PolicyComparisonResponse | null>(null);
@@ -159,6 +161,7 @@ export function useDashboard() {
       setToken(null);
       setRebuilding(false);
       setUploadingData(false);
+      setEntityMutationPending(false);
       setAvailabilityPendingId(null);
       setSnapshot(null);
       setFocus({ engineerId: null, requestId: null });
@@ -303,31 +306,6 @@ export function useDashboard() {
     ]);
   }, []);
 
-  const previousLiveEngineers = useRef<Map<string, string>>(new Map());
-  useEffect(() => {
-    if (liveWorkday?.workday.status !== 'running') {
-      previousLiveEngineers.current = new Map();
-      return;
-    }
-    const next = new Map(
-      liveWorkday.engineers.map((engineer) => [
-        engineer.id,
-        `${engineer.lineStatus}:${engineer.activeRequestId ?? ''}:${engineer.pendingDelayProblem?.requestId ?? ''}`,
-      ]),
-    );
-    const previous = previousLiveEngineers.current;
-    if (previous.size > 0) {
-      for (const engineer of liveWorkday.engineers) {
-        const before = previous.get(engineer.id);
-        const after = next.get(engineer.id);
-        if (before !== undefined && before !== after) {
-          pushEvent(`LIVE: ${engineer.name} — ${liveEngineerEvent(engineer)}.`);
-        }
-      }
-    }
-    previousLiveEngineers.current = next;
-  }, [liveWorkday, pushEvent]);
-
   const acceptSession = useCallback(
     (session: Awaited<ReturnType<typeof loginDispatcher>>, generation: number) => {
       if (generation !== readGeneration.current) return;
@@ -358,6 +336,18 @@ export function useDashboard() {
       }
     },
     [acceptSession, reportFailure],
+  );
+
+  /** Adopts the dispatcher session returned by the Figma login card without
+   * duplicating the hook's session, cache, and LIVE reset semantics. */
+  const acceptLoginSession = useCallback(
+    (session: { readonly token: string; readonly expiresAt: number }) => {
+      acceptSession(
+        { token: session.token, expiresAt: session.expiresAt, role: 'dispatcher' },
+        readGeneration.current,
+      );
+    },
+    [acceptSession],
   );
 
   const requestLoginCode = useCallback(
@@ -634,6 +624,7 @@ export function useDashboard() {
       if (!snapshot) {
         return;
       }
+      const current = snapshot.routerSettings ?? defaultRouterSettings(snapshot);
       const changes = [
         policyId !== snapshot.policyId ? `политика ${policyId}` : null,
         nextSettings.lunchesEnabled !== snapshot.lunchesEnabled
@@ -641,26 +632,30 @@ export function useDashboard() {
             ? 'обеды включены'
             : 'обеды выключены'
           : null,
-        snapshot.routerSettings &&
-        nextSettings.windowLatenessToleranceSec !==
-          snapshot.routerSettings.windowLatenessToleranceSec
-          ? 'допуск окна обновлён'
+        nextSettings.windowLatenessToleranceSec !== current.windowLatenessToleranceSec ||
+        nextSettings.departureLatenessToleranceSec !== current.departureLatenessToleranceSec ||
+        nextSettings.taskStartLatenessToleranceSec !== current.taskStartLatenessToleranceSec
+          ? 'допуск опоздания обновлён'
           : null,
-        snapshot.routerSettings &&
-        nextSettings.accessBufferSec !== snapshot.routerSettings.accessBufferSec
-          ? 'буфер доступа обновлён'
+        nextSettings.accessBufferSec !== current.accessBufferSec ? 'буфер доступа обновлён' : null,
+        nextSettings.earlyFinishReplanThresholdSec !== current.earlyFinishReplanThresholdSec
+          ? 'порог раннего финиша обновлён'
           : null,
-        snapshot.routerSettings &&
-        nextSettings.trafficEnabled !== snapshot.routerSettings.trafficEnabled
-          ? 'режим пробок обновлён'
+        nextSettings.taskOverrunToleranceSec !== current.taskOverrunToleranceSec
+          ? 'допуск переработки обновлён'
           : null,
-        snapshot.routerSettings &&
-        nextSettings.equipmentEnabled !== snapshot.routerSettings.equipmentEnabled
+        nextSettings.trafficEnabled !== current.trafficEnabled ? 'режим пробок обновлён' : null,
+        nextSettings.equipmentEnabled !== current.equipmentEnabled
           ? 'режим оборудования обновлён'
           : null,
       ].filter((item): item is string => item !== null);
-      if (changes.length > 0) {
-        void rebuild(policyId, nextSettings, changes.join(', '), true);
+      if (changes.length > 0 || !sameRouterSettings(current, nextSettings)) {
+        void rebuild(
+          policyId,
+          nextSettings,
+          changes.join(', ') || 'технические настройки обновлены',
+          true,
+        );
       }
     },
     [rebuild, snapshot],
@@ -865,13 +860,18 @@ export function useDashboard() {
     ],
   );
 
-  /** Grants a login address to a brigade that arrived without one. Does not republish. */
-  const linkEngineerLogin = useCallback(
+  /** Grants or replaces an Engineer App login without changing routing parameters. */
+  const saveEngineerLogin = useCallback(
     async (engineerId: string, email: string) => {
       if (!token || sourceRef.current !== 'live') {
-        throw new Error('Привязка почты доступна только в живом контуре');
+        throw new Error('Изменение почты доступно только в живом контуре');
       }
-      await linkEngineerAccount(token, engineerId, email);
+      const engineer = snapshotRef.current?.engineers.find((item) => item.id === engineerId);
+      if (engineer?.hasAccount) {
+        await changeEngineerEmail(token, engineerId, email, engineer.version);
+      } else {
+        await linkEngineerAccount(token, engineerId, email);
+      }
       await refresh();
     },
     [refresh, token],
@@ -887,6 +887,91 @@ export function useDashboard() {
       await refresh();
     },
     [refresh, token],
+  );
+
+  /** Runs one create/archive mutation and then reloads both dashboard projections. */
+  const performEntityMutation = useCallback(
+    async (operation: (session: string) => Promise<void>, eventText: string) => {
+      if (
+        !token ||
+        sourceRef.current !== 'live' ||
+        loading ||
+        entityMutationPending ||
+        operationWarning !== null
+      ) {
+        throw new Error('Изменение доступно только при подключении к рабочему серверу');
+      }
+      invalidateAsyncReads();
+      setEntityMutationPending(true);
+      setError(null);
+      try {
+        await operation(token);
+        const [next] = await Promise.all([refresh(), refreshLive()]);
+        if (!next) {
+          setOperationWarning(
+            'Изменение принято сервером, но обновление экрана не подтверждено. Не повторяйте операцию вслепую.',
+          );
+        }
+        pushEvent(eventText);
+      } catch (cause) {
+        const uncertain = !(cause instanceof DashboardApiError) || cause.status === 0;
+        if (
+          uncertain ||
+          (cause instanceof DashboardApiError && (cause.status === 401 || cause.status === 403))
+        ) {
+          reportFailure(cause);
+        }
+        if (uncertain) {
+          setOperationWarning(
+            'Результат изменения не подтверждён. Проверьте актуальный список перед повтором.',
+          );
+        }
+        setError(errorMessage(cause));
+        throw cause;
+      } finally {
+        setEntityMutationPending(false);
+      }
+    },
+    [
+      entityMutationPending,
+      invalidateAsyncReads,
+      loading,
+      operationWarning,
+      pushEvent,
+      refresh,
+      refreshLive,
+      reportFailure,
+      token,
+    ],
+  );
+
+  const createRequest = useCallback(
+    (input: CreateDispatchRequestInput) =>
+      performEntityMutation(async (session) => {
+        await createDispatchRequest(session, input);
+      }, 'Создана новая заявка.'),
+    [performEntityMutation],
+  );
+
+  const createEngineer = useCallback(
+    (input: CreateDispatchEngineerInput) =>
+      performEntityMutation(async (session) => {
+        await createDispatchEngineer(session, input);
+      }, `Добавлен инженер ${input.displayName}.`),
+    [performEntityMutation],
+  );
+
+  const deleteEngineer = useCallback(
+    (engineerId: string) => {
+      const engineer = snapshotRef.current?.engineers.find((item) => item.id === engineerId);
+      return performEntityMutation(
+        async (session) => {
+          await deleteDispatchEngineer(session, engineerId, engineer?.version);
+        },
+        `Инженер ${engineer?.displayName ?? engineerId} удалён из активного состава.`,
+      );
+    },
+    [performEntityMutation],
   );
 
   const performAlertOperation = useCallback(
@@ -1066,8 +1151,9 @@ export function useDashboard() {
     selectDemoScenario,
     leaveDemo,
     demoScenarios,
-    writesDisabled: source !== 'live' || loading || operationWarning !== null,
-    busy: rebuilding || uploadingData,
+    writesDisabled:
+      source !== 'live' || loading || entityMutationPending || operationWarning !== null,
+    busy: rebuilding || uploadingData || entityMutationPending,
     isDemo: source === 'demo',
     loading,
     error,
@@ -1086,12 +1172,14 @@ export function useDashboard() {
     rebuilding,
     availabilityPendingId,
     uploadingData,
+    entityMutationPending,
     pendingDelta,
     canRejectDelta: baseline !== null,
     policyComparison,
     policyComparisonLoading,
     policyComparisonError,
     events,
+    acceptLoginSession,
     signIn,
     requestLoginCode,
     signInWithCode,
@@ -1109,8 +1197,11 @@ export function useDashboard() {
     setMode,
     refreshPolicyComparison,
     updateEngineerAvailability,
-    linkEngineerLogin,
+    saveEngineerLogin,
     unlinkEngineerLogin,
+    createRequest,
+    createEngineer,
+    deleteEngineer,
     uploadDataset,
     importOfficialTzDataset,
     resolveAlert,
@@ -1191,13 +1282,4 @@ function errorMessage(cause: unknown): string {
 
 function engineerName(snapshot: DashboardSnapshot, engineerId: string): string {
   return snapshot.engineers.find((item) => item.id === engineerId)?.displayName ?? engineerId;
-}
-
-function liveEngineerEvent(engineer: LiveEngineerState): string {
-  if (engineer.pendingDelayProblem) return 'сообщил о задержке';
-  if (engineer.lineStatus === 'technical_break') return 'на техническом перерыве';
-  if (engineer.lineStatus === 'no_show_offline') return 'не вышел на линию';
-  if (engineer.activeRequestId) return `работает с заявкой №${engineer.activeRequestId}`;
-  if (engineer.lineStatus === 'online') return 'вышел на линию';
-  return 'ожидает выхода на линию';
 }

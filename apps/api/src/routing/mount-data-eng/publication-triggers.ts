@@ -26,6 +26,7 @@ export const PUBLICATION_TRIGGERS = {
   /** An unfinished task exceeded its normative duration and configured tolerance. */
   REQUEST_EXECUTION_OVERRUN: 'request.execution_overrun',
   ENGINEER_CREATED: 'engineer.created',
+  ENGINEER_ARCHIVED: 'engineer.archived',
   ENGINEER_PROFILE_CHANGED: 'engineer.profile_changed',
   ENGINEER_WORKDAY_CHANGED: 'engineer.workday_changed',
   ENGINEER_AVAILABILITY_CHANGED: 'engineer.availability_changed',

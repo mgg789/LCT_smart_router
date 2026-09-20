@@ -16,7 +16,7 @@ import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-dat
 import { assertLunchConditions, type LunchConditions, workDateOf } from './workday';
 
 export interface CreateEngineerInput {
-  readonly email: string;
+  readonly email?: string | null;
   readonly displayName: string;
   readonly skills: Skill[];
   readonly transportType: TransportType;
@@ -70,7 +70,7 @@ export class EngineersService {
   ) {}
 
   /**
-   * The dispatcher adds an engineer by address.
+   * The dispatcher adds an engineer profile and may grant its login address immediately.
    *
    * Creating the access and having an engineer Router can plan for are two different
    * results. Skills, transport, shift and start point must come from the profile, an
@@ -81,35 +81,37 @@ export class EngineersService {
     context: OperationContext,
     input: CreateEngineerInput,
   ): Promise<EngineerWithAccount> {
-    const email = input.email.trim().toLowerCase();
     const now = BigInt(context.now);
+    const email = input.email?.trim().toLowerCase() || null;
+    let account: Account | null = null;
+    if (email !== null) {
+      account = await context.tx.account.upsert({
+        where: { email },
+        update: {},
+        create: { email, createdAt: now, updatedAt: now },
+      });
+      // The role is granted here, by the dispatcher. Typing this address on the engineer
+      // sign-in screen would never have produced it (context/36 section 7.2).
+      await context.tx.accountRole.upsert({
+        where: { accountId_role: { accountId: account.id, role: 'engineer' } },
+        update: {},
+        create: { accountId: account.id, role: 'engineer', grantedAt: now },
+      });
 
-    const account = await context.tx.account.upsert({
-      where: { email },
-      update: {},
-      create: { email, createdAt: now, updatedAt: now },
-    });
-    // The role is granted here, by the dispatcher. Typing this address on the engineer
-    // sign-in screen would never have produced it (context/36 section 7.2).
-    await context.tx.accountRole.upsert({
-      where: { accountId_role: { accountId: account.id, role: 'engineer' } },
-      update: {},
-      create: { accountId: account.id, role: 'engineer', grantedAt: now },
-    });
-
-    const existing = await context.tx.engineer.findUnique({
-      where: { accountId: account.id },
-      include: { account: true },
-    });
-    if (existing) {
-      return existing;
+      const existing = await context.tx.engineer.findUnique({
+        where: { accountId: account.id },
+        include: { account: true },
+      });
+      if (existing) {
+        return existing;
+      }
     }
 
     assertSkills(input.skills);
 
     const created = await context.tx.engineer.create({
       data: {
-        accountId: account.id,
+        accountId: account?.id ?? null,
         displayName: input.displayName,
         // Order of appearance, which the baseline iterates in (context/33 section 5).
         inputOrder: await nextInputOrder(context.tx),
@@ -131,6 +133,90 @@ export class EngineersService {
     );
     return context.tx.engineer.findUniqueOrThrow({
       where: { id: created.id },
+      include: { account: true },
+    });
+  }
+
+  /**
+   * Removes an engineer from future routing without deleting historical plans or facts.
+   *
+   * An engineer currently on the LIVE line must first be taken offline. Any linked login
+   * is revoked so an archived profile cannot keep using the Engineer App.
+   */
+  async archive(
+    context: OperationContext,
+    engineerId: string,
+    expectedVersion: number | null | undefined,
+  ): Promise<EngineerWithAccount> {
+    const current = await context.tx.engineer.findUnique({
+      where: { id: engineerId },
+      include: { account: true },
+    });
+    if (!current) {
+      throw SysError.notFound('Engineer', { engineerId });
+    }
+    if (current.archivedAt !== null) {
+      return current;
+    }
+
+    const activeLine = await context.tx.liveEngineerState.findFirst({
+      where: {
+        engineerId,
+        workday: { status: 'running' },
+        lineStatus: { in: ['online', 'technical_break'] },
+      },
+      select: { id: true, lineStatus: true },
+    });
+    const activeWork = await context.tx.requestFact.findFirst({
+      where: { engineerId, request: { lifecycle: 'in_progress' } },
+      select: { requestId: true },
+    });
+    if (activeLine || activeWork) {
+      throw new SysError(
+        'VALIDATION_FAILED',
+        'Take the engineer offline and finish active work before deleting the profile',
+        {
+          details: {
+            engineerId,
+            lineStatus: activeLine?.lineStatus ?? null,
+            requestId: activeWork?.requestId ?? null,
+          },
+        },
+      );
+    }
+
+    const now = BigInt(context.now);
+    if (current.accountId !== null) {
+      await context.tx.session.updateMany({
+        where: { accountId: current.accountId, role: 'engineer', revokedAt: null },
+        data: { revokedAt: now },
+      });
+      await context.tx.accountRole.deleteMany({
+        where: { accountId: current.accountId, role: 'engineer' },
+      });
+    }
+    const updated = await context.tx.engineer.updateMany({
+      where: {
+        id: engineerId,
+        archivedAt: null,
+        version: expectedVersion ?? current.version,
+      },
+      data: {
+        accountId: null,
+        archivedAt: now,
+        updatedAt: now,
+        version: { increment: 1 },
+      },
+    });
+    assertWriteApplied('Engineer', updated.count, expectedVersion, current.version);
+
+    await this.publisher.publishIfChanged(
+      context.tx,
+      context.now,
+      PUBLICATION_TRIGGERS.ENGINEER_ARCHIVED,
+    );
+    return context.tx.engineer.findUniqueOrThrow({
+      where: { id: engineerId },
       include: { account: true },
     });
   }
@@ -184,6 +270,93 @@ export class EngineersService {
       data: { accountId: account.id, updatedAt: now, version: { increment: 1 } },
     });
     assertWriteApplied('Engineer', updated.count, engineer.version, engineer.version);
+
+    return context.tx.engineer.findUniqueOrThrow({
+      where: { id: engineerId },
+      include: { account: true },
+    });
+  }
+
+  /**
+   * Replaces the login address the dispatcher granted to an engineer profile.
+   *
+   * The old engineer role and its live sessions are revoked atomically. Planning data
+   * does not change, so the Router input is deliberately not republished.
+   */
+  async changeEmail(
+    context: OperationContext,
+    engineerId: string,
+    expectedVersion: number | null | undefined,
+    email: string,
+  ): Promise<EngineerWithAccount> {
+    const engineer = await this.load(context.tx, engineerId);
+    if (engineer.accountId === null) {
+      throw new SysError('VALIDATION_FAILED', 'This engineer has no login to replace', {
+        details: { engineerId },
+      });
+    }
+    if (
+      expectedVersion !== null &&
+      expectedVersion !== undefined &&
+      expectedVersion !== engineer.version
+    ) {
+      assertWriteApplied('Engineer', 0, expectedVersion, engineer.version);
+    }
+
+    const normalized = email.trim().toLowerCase();
+    const currentAccount = await context.tx.account.findUniqueOrThrow({
+      where: { id: engineer.accountId },
+    });
+    if (currentAccount.email === normalized) {
+      return context.tx.engineer.findUniqueOrThrow({
+        where: { id: engineerId },
+        include: { account: true },
+      });
+    }
+
+    const now = BigInt(context.now);
+    const nextAccount = await context.tx.account.upsert({
+      where: { email: normalized },
+      update: {},
+      create: { email: normalized, createdAt: now, updatedAt: now },
+    });
+    const taken = await context.tx.engineer.findUnique({
+      where: { accountId: nextAccount.id },
+    });
+    if (taken && taken.id !== engineerId) {
+      throw new SysError(
+        'VALIDATION_FAILED',
+        'This address is already the login of another engineer',
+        { details: { engineerId, linkedEngineerId: taken.id } },
+      );
+    }
+
+    await context.tx.accountRole.upsert({
+      where: { accountId_role: { accountId: nextAccount.id, role: 'engineer' } },
+      update: {},
+      create: { accountId: nextAccount.id, role: 'engineer', grantedAt: now },
+    });
+    const updated = await context.tx.engineer.updateMany({
+      where: {
+        id: engineerId,
+        accountId: engineer.accountId,
+        version: expectedVersion ?? engineer.version,
+      },
+      data: {
+        accountId: nextAccount.id,
+        updatedAt: now,
+        version: { increment: 1 },
+      },
+    });
+    assertWriteApplied('Engineer', updated.count, expectedVersion, engineer.version);
+
+    await context.tx.session.updateMany({
+      where: { accountId: engineer.accountId, role: 'engineer', revokedAt: null },
+      data: { revokedAt: now },
+    });
+    await context.tx.accountRole.deleteMany({
+      where: { accountId: engineer.accountId, role: 'engineer' },
+    });
 
     return context.tx.engineer.findUniqueOrThrow({
       where: { id: engineerId },
@@ -341,9 +514,11 @@ export class EngineersService {
     engineerId: string,
     availability: Availability,
     expectedOnlineAt: number | null,
+    options: { readonly publish?: boolean } = {},
   ): Promise<EngineerDay> {
     return this.applyAvailability(context, engineerId, availability, expectedOnlineAt, {
       daySummary: true,
+      publish: options.publish ?? true,
     });
   }
 
@@ -360,7 +535,7 @@ export class EngineersService {
     engineerId: string,
     availability: Availability,
     expectedOnlineAt: number | null,
-    options: { readonly daySummary: boolean },
+    options: { readonly daySummary: boolean; readonly publish: boolean },
   ): Promise<EngineerDay> {
     const day = await this.currentDay(context, engineerId);
     const updated = await context.tx.engineerDay.update({
@@ -376,12 +551,14 @@ export class EngineersService {
       },
     });
 
-    await this.publisher.publishIfChanged(
-      context.tx,
-      context.now,
-      PUBLICATION_TRIGGERS.ENGINEER_AVAILABILITY_CHANGED,
-      { businessTime: context.businessTime },
-    );
+    if (options.publish) {
+      await this.publisher.publishIfChanged(
+        context.tx,
+        context.now,
+        PUBLICATION_TRIGGERS.ENGINEER_AVAILABILITY_CHANGED,
+        { businessTime: context.businessTime },
+      );
+    }
 
     if (availability === 'offline' && options.daySummary) {
       await this.recordDaySummary(context, engineerId, day.workDate);
@@ -476,6 +653,7 @@ export class EngineersService {
       context.now + TECHNICAL_BREAK_SEC,
       {
         daySummary: false,
+        publish: true,
       },
     );
   }
@@ -597,8 +775,8 @@ export class EngineersService {
    * request carries the `engineerId` and this is the existence check on it.
    */
   async byId(tx: Tx, engineerId: string): Promise<EngineerWithAccount> {
-    const engineer = await tx.engineer.findUnique({
-      where: { id: engineerId },
+    const engineer = await tx.engineer.findFirst({
+      where: { id: engineerId, archivedAt: null },
       include: { account: true },
     });
     if (!engineer) {
@@ -608,7 +786,7 @@ export class EngineersService {
   }
 
   private async load(tx: Tx, engineerId: string): Promise<Engineer> {
-    const engineer = await tx.engineer.findUnique({ where: { id: engineerId } });
+    const engineer = await tx.engineer.findFirst({ where: { id: engineerId, archivedAt: null } });
     if (!engineer) {
       throw SysError.notFound('Engineer', { engineerId });
     }

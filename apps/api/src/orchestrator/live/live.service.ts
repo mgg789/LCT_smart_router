@@ -31,10 +31,12 @@ import {
   type ExecutionTimingPolicyValue,
 } from '../facts/execution-timing-policy';
 
+import { etaNeedsReplan, MATERIAL_DELAY_SEC, NEXT_VISIT_GAP_SEC } from './replan-policy';
+
 const NO_SHOW_SEC = 30 * 60;
 const TECHNICAL_BREAK_SEC = 15 * 60;
 const TECHNICAL_BREAK_OVERDUE_SEC = 20 * 60;
-const WINDOW_COMPLETION_GRACE_SEC = 10 * 60;
+const WINDOW_COMPLETION_GRACE_SEC = MATERIAL_DELAY_SEC;
 const POST_LUNCH_HANDOFF_GRACE_SEC = 5 * 60;
 
 type DayWithStates = LiveWorkday & {
@@ -50,6 +52,8 @@ type DayWithStates = LiveWorkday & {
  */
 @Injectable()
 export class LiveService {
+  private advanceInFlight: Promise<void> | null = null;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly uow: UnitOfWork,
@@ -85,6 +89,10 @@ export class LiveService {
         },
       });
       await this.ensureEngineerStates(context.tx, day.id, context.now);
+      await context.tx.engineerDay.updateMany({
+        where: { workDate: day.workDate, lunchEnabled: true, lunchTaken: false },
+        data: { lunchRequired: true },
+      });
       await this.captureRouteOrigins(context.tx, day.id, Number(day.logicalStartAt), context.now);
       // Import may already have published an identical task. Day start is deliberately
       // the sole exception: Router needs a publication stamped with logical t=0.
@@ -132,6 +140,7 @@ export class LiveService {
         data: enabled
           ? {
               lunchEnabled: true,
+              lunchRequired: true,
               lunchDurationSec: 30 * 60,
               lunchWindowStartAt: BigInt(lunch.startAt),
               lunchWindowEndAt: BigInt(lunch.endAt),
@@ -225,13 +234,20 @@ export class LiveService {
 
     switch (input.kind) {
       case 'online':
+        if (state.lineStartedAt !== null) {
+          if (state.lineStatus !== 'online')
+            throw SysError.forbidden('Only the dispatcher can restore a removed shift');
+          break;
+        }
         if (state.lineStatus === 'technical_break') {
           throw new SysError(
             'VALIDATION_FAILED',
             'Finish the technical break explicitly before going online',
           );
         }
-        await this.engineers.setAvailability(businessContext, engineerId, 'online', null);
+        await this.engineers.setAvailability(businessContext, engineerId, 'online', null, {
+          publish: liveNow >= Number(day.logicalStartAt) + NO_SHOW_SEC,
+        });
         await context.tx.liveEngineerState.update({
           where: { id: state.id },
           data: {
@@ -244,27 +260,40 @@ export class LiveService {
             version: { increment: 1 },
           },
         });
+        await context.tx.alert.upsert({
+          where: { dedupKey: `notice:line-started:${day.id}:${engineerId}` },
+          update: {},
+          create: {
+            dedupKey: `notice:line-started:${day.id}:${engineerId}`,
+            kind: 'notice',
+            code: 'engineer_line_started',
+            severity: 'info',
+            engineerIds: [engineerId],
+            requestIds: [],
+            workDate: day.workDate,
+            reasons: {
+              text: `${(await context.tx.engineer.findUniqueOrThrow({ where: { id: engineerId } })).displayName}: выход на линию подтверждён.`,
+            },
+            isBlocking: false,
+            createdAt: BigInt(liveNow),
+          },
+        });
         break;
 
-      case 'on_time':
       case 'eta': {
         const current = await this.currentFor(context.tx, day, engineerId, liveNow);
         this.assertCurrentRequest(current, input.requestId);
         // Once the customer window is open the UI offers an early start *alongside*
         // the ETA controls until the planned service slot begins.
         const forecastOpen =
-          current.phase === 'awaiting_window' ||
-          (current.phase === 'ready_to_start' &&
-            current.stop !== null &&
-            liveNow < current.stop.startAt);
+          current.phase === 'awaiting_window' || current.phase === 'ready_to_start';
         if (!forecastOpen) {
           throw new SysError(
             'VALIDATION_FAILED',
             'Arrival forecast is available only before the visit window',
           );
         }
-        const reportedEtaAt =
-          input.kind === 'eta' ? input.etaAt : (current.stop?.startAt ?? liveNow);
+        const reportedEtaAt = input.etaAt;
         if (
           reportedEtaAt < Math.max(liveNow, current.stop?.startAt ?? liveNow) ||
           reportedEtaAt > Number(day.logicalEndAt)
@@ -275,6 +304,18 @@ export class LiveService {
         }
         const request = current.current?.request;
         if (!request) throw SysError.notFound('Request', { requestId: input.requestId });
+        const original = await context.tx.appState.upsert({
+          where: { key: `live.arrival-baseline.${day.id}.${request.id}` },
+          update: {},
+          create: {
+            key: `live.arrival-baseline.${day.id}.${request.id}`,
+            value: { plannedStartAt: current.stop?.startAt ?? liveNow },
+            updatedAt: BigInt(liveNow),
+          },
+        });
+        const plannedStartAt = z
+          .object({ plannedStartAt: z.number() })
+          .parse(original.value).plannedStartAt;
         // Forecasts are promises about a completed visit. A late start whose normative
         // service would already exceed the customer window plus the product grace must
         // be released back to the Router instead of pinning a knowingly futile drive.
@@ -302,7 +343,14 @@ export class LiveService {
           reportedEtaAt: BigInt(reportedEtaAt),
           reservedEngineerId: engineerId,
         });
-        if (input.kind === 'eta') {
+        if (
+          etaNeedsReplan(
+            reportedEtaAt,
+            plannedStartAt,
+            request.serviceDurationSec,
+            request.windowEndAt,
+          )
+        ) {
           await this.publisher.publishIfChanged(
             context.tx,
             liveNow,
@@ -377,7 +425,16 @@ export class LiveService {
   }
 
   /** Invoked by the coordinator and reads. It is safe to call concurrently. */
-  async advanceOnce(): Promise<void> {
+  advanceOnce(): Promise<void> {
+    if (this.advanceInFlight) return this.advanceInFlight;
+    const pending = this.advanceShared().finally(() => {
+      if (this.advanceInFlight === pending) this.advanceInFlight = null;
+    });
+    this.advanceInFlight = pending;
+    return pending;
+  }
+
+  private async advanceShared(): Promise<void> {
     const wallNow = this.clock.nowSeconds();
     const timing = await this.timing.read();
     await this.uow.run(async (tx) => {
@@ -466,7 +523,14 @@ export class LiveService {
     await this.requireEngineerState(tx, day.id, engineerId, wallNow);
     const full = await this.dayWithStates(tx, day.id);
     const liveNow = this.liveNow(full, wallNow);
-    const views = await this.engineerStatesView(tx, full, wallNow);
+    const views = await this.engineerStatesView(
+      tx,
+      {
+        ...full,
+        engineers: full.engineers.filter((state) => state.engineerId === engineerId),
+      },
+      wallNow,
+    );
     const engineer = views.find((item) => item.id === engineerId);
     if (!engineer) throw SysError.notFound('Engineer', { engineerId });
     const current = await this.currentFor(tx, full, engineerId, liveNow);
@@ -566,18 +630,18 @@ export class LiveService {
       where: { workDate: workday.workDate, engineer: { archivedAt: null } },
       select: { engineerId: true },
     });
-    for (const day of days) {
-      await tx.liveEngineerState.upsert({
-        where: { workdayId_engineerId: { workdayId, engineerId: day.engineerId } },
-        update: {},
-        create: {
-          workdayId,
-          engineerId: day.engineerId,
-          createdAt: BigInt(wallNow),
-          updatedAt: BigInt(wallNow),
-        },
-      });
-    }
+    if (days.length === 0) return;
+    // Every LIVE read calls this guard. One idempotent insert keeps the hot polling path
+    // constant-round-trip instead of issuing one upsert per engineer every two seconds.
+    await tx.liveEngineerState.createMany({
+      data: days.map((day) => ({
+        workdayId,
+        engineerId: day.engineerId,
+        createdAt: BigInt(wallNow),
+        updatedAt: BigInt(wallNow),
+      })),
+      skipDuplicates: true,
+    });
   }
 
   /**
@@ -610,7 +674,7 @@ export class LiveService {
         data: {
           routeOriginLat: route.startLat,
           routeOriginLon: route.startLon,
-          routeOriginAt: BigInt(route.startAt ?? logicalStartAt),
+          routeOriginAt: BigInt(logicalStartAt),
           updatedAt: BigInt(wallNow),
           version: { increment: 1 },
         },
@@ -705,7 +769,12 @@ export class LiveService {
   ): Promise<LiveEngineerStateView[]> {
     const rows = await tx.engineerDay.findMany({
       where: { workDate: day.workDate },
-      select: { engineerId: true, availability: true },
+      select: {
+        engineerId: true,
+        availability: true,
+        lunchStartedAt: true,
+        lunchDurationSec: true,
+      },
     });
     const availability = new Map(rows.map((row) => [row.engineerId, row.availability]));
     const active = await tx.requestFact.findMany({
@@ -751,10 +820,20 @@ export class LiveService {
                 : viableDemand
                   ? 'awaiting_plan'
                   : 'exhausted';
+        const lunchDay = rows.find((row) => row.engineerId === state.engineerId);
         return {
           id: state.engineerId,
           name: state.engineer.displayName,
           lineStatus: state.lineStatus,
+          lineStartedAt: nullableNumber(state.lineStartedAt),
+          noShowAt: nullableNumber(state.noShowAt),
+          lunchInterval:
+            lunchDay?.lunchStartedAt != null && lunchDay.lunchDurationSec != null
+              ? {
+                  startAt: Number(lunchDay.lunchStartedAt),
+                  endAt: Number(lunchDay.lunchStartedAt) + lunchDay.lunchDurationSec,
+                }
+              : null,
           availability: availability.get(state.engineerId) ?? 'offline',
           activeRequestId,
           technicalBreak:
@@ -998,11 +1077,26 @@ export class LiveService {
           at: nextStop.startAt,
         }
       : null;
+    const workday = await tx.liveWorkday.findUnique({
+      where: { id: state.workdayId },
+      select: { workDate: true },
+    });
+    const engineerDay = workday
+      ? await tx.engineerDay.findUnique({
+          where: {
+            engineerId_workDate: { engineerId: state.engineerId, workDate: workday.workDate },
+          },
+          select: { lunchTaken: true },
+        })
+      : null;
     // Lunch is a structural part of the traversed edge as soon as the preceding job is
     // left. It is not a waiting vertex: the UI must highlight job→lunch→next before the
     // clock enters the break, and keep that compound edge until the next job is reached.
     const structuralLunch =
-      state.routeAnchorDepartedAt === null || activeRequestId !== null || nextStop === undefined
+      engineerDay?.lunchTaken ||
+      state.routeAnchorDepartedAt === null ||
+      activeRequestId !== null ||
+      nextStop === undefined
         ? null
         : (route?.stops.find(
             (stop) =>
@@ -1032,16 +1126,19 @@ export class LiveService {
               ? stop.lat === persistedLunch.lat && stop.lon === persistedLunch.lon
               : stop === structuralLunch),
       );
-      const lunchPoint = lunchStop
-        ? {
-            kind: 'lunch' as const,
-            requestId: null,
-            lat: lunchStop.lat,
-            lon: lunchStop.lon,
-            at: lunchStop.startAt,
-          }
-        : (persistedLunch ??
-          (structuralLunch
+      const lunchPoint =
+        persistedLunch ??
+        (lunch
+          ? lunchStop
+            ? {
+                kind: 'lunch' as const,
+                requestId: null,
+                lat: lunchStop.lat,
+                lon: lunchStop.lon,
+                at: lunch.startedAt,
+              }
+            : null
+          : structuralLunch
             ? {
                 kind: 'lunch' as const,
                 requestId: null,
@@ -1049,7 +1146,7 @@ export class LiveService {
                 lon: structuralLunch.lon,
                 at: structuralLunch.startAt,
               }
-            : null));
+            : null);
       const afterLunch = possibleNext.find(
         (stop) => viableIds.has(stop.requestId) && (!lunch || stop.startAt >= lunch.endAt),
       );
@@ -1136,7 +1233,7 @@ export class LiveService {
     });
     if (active) {
       const startedAt = Number(active.startedAt);
-      const stop: PlanStopView | null =
+      const plannedStop: PlanStopView | null =
         route?.stops.find((item) => item.requestId === active.id) ??
         (active.lat !== null && active.lon !== null
           ? {
@@ -1152,6 +1249,22 @@ export class LiveService {
               ),
             }
           : null);
+      const stop = plannedStop
+        ? {
+            ...plannedStop,
+            arrivalAt: startedAt,
+            startAt: startedAt,
+            endAt: Number(
+              active.expectedCompletionAt ?? BigInt(startedAt + active.serviceDurationSec),
+            ),
+          }
+        : null;
+      if (stop && route?.stops.some((item) => item.requestId === active.id)) {
+        route = {
+          ...route,
+          stops: route.stops.map((item) => (item.requestId === active.id ? stop : item)),
+        };
+      }
       if (stop && !route?.stops.some((item) => item.requestId === active.id)) {
         route = route
           ? { ...route, stops: [stop, ...route.stops] }
@@ -1316,31 +1429,19 @@ export class LiveService {
     };
   }
 
-  private lunchAt(
-    route: PlanRouteView | null,
-    liveNow: number,
-  ): { startedAt: number; endAt: number } | null {
-    const lunch = route?.stops.find(
-      (stop) => stop.kind === 'lunch' && stop.startAt <= liveNow && liveNow < stop.endAt,
-    );
-    return lunch ? { startedAt: lunch.startAt, endAt: lunch.endAt } : null;
-  }
-
   /** Keeps an entered automatic lunch blocking after a remaining-day plan omits it. */
   private async activeLunch(
     tx: Tx,
     workDate: string,
     engineerId: string,
-    route: PlanRouteView | null,
+    _route: PlanRouteView | null,
     liveNow: number,
   ) {
     const day = await tx.engineerDay.findUnique({
       where: { engineerId_workDate: { engineerId, workDate } },
     });
-    const planned = this.lunchAt(route, liveNow);
     // The accepted plan can lag behind a dispatcher switch. The current day fact is
     // authoritative until Router returns a plan without the removed lunch stop.
-    if (day?.lunchEnabled && planned) return planned;
     if (!day?.lunchTaken || day.lunchStartedAt === null || !day.lunchDurationSec) return null;
     const startedAt = Number(day.lunchStartedAt);
     const endAt = startedAt + day.lunchDurationSec;
@@ -1419,7 +1520,7 @@ export class LiveService {
             },
           },
         ],
-        createdAt: BigInt(wallNow),
+        createdAt: BigInt(this.liveNow(day, wallNow)),
       },
     });
   }
@@ -1502,12 +1603,21 @@ export class LiveService {
           version: { increment: 1 },
         },
       });
-      await this.publisher.publishIfChanged(
-        context.tx,
-        context.now,
-        PUBLICATION_TRIGGERS.ENGINEER_FORECAST_CHANGED,
-        { businessTime: true },
-      );
+      const actualStart = current.current?.request.startedAt;
+      const norm = current.current?.request.serviceDurationSec;
+      if (
+        actualStart !== null &&
+        actualStart !== undefined &&
+        norm !== undefined &&
+        expected > actualStart + norm + MATERIAL_DELAY_SEC
+      ) {
+        await this.publisher.publishIfChanged(
+          context.tx,
+          context.now,
+          PUBLICATION_TRIGGERS.ENGINEER_FORECAST_CHANGED,
+          { businessTime: true },
+        );
+      }
       return;
     }
     await context.tx.request.update({
@@ -1521,12 +1631,20 @@ export class LiveService {
       },
     });
     await this.departAnchor(context.tx, state, input.requestId, context.now, context.now);
-    await this.publisher.publishIfChanged(
-      context.tx,
-      context.now,
-      PUBLICATION_TRIGGERS.REQUEST_CANCELLED,
-      { businessTime: true },
-    );
+    const sequence = current.stop?.sequence;
+    const next =
+      sequence === undefined
+        ? null
+        : current.route?.stops
+            .filter((stop) => stop.kind === 'job' && stop.sequence > sequence)
+            .sort((a, b) => a.sequence - b.sequence)[0];
+    if (next && next.startAt - context.now > NEXT_VISIT_GAP_SEC)
+      await this.publisher.publishIfChanged(
+        context.tx,
+        context.now,
+        PUBLICATION_TRIGGERS.REQUEST_CANCELLED,
+        { businessTime: true },
+      );
   }
 
   private async startBreak(
@@ -1602,6 +1720,7 @@ export class LiveService {
     // this, two tabs crossing the no-show boundary could publish competing snapshots.
     await tx.$queryRaw`SELECT id FROM live_workdays WHERE id = ${day.id} FOR UPDATE`;
     await this.ensureEngineerStates(tx, day.id, wallNow);
+    let availabilityChanged = false;
     if (liveNow >= Number(day.logicalStartAt) + NO_SHOW_SEC) {
       const pending = await tx.liveEngineerState.findMany({
         where: { workdayId: day.id, lineStatus: 'pending' },
@@ -1611,7 +1730,7 @@ export class LiveService {
           where: { id: state.id },
           data: {
             lineStatus: 'no_show_offline',
-            noShowAt: BigInt(liveNow),
+            noShowAt: day.logicalStartAt + BigInt(NO_SHOW_SEC),
             updatedAt: BigInt(wallNow),
             version: { increment: 1 },
           },
@@ -1630,7 +1749,10 @@ export class LiveService {
           },
           operationId: `live-no-show-${day.id}-${state.engineerId}`,
         };
-        await this.engineers.setAvailability(operation, state.engineerId, 'offline', null);
+        await this.engineers.setAvailability(operation, state.engineerId, 'offline', null, {
+          publish: false,
+        });
+        availabilityChanged = true;
       }
     }
     const overdueBreaks = await tx.liveEngineerState.findMany({
@@ -1678,17 +1800,39 @@ export class LiveService {
           },
           operationId: `live-break-overdue-${day.id}-${state.engineerId}-${state.technicalBreakStartedAt}`,
         };
-        await this.engineers.setAvailability(operation, state.engineerId, 'offline', null);
+        await this.engineers.setAvailability(operation, state.engineerId, 'offline', null, {
+          publish: false,
+        });
+        availabilityChanged = true;
       }
     }
+    if (availabilityChanged) {
+      await this.publisher.publishIfChanged(
+        tx,
+        liveNow,
+        PUBLICATION_TRIGGERS.ENGINEER_AVAILABILITY_CHANGED,
+        { businessTime: true },
+      );
+    }
     const plan = await this.plans.current(tx);
-    let lunchChanged = false;
     for (const route of plan?.routes ?? []) {
       const lunch = route.stops.find(
         (stop) =>
           stop.kind === 'lunch' && stop.startAt <= BigInt(liveNow) && BigInt(liveNow) < stop.endAt,
       );
       if (!lunch) continue;
+      const line = await tx.liveEngineerState.findUnique({
+        where: { workdayId_engineerId: { workdayId: day.id, engineerId: route.engineerId } },
+      });
+      if (line?.lineStatus !== 'online') continue;
+      const working = await tx.requestFact.count({
+        where: {
+          engineerId: route.engineerId,
+          kind: 'started',
+          request: { lifecycle: 'in_progress' },
+        },
+      });
+      if (working > 0) continue;
       const updated = await tx.engineerDay.updateMany({
         where: {
           engineerId: route.engineerId,
@@ -1698,7 +1842,7 @@ export class LiveService {
         },
         data: {
           lunchTaken: true,
-          lunchStartedAt: BigInt(liveNow),
+          lunchStartedAt: lunch.startAt,
           updatedAt: BigInt(wallNow),
           version: { increment: 1 },
         },
@@ -1709,21 +1853,13 @@ export class LiveService {
           data: {
             activeLunchLat: lunch.lat,
             activeLunchLon: lunch.lon,
-            activeLunchStartedAt: BigInt(liveNow),
+            activeLunchStartedAt: lunch.startAt,
             updatedAt: BigInt(wallNow),
             version: { increment: 1 },
           },
         });
       }
-      lunchChanged ||= updated.count > 0;
     }
-    if (lunchChanged)
-      await this.publisher.publishIfChanged(
-        tx,
-        liveNow,
-        PUBLICATION_TRIGGERS.ENGINEER_LUNCH_TAKEN,
-        { businessTime: true },
-      );
     const assumed = await tx.liveRequestState.findMany({
       where: { workdayId: day.id },
       select: {
@@ -1761,12 +1897,17 @@ export class LiveService {
       select: { id: true },
     });
     const protectedIds = new Set(explicit.map((item) => item.id));
-    let changed = false;
+    const appActiveFacts = await tx.requestFact.findMany({
+      where: { kind: 'finished', request: { liveStates: { some: { workdayId: day.id } } } },
+      select: { engineerId: true },
+    });
+    const appActiveEngineers = new Set(appActiveFacts.map((fact) => fact.engineerId));
     for (const route of plan?.routes ?? []) {
       const liveState = await tx.liveEngineerState.findUnique({
         where: { workdayId_engineerId: { workdayId: day.id, engineerId: route.engineerId } },
       });
       if (liveState?.lineStatus !== 'online') continue;
+      if (appActiveEngineers.has(route.engineerId)) continue;
       const dayState = await tx.engineerDay.findUnique({
         where: { engineerId_workDate: { engineerId: route.engineerId, workDate: day.workDate } },
         select: { lunchDurationSec: true },
@@ -1855,7 +1996,6 @@ export class LiveService {
                 version: { increment: 1 },
               },
             });
-            changed = true;
           }
           continue;
         }
@@ -1878,7 +2018,6 @@ export class LiveService {
               version: { increment: 1 },
             },
           });
-          changed = true;
         }
       }
     }
@@ -1921,33 +2060,49 @@ export class LiveService {
             version: { increment: 1 },
           },
         });
-        changed = true;
       }
     }
-    if (changed)
-      await this.publisher.publishIfChanged(
-        tx,
-        liveNow,
-        PUBLICATION_TRIGGERS.LIVE_SILENT_SCHEDULE_PROGRESS,
-        { businessTime: true },
-      );
     // The legacy coordinator intentionally follows wall time for ordinary API use. LIVE
     // advances a virtual clock, therefore its overrun gate lives here and writes the
     // exact same durable request field/Router trigger.
-    const overdue = await tx.request.updateMany({
+    const materialOverruns = await tx.request.findMany({
       where: {
         lifecycle: 'in_progress',
         liveStates: { some: { workdayId: day.id } },
-        expectedCompletionAt: { lt: BigInt(liveNow - timing.taskOverrunToleranceSec) },
-        overrunDetectedAt: null,
+        startedAt: { not: null },
       },
-      data: {
-        overrunDetectedAt: BigInt(liveNow),
-        updatedAt: BigInt(liveNow),
-        version: { increment: 1 },
-      },
+      select: { id: true, startedAt: true, serviceDurationSec: true, overrunDetectedAt: true },
     });
-    if (overdue.count > 0) {
+    let materialChanged = false;
+    for (const request of materialOverruns) {
+      if (
+        request.startedAt !== null &&
+        request.overrunDetectedAt === null &&
+        liveNow >
+          Number(request.startedAt) + request.serviceDurationSec + timing.taskOverrunToleranceSec
+      ) {
+        await tx.request.update({
+          where: { id: request.id },
+          data: {
+            overrunDetectedAt: BigInt(liveNow),
+            updatedAt: BigInt(liveNow),
+            version: { increment: 1 },
+          },
+        });
+      }
+      if (
+        request.startedAt === null ||
+        liveNow <= Number(request.startedAt) + request.serviceDurationSec + MATERIAL_DELAY_SEC
+      )
+        continue;
+      const key = `live.material-overrun.${day.id}.${request.id}`;
+      if (await tx.appState.findUnique({ where: { key } })) continue;
+      await tx.appState.create({
+        data: { key, value: { requestId: request.id }, updatedAt: BigInt(liveNow) },
+      });
+      materialChanged = true;
+    }
+    if (materialChanged) {
       await this.publisher.publishIfChanged(
         tx,
         liveNow,
@@ -1973,6 +2128,39 @@ export class LiveService {
         liveNow < Number(item.lunchStartedAt) + item.lunchDurationSec,
     );
     const viableDemand = await this.hasViableDemand(tx, day.id, liveNow);
+    for (const route of plan?.routes ?? []) {
+      const line = await tx.liveEngineerState.findUnique({
+        where: { workdayId_engineerId: { workdayId: day.id, engineerId: route.engineerId } },
+        include: { engineer: true },
+      });
+      if (!line?.lineStartedAt || line.lineStatus !== 'online') continue;
+      const remaining = await tx.request.count({
+        where: {
+          id: { in: route.stops.flatMap((stop) => (stop.requestId ? [stop.requestId] : [])) },
+          lifecycle: { in: ['submitted', 'in_progress'] },
+          liveStates: { none: { workdayId: day.id, assumedCompletedAt: { not: null } } },
+        },
+      });
+      if (remaining !== 0 || (await this.statsFor(tx, day, route.engineerId)).completedCount === 0)
+        continue;
+      const dedupKey = `notice:engineer-finished:${day.id}:${route.engineerId}`;
+      await tx.alert.upsert({
+        where: { dedupKey },
+        update: {},
+        create: {
+          dedupKey,
+          kind: 'notice',
+          code: 'engineer_day_finished',
+          severity: 'info',
+          engineerIds: [route.engineerId],
+          requestIds: [],
+          workDate: day.workDate,
+          reasons: { text: `${line.engineer.displayName}: все заявки завершены.` },
+          isBlocking: false,
+          createdAt: BigInt(liveNow),
+        },
+      });
+    }
     if (
       unfinished === 0 &&
       technicalBreak === 0 &&
@@ -1990,6 +2178,30 @@ export class LiveService {
           version: { increment: 1 },
         },
       });
+      const unresolved = await tx.alert.count({
+        where: { kind: 'alert', isBlocking: true, resolvedAt: null, invalidatedAt: null },
+      });
+      if (unresolved > 0) {
+        const dedupKey = `notice:day-finished-alerts:${day.id}`;
+        await tx.alert.upsert({
+          where: { dedupKey },
+          update: {},
+          create: {
+            dedupKey,
+            kind: 'notice',
+            code: 'workday_finished_with_alerts',
+            severity: 'info',
+            engineerIds: [],
+            requestIds: [],
+            workDate: day.workDate,
+            reasons: {
+              text: 'Рабочий день завершён. Перед закрытием смены разрешите оставшиеся алерты.',
+            },
+            isBlocking: false,
+            createdAt: BigInt(liveNow),
+          },
+        });
+      }
     }
   }
 }

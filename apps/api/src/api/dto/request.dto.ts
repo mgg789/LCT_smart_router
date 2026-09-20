@@ -63,9 +63,12 @@ export const rescheduleRequestSchema = operationEnvelopeSchema.extend({
 export type RescheduleRequestDto = z.infer<typeof rescheduleRequestSchema>;
 
 export const dispatcherCreateRequestSchema = prepareRequestSchema.extend({
-  /** The client this request belongs to, by address. Machine calls select the object;
-   * they do not prove that its owner confirmed anything (context/41 section 10). */
-  clientEmail: z.email(),
+  /** Optional when the compact dispatcher form has no customer identity. When present,
+   * the address selects the owning client object; it never proves that its owner
+   * confirmed anything (context/41 section 10). */
+  clientEmail: z.email().optional(),
+  /** The dispatcher may receive an unplanned job before the contact is known. */
+  contactName: z.string().min(1).max(200).optional(),
 });
 export type DispatcherCreateRequestDto = z.infer<typeof dispatcherCreateRequestSchema>;
 
