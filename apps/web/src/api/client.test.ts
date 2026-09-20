@@ -5,6 +5,9 @@ import {
   loadPolicyComparison,
   resolveApiUrl,
   selectRoutingPolicy,
+  changeEngineerAccount,
+  deleteDispatcherEngineer,
+  linkEngineerAccount,
   setEngineerAvailability,
   setLunchesEnabled,
   uploadDataPackage,
@@ -417,6 +420,48 @@ describe('live dashboard client', () => {
       schemaVersion: '1.0',
       mode: 'append_requests',
     });
+  });
+
+  it('sends first-bind, account change and delete on the dispatch engineer routes', async () => {
+    const calls: Array<{ url: string; method: string; body: Record<string, unknown> }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        calls.push({ url, method: init?.method ?? 'GET', body });
+        if (url.endsWith('/engineers/link-account') || url.includes('/account')) {
+          return json({ engineer: { id: 'eng-1' } });
+        }
+        return json({ deleted: true });
+      }),
+    );
+
+    await linkEngineerAccount('session-token', { engineerId: 'eng-1', email: 'a@test.com' });
+    await changeEngineerAccount('session-token', {
+      engineerId: 'eng-1',
+      email: 'b@test.com',
+      expectedVersion: 3,
+    });
+    await deleteDispatcherEngineer('session-token', { engineerId: 'eng-1', expectedVersion: 3 });
+
+    expect(calls).toEqual([
+      expect.objectContaining({
+        url: '/api/v1/dispatch/engineers/link-account',
+        method: 'POST',
+        body: expect.objectContaining({ engineerId: 'eng-1', email: 'a@test.com' }),
+      }),
+      expect.objectContaining({
+        url: '/api/v1/dispatch/engineers/eng-1/account',
+        method: 'PATCH',
+        body: expect.objectContaining({ email: 'b@test.com', expectedVersion: 3 }),
+      }),
+      expect.objectContaining({
+        url: '/api/v1/dispatch/engineers/eng-1',
+        method: 'DELETE',
+        body: expect.objectContaining({ expectedVersion: 3 }),
+      }),
+    ]);
   });
 });
 

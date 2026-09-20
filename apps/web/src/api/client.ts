@@ -714,6 +714,51 @@ export function linkEngineerAccount(
 }
 
 /**
+ * Replaces the login address of an engineer who already has one.
+ * Integration owner: PATCH `/dispatch/engineers/:id/account`.
+ */
+export function changeEngineerAccount(
+  token: string,
+  input: { engineerId: string; email: string; expectedVersion: number },
+): Promise<{ engineer: { id: string } }> {
+  return requestJson(
+    `/api/v1/dispatch/engineers/${encodeURIComponent(input.engineerId)}/account`,
+    createdEngineerSchema,
+    token,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({
+        operationId: crypto.randomUUID(),
+        expectedVersion: input.expectedVersion,
+        email: input.email,
+      }),
+    },
+  );
+}
+
+/**
+ * Removes an engineer profile from the dispatch roster.
+ * Integration owner: DELETE `/dispatch/engineers/:id`.
+ */
+export function deleteDispatcherEngineer(
+  token: string,
+  input: { engineerId: string; expectedVersion: number },
+): Promise<{ deleted: true }> {
+  return requestJson(
+    `/api/v1/dispatch/engineers/${encodeURIComponent(input.engineerId)}`,
+    z.object({ deleted: z.literal(true) }),
+    token,
+    {
+      method: 'DELETE',
+      body: JSON.stringify({
+        operationId: crypto.randomUUID(),
+        expectedVersion: input.expectedVersion,
+      }),
+    },
+  );
+}
+
+/**
  * Creates an engineer profile. The live contract requires email at creation.
  */
 export function createDispatcherEngineer(

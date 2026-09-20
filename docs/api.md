@@ -231,6 +231,8 @@ watchdog/транспорта, а не доказательство достав
 | GET | `/api/v1/dispatch/engineers` | Инженеры с навыками, транспортом и их текущим днём |
 | POST | `/api/v1/dispatch/engineers` | Добавить инженера по адресу |
 | POST | `/api/v1/dispatch/engineers/link-account` | Выдать логин профилю инженера без адреса (привязка бригады из импорта) |
+| PATCH | `/api/v1/dispatch/engineers/:id/account` | Сменить уже привязанный логин (`{operationId, expectedVersion, email}` → `{engineer}`). Фронт вызывает; маршрута в контроллере ещё нет |
+| DELETE | `/api/v1/dispatch/engineers/:id` | Удалить профиль (`{operationId, expectedVersion}` → `{deleted: true}`). Фронт вызывает; маршрута в контроллере ещё нет |
 | PATCH | `/api/v1/dispatch/engineers/:id` | Изменить профиль |
 | POST | `/api/v1/dispatch/engineers/:id/workday` | Задать смену и условия обеда |
 | POST | `/api/v1/dispatch/engineers/:id/availability` | Снять инженера с линии или вернуть на неё |

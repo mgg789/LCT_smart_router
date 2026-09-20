@@ -62,6 +62,53 @@ export function isPlausibleEmail(value: string): boolean {
 }
 
 /**
+ * First bind uses `link-account`; an already-linked login uses PATCH `.../account`.
+ */
+export function engineerEmailWriteKind(hasAccount: boolean): 'link' | 'change' {
+  return hasAccount ? 'change' : 'link';
+}
+
+/**
+ * Demo-pack mutation: bind or replace a login address on the local snapshot.
+ */
+export function bindEngineerEmailInSnapshot(
+  snapshot: DashboardSnapshot,
+  engineerId: string,
+  email: string,
+): DashboardSnapshot {
+  return {
+    ...snapshot,
+    engineers: snapshot.engineers.map((item) =>
+      item.id === engineerId ? { ...item, email, hasAccount: true } : item,
+    ),
+  };
+}
+
+/**
+ * Demo-pack mutation: drop a roster row and its planned work.
+ */
+export function dropEngineerFromSnapshot(
+  snapshot: DashboardSnapshot,
+  engineerId: string,
+): DashboardSnapshot {
+  const plan = snapshot.plan.plan;
+  return {
+    ...snapshot,
+    engineers: snapshot.engineers.filter((item) => item.id !== engineerId),
+    plan: {
+      ...snapshot.plan,
+      plan: plan
+        ? {
+            ...plan,
+            routes: plan.routes.filter((route) => route.engineerId !== engineerId),
+            assignments: plan.assignments.filter((item) => item.engineerId !== engineerId),
+          }
+        : null,
+    },
+  };
+}
+
+/**
  * Dispatcher-facing skill chip. Known codes use the add-entity labels (title case).
  */
 export function skillChipLabel(skill: string): string {

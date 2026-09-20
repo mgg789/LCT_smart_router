@@ -4,6 +4,8 @@ import {
   createDispatcherEngineer,
   createDispatcherRequest,
   importOfficialDataset,
+  changeEngineerAccount,
+  deleteDispatcherEngineer,
   linkEngineerAccount,
   loadDashboardSnapshot,
   loadPolicyComparison,
@@ -47,6 +49,11 @@ import {
   saveDay,
   startRecoverySession,
 } from '../domain/resilience';
+import {
+  bindEngineerEmailInSnapshot,
+  dropEngineerFromSnapshot,
+  engineerEmailWriteKind,
+} from '../figma-dashboard/engineerRoster';
 
 const SESSION_KEY = 'lct.dispatcher.session';
 const DEFAULT_REBUILD_TIMEOUT_MS = 90_000;
@@ -845,35 +852,79 @@ export function useDashboard() {
     [pushEvent, setSnapshot, token],
   );
 
-  /** First-bind of a login address. Changing an already linked email has no contract. */
+  /** First-bind or replace the login address. */
   const linkEngineerEmail = useCallback(
     async (engineerId: string, email: string) => {
-      if (sourceRef.current === 'demo' && snapshotRef.current) {
-        const current = snapshotRef.current;
-        const next: DashboardSnapshot = {
-          ...current,
-          engineers: current.engineers.map((item) =>
-            item.id === engineerId ? { ...item, email, hasAccount: true } : item,
-          ),
-        };
+      const current = snapshotRef.current;
+      const existing = current?.engineers.find((item) => item.id === engineerId);
+      const write = engineerEmailWriteKind(Boolean(existing?.hasAccount && existing.email));
+      if (sourceRef.current === 'demo' && current) {
+        const next = bindEngineerEmailInSnapshot(current, engineerId, email);
         setSnapshot(next);
         pushEvent(`Почта ${engineerName(next, engineerId)} обновлена.`);
         return;
       }
       if (!token || sourceRef.current !== 'live') {
-        throw new Error('Привязка почты доступна только в живой сессии.');
+        throw new Error('Почта инженера меняется только в живой сессии.');
       }
       setCreatingEntity(true);
       try {
-        await linkEngineerAccount(token, { engineerId, email });
+        if (write === 'change' && existing) {
+          await changeEngineerAccount(token, {
+            engineerId,
+            email,
+            expectedVersion: existing.version,
+          });
+        } else {
+          await linkEngineerAccount(token, { engineerId, email });
+        }
         const next = await loadDashboardSnapshot(token);
         setSnapshot(next);
-        pushEvent(`Почта ${engineerName(next, engineerId)} привязана.`);
+        pushEvent(`Почта ${engineerName(next, engineerId)} сохранена.`);
       } finally {
         setCreatingEntity(false);
       }
     },
     [pushEvent, setSnapshot, token],
+  );
+
+  /** Removes a roster profile and drops focus if that engineer was selected. */
+  const deleteEngineer = useCallback(
+    async (engineerId: string) => {
+      const current = snapshotRef.current;
+      const existing = current?.engineers.find((item) => item.id === engineerId);
+      if (sourceRef.current === 'demo' && current) {
+        const next = dropEngineerFromSnapshot(current, engineerId);
+        setSnapshot(next);
+        if (focus.engineerId === engineerId) {
+          setFocus({ engineerId: next.engineers[0]?.id ?? null, requestId: null });
+        }
+        pushEvent(`${engineerName(current, engineerId)} удалён из демо-снимка.`);
+        return;
+      }
+      if (!token || sourceRef.current !== 'live') {
+        throw new Error('Удаление инженера доступно только в живой сессии.');
+      }
+      if (!existing) {
+        throw new Error('Инженер уже отсутствует в снимке.');
+      }
+      setCreatingEntity(true);
+      try {
+        await deleteDispatcherEngineer(token, {
+          engineerId,
+          expectedVersion: existing.version,
+        });
+        const next = await loadDashboardSnapshot(token);
+        setSnapshot(next);
+        if (focus.engineerId === engineerId) {
+          setFocus({ engineerId: next.engineers[0]?.id ?? null, requestId: null });
+        }
+        pushEvent(`${engineerName(current ?? next, engineerId)} удалён.`);
+      } finally {
+        setCreatingEntity(false);
+      }
+    },
+    [focus.engineerId, pushEvent, setSnapshot, token],
   );
 
   return {
@@ -931,6 +982,7 @@ export function useDashboard() {
     createRequest,
     createEngineer,
     linkEngineerEmail,
+    deleteEngineer,
   };
 }
 

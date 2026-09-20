@@ -63,6 +63,7 @@ export function EngineersView({
   busy,
   onSelectEngineer,
   onLinkEmail,
+  onDeleteEngineer,
   onSetAvailability,
 }: {
   snapshot: DashboardSnapshot | null;
@@ -71,6 +72,7 @@ export function EngineersView({
   busy: boolean;
   onSelectEngineer: (engineerId: string) => void;
   onLinkEmail: (engineerId: string, email: string) => Promise<void>;
+  onDeleteEngineer: (engineerId: string) => Promise<void>;
   onSetAvailability: (engineerId: string, availability: 'online' | 'offline') => void;
 }) {
   const reduceMotion = useReducedMotion();
@@ -87,6 +89,7 @@ export function EngineersView({
   const [emailError, setEmailError] = useState<string | null>(null);
   const [emailBusy, setEmailBusy] = useState(false);
   const [deleteAsk, setDeleteAsk] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const rosterRef = useRef(roster);
   const centerRef = useRef(0);
   const targetRef = useRef(0);
@@ -116,6 +119,13 @@ export function EngineersView({
   searchHeldRef.current = searchHeld;
 
   const focused = roster[focusedIndex] ?? roster[0] ?? null;
+
+  useEffect(() => {
+    setDeleteAsk(false);
+    setDeleteError(null);
+    setEmailOpen(false);
+    setEmailError(null);
+  }, [focused?.id]);
 
   function paint(center: number) {
     const items = rosterRef.current;
@@ -426,10 +436,6 @@ export function EngineersView({
       setEmailError('Проверьте адрес почты');
       return;
     }
-    if (focused.hasAccount && focused.email) {
-      setEmailError('Смена уже привязанной почты пока без контракта');
-      return;
-    }
     setEmailBusy(true);
     setEmailError(null);
     try {
@@ -437,6 +443,20 @@ export function EngineersView({
       setEmailOpen(false);
     } catch (cause) {
       setEmailError(cause instanceof Error ? cause.message : 'Не удалось сохранить почту');
+    } finally {
+      setEmailBusy(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!focused) return;
+    setEmailBusy(true);
+    setDeleteError(null);
+    try {
+      await onDeleteEngineer(focused.id);
+      setDeleteAsk(false);
+    } catch (cause) {
+      setDeleteError(cause instanceof Error ? cause.message : 'Не удалось удалить инженера');
     } finally {
       setEmailBusy(false);
     }
@@ -453,6 +473,7 @@ export function EngineersView({
           emailDraft={emailDraft}
           emailError={emailError}
           deleteAsk={deleteAsk}
+          deleteError={deleteError}
           onToggleEmail={() => {
             setEmailOpen((open) => !open);
             setEmailDraft(focused.email ?? '');
@@ -463,8 +484,15 @@ export function EngineersView({
           onAvailability={() => {
             onSetAvailability(focused.id, focused.availability === 'offline' ? 'online' : 'offline');
           }}
-          onAskDelete={() => setDeleteAsk(true)}
-          onCancelDelete={() => setDeleteAsk(false)}
+          onAskDelete={() => {
+            setDeleteAsk(true);
+            setDeleteError(null);
+          }}
+          onCancelDelete={() => {
+            setDeleteAsk(false);
+            setDeleteError(null);
+          }}
+          onConfirmDelete={() => void confirmDelete()}
         />
       ) : (
         <div
@@ -576,12 +604,14 @@ function EngineerDossier({
   emailDraft,
   emailError,
   deleteAsk,
+  deleteError,
   onToggleEmail,
   onEmailDraft,
   onSubmitEmail,
   onAvailability,
   onAskDelete,
   onCancelDelete,
+  onConfirmDelete,
 }: {
   engineer: EngineerProfile;
   motionOn: boolean;
@@ -590,12 +620,14 @@ function EngineerDossier({
   emailDraft: string;
   emailError: string | null;
   deleteAsk: boolean;
+  deleteError: string | null;
   onToggleEmail: () => void;
   onEmailDraft: (value: string) => void;
   onSubmitEmail: (event: FormEvent) => void;
   onAvailability: () => void;
   onAskDelete: () => void;
   onCancelDelete: () => void;
+  onConfirmDelete: () => void;
 }) {
   const portrait = ENGINEER_PORTRAITS[engineer.photoIndex] ?? ENGINEER_PORTRAITS[0];
   const offline = engineer.availability === 'offline';
@@ -684,17 +716,39 @@ function EngineerDossier({
                 {offline ? 'Вернуть на смену' : 'Снять со смены'}
               </motion.button>
               {deleteAsk ? (
-                <button
-                  type="button"
-                  className="flex h-[67px] w-[241px] items-center justify-center rounded-[20px] bg-figma-track font-semibold text-[16px] text-figma-ink"
-                  onClick={onCancelDelete}
-                >
-                  Удаление без контракта
-                </button>
+                <div className="flex flex-col gap-[8px]">
+                  <div className="flex gap-[12px]">
+                    <button
+                      type="button"
+                      disabled={busy}
+                      className="flex h-[67px] w-[114px] items-center justify-center rounded-[20px] bg-figma-track font-semibold text-[16px] text-figma-ink disabled:opacity-50"
+                      onClick={onCancelDelete}
+                    >
+                      Отмена
+                    </button>
+                    <motion.button
+                      type="button"
+                      disabled={busy}
+                      className="flex h-[67px] w-[115px] items-center justify-center rounded-[20px] bg-figma-cancel font-semibold text-[16px] text-[#f1f1f1] disabled:opacity-50"
+                      whileHover={motionOn ? { scale: 1.03, filter: 'brightness(1.08)' } : undefined}
+                      whileTap={motionOn ? { scale: 0.98 } : undefined}
+                      transition={tap}
+                      onClick={onConfirmDelete}
+                    >
+                      Удалить
+                    </motion.button>
+                  </div>
+                  {deleteError ? (
+                    <p className="figma-nowrap max-w-[241px] truncate font-medium text-[14px] text-figma-cancel">
+                      {deleteError}
+                    </p>
+                  ) : null}
+                </div>
               ) : (
                 <motion.button
                   type="button"
-                  className="flex h-[67px] w-[241px] items-center justify-center rounded-[20px] bg-figma-cancel font-semibold text-[20px] tracking-[-0.6px] text-[#f1f1f1]"
+                  disabled={busy}
+                  className="flex h-[67px] w-[241px] items-center justify-center rounded-[20px] bg-figma-cancel font-semibold text-[20px] tracking-[-0.6px] text-[#f1f1f1] disabled:opacity-50"
                   whileHover={motionOn ? { scale: 1.03, filter: 'brightness(1.08)' } : undefined}
                   whileTap={motionOn ? { scale: 0.98 } : undefined}
                   transition={tap}

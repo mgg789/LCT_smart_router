@@ -623,6 +623,7 @@ export function MainDashboardPage() {
                   busy={dash.busy}
                   onSelectEngineer={dash.selectEngineer}
                   onLinkEmail={dash.linkEngineerEmail}
+                  onDeleteEngineer={dash.deleteEngineer}
                   onSetAvailability={(engineerId, availability) => {
                     void dash.updateEngineerAvailability(engineerId, availability);
                   }}

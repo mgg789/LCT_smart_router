@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { createDevSnapshot, FOCUS_ENGINEER_ID } from '../fixtures/dev-day';
 import { moscowAt } from '../lib/time';
 import {
+  bindEngineerEmailInSnapshot,
+  dropEngineerFromSnapshot,
   engineerActivity,
+  engineerEmailWriteKind,
   engineerOfficeLabel,
   engineerPhotoIndex,
   engineerProfilesFromSnapshot,
@@ -90,5 +93,22 @@ describe('engineerRoster', () => {
       title: 'Технический перерыв',
       untilClock: '13:10',
     });
+  });
+
+  it('routes a first bind to link-account and a linked address to change', () => {
+    expect(engineerEmailWriteKind(false)).toBe('link');
+    expect(engineerEmailWriteKind(true)).toBe('change');
+    const snapshot = createDevSnapshot();
+    const first = snapshot.engineers[0];
+    expect(first).toBeTruthy();
+    if (!first) return;
+    const bound = bindEngineerEmailInSnapshot(snapshot, first.id, 'brigade@test.com');
+    expect(bound.engineers.find((item) => item.id === first.id)).toMatchObject({
+      email: 'brigade@test.com',
+      hasAccount: true,
+    });
+    const dropped = dropEngineerFromSnapshot(bound, first.id);
+    expect(dropped.engineers.some((item) => item.id === first.id)).toBe(false);
+    expect(dropped.plan.plan?.routes.every((route) => route.engineerId !== first.id)).toBe(true);
   });
 });

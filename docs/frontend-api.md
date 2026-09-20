@@ -320,9 +320,19 @@ CAS по `expectedContextVersion`: устарели — 409 `VERSION_CONFLICT`, 
 `POST /dispatch/regions` — офисы и новые регионы из той же модалки живут
 в сессии фронта, пока их не появят в API. `POST /dispatch/engineers`
 сейчас требует `email`; форма считает почту необязательной.
-Вкладки «Инженеры» не хватает `DELETE /dispatch/engineers/:id` и смены уже
-привязанной почты (есть только `POST /dispatch/engineers/link-account` для
-профиля без адреса).
+Вкладка «Инженеры» уже вызывает два маршрута, которых ещё нет в `apps/api`
+(следующий агент — владелец контракта):
+
+**PATCH `/dispatch/engineers/:id/account`** — `{operationId, expectedVersion, email}` → `{engineer}`.
+Смена логина у профиля, у которого адрес уже есть. `VALIDATION_FAILED`, если адрес
+занят другим инженером; `VERSION_CONFLICT` при устаревшей версии. После смены
+инженер входит с новым адресом через `POST /auth/login-code`.
+
+**DELETE `/dispatch/engineers/:id`** — `{operationId, expectedVersion}` → `{deleted: true}`.
+Снять профиль с ростера. `VERSION_CONFLICT` при устаревшей версии; `409`, если
+на инженере есть начатая работа (`WORK_ALREADY_STARTED`) — тогда удаление
+запрещено, пока визит не завершён или не снят. Первая привязка почты по-прежнему
+`POST /dispatch/engineers/link-account`.
 Часы смены диспетчера и ключ 2ГИС/Яндекс в «Настройках» — только
 `localStorage` (`lct.dispatcher.settings`): нет `PUT /dispatch/settings`
 и нет контракта на токен карт. Допуск опоздания 0–15 мин мапится на
