@@ -1,14 +1,27 @@
 import type { LucideIcon } from 'lucide-react';
 import { ArrowUpRight, Car, Clock, MapPin, Search, Utensils } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import type { WheelEvent } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type { EngineerView } from '@/entities/engineer';
 import { useEngineers } from '@/entities/engineer';
 import { useDispatchState } from '@/entities/plan';
 import { useRequests } from '@/entities/request';
-import { cn, formatKm, formatRange, formatTime } from '@/shared/lib';
+import { cn, formatKm, formatRange, formatTime, useElementSize } from '@/shared/lib';
 import { ArcCarousel, initialsOf, Monogram } from '@/shared/ui';
 import type { EngineerProfile, ProfileStop } from '../model/engineerProfile';
 import { buildEngineerProfile, routeElapsedShare } from '../model/engineerProfile';
+
+/**
+ * The canvas the screen is drawn on: what the mockup's 1920×1080 frame leaves a
+ * section once the rail, the header and the page gutters are taken out. The
+ * screen is laid out at exactly this size and then fitted to the window, so the
+ * drawing keeps its proportions instead of spilling out of a shorter one.
+ */
+const DESIGN = { width: 1706, height: 937 };
+/** Below this the drawing would be unreadable; the page scrolls instead. */
+const MIN_FIT = 0.62;
+/** Distance between two stops on the day's line. */
+const STOP_WIDTH = 276;
 
 /** One row of the profile's detail list: icon, dark label, grey value. */
 function Detail({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value: string }) {
@@ -52,22 +65,30 @@ function currentSubtitle(stop: ProfileStop): string {
     .join('  •  ');
 }
 
-/** Face of a deck card: a monogram plate, darkened towards the name. */
+/** Face of a deck card, written in `em` so it scales with the card. */
 function CrewCard({ engineer, assigned }: { engineer: EngineerView; assigned: number }) {
   return (
     <span className="relative block h-full w-full bg-ink text-left">
-      <span className="absolute inset-0 flex items-center justify-center font-display text-[84px] text-white/15">
+      <span className="absolute inset-0 flex items-center justify-center font-display text-[5.25em] text-white/15">
         {initialsOf(engineer.displayName)}
       </span>
       <span className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-ink to-transparent" />
-      <span className="absolute right-6 bottom-6 left-6 block">
-        <span className="block truncate font-display text-[22px] text-white">
+      <span className="absolute right-[1.5em] bottom-[1.5em] left-[1.5em] block">
+        <span className="block truncate font-display text-[1.375em] text-white">
           {engineer.displayName}
         </span>
-        <span className="mt-1 block text-[15px] text-white/70">в работе — {assigned} заявок</span>
+        <span className="mt-[0.25em] block text-[0.9375em] text-white/70">
+          в работе — {assigned} заявок
+        </span>
       </span>
     </span>
   );
+}
+
+/** A vertical wheel over a horizontal strip should walk it sideways. */
+function wheelAsHorizontal(event: WheelEvent<HTMLDivElement>) {
+  const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+  if (delta !== 0) event.currentTarget.scrollLeft += delta;
 }
 
 /**
@@ -88,6 +109,15 @@ export function EngineersPage() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+
+  // Measured outside the fitted canvas, so what is measured is the window and
+  // not the box the fit itself produced.
+  const frameRef = useRef<HTMLDivElement>(null);
+  const frame = useElementSize(frameRef);
+  const fit =
+    frame.width > 0 && frame.height > 0
+      ? Math.max(MIN_FIT, Math.min(1, frame.width / DESIGN.width, frame.height / DESIGN.height))
+      : 1;
 
   const engineers = engineersQuery.data?.engineers ?? [];
   const requests = requestsQuery.data?.requests ?? [];
@@ -115,7 +145,7 @@ export function EngineersPage() {
   const elapsed = profile ? routeElapsedShare(profile, Math.floor(Date.now() / 1000)) : 0;
   const current = profile?.current ?? null;
   const upcoming = current
-    ? (profile?.stops ?? []).filter((stop) => stop.sequence > current.sequence).slice(0, 3)
+    ? (profile?.stops ?? []).filter((stop) => stop.sequence > current.sequence)
     : [];
 
   const failed = engineersQuery.isError || requestsQuery.isError || stateQuery.isError;
@@ -130,193 +160,212 @@ export function EngineersPage() {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-y-auto">
-      {loading ? <p className="pt-10 text-[16px] text-ink-soft">Загружаем инженеров…</p> : null}
+    <div className="h-full min-h-0 overflow-auto" ref={frameRef}>
+      {/*
+       * `zoom` fits the drawing to the window: unlike a transform it takes part
+       * in layout, so the canvas below is laid out at the mockup's size and ends
+       * up filling this frame exactly — no leftover space and no scrollbars.
+       */}
+      <div className="flex h-full min-h-0 flex-col" style={{ zoom: fit }}>
+        {loading ? <p className="pt-10 text-[16px] text-ink-soft">Загружаем инженеров…</p> : null}
 
-      {!loading && !profile ? (
-        <p className="pt-10 text-[16px] text-ink-soft">
-          {engineers.length === 0 ? 'Инженеров в этом дне нет.' : 'По запросу никто не найден.'}
-        </p>
-      ) : null}
+        {!loading && !profile ? (
+          <p className="pt-10 text-[16px] text-ink-soft">
+            {engineers.length === 0 ? 'Инженеров в этом дне нет.' : 'По запросу никто не найден.'}
+          </p>
+        ) : null}
 
-      {profile ? (
-        <section className="flex h-[418px] shrink-0 overflow-hidden rounded-[20px] bg-surface">
-          {/* The drawing bleeds the portrait to the card's edges. */}
-          <Monogram
-            className="w-[286px] shrink-0 self-stretch"
-            name={profile.name}
-            shape="fill"
-            size={200}
-          />
-
-          <div className="flex min-w-0 flex-1 flex-col pt-7 pr-7 pb-[34px] pl-5">
-            <div className="flex items-start gap-8">
-              <div className="min-w-0">
-                <h2 className="truncate font-display text-[31px] text-ink leading-none">
-                  {profile.name}
-                </h2>
-                <p className="mt-3 truncate text-[17px] text-ink-soft">
-                  {profile.email ?? 'вход не привязан'}
-                </p>
-              </div>
-
-              <div className="mt-4 w-[320px] shrink-0">
-                <div
-                  className="h-2 w-full overflow-hidden rounded-full bg-muted"
-                  title="Доля маршрута, которая уже прошла по времени. Сколько заявок бригада закрыла, контракт не отдаёт: начатая работа уходит из плана."
-                >
-                  <div
-                    className="h-full rounded-full bg-ink"
-                    style={{ width: `${Math.round(elapsed * 100)}%` }}
-                  />
-                </div>
-                <p className="mt-2 flex items-baseline justify-end gap-3">
-                  <span className="text-[15px] text-ink">
-                    осталось {profile.assignedCount} заявок
-                  </span>
-                  <span className="font-display text-[24px] text-ink">
-                    {profile.distanceKm === null ? '— км' : formatKm(profile.distanceKm)}
-                  </span>
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-4 flex flex-wrap gap-3">
-              {profile.skills.map((skill) => (
-                <span
-                  className="flex h-[39px] items-center rounded-full bg-muted px-6 text-[19px] text-ink"
-                  key={skill}
-                >
-                  {skill}
-                </span>
-              ))}
-            </div>
-
-            <div className="mt-3 flex min-h-0 flex-1">
-              <div className="flex-[572_1_0%]">
-                <Detail icon={Car} label="Транспорт" value={profile.transport} />
-                <Detail icon={MapPin} label="Офис" value={baseText(profile)} />
-                <Detail
-                  icon={Clock}
-                  label="Смена"
-                  value={
-                    profile.shiftStartAt !== null && profile.shiftEndAt !== null
-                      ? formatRange(profile.shiftStartAt, profile.shiftEndAt)
-                      : 'не задана'
-                  }
-                />
-                <Detail icon={Utensils} label="Обед" value={lunchText(profile)} />
-              </div>
-
-              <div className="mx-5 w-[2px] shrink-0 bg-muted" />
-
-              <div className="min-w-0 flex-[810_1_0%] pt-1">
-                {current ? (
-                  <>
-                    <h3 className="truncate font-display text-[32px] text-ink">
-                      {current.number ? `Заявка № ${current.number}` : current.title}
-                    </h3>
-                    <p className="mt-2 truncate text-[18px] text-ink-soft">
-                      {currentSubtitle(current)}
-                    </p>
-
-                    <div className="mt-6 flex gap-10">
-                      <div className="shrink-0">
-                        <p className="font-display text-[64px] text-ink leading-[0.8]">
-                          {formatTime(current.endAt)}
-                        </p>
-                        <p className="mt-5 text-[18px] text-ink">Ожидаемое завершение &nbsp;•</p>
-                        <p className="mt-1 text-[18px] text-ink">
-                          {profile.nextStartAt === null
-                            ? 'Следующей заявки в плане нет'
-                            : `Следующая заявка в ${formatTime(profile.nextStartAt)}`}
-                        </p>
-                      </div>
-
-                      {upcoming.length > 0 ? (
-                        <div className="relative min-w-0 flex-1 overflow-hidden">
-                          <span
-                            aria-hidden
-                            className="absolute top-[7px] right-0 left-[138px] h-[3px]"
-                            style={{
-                              background:
-                                'linear-gradient(to right, var(--color-ink) 0%, var(--color-ink) 66%, transparent 100%)',
-                            }}
-                          />
-                          <ol className="flex">
-                            {upcoming.map((stop) => (
-                              <li className="w-[276px] shrink-0 text-center" key={stop.sequence}>
-                                <span
-                                  aria-hidden
-                                  className={cn(
-                                    'mx-auto block size-[17px] rounded-full',
-                                    stop.running ? 'bg-success' : 'bg-ink',
-                                  )}
-                                />
-                                <p className="mt-3 font-semibold text-[24px] text-ink">
-                                  {formatTime(stop.startAt)}
-                                </p>
-                                <p className="mt-1 truncate px-2 text-[18px] text-ink">
-                                  {stop.title}
-                                </p>
-                                <p className="mt-1 text-[15px] text-ink-faint">
-                                  {stopStatus(stop)}
-                                </p>
-                              </li>
-                            ))}
-                          </ol>
-                        </div>
-                      ) : null}
-                    </div>
-                  </>
-                ) : (
-                  <p className="text-[18px] text-ink-soft">
-                    У этой бригады нет маршрута в применённом плане.
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-        </section>
-      ) : null}
-
-      <div className="mt-[67px] flex shrink-0 flex-col items-center gap-2">
-        <button
-          className="flex h-[47px] items-center gap-4 rounded-full bg-accent pr-[2px] pl-7 font-semibold text-[19px] text-ink disabled:cursor-not-allowed"
-          disabled
-          title="Чаты появятся вместе с контрактом на переписку"
-          type="button"
-        >
-          Перейти в чат
-          <span className="flex size-[43px] items-center justify-center rounded-full bg-ink text-accent">
-            <ArrowUpRight aria-hidden size={22} strokeWidth={2.4} />
-          </span>
-        </button>
-        <span className="text-[13px] text-ink-faint">
-          Чатов пока нет: System Layer не отдаёт переписку.
-        </span>
-      </div>
-
-      <div className="relative mt-[22px] shrink-0">
-        <ArcCarousel
-          activeIndex={activeIndex}
-          aria-label="Бригады"
-          className="-mx-[31px]"
-          items={deck}
-          keyOf={(engineer) => engineer.id}
-          labelOf={(engineer) => engineer.displayName}
-          onActiveIndexChange={(index) => setSelectedId(deck[index]?.id ?? null)}
-          renderCard={(engineer) => (
-            <CrewCard
-              assigned={
-                plan?.routes.find((route) => route.engineerId === engineer.id)?.assignedCount ?? 0
-              }
-              engineer={engineer}
+        {profile ? (
+          <section className="flex shrink-0 overflow-hidden rounded-[20px] bg-surface">
+            {/* The drawing bleeds the portrait to the card's edges. */}
+            <Monogram
+              className="w-[286px] shrink-0 self-stretch"
+              name={profile.name}
+              shape="fill"
+              size={200}
             />
-          )}
-        />
 
-        <label className="-translate-x-1/2 absolute top-[260px] left-1/2 z-10 flex items-center gap-4 text-ink">
+            <div className="flex min-w-0 flex-1 flex-col pt-7 pr-7 pb-[34px] pl-5">
+              <div className="flex items-start gap-8">
+                <div className="min-w-0">
+                  <h2 className="truncate font-display text-[31px] text-ink leading-none">
+                    {profile.name}
+                  </h2>
+                  <p className="mt-3 truncate text-[17px] text-ink-soft">
+                    {profile.email ?? 'вход не привязан'}
+                  </p>
+                </div>
+
+                <div className="mt-4 w-[320px] shrink-0">
+                  <div
+                    className="h-2 w-full overflow-hidden rounded-full bg-muted"
+                    title="Доля маршрута, которая уже прошла по времени. Сколько заявок бригада закрыла, контракт не отдаёт: начатая работа уходит из плана."
+                  >
+                    <div
+                      className="h-full rounded-full bg-ink"
+                      style={{ width: `${Math.round(elapsed * 100)}%` }}
+                    />
+                  </div>
+                  <p className="mt-2 flex items-baseline justify-end gap-3">
+                    <span className="text-[15px] text-ink">
+                      осталось {profile.assignedCount} заявок
+                    </span>
+                    <span className="font-display text-[24px] text-ink">
+                      {profile.distanceKm === null ? '— км' : formatKm(profile.distanceKm)}
+                    </span>
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-3">
+                {profile.skills.map((skill) => (
+                  <span
+                    className="flex h-[39px] items-center rounded-full bg-muted px-6 text-[19px] text-ink"
+                    key={skill}
+                  >
+                    {skill}
+                  </span>
+                ))}
+              </div>
+
+              <div className="mt-3 flex min-h-0 flex-1">
+                <div className="flex-[572_1_0%]">
+                  <Detail icon={Car} label="Транспорт" value={profile.transport} />
+                  <Detail icon={MapPin} label="Офис" value={baseText(profile)} />
+                  <Detail
+                    icon={Clock}
+                    label="Смена"
+                    value={
+                      profile.shiftStartAt !== null && profile.shiftEndAt !== null
+                        ? formatRange(profile.shiftStartAt, profile.shiftEndAt)
+                        : 'не задана'
+                    }
+                  />
+                  <Detail icon={Utensils} label="Обед" value={lunchText(profile)} />
+                </div>
+
+                <div className="mx-5 w-[2px] shrink-0 bg-muted" />
+
+                <div className="min-w-0 flex-[810_1_0%] pt-1">
+                  {current ? (
+                    <>
+                      <h3 className="truncate font-display text-[32px] text-ink">
+                        {current.number ? `Заявка № ${current.number}` : current.title}
+                      </h3>
+                      <p className="mt-2 truncate text-[18px] text-ink-soft">
+                        {currentSubtitle(current)}
+                      </p>
+
+                      <div className="mt-6 flex gap-10">
+                        <div className="shrink-0">
+                          <p className="font-display text-[64px] text-ink leading-[0.8]">
+                            {formatTime(current.endAt)}
+                          </p>
+                          <p className="mt-5 text-[18px] text-ink">Ожидаемое завершение &nbsp;•</p>
+                          <p className="mt-1 text-[18px] text-ink">
+                            {profile.nextStartAt === null
+                              ? 'Следующей заявки в плане нет'
+                              : `Следующая заявка в ${formatTime(profile.nextStartAt)}`}
+                          </p>
+                        </div>
+
+                        {upcoming.length > 0 ? (
+                          <div
+                            className={cn(
+                              'min-w-0 flex-1 overflow-x-auto overscroll-x-contain',
+                              '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
+                            )}
+                            onWheel={wheelAsHorizontal}
+                            style={{
+                              // The day runs on past the card's edge, so it fades there.
+                              maskImage: 'linear-gradient(to right, #000 82%, transparent)',
+                            }}
+                          >
+                            <ol className="relative flex w-max">
+                              <span
+                                aria-hidden
+                                className="absolute top-[7px] h-[3px] bg-ink"
+                                style={{ left: STOP_WIDTH / 2, right: STOP_WIDTH / 2 }}
+                              />
+                              {upcoming.map((stop) => (
+                                <li
+                                  className="shrink-0 text-center"
+                                  key={stop.sequence}
+                                  style={{ width: STOP_WIDTH }}
+                                >
+                                  <span
+                                    aria-hidden
+                                    className={cn(
+                                      'mx-auto block size-[17px] rounded-full',
+                                      stop.running ? 'bg-success' : 'bg-ink',
+                                    )}
+                                  />
+                                  <p className="mt-3 font-semibold text-[24px] text-ink">
+                                    {formatTime(stop.startAt)}
+                                  </p>
+                                  <p className="mt-1 truncate px-2 text-[18px] text-ink">
+                                    {stop.title}
+                                  </p>
+                                  <p className="mt-1 text-[15px] text-ink-faint">
+                                    {stopStatus(stop)}
+                                  </p>
+                                </li>
+                              ))}
+                            </ol>
+                          </div>
+                        ) : null}
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-[18px] text-ink-soft">
+                      У этой бригады нет маршрута в применённом плане.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
+        ) : null}
+
+        <div className="mt-[67px] flex shrink-0 flex-col items-center gap-2">
+          <button
+            className="flex h-[47px] items-center gap-4 rounded-full bg-accent pr-[2px] pl-7 font-semibold text-[19px] text-ink disabled:cursor-not-allowed"
+            disabled
+            title="Чаты появятся вместе с контрактом на переписку"
+            type="button"
+          >
+            Перейти в чат
+            <span className="flex size-[43px] items-center justify-center rounded-full bg-ink text-accent">
+              <ArrowUpRight aria-hidden size={22} strokeWidth={2.4} />
+            </span>
+          </button>
+          <span className="text-[13px] text-ink-faint">
+            Чатов пока нет: System Layer не отдаёт переписку.
+          </span>
+        </div>
+
+        {/* The deck takes whatever height is left, and the arc is cut to fit it. */}
+        <div className="mt-[22px] min-h-0 flex-1">
+          <ArcCarousel
+            activeIndex={activeIndex}
+            aria-label="Бригады"
+            height="100%"
+            items={deck}
+            keyOf={(engineer) => engineer.id}
+            labelOf={(engineer) => engineer.displayName}
+            onActiveIndexChange={(index) => setSelectedId(deck[index]?.id ?? null)}
+            renderCard={(engineer) => (
+              <CrewCard
+                assigned={
+                  plan?.routes.find((route) => route.engineerId === engineer.id)?.assignedCount ?? 0
+                }
+                engineer={engineer}
+              />
+            )}
+          />
+        </div>
+
+        <label className="-mt-[38px] relative z-10 flex shrink-0 items-center justify-center gap-4 pb-1 text-ink">
           <Search aria-hidden size={28} strokeWidth={2.2} />
           <span className="sr-only">Найти инженера</span>
           <input

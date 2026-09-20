@@ -1,7 +1,10 @@
 import type { KeyboardEvent, PointerEvent, ReactNode, WheelEvent } from 'react';
 import { useRef } from 'react';
 import { cn } from '../../lib/cn';
+import { useElementSize } from '../../lib/useElementSize';
 
+/** Width the mockup is drawn at; every measurement below is taken from it. */
+const DESIGN_WIDTH = 1920;
 /**
  * Radius of the circle the cards are laid on. Measured from the mockup: the
  * neighbour sits 349px sideways and 46px lower than the front card, which is the
@@ -12,14 +15,14 @@ const RADIUS = 1350;
 const STEP_DEG = 15;
 /** Cards drawn either side of the front one; the outermost pair is only a wrap buffer. */
 const WINDOW = 3;
-/** The outermost pair is invisible, so a card that wraps does it off screen. */
-const VISIBLE = 2;
 /** Wheel distance that advances the deck by one card. */
 const WHEEL_STEP = 90;
 /** Pointer distance that advances the deck by one card. */
 const DRAG_STEP = 150;
 /** Movement past which a pointer gesture is a drag and not a click. */
 const DRAG_SLOP = 6;
+/** How far a card has faded once it is this many places from the front. */
+const FADE: Record<number, number> = { 0: 1, 1: 1, 2: 0.4, 3: 0 };
 
 export interface ArcCarouselProps<T> {
   items: T[];
@@ -29,8 +32,11 @@ export interface ArcCarouselProps<T> {
   keyOf: (item: T) => string;
   labelOf: (item: T) => string;
   renderCard: (item: T, active: boolean) => ReactNode;
+  /** Card size at the design width; both shrink with the deck. */
   cardWidth?: number;
   cardHeight?: number;
+  /** Height of the deck's box; by default one step of the curve past the card. */
+  height?: number | string;
   'aria-label': string;
   className?: string;
 }
@@ -64,8 +70,13 @@ function releasePointer(element: Element, pointerId: number): void {
  *
  * The ring has no ends — stepping past the last card comes back to the first —
  * so the strip is drawn as a window around the active card rather than as a
- * list. The pair at the edge of that window is transparent, which is where a
- * card crosses from one side of the deck to the other unseen.
+ * list. Cards dim as they travel outwards and the deck itself fades at both
+ * ends, so a card crossing from one side of the ring to the other is never seen
+ * to jump.
+ *
+ * The arc scales with the width it is given, and its box is one step of the
+ * curve deep: the outer cards are cut off below, as the drawing cuts them at the
+ * edge of the screen.
  *
  * It answers the wheel (either axis), the arrow keys and dragging with a mouse.
  */
@@ -78,9 +89,11 @@ export function ArcCarousel<T>({
   renderCard,
   cardWidth = 318,
   cardHeight = 238,
+  height: boxHeight,
   className,
   ...rest
 }: ArcCarouselProps<T>) {
+  const hostRef = useRef<HTMLElement>(null);
   const wheelAcc = useRef(0);
   const drag = useRef<{ pointerId: number; startX: number; startIndex: number; moved: boolean }>({
     pointerId: -1,
@@ -89,6 +102,12 @@ export function ArcCarousel<T>({
     moved: false,
   });
   const suppressClick = useRef(false);
+
+  const { width: hostWidth } = useElementSize(hostRef);
+  const scale = hostWidth > 0 ? Math.min(1, Math.max(0.55, hostWidth / DESIGN_WIDTH)) : 1;
+  const radius = RADIUS * scale;
+  const width = cardWidth * scale;
+  const height = cardHeight * scale;
 
   const length = items.length;
   const step = (delta: number) => {
@@ -169,24 +188,30 @@ export function ArcCarousel<T>({
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
       onWheel={onWheel}
-      style={{ height: cardHeight + RADIUS * (1 - Math.cos((VISIBLE * STEP_DEG * Math.PI) / 180)) }}
+      ref={hostRef}
+      style={{
+        height: boxHeight ?? height + radius * (1 - Math.cos((STEP_DEG * Math.PI) / 180)),
+        // The deck dissolves towards both ends instead of stopping at a hard edge.
+        maskImage: 'linear-gradient(to right, transparent, #000 18%, #000 82%, transparent)',
+      }}
       // biome-ignore lint/a11y/noNoninteractiveTabindex: WCAG 2.1.1 — the arrow keys have to reach the deck even when no card holds focus.
       tabIndex={0}
     >
       {items.map((item, index) => {
         const offset = cyclicOffset(index, activeIndex, length);
-        if (Math.abs(offset) > WINDOW) return null;
+        const distance = Math.abs(offset);
+        if (distance > WINDOW) return null;
 
         const angle = offset * STEP_DEG;
         const radians = (angle * Math.PI) / 180;
-        const hidden = Math.abs(offset) > VISIBLE;
+        const opacity = FADE[distance] ?? 0;
         const active = offset === 0;
 
         return (
           <button
             aria-current={active}
-            aria-hidden={hidden}
-            className="absolute top-0 left-1/2 origin-center overflow-hidden rounded-[20px] transition-[transform,opacity] duration-500 ease-out"
+            aria-hidden={opacity === 0}
+            className="absolute top-0 left-1/2 origin-center overflow-hidden rounded-[1.25em] transition-[transform,opacity] duration-500 ease-out"
             key={keyOf(item)}
             onClick={() => {
               if (suppressClick.current) {
@@ -196,16 +221,18 @@ export function ArcCarousel<T>({
               onActiveIndexChange(index);
             }}
             style={{
-              width: cardWidth,
-              height: cardHeight,
-              transform: `translate(-50%, 0) translate(${RADIUS * Math.sin(radians)}px, ${
-                RADIUS * (1 - Math.cos(radians))
+              width,
+              height,
+              // The face is written in `em`, so its type and padding scale with the card.
+              fontSize: 16 * scale,
+              transform: `translate(-50%, 0) translate(${radius * Math.sin(radians)}px, ${
+                radius * (1 - Math.cos(radians))
               }px) rotate(${angle}deg)`,
-              zIndex: WINDOW + 1 - Math.abs(offset),
-              opacity: hidden ? 0 : 1,
-              pointerEvents: hidden ? 'none' : 'auto',
+              zIndex: WINDOW + 1 - distance,
+              opacity,
+              pointerEvents: opacity === 0 ? 'none' : 'auto',
             }}
-            tabIndex={hidden ? -1 : 0}
+            tabIndex={opacity === 0 ? -1 : 0}
             title={labelOf(item)}
             type="button"
           >

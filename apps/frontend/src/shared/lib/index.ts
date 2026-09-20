@@ -8,3 +8,5 @@ export {
   formatRange,
   formatTime,
 } from './time';
+export type { ElementSize } from './useElementSize';
+export { useElementSize } from './useElementSize';
