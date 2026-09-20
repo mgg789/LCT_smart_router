@@ -6,6 +6,7 @@ import { SysError } from '../common/errors';
 import { Clock } from '../common/time';
 import { zodBody } from '../common/validation';
 import { OperationsService } from '../operations';
+import { AlertsService } from '../orchestrator/alerts';
 import { EngineersService } from '../orchestrator/engineers';
 import {
   DATASET_REGIONS,
@@ -28,6 +29,12 @@ import {
   ResultAcceptanceService,
   RouterClient,
 } from '../routing/router-gateway';
+import {
+  type CloseShiftDto,
+  closeShiftSchema,
+  type ResolveAlertDto,
+  resolveAlertSchema,
+} from './dto/alert.dto';
 import {
   type ImportDatasetDto,
   importDatasetSchema,
@@ -97,6 +104,7 @@ export class DispatchController {
   constructor(
     private readonly requests: RequestsService,
     private readonly engineers: EngineersService,
+    private readonly alertsService: AlertsService,
     private readonly policyService: PolicyService,
     private readonly publisher: SnapshotPublisher,
     private readonly builder: SnapshotBuilder,
@@ -418,6 +426,9 @@ export class DispatchController {
             shiftEndAt: dto.shiftEndAt,
             ...(dto.lunch === undefined ? {} : { lunch: dto.lunch }),
             ...(dto.lunchRequired === undefined ? {} : { lunchRequired: dto.lunchRequired }),
+            ...(dto.attendanceOptOut === undefined
+              ? {}
+              : { attendanceOptOut: dto.attendanceOptOut }),
           }),
         ),
     );
@@ -682,22 +693,11 @@ export class DispatchController {
 
   @Get('alerts')
   @ApiOperation({ summary: 'Explainable problems reported by the plan' })
-  async alerts() {
-    const alerts = await this.prisma.alert.findMany({ orderBy: { createdAt: 'desc' }, take: 200 });
-    return {
-      alerts: alerts.map((alert) => ({
-        id: alert.id,
-        code: alert.code,
-        severity: alert.severity,
-        engineerIds: alert.engineerIds,
-        requestIds: alert.requestIds,
-        reasons: alert.reasons,
-        restoreOption: alert.restoreOption,
-        createdAt: Number(alert.createdAt),
-        seenAt: alert.seenAt === null ? null : Number(alert.seenAt),
-        resolvedAt: alert.resolvedAt === null ? null : Number(alert.resolvedAt),
-      })),
-    };
+  async alerts(@Query('workDate') workDate?: string) {
+    if (workDate && !/^\d{4}-\d{2}-\d{2}$/.test(workDate)) {
+      throw new SysError('VALIDATION_FAILED', 'workDate must be YYYY-MM-DD');
+    }
+    return { alerts: await this.alertsService.list(workDate) };
   }
 
   @Post('alerts/:id/seen')
@@ -705,11 +705,57 @@ export class DispatchController {
   async markAlertSeen(@Param('id') id: string) {
     // Seen is not resolved. The underlying condition is unchanged, and it clears only when
     // the real state changes (context/39 DB2).
-    await this.prisma.alert.updateMany({
-      where: { id, seenAt: null },
-      data: { seenAt: BigInt(this.clock.nowSeconds()) },
-    });
+    await this.alertsService.markSeen(id, this.clock.nowSeconds());
     return { seen: true };
+  }
+
+  @Post('notices/:id/seen')
+  @ApiOperation({ summary: 'Mark an informational notice as seen without resolving any alert' })
+  async markNoticeSeen(@Param('id') id: string) {
+    await this.alertsService.markSeen(id, this.clock.nowSeconds());
+    return { seen: true };
+  }
+
+  @Post('alerts/:id/resolve')
+  @ApiOperation({ summary: 'Apply one dispatcher-selected alert resolution atomically' })
+  async resolveAlert(
+    @CurrentActor() actor: Actor,
+    @Param('id') id: string,
+    @Body(zodBody(resolveAlertSchema)) dto: ResolveAlertDto,
+  ) {
+    const outcome = await this.operations.execute(
+      { operationId: dto.operationId, actor, action: 'alert.resolve', targetRef: id, payload: dto },
+      (context) => this.alertsService.resolve(context, id, dto),
+    );
+    return { alert: outcome.result };
+  }
+
+  @Get('shift')
+  @ApiOperation({ summary: 'Day close status; open alerts are a hard close gate' })
+  async shift(@Query('workDate') workDate?: string) {
+    if (!workDate || !/^\d{4}-\d{2}-\d{2}$/.test(workDate)) {
+      throw new SysError('VALIDATION_FAILED', 'workDate must be YYYY-MM-DD');
+    }
+    return this.alertsService.shiftStatus(workDate);
+  }
+
+  @Post('shift/close')
+  @ApiOperation({ summary: 'Close a day only when every blocking alert has an outcome' })
+  async closeShift(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(closeShiftSchema)) dto: CloseShiftDto,
+  ) {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'shift.close',
+        targetRef: dto.workDate,
+        payload: dto,
+      },
+      (context) => this.alertsService.closeShift(context, dto.workDate),
+    );
+    return outcome.result;
   }
 
   @Post('mode')

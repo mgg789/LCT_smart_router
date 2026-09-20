@@ -1,7 +1,9 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { HardHat, Map as MapIcon, Plus, Settings, ShieldCog } from 'lucide-react';
+import { BellRing, HardHat, Map as MapIcon, Plus, Settings, ShieldCog } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { EquipmentType } from '../api/types';
+import { AlertsPage } from '../components/AlertsPage';
+import { AlertToasts } from '../components/AlertToasts';
 import { ApiTokensPage } from '../components/ApiTokensPage';
 import { DataUploadModal } from '../components/DataUploadModal';
 import { DayMap } from '../components/DayMap';
@@ -9,6 +11,7 @@ import { EngineersPage } from '../components/EngineersPage';
 import { PolicyComparisonPage } from '../components/PolicyComparisonPage';
 import { PolicyModal } from '../components/PolicyModal';
 import { RouteTimeline } from '../components/RouteTimeline';
+import { isOpenAlert } from '../domain/alerts';
 import {
   assignmentFor,
   engineerSummaries,
@@ -37,6 +40,7 @@ const NAV = [
   { id: 'day', label: 'План дня', icon: MapIcon },
   { id: 'policies', label: 'Политики', icon: ShieldCog },
   { id: 'engineers', label: 'Инженеры', icon: HardHat },
+  { id: 'alerts', label: 'Алерты', icon: BellRing },
   { id: 'settings', label: 'Настройки', icon: Settings },
 ] as const;
 
@@ -144,11 +148,16 @@ export function DashboardPage() {
                     void dash.refreshPolicyComparison();
                   }
                 }}
-                className={`flex h-10 w-10 items-center justify-center rounded-xl ${
+                className={`relative flex h-10 w-10 items-center justify-center rounded-xl ${
                   activeTab === item.id ? 'bg-ink text-white' : 'text-muted hover:bg-canvas'
                 }`}
               >
                 <Icon className="h-5 w-5" strokeWidth={1.8} />
+                {item.id === 'alerts' && snapshot.alerts.some(isOpenAlert) && (
+                  <span className="absolute -right-1 -top-1 rounded-full bg-bee px-1 text-xs font-semibold text-ink">
+                    {snapshot.alerts.filter(isOpenAlert).length}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -476,11 +485,27 @@ export function DashboardPage() {
             }
             onLinkAccount={(engineerId, email) => dash.linkEngineerLogin(engineerId, email)}
             onUnlinkAccount={(engineerId) => dash.unlinkEngineerLogin(engineerId)}
+            onAttendanceOptOut={dash.setAttendanceOptOut}
+          />
+        ) : activeTab === 'alerts' ? (
+          <AlertsPage
+            snapshot={snapshot}
+            writesDisabled={dash.writesDisabled || dash.busy}
+            onResolve={dash.resolveAlert}
+            onSeen={dash.markNoticeSeen}
+            onCloseShift={dash.closeShift}
           />
         ) : activeTab === 'settings' ? (
           <ApiTokensPage token={dash.token} />
         ) : null}
       </div>
+      {dash.source === 'live' && (
+        <AlertToasts
+          alerts={snapshot.alerts}
+          scope={snapshot.workDate}
+          onOpen={() => setActiveTab('alerts')}
+        />
+      )}
     </div>
   );
 }

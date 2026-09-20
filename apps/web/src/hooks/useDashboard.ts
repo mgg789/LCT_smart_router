@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  closeDispatchShift,
   DashboardApiError,
   importOfficialDataset,
   linkEngineerAccount,
   loadDashboardSnapshot,
   loadPolicyComparison,
   loginDispatcher,
+  markDispatchNoticeSeen,
   requestDispatcherLoginCode,
+  resolveDispatchAlert,
   selectRoutingPolicy,
   setDispatchMode,
+  setEngineerAttendanceOptOut,
   setEngineerAvailability,
   signOutDispatcher,
   unlinkEngineerAccount,
@@ -17,9 +21,11 @@ import {
   verifyDispatcherLoginCode,
 } from '../api/client';
 import type {
+  AlertResolutionInput,
   DashboardSnapshot,
   DataUploadFile,
   DataUploadSummary,
+  EngineerDayView,
   OfficialImportSummary,
   PlanDelta,
   PolicyComparisonResponse,
@@ -764,6 +770,51 @@ export function useDashboard() {
     [refresh, token],
   );
 
+  const performAlertOperation = useCallback(
+    async (operation: (session: string) => Promise<void>) => {
+      if (!token || sourceRef.current !== 'live' || loading || operationWarning !== null) {
+        throw new Error('Для решения алертов нужно подключение к рабочему серверу');
+      }
+      const generation = readGeneration.current;
+      try {
+        await operation(token);
+      } catch (cause) {
+        if (
+          generation === readGeneration.current &&
+          cause instanceof DashboardApiError &&
+          (cause.status === 401 || cause.status === 403)
+        )
+          reportFailure(cause);
+        throw cause;
+      }
+      if (generation === readGeneration.current) await refresh();
+    },
+    [loading, operationWarning, refresh, reportFailure, token],
+  );
+
+  const resolveAlert = useCallback(
+    (id: string, input: AlertResolutionInput) =>
+      performAlertOperation((session) => resolveDispatchAlert(session, id, input)),
+    [performAlertOperation],
+  );
+
+  const setAttendanceOptOut = useCallback(
+    (day: EngineerDayView, optOut: boolean) =>
+      performAlertOperation((session) => setEngineerAttendanceOptOut(session, day, optOut)),
+    [performAlertOperation],
+  );
+
+  const markNoticeSeen = useCallback(
+    (id: string) => performAlertOperation((session) => markDispatchNoticeSeen(session, id)),
+    [performAlertOperation],
+  );
+
+  const closeShift = useCallback(
+    (workDate: string, operationId: string) =>
+      performAlertOperation((session) => closeDispatchShift(session, workDate, operationId)),
+    [performAlertOperation],
+  );
+
   const uploadDataset = useCallback(
     async (file: DataUploadFile): Promise<DataUploadSummary> => {
       if (!token || sourceRef.current !== 'live' || uploadingData) {
@@ -912,6 +963,10 @@ export function useDashboard() {
     unlinkEngineerLogin,
     uploadDataset,
     importOfficialTzDataset,
+    resolveAlert,
+    setAttendanceOptOut,
+    markNoticeSeen,
+    closeShift,
   };
 }
 

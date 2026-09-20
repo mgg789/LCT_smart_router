@@ -337,6 +337,23 @@ export function renderMail(
         base,
       );
     }
+    case 'engineer_attention_required': {
+      const href = appLink(base, '/engineer');
+      return genericMail(
+        'Нужно отметиться',
+        `<p style="margin:0 0 20px;">Диспетчер ожидает подтверждение вашего статуса. Откройте приложение и отметьтесь.</p>${buttonPill(href, 'Открыть приложение')}`,
+        `Диспетчер ожидает подтверждение статуса. Откройте приложение:\n${href}`,
+        base,
+      );
+    }
+    case 'plan_rebuilt': {
+      return genericMail(
+        'План обновлён',
+        '<p style="margin:0;">План работ был пересчитан.</p>',
+        'План работ был пересчитан.',
+        base,
+      );
+    }
     default: {
       const exhaustive: never = category;
       return exhaustive;

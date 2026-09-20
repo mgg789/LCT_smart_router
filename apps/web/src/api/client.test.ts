@@ -202,7 +202,27 @@ describe('live dashboard client', () => {
             lastResult: null,
           });
         }
-        if (path.endsWith('/alerts')) return json({ alerts: [] });
+        if (path.endsWith('/alerts'))
+          return json({
+            alerts: [
+              {
+                id: 'risk',
+                code: 'time_risk',
+                kind: 'alert',
+                severity: 'warning',
+                engineerIds: ['engineer-1'],
+                requestIds: ['request-1'],
+                reasons: [{ plannedStartAt: 1_800_000_600, windowEndAt: 1_800_000_000 }],
+                restoreOption: { engineer_id: 'engineer-1', reject_request_ids: ['request-1'] },
+                actions: ['move_window'],
+                createdAt: 1_800_000_000,
+                seenAt: null,
+                resolvedAt: null,
+              },
+            ],
+          });
+        if (path.endsWith('/shift'))
+          return json({ workDate: '2026-09-17', closedAt: null, unresolvedCount: 0 });
         if (path.endsWith('/policies')) {
           return json({
             policies: [
@@ -226,6 +246,11 @@ describe('live dashboard client', () => {
     expect(snapshot.workDate).toBe('2026-09-17');
     expect(snapshot.policyId).toBe('compact');
     expect(snapshot.requests).toHaveLength(1);
+    expect(snapshot.alerts[0]?.reasons[0]).toContain('Опоздание: 10 мин.');
+    expect(snapshot.alerts[0]?.restoreOption).toEqual({
+      engineer_id: 'engineer-1',
+      reject_request_ids: ['request-1'],
+    });
     expect(snapshot.plan.plan?.assignments[0]?.reasons.assignment?.factors[0]).toMatchObject({
       code: 'CONSTRAINTS_SATISFIED',
       detail: 'Constraints verified.',

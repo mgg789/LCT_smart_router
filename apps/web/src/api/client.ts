@@ -1,5 +1,7 @@
 import { z } from 'zod';
+import { formatClock } from '../lib/time';
 import type {
+  AlertResolutionInput,
   ApiTokenCategory,
   ApiTokenSummary,
   AssignmentReasons,
@@ -8,6 +10,7 @@ import type {
   DashboardSnapshot,
   DataUploadFile,
   DataUploadSummary,
+  EngineerDayView,
   OfficialImportSummary,
   PlanAssignmentView,
   PolicyComparisonResponse,
@@ -60,6 +63,8 @@ const requestSchema = z.object({
 });
 
 const engineerDaySchema = z.object({
+  attendanceOptOut: z.boolean().default(false),
+  lastAttendanceAt: z.number().int().nullable().default(null),
   engineerId: z.string(),
   workDate: z.string(),
   version: z.number().int(),
@@ -205,11 +210,94 @@ const alertSchema = z.object({
   engineerIds: z.array(z.string()),
   requestIds: z.array(z.string()),
   reasons: z.array(z.unknown()),
-  restoreOption: z.string().nullable(),
+  restoreOption: z
+    .union([
+      z.string(),
+      z.object({ engineer_id: z.string(), reject_request_ids: z.array(z.string()) }),
+    ])
+    .nullable(),
   createdAt: z.number().int(),
   seenAt: z.number().int().nullable(),
   resolvedAt: z.number().int().nullable(),
+  kind: z.enum(['alert', 'notice']).default('alert'),
+  actions: z.array(z.string()).default([]),
+  workDate: z.string().nullable().default(null),
+  resolutionAction: z.string().nullable().default(null),
+  resolutionReason: z.string().nullable().default(null),
+  resolutionDelaySec: z.number().int().nonnegative().nullable().default(null),
 });
+
+const shiftSchema = z.object({
+  workDate: z.string(),
+  closedAt: z.number().int().nullable(),
+  unresolvedCount: z.number().int().nonnegative(),
+});
+
+/** Executes one allowed decision; the caller keeps operationId stable for retries. */
+export async function resolveDispatchAlert(
+  token: string,
+  id: string,
+  input: AlertResolutionInput,
+): Promise<void> {
+  await requestJson(
+    `/api/v1/dispatch/alerts/${encodeURIComponent(id)}/resolve`,
+    z.unknown(),
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+/** Exempts this working day from attendance checks while preserving shift bounds. */
+export async function setEngineerAttendanceOptOut(
+  token: string,
+  day: EngineerDayView,
+  attendanceOptOut: boolean,
+): Promise<void> {
+  await requestJson(
+    `/api/v1/dispatch/engineers/${encodeURIComponent(day.engineerId)}/workday`,
+    z.object({ day: engineerDaySchema }),
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        operationId: crypto.randomUUID(),
+        workDate: day.workDate,
+        shiftStartAt: day.shiftStartAt,
+        shiftEndAt: day.shiftEndAt,
+        lunch: {
+          enabled: day.lunch.enabled,
+          durationSec: day.lunch.durationSec,
+          windowStartAt: day.lunch.windowStartAt,
+          windowEndAt: day.lunch.windowEndAt,
+        },
+        lunchRequired: day.lunch.required,
+        attendanceOptOut,
+      }),
+    },
+  );
+}
+
+/** Marks an ordinary notice as read without resolving an actionable alert. */
+export async function markDispatchNoticeSeen(token: string, id: string): Promise<void> {
+  await requestJson(`/api/v1/dispatch/alerts/${encodeURIComponent(id)}/seen`, z.unknown(), token, {
+    method: 'POST',
+  });
+}
+
+/** Requests closure after the server checks for unresolved problems. */
+export async function closeDispatchShift(
+  token: string,
+  workDate: string,
+  operationId: string,
+): Promise<void> {
+  await requestJson('/api/v1/dispatch/shift/close', z.unknown(), token, {
+    method: 'POST',
+    body: JSON.stringify({ operationId, workDate }),
+  });
+}
 
 const policiesSchema = z.object({
   policies: z.array(
@@ -580,9 +668,15 @@ export async function loadDashboardSnapshot(token: string): Promise<DashboardSna
     : null;
   const workDate =
     engineers.engineers.find((engineer) => engineer.day)?.day?.workDate ?? moscowDate(new Date());
+  const shift = await requestJson(
+    `/api/v1/dispatch/shift?workDate=${encodeURIComponent(workDate)}`,
+    shiftSchema,
+    token,
+  );
 
   return {
     workDate,
+    shift,
     timeZone: 'Europe/Moscow',
     nowAt: Math.floor(Date.now() / 1000),
     policyId: policies.active.policyId,
@@ -815,8 +909,39 @@ function formatUnknownReason(reason: unknown): string {
   if (typeof reason === 'string') {
     return reason;
   }
-  const parsed = reasonSchema.safeParse(reason);
-  return parsed.success ? parsed.data.text : 'Подробности доступны в структурированных данных';
+  const parsed = z.object({ text: z.string() }).safeParse(reason);
+  if (parsed.success) return parsed.data.text;
+  const facts = z
+    .object({
+      expectedAt: z.number().optional(),
+      shiftStartAt: z.number().optional(),
+      thresholdAt: z.number().optional(),
+      lastAttendanceAt: z.number().nullable().optional(),
+      plannedStartAt: z.number().optional(),
+      windowEndAt: z.number().optional(),
+      assignment: z.string().optional(),
+      lunchStatus: z.string().optional(),
+      assignedBefore: z.number().optional(),
+      assignedAfter: z.number().optional(),
+    })
+    .safeParse(reason);
+  if (facts.success) {
+    const value = facts.data;
+    if (value.shiftStartAt !== undefined && value.thresholdAt !== undefined)
+      return `Смена началась в ${formatClock(value.shiftStartAt)}. К ${formatClock(value.thresholdAt)} отметка о выходе не поступила.`;
+    if (value.plannedStartAt !== undefined && value.windowEndAt !== undefined) {
+      return `Начало по плану — ${formatClock(value.plannedStartAt)}, конец окна — ${formatClock(value.windowEndAt)}. Опоздание: ${Math.ceil((value.plannedStartAt - value.windowEndAt) / 60)} мин.`;
+    }
+    if (value.expectedAt !== undefined)
+      return `Ожидалась отметка к ${formatClock(value.expectedAt)}. ${value.lastAttendanceAt ? `Последняя отметка: ${formatClock(value.lastAttendanceAt)}.` : 'Отметок пока нет.'}`;
+    if (value.assignment === 'unassigned')
+      return 'Для заявки не найдено допустимое назначение. Нужно изменить условия или добавить инженера.';
+    if (value.lunchStatus)
+      return 'Обед не помещается в текущий маршрут. Требуется выбор диспетчера.';
+    if (value.assignedBefore !== undefined && value.assignedAfter !== undefined)
+      return `Назначено заявок: ${value.assignedBefore} → ${value.assignedAfter}.`;
+  }
+  return 'Подробности доступны в структурированных данных';
 }
 
 export async function requestJson<T>(

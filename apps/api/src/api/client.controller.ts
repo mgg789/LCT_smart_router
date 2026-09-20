@@ -136,7 +136,9 @@ export class ClientController {
   }
 
   @Get('requests')
-  @ApiOperation({ summary: 'Active requests of the signed-in customer, or of the clientEmail a key names' })
+  @ApiOperation({
+    summary: 'Active requests of the signed-in customer, or of the clientEmail a key names',
+  })
   async list(
     @CurrentActor() actor: Actor,
     @Query('clientEmail') clientEmail?: string,

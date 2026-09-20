@@ -434,6 +434,41 @@ class RouterRuntime:
         with self._lock:
             return self.result.model_copy(deep=True)
 
+    def evaluate_manual(self, input_hash: str, context_version: str, routes: dict) -> dict:
+        """Evaluate fixed orders against the current automatic result, without solving.
+
+        Publication and context are checked before and after calculation so sys cannot
+        attach an evaluation to another manual revision or changed resource set.
+        """
+        from core.manual_evaluation import evaluate_manual
+
+        publication = self.reader.read()
+        raw = publication if isinstance(publication, bytes) else publication.payload
+        with self._lock:
+            active = self.result.model_copy(deep=True)
+            if (
+                content_hash(raw) != input_hash
+                or active.input_hash != input_hash
+                or self.context_version != context_version
+                or active.router_context_version != context_version
+                or active.status != "ready"
+                or active.main is None
+                or not active.main.is_usable
+            ):
+                raise ValueError("PUBLICATION_CHANGED")
+            graph, settings = copy.deepcopy(self._graph), copy.deepcopy(self.settings)
+        snapshot = apply_system_policy(parse_snapshot(raw), settings)
+        provider = GraphTravel(graph) if isinstance(graph, RoadGraph) else graph
+        provider = attach_live_roads(provider)
+        provider = configure_travel(provider, settings.technical(), snapshot.planning_as_of)
+        result = evaluate_manual(snapshot, provider, active.main, routes)
+        latest = self.reader.read()
+        latest_raw = latest if isinstance(latest, bytes) else latest.payload
+        with self._lock:
+            if content_hash(latest_raw) != input_hash or self.context_version != context_version:
+                raise ValueError("PUBLICATION_CHANGED")
+        return {"input_hash": input_hash, "router_context_version": context_version, **result}
+
     def compare_policies(self, search_budget_ms: int | None = None) -> PolicyComparison:
         """Compare seven strategies on the ready publication without mutating Runtime."""
         if search_budget_ms is not None and not 1 <= search_budget_ms <= 8000:

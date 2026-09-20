@@ -1,0 +1,1102 @@
+import { Injectable } from '@nestjs/common';
+import { z } from 'zod';
+import { SysError } from '../../common/errors';
+import { Clock } from '../../common/time';
+import { Prisma } from '../../generated/prisma/client';
+import { NotificationsService } from '../../notifications';
+import type { OperationContext } from '../../operations';
+import { lockAlertQueue, PrismaService, type Tx, UnitOfWork } from '../../persistence';
+import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
+import { RouterClient } from '../../routing/router-gateway/router-client.port';
+
+const GRACE_SECONDS = 180;
+const NO_SHOW_SECONDS = 30 * 60;
+const OVERDUE_SECONDS = 5 * 60;
+// Router's exact tolerance is contextual; before it is exposed in a plan result, a five
+// minute floor prevents a harmless one-second schedule variance becoming dispatcher work.
+const TIME_RISK_SECONDS = 5 * 60;
+const REPEAT_AFTER_SECONDS = 15 * 60;
+/** Router's immutable comparison evidence for one manual plan on one exact input. */
+const manualEvaluationSchema = z.object({
+  input_hash: z.string().min(1),
+  router_context_version: z.string().min(1),
+  policy_id: z.string().min(1),
+  feasible: z.boolean(),
+  degraded: z.boolean(),
+  criterion: z.string().nullable(),
+  before: z.array(z.number()),
+  after: z.array(z.number()).nullable(),
+});
+
+/** Cached only by immutable plan, input and Router-context identity. */
+const manualEvidenceSchema = z.object({
+  identity: z.string().min(1),
+  planId: z.string().min(1),
+  inputHash: z.string().min(1),
+  evaluation: manualEvaluationSchema.nullable(),
+});
+
+export type AlertAction =
+  | 'reschedule'
+  | 'move_window'
+  | 'add_engineer'
+  | 'keep_manual'
+  | 'restore_auto'
+  | 'skip_lunch'
+  | 'keep_lunch'
+  | 'message'
+  | 'remove_shift'
+  | 'message_remove'
+  | 'extend';
+
+export interface ResolveAlertInput {
+  readonly action: AlertAction;
+  readonly reason?: string;
+  readonly minutes?: number;
+  readonly windowStartAt?: number;
+  readonly windowEndAt?: number;
+  readonly engineerId?: string;
+}
+
+export interface AlertView {
+  readonly id: string;
+  readonly kind: 'alert' | 'notice';
+  readonly code: string;
+  readonly severity: string;
+  readonly engineerIds: string[];
+  readonly requestIds: string[];
+  readonly reasons: unknown;
+  readonly restoreOption: unknown;
+  readonly actions: AlertAction[];
+  readonly createdAt: number;
+  readonly seenAt: number | null;
+  readonly resolvedAt: number | null;
+  readonly resolutionAction: string | null;
+  readonly resolutionReason: string | null;
+  readonly resolutionDelaySec: number | null;
+  readonly workDate: string | null;
+}
+
+/**
+ * Durable dispatcher decision queue.
+ *
+ * Timers only detect a condition. They never change a route, remove an engineer or
+ * resolve a request. A dispatcher operation is the sole path that closes an alert.
+ */
+@Injectable()
+export class AlertsService {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly uow: UnitOfWork,
+    private readonly clock: Clock,
+    private readonly publisher: SnapshotPublisher,
+    private readonly notifications: NotificationsService,
+    private readonly router: RouterClient,
+  ) {}
+
+  /** Refreshes timer-derived conditions before a dashboard reads the queue. */
+  async list(workDate?: string): Promise<AlertView[]> {
+    await this.evaluateManualPlan();
+    await this.uow.run((tx) => this.refresh(tx, this.clock.nowSeconds(), workDate));
+    const scope = workDate ? { workDate } : {};
+    // Open work is never hidden by an arbitrarily long resolved history.
+    const [open, history] = await Promise.all([
+      this.prisma.alert.findMany({
+        where: { ...scope, resolvedAt: null, invalidatedAt: null },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.alert.findMany({
+        where: { ...scope, OR: [{ resolvedAt: { not: null } }, { invalidatedAt: { not: null } }] },
+        orderBy: { createdAt: 'desc' },
+        take: 500,
+      }),
+    ]);
+    const alerts = [...open, ...history];
+    return alerts.map((alert) => this.view(alert));
+  }
+
+  /** Used by the coordinator; no dashboard request is required for alert creation. */
+  async refreshAll(): Promise<void> {
+    await this.evaluateManualPlan();
+    const now = this.clock.nowSeconds();
+    await this.uow.run((tx) => this.refresh(tx, now));
+  }
+
+  /** Calculates manual costs outside database transactions, caching only exact identities. */
+  private async evaluateManualPlan(): Promise<void> {
+    const pointer = await this.prisma.appliedPlanCurrent.findUnique({
+      where: { id: 'singleton' },
+      include: {
+        plan: { include: { routes: { include: { stops: { orderBy: { sequence: 'asc' } } } } } },
+      },
+    });
+    if (!pointer || pointer.plan.origin !== 'manual') return;
+    const input = await this.prisma.routingCurrent.findUnique({
+      where: { id: 'singleton' },
+      include: { snapshot: true },
+    });
+    if (!input) return;
+    let contextVersion: string | null = null;
+    try {
+      contextVersion = await this.router.getActiveContextVersion();
+    } catch {
+      /* The review alert below records unavailable evaluation. */
+    }
+    const identity = `${pointer.plan.id}:${input.snapshot.inputHash}:${contextVersion}`;
+    const previous = await this.prisma.appState.findUnique({
+      where: { key: 'alerts.manual-evaluation' },
+    });
+    const saved = manualEvidenceSchema.safeParse(previous?.value);
+    if (saved.success && saved.data.identity === identity && saved.data.evaluation !== null) return;
+    let evaluation: z.infer<typeof manualEvaluationSchema> | null = null;
+    if (contextVersion) {
+      try {
+        const snapshot = z
+          .object({
+            requests: z.array(z.object({ request_id: z.string() })),
+            engineers: z.array(z.object({ engineer_id: z.string() })),
+          })
+          .parse(JSON.parse(input.snapshot.payload));
+        const requestIds = new Set(snapshot.requests.map((request) => request.request_id));
+        const engineerIds = new Set(snapshot.engineers.map((engineer) => engineer.engineer_id));
+        const routes: Record<string, string[]> = {};
+        for (const route of pointer.plan.routes) {
+          const jobs = route.stops.flatMap((stop) =>
+            stop.kind === 'job' && stop.requestId && requestIds.has(stop.requestId)
+              ? [stop.requestId]
+              : [],
+          );
+          if (jobs.length || engineerIds.has(route.engineerId)) routes[route.engineerId] = jobs;
+        }
+        const result = await this.router.evaluateManual({
+          input_hash: input.snapshot.inputHash,
+          router_context_version: contextVersion,
+          routes,
+        });
+        if (
+          result.input_hash === input.snapshot.inputHash &&
+          result.router_context_version === contextVersion
+        )
+          evaluation = result;
+      } catch {
+        /* Never use copied/stale costs to claim objective degradation. */
+      }
+    }
+    await this.uow.run(async (tx) => {
+      await lockAlertQueue(tx);
+      const current = await tx.appliedPlanCurrent.findUnique({ where: { id: 'singleton' } });
+      const publication = await tx.routingCurrent.findUnique({ where: { id: 'singleton' } });
+      if (current?.planId !== pointer.plan.id || publication?.snapshotId !== input.snapshotId)
+        return;
+      const now = this.clock.nowSeconds();
+      const value = {
+        identity,
+        planId: pointer.plan.id,
+        inputHash: input.snapshot.inputHash,
+        evaluation,
+      };
+      await tx.appState.upsert({
+        where: { key: 'alerts.manual-evaluation' },
+        create: { key: 'alerts.manual-evaluation', value, updatedAt: BigInt(now) },
+        update: { value, updatedAt: BigInt(now) },
+      });
+    });
+  }
+
+  /** Snapshot apply calls this in its existing transaction for Router-originated alerts. */
+  async ingestRouter(
+    tx: Tx,
+    now: number,
+    input: {
+      readonly id: string;
+      readonly code: string;
+      readonly severity: 'info' | 'warning' | 'error';
+      readonly engineerIds: string[];
+      readonly requestIds: string[];
+      readonly reasons: object;
+      readonly restoreOption: object | null;
+      readonly sourceResultId: string | null;
+      readonly workDate: string | null;
+    },
+  ): Promise<void> {
+    await lockAlertQueue(tx);
+    const code = canonicalRouterCode(input.code);
+    const workDate = input.workDate ?? (await this.workDateForEngineer(tx, input.engineerIds[0]));
+    // Router reuses e.g. lunch:{engineer} across dates. A condition, not a transient
+    // result id, is the durable identity of the alert episode.
+    const dedupKey = `router:${code}:${workDate ?? 'unknown'}:${input.engineerIds.join(',')}:${input.requestIds.join(',')}:${input.id}`;
+    const existing = await tx.alert.findUnique({ where: { dedupKey } });
+    if (existing) {
+      if (
+        (existing.invalidatedAt !== null && existing.resolvedAt === null) ||
+        existing.sourceResultId !== input.sourceResultId
+      ) {
+        await tx.alert.update({
+          where: { id: existing.id },
+          data: { invalidatedAt: null, sourceResultId: input.sourceResultId },
+        });
+      }
+      return;
+    }
+    await tx.alert.create({
+      data: {
+        dedupKey,
+        kind: alertActionsFor(code).length === 0 ? 'notice' : 'alert',
+        code,
+        severity: input.severity,
+        engineerIds: input.engineerIds,
+        requestIds: input.requestIds,
+        reasons: input.reasons,
+        restoreOption: input.restoreOption ?? Prisma.DbNull,
+        sourceResultId: input.sourceResultId,
+        workDate,
+        isBlocking: alertActionsFor(code).length > 0,
+        createdAt: BigInt(now),
+      },
+    });
+  }
+
+  /** A newer applied Router result makes absent, still-open Router conditions stale. */
+  async invalidateOtherRouterConditions(
+    tx: Tx,
+    now: number,
+    resultId: string | null,
+  ): Promise<void> {
+    if (!resultId) return;
+    await tx.alert.updateMany({
+      where: {
+        dedupKey: { startsWith: 'router:' },
+        sourceResultId: { not: resultId },
+        resolvedAt: null,
+        invalidatedAt: null,
+      },
+      data: { invalidatedAt: BigInt(now), resolvedAt: BigInt(now), resolutionAction: 'superseded' },
+    });
+  }
+
+  /** A plan application is visible as a notification but can never hold up the shift. */
+  async recordPlanRebuilt(tx: Tx, now: number, resultId: string | null): Promise<void> {
+    const dedupKey = `notice:plan_rebuilt:${resultId ?? now}`;
+    if (await tx.alert.findUnique({ where: { dedupKey } })) return;
+    await tx.alert.create({
+      data: {
+        kind: 'notice',
+        dedupKey,
+        code: 'plan_rebuilt',
+        severity: 'info',
+        engineerIds: [],
+        requestIds: [],
+        reasons: { resultId },
+        isBlocking: false,
+        sourceResultId: resultId,
+        createdAt: BigInt(now),
+      },
+    });
+  }
+
+  async markSeen(id: string, now: number): Promise<void> {
+    await this.prisma.alert.updateMany({
+      where: { id, seenAt: null },
+      data: { seenAt: BigInt(now) },
+    });
+  }
+
+  async resolve(
+    context: OperationContext,
+    id: string,
+    input: ResolveAlertInput,
+  ): Promise<AlertView> {
+    await lockAlertQueue(context.tx);
+    await this.refresh(context.tx, context.now);
+    const alert = await context.tx.alert.findUnique({ where: { id } });
+    if (!alert) throw SysError.notFound('Alert', { alertId: id });
+    if (alert.kind !== 'alert') {
+      throw new SysError('VALIDATION_FAILED', 'A notice has no resolution action');
+    }
+    if (alert.resolvedAt !== null || alert.invalidatedAt !== null) return this.view(alert);
+    const actions = alertActionsFor(alert.code);
+    if (!actions.includes(input.action)) {
+      throw new SysError('VALIDATION_FAILED', 'This action is not available for the alert', {
+        details: { code: alert.code, action: input.action, actions },
+      });
+    }
+    await this.applyAction(context, alert, input);
+    if (input.action === 'restore_auto') {
+      // The bus applies a still-current package after commit. Keep the hard blocker until
+      // that application actually replaces the manual revision; an outage is not success.
+      return this.view(
+        await context.tx.alert.update({
+          where: { id },
+          data: {
+            resolutionAction: 'restore_auto',
+            resolutionReason: input.reason ?? null,
+          },
+        }),
+      );
+    }
+    const elapsed = context.now - Number(alert.createdAt);
+    const resolved = await context.tx.alert.update({
+      where: { id },
+      data: {
+        resolvedAt: BigInt(context.now),
+        resolutionAction: input.action,
+        resolutionReason: input.reason ?? null,
+        // The first three minutes are normal dispatcher thinking time, not a penalty.
+        resolutionDelaySec: resolutionDelay(elapsed),
+      },
+    });
+    return this.view(resolved);
+  }
+
+  async shiftStatus(
+    workDate: string,
+  ): Promise<{ workDate: string; closedAt: number | null; unresolvedCount: number }> {
+    await this.evaluateManualPlan();
+    await this.uow.run((tx) => this.refresh(tx, this.clock.nowSeconds(), workDate));
+    const [closure, unresolvedCount] = await Promise.all([
+      this.prisma.shiftClosure.findUnique({ where: { workDate } }),
+      this.prisma.alert.count({
+        // Closing any shift is a dispatcher-level finalisation: an unresolved decision
+        // cannot be hidden behind a date filter or an unknown Router work date.
+        where: { kind: 'alert', isBlocking: true, resolvedAt: null, invalidatedAt: null },
+      }),
+    ]);
+    return { workDate, closedAt: closure ? Number(closure.closedAt) : null, unresolvedCount };
+  }
+
+  async closeShift(
+    context: OperationContext,
+    workDate: string,
+  ): Promise<{ workDate: string; closedAt: number; unresolvedCount: number }> {
+    await this.refresh(context.tx, context.now, workDate);
+    const unresolvedCount = await context.tx.alert.count({
+      where: { kind: 'alert', isBlocking: true, resolvedAt: null, invalidatedAt: null },
+    });
+    if (unresolvedCount > 0) {
+      throw new SysError('SHIFT_CLOSE_BLOCKED', 'Resolve every alert before closing this shift', {
+        details: { workDate, unresolvedCount },
+      });
+    }
+    const closure = await context.tx.shiftClosure.upsert({
+      where: { workDate },
+      update: {},
+      create: {
+        workDate,
+        closedAt: BigInt(context.now),
+        closedBy: context.actor.id,
+        operationId: context.operationId,
+      },
+    });
+    return { workDate, closedAt: Number(closure.closedAt), unresolvedCount: 0 };
+  }
+
+  private async applyAction(
+    context: OperationContext,
+    alert: {
+      id: string;
+      code: string;
+      requestIds: string[];
+      engineerIds: string[];
+      workDate: string | null;
+    },
+    input: ResolveAlertInput,
+  ): Promise<void> {
+    const requestId = alert.requestIds[0];
+    const engineerId = input.engineerId ?? alert.engineerIds[0];
+    if (input.action === 'reschedule' || input.action === 'move_window') {
+      if (!requestId) throw new SysError('VALIDATION_FAILED', 'This alert names no request');
+      const request = await context.tx.request.findUnique({ where: { id: requestId } });
+      if (!request || request.lifecycle !== 'submitted') {
+        throw new SysError('WORK_ALREADY_STARTED', 'Only a submitted request can be rescheduled');
+      }
+      const start =
+        input.action === 'reschedule'
+          ? Number(request.windowStartAt) + 86_400
+          : input.windowStartAt;
+      const end =
+        input.action === 'reschedule' ? Number(request.windowEndAt) + 86_400 : input.windowEndAt;
+      if (start === undefined || end === undefined || end <= start) {
+        throw new SysError('VALIDATION_FAILED', 'Moving a window needs both ordered bounds');
+      }
+      await context.tx.requestConditionHistory.create({
+        data: {
+          requestId,
+          changedAt: BigInt(context.now),
+          operationId: context.operationId,
+          previous: {
+            windowStartAt: Number(request.windowStartAt),
+            windowEndAt: Number(request.windowEndAt),
+          },
+          reason: input.reason ?? input.action,
+        },
+      });
+      await context.tx.request.update({
+        where: { id: requestId },
+        data: {
+          windowStartAt: BigInt(start),
+          windowEndAt: BigInt(end),
+          updatedAt: BigInt(context.now),
+          version: { increment: 1 },
+        },
+      });
+      await this.publisher.publishIfChanged(
+        context.tx,
+        context.now,
+        PUBLICATION_TRIGGERS.REQUEST_CONDITIONS_CHANGED,
+      );
+      return;
+    }
+    if (input.action === 'add_engineer') {
+      if (!input.engineerId || !alert.workDate)
+        throw new SysError(
+          'VALIDATION_FAILED',
+          'Adding an engineer needs engineerId and work date',
+        );
+      if (!requestId) throw new SysError('VALIDATION_FAILED', 'Adding an engineer needs a request');
+      const [day, request] = await Promise.all([
+        context.tx.engineerDay.findUnique({
+          where: {
+            engineerId_workDate: { engineerId: input.engineerId, workDate: alert.workDate },
+          },
+          include: { engineer: { include: { account: true } } },
+        }),
+        context.tx.request.findUnique({ where: { id: requestId } }),
+      ]);
+      if (!day)
+        throw SysError.notFound('Engineer day', {
+          engineerId: input.engineerId,
+          workDate: alert.workDate,
+        });
+      if (
+        !request ||
+        request.lifecycle !== 'submitted' ||
+        day.availability === 'online' ||
+        !day.engineer.skills.includes(request.requiredSkill) ||
+        Number(day.shiftStartAt) > Number(request.windowStartAt) ||
+        Number(day.shiftEndAt) < Number(request.windowEndAt)
+      ) {
+        throw new SysError('VALIDATION_FAILED', 'This engineer cannot be added to this request', {
+          details: { engineerId: input.engineerId, requestId },
+        });
+      }
+      await context.tx.engineerDay.update({
+        where: { id: day.id },
+        data: {
+          availability: 'online',
+          attendanceOptOut: false,
+          attendanceGraceUntil: BigInt(context.now + NO_SHOW_SECONDS),
+          updatedAt: BigInt(context.now),
+          version: { increment: 1 },
+        },
+      });
+      await this.notifications.record(context.tx, context.now, {
+        category: 'engineer_attention_required',
+        businessEventKey: `engineer_called_in:${alert.id}:${input.engineerId}`,
+        recipientEmail: day.engineer.account?.email ?? null,
+        payload: { engineerId: input.engineerId, alertCode: 'called_in' },
+      });
+      await this.publisher.publishIfChanged(
+        context.tx,
+        context.now,
+        PUBLICATION_TRIGGERS.ENGINEER_AVAILABILITY_CHANGED,
+      );
+      return;
+    }
+    if (input.action === 'keep_manual') {
+      if (!input.reason)
+        throw new SysError('VALIDATION_FAILED', 'Keeping a degraded plan requires a reason');
+      const pointer = await context.tx.appliedPlanCurrent.findUnique({
+        where: { id: 'singleton' },
+        include: { plan: true },
+      });
+      if (pointer?.plan.origin === 'manual')
+        await context.tx.controlState.update({
+          where: { id: 'singleton' },
+          data: {
+            mode: 'manual',
+            frozenPlanId: pointer.plan.id,
+            changedAt: BigInt(context.now),
+            changedBy: context.actor.id,
+            modeVersion: { increment: 1 },
+          },
+        });
+      return;
+    }
+    if (input.action === 'restore_auto') {
+      if (!this.router.isConfigured())
+        throw SysError.notConfigured('Router automatic plan restoration');
+      const publication = await context.tx.routingCurrent.findUnique({
+        where: { id: 'singleton' },
+        include: { snapshot: true },
+      });
+      const candidate =
+        publication &&
+        (await context.tx.routerResult.findFirst({
+          where: { inputHash: publication.snapshot.inputHash, status: 'ready' },
+          orderBy: { receivedAt: 'desc' },
+        }));
+      if (!candidate)
+        throw new SysError(
+          'VALIDATION_FAILED',
+          'No current automatic result is available; retry when Router is ready',
+        );
+      await context.tx.controlState.update({
+        where: { id: 'singleton' },
+        data: {
+          mode: 'auto',
+          frozenPlanId: null,
+          changedAt: BigInt(context.now),
+          changedBy: context.actor.id,
+          modeVersion: { increment: 1 },
+        },
+      });
+      return;
+    }
+    if (input.action === 'skip_lunch' || input.action === 'keep_lunch') {
+      if (!engineerId || !alert.workDate)
+        throw new SysError('VALIDATION_FAILED', 'This alert names no engineer day');
+      const day = await context.tx.engineerDay.findUnique({
+        where: { engineerId_workDate: { engineerId, workDate: alert.workDate } },
+      });
+      if (!day) throw SysError.notFound('Engineer day', { engineerId, workDate: alert.workDate });
+      await context.tx.engineerDay.update({
+        where: { id: day.id },
+        data:
+          input.action === 'skip_lunch'
+            ? {
+                lunchEnabled: false,
+                lunchRequired: false,
+                updatedAt: BigInt(context.now),
+                version: { increment: 1 },
+              }
+            : { lunchRequired: true, updatedAt: BigInt(context.now), version: { increment: 1 } },
+      });
+      await this.publisher.publishIfChanged(
+        context.tx,
+        context.now,
+        PUBLICATION_TRIGGERS.LUNCH_RESTORED,
+      );
+      return;
+    }
+    if (!engineerId || !alert.workDate)
+      throw new SysError('VALIDATION_FAILED', 'This alert names no engineer day');
+    const day = await context.tx.engineerDay.findUnique({
+      where: { engineerId_workDate: { engineerId, workDate: alert.workDate } },
+      include: { engineer: { include: { account: true } } },
+    });
+    if (!day) throw SysError.notFound('Engineer day', { engineerId, workDate: alert.workDate });
+    if (input.action === 'message' || input.action === 'message_remove') {
+      await this.notifications.record(context.tx, context.now, {
+        category: 'engineer_attention_required',
+        businessEventKey: `engineer_attention:${alert.code}:${alert.id}`,
+        recipientEmail: day.engineer.account?.email ?? null,
+        payload: { engineerId, alertCode: alert.code },
+      });
+    }
+    if (input.action === 'remove_shift' || input.action === 'message_remove') {
+      await context.tx.engineerDay.update({
+        where: { id: day.id },
+        data: {
+          availability: 'offline',
+          attendanceOptOut: true,
+          updatedAt: BigInt(context.now),
+          version: { increment: 1 },
+        },
+      });
+      await this.publisher.publishIfChanged(
+        context.tx,
+        context.now,
+        PUBLICATION_TRIGGERS.ENGINEER_AVAILABILITY_CHANGED,
+      );
+      return;
+    }
+    if (input.action === 'extend') {
+      if (!input.minutes)
+        throw new SysError('VALIDATION_FAILED', 'Extending needs a positive minutes value');
+      if (alert.code === 'shift_no_show' && input.minutes !== 15) {
+        throw new SysError('VALIDATION_FAILED', 'A no-show can only be extended by 15 minutes');
+      }
+      await context.tx.engineerDay.update({
+        where: { id: day.id },
+        data: {
+          expectedOnlineAt: BigInt(context.now + input.minutes * 60),
+          attendanceGraceUntil: BigInt(context.now + input.minutes * 60),
+          updatedAt: BigInt(context.now),
+          version: { increment: 1 },
+        },
+      });
+    }
+  }
+
+  /** Derives open alerts only from facts/schedules that actually exist. */
+  private async refresh(tx: Tx, now: number, scopeDate?: string): Promise<void> {
+    await lockAlertQueue(tx);
+    const active = new Set<string>();
+    const days = await tx.engineerDay.findMany({
+      where: scopeDate ? { workDate: scopeDate } : {},
+      include: { engineer: { select: { accountId: true } } },
+    });
+    for (const day of days) {
+      if (!day.engineer.accountId || day.attendanceOptOut) continue;
+      if (
+        now >= Number(day.shiftStartAt) + NO_SHOW_SECONDS &&
+        now <= Number(day.shiftEndAt) &&
+        (day.attendanceGraceUntil === null || now >= Number(day.attendanceGraceUntil)) &&
+        (day.lastAttendanceAt === null || day.lastAttendanceAt < day.shiftStartAt)
+      ) {
+        const key = `system:shift_no_show:${day.id}`;
+        active.add(key);
+        await this.ensure(tx, now, {
+          key,
+          code: 'shift_no_show',
+          severity: 'error',
+          engineerIds: [day.engineerId],
+          requestIds: [],
+          workDate: day.workDate,
+          reasons: {
+            shiftStartAt: Number(day.shiftStartAt),
+            thresholdAt: Number(day.shiftStartAt) + NO_SHOW_SECONDS,
+          },
+        });
+      }
+      const expected = overdueExpectation(day);
+      if (
+        expected !== null &&
+        (day.attendanceGraceUntil === null || now >= Number(day.attendanceGraceUntil)) &&
+        now >= expected + OVERDUE_SECONDS &&
+        Number(day.lastAttendanceAt ?? 0n) < expected
+      ) {
+        const key = `system:engineer_overdue:${day.id}:${expected}`;
+        active.add(key);
+        await this.ensure(tx, now, {
+          key,
+          code: 'engineer_overdue',
+          severity: 'warning',
+          engineerIds: [day.engineerId],
+          requestIds: [],
+          workDate: day.workDate,
+          reasons: {
+            expectedAt: expected,
+            lastAttendanceAt: day.lastAttendanceAt === null ? null : Number(day.lastAttendanceAt),
+          },
+        });
+      }
+    }
+    const requests = await tx.request.findMany({
+      where: { lifecycle: 'submitted', assignmentState: 'unassigned' },
+    });
+    for (const request of requests) {
+      const date = workDateForMoment(Number(request.windowStartAt), days) ?? scopeDate ?? null;
+      if (scopeDate && date !== scopeDate) continue;
+      const key = `system:unassigned:${date}:${request.id}:${request.windowStartAt}:${request.windowEndAt}`;
+      active.add(key);
+      await this.ensure(tx, now, {
+        key,
+        code: 'unassigned',
+        severity: 'error',
+        engineerIds: [],
+        requestIds: [request.id],
+        workDate: date,
+        reasons: { assignment: 'unassigned' },
+      });
+    }
+    const activeWork = await tx.request.findMany({
+      where: { lifecycle: 'in_progress', expectedCompletionAt: { not: null } },
+    });
+    for (const request of activeWork) {
+      const expectedAt = Number(request.expectedCompletionAt ?? 0n);
+      if (now < expectedAt + OVERDUE_SECONDS) continue;
+      const start = await tx.requestFact.findFirst({
+        where: { requestId: request.id, kind: 'started' },
+        orderBy: { occurredAt: 'desc' },
+      });
+      if (!start?.engineerId) continue;
+      const day = days.find(
+        (candidate) =>
+          candidate.engineerId === start.engineerId &&
+          now >= Number(candidate.shiftStartAt) &&
+          now <= Number(candidate.shiftEndAt),
+      );
+      if (
+        !day ||
+        !day.engineer.accountId ||
+        day.attendanceOptOut ||
+        (day.attendanceGraceUntil !== null && now < Number(day.attendanceGraceUntil)) ||
+        Number(day.lastAttendanceAt ?? 0n) >= expectedAt
+      )
+        continue;
+      const key = `system:engineer_overdue:work:${request.id}:${expectedAt}`;
+      active.add(key);
+      await this.ensure(tx, now, {
+        key,
+        code: 'engineer_overdue',
+        severity: 'warning',
+        engineerIds: [start.engineerId],
+        requestIds: [request.id],
+        workDate: day.workDate,
+        reasons: {
+          state: 'at_job',
+          expectedAt,
+          lastAttendanceAt: day.lastAttendanceAt === null ? null : Number(day.lastAttendanceAt),
+        },
+      });
+    }
+    const pointer = await tx.appliedPlanCurrent.findUnique({
+      where: { id: 'singleton' },
+      include: { plan: { include: { routes: { include: { stops: true } }, assignments: true } } },
+    });
+    if (pointer?.plan) {
+      const requestsById = new Map(
+        (
+          await tx.request.findMany({
+            where: { id: { in: pointer.plan.assignments.map((x) => x.requestId) } },
+          })
+        ).map((x) => [x.id, x]),
+      );
+      for (const route of pointer.plan.routes) {
+        for (const stop of route.stops) {
+          if (!stop.requestId) continue;
+          const request = requestsById.get(stop.requestId);
+          if (
+            !request ||
+            request.lifecycle !== 'submitted' ||
+            pointer.plan.origin !== 'auto' ||
+            Number(stop.startAt) <= Number(request.windowEndAt) + TIME_RISK_SECONDS
+          )
+            continue;
+          const date = workDateForMoment(Number(stop.startAt), days) ?? scopeDate ?? null;
+          if (scopeDate && date !== scopeDate) continue;
+          const key = `system:time_risk:${date}:${stop.requestId}:${route.engineerId}:${request.windowEndAt}`;
+          active.add(key);
+          await this.ensure(tx, now, {
+            key,
+            code: 'time_risk',
+            severity: 'warning',
+            engineerIds: [route.engineerId],
+            requestIds: [stop.requestId],
+            workDate: date,
+            reasons: {
+              plannedStartAt: Number(stop.startAt),
+              windowEndAt: Number(request.windowEndAt),
+              thresholdSec: TIME_RISK_SECONDS,
+            },
+          });
+        }
+        const day = days.find(
+          (candidate) =>
+            candidate.engineerId === route.engineerId &&
+            now >= Number(candidate.shiftStartAt) &&
+            now <= Number(candidate.shiftEndAt),
+        );
+        const working = route.stops.some(
+          (stop) => stop.requestId && requestsById.get(stop.requestId)?.lifecycle === 'in_progress',
+        );
+        const lateStop =
+          day &&
+          route.stops
+            .filter(
+              (stop) =>
+                stop.kind === 'job' &&
+                stop.requestId &&
+                requestsById.get(stop.requestId)?.lifecycle === 'submitted',
+            )
+            .sort((a, b) => a.sequence - b.sequence)[0];
+        if (
+          pointer.plan.origin === 'auto' &&
+          day &&
+          day.engineer.accountId &&
+          day.lastAttendanceAt !== null &&
+          day.availability === 'online' &&
+          !working &&
+          !day.attendanceOptOut &&
+          (day.attendanceGraceUntil === null || now >= Number(day.attendanceGraceUntil)) &&
+          lateStop &&
+          now >= Number(lateStop.arrivalAt) + OVERDUE_SECONDS &&
+          Number(day.lastAttendanceAt) < Number(lateStop.arrivalAt)
+        ) {
+          const key = `system:engineer_overdue:edge:${day.id}:${lateStop.requestId}:${lateStop.arrivalAt}`;
+          active.add(key);
+          await this.ensure(tx, now, {
+            key,
+            code: 'engineer_overdue',
+            severity: 'warning',
+            engineerIds: [route.engineerId],
+            requestIds: lateStop.requestId ? [lateStop.requestId] : [],
+            workDate: day.workDate,
+            reasons: {
+              state: 'on_route_edge',
+              expectedAt: Number(lateStop.arrivalAt),
+              lastAttendanceAt: day.lastAttendanceAt === null ? null : Number(day.lastAttendanceAt),
+            },
+          });
+        }
+      }
+      for (const day of days) {
+        if (!day.lunchRequired || day.lunchTaken) continue;
+        const route = pointer.plan.routes.find((x) => x.engineerId === day.engineerId);
+        if (!route || route.lunchStatus !== 'scheduled') {
+          const key = `system:lunch_conflict:${day.id}`;
+          active.add(key);
+          await this.ensure(tx, now, {
+            key,
+            code: 'lunch_conflict',
+            severity: 'warning',
+            engineerIds: [day.engineerId],
+            requestIds: [],
+            workDate: day.workDate,
+            reasons: { lunchStatus: route?.lunchStatus ?? 'not_scheduled' },
+          });
+        }
+      }
+      if (pointer.plan.origin === 'manual') {
+        const row = await tx.appState.findUnique({ where: { key: 'alerts.manual-evaluation' } });
+        const evidence = manualEvidenceSchema.safeParse(row?.value);
+        const publication = await tx.routingCurrent.findUnique({
+          where: { id: 'singleton' },
+          include: { snapshot: true },
+        });
+        const evaluation =
+          evidence.success &&
+          evidence.data.planId === pointer.plan.id &&
+          evidence.data.inputHash === publication?.snapshot.inputHash
+            ? evidence.data.evaluation
+            : null;
+        if (!evaluation || evaluation.degraded) {
+          const code = evaluation ? 'plan_degraded' : 'plan_review_required';
+          const key = `system:${code}:${pointer.plan.id}`;
+          active.add(key);
+          await this.ensure(tx, now, {
+            key,
+            code,
+            severity: 'warning',
+            engineerIds: [],
+            requestIds: [],
+            workDate: scopeDate ?? null,
+            reasons: {
+              text: evaluation
+                ? `Ручной план хуже автоматического по критерию «${criterionLabel(evaluation.criterion)}» политики «${evaluation.policy_id}».`
+                : 'Оценка ручного плана временно недоступна. Проверьте решение вручную или восстановите автоматический вариант.',
+              ...(evaluation ?? {}),
+            },
+          });
+        }
+      }
+    }
+    const openSystem = await tx.alert.findMany({
+      where: {
+        dedupKey: { startsWith: 'system:' },
+        ...(scopeDate ? { workDate: scopeDate } : {}),
+        invalidatedAt: null,
+      },
+      select: {
+        id: true,
+        dedupKey: true,
+        resolvedAt: true,
+        resolutionAction: true,
+        createdAt: true,
+      },
+    });
+    for (const alert of openSystem) {
+      const dedupKey = alert.dedupKey;
+      if (
+        alert.resolutionAction === 'restore_auto' &&
+        alert.resolvedAt === null &&
+        pointer?.plan.origin !== 'auto'
+      )
+        continue;
+      if (dedupKey && ![...active].some((key) => dedupKey.startsWith(key))) {
+        await tx.alert.update({
+          where: { id: alert.id },
+          data: {
+            invalidatedAt: BigInt(now),
+            ...(alert.resolvedAt === null
+              ? {
+                  resolvedAt: BigInt(now),
+                  resolutionAction:
+                    alert.resolutionAction === 'restore_auto' ? 'restore_auto' : 'superseded',
+                  resolutionDelaySec:
+                    alert.resolutionAction === 'restore_auto'
+                      ? resolutionDelay(now - Number(alert.createdAt))
+                      : null,
+                }
+              : {}),
+          },
+        });
+      }
+    }
+  }
+
+  private async ensure(
+    tx: Tx,
+    now: number,
+    input: {
+      key: string;
+      code: string;
+      severity: 'info' | 'warning' | 'error';
+      engineerIds: string[];
+      requestIds: string[];
+      workDate: string | null;
+      reasons: object;
+    },
+  ): Promise<void> {
+    const matchingOpen = await tx.alert.findFirst({
+      where: {
+        code: input.code,
+        workDate: input.workDate,
+        resolvedAt: null,
+        invalidatedAt: null,
+        engineerIds: { hasEvery: input.engineerIds },
+        requestIds: { hasEvery: input.requestIds },
+      },
+    });
+    if (matchingOpen) return;
+    const latest = await tx.alert.findFirst({
+      where: { dedupKey: { startsWith: input.key } },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (latest?.resolvedAt != null && latest.invalidatedAt === null) {
+      if (!['shift_no_show', 'engineer_overdue'].includes(input.code)) return;
+      if (
+        latest.resolutionAction === 'message' &&
+        now - Number(latest.resolvedAt) < REPEAT_AFTER_SECONDS
+      )
+        return;
+    }
+    const dedupKey = latest ? `${input.key}:episode:${now}` : input.key;
+    await tx.alert.create({
+      data: {
+        dedupKey,
+        code: input.code,
+        severity: input.severity,
+        engineerIds: input.engineerIds,
+        requestIds: input.requestIds,
+        reasons: input.reasons,
+        workDate: input.workDate,
+        isBlocking: true,
+        createdAt: BigInt(now),
+      },
+    });
+  }
+
+  private async workDateForEngineer(
+    tx: Tx,
+    engineerId: string | undefined,
+  ): Promise<string | null> {
+    if (!engineerId) return null;
+    const day = await tx.engineerDay.findFirst({
+      where: { engineerId },
+      orderBy: { workDate: 'desc' },
+      select: { workDate: true },
+    });
+    return day?.workDate ?? null;
+  }
+
+  private view(alert: {
+    id: string;
+    kind: string;
+    code: string;
+    severity: string;
+    engineerIds: string[];
+    requestIds: string[];
+    reasons: unknown;
+    restoreOption: unknown;
+    createdAt: bigint;
+    seenAt: bigint | null;
+    resolvedAt: bigint | null;
+    resolutionAction: string | null;
+    resolutionReason: string | null;
+    resolutionDelaySec: number | null;
+    workDate: string | null;
+  }): AlertView {
+    return {
+      id: alert.id,
+      kind: alert.kind === 'notice' ? 'notice' : 'alert',
+      code: alert.code,
+      severity: alert.severity,
+      engineerIds: alert.engineerIds,
+      requestIds: alert.requestIds,
+      reasons: Array.isArray(alert.reasons) ? alert.reasons : [alert.reasons],
+      restoreOption: alert.restoreOption,
+      actions: alert.kind === 'notice' ? [] : alertActionsFor(alert.code),
+      createdAt: Number(alert.createdAt),
+      seenAt: alert.seenAt === null ? null : Number(alert.seenAt),
+      resolvedAt: alert.resolvedAt === null ? null : Number(alert.resolvedAt),
+      resolutionAction: alert.resolutionAction,
+      resolutionReason: alert.resolutionReason,
+      resolutionDelaySec: alert.resolutionDelaySec,
+      workDate: alert.workDate,
+    };
+  }
+}
+
+export function alertActionsFor(code: string): AlertAction[] {
+  switch (code) {
+    case 'time_risk':
+    case 'unassigned':
+      return ['reschedule', 'move_window', 'add_engineer'];
+    case 'plan_degraded':
+    case 'plan_review_required':
+      return ['keep_manual', 'restore_auto'];
+    case 'lunch_conflict':
+      return ['skip_lunch', 'keep_lunch'];
+    case 'engineer_overdue':
+      return ['message', 'remove_shift', 'extend'];
+    case 'shift_no_show':
+      return ['message_remove', 'remove_shift', 'extend'];
+    default:
+      return [];
+  }
+}
+export function resolutionDelay(elapsedSeconds: number): number | null {
+  return elapsedSeconds > GRACE_SECONDS ? elapsedSeconds - GRACE_SECONDS : null;
+}
+function canonicalRouterCode(code: string): string {
+  const normalized = code.toLowerCase();
+  if (normalized === 'routing_fail') return 'unassigned';
+  if (
+    ['required_lunch_unplaced', 'lunch_not_placed', 'lunch_skipped_for_work'].includes(normalized)
+  )
+    return 'lunch_conflict';
+  return normalized;
+}
+function overdueExpectation(day: {
+  availability: string;
+  expectedOnlineAt: bigint | null;
+  lunchTaken: boolean;
+  lunchStartedAt: bigint | null;
+  lunchDurationSec: number | null;
+  lastAttendanceAt: bigint | null;
+}): number | null {
+  if (
+    (day.availability === 'technical_break' ||
+      (day.availability === 'offline' && day.lastAttendanceAt !== null)) &&
+    day.expectedOnlineAt !== null
+  )
+    return Number(day.expectedOnlineAt);
+  if (day.lunchTaken && day.lunchStartedAt !== null && day.lunchDurationSec !== null)
+    return Number(day.lunchStartedAt) + day.lunchDurationSec;
+  return null;
+}
+function workDateForMoment(
+  moment: number,
+  _days: Array<{ workDate: string; shiftStartAt: bigint; shiftEndAt: bigint }>,
+): string | null {
+  return new Date((moment + 3 * 3600) * 1000).toISOString().slice(0, 10);
+}
+function criterionLabel(criterion: string | null): string {
+  const labels: Record<string, string> = {
+    constraints: 'ограничения',
+    urgent_unassigned: 'срочные неназначенные заявки',
+    unassigned: 'неназначенные заявки',
+    missed_optional_lunches: 'пропущенные обеды',
+    travel_time: 'время в пути',
+    distance: 'пробег',
+    engineers_used: 'число инженеров',
+    additional_engineers: 'дополнительные инженеры',
+    window_end_risk: 'риск окна',
+    total_lateness: 'опоздание',
+    max_workload_ratio: 'загрузка',
+    workload_spread: 'разброс загрузки',
+  };
+  return labels[criterion ?? ''] ?? criterion ?? 'целевая функция';
+}

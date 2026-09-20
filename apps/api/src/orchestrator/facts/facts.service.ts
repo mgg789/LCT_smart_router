@@ -246,6 +246,20 @@ export class FactsService {
         operationId: context.operationId,
       },
     });
+    // A fact submitted by the engineer is also a confirmed app activity. It is not
+    // inferred from a route timestamp, and it only touches the day containing the fact.
+    await context.tx.engineerDay.updateMany({
+      where: {
+        engineerId,
+        shiftStartAt: { lte: BigInt(occurredAt) },
+        shiftEndAt: { gte: BigInt(occurredAt) },
+      },
+      data: {
+        lastAttendanceAt: BigInt(context.now),
+        updatedAt: BigInt(context.now),
+        version: { increment: 1 },
+      },
+    });
   }
 
   private async reload(tx: Tx, requestId: string): Promise<Request> {

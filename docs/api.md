@@ -438,12 +438,42 @@ profile`, `availability`, `technical-break`, `lunch/*`, `requests/:id/facts`)
 | POST | `/api/v1/dispatch/mode` | диспетчер | Включить или выключить аварийное ручное управление |
 | POST | `/api/v1/dispatch/plan/reassign` | диспетчер | Перенести ещё не начатую работу другому инженеру |
 | POST | `/api/v1/dispatch/plan/reorder` | диспетчер | Сохранить итоговый порядок одной очереди |
-| GET | `/api/v1/dispatch/alerts` | диспетчер | Объяснимые проблемы из плана |
-| POST | `/api/v1/dispatch/alerts/:id/seen` | диспетчер | Отметить алерт просмотренным |
+| GET | `/api/v1/dispatch/alerts?workDate=YYYY-MM-DD` | диспетчер | Очередь решений и обычные уведомления дня |
+| POST | `/api/v1/dispatch/alerts/:id/seen` | диспетчер | Отметить алерт просмотренным, не решая его |
+| POST | `/api/v1/dispatch/notices/:id/seen` | диспетчер | Отметить обычное уведомление просмотренным |
+| POST | `/api/v1/dispatch/alerts/:id/resolve` | диспетчер | Атомарно выполнить выбранное решение алерта |
+| GET | `/api/v1/dispatch/shift?workDate=YYYY-MM-DD` | диспетчер | `{ workDate, closedAt, unresolvedCount }` для закрытия дня |
+| POST | `/api/v1/dispatch/shift/close` | диспетчер | Закрыть день, только когда `unresolvedCount=0` |
+| POST | `/api/v1/engineer/attendance` | инженер | Явная отметка в приложении для мониторинга молчания |
 | GET | `/api/v1/engineer/plan` | инженер | Маршрут этого инженера на день и карточки его заявок |
 | GET | `/api/v1/engineer/requests/:id` | инженер | Одна заявка своего применённого маршрута |
 | POST | `/api/v1/engineer/requests/:id/facts` | инженер | Записать подтверждённый факт исполнения |
 | POST | `/api/v1/dispatch/debug/router-result` | диспетчер | Прогнать результат через проверки приёмки |
+
+### Алерты и уведомления
+
+`GET /dispatch/alerts` возвращает `kind: "alert" | "notice"`, неизменяемые данные
+ситуации и состояние решения: `actions`, `resolutionAction`, `resolutionReason`,
+`resolutionDelaySec`, `workDate`. У `notice` список действий пуст и он не блокирует
+смену. Первый 180 секунд `resolutionDelaySec=null`; после решения в нём записываются
+секунды сверх этого льготного интервала.
+
+У `POST /dispatch/alerts/:id/resolve` обязательны `operationId` и одно действие из
+списка строки. `reschedule`, `move_window` (оба `windowStartAt`/`windowEndAt`) и
+`add_engineer` (доступный `engineerId`) применяют изменение входа Router; для
+`keep_manual` нужна причина. `extend` требует `minutes`, а для `shift_no_show` строго
+15. Возможного позже выбора AI в API пока нет: сервер не принимает выдуманный вариант.
+Повтор с тем же `operationId` возвращает сохранённый результат.
+
+Детекторы создают решения для `time_risk`, `unassigned`, `plan_degraded`,
+`lunch_conflict`, `engineer_overdue` и `shift_no_show`; обычное событие
+`plan_rebuilt` приходит как `notice`. Открытый день нельзя закрыть при хотя бы одном
+неразрешённом блокирующем алерте (`SHIFT_CLOSE_BLOCKED`). `seen` меняет только факт
+просмотра, никогда не `resolvedAt`.
+
+Пока Router не публикует в результате свой применённый допуск окна, `time_risk`
+создаётся только при расчётном старте позже конца окна более чем на 300 секунд. Это
+защита от шума расписания, а не изменение обещанного клиенту окна.
 
 ### Приёмка: пять независимых проверок
 
