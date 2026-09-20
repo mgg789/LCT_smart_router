@@ -10,7 +10,8 @@ interface EngineersPageProps {
   readonly pendingEngineerId: string | null;
   readonly rebuilding: boolean;
   readonly writesDisabled: boolean;
-  readonly liveStates: readonly LiveEngineerState[];
+  /** Optional for roster consumers that do not subscribe to the LIVE workday. */
+  readonly liveStates?: readonly LiveEngineerState[];
   readonly onAvailabilityChange: (engineerId: string, availability: 'online' | 'offline') => void;
   readonly onLinkAccount: (engineerId: string, email: string) => Promise<void>;
   readonly onUnlinkAccount: (engineerId: string) => Promise<void>;
@@ -33,7 +34,7 @@ export function EngineersPage({
     (left, right) => left.inputOrder - right.inputOrder,
   );
   const teamEquipment = engineers.flatMap((engineer) => equipmentLoadout(snapshot, engineer.id));
-  const liveByEngineerId = new Map(liveStates.map((state) => [state.id, state]));
+  const liveByEngineerId = new Map((liveStates ?? []).map((state) => [state.id, state]));
   const totals = (['router', 'set_top_box', 'smart_speaker'] as const).map((type) => {
     const lines = teamEquipment.filter((line) => line.type === type);
     return {

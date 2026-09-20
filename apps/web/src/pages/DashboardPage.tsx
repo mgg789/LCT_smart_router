@@ -583,9 +583,9 @@ export function DashboardPage() {
       {dash.liveWorkday?.workday.status === 'finished' ? (
         <WorkdayFinishedPanel workday={dash.liveWorkday.workday} />
       ) : null}
-      </div>
-    );
-  }
+    </div>
+  );
+}
 
 /** Dispatcher completion panel uses server totals so it cannot disagree with engineer facts. */
 function WorkdayFinishedPanel({ workday }: { readonly workday: LiveWorkday }) {
