@@ -66,7 +66,9 @@ def _candidate_release(snapshot: RouterTaskSnapshot, engineer: Engineer, limit: 
 
 def release_at(snapshot: RouterTaskSnapshot, engineer: Engineer) -> int | None:
     """Conservative ordinary release; unknown or expired offline forecasts are unavailable."""
-    return _candidate_release(snapshot, engineer, min(engineer.shift_end_at, snapshot.horizon_end_at))
+    return _candidate_release(
+        snapshot, engineer, min(engineer.shift_end_at, snapshot.horizon_end_at)
+    )
 
 
 def job_completion_limit(
@@ -85,7 +87,9 @@ def job_completion_limit(
 
 def terminal_release_at(snapshot: RouterTaskSnapshot, engineer: Engineer) -> int | None:
     """Permit a known-late engineer only for an otherwise terminal recovery visit."""
-    return _candidate_release(snapshot, engineer, job_completion_limit(snapshot, engineer, terminal=True))
+    return _candidate_release(
+        snapshot, engineer, job_completion_limit(snapshot, engineer, terminal=True)
+    )
 
 
 def _matches_static_constraints(engineer: Engineer, request: Request) -> bool:
@@ -103,12 +107,18 @@ def _matches_static_constraints(engineer: Engineer, request: Request) -> bool:
 
 def eligible(snapshot: RouterTaskSnapshot, engineer: Engineer, request: Request) -> bool:
     """Check region, skill, transport, equipment and release constraints."""
-    return _matches_static_constraints(engineer, request) and release_at(snapshot, engineer) is not None
+    return (
+        _matches_static_constraints(engineer, request)
+        and release_at(snapshot, engineer) is not None
+    )
 
 
 def terminal_eligible(snapshot: RouterTaskSnapshot, engineer: Engineer, request: Request) -> bool:
     """Check whether a job can be the sole post-shift terminal recovery visit."""
-    return _matches_static_constraints(engineer, request) and terminal_release_at(snapshot, engineer) is not None
+    return (
+        _matches_static_constraints(engineer, request)
+        and terminal_release_at(snapshot, engineer) is not None
+    )
 
 
 def reason(code: str, text: str, *, outcome: bool = False, **facts) -> Reason:
@@ -238,12 +248,8 @@ def schedule_steps(
             tolerance,
             TERMINAL_WINDOW_LATENESS_TOLERANCE_SEC if step_index == len(steps) - 1 else 0,
         )
-        if (
-            end > request.window_end_at + window_tolerance
-            or end
-            > job_completion_limit(
-                snapshot, engineer, terminal=step_index == len(steps) - 1
-            )
+        if end > request.window_end_at + window_tolerance or end > job_completion_limit(
+            snapshot, engineer, terminal=step_index == len(steps) - 1
         ):
             return None
         previous_stop = stops[-1].stop_id if stops else None
@@ -658,6 +664,66 @@ def score(snapshot: RouterTaskSnapshot, plan: Plan) -> tuple[int, ...]:
     return policy_score(snapshot, plan)
 
 
+def lunch_coverage_alerts(
+    snapshot: RouterTaskSnapshot, plan: Plan, travel: TravelProvider
+) -> list[PlanningAlert]:
+    """Prove a one-job coverage gain without lunch, never mutate the accepted route.
+
+    A bounded insertion witness is sufficient evidence, not a claim of global optimality.
+    Existing job order and assignments stay fixed in both counterfactual candidates.
+    """
+    unassigned = [a.request_id for a in plan.assignments if a.status == "unassigned"]
+    if not unassigned:
+        return []
+    engineers = {e.engineer_id: e for e in snapshot.engineers}
+    alerts = []
+    for route in plan.routes:
+        engineer = engineers[route.engineer_id]
+        lunch = next((s for s in route.stops if s.kind == "lunch"), None)
+        if not lunch or lunch.start_at <= snapshot.planning_as_of or engineer.lunch_taken:
+            continue
+        without = engineer.model_copy(
+            update={
+                "lunch": engineer.lunch.model_copy(update={"enabled": False, "required": False})
+            }
+        )
+        jobs = [s.request_id for s in route.stops if s.kind == "job"]
+        witness = None
+        for request_id in unassigned:
+            for index in range(len(jobs) + 1):
+                candidate = jobs[:index] + [request_id] + jobs[index:]
+                if fixed_order(snapshot, without, candidate, travel) is None:
+                    continue
+                with_lunch = fixed_order(snapshot, engineer, candidate, travel)
+                if with_lunch is not None and with_lunch.lunch.status == "scheduled":
+                    continue
+                witness = request_id
+                break
+            if witness:
+                break
+        if witness:
+            alerts.append(
+                PlanningAlert(
+                    alert_id=f"lunch-coverage:{engineer.engineer_id}",
+                    code="LUNCH_COVERAGE_GAIN",
+                    severity="warning",
+                    engineer_ids=[engineer.engineer_id],
+                    request_ids=[witness],
+                    reasons=[
+                        reason(
+                            "LUNCH_COVERAGE_GAIN",
+                            "Removing lunch permits one additional job.",
+                            outcome=True,
+                            additional_assigned_count=1,
+                            request_id=witness,
+                            lunch_start_at=lunch.start_at,
+                        )
+                    ],
+                )
+            )
+    return alerts
+
+
 def validate_plan(snapshot: RouterTaskSnapshot, plan: Plan, travel: TravelProvider) -> None:
     """Raise ValueError on identity, timing, travel, metrics or lunch contract violations."""
 
@@ -753,4 +819,9 @@ def validate_plan(snapshot: RouterTaskSnapshot, plan: Plan, travel: TravelProvid
         require(bool(assignment.reasons), "missing explanation")
     assembled = assemble_plan(snapshot, plan.routes)
     require(plan.summary == assembled.summary, "plan totals")
-    require(plan.alerts == assembled.alerts, "plan alerts")
+    coverage_alerts = (
+        lunch_coverage_alerts(snapshot, plan, travel)
+        if any(alert.code == "LUNCH_COVERAGE_GAIN" for alert in plan.alerts)
+        else []
+    )
+    require(plan.alerts == assembled.alerts + coverage_alerts, "plan alerts")

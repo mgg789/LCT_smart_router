@@ -1,6 +1,5 @@
 import { motion } from 'framer-motion';
 import type { ReactNode } from 'react';
-import { FIGMA_ASSETS } from '../figma-dashboard/assets';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { skillLabel } from '../lib/reasons';
 import { ENGINEER_ASSETS } from './assets';
@@ -137,6 +136,12 @@ function UpcomingCard({
             />
             <span>{formatMinutesRu(item.request.serviceDurationSec)}</span>
           </div>
+          <span
+            className="inline-flex rounded-full bg-figma-ink font-semibold text-white"
+            style={{ marginTop: eu(16), padding: `${eu(14)} ${eu(24)}`, fontSize: eu(22) }}
+          >
+            {formatPlanWindow(item.request.windowStartAt, item.request.windowEndAt)}
+          </span>
         </div>
         <MapThumb onRoute={onRoute} />
       </div>
@@ -146,7 +151,7 @@ function UpcomingCard({
         <div className="flex" style={{ marginTop: eu(20), gap: eu(16) }}>
           <motion.button
             type="button"
-            disabled={latePending}
+            disabled={latePending || !onLate}
             onClick={(event) => {
               stopInside(event);
               onLate?.();
@@ -286,26 +291,10 @@ function MapThumb({ onRoute }: { onRoute?: () => void }) {
         stopInside(event);
         onRoute?.();
       }}
-      className="relative shrink-0 overflow-hidden bg-black"
+      className="relative flex shrink-0 items-center justify-center overflow-hidden bg-figma-ink"
       style={{ width: eu(170), height: eu(164), borderRadius: eu(20) }}
     >
-      <img
-        alt=""
-        src={FIGMA_ASSETS.map}
-        className="absolute inset-0 size-full max-w-none object-cover"
-      />
-      <div
-        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
-        style={{ width: eu(40), height: eu(40) }}
-      >
-        <FigmaIcon
-          src={ENGINEER_ASSETS.pin}
-          alt=""
-          width={40}
-          height={40}
-          style={{ width: '100%', height: '100%' }}
-        />
-      </div>
+      <img alt="" src="/figma/eng-navigation.svg" style={{ width: eu(82), height: eu(82) }} />
     </button>
   );
 }

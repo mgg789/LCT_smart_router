@@ -107,6 +107,16 @@ describe('LIVE workday', () => {
     return { ...body, snapshot: JSON.parse(body.payload) as RouterTaskSnapshot };
   };
 
+  const publishDispatcherContinuation = async (engineerId: string) => {
+    const response = await call(
+      'POST',
+      `/api/v1/dispatch/engineers/${engineerId}/availability`,
+      dispatcherToken,
+      { operationId: randomUUID(), availability: 'online' },
+    );
+    assert.equal(response.status, 201, await response.clone().text());
+  };
+
   const liveFeed = async (result: unknown) => {
     const snapshot = await liveSnapshot();
     const packageResult = result as { input_publication_id?: string | null };
@@ -257,7 +267,7 @@ describe('LIVE workday', () => {
     await prisma.alert.deleteMany({
       where: { code: { in: ['LIVE_TECHNICAL_BREAK_OVERRUN', 'LIVE_WINDOW_COMPLETION_RISK'] } },
     });
-    app = await NestFactory.create(AppModule, { logger: false });
+    app = await NestFactory.create(AppModule, { logger: false, abortOnError: false });
     app.setGlobalPrefix('api/v1', { exclude: ['health/live', 'health/ready', 'health/services'] });
     app.useGlobalFilters(new AllExceptionsFilter());
     app.useGlobalInterceptors(new BigIntGuardInterceptor(true));
@@ -303,6 +313,7 @@ describe('LIVE workday', () => {
     await prisma.appliedPlanCurrent.deleteMany({});
     await prisma.appliedPlan.deleteMany({});
     await prisma.routerResult.deleteMany({});
+    await prisma.engineerDay.deleteMany({ where: { engineerId: { in: engineerIds } } });
     await prisma.alert.deleteMany({
       where: { code: { in: ['LIVE_TECHNICAL_BREAK_OVERRUN', 'LIVE_WINDOW_COMPLETION_RISK'] } },
     });
@@ -362,6 +373,84 @@ describe('LIVE workday', () => {
     assert.equal(detail.status, 200, await detail.clone().text());
     assert.ok(
       (await liveView(engineer.token)).route?.stops.some((stop) => stop.requestId === request.id),
+    );
+  });
+
+  it('keeps normal entry/start/ETA publication-free and publishes a material overrun once', async () => {
+    const engineer = await liveCreateEngineer();
+    const request = await liveCreateRequest();
+    await liveApplyPlan(engineer.id, [request]);
+    await liveStart();
+    const before = await liveView(engineer.token);
+    const job = before.route?.stops.find((stop) => stop.requestId === request.id);
+    assert.ok(job);
+    const count = await prisma.routingSnapshot.count();
+    assert.equal((await liveAction(engineer.token, { kind: 'online' })).status, 201);
+    assert.equal(await prisma.routingSnapshot.count(), count, 'normal first entry');
+    assert.equal(
+      (
+        await liveAction(engineer.token, {
+          kind: 'eta',
+          requestId: request.id,
+          etaAt: job.startAt + 60,
+        })
+      ).status,
+      201,
+    );
+    assert.equal(await prisma.routingSnapshot.count(), count, 'ETA within tolerance');
+    await liveSetLogicalNow(
+      before.workday.id,
+      before.workday.logicalStartAt,
+      before.workday.logicalEndAt,
+      job.startAt + 1,
+      before.workday.speedDurationSec,
+    );
+    assert.equal(
+      (await liveAction(engineer.token, { kind: 'start', requestId: request.id })).status,
+      201,
+    );
+    assert.equal(
+      await prisma.routingSnapshot.count(),
+      count,
+      JSON.stringify(
+        await prisma.routingSnapshot.findFirst({
+          orderBy: { createdAt: 'desc' },
+          select: { trigger: true },
+        }),
+      ),
+    );
+    const started = await prisma.request.findUniqueOrThrow({ where: { id: request.id } });
+    const normEnd = Number(started.startedAt) + started.serviceDurationSec;
+    await liveSetLogicalNow(
+      before.workday.id,
+      before.workday.logicalStartAt,
+      before.workday.logicalEndAt,
+      normEnd + 601,
+      before.workday.speedDurationSec,
+    );
+    await liveView(engineer.token);
+    assert.ok(
+      (await prisma.request.findUniqueOrThrow({ where: { id: request.id } })).overrunDetectedAt,
+    );
+    assert.equal(
+      await prisma.routingSnapshot.count(),
+      count,
+      'tolerance breach is an alert, not a publication',
+    );
+    await liveSetLogicalNow(
+      before.workday.id,
+      before.workday.logicalStartAt,
+      before.workday.logicalEndAt,
+      normEnd + 1501,
+      before.workday.speedDurationSec,
+    );
+    await liveView(engineer.token);
+    assert.equal(await prisma.routingSnapshot.count(), count + 1);
+    await liveView(engineer.token);
+    assert.equal(
+      await prisma.routingSnapshot.count(),
+      count + 1,
+      'one material overrun publishes once',
     );
   });
 
@@ -425,7 +514,13 @@ describe('LIVE workday', () => {
     const previousStop = initial.route?.stops.find((stop) => stop.requestId === previous.id);
     assert.ok(previousStop);
     assert.equal(
-      (await liveAction(engineer.token, { kind: 'on_time', requestId: previous.id })).status,
+      (
+        await liveAction(engineer.token, {
+          kind: 'eta',
+          requestId: previous.id,
+          etaAt: previousStop.startAt,
+        })
+      ).status,
       201,
     );
     await liveSetLogicalNow(
@@ -443,6 +538,7 @@ describe('LIVE workday', () => {
       (await liveAction(engineer.token, { kind: 'finish', requestId: previous.id })).status,
       201,
     );
+    await publishDispatcherContinuation(engineer.id);
     await liveApplyPlan(engineer.id, [first, second]);
     const beforeEta = await liveView(engineer.token);
     assert.equal(beforeEta.current?.request.id, first.id);
@@ -785,6 +881,7 @@ describe('LIVE workday', () => {
     const duringLunch = await liveView(engineer.token);
     assert.equal(duringLunch.engineer.progress?.phase, 'lunch');
     assert.ok(duringLunch.engineer.progress?.lunch);
+    await publishDispatcherContinuation(engineer.id);
     const snapshot = await liveSnapshot();
     const projected = snapshot.snapshot.engineers.find((item) => item.engineer_id === engineer.id);
     assert.deepEqual(projected?.start_location, { lat: lunchStop.lat, lon: lunchStop.lon });
@@ -952,13 +1049,19 @@ describe('LIVE workday', () => {
     );
     await liveView(engineer.token);
     const snapshot = await liveSnapshot();
-    assert.ok(!snapshot.snapshot.requests.some((item) => item.request_id === request.id));
+    assert.ok(
+      snapshot.snapshot.requests.some((item) => item.request_id === request.id),
+      'ordinary schedule progress does not publish',
+    );
+    await publishDispatcherContinuation(engineer.id);
+    const refreshed = await liveSnapshot();
+    assert.ok(!refreshed.snapshot.requests.some((item) => item.request_id === request.id));
     await liveFeed(
       buildRouterResult({
         resultId: unique('silent-result'),
-        inputHash: snapshot.inputHash,
+        inputHash: refreshed.inputHash,
         contextVersion: 'live-test',
-        planningAsOf: snapshot.planningAsOf,
+        planningAsOf: refreshed.planningAsOf,
       }),
     );
     const stored = await prisma.request.findUniqueOrThrow({ where: { id: request.id } });
@@ -1054,6 +1157,7 @@ describe('LIVE workday', () => {
       where: { workdayId: before.workday.id, engineerId: engineer.id },
     });
     assert.ok(cancelledAnchor.routeAnchorDepartedAt);
+    await publishDispatcherContinuation(engineer.id);
     const afterCancel = await liveSnapshot();
     const projected = afterCancel.snapshot.engineers.find(
       (item) => item.engineer_id === engineer.id,

@@ -62,8 +62,8 @@ describe('Figma engineer LIVE controls', () => {
   it('switches from arrival promises to start and then finish/problem', () => {
     const current = live.current;
     if (!current) throw new Error('Missing current visit');
-    expect(controls(live)).toContain('Буду вовремя');
-    expect(controls(live)).toContain('Буду в…');
+    expect(controls(live)).not.toContain('Буду вовремя');
+    expect(controls(live)).toContain('Опаздываю');
     expect(controls({ ...live, current: { ...current, phase: 'ready_to_start' } })).toContain(
       'Приступить',
     );
@@ -73,7 +73,7 @@ describe('Figma engineer LIVE controls', () => {
     });
     expect(working).toContain('Завершить');
     expect(working).toContain('Проблема');
-    expect(working).toContain('Превышено время');
+    expect(working).toContain('bg-figma-cancel');
     expect(working).not.toContain('Приступить');
   });
   it('blocks job actions during lunch, technical breaks and before day start', () => {
@@ -89,10 +89,18 @@ describe('Figma engineer LIVE controls', () => {
       },
     };
     expect(controls(paused)).toBe('');
-    expect(overlay(paused)).toContain('Завершить перерыв');
+    expect(overlay(paused)).toContain('Вернуться');
     expect(overlay(paused)).toContain('Диспетчер уведомлён');
     const pending = { ...live, workday: { ...live.workday, status: 'pending' as const } };
     expect(controls(pending)).toBe('');
     expect(overlay(pending)).toContain('Ожидаем начала дня');
+  });
+  it('offers explicit line entry and never duplicates it after a previous entry', () => {
+    const waiting = {
+      ...live,
+      engineer: { ...live.engineer, lineStatus: 'pending' as const, lineStartedAt: null },
+    };
+    expect(overlay(waiting)).toContain('Выйти на линию');
+    expect(overlay({ ...waiting, engineer: { ...waiting.engineer, lineStartedAt: 90 } })).toBe('');
   });
 });

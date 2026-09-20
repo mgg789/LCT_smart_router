@@ -49,6 +49,9 @@ export interface LiveEngineerStateView {
   readonly id: string;
   readonly name: string;
   readonly lineStatus: 'pending' | 'online' | 'no_show_offline' | 'technical_break';
+  readonly lineStartedAt: number | null;
+  readonly noShowAt: number | null;
+  readonly lunchInterval: { readonly startAt: number; readonly endAt: number } | null;
   readonly availability: string;
   readonly activeRequestId: string | null;
   readonly technicalBreak: {

@@ -9,6 +9,7 @@ export const resolveAlertSchema = z.object({
     'move_window',
     'add_engineer',
     'keep_manual',
+    'keep_as_is',
     'restore_auto',
     'skip_lunch',
     'keep_lunch',

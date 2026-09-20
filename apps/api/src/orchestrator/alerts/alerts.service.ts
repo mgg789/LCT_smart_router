@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
+import { businessNow } from '../live/business-clock';
 import { z } from 'zod';
 import { SysError } from '../../common/errors';
 import { Clock } from '../../common/time';
@@ -8,13 +9,15 @@ import type { OperationContext } from '../../operations';
 import { lockAlertQueue, PrismaService, type Tx, UnitOfWork } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import { RouterClient } from '../../routing/router-gateway/router-client.port';
+import {
+  DEFAULT_EXECUTION_TIMING_POLICY,
+  ExecutionTimingPolicy,
+} from '../facts/execution-timing-policy';
 import { type AlertAction, alertActionsFor, resolutionDelay } from './alert-policy';
 
 const NO_SHOW_SECONDS = 30 * 60;
-const OVERDUE_SECONDS = 5 * 60;
 // Router's exact tolerance is contextual; before it is exposed in a plan result, a five
 // minute floor prevents a harmless one-second schedule variance becoming dispatcher work.
-const TIME_RISK_SECONDS = 5 * 60;
 const REPEAT_AFTER_SECONDS = 15 * 60;
 /** Router's immutable comparison evidence for one manual plan on one exact input. */
 const manualEvaluationSchema = z.object({
@@ -79,6 +82,7 @@ export class AlertsService {
     private readonly publisher: SnapshotPublisher,
     private readonly notifications: NotificationsService,
     private readonly router: RouterClient,
+    @Optional() private readonly timing?: ExecutionTimingPolicy,
   ) {}
 
   /** Refreshes timer-derived conditions before a dashboard reads the queue. */
@@ -207,11 +211,19 @@ export class AlertsService {
     },
   ): Promise<void> {
     await lockAlertQueue(tx);
+    const liveDay = await tx.liveWorkday.findFirst({
+      where: { status: 'running' },
+      orderBy: { startedAtWallSec: 'desc' },
+      select: { id: true },
+    });
     const code = canonicalRouterCode(input.code);
+    if (liveDay && ['time_risk', 'unassigned'].includes(code)) return;
+    if (liveDay && code === 'lunch_conflict' && !hasLunchCoverageWitness(input.reasons)) return;
     const workDate = input.workDate ?? (await this.workDateForEngineer(tx, input.engineerIds[0]));
+    now = await businessNow(tx, now, workDate ?? undefined);
     // Router reuses e.g. lunch:{engineer} across dates. A condition, not a transient
     // result id, is the durable identity of the alert episode.
-    const conditionKey = `router:${code}:${workDate ?? 'unknown'}:${[...input.engineerIds].sort().join(',')}:${[...input.requestIds].sort().join(',')}:${input.id}`;
+    const conditionKey = `router:${code}:${workDate ?? 'unknown'}:${[...input.engineerIds].sort().join(',')}:${[...input.requestIds].sort().join(',')}`;
     const existing = await tx.alert.findFirst({
       where: {
         OR: [{ dedupKey: conditionKey }, { dedupKey: { startsWith: `${conditionKey}:episode:` } }],
@@ -275,20 +287,103 @@ export class AlertsService {
 
   /** A plan application is visible as a notification but can never hold up the shift. */
   async recordPlanRebuilt(tx: Tx, now: number, resultId: string | null): Promise<void> {
+    now = await businessNow(tx, now);
     const dedupKey = `notice:plan_rebuilt:${resultId ?? now}`;
-    if (await tx.alert.findUnique({ where: { dedupKey } })) return;
-    await tx.alert.create({
-      data: {
-        kind: 'notice',
-        dedupKey,
-        code: 'plan_rebuilt',
-        severity: 'info',
-        engineerIds: [],
-        requestIds: [],
-        reasons: { resultId },
-        isBlocking: false,
-        sourceResultId: resultId,
-        createdAt: BigInt(now),
+    if (!(await tx.alert.findUnique({ where: { dedupKey } }))) {
+      await tx.alert.create({
+        data: {
+          kind: 'notice',
+          dedupKey,
+          code: 'plan_rebuilt',
+          severity: 'info',
+          engineerIds: [],
+          requestIds: [],
+          reasons: { resultId },
+          isBlocking: false,
+          sourceResultId: resultId,
+          createdAt: BigInt(now),
+        },
+      });
+    }
+    await this.evaluatePolicyCoverage(tx, now, resultId);
+  }
+
+  /** Raises coverage degradation only for the automatic result following a policy change. */
+  private async evaluatePolicyCoverage(
+    tx: Tx,
+    now: number,
+    resultId: string | null,
+  ): Promise<void> {
+    const row = await tx.appState.findUnique({ where: { key: 'alerts.policy-coverage-baseline' } });
+    if (!row || !resultId) return;
+    const baseline = z
+      .object({
+        requestIds: z.array(z.string()),
+        policyId: z.string(),
+        policyVersion: z.number().int(),
+        operationId: z.string(),
+        workDate: z.string().nullable(),
+        expiresAt: z.number().nullable(),
+      })
+      .safeParse(row.value);
+    if (!baseline.success) return;
+    if (baseline.data.expiresAt !== null && now > baseline.data.expiresAt) {
+      await tx.appState.delete({ where: { key: row.key } });
+      return;
+    }
+    const current = await tx.appliedPlanCurrent.findUnique({
+      where: { id: 'singleton' },
+      include: { plan: { include: { routerResult: true, assignments: true } } },
+    });
+    if (!current?.plan.routerResult || current.plan.routerResult.resultId !== resultId) return;
+    const payload = current.plan.routerResult.payload;
+    const publishedPolicy =
+      payload && typeof payload === 'object' && !Array.isArray(payload) && 'policy_id' in payload
+        ? String((payload as { policy_id: unknown }).policy_id)
+        : null;
+    if (publishedPolicy !== baseline.data.policyId) return;
+    const activePolicy = await tx.activePolicy.findUnique({ where: { id: 'singleton' } });
+    if (
+      activePolicy?.policyId !== baseline.data.policyId ||
+      activePolicy.version !== baseline.data.policyVersion
+    )
+      return;
+    const submitted = await tx.request.findMany({
+      where: { id: { in: baseline.data.requestIds }, lifecycle: 'submitted' },
+      select: { id: true },
+    });
+    const currentAssigned = new Set(
+      current.plan.assignments
+        .filter((assignment) => assignment.status === 'assigned')
+        .map((assignment) => assignment.requestId),
+    );
+    await tx.appState.delete({ where: { key: row.key } });
+    const newSubmittedAssignedIds = submitted
+      .map((request) => request.id)
+      .filter((id) => currentAssigned.has(id));
+    if (
+      !policyCoverageRegressed(
+        submitted.map((request) => request.id),
+        newSubmittedAssignedIds,
+      )
+    )
+      return;
+    const lost = submitted.map((request) => request.id).filter((id) => !currentAssigned.has(id));
+    const key = `system:plan_degraded:policy:${baseline.data.policyVersion}:${resultId}`;
+    await this.ensure(tx, now, {
+      key,
+      code: 'plan_degraded',
+      severity: 'warning',
+      engineerIds: [],
+      requestIds: lost,
+      workDate: baseline.data.workDate,
+      reasons: {
+        policyId: baseline.data.policyId,
+        policyVersion: baseline.data.policyVersion,
+        operationId: baseline.data.operationId,
+        baselineAssignedRequestIds: baseline.data.requestIds,
+        lostSubmittedRequestIds: lost,
+        expiresAt: baseline.data.expiresAt,
       },
     });
   }
@@ -307,6 +402,8 @@ export class AlertsService {
   ): Promise<AlertView> {
     await lockAlertQueue(context.tx);
     await this.refresh(context.tx, context.now);
+    if (!context.businessTime)
+      context = { ...context, now: await businessNow(context.tx, context.now), businessTime: true };
     const alert = await context.tx.alert.findUnique({ where: { id } });
     if (!alert) throw SysError.notFound('Alert', { alertId: id });
     if (alert.kind !== 'alert') {
@@ -534,6 +631,7 @@ export class AlertsService {
         });
       return;
     }
+    if (input.action === 'keep_as_is') return;
     if (input.action === 'restore_auto') {
       if (!this.router.isConfigured())
         throw SysError.notConfigured('Router automatic plan restoration');
@@ -648,13 +746,36 @@ export class AlertsService {
   /** Derives open alerts only from facts/schedules that actually exist. */
   private async refresh(tx: Tx, now: number, scopeDate?: string): Promise<void> {
     await lockAlertQueue(tx);
+    now = await businessNow(tx, now, scopeDate);
     const active = new Set<string>();
+    const liveRunning = await tx.liveWorkday.findFirst({
+      where: { status: 'running' },
+      orderBy: { startedAtWallSec: 'desc' },
+      select: { id: true },
+    });
+    const routerAlerts = await tx.alert.findMany({
+      where: { dedupKey: { startsWith: 'router:' }, invalidatedAt: null },
+      select: { id: true, reasons: true },
+    });
+    for (const alert of routerAlerts) {
+      const lunchStartAt = lunchCoverageWitness(alert.reasons)?.lunch_start_at ?? null;
+      if (lunchStartAt !== null && now >= lunchStartAt) {
+        await tx.alert.update({
+          where: { id: alert.id },
+          data: {
+            invalidatedAt: BigInt(now),
+            resolvedAt: BigInt(now),
+            resolutionAction: 'superseded',
+          },
+        });
+      }
+    }
     const days = await tx.engineerDay.findMany({
       where: scopeDate ? { workDate: scopeDate } : {},
       include: { engineer: { select: { accountId: true } } },
     });
     for (const day of days) {
-      if (!day.engineer.accountId || day.attendanceOptOut) continue;
+      if (day.attendanceOptOut) continue;
       if (
         now >= Number(day.shiftStartAt) + NO_SHOW_SECONDS &&
         now <= Number(day.shiftEndAt) &&
@@ -676,28 +797,6 @@ export class AlertsService {
           },
         });
       }
-      const expected = overdueExpectation(day);
-      if (
-        expected !== null &&
-        (day.attendanceGraceUntil === null || now >= Number(day.attendanceGraceUntil)) &&
-        now >= expected + OVERDUE_SECONDS &&
-        Number(day.lastAttendanceAt ?? 0n) < expected
-      ) {
-        const key = `system:engineer_overdue:${day.id}:${expected}`;
-        active.add(key);
-        await this.ensure(tx, now, {
-          key,
-          code: 'engineer_overdue',
-          severity: 'warning',
-          engineerIds: [day.engineerId],
-          requestIds: [],
-          workDate: day.workDate,
-          reasons: {
-            expectedAt: expected,
-            lastAttendanceAt: day.lastAttendanceAt === null ? null : Number(day.lastAttendanceAt),
-          },
-        });
-      }
     }
     const requests = await tx.request.findMany({
       where: { lifecycle: 'submitted', assignmentState: 'unassigned' },
@@ -705,7 +804,7 @@ export class AlertsService {
     for (const request of requests) {
       const date = workDateForMoment(Number(request.windowStartAt), days) ?? scopeDate ?? null;
       if (scopeDate && date !== scopeDate) continue;
-      const key = `system:unassigned:${date}:${request.id}:${request.windowStartAt}:${request.windowEndAt}`;
+      const key = `system:unassigned:${date}:${request.id}`;
       active.add(key);
       await this.ensure(tx, now, {
         key,
@@ -717,52 +816,15 @@ export class AlertsService {
         reasons: { assignment: 'unassigned' },
       });
     }
-    const activeWork = await tx.request.findMany({
-      where: { lifecycle: 'in_progress', expectedCompletionAt: { not: null } },
-    });
-    for (const request of activeWork) {
-      const expectedAt = Number(request.expectedCompletionAt ?? 0n);
-      if (now < expectedAt + OVERDUE_SECONDS) continue;
-      const start = await tx.requestFact.findFirst({
-        where: { requestId: request.id, kind: 'started' },
-        orderBy: { occurredAt: 'desc' },
-      });
-      if (!start?.engineerId) continue;
-      const day = days.find(
-        (candidate) =>
-          candidate.engineerId === start.engineerId &&
-          now >= Number(candidate.shiftStartAt) &&
-          now <= Number(candidate.shiftEndAt),
-      );
-      if (
-        !day ||
-        !day.engineer.accountId ||
-        day.attendanceOptOut ||
-        (day.attendanceGraceUntil !== null && now < Number(day.attendanceGraceUntil)) ||
-        Number(day.lastAttendanceAt ?? 0n) >= expectedAt
-      )
-        continue;
-      const key = `system:engineer_overdue:work:${request.id}:${expectedAt}`;
-      active.add(key);
-      await this.ensure(tx, now, {
-        key,
-        code: 'engineer_overdue',
-        severity: 'warning',
-        engineerIds: [start.engineerId],
-        requestIds: [request.id],
-        workDate: day.workDate,
-        reasons: {
-          state: 'at_job',
-          expectedAt,
-          lastAttendanceAt: day.lastAttendanceAt === null ? null : Number(day.lastAttendanceAt),
-        },
-      });
-    }
     const pointer = await tx.appliedPlanCurrent.findUnique({
       where: { id: 'singleton' },
       include: { plan: { include: { routes: { include: { stops: true } }, assignments: true } } },
     });
     if (pointer?.plan) {
+      const completedFacts = await tx.requestFact.findMany({
+        where: { kind: 'finished', engineerId: { not: null } },
+        select: { engineerId: true, occurredAt: true },
+      });
       const requestsById = new Map(
         (
           await tx.request.findMany({
@@ -770,36 +832,76 @@ export class AlertsService {
           })
         ).map((x) => [x.id, x]),
       );
+      const timing = this.timing?.current() ?? DEFAULT_EXECUTION_TIMING_POLICY;
+      const liveStates = await tx.liveRequestState.findMany({
+        where: { workday: { status: 'running' } },
+        include: { request: true, workday: true },
+      });
+      const liveStateByRequest = new Map(liveStates.map((state) => [state.requestId, state]));
+      for (const state of liveStates) {
+        const request = state.request;
+        if (
+          !['submitted', 'in_progress'].includes(request.lifecycle) ||
+          state.assumedCompletedAt !== null
+        )
+          continue;
+        const route = pointer.plan.routes.find((candidate) =>
+          candidate.stops.some((stop) => stop.requestId === request.id),
+        );
+        const stop = route?.stops
+          .filter((candidate) => candidate.requestId === request.id)
+          .sort((a, b) => a.sequence - b.sequence)[0];
+        const engineerId = route?.engineerId ?? state.reservedEngineerId;
+        if (!engineerId) continue;
+        const original = await tx.appState.findUnique({
+          where: { key: `live.arrival-baseline.${state.workdayId}.${request.id}` },
+        });
+        const parsed = z.object({ plannedStartAt: z.number() }).safeParse(original?.value);
+        const plannedStartAt = parsed.success
+          ? parsed.data.plannedStartAt
+          : Number(stop?.startAt ?? request.startedAt ?? request.windowStartAt);
+        const etaRisk =
+          state.reportedEtaAt !== null &&
+          Number(state.reportedEtaAt) > plannedStartAt + timing.taskOverrunToleranceSec;
+        const windowRisk =
+          state.reportedEtaAt !== null &&
+          Number(state.reportedEtaAt) + request.serviceDurationSec >
+            Number(request.windowEndAt) + timing.taskOverrunToleranceSec;
+        const workRisk =
+          request.lifecycle === 'in_progress' &&
+          request.startedAt !== null &&
+          now >
+            Number(request.startedAt) + request.serviceDurationSec + timing.taskOverrunToleranceSec;
+        if (!etaRisk && !windowRisk && !workRisk) continue;
+        const date = state.workday.workDate;
+        if (scopeDate && date !== scopeDate) continue;
+        const key = `system:time_risk:${date}:${request.id}:${engineerId}`;
+        active.add(key);
+        await this.ensure(tx, now, {
+          key,
+          code: 'time_risk',
+          severity: 'warning',
+          engineerIds: [engineerId],
+          requestIds: [request.id],
+          workDate: date,
+          reasons: {
+            text: workRisk
+              ? 'Работа длится дольше нормативного времени с учётом допуска.'
+              : windowRisk
+                ? 'Прогноз завершения заявки выходит за окно клиента с учётом допуска.'
+                : 'Инженер сообщил прибытие позже планового времени с учётом допуска.',
+            plannedStartAt,
+            reportedEtaAt: state.reportedEtaAt === null ? null : Number(state.reportedEtaAt),
+            windowEndAt: Number(request.windowEndAt),
+            startedAt: request.startedAt === null ? null : Number(request.startedAt),
+            thresholdSec: timing.taskOverrunToleranceSec,
+            etaRisk,
+            windowRisk,
+            workRisk,
+          },
+        });
+      }
       for (const route of pointer.plan.routes) {
-        for (const stop of route.stops) {
-          if (!stop.requestId) continue;
-          const request = requestsById.get(stop.requestId);
-          if (
-            !request ||
-            request.assignmentState !== 'assigned' ||
-            request.lifecycle !== 'submitted' ||
-            pointer.plan.origin !== 'auto' ||
-            Number(stop.startAt) <= Number(request.windowEndAt) + TIME_RISK_SECONDS
-          )
-            continue;
-          const date = workDateForMoment(Number(stop.startAt), days) ?? scopeDate ?? null;
-          if (scopeDate && date !== scopeDate) continue;
-          const key = `system:time_risk:${date}:${stop.requestId}:${route.engineerId}:${request.windowEndAt}`;
-          active.add(key);
-          await this.ensure(tx, now, {
-            key,
-            code: 'time_risk',
-            severity: 'warning',
-            engineerIds: [route.engineerId],
-            requestIds: [stop.requestId],
-            workDate: date,
-            reasons: {
-              plannedStartAt: Number(stop.startAt),
-              windowEndAt: Number(request.windowEndAt),
-              thresholdSec: TIME_RISK_SECONDS,
-            },
-          });
-        }
         const day = days.find(
           (candidate) =>
             candidate.engineerId === route.engineerId &&
@@ -822,17 +924,24 @@ export class AlertsService {
         if (
           pointer.plan.origin === 'auto' &&
           day &&
-          day.engineer.accountId &&
-          day.lastAttendanceAt !== null &&
+          completedFacts.some(
+            (fact) =>
+              fact.engineerId === route.engineerId &&
+              Number(fact.occurredAt) >= Number(day.shiftStartAt) &&
+              Number(fact.occurredAt) <= Number(day.shiftEndAt),
+          ) &&
           day.availability === 'online' &&
           !working &&
           !day.attendanceOptOut &&
           (day.attendanceGraceUntil === null || now >= Number(day.attendanceGraceUntil)) &&
           lateStop &&
-          now >= Number(lateStop.arrivalAt) + OVERDUE_SECONDS &&
-          Number(day.lastAttendanceAt) < Number(lateStop.arrivalAt)
+          (lateStop.requestId
+            ? (liveStateByRequest.get(lateStop.requestId)?.reportedEtaAt ?? null) === null
+            : false) &&
+          now > Number(lateStop.startAt) + timing.taskOverrunToleranceSec &&
+          Number(day.lastAttendanceAt ?? 0n) < Number(lateStop.arrivalAt)
         ) {
-          const key = `system:engineer_overdue:edge:${day.id}:${lateStop.requestId}:${lateStop.arrivalAt}`;
+          const key = `system:engineer_overdue:edge:${day.id}:${lateStop.requestId}`;
           active.add(key);
           await this.ensure(tx, now, {
             key,
@@ -859,7 +968,7 @@ export class AlertsService {
         )
           continue;
         const route = pointer.plan.routes.find((x) => x.engineerId === day.engineerId);
-        if (!route || route.lunchStatus !== 'scheduled') {
+        if (!liveRunning && (!route || route.lunchStatus !== 'scheduled')) {
           const key = `system:lunch_conflict:${day.id}`;
           active.add(key);
           await this.ensure(tx, now, {
@@ -873,7 +982,7 @@ export class AlertsService {
           });
         }
       }
-      if (pointer.plan.origin === 'manual') {
+      if (pointer.plan.origin === 'manual' && !liveRunning) {
         const row = await tx.appState.findUnique({ where: { key: 'alerts.manual-evaluation' } });
         const evidence = manualEvidenceSchema.safeParse(row?.value);
         const publication = await tx.routingCurrent.findUnique({
@@ -886,8 +995,8 @@ export class AlertsService {
           evidence.data.inputHash === publication?.snapshot.inputHash
             ? evidence.data.evaluation
             : null;
-        if (!evaluation || evaluation.degraded) {
-          const code = evaluation ? 'plan_degraded' : 'plan_review_required';
+        if (!evaluation) {
+          const code = 'plan_review_required';
           const key = `system:${code}:${pointer.plan.id}`;
           active.add(key);
           await this.ensure(tx, now, {
@@ -898,9 +1007,7 @@ export class AlertsService {
             requestIds: [],
             workDate: scopeDate ?? null,
             reasons: {
-              text: evaluation
-                ? `Ручной план хуже автоматического по критерию «${criterionLabel(evaluation.criterion)}» политики «${evaluation.policy_id}».`
-                : 'Оценка ручного плана временно недоступна. Проверьте решение вручную или восстановите автоматический вариант.',
+              text: 'Оценка ручного плана временно недоступна. Проверьте решение вручную или восстановите автоматический вариант.',
               ...(evaluation ?? {}),
             },
           });
@@ -919,10 +1026,16 @@ export class AlertsService {
         resolvedAt: true,
         resolutionAction: true,
         createdAt: true,
+        reasons: true,
       },
     });
     for (const alert of openSystem) {
       const dedupKey = alert.dedupKey;
+      if (dedupKey?.startsWith('system:plan_degraded:policy:')) {
+        const reasons = z.object({ expiresAt: z.number().nullable() }).safeParse(alert.reasons);
+        if (reasons.success && (reasons.data.expiresAt === null || now <= reasons.data.expiresAt))
+          continue;
+      }
       if (
         alert.resolutionAction === 'restore_auto' &&
         alert.resolvedAt === null &&
@@ -974,11 +1087,20 @@ export class AlertsService {
         requestIds: { hasEvery: input.requestIds },
       },
     });
-    if (matchingOpen) return;
+    if (matchingOpen) {
+      await tx.alert.update({
+        where: { id: matchingOpen.id },
+        data: { reasons: input.reasons, severity: input.severity },
+      });
+      return;
+    }
     const latest = await tx.alert.findFirst({
       where: { dedupKey: { startsWith: input.key } },
       orderBy: { createdAt: 'desc' },
     });
+    // A no-show is one attendance episode for one engineer-day. Resolution changes
+    // the action state but must not make the same absence produce duplicate episodes.
+    if (latest?.code === 'shift_no_show') return;
     if (latest?.resolvedAt != null && latest.invalidatedAt === null) {
       if (!['shift_no_show', 'engineer_overdue'].includes(input.code)) return;
       if (
@@ -1054,8 +1176,17 @@ export class AlertsService {
   }
 }
 
+/** Returns whether a policy change reduced submitted-request coverage. */
+export function policyCoverageRegressed(
+  baselineSubmittedIds: readonly string[],
+  newAssignedSubmittedIds: readonly string[],
+): boolean {
+  return newAssignedSubmittedIds.length < baselineSubmittedIds.length;
+}
+
 function canonicalRouterCode(code: string): string {
   const normalized = code.toLowerCase();
+  if (normalized === 'lunch_coverage_gain') return 'lunch_conflict';
   if (normalized === 'routing_fail') return 'unassigned';
   if (
     ['required_lunch_unplaced', 'lunch_not_placed', 'lunch_skipped_for_work'].includes(normalized)
@@ -1063,22 +1194,22 @@ function canonicalRouterCode(code: string): string {
     return 'lunch_conflict';
   return normalized;
 }
-function overdueExpectation(day: {
-  availability: string;
-  expectedOnlineAt: bigint | null;
-  lunchTaken: boolean;
-  lunchStartedAt: bigint | null;
-  lunchDurationSec: number | null;
-  lastAttendanceAt: bigint | null;
-}): number | null {
-  if (
-    (day.availability === 'technical_break' ||
-      (day.availability === 'offline' && day.lastAttendanceAt !== null)) &&
-    day.expectedOnlineAt !== null
-  )
-    return Number(day.expectedOnlineAt);
-  if (day.lunchTaken && day.lunchStartedAt !== null && day.lunchDurationSec !== null)
-    return Number(day.lunchStartedAt) + day.lunchDurationSec;
+function hasLunchCoverageWitness(reasons: object): boolean {
+  return lunchCoverageWitness(reasons) !== null;
+}
+
+function lunchCoverageWitness(reasons: unknown): { lunch_start_at: number } | null {
+  const schema = z.object({
+    code: z.literal('LUNCH_COVERAGE_GAIN'),
+    facts: z.object({
+      additional_assigned_count: z.number().int().min(1),
+      lunch_start_at: z.number().int(),
+    }),
+  });
+  for (const reason of Array.isArray(reasons) ? reasons : [reasons]) {
+    const parsed = schema.safeParse(reason);
+    if (parsed.success) return parsed.data.facts;
+  }
   return null;
 }
 function workDateForMoment(

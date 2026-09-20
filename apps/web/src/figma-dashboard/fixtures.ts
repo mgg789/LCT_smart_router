@@ -38,6 +38,7 @@ export type RouteStop = {
   kind?: 'start' | 'job' | 'lunch' | 'technical';
   at?: number;
   active?: boolean;
+  failed?: boolean;
   completed?: boolean;
 };
 
@@ -54,6 +55,8 @@ export type EngineerRequest = {
 };
 
 export type EngineerCard = {
+  lineLabel?: string;
+  lineFailed?: boolean;
   id: string;
   name: string;
   km: number;

@@ -76,8 +76,6 @@ export function EngineerApp({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(!designPreview);
   const [openedJob, setOpenedJob] = useState<EngineerJobItem | null>(null);
-  const [lateIds, setLateIds] = useState<ReadonlySet<string>>(new Set());
-  const [onTimeIds, setOnTimeIds] = useState<ReadonlySet<string>>(new Set());
   const [startPendingId, setStartPendingId] = useState<string | null>(null);
   const [breakPending, setBreakPending] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
@@ -227,7 +225,7 @@ export function EngineerApp({
             ? !live || item.endAt > logicalNow
             : item.request.lifecycle !== 'completed' &&
               item.request.lifecycle !== 'cancelled' &&
-              !item.request.assumedCompletedAt,
+              (!item.request.assumedCompletedAt || live?.engineer.stats.completedCount === 0),
         )
         .map((item) =>
           item.kind === 'job' && live
@@ -242,7 +240,10 @@ export function EngineerApp({
         ),
     [day, live, logicalNow, plan],
   );
-  const lunch = useMemo(() => engineerLunchWindow(plan, day), [day, plan]);
+  const lunch = useMemo(() => {
+    const planned = engineerLunchWindow(plan, live ? null : day);
+    return planned && (!live || planned.endAt > logicalNow) ? planned : null;
+  }, [day, live, logicalNow, plan]);
 
   const applyLiveAction = async (action: EngineerLiveAction): Promise<boolean> => {
     if (liveActionPending.current) return false;
@@ -319,31 +320,6 @@ export function EngineerApp({
     }
   };
 
-  const markLate = (requestId: string) => {
-    setLateIds((current) => new Set(current).add(requestId));
-    setOnTimeIds((current) => {
-      const next = new Set(current);
-      next.delete(requestId);
-      return next;
-    });
-    setNotice('Отметка «опаздываю» пока только на устройстве — отдельного факта в API ещё нет.');
-  };
-
-  const markOnTime = async (requestId: string) => {
-    if (designPreview) {
-      setNotice('В макете отметка «буду вовремя» не отправляется.');
-      return;
-    }
-    if (!(await applyLiveAction({ kind: 'on_time', requestId }))) return;
-    setOnTimeIds((current) => new Set(current).add(requestId));
-    setLateIds((current) => {
-      const next = new Set(current);
-      next.delete(requestId);
-      return next;
-    });
-    setNotice('Статус «буду вовремя» передан диспетчеру.');
-  };
-
   const openRoute = (job: EngineerJobItem) => {
     const url = engineerMapsUrl({
       lat: job.request.lat ?? job.stop.lat,
@@ -418,7 +394,7 @@ export function EngineerApp({
           item.kind === 'job' && item.request.id === openedJob.request.id,
       ) ?? null)
     : null;
-  const controls = (id: string) =>
+  const controls = (id: string, detail = false) =>
     live?.current?.request.id === id ? (
       <LiveControls
         key={id}
@@ -426,6 +402,7 @@ export function EngineerApp({
         now={logicalNow}
         busy={actionBusy}
         send={applyLiveAction}
+        detail={detail}
       />
     ) : null;
   const email = profile?.email ?? fallbackEmail;
@@ -552,7 +529,6 @@ export function EngineerApp({
                     motionOn={motionOn}
                     delay={index * 0.04}
                     actions={live && item.kind === 'job' ? controls(item.request.id) : undefined}
-                    latePending={item.kind === 'job' ? lateIds.has(item.request.id) : false}
                     startPending={item.kind === 'job' && startPendingId === item.request.id}
                     onOpen={
                       item.kind === 'job'
@@ -564,7 +540,6 @@ export function EngineerApp({
                         : undefined
                     }
                     onRoute={item.kind === 'job' ? () => openRoute(item) : undefined}
-                    onLate={item.kind === 'job' ? () => markLate(item.request.id) : undefined}
                     onStart={item.kind === 'job' ? () => void startJob(item.request.id) : undefined}
                   />
                 ))}
@@ -593,17 +568,13 @@ export function EngineerApp({
               <div className="h-full overflow-y-auto">
                 <RequestDetail
                   item={detailJob}
-                  actions={live ? controls(detailJob.request.id) : undefined}
+                  actions={live ? controls(detailJob.request.id, true) : undefined}
                   nowMs={designPreview ? DESIGN_PREVIEW_NOW_MS : logicalNow * 1000}
-                  latePending={lateIds.has(openedJob.request.id)}
-                  onTimePending={onTimeIds.has(openedJob.request.id)}
                   onBack={() => {
                     setOpenedJob(null);
                     setNotice(null);
                   }}
                   onRoute={() => openRoute(openedJob)}
-                  onLate={() => markLate(openedJob.request.id)}
-                  onOnTime={() => void markOnTime(openedJob.request.id)}
                 />
               </div>
             </motion.div>

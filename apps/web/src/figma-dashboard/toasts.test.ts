@@ -74,12 +74,12 @@ describe('toast stack', () => {
     expect(visibleToastsForColumn()).toEqual([]);
   });
 
-  it('returns a progress peek to the panel even when the operation is still running', () => {
+  it('keeps progress visible until the operation completes', () => {
     vi.useFakeTimers();
     setToastColumnPinned(false);
     pushToast({ id: 'p', kind: 'progress', title: 'Пересчет', progress: 20, etaLabel: '2 мин' });
     vi.advanceTimersByTime(TOAST_PEEK_MS);
-    expect(visibleToastsForColumn()).toEqual([]);
+    expect(visibleToastsForColumn().map((item) => item.id)).toEqual(['p']);
     expect(getToasts().map((item) => item.id)).toEqual(['p']);
     expect(updateToast('p', { progress: 100 })).toBeNull();
     expect(visibleToastsForColumn()).toEqual([]);

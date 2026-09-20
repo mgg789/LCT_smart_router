@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { finishNeedsReplan } from '../live/replan-policy';
 import { SysError } from '../../common/errors';
 import type { FactKind, Request } from '../../generated/prisma/client';
 import { NotificationsService } from '../../notifications';
@@ -128,12 +129,13 @@ export class FactsService {
       recipientAccountId: request.clientAccountId,
       payload: { requestId: request.id, engineerId },
     });
-    await this.publisher.publishIfChanged(
-      context.tx,
-      context.now,
-      PUBLICATION_TRIGGERS.REQUEST_EXECUTION_STARTED,
-      { businessTime: context.businessTime },
-    );
+    if (!context.businessTime)
+      await this.publisher.publishIfChanged(
+        context.tx,
+        context.now,
+        PUBLICATION_TRIGGERS.REQUEST_EXECUTION_STARTED,
+        { businessTime: context.businessTime },
+      );
     return this.reload(context.tx, request.id);
   }
 
@@ -176,7 +178,24 @@ export class FactsService {
     const overrunSec = actualDurationSec - request.serviceDurationSec;
     const materialEarly = earlyGainSec >= timing.earlyFinishReplanThresholdSec;
     const materialLate = overrunSec > timing.taskOverrunToleranceSec;
-    const materialVariance = materialEarly || materialLate || request.overrunDetectedAt !== null;
+    const currentPlan = context.businessTime ? await this.plans.current(context.tx) : null;
+    const route = currentPlan?.routes.find((item) => item.engineerId === engineerId);
+    const sequence = route?.stops.find((stop) => stop.requestId === request.id)?.sequence;
+    const next =
+      sequence === undefined
+        ? null
+        : route?.stops
+            .filter((stop) => stop.kind === 'job' && stop.sequence > sequence)
+            .sort((a, b) => a.sequence - b.sequence)[0];
+    const materialVariance = context.businessTime
+      ? finishNeedsReplan(
+          occurredAt,
+          startedAt,
+          request.serviceDurationSec,
+          timing.taskOverrunToleranceSec,
+          next ? Number(next.startAt) : null,
+        )
+      : materialEarly || materialLate || request.overrunDetectedAt !== null;
 
     await this.write(context, engineerId, request.id, 'finished', occurredAt, note);
     await context.tx.request.update({

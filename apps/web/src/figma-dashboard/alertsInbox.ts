@@ -77,7 +77,7 @@ export function inboxFromSources(
   );
   const sourceToasts =
     demoMode && snapshot === null && toasts.length === 0 ? demoInboxToasts() : toasts;
-  const covered = new Set([...openAlerts, ...openNotices].map((alert) => `alert:${alert.id}`));
+  const covered = new Set(snapshotAlerts.map((alert) => `alert:${alert.id}`));
   const alerts = sortByArrival([
     ...(snapshot ? openAlerts.map((alert) => alertCardFromSnapshot(snapshot, alert)) : []),
     ...sourceToasts

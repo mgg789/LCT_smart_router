@@ -129,7 +129,9 @@ export function isToastColumnPinned(): boolean {
 export function visibleToastsForColumn(): ToastNotification[] {
   const all = getToasts();
   if (columnPinned) return all.slice(0, visibleToastLimit());
-  return all.filter((item) => peekIds.has(item.id)).slice(0, 1);
+  return all
+    .filter((item) => item.kind === 'progress' || peekIds.has(item.id))
+    .slice(0, visibleToastLimit());
 }
 
 /**
@@ -370,6 +372,7 @@ export function updateToast(
 
 /** Removes one toast. Silent if the id is already gone. */
 export function dismissToast(id: string): void {
+  if (toasts.some((item) => item.id === id && item.kind === 'progress')) return;
   dismissed.add(id);
   clearPeekTimer(id);
   peekIds.delete(id);
@@ -405,7 +408,7 @@ export function toastFromAlert(alert: AlertView): ToastDraft {
   const title = label === alert.code ? factorLabel(alert.code) : label;
   return {
     id: `alert:${alert.id}`,
-    kind: notice ? 'route' : 'alert',
+    kind: notice ? (alert.code === 'plan_rebuilt' ? 'route' : 'system') : 'alert',
     title: notice ? title : `Алёрт: ${title}`,
     body:
       alert.code === 'plan_rebuilt'

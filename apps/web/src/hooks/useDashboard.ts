@@ -24,12 +24,7 @@ import {
   uploadDataPackage,
   verifyDispatcherLoginCode,
 } from '../api/client';
-import {
-  type DispatchLiveView,
-  type LiveEngineerState,
-  loadDispatchLive,
-  startLiveWorkday,
-} from '../api/live';
+import { type DispatchLiveView, loadDispatchLive, startLiveWorkday } from '../api/live';
 import type {
   AlertResolutionInput,
   CreateDispatchEngineerInput,
@@ -310,31 +305,6 @@ export function useDashboard() {
       ...previous,
     ]);
   }, []);
-
-  const previousLiveEngineers = useRef<Map<string, string>>(new Map());
-  useEffect(() => {
-    if (liveWorkday?.workday.status !== 'running') {
-      previousLiveEngineers.current = new Map();
-      return;
-    }
-    const next = new Map(
-      liveWorkday.engineers.map((engineer) => [
-        engineer.id,
-        `${engineer.lineStatus}:${engineer.activeRequestId ?? ''}:${engineer.pendingDelayProblem?.requestId ?? ''}`,
-      ]),
-    );
-    const previous = previousLiveEngineers.current;
-    if (previous.size > 0) {
-      for (const engineer of liveWorkday.engineers) {
-        const before = previous.get(engineer.id);
-        const after = next.get(engineer.id);
-        if (before !== undefined && before !== after) {
-          pushEvent(`LIVE: ${engineer.name} — ${liveEngineerEvent(engineer)}.`);
-        }
-      }
-    }
-    previousLiveEngineers.current = next;
-  }, [liveWorkday, pushEvent]);
 
   const acceptSession = useCallback(
     (session: Awaited<ReturnType<typeof loginDispatcher>>, generation: number) => {
@@ -989,9 +959,12 @@ export function useDashboard() {
   const deleteEngineer = useCallback(
     (engineerId: string) => {
       const engineer = snapshotRef.current?.engineers.find((item) => item.id === engineerId);
-      return performEntityMutation(async (session) => {
-        await deleteDispatchEngineer(session, engineerId, engineer?.version);
-      }, `Инженер ${engineer?.displayName ?? engineerId} удалён из активного состава.`);
+      return performEntityMutation(
+        async (session) => {
+          await deleteDispatchEngineer(session, engineerId, engineer?.version);
+        },
+        `Инженер ${engineer?.displayName ?? engineerId} удалён из активного состава.`,
+      );
     },
     [performEntityMutation],
   );
@@ -1304,13 +1277,4 @@ function errorMessage(cause: unknown): string {
 
 function engineerName(snapshot: DashboardSnapshot, engineerId: string): string {
   return snapshot.engineers.find((item) => item.id === engineerId)?.displayName ?? engineerId;
-}
-
-function liveEngineerEvent(engineer: LiveEngineerState): string {
-  if (engineer.pendingDelayProblem) return 'сообщил о задержке';
-  if (engineer.lineStatus === 'technical_break') return 'на техническом перерыве';
-  if (engineer.lineStatus === 'no_show_offline') return 'не вышел на линию';
-  if (engineer.activeRequestId) return `работает с заявкой №${engineer.activeRequestId}`;
-  if (engineer.lineStatus === 'online') return 'вышел на линию';
-  return 'ожидает выхода на линию';
 }

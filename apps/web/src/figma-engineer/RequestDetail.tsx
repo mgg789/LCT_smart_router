@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import type { ReactNode } from 'react';
-import { FIGMA_ASSETS } from '../figma-dashboard/assets';
+import { RequestMap } from './RequestMap';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { skillLabel } from '../lib/reasons';
 import { ENGINEER_ASSETS } from './assets';
@@ -16,22 +16,14 @@ import { eu } from './engineerScale';
 export function RequestDetail({
   item,
   nowMs,
-  latePending,
-  onTimePending,
   onBack,
   onRoute,
-  onLate,
-  onOnTime,
   actions,
 }: {
   item: EngineerJobItem;
   nowMs: number;
-  latePending: boolean;
-  onTimePending: boolean;
   onBack: () => void;
   onRoute: () => void;
-  onLate: () => void;
-  onOnTime: () => void;
   actions?: ReactNode;
 }) {
   const service = item.request.workTypeTitle ?? skillLabel(item.request.requiredSkill);
@@ -73,23 +65,10 @@ export function RequestDetail({
         className="relative overflow-hidden bg-black"
         style={{ marginTop: eu(36), height: eu(287), borderRadius: eu(26) }}
       >
-        <img
-          alt=""
-          src={FIGMA_ASSETS.map}
-          className="absolute inset-0 size-full max-w-none object-cover"
+        <RequestMap
+          lat={item.request.lat ?? item.stop.lat}
+          lon={item.request.lon ?? item.stop.lon}
         />
-        <div
-          className="absolute left-1/2 top-[23%] -translate-x-1/2"
-          style={{ width: eu(48), height: eu(48) }}
-        >
-          <FigmaIcon
-            src={ENGINEER_ASSETS.pin}
-            alt=""
-            width={48}
-            height={48}
-            style={{ width: '100%', height: '100%' }}
-          />
-        </div>
         <motion.button
           type="button"
           onClick={onRoute}
@@ -128,29 +107,16 @@ export function RequestDetail({
         {equipment ? <Chip>{equipment}</Chip> : null}
       </div>
 
-      {actions !== undefined ? (
-        actions
-      ) : (
-        <div className="mt-auto flex flex-col" style={{ gap: eu(15), paddingTop: eu(28) }}>
-          <motion.button
-            type="button"
-            onClick={onOnTime}
-            whileTap={{ scale: 0.98 }}
-            className="flex w-full items-center justify-center bg-figma-bee font-semibold tracking-[-0.03em] text-figma-ink disabled:opacity-60"
-            style={{ height: eu(95), borderRadius: eu(23), fontSize: eu(28) }}
-          >
-            {onTimePending ? 'Отмечено' : 'Буду вовремя'}
-          </motion.button>
-          <motion.button
-            type="button"
-            onClick={onLate}
-            whileTap={{ scale: 0.98 }}
-            className="flex w-full items-center justify-center bg-figma-ink font-semibold tracking-[-0.03em] text-white disabled:opacity-60"
-            style={{ height: eu(95), borderRadius: eu(23), fontSize: eu(28) }}
-          >
-            {latePending ? 'Отмечено' : 'Опаздываю'}
-          </motion.button>
-        </div>
+      {actions}
+      {actions ? null : (
+        <button
+          type="button"
+          disabled
+          title="Канал поддержки пока не подключён"
+          className="mt-auto rounded-[20px] bg-figma-bee p-4 font-semibold text-figma-ink disabled:opacity-50"
+        >
+          Написать в поддержку
+        </button>
       )}
     </section>
   );

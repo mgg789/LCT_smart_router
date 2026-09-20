@@ -1,10 +1,13 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { EngineerLiveAction, EngineerLiveView } from '../api/live';
 import { formatLiveCountdown, moscowTimeInputAt } from '../engineer/live';
 import { eu } from './engineerScale';
+import { shouldEnterLiveLine } from './liveSession';
+import { FIGMA_ASSETS } from '../figma-dashboard/assets';
 
 const button =
-  'rounded-[20px] bg-figma-bee px-4 py-3 font-semibold text-figma-ink disabled:opacity-50';
+  'min-h-[calc(82*var(--eu))] rounded-[calc(20*var(--eu))] bg-figma-bee px-4 py-3 font-semibold text-figma-ink disabled:opacity-50';
 const field = 'w-full rounded-[20px] border border-figma-ink/20 bg-white p-3 text-figma-ink';
 
 /** State-dependent actions shared by the nearest visit and its detail screen. */
@@ -13,17 +16,19 @@ export function LiveControls({
   now,
   busy,
   send,
+  detail = false,
 }: {
   live: EngineerLiveView;
   now: number;
   busy: boolean;
   send: (action: EngineerLiveAction) => Promise<boolean>;
+  detail?: boolean;
 }) {
   const [form, setForm] = useState<'eta' | 'problem' | null>(null);
   const [time, setTime] = useState('');
-  const [problem, setProblem] = useState<'delay' | 'missing_equipment' | 'other' | 'impossible'>(
-    'delay',
-  );
+  const [problem, setProblem] = useState<
+    'eta' | 'delay' | 'missing_equipment' | 'other' | 'impossible'
+  >('other');
   const [minutes, setMinutes] = useState(40);
   const [equipment, setEquipment] = useState<'router' | 'set_top_box' | 'smart_speaker'>('router');
   const [note, setNote] = useState('');
@@ -45,71 +50,61 @@ export function LiveControls({
   };
   return (
     <div className="flex flex-col gap-3" style={{ marginTop: eu(20), fontSize: eu(24) }}>
-      {working ? (
-        <>
-          <p className={current.overrunAt !== null ? 'text-figma-danger' : 'text-figma-muted'}>
-            {current.overrunAt !== null ? 'Превышено время · ' : 'В работе · '}
-            {formatLiveCountdown(now - (current.request.startedAt ?? now))}
-          </p>
-          <button
-            type="button"
-            className={button}
-            disabled={busy}
-            onClick={() => void submit({ kind: 'finish', requestId })}
-          >
-            Завершить
-          </button>
-          <button
-            type="button"
-            className={`${button} bg-figma-ink text-white`}
-            disabled={busy}
-            onClick={() => setForm('problem')}
-          >
-            Проблема
-          </button>
-          {live.engineer.pendingDelayProblem ? (
+      {form !== 'eta' ? (
+        <div className="flex" style={{ gap: eu(28), fontSize: eu(28) }}>
+          {working ? (
             <button
               type="button"
-              className="text-left text-figma-danger"
+              aria-label={current.overrunAt !== null ? 'Проблема' : 'Время работы'}
+              className={`${button} flex-1 ${current.overrunAt !== null ? 'bg-figma-cancel' : 'bg-figma-ink'} text-white disabled:opacity-100`}
+              disabled={busy || current.overrunAt === null}
               onClick={() => setForm('problem')}
             >
-              Задержка: +{Math.round(live.engineer.pendingDelayProblem.additionalDurationSec / 60)}{' '}
-              мин · {live.engineer.pendingDelayProblem.note}
+              {formatLiveCountdown(now - (current.request.startedAt ?? now))}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={`${button} flex-1 ${current.phase !== 'awaiting_window' && now >= (current.stop?.startAt ?? Infinity) ? 'bg-figma-cancel text-white' : ''}`}
+              disabled={busy}
+              onClick={() =>
+                setForm(
+                  current.phase !== 'awaiting_window' && now >= (current.stop?.startAt ?? Infinity)
+                    ? 'problem'
+                    : 'eta',
+                )
+              }
+            >
+              {current.phase !== 'awaiting_window' && now >= (current.stop?.startAt ?? Infinity)
+                ? 'Проблема'
+                : 'Опаздываю'}
+            </button>
+          )}
+          {working || current.phase === 'ready_to_start' ? (
+            <button
+              type="button"
+              className={`${button} flex-1 bg-figma-ink text-white`}
+              disabled={busy}
+              onClick={() => void submit({ kind: working ? 'finish' : 'start', requestId })}
+            >
+              {working ? 'Завершить' : 'Приступить'}
             </button>
           ) : null}
-        </>
-      ) : current.phase === 'awaiting_window' ? (
-        <div className="flex gap-3">
-          <button
-            type="button"
-            className={`${button} flex-1`}
-            disabled={busy}
-            onClick={() => void submit({ kind: 'on_time', requestId })}
-          >
-            Буду вовремя
-          </button>
-          <button
-            type="button"
-            className={`${button} flex-1 bg-figma-ink text-white`}
-            disabled={busy}
-            onClick={() => setForm('eta')}
-          >
-            Буду в…
-          </button>
         </div>
-      ) : (
+      ) : null}
+      {detail ? (
         <button
           type="button"
-          className={button}
+          className={`${button} bg-figma-ink text-white`}
           disabled={busy}
-          onClick={() => void submit({ kind: 'start', requestId })}
+          onClick={() => setForm('problem')}
         >
-          Приступить
+          Проблема
         </button>
-      )}
+      ) : null}
       {form === 'eta' ? (
         <form
-          className="flex flex-col gap-3"
+          className="flex gap-3"
           onSubmit={(event) => {
             event.preventDefault();
             const etaAt = moscowTimeInputAt(live.workday.workDate, time);
@@ -120,106 +115,159 @@ export function LiveControls({
             void submit({ kind: 'eta', requestId, etaAt });
           }}
         >
-          <label>
-            Время прибытия (Москва)
+          <label className="min-w-0 flex-1">
+            <span className="mb-2 inline-flex rounded-full bg-figma-ink px-3 py-1 text-sm text-white">
+              Время прибытия
+            </span>
             <input
               className={field}
               type="time"
+              aria-label="Время прибытия (Москва)"
               required
               value={time}
               onChange={(event) => setTime(event.target.value)}
             />
           </label>
-          <button type="submit" className={button} disabled={busy}>
-            Сообщить время
+          <button
+            type="submit"
+            className={`${button} flex-1 bg-figma-ink text-white`}
+            disabled={busy}
+          >
+            Установить
           </button>
         </form>
       ) : null}
-      {form === 'problem' ? (
-        <form
-          className="flex flex-col gap-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void submit({
-              kind: 'problem',
-              requestId,
-              problemKind: problem,
-              note: note.trim(),
-              ...(problem === 'delay' ? { additionalDurationSec: minutes * 60 } : {}),
-              ...(problem === 'missing_equipment' ? { missingEquipment: equipment } : {}),
-            });
-          }}
-        >
-          <label>
-            Что случилось
-            <select
-              className={field}
-              value={problem}
-              onChange={(event) => {
-                const value = event.target.value;
-                if (
-                  value === 'delay' ||
-                  value === 'missing_equipment' ||
-                  value === 'other' ||
-                  value === 'impossible'
-                )
-                  setProblem(value);
-              }}
+      {form === 'problem'
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+              role="presentation"
             >
-              <option value="delay">Задержка</option>
-              <option value="missing_equipment">Нет оборудования</option>
-              <option value="other">Другая проблема</option>
-              <option value="impossible">Невозможно выполнить</option>
-            </select>
-          </label>
-          {problem === 'delay' ? (
-            <label>
-              Нужно ещё минут
-              <input
-                className={field}
-                type="number"
-                min="1"
-                max="720"
-                required
-                value={minutes}
-                onChange={(event) => setMinutes(Number(event.target.value))}
-              />
-            </label>
-          ) : null}
-          {problem === 'missing_equipment' ? (
-            <label>
-              Какого оборудования нет
-              <select
-                className={field}
-                value={equipment}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  if (value === 'router' || value === 'set_top_box' || value === 'smart_speaker')
-                    setEquipment(value);
+              <form
+                role="dialog"
+                aria-modal="true"
+                aria-label="Проблема с заявкой"
+                className="flex max-h-[90dvh] w-full max-w-md flex-col gap-3 overflow-auto rounded-[20px] bg-figma-canvas p-6 text-figma-ink"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (problem === 'eta') {
+                    const etaAt = moscowTimeInputAt(live.workday.workDate, time);
+                    if (etaAt === null || etaAt <= now) {
+                      setError('Укажите будущее время прибытия');
+                      return;
+                    }
+                    void submit({ kind: 'eta', requestId, etaAt });
+                    return;
+                  }
+                  void submit({
+                    kind: 'problem',
+                    requestId,
+                    problemKind: problem,
+                    note: note.trim(),
+                    ...(problem === 'delay' ? { additionalDurationSec: minutes * 60 } : {}),
+                    ...(problem === 'missing_equipment' ? { missingEquipment: equipment } : {}),
+                  });
                 }}
               >
-                <option value="router">Роутер</option>
-                <option value="set_top_box">ТВ-приставка</option>
-                <option value="smart_speaker">Умная колонка</option>
-              </select>
-            </label>
-          ) : null}
-          <label>
-            Описание
-            <textarea
-              className={field}
-              required
-              maxLength={2000}
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-            />
-          </label>
-          <button type="submit" className={button} disabled={busy}>
-            {problem === 'delay' ? 'Сообщить задержку' : 'Отменить заявку с причиной'}
-          </button>
-        </form>
-      ) : null}
-      {form ? (
+                <button type="button" className="self-end" onClick={() => setForm(null)}>
+                  Закрыть
+                </button>
+                <label>
+                  Что случилось
+                  <select
+                    className={field}
+                    value={problem}
+                    onChange={(event) => {
+                      const value = event.target.value;
+                      if (
+                        value === 'eta' ||
+                        value === 'delay' ||
+                        value === 'missing_equipment' ||
+                        value === 'other' ||
+                        value === 'impossible'
+                      )
+                        setProblem(value);
+                    }}
+                  >
+                    {working ? <option value="delay">Задержка</option> : null}
+                    {!working ? <option value="eta">Опаздываю к заявке</option> : null}
+                    <option value="missing_equipment">Нет оборудования</option>
+                    <option value="other">Другая проблема</option>
+                    <option value="impossible">Невозможно выполнить</option>
+                  </select>
+                </label>
+                {problem === 'eta' ? (
+                  <label>
+                    Время прибытия
+                    <input
+                      type="time"
+                      className={field}
+                      required
+                      value={time}
+                      onChange={(event) => setTime(event.target.value)}
+                    />
+                  </label>
+                ) : null}
+                {problem === 'delay' ? (
+                  <label>
+                    Нужно ещё минут
+                    <input
+                      className={field}
+                      type="number"
+                      min="1"
+                      max="720"
+                      required
+                      value={minutes}
+                      onChange={(event) => setMinutes(Number(event.target.value))}
+                    />
+                  </label>
+                ) : null}
+                {problem === 'missing_equipment' ? (
+                  <label>
+                    Какого оборудования нет
+                    <select
+                      className={field}
+                      value={equipment}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        if (
+                          value === 'router' ||
+                          value === 'set_top_box' ||
+                          value === 'smart_speaker'
+                        )
+                          setEquipment(value);
+                      }}
+                    >
+                      <option value="router">Роутер</option>
+                      <option value="set_top_box">ТВ-приставка</option>
+                      <option value="smart_speaker">Умная колонка</option>
+                    </select>
+                  </label>
+                ) : null}
+                <label>
+                  Описание
+                  <textarea
+                    className={field}
+                    required={problem !== 'eta'}
+                    maxLength={2000}
+                    value={note}
+                    onChange={(event) => setNote(event.target.value)}
+                  />
+                </label>
+                <button type="submit" className={button} disabled={busy}>
+                  {problem === 'eta'
+                    ? 'Установить время прибытия'
+                    : problem === 'delay'
+                      ? 'Сообщить задержку'
+                      : 'Отменить заявку с причиной'}
+                </button>
+                {error ? <p role="alert">{error}</p> : null}
+              </form>
+            </div>,
+            document.body,
+          )
+        : null}
+      {form === 'eta' ? (
         <button
           type="button"
           className="text-figma-muted"
@@ -231,7 +279,7 @@ export function LiveControls({
           Закрыть форму
         </button>
       ) : null}
-      {error ? (
+      {error && form !== 'problem' ? (
         <p role="alert" className="text-figma-danger">
           {error}
         </p>
@@ -256,23 +304,38 @@ export function LiveDayOverlay({
   const stop = live.engineer.technicalBreak;
   const pending = live.workday.status === 'pending';
   const finished = live.workday.status === 'finished';
-  if (!pending && !finished && !stop && !live.lunch) return null;
+  const entry = shouldEnterLiveLine(live);
+  if (!pending && !finished && !stop && !live.lunch && !entry) return null;
   const end = stop?.plannedEndAt ?? live.lunch?.endAt ?? now;
   return (
     <section
       className="absolute inset-x-0 bottom-0 top-[100px] z-40 flex flex-col items-center justify-center gap-5 overflow-auto bg-figma-canvas p-6 text-center"
       aria-live="polite"
     >
+      {stop ? (
+        <img src={FIGMA_ASSETS.logo} alt="NAVIX" style={{ width: eu(300), marginBottom: eu(60) }} />
+      ) : null}
       <h2 className="font-murs text-2xl text-figma-ink">
-        {pending
-          ? 'Ожидаем начала дня'
-          : finished
-            ? 'Рабочий день завершён'
-            : stop
-              ? 'Технический перерыв'
-              : 'Обед'}
+        {entry
+          ? 'Выйти на смену'
+          : pending
+            ? 'Ожидаем начала дня'
+            : finished
+              ? 'Рабочий день завершён'
+              : stop
+                ? 'Технический перерыв'
+                : 'Обед'}
       </h2>
-      {pending ? (
+      {entry ? (
+        <button
+          type="button"
+          className={button}
+          disabled={busy}
+          onClick={() => void send({ kind: 'online' }).then((ok) => setError(!ok))}
+        >
+          Выйти на линию
+        </button>
+      ) : pending ? (
         <p>Диспетчер запустит смену — ваш маршрут появится здесь.</p>
       ) : finished ? (
         <p>
@@ -281,7 +344,9 @@ export function LiveDayOverlay({
           {live.engineer.stats.cancelledCount}
         </p>
       ) : (
-        <p className="font-murs text-4xl">{formatLiveCountdown(end - now)}</p>
+        <p className="font-murs" style={{ fontSize: stop ? eu(125) : eu(64) }}>
+          {formatLiveCountdown(end - now)}
+        </p>
       )}
       {stop && !finished ? (
         <>
@@ -293,10 +358,7 @@ export function LiveDayOverlay({
               void send({ kind: 'break_finish' }).then((ok) => setError(!ok));
             }}
           >
-            Завершить перерыв
-          </button>
-          <button type="button" className={button} disabled>
-            Проблема
+            Вернуться
           </button>
           {now >= stop.overdueAt ? (
             <p className="text-figma-danger">Перерыв затянулся. Диспетчер уведомлён.</p>

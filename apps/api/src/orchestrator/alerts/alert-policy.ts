@@ -6,6 +6,7 @@ export type AlertAction =
   | 'move_window'
   | 'add_engineer'
   | 'keep_manual'
+  | 'keep_as_is'
   | 'restore_auto'
   | 'skip_lunch'
   | 'keep_lunch'
@@ -18,6 +19,10 @@ export type AlertAction =
 export function alertActionsFor(code: string): AlertAction[] {
   switch (code) {
     case 'time_risk':
+    case 'LIVE_WINDOW_COMPLETION_RISK':
+      return ['reschedule', 'move_window', 'add_engineer', 'keep_as_is'];
+    case 'LIVE_TECHNICAL_BREAK_OVERRUN':
+      return ['keep_as_is'];
     case 'unassigned':
       return ['reschedule', 'move_window', 'add_engineer'];
     case 'plan_degraded':

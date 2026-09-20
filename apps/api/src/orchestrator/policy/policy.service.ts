@@ -66,6 +66,54 @@ export class PolicyService {
         details: { policyId, supported: POLICIES.map((policy) => policy.policyId) },
       });
     }
+    const previous = await context.tx.activePolicy.findUnique({ where: { id: 'singleton' } });
+    const currentPolicyId = previous?.policyId ?? DEFAULT_POLICY_ID;
+    if (currentPolicyId !== policyId) {
+      const current = await context.tx.appliedPlanCurrent.findUnique({
+        where: { id: 'singleton' },
+        include: { plan: { include: { assignments: true } } },
+      });
+      const assignedIds =
+        current?.plan.assignments
+          .filter((assignment) => assignment.status === 'assigned')
+          .map((assignment) => assignment.requestId) ?? [];
+      const submitted = await context.tx.request.findMany({
+        where: { id: { in: assignedIds }, lifecycle: 'submitted' },
+        select: { id: true },
+      });
+      const runningDay = await context.tx.liveWorkday.findFirst({
+        where: { status: 'running' },
+        orderBy: { startedAtWallSec: 'desc' },
+        select: { workDate: true, logicalEndAt: true },
+      });
+      const nextVersion = (previous?.version ?? 0) + 1;
+      await context.tx.appState.upsert({
+        where: { key: 'alerts.policy-coverage-baseline' },
+        create: {
+          key: 'alerts.policy-coverage-baseline',
+          value: {
+            requestIds: submitted.map((request) => request.id),
+            policyId,
+            policyVersion: nextVersion,
+            operationId: context.operationId,
+            workDate: runningDay?.workDate ?? null,
+            expiresAt: runningDay ? Number(runningDay.logicalEndAt) : null,
+          },
+          updatedAt: BigInt(context.now),
+        },
+        update: {
+          value: {
+            requestIds: submitted.map((request) => request.id),
+            policyId,
+            policyVersion: nextVersion,
+            operationId: context.operationId,
+            workDate: runningDay?.workDate ?? null,
+            expiresAt: runningDay ? Number(runningDay.logicalEndAt) : null,
+          },
+          updatedAt: BigInt(context.now),
+        },
+      });
+    }
     await context.tx.activePolicy.upsert({
       where: { id: 'singleton' },
       update: {

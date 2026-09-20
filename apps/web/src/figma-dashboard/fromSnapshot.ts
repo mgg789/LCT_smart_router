@@ -222,8 +222,8 @@ export function withTechnicalBreaks(
     if (markers.length === 0) return engineer;
     return {
       ...engineer,
-      stops: [...engineer.stops, ...markers].sort(
-        (left, right) => (left.at ?? 0) - (right.at ?? 0),
+      stops: [...engineer.stops, ...markers].sort((left, right) =>
+        left.kind === 'start' ? -1 : right.kind === 'start' ? 1 : (left.at ?? 0) - (right.at ?? 0),
       ),
     };
   });
@@ -250,8 +250,15 @@ export function withLiveRouteStops(
       return {
         kind: node.kind,
         requestId: node.requestId,
-        at: node.at,
-        time: formatClock(node.at),
+        at:
+          node.kind === 'start'
+            ? (state?.lineStartedAt ?? state?.noShowAt ?? live?.workday.logicalStartAt ?? node.at)
+            : node.at,
+        time: formatClock(
+          node.kind === 'start'
+            ? (state?.lineStartedAt ?? state?.noShowAt ?? live?.workday.logicalStartAt ?? node.at)
+            : node.at,
+        ),
         place:
           node.kind === 'start'
             ? 'Выход на смену'
@@ -262,13 +269,16 @@ export function withLiveRouteStops(
                 : 'Заявка',
         status:
           node.kind === 'start'
-            ? entered
-              ? 'на смене'
-              : 'ожидаем выхода'
+            ? state?.lineStartedAt
+              ? 'ВЫШЕЛ'
+              : state?.noShowAt
+                ? 'НЕ ВЫШЕЛ'
+                : 'ожидаем выхода'
             : node.kind === 'lunch'
               ? 'обед'
               : stopStatus(request),
-        active: graph.activeNodeKeys.has(node.key),
+        active: node.kind !== 'start' && graph.activeNodeKeys.has(node.key),
+        failed: node.kind === 'start' && Boolean(state?.noShowAt),
         completed:
           node.kind === 'start'
             ? entered
@@ -277,7 +287,7 @@ export function withLiveRouteStops(
     });
     for (const item of history) {
       const previous = stops.find((stop) => stop.requestId === item.request.id);
-      const at = item.stop?.startAt ?? item.terminalAt;
+      const at = item.request.startedAt ?? item.stop?.startAt ?? item.terminalAt;
       const terminalStop: RouteStop = {
         kind: 'job',
         requestId: item.request.id,
@@ -295,10 +305,45 @@ export function withLiveRouteStops(
       if (previous) Object.assign(previous, terminalStop);
       else stops.push(terminalStop);
     }
+    if (state?.lunchInterval) {
+      const { startAt, endAt } = state.lunchInterval;
+      const now = live?.workday.liveNow ?? 0;
+      const lunch: RouteStop = {
+        kind: 'lunch',
+        requestId: null,
+        at: startAt,
+        time: formatClock(startAt),
+        place: 'Обед',
+        status: now >= endAt ? 'выполнено' : 'обед',
+        active: now >= startAt && now < endAt,
+        completed: now >= endAt,
+      };
+      const planned = stops.find((stop) => stop.kind === 'lunch');
+      if (planned) Object.assign(planned, lunch);
+      else stops.push(lunch);
+    }
     stops.sort((a, b) =>
       a.kind === 'start' ? -1 : b.kind === 'start' ? 1 : (a.at ?? 0) - (b.at ?? 0),
     );
-    return { ...engineer, stops };
+    const doneCount = state
+      ? state.stats.completedCount + state.stats.assumedCompletedCount
+      : engineer.doneCount;
+    const remaining = stops.filter(
+      (stop) => stop.kind === 'job' && !stop.completed && stop.status !== 'отменено',
+    ).length;
+    return {
+      ...engineer,
+      stops,
+      doneCount,
+      requestCount: doneCount + remaining,
+      lineLabel:
+        state?.lineStatus === 'no_show_offline'
+          ? state.lineStartedAt
+            ? 'Снят со смены'
+            : 'Не вышел'
+          : undefined,
+      lineFailed: state?.lineStatus === 'no_show_offline',
+    };
   });
   return withTechnicalBreaks(cards, live?.breaks ?? []);
 }

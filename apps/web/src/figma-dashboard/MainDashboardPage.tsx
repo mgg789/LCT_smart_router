@@ -68,11 +68,12 @@ import { routeProgressMarker } from './routeProgress';
 import { SettingsModal } from './SettingsModal';
 import { ToastColumn } from './ToastColumn';
 import {
+  dismissToast,
   pushToast,
   seedDemoToasts,
   setToastColumnPinned,
   toastFromAlert,
-  toastFromEvent,
+  updateToast,
   upsertNewToasts,
   useToasts,
 } from './toasts';
@@ -214,6 +215,16 @@ export function MainDashboardPage() {
     () => filterEngineers(roster, searchQuery),
     [roster, searchQuery],
   );
+  const liveCompleted = useMemo(
+    () =>
+      new Map(
+        dash.liveWorkday?.engineers.map((engineer) => [
+          engineer.id,
+          engineer.stats.completedCount + engineer.stats.assumedCompletedCount,
+        ]) ?? [],
+      ),
+    [dash.liveWorkday],
+  );
   const selectedEngineer = dash.selectedEngineerId
     ? (visibleEngineers.find((item) => item.id === dash.selectedEngineerId) ?? null)
     : null;
@@ -253,10 +264,30 @@ export function MainDashboardPage() {
 
   const toastHydrated = useRef(false);
   useEffect(() => {
+    if (dash.rebuilding)
+      pushToast({
+        id: 'dispatcher-rebuild',
+        kind: 'progress',
+        title: 'Пересчитываем маршруты',
+        body: 'Дождитесь подтверждения нового плана.',
+        progress: 0,
+        etaLabel: 'Выполняется',
+      });
+    else updateToast('dispatcher-rebuild', { progress: 100 });
+  }, [dash.rebuilding]);
+  useEffect(() => {
     const openAlerts = (dash.snapshot?.alerts ?? []).filter((alert) => alert.resolvedAt === null);
     const peek = toastHydrated.current;
-    upsertNewToasts(openAlerts.map(toastFromAlert), peek);
-    if (!dash.isDemo) upsertNewToasts(dash.events.map(toastFromEvent), peek);
+    for (const alert of dash.snapshot?.alerts ?? []) {
+      if (alert.resolvedAt !== null || (alert.kind === 'notice' && alert.seenAt !== null))
+        dismissToast(`alert:${alert.id}`);
+    }
+    upsertNewToasts(
+      openAlerts
+        .filter((alert) => alert.kind !== 'notice' || alert.seenAt === null)
+        .map(toastFromAlert),
+      peek,
+    );
     toastHydrated.current = true;
   }, [dash.events, dash.isDemo, dash.snapshot]);
 
@@ -758,6 +789,7 @@ export function MainDashboardPage() {
                     selectedEngineerId={dash.selectedEngineerId}
                     selectedRequestId={dash.selectedRequest?.id ?? null}
                     progressByEngineer={liveProgress}
+                    completedByEngineer={liveCompleted}
                     frame={mapFrame}
                     regionLabel={regionLabel}
                     regions={[
@@ -1522,7 +1554,10 @@ function EngineerRow({
 }) {
   const progress = Math.max(
     8,
-    Math.round((engineer.doneCount / engineer.requestCount) * PROGRESS_TRACK),
+    Math.round(
+      (engineer.requestCount === 0 ? 1 : engineer.doneCount / engineer.requestCount) *
+        PROGRESS_TRACK,
+    ),
   );
 
   return (
@@ -1558,7 +1593,7 @@ function EngineerRow({
       </div>
       <div className="absolute left-[15px] top-[81px] h-[8px] w-[321px] rounded-[13px] bg-figma-track" />
       <motion.div
-        className="absolute left-[15px] top-[81px] h-[8px] rounded-[13px] bg-figma-ink"
+        className={`absolute left-[15px] top-[81px] h-[8px] rounded-[13px] ${engineer.lineFailed ? 'bg-figma-cancel' : engineer.doneCount === engineer.requestCount ? 'bg-figma-done' : 'bg-figma-ink'}`}
         initial={false}
         animate={{ width: progress }}
         transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
@@ -1567,7 +1602,7 @@ function EngineerRow({
         {engineer.shift}
       </FigmaText>
       <FigmaText className="figma-nowrap absolute right-[15px] top-[104px] font-semibold text-[16px] tracking-[-0.272px] text-figma-muted">
-        выполнено {engineer.doneCount}/{engineer.requestCount}
+        {engineer.lineLabel ?? `выполнено ${engineer.doneCount}/${engineer.requestCount}`}
       </FigmaText>
     </motion.button>
   );
@@ -1578,6 +1613,7 @@ function MapCard({
   selectedEngineerId,
   selectedRequestId,
   progressByEngineer,
+  completedByEngineer,
   frame,
   regionLabel,
   regions,
@@ -1592,6 +1628,7 @@ function MapCard({
   selectedEngineerId: string | null;
   selectedRequestId: string | null;
   progressByEngineer: NonNullable<Parameters<typeof DayMap>[0]['progressByEngineer']>;
+  completedByEngineer: ReadonlyMap<string, number>;
   frame: { left: number; top: number; width: number; height: number };
   regionLabel: string;
   regions: { id: RegionSelection; label: string }[];
@@ -1616,6 +1653,7 @@ function MapCard({
             selectedEngineerId={selectedEngineerId}
             selectedRequestId={selectedRequestId}
             progressByEngineer={progressByEngineer}
+            completedByEngineer={completedByEngineer}
             onSelectRequest={onSelectRequest}
           />
         ) : (
@@ -1906,20 +1944,6 @@ function RouteCard({
                   }}
                 />
               ) : null}
-              {liveMarker ? (
-                <motion.span
-                  aria-label="Текущая позиция инженера в пути"
-                  className="pointer-events-none absolute top-[11px] z-20 size-[19px] rounded-full border-[3px] border-figma-ink bg-figma-bee"
-                  initial={false}
-                  animate={{
-                    left:
-                      ROUTE_LINE_LEFT -
-                      9.5 +
-                      (liveMarker.fromIndex + liveMarker.progress) * ROUTE_STOP_WIDTH,
-                  }}
-                  transition={motionOn ? { duration: 0.32, ease: slideEase } : { duration: 0 }}
-                />
-              ) : null}
               <div className="flex">
                 {engineer.stops.map((stop, index) => (
                   <RouteStopTopic
@@ -1984,7 +2008,7 @@ function RouteStopTopic({
       transition={{ ...fadeSoft, delay: index * 0.04 }}
     >
       <span
-        className={`absolute top-[10px] rounded-full ${stop.completed ? 'bg-figma-done' : stop.status === 'отменено' ? 'bg-figma-cancel' : stop.active ? 'bg-figma-bee ring-4 ring-figma-ink' : 'bg-figma-ink'}`}
+        className={`absolute top-[10px] rounded-full ${stop.failed || stop.status === 'отменено' ? 'bg-figma-cancel' : stop.active ? 'bg-figma-bee ring-4 ring-figma-ink' : stop.completed ? 'bg-figma-done' : 'bg-figma-ink'}`}
         style={{ left: ROUTE_DOT_LEFT, width: ROUTE_DOT_SIZE, height: ROUTE_DOT_SIZE }}
       />
       <FigmaText className="figma-nowrap absolute left-0 top-[46px] w-[240px] text-center font-semibold text-[24px] tracking-[-0.408px] text-black">
@@ -1995,7 +2019,11 @@ function RouteStopTopic({
       </p>
       <FigmaText
         className={`absolute left-0 top-[126px] w-[240px] text-center font-semibold text-[16px] tracking-[-0.272px] ${
-          isCompletedStop(stop.status) ? 'text-figma-done' : 'text-figma-hint'
+          stop.failed || stop.status === 'отменено'
+            ? 'text-figma-cancel uppercase'
+            : isCompletedStop(stop.status)
+              ? 'text-figma-done'
+              : 'text-figma-hint'
         }`}
       >
         {routeStopStatusLabel(stop.status)}
