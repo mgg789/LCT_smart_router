@@ -7,7 +7,7 @@ const FIELD =
   'mt-[8px] h-[56px] w-full rounded-[20px] border border-figma-ink/15 bg-white px-[18px] font-medium text-[18px] tracking-[-0.3px] text-figma-ink outline-none placeholder:text-figma-hint focus:border-figma-ink';
 
 /**
- * Address search via LocationIQ (structured, city then street) plus an OSM click map.
+ * Address search via LocationIQ autocomplete plus an OSM click map.
  * A map click sets coordinates without reverse geocoding.
  */
 export function AddressPointField({
@@ -36,7 +36,7 @@ export function AddressPointField({
   const [searchError, setSearchError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!token || addressText.trim().length < 4 || lat !== null) {
+    if (!token || addressText.trim().length < 3 || lat !== null) {
       setHits([]);
       return;
     }

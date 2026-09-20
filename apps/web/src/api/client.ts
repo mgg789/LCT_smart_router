@@ -676,7 +676,7 @@ export function getMapProvidersStatus(token: string): Promise<MapProvidersStatus
   );
 }
 
-/** Structured LocationIQ search. Pass city+street or a free-form Russian address. */
+/** LocationIQ autocomplete. Pass a free-form address or city+street. */
 export async function geocodeAddress(
   token: string,
   query: { q?: string; city?: string; street?: string },

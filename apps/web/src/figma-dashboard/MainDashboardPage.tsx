@@ -74,7 +74,7 @@ import {
   useToasts,
 } from './toasts';
 import { WelcomeScreen } from './WelcomeScreen';
-import { hasStartedWorkDay, markWorkDayStarted, moscowWorkDate } from './welcomeDay';
+import { hasStartedWorkDay, markWorkDayStarted, moscowWorkDate, shouldShowStartWelcome } from './welcomeDay';
 
 const NAV_ICONS = {
   navHome: FIGMA_ASSETS.navHome,
@@ -411,10 +411,10 @@ export function MainDashboardPage() {
     );
   }
 
-  if (dash.source === 'live' && dash.liveLoading && !dash.liveWorkday) {
+  if (dash.source === 'live' && dash.liveLoading && !dash.liveWorkday && !dash.snapshot) {
     return (
       <WelcomeScreen
-        requestCount={dash.snapshot?.requests.length ?? null}
+        requestCount={null}
         motionOn={motionOn}
         disabled={!dash.error}
         buttonLabel={dash.error ? 'Повторить загрузку' : 'Загружаем рабочий день…'}
@@ -425,7 +425,14 @@ export function MainDashboardPage() {
     );
   }
 
-  if (dash.liveWorkday?.workday.status === 'pending' || (dash.source !== 'live' && welcomeOpen)) {
+  if (
+    shouldShowStartWelcome({
+      source: dash.source,
+      liveStatus: dash.liveWorkday?.workday.status ?? null,
+      welcomeOpen,
+      hasSnapshot: dash.snapshot !== null,
+    })
+  ) {
     return (
       <WelcomeScreen
         requestCount={dash.snapshot ? dash.snapshot.requests.length : null}

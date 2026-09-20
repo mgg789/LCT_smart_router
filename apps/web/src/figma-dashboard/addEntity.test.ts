@@ -69,11 +69,14 @@ describe('addEntity catalog helpers', () => {
       skills: ['connection'],
       transportType: 'car',
       region: 'east',
-      officeId: 'office-1',
       email: '',
+      homeLat: 55.75,
+      homeLon: 37.62,
     };
     expect(validateEngineerDraft(base)).toBeNull();
-    expect(validateEngineerDraft({ ...base, officeId: '' })).toBeNull();
+    expect(validateEngineerDraft({ ...base, homeLat: null, homeLon: null })).toBe(
+      'Укажите адрес офиса из подсказки или точку на карте',
+    );
     expect(validateEngineerDraft({ ...base, email: 'not-mail' })).toBe('Проверьте адрес почты');
     expect(validateEngineerDraft({ ...base, skills: [] })).toBe('Выберите хотя бы один навык');
   });

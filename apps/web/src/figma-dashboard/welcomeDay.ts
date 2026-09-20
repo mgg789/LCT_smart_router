@@ -34,3 +34,23 @@ export function markWorkDayStarted(storage: Pick<Storage, 'setItem'>, date: stri
 export function clearWorkDayStarted(storage: Pick<Storage, 'removeItem'>): void {
   storage.removeItem(WORKDAY_STARTED_KEY);
 }
+
+/**
+ * Whether MAIN should unmount the dashboard for the start-of-day splash.
+ *
+ * A running (or finished) LIVE day never goes back to Welcome just because a
+ * refresh fell into the cached source or the local "started" flag is stale.
+ * Demo still uses `welcomeOpen`. A pending LIVE card always asks to start.
+ */
+export function shouldShowStartWelcome(input: {
+  readonly source: 'live' | 'cached' | 'demo';
+  readonly liveStatus: 'pending' | 'running' | 'finished' | null;
+  readonly welcomeOpen: boolean;
+  readonly hasSnapshot: boolean;
+}): boolean {
+  if (input.liveStatus === 'pending') return true;
+  if (input.liveStatus === 'running' || input.liveStatus === 'finished') return false;
+  if (input.source === 'demo') return input.welcomeOpen;
+  if (input.source === 'cached') return input.welcomeOpen && !input.hasSnapshot;
+  return false;
+}

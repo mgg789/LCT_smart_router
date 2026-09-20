@@ -191,13 +191,17 @@ export function validateEngineerDraft(draft: {
   skills: readonly string[];
   transportType: string;
   region: string;
-  officeId: string;
   email: string;
+  homeLat?: number | null;
+  homeLon?: number | null;
 }): string | null {
   if (!draft.displayName.trim()) return 'Укажите имя инженера';
   if (draft.skills.length === 0) return 'Выберите хотя бы один навык';
   if (!TRANSPORT_OPTIONS.some((item) => item.id === draft.transportType)) return 'Выберите транспорт';
   if (!draft.region) return 'Выберите регион';
+  if (draft.homeLat == null || draft.homeLon == null) {
+    return 'Укажите адрес офиса из подсказки или точку на карте';
+  }
   if (draft.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.email.trim())) {
     return 'Проверьте адрес почты';
   }

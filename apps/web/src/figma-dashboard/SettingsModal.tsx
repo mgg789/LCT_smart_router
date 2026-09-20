@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { Copy, KeyRound, Plus } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   createApiToken,
   getDispatcherSettings,
@@ -100,32 +100,52 @@ export function SettingsModal({
   const [clearTwogis, setClearTwogis] = useState(false);
   const [clearYandex, setClearYandex] = useState(false);
   const [mapStatus, setMapStatus] = useState<MapProvidersStatus | null>(null);
+  const wasOpen = useRef(false);
+  const routerRef = useRef(routerSettings);
+  routerRef.current = routerSettings;
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      wasOpen.current = false;
+      return;
+    }
+    if (wasOpen.current) return;
+    wasOpen.current = true;
     setTab('general');
     setError(null);
     setTwogisKey('');
     setYandexKey('');
     setClearTwogis(false);
     setClearYandex(false);
-    setDraft(generalFrom(undefined, routerSettings));
+    setDraft(generalFrom(undefined, routerRef.current));
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
     if (!token) {
       setServer(null);
       return;
     }
+    let cancelled = false;
     setLoading(true);
     void Promise.all([getDispatcherSettings(token), getMapProvidersStatus(token).catch(() => null)])
       .then(([settings, status]) => {
+        if (cancelled) return;
         setServer(settings);
         setMapStatus(status);
-        setDraft(generalFrom(settings, routerSettings));
+        setDraft(generalFrom(settings, routerRef.current));
       })
       .catch((cause: unknown) => {
+        if (cancelled) return;
         setError(cause instanceof Error ? cause.message : 'Не удалось загрузить настройки');
       })
-      .finally(() => setLoading(false));
-  }, [open, routerSettings, token]);
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, token]);
 
   const setField = <K extends keyof GeneralDraft>(key: K, value: GeneralDraft[K]) => {
     setDraft((current) => ({ ...current, [key]: value }));

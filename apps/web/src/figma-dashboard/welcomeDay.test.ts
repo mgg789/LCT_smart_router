@@ -6,6 +6,7 @@ import {
   markWorkDayStarted,
   moscowClockLabel,
   moscowWorkDate,
+  shouldShowStartWelcome,
 } from './welcomeDay';
 
 describe('welcomeDay', () => {
@@ -35,5 +36,32 @@ describe('welcomeDay', () => {
     expect(hasStartedWorkDay(storage, '2026-09-20')).toBe(false);
     clearWorkDayStarted(storage);
     expect(hasStartedWorkDay(storage, '2026-09-19')).toBe(false);
+  });
+
+  it('does not send a running LIVE day back to Welcome after a cached refresh', () => {
+    expect(
+      shouldShowStartWelcome({
+        source: 'cached',
+        liveStatus: 'running',
+        welcomeOpen: true,
+        hasSnapshot: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldShowStartWelcome({
+        source: 'live',
+        liveStatus: 'pending',
+        welcomeOpen: false,
+        hasSnapshot: true,
+      }),
+    ).toBe(true);
+    expect(
+      shouldShowStartWelcome({
+        source: 'demo',
+        liveStatus: null,
+        welcomeOpen: true,
+        hasSnapshot: true,
+      }),
+    ).toBe(true);
   });
 });

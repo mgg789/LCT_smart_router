@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { DashboardSnapshot } from '../api/types';
 import { FIGMA_ASSETS } from './assets';
 import {
@@ -8,12 +8,10 @@ import {
   SKILL_OPTIONS,
   TRANSPORT_OPTIONS,
   WORK_TYPE_OPTIONS,
-  officesForRegion,
   selectableRegions,
   type AddTab,
   type SkillId,
   type TransportId,
-  useAddedEntities,
   validateEngineerDraft,
   validateRequestDraft,
   windowFromClocks,
@@ -74,9 +72,15 @@ export function AddEntityModal({
   const [tab, setTab] = useState<AddTab>('request');
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const wasOpen = useRef(false);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      wasOpen.current = false;
+      return;
+    }
+    if (wasOpen.current) return;
+    wasOpen.current = true;
     setTab('request');
     setError(null);
     setStatus(null);
@@ -371,27 +375,18 @@ function EngineerForm({
   const [homeLat, setHomeLat] = useState<number | null>(null);
   const [homeLon, setHomeLon] = useState<number | null>(null);
   const [homeAddress, setHomeAddress] = useState('');
-  const added = useAddedEntities();
   const regions = selectableRegions(snapshot);
   const [displayName, setDisplayName] = useState('');
   const [transportType, setTransportType] = useState<TransportId>('car');
   const [skills, setSkills] = useState<SkillId[]>(['connection']);
   const [region, setRegion] = useState(regions[0]?.id ?? '');
-  const [officeId, setOfficeId] = useState('');
   const [email, setEmail] = useState('');
-  const offices = officesForRegion(region);
 
   useEffect(() => {
     if (region && !regions.some((item) => item.id === region)) {
       setRegion(regions[0]?.id ?? '');
     }
   }, [region, regions]);
-
-  useEffect(() => {
-    if (!offices.some((item) => item.id === officeId)) {
-      setOfficeId(offices[0]?.id ?? '');
-    }
-  }, [officeId, offices]);
 
   return (
     <form
@@ -405,8 +400,9 @@ function EngineerForm({
           skills,
           transportType,
           region,
-          officeId,
           email,
+          homeLat,
+          homeLon,
         });
         if (issue) {
           onError(issue);
@@ -497,12 +493,16 @@ function EngineerForm({
       </Field>
       <AddressPointField
         id="add-engineer-home"
-        label="Точка старта"
+        label="Адрес офиса"
         token={token}
         addressText={homeAddress}
         lat={homeLat}
         lon={homeLon}
-        onAddressChange={setHomeAddress}
+        onAddressChange={(value) => {
+          setHomeAddress(value);
+          setHomeLat(null);
+          setHomeLon(null);
+        }}
         onResolved={(hit) => {
           setHomeAddress(hit.displayName);
           setHomeLat(hit.lat);
@@ -511,26 +511,14 @@ function EngineerForm({
         onMapPick={(nextLat, nextLon) => {
           setHomeLat(nextLat);
           setHomeLon(nextLon);
-          setHomeAddress(`${nextLat.toFixed(5)}, ${nextLon.toFixed(5)}`);
+          if (!homeAddress.trim()) {
+            setHomeAddress(`${nextLat.toFixed(5)}, ${nextLon.toFixed(5)}`);
+          }
         }}
       />
-      <Field label="Адрес офиса" htmlFor="add-engineer-office">
-        <select
-          id="add-engineer-office"
-          value={officeId}
-          onChange={(event) => setOfficeId(event.target.value)}
-          className={FIELD}
-        >
-          {offices.length === 0 ? (
-            <option value="">Офис можно привязать позже</option>
-          ) : null}
-          {offices.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.addressText}
-            </option>
-          ))}
-        </select>
-      </Field>
+      <p className="mt-[10px] font-medium text-[14px] text-figma-muted">
+        Точка старта маршрута — это адрес офиса.
+      </p>
       <Field label="Email (необязательно)" htmlFor="add-engineer-email">
         <input
           id="add-engineer-email"
@@ -541,11 +529,6 @@ function EngineerForm({
           className={FIELD}
         />
       </Field>
-      <p className="mt-[10px] font-medium text-[14px] text-figma-muted">
-        {added.offices.length === 0
-          ? 'Пока сохраняется регион; офис можно привязать после появления API.'
-          : null}
-      </p>
     </form>
   );
 }
