@@ -968,7 +968,7 @@ export function useDashboard() {
     (input: CreateDispatchRequestInput) =>
       performEntityMutation(async (session) => {
         await createDispatchRequest(session, input);
-      }, 'Создана новая заявка и отправлена в планирование.'),
+      }, 'Создана новая заявка; адрес без координат ожидает геокодирования.'),
     [performEntityMutation],
   );
 

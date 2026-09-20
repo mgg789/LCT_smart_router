@@ -271,7 +271,11 @@ function RequestForm({
         void onSubmit({ workType, addressText: addressText.trim(), ...window })
           .then(() => {
             setAddressText('');
-            onStatus(live ? 'Заявка создана и ушла в план дня.' : 'Заявка сохранена только в этом сеансе — живой API недоступен.');
+            onStatus(
+              live
+                ? 'Заявка создана. Адрес без координат будет ждать геокодирования.'
+                : 'Заявка сохранена только в этом сеансе — живой API недоступен.',
+            );
           })
           .catch((cause: unknown) => {
             onError(cause instanceof Error ? cause.message : 'Не удалось создать заявку');
@@ -390,7 +394,11 @@ function EngineerForm({
           .then(() => {
             setDisplayName('');
             setEmail('');
-            onStatus(live ? 'Инженер добавлен в снимок дня.' : 'Инженер сохранён только в этом сеансе — живой API недоступен.');
+            onStatus(
+              live
+                ? 'Профиль инженера создан. Для маршрута нужны точка старта и смена.'
+                : 'Инженер сохранён только в этом сеансе — живой API недоступен.',
+            );
           })
           .catch((cause: unknown) => {
             onError(cause instanceof Error ? cause.message : 'Не удалось добавить инженера');
