@@ -1,0 +1,357 @@
+import { z } from 'zod';
+import type { EngineerLiveView } from '../../api/live-view.types';
+import { AppConfigService } from '../../common/config';
+import { SysError } from '../../common/errors';
+import { LiveService } from '../../orchestrator/live/live.service';
+import type { AiOperationService } from '../operations';
+import { localTimeSchema, localToUnixSeconds } from './local-time';
+import type { ToolContext, ToolResult, ToolSpec } from './tool.types';
+
+export interface EngineerToolDeps {
+  readonly aiOperations: AiOperationService;
+  readonly live: LiveService;
+  readonly config: AppConfigService;
+}
+
+const equipmentSchema = z.enum(['router', 'set_top_box', 'smart_speaker']);
+
+const reportDelaySchema = z.object({
+  /** Extra minutes needed, as the engineer states it. Never assumed or defaulted. */
+  minutes: z.number().int().positive().max(1_440),
+  note: z.string().trim().min(1).max(2_000),
+});
+type ReportDelayArgs = z.infer<typeof reportDelaySchema>;
+
+const reportMissingEquipmentSchema = z.object({
+  equipment: equipmentSchema,
+  note: z.string().trim().min(1).max(2_000),
+});
+type ReportMissingEquipmentArgs = z.infer<typeof reportMissingEquipmentSchema>;
+
+const reportCannotCompleteSchema = z.object({
+  reason: z.enum(['impossible', 'other']),
+  note: z.string().trim().min(1).max(2_000),
+});
+type ReportCannotCompleteArgs = z.infer<typeof reportCannotCompleteSchema>;
+
+const reportEtaSchema = z.object({
+  /** Local `HH:MM` arrival forecast, converted to Unix seconds on the server. */
+  etaLocal: localTimeSchema,
+});
+type ReportEtaArgs = z.infer<typeof reportEtaSchema>;
+
+const emptySchema = z.object({});
+
+const changeStatusSchema = z.object({
+  /** `1` to go online, `0` to go offline. Not a boolean: this mirrors the two states the
+   *  underlying `Availability` enum actually has, with no third value to invent. */
+  status: z.union([z.literal(0), z.literal(1)]),
+});
+type ChangeStatusArgs = z.infer<typeof changeStatusSchema>;
+
+/** The engineer's nearest current visit, resolved from the trusted session -- never a
+ *  `requestId` argument a model could supply. */
+async function currentRequestId(live: LiveService, engineerId: string): Promise<string> {
+  const view = await live.engineerView(engineerId);
+  const requestId = view.current?.request.id;
+  if (!requestId) {
+    throw new SysError('VALIDATION_FAILED', 'There is no current visit to report against');
+  }
+  return requestId;
+}
+
+/** True while the dispatcher-controlled LIVE workday is running: engineer availability
+ *  then goes through `live.engineer.*` actions instead of the legacy availability
+ *  endpoint (`LiveService.assertLegacyMutationAllowed`'s own doc comment). */
+async function liveWorkdayRunning(live: LiveService): Promise<boolean> {
+  try {
+    await live.assertLegacyMutationAllowed();
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+/** Every tool in this catalogue acts on the signed-in engineer; a profile that reached
+ *  here without one resolved is a dispatcher bug upstream, not a business refusal. */
+function requireEngineerId(ctx: ToolContext): string {
+  if (!ctx.engineerId) {
+    throw new SysError('VALIDATION_FAILED', 'This tool requires a signed-in engineer');
+  }
+  return ctx.engineerId;
+}
+
+function prepared(
+  operationId: string,
+  state: string,
+  preview: unknown,
+  summary: string,
+): ToolResult {
+  return {
+    ok: true,
+    summary,
+    resultContent: JSON.stringify({ operation_id: operationId, state, preview }),
+  };
+}
+
+/**
+ * The engineer catalogue: one tool per `liveActionSchema` member an assistant may use, so
+ * an invalid combination (e.g. a delay outside a visit) is unrepresentable at the schema
+ * boundary and caught again, defensively, by `ai-action.catalog.ts`'s own precheck.
+ *
+ * Deliberately missing `start_visit`/`finish_visit`: factual marks stay buttons in the
+ * Engineer App by an explicit product decision (context/35 section 4.2); giving them to
+ * the assistant needs a separate decision this change does not make.
+ */
+export function buildEngineerTools(deps: EngineerToolDeps): readonly ToolSpec[] {
+  const reportDelay: ToolSpec<ReportDelayArgs> = {
+    name: 'report_delay',
+    description:
+      'Report that the current visit needs extra time. Only while the visit is already ' +
+      'in progress -- ask the engineer for the visit to be started first otherwise.',
+    schema: reportDelaySchema,
+    async run(ctx, args) {
+      const engineerId = requireEngineerId(ctx);
+      const requestId = await currentRequestId(deps.live, engineerId);
+      const view = await deps.live.engineerView(engineerId);
+      if (view.current?.phase !== 'in_progress') {
+        throw new SysError(
+          'VALIDATION_FAILED',
+          'Report additional time only while the visit is in progress',
+        );
+      }
+      const op = await deps.aiOperations.prepare({
+        actor: ctx.actor,
+        accountId: ctx.accountId,
+        conversationId: ctx.conversationId,
+        runId: ctx.runId,
+        action: 'live.engineer.problem',
+        targetRef: engineerId,
+        payload: {
+          requestId,
+          problemKind: 'delay',
+          note: args.note,
+          additionalDurationSec: args.minutes * 60,
+        },
+      });
+      return prepared(op.operationId, op.state, op.preview, 'Prepared a delay report');
+    },
+  };
+
+  const reportMissingEquipment: ToolSpec<ReportMissingEquipmentArgs> = {
+    name: 'report_missing_equipment',
+    description: 'Report that the current visit is blocked by missing equipment.',
+    schema: reportMissingEquipmentSchema,
+    async run(ctx, args) {
+      const engineerId = requireEngineerId(ctx);
+      const requestId = await currentRequestId(deps.live, engineerId);
+      const op = await deps.aiOperations.prepare({
+        actor: ctx.actor,
+        accountId: ctx.accountId,
+        conversationId: ctx.conversationId,
+        runId: ctx.runId,
+        action: 'live.engineer.problem',
+        targetRef: engineerId,
+        payload: {
+          requestId,
+          problemKind: 'missing_equipment',
+          note: args.note,
+          missingEquipment: args.equipment,
+        },
+      });
+      return prepared(op.operationId, op.state, op.preview, 'Prepared a missing-equipment report');
+    },
+  };
+
+  const reportCannotComplete: ToolSpec<ReportCannotCompleteArgs> = {
+    name: 'report_cannot_complete',
+    description:
+      'Report that the current visit cannot be completed. This cancels the request; use ' +
+      'it only when the engineer says the work cannot be done.',
+    schema: reportCannotCompleteSchema,
+    async run(ctx, args) {
+      const engineerId = requireEngineerId(ctx);
+      const requestId = await currentRequestId(deps.live, engineerId);
+      const op = await deps.aiOperations.prepare({
+        actor: ctx.actor,
+        accountId: ctx.accountId,
+        conversationId: ctx.conversationId,
+        runId: ctx.runId,
+        action: 'live.engineer.problem',
+        targetRef: engineerId,
+        payload: { requestId, problemKind: args.reason, note: args.note },
+      });
+      return prepared(op.operationId, op.state, op.preview, 'Prepared a cannot-complete report');
+    },
+  };
+
+  const reportEta: ToolSpec<ReportEtaArgs> = {
+    name: 'report_eta',
+    description: "Report the engineer's forecast arrival time for the current visit.",
+    schema: reportEtaSchema,
+    async run(ctx, args) {
+      const engineerId = requireEngineerId(ctx);
+      const view = await deps.live.engineerView(engineerId);
+      const requestId = view.current?.request.id;
+      if (!requestId) {
+        throw new SysError('VALIDATION_FAILED', 'There is no current visit to report against');
+      }
+      const etaAt = localToUnixSeconds(
+        view.workday.workDate,
+        args.etaLocal,
+        deps.config.get('APP_TIME_ZONE'),
+      );
+      const op = await deps.aiOperations.prepare({
+        actor: ctx.actor,
+        accountId: ctx.accountId,
+        conversationId: ctx.conversationId,
+        runId: ctx.runId,
+        action: 'live.engineer.eta',
+        targetRef: engineerId,
+        payload: { requestId, etaAt },
+      });
+      return prepared(op.operationId, op.state, op.preview, 'Prepared an arrival forecast');
+    },
+  };
+
+  const confirmOnTime: ToolSpec = {
+    name: 'confirm_on_time',
+    description: 'Confirm the engineer will reach the current visit on time.',
+    schema: emptySchema,
+    async run(ctx) {
+      const engineerId = requireEngineerId(ctx);
+      const requestId = await currentRequestId(deps.live, engineerId);
+      const op = await deps.aiOperations.prepare({
+        actor: ctx.actor,
+        accountId: ctx.accountId,
+        conversationId: ctx.conversationId,
+        runId: ctx.runId,
+        action: 'live.engineer.on_time',
+        targetRef: engineerId,
+        payload: { requestId },
+      });
+      return prepared(op.operationId, op.state, op.preview, 'Prepared an on-time confirmation');
+    },
+  };
+
+  const startTechnicalBreak: ToolSpec = {
+    name: 'start_technical_break',
+    description: 'Start a technical break for the signed-in engineer.',
+    schema: emptySchema,
+    async run(ctx) {
+      const op = await deps.aiOperations.prepare({
+        actor: ctx.actor,
+        accountId: ctx.accountId,
+        conversationId: ctx.conversationId,
+        runId: ctx.runId,
+        action: 'live.engineer.break_start',
+        targetRef: requireEngineerId(ctx),
+        payload: {},
+      });
+      return prepared(op.operationId, op.state, op.preview, 'Prepared a technical break');
+    },
+  };
+
+  const finishTechnicalBreak: ToolSpec = {
+    name: 'finish_technical_break',
+    description: 'Finish the current technical break for the signed-in engineer.',
+    schema: emptySchema,
+    async run(ctx) {
+      const op = await deps.aiOperations.prepare({
+        actor: ctx.actor,
+        accountId: ctx.accountId,
+        conversationId: ctx.conversationId,
+        runId: ctx.runId,
+        action: 'live.engineer.break_finish',
+        targetRef: requireEngineerId(ctx),
+        payload: {},
+      });
+      return prepared(
+        op.operationId,
+        op.state,
+        op.preview,
+        'Prepared finishing the technical break',
+      );
+    },
+  };
+
+  const changeStatusTo: ToolSpec<ChangeStatusArgs> = {
+    name: 'change_status_to',
+    description:
+      '`status: 1` to go online, `status: 0` to go offline. While a LIVE workday is ' +
+      'running an engineer cannot go offline through this tool -- suggest a technical ' +
+      'break, or that the dispatcher takes the engineer offline.',
+    schema: changeStatusSchema,
+    async run(ctx, args) {
+      const running = await liveWorkdayRunning(deps.live);
+      if (running) {
+        if (args.status === 0) {
+          // No engineer-facing "go offline" exists while LIVE runs: `liveActionSchema`
+          // has no `offline` member, and only the dispatcher can set `no_show_offline`
+          // (`LiveService.setDispatcherAvailability`). Refusing honestly here, rather
+          // than inventing a third availability path, is a deliberate product gap this
+          // change reports rather than papers over.
+          throw new SysError(
+            'VALIDATION_FAILED',
+            'Cannot go offline while the workday is running. Take a technical break ' +
+              'instead, or ask the dispatcher to take you offline.',
+          );
+        }
+        const op = await deps.aiOperations.prepare({
+          actor: ctx.actor,
+          accountId: ctx.accountId,
+          conversationId: ctx.conversationId,
+          runId: ctx.runId,
+          action: 'live.engineer.online',
+          targetRef: requireEngineerId(ctx),
+          payload: {},
+        });
+        return prepared(op.operationId, op.state, op.preview, 'Prepared going online');
+      }
+      const op = await deps.aiOperations.prepare({
+        actor: ctx.actor,
+        accountId: ctx.accountId,
+        conversationId: ctx.conversationId,
+        runId: ctx.runId,
+        action: 'engineer.set_availability',
+        targetRef: requireEngineerId(ctx),
+        payload: { availability: args.status === 1 ? 'online' : 'offline' },
+      });
+      return prepared(op.operationId, op.state, op.preview, 'Prepared an availability change');
+    },
+  };
+
+  const getMyRoute: ToolSpec = {
+    name: 'get_my_route',
+    description: "Read the signed-in engineer's current LIVE route and current visit.",
+    schema: emptySchema,
+    async run(ctx) {
+      const view: EngineerLiveView = await deps.live.engineerView(requireEngineerId(ctx));
+      return {
+        ok: true,
+        summary: view.current
+          ? `Current visit: request ${view.current.request.id} (${view.current.phase})`
+          : 'No current visit',
+        resultContent: JSON.stringify({
+          workday: view.workday,
+          engineer: view.engineer,
+          route: view.route,
+          current: view.current,
+          lunch: view.lunch,
+        }),
+      };
+    },
+  };
+
+  return [
+    reportDelay,
+    reportMissingEquipment,
+    reportCannotComplete,
+    reportEta,
+    confirmOnTime,
+    startTechnicalBreak,
+    finishTechnicalBreak,
+    changeStatusTo,
+    getMyRoute,
+  ];
+}

@@ -3,7 +3,12 @@ import { AppConfigService } from '../common/config';
 import type { Env } from '../common/config/env.schema';
 import { HealthRegistry } from '../common/health';
 import { Clock } from '../common/time';
+import { EngineersModule } from '../orchestrator/engineers';
+import { LiveModule } from '../orchestrator/live';
+import { RequestsModule } from '../orchestrator/requests';
 import { AiHealthProbe } from './ai-health.probe';
+import { KnowledgeModule, KnowledgeService } from './knowledge';
+import { AiOperationService } from './operations';
 import {
   AgentsSdkProvider,
   createDeepseekClient,
@@ -17,12 +22,12 @@ import {
   AI_FALLBACK_PROVIDER,
   BudgetService,
   ConversationService,
-  NoopToolDispatcher,
   RunEventBus,
   RunRegistry,
   StopService,
   ToolDispatcher,
 } from './runtime';
+import { AiToolDispatcher, KnowledgeSearchPort, RoleProfileService, ToolRegistry } from './tools';
 
 type PrimaryProviderKind = Env['LLM_PROVIDER'];
 type FallbackProviderKind = Env['LLM_FALLBACK_PROVIDER'];
@@ -81,13 +86,24 @@ function buildFallbackProvider(
  * ROUTER-gateway: the configured provider kind selects a concrete implementation, and an
  * unconfigured deployment gets an honest `off` stand-in instead of a missing binding.
  *
+ * `RequestsModule`/`EngineersModule`/`LiveModule` are imported so the tool catalogues and
+ * the AI action catalogue (`src/ai/operations/ai-action.catalog.ts`) can call the exact
+ * same orchestrator services `ClientController`/`EngineerController` call -- never a
+ * second implementation of a business rule.
+ *
+ * `KnowledgeSearchPort` (src/ai/tools/knowledge-search.port.ts) is bound to the real
+ * `KnowledgeService` from `src/ai/knowledge/` -- a parallel piece of work this module
+ * only *consumes* through that port, the same way `ToolDispatcher` itself moved from
+ * `NoopToolDispatcher` to `AiToolDispatcher` in this change rather than being reimplemented
+ * here.
+ *
  * Global, because `LlmProvider`, the runtime services and `ToolDispatcher` are needed by
- * `src/api/ai.controller.ts` (a different module) and by whichever later module adds the
- * real tool catalogue -- the same reasoning `OperationsModule` and `RouterGatewayModule`
- * already apply to their own single, shared instances.
+ * `src/api/ai.controller.ts` (a different module) -- the same reasoning `OperationsModule`
+ * and `RouterGatewayModule` already apply to their own single, shared instances.
  */
 @Global()
 @Module({
+  imports: [RequestsModule, EngineersModule, LiveModule, KnowledgeModule],
   providers: [
     {
       provide: LlmProvider,
@@ -101,12 +117,16 @@ function buildFallbackProvider(
       useFactory: (config: AppConfigService, clock: Clock): LlmProvider | null =>
         buildFallbackProvider(config.get('LLM_FALLBACK_PROVIDER'), config, clock),
     },
-    { provide: ToolDispatcher, useClass: NoopToolDispatcher },
+    { provide: KnowledgeSearchPort, useExisting: KnowledgeService },
+    { provide: ToolDispatcher, useClass: AiToolDispatcher },
     RunRegistry,
     RunEventBus,
     ConversationService,
     BudgetService,
     StopService,
+    RoleProfileService,
+    AiOperationService,
+    ToolRegistry,
     AgentRuntimeService,
     AiHealthProbe,
   ],
@@ -119,6 +139,9 @@ function buildFallbackProvider(
     ConversationService,
     BudgetService,
     StopService,
+    RoleProfileService,
+    AiOperationService,
+    ToolRegistry,
     AgentRuntimeService,
   ],
 })

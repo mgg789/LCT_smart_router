@@ -16,6 +16,14 @@ export const APP_STATE_KEYS = {
    * (context/37 section 9.6).
    */
   GENERATION: 'generation',
+  /**
+   * The single dispatcher's current AI assist lane (`help` or `fix`, schema.prisma's own
+   * comment on `AiAssistMode`), read fresh by `RoleProfileService.forActor` at every
+   * confirm so a lane flip made after an operation was prepared is never missed
+   * (context/35 section 8). Global, not per-account, because this deployment has exactly
+   * one dispatcher (auth/actor.ts's comment on `ApiTokenCategory`).
+   */
+  AI_DISPATCHER_ASSIST_MODE: 'ai_dispatcher_assist_mode',
 } as const;
 
 export type AppStateKey = (typeof APP_STATE_KEYS)[keyof typeof APP_STATE_KEYS];

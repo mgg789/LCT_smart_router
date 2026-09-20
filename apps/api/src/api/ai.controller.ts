@@ -14,10 +14,13 @@ import {
 } from 'rxjs';
 import {
   AgentRuntimeService,
+  AiOperationService,
   type AiRunEvent,
   BudgetService,
   ConversationService,
   isTerminalAiEvent,
+  type OperationOutcomeView,
+  RoleProfileService,
   RunRegistry,
   StopService,
 } from '../ai';
@@ -26,7 +29,7 @@ import { AppConfigService } from '../common/config';
 import { SysError } from '../common/errors';
 import { Clock } from '../common/time';
 import { zodBody } from '../common/validation';
-import type { AiConversation, AiRoleProfile } from '../generated/prisma/client';
+import type { AiConversation } from '../generated/prisma/client';
 import { OperationsService } from '../operations';
 import { PrismaService } from '../persistence';
 import {
@@ -38,7 +41,9 @@ import {
 import {
   type AfterSeqQueryDto,
   afterSeqQuerySchema,
+  type ConfirmAiOperationDto,
   type CreateAiConversationDto,
+  confirmAiOperationSchema,
   createAiConversationSchema,
   type PostAiMessageDto,
   postAiMessageSchema,
@@ -78,6 +83,8 @@ export class AiController {
     private readonly stop: StopService,
     private readonly registry: RunRegistry,
     private readonly operations: OperationsService,
+    private readonly aiOperations: AiOperationService,
+    private readonly roleProfiles: RoleProfileService,
     private readonly prisma: PrismaService,
     private readonly clock: Clock,
     private readonly config: AppConfigService,
@@ -90,11 +97,18 @@ export class AiController {
     @Body(zodBody(createAiConversationSchema)) dto: CreateAiConversationDto,
   ): Promise<{ conversation: AiConversationView }> {
     const accountId = this.requireAccount(actor);
-    const roleProfile = this.roleProfileFor(actor, dto.assistMode);
     const role = effectiveRole(actor);
     if (!role) {
       throw SysError.forbidden('This actor has no role to open a conversation as');
     }
+    if (role === 'dispatcher' && dto.assistMode !== undefined) {
+      // The single dispatcher's lane is durable, not per-conversation (role-profile.ts's
+      // own note on why): an explicit `assistMode` moves it, and a plain open -- no
+      // `assistMode` -- leaves it exactly where it was, it does not reset it to `help`
+      // on every new tab.
+      await this.roleProfiles.setDispatcherAssistMode(dto.assistMode);
+    }
+    const roleProfile = await this.roleProfiles.forActor(actor);
     const conversation = await this.conversations.getOrCreate({
       accountId,
       role,
@@ -253,6 +267,30 @@ export class AiController {
     return { stopped: true };
   }
 
+  @Post('operations/:id/apply')
+  @ApiOperation({ summary: 'Confirm a prepared AI operation and apply it' })
+  async applyOperation(
+    @CurrentActor() actor: Actor,
+    @Param('id') id: string,
+    @Body(zodBody(confirmAiOperationSchema)) dto: ConfirmAiOperationDto,
+  ): Promise<OperationOutcomeView> {
+    this.requireAccount(actor);
+    return this.aiOperations.confirm({ actor, aiOperationId: id, operationId: dto.operationId });
+  }
+
+  @Post('operations/:id/cancel')
+  @ApiOperation({ summary: 'Withdraw a prepared AI operation before it is applied' })
+  async cancelOperation(
+    @CurrentActor() actor: Actor,
+    @Param('id') id: string,
+    // Validated for shape consistency with `apply`, even though cancelling never opens a
+    // second, independently-idempotent business write of its own.
+    @Body(zodBody(confirmAiOperationSchema)) _dto: ConfirmAiOperationDto,
+  ): Promise<OperationOutcomeView> {
+    this.requireAccount(actor);
+    return this.aiOperations.cancel({ actor, aiOperationId: id });
+  }
+
   /**
    * Replays the persisted tail of a run and then follows it live, without losing an
    * event produced in the gap between the two: the live subscription is opened *before*
@@ -319,17 +357,6 @@ export class AiController {
       );
     }
     return actor.accountId;
-  }
-
-  private roleProfileFor(actor: Actor, assistMode: 'help' | 'fix' | undefined): AiRoleProfile {
-    const role = effectiveRole(actor);
-    if (role === 'dispatcher') {
-      return assistMode === 'fix' ? 'dispatcher_fix' : 'dispatcher_readonly';
-    }
-    if (role === 'client' || role === 'engineer') {
-      return role;
-    }
-    throw SysError.forbidden('This actor has no role to open a conversation as');
   }
 
   private async assertOwned(actor: Actor, conversationId: string): Promise<AiConversation> {

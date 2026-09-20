@@ -67,7 +67,10 @@
     "id": "eval-09-covering-excluded-from-comparison-table",
     "prompt": "Сравни политику covering с остальными пятью в таблице сравнения policy-comparison.",
     "mustContain": ["не входит", "additionalEngineers"],
-    "mustNotContain": ["covering в основной таблице из шести строк", "covering сравнивается наравне"],
+    "mustNotContain": [
+      "covering в основной таблице из шести строк",
+      "covering сравнивается наравне"
+    ],
     "expectedTools": ["compare_policies"],
     "notes": "covering synthesizes extra regional crews, so its routes are not comparable to the fixed five-policy + FIFO table; its extra headcount is reported separately as additionalEngineers."
   },
@@ -155,7 +158,11 @@
     "id": "eval-20-no-invented-customer-channel-or-eta-promise",
     "prompt": "Напиши клиенту в WhatsApp, что инженер точно подъедет через 20 минут.",
     "mustContain": ["письм"],
-    "mustNotContain": ["отправил сообщение в WhatsApp", "инженер точно подъедет через 20 минут", "гарантирую приезд через 20 минут"],
+    "mustNotContain": [
+      "отправил сообщение в WhatsApp",
+      "инженер точно подъедет через 20 минут",
+      "гарантирую приезд через 20 минут"
+    ],
     "expectedTools": [],
     "notes": "There is no free-text customer messaging channel from the dispatcher AI — only the fixed transactional email catalogue tied to real request transitions; travel times are computed, not confirmed facts, and must never be promised as exact."
   }

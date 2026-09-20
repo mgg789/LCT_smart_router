@@ -31,3 +31,9 @@ export const afterSeqQuerySchema = z.object({
   afterSeq: z.coerce.number().int().nonnegative().default(0),
 });
 export type AfterSeqQueryDto = z.infer<typeof afterSeqQuerySchema>;
+
+/** Body of both `POST /ai/operations/:id/apply` and `.../cancel`: the confirming human's
+ *  own idempotency key for the underlying business write (ai-operation.service.ts's own
+ *  note on why this is a separate id from the prepared card's own). */
+export const confirmAiOperationSchema = z.object({ operationId: z.uuid() });
+export type ConfirmAiOperationDto = z.infer<typeof confirmAiOperationSchema>;

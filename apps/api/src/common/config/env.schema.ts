@@ -157,6 +157,9 @@ export const envSchema = z.object({
   AI_UNITS_PER_1K_COMPLETION_MICROS: z.coerce.number().int().nonnegative().default(8_000),
   /** Reserved before a run's real usage is known; refunded down to the settled amount. */
   AI_RUN_ESTIMATE_MICROS: z.coerce.number().int().positive().default(20_000),
+  /** How long a prepared operation card waits for a human's explicit confirm/cancel
+   *  before it expires on its own (src/ai/operations/ai-operation.service.ts). */
+  AI_OPERATION_TTL_SEC: z.coerce.number().int().positive().default(900),
   AI_REPLAY_DIR: z.string().min(1).default('apps/api/test/fixtures/ai'),
   /** Forces one fixture regardless of the last user message; unset lets replay pick by hash. */
   AI_REPLAY_SCENARIO: z.string().min(1).optional(),

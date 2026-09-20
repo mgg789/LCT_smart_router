@@ -327,6 +327,19 @@ export interface EngineerAuthSession {
   readonly expiresAt: number;
 }
 
+export interface ClientAuthSession {
+  readonly token: string;
+  readonly role: 'client';
+  readonly expiresAt: number;
+}
+
+/** One type of work the Client App lets a customer pick; the skill and duration follow
+ * from it server-side and are never typed by the customer. */
+export interface ClientWorkType {
+  readonly code: string;
+  readonly title: string;
+}
+
 export interface EngineerPlanResponse {
   readonly planAsOf: number | null;
   readonly origin: 'auto' | 'manual' | null;

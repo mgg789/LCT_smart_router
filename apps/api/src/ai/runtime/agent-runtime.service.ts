@@ -15,6 +15,7 @@ import {
   type RetryRunResult,
   runProviderTurn,
 } from '../provider';
+import { ToolRegistry } from '../tools/tool.registry';
 import type { AiRunEvent, AiRunState } from './ai-event.types';
 import { type BudgetReservation, BudgetService } from './budget.service';
 import { ConversationService } from './conversation.service';
@@ -54,11 +55,10 @@ export interface StartRunResult {
  * this contract (a `POST` and an `@Sse()` `GET`), and the SSE transport is what is
  * required to never error (ai-event.types.ts); the `POST` handler is not it.
  *
- * Tool execution is deliberately not implemented here: `ToolDispatcher` is a seam a later
- * piece of work fills in with the real catalogue and the prepare/confirm spine. Passing
- * an empty tool list keeps this loop exercising the full turn/tool-call/tool-result shape
- * end to end today, against `NoopToolDispatcher`, without inventing business behaviour
- * that belongs to that later change.
+ * Tool execution itself is not implemented here: `ToolDispatcher` is the seam
+ * `AiToolDispatcher` (src/ai/tools/ai-tool.dispatcher.ts) plugs into, and `ToolRegistry`
+ * is this loop's only source for which tools a turn may even offer -- this class stays a
+ * turn/tool-call/tool-result loop and never itself decides which tools exist.
  */
 @Injectable()
 export class AgentRuntimeService implements OnModuleInit {
@@ -77,6 +77,7 @@ export class AgentRuntimeService implements OnModuleInit {
     private readonly provider: LlmProvider,
     @Inject(AI_FALLBACK_PROVIDER) private readonly fallbackProvider: LlmProvider | null,
     private readonly toolDispatcher: ToolDispatcher,
+    private readonly toolRegistry: ToolRegistry,
   ) {}
 
   /**
@@ -202,10 +203,10 @@ export class AgentRuntimeService implements OnModuleInit {
     const maxOutputTokens = this.config.get('LLM_MAX_OUTPUT_TOKENS');
     const maxAttempts = this.config.get('LLM_MAX_ATTEMPTS');
     const maxToolSteps = this.config.get('LLM_MAX_TOOL_STEPS');
-    // The tool catalogue is a later piece of work; an empty list keeps this loop's shape
-    // (turn -> tool_call -> dispatch -> tool_result -> next turn) real and testable
-    // without the runtime inventing which tools exist.
-    const tools: LlmToolSpec[] = [];
+    // This conversation's lane decides which tools the model is even offered --
+    // `ToolRegistry.catalogueFor` is the single source of truth `AiToolDispatcher` also
+    // consults when a call actually comes back.
+    const tools: LlmToolSpec[] = this.toolRegistry.llmSpecsFor(conversation.roleProfile);
 
     let messages: LlmMessage[] = await this.conversations.historyWindow(
       conversation.id,

@@ -11,6 +11,7 @@ import {
   type AiQuota,
   type AiRoleProfile,
   type AiRunState,
+  type AiStreamOutcome,
   applyAiOperation,
   cancelAiOperation,
   createAiConversation,
@@ -61,6 +62,10 @@ export interface UseAssistantChatOptions {
   readonly surface: AssistantSurface;
   readonly contextRef?: unknown;
   readonly assistMode?: AiAssistMode;
+  /** Fires for every SSE frame exactly as it arrived off the wire, including
+   * `message_delta` and parse failures -- before the generation check below can drop a
+   * stale one. Used only by the `/ai-lab` raw event log; ordinary surfaces leave it unset. */
+  readonly onRawEvent?: (outcome: AiStreamOutcome) => void;
 }
 
 export interface UseAssistantChatResult {
@@ -169,6 +174,7 @@ export function useAssistantChat({
   surface,
   contextRef,
   assistMode,
+  onRawEvent,
 }: UseAssistantChatOptions): UseAssistantChatResult {
   const [conversation, setConversation] = useState<AiConversation | null>(null);
   const [messages, setMessages] = useState<AssistantChatMessage[]>([]);
@@ -194,6 +200,8 @@ export function useAssistantChat({
   // contextRef's *value* (see storageKey).
   const contextRefLatest = useRef(contextRef);
   contextRefLatest.current = contextRef;
+  const onRawEventRef = useRef(onRawEvent);
+  onRawEventRef.current = onRawEvent;
 
   const key = storageKey(surface, contextRef);
 
@@ -245,6 +253,7 @@ export function useAssistantChat({
         token ?? '',
         afterSeq,
         (outcome) => {
+          onRawEventRef.current?.(outcome);
           if (generation !== generationRef.current) return;
           if (!outcome.ok) {
             setError(outcome.error.message);

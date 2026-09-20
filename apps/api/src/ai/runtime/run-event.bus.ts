@@ -63,4 +63,36 @@ export class RunEventBus {
   forget(runId: string): void {
     this.counters.delete(runId);
   }
+
+  /**
+   * Persists an event for a run this process is not driving -- there is no `RunHandle`
+   * to multicast on, because `AiOperationService.confirm`/`cancel`/`expire` react to a
+   * prepared operation strictly after the run that prepared it already produced its own
+   * `run_finished` (a separate later HTTP request, not a continuation of the run loop).
+   *
+   * The sequence number therefore cannot come from {@link emit}'s in-memory counter --
+   * nothing guarantees this process is the one that drove the run, or that the counter
+   * was ever populated here -- so it is advanced atomically in the database instead, the
+   * same `UPDATE ... RETURNING` shape `budget.service.ts` uses for its own reservation.
+   */
+  async emitForRun(runId: string, event: AiRunEventInput): Promise<AiRunEvent | null> {
+    const now = this.clock.nowSeconds();
+    const rows = await this.prisma.$queryRaw<Array<{ last_event_seq: number }>>`
+      UPDATE ai_runs SET last_event_seq = last_event_seq + 1 WHERE id = ${runId}
+      RETURNING last_event_seq
+    `;
+    const seq = rows[0]?.last_event_seq;
+    if (seq === undefined) {
+      // The run row is gone (its conversation was deleted); there is nothing left to
+      // attach this event to. Not the caller's fault, so this is a no-op, not a throw.
+      return null;
+    }
+    const full = { ...event, seq, at: now } as AiRunEvent;
+    if (PERSISTED_AI_EVENT_TYPES.has(full.type)) {
+      await this.prisma.aiRunEvent.create({
+        data: { runId, seq, type: full.type, payload: full as object, createdAt: BigInt(now) },
+      });
+    }
+    return full;
+  }
 }
