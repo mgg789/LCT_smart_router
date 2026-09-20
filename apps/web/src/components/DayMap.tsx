@@ -7,6 +7,7 @@ import {
   type LiveGraphNode,
   type LiveGraphProjection,
   projectLiveGraph,
+  withoutMapLunch,
 } from '../domain/liveGraph';
 import { localMapStyle } from '../domain/localBasemap';
 import { ONLINE_MAP_STYLE, watchMapStartup } from '../domain/mapAvailability';
@@ -60,12 +61,8 @@ export interface LiveProgressSegment {
 export function liveProgressPosition(
   progress: LiveRouteProgress,
 ): { readonly lat: number; readonly lon: number } | null {
-  if (progress.phase !== 'traveling' || !progress.next) return null;
-  const [from, to] = progress.lunch
-    ? progress.occurredAt < progress.lunch.at
-      ? [progress.anchor, progress.lunch]
-      : [progress.lunch, progress.next]
-    : [progress.anchor, progress.next];
+  if (!['traveling', 'lunch'].includes(progress.phase) || !progress.next) return null;
+  const [from, to] = [progress.anchor, progress.next];
   const span = Math.max(1, to.at - from.at);
   const ratio = Math.min(1, Math.max(0, (progress.occurredAt - from.at) / span));
   return {
@@ -159,25 +156,23 @@ function hasCoordinate(
 
 /**
  * Projects the factual part of a LIVE route. A completed job remains the edge
- * anchor until the next job is explicitly started; lunch is a two-leg span.
+ * anchor until the next job is explicitly started; lunch is collapsed out of the map.
  */
 export function liveProgressSegments(progress: LiveRouteProgress): readonly LiveProgressSegment[] {
-  return projectLiveGraph(null, progress).activeSegments.map((segment) => ({
+  return withoutMapLunch(projectLiveGraph(null, progress)).activeSegments.map((segment) => ({
     from: pointWithoutProjectionFields(segment.from),
     to: pointWithoutProjectionFields(segment.to),
   }));
 }
 
-/** Current factual vertices: job anchor and the lunch point while lunch is active. */
+/** Current factual map vertex: the last reached job, never a separate lunch point. */
 export function liveProgressPoints(
   progress: LiveRouteProgress,
 ): readonly LiveRouteProgress['anchor'][] {
-  const graph = projectLiveGraph(null, progress);
+  const graph = withoutMapLunch(projectLiveGraph(null, progress));
   return graph.mapNodes
-    .filter((node) =>
-      node.kind === progress.anchor.kind && node.requestId === progress.anchor.requestId
-        ? true
-        : progress.lunch !== null && node.kind === 'lunch',
+    .filter(
+      (node) => node.kind === progress.anchor.kind && node.requestId === progress.anchor.requestId,
     )
     .map(pointWithoutProjectionFields);
 }
@@ -312,7 +307,7 @@ export function DayMap({
           engineerId,
           route,
           progress,
-          graph: projectLiveGraph(route, progress, visibleRequestIds),
+          graph: withoutMapLunch(projectLiveGraph(route, progress, visibleRequestIds)),
         };
       });
       const viewingUnassigned = unassignedRequests(snapshot).some(

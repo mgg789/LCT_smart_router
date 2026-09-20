@@ -512,14 +512,15 @@ export function EngineerApp({
                 >
                   <p className="font-semibold text-figma-ink" style={{ fontSize: eu(24) }}>
                     {live?.engineer.routeState === 'awaiting_plan'
-                      ? 'Ожидаем новый маршрут'
+                      ? 'Ожидаем новые заявки'
                       : 'На сегодня все заявки пройдены'}
                   </p>
                   <p
                     className="font-medium text-figma-muted"
                     style={{ marginTop: eu(8), fontSize: eu(18) }}
                   >
-                    Когда диспетчер применит план, список появится здесь.
+                    До 17:00 остаёмся на связи. День завершится, когда у всех инженеров закончится
+                    работа и будут разрешены алерты.
                   </p>
                 </div>
               ) : null}

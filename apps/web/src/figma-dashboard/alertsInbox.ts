@@ -69,7 +69,22 @@ export function inboxFromSources(
 ): { alerts: InboxAlertCard[]; notices: InboxNoticeCard[] } {
   const snapshotAlerts = snapshot?.alerts ?? [];
   const openAlerts = snapshotAlerts.filter(
-    (alert) => alert.kind !== 'notice' && alert.resolvedAt === null,
+    (alert) =>
+      alert.kind !== 'notice' &&
+      alert.resolvedAt === null &&
+      // Independent dashboard reads can straddle an assignment transaction.
+      // Never offer an obsolete unassigned action for already assigned work.
+      !(
+        alert.code === 'unassigned' &&
+        alert.requestIds.length > 0 &&
+        snapshot &&
+        alert.requestIds.every((id) => {
+          const request = requestById(snapshot, id);
+          return (
+            request && (request.assignmentState === 'assigned' || request.lifecycle !== 'submitted')
+          );
+        })
+      ),
   );
   const openNotices = snapshotAlerts.filter(
     (alert) => alert.kind === 'notice' && alert.seenAt === null,
@@ -77,14 +92,16 @@ export function inboxFromSources(
   const sourceToasts =
     demoMode && snapshot === null && toasts.length === 0 ? demoInboxToasts() : toasts;
   const covered = new Set(snapshotAlerts.map((alert) => `alert:${alert.id}`));
-  const alerts = sortByArrival([
+  const alerts = [
     ...(snapshot ? openAlerts.map((alert) => alertCardFromSnapshot(snapshot, alert)) : []),
     ...sourceToasts
       .filter(
         (toast) => snapshot === null && isInboxAlertKind(toast.kind) && !covered.has(toast.id),
       )
       .map(alertCardFromToast),
-  ]);
+  ].sort(
+    (a, b) => arrivalSeconds(a.createdAt) - arrivalSeconds(b.createdAt) || a.id.localeCompare(b.id),
+  );
   const notices = sortByArrival([
     ...openNotices.map((notice) => ({
       id: `alert:${notice.id}`,

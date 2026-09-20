@@ -26,6 +26,7 @@ describe('dispatcher alert lifecycle', () => {
   const requestIds: string[] = [];
   const engineerIds: string[] = [];
   const accountIds: string[] = [];
+  const liveDayIds: string[] = [];
   const actor: Actor = {
     kind: 'account',
     source: 'ui',
@@ -56,6 +57,7 @@ describe('dispatcher alert lifecycle', () => {
     alerts = app.get(AlertsService);
   });
   after(async () => {
+    await prisma.liveWorkday.deleteMany({ where: { id: { in: liveDayIds } } });
     await prisma.shiftClosure.deleteMany({ where: { workDate: date } });
     await prisma.alert.deleteMany({ where: { id: { in: ids } } });
     await prisma.alert.deleteMany({
@@ -174,8 +176,22 @@ describe('dispatcher alert lifecycle', () => {
     assert.equal(row.resolutionDelaySec === null, false);
   });
 
-  it('moves the actual request window once even with concurrent distinct operation ids', async () => {
+  it('defers free LIVE work once without publishing a replacement plan, even with concurrent retries', async () => {
     const now = Math.floor(Date.now() / 1000);
+    const day = await prisma.liveWorkday.create({
+      data: {
+        generation: 998,
+        workDate: new Date((now + 10800) * 1000).toISOString().slice(0, 10),
+        status: 'running',
+        logicalStartAt: BigInt(now),
+        logicalEndAt: BigInt(now + 3600),
+        startedAtWallSec: BigInt(now),
+        createdAt: BigInt(now),
+        updatedAt: BigInt(now),
+      },
+    });
+    liveDayIds.push(day.id);
+    const publicationsBefore = await prisma.routingSnapshot.count();
     const request = await prisma.request.create({
       data: {
         arrivalOrder: 991,
@@ -228,12 +244,107 @@ describe('dispatcher alert lifecycle', () => {
     await Promise.all([invoke(), invoke()]);
     const changed = await prisma.request.findUniqueOrThrow({ where: { id: request.id } });
     assert.equal(changed.windowStartAt, request.windowStartAt + 86400n);
+    assert.equal(await prisma.routingSnapshot.count(), publicationsBefore);
     assert.equal(
       await prisma.requestConditionHistory.count({ where: { requestId: request.id } }),
       1,
     );
     await prisma.request.update({ where: { id: request.id }, data: { lifecycle: 'cancelled' } });
     await alerts.refreshAll();
+    await prisma.liveWorkday.delete({ where: { id: day.id } });
+  });
+
+  it('keeps one unassigned episode across polling and closes both sources after assignment', async () => {
+    const now = BigInt(Math.floor(Date.now() / 1000));
+    const request = await prisma.request.create({
+      data: {
+        arrivalOrder: 993,
+        addressText: 'Stable alert regression',
+        lat: 55.75,
+        lon: 37.6,
+        needsGeocoding: false,
+        normProfileCode: 'local',
+        normativeTravelDurationSec: 600,
+        technicalDurationSec: 600,
+        documentationDurationSec: 300,
+        serviceDurationSec: 900,
+        windowStartAt: now,
+        windowEndAt: now + 3600n,
+        requiredSkill: 'local',
+        lifecycle: 'submitted',
+        assignmentState: 'unassigned',
+        origin: 'manual',
+        createdAt: now,
+        updatedAt: now,
+      },
+    });
+    requestIds.push(request.id);
+    await alerts.refreshAll();
+    const first = await prisma.alert.findFirstOrThrow({
+      where: {
+        requestIds: { has: request.id },
+        code: 'unassigned',
+        resolvedAt: null,
+      },
+    });
+    await alerts.refreshAll();
+    await alerts.refreshAll();
+    const open = await prisma.alert.findMany({
+      where: {
+        requestIds: { has: request.id },
+        code: 'unassigned',
+        resolvedAt: null,
+      },
+    });
+    assert.deepEqual(
+      open.map((item) => item.id),
+      [first.id],
+    );
+    // A Router episode for the exact same request is reused without adding
+    // another system card on every refresh.
+    await prisma.alert.update({
+      where: { id: first.id },
+      data: {
+        dedupKey: `router:unassigned:${request.id}`,
+      },
+    });
+    await alerts.refreshAll();
+    assert.equal(
+      await prisma.alert.count({
+        where: {
+          requestIds: { has: request.id },
+          resolvedAt: null,
+        },
+      }),
+      1,
+    );
+    await prisma.alert.create({
+      data: {
+        dedupKey: `system:unassigned:legacy:${request.id}`,
+        code: 'unassigned',
+        severity: 'error',
+        requestIds: [request.id],
+        engineerIds: [],
+        reasons: {},
+        createdAt: now,
+      },
+    });
+    await prisma.request.update({
+      where: { id: request.id },
+      data: { assignmentState: 'assigned' },
+    });
+    await alerts.refreshAll();
+    assert.equal(
+      await prisma.alert.count({
+        where: {
+          requestIds: { has: request.id },
+          code: 'unassigned',
+          resolvedAt: null,
+        },
+      }),
+      0,
+    );
+    assert.equal(await prisma.alert.count({ where: { requestIds: { has: request.id } } }), 2);
   });
 
   it('tracks no-show without email once and honours opt-out and an explicit extension', async () => {

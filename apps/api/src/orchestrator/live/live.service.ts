@@ -587,6 +587,7 @@ export class LiveService {
     const logicalStartAt = starts.length > 0 ? Math.min(...starts) : wallNow;
     const logicalEndAt = Math.max(
       logicalStartAt + 1,
+      Date.parse(`${workDate}T17:00:00+03:00`) / 1000,
       ...(ends.length > 0 ? ends : [logicalStartAt + 8 * 3600]),
     );
     if (existing) {
@@ -808,7 +809,6 @@ export class LiveService {
           current.route,
           liveNow,
         );
-        const viableDemand = await this.hasViableDemand(tx, day.id, liveNow);
         const routeState =
           day.status === 'finished'
             ? 'exhausted'
@@ -817,9 +817,7 @@ export class LiveService {
               : current.current ||
                   current.route?.stops.some((stop) => stop.kind === 'job' && stop.endAt >= liveNow)
                 ? 'active'
-                : viableDemand
-                  ? 'awaiting_plan'
-                  : 'exhausted';
+                : 'awaiting_plan';
         const lunchDay = rows.find((row) => row.engineerId === state.engineerId);
         return {
           id: state.engineerId,
@@ -925,25 +923,6 @@ export class LiveService {
             Number(day.logicalStartAt),
         };
       }),
-    );
-  }
-
-  /** Returns only demand that can still finish inside the LIVE ten-minute window grace. */
-  private async hasViableDemand(tx: Tx, workdayId: string, liveNow: number): Promise<boolean> {
-    const candidates = await tx.request.findMany({
-      where: {
-        lifecycle: 'submitted',
-        windowEndAt: { gte: BigInt(liveNow - WINDOW_COMPLETION_GRACE_SEC) },
-        liveStates: {
-          none: { workdayId, assumedCompletedAt: { not: null } },
-        },
-      },
-      select: { windowEndAt: true, serviceDurationSec: true },
-    });
-    return candidates.some(
-      (candidate) =>
-        liveNow + candidate.serviceDurationSec <=
-        Number(candidate.windowEndAt) + WINDOW_COMPLETION_GRACE_SEC,
     );
   }
 
@@ -2127,8 +2106,32 @@ export class LiveService {
         Number(item.lunchStartedAt) <= liveNow &&
         liveNow < Number(item.lunchStartedAt) + item.lunchDurationSec,
     );
-    const viableDemand = await this.hasViableDemand(tx, day.id, liveNow);
-    for (const route of plan?.routes ?? []) {
+    const dayStart = Date.parse(`${day.workDate}T00:00:00+03:00`) / 1000;
+    const pendingToday = await tx.request.count({
+      where: {
+        lifecycle: 'submitted',
+        windowStartAt: { lt: BigInt(dayStart + 86_400) },
+        windowEndAt: { gte: BigInt(dayStart) },
+        liveStates: { none: { workdayId: day.id, assumedCompletedAt: { not: null } } },
+      },
+    });
+    const unresolved = await tx.alert.count({
+      where: {
+        kind: 'alert',
+        isBlocking: true,
+        resolvedAt: null,
+        invalidatedAt: null,
+        OR: [{ workDate: day.workDate }, { workDate: null }],
+      },
+    });
+    const canFinish =
+      liveNow >= dayStart + 17 * 3600 &&
+      unfinished === 0 &&
+      pendingToday === 0 &&
+      unresolved === 0 &&
+      technicalBreak === 0 &&
+      !activeLunch;
+    for (const route of canFinish ? (plan?.routes ?? []) : []) {
       const line = await tx.liveEngineerState.findUnique({
         where: { workdayId_engineerId: { workdayId: day.id, engineerId: route.engineerId } },
         include: { engineer: true },
@@ -2161,12 +2164,7 @@ export class LiveService {
         },
       });
     }
-    if (
-      unfinished === 0 &&
-      technicalBreak === 0 &&
-      !activeLunch &&
-      (!viableDemand || liveNow >= Number(day.logicalEndAt))
-    ) {
+    if (canFinish) {
       await tx.liveWorkday.update({
         where: { id: day.id, status: 'running' },
         data: {

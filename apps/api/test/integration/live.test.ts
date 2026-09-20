@@ -1413,7 +1413,7 @@ describe('LIVE workday', () => {
     );
   });
 
-  it('finishes the day when no submitted request can still be served', async () => {
+  it('waits until 17:00 and all current-day work and alerts are cleared, ignoring tomorrow', async () => {
     const engineer = await liveCreateEngineer();
     const submitted = await prisma.request.findMany({
       where: { lifecycle: 'submitted' },
@@ -1452,8 +1452,60 @@ describe('LIVE workday', () => {
     });
     try {
       await liveStart();
-
-      const response = await call('GET', '/api/v1/engineer/live', engineer.token);
+      const initial = await liveView(engineer.token);
+      let response = await call('GET', '/api/v1/engineer/live', engineer.token);
+      assert.equal(
+        ((await response.json()) as { workday: { status: string } }).workday.status,
+        'running',
+      );
+      const pending = await liveCreateRequest();
+      const alert = await prisma.alert.create({
+        data: {
+          code: 'plan_degraded',
+          severity: 'warning',
+          workDate: workDate(),
+          engineerIds: [],
+          requestIds: [],
+          reasons: {},
+          isBlocking: true,
+          createdAt: BigInt(now()),
+        },
+      });
+      const cutoff = Date.parse(`${workDate()}T17:00:00+03:00`) / 1000;
+      await liveSetLogicalNow(
+        initial.workday.id,
+        initial.workday.logicalStartAt,
+        initial.workday.logicalEndAt,
+        cutoff,
+        initial.workday.speedDurationSec,
+      );
+      response = await call('GET', '/api/v1/engineer/live', engineer.token);
+      assert.equal(
+        ((await response.json()) as { workday: { status: string } }).workday.status,
+        'running',
+        'new submitted work blocks finish',
+      );
+      await prisma.request.update({
+        where: { id: pending.id },
+        data: {
+          windowStartAt: BigInt(cutoff + 86400),
+          windowEndAt: BigInt(cutoff + 90000),
+        },
+      });
+      response = await call('GET', '/api/v1/engineer/live', engineer.token);
+      assert.equal(
+        ((await response.json()) as { workday: { status: string } }).workday.status,
+        'running',
+        'unresolved alert blocks finish',
+      );
+      await prisma.alert.delete({ where: { id: alert.id } });
+      // Earlier scenarios may retain unrelated alert history; only open current-day
+      // blockers are cleared here in the isolated test database.
+      await prisma.alert.updateMany({
+        where: { resolvedAt: null, isBlocking: true },
+        data: { resolvedAt: BigInt(cutoff), invalidatedAt: BigInt(cutoff) },
+      });
+      response = await call('GET', '/api/v1/engineer/live', engineer.token);
       assert.equal(response.status, 200, await response.clone().text());
       const view = (await response.json()) as {
         workday: {
@@ -1464,7 +1516,9 @@ describe('LIVE workday', () => {
         };
       };
       assert.equal(view.workday.status, 'finished');
-      assert.equal(view.workday.completionReason, 'schedule_exhausted');
+      assert.ok(
+        ['schedule_exhausted', 'logical_end'].includes(view.workday.completionReason ?? ''),
+      );
       assert.ok(view.workday.finishedAt);
       assert.equal(view.workday.liveNow, view.workday.finishedAt);
     } finally {

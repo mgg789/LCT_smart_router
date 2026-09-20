@@ -135,24 +135,37 @@ function ExplainedAction({
   const anchor = useRef<HTMLFieldSetElement>(null);
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(
     () => () => {
       if (hideTimer.current) clearTimeout(hideTimer.current);
+      if (showTimer.current) clearTimeout(showTimer.current);
     },
     [],
   );
   function hide() {
+    if (showTimer.current) clearTimeout(showTimer.current);
+    showTimer.current = null;
     if (hideTimer.current) clearTimeout(hideTimer.current);
     hideTimer.current = setTimeout(() => setPosition(null), 150);
   }
   function show() {
     if (hideTimer.current) clearTimeout(hideTimer.current);
-    const rect = anchor.current?.getBoundingClientRect();
-    if (rect)
-      setPosition({
-        left: Math.max(8, Math.min(rect.left, window.innerWidth - 368)),
-        top: Math.max(8, Math.min(rect.bottom + 8, window.innerHeight - 300)),
-      });
+    if (showTimer.current || position) return;
+    showTimer.current = setTimeout(() => {
+      showTimer.current = null;
+      const rect = anchor.current?.getBoundingClientRect();
+      if (rect)
+        setPosition({
+          left: Math.max(8, Math.min(rect.left, window.innerWidth - 368)),
+          top: Math.max(8, Math.min(rect.bottom + 8, window.innerHeight - 300)),
+        });
+    }, 700);
+  }
+  function dismiss() {
+    if (showTimer.current) clearTimeout(showTimer.current);
+    showTimer.current = null;
+    setPosition(null);
   }
   return (
     <fieldset
@@ -164,12 +177,21 @@ function ExplainedAction({
       onMouseEnter={show}
       onMouseLeave={hide}
       onFocus={show}
-      onBlur={() => setPosition(null)}
+      onBlur={dismiss}
+      onPointerDown={dismiss}
       onKeyDown={(event) => {
-        if (event.key === 'Escape') setPosition(null);
+        if (event.key === 'Escape') dismiss();
       }}
     >
-      <InboxButton variant={spec.tone} disabled={disabled} describedBy={id} onClick={onClick}>
+      <InboxButton
+        variant={spec.tone}
+        disabled={disabled}
+        describedBy={id}
+        onClick={() => {
+          dismiss();
+          onClick?.();
+        }}
+      >
         <Icon size={22} strokeWidth={1.8} aria-hidden="true" className="mr-[10px] shrink-0" />
         {spec.label}
       </InboxButton>

@@ -9,7 +9,13 @@ import { Clock } from '../../common/time';
 import { Prisma } from '../../generated/prisma/client';
 import { NotificationsService } from '../../notifications';
 import type { OperationContext } from '../../operations';
-import { lockAlertQueue, PrismaService, type Tx, UnitOfWork } from '../../persistence';
+import {
+  lockAlertQueue,
+  lockRoutingCurrent,
+  PrismaService,
+  type Tx,
+  UnitOfWork,
+} from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import { RouterClient } from '../../routing/router-gateway/router-client.port';
 import {
@@ -537,6 +543,7 @@ export class AlertsService {
     const engineerId = input.engineerId ?? alert.engineerIds[0];
     if (input.action === 'reschedule' || input.action === 'move_window') {
       if (!requestId) throw new SysError('VALIDATION_FAILED', 'This alert names no request');
+      await lockRoutingCurrent(context.tx);
       const request = await context.tx.request.findUnique({ where: { id: requestId } });
       if (!request || request.lifecycle !== 'submitted') {
         throw new SysError('WORK_ALREADY_STARTED', 'Only a submitted request can be rescheduled');
@@ -550,6 +557,30 @@ export class AlertsService {
       if (start === undefined || end === undefined || end <= start) {
         throw new SysError('VALIDATION_FAILED', 'Moving a window needs both ordered bounds');
       }
+      const liveDay = await context.tx.liveWorkday.findFirst({ where: { status: 'running' } });
+      const assignedStop = await context.tx.appliedPlanStop.findFirst({
+        where: { requestId, route: { plan: { current: { isNot: null } } } },
+        select: { id: true },
+      });
+      const liveOwnership = liveDay
+        ? await context.tx.liveRequestState.findFirst({
+            where: {
+              requestId,
+              workdayId: liveDay.id,
+              OR: [{ assumedStartedAt: { not: null } }, { reservedEngineerId: { not: null } }],
+            },
+            select: { id: true },
+          })
+        : null;
+      // Deferring free work outside today's horizon does not alter anyone's route.
+      // Future publications will read the new window; stale in-flight results are
+      // rejected by the acceptance service's window check.
+      const deferFreeWork =
+        liveDay !== null &&
+        request.assignmentState === 'unassigned' &&
+        assignedStop === null &&
+        liveOwnership === null &&
+        start >= Date.parse(`${liveDay.workDate}T00:00:00+03:00`) / 1000 + 86_400;
       await context.tx.requestConditionHistory.create({
         data: {
           requestId,
@@ -572,11 +603,13 @@ export class AlertsService {
           version: { increment: 1 },
         },
       });
-      await this.publisher.publishIfChanged(
-        context.tx,
-        context.now,
-        PUBLICATION_TRIGGERS.REQUEST_CONDITIONS_CHANGED,
-      );
+      if (!deferFreeWork)
+        await this.publisher.publishIfChanged(
+          context.tx,
+          context.now,
+          PUBLICATION_TRIGGERS.REQUEST_CONDITIONS_CHANGED,
+          { businessTime: true },
+        );
       return;
     }
     if (input.action === 'add_engineer') {
@@ -785,6 +818,31 @@ export class AlertsService {
     now = await businessNow(tx, now, scopeDate);
     const thresholds = await this.thresholds(tx);
     const active = new Set<string>();
+    // Router and system episodes both become obsolete once the request is no
+    // longer free work. Preserve the audit row, but remove it from the open queue.
+    const unassignedAlerts = await tx.alert.findMany({
+      where: { code: 'unassigned', resolvedAt: null, invalidatedAt: null },
+      select: { id: true, requestIds: true },
+    });
+    for (const alert of unassignedAlerts) {
+      if (alert.requestIds.length === 0) continue;
+      const remaining = await tx.request.count({
+        where: {
+          id: { in: alert.requestIds },
+          lifecycle: 'submitted',
+          assignmentState: 'unassigned',
+        },
+      });
+      if (remaining === 0)
+        await tx.alert.update({
+          where: { id: alert.id },
+          data: {
+            resolvedAt: BigInt(now),
+            invalidatedAt: BigInt(now),
+            resolutionAction: 'superseded',
+          },
+        });
+    }
     const liveRunning = await tx.liveWorkday.findFirst({
       where: {
         status: { in: ['running', 'finished'] },
@@ -1200,8 +1258,14 @@ export class AlertsService {
         workDate: input.workDate,
         resolvedAt: null,
         invalidatedAt: null,
-        engineerIds: { hasEvery: input.engineerIds },
-        requestIds: { hasEvery: input.requestIds },
+        OR: [
+          { dedupKey: { startsWith: input.key } },
+          // Reuse a Router condition, never an unrelated system episode whose
+          // different reconciliation key would immediately expire it.
+          { dedupKey: { startsWith: 'router:' } },
+        ],
+        engineerIds: { equals: input.engineerIds },
+        requestIds: { equals: input.requestIds },
       },
     });
     if (matchingOpen) {
