@@ -1,18 +1,18 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { type PointerEvent as ReactPointerEvent, useEffect, useRef, useState } from 'react';
 import { useLetterboxInsets } from './artboardScale';
 import { FIGMA_ASSETS } from './assets';
 import { FigmaIcon } from './primitives';
 import {
+  accumulateSwipeCollapse,
+  dismissToast,
+  invertToastSwipe,
   TOAST_CARD_HEIGHT,
   TOAST_EXIT_X,
   TOAST_GAP,
   TOAST_LEFT,
   TOAST_STACK_TOP,
   TOAST_WIDTH,
-  accumulateSwipeCollapse,
-  dismissToast,
-  invertToastSwipe,
   type ToastKind,
   type ToastNotification,
   useVisibleColumnToasts,
@@ -71,7 +71,7 @@ export function ToastColumn({
   onCollapseRef.current = onCollapse;
 
   useEffect(() => {
-    if (!shown) {
+    if (!open) {
       wheelX.current = 0;
       return;
     }
@@ -102,7 +102,7 @@ export function ToastColumn({
       window.removeEventListener('wheel', onWheel, true);
       if (wheelReset.current !== null) window.clearTimeout(wheelReset.current);
     };
-  }, [shown]);
+  }, [open]);
 
   const beginLeave = (toast: ToastNotification, top: number, startX: number) => {
     setGhosts((current) =>
@@ -125,41 +125,45 @@ export function ToastColumn({
             exit={{ x: TOAST_EXIT_X }}
             transition={motionOn ? { duration: 0.34, ease: STACK_EASE } : { duration: 0 }}
           >
-            <motion.div
-              aria-hidden
-              className="absolute right-0"
-              style={{
-                top: -letterbox.y,
-                bottom: -letterbox.y,
-                right: -letterbox.x,
-                width: VEIL_WIDTH + letterbox.x,
-                background:
-                  'linear-gradient(to left, rgba(15,16,20,0.28), rgba(15,16,20,0.10) 52%, transparent)',
-                backdropFilter: 'blur(14px)',
-                WebkitBackdropFilter: 'blur(14px)',
-                maskImage: 'linear-gradient(to left, #000 55%, transparent)',
-                WebkitMaskImage: 'linear-gradient(to left, #000 55%, transparent)',
-              }}
-              exit={{ opacity: 0, transition: { duration: 0.26, ease: 'easeOut' } }}
-            />
-            <motion.button
-              type="button"
-              aria-label="Свернуть уведомления"
-              onClick={onCollapse}
-              className="pointer-events-auto absolute flex items-center justify-center rounded-full bg-white shadow-[0_10px_24px_rgba(15,16,20,0.20)]"
-              style={{
-                top: COLLAPSE_BUBBLE_TOP,
-                right: COLLAPSE_BUBBLE_RIGHT,
-                width: COLLAPSE_BUBBLE_SIZE,
-                height: COLLAPSE_BUBBLE_SIZE,
-              }}
-              whileHover={motionOn ? { scale: 1.08 } : undefined}
-              whileTap={motionOn ? { scale: 0.94 } : undefined}
-              transition={{ duration: 0.16 }}
-              exit={{ opacity: 0, transition: { duration: 0.16 } }}
-            >
-              <FigmaIcon src={FIGMA_ASSETS.arrowRight} alt="" width={22} height={22} />
-            </motion.button>
+            {open ? (
+              <>
+                <motion.div
+                  aria-hidden
+                  className="absolute right-0"
+                  style={{
+                    top: -letterbox.y,
+                    bottom: -letterbox.y,
+                    right: -letterbox.x,
+                    width: VEIL_WIDTH + letterbox.x,
+                    background:
+                      'linear-gradient(to left, rgba(15,16,20,0.28), rgba(15,16,20,0.10) 52%, transparent)',
+                    backdropFilter: 'blur(14px)',
+                    WebkitBackdropFilter: 'blur(14px)',
+                    maskImage: 'linear-gradient(to left, #000 55%, transparent)',
+                    WebkitMaskImage: 'linear-gradient(to left, #000 55%, transparent)',
+                  }}
+                  exit={{ opacity: 0, transition: { duration: 0.26, ease: 'easeOut' } }}
+                />
+                <motion.button
+                  type="button"
+                  aria-label="Свернуть уведомления"
+                  onClick={onCollapse}
+                  className="pointer-events-auto absolute flex items-center justify-center rounded-full bg-white shadow-[0_10px_24px_rgba(15,16,20,0.20)]"
+                  style={{
+                    top: COLLAPSE_BUBBLE_TOP,
+                    right: COLLAPSE_BUBBLE_RIGHT,
+                    width: COLLAPSE_BUBBLE_SIZE,
+                    height: COLLAPSE_BUBBLE_SIZE,
+                  }}
+                  whileHover={motionOn ? { scale: 1.08 } : undefined}
+                  whileTap={motionOn ? { scale: 0.94 } : undefined}
+                  transition={{ duration: 0.16 }}
+                  exit={{ opacity: 0, transition: { duration: 0.16 } }}
+                >
+                  <FigmaIcon src={FIGMA_ASSETS.arrowRight} alt="" width={22} height={22} />
+                </motion.button>
+              </>
+            ) : null}
             {visible.map((toast, index) => {
               const top = TOAST_STACK_TOP + index * STRIDE;
               return (

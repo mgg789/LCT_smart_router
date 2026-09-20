@@ -1,3 +1,4 @@
+import type { LiveBreak } from '../api/live';
 import type {
   AlertView,
   DashboardSnapshot,
@@ -8,26 +9,18 @@ import type {
   RequestView,
   RouterTechnicalSettings,
 } from '../api/types';
-import type { LiveBreak } from '../api/live';
 import {
   assignmentFor,
+  type EngineerSummary,
   engineerSummaries,
   requestById,
   routeForEngineer,
   unassignedRequests,
-  type EngineerSummary,
 } from '../domain/dashboard';
 import { explainSelection } from '../lib/explanations';
-import {
-  factorLabel,
-  POLICY_LABELS,
-  skillLabel,
-  transportLabel,
-} from '../lib/reasons';
+import { factorLabel, POLICY_LABELS, skillLabel, transportLabel } from '../lib/reasons';
 import { formatClock, formatDayTitle, formatDurationMin } from '../lib/time';
-import { shortRequestId } from './requestsTable';
 import {
-  visibleNotifications,
   type DashboardNotification,
   type EngineerCard,
   type EngineerRequest,
@@ -35,7 +28,9 @@ import {
   type NotificationTone,
   type ReasonIconKey,
   type RouteStop,
+  visibleNotifications,
 } from './fixtures';
+import { shortRequestId } from './requestsTable';
 
 const REASON_ICON_ORDER = [
   'reasonCheck',
@@ -177,7 +172,7 @@ export function dashboardViewFromSnapshot(
   const focusRequest = focus.requestId ? requestById(snapshot, focus.requestId) : null;
   const fallbackRequest = displayedEngineerId
     ? firstAssignedRequest(snapshot, displayedEngineerId)
-    : snapshot.requests[0] ?? null;
+    : (snapshot.requests[0] ?? null);
   const request = focusRequest ?? fallbackRequest;
   const assignment = request ? assignmentFor(snapshot, request.id) : null;
   const ownerId = assignment?.engineerId ?? displayedEngineerId;
@@ -192,12 +187,11 @@ export function dashboardViewFromSnapshot(
     requestCount: snapshot.requests.length,
     planLabel: `${unassigned.length} без назначения - план от ${formatClock(planAsOf)}`,
     unassignedTitle: unassignedCountTitle(unassigned.length),
-    unassignedReason:
-      firstUnassignedAssignment?.reasons.assignment?.factors[0]?.code
-        ? factorLabel(firstUnassignedAssignment.reasons.assignment.factors[0].code)
-        : firstUnassigned
-          ? firstUnassigned.workTypeTitle ?? firstUnassigned.addressText
-          : 'Все заявки назначены',
+    unassignedReason: firstUnassignedAssignment?.reasons.assignment?.factors[0]?.code
+      ? factorLabel(firstUnassignedAssignment.reasons.assignment.factors[0].code)
+      : firstUnassigned
+        ? (firstUnassigned.workTypeTitle ?? firstUnassigned.addressText)
+        : 'Все заявки назначены',
     firstUnassignedId: firstUnassigned?.id ?? null,
     engineers,
     totalKm: engineers.reduce((sum, item) => sum + item.km, 0),
@@ -221,6 +215,8 @@ export function withTechnicalBreaks(
         time: formatClock(item.startedAt),
         place: 'Техническая остановка',
         status: item.endedAt === null ? `до ${formatClock(item.plannedEndAt)}` : 'выполнено',
+        kind: 'technical' as const,
+        at: item.startedAt,
       }));
     if (markers.length === 0) return engineer;
     return {
@@ -284,7 +280,9 @@ function requestPanelFromSnapshot(
     address: shortAddress(request.addressText),
     window: `${formatClock(request.windowStartAt)}-${formatClock(request.windowEndAt)}`,
     work: request.workTypeTitle ?? formatDurationMin(request.serviceDurationSec),
-    whyTitle: whyTitle ?? (assignment?.status === 'unassigned' ? 'Почему без назначения' : 'Почему этот инженер?'),
+    whyTitle:
+      whyTitle ??
+      (assignment?.status === 'unassigned' ? 'Почему без назначения' : 'Почему этот инженер?'),
     reasons: reasonsFromAssignment(assignment),
   };
 }
@@ -305,18 +303,31 @@ function routeStopsFromRoute(
   route: PlanRouteView | null,
 ): RouteStop[] {
   if (!route) return [];
-  return route.stops.map((stop) => stopToCard(snapshot, stop));
+  return route.stops
+    .filter((stop) => stop.kind !== 'wait')
+    .map((stop) => stopToCard(snapshot, stop));
 }
 
 function stopToCard(snapshot: DashboardSnapshot, stop: PlanStopView): RouteStop {
   if (stop.kind === 'lunch') {
-    return { time: formatClock(stop.startAt), place: 'Обед', status: 'обед', requestId: null };
+    return {
+      time: formatClock(stop.startAt),
+      place: 'Обед',
+      status: 'обед',
+      requestId: null,
+      kind: 'lunch',
+      at: stop.startAt,
+    };
   }
   if (stop.kind === 'start') {
-    return { time: formatClock(stop.startAt), place: 'Старт смены', status: 'старт смены', requestId: null };
-  }
-  if (stop.kind === 'wait') {
-    return { time: formatClock(stop.startAt), place: 'Ожидание окна', status: 'ожидание окна', requestId: null };
+    return {
+      time: formatClock(stop.startAt),
+      place: 'Старт смены',
+      status: 'старт смены',
+      requestId: null,
+      kind: 'start',
+      at: stop.startAt,
+    };
   }
   const request = stop.requestId ? requestById(snapshot, stop.requestId) : null;
   return {
@@ -324,6 +335,8 @@ function stopToCard(snapshot: DashboardSnapshot, stop: PlanStopView): RouteStop 
     place: request ? routeStopAddress(request.addressText) : 'Заявка',
     status: stopStatus(request),
     requestId: stop.requestId,
+    kind: 'job',
+    at: stop.startAt,
   };
 }
 
@@ -373,12 +386,16 @@ function unassignedCountTitle(count: number): string {
   const mod10 = count % 10;
   const mod100 = count % 100;
   if (mod10 === 1 && mod100 !== 11) return `${count} заявка без назначения`;
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return `${count} заявки без назначения`;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14))
+    return `${count} заявки без назначения`;
   return `${count} заявок без назначения`;
 }
 
 function shortAddress(address: string): string {
-  const parts = address.split(',').map((part) => part.trim()).filter(Boolean);
+  const parts = address
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
   if (parts.length <= 2) return address;
   return parts.slice(-2).join(', ');
 }
@@ -388,7 +405,12 @@ function notificationIcon(code: string): NotificationIconKey {
   if (upper.includes('UNASSIGNED') || upper.includes('SKILL') || upper.includes('LATE')) {
     return 'delay';
   }
-  if (upper.includes('PLAN') || upper.includes('ROUTE') || upper.includes('POLICY') || upper.includes('LUNCH')) {
+  if (
+    upper.includes('PLAN') ||
+    upper.includes('ROUTE') ||
+    upper.includes('POLICY') ||
+    upper.includes('LUNCH')
+  ) {
     return 'route';
   }
   return 'message';
@@ -397,10 +419,17 @@ function notificationIcon(code: string): NotificationIconKey {
 function iconForFactor(code: string, index: number): ReasonIconKey {
   const lower = code.toLowerCase();
   if (lower.includes('skill') || lower.includes('constraint')) return 'reasonCheck';
-  if (lower.includes('equip') || lower.includes('transport') || lower.includes('car')) return 'reasonCar';
-  if (lower.includes('window') || lower.includes('sla') || lower.includes('lunch') || lower.includes('clock')) {
+  if (lower.includes('equip') || lower.includes('transport') || lower.includes('car'))
+    return 'reasonCar';
+  if (
+    lower.includes('window') ||
+    lower.includes('sla') ||
+    lower.includes('lunch') ||
+    lower.includes('clock')
+  ) {
     return 'reasonClock';
   }
-  if (lower.includes('travel') || lower.includes('cluster') || lower.includes('pin')) return 'reasonPin';
+  if (lower.includes('travel') || lower.includes('cluster') || lower.includes('pin'))
+    return 'reasonPin';
   return REASON_ICON_ORDER[index % REASON_ICON_ORDER.length] ?? 'reasonCheck';
 }

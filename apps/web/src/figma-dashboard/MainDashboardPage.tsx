@@ -1,6 +1,7 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { LiveRouteProgress } from '../api/live';
 import type { PolicyId, RequestView } from '../api/types';
 import { DayMap } from '../components/DayMap';
 import {
@@ -63,6 +64,7 @@ import { FigmaIcon, FigmaText } from './primitives';
 import { RequestDetailView } from './RequestDetailView';
 import { RequestsView } from './RequestsView';
 import { shortRequestId } from './requestsTable';
+import { routeProgressMarker } from './routeProgress';
 import { SettingsModal } from './SettingsModal';
 import { ToastColumn } from './ToastColumn';
 import {
@@ -145,7 +147,7 @@ export function MainDashboardPage() {
   const [stackDir, setStackDir] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [notifOpen, setNotifOpen] = useState(true);
+  const [notifOpen, setNotifOpen] = useState(false);
   const toasts = useToasts();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [regionOpen, setRegionOpen] = useState(false);
@@ -246,15 +248,18 @@ export function MainDashboardPage() {
     if (dash.isDemo && openAlerts.length === 0) seedDemoToasts();
   }, [dash.isDemo, dash.snapshot]);
 
+  const toastHydrated = useRef(false);
   useEffect(() => {
     const openAlerts = (dash.snapshot?.alerts ?? []).filter((alert) => alert.resolvedAt === null);
-    upsertNewToasts(openAlerts.map(toastFromAlert));
-    if (!dash.isDemo) upsertNewToasts(dash.events.map(toastFromEvent));
+    const peek = toastHydrated.current;
+    upsertNewToasts(openAlerts.map(toastFromAlert), peek);
+    if (!dash.isDemo) upsertNewToasts(dash.events.map(toastFromEvent), peek);
+    toastHydrated.current = true;
   }, [dash.events, dash.isDemo, dash.snapshot]);
 
   useEffect(() => {
-    setToastColumnPinned(notifOpen);
-  }, [notifOpen]);
+    setToastColumnPinned(notifOpen && activeNav !== 'alerts');
+  }, [activeNav, notifOpen]);
 
   const hadToasts = useRef(false);
   useEffect(() => {
@@ -775,6 +780,7 @@ export function MainDashboardPage() {
                       <RouteCard
                         key="route-card"
                         engineer={selectedEngineer}
+                        progress={liveProgress.get(selectedEngineer.id) ?? null}
                         motionOn={motionOn}
                         onSelectRequest={dash.selectRequest}
                       />
@@ -1741,15 +1747,18 @@ function RegionSwitch({
 
 function RouteCard({
   engineer,
+  progress,
   motionOn,
   onSelectRequest,
 }: {
   engineer: EngineerCard;
+  progress: LiveRouteProgress | null;
   motionOn: boolean;
   onSelectRequest: (requestId: string) => void;
 }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const skipClick = useRef(false);
+  const liveMarker = routeProgressMarker(engineer.stops, progress);
   const drag = useRef<{
     kind: 'panel' | 'thumb';
     startX: number;
@@ -1884,6 +1893,20 @@ function RouteCard({
                   width: Math.max(0, (engineer.stops.length - 1) * ROUTE_STOP_WIDTH),
                 }}
               />
+              {liveMarker ? (
+                <motion.span
+                  aria-label="Текущая позиция инженера в пути"
+                  className="pointer-events-none absolute top-[11px] z-20 size-[19px] rounded-full border-[3px] border-figma-ink bg-figma-bee"
+                  initial={false}
+                  animate={{
+                    left:
+                      ROUTE_LINE_LEFT -
+                      9.5 +
+                      (liveMarker.fromIndex + liveMarker.progress) * ROUTE_STOP_WIDTH,
+                  }}
+                  transition={motionOn ? { duration: 0.32, ease: slideEase } : { duration: 0 }}
+                />
+              ) : null}
               <div className="flex">
                 {engineer.stops.map((stop, index) => (
                   <RouteStopTopic

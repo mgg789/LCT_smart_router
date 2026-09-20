@@ -17,7 +17,7 @@ describe('Figma MAIN snapshot mapper', () => {
   it('formats the header date and policy the same way as the live day page', () => {
     expect(figmaDateLabel('2026-09-15')).toBe('15 сентября, 2026');
     expect(policyLabel('fast')).toBe('Быстрее до клиента');
-    expect(policyLabel('compact')).toBe('Компактнее — меньше инженеров');
+    expect(policyLabel('compact')).toBe('Дешевле');
   });
 
   it('maps demo-day engineers, alerts and the selected request into Figma slots', () => {
@@ -33,6 +33,9 @@ describe('Figma MAIN snapshot mapper', () => {
     expect(view.engineers.length).toBe(snapshot.engineers.length);
     expect(view.engineers.some((item) => item.id === FOCUS_ENGINEER_ID)).toBe(true);
     expect(view.engineers.some((item) => item.stops.length > 0)).toBe(true);
+    expect(
+      view.engineers.flatMap((item) => item.stops).some((stop) => stop.place === 'Ожидание окна'),
+    ).toBe(false);
     const focused = view.engineers.find((item) => item.id === FOCUS_ENGINEER_ID);
     const focusedLive = snapshot.engineers.find((item) => item.id === FOCUS_ENGINEER_ID);
     expect(focused?.status).toBe(transportLabel(focusedLive?.transportType ?? ''));

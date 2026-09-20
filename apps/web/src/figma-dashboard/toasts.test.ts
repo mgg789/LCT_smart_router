@@ -1,26 +1,26 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   accumulateSwipeCollapse,
-  invertToastSwipe,
-  DEMO_TOASTS,
-  TOAST_CARD_HEIGHT,
-  TOAST_GAP,
-  TOAST_PEEK_MS,
-  TOAST_STACK_BOTTOM,
-  TOAST_STACK_TOP,
   clampProgress,
+  DEMO_TOASTS,
   dismissToast,
   getToasts,
+  invertToastSwipe,
   pushToast,
   resetToastsForTests,
   seedDemoToasts,
   setToastColumnPinned,
   sortToasts,
+  TOAST_CARD_HEIGHT,
+  TOAST_GAP,
+  TOAST_PEEK_MS,
+  TOAST_STACK_BOTTOM,
+  TOAST_STACK_TOP,
   toastFromAlert,
   updateToast,
   upsertNewToasts,
-  visibleToastsForColumn,
   visibleToastLimit,
+  visibleToastsForColumn,
 } from './toasts';
 
 afterEach(() => {
@@ -56,12 +56,31 @@ describe('toast stack', () => {
     vi.useRealTimers();
   });
 
-  it('keeps a progress peek until the bar completes, then drops the card', () => {
+  it('shows simultaneous arrivals one at a time without pinning the column', () => {
+    vi.useFakeTimers();
+    upsertNewToasts([
+      { id: 'first', kind: 'system', title: 'one', createdAt: 1 },
+      { id: 'second', kind: 'alert', title: 'two', createdAt: 2 },
+    ]);
+    expect(visibleToastsForColumn()).toHaveLength(1);
+    expect(visibleToastsForColumn()[0]?.id).toBe('second');
+    vi.advanceTimersByTime(TOAST_PEEK_MS);
+    expect(visibleToastsForColumn()).toEqual([]);
+  });
+
+  it('hydrates the inbox silently', () => {
+    upsertNewToasts([{ id: 'existing', kind: 'alert', title: 'old', createdAt: 1 }], false);
+    expect(getToasts()).toHaveLength(1);
+    expect(visibleToastsForColumn()).toEqual([]);
+  });
+
+  it('returns a progress peek to the panel even when the operation is still running', () => {
     vi.useFakeTimers();
     setToastColumnPinned(false);
     pushToast({ id: 'p', kind: 'progress', title: 'Пересчет', progress: 20, etaLabel: '2 мин' });
-    vi.advanceTimersByTime(TOAST_PEEK_MS * 3);
-    expect(visibleToastsForColumn().map((item) => item.id)).toEqual(['p']);
+    vi.advanceTimersByTime(TOAST_PEEK_MS);
+    expect(visibleToastsForColumn()).toEqual([]);
+    expect(getToasts().map((item) => item.id)).toEqual(['p']);
     expect(updateToast('p', { progress: 100 })).toBeNull();
     expect(visibleToastsForColumn()).toEqual([]);
     expect(getToasts()).toEqual([]);
@@ -71,9 +90,10 @@ describe('toast stack', () => {
   it('clamps progress and dismisses a card that reaches 100', () => {
     expect(clampProgress(-4)).toBe(0);
     expect(clampProgress(140)).toBe(100);
-    expect(pushToast({ id: 'p', kind: 'progress', title: 'Пересчет', progress: 20, etaLabel: '3 мин' })?.progress).toBe(
-      20,
-    );
+    expect(
+      pushToast({ id: 'p', kind: 'progress', title: 'Пересчет', progress: 20, etaLabel: '3 мин' })
+        ?.progress,
+    ).toBe(20);
     expect(updateToast('p', { progress: 55, etaLabel: '1 мин' })).toMatchObject({
       progress: 55,
       etaLabel: '1 мин',
@@ -96,7 +116,9 @@ describe('toast stack', () => {
     const limit = visibleToastLimit();
     expect(limit).toBe(6);
     expect(TOAST_STACK_TOP).toBeLessThan(80);
-    expect(TOAST_STACK_TOP + limit * TOAST_CARD_HEIGHT + (limit - 1) * TOAST_GAP).toBeLessThanOrEqual(TOAST_STACK_BOTTOM);
+    expect(
+      TOAST_STACK_TOP + limit * TOAST_CARD_HEIGHT + (limit - 1) * TOAST_GAP,
+    ).toBeLessThanOrEqual(TOAST_STACK_BOTTOM);
   });
 
   it('maps an open alert onto a yellow toast', () => {
@@ -126,9 +148,17 @@ describe('toast stack', () => {
   });
 
   it('inverts the collapse direction on macOS trackpads', () => {
-    expect(invertToastSwipe('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)', 'MacIntel')).toBe(true);
+    expect(invertToastSwipe('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)', 'MacIntel')).toBe(
+      true,
+    );
     expect(invertToastSwipe('Mozilla/5.0 (Windows NT 10.0; Win64; x64)', 'Win32')).toBe(false);
-    expect(accumulateSwipeCollapse(-70, 4, 20, 80, true)).toEqual({ accumulated: 0, collapse: true });
-    expect(accumulateSwipeCollapse(70, 4, 20, 80, true)).toEqual({ accumulated: 0, collapse: false });
+    expect(accumulateSwipeCollapse(-70, 4, 20, 80, true)).toEqual({
+      accumulated: 0,
+      collapse: true,
+    });
+    expect(accumulateSwipeCollapse(70, 4, 20, 80, true)).toEqual({
+      accumulated: 0,
+      collapse: false,
+    });
   });
 });

@@ -35,6 +35,8 @@ export type RouteStop = {
   place: string;
   status: string;
   requestId?: string | null;
+  kind?: 'start' | 'job' | 'lunch' | 'technical';
+  at?: number;
 };
 
 export type EngineerRequest = {
@@ -174,7 +176,11 @@ export const MAIN_DASHBOARD = {
       stops: [
         { time: '9:10', place: 'Офис - ул. Лесная, 7', status: 'выполнено' },
         { time: '10:13', place: 'Магазин - ул. Покровка, 11', status: 'выполнено' },
-        { time: '12:20', place: 'Подключение офиса - Таганская, 24', status: 'сейчас - визит 45 мин' },
+        {
+          time: '12:20',
+          place: 'Подключение офиса - Таганская, 24',
+          status: 'сейчас - визит 45 мин',
+        },
         { time: '14:05', place: 'Роутер - Садовая, 3', status: 'в пути 18 мин' },
         { time: '15:40', place: 'Диагностика - Арбат, 16', status: 'окно 15:30-17:00' },
       ],

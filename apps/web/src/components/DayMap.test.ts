@@ -3,6 +3,7 @@ import type { PlanRouteView } from '../api/types';
 import { projectLiveGraph } from '../domain/liveGraph';
 import {
   liveProgressPoints,
+  liveProgressPosition,
   liveProgressSegments,
   lunchMarkerCoordinates,
   visiblePlannedSegments,
@@ -24,6 +25,7 @@ describe('LIVE map factual projection', () => {
     };
     expect(liveProgressSegments(progress)).toEqual([{ from: anchor, to: next }]);
     expect(liveProgressPoints(progress)).toEqual([anchor]);
+    expect(liveProgressPosition(progress)).toEqual({ lat: 55.751, lon: 37.611 });
   });
 
   it('projects lunch as both legs and the lunch vertex at once', () => {

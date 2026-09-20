@@ -41,6 +41,24 @@ export interface LiveProgressSegment {
   readonly to: LiveRouteProgress['anchor'];
 }
 
+/** Interpolated position on the current factual edge at the LIVE business time. */
+export function liveProgressPosition(
+  progress: LiveRouteProgress,
+): { readonly lat: number; readonly lon: number } | null {
+  if (progress.phase !== 'traveling' || !progress.next) return null;
+  const [from, to] = progress.lunch
+    ? progress.occurredAt < progress.lunch.at
+      ? [progress.anchor, progress.lunch]
+      : [progress.lunch, progress.next]
+    : [progress.anchor, progress.next];
+  const span = Math.max(1, to.at - from.at);
+  const ratio = Math.min(1, Math.max(0, (progress.occurredAt - from.at) / span));
+  return {
+    lat: from.lat + (to.lat - from.lat) * ratio,
+    lon: from.lon + (to.lon - from.lon) * ratio,
+  };
+}
+
 /** Router geometry retained for a visible planned edge. */
 export interface VisiblePlannedSegment extends MapRouteSegment {
   readonly fromKey: string;
@@ -275,14 +293,12 @@ export function DayMap({
       }
       const projections = [...projectedEngineerIds].map((engineerId) => {
         const route = routeByEngineer.get(engineerId) ?? null;
+        const progress = progressByEngineer?.get(engineerId) ?? null;
         return {
           engineerId,
           route,
-          graph: projectLiveGraph(
-            route,
-            progressByEngineer?.get(engineerId) ?? null,
-            visibleRequestIds,
-          ),
+          progress,
+          graph: projectLiveGraph(route, progress, visibleRequestIds),
         };
       });
       const viewingUnassigned = unassignedRequests(snapshot).some(
@@ -353,6 +369,22 @@ export function DayMap({
           };
         }),
       );
+      const progressPositions = projections.flatMap(({ engineerId, progress }) => {
+        if (!progress) return [];
+        const position = liveProgressPosition(progress);
+        return position
+          ? [
+              {
+                type: 'Feature' as const,
+                properties: { engineerId, color: mapPaintColor(engineerColor(engineerId)) },
+                geometry: {
+                  type: 'Point' as const,
+                  coordinates: [position.lon, position.lat],
+                },
+              },
+            ]
+          : [];
+      });
 
       const startFeatures = projections.flatMap(({ engineerId, route, graph }) => {
         const start = graph.mapNodes.find((node) => node.kind === 'start');
@@ -491,6 +523,24 @@ export function DayMap({
           });
         },
       );
+      upsert(
+        map,
+        'live-progress-points',
+        { type: 'FeatureCollection', features: progressPositions },
+        () => {
+          map.addLayer({
+            id: 'live-progress-points',
+            type: 'circle',
+            source: 'live-progress-points',
+            paint: {
+              'circle-radius': 8,
+              'circle-color': '#FFC72C',
+              'circle-stroke-width': 3,
+              'circle-stroke-color': ['get', 'color'],
+            },
+          });
+        },
+      );
 
       upsert(map, 'starts', { type: 'FeatureCollection', features: startFeatures }, () => {
         map.addLayer({
@@ -560,12 +610,7 @@ export function DayMap({
             type: 'symbol',
             source: 'stops',
             layout: {
-              'text-field': [
-                'concat',
-                ['to-string', ['get', 'sequence']],
-                ' ',
-                ['get', 'skillMark'],
-              ],
+              'text-field': ['to-string', ['get', 'sequence']],
               'text-size': 14,
               'text-font': ['Open Sans Bold', 'Arial Unicode MS Bold'],
             },

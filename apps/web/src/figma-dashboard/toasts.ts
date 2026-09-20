@@ -12,7 +12,7 @@ export const TOAST_LEFT = 1465;
 export const TOAST_WIDTH = 425;
 export const TOAST_EXIT_X = 520;
 export const TOAST_SWIPE_COLLAPSE = 80;
-/** How long a peek card stays after the column was collapsed. Progress ignores this. */
+/** How long one transient card stays over the interface before returning to the panel. */
 export const TOAST_PEEK_MS = 4000;
 
 /**
@@ -78,7 +78,7 @@ const dismissed = new Set<string>();
 const listeners = new Set<ToastListener>();
 const peekIds = new Set<string>();
 const peekTimers = new Map<string, ReturnType<typeof setTimeout>>();
-let columnPinned = true;
+let columnPinned = false;
 
 function clearPeekTimer(id: string): void {
   const timer = peekTimers.get(id);
@@ -94,9 +94,9 @@ function clearAllPeeks(): void {
 }
 
 function beginPeek(toast: ToastNotification): void {
+  clearAllPeeks();
   peekIds.add(toast.id);
   clearPeekTimer(toast.id);
-  if (toast.kind === 'progress') return;
   peekTimers.set(
     toast.id,
     setTimeout(() => {
@@ -128,7 +128,7 @@ export function isToastColumnPinned(): boolean {
 export function visibleToastsForColumn(): ToastNotification[] {
   const all = getToasts();
   if (columnPinned) return all.slice(0, visibleToastLimit());
-  return all.filter((item) => peekIds.has(item.id)).slice(0, visibleToastLimit());
+  return all.filter((item) => peekIds.has(item.id)).slice(0, 1);
 }
 
 /**
@@ -379,14 +379,14 @@ export function dismissToast(id: string): void {
 }
 
 /** Adds missing drafts without touching already-visible or dismissed cards. */
-export function upsertNewToasts(drafts: readonly ToastDraft[]): void {
+export function upsertNewToasts(drafts: readonly ToastDraft[], peek = true): void {
   let changed = false;
   for (const draft of drafts) {
     if (dismissed.has(draft.id) || toasts.some((item) => item.id === draft.id)) continue;
     const next = normalizeToast(draft);
     if (!next) continue;
     toasts = [...toasts, next];
-    if (!columnPinned) beginPeek(next);
+    if (peek && !columnPinned) beginPeek(next);
     changed = true;
   }
   if (changed) emit();
@@ -394,7 +394,7 @@ export function upsertNewToasts(drafts: readonly ToastDraft[]): void {
 
 /** Seeds Figma examples plus extra demo alerts/notices for the inbox review. */
 export function seedDemoToasts(): void {
-  upsertNewToasts(DEMO_TOASTS);
+  upsertNewToasts(DEMO_TOASTS, false);
 }
 
 /** Maps an open snapshot alert onto a yellow alert toast. */
@@ -437,7 +437,7 @@ export function toastFromEvent(event: { id: string; at: number; text: string }):
 export function resetToastsForTests(): void {
   toasts = [];
   dismissed.clear();
-  columnPinned = true;
+  columnPinned = false;
   clearAllPeeks();
   emit();
 }
