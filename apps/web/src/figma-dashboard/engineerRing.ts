@@ -15,8 +15,17 @@ export const RING_RADIUS = 1100;
 
 export const RING_CARD = { width: 308, height: 229 } as const;
 
-/** Artboard point of the upright card's centre (Figma 49:5146). */
-export const RING_CENTER = { x: 1037, y: 811 } as const;
+/**
+ * Artboard point of the upright card's centre. 10px above Figma 49:5146
+ * so chat, card and search sit as one cluster; spin arrivals target this.
+ */
+export const RING_CENTER = { x: 1037, y: 801 } as const;
+
+/** Chat pill top, 31.5px above the upright card. */
+export const RING_CHAT_TOP = RING_CENTER.y - RING_CARD.height / 2 - 82.5;
+
+/** Search field top, 34.5px below the upright card. */
+export const RING_SEARCH_TOP = RING_CENTER.y + RING_CARD.height / 2 + 34.5;
 
 /** Circle origin sits below the artboard so only the upper arc is on screen. */
 export const RING_ORIGIN = {

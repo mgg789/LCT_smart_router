@@ -7,6 +7,9 @@ import {
   isRenderedSlot,
   pointerAngleDeg,
   ringMounts,
+  RING_CENTER,
+  RING_CHAT_TOP,
+  RING_SEARCH_TOP,
   ringPose,
   ringSlotKeys,
   selectionSpinTarget,
@@ -51,6 +54,9 @@ describe('engineerRing', () => {
     const inner = ringPose(1);
     const outer = ringPose(2);
     expect(center.lean).toBe(0);
+    expect(center.y).toBe(RING_CENTER.y);
+    expect(RING_CHAT_TOP).toBe(RING_CENTER.y - 197);
+    expect(RING_SEARCH_TOP).toBe(RING_CENTER.y + 149);
     expect(center.blur).toBe(0);
     expect(inner.lean).toBeGreaterThan(3);
     expect(inner.lean).toBeLessThan(6);

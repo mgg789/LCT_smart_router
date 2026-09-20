@@ -179,33 +179,21 @@ body {
   position: absolute;
   top: 560px;
   bottom: 0;
-  width: 860px;
-  backdrop-filter: blur(64px) saturate(1.08);
-  -webkit-backdrop-filter: blur(64px) saturate(1.08);
+  width: 780px;
+  backdrop-filter: blur(42px) saturate(1.04);
+  -webkit-backdrop-filter: blur(42px) saturate(1.04);
 }
 
 .engineer-ring-blur-veil-left {
-  left: -220px;
-  mask-image:
-    linear-gradient(to top, #000 0% 42%, rgba(0, 0, 0, 0.85) 62%, transparent 88%),
-    radial-gradient(ellipse 130% 150% at 0% 100%, #000 0% 62%, transparent 88%);
-  mask-composite: intersect;
-  -webkit-mask-image:
-    linear-gradient(to top, #000 0% 42%, rgba(0, 0, 0, 0.85) 62%, transparent 88%),
-    radial-gradient(ellipse 130% 150% at 0% 100%, #000 0% 62%, transparent 88%);
-  -webkit-mask-composite: source-in;
+  left: -200px;
+  mask-image: radial-gradient(ellipse 108% 128% at 0% 100%, #000 0% 38%, transparent 86%);
+  -webkit-mask-image: radial-gradient(ellipse 108% 128% at 0% 100%, #000 0% 38%, transparent 86%);
 }
 
 .engineer-ring-blur-veil-right {
-  right: -220px;
-  mask-image:
-    linear-gradient(to top, #000 0% 42%, rgba(0, 0, 0, 0.85) 62%, transparent 88%),
-    radial-gradient(ellipse 130% 150% at 100% 100%, #000 0% 62%, transparent 88%);
-  mask-composite: intersect;
-  -webkit-mask-image:
-    linear-gradient(to top, #000 0% 42%, rgba(0, 0, 0, 0.85) 62%, transparent 88%),
-    radial-gradient(ellipse 130% 150% at 100% 100%, #000 0% 62%, transparent 88%);
-  -webkit-mask-composite: source-in;
+  right: -200px;
+  mask-image: radial-gradient(ellipse 108% 128% at 100% 100%, #000 0% 38%, transparent 86%);
+  -webkit-mask-image: radial-gradient(ellipse 108% 128% at 100% 100%, #000 0% 38%, transparent 86%);
 }
 
 .engineer-ring-fog {
@@ -213,8 +201,8 @@ body {
   position: absolute;
   z-index: 17;
   background:
-    radial-gradient(ellipse 220px 180px at 0% 100%, rgba(241, 241, 241, 0.72) 0%, transparent 72%),
-    radial-gradient(ellipse 220px 180px at 100% 100%, rgba(241, 241, 241, 0.72) 0%, transparent 72%);
+    radial-gradient(ellipse 240px 200px at 0% 100%, rgba(241, 241, 241, 0.5) 0%, transparent 78%),
+    radial-gradient(ellipse 240px 200px at 100% 100%, rgba(241, 241, 241, 0.5) 0%, transparent 78%);
 }
 
 .engineer-phone {

@@ -14,6 +14,8 @@ import { ENGINEER_PORTRAITS, FIGMA_ASSETS } from './assets';
 import {
   RING_CARD,
   RING_CENTER,
+  RING_CHAT_TOP,
+  RING_SEARCH_TOP,
   RING_HOLD_CARDS_PER_SEC,
   RING_HOLD_DELAY_MS,
   RING_RENDER_SPAN,
@@ -516,7 +518,7 @@ export function EngineersView({
           aria-disabled
           title="Скоро"
           className="absolute z-20 flex h-[51px] w-[225px] cursor-not-allowed items-center rounded-[27px] bg-figma-bee px-[16px] opacity-45"
-          style={{ left: RING_CENTER.x - 112.5, top: 614 }}
+          style={{ left: RING_CENTER.x - 112.5, top: RING_CHAT_TOP }}
         >
           <FigmaText className="font-bold text-[20px] text-figma-ink">Перейти в чат</FigmaText>
           <FigmaIcon
@@ -532,7 +534,7 @@ export function EngineersView({
       <motion.label
         data-eng-chrome
         className="absolute z-20 flex h-[51px] w-[284px] origin-center items-center rounded-[27px] bg-white px-[16px] pr-[54px]"
-        style={{ left: 895, top: 960 }}
+        style={{ left: 895, top: RING_SEARCH_TOP }}
         animate={
           !motionOn || reduceMotion
             ? undefined
