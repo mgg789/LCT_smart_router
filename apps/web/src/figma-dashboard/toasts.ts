@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { AlertView } from '../api/types';
+import { alertTitle } from '../domain/alerts';
 import { factorLabel } from '../lib/reasons';
 
 export type ToastKind = 'system' | 'progress' | 'ai' | 'chat' | 'route' | 'alert' | 'error';
@@ -397,13 +398,19 @@ export function seedDemoToasts(): void {
   upsertNewToasts(DEMO_TOASTS, false);
 }
 
-/** Maps an open snapshot alert onto a yellow alert toast. */
+/** Keeps informational notices distinct from actionable yellow alert toasts. */
 export function toastFromAlert(alert: AlertView): ToastDraft {
+  const notice = alert.kind === 'notice';
+  const label = alertTitle(alert.code);
+  const title = label === alert.code ? factorLabel(alert.code) : label;
   return {
     id: `alert:${alert.id}`,
-    kind: 'alert',
-    title: `Алёрт: ${factorLabel(alert.code)}`,
-    body: alert.reasons[0] ?? factorLabel(alert.code),
+    kind: notice ? 'route' : 'alert',
+    title: notice ? title : `Алёрт: ${title}`,
+    body:
+      alert.code === 'plan_rebuilt'
+        ? 'Маршруты обновлены. Новый план доступен на карте.'
+        : (alert.reasons[0] ?? title),
     createdAt: alert.createdAt,
     requestId: alert.requestIds[0] ?? null,
   };

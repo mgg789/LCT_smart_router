@@ -11,6 +11,7 @@ import {
   requestUrgency,
   rightPanelMode,
   routeStopAddress,
+  withLiveRouteStops,
 } from './fromSnapshot';
 
 describe('Figma MAIN snapshot mapper', () => {
@@ -33,6 +34,11 @@ describe('Figma MAIN snapshot mapper', () => {
     expect(view.engineers.length).toBe(snapshot.engineers.length);
     expect(view.engineers.some((item) => item.id === FOCUS_ENGINEER_ID)).toBe(true);
     expect(view.engineers.some((item) => item.stops.length > 0)).toBe(true);
+    const liveCards = withLiveRouteStops(view.engineers, snapshot, null);
+    expect(liveCards.find((item) => item.id === FOCUS_ENGINEER_ID)?.stops[0]?.kind).toBe('start');
+    expect(
+      liveCards.flatMap((item) => item.stops).some((stop) => stop.place === 'Ожидание окна'),
+    ).toBe(false);
     expect(
       view.engineers.flatMap((item) => item.stops).some((stop) => stop.place === 'Ожидание окна'),
     ).toBe(false);

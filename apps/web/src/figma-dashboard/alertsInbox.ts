@@ -1,4 +1,5 @@
 import type { AlertView, DashboardSnapshot } from '../api/types';
+import { alertTitle } from '../domain/alerts';
 import { requestById } from '../domain/dashboard';
 import { factorLabel } from '../lib/reasons';
 import { formatClock } from '../lib/time';
@@ -74,7 +75,8 @@ export function inboxFromSources(
   const openNotices = snapshotAlerts.filter(
     (alert) => alert.kind === 'notice' && alert.seenAt === null,
   );
-  const sourceToasts = demoMode && snapshot === null && toasts.length === 0 ? demoInboxToasts() : toasts;
+  const sourceToasts =
+    demoMode && snapshot === null && toasts.length === 0 ? demoInboxToasts() : toasts;
   const covered = new Set([...openAlerts, ...openNotices].map((alert) => `alert:${alert.id}`));
   const alerts = sortByArrival([
     ...(snapshot ? openAlerts.map((alert) => alertCardFromSnapshot(snapshot, alert)) : []),
@@ -87,7 +89,10 @@ export function inboxFromSources(
       id: `alert:${notice.id}`,
       sourceNoticeId: notice.id,
       createdAt: notice.createdAt,
-      title: factorLabel(notice.code),
+      title:
+        alertTitle(notice.code) === notice.code
+          ? factorLabel(notice.code)
+          : alertTitle(notice.code),
       body: notice.reasons.filter(Boolean).join(' · ') || factorLabel(notice.code),
       toastKind: 'system' as const,
     })),
@@ -141,7 +146,9 @@ function alertCardFromSnapshot(snapshot: DashboardSnapshot, alert: AlertView): I
     title:
       request && unassigned
         ? `Заявка № ${shortRequestId(request.id)} без назначения`
-        : factorLabel(alert.code),
+        : alertTitle(alert.code) === alert.code
+          ? factorLabel(alert.code)
+          : alertTitle(alert.code),
     body: formatAlertReason(alert.reasons.filter(Boolean).join(' · ') || factorLabel(alert.code)),
     badge:
       request && requestUrgency(request).tone !== 'neutral'

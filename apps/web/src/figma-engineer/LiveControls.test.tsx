@@ -1,0 +1,98 @@
+import { renderToStaticMarkup } from 'react-dom/server';
+import { describe, expect, it } from 'vitest';
+import type { EngineerLiveView } from '../api/live';
+import { DESIGN_PREVIEW_PLAN } from './designPreview';
+import { LiveControls, LiveDayOverlay } from './LiveControls';
+
+const stats = {
+  completedCount: 1,
+  cancelledCount: 0,
+  assumedCompletedCount: 0,
+  problemCount: 0,
+  technicalBreakCount: 0,
+};
+const request = DESIGN_PREVIEW_PLAN.requests[0];
+if (!request) throw new Error('Missing test visit');
+const live: EngineerLiveView = {
+  workday: {
+    id: 'day',
+    workDate: '2026-09-20',
+    status: 'running',
+    logicalStartAt: 1,
+    logicalEndAt: 200,
+    startedAtWallSec: 1,
+    finishedAt: null,
+    completionReason: null,
+    liveNow: 100,
+    speedDurationSec: 3600,
+    speedFactor: 11,
+    engineerStartDeadlineAt: 1801,
+    requestCount: 14,
+    stats,
+  },
+  engineer: {
+    id: 'engineer',
+    name: 'Engineer',
+    lineStatus: 'online',
+    availability: 'online',
+    activeRequestId: null,
+    technicalBreak: null,
+    progress: null,
+    routeState: 'active',
+    stats,
+    pendingDelayProblem: null,
+  },
+  current: {
+    request,
+    stop: null,
+    phase: 'awaiting_window',
+    expectedCompletionAt: null,
+    overrunAt: null,
+  },
+  route: DESIGN_PREVIEW_PLAN.route,
+  lunch: null,
+};
+const send = async () => true;
+const controls = (value: EngineerLiveView) =>
+  renderToStaticMarkup(<LiveControls live={value} now={100} busy={false} send={send} />);
+const overlay = (value: EngineerLiveView) =>
+  renderToStaticMarkup(<LiveDayOverlay live={value} now={100} busy={false} send={send} />);
+
+describe('Figma engineer LIVE controls', () => {
+  it('switches from arrival promises to start and then finish/problem', () => {
+    const current = live.current;
+    if (!current) throw new Error('Missing current visit');
+    expect(controls(live)).toContain('Буду вовремя');
+    expect(controls(live)).toContain('Буду в…');
+    expect(controls({ ...live, current: { ...current, phase: 'ready_to_start' } })).toContain(
+      'Приступить',
+    );
+    const working = controls({
+      ...live,
+      current: { ...current, phase: 'in_progress', overrunAt: 99 },
+    });
+    expect(working).toContain('Завершить');
+    expect(working).toContain('Проблема');
+    expect(working).toContain('Превышено время');
+    expect(working).not.toContain('Приступить');
+  });
+  it('blocks job actions during lunch, technical breaks and before day start', () => {
+    const lunch = { ...live, lunch: { startedAt: 50, endAt: 150 } };
+    expect(controls(lunch)).toBe('');
+    expect(overlay(lunch)).toContain('00:50');
+    const paused = {
+      ...live,
+      engineer: {
+        ...live.engineer,
+        lineStatus: 'technical_break' as const,
+        technicalBreak: { startedAt: 1, plannedEndAt: 90, overdueAt: 99 },
+      },
+    };
+    expect(controls(paused)).toBe('');
+    expect(overlay(paused)).toContain('Завершить перерыв');
+    expect(overlay(paused)).toContain('Диспетчер уведомлён');
+    const pending = { ...live, workday: { ...live.workday, status: 'pending' as const } };
+    expect(controls(pending)).toBe('');
+    expect(overlay(pending)).toContain('Ожидаем начала дня');
+  });
+});

@@ -26,6 +26,8 @@ export function alertTitle(code: string): string {
     engineer_overdue: 'Инженер задержался и не отмечается',
     shift_no_show: 'Не вышел на смену',
     plan_rebuilt: 'План перестроился',
+    LIVE_TECHNICAL_BREAK_OVERRUN: 'Технический перерыв затянулся',
+    LIVE_WINDOW_COMPLETION_RISK: 'Риск не завершить заявку в окне',
   };
   return titles[code] ?? code;
 }

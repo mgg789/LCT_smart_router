@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import type { ReactNode } from 'react';
 import { FIGMA_ASSETS } from '../figma-dashboard/assets';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { skillLabel } from '../lib/reasons';
@@ -23,6 +24,7 @@ export function EngineerListCard({
   onRoute,
   onLate,
   onStart,
+  actions,
 }: {
   item: EngineerJobItem | EngineerLunchItem;
   motionOn: boolean;
@@ -33,6 +35,7 @@ export function EngineerListCard({
   onRoute?: () => void;
   onLate?: () => void;
   onStart?: () => void;
+  actions?: ReactNode;
 }) {
   return (
     <motion.article
@@ -51,6 +54,7 @@ export function EngineerListCard({
           onRoute={onRoute}
           onLate={onLate}
           onStart={onStart}
+          actions={actions}
         />
       ) : (
         <RegularCard item={item} onOpen={onOpen} onRoute={onRoute} />
@@ -71,6 +75,7 @@ function UpcomingCard({
   onRoute,
   onLate,
   onStart,
+  actions,
 }: {
   item: EngineerJobItem;
   latePending: boolean;
@@ -79,14 +84,19 @@ function UpcomingCard({
   onRoute?: () => void;
   onLate?: () => void;
   onStart?: () => void;
+  actions?: ReactNode;
 }) {
   const service = item.request.workTypeTitle ?? skillLabel(item.request.requiredSkill);
   return (
     <div
       role="button"
       tabIndex={0}
-      onClick={onOpen}
+      onClick={(event) => {
+        if ((event.target as HTMLElement).closest('button, input, select, textarea, form')) return;
+        onOpen?.();
+      }}
       onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
           onOpen?.();
@@ -101,7 +111,10 @@ function UpcomingCard({
     >
       <div className="flex items-start justify-between" style={{ gap: eu(16) }}>
         <div className="min-w-0 flex-1">
-          <p className="font-murs leading-none tracking-[-0.02em] text-figma-ink" style={{ fontSize: eu(40) }}>
+          <p
+            className="font-murs leading-none tracking-[-0.02em] text-figma-ink"
+            style={{ fontSize: eu(40) }}
+          >
             {formatPlanTime(item.stop.startAt)}
           </p>
           <p
@@ -127,36 +140,50 @@ function UpcomingCard({
         </div>
         <MapThumb onRoute={onRoute} />
       </div>
-      <div className="flex" style={{ marginTop: eu(20), gap: eu(16) }}>
-        <motion.button
-          type="button"
-          disabled={latePending}
-          onClick={(event) => {
-            stopInside(event);
-            onLate?.();
-          }}
-          whileTap={{ scale: 0.98 }}
-          transition={tap}
-          className="flex flex-1 items-center justify-center whitespace-nowrap bg-figma-bee font-semibold tracking-[-0.03em] text-figma-ink disabled:opacity-60"
-          style={{ height: eu(76), borderRadius: eu(20), paddingInline: eu(16), fontSize: eu(28) }}
-        >
-          {latePending ? 'Отмечено' : 'Опаздываю'}
-        </motion.button>
-        <motion.button
-          type="button"
-          disabled={startPending}
-          onClick={(event) => {
-            stopInside(event);
-            onStart?.();
-          }}
-          whileTap={{ scale: 0.98 }}
-          transition={tap}
-          className="flex flex-1 items-center justify-center whitespace-nowrap bg-figma-ink font-semibold tracking-[-0.03em] text-white disabled:opacity-60"
-          style={{ height: eu(76), borderRadius: eu(20), paddingInline: eu(16), fontSize: eu(28) }}
-        >
-          Приступить
-        </motion.button>
-      </div>
+      {actions !== undefined ? (
+        actions
+      ) : (
+        <div className="flex" style={{ marginTop: eu(20), gap: eu(16) }}>
+          <motion.button
+            type="button"
+            disabled={latePending}
+            onClick={(event) => {
+              stopInside(event);
+              onLate?.();
+            }}
+            whileTap={{ scale: 0.98 }}
+            transition={tap}
+            className="flex flex-1 items-center justify-center whitespace-nowrap bg-figma-bee font-semibold tracking-[-0.03em] text-figma-ink disabled:opacity-60"
+            style={{
+              height: eu(76),
+              borderRadius: eu(20),
+              paddingInline: eu(16),
+              fontSize: eu(28),
+            }}
+          >
+            {latePending ? 'Отмечено' : 'Опаздываю'}
+          </motion.button>
+          <motion.button
+            type="button"
+            disabled={startPending}
+            onClick={(event) => {
+              stopInside(event);
+              onStart?.();
+            }}
+            whileTap={{ scale: 0.98 }}
+            transition={tap}
+            className="flex flex-1 items-center justify-center whitespace-nowrap bg-figma-ink font-semibold tracking-[-0.03em] text-white disabled:opacity-60"
+            style={{
+              height: eu(76),
+              borderRadius: eu(20),
+              paddingInline: eu(16),
+              fontSize: eu(28),
+            }}
+          >
+            Приступить
+          </motion.button>
+        </div>
+      )}
     </div>
   );
 }
@@ -190,7 +217,10 @@ function RegularCard({
       }}
     >
       <div className="min-w-0 flex-1">
-        <p className="font-murs leading-none tracking-[-0.02em] text-figma-ink" style={{ fontSize: eu(40) }}>
+        <p
+          className="font-murs leading-none tracking-[-0.02em] text-figma-ink"
+          style={{ fontSize: eu(40) }}
+        >
           {formatPlanTime(item.stop.startAt)}
         </p>
         <p

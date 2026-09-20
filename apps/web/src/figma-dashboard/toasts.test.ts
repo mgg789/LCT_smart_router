@@ -138,6 +138,21 @@ describe('toast stack', () => {
     expect(toast.id).toBe('alert:al-1');
     expect(toast.title).toContain('Алёрт');
     expect(toast.body).toContain('навыком');
+    const notice = toastFromAlert({
+      id: 'notice',
+      code: 'plan_rebuilt',
+      kind: 'notice',
+      severity: 'info',
+      engineerIds: [],
+      requestIds: [],
+      reasons: [],
+      restoreOption: null,
+      createdAt: 10,
+      seenAt: null,
+      resolvedAt: null,
+    });
+    expect(notice.kind).toBe('route');
+    expect(notice.title).toBe('План перестроился');
   });
 
   it('collapses the column on a rightward two-finger wheel swipe', () => {

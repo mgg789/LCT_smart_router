@@ -30,6 +30,7 @@ import type { EngineerJobItem } from './engineerDay';
 import { engineerListItems, engineerLunchWindow, missingRequestIds } from './engineerDay';
 import { engineerMapsUrl } from './engineerRoute';
 import { eu } from './engineerScale';
+import { LiveControls, LiveDayOverlay } from './LiveControls';
 import { loadEngineerSessionLive } from './liveSession';
 import { EngineerListCard } from './RequestCards';
 import { RequestDetail } from './RequestDetail';
@@ -83,6 +84,22 @@ export function EngineerApp({
   const [settingsSubmitting, setSettingsSubmitting] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const liveActionPending = useRef(false);
+  const readPending = useRef(false);
+  const requestGeneration = useRef(0);
+  const liveReceivedAt = useRef(Date.now());
+  const [actionBusy, setActionBusy] = useState(false);
+  const acceptLive = useCallback((value: EngineerLiveView, receivedAt = Date.now()) => {
+    liveReceivedAt.current = receivedAt;
+    setLive(value);
+  }, []);
+  const logicalNow = live
+    ? Math.floor(
+        live.workday.liveNow +
+          (live.workday.status === 'running'
+            ? (Math.max(0, nowMs - liveReceivedAt.current) / 1000) * live.workday.speedFactor
+            : 0),
+      )
+    : Math.floor(nowMs / 1000);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNowMs(Date.now()), 1_000);
@@ -118,6 +135,9 @@ export function EngineerApp({
         setLoading(false);
         return;
       }
+      if (readPending.current || liveActionPending.current) return;
+      readPending.current = true;
+      const generation = requestGeneration.current;
       if (initial) setLoading(true);
       setError(null);
       try {
@@ -128,25 +148,23 @@ export function EngineerApp({
           loadEngineerSessionLive(token),
         ]);
         const missing = missingRequestIds(nextPlan);
-        if (missing.length === 0) {
-          setStoredPlan(nextPlan);
-        } else {
-          const extras = await Promise.all(
-            missing.map((id) => loadEngineerRequest(token, id).then((body) => body.request)),
-          );
-          setStoredPlan({ ...nextPlan, requests: [...nextPlan.requests, ...extras] });
-        }
+        const extras = await Promise.all(
+          missing.map((id) => loadEngineerRequest(token, id).then((body) => body.request)),
+        );
+        if (generation !== requestGeneration.current) return;
+        setStoredPlan({ ...nextPlan, requests: [...nextPlan.requests, ...extras] });
         setProfile(nextProfile);
         setDay(nextDay);
-        setLive(nextLive);
+        acceptLive(nextLive);
       } catch (cause) {
         if (failSession(cause)) return;
         setError(cause instanceof Error ? cause.message : 'Не удалось загрузить смену');
       } finally {
+        readPending.current = false;
         if (initial) setLoading(false);
       }
     },
-    [designPreview, failSession, token],
+    [acceptLive, designPreview, failSession, token],
   );
 
   useEffect(() => {
@@ -155,20 +173,39 @@ export function EngineerApp({
 
   useEffect(() => {
     if (designPreview) return;
+    let disposed = false;
     const refreshLive = async () => {
-      if (liveActionPending.current) return;
+      if (liveActionPending.current || readPending.current) return;
+      readPending.current = true;
+      const generation = requestGeneration.current;
       try {
-        setLive(await loadEngineerSessionLive(token));
+        const next = await loadEngineerSessionLive(token);
+        const receivedAt = Date.now();
+        const nextPlan = await loadEngineerPlan(token);
+        const extras = await Promise.all(
+          missingRequestIds(nextPlan).map((id) =>
+            loadEngineerRequest(token, id).then((body) => body.request),
+          ),
+        );
+        if (disposed || generation !== requestGeneration.current) return;
+        setStoredPlan({ ...nextPlan, requests: [...nextPlan.requests, ...extras] });
+        acceptLive(next, receivedAt);
         setError(null);
       } catch (cause) {
+        if (disposed || generation !== requestGeneration.current) return;
         if (!failSession(cause)) {
           setError(cause instanceof Error ? cause.message : 'Не удалось обновить статус смены');
         }
+      } finally {
+        readPending.current = false;
       }
     };
     const timer = window.setInterval(() => void refreshLive(), 2_000);
-    return () => window.clearInterval(timer);
-  }, [designPreview, failSession, token]);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+    };
+  }, [acceptLive, designPreview, failSession, token]);
 
   const plan = useMemo<EngineerPlanResponse | null>(() => {
     if (!storedPlan || !live || live.workday.status === 'pending') return storedPlan;
@@ -182,15 +219,81 @@ export function EngineerApp({
     };
   }, [live, storedPlan]);
 
-  const items = useMemo(() => engineerListItems(plan, day), [day, plan]);
+  const items = useMemo(
+    () =>
+      engineerListItems(plan, live ? null : day)
+        .filter((item) =>
+          item.kind === 'lunch'
+            ? !live || item.endAt > logicalNow
+            : item.request.lifecycle !== 'completed' &&
+              item.request.lifecycle !== 'cancelled' &&
+              !item.request.assumedCompletedAt,
+        )
+        .map((item) =>
+          item.kind === 'job' && live
+            ? {
+                ...item,
+                variant:
+                  item.request.id === live.current?.request.id
+                    ? ('upcoming' as const)
+                    : ('regular' as const),
+              }
+            : item,
+        ),
+    [day, live, logicalNow, plan],
+  );
   const lunch = useMemo(() => engineerLunchWindow(plan, day), [day, plan]);
 
   const applyLiveAction = async (action: EngineerLiveAction): Promise<boolean> => {
     if (liveActionPending.current) return false;
     liveActionPending.current = true;
+    requestGeneration.current += 1;
+    setActionBusy(true);
     try {
-      setLive(await sendEngineerLiveAction(token, action));
+      const next = await sendEngineerLiveAction(token, action);
+      const receivedAt = Date.now();
       setError(null);
+      const terminalId =
+        action.kind === 'finish' || (action.kind === 'problem' && action.problemKind !== 'delay')
+          ? action.requestId
+          : null;
+      try {
+        const nextPlan = await loadEngineerPlan(token);
+        const extras = await Promise.all(
+          missingRequestIds(nextPlan).map((id) =>
+            loadEngineerRequest(token, id).then((body) => body.request),
+          ),
+        );
+        setStoredPlan({ ...nextPlan, requests: [...nextPlan.requests, ...extras] });
+      } catch (cause) {
+        // The fact is already committed: do not invite a duplicate mutation if only
+        // the follow-up read failed. Preserve its terminal state until polling recovers.
+        if (terminalId)
+          setStoredPlan((previous) =>
+            previous
+              ? {
+                  ...previous,
+                  requests: previous.requests.map((request) =>
+                    request.id !== terminalId
+                      ? request
+                      : action.kind === 'finish'
+                        ? {
+                            ...request,
+                            lifecycle: 'completed',
+                            assignmentState: 'done',
+                            completedAt: next.workday.liveNow,
+                          }
+                        : { ...request, lifecycle: 'cancelled', cancelledAt: next.workday.liveNow },
+                  ),
+                }
+              : previous,
+          );
+        if (!failSession(cause))
+          setError('Отметка сохранена. Не удалось обновить маршрут — повторим автоматически.');
+      }
+      if (terminalId)
+        setOpenedJob((previous) => (previous?.request.id === terminalId ? null : previous));
+      acceptLive(next, receivedAt);
       return true;
     } catch (cause) {
       if (failSession(cause)) return false;
@@ -198,6 +301,7 @@ export function EngineerApp({
       return false;
     } finally {
       liveActionPending.current = false;
+      setActionBusy(false);
     }
   };
 
@@ -308,8 +412,24 @@ export function EngineerApp({
   };
 
   const name = profile?.displayName ?? 'Инженер';
+  const detailJob = openedJob
+    ? (items.find(
+        (item): item is EngineerJobItem =>
+          item.kind === 'job' && item.request.id === openedJob.request.id,
+      ) ?? null)
+    : null;
+  const controls = (id: string) =>
+    live?.current?.request.id === id ? (
+      <LiveControls
+        key={id}
+        live={live}
+        now={logicalNow}
+        busy={actionBusy}
+        send={applyLiveAction}
+      />
+    ) : null;
   const email = profile?.email ?? fallbackEmail;
-  const overlayOpen = openedJob !== null || screen === 'settings';
+  const overlayOpen = detailJob !== null || screen === 'settings';
   const sheetY = window.innerHeight;
 
   return (
@@ -346,7 +466,7 @@ export function EngineerApp({
               className="min-w-0 font-murs tracking-[-0.02em] text-figma-ink"
               style={{ fontSize: eu(32) }}
             >
-              {engineerHeaderStamp(nowMs)}
+              {engineerHeaderStamp(live ? logicalNow * 1000 : nowMs)}
             </p>
           </header>
 
@@ -412,7 +532,9 @@ export function EngineerApp({
                   }}
                 >
                   <p className="font-semibold text-figma-ink" style={{ fontSize: eu(24) }}>
-                    Сегодня заявок нет
+                    {live?.engineer.routeState === 'awaiting_plan'
+                      ? 'Ожидаем новый маршрут'
+                      : 'На сегодня все заявки пройдены'}
                   </p>
                   <p
                     className="font-medium text-figma-muted"
@@ -429,6 +551,7 @@ export function EngineerApp({
                     item={item}
                     motionOn={motionOn}
                     delay={index * 0.04}
+                    actions={live && item.kind === 'job' ? controls(item.request.id) : undefined}
                     latePending={item.kind === 'job' ? lateIds.has(item.request.id) : false}
                     startPending={item.kind === 'job' && startPendingId === item.request.id}
                     onOpen={
@@ -458,7 +581,7 @@ export function EngineerApp({
         </div>
 
         <AnimatePresence>
-          {openedJob ? (
+          {openedJob && detailJob ? (
             <motion.div
               key={`detail-${openedJob.request.id}`}
               className="absolute left-0 top-0 z-30 h-full w-full bg-figma-canvas"
@@ -469,8 +592,9 @@ export function EngineerApp({
             >
               <div className="h-full overflow-y-auto">
                 <RequestDetail
-                  item={openedJob}
-                  nowMs={designPreview ? DESIGN_PREVIEW_NOW_MS : nowMs}
+                  item={detailJob}
+                  actions={live ? controls(detailJob.request.id) : undefined}
+                  nowMs={designPreview ? DESIGN_PREVIEW_NOW_MS : logicalNow * 1000}
                   latePending={lateIds.has(openedJob.request.id)}
                   onTimePending={onTimeIds.has(openedJob.request.id)}
                   onBack={() => {
@@ -486,6 +610,9 @@ export function EngineerApp({
           ) : null}
         </AnimatePresence>
 
+        {live ? (
+          <LiveDayOverlay live={live} now={logicalNow} busy={actionBusy} send={applyLiveAction} />
+        ) : null}
         <AnimatePresence>
           {screen === 'settings' ? (
             <motion.div

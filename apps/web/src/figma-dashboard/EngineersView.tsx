@@ -896,11 +896,11 @@ function EngineerRingCard({
         <div className="absolute bottom-[14px] left-[26px] right-[26px] pb-[4px]">
           <p
             ref={titleRef}
-            className="figma-text figma-text-keep-descenders figma-nowrap overflow-x-hidden text-ellipsis font-murs text-[24px] leading-[30px] tracking-[0.48px] text-white"
+            className="figma-text figma-text-keep-descenders figma-nowrap overflow-hidden text-ellipsis font-murs text-[24px] leading-[30px] tracking-[0.48px] text-white"
           />
           <p
             ref={statusRef}
-            className="figma-nowrap mt-[4px] overflow-x-hidden text-ellipsis font-extrabold text-[18px] leading-[22px] tracking-[0.36px] text-[#ededed]"
+            className="figma-nowrap mt-[4px] overflow-hidden text-ellipsis font-extrabold text-[18px] leading-[22px] tracking-[0.36px] text-[#ededed]"
           />
         </div>
       </div>

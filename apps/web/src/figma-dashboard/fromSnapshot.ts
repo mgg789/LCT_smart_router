@@ -1,4 +1,4 @@
-import type { LiveBreak } from '../api/live';
+import type { DispatchLiveView, LiveBreak } from '../api/live';
 import type {
   AlertView,
   DashboardSnapshot,
@@ -17,6 +17,7 @@ import {
   routeForEngineer,
   unassignedRequests,
 } from '../domain/dashboard';
+import { projectLiveGraph } from '../domain/liveGraph';
 import { explainSelection } from '../lib/explanations';
 import { factorLabel, POLICY_LABELS, skillLabel, transportLabel } from '../lib/reasons';
 import { formatClock, formatDayTitle, formatDurationMin } from '../lib/time';
@@ -221,11 +222,85 @@ export function withTechnicalBreaks(
     if (markers.length === 0) return engineer;
     return {
       ...engineer,
-      stops: [...engineer.stops, ...markers].sort((left, right) =>
-        left.time.localeCompare(right.time, 'ru'),
+      stops: [...engineer.stops, ...markers].sort(
+        (left, right) => (left.at ?? 0) - (right.at ?? 0),
       ),
     };
   });
+}
+
+/** Uses the same factual graph as the map, retaining terminal visits across replans. */
+export function withLiveRouteStops(
+  engineers: readonly EngineerCard[],
+  snapshot: DashboardSnapshot,
+  live: DispatchLiveView | null,
+): EngineerCard[] {
+  const cards = engineers.map((engineer) => {
+    const state = live?.engineers.find((item) => item.id === engineer.id);
+    const graph = projectLiveGraph(
+      routeForEngineer(snapshot, engineer.id),
+      state?.progress ?? null,
+    );
+    const history = live?.history.filter((item) => item.engineerId === engineer.id) ?? [];
+    const stops: RouteStop[] = graph.timelineNodes.map((node) => {
+      const terminal = history.find((item) => item.request.id === node.requestId);
+      const request =
+        terminal?.request ?? (node.requestId ? requestById(snapshot, node.requestId) : null);
+      const entered = state?.lineStatus === 'online' || state?.lineStatus === 'technical_break';
+      return {
+        kind: node.kind,
+        requestId: node.requestId,
+        at: node.at,
+        time: formatClock(node.at),
+        place:
+          node.kind === 'start'
+            ? 'Выход на смену'
+            : node.kind === 'lunch'
+              ? 'Обед'
+              : request
+                ? routeStopAddress(request.addressText)
+                : 'Заявка',
+        status:
+          node.kind === 'start'
+            ? entered
+              ? 'на смене'
+              : 'ожидаем выхода'
+            : node.kind === 'lunch'
+              ? 'обед'
+              : stopStatus(request),
+        active: graph.activeNodeKeys.has(node.key),
+        completed:
+          node.kind === 'start'
+            ? entered
+            : request?.lifecycle === 'completed' || Boolean(request?.assumedCompletedAt),
+      };
+    });
+    for (const item of history) {
+      const previous = stops.find((stop) => stop.requestId === item.request.id);
+      const at = item.stop?.startAt ?? item.terminalAt;
+      const terminalStop: RouteStop = {
+        kind: 'job',
+        requestId: item.request.id,
+        at,
+        time: formatClock(at),
+        place: routeStopAddress(item.request.addressText),
+        status:
+          item.outcome === 'cancelled'
+            ? 'отменено'
+            : item.outcome === 'assumed_completed'
+              ? 'по расписанию'
+              : 'выполнено',
+        completed: item.outcome !== 'cancelled',
+      };
+      if (previous) Object.assign(previous, terminalStop);
+      else stops.push(terminalStop);
+    }
+    stops.sort((a, b) =>
+      a.kind === 'start' ? -1 : b.kind === 'start' ? 1 : (a.at ?? 0) - (b.at ?? 0),
+    );
+    return { ...engineer, stops };
+  });
+  return withTechnicalBreaks(cards, live?.breaks ?? []);
 }
 
 function engineerCardFromSummary(
@@ -365,6 +440,8 @@ export function requestUrgency(request: Pick<RequestView, 'priority' | 'required
 
 function stopStatus(request: RequestView | null): string {
   if (!request) return 'запланировано';
+  if (request.lifecycle === 'cancelled') return 'отменено';
+  if (request.assumedCompletedAt) return 'по расписанию';
   if (request.lifecycle === 'completed' || request.assignmentState === 'done') return 'выполнено';
   if (request.lifecycle === 'in_progress') return 'сейчас - визит';
   return 'запланировано';

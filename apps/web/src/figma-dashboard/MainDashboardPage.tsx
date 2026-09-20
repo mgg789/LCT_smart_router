@@ -13,7 +13,7 @@ import {
 } from '../domain/regions';
 import { useDashboard } from '../hooks/useDashboard';
 import { type CaseExplanation, explainSelection } from '../lib/explanations';
-import { formatDurationMin } from '../lib/time';
+import { formatClock, formatDurationMin } from '../lib/time';
 import { AddEntityModal } from './AddEntityModal';
 import { AlertsView } from './AlertsView';
 import { useArtboardScale } from './artboardScale';
@@ -57,7 +57,7 @@ import {
   policyLabel,
   requestUrgency,
   rightPanelMode,
-  withTechnicalBreaks,
+  withLiveRouteStops,
 } from './fromSnapshot';
 import { PolicyComparisonView } from './PolicyComparisonView';
 import { FigmaIcon, FigmaText } from './primitives';
@@ -197,8 +197,11 @@ export function MainDashboardPage() {
     [dash.selectedEngineerId, dash.selectedRequest, visibleSnapshot],
   );
   const roster = useMemo(
-    () => withTechnicalBreaks(view?.engineers ?? [], dash.liveWorkday?.breaks ?? []),
-    [dash.liveWorkday?.breaks, view?.engineers],
+    () =>
+      visibleSnapshot
+        ? withLiveRouteStops(view?.engineers ?? [], visibleSnapshot, dash.liveWorkday)
+        : [],
+    [dash.liveWorkday, view?.engineers, visibleSnapshot],
   );
   const liveProgress = useMemo(
     () =>
@@ -649,6 +652,7 @@ export function MainDashboardPage() {
             style={{ top: DATE_TOP }}
           >
             {view?.dateLabel ?? 'Рабочий день'}
+            {dash.liveWorkday ? ` · ${formatClock(dash.liveWorkday.workday.liveNow)}` : ''}
           </FigmaText>
         )}
         <div
@@ -1870,7 +1874,7 @@ function RouteCard({
           className="absolute inset-0"
         >
           <FigmaText
-            className="figma-text-keep-descenders figma-nowrap pointer-events-none absolute left-[30px] right-[30px] top-[30px] overflow-x-hidden font-bold text-[28px] tracking-[-0.476px] text-ellipsis text-figma-ink"
+            className="figma-text-keep-descenders figma-nowrap pointer-events-none absolute left-[30px] right-[30px] top-[30px] overflow-hidden font-bold text-[28px] tracking-[-0.476px] text-ellipsis text-figma-ink"
             title={`Маршрут ${engineer.name}`}
           >
             Маршрут {truncateEnd(engineer.name, 22)}
@@ -1893,6 +1897,15 @@ function RouteCard({
                   width: Math.max(0, (engineer.stops.length - 1) * ROUTE_STOP_WIDTH),
                 }}
               />
+              {liveMarker ? (
+                <div
+                  className="absolute top-[19px] h-[3px] bg-figma-bee"
+                  style={{
+                    left: ROUTE_LINE_LEFT + liveMarker.fromIndex * ROUTE_STOP_WIDTH,
+                    width: (liveMarker.toIndex - liveMarker.fromIndex) * ROUTE_STOP_WIDTH,
+                  }}
+                />
+              ) : null}
               {liveMarker ? (
                 <motion.span
                   aria-label="Текущая позиция инженера в пути"
@@ -1971,7 +1984,7 @@ function RouteStopTopic({
       transition={{ ...fadeSoft, delay: index * 0.04 }}
     >
       <span
-        className="absolute top-[10px] rounded-full bg-figma-ink"
+        className={`absolute top-[10px] rounded-full ${stop.completed ? 'bg-figma-done' : stop.status === 'отменено' ? 'bg-figma-cancel' : stop.active ? 'bg-figma-bee ring-4 ring-figma-ink' : 'bg-figma-ink'}`}
         style={{ left: ROUTE_DOT_LEFT, width: ROUTE_DOT_SIZE, height: ROUTE_DOT_SIZE }}
       />
       <FigmaText className="figma-nowrap absolute left-0 top-[46px] w-[240px] text-center font-semibold text-[24px] tracking-[-0.408px] text-black">

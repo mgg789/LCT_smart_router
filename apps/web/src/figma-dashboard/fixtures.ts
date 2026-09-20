@@ -37,6 +37,8 @@ export type RouteStop = {
   requestId?: string | null;
   kind?: 'start' | 'job' | 'lunch' | 'technical';
   at?: number;
+  active?: boolean;
+  completed?: boolean;
 };
 
 export type EngineerRequest = {

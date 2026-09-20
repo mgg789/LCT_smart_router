@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import type { ReactNode } from 'react';
 import { FIGMA_ASSETS } from '../figma-dashboard/assets';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { skillLabel } from '../lib/reasons';
@@ -21,6 +22,7 @@ export function RequestDetail({
   onRoute,
   onLate,
   onOnTime,
+  actions,
 }: {
   item: EngineerJobItem;
   nowMs: number;
@@ -30,6 +32,7 @@ export function RequestDetail({
   onRoute: () => void;
   onLate: () => void;
   onOnTime: () => void;
+  actions?: ReactNode;
 }) {
   const service = item.request.workTypeTitle ?? skillLabel(item.request.requiredSkill);
   const equipment = equipmentLabel(item.request.requiredEquipment);
@@ -58,7 +61,10 @@ export function RequestDetail({
             style={{ width: eu(32), height: eu(29) }}
           />
         </motion.button>
-        <h1 className="min-w-0 font-murs tracking-[-0.02em] text-figma-ink" style={{ fontSize: eu(40) }}>
+        <h1
+          className="min-w-0 font-murs tracking-[-0.02em] text-figma-ink"
+          style={{ fontSize: eu(40) }}
+        >
           {arrivalHeadline(item.stop.startAt, nowMs)}
         </h1>
       </header>
@@ -113,33 +119,39 @@ export function RequestDetail({
       <div className="flex flex-col" style={{ marginTop: eu(24), gap: eu(16) }}>
         <div className="flex" style={{ gap: eu(40) }}>
           <Chip>{contact}</Chip>
-          <Chip align="center">{formatPlanWindow(item.request.windowStartAt, item.request.windowEndAt)}</Chip>
+          <Chip align="center">
+            {formatPlanWindow(item.request.windowStartAt, item.request.windowEndAt)}
+          </Chip>
         </div>
         <Chip>{item.request.addressText}</Chip>
         <Chip>{service}</Chip>
         {equipment ? <Chip>{equipment}</Chip> : null}
       </div>
 
-      <div className="mt-auto flex flex-col" style={{ gap: eu(15), paddingTop: eu(28) }}>
-        <motion.button
-          type="button"
-          onClick={onOnTime}
-          whileTap={{ scale: 0.98 }}
-          className="flex w-full items-center justify-center bg-figma-bee font-semibold tracking-[-0.03em] text-figma-ink disabled:opacity-60"
-          style={{ height: eu(95), borderRadius: eu(23), fontSize: eu(28) }}
-        >
-          {onTimePending ? 'Отмечено' : 'Буду вовремя'}
-        </motion.button>
-        <motion.button
-          type="button"
-          onClick={onLate}
-          whileTap={{ scale: 0.98 }}
-          className="flex w-full items-center justify-center bg-figma-ink font-semibold tracking-[-0.03em] text-white disabled:opacity-60"
-          style={{ height: eu(95), borderRadius: eu(23), fontSize: eu(28) }}
-        >
-          {latePending ? 'Отмечено' : 'Опаздываю'}
-        </motion.button>
-      </div>
+      {actions !== undefined ? (
+        actions
+      ) : (
+        <div className="mt-auto flex flex-col" style={{ gap: eu(15), paddingTop: eu(28) }}>
+          <motion.button
+            type="button"
+            onClick={onOnTime}
+            whileTap={{ scale: 0.98 }}
+            className="flex w-full items-center justify-center bg-figma-bee font-semibold tracking-[-0.03em] text-figma-ink disabled:opacity-60"
+            style={{ height: eu(95), borderRadius: eu(23), fontSize: eu(28) }}
+          >
+            {onTimePending ? 'Отмечено' : 'Буду вовремя'}
+          </motion.button>
+          <motion.button
+            type="button"
+            onClick={onLate}
+            whileTap={{ scale: 0.98 }}
+            className="flex w-full items-center justify-center bg-figma-ink font-semibold tracking-[-0.03em] text-white disabled:opacity-60"
+            style={{ height: eu(95), borderRadius: eu(23), fontSize: eu(28) }}
+          >
+            {latePending ? 'Отмечено' : 'Опаздываю'}
+          </motion.button>
+        </div>
+      )}
     </section>
   );
 }
