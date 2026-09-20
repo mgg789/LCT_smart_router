@@ -6,6 +6,7 @@ import shutil
 from pathlib import Path
 
 import pytest
+from core.contracts import GeoPoint
 from core.official import load_official_region
 from core.policy import compile_policy
 
@@ -87,6 +88,49 @@ def test_official_east_golden(official_east_scenario, official_east_run):
         for assignment in main.assignments
         if assignment.status == "unassigned"
     ] == GOLDEN["main"]["unassigned_request_ids"]
+
+
+def test_prepared_road_geometries_are_pinned_to_their_nodes(official_east_scenario):
+    """The enriched east matrix carries road polylines pinned to exact node ends."""
+    scenario = official_east_scenario
+    assert all(edge.geometry is not None for edge in scenario.graph.edges)
+    locations = {node.node_id: node.location for node in scenario.graph.nodes}
+    for edge in scenario.graph.edges:
+        assert edge.geometry is not None
+        assert edge.geometry[0] == locations[edge.source]
+        assert edge.geometry[-1] == locations[edge.target]
+        assert len(edge.geometry) >= 2
+
+
+def test_matrix_without_geometries_keeps_edges_shapeless(tmp_path):
+    """A matrix prepared without polylines stays disclosed-absent, never invented."""
+    from core.official import _edge_geometry
+
+    road = [GeoPoint(lat=55.7, lon=37.5), GeoPoint(lat=55.71, lon=37.51)]
+    snapped = [[37.5001, 55.7002], [37.505, 55.705], [37.5099, 55.7101]]
+    prepared = {"a>b": [[float(lon), float(lat)] for lon, lat in snapped]}
+
+    attached = _edge_geometry(prepared, "a", "b", road)
+    assert attached is not None
+    assert attached[0] == road[0]
+    assert attached[-1] == road[-1]
+    assert len(attached) == len(snapped) + 2
+
+    assert _edge_geometry({}, "a", "b", road) is None
+    assert _edge_geometry({"a>b": [[37.5, 55.7]]}, "a", "b", road) is None
+
+
+def test_official_travel_quotes_carry_exact_road_geometry(official_east_scenario):
+    from core.geo import GraphTravel
+
+    travel = GraphTravel(official_east_scenario.graph)
+    graph = official_east_scenario.graph
+    quote = travel.quote(graph.nodes[0].location, graph.nodes[17].location, "car")
+    assert quote is not None
+    assert quote.provenance == "road_matrix"
+    assert quote.geometry_exact is True
+    # A real path has intermediate shape; two points would be a straight line again.
+    assert len(quote.points) > 2
 
 
 def test_explanation_evidence_is_calculation_backed(official_east_run):

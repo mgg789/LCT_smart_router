@@ -47,18 +47,78 @@
     "Авария": "emergency"
   },
   "team_profiles": [
-    {"control_team": "Бригада Соколов", "transport_type": "car", "shift_start": "09:00", "shift_end": "18:00"},
-    {"control_team": "Бригада Мельников", "transport_type": "car", "shift_start": "10:00", "shift_end": "20:00"},
-    {"control_team": "Бригада Матвеев", "transport_type": "bike", "shift_start": "09:00", "shift_end": "19:00"},
-    {"control_team": "Бригада Попов", "transport_type": "car", "shift_start": "12:00", "shift_end": "23:00"},
-    {"control_team": "Бригада Арташкин", "transport_type": "transit", "shift_start": "08:00", "shift_end": "18:00"},
-    {"control_team": "Бригада Комарь", "transport_type": "car", "shift_start": "11:00", "shift_end": "22:00"},
-    {"control_team": "Бригада Каушнян", "transport_type": "walk", "shift_start": "09:00", "shift_end": "18:00"},
-    {"control_team": "Бригада Зверев", "transport_type": "car", "shift_start": "12:00", "shift_end": "23:00"},
-    {"control_team": "Бригада Перов", "transport_type": "bike", "shift_start": "10:00", "shift_end": "20:00"},
-    {"control_team": "Бригада Белузин", "transport_type": "car", "shift_start": "08:00", "shift_end": "18:00"},
-    {"control_team": "Бригада Гусаковский", "transport_type": "transit", "shift_start": "11:00", "shift_end": "23:00"},
-    {"control_team": "Бригада Свеженцев", "transport_type": "car", "shift_start": "09:00", "shift_end": "20:00"}
+    {
+      "control_team": "Бригада Соколов",
+      "transport_type": "car",
+      "shift_start": "09:00",
+      "shift_end": "18:00"
+    },
+    {
+      "control_team": "Бригада Мельников",
+      "transport_type": "car",
+      "shift_start": "10:00",
+      "shift_end": "20:00"
+    },
+    {
+      "control_team": "Бригада Матвеев",
+      "transport_type": "bike",
+      "shift_start": "09:00",
+      "shift_end": "19:00"
+    },
+    {
+      "control_team": "Бригада Попов",
+      "transport_type": "car",
+      "shift_start": "12:00",
+      "shift_end": "23:00"
+    },
+    {
+      "control_team": "Бригада Арташкин",
+      "transport_type": "transit",
+      "shift_start": "08:00",
+      "shift_end": "18:00"
+    },
+    {
+      "control_team": "Бригада Комарь",
+      "transport_type": "car",
+      "shift_start": "11:00",
+      "shift_end": "22:00"
+    },
+    {
+      "control_team": "Бригада Каушнян",
+      "transport_type": "walk",
+      "shift_start": "09:00",
+      "shift_end": "18:00"
+    },
+    {
+      "control_team": "Бригада Зверев",
+      "transport_type": "car",
+      "shift_start": "12:00",
+      "shift_end": "23:00"
+    },
+    {
+      "control_team": "Бригада Перов",
+      "transport_type": "bike",
+      "shift_start": "10:00",
+      "shift_end": "20:00"
+    },
+    {
+      "control_team": "Бригада Белузин",
+      "transport_type": "car",
+      "shift_start": "08:00",
+      "shift_end": "18:00"
+    },
+    {
+      "control_team": "Бригада Гусаковский",
+      "transport_type": "transit",
+      "shift_start": "11:00",
+      "shift_end": "23:00"
+    },
+    {
+      "control_team": "Бригада Свеженцев",
+      "transport_type": "car",
+      "shift_start": "09:00",
+      "shift_end": "20:00"
+    }
   ],
   "transport_cost_model": {
     "car": "osrm_duration",
@@ -73,7 +133,7 @@
   },
   "resource_sha256": {
     "geocodes": "169627d2f78a9fdfe7795234f77d1dde5d4955bb908d107bdff1c50da113046a",
-    "road_matrix": "3ba788321aefc4f98542662da7b2a79f742d04e79234125d2dc673136711c6ac"
+    "road_matrix": "b65cb704ebdccfc13f958e7c1d8439da74c72a7a82545954ef48406318f5fae0"
   },
   "assumptions": [
     "The official archive has no engineer directory, shifts, transport assignments or service durations.",

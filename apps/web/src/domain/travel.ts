@@ -12,9 +12,16 @@ export function mapRouteSegments(route: PlanRouteView): MapRouteSegment[] {
   if (route.legs.length > 0) {
     return route.legs.map((leg) => {
       const providerPoints = leg.geometry?.points ?? [];
+      // A prepared road graph (road_matrix) carries a real road polyline only when the
+      // path has intermediate shape: a two-point road_matrix leg is the disclosed
+      // node-to-node straightness of an un-enriched matrix, so it stays approximate
+      // (card #66). Route/traffic APIs always return a snapped road shape.
+      const exactRoadGeometry =
+        leg.travelSource === 'route_api' ||
+        leg.travelSource === 'traffic_api' ||
+        (leg.travelSource === 'road_matrix' && providerPoints.length > 2);
       const exactGeometry =
-        (leg.travelSource === 'route_api' || leg.travelSource === 'traffic_api') &&
-        providerPoints.length >= 2
+        exactRoadGeometry && providerPoints.length >= 2
           ? providerPoints.map((point) => [point.lon, point.lat] as const)
           : null;
       const endpointGeometry =
