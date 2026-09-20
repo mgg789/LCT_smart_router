@@ -1,33 +1,26 @@
 import { motion } from 'framer-motion';
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { DashboardSnapshot } from '../api/types';
 import { FIGMA_ASSETS } from './assets';
 import {
   ADD_TAB_LABEL,
   ADD_TABS,
-  ALERT_TYPE_OPTIONS,
   SKILL_OPTIONS,
   TRANSPORT_OPTIONS,
   WORK_TYPE_OPTIONS,
-  addSessionOffice,
-  addSessionRegion,
-  alertTypeLabel,
   officesForRegion,
   selectableRegions,
   type AddTab,
   type SkillId,
   type TransportId,
   useAddedEntities,
-  validateAlertDraft,
   validateEngineerDraft,
-  validateOfficeDraft,
-  validateRegionDraft,
   validateRequestDraft,
   windowFromClocks,
 } from './addEntity';
+import { AddressPointField } from './AddressPointField';
 import { ModalLayer, ModalScrim } from './modalLayer';
 import { FigmaIcon } from './primitives';
-import { pushToast } from './toasts';
 
 const fade = { duration: 0.22, ease: [0.22, 1, 0.36, 1] as const };
 /** Tall enough for the engineer tab; shorter tabs keep the empty canvas. */
@@ -38,17 +31,16 @@ const FIELD =
   'mt-[8px] h-[56px] w-full rounded-[20px] border border-figma-ink/15 bg-white px-[18px] font-medium text-[18px] tracking-[-0.3px] text-figma-ink outline-none placeholder:text-figma-hint focus:border-figma-ink';
 
 /**
- * Header «plus» dialog: request / engineer / region+office / alert.
- * Height is fixed to the tallest tab; shorter tabs keep empty canvas.
- * The primary action stays pinned to the bottom except on Region (two submits).
- * Request and engineer call live dispatch APIs; region, office and alert stay
- * session-local until those contracts exist.
+ * Header «plus» dialog: request / engineer / region.
+ * Request and engineer call live dispatch APIs. Region/office create is
+ * temporarily disabled; alert create is removed.
  */
 export function AddEntityModal({
   open,
   snapshot,
   motionOn,
   live,
+  token,
   submitting,
   onClose,
   onCreateRequest,
@@ -58,6 +50,7 @@ export function AddEntityModal({
   snapshot: DashboardSnapshot | null;
   motionOn: boolean;
   live: boolean;
+  token: string | null;
   submitting: boolean;
   onClose: () => void;
   onCreateRequest: (input: {
@@ -65,6 +58,8 @@ export function AddEntityModal({
     addressText: string;
     windowStartAt: number;
     windowEndAt: number;
+    lat?: number | null;
+    lon?: number | null;
   }) => Promise<void>;
   onCreateEngineer: (input: {
     displayName: string;
@@ -72,6 +67,8 @@ export function AddEntityModal({
     transportType: TransportId;
     region: string;
     email: string | null;
+    homeLat?: number | null;
+    homeLon?: number | null;
   }) => Promise<void>;
 }) {
   const [tab, setTab] = useState<AddTab>('request');
@@ -134,6 +131,7 @@ export function AddEntityModal({
                 <RequestForm
                   workDate={snapshot?.workDate ?? todayMoscow()}
                   live={live}
+                  token={token}
                   onError={setError}
                   onStatus={setStatus}
                   onSubmit={onCreateRequest}
@@ -143,16 +141,16 @@ export function AddEntityModal({
                 <EngineerForm
                   snapshot={snapshot}
                   live={live}
+                  token={token}
                   onError={setError}
                   onStatus={setStatus}
                   onSubmit={onCreateEngineer}
                 />
               ) : null}
               {tab === 'region' ? (
-                <RegionOfficeForm snapshot={snapshot} onError={setError} onStatus={setStatus} />
-              ) : null}
-              {tab === 'alert' ? (
-                <AlertForm onError={setError} onStatus={setStatus} />
+                <p className="mt-[24px] font-medium text-[16px] leading-[24px] text-figma-muted">
+                  Создание офиса и региона временно отключено.
+                </p>
               ) : null}
             </div>
 
@@ -171,9 +169,7 @@ export function AddEntityModal({
               {tab !== 'region' ? (
                 <SubmitRow
                   submitting={submitting}
-                  label={
-                    tab === 'request' ? 'Создать заявку' : tab === 'engineer' ? 'Добавить инженера' : 'Создать алёрт'
-                  }
+                  label={tab === 'request' ? 'Создать заявку' : 'Добавить инженера'}
                   formId={`add-form-${tab}`}
                 />
               ) : null}
@@ -196,27 +192,32 @@ function TabSwitch({
   const index = ADD_TABS.indexOf(tab);
   return (
     <div className="mt-[22px] h-[56px] rounded-full bg-figma-canvas p-[4px]">
-      <div className="relative grid h-full grid-cols-4">
+      <div className="relative grid h-full grid-cols-3">
       <motion.span
         aria-hidden
-        className="pointer-events-none absolute inset-y-0 left-0 w-1/4 rounded-full bg-figma-ink"
+        className="pointer-events-none absolute inset-y-0 left-0 w-1/3 rounded-full bg-figma-ink"
         initial={false}
         animate={{ x: `${index * 100}%` }}
         transition={motionOn ? CAPSULE_SPRING : { duration: 0 }}
       />
       {ADD_TABS.map((item) => {
         const active = item === tab;
+        const disabled = item === 'region';
         return (
           <button
             key={item}
             type="button"
-            onClick={() => onChange(item)}
-            className="relative z-10 flex h-full items-center justify-center rounded-full"
+            disabled={disabled}
+            title={disabled ? 'Временно недоступно' : undefined}
+            onClick={() => {
+              if (!disabled) onChange(item);
+            }}
+            className="relative z-10 flex h-full items-center justify-center rounded-full disabled:cursor-not-allowed"
           >
             <span
-              className={`font-semibold text-[16px] tracking-[-0.3px] transition-colors duration-300 ease-out ${
-                active ? 'text-white' : 'text-figma-ink'
-              }`}
+                className={`font-semibold text-[16px] tracking-[-0.3px] transition-colors duration-300 ease-out ${
+                  disabled ? 'text-figma-hint' : active ? 'text-white' : 'text-figma-ink'
+                }`}
             >
               {ADD_TAB_LABEL[item]}
             </span>
@@ -231,12 +232,14 @@ function TabSwitch({
 function RequestForm({
   workDate,
   live,
+  token,
   onError,
   onStatus,
   onSubmit,
 }: {
   workDate: string;
   live: boolean;
+  token: string | null;
   onError: (value: string | null) => void;
   onStatus: (value: string | null) => void;
   onSubmit: (input: {
@@ -244,10 +247,14 @@ function RequestForm({
     addressText: string;
     windowStartAt: number;
     windowEndAt: number;
+    lat?: number | null;
+    lon?: number | null;
   }) => Promise<void>;
 }) {
   const [workType, setWorkType] = useState<string>(WORK_TYPE_OPTIONS[0].code);
   const [addressText, setAddressText] = useState('');
+  const [lat, setLat] = useState<number | null>(null);
+  const [lon, setLon] = useState<number | null>(null);
   const [startClock, setStartClock] = useState('09:00');
   const [endClock, setEndClock] = useState('12:00');
 
@@ -258,7 +265,7 @@ function RequestForm({
         event.preventDefault();
         onError(null);
         onStatus(null);
-        const issue = validateRequestDraft({ workType, addressText, startClock, endClock });
+        const issue = validateRequestDraft({ workType, addressText, startClock, endClock, lat, lon });
         if (issue) {
           onError(issue);
           return;
@@ -268,14 +275,12 @@ function RequestForm({
           onError(window);
           return;
         }
-        void onSubmit({ workType, addressText: addressText.trim(), ...window })
+        void onSubmit({ workType, addressText: addressText.trim(), lat, lon, ...window })
           .then(() => {
             setAddressText('');
-            onStatus(
-              live
-                ? 'Заявка создана. Адрес без координат будет ждать геокодирования.'
-                : 'Заявка сохранена только в этом сеансе — живой API недоступен.',
-            );
+            setLat(null);
+            setLon(null);
+            onStatus(live ? 'Заявка создана и попала в план дня.' : 'Заявка сохранена только в этом сеансе.');
           })
           .catch((cause: unknown) => {
             onError(cause instanceof Error ? cause.message : 'Не удалось создать заявку');
@@ -311,15 +316,31 @@ function RequestForm({
           />
         </Field>
       </div>
-      <Field label="Адрес" htmlFor="add-request-address">
-        <input
-          id="add-request-address"
-          value={addressText}
-          onChange={(event) => setAddressText(event.target.value)}
-          placeholder="Город, улица, дом"
-          className={FIELD}
-        />
-      </Field>
+      <AddressPointField
+        id="add-request-address"
+        label="Адрес"
+        token={token}
+        addressText={addressText}
+        lat={lat}
+        lon={lon}
+        onAddressChange={(value) => {
+          setAddressText(value);
+          setLat(null);
+          setLon(null);
+        }}
+        onResolved={(hit) => {
+          setAddressText(hit.displayName);
+          setLat(hit.lat);
+          setLon(hit.lon);
+        }}
+        onMapPick={(nextLat, nextLon) => {
+          setLat(nextLat);
+          setLon(nextLon);
+          if (!addressText.trim()) {
+            setAddressText(`${nextLat.toFixed(5)}, ${nextLon.toFixed(5)}`);
+          }
+        }}
+      />
     </form>
   );
 }
@@ -327,12 +348,14 @@ function RequestForm({
 function EngineerForm({
   snapshot,
   live,
+  token,
   onError,
   onStatus,
   onSubmit,
 }: {
   snapshot: DashboardSnapshot | null;
   live: boolean;
+  token: string | null;
   onError: (value: string | null) => void;
   onStatus: (value: string | null) => void;
   onSubmit: (input: {
@@ -341,8 +364,13 @@ function EngineerForm({
     transportType: TransportId;
     region: string;
     email: string | null;
+    homeLat?: number | null;
+    homeLon?: number | null;
   }) => Promise<void>;
 }) {
+  const [homeLat, setHomeLat] = useState<number | null>(null);
+  const [homeLon, setHomeLon] = useState<number | null>(null);
+  const [homeAddress, setHomeAddress] = useState('');
   const added = useAddedEntities();
   const regions = selectableRegions(snapshot);
   const [displayName, setDisplayName] = useState('');
@@ -390,15 +418,16 @@ function EngineerForm({
           transportType,
           region,
           email: email.trim() || null,
+          homeLat,
+          homeLon,
         })
           .then(() => {
             setDisplayName('');
             setEmail('');
-            onStatus(
-              live
-                ? 'Профиль инженера создан. Для маршрута нужны точка старта и смена.'
-                : 'Инженер сохранён только в этом сеансе — живой API недоступен.',
-            );
+            setHomeAddress('');
+            setHomeLat(null);
+            setHomeLon(null);
+            onStatus(live ? 'Профиль инженера создан и поставлен в смену.' : 'Инженер сохранён только в этом сеансе.');
           })
           .catch((cause: unknown) => {
             onError(cause instanceof Error ? cause.message : 'Не удалось добавить инженера');
@@ -466,6 +495,25 @@ function EngineerForm({
           ))}
         </select>
       </Field>
+      <AddressPointField
+        id="add-engineer-home"
+        label="Точка старта"
+        token={token}
+        addressText={homeAddress}
+        lat={homeLat}
+        lon={homeLon}
+        onAddressChange={setHomeAddress}
+        onResolved={(hit) => {
+          setHomeAddress(hit.displayName);
+          setHomeLat(hit.lat);
+          setHomeLon(hit.lon);
+        }}
+        onMapPick={(nextLat, nextLon) => {
+          setHomeLat(nextLat);
+          setHomeLon(nextLon);
+          setHomeAddress(`${nextLat.toFixed(5)}, ${nextLon.toFixed(5)}`);
+        }}
+      />
       <Field label="Адрес офиса" htmlFor="add-engineer-office">
         <select
           id="add-engineer-office"
@@ -498,188 +546,6 @@ function EngineerForm({
           ? 'Пока сохраняется регион; офис можно привязать после появления API.'
           : null}
       </p>
-    </form>
-  );
-}
-
-function RegionOfficeForm({
-  snapshot,
-  onError,
-  onStatus,
-}: {
-  snapshot: DashboardSnapshot | null;
-  onError: (value: string | null) => void;
-  onStatus: (value: string | null) => void;
-}) {
-  const added = useAddedEntities();
-  const regions = selectableRegions(snapshot);
-  const [regionName, setRegionName] = useState('');
-  const [officeRegion, setOfficeRegion] = useState(regions[0]?.id ?? '');
-  const [officeAddress, setOfficeAddress] = useState('');
-
-  useEffect(() => {
-    if (officeRegion && !regions.some((item) => item.id === officeRegion)) {
-      setOfficeRegion(regions[0]?.id ?? '');
-    }
-  }, [officeRegion, regions]);
-
-  return (
-    <div className="flex flex-col gap-[28px]">
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          onError(null);
-          onStatus(null);
-          const issue = validateRegionDraft(regionName);
-          if (issue) {
-            onError(issue);
-            return;
-          }
-          const created = addSessionRegion(regionName);
-          setOfficeRegion(created.id);
-          setRegionName('');
-          onStatus(`Регион «${created.label}» добавлен. Контракта POST /dispatch/regions пока нет.`);
-        }}
-      >
-        <p className="font-bold text-[20px] tracking-[-0.34px] text-figma-ink">Новый регион</p>
-        <p className="mt-[6px] font-medium text-[14px] text-figma-muted">
-          Только название — регион связывает заявки и инженеров, без своих координат.
-        </p>
-        <Field label="Название" htmlFor="add-region-name">
-          <input
-            id="add-region-name"
-            value={regionName}
-            onChange={(event) => setRegionName(event.target.value)}
-            placeholder="Северный округ"
-            className={FIELD}
-          />
-        </Field>
-        <SubmitRow submitting={false} label="Добавить регион" />
-      </form>
-
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          onError(null);
-          onStatus(null);
-          const issue = validateOfficeDraft(officeRegion, officeAddress);
-          if (issue) {
-            onError(issue);
-            return;
-          }
-          const created = addSessionOffice(officeRegion, officeAddress);
-          setOfficeAddress('');
-          onStatus(`Офис «${created.addressText}» добавлен. Контракта POST /dispatch/depots пока нет.`);
-        }}
-      >
-        <p className="font-bold text-[20px] tracking-[-0.34px] text-figma-ink">Новый офис</p>
-        <p className="mt-[6px] font-medium text-[14px] text-figma-muted">
-          Адрес базы и регион привязки — отдельная сущность, в этой вкладке рядом с регионом.
-        </p>
-        <Field label="Регион привязки" htmlFor="add-office-region">
-          <select
-            id="add-office-region"
-            value={officeRegion}
-            onChange={(event) => setOfficeRegion(event.target.value)}
-            className={FIELD}
-          >
-            {regions.length === 0 ? <option value="">Сначала добавьте регион</option> : null}
-            {regions.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Адрес" htmlFor="add-office-address">
-          <input
-            id="add-office-address"
-            value={officeAddress}
-            onChange={(event) => setOfficeAddress(event.target.value)}
-            placeholder="Москва, Варшавское шоссе, 18"
-            className={FIELD}
-          />
-        </Field>
-        {added.offices.length > 0 ? (
-          <ul className="mt-[16px] space-y-[8px] font-medium text-[15px] text-figma-muted">
-            {added.offices.map((item) => (
-              <li key={item.id}>
-                {item.addressText} · {regions.find((region) => region.id === item.region)?.label ?? item.region}
-              </li>
-            ))}
-          </ul>
-        ) : null}
-        <SubmitRow submitting={false} label="Добавить офис" />
-      </form>
-    </div>
-  );
-}
-
-function AlertForm({
-  onError,
-  onStatus,
-}: {
-  onError: (value: string | null) => void;
-  onStatus: (value: string | null) => void;
-}) {
-  const titleId = useId();
-  const [title, setTitle] = useState('');
-  const [type, setType] = useState(ALERT_TYPE_OPTIONS[0].id);
-  const [reason, setReason] = useState('');
-
-  return (
-    <form
-      id="add-form-alert"
-      onSubmit={(event) => {
-        event.preventDefault();
-        onError(null);
-        onStatus(null);
-        const issue = validateAlertDraft({ title, type, reason });
-        if (issue) {
-          onError(issue);
-          return;
-        }
-        const named = title.trim().replace(/^./u, (letter) => letter.toLocaleUpperCase('ru-RU'));
-        const id = `manual-alert-${Date.now()}`;
-        pushToast({
-          id,
-          kind: 'alert',
-          title: named,
-          body: reason.trim(),
-        });
-        setTitle('');
-        setReason('');
-        onStatus(`Алёрт «${alertTypeLabel(type)}» появился во вкладке «Алерты». POST /dispatch/alerts ещё нет.`);
-      }}
-    >
-      <Field label="Название" htmlFor={titleId}>
-        <input
-          id={titleId}
-          value={title}
-          onChange={(event) => setTitle(event.target.value)}
-          placeholder="Окно не закрывается"
-          className={FIELD}
-        />
-      </Field>
-      <Field label="Тип" htmlFor="add-alert-type">
-        <select id="add-alert-type" value={type} onChange={(event) => setType(event.target.value as typeof type)} className={FIELD}>
-          {ALERT_TYPE_OPTIONS.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.label}
-            </option>
-          ))}
-        </select>
-      </Field>
-      <Field label="Причина" htmlFor="add-alert-reason">
-        <textarea
-          id="add-alert-reason"
-          value={reason}
-          onChange={(event) => setReason(event.target.value)}
-          rows={4}
-          placeholder="Что требует решения диспетчера"
-          className={`${FIELD} h-auto min-h-[120px] py-[16px]`}
-        />
-      </Field>
     </form>
   );
 }

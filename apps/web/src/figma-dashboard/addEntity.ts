@@ -3,14 +3,13 @@ import type { DashboardSnapshot } from '../api/types';
 import { regionOptions, regionStyle } from '../domain/regions';
 import { moscowAt } from '../lib/time';
 
-export const ADD_TABS = ['request', 'engineer', 'region', 'alert'] as const;
+export const ADD_TABS = ['request', 'engineer', 'region'] as const;
 export type AddTab = (typeof ADD_TABS)[number];
 
 export const ADD_TAB_LABEL: Record<AddTab, string> = {
   request: 'Заявка',
   engineer: 'Инженер',
   region: 'Регион',
-  alert: 'Алёрт',
 };
 
 /**
@@ -175,9 +174,14 @@ export function validateRequestDraft(draft: {
   addressText: string;
   startClock: string;
   endClock: string;
+  lat?: number | null;
+  lon?: number | null;
 }): string | null {
   if (!WORK_TYPE_OPTIONS.some((item) => item.code === draft.workType)) return 'Выберите тип заявки';
   if (!draft.addressText.trim()) return 'Укажите адрес';
+  if (draft.lat == null || draft.lon == null) {
+    return 'Выберите адрес из подсказки или точку на карте';
+  }
   if (!parseClock(draft.startClock) || !parseClock(draft.endClock)) return 'Укажите окно в формате ЧЧ:ММ';
   return null;
 }

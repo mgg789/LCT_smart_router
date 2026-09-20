@@ -41,8 +41,18 @@ describe('addEntity catalog helpers', () => {
         addressText: 'Таганская, 24',
         startClock: '09:00',
         endClock: '11:00',
+        lat: 55.74,
+        lon: 37.65,
       }),
     ).toBeNull();
+    expect(
+      validateRequestDraft({
+        workType: 'connection_request',
+        addressText: 'Таганская, 24',
+        startClock: '09:00',
+        endClock: '11:00',
+      }),
+    ).toBe('Выберите адрес из подсказки или точку на карте');
     expect(
       validateRequestDraft({
         workType: 'unknown',
