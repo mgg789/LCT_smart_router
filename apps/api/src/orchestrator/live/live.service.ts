@@ -566,18 +566,18 @@ export class LiveService {
       where: { workDate: workday.workDate, engineer: { archivedAt: null } },
       select: { engineerId: true },
     });
-    for (const day of days) {
-      await tx.liveEngineerState.upsert({
-        where: { workdayId_engineerId: { workdayId, engineerId: day.engineerId } },
-        update: {},
-        create: {
-          workdayId,
-          engineerId: day.engineerId,
-          createdAt: BigInt(wallNow),
-          updatedAt: BigInt(wallNow),
-        },
-      });
-    }
+    if (days.length === 0) return;
+    // Every LIVE read calls this guard. One idempotent insert keeps the hot polling path
+    // constant-round-trip instead of issuing one upsert per engineer every two seconds.
+    await tx.liveEngineerState.createMany({
+      data: days.map((day) => ({
+        workdayId,
+        engineerId: day.engineerId,
+        createdAt: BigInt(wallNow),
+        updatedAt: BigInt(wallNow),
+      })),
+      skipDuplicates: true,
+    });
   }
 
   /**
