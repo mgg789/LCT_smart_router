@@ -528,7 +528,7 @@ export class AlertsService {
     input: ResolveAlertInput,
   ): Promise<AlertView> {
     await lockAlertQueue(context.tx);
-    await this.refresh(context.tx, context.now);
+    await this.refresh(context.tx, context.now, undefined, context.businessTime);
     if (!context.businessTime)
       context = { ...context, now: await businessNow(context.tx, context.now), businessTime: true };
     const alert = await context.tx.alert.findUnique({ where: { id } });
@@ -768,6 +768,7 @@ export class AlertsService {
         context.tx,
         context.now,
         PUBLICATION_TRIGGERS.ENGINEER_AVAILABILITY_CHANGED,
+        { businessTime: true },
       );
       return;
     }
@@ -845,6 +846,7 @@ export class AlertsService {
         context.tx,
         context.now,
         PUBLICATION_TRIGGERS.LUNCH_RESTORED,
+        { businessTime: true },
       );
       return;
     }
@@ -882,6 +884,7 @@ export class AlertsService {
         context.tx,
         context.now,
         PUBLICATION_TRIGGERS.ENGINEER_AVAILABILITY_CHANGED,
+        { businessTime: true },
       );
       return;
     }
@@ -904,9 +907,14 @@ export class AlertsService {
   }
 
   /** Derives open alerts only from facts/schedules that actually exist. */
-  private async refresh(tx: Tx, now: number, scopeDate?: string): Promise<void> {
+  private async refresh(
+    tx: Tx,
+    now: number,
+    scopeDate?: string,
+    businessTime = false,
+  ): Promise<void> {
     await lockAlertQueue(tx);
-    now = await businessNow(tx, now, scopeDate);
+    if (!businessTime) now = await businessNow(tx, now, scopeDate);
     const thresholds = await this.thresholds(tx);
     const active = new Set<string>();
     const windowChanges = await tx.alert.findMany({

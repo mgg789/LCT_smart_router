@@ -7,12 +7,13 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../../src/app.module';
 import type { Actor } from '../../src/auth';
 import { SysError } from '../../src/common/errors';
-import type { PrismaClient } from '../../src/generated/prisma/client';
+import type { Engineer, PrismaClient } from '../../src/generated/prisma/client';
 import { OperationsService } from '../../src/operations';
 import { AlertsService } from '../../src/orchestrator/alerts';
 import { EngineersService } from '../../src/orchestrator/engineers';
 import { UnitOfWork } from '../../src/persistence';
-import { RouterClient } from '../../src/routing/router-gateway/router-client.port';
+import { RouterClient, type WindowProposalInput } from '../../src/routing/router-gateway/router-client.port';
+import { PUBLICATION_TRIGGERS, SnapshotPublisher, type RouterTaskSnapshot } from '../../src/routing/mount-data-eng';
 import { createTestClient, databaseUrl, unique } from '../support/database';
 
 /** Exercises the durable queue against PostgreSQL: seen is not a resolution and a
@@ -304,7 +305,7 @@ describe('dispatcher alert lifecycle', () => {
     const operationId = randomUUID();
     opIds.push(operationId);
     const beforePreview = await prisma.routingSnapshot.count();
-    const transport = mock.method(app.get(RouterClient), 'proposeWindow', async (preview) => {
+    const transport = mock.method(app.get(RouterClient), 'proposeWindow', async (preview: WindowProposalInput) => {
       assert.ok(preview.snapshot.requests.some((item) => item.request_id === request.id));
       assert.equal(preview.request_id, request.id);
       return { status: 'none' as const, proposal: null };
@@ -512,6 +513,75 @@ describe('dispatcher alert lifecycle', () => {
             ),
         ),
     );
+  });
+
+  it('publishes all engineer alert decisions on the accelerated business clock exactly once', async () => {
+    const wall = Math.floor(Date.now() / 1000);
+    const start = Date.parse('2098-11-20T09:00:00+03:00') / 1000;
+    const business = start + 3600;
+    const workDate = '2098-11-20';
+    const live = await prisma.liveWorkday.create({ data: {
+      generation: 997, workDate, status: 'running', logicalStartAt: BigInt(start),
+      logicalEndAt: BigInt(start + 10 * 3600), startedAtWallSec: BigInt(wall - 180),
+      speedDurationSec: 1800, createdAt: BigInt(wall), updatedAt: BigInt(wall),
+    } });
+    liveDayIds.push(live.id);
+    const crew: Engineer[] = [];
+    for (let index = 0; index < 2; index++) {
+      const engineer = await prisma.engineer.create({ data: {
+        displayName: `Clock regression ${index}`, inputOrder: 995 + index, skills: ['local'],
+        transportType: 'car', homeLat: 55.75, homeLon: 37.6, origin: 'manual',
+        createdAt: BigInt(wall), updatedAt: BigInt(wall),
+      } });
+      engineerIds.push(engineer.id);
+      crew.push(engineer);
+      await prisma.engineerDay.create({ data: {
+        engineerId: engineer.id, workDate, shiftStartAt: BigInt(start),
+        shiftEndAt: BigInt(start + 10 * 3600), availability: index === 0 ? 'offline' : 'online',
+        createdAt: BigInt(wall), updatedAt: BigInt(wall),
+      } });
+    }
+    const request = await prisma.request.create({ data: {
+      arrivalOrder: 995, addressText: 'Clock regression request', lat: 55.75, lon: 37.6,
+      needsGeocoding: false, normProfileCode: 'local', normativeTravelDurationSec: 600,
+      technicalDurationSec: 600, documentationDurationSec: 300, serviceDurationSec: 900,
+      windowStartAt: BigInt(business + 300), windowEndAt: BigInt(business + 3600),
+      requiredSkill: 'local', lifecycle: 'submitted', assignmentState: 'unassigned',
+      origin: 'manual', createdAt: BigInt(wall), updatedAt: BigInt(wall),
+    } });
+    requestIds.push(request.id);
+    try {
+      await app.get(UnitOfWork).run(tx => app.get(SnapshotPublisher).publishIfChanged(
+        tx, business, PUBLICATION_TRIGGERS.ENGINEER_AVAILABILITY_CHANGED, { businessTime: true, force: true },
+      ));
+      const before = await prisma.routingCurrent.findUniqueOrThrow({where:{id:'singleton'}});
+      for (const action of ['remove_shift', 'message_remove', 'skip_lunch', 'keep_lunch', 'add_engineer'] as const) {
+        const issue = await prisma.alert.create({ data: {
+          code: action === 'add_engineer' ? 'unassigned' : action.includes('lunch') ? 'lunch_conflict' : 'shift_no_show',
+          severity: 'warning', engineerIds: [crew[0]!.id], requestIds: [request.id],
+          reasons: [], workDate, createdAt: BigInt(business),
+        } });
+        ids.push(issue.id);
+        const operationId = randomUUID();
+        opIds.push(operationId);
+        const input = { action, engineerId: crew[0]!.id };
+        await operations.execute({operationId, actor, action: 'alert.resolve', targetRef: issue.id, payload: input},
+          context => alerts.resolve(context, issue.id, input));
+        const current = await prisma.routingCurrent.findUniqueOrThrow({where:{id:'singleton'},include:{snapshot:true}});
+        if (action === 'remove_shift' || action === 'message_remove')
+          assert.equal(current.snapshotId, before.snapshotId, 'removing an already offline engineer must not republish');
+        const resolved = await prisma.alert.findUniqueOrThrow({where:{id:issue.id}});
+        assert.equal(resolved.resolutionAction, action);
+        const task = JSON.parse(current.snapshot.payload) as RouterTaskSnapshot;
+        assert.equal(task.planning_as_of, business, action);
+        assert.ok(task.engineers.some(engineer => engineer.engineer_id === crew[1]!.id), `${action}: other engineer remains`);
+        assert.ok(task.requests.some(item => item.request_id === request.id), `${action}: work remains`);
+        const unaffected = await prisma.engineerDay.findUniqueOrThrow({where:{engineerId_workDate:{engineerId:crew[1]!.id,workDate}}});
+        assert.equal(unaffected.availability, 'online');
+      }
+    } finally {
+      await prisma.liveWorkday.delete({where:{id:live.id}});
+    }
   });
 
   it('removes stale direct LIVE window alerts and ignores archived engineer days', async () => {
