@@ -1,5 +1,6 @@
 import { motion, useReducedMotion } from 'framer-motion';
-import type { DashboardSnapshot } from '../api/types';
+import type { AlertResolutionInput, DashboardSnapshot } from '../api/types';
+import { AlertActions } from './AlertActions';
 import { type InboxNoticeCard, inboxFromSources } from './alertsInbox';
 import { FIGMA_ASSETS } from './assets';
 import { InboxAlertCardView, InboxNoticeCardView } from './inboxCard';
@@ -44,6 +45,8 @@ export function AlertsView({
   motionOn,
   onOpenRequest,
   onMarkNoticeSeen,
+  onResolve,
+  writesDisabled,
 }: {
   snapshot: DashboardSnapshot | null;
   toasts: readonly ToastNotification[];
@@ -51,6 +54,8 @@ export function AlertsView({
   motionOn: boolean;
   onOpenRequest: (requestId: string) => void;
   onMarkNoticeSeen: (noticeId: string) => Promise<void>;
+  onResolve: (id: string, input: AlertResolutionInput) => Promise<void>;
+  writesDisabled: boolean;
 }) {
   const reduceMotion = useReducedMotion();
   const animate = motionOn && !reduceMotion;
@@ -119,8 +124,15 @@ export function AlertsView({
                   engineerName={card.engineerName}
                   badge={card.badge}
                   body={card.body}
-                  primaryLabel={card.primaryLabel}
-                  secondaryLabel={card.secondaryLabel}
+                  primaryLabel={card.requestId ? 'К заявке' : null}
+                  actions={
+                    <AlertActions
+                      alert={card.sourceAlert}
+                      snapshot={snapshot}
+                      disabled={writesDisabled}
+                      onResolve={onResolve}
+                    />
+                  }
                   onPrimary={
                     card.requestId
                       ? () => {

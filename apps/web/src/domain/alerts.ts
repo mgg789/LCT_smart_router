@@ -36,7 +36,7 @@ export const ALERT_ACTION_SPECS: Readonly<Record<AlertActionId, AlertActionSpec>
     id: 'reschedule',
     label: 'На завтра',
     summary: 'Перенести заявку на следующий календарный день, сохранив часы окна.',
-    effect: 'Sys сдвинет обе границы окна на 24 часа и отправит заявку на перепланирование.',
+    effect: 'Система сдвинет обе границы окна на 24 часа и отправит заявку на перепланирование.',
     benefit: 'Снимает текущий риск и сохраняет длительность согласованного окна.',
     drawback: 'Клиент получит услугу позже; сегодняшняя заявка исчезнет из плана.',
     tone: 'outline',
@@ -46,7 +46,7 @@ export const ALERT_ACTION_SPECS: Readonly<Record<AlertActionId, AlertActionSpec>
     id: 'move_window',
     label: 'Сменить окно',
     summary: 'Задать заявке новое точное окно обслуживания по московскому времени.',
-    effect: 'Sys сохранит новые границы и отправит заявку на перепланирование.',
+    effect: 'Система сохранит новые границы и отправит заявку на перепланирование.',
     benefit: 'Позволяет найти выполнимое время без переноса на другой день.',
     drawback: 'Новое окно нужно заранее согласовать с клиентом.',
     tone: 'bee',
@@ -56,7 +56,7 @@ export const ALERT_ACTION_SPECS: Readonly<Record<AlertActionId, AlertActionSpec>
     id: 'add_engineer',
     label: 'Добавить инженера',
     summary: 'Подключить к текущей смене подходящего инженера, который сейчас вне линии.',
-    effect: 'Инженер выйдет online, получит уведомление, а заявка вернётся в планирование.',
+    effect: 'Инженер станет доступен для планирования, будет создано почтовое уведомление.',
     benefit: 'Добавляет доступную мощность и повышает шанс выполнить заявку сегодня.',
     drawback: 'Требует свободного инженера нужного региона, навыка, транспорта и смены.',
     tone: 'ink',
@@ -66,7 +66,7 @@ export const ALERT_ACTION_SPECS: Readonly<Record<AlertActionId, AlertActionSpec>
     id: 'keep_manual',
     label: 'Сохранить план',
     summary: 'Подтвердить текущий ручной план, несмотря на обнаруженное ухудшение.',
-    effect: 'Sys зафиксирует MANUAL-режим и сохранит обязательную причину решения.',
+    effect: 'Система сохранит ручной режим и обязательную причину решения.',
     benefit: 'Сохраняет диспетчерскую договорённость и уже выданный порядок работ.',
     drawback: 'План может быть хуже доступного автоматического варианта.',
     tone: 'outline',
@@ -86,7 +86,7 @@ export const ALERT_ACTION_SPECS: Readonly<Record<AlertActionId, AlertActionSpec>
     id: 'restore_auto',
     label: 'Вернуть AUTO',
     summary: 'Вернуться к актуальному автоматическому варианту Router.',
-    effect: 'Sys включит AUTO; алерт закроется только после фактического применения плана.',
+    effect: 'Система включит AUTO; алерт закроется только после фактического применения плана.',
     benefit: 'Использует лучший доступный вариант для текущих входных данных.',
     drawback: 'Маршруты и назначения могут измениться для нескольких инженеров.',
     tone: 'bee',
@@ -96,7 +96,7 @@ export const ALERT_ACTION_SPECS: Readonly<Record<AlertActionId, AlertActionSpec>
     id: 'skip_lunch',
     label: 'Убрать обед',
     summary: 'Отключить обед для выбранной смены инженера.',
-    effect: 'Sys снимет требование обеда и пересоберёт план дня.',
+    effect: 'Система снимет требование обеда и отправит день на перепланирование.',
     benefit: 'Освобождает время для выполнения заявок.',
     drawback: 'Инженер останется без запланированного перерыва на обед.',
     tone: 'ink',
@@ -106,7 +106,7 @@ export const ALERT_ACTION_SPECS: Readonly<Record<AlertActionId, AlertActionSpec>
     id: 'keep_lunch',
     label: 'Сохранить обед',
     summary: 'Сохранить обязательный обед и перепланировать остальные работы вокруг него.',
-    effect: 'Sys отметит обед обязательным и опубликует обновлённый вход Router.',
+    effect: 'Система отметит обед обязательным и отправит день на перепланирование.',
     benefit: 'Сохраняет перерыв инженера в рабочем дне.',
     drawback: 'Часть заявок может сдвинуться или остаться без назначения.',
     tone: 'bee',
@@ -116,7 +116,7 @@ export const ALERT_ACTION_SPECS: Readonly<Record<AlertActionId, AlertActionSpec>
     id: 'message',
     label: 'Написать инженеру',
     summary: 'Отправить инженеру сообщение и продолжить ждать его отметку.',
-    effect: 'Sys создаст почтовое уведомление на привязанный адрес.',
+    effect: 'Система создаст почтовое уведомление на привязанный адрес.',
     benefit: 'Даёт шанс быстро уточнить статус без изменения смены.',
     drawback: 'Не гарантирует ответ и само по себе не меняет маршрут.',
     tone: 'bee',
@@ -126,7 +126,8 @@ export const ALERT_ACTION_SPECS: Readonly<Record<AlertActionId, AlertActionSpec>
     id: 'remove_shift',
     label: 'Снять со смены',
     summary: 'Убрать инженера из активной смены на этот день.',
-    effect: 'Sys переведёт инженера offline, отключит ожидание явки и перепланирует работы.',
+    effect:
+      'Система снимет инженера с линии, отключит ожидание явки и отправит работы на перепланирование.',
     benefit: 'План перестанет рассчитывать на недоступного инженера.',
     drawback: 'Его заявки придётся перераспределить между оставшимися инженерами.',
     tone: 'ink',
@@ -136,7 +137,8 @@ export const ALERT_ACTION_SPECS: Readonly<Record<AlertActionId, AlertActionSpec>
     id: 'message_remove',
     label: 'Написать и снять',
     summary: 'Одновременно уведомить инженера и снять его с текущей смены.',
-    effect: 'Sys создаст письмо, переведёт инженера offline и перепланирует работы.',
+    effect:
+      'Система создаст письмо, снимет инженера с линии и отправит работы на перепланирование.',
     benefit: 'Фиксирует решение и сразу освобождает его заявки для других.',
     drawback: 'Инженер исключается из плана, даже если ответит позднее.',
     tone: 'ink',
@@ -146,7 +148,7 @@ export const ALERT_ACTION_SPECS: Readonly<Record<AlertActionId, AlertActionSpec>
     id: 'extend',
     label: 'Продлить ожидание',
     summary: 'Продлить время ожидания отметки инженера.',
-    effect: 'Sys перенесёт контрольный срок; для неявки продление всегда равно 15 минутам.',
+    effect: 'Система перенесёт контрольный срок; для неявки продление всегда равно 15 минутам.',
     benefit: 'Сохраняет текущий план, если инженер скоро появится.',
     drawback: 'При дальнейшей неявке перепланирование начнётся позже.',
     tone: 'outline',
@@ -161,7 +163,7 @@ export const ALERT_ACTION_LABELS: Readonly<Record<AlertActionId, string>> = Obje
 
 /** Narrows untrusted action ids supplied by live or cached server snapshots. */
 export function isAlertActionId(value: string): value is AlertActionId {
-  return Object.prototype.hasOwnProperty.call(ALERT_ACTION_SPECS, value);
+  return Object.hasOwn(ALERT_ACTION_SPECS, value);
 }
 
 /** Resolves known event codes without losing unknown server events. */

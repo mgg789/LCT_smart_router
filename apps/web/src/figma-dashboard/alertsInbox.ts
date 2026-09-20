@@ -8,6 +8,7 @@ import { shortRequestId } from './requestsTable';
 import { DEMO_TOASTS, type ToastKind, type ToastNotification } from './toasts';
 
 export type InboxAlertCard = {
+  sourceAlert: AlertView | null;
   id: string;
   createdAt: number;
   title: string;
@@ -15,8 +16,6 @@ export type InboxAlertCard = {
   badge: string | null;
   engineerName: string | null;
   requestId: string | null;
-  primaryLabel: string | null;
-  secondaryLabel: string | null;
 };
 
 export type InboxNoticeCard = {
@@ -144,6 +143,7 @@ function alertCardFromSnapshot(snapshot: DashboardSnapshot, alert: AlertView): I
     );
   return {
     id: `alert:${alert.id}`,
+    sourceAlert: alert,
     createdAt: alert.createdAt,
     title:
       request && unassigned
@@ -158,27 +158,18 @@ function alertCardFromSnapshot(snapshot: DashboardSnapshot, alert: AlertView): I
         : `Результат в ${formatClock(alert.createdAt)}`,
     engineerName: engineer?.displayName ?? null,
     requestId: request?.id ?? null,
-    primaryLabel: lunch ? 'Оставить без обеда' : request ? 'К заявке' : null,
-    secondaryLabel: lunch
-      ? 'Исключить заявку'
-      : request
-        ? unassigned
-          ? 'Сменить окно'
-          : 'Изменить условия'
-        : null,
   };
 }
 
 function alertCardFromToast(toast: ToastNotification): InboxAlertCard {
   return {
     id: toast.id,
+    sourceAlert: null,
     createdAt: toast.createdAt,
     title: toast.title.replace(/^Алёрт:\s*/u, ''),
     body: formatAlertReason(toast.body),
     badge: 'Срочная',
     engineerName: null,
     requestId: toast.requestId ?? null,
-    primaryLabel: toast.requestId ? 'К заявке' : null,
-    secondaryLabel: 'Сменить окно',
   };
 }

@@ -22,7 +22,9 @@ describe('ALERTS inbox', () => {
     expect(inbox.alerts.some((item) => item.id === 'demo-alert')).toBe(false);
     expect(inbox.notices.map((item) => item.id)).toEqual(['n-new', 'n-old']);
     expect(inbox.alerts[0]?.requestId).toBe('10490');
-    expect(inbox.alerts[0]?.primaryLabel).toBe('К заявке');
+    expect(inbox.alerts[0]?.sourceAlert).toBe(
+      snapshot.alerts.find((alert) => alert.id === 'alert-video'),
+    );
     expect(inbox.alerts[0]?.body.startsWith('Причина:')).toBe(true);
     expect(
       inbox.alerts.every((item) => item.id.startsWith('alert:') || item.id === 'demo-alert'),
@@ -85,8 +87,7 @@ describe('ALERTS inbox', () => {
     expect(inbox.alerts[0]?.title).toBe('окно заявки');
     expect(inbox.alerts[0]?.badge).toBe('Срочная');
     expect(inbox.alerts[0]?.requestId).toBe('10441');
-    expect(inbox.alerts[0]?.primaryLabel).toBe('К заявке');
-    expect(inbox.alerts[0]?.secondaryLabel).toBe('Сменить окно');
+    expect(inbox.alerts[0]?.sourceAlert).toBeNull();
   });
 
   it('keeps the «К заявке» action only when the alert names a request', () => {
@@ -100,7 +101,6 @@ describe('ALERTS inbox', () => {
       },
     ]);
     expect(inbox.alerts[0]?.requestId).toBeNull();
-    expect(inbox.alerts[0]?.primaryLabel).toBeNull();
   });
 
   it('treats only alert/error as inbox alerts and normalizes ms timestamps', () => {

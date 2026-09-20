@@ -717,6 +717,8 @@ export function MainDashboardPage() {
                   demoMode={dash.isDemo}
                   motionOn={motionOn}
                   onMarkNoticeSeen={dash.markNoticeSeen}
+                  onResolve={dash.resolveAlert}
+                  writesDisabled={dash.writesDisabled || dash.busy}
                   onOpenRequest={(requestId) => {
                     setStackDir(stackSlideDir(stackNav, 'requests'));
                     setStackNav('requests');
