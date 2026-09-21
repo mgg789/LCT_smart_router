@@ -1668,4 +1668,41 @@ describe('LIVE workday', () => {
       );
     }
   });
+
+  it('serialises an empty reset against an in-flight LIVE poll', async () => {
+    const engineer = await liveCreateEngineer();
+    const request = await liveCreateRequest();
+    await liveApplyPlan(engineer.id, [request]);
+    await liveStart();
+    assert.equal((await liveAction(engineer.token, { kind: 'online' })).status, 201);
+
+    const [pollResponse, resetResponse] = await Promise.all([
+      call('GET', '/api/v1/dispatch/live', dispatcherToken),
+      call('POST', '/api/v1/dispatch/data/reset', dispatcherToken, {
+        operationId: randomUUID(),
+        kind: 'empty',
+        confirmation: 'erase all application data',
+      }),
+    ]);
+    assert.notEqual(
+      pollResponse.status,
+      500,
+      `LIVE poll must not deadlock with reset: ${await pollResponse.text()}`,
+    );
+    assert.equal(resetResponse.status, 201, await resetResponse.text());
+
+    const login = await fetch(`${baseUrl}/api/v1/auth/dispatcher/password`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        email: process.env.DISPATCHER_EMAIL,
+        password: process.env.DISPATCHER_PASSWORD,
+      }),
+    });
+    assert.equal(login.status, 201, await login.clone().text());
+    dispatcherToken = ((await login.json()) as { token: string }).token;
+    const email = `${unique('live-client')}@example.test`;
+    emails.push(email);
+    clientToken = await signIn(email, 'client');
+  });
 });
