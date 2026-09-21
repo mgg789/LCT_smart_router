@@ -27,6 +27,7 @@ export function AskBar({ value, onChange, onSubmit, inputRef, className }: AskBa
     <form
       className={cn(
         'flex h-[79px] w-[813px] max-w-full items-center rounded-full bg-ink pr-2 pl-[10px] shadow-[0_18px_40px_rgba(39,41,48,0.14)]',
+        'transition-shadow duration-300 focus-within:shadow-[0_18px_48px_rgba(39,41,48,0.24),0_0_0_4px_rgba(255,199,44,0.35)]',
         className,
       )}
       onSubmit={submit}
@@ -49,14 +50,19 @@ export function AskBar({ value, onChange, onSubmit, inputRef, className }: AskBa
       <button
         aria-label="Отправить"
         className={cn(
-          'flex size-[63px] shrink-0 items-center justify-center rounded-full text-white',
+          'group flex size-[63px] shrink-0 items-center justify-center rounded-full text-white',
           'bg-gradient-to-b from-white/20 to-white/[0.05] shadow-[inset_0_1px_0_rgba(255,255,255,0.45)] ring-1 ring-white/20',
           'transition-[transform,opacity] duration-150 enabled:hover:scale-[1.06] enabled:active:scale-[0.95] disabled:opacity-45',
         )}
         disabled={empty}
         type="submit"
       >
-        <ArrowRight aria-hidden size={28} />
+        {/* The arrow leans towards where the question goes. */}
+        <ArrowRight
+          aria-hidden
+          className="transition-transform duration-200 ease-out group-enabled:group-hover:translate-x-[3px]"
+          size={28}
+        />
       </button>
     </form>
   );

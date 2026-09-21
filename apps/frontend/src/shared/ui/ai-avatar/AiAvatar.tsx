@@ -17,7 +17,7 @@ export function AiAvatar({ size = 60, className }: AiAvatarProps) {
     <img
       alt=""
       aria-hidden
-      className={cn('shrink-0 self-start rounded-full object-cover', className)}
+      className={cn('shrink-0 rounded-full object-cover', className)}
       height={size}
       src={avatarUrl}
       // Fixed both ways: inside a flex row an image would otherwise stretch to the row's height.

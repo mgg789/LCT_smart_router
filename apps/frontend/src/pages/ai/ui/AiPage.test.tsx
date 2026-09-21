@@ -26,7 +26,14 @@ describe('AiPage', () => {
 
     expect(await screen.findByText('Почему заявку не назначили?')).toBeInTheDocument();
     expect(await screen.findByText('Ассистент не подключён')).toBeInTheDocument();
-    expect(screen.getByText(/AI-ассистента в System Layer пока нет/)).toBeInTheDocument();
+    // The answer arrives word by word, so it is read as a whole paragraph.
+    expect(
+      screen.getByText(
+        (_, element) =>
+          element?.tagName === 'P' &&
+          (element.textContent ?? '').includes('AI-ассистента в System Layer пока нет'),
+      ),
+    ).toBeInTheDocument();
     // Nothing claims the model thought about it.
     expect(screen.queryByText(/Думал/)).not.toBeInTheDocument();
   });
