@@ -1,5 +1,7 @@
 import type { EngineerView, TransportType } from '@/entities/engineer';
 import { transportTitleOf } from '@/entities/engineer';
+import type { CrewTally, DispatchLiveView } from '@/entities/live';
+import { crewTally } from '@/entities/live';
 import type { PlanView } from '@/entities/plan';
 import type { RequestView } from '@/entities/request';
 import { skillTitle } from '@/entities/request';
@@ -23,6 +25,8 @@ export interface ProfileStop {
   endAt: number;
   done: boolean;
   running: boolean;
+  /** How a closed visit ended; `null` while it is still ahead or under way. */
+  outcome: 'completed' | 'cancelled' | 'assumed_completed' | null;
 }
 
 export interface EngineerProfile {
@@ -42,6 +46,9 @@ export interface EngineerProfile {
   assignedCount: number;
   routeStartAt: number | null;
   routeFinishAt: number | null;
+  /** «выполнено N/M» from the LIVE day; `null` when it does not know the crew. */
+  tally: CrewTally | null;
+  /** The crew's closed visits, oldest first, then the route still ahead. */
   stops: ProfileStop[];
   /** The stop under way, or the next one the plan has for this crew. */
   current: ProfileStop | null;
@@ -56,16 +63,15 @@ export interface EngineerProfile {
  * lifecycle. A stop with no request behind it — a wait, a lunch — keeps its own
  * name instead of borrowing an address it does not have.
  *
- * There is deliberately no "done" count. The Router plans only the work that
- * remains: a request leaves `routes` and `assignments` the moment it is started
- * or finished, and no dispatcher endpoint says which crew did it. The mockup's
- * «выполнено 2/6» has nothing behind it until the contract attributes finished
- * work to a crew.
+ * The plan holds only the work ahead: a visit leaves it once it is started or
+ * closed. What is behind the crew comes from the LIVE day instead — its tally
+ * and its history of closed visits, which lead the crew's line of stops.
  */
 export function buildEngineerProfile(
   engineer: EngineerView,
   plan: PlanView | null,
   requests: RequestView[],
+  live: DispatchLiveView | null = null,
 ): EngineerProfile {
   const byId = new Map(requests.map((request) => [request.id, request]));
   const route = plan?.routes.find((candidate) => candidate.engineerId === engineer.id) ?? null;
@@ -83,10 +89,34 @@ export function buildEngineerProfile(
       endAt: stop.endAt,
       done: request?.lifecycle === 'completed',
       running: request?.lifecycle === 'in_progress',
+      outcome: null,
     };
   });
 
-  const current = stops.find((stop) => stop.running) ?? stops.find((stop) => !stop.done) ?? null;
+  const closed: ProfileStop[] = (live?.history ?? [])
+    .filter((entry) => entry.engineerId === engineer.id)
+    .sort((left, right) => left.terminalAt - right.terminalAt)
+    .map((entry) => ({
+      // Closed visits sit before everything still planned; negative keeps the key unique.
+      sequence: -1 - (entry.stop?.sequence ?? 0) - entry.terminalAt,
+      requestId: entry.request.id,
+      number: entry.request.id.slice(0, 8),
+      title: entry.request.addressText,
+      contactName: entry.request.contactName,
+      arrivalAt: entry.stop?.arrivalAt ?? entry.terminalAt,
+      startAt: entry.stop?.startAt ?? entry.terminalAt,
+      endAt: entry.terminalAt,
+      done: entry.outcome !== 'cancelled',
+      running: false,
+      outcome: entry.outcome,
+    }));
+
+  const liveState = live?.engineers.find((state) => state.id === engineer.id);
+  const activeId = liveState?.activeRequestId ?? null;
+  const current =
+    stops.find((stop) => stop.running || (activeId !== null && stop.requestId === activeId)) ??
+    stops.find((stop) => !stop.done) ??
+    null;
   const currentIndex = current ? stops.indexOf(current) : -1;
   const next = currentIndex >= 0 ? (stops[currentIndex + 1] ?? null) : null;
 
@@ -106,7 +136,11 @@ export function buildEngineerProfile(
     assignedCount: route?.assignedCount ?? 0,
     routeStartAt: route?.startAt ?? null,
     routeFinishAt: route?.finishAt ?? null,
-    stops,
+    tally: crewTally(
+      liveState,
+      stops.flatMap((stop) => (stop.requestId ? [stop.requestId] : [])),
+    ),
+    stops: [...closed, ...stops],
     current,
     nextStartAt: next?.startAt ?? null,
   };

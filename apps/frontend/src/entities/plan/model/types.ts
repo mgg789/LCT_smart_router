@@ -40,7 +40,32 @@ export interface PlanRouteView {
   lunchTimeSec: number;
   assignedCount: number;
   lunchStatus: string;
+  /**
+   * One movement per visit, in the route's order. Absent on plans stored before
+   * the contract carried legs, hence optional.
+   */
+  legs?: PlanRouteLegView[];
   stops: PlanStopView[];
+}
+
+/** Where a leg's travel time came from; only road sources carry a road shape. */
+export type TravelSource = 'approximate' | 'road_matrix' | 'route_api' | 'traffic_api';
+
+/** One planned movement between two stops (docs/frontend-api.md §6.5). */
+export interface PlanRouteLegView {
+  legId: string;
+  fromStopId: string | null;
+  toStopId: string;
+  departureAt: number;
+  /** Equals the `arrivalAt` of the stop the leg ends at. */
+  arrivalAt: number;
+  travelTimeSec: number;
+  distanceKm: number;
+  /** The road itself, when Router — or a map provider — had one; otherwise `null`. */
+  geometry: { points: Array<{ lat: number; lon: number }> } | null;
+  travelSource: TravelSource;
+  trafficFactor: number;
+  geometryProvider?: 'twogis' | 'yandex';
 }
 
 export interface PlanStopView {

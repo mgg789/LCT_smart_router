@@ -1,7 +1,10 @@
 import { useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useEngineers } from '@/entities/engineer';
+import { useDispatchLive } from '@/entities/live';
 import { useDispatchState } from '@/entities/plan';
 import { unassignedRequests, useRequests } from '@/entities/request';
+import { failedWithoutData } from '@/shared/api';
 import { formatDayTitle } from '@/shared/lib';
 import { DayBoard } from '@/widgets/day-board';
 import { DayMap } from '@/widgets/day-map';
@@ -12,9 +15,16 @@ export function PlanPage() {
   const engineersQuery = useEngineers();
   const requestsQuery = useRequests();
   const stateQuery = useDispatchState();
+  // Optional: without the LIVE day the crews simply show what is ahead of them,
+  // so its failure does not take the day screen down with it.
+  const liveQuery = useDispatchLive();
 
+  // Another section can hand the day a request to open — «К заявке» on an alert.
+  const [searchParams] = useSearchParams();
   const [selectedEngineerId, setSelectedEngineerId] = useState<string | null>(null);
-  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
+  const [selectedRequestId, setSelectedRequestId] = useState<string | null>(() =>
+    searchParams.get('request'),
+  );
 
   const engineers = engineersQuery.data?.engineers ?? [];
   const requests = requestsQuery.data?.requests ?? [];
@@ -39,7 +49,7 @@ export function PlanPage() {
     engineers.find((engineer) => engineer.id === selectedAssignment?.engineerId) ?? null;
 
   const loading = engineersQuery.isPending || requestsQuery.isPending || stateQuery.isPending;
-  const failed = engineersQuery.isError || requestsQuery.isError || stateQuery.isError;
+  const failed = [engineersQuery, requestsQuery, stateQuery].some(failedWithoutData);
 
   const dayAnchor = plan?.planAsOf ?? requests[0]?.windowStartAt ?? null;
 
@@ -68,6 +78,7 @@ export function PlanPage() {
         <div className="mt-[26px] flex min-h-0 flex-1 gap-8">
           <DayBoard
             engineers={engineers}
+            live={liveQuery.data ?? null}
             onSelectEngineer={(id) =>
               setSelectedEngineerId((current) => (current === id ? null : id))
             }

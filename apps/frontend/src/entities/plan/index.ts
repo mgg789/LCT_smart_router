@@ -6,9 +6,11 @@ export type {
   DispatchStateView,
   LastResultRef,
   PlanAssignmentView,
+  PlanRouteLegView,
   PlanRouteView,
   PlanStopView,
   PlanView,
   ResultRef,
+  TravelSource,
 } from './model/types';
 export { PLAN_POLL_MS, planQueryKey, useDispatchState } from './model/useDispatchState';

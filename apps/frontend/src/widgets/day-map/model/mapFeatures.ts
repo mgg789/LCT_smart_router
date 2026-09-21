@@ -1,5 +1,5 @@
 import type { FeatureCollection, LineString, Point } from 'geojson';
-import type { PlanRouteView } from '@/entities/plan';
+import type { PlanRouteLegView, PlanRouteView } from '@/entities/plan';
 import type { RequestView } from '@/entities/request';
 
 export type StopState = 'assigned' | 'unassigned' | 'completed' | 'running';
@@ -49,30 +49,93 @@ export function buildRequestPoints(requests: RequestView[]): PointCollection {
   };
 }
 
+export interface RouteLegProps extends Record<string, unknown> {
+  /** `road` follows a real road shape; `straight` only joins two points. */
+  shape: 'road' | 'straight';
+}
+
+export type RouteLineCollection = FeatureCollection<LineString, RouteLegProps>;
+
+type LonLat = [number, number];
+
+function isFinitePoint(lon: number, lat: number): boolean {
+  return Number.isFinite(lon) && Number.isFinite(lat);
+}
+
 /**
- * The selected crew's route as one straight, dashed line.
+ * Whether a leg's points trace an actual road — the same rule `apps/web` draws by.
  *
- * The contract ships no road geometry for a leg, so nothing here claims to be a
- * road: straight dashed segments say "these points follow each other", which is
- * all the plan actually states (D-29).
+ * Route and traffic APIs always answer with a road shape. A prepared road graph
+ * (`road_matrix`) only does when the path has intermediate points: a two-point
+ * `road_matrix` leg is the matrix's node-to-node straightness, disclosed as such,
+ * and drawing it solid would pass a straight line off as a road.
  */
-export function buildRouteLine(route: PlanRouteView | null): LineCollection {
+function tracesRoad(leg: PlanRouteLegView, points: number): boolean {
+  if (points < 2) return false;
+  if (leg.travelSource === 'route_api' || leg.travelSource === 'traffic_api') return true;
+  return leg.travelSource === 'road_matrix' && points > 2;
+}
+
+/**
+ * The selected crew's route, one feature per movement.
+ *
+ * A leg whose geometry traces a road (`routes[].legs[].geometry`, see
+ * `tracesRoad`) is drawn along that road. Any other leg — an approximate travel
+ * time, a bare two-point matrix leg, a plan stored before legs existed — is a
+ * straight segment marked `straight`, so the map never passes a guess off as a
+ * road.
+ *
+ * Legs come one per visit, in the route's order: lunch is taken where the crew
+ * already stands and a wait sits on the visit's own address, so neither moves
+ * anyone. A leg is matched to its visit by position and confirmed by time — it
+ * ends when the visit's stop begins (`arrivalAt`). If the two disagree, the leg
+ * is not trusted and the segment falls back to a straight line.
+ */
+export function buildRouteLine(route: PlanRouteView | null): RouteLineCollection {
   if (!route) return { type: 'FeatureCollection', features: [] };
 
-  const coordinates: [number, number][] = [
-    [route.startLon, route.startLat],
-    ...route.stops
-      .filter((stop) => stop.requestId !== null)
-      .filter((stop) => Number.isFinite(stop.lon) && Number.isFinite(stop.lat))
-      .map((stop) => [stop.lon, stop.lat] as [number, number]),
-  ];
+  const visits = route.stops.filter(
+    (stop) => stop.requestId !== null && stop.kind === 'job' && isFinitePoint(stop.lon, stop.lat),
+  );
+  const legs = route.legs ?? [];
+  const features: RouteLineCollection['features'] = [];
 
-  if (coordinates.length < 2) return { type: 'FeatureCollection', features: [] };
+  let from: LonLat | null = isFinitePoint(route.startLon, route.startLat)
+    ? [route.startLon, route.startLat]
+    : null;
 
-  return {
-    type: 'FeatureCollection',
-    features: [{ type: 'Feature', geometry: { type: 'LineString', coordinates }, properties: {} }],
-  };
+  visits.forEach((visit, index) => {
+    const to: LonLat = [visit.lon, visit.lat];
+    const leg = legs[index];
+    // A wait before the visit shares the leg's arrival, so either stop may carry it.
+    const arrivals = route.stops
+      .filter(
+        (stop) =>
+          stop.sequence <= visit.sequence && stop.lon === visit.lon && stop.lat === visit.lat,
+      )
+      .map((stop) => stop.arrivalAt);
+    const matches = leg !== undefined && arrivals.includes(leg.arrivalAt);
+    const points = matches
+      ? (leg.geometry?.points ?? []).filter((p) => isFinitePoint(p.lon, p.lat))
+      : [];
+
+    if (matches && tracesRoad(leg, points.length)) {
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates: points.map((p) => [p.lon, p.lat]) },
+        properties: { shape: 'road' },
+      });
+    } else if (from) {
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates: [from, to] },
+        properties: { shape: 'straight' },
+      });
+    }
+    from = to;
+  });
+
+  return { type: 'FeatureCollection', features };
 }
 
 export type MapBounds = [[number, number], [number, number]];

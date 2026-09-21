@@ -1,10 +1,12 @@
+import { motion } from 'framer-motion';
 import { Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import type { EngineerView } from '@/entities/engineer';
+import type { DispatchLiveView } from '@/entities/live';
 import type { PlanView } from '@/entities/plan';
 import type { RequestView } from '@/entities/request';
 import { activeRequests, unassignedRequests } from '@/entities/request';
-import { cn, formatKm, formatRange, formatTime } from '@/shared/lib';
+import { cn, formatKm, formatRange, formatTime, staggered, useMotionOn } from '@/shared/lib';
 import { Monogram } from '@/shared/ui';
 import type { EngineerRow } from '../model/engineerRows';
 import { buildEngineerRows } from '../model/engineerRows';
@@ -13,6 +15,8 @@ export interface DayBoardProps {
   engineers: EngineerView[];
   requests: RequestView[];
   plan: PlanView | null;
+  /** The LIVE day, for each crew's «выполнено N/M»; `null` while it is unknown. */
+  live: DispatchLiveView | null;
   selectedEngineerId: string | null;
   onSelectEngineer: (engineerId: string) => void;
   onShowUnassigned: () => void;
@@ -31,7 +35,7 @@ function EngineerCard({
     <button
       aria-pressed={selected}
       className={cn(
-        'w-full rounded-2xl px-4 py-3 text-left transition-colors',
+        'w-full rounded-2xl px-4 py-3 text-left transition-[background-color,transform] duration-150 active:scale-[0.99]',
         selected ? 'bg-surface ring-1 ring-ink/15' : 'hover:bg-muted/60',
       )}
       onClick={onSelect}
@@ -51,13 +55,26 @@ function EngineerCard({
         {row.availability === 'offline' ? 'не на смене' : 'в работе'} · {row.assignedCount} заявок
       </p>
 
-      <div className="mt-3 flex items-center justify-between text-[14px] text-ink/55">
+      {/* As drawn: a bar of the crew's day, the shift under it on the left, the tally on the right. */}
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-muted">
+        <div
+          className="h-full rounded-full bg-ink transition-[width] duration-500 ease-out"
+          style={{
+            width: `${row.tally && row.tally.total > 0 ? (row.tally.done / row.tally.total) * 100 : 0}%`,
+          }}
+        />
+      </div>
+      <div className="mt-2 flex items-center justify-between text-[14px] text-ink/55">
         <span>
           {row.shiftStartAt !== null && row.shiftEndAt !== null
             ? formatRange(row.shiftStartAt, row.shiftEndAt)
             : 'смена не задана'}
         </span>
-        <span>в маршруте {row.assignedCount}</span>
+        <span>
+          {row.tally
+            ? `выполнено ${row.tally.done}/${row.tally.total}`
+            : `в маршруте ${row.assignedCount}`}
+        </span>
       </div>
     </button>
   );
@@ -74,13 +91,15 @@ export function DayBoard({
   engineers,
   requests,
   plan,
+  live,
   selectedEngineerId,
   onSelectEngineer,
   onShowUnassigned,
 }: DayBoardProps) {
   const [query, setQuery] = useState('');
+  const motionOn = useMotionOn();
 
-  const rows = useMemo(() => buildEngineerRows(engineers, plan), [engineers, plan]);
+  const rows = useMemo(() => buildEngineerRows(engineers, plan, live), [engineers, plan, live]);
   const visibleRows = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return rows;
@@ -120,13 +139,20 @@ export function DayBoard({
       </div>
 
       <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto">
-        {visibleRows.map((row) => (
-          <EngineerCard
+        {visibleRows.map((row, index) => (
+          // The crews settle in one after another the first time the day opens.
+          <motion.div
+            animate={{ opacity: 1, y: 0 }}
+            initial={motionOn ? { opacity: 0, y: 16 } : false}
             key={row.engineerId}
-            onSelect={() => onSelectEngineer(row.engineerId)}
-            row={row}
-            selected={row.engineerId === selectedEngineerId}
-          />
+            transition={motionOn ? staggered(index) : { duration: 0 }}
+          >
+            <EngineerCard
+              onSelect={() => onSelectEngineer(row.engineerId)}
+              row={row}
+              selected={row.engineerId === selectedEngineerId}
+            />
+          </motion.div>
         ))}
         {visibleRows.length === 0 ? (
           <p className="px-4 py-6 text-[14px] text-ink/55">Никто не найден.</p>
@@ -135,7 +161,7 @@ export function DayBoard({
 
       {unassigned.length > 0 ? (
         <button
-          className="mt-4 shrink-0 rounded-2xl bg-accent px-4 py-4 text-center"
+          className="mt-4 shrink-0 rounded-2xl bg-accent px-4 py-4 text-center transition-[transform,filter] duration-150 hover:scale-[1.01] hover:brightness-105 active:scale-[0.98]"
           onClick={onShowUnassigned}
           type="button"
         >

@@ -1,12 +1,23 @@
+import { AnimatePresence, motion } from 'framer-motion';
 import type { LucideIcon } from 'lucide-react';
 import { ArrowUpRight, Car, Clock, MapPin, Search, Utensils } from 'lucide-react';
 import type { WheelEvent } from 'react';
 import { useMemo, useRef, useState } from 'react';
 import type { EngineerView } from '@/entities/engineer';
 import { useEngineers } from '@/entities/engineer';
+import { useDispatchLive } from '@/entities/live';
 import { useDispatchState } from '@/entities/plan';
 import { useRequests } from '@/entities/request';
-import { cn, formatKm, formatRange, formatTime, useElementSize } from '@/shared/lib';
+import { failedWithoutData } from '@/shared/api';
+import {
+  cn,
+  fadeSoft,
+  formatKm,
+  formatRange,
+  formatTime,
+  useElementSize,
+  useMotionOn,
+} from '@/shared/lib';
 import { ArcCarousel, initialsOf, Monogram } from '@/shared/ui';
 import type { EngineerProfile, ProfileStop } from '../model/engineerProfile';
 import { buildEngineerProfile, routeElapsedShare } from '../model/engineerProfile';
@@ -58,6 +69,8 @@ function baseText(profile: EngineerProfile): string {
 }
 
 function stopStatus(stop: ProfileStop): string {
+  if (stop.outcome === 'cancelled') return 'отменено';
+  if (stop.outcome === 'assumed_completed') return 'по расписанию';
   if (stop.done) return 'выполнено';
   if (stop.running) return 'в работе';
   return 'по плану';
@@ -104,20 +117,20 @@ function wheelAsHorizontal(event: WheelEvent<HTMLDivElement>) {
  * The crews of the day: one profile card in full, then the deck of all of them
  * curved along an arc.
  *
- * The mockup fronts this screen with photographs and a «выполнено 2/6» tally.
- * There are no photographs in the data, so every face is a monogram; and the
- * tally has nothing behind it — the plan holds only the work still ahead, and no
- * dispatcher endpoint attributes finished work to a crew. The bar therefore
- * measures the one thing the plan does state: how much of the route is behind by
- * the clock.
+ * The mockup fronts this screen with photographs; there are none in the data, so
+ * every face is a monogram. Its «выполнено 2/6» tally and the finished stops on
+ * the line come from the LIVE day, which keeps each crew's closed visits — the
+ * plan itself holds only the work still ahead.
  */
 export function EngineersPage() {
   const engineersQuery = useEngineers();
   const requestsQuery = useRequests();
   const stateQuery = useDispatchState();
+  const liveQuery = useDispatchLive();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  const motionOn = useMotionOn();
 
   // Measured outside the fitted canvas, so what is measured is the window and
   // not the box the fit itself produced.
@@ -133,6 +146,7 @@ export function EngineersPage() {
   const engineers = engineersQuery.data?.engineers ?? [];
   const requests = requestsQuery.data?.requests ?? [];
   const plan = stateQuery.data?.plan ?? null;
+  const live = liveQuery.data ?? null;
 
   const deck = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -149,17 +163,24 @@ export function EngineersPage() {
   );
   const active = deck[activeIndex] ?? null;
   const profile = useMemo(
-    () => (active ? buildEngineerProfile(active, plan, requests) : null),
-    [active, plan, requests],
+    () => (active ? buildEngineerProfile(active, plan, requests, live) : null),
+    [active, plan, requests, live],
   );
 
   const elapsed = profile ? routeElapsedShare(profile, Math.floor(Date.now() / 1000)) : 0;
   const current = profile?.current ?? null;
-  const upcoming = current
-    ? (profile?.stops ?? []).filter((stop) => stop.sequence > current.sequence)
-    : [];
+  // The line of the day: what the crew has closed, then what is ahead of the
+  // current visit — the drawing shows the finished stops first.
+  const line = [
+    ...(profile?.stops ?? []).filter((stop) => stop.outcome !== null),
+    ...(current
+      ? (profile?.stops ?? []).filter(
+          (stop) => stop.outcome === null && stop.sequence > current.sequence,
+        )
+      : []),
+  ];
 
-  const failed = engineersQuery.isError || requestsQuery.isError || stateQuery.isError;
+  const failed = [engineersQuery, requestsQuery, stateQuery].some(failedWithoutData);
   const loading = engineersQuery.isPending || requestsQuery.isPending || stateQuery.isPending;
 
   if (failed) {
@@ -191,160 +212,184 @@ export function EngineersPage() {
           </p>
         ) : null}
 
-        {profile ? (
-          <section
-            className={cn(GUTTER, 'flex shrink-0 overflow-hidden rounded-[20px] bg-surface')}
-          >
-            {/* The drawing bleeds the portrait to the card's edges. */}
-            <Monogram
-              className="w-[286px] shrink-0 self-stretch"
-              name={profile.name}
-              shape="fill"
-              size={200}
-            />
+        {/* The profile turns over with the deck: the old crew lifts away, the new one settles in. */}
+        <AnimatePresence initial={false} mode="wait">
+          {profile ? (
+            <motion.section
+              animate={{ opacity: 1, y: 0 }}
+              className={cn(GUTTER, 'flex shrink-0 overflow-hidden rounded-[20px] bg-surface')}
+              exit={motionOn ? { opacity: 0, y: -8, transition: { duration: 0.12 } } : undefined}
+              initial={motionOn ? { opacity: 0, y: 8 } : false}
+              key={profile.id}
+              transition={fadeSoft}
+            >
+              {/* The drawing bleeds the portrait to the card's edges. */}
+              <Monogram
+                className="w-[286px] shrink-0 self-stretch"
+                name={profile.name}
+                shape="fill"
+                size={200}
+              />
 
-            <div className="flex min-w-0 flex-1 flex-col pt-7 pr-7 pb-[34px] pl-5">
-              <div className="flex items-start gap-8">
-                <div className="min-w-0">
-                  <h2 className="truncate font-display text-[31px] text-ink leading-none">
-                    {profile.name}
-                  </h2>
-                  <p className="mt-3 truncate text-[17px] text-ink-soft">
-                    {profile.email ?? 'вход не привязан'}
-                  </p>
-                </div>
-
-                <div className="mt-4 w-[320px] shrink-0">
-                  <div
-                    className="h-2 w-full overflow-hidden rounded-full bg-muted"
-                    title="Доля маршрута, которая уже прошла по времени. Сколько заявок бригада закрыла, контракт не отдаёт: начатая работа уходит из плана."
-                  >
-                    <div
-                      className="h-full rounded-full bg-ink"
-                      style={{ width: `${Math.round(elapsed * 100)}%` }}
-                    />
-                  </div>
-                  <p className="mt-2 flex items-baseline justify-end gap-3">
-                    <span className="text-[15px] text-ink">
-                      осталось {profile.assignedCount} заявок
-                    </span>
-                    <span className="font-display text-[24px] text-ink">
-                      {profile.distanceKm === null ? '— км' : formatKm(profile.distanceKm)}
-                    </span>
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-4 flex flex-wrap gap-3">
-                {profile.skills.map((skill) => (
-                  <span
-                    className="flex h-[39px] items-center rounded-full bg-muted px-6 text-[19px] text-ink"
-                    key={skill}
-                  >
-                    {skill}
-                  </span>
-                ))}
-              </div>
-
-              <div className="mt-3 flex min-h-0 flex-1">
-                <div className="flex-[572_1_0%]">
-                  <Detail icon={Car} label="Транспорт" value={profile.transport} />
-                  <Detail icon={MapPin} label="Офис" value={baseText(profile)} />
-                  <Detail
-                    icon={Clock}
-                    label="Смена"
-                    value={
-                      profile.shiftStartAt !== null && profile.shiftEndAt !== null
-                        ? formatRange(profile.shiftStartAt, profile.shiftEndAt)
-                        : 'не задана'
-                    }
-                  />
-                  <Detail icon={Utensils} label="Обед" value={lunchText(profile)} />
-                </div>
-
-                <div className="mx-5 w-[2px] shrink-0 bg-muted" />
-
-                <div className="min-w-0 flex-[810_1_0%] pt-1">
-                  {current ? (
-                    <>
-                      <h3 className="truncate font-display text-[32px] text-ink">
-                        {current.number ? `Заявка № ${current.number}` : current.title}
-                      </h3>
-                      <p className="mt-2 truncate text-[18px] text-ink-soft">
-                        {currentSubtitle(current)}
-                      </p>
-
-                      <div className="mt-6 flex gap-10">
-                        <div className="shrink-0">
-                          <p className="font-display text-[64px] text-ink leading-[0.8]">
-                            {formatTime(current.endAt)}
-                          </p>
-                          <p className="mt-5 text-[18px] text-ink">Ожидаемое завершение &nbsp;•</p>
-                          <p className="mt-1 text-[18px] text-ink">
-                            {profile.nextStartAt === null
-                              ? 'Следующей заявки в плане нет'
-                              : `Следующая заявка в ${formatTime(profile.nextStartAt)}`}
-                          </p>
-                        </div>
-
-                        {upcoming.length > 0 ? (
-                          <div
-                            className={cn(
-                              'min-w-0 flex-1 overflow-x-auto overscroll-x-contain',
-                              '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
-                            )}
-                            onWheel={wheelAsHorizontal}
-                            style={{
-                              // The day runs on past both ends of the strip.
-                              maskImage:
-                                'linear-gradient(to right, transparent, #000 7%, #000 82%, transparent)',
-                            }}
-                          >
-                            <ol className="relative flex w-max">
-                              <span
-                                aria-hidden
-                                className="absolute top-[7px] h-[3px] bg-ink"
-                                style={{ left: STOP_WIDTH / 2, right: STOP_WIDTH / 2 }}
-                              />
-                              {upcoming.map((stop) => (
-                                <li
-                                  className="shrink-0 text-center"
-                                  key={stop.sequence}
-                                  style={{ width: STOP_WIDTH }}
-                                >
-                                  <span
-                                    aria-hidden
-                                    className={cn(
-                                      'mx-auto block size-[17px] rounded-full',
-                                      stop.running ? 'bg-success' : 'bg-ink',
-                                    )}
-                                  />
-                                  <p className="mt-3 font-semibold text-[24px] text-ink">
-                                    {formatTime(stop.startAt)}
-                                  </p>
-                                  <p className="mt-1 truncate px-2 text-[18px] text-ink">
-                                    {stop.title}
-                                  </p>
-                                  <p className="mt-1 text-[15px] text-ink-faint">
-                                    {stopStatus(stop)}
-                                  </p>
-                                </li>
-                              ))}
-                            </ol>
-                          </div>
-                        ) : null}
-                      </div>
-                    </>
-                  ) : (
-                    <p className="text-[18px] text-ink-soft">
-                      У этой бригады нет маршрута в применённом плане.
+              <div className="flex min-w-0 flex-1 flex-col pt-7 pr-7 pb-[34px] pl-5">
+                <div className="flex items-start gap-8">
+                  <div className="min-w-0">
+                    <h2 className="truncate font-display text-[31px] text-ink leading-none">
+                      {profile.name}
+                    </h2>
+                    <p className="mt-3 truncate text-[17px] text-ink-soft">
+                      {profile.email ?? 'вход не привязан'}
                     </p>
-                  )}
+                  </div>
+
+                  <div className="mt-4 w-[320px] shrink-0">
+                    <div
+                      className="h-2 w-full overflow-hidden rounded-full bg-muted"
+                      title={
+                        profile.tally
+                          ? 'Сколько визитов бригада уже закрыла — из LIVE-дня'
+                          : 'LIVE-день не знает эту бригаду: шкала показывает, какая часть маршрута прошла по времени'
+                      }
+                    >
+                      <div
+                        className="h-full rounded-full bg-ink transition-[width] duration-500 ease-out"
+                        style={{
+                          width: `${Math.round(
+                            (profile.tally
+                              ? profile.tally.total > 0
+                                ? profile.tally.done / profile.tally.total
+                                : 0
+                              : elapsed) * 100,
+                          )}%`,
+                        }}
+                      />
+                    </div>
+                    <p className="mt-2 flex items-baseline justify-end gap-3">
+                      <span className="text-[15px] text-ink">
+                        {profile.tally
+                          ? `выполнено ${profile.tally.done}/${profile.tally.total}`
+                          : `осталось ${profile.assignedCount} заявок`}
+                      </span>
+                      <span className="font-display text-[24px] text-ink">
+                        {profile.distanceKm === null ? '— км' : formatKm(profile.distanceKm)}
+                      </span>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-3">
+                  {profile.skills.map((skill) => (
+                    <span
+                      className="flex h-[39px] items-center rounded-full bg-muted px-6 text-[19px] text-ink"
+                      key={skill}
+                    >
+                      {skill}
+                    </span>
+                  ))}
+                </div>
+
+                <div className="mt-3 flex min-h-0 flex-1">
+                  <div className="flex-[572_1_0%]">
+                    <Detail icon={Car} label="Транспорт" value={profile.transport} />
+                    <Detail icon={MapPin} label="Офис" value={baseText(profile)} />
+                    <Detail
+                      icon={Clock}
+                      label="Смена"
+                      value={
+                        profile.shiftStartAt !== null && profile.shiftEndAt !== null
+                          ? formatRange(profile.shiftStartAt, profile.shiftEndAt)
+                          : 'не задана'
+                      }
+                    />
+                    <Detail icon={Utensils} label="Обед" value={lunchText(profile)} />
+                  </div>
+
+                  <div className="mx-5 w-[2px] shrink-0 bg-muted" />
+
+                  <div className="min-w-0 flex-[810_1_0%] pt-1">
+                    {current ? (
+                      <>
+                        <h3 className="truncate font-display text-[32px] text-ink">
+                          {current.number ? `Заявка № ${current.number}` : current.title}
+                        </h3>
+                        <p className="mt-2 truncate text-[18px] text-ink-soft">
+                          {currentSubtitle(current)}
+                        </p>
+
+                        <div className="mt-6 flex gap-10">
+                          <div className="shrink-0">
+                            <p className="font-display text-[64px] text-ink leading-[0.8]">
+                              {formatTime(current.endAt)}
+                            </p>
+                            <p className="mt-5 text-[18px] text-ink">
+                              Ожидаемое завершение &nbsp;•
+                            </p>
+                            <p className="mt-1 text-[18px] text-ink">
+                              {profile.nextStartAt === null
+                                ? 'Следующей заявки в плане нет'
+                                : `Следующая заявка в ${formatTime(profile.nextStartAt)}`}
+                            </p>
+                          </div>
+
+                          {line.length > 0 ? (
+                            <div
+                              className={cn(
+                                'min-w-0 flex-1 overflow-x-auto overscroll-x-contain',
+                                '[scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
+                              )}
+                              onWheel={wheelAsHorizontal}
+                              style={{
+                                // The day runs on past both ends of the strip.
+                                maskImage:
+                                  'linear-gradient(to right, transparent, #000 7%, #000 82%, transparent)',
+                              }}
+                            >
+                              <ol className="relative flex w-max">
+                                <span
+                                  aria-hidden
+                                  className="absolute top-[7px] h-[3px] bg-ink"
+                                  style={{ left: STOP_WIDTH / 2, right: STOP_WIDTH / 2 }}
+                                />
+                                {line.map((stop) => (
+                                  <li
+                                    className="shrink-0 text-center"
+                                    key={stop.sequence}
+                                    style={{ width: STOP_WIDTH }}
+                                  >
+                                    <span
+                                      aria-hidden
+                                      className={cn(
+                                        'mx-auto block size-[17px] rounded-full',
+                                        stop.running ? 'bg-success' : 'bg-ink',
+                                      )}
+                                    />
+                                    <p className="mt-3 font-semibold text-[24px] text-ink">
+                                      {formatTime(stop.startAt)}
+                                    </p>
+                                    <p className="mt-1 truncate px-2 text-[18px] text-ink">
+                                      {stop.title}
+                                    </p>
+                                    <p className="mt-1 text-[15px] text-ink-faint">
+                                      {stopStatus(stop)}
+                                    </p>
+                                  </li>
+                                ))}
+                              </ol>
+                            </div>
+                          ) : null}
+                        </div>
+                      </>
+                    ) : (
+                      <p className="text-[18px] text-ink-soft">
+                        У этой бригады нет маршрута в применённом плане.
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          </section>
-        ) : null}
+            </motion.section>
+          ) : null}
+        </AnimatePresence>
 
         <div className="mt-[67px] flex shrink-0 flex-col items-center gap-2">
           <button

@@ -125,10 +125,22 @@ export function DayMap({ requests, route, selectedRequestId, onSelectRequest }: 
         data: { type: 'FeatureCollection', features: [] },
       });
 
+      // A leg with a road shape is drawn solid along that road; a leg without one
+      // is a dashed straight segment — joining two points, not claiming a road.
+      // `line-dasharray` cannot vary per feature, hence two layers on one source.
+      map.addLayer({
+        id: 'day-route-road',
+        type: 'line',
+        source: ROUTE_SOURCE,
+        filter: ['==', ['get', 'shape'], 'road'],
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': '#272930', 'line-width': 3 },
+      });
       map.addLayer({
         id: 'day-route-line',
         type: 'line',
         source: ROUTE_SOURCE,
+        filter: ['==', ['get', 'shape'], 'straight'],
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         paint: { 'line-color': '#272930', 'line-width': 2, 'line-dasharray': [2, 2] },
       });

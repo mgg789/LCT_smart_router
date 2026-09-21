@@ -22,3 +22,13 @@ export const NAV_ITEMS: NavItem[] = [
   { to: ROUTES.chats, label: 'Чаты', icon: MessagesCircle },
   { to: ROUTES.ai, label: 'AI', icon: AiIcon },
 ];
+
+/**
+ * Position of the section a path belongs to, or -1 outside the rail.
+ *
+ * The rail's order is also the order sections slide in: moving down the list
+ * brings the next one up from below, moving back brings it down from above.
+ */
+export function navIndexOf(pathname: string): number {
+  return NAV_ITEMS.findIndex((item) => pathname === item.to || pathname.startsWith(`${item.to}/`));
+}

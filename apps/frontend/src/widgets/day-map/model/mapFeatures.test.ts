@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { PlanRouteView } from '@/entities/plan';
+import type { PlanRouteLegView, PlanRouteView } from '@/entities/plan';
 import type { RequestView } from '@/entities/request';
 import { boundsOf, buildRequestPoints, buildRouteLine } from './mapFeatures';
 
@@ -107,14 +107,103 @@ describe('buildRouteLine', () => {
     ],
   };
 
-  it('starts the line at the crew start and walks the stops in order', () => {
+  const leg = (index: number, over: Partial<PlanRouteLegView>): PlanRouteLegView => ({
+    legId: `e1:leg:${index}`,
+    fromStopId: index === 0 ? null : `e1:${index - 1}`,
+    toStopId: `e1:${index}`,
+    departureAt: 0,
+    arrivalAt: index + 1,
+    travelTimeSec: 60,
+    distanceKm: 1,
+    geometry: null,
+    travelSource: 'approximate',
+    trafficFactor: 1,
+    ...over,
+  });
+
+  it('starts at the crew start and walks the stops in order, straight when no road is known', () => {
     const line = buildRouteLine(route);
 
-    expect(line.features[0]?.geometry.coordinates).toEqual([
-      [37.77, 55.69],
-      [37.78, 55.7],
-      [37.79, 55.71],
+    expect(line.features.map((feature) => feature.geometry.coordinates)).toEqual([
+      [
+        [37.77, 55.69],
+        [37.78, 55.7],
+      ],
+      [
+        [37.78, 55.7],
+        [37.79, 55.71],
+      ],
     ]);
+    expect(line.features.every((feature) => feature.properties.shape === 'straight')).toBe(true);
+  });
+
+  it('follows the road a leg carries', () => {
+    const road = [
+      { lat: 55.69, lon: 37.77 },
+      { lat: 55.695, lon: 37.771 },
+      { lat: 55.7, lon: 37.78 },
+    ];
+    const line = buildRouteLine({
+      ...route,
+      legs: [leg(0, { geometry: { points: road }, travelSource: 'road_matrix' }), leg(1, {})],
+    });
+
+    expect(line.features[0]?.properties.shape).toBe('road');
+    expect(line.features[0]?.geometry.coordinates).toHaveLength(3);
+    expect(line.features[1]?.properties.shape).toBe('straight');
+  });
+
+  it('does not call a bare two-point matrix leg a road', () => {
+    const line = buildRouteLine({
+      ...route,
+      legs: [
+        leg(0, {
+          geometry: {
+            points: [
+              { lat: 55.69, lon: 37.77 },
+              { lat: 55.7, lon: 37.78 },
+            ],
+          },
+          travelSource: 'road_matrix',
+        }),
+      ],
+    });
+
+    expect(line.features[0]?.properties.shape).toBe('straight');
+  });
+
+  it('trusts a route API even when its road is short', () => {
+    const line = buildRouteLine({
+      ...route,
+      legs: [
+        leg(0, {
+          geometry: {
+            points: [
+              { lat: 55.69, lon: 37.77 },
+              { lat: 55.7, lon: 37.78 },
+            ],
+          },
+          travelSource: 'route_api',
+        }),
+      ],
+    });
+
+    expect(line.features[0]?.properties.shape).toBe('road');
+  });
+
+  it('drops a leg whose arrival does not match its visit instead of drawing it wrong', () => {
+    const road = [
+      { lat: 50, lon: 30 },
+      { lat: 50.5, lon: 30.5 },
+      { lat: 51, lon: 31 },
+    ];
+    const line = buildRouteLine({
+      ...route,
+      legs: [leg(0, { arrivalAt: 999, geometry: { points: road }, travelSource: 'route_api' })],
+    });
+
+    expect(line.features[0]?.properties.shape).toBe('straight');
+    expect(line.features[0]?.geometry.coordinates[1]).toEqual([37.78, 55.7]);
   });
 
   it('draws nothing when there is no route', () => {

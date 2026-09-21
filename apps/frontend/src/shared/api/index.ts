@@ -8,3 +8,4 @@ export {
 } from './errors';
 export type { ApiRequestOptions, HttpMethod } from './http';
 export { apiRequest } from './http';
+export { failedWithoutData } from './queryState';

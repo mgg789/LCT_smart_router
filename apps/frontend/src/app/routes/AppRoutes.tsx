@@ -1,7 +1,9 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
+import { AlertsPage } from '@/pages/alerts';
 import { EngineersPage } from '@/pages/engineers';
 import { LoginPage } from '@/pages/login';
 import { PlanPage } from '@/pages/plan';
+import { PolicyPage } from '@/pages/policy';
 import { RequestsPage } from '@/pages/requests';
 import { SectionPlaceholder } from '@/shared/ui';
 import { AppLayout } from '@/widgets/app-shell';
@@ -13,12 +15,6 @@ import { RequireSession } from './RequireSession';
  * plainly rather than showing invented content.
  */
 const PENDING_SECTIONS = [
-  { path: ROUTES.alerts, title: 'Алерты', note: 'Экран ещё не собран.' },
-  {
-    path: ROUTES.policy,
-    title: 'Политика',
-    note: 'Экран ещё не собран; сюда же встанет сравнение политик с базовой из ТЗ.',
-  },
   {
     path: ROUTES.chats,
     title: 'Чаты',
@@ -40,6 +36,8 @@ export function AppRoutes() {
           <Route element={<PlanPage />} path={ROUTES.plan} />
           <Route element={<RequestsPage />} path={ROUTES.requests} />
           <Route element={<EngineersPage />} path={ROUTES.engineers} />
+          <Route element={<AlertsPage />} path={ROUTES.alerts} />
+          <Route element={<PolicyPage />} path={ROUTES.policy} />
           {PENDING_SECTIONS.map((section) => (
             <Route
               element={<SectionPlaceholder note={section.note} title={section.title} />}

@@ -1,8 +1,10 @@
+import { AnimatePresence } from 'framer-motion';
 import { ChevronDown, ChevronUp, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useEngineers } from '@/entities/engineer';
 import { useDispatchState } from '@/entities/plan';
 import { unassignedRequests, useRequests } from '@/entities/request';
+import { failedWithoutData } from '@/shared/api';
 import { cn, formatDayTitle, formatRange } from '@/shared/lib';
 import { Popover, StatusPill } from '@/shared/ui';
 import type { RequestSort } from '../model/requestRows';
@@ -41,7 +43,7 @@ export function RequestsPage() {
   );
   const visible = useMemo(() => sortRows(filterRows(rows, query), sort), [rows, query, sort]);
 
-  const failed = requestsQuery.isError || stateQuery.isError || engineersQuery.isError;
+  const failed = [requestsQuery, stateQuery, engineersQuery].some(failedWithoutData);
   const loading = requestsQuery.isPending || stateQuery.isPending || engineersQuery.isPending;
   const dayAnchor = plan?.planAsOf ?? requests[0]?.windowStartAt ?? null;
   const sortLabel = SORT_OPTIONS.find((option) => option.value === sort)?.label ?? '';
@@ -96,51 +98,55 @@ export function RequestsPage() {
             {sortOpen ? <ChevronUp aria-hidden size={20} /> : <ChevronDown aria-hidden size={20} />}
           </button>
 
-          {sortOpen ? (
-            <Popover
-              className="-top-1 -right-1"
-              closeIcon={<ChevronUp aria-hidden size={20} />}
-              closeLabel="Закрыть сортировку"
-              onClose={() => setSortOpen(false)}
-              title="Сортировка"
-              width={280}
-            >
-              <fieldset className="border-0 p-0">
-                <legend className="sr-only">Порядок заявок</legend>
-                {SORT_OPTIONS.map((option) => (
-                  <label
-                    className="flex h-[44px] cursor-pointer items-center gap-[10px]"
-                    key={option.value}
-                  >
-                    <span className="relative inline-flex size-[24px] shrink-0">
-                      <input
-                        checked={sort === option.value}
-                        className="peer size-[24px] cursor-pointer appearance-none rounded-full border-2 border-ink"
-                        name="requests-sort"
-                        onChange={() => {
-                          setSort(option.value);
-                          setSortOpen(false);
-                        }}
-                        type="radio"
-                      />
-                      <span
-                        aria-hidden
-                        className="pointer-events-none absolute inset-0 m-auto hidden size-[12px] rounded-full bg-ink peer-checked:block"
-                      />
-                    </span>
-                    <span
-                      className={cn(
-                        'text-[18px] font-medium text-ink',
-                        sort === option.value && 'font-semibold',
-                      )}
+          <AnimatePresence>
+            {sortOpen ? (
+              <Popover
+                className="-top-1 -right-1"
+                key="sort"
+                origin="right"
+                closeIcon={<ChevronUp aria-hidden size={20} />}
+                closeLabel="Закрыть сортировку"
+                onClose={() => setSortOpen(false)}
+                title="Сортировка"
+                width={280}
+              >
+                <fieldset className="border-0 p-0">
+                  <legend className="sr-only">Порядок заявок</legend>
+                  {SORT_OPTIONS.map((option) => (
+                    <label
+                      className="flex h-[44px] cursor-pointer items-center gap-[10px]"
+                      key={option.value}
                     >
-                      {option.label}
-                    </span>
-                  </label>
-                ))}
-              </fieldset>
-            </Popover>
-          ) : null}
+                      <span className="relative inline-flex size-[24px] shrink-0">
+                        <input
+                          checked={sort === option.value}
+                          className="peer size-[24px] cursor-pointer appearance-none rounded-full border-2 border-ink"
+                          name="requests-sort"
+                          onChange={() => {
+                            setSort(option.value);
+                            setSortOpen(false);
+                          }}
+                          type="radio"
+                        />
+                        <span
+                          aria-hidden
+                          className="pointer-events-none absolute inset-0 m-auto hidden size-[12px] rounded-full bg-ink peer-checked:block"
+                        />
+                      </span>
+                      <span
+                        className={cn(
+                          'text-[18px] font-medium text-ink',
+                          sort === option.value && 'font-semibold',
+                        )}
+                      >
+                        {option.label}
+                      </span>
+                    </label>
+                  ))}
+                </fieldset>
+              </Popover>
+            ) : null}
+          </AnimatePresence>
         </div>
       </div>
 

@@ -13,18 +13,36 @@ export interface SolverReason {
   facts?: Record<string, unknown>;
 }
 
+/**
+ * `alert` waits for a dispatcher's decision; `notice` only informs and never
+ * blocks the day (docs/api.md, «Алерты и уведомления»).
+ */
+export type AlertKind = 'alert' | 'notice';
+
 export interface AlertView {
   id: string;
+  /** Absent only on rows stored before alerts and notices were told apart. */
+  kind?: AlertKind;
   code: string;
   severity: AlertSeverity;
   engineerIds: string[];
   requestIds: string[];
-  reasons: SolverReason[];
-  restoreOption?: string | null;
+  /**
+   * The situation's facts as the detector recorded them — structured objects
+   * such as `{assignment: "unassigned"}`, not sentences. Read them through
+   * `alertReasonText`.
+   */
+  reasons: unknown[];
+  restoreOption?: unknown;
+  /** Decisions the server will accept for this alert; empty for a notice. */
+  actions?: string[];
   /** Unix seconds. */
   createdAt: number;
   seenAt: number | null;
   resolvedAt: number | null;
+  resolutionAction?: string | null;
+  resolutionReason?: string | null;
+  workDate?: string | null;
 }
 
 export interface AlertsView {

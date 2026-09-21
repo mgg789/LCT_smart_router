@@ -1,4 +1,6 @@
 import type { EngineerView } from '@/entities/engineer';
+import type { CrewTally, DispatchLiveView } from '@/entities/live';
+import { crewTally } from '@/entities/live';
 import type { PlanView } from '@/entities/plan';
 
 export interface EngineerRow {
@@ -11,18 +13,24 @@ export interface EngineerRow {
   shiftStartAt: number | null;
   shiftEndAt: number | null;
   availability: 'online' | 'offline' | null;
+  /** «выполнено N/M» — `null` when the LIVE day does not know this crew. */
+  tally: CrewTally | null;
 }
 
 /**
- * Joins what the crew is, and what the applied plan still has for it.
+ * Joins what the crew is, what the applied plan still has for it, and what the
+ * LIVE day says it has already done.
  *
- * There is deliberately no "done" count here. The Router plans only the work
- * that remains: a request drops out of the plan the moment it is started or
- * finished, and no dispatcher endpoint says which crew did it. Counting
- * completions from the plan would therefore always report zero — see the note
- * in docs about the missing attribution.
+ * The plan alone cannot say what is behind a crew: a request leaves it the
+ * moment it is started or finished. The LIVE workday keeps that tally per crew,
+ * so the done count comes from there and the plan supplies only what is ahead.
  */
-export function buildEngineerRows(engineers: EngineerView[], plan: PlanView | null): EngineerRow[] {
+export function buildEngineerRows(
+  engineers: EngineerView[],
+  plan: PlanView | null,
+  live: DispatchLiveView | null = null,
+): EngineerRow[] {
+  const liveById = new Map(live?.engineers.map((state) => [state.id, state]) ?? []);
   const routeByEngineer = new Map(plan?.routes.map((route) => [route.engineerId, route]) ?? []);
   const assignedByEngineer = new Map<string, number>();
   for (const assignment of plan?.assignments ?? []) {
@@ -43,6 +51,12 @@ export function buildEngineerRows(engineers: EngineerView[], plan: PlanView | nu
       shiftStartAt: engineer.day?.shiftStartAt ?? null,
       shiftEndAt: engineer.day?.shiftEndAt ?? null,
       availability: engineer.day?.availability ?? null,
+      tally: crewTally(
+        liveById.get(engineer.id),
+        (route?.stops ?? []).flatMap((stop) =>
+          stop.kind === 'job' && stop.requestId ? [stop.requestId] : [],
+        ),
+      ),
     };
   });
 }

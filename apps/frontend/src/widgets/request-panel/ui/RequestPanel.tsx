@@ -1,3 +1,4 @@
+import { AnimatePresence, motion } from 'framer-motion';
 import { Check, CircleHelp } from 'lucide-react';
 import { useState } from 'react';
 import type { EngineerView } from '@/entities/engineer';
@@ -5,7 +6,7 @@ import type { DispatchMode, PlanAssignmentView, PlanRouteView } from '@/entities
 import type { RequestView } from '@/entities/request';
 import { requestStatusTitle, skillTitle } from '@/entities/request';
 import { useReassignRequest } from '@/features/plan/reassign-request';
-import { cn, formatRange } from '@/shared/lib';
+import { cn, EASE_OUT, formatRange, useMotionOn } from '@/shared/lib';
 import { explainRequest } from '../model/explainRequest';
 
 export interface RequestPanelProps {
@@ -35,7 +36,31 @@ function Tile({ children, className }: { children: React.ReactNode; className?: 
  * plainly when a reason is the outcome of a limited search rather than a checked
  * constraint.
  */
-export function RequestPanel({
+export function RequestPanel(props: RequestPanelProps) {
+  const motionOn = useMotionOn();
+  // A newly picked request slides in from the right, the way `apps/web` brings a
+  // request forward; the old one steps back out first.
+  return (
+    <AnimatePresence initial={false} mode="wait">
+      <motion.div
+        animate={{ opacity: 1, x: 0 }}
+        className="flex h-full min-w-[320px] shrink basis-[485px]"
+        exit={
+          motionOn
+            ? { opacity: 0, x: 24, transition: { duration: 0.14, ease: EASE_OUT } }
+            : undefined
+        }
+        initial={motionOn ? { opacity: 0, x: 48 } : false}
+        key={props.request?.id ?? 'none'}
+        transition={{ duration: 0.28, ease: EASE_OUT }}
+      >
+        <RequestPanelBody {...props} />
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
+function RequestPanelBody({
   request,
   assignment,
   engineer,
@@ -48,7 +73,7 @@ export function RequestPanel({
 
   if (!request) {
     return (
-      <aside className="flex h-full min-w-[320px] shrink basis-[485px] items-center justify-center rounded-[20px] bg-ink p-6 text-center">
+      <aside className="flex h-full w-full items-center justify-center rounded-[20px] bg-ink p-6 text-center">
         <p className="text-[16px] text-white/60">Выберите заявку на карте или в списке.</p>
       </aside>
     );
@@ -62,7 +87,7 @@ export function RequestPanel({
     : 'Переназначение доступно только в ручном режиме.';
 
   return (
-    <aside className="flex h-full min-w-[320px] shrink basis-[485px] flex-col gap-4 overflow-y-auto rounded-[20px] bg-ink p-6">
+    <aside className="flex h-full w-full flex-col gap-4 overflow-y-auto rounded-[20px] bg-ink p-6">
       <div>
         <h2 className="flex items-center gap-3 font-display text-[28px] text-white">
           Заявка
@@ -120,7 +145,7 @@ export function RequestPanel({
 
       <div className="mt-auto flex flex-col gap-3 pt-2">
         <button
-          className="h-[56px] rounded-full bg-accent font-semibold text-[18px] text-ink disabled:opacity-45"
+          className="h-[56px] rounded-full bg-accent font-semibold text-[18px] text-ink transition-[transform,filter] duration-150 enabled:hover:scale-[1.02] enabled:hover:brightness-105 enabled:active:scale-[0.98] disabled:opacity-45"
           disabled={!canReassign || reassign.isPending}
           onClick={() => setPickerOpen((open) => !open)}
           title={canReassign ? undefined : reassignHint}

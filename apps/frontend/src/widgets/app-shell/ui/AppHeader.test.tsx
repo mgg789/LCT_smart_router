@@ -164,7 +164,12 @@ describe('AppHeader', () => {
 
     await user.click(screen.getByLabelText('Меню аккаунта'));
 
-    expect(screen.queryByRole('dialog', { name: 'Алерты и уведомления' })).not.toBeInTheDocument();
+    // The closing panel animates out before it unmounts.
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', { name: 'Алерты и уведомления' }),
+      ).not.toBeInTheDocument(),
+    );
     expect(screen.getByRole('button', { name: 'Выйти' })).toBeInTheDocument();
   });
 
