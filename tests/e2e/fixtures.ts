@@ -95,6 +95,21 @@ export async function openDispatcherSettings(page: Page) {
   }).toPass({ timeout: 30_000 });
 }
 
+/**
+ * Open the Engineers tab and return the dossier availability control.
+ * Prefer the DOM node: the 3D ring (`perspective` + `preserve-3d`) plus the
+ * dossier's `overflow-hidden` often drop the button from Chromium's a11y tree,
+ * so `getByRole('Снять со смены')` times out even when the control is painted.
+ */
+export async function engineerAvailabilityControl(page: Page) {
+  await page.getByRole('button', { name: 'Инженеры', exact: true }).click();
+  const dossier = page.locator('[data-name="ENGINEERS"] [data-engineer-dossier]');
+  await expect(dossier).toBeVisible({ timeout: 20_000 });
+  const control = dossier.locator('[data-availability-action]');
+  await expect(control).toBeVisible({ timeout: 20_000 });
+  return control;
+}
+
 /** Isolated serial fixtures: real seed per test, external network blocked, error evidence. */
 export const test = base.extend<{ live: LiveDay; browserHealth: undefined }>({
   browserHealth: [
