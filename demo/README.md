@@ -14,3 +14,9 @@ review. Login is in the root [README](../README.md).
 | [06-policy-comparison.jpg](./06-policy-comparison.jpg) | FIFO baseline vs working presets |
 
 These files are recordings, not a substitute for the live contour.
+
+## Ручное управление MANUAL — 21.09.2026
+
+[Приёмка DRO-70](./manual/README.md): 30-минутный локальный день на четырёх заявках
+и двух инженерах, остановка Router, перезапуск API, ручные правки и возврат AUTO.
+В папке — скриншоты обоих интерфейсов и машинный журнал проверок.
