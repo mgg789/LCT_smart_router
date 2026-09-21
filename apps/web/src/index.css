@@ -149,7 +149,7 @@ body {
 }
 
 /**
- * Engineer phone column: layout width is the device (or 430px on desktop).
+ * Engineer / Client phone column: layout width is the device (or 430px on desktop).
  * `--eu` is one Figma artboard pixel so 670-wide tokens fit without transform/zoom.
  */
 .engineer-ring-page,
@@ -212,7 +212,8 @@ body {
     radial-gradient(ellipse 240px 200px at 100% 100%, rgba(241, 241, 241, 0.5) 0%, transparent 78%);
 }
 
-.engineer-phone {
+.engineer-phone,
+.client-phone {
   width: min(100%, 430px);
   min-height: 100%;
   margin-inline: auto;

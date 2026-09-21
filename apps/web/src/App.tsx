@@ -1,20 +1,20 @@
 import { useEffect, useState } from 'react';
+import { appSurface } from './appSurface';
+import { ClientPage } from './figma-client/ClientPage';
 import { EngineerAuthPage } from './figma-dashboard/EngineerAuthPage';
 import { MainDashboardPage } from './figma-dashboard/MainDashboardPage';
 
-/** Splits the dispatcher Dashboard from the Engineer App on `/engineer`. */
+/** Splits Client App, Engineer App and the dispatcher Dashboard. */
 export function App() {
-  const [engineer, setEngineer] = useState(() => isEngineerPath(window.location.pathname));
+  const [surface, setSurface] = useState(() => appSurface(window.location.pathname));
 
   useEffect(() => {
-    const onPop = () => setEngineer(isEngineerPath(window.location.pathname));
+    const onPop = () => setSurface(appSurface(window.location.pathname));
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
-  return engineer ? <EngineerAuthPage /> : <MainDashboardPage />;
-}
-
-function isEngineerPath(pathname: string): boolean {
-  return pathname === '/engineer' || pathname.startsWith('/engineer/');
+  if (surface === 'client') return <ClientPage />;
+  if (surface === 'engineer') return <EngineerAuthPage />;
+  return <MainDashboardPage />;
 }
