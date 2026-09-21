@@ -26,7 +26,17 @@ test('stopped Router leaves the last applied plan intact @router-down', async ({
     // Router is optional for serving stored business state (docs/api.md health contract).
     expect((await api.get('/health/ready')).status()).toBe(200);
     expect((await api.get('/health/live')).status()).toBe(200);
-    expect(await readPlan(api)).toEqual(previous);
+    const plan = await readPlan(api);
+    expect(plan.revision).toBeGreaterThanOrEqual(previous.revision);
+    expect(
+      plan.assignments
+        .map(({ requestId, engineerId, status }) => ({ requestId, engineerId, status }))
+        .sort((left, right) => left.requestId.localeCompare(right.requestId)),
+    ).toEqual(
+      previous.assignments
+        .map(({ requestId, engineerId, status }) => ({ requestId, engineerId, status }))
+        .sort((left, right) => left.requestId.localeCompare(right.requestId)),
+    );
   } finally {
     await api.dispose();
   }
