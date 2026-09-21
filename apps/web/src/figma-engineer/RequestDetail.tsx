@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import type { ReactNode } from 'react';
+import { RequestPassport } from '../components/passports/PassportDetails';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { skillLabel } from '../lib/reasons';
 import { ENGINEER_ASSETS } from './assets';
@@ -14,12 +15,14 @@ import { RequestMap } from './RequestMap';
  * contact / window / address / type / equipment chips, on-time and late.
  */
 export function RequestDetail({
+  token,
   item,
   nowMs,
   onBack,
   onRoute,
   actions,
 }: {
+  token?: string;
   item: EngineerJobItem;
   nowMs: number;
   onBack: () => void;
@@ -105,6 +108,12 @@ export function RequestDetail({
         <Chip>{service}</Chip>
         {equipment ? <Chip>{equipment}</Chip> : null}
       </div>
+
+      {token ? (
+        <div className="mt-4">
+          <RequestPassport token={token} audience="engineer" requestId={item.request.id} />
+        </div>
+      ) : null}
 
       {actions ? (
         <div className="mt-auto" style={{ paddingTop: eu(24) }}>

@@ -774,6 +774,7 @@ export function MainDashboardPage() {
               ) : null}
               {stackViewKey(stackNav) === 'engineers' ? (
                 <EngineersView
+                  token={dash.source === 'live' ? (dash.token ?? undefined) : undefined}
                   snapshot={visibleSnapshot}
                   selectedEngineerId={dash.selectedEngineerId}
                   motionOn={motionOn}
@@ -887,6 +888,7 @@ export function MainDashboardPage() {
                 transition={motionOn ? slide : { duration: 0 }}
               >
                 <RequestDetailView
+                  token={dash.source === 'live' ? (dash.token ?? undefined) : undefined}
                   snapshot={dash.snapshot}
                   requestId={openedRequestId}
                   motionOn={motionOn}
