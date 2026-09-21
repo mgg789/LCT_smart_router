@@ -2,7 +2,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import { SysError } from '../../common/errors';
 import type { OperationContext } from '../../operations';
 import type { Tx } from '../../persistence';
-import { APP_STATE_KEYS } from '../../persistence';
+import {
+  APP_STATE_KEYS,
+  lockControlState,
+  lockLiveWorkdays,
+  lockRoutingCurrent,
+} from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 
 export type ResetKind = 'demo' | 'empty';
@@ -88,6 +93,11 @@ export class ResetService {
     context: OperationContext,
     options: ClearWorkingSetOptions = {},
   ): Promise<{ generation: number }> {
+    // Hold LIVE days, then the plan singletons, before deleting. Inverting that
+    // order deadlocks with `LiveService.advanceOnce` (workday → routing).
+    await lockLiveWorkdays(context.tx);
+    await lockControlState(context.tx);
+    await lockRoutingCurrent(context.tx);
     const previousPublicationSeq = await this.clearApplicationData(context.tx, {
       preserveDispatcherSessions: options.preserveDispatcherSessions === true,
     });

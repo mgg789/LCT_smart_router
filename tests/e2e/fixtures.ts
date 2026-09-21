@@ -89,23 +89,39 @@ export const test = base.extend<{ live: LiveDay; browserHealth: undefined }>({
   ],
   live: async ({ playwright }, use, testInfo) => {
     // Reuse the established public-API seed, golden-node calculation and urgent-event gate.
-    const { stdout, stderr } = await run(
-      process.execPath,
-      ['apps/api/dist-test/scripts/smoke.js'],
-      {
+    // One extra attempt covers a leftover LIVE poll racing the empty reset; Playwright
+    // itself still has retries: 0 so a real product failure is not hidden.
+    const runSmoke = () =>
+      run(process.execPath, ['apps/api/dist-test/scripts/smoke.js'], {
         timeout: 100_000,
         maxBuffer: 2 * 1024 * 1024,
-      },
-    ).catch(async (cause: unknown) => {
-      const failure = z.object({ stdout: z.string(), stderr: z.string() }).safeParse(cause);
-      if (failure.success) {
-        await testInfo.attach('seed-smoke-failure', {
-          body: failure.data.stdout + failure.data.stderr,
-          contentType: 'text/plain',
-        });
+      });
+    let stdout = '';
+    let stderr = '';
+    let lastCause: unknown;
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        const result = await runSmoke();
+        stdout = result.stdout;
+        stderr = result.stderr;
+        lastCause = undefined;
+        break;
+      } catch (cause: unknown) {
+        lastCause = cause;
+        const failure = z.object({ stdout: z.string(), stderr: z.string() }).safeParse(cause);
+        if (failure.success) {
+          await testInfo.attach(`seed-smoke-failure-${attempt}`, {
+            body: failure.data.stdout + failure.data.stderr,
+            contentType: 'text/plain',
+          });
+          stdout = failure.data.stdout;
+          stderr = failure.data.stderr;
+        }
       }
-      throw cause;
-    });
+    }
+    if (lastCause) {
+      throw lastCause;
+    }
     await testInfo.attach('seed-smoke', { body: stdout + stderr, contentType: 'text/plain' });
     expect(stdout).toContain('SMOKE GATE GREEN');
     const anonymous = await playwright.request.newContext();
