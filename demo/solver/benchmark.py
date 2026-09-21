@@ -3,6 +3,7 @@
 import cProfile
 import hashlib
 import json
+import os
 import platform
 import subprocess
 import sys
@@ -11,7 +12,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, os.environ.get("SOLVER_AUDIT_CORE_ROOT", str(ROOT)))
 
 
 def child(name: str, traffic: bool, profile: bool = False) -> dict:

@@ -1,5 +1,5 @@
 {
-  "commit": "a55e41cacd74706a63ed6b6674941085fa0180b7",
+  "commit": "50e17f0a74953c6f6fda37b06c105ad2296bf81b",
   "runs": [
     {
       "scenario": "east",
@@ -24,8 +24,8 @@
       "ortools": "9.15.6755",
       "requests": 66,
       "engineers": 12,
-      "elapsed_sec": 1.1653131999992183,
-      "cpu_sec": 1.140625,
+      "elapsed_sec": 1.2732037999958266,
+      "cpu_sec": 1.25,
       "main": {
         "distance_km": 264.318,
         "travel_time_sec": 84643,
@@ -90,8 +90,8 @@
       "ortools": "9.15.6755",
       "requests": 66,
       "engineers": 12,
-      "elapsed_sec": 1.1644543999937014,
-      "cpu_sec": 1.125,
+      "elapsed_sec": 1.2136218000014196,
+      "cpu_sec": 1.15625,
       "main": {
         "distance_km": 264.318,
         "travel_time_sec": 84643,
@@ -156,8 +156,8 @@
       "ortools": "9.15.6755",
       "requests": 66,
       "engineers": 12,
-      "elapsed_sec": 1.14451569999801,
-      "cpu_sec": 1.15625,
+      "elapsed_sec": 1.2120998000027612,
+      "cpu_sec": 1.203125,
       "main": {
         "distance_km": 264.318,
         "travel_time_sec": 84643,
@@ -222,8 +222,8 @@
       "ortools": "9.15.6755",
       "requests": 83,
       "engineers": 12,
-      "elapsed_sec": 0.7594282999998541,
-      "cpu_sec": 0.734375,
+      "elapsed_sec": 0.8015855000048759,
+      "cpu_sec": 0.765625,
       "main": {
         "distance_km": 755.81,
         "travel_time_sec": 163730,
@@ -288,8 +288,8 @@
       "ortools": "9.15.6755",
       "requests": 83,
       "engineers": 12,
-      "elapsed_sec": 0.7524730000004638,
-      "cpu_sec": 0.75,
+      "elapsed_sec": 0.7772922000003746,
+      "cpu_sec": 0.765625,
       "main": {
         "distance_km": 755.81,
         "travel_time_sec": 163730,
@@ -354,8 +354,8 @@
       "ortools": "9.15.6755",
       "requests": 83,
       "engineers": 12,
-      "elapsed_sec": 0.7569049000012456,
-      "cpu_sec": 0.734375,
+      "elapsed_sec": 0.796634799997264,
+      "cpu_sec": 0.796875,
       "main": {
         "distance_km": 755.81,
         "travel_time_sec": 163730,
@@ -420,8 +420,8 @@
       "ortools": "9.15.6755",
       "requests": 56,
       "engineers": 11,
-      "elapsed_sec": 0.3831900999939535,
-      "cpu_sec": 0.359375,
+      "elapsed_sec": 0.4211474000039743,
+      "cpu_sec": 0.421875,
       "main": {
         "distance_km": 135.549,
         "travel_time_sec": 60320,
@@ -486,7 +486,7 @@
       "ortools": "9.15.6755",
       "requests": 56,
       "engineers": 11,
-      "elapsed_sec": 0.40002580000145826,
+      "elapsed_sec": 0.4133404000021983,
       "cpu_sec": 0.390625,
       "main": {
         "distance_km": 135.549,
@@ -552,8 +552,8 @@
       "ortools": "9.15.6755",
       "requests": 56,
       "engineers": 11,
-      "elapsed_sec": 0.40593079999962356,
-      "cpu_sec": 0.40625,
+      "elapsed_sec": 0.41704310000204714,
+      "cpu_sec": 0.375,
       "main": {
         "distance_km": 135.549,
         "travel_time_sec": 60320,
@@ -618,8 +618,8 @@
       "ortools": "9.15.6755",
       "requests": 205,
       "engineers": 35,
-      "elapsed_sec": 2.429137699997227,
-      "cpu_sec": 2.390625,
+      "elapsed_sec": 2.6674833000070066,
+      "cpu_sec": 2.625,
       "main": {
         "distance_km": 1169.242,
         "travel_time_sec": 312693,
@@ -684,8 +684,8 @@
       "ortools": "9.15.6755",
       "requests": 205,
       "engineers": 35,
-      "elapsed_sec": 2.395386599993799,
-      "cpu_sec": 2.375,
+      "elapsed_sec": 2.9912999000007403,
+      "cpu_sec": 2.875,
       "main": {
         "distance_km": 1169.242,
         "travel_time_sec": 312693,
@@ -750,8 +750,8 @@
       "ortools": "9.15.6755",
       "requests": 205,
       "engineers": 35,
-      "elapsed_sec": 2.4320607999979984,
-      "cpu_sec": 2.40625,
+      "elapsed_sec": 3.0887967000016943,
+      "cpu_sec": 3.03125,
       "main": {
         "distance_km": 1169.242,
         "travel_time_sec": 312693,
@@ -816,8 +816,8 @@
       "ortools": "9.15.6755",
       "requests": 66,
       "engineers": 12,
-      "elapsed_sec": 3.868753700000525,
-      "cpu_sec": 3.796875,
+      "elapsed_sec": 4.0399483000001055,
+      "cpu_sec": 3.96875,
       "main": {
         "distance_km": 291.719,
         "travel_time_sec": 81606,
@@ -882,8 +882,8 @@
       "ortools": "9.15.6755",
       "requests": 66,
       "engineers": 12,
-      "elapsed_sec": 3.8941711000006762,
-      "cpu_sec": 3.78125,
+      "elapsed_sec": 4.073463500004436,
+      "cpu_sec": 4.015625,
       "main": {
         "distance_km": 291.719,
         "travel_time_sec": 81606,
@@ -948,8 +948,8 @@
       "ortools": "9.15.6755",
       "requests": 66,
       "engineers": 12,
-      "elapsed_sec": 3.870023700001184,
-      "cpu_sec": 3.859375,
+      "elapsed_sec": 4.044277499997406,
+      "cpu_sec": 4.015625,
       "main": {
         "distance_km": 291.719,
         "travel_time_sec": 81606,
@@ -1014,8 +1014,8 @@
       "ortools": "9.15.6755",
       "requests": 83,
       "engineers": 12,
-      "elapsed_sec": 3.5796619999964605,
-      "cpu_sec": 3.515625,
+      "elapsed_sec": 3.787756300000183,
+      "cpu_sec": 3.671875,
       "main": {
         "distance_km": 659.532,
         "travel_time_sec": 146130,
@@ -1080,8 +1080,8 @@
       "ortools": "9.15.6755",
       "requests": 83,
       "engineers": 12,
-      "elapsed_sec": 3.581858600002306,
-      "cpu_sec": 3.5625,
+      "elapsed_sec": 3.7673463999963133,
+      "cpu_sec": 3.59375,
       "main": {
         "distance_km": 659.532,
         "travel_time_sec": 146130,
@@ -1146,8 +1146,8 @@
       "ortools": "9.15.6755",
       "requests": 83,
       "engineers": 12,
-      "elapsed_sec": 3.5931733000034,
-      "cpu_sec": 3.328125,
+      "elapsed_sec": 3.7495736999990186,
+      "cpu_sec": 3.65625,
       "main": {
         "distance_km": 659.532,
         "travel_time_sec": 146130,
@@ -1212,8 +1212,8 @@
       "ortools": "9.15.6755",
       "requests": 56,
       "engineers": 11,
-      "elapsed_sec": 3.2254653999989387,
-      "cpu_sec": 3.140625,
+      "elapsed_sec": 3.2967501000021002,
+      "cpu_sec": 3.265625,
       "main": {
         "distance_km": 145.751,
         "travel_time_sec": 58173,
@@ -1278,8 +1278,8 @@
       "ortools": "9.15.6755",
       "requests": 56,
       "engineers": 11,
-      "elapsed_sec": 3.2274115000036545,
-      "cpu_sec": 3.203125,
+      "elapsed_sec": 3.303687899999204,
+      "cpu_sec": 3.265625,
       "main": {
         "distance_km": 145.751,
         "travel_time_sec": 58173,
@@ -1344,8 +1344,8 @@
       "ortools": "9.15.6755",
       "requests": 56,
       "engineers": 11,
-      "elapsed_sec": 3.2365334999994957,
-      "cpu_sec": 3.15625,
+      "elapsed_sec": 3.3125092000045697,
+      "cpu_sec": 3.234375,
       "main": {
         "distance_km": 145.751,
         "travel_time_sec": 58173,
@@ -1410,8 +1410,8 @@
       "ortools": "9.15.6755",
       "requests": 205,
       "engineers": 35,
-      "elapsed_sec": 5.414210900002217,
-      "cpu_sec": 5.171875,
+      "elapsed_sec": 5.652746699997806,
+      "cpu_sec": 5.328125,
       "main": {
         "distance_km": 1186.368,
         "travel_time_sec": 298428,
@@ -1476,8 +1476,8 @@
       "ortools": "9.15.6755",
       "requests": 205,
       "engineers": 35,
-      "elapsed_sec": 4.981246100003773,
-      "cpu_sec": 4.796875,
+      "elapsed_sec": 5.589980800003104,
+      "cpu_sec": 5.53125,
       "main": {
         "distance_km": 1186.368,
         "travel_time_sec": 298428,
@@ -1542,8 +1542,8 @@
       "ortools": "9.15.6755",
       "requests": 205,
       "engineers": 35,
-      "elapsed_sec": 5.366630199998326,
-      "cpu_sec": 5.15625,
+      "elapsed_sec": 5.484374400002707,
+      "cpu_sec": 5.359375,
       "main": {
         "distance_km": 1186.368,
         "travel_time_sec": 298428,
@@ -1587,16 +1587,15 @@
     }
   ],
   "source_state": {
-    "base_commit": "a55e41cacd74706a63ed6b6674941085fa0180b7",
-    "working_tree_modified": true,
+    "production_commit": "50e17f0a74953c6f6fda37b06c105ad2296bf81b",
+    "production_working_tree_modified": false,
+    "source_sha256_encoding": "UTF-8, CRLF normalized to LF",
     "source_sha256": {
-      "core/contracts.py": "a4a2a79df6fb5fdb3ac104a694e90c736f503a8e97eec8de66196eadb80172dd",
-      "core/engine.py": "2674f3cce5a0c535476a4502fd09f5edfc90e8a03b8fc4276fd69225dd48e3d2",
-      "core/geo.py": "651a4018c3125f5f14668680e848ff571bbd7357ee05fd7b466457ac6bf10191",
-      "core/policy_benchmark.py": "b85c1adcb777e6eb0ae2be1933cdc94e6179314ccccc89218b84685e6b25396f",
-      "core/route_search.py": "ac1fe7149ac54fe0cdad4964d4e6018b0636ef61b4840a6b9b8d83cb3c4127b9",
-      "core/schedule.py": "001c75a01fa9e9c00f69bd664c276fd5fa6353063afd7f7889e1c27aff5bf7ca",
-      "core/traffic_engine.py": "650ff36c728bd841506fb78e71638fd5f9176dc222c17b01a18606cd7343b9b6"
+      "core/engine.py": "dd54c1347e010559e5ab62c06428748d027f445cbcd076b00845059336388384",
+      "core/geo.py": "dce78ab98d63d6c2e846b9c0443de3498b0d8ecf10b37076852fd60b15f1f3ec",
+      "core/route_search.py": "9ac218d7eb6c03f7f6e12dd6d604da41bcfcdd715a7459d4eaee64619ade6744",
+      "core/schedule.py": "609bdc18eb48e9e5171bb1d68380734da1c23053f4bc340a2b66bac6a7b2829b",
+      "core/traffic_engine.py": "7ada4c99f85340ec1d13946836ab84088da98c8c5ea69dc8143284fe44e63d68"
     }
   }
 }

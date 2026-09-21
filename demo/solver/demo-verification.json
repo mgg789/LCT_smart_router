@@ -1,0 +1,60 @@
+{
+  "sourceCommit": "50e17f0a74953c6f6fda37b06c105ad2296bf81b",
+  "startedAt": "2026-09-21T18:57:43.420Z",
+  "finishedAt": "2026-09-21T19:27:44.825Z",
+  "elapsedSeconds": 1801.4054934,
+  "initialRequests": 14,
+  "engineers": 2,
+  "createdUrgentRequests": 1,
+  "finalCounts": {
+    "completed": 15
+  },
+  "executionFacts": 30,
+  "factTimestampMismatches": 0,
+  "duplicateExecutionFacts": 0,
+  "completedFactPersistenceComparisons": 812,
+  "snapshots": 106,
+  "pageErrors": [],
+  "expectedBlockedMapConsoleErrors": 63,
+  "unexpectedConsoleErrors": [],
+  "browser": {
+    "engine": "Microsoft Edge / Playwright",
+    "browserPlugin": "not available",
+    "dispatcherViewport": [
+      1920,
+      1080
+    ],
+    "engineerViewport": [
+      430,
+      932
+    ]
+  },
+  "isolation": {
+    "database": "lct_solver_demo2",
+    "mapProviderKeysConfigured": false,
+    "externalBrowserRequests": "blocked",
+    "clock": "1800 real seconds; speed_up_work_stub=1800; no manual time jumps"
+  },
+  "supersededAttempt": {
+    "durationSeconds": 290.7917082,
+    "sourceCommit": "0601097802c9a0512e95a1ae32a1f988b7352767",
+    "includedInAcceptance": false
+  },
+  "browserResourceWarnings": [
+    {
+      "at": "2026-09-21T19:10:35.192Z",
+      "text": "Failed to load resource: net::ERR_NO_BUFFER_SPACE"
+    }
+  ],
+  "initialEngineerCount": 2,
+  "observedSyntheticEngineerIds": [
+    "covering-east-1"
+  ],
+  "explicitCompletedByEngineer": {
+    "276e0d62-a1f4-4dd8-a147-acb2fe480f2c": 8,
+    "74f847f2-0ea4-4cfb-bb88-8a1c7c191fdf": 7
+  },
+  "finalDashboardCapturedAt": "2026-09-21T19:29:50.367Z",
+  "networkFailuresAfterInstrumentation": [],
+  "consoleHealth": "One ERR_NO_BUFFER_SPACE resource warning with unknown source URL; no observed functional impact. Offline OSM/CARTO failures were injected intentionally."
+}
