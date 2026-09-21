@@ -25,14 +25,20 @@ from core.geo import configure_travel, routing_context_version
 from core.policy import Criterion, PolicySpec, compile_policy, criterion_values
 from core.route_search import improve_routes
 from core.schedule import (
+    TERMINAL_SHIFT_OVERTIME_SEC,
+    TERMINAL_WINDOW_LATENESS_TOLERANCE_SEC,
     TravelProvider,
     assemble_plan,
     baseline,
     eligible,
     fixed_order,
+    job_completion_limit,
+    lunch_coverage_alerts,
     release_at,
     schedule_steps,
     score,
+    terminal_eligible,
+    terminal_release_at,
     validate_plan,
 )
 
@@ -46,7 +52,10 @@ class SearchSettings:
     lunches_enabled: bool = False
     traffic_enabled: bool = True
     equipment_enabled: bool = True
-    window_lateness_tolerance_sec: int = 0
+    # A customer visit is feasible when its *completion* is within this grace after
+    # the promised window.  LIVE uses ten minutes by default; callers may still make
+    # the Router stricter or relax it explicitly within the bounded product limit.
+    window_lateness_tolerance_sec: int = 600
     departure_lateness_tolerance_sec: int = 0
     task_start_lateness_tolerance_sec: int = 0
     travel_time_mode: TravelTimeMode = "graph_with_access_buffer"
@@ -258,6 +267,7 @@ def _search(
         return assemble_plan(snapshot, [])
     origin = snapshot.horizon_start_at
     horizon = snapshot.horizon_end_at - origin
+    time_horizon = horizon + TERMINAL_SHIFT_OVERTIME_SEC
     if horizon > 31 * 86400:
         raise ValueError("HORIZON_RANGE: v1 supports at most 31 days per snapshot")
     nodes: list[_Node] = []
@@ -343,6 +353,8 @@ def _search(
             return nodes[a].service if metric == "clock" else 0
         road = quote(a, b, e)
         if road is None:
+            if metric == "clock":
+                return time_horizon + 1
             return horizon + 1 if metric != "distance" else distance_bound + 1
         if metric == "distance":
             return road.distance_m
@@ -356,7 +368,9 @@ def _search(
             )
             for e in range(len(engineers))
         ]
-    routing.AddDimensionWithVehicleTransits(callbacks["clock"], horizon, horizon, False, "Time")
+    routing.AddDimensionWithVehicleTransits(
+        callbacks["clock"], time_horizon, time_horizon, False, "Time"
+    )
     routing.AddDimensionWithVehicleTransits(callbacks["travel"], 0, horizon, True, "Travel")
     routing.AddDimensionWithVehicleTransits(
         callbacks["distance"], 0, distance_bound, True, "Distance"
@@ -385,14 +399,15 @@ def _search(
         )
     time_dimension = routing.GetDimensionOrDie("Time")
     for e, engineer in enumerate(engineers):
-        release = release_at(snapshot, engineer)
+        release = release_at(snapshot, engineer) or terminal_release_at(snapshot, engineer)
         if release is None:
             time_dimension.CumulVar(routing.Start(e)).SetRange(0, 0)
             time_dimension.CumulVar(routing.End(e)).SetRange(0, 0)
         else:
             time_dimension.CumulVar(routing.Start(e)).SetRange(release - origin, release - origin)
             time_dimension.CumulVar(routing.End(e)).SetRange(
-                release - origin, min(engineer.shift_end_at, snapshot.horizon_end_at) - origin
+                release - origin,
+                job_completion_limit(snapshot, engineer, terminal=True) - origin,
             )
         routing.AddVariableMinimizedByFinalizer(time_dimension.CumulVar(routing.End(e)))
 
@@ -404,17 +419,59 @@ def _search(
     for request in snapshot.requests:
         index = manager.NodeToIndex(jobs[request.request_id])
         allowed = [
-            e for e, engineer in enumerate(engineers) if eligible(snapshot, engineer, request)
+            e
+            for e, engineer in enumerate(engineers)
+            if eligible(snapshot, engineer, request)
+            or terminal_eligible(snapshot, engineer, request)
         ]
         routing.VehicleVar(index).SetValues([-1] + allowed)
         lower = max(0, request.window_start_at - origin)
-        upper = min(
-            horizon, request.window_end_at + settings.window_lateness_tolerance_sec - origin
+        # Time is the service start cumul.  Bound it by completion rather than arrival:
+        # scheduling a 30-minute job at 10:18 for a window ending 10:20 must not pass
+        # merely because its start fits.
+        normal_upper = min(
+            horizon,
+            request.window_end_at
+            + settings.window_lateness_tolerance_sec
+            - request.service_duration_sec
+            - origin,
         )
-        if not allowed or lower > upper or request.service_duration_sec > horizon:
+        terminal_upper = min(
+            time_horizon,
+            request.window_end_at
+            + max(
+                settings.window_lateness_tolerance_sec,
+                TERMINAL_WINDOW_LATENESS_TOLERANCE_SEC,
+            )
+            - request.service_duration_sec
+            - origin,
+        )
+        if not allowed or lower > terminal_upper or request.service_duration_sec > time_horizon:
             routing.ActiveVar(index).SetValue(0)
         else:
-            time_dimension.CumulVar(index).SetRange(lower, upper)
+            time_dimension.CumulVar(index).SetRange(lower, terminal_upper)
+            # The end cumul includes service at this node.  The extended shift
+            # cap applies only when this exact job is directly followed by the
+            # vehicle end, which also excludes a later lunch or another job.
+            for e, engineer in enumerate(engineers):
+                on_vehicle = solver.IsEqualCstVar(routing.VehicleVar(index), e)
+                next_is_end = solver.IsEqualCstVar(routing.NextVar(index), routing.End(e))
+                normal_limit = job_completion_limit(snapshot, engineer, terminal=False) - origin
+                normal_window_limit = min(normal_upper, horizon)
+                terminal_window_limit = terminal_upper
+                inactive_time_slack = max(time_horizon * 2, time_horizon - normal_window_limit)
+                solver.Add(
+                    time_dimension.CumulVar(index) + request.service_duration_sec
+                    <= normal_limit
+                    + TERMINAL_SHIFT_OVERTIME_SEC * next_is_end
+                    + inactive_time_slack * (1 - on_vehicle)
+                )
+                solver.Add(
+                    time_dimension.CumulVar(index)
+                    <= normal_window_limit
+                    + (terminal_window_limit - normal_window_limit) * next_is_end
+                    + inactive_time_slack * (1 - on_vehicle)
+                )
             if stage == "window_start_delay":
                 time_dimension.SetCumulVarSoftUpperBound(index, lower, 1)
         penalty = coverage_weight + (urgent_weight if request.priority == "urgent" else 0)
@@ -714,7 +771,9 @@ def _union_memory_engineers(
         if route.engineer_id.startswith("covering-") and route.metrics.assigned_count > 0
     }
     extras = [
-        engineer for engineer in memory.snapshot.engineers if engineer.engineer_id not in known
+        engineer
+        for engineer in memory.snapshot.engineers
+        if engineer.engineer_id not in known
         and engineer.engineer_id in used
         and engineer.engineer_id.startswith("covering-")
         and any(
@@ -766,9 +825,7 @@ def _improve_covering(
         projected = baseline(search_snapshot, travel)
     if not projected.is_usable:
         return projected
-    candidates = improve_routes(
-        search_snapshot, travel, [projected], effort, construct=construct
-    )
+    candidates = improve_routes(search_snapshot, travel, [projected], effort, construct=construct)
     usable = [candidate for candidate in candidates if candidate.is_usable]
     chosen = (
         min(usable, key=lambda candidate: score(search_snapshot, candidate))
@@ -802,9 +859,7 @@ def _cover_leftovers(
 
     original = official_roster(snapshot)
     existing_extras = [
-        engineer
-        for engineer in snapshot.engineers
-        if engineer.engineer_id.startswith("covering-")
+        engineer for engineer in snapshot.engineers if engineer.engineer_id.startswith("covering-")
     ]
     extras = _covering_extra_engineers(snapshot, leftover_requests, travel)
     expanded = original.model_copy(
@@ -824,8 +879,7 @@ def _cover_leftovers(
             "engineers": [
                 engineer
                 for engineer in expanded.engineers
-                if not engineer.engineer_id.startswith("covering-")
-                or engineer.engineer_id in used
+                if not engineer.engineer_id.startswith("covering-") or engineer.engineer_id in used
             ]
         }
     )
@@ -873,11 +927,18 @@ def _cover_leftovers(
         ):
             current_snapshot, current = trial_snapshot, trial
     final_used = {r.engineer_id for r in current.routes if r.metrics.assigned_count > 0}
-    current_snapshot = current_snapshot.model_copy(update={"engineers": [
-        e for e in current_snapshot.engineers
-        if not e.engineer_id.startswith("covering-") or e.engineer_id in final_used
-    ]})
-    final = _canonical_plan(current_snapshot, current.routes, travel) if current.is_usable else current
+    current_snapshot = current_snapshot.model_copy(
+        update={
+            "engineers": [
+                e
+                for e in current_snapshot.engineers
+                if not e.engineer_id.startswith("covering-") or e.engineer_id in final_used
+            ]
+        }
+    )
+    final = (
+        _canonical_plan(current_snapshot, current.routes, travel) if current.is_usable else current
+    )
     validate_plan(current_snapshot, final, travel)
     return current_snapshot.engineers, final.routes
 
@@ -1019,6 +1080,9 @@ def _solve_prepared(
             memory.plan, projected, settings.task_start_lateness_tolerance_sec
         )
     ):
+        projected = projected.model_copy(
+            update={"alerts": projected.alerts + lunch_coverage_alerts(snapshot, projected, travel)}
+        )
         return EngineOutput(projected, base, "REVALIDATE", memory)
     path = "REPAIR_AND_IMPROVE" if projected else "COLD_START"
     search_base = base if search_snapshot is snapshot else baseline(search_snapshot, travel)
@@ -1080,6 +1144,9 @@ def _solve_prepared(
         if main is None:
             raise ValueError("OPTIONAL_LUNCH_ENRICHMENT_FAILED")
     validate_plan(snapshot, main, travel)
+    main = main.model_copy(
+        update={"alerts": main.alerts + lunch_coverage_alerts(snapshot, main, travel)}
+    )
     return EngineOutput(
         main, base, path, EngineMemory(snapshot.model_copy(deep=True), main, context_version)
     )

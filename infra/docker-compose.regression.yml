@@ -1,0 +1,52 @@
+# Overlay for a unique, disposable project. No host ports, persistent user data,
+# developer .env, SMTP delivery, or Docker socket is exposed to the browser runner.
+services:
+  postgres:
+    restart: 'no'
+    ports: !reset []
+  router:
+    restart: 'no'
+    ports: !reset []
+  api:
+    restart: 'no'
+    env_file: !override
+      - ../tests/e2e/contour.env
+    extra_hosts: !reset []
+    ports: !reset []
+    environment:
+      NODE_ENV: test
+      AUTH_DEV_EXPOSE_CODES: 'true'
+      LOG_LEVEL: warn
+  web:
+    restart: 'no'
+    ports: !reset []
+    healthcheck:
+      test: ['CMD', 'wget', '-q', '--spider', 'http://127.0.0.1/']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  regression:
+    # Share only web's private network namespace so the browser can use a real
+    # loopback secure context without TLS exceptions or published host ports.
+    network_mode: service:web
+    build:
+      context: ..
+      dockerfile: tests/e2e/Dockerfile
+    init: true
+    shm_size: 1gb
+    env_file:
+      - ../tests/e2e/contour.env
+    environment:
+      CI: 'true'
+      E2E_ISOLATED: 'true'
+      E2E_BASE_URL: http://localhost
+      E2E_API_URL: http://api:8000
+      SMOKE_BASE_URL: http://api:8000
+      SMOKE_ALLOWED_HOSTS: api
+    depends_on:
+      web:
+        condition: service_healthy
+
+networks:
+  default:
+    internal: true

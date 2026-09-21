@@ -130,7 +130,7 @@ class RouterTechnicalSettings(Record):
     lunches_enabled: bool = False
     traffic_enabled: bool = True
     equipment_enabled: bool = True
-    window_lateness_tolerance_sec: int = Field(default=0, ge=0, le=1200)
+    window_lateness_tolerance_sec: int = Field(default=600, ge=0, le=1200)
     departure_lateness_tolerance_sec: int = Field(default=0, ge=0, le=86400)
     task_start_lateness_tolerance_sec: int = Field(default=0, ge=0, le=86400)
     travel_time_mode: TravelTimeMode = "graph_with_access_buffer"

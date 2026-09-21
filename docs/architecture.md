@@ -41,7 +41,7 @@ System Layer владеет бизнес-состоянием, авториза�
 | `mount-data-eng` | `src/routing/mount-data-eng` | Реализовано: проекция (с execution-якорями — активная работа закрепляет точку старта инженера и `available_from`), каноническая сериализация, hash, неизменяемые снимки и переключение указателя |
 | `ROUTER-gateway` | `src/routing/router-gateway` | Реализовано от конца до конца: HTTP-клиент к Router Core (`/v1/result`, `/v1/context`, `PUT /v2/config/technical-settings`), проверки приёмки (id публикации + hash + версия контекста + пригодность + факты), ревизии применённого плана, AUTO/MANUAL, ручные правки, технастройки, управляемые из sys |
 | `AI-gateway` | — | Вне скоупа этой сборки; в `/health/services` объявлен как `not_configured` |
-| `SMTP-gateway` | `src/notifications` | интенты с дедупликацией по переходам, HTML-шаблоны каталога и Nodemailer-submit на внешний Postfix; без `SMTP_HOST` остаётся `not_configured` |
+| `SMTP-gateway` | `src/notifications` | интенты с дедупликацией по переходам, каталог писем всех видимых переходов заявки плюс итоги дня инженеру (2026-09-20; `docs/api.md` §5), флаг тишины адреса — коды входа не отключаемы, HTML-шаблоны каталога и Nodemailer-submit на внешний Postfix; без `SMTP_HOST` остаётся `not_configured` |
 
 ## 3. Сквозной фундамент (реализован)
 

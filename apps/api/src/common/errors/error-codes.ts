@@ -55,6 +55,9 @@ export const ERROR_CODES = {
   /** A destructive action was requested without its explicit human confirmation. */
   CONFIRMATION_REQUIRED: HttpStatus.CONFLICT,
 
+  /** A dispatcher tried to close a day while decision-required alerts remain open. */
+  SHIFT_CLOSE_BLOCKED: HttpStatus.CONFLICT,
+
   /**
    * An optional integration (Router, AI, SMTP) is not wired in this deployment. Reported
    * honestly instead of being faked as success.

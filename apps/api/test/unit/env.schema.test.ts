@@ -26,6 +26,8 @@ describe('environment validation', () => {
     assert.equal(env.ROUTER_BASE_URL, undefined);
     assert.equal(env.ROUTER_POLL_INTERVAL_MS, 500);
     assert.equal(env.ROUTER_REQUEST_TIMEOUT_MS, 3000);
+    assert.equal(env.LOCATION_IQ_TOKEN, undefined);
+    assert.equal(env.DEMO_STAND, false);
   });
 
   it('coerces PORT from its string form', () => {
@@ -67,5 +69,10 @@ describe('environment validation', () => {
     assert.doesNotThrow(() =>
       validateEnv({ ...REQUIRED, NODE_ENV: 'production', AUTH_DEV_EXPOSE_CODES: 'false' }),
     );
+  });
+
+  it('enables the public demo stand only when the flag is true', () => {
+    assert.equal(validateEnv({ ...REQUIRED, DEMO_STAND: 'true' }).DEMO_STAND, true);
+    assert.equal(validateEnv({ ...REQUIRED, DEMO_STAND: 'false' }).DEMO_STAND, false);
   });
 });

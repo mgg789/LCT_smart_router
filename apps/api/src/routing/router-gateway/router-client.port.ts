@@ -1,6 +1,27 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { SysError } from '../../common/errors';
+import type { RouterTaskSnapshot } from '../mount-data-eng/snapshot.types';
 import type { RouterResult } from './result.types';
+
+/** Read-only proposal evaluated against a fresh sys projection and existing job orders. */
+export interface WindowProposalInput {
+  snapshot: RouterTaskSnapshot;
+  request_id: string;
+  routes: Record<string, string[]>;
+  day_end_at: number;
+}
+
+/** A calculation witness, not a reservation or an applied assignment. */
+export interface WindowProposal {
+  status: 'available' | 'none';
+  proposal: {
+    engineerId: string;
+    windowStartAt: number;
+    windowEndAt: number;
+    serviceStartAt: number;
+    serviceEndAt: number;
+  } | null;
+}
 
 export interface RouterTechnicalSettings {
   readonly lunchesEnabled: boolean;
@@ -95,6 +116,14 @@ export interface PolicyComparison {
  * A port keeps the optional null transport and private-network HTTP transport interchangeable.
  */
 export abstract class RouterClient {
+  /** Finds an actual same-day insertion without altering the live plan. */
+  proposeWindow(_input: WindowProposalInput): Promise<WindowProposal> {
+    throw SysError.notConfigured('Router window proposal');
+  }
+  /** Evaluates explicit manual orders without changing or optimizing the plan. */
+  evaluateManual(_input: ManualEvaluationInput): Promise<ManualEvaluation> {
+    throw SysError.notConfigured('Router manual evaluation');
+  }
   /** The current result, whatever its status. */
   abstract getResult(): Promise<RouterResult>;
 
@@ -125,6 +154,25 @@ export abstract class RouterClient {
   }
 
   abstract isConfigured(): boolean;
+}
+
+/** Identity-bound fixed-order evaluation request. */
+export interface ManualEvaluationInput {
+  readonly input_hash: string;
+  readonly router_context_version: string;
+  readonly routes: Record<string, string[]>;
+}
+
+/** Exact lexicographic policy evidence on the same snapshot and travel resources. */
+export interface ManualEvaluation {
+  readonly input_hash: string;
+  readonly router_context_version: string;
+  readonly policy_id: string;
+  readonly feasible: boolean;
+  readonly degraded: boolean;
+  readonly criterion: string | null;
+  readonly before: number[];
+  readonly after: number[] | null;
 }
 
 /**

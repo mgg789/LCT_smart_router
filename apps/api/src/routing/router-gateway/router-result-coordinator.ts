@@ -1,4 +1,5 @@
 import { Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
+import type { PrismaService } from '../../persistence';
 import type { RouterResult } from './result.types';
 import type { ResultAcceptanceService } from './result-acceptance.service';
 import type { RouterClient } from './router-client.port';
@@ -21,6 +22,7 @@ export class RouterResultCoordinator implements OnModuleInit, OnModuleDestroy {
     private readonly client: RouterClient,
     private readonly acceptance: ResultAcceptor,
     private readonly pollIntervalMs: number,
+    private readonly prisma?: PrismaService,
   ) {}
 
   /** Starts polling only when Router has an actual configured transport. */
@@ -67,12 +69,17 @@ export class RouterResultCoordinator implements OnModuleInit, OnModuleDestroy {
       }
 
       const identity = this.resultIdentity(result);
-      if (identity === this.handledIdentity) {
+      const restoreManualPlan = await this.hasPendingManualRestore();
+      if (identity === this.handledIdentity && !restoreManualPlan) {
         return;
       }
 
       const activeContextVersion = await this.client.getActiveContextVersion();
-      const outcome = await this.acceptance.accept(result, activeContextVersion);
+      const outcome = await this.acceptance.accept(result, activeContextVersion, {
+        // Returning to AUTO is the one explicit exception that may apply a retained
+        // suitable result over a manual plan. Routine polls retain their idempotence.
+        allowRepeatOfKnownResult: restoreManualPlan,
+      });
       // MANUAL mode is temporary: once AUTO is restored, the same still-current package
       // is intentionally eligible for acceptance without waiting for Router to recompute it.
       if (outcome.reason !== 'MODE_MANUAL') {
@@ -88,6 +95,16 @@ export class RouterResultCoordinator implements OnModuleInit, OnModuleDestroy {
         `Router polling failed; will retry: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
+  }
+
+  private async hasPendingManualRestore(): Promise<boolean> {
+    if (!this.prisma) return false;
+    const current = await this.prisma.appliedPlanCurrent.findUnique({
+      where: { id: 'singleton' },
+      include: { plan: { select: { origin: true } } },
+    });
+    const control = await this.prisma.controlState.findUnique({ where: { id: 'singleton' } });
+    return control?.mode === 'auto' && current?.plan.origin === 'manual';
   }
 
   private resultIdentity(result: RouterResult): string {

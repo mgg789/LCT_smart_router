@@ -4,12 +4,14 @@
     "includes": [
       "apps/**",
       "packages/**",
+      "tests/e2e/**",
       "biome.json",
       "package.json",
       "!**/node_modules",
       "!**/dist",
       "!**/dist-test",
       "!**/generated",
+      "!**/artifacts",
       "!**/.mimosa"
     ]
   },

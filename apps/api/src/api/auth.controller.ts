@@ -6,6 +6,7 @@ import {
   AuthService,
   CurrentActor,
   effectiveRole,
+  effectiveRoles,
   Public,
   Roles,
 } from '../auth';
@@ -86,6 +87,7 @@ export class AuthController {
       kind: actor.kind,
       source: actor.source,
       role: effectiveRole(actor),
+      roles: effectiveRoles(actor),
       accountId: actor.accountId,
       tokenCategory: actor.tokenCategory,
     };
@@ -106,7 +108,7 @@ export class AuthController {
   @Post('tokens')
   @ApiOperation({ summary: 'Create an integration key; the secret is shown once' })
   async createToken(@Body(zodBody(createApiTokenSchema)) dto: CreateApiTokenDto) {
-    return this.apiTokens.create(dto.name, dto.category);
+    return this.apiTokens.create(dto.name, dto.category, dto.expiresAt ?? null);
   }
 
   @Roles('dispatcher')

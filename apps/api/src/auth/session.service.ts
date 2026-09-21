@@ -24,7 +24,11 @@ export class SessionService {
 
   async create(accountId: string, role: Role): Promise<IssuedSession> {
     const now = this.clock.nowSeconds();
-    const expiresAt = now + this.config.get('SESSION_TTL_SEC');
+    const ttlSec =
+      role === 'engineer'
+        ? this.config.get('ENGINEER_SESSION_TTL_SEC')
+        : this.config.get('SESSION_TTL_SEC');
+    const expiresAt = now + ttlSec;
     const token = generateToken();
 
     await this.prisma.session.create({

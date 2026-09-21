@@ -26,6 +26,7 @@ export const PUBLICATION_TRIGGERS = {
   /** An unfinished task exceeded its normative duration and configured tolerance. */
   REQUEST_EXECUTION_OVERRUN: 'request.execution_overrun',
   ENGINEER_CREATED: 'engineer.created',
+  ENGINEER_ARCHIVED: 'engineer.archived',
   ENGINEER_PROFILE_CHANGED: 'engineer.profile_changed',
   ENGINEER_WORKDAY_CHANGED: 'engineer.workday_changed',
   ENGINEER_AVAILABILITY_CHANGED: 'engineer.availability_changed',
@@ -39,6 +40,10 @@ export const PUBLICATION_TRIGGERS = {
   LUNCH_RESTORED: 'lunch.restored',
   DATA_IMPORTED: 'data.imported',
   DATA_RESET: 'data.reset',
+  /** Dispatcher explicitly started a durable LIVE day and needs a t=0 Router result. */
+  LIVE_WORKDAY_STARTED: 'live.workday_started',
+  /** The no-marking policy advanced completed scheduled stops without fabricating facts. */
+  LIVE_SILENT_SCHEDULE_PROGRESS: 'live.silent_schedule_progress',
 } as const;
 
 export type PublicationTrigger = (typeof PUBLICATION_TRIGGERS)[keyof typeof PUBLICATION_TRIGGERS];

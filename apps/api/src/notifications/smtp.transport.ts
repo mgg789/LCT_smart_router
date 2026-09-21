@@ -1,12 +1,21 @@
 import nodemailer, { type Transporter } from 'nodemailer';
 import type SMTPTransport from 'nodemailer/lib/smtp-transport';
 
+/** Inline CID image attached to a catalogue letter. */
+export interface OutboundMailAttachment {
+  readonly filename: string;
+  readonly cid: string;
+  readonly content: Buffer;
+  readonly contentType: string;
+}
+
 export interface OutboundMail {
   readonly from: string;
   readonly to: string;
   readonly subject: string;
   readonly text: string;
   readonly html: string;
+  readonly attachments?: readonly OutboundMailAttachment[];
 }
 
 export type TransportOutcome =
@@ -33,6 +42,13 @@ export class NodemailerTransport implements MailTransport {
         subject: mail.subject,
         text: mail.text,
         html: mail.html,
+        attachments: mail.attachments?.map((attachment) => ({
+          filename: attachment.filename,
+          cid: attachment.cid,
+          content: attachment.content,
+          contentType: attachment.contentType,
+          contentDisposition: 'inline',
+        })),
       });
       const response = info.response ?? '250 accepted';
       if ((info.rejected?.length ?? 0) > 0 && (info.accepted?.length ?? 0) === 0) {

@@ -1,7 +1,10 @@
 import { Module } from '@nestjs/common';
+import { AlertsModule } from '../orchestrator/alerts';
+import { DemoStandModule } from '../orchestrator/demo-stand';
 import { EngineersModule } from '../orchestrator/engineers';
 import { FactsModule } from '../orchestrator/facts';
 import { ImportsModule } from '../orchestrator/imports';
+import { LiveModule } from '../orchestrator/live';
 import { RequestsModule } from '../orchestrator/requests';
 import { ResetModule } from '../orchestrator/reset';
 import { AuthController } from './auth.controller';
@@ -18,7 +21,16 @@ import { EngineerController } from './engineer.controller';
  * tool cannot grow three diverging versions of it (context/36 section 2).
  */
 @Module({
-  imports: [RequestsModule, EngineersModule, FactsModule, ImportsModule, ResetModule],
+  imports: [
+    RequestsModule,
+    EngineersModule,
+    AlertsModule,
+    FactsModule,
+    ImportsModule,
+    ResetModule,
+    DemoStandModule,
+    LiveModule,
+  ],
   controllers: [AuthController, ClientController, EngineerController, DispatchController],
 })
 export class ApiModule {}

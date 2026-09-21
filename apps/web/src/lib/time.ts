@@ -45,6 +45,16 @@ export function formatDayTitle(workDate: string): string {
   return `${Number(dayText)} ${month} ${yearText}`;
 }
 
+/** Moscow calendar date `D month YYYY` for a Unix-seconds moment. */
+export function formatMoscowDate(unixSec: number): string {
+  const local = new Date((unixSec + MOSCOW_OFFSET_SEC) * 1000);
+  const month = MONTHS_RU[local.getUTCMonth()];
+  if (month === undefined) {
+    return String(unixSec);
+  }
+  return `${local.getUTCDate()} ${month} ${local.getUTCFullYear()}`;
+}
+
 export function formatDurationMin(sec: number): string {
   return `${Math.round(sec / 60)} мин`;
 }

@@ -28,6 +28,10 @@ const longitude = z.number().min(-180).max(180);
 const equipmentType = z.enum(['router', 'set_top_box', 'smart_speaker']);
 
 export const prepareRequestSchema = operationEnvelopeSchema.extend({
+  /** Required for an integration key, refused for a session: a session prepares the
+   * request for its own account, a key names the customer by address
+   * (context/41 sections 3.2 and 10). */
+  clientEmail: z.email().optional(),
   contactName: z.string().min(1).max(200),
   addressText: z.string().min(1).max(500),
   /**
@@ -59,9 +63,12 @@ export const rescheduleRequestSchema = operationEnvelopeSchema.extend({
 export type RescheduleRequestDto = z.infer<typeof rescheduleRequestSchema>;
 
 export const dispatcherCreateRequestSchema = prepareRequestSchema.extend({
-  /** The client this request belongs to, by address. Machine calls select the object;
-   * they do not prove that its owner confirmed anything (context/41 section 10). */
-  clientEmail: z.email(),
+  /** Optional when the compact dispatcher form has no customer identity. When present,
+   * the address selects the owning client object; it never proves that its owner
+   * confirmed anything (context/41 section 10). */
+  clientEmail: z.email().optional(),
+  /** The dispatcher may receive an unplanned job before the contact is known. */
+  contactName: z.string().min(1).max(200).optional(),
 });
 export type DispatcherCreateRequestDto = z.infer<typeof dispatcherCreateRequestSchema>;
 
@@ -92,3 +99,8 @@ export const cancelRequestSchema = operationEnvelopeSchema.extend({
   reason: z.string().max(500).nullish(),
 });
 export type CancelRequestDto = z.infer<typeof cancelRequestSchema>;
+
+export const notificationSettingsSchema = operationEnvelopeSchema.extend({
+  enabled: z.boolean(),
+});
+export type NotificationSettingsDto = z.infer<typeof notificationSettingsSchema>;

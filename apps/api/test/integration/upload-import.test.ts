@@ -149,7 +149,7 @@ describe('JSON region and request package upload', () => {
     const day = await prisma.engineerDay.findFirstOrThrow({ where: { engineerId: engineer.id } });
     const bounds = today();
     assert.equal(day.lunchEnabled, true);
-    assert.equal(day.lunchDurationSec, 2700);
+    assert.equal(day.lunchDurationSec, 1800);
     assert.equal(Number(day.lunchWindowStartAt), bounds.lunchStart);
     assert.equal(Number(day.lunchWindowEndAt), bounds.lunchEnd);
     assert.equal(day.equipmentRouter, 2);

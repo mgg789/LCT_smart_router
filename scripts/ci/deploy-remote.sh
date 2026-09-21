@@ -58,6 +58,23 @@ fi
 
 "${compose_cmd[@]}" pull || true
 "${compose_cmd[@]}" up -d --build --remove-orphans
+# API reaches host Hysteria via host.docker.internal. UFW INPUT is DROP, so
+# Docker-bridge packets to :2525/:8587 must be accepted explicitly.
+if docker image inspect alpine:3.21 >/dev/null 2>&1 || docker pull alpine:3.21 >/dev/null 2>&1; then
+  docker rm -f navix-smtp-host-allow >/dev/null 2>&1 || true
+  docker run -d --name navix-smtp-host-allow --restart unless-stopped \
+    --privileged --network host alpine:3.21 \
+    sh -c 'apk add --no-cache iptables iproute2 >/dev/null
+      while true; do
+        for br in $(ip -br addr | awk "/^br-/{print \$1}"); do
+          iptables -C INPUT -i "$br" -p tcp --dport 2525 -j ACCEPT 2>/dev/null \
+            || iptables -I INPUT -i "$br" -p tcp --dport 2525 -j ACCEPT
+          iptables -C INPUT -i "$br" -p tcp --dport 8587 -j ACCEPT 2>/dev/null \
+            || iptables -I INPUT -i "$br" -p tcp --dport 8587 -j ACCEPT
+        done
+        sleep 60
+      done'
+fi
 echo 'COMPOSE_PS_BEGIN'
 "${compose_cmd[@]}" ps
 echo 'COMPOSE_PS_END'

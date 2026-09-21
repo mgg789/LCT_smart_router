@@ -53,6 +53,8 @@ export interface PlanRouteLegView {
   } | null;
   readonly travelSource: TravelSource;
   readonly trafficFactor: number;
+  /** Present when sys replaced Router geometry with a map-provider polyline. */
+  readonly geometryProvider?: 'twogis' | 'yandex';
 }
 
 export interface PlanView {
@@ -148,6 +150,9 @@ function planLegs(value: unknown): PlanRouteLegView[] {
         geometry: points ? { points } : null,
         travelSource: leg.travelSource,
         trafficFactor: leg.trafficFactor,
+        ...(leg.geometryProvider === 'twogis' || leg.geometryProvider === 'yandex'
+          ? { geometryProvider: leg.geometryProvider }
+          : {}),
       },
     ];
   });

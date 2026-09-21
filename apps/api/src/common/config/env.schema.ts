@@ -41,6 +41,19 @@ export const envSchema = z.object({
   ROUTER_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000).default(3_000),
 
   /**
+   * Optional duration of an entire logical workday in wall-clock seconds. Empty means
+   * ordinary 1:1 time. LIVE persists the chosen value when the dispatcher starts a day,
+   * so changing the environment cannot warp a day already in progress.
+   */
+  speed_up_work_stub: z
+    .string()
+    .trim()
+    .optional()
+    .transform((value) => (value ? Number(value) : null))
+    .pipe(z.number().int().min(60).max(86_400).nullable())
+    .default(null),
+
+  /**
    * Connection used by `prisma migrate deploy`. A deployment points it at the migration
    * owner; on a developer machine it is absent and the CLI falls back to DATABASE_URL.
    */
@@ -59,6 +72,12 @@ export const envSchema = z.object({
    * (context/36 section 11).
    */
   SESSION_TTL_SEC: z.coerce.number().int().positive().default(86_400),
+  /**
+   * Engineer App sessions live on the device for a working month. Dispatcher
+   * sessions stay on `SESSION_TTL_SEC` so a shared Dashboard console does not
+   * remain signed in for 30 days.
+   */
+  ENGINEER_SESSION_TTL_SEC: z.coerce.number().int().positive().default(2_592_000),
   LOGIN_CODE_TTL_SEC: z.coerce.number().int().positive().default(600),
   LOGIN_CODE_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
 
@@ -102,6 +121,21 @@ export const envSchema = z.object({
   SMTP_HEALTH_URL: z.url().optional(),
   SMTP_POLL_INTERVAL_MS: z.coerce.number().int().min(1_000).max(120_000).default(15_000),
   SMTP_APP_BASE_URL: z.url().default('https://navix.droidje.com'),
+
+  /**
+   * LocationIQ key for dispatcher address search. Absent means geocoding stays
+   * unavailable and the caller must pick a point on the map instead.
+   */
+  LOCATION_IQ_TOKEN: z.string().min(1).optional(),
+
+  /**
+   * Public demo stand: seed today's 14/2 live-demo, accelerate the day, and rewind after
+   * the shift or «День заново». Leave unset/false on developer machines.
+   */
+  DEMO_STAND: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
 });
 
 export type Env = z.infer<typeof envSchema>;

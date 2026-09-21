@@ -4,11 +4,15 @@ import type { RouterResult } from './result.types';
 import { routerResultSchema } from './result.types';
 import {
   COMPARISON_STRATEGIES,
+  type ManualEvaluation,
+  type ManualEvaluationInput,
   type PolicyComparison,
   RouterClient,
   type RouterTechnicalSettingsState,
   type RouterTechnicalSettingsUpdate,
   type UpdateRouterTechnicalSettings,
+  type WindowProposal,
+  type WindowProposalInput,
 } from './router-client.port';
 
 const comparisonMetricsSchema = z.object({
@@ -83,6 +87,33 @@ export interface HttpRouterClientOptions {
 
 /** Reads validated results and context from Router Core over the private Docker network. */
 export class HttpRouterClient extends RouterClient {
+  /** Uses canonical Router travel and scheduling, without publication side effects. */
+  override async proposeWindow(input: WindowProposalInput): Promise<WindowProposal> {
+    const raw = await this.fetchJson(
+      '/v1/window-proposal',
+      {
+        method: 'POST',
+        body: JSON.stringify(input),
+        headers: { 'content-type': 'application/json' },
+      },
+      30_000,
+    );
+    return z
+      .discriminatedUnion('status', [
+        z.object({ status: z.literal('none'), proposal: z.null() }),
+        z.object({
+          status: z.literal('available'),
+          proposal: z.object({
+            engineerId: z.string(),
+            windowStartAt: z.number().int(),
+            windowEndAt: z.number().int(),
+            serviceStartAt: z.number().int(),
+            serviceEndAt: z.number().int(),
+          }),
+        }),
+      ])
+      .parse(raw);
+  }
   private readonly baseUrl: string;
 
   constructor(private readonly options: HttpRouterClientOptions) {
@@ -162,6 +193,27 @@ export class HttpRouterClient extends RouterClient {
       status: parsed.data.status,
       ...toTechnicalSettings(parsed.data.technical_settings, parsed.data.router_context_version),
     };
+  }
+
+  /** Runs or reads Router's cached same-snapshot policy comparison. */
+  override async evaluateManual(input: ManualEvaluationInput): Promise<ManualEvaluation> {
+    const raw = await this.fetchJson('/v1/manual-evaluation', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    return z
+      .object({
+        input_hash: z.string().length(64),
+        router_context_version: z.string(),
+        policy_id: z.string(),
+        feasible: z.boolean(),
+        degraded: z.boolean(),
+        criterion: z.string().nullable(),
+        before: z.array(z.number()),
+        after: z.array(z.number()).nullable(),
+      })
+      .parse(raw);
   }
 
   /** Runs or reads Router's cached same-snapshot policy comparison. */

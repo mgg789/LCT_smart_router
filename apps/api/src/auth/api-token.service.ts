@@ -11,6 +11,8 @@ export interface CreatedApiToken {
   readonly name: string;
   readonly category: ApiTokenCategory;
   readonly createdAt: number;
+  /** Unix-epoch seconds, or null for a key that never expires. */
+  readonly expiresAt: number | null;
   /** Shown exactly once. Losing it means creating a new key (context/41 section 4.3). */
   readonly token: string;
 }
@@ -20,16 +22,18 @@ export interface ApiTokenSummary {
   readonly name: string;
   readonly category: ApiTokenCategory;
   readonly createdAt: number;
+  readonly expiresAt: number | null;
   readonly revokedAt: number | null;
 }
 
 /**
  * Integration keys of the single dispatcher.
  *
- * Deliberately simple, following context/41 sections 3-4: only a name and a category, full
- * access inside that category, no scopes, no expiry, no binding to an end user, valid
- * until deleted. A `client` or `eng` key never gains dispatcher functions just because the
- * same person owns it.
+ * A key carries a name, a category and an optional expiry, and holds full access inside
+ * that category: no scopes, no binding to an end user (context/41 sections 3-5). NULL
+ * expiry is the deliberate never-expiring key; a passed date stops new calls exactly
+ * like a revocation (2026-09-19 amendment to context/41 section 4.2). A `client` or
+ * `eng` key never gains dispatcher functions just because the same person owns it.
  */
 @Injectable()
 export class ApiTokenService {
@@ -38,13 +42,26 @@ export class ApiTokenService {
     private readonly clock: Clock,
   ) {}
 
-  async create(name: string, category: ApiTokenCategory): Promise<CreatedApiToken> {
+  async create(
+    name: string,
+    category: ApiTokenCategory,
+    expiresAt: number | null,
+  ): Promise<CreatedApiToken> {
     const now = this.clock.nowSeconds();
+    if (expiresAt !== null && expiresAt <= now) {
+      throw SysError.validationFailed('The expiry date must be in the future', { expiresAt });
+    }
     const token = generateToken();
     const created = await this.prisma.apiToken.create({
-      data: { name, category, tokenHash: hashToken(token), createdAt: BigInt(now) },
+      data: {
+        name,
+        category,
+        tokenHash: hashToken(token),
+        createdAt: BigInt(now),
+        ...(expiresAt === null ? {} : { expiresAt: BigInt(expiresAt) }),
+      },
     });
-    return { id: created.id, name, category, createdAt: now, token };
+    return { id: created.id, name, category, createdAt: now, expiresAt, token };
   }
 
   async list(): Promise<ApiTokenSummary[]> {
@@ -55,6 +72,7 @@ export class ApiTokenService {
       name: token.name,
       category: token.category,
       createdAt: Number(token.createdAt),
+      expiresAt: token.expiresAt === null ? null : Number(token.expiresAt),
       revokedAt: token.revokedAt === null ? null : Number(token.revokedAt),
     }));
   }
@@ -84,6 +102,11 @@ export class ApiTokenService {
       where: { tokenHash: hashToken(token) },
     });
     if (!record || record.revokedAt !== null) {
+      return null;
+    }
+    if (record.expiresAt !== null && Number(record.expiresAt) <= this.clock.nowSeconds()) {
+      // An expired key is indistinguishable from a revoked one to the caller: both are
+      // simply no longer valid credentials.
       return null;
     }
     return {

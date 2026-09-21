@@ -33,7 +33,17 @@ export type DispatcherPasswordLoginDto = z.infer<typeof dispatcherPasswordLoginS
 export const createApiTokenSchema = z.object({
   /** A label the dispatcher recognises. */
   name: z.string().min(1).max(120),
-  /** Exactly the two parameters context/41 section 4.1 allows: a name and a category. */
-  category: z.enum(['client', 'eng', 'master']),
+  /**
+   * Which interface the key replaces (context/41 section 5): `client`, `eng`, `client_eng`
+   * for both app contours with one key, `master` for everything including the dispatcher
+   * contour and system/debug functions.
+   */
+  category: z.enum(['client', 'eng', 'client_eng', 'master']),
+  /**
+   * Unix-epoch seconds after which the key stops authorising new calls; omitted or null
+   * means the key never expires (context/41 section 4.2, 2026-09-19 amendment). Not in
+   * the past: a key born dead has no owner who asked for it.
+   */
+  expiresAt: z.number().int().positive().nullable().optional(),
 });
 export type CreateApiTokenDto = z.infer<typeof createApiTokenSchema>;

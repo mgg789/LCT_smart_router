@@ -5,7 +5,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from pydantic import Field
 
-from core.contracts import PolicyComparison, Record, RouterResult, RouterTechnicalSettings
+from core.contracts import (
+    PolicyComparison,
+    Record,
+    RouterResult,
+    RouterTaskSnapshot,
+    RouterTechnicalSettings,
+)
 from core.runtime import RouterRuntime
 
 
@@ -17,11 +23,28 @@ class ToleranceRequest(Record):
     expected_context_version: str = Field(min_length=1)
 
 
+class ManualEvaluationRequest(Record):
+    """Explicit orders and immutable context, never a request for a new plan."""
+
+    input_hash: str = Field(min_length=64, max_length=64)
+    router_context_version: str = Field(min_length=1)
+    routes: dict[str, list[str]] = Field(max_length=1000)
+
+
 class TechnicalSettingsRequest(RouterTechnicalSettings):
     """Complete idempotent replacement of Router-owned technical controls."""
 
     operation_id: str = Field(min_length=1, max_length=128)
     expected_context_version: str = Field(min_length=1)
+
+
+class WindowProposalRequest(Record):
+    """Fresh sys-owned projection; this preview never becomes the published task."""
+
+    snapshot: RouterTaskSnapshot
+    request_id: str = Field(min_length=1, max_length=128)
+    routes: dict[str, list[str]] = Field(max_length=100)
+    day_end_at: int = Field(gt=0)
 
 
 def create_app(runtime: RouterRuntime) -> FastAPI:
@@ -63,6 +86,34 @@ def create_app(runtime: RouterRuntime) -> FastAPI:
             if str(exc) == "PUBLICATION_CHANGED":
                 raise HTTPException(status_code=409, detail=str(exc)) from exc
             raise
+
+    @app.post("/v1/manual-evaluation")
+    def manual_evaluation(request: ManualEvaluationRequest) -> dict:
+        """Return real fixed-order policy evidence without applying or optimizing it."""
+        if sum(len(order) for order in request.routes.values()) > 10000:
+            raise HTTPException(status_code=422, detail="MANUAL_PLAN_TOO_LARGE")
+        try:
+            return runtime.evaluate_manual(
+                request.input_hash, request.router_context_version, request.routes
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="ACTIVE_PUBLICATION_UNAVAILABLE") from exc
+
+    @app.post("/v1/window-proposal")
+    def window_proposal(request: WindowProposalRequest) -> dict:
+        """Calculate a bounded same-day insertion without publishing or applying it."""
+        if len(request.snapshot.requests) > 500 or sum(map(len, request.routes.values())) > 200:
+            raise HTTPException(status_code=422, detail="PREVIEW_TOO_LARGE")
+        try:
+            return runtime.propose_window(
+                request.snapshot, request.request_id, request.routes, request.day_end_at
+            )
+        except TimeoutError as exc:
+            raise HTTPException(status_code=503, detail="WINDOW_SEARCH_TIMEOUT") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @app.put("/v1/config/tolerance")
     def tolerance(body: ToleranceRequest) -> dict:

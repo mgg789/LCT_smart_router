@@ -130,6 +130,46 @@ export class AuthService implements OnModuleInit {
     await this.sessions.revoke(token);
   }
 
+  /**
+   * Sends a login code to a new address the signed-in engineer wants to use.
+   *
+   * The current login is not changed until the code is confirmed. An address that
+   * already belongs to any account is refused so two profiles cannot collapse.
+   */
+  async requestOwnedEmailChange(accountId: string, email: string): Promise<IssuedLoginCode> {
+    const normalized = normalizeEmail(email);
+    const current = await this.prisma.account.findUniqueOrThrow({ where: { id: accountId } });
+    if (current.email === normalized) {
+      throw new SysError('VALIDATION_FAILED', 'This is already the login of this engineer');
+    }
+    const taken = await this.prisma.account.findUnique({ where: { email: normalized } });
+    if (taken) {
+      throw new SysError('VALIDATION_FAILED', 'This address is already in use');
+    }
+    return this.requestLoginCode(normalized);
+  }
+
+  /**
+   * Moves the signed-in account onto the address that just proved the code.
+   *
+   * The engineer role stays on the same account; only the login address changes.
+   */
+  async confirmOwnedEmailChange(accountId: string, email: string, code: string): Promise<void> {
+    const verified = await this.loginCodes.verify(email, code);
+    const current = await this.prisma.account.findUniqueOrThrow({ where: { id: accountId } });
+    if (current.email === verified.email) {
+      return;
+    }
+    const taken = await this.prisma.account.findUnique({ where: { email: verified.email } });
+    if (taken) {
+      throw new SysError('VALIDATION_FAILED', 'This address is already in use');
+    }
+    await this.prisma.account.update({
+      where: { id: accountId },
+      data: { email: verified.email, updatedAt: BigInt(this.clock.nowSeconds()) },
+    });
+  }
+
   /** Creates the account if needed and grants the role if it is not granted yet. */
   private async ensureAccount(email: string, role: Role): Promise<{ id: string }> {
     const now = BigInt(this.clock.nowSeconds());

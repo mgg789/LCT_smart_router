@@ -46,10 +46,21 @@ export class SnapshotPublisher {
     tx: Tx,
     planningAsOf: number,
     trigger: PublicationTrigger,
+    options: { force?: boolean; businessTime?: boolean } = {},
   ): Promise<PublicationOutcome> {
     await lockRoutingCurrent(tx);
 
-    const { snapshot, diagnostics, taskFingerprint } = await this.builder.build(tx, planningAsOf);
+    // Mutations from dispatcher/legacy endpoints carry wall time even during LIVE.
+    // Keep every route publication on the virtual clock; LIVE callers mark timestamps
+    // that already use that clock.
+    const effectivePlanningAsOf = options.businessTime
+      ? planningAsOf
+      : await this.liveNow(tx, planningAsOf);
+
+    const { snapshot, diagnostics, taskFingerprint } = await this.builder.build(
+      tx,
+      effectivePlanningAsOf,
+    );
 
     // The document is serialized once and both stored and hashed from that same string.
     // Re-serializing for the hash would leave room for the two to differ.
@@ -65,7 +76,7 @@ export class SnapshotPublisher {
     // so comparing hashes would report a change every second and the timestamp would tick
     // -- which is exactly what the contract forbids. The check happens before the time is
     // stamped (context/33 section 7).
-    if (current && current.snapshot.taskFingerprint === taskFingerprint) {
+    if (!options.force && current && current.snapshot.taskFingerprint === taskFingerprint) {
       // Nothing about the task changed. The trigger was real, the content was not.
       return {
         published: false,
@@ -82,8 +93,8 @@ export class SnapshotPublisher {
         inputHash,
         taskFingerprint,
         // Stamped with this publication of changed data, not by a separate clock.
-        planningAsOf: BigInt(planningAsOf),
-        createdAt: BigInt(planningAsOf),
+        planningAsOf: BigInt(effectivePlanningAsOf),
+        createdAt: BigInt(effectivePlanningAsOf),
         trigger,
         generation,
         diagnostics: { ...diagnostics },
@@ -95,13 +106,13 @@ export class SnapshotPublisher {
       update: {
         snapshotId: created.id,
         pointerVersion: { increment: 1 },
-        updatedAt: BigInt(planningAsOf),
+        updatedAt: BigInt(effectivePlanningAsOf),
       },
       create: {
         id: 'singleton',
         snapshotId: created.id,
         pointerVersion: 1,
-        updatedAt: BigInt(planningAsOf),
+        updatedAt: BigInt(effectivePlanningAsOf),
       },
     });
 
@@ -113,8 +124,27 @@ export class SnapshotPublisher {
     return {
       published: true,
       inputHash,
-      planningAsOf,
+      planningAsOf: effectivePlanningAsOf,
       snapshotId: created.id,
     };
+  }
+
+  /** Returns the active durable business timestamp, otherwise the supplied wall time. */
+  private async liveNow(tx: Tx, wallNow: number): Promise<number> {
+    const day = await tx.liveWorkday.findFirst({
+      where: { status: 'running' },
+      orderBy: { startedAtWallSec: 'desc' },
+      select: {
+        logicalStartAt: true,
+        logicalEndAt: true,
+        startedAtWallSec: true,
+        speedDurationSec: true,
+      },
+    });
+    if (day?.startedAtWallSec === null || day?.startedAtWallSec === undefined) return wallNow;
+    const elapsed = Math.max(0, wallNow - Number(day.startedAtWallSec));
+    const duration = Number(day.logicalEndAt) - Number(day.logicalStartAt);
+    const factor = day.speedDurationSec === null ? 1 : duration / Number(day.speedDurationSec);
+    return Number(day.logicalStartAt) + Math.floor(elapsed * factor);
   }
 }

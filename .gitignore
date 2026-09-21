@@ -28,6 +28,9 @@ apps/*/dist-test/
 apps/*/generated/
 apps/api/src/generated/
 coverage/
+artifacts/
+test-results/
+playwright-report/
 
 # Local environment files (only .env.example is committed)
 .env.*

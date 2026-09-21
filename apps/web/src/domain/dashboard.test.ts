@@ -14,6 +14,7 @@ import {
   planWithLunches,
   reconcileDashboardFocus,
   regionalDistanceKm,
+  remainingRouteForLiveMap,
   requestById,
   routeVertices,
   unassignedRequests,
@@ -21,11 +22,61 @@ import {
 } from './dashboard';
 
 describe('dev dashboard fixture', () => {
+  it('counts pending current-day work without claiming it is assigned and excludes tomorrow', () => {
+    const snapshot = createDevSnapshot();
+    const request = snapshot.requests[0];
+    if (!request) throw new Error('request fixture missing');
+    const start = Date.parse(`${snapshot.workDate}T09:00:00+03:00`) / 1000;
+    const pending = {
+      ...request,
+      assignmentState: 'pending' as const,
+      lifecycle: 'submitted' as const,
+      windowStartAt: start,
+      windowEndAt: start + 3600,
+    };
+    expect(unassignedRequests({ ...snapshot, requests: [pending] })).toEqual([pending]);
+    expect(
+      unassignedRequests({
+        ...snapshot,
+        requests: [{ ...pending, windowStartAt: start + 86400, windowEndAt: start + 90000 }],
+      }),
+    ).toEqual([]);
+  });
   it('keeps two skill-blocked requests unassigned', () => {
     const snapshot = createDevSnapshot();
     const unassigned = unassignedRequests(snapshot);
     expect(unassigned.map((item) => item.id)).toEqual(['10490', '10491']);
     expect(snapshot.requests).toHaveLength(24);
+  });
+
+  it('keeps completed, cancelled and silently assumed jobs in history but removes them from live map edges', () => {
+    const snapshot = createDevSnapshot();
+    const route = snapshot.plan.plan?.routes[0];
+    const [completedId, cancelledId, assumedId] =
+      route?.stops.flatMap((stop) => (stop.requestId ? [stop.requestId] : [])).slice(0, 3) ?? [];
+    if (!route || !completedId || !cancelledId || !assumedId) {
+      throw new Error('fixture route needs three jobs');
+    }
+    const updated = {
+      ...snapshot,
+      requests: snapshot.requests.map((request) =>
+        request.id === completedId
+          ? { ...request, lifecycle: 'completed' as const }
+          : request.id === cancelledId
+            ? { ...request, lifecycle: 'cancelled' as const }
+            : request.id === assumedId
+              ? { ...request, assumedCompletedAt: 1_800_000_000 }
+              : request,
+      ),
+    };
+
+    const mapRoute = remainingRouteForLiveMap(updated, route);
+
+    expect(mapRoute?.stops.map((stop) => stop.requestId)).not.toContain(completedId);
+    expect(mapRoute?.stops.map((stop) => stop.requestId)).not.toContain(cancelledId);
+    expect(mapRoute?.stops.map((stop) => stop.requestId)).not.toContain(assumedId);
+    expect(mapRoute?.legs).toEqual([]);
+    expect(route.stops.map((stop) => stop.requestId)).toContain(completedId);
   });
 
   it('summarizes Sokolov route from the applied plan', () => {

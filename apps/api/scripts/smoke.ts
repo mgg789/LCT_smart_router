@@ -2,6 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { resolveSmokeBaseUrl } from './smoke-base-url';
+import {
+  type ExpectedSmokePlan,
+  matchesSmokePlan,
+  type SmokePlanResponse as PlanResponse,
+} from './smoke-plan';
 
 /**
  * End-to-end smoke gate for the real Docker contour.
@@ -37,37 +42,10 @@ interface HttpResult {
   readonly rawBody: string;
 }
 
-interface PlanAssignment {
-  readonly requestId: string;
-  readonly status: string;
-  readonly engineerId: string | null;
-}
-
-interface PlanResponse {
-  readonly mode?: string;
-  readonly plan?: {
-    readonly revision: number;
-    readonly origin: string;
-    readonly planAsOf: number;
-    readonly assignments: PlanAssignment[];
-  } | null;
-  readonly lastResult?: {
-    readonly resultId: string;
-    readonly accepted: boolean;
-    readonly rejectionCode: string | null;
-  } | null;
-}
-
-interface WaitForAppliedPlanInput {
+interface WaitForAppliedPlanInput extends ExpectedSmokePlan {
   readonly token: string;
-  readonly requestIds: readonly string[];
-  readonly engineerId: string;
   readonly publicationId: string;
   readonly timeoutMs: number;
-  /** When set, the applied revision must be strictly newer than this value. */
-  readonly minRevision?: number;
-  /** When set, the accepted package must not be this previous result. */
-  readonly previousResultId?: string;
 }
 
 interface SyntheticRequest {
@@ -219,19 +197,7 @@ async function waitForAppliedPlan(input: WaitForAppliedPlanInput): Promise<PlanR
     const response = await call('GET', '/api/v1/dispatch/plan', input.token);
     requireStatus(response, 200, 'read working plan');
     last = response.body as PlanResponse;
-    const assignments = last.plan?.assignments ?? [];
-    const byRequest = new Map(assignments.map((item) => [item.requestId, item]));
-    const complete = input.requestIds.every((requestId) => {
-      const assignment = byRequest.get(requestId);
-      return assignment?.status === 'assigned' && assignment.engineerId === input.engineerId;
-    });
-    const revisionOk =
-      input.minRevision === undefined || (last.plan?.revision ?? 0) > input.minRevision;
-    const resultOk =
-      last.lastResult?.accepted === true &&
-      last.lastResult.rejectionCode === null &&
-      (input.previousResultId === undefined || last.lastResult.resultId !== input.previousResultId);
-    if (last.mode === 'auto' && complete && revisionOk && resultOk) {
+    if (matchesSmokePlan(last, input)) {
       return last;
     }
     await sleep(POLL_INTERVAL_MS);
@@ -447,10 +413,11 @@ async function main(): Promise<void> {
     requestIds,
     engineerId: engineer.id,
     publicationId,
+    inputHash,
     timeoutMs: planTimeoutMs,
   });
   const firstRevision = plan.plan?.revision;
-  const firstResultId = plan.lastResult?.resultId;
+  const firstResultId = plan.appliedResult?.resultId;
   if (firstRevision === undefined || firstResultId === undefined) {
     throw new Error(`accepted plan is missing revision or result id: ${JSON.stringify(plan)}`);
   }
@@ -460,9 +427,9 @@ async function main(): Promise<void> {
     `revision=${String(plan.plan?.revision)}, assignments=${String(plan.plan?.assignments.length)}`,
   );
   check(
-    plan.lastResult?.accepted === true && plan.lastResult.rejectionCode === null,
+    plan.appliedResult?.inputHash === inputHash,
     'backend accepted the current Router package',
-    `result=${String(plan.lastResult?.resultId)}`,
+    `result=${String(plan.appliedResult?.resultId)}`,
   );
 
   const requestsResponse = await call('GET', '/api/v1/dispatch/requests', dispatcher);
@@ -524,15 +491,16 @@ async function main(): Promise<void> {
     requestIds: [...requestIds, urgentRequest.id],
     engineerId: engineer.id,
     publicationId: eventPublicationId,
+    inputHash: eventInputHash,
     timeoutMs: planTimeoutMs,
     minRevision: firstRevision,
     previousResultId: firstResultId,
   });
   check(
     (replanned.plan?.revision ?? 0) > firstRevision &&
-      replanned.lastResult?.resultId !== firstResultId,
+      replanned.appliedResult?.resultId !== firstResultId,
     'urgent event produced a new accepted plan',
-    `revision=${firstRevision}→${String(replanned.plan?.revision)}, result=${String(replanned.lastResult?.resultId)}`,
+    `revision=${firstRevision}→${String(replanned.plan?.revision)}, result=${String(replanned.appliedResult?.resultId)}`,
   );
   check(
     replanned.plan?.assignments.some(

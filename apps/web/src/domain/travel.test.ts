@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createDevSnapshot } from '../fixtures/dev-day';
-import { mapRouteSegments } from './travel';
+import { mapRouteSegments, routeLineKind } from './travel';
 
 describe('map travel geometry', () => {
   it('uses provider geometry only for route and traffic API legs', () => {
@@ -68,6 +68,75 @@ describe('map travel geometry', () => {
           travelSource: 'road_matrix',
           trafficFactor: 1.2,
           geometry: null,
+        },
+      ],
+    })[0];
+    expect(segment).toMatchObject({ source: 'road_matrix', approximate: true });
+  });
+
+  it('draws the prepared road polyline of an enriched road-matrix leg', () => {
+    const route = createDevSnapshot().plan.plan?.routes[0];
+    expect(route).toBeTruthy();
+    if (!route) return;
+    const segment = mapRouteSegments({
+      ...route,
+      legs: [
+        {
+          legId: 'matrix-road-leg',
+          fromStopId: null,
+          toStopId: 'first',
+          departureAt: route.startAt ?? 0,
+          arrivalAt: route.stops[0]?.arrivalAt ?? 0,
+          travelTimeSec: 600,
+          distanceKm: 4,
+          travelSource: 'road_matrix',
+          trafficFactor: 1.2,
+          geometry: {
+            points: [
+              { lat: 55.7, lon: 37.5 },
+              { lat: 55.72, lon: 37.55 },
+              { lat: 55.75, lon: 37.61 },
+            ],
+          },
+        },
+      ],
+    })[0];
+    // More than two shape points means the graph carried a real road polyline: the
+    // segment is exact road geometry, not the straight node-to-node line (card #66).
+    expect(segment).toMatchObject({
+      source: 'road_matrix',
+      approximate: false,
+      coordinates: [
+        [37.5, 55.7],
+        [37.55, 55.72],
+        [37.61, 55.75],
+      ],
+    });
+  });
+
+  it('keeps a two-point road-matrix leg schematic instead of claiming road shape', () => {
+    const route = createDevSnapshot().plan.plan?.routes[0];
+    expect(route).toBeTruthy();
+    if (!route) return;
+    const segment = mapRouteSegments({
+      ...route,
+      legs: [
+        {
+          legId: 'matrix-two-point-leg',
+          fromStopId: null,
+          toStopId: 'first',
+          departureAt: route.startAt ?? 0,
+          arrivalAt: route.stops[0]?.arrivalAt ?? 0,
+          travelTimeSec: 600,
+          distanceKm: 4,
+          travelSource: 'road_matrix',
+          trafficFactor: 1.2,
+          geometry: {
+            points: [
+              { lat: 55.7, lon: 37.5 },
+              { lat: 55.75, lon: 37.61 },
+            ],
+          },
         },
       ],
     })[0];
@@ -180,5 +249,14 @@ describe('map travel geometry', () => {
       [lunch.lon, lunch.lat],
       [wait.lon, wait.lat],
     ]);
+  });
+
+  it('classifies dashed centroids, gray OSRM and green map-provider lines', () => {
+    expect(routeLineKind({ approximate: true, source: 'approximate' })).toBe('centroid');
+    expect(routeLineKind({ approximate: false, source: 'road_matrix' })).toBe('osrm');
+    expect(routeLineKind({ approximate: false, source: 'route_api' })).toBe('osrm');
+    expect(
+      routeLineKind({ approximate: false, source: 'traffic_api', geometryProvider: 'twogis' }),
+    ).toBe('map');
   });
 });

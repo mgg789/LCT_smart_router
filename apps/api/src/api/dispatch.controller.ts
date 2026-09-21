@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { type Actor, CurrentActor, Roles } from '../auth';
 import { AppConfigService } from '../common/config';
@@ -6,15 +6,24 @@ import { SysError } from '../common/errors';
 import { Clock } from '../common/time';
 import { zodBody } from '../common/validation';
 import { OperationsService } from '../operations';
-import { EngineersService } from '../orchestrator/engineers';
+import { AlertsService } from '../orchestrator/alerts';
+import { DemoStandService } from '../orchestrator/demo-stand';
+import { EngineersService, workDateOf } from '../orchestrator/engineers';
 import {
   DATASET_REGIONS,
   DatasetImportService,
   UploadImportService,
 } from '../orchestrator/imports';
+import { LiveService } from '../orchestrator/live';
 import { PolicyService } from '../orchestrator/policy';
 import { RequestsService } from '../orchestrator/requests';
 import { ResetService } from '../orchestrator/reset';
+import {
+  DispatcherSettingsService,
+  GeocodingService,
+  MapRoutingService,
+  moscowMinutesToUnix,
+} from '../orchestrator/settings';
 import { APP_STATE_KEYS, PrismaService } from '../persistence';
 import {
   PUBLICATION_TRIGGERS,
@@ -29,24 +38,41 @@ import {
   RouterClient,
 } from '../routing/router-gateway';
 import {
+  type CloseShiftDto,
+  closeShiftSchema,
+  type ResolveAlertDto,
+  resolveAlertSchema,
+} from './dto/alert.dto';
+import {
   type ImportDatasetDto,
   importDatasetSchema,
   type ResetDto,
+  type RestartDemoDto,
   resetSchema,
+  restartDemoSchema,
   type UploadDataPackageDto,
   uploadDataPackageSchema,
 } from './dto/data.dto';
 import {
+  type ArchiveEngineerDto,
+  archiveEngineerSchema,
+  type ChangeEngineerEmailDto,
   type CreateEngineerDto,
+  changeEngineerEmailSchema,
   createEngineerSchema,
+  type LinkEngineerAccountDto,
+  linkEngineerAccountSchema,
   operationOnlySchema,
   type SetAvailabilityDto,
   type SetWorkdayDto,
   setAvailabilitySchema,
   setWorkdaySchema,
+  type UnlinkEngineerAccountDto,
   type UpdateEngineerDto,
+  unlinkEngineerAccountSchema,
   updateEngineerSchema,
 } from './dto/engineer.dto';
+import { type StartLiveWorkdayDto, startLiveWorkdaySchema } from './dto/live.dto';
 import {
   type ReassignDto,
   type ReorderDto,
@@ -71,11 +97,16 @@ import {
   updateRouterTechnicalSettingsSchema,
 } from './dto/router.dto';
 import {
+  type UpdateDispatcherSettingsDto,
+  updateDispatcherSettingsSchema,
+} from './dto/settings.dto';
+import {
   type EngineerDayView,
   type EngineerView,
   toDayView,
   toEngineerView,
 } from './engineer-view';
+import type { DispatchLiveView } from './live-view.types';
 import { toPlanView } from './plan-view';
 import { type RequestView, toRequestView } from './request-view';
 
@@ -93,6 +124,7 @@ export class DispatchController {
   constructor(
     private readonly requests: RequestsService,
     private readonly engineers: EngineersService,
+    private readonly alertsService: AlertsService,
     private readonly policyService: PolicyService,
     private readonly publisher: SnapshotPublisher,
     private readonly builder: SnapshotBuilder,
@@ -104,11 +136,35 @@ export class DispatchController {
     private readonly imports: DatasetImportService,
     private readonly uploadImports: UploadImportService,
     private readonly resetService: ResetService,
+    private readonly demoStand: DemoStandService,
     private readonly config: AppConfigService,
     private readonly operations: OperationsService,
     private readonly prisma: PrismaService,
     private readonly clock: Clock,
+    private readonly live: LiveService,
+    private readonly dispatcherSettings: DispatcherSettingsService,
+    private readonly geocoding: GeocodingService,
+    private readonly mapRouting: MapRoutingService,
   ) {}
+
+  @Get('live')
+  @ApiOperation({ summary: 'Durable LIVE workday state for the dispatcher dashboard' })
+  async liveView(): Promise<DispatchLiveView> {
+    return this.live.dispatchView();
+  }
+
+  @Post('live/start')
+  @ApiOperation({ summary: 'Start the current LIVE workday and publish its t=0 task' })
+  async startLive(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(startLiveWorkdaySchema)) dto: StartLiveWorkdayDto,
+  ): Promise<DispatchLiveView> {
+    const outcome = await this.operations.execute(
+      { operationId: dto.operationId, actor, action: 'live.workday.start', payload: dto },
+      async (context) => this.live.start(context),
+    );
+    return outcome.result;
+  }
 
   @Get('requests')
   @ApiOperation({ summary: 'Requests of the day, including started, finished and cancelled' })
@@ -125,11 +181,18 @@ export class DispatchController {
       },
       orderBy: [{ arrivalOrder: 'asc' }, { createdAt: 'asc' }],
     });
-    return { requests: requests.map(toRequestView) };
+    const live = await this.prisma.liveRequestState.findMany({
+      where: { workday: { status: 'running' } },
+      select: { requestId: true, assumedStartedAt: true, assumedCompletedAt: true },
+    });
+    const states = new Map(live.map((item) => [item.requestId, item]));
+    return {
+      requests: requests.map((request) => toRequestView(request, states.get(request.id) ?? null)),
+    };
   }
 
   @Post('requests')
-  @ApiOperation({ summary: 'Create a request on behalf of a customer' })
+  @ApiOperation({ summary: 'Create and submit an unplanned request' })
   async create(
     @CurrentActor() actor: Actor,
     @Body(zodBody(dispatcherCreateRequestSchema)) dto: DispatcherCreateRequestDto,
@@ -142,27 +205,31 @@ export class DispatchController {
         payload: dto,
       },
       async (context) => {
-        const email = dto.clientEmail.trim().toLowerCase();
-        const account = await context.tx.account.upsert({
-          where: { email },
-          update: {},
-          create: {
-            email,
-            createdAt: BigInt(context.now),
-            updatedAt: BigInt(context.now),
-          },
-        });
-        // The account exists so the request has an owner and a real address to write to.
-        // It is not marked as a verified address: only the customer's own login proves
-        // that (context/41 section 10).
-        await context.tx.accountRole.upsert({
-          where: { accountId_role: { accountId: account.id, role: 'client' } },
-          update: {},
-          create: { accountId: account.id, role: 'client', grantedAt: BigInt(context.now) },
-        });
+        let clientAccountId: string | null = null;
+        if (dto.clientEmail) {
+          const email = dto.clientEmail.trim().toLowerCase();
+          const account = await context.tx.account.upsert({
+            where: { email },
+            update: {},
+            create: {
+              email,
+              createdAt: BigInt(context.now),
+              updatedAt: BigInt(context.now),
+            },
+          });
+          // The account exists so the request has an owner and a real address to write to.
+          // It is not marked as a verified address: only the customer's own login proves
+          // that (context/41 section 10).
+          await context.tx.accountRole.upsert({
+            where: { accountId_role: { accountId: account.id, role: 'client' } },
+            update: {},
+            create: { accountId: account.id, role: 'client', grantedAt: BigInt(context.now) },
+          });
+          clientAccountId = account.id;
+        }
 
-        const prepared = await this.requests.prepare(context, account.id, {
-          contactName: dto.contactName,
+        const prepared = await this.requests.prepare(context, clientAccountId, {
+          contactName: dto.contactName ?? null,
           addressText: dto.addressText,
           lat: dto.lat ?? null,
           lon: dto.lon ?? null,
@@ -273,7 +340,10 @@ export class DispatchController {
     const engineers = await this.prisma.engineer.findMany({
       where: { archivedAt: null },
       orderBy: { inputOrder: 'asc' },
-      include: { days: { orderBy: { workDate: 'desc' }, take: 1 } },
+      include: {
+        account: { select: { email: true } },
+        days: { orderBy: { workDate: 'desc' }, take: 1 },
+      },
     });
     return {
       engineers: engineers.map((engineer) => ({
@@ -287,7 +357,7 @@ export class DispatchController {
   }
 
   @Post('engineers')
-  @ApiOperation({ summary: 'Add an engineer by email address' })
+  @ApiOperation({ summary: 'Add an engineer profile, optionally with a login address' })
   async createEngineer(
     @CurrentActor() actor: Actor,
     @Body(zodBody(createEngineerSchema)) dto: CreateEngineerDto,
@@ -300,17 +370,111 @@ export class DispatchController {
         payload: dto,
       },
       async (context) =>
-        toEngineerView(
-          await this.engineers.create(context, {
-            email: dto.email,
+        await (async () => {
+          const created = await this.engineers.create(context, {
+            email: dto.email ?? null,
             displayName: dto.displayName,
             skills: dto.skills,
             transportType: dto.transportType,
             region: dto.region ?? null,
             homeLat: dto.homeLat ?? null,
             homeLon: dto.homeLon ?? null,
-          }),
+          });
+          const settings = await this.dispatcherSettings.read(context.tx);
+          const workDate = workDateOf(context.now, this.config.get('APP_TIME_ZONE'));
+          await this.engineers.setWorkday(context, created.id, {
+            workDate,
+            shiftStartAt: moscowMinutesToUnix(workDate, settings.dayStartMin),
+            shiftEndAt: moscowMinutesToUnix(workDate, settings.dayEndMin),
+          });
+          return toEngineerView(created);
+        })(),
+    );
+    return { engineer: outcome.result };
+  }
+
+  @Delete('engineers/:id')
+  @ApiOperation({ summary: 'Archive an engineer profile and revoke its login' })
+  async archiveEngineer(
+    @CurrentActor() actor: Actor,
+    @Param('id') id: string,
+    @Body(zodBody(archiveEngineerSchema)) dto: ArchiveEngineerDto,
+  ): Promise<{ engineer: EngineerView }> {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'engineer.archive',
+        targetRef: id,
+        expectedVersion: dto.expectedVersion ?? null,
+        payload: dto,
+      },
+      async (context) =>
+        toEngineerView(await this.engineers.archive(context, id, dto.expectedVersion ?? null)),
+    );
+    return { engineer: outcome.result };
+  }
+
+  @Post('engineers/link-account')
+  @ApiOperation({ summary: 'Give an engineer profile that has no login its email address' })
+  async linkEngineerAccount(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(linkEngineerAccountSchema)) dto: LinkEngineerAccountDto,
+  ): Promise<{ engineer: EngineerView }> {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'engineer.link_account',
+        targetRef: dto.engineerId,
+        payload: dto,
+      },
+      async (context) =>
+        toEngineerView(await this.engineers.linkAccount(context, dto.engineerId, dto.email)),
+    );
+    return { engineer: outcome.result };
+  }
+
+  @Put('engineers/:id/email')
+  @ApiOperation({ summary: 'Replace the login address of an engineer profile' })
+  async changeEngineerEmail(
+    @CurrentActor() actor: Actor,
+    @Param('id') id: string,
+    @Body(zodBody(changeEngineerEmailSchema)) dto: ChangeEngineerEmailDto,
+  ): Promise<{ engineer: EngineerView }> {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'engineer.change_email',
+        targetRef: id,
+        expectedVersion: dto.expectedVersion ?? null,
+        payload: dto,
+      },
+      async (context) =>
+        toEngineerView(
+          await this.engineers.changeEmail(context, id, dto.expectedVersion ?? null, dto.email),
         ),
+    );
+    return { engineer: outcome.result };
+  }
+
+  @Post('engineers/unlink-account')
+  @ApiOperation({ summary: 'Remove the login from an engineer without deleting the profile' })
+  async unlinkEngineerAccount(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(unlinkEngineerAccountSchema)) dto: UnlinkEngineerAccountDto,
+  ): Promise<{ engineer: EngineerView }> {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'engineer.unlink_account',
+        targetRef: dto.engineerId,
+        payload: dto,
+      },
+      async (context) =>
+        toEngineerView(await this.engineers.unlinkAccount(context, dto.engineerId)),
     );
     return { engineer: outcome.result };
   }
@@ -371,6 +535,9 @@ export class DispatchController {
             shiftEndAt: dto.shiftEndAt,
             ...(dto.lunch === undefined ? {} : { lunch: dto.lunch }),
             ...(dto.lunchRequired === undefined ? {} : { lunchRequired: dto.lunchRequired }),
+            ...(dto.attendanceOptOut === undefined
+              ? {}
+              : { attendanceOptOut: dto.attendanceOptOut }),
           }),
         ),
     );
@@ -399,7 +566,7 @@ export class DispatchController {
       // reassign it (context/42 DF-06).
       async (context) =>
         toDayView(
-          await this.engineers.setAvailability(
+          await this.live.setDispatcherAvailability(
             context,
             id,
             dto.availability,
@@ -430,6 +597,7 @@ export class DispatchController {
     @Param('id') id: string,
     @Body(zodBody(operationOnlySchema)) dto: { operationId: string },
   ): Promise<{ day: EngineerDayView }> {
+    await this.live.assertLegacyMutationAllowed();
     const outcome = await this.operations.execute(
       {
         operationId: dto.operationId,
@@ -489,6 +657,9 @@ export class DispatchController {
       // the intent first, then releases the sys transaction before this private HTTP call.
       () => this.router.updateTechnicalSettings(requested),
     );
+    // Router's switch only permits lunch nodes. Daily engineer conditions provide the
+    // actual lunch contract, including when a dispatcher enables it after LIVE started.
+    await this.live.synchronizeGlobalLunchSwitch(dto.lunchesEnabled);
     return outcome.result;
   }
 
@@ -607,7 +778,7 @@ export class DispatchController {
       // The moment the shown plan describes. While a recalculation is under way the
       // interface keeps this plan and says it is being rebuilt, rather than clearing the
       // day (context/36 section 6).
-      plan: plan ? toPlanView(plan) : null,
+      plan: plan ? await this.decoratePlan(toPlanView(plan)) : null,
       // Direct relation to the package that produced the working revision. Unlike the
       // diagnostic last package, this cannot be confused by another result received in
       // the same second.
@@ -635,22 +806,11 @@ export class DispatchController {
 
   @Get('alerts')
   @ApiOperation({ summary: 'Explainable problems reported by the plan' })
-  async alerts() {
-    const alerts = await this.prisma.alert.findMany({ orderBy: { createdAt: 'desc' }, take: 200 });
-    return {
-      alerts: alerts.map((alert) => ({
-        id: alert.id,
-        code: alert.code,
-        severity: alert.severity,
-        engineerIds: alert.engineerIds,
-        requestIds: alert.requestIds,
-        reasons: alert.reasons,
-        restoreOption: alert.restoreOption,
-        createdAt: Number(alert.createdAt),
-        seenAt: alert.seenAt === null ? null : Number(alert.seenAt),
-        resolvedAt: alert.resolvedAt === null ? null : Number(alert.resolvedAt),
-      })),
-    };
+  async alerts(@Query('workDate') workDate?: string) {
+    if (workDate && !/^\d{4}-\d{2}-\d{2}$/.test(workDate)) {
+      throw new SysError('VALIDATION_FAILED', 'workDate must be YYYY-MM-DD');
+    }
+    return { alerts: await this.alertsService.list(workDate) };
   }
 
   @Post('alerts/:id/seen')
@@ -658,11 +818,63 @@ export class DispatchController {
   async markAlertSeen(@Param('id') id: string) {
     // Seen is not resolved. The underlying condition is unchanged, and it clears only when
     // the real state changes (context/39 DB2).
-    await this.prisma.alert.updateMany({
-      where: { id, seenAt: null },
-      data: { seenAt: BigInt(this.clock.nowSeconds()) },
-    });
+    await this.alertsService.markSeen(id, this.clock.nowSeconds());
     return { seen: true };
+  }
+
+  @Post('notices/:id/seen')
+  @ApiOperation({ summary: 'Mark an informational notice as seen without resolving any alert' })
+  async markNoticeSeen(@Param('id') id: string) {
+    await this.alertsService.markSeen(id, this.clock.nowSeconds());
+    return { seen: true };
+  }
+
+  @Post('alerts/:id/resolve')
+  @ApiOperation({ summary: 'Apply one dispatcher-selected alert resolution atomically' })
+  async resolveAlert(
+    @CurrentActor() actor: Actor,
+    @Param('id') id: string,
+    @Body(zodBody(resolveAlertSchema)) dto: ResolveAlertDto,
+  ) {
+    const outcome = await this.operations.execute(
+      { operationId: dto.operationId, actor, action: 'alert.resolve', targetRef: id, payload: dto },
+      (context) => this.alertsService.resolve(context, id, dto),
+    );
+    return { alert: outcome.result };
+  }
+
+  @Get('alerts/:id/window-proposal')
+  @ApiOperation({ summary: 'Preview a feasible same-day customer window without applying it' })
+  async proposeAlertWindow(@Param('id') id: string) {
+    return this.alertsService.proposeWindow(id);
+  }
+
+  @Get('shift')
+  @ApiOperation({ summary: 'Day close status; open alerts are a hard close gate' })
+  async shift(@Query('workDate') workDate?: string) {
+    if (!workDate || !/^\d{4}-\d{2}-\d{2}$/.test(workDate)) {
+      throw new SysError('VALIDATION_FAILED', 'workDate must be YYYY-MM-DD');
+    }
+    return this.alertsService.shiftStatus(workDate);
+  }
+
+  @Post('shift/close')
+  @ApiOperation({ summary: 'Close a day only when every blocking alert has an outcome' })
+  async closeShift(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(closeShiftSchema)) dto: CloseShiftDto,
+  ) {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'shift.close',
+        targetRef: dto.workDate,
+        payload: dto,
+      },
+      (context) => this.alertsService.closeShift(context, dto.workDate),
+    );
+    return outcome.result;
   }
 
   @Post('mode')
@@ -771,6 +983,7 @@ export class DispatchController {
       initialized: byKey.get(APP_STATE_KEYS.INITIALIZED) ?? false,
       startupProfile: byKey.get(APP_STATE_KEYS.STARTUP_PROFILE) ?? null,
       generation: byKey.get(APP_STATE_KEYS.GENERATION) ?? 1,
+      demoStand: this.demoStand.enabled,
       availableRegions,
       imports: packages.map((item) => ({
         source: item.source,
@@ -837,6 +1050,30 @@ export class DispatchController {
     return outcome.result;
   }
 
+  @Post('data/restart-demo')
+  @ApiOperation({
+    summary: 'Rewind the public 14/2 demo day (DEMO_STAND only); keeps the dispatcher session',
+  })
+  async restartDemo(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(restartDemoSchema)) dto: RestartDemoDto,
+  ) {
+    if (actor.kind !== 'account') {
+      throw SysError.forbidden('Demo rewind is confirmed from the Dashboard');
+    }
+    this.demoStand.assertEnabled();
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'data.restart_demo',
+        payload: dto,
+      },
+      async (context) => this.demoStand.restore(context),
+    );
+    return outcome.result;
+  }
+
   @Post('data/reset')
   @ApiOperation({ summary: 'Reset to the test data, or to an empty working set' })
   async reset(@CurrentActor() actor: Actor, @Body(zodBody(resetSchema)) dto: ResetDto) {
@@ -853,8 +1090,68 @@ export class DispatchController {
         payload: dto,
         confirmation: dto.confirmation,
       },
-      async (context) => this.resetService.run(context, dto.kind, dto.confirmation),
+      async (context) => {
+        if (dto.kind === 'demo' && this.demoStand.enabled) {
+          ResetService.assertConfirmation(dto.kind, dto.confirmation);
+          return this.demoStand.restore(context);
+        }
+        return this.resetService.run(context, dto.kind, dto.confirmation);
+      },
     );
     return outcome.result;
+  }
+
+  @Get('settings')
+  @ApiOperation({ summary: 'Dispatcher-owned day clock, alert timers and map keys' })
+  async dispatcherSettingsView() {
+    return this.dispatcherSettings.view();
+  }
+
+  @Put('settings')
+  @ApiOperation({ summary: 'Replace dispatcher-owned operational settings' })
+  async updateDispatcherSettings(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(updateDispatcherSettingsSchema)) dto: UpdateDispatcherSettingsDto,
+  ) {
+    const { operationId, ...patch } = dto;
+    const outcome = await this.operations.execute(
+      {
+        operationId,
+        actor,
+        action: 'dispatch.settings.replace',
+        payload: dto,
+      },
+      async (context) => this.dispatcherSettings.replace(context, patch),
+    );
+    return outcome.result;
+  }
+
+  @Get('settings/maps/status')
+  @ApiOperation({ summary: 'Probe configured map providers with a short Moscow sample route' })
+  async mapStatus() {
+    return this.mapRouting.probe();
+  }
+
+  @Get('geocode')
+  @ApiOperation({ summary: 'LocationIQ autocomplete for a dispatcher address' })
+  async geocode(
+    @Query('q') q?: string,
+    @Query('city') city?: string,
+    @Query('street') street?: string,
+  ) {
+    return { hits: await this.geocoding.search({ q, city, street }) };
+  }
+
+  private async decoratePlan(plan: ReturnType<typeof toPlanView>) {
+    let trafficEnabled = true;
+    if (this.router.isConfigured()) {
+      try {
+        trafficEnabled = (await this.router.getTechnicalSettings()).trafficEnabled ?? true;
+      } catch {
+        // Technical settings are optional decoration. The last applied plan must remain
+        // readable while Router is unavailable; routing health is reported separately.
+      }
+    }
+    return this.mapRouting.enrichPlan(plan, trafficEnabled);
   }
 }

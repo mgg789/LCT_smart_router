@@ -30,6 +30,10 @@ export class SysError extends Error {
     return new SysError('NOT_FOUND', `${what} not found`, { details });
   }
 
+  static validationFailed(message: string, details?: Record<string, unknown>): SysError {
+    return new SysError('VALIDATION_FAILED', message, { details });
+  }
+
   static forbidden(message: string, details?: Record<string, unknown>): SysError {
     return new SysError('FORBIDDEN', message, { details });
   }

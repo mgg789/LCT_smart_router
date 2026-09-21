@@ -32,8 +32,12 @@ FROM node:24-slim AS runtime
 ENV PNPM_HOME=/pnpm
 ENV PATH="${PNPM_HOME}:${PATH}"
 ENV NODE_ENV=production
+# Share the prepared package manager with USER node; root's default cache would
+# force migrate to download pnpm at runtime and break an offline contour.
+ENV COREPACK_HOME=/opt/corepack
 RUN apt-get update   && apt-get install -y --no-install-recommends openssl ca-certificates   && rm -rf /var/lib/apt/lists/*
 RUN corepack enable && corepack prepare pnpm@10.28.2 --activate
+ENV COREPACK_ENABLE_NETWORK=0
 WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY apps/api/package.json apps/api/package.json

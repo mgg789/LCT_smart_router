@@ -1,10 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { SysError } from '../../common/errors';
 import type { FactKind, Request } from '../../generated/prisma/client';
+import { NotificationsService } from '../../notifications';
 import type { OperationContext } from '../../operations';
 import type { Tx } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import { AppliedPlanService } from '../../routing/router-gateway/applied-plan.service';
+import { finishNeedsReplan } from '../live/replan-policy';
 import { ExecutionTimingPolicy, type ExecutionTimingPolicyValue } from './execution-timing-policy';
 
 export type ReportableFact = 'arrived' | 'arrived_blocked' | 'started' | 'finished' | 'problem';
@@ -27,6 +29,7 @@ export class FactsService {
     private readonly plans: AppliedPlanService,
     private readonly publisher: SnapshotPublisher,
     private readonly timingPolicy: ExecutionTimingPolicy,
+    private readonly notifications: NotificationsService,
   ) {}
 
   /** Reads the Router-owned variance thresholds before opening a database transaction. */
@@ -117,11 +120,22 @@ export class FactsService {
         version: { increment: 1 },
       },
     });
-    await this.publisher.publishIfChanged(
-      context.tx,
-      context.now,
-      PUBLICATION_TRIGGERS.REQUEST_EXECUTION_STARTED,
-    );
+
+    // The engineer's own start mark is the confirmation the customer waits for after the
+    // assignment letter (card #65, 2026-09-20 decision). One letter per started request.
+    await this.notifications.record(context.tx, context.now, {
+      category: 'engineer_confirmed',
+      businessEventKey: `engineer_confirmed:${request.id}`,
+      recipientAccountId: request.clientAccountId,
+      payload: { requestId: request.id, engineerId },
+    });
+    if (!context.businessTime)
+      await this.publisher.publishIfChanged(
+        context.tx,
+        context.now,
+        PUBLICATION_TRIGGERS.REQUEST_EXECUTION_STARTED,
+        { businessTime: context.businessTime },
+      );
     return this.reload(context.tx, request.id);
   }
 
@@ -164,7 +178,37 @@ export class FactsService {
     const overrunSec = actualDurationSec - request.serviceDurationSec;
     const materialEarly = earlyGainSec >= timing.earlyFinishReplanThresholdSec;
     const materialLate = overrunSec > timing.taskOverrunToleranceSec;
-    const materialVariance = materialEarly || materialLate || request.overrunDetectedAt !== null;
+    const currentPlan = context.businessTime ? await this.plans.current(context.tx) : null;
+    const route = currentPlan?.routes.find((item) => item.engineerId === engineerId);
+    const sequence = route?.stops.find((stop) => stop.requestId === request.id)?.sequence;
+    const next =
+      sequence === undefined
+        ? null
+        : route?.stops
+            .filter((stop) => stop.kind === 'job' && stop.sequence > sequence)
+            .sort((a, b) => a.sequence - b.sequence)[0];
+    const materialVariance = context.businessTime
+      ? finishNeedsReplan(
+          occurredAt,
+          startedAt,
+          request.serviceDurationSec,
+          timing.taskOverrunToleranceSec,
+          next ? Number(next.startAt) : null,
+        )
+      : materialEarly || materialLate || request.overrunDetectedAt !== null;
+    const openUnassignedDemand =
+      context.businessTime &&
+      (await context.tx.request.count({
+        where: {
+          lifecycle: 'submitted',
+          assignmentState: 'unassigned',
+          windowEndAt: { gte: BigInt(occurredAt) },
+          windowStartAt: {
+            lt: BigInt(Math.floor((occurredAt + 10800) / 86400) * 86400 - 10800 + 86400),
+          },
+        },
+      })) > 0;
+    const shouldReplan = materialVariance || openUnassignedDemand;
 
     await this.write(context, engineerId, request.id, 'finished', occurredAt, note);
     await context.tx.request.update({
@@ -174,18 +218,33 @@ export class FactsService {
         completedAt: BigInt(occurredAt),
         // Small deviations are deliberately absorbed by the existing route. Material
         // variance releases the route from the confirmed finish at the task location.
-        continuationAvailableAt: BigInt(materialVariance ? occurredAt : expectedCompletionAt),
+        continuationAvailableAt: BigInt(shouldReplan ? occurredAt : expectedCompletionAt),
         updatedAt: BigInt(context.now),
         version: { increment: 1 },
       },
     });
-    if (materialVariance) {
+    // A normal finish still releases capacity. If the current LIVE pool contains work
+    // waiting for assignment, publish once so Router can use that capacity. The
+    // continuation is also moved to the actual finish above, avoiding the old forecast
+    // pinning the engineer in the next snapshot.
+    if (shouldReplan) {
       await this.publisher.publishIfChanged(
         context.tx,
         context.now,
         PUBLICATION_TRIGGERS.REQUEST_EXECUTION_VARIANCE,
+        { businessTime: context.businessTime },
       );
     }
+
+    // The confirmed finish closes the loop the request-received letter opened (card #65,
+    // 2026-09-20 decision). One letter per completed request, regardless of variance.
+    await this.notifications.record(context.tx, context.now, {
+      category: 'request_completed',
+      businessEventKey: `request_completed:${request.id}`,
+      recipientAccountId: request.clientAccountId,
+      payload: { requestId: request.id, engineerId, completedAt: occurredAt },
+    });
+
     return this.reload(context.tx, request.id);
   }
 
@@ -219,10 +278,22 @@ export class FactsService {
       throw new SysError('NOT_FOUND', 'There is no working plan yet', { details: { requestId } });
     }
     const assignment = plan.assignments.find((item) => item.requestId === requestId);
-    if (assignment?.status !== 'assigned' || assignment.engineerId !== engineerId) {
-      throw SysError.forbidden('This work is not in your plan', { requestId });
+    if (assignment?.status === 'assigned' && assignment.engineerId === engineerId) {
+      return request;
     }
-    return request;
+    // An ETA is excluded from Router's free pool during a replan, but the engineer who
+    // reported it remains the owner until the visit is explicitly started or closes.
+    const reservation = await tx.liveRequestState.findFirst({
+      where: {
+        requestId,
+        reservedEngineerId: engineerId,
+        assumedCompletedAt: null,
+        workday: { status: 'running' },
+      },
+      select: { id: true },
+    });
+    if (reservation) return request;
+    throw SysError.forbidden('This work is not in your plan', { requestId });
   }
 
   private async write(
@@ -244,6 +315,20 @@ export class FactsService {
         recordedAt: BigInt(context.now),
         note,
         operationId: context.operationId,
+      },
+    });
+    // A fact submitted by the engineer is also a confirmed app activity. It is not
+    // inferred from a route timestamp, and it only touches the day containing the fact.
+    await context.tx.engineerDay.updateMany({
+      where: {
+        engineerId,
+        shiftStartAt: { lte: BigInt(occurredAt) },
+        shiftEndAt: { gte: BigInt(occurredAt) },
+      },
+      data: {
+        lastAttendanceAt: BigInt(context.now),
+        updatedAt: BigInt(context.now),
+        version: { increment: 1 },
       },
     });
   }
