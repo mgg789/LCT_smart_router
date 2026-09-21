@@ -1871,6 +1871,7 @@ export class LiveService {
       await context.tx.request.update({
         where: { id: input.requestId },
         data: {
+          // Keep the workbook identity: service_duration_sec = technical + documentation.
           serviceDurationSec: nextDuration,
           technicalDurationSec: nextDuration - stored.documentationDurationSec,
           windowEndAt: BigInt(windowEndAt),
