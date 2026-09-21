@@ -1,8 +1,11 @@
 import { motion, useReducedMotion } from 'framer-motion';
-import type { DashboardSnapshot } from '../api/types';
+import { ArrowUpRight } from 'lucide-react';
+import { useLayoutEffect, useRef } from 'react';
+import type { AlertResolutionInput, DashboardSnapshot } from '../api/types';
+import { AlertActions } from './AlertActions';
 import { type InboxNoticeCard, inboxFromSources } from './alertsInbox';
 import { FIGMA_ASSETS } from './assets';
-import { InboxAlertCardView, InboxNoticeCardView } from './inboxCard';
+import { InboxAlertCardView, InboxButton, InboxNoticeCardView } from './inboxCard';
 import { FigmaIcon, FigmaText } from './primitives';
 import { dismissToast, type ToastKind, type ToastNotification } from './toasts';
 
@@ -38,24 +41,52 @@ const NOTICE_ICON: Record<ToastKind, { src: string; width: number; height: numbe
  * (same trick as the toast veil) instead of clipping on a hard edge.
  */
 export function AlertsView({
+  token,
   snapshot,
   toasts,
   demoMode,
   motionOn,
   onOpenRequest,
   onMarkNoticeSeen,
+  onResolve,
+  writesDisabled,
 }: {
+  token?: string;
   snapshot: DashboardSnapshot | null;
   toasts: readonly ToastNotification[];
   demoMode: boolean;
   motionOn: boolean;
   onOpenRequest: (requestId: string) => void;
   onMarkNoticeSeen: (noticeId: string) => Promise<void>;
+  onResolve: (id: string, input: AlertResolutionInput) => Promise<void>;
+  writesDisabled: boolean;
 }) {
   const reduceMotion = useReducedMotion();
   const animate = motionOn && !reduceMotion;
   const inbox = inboxFromSources(snapshot, toasts, demoMode);
   const glassArrow = inbox.alerts.length > 0;
+  const listRef = useRef<HTMLDivElement>(null);
+  const anchors = useRef<Array<{ id: string; offset: number }>>([]);
+  function rememberScroll() {
+    const list = listRef.current;
+    if (!list) return;
+    anchors.current = Array.from(list.querySelectorAll<HTMLElement>('[data-alert-id]'))
+      .filter((node) => node.offsetTop + node.offsetHeight > list.scrollTop)
+      .map((node) => ({ id: node.dataset.alertId ?? '', offset: node.offsetTop - list.scrollTop }));
+  }
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const nodes = Array.from(list.querySelectorAll<HTMLElement>('[data-alert-id]'));
+    for (const anchor of anchors.current) {
+      const node = nodes.find((item) => item.dataset.alertId === anchor.id);
+      if (node) {
+        list.scrollTop = node.offsetTop - anchor.offset;
+        break;
+      }
+    }
+    rememberScroll();
+  });
 
   return (
     <section className="absolute inset-0" aria-label="Алерты и уведомления">
@@ -96,7 +127,9 @@ export function AlertsView({
       </motion.button>
 
       <div
-        className="absolute left-[180px] w-[1710px] overflow-y-auto [scrollbar-width:thin]"
+        ref={listRef}
+        onScroll={rememberScroll}
+        className="absolute left-[180px] w-[1710px] overflow-y-auto [overflow-anchor:none] [scrollbar-width:thin]"
         style={{ top: LIST_TOP, bottom: 28 }}
       >
         <div className="pt-[64px]">
@@ -110,6 +143,7 @@ export function AlertsView({
             {inbox.alerts.map((card, index) => (
               <motion.div
                 key={card.id}
+                data-alert-id={card.id}
                 initial={animate ? { opacity: 0, y: 16 } : false}
                 animate={{ opacity: 1, y: 0 }}
                 transition={animate ? { ...fadeSoft, delay: index * 0.04 } : { duration: 0 }}
@@ -119,14 +153,30 @@ export function AlertsView({
                   engineerName={card.engineerName}
                   badge={card.badge}
                   body={card.body}
-                  primaryLabel={card.primaryLabel}
-                  secondaryLabel={card.secondaryLabel}
-                  onPrimary={
-                    card.requestId
-                      ? () => {
-                          if (card.requestId) onOpenRequest(card.requestId);
-                        }
-                      : undefined
+                  actions={
+                    <AlertActions
+                      token={token}
+                      alert={card.sourceAlert}
+                      snapshot={snapshot}
+                      disabled={writesDisabled}
+                      onResolve={onResolve}
+                      leadingAction={
+                        card.requestId ? (
+                          <InboxButton
+                            variant="outline"
+                            onClick={() => card.requestId && onOpenRequest(card.requestId)}
+                          >
+                            <ArrowUpRight
+                              size={22}
+                              strokeWidth={1.8}
+                              aria-hidden="true"
+                              className="mr-[10px] shrink-0"
+                            />
+                            К заявке
+                          </InboxButton>
+                        ) : null
+                      }
+                    />
                   }
                 />
               </motion.div>

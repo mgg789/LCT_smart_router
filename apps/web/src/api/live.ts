@@ -59,6 +59,7 @@ export interface LiveEngineerState {
   readonly availability: string;
   readonly activeRequestId: string | null;
   readonly routeState: 'active' | 'awaiting_plan' | 'exhausted';
+  readonly canFinishDay: boolean;
   readonly progress: LiveRouteProgress | null;
   readonly stats: LiveStats;
   readonly technicalBreak: {
@@ -212,6 +213,7 @@ const engineerSchema: z.ZodType<LiveEngineerState> = z.object({
   availability: z.string(),
   activeRequestId: z.string().nullable(),
   routeState: z.enum(['active', 'awaiting_plan', 'exhausted']),
+  canFinishDay: z.boolean().default(false),
   progress: progressSchema.nullable(),
   stats: liveStatsSchema,
   technicalBreak: z

@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { AlertView } from '../api/types';
-import { alertDecisionSeconds, alertWindowInput, alertWindowSeconds, isOpenAlert } from './alerts';
+import {
+  ALERT_ACTION_LABELS,
+  ALERT_ACTION_SPECS,
+  alertDecisionSeconds,
+  alertWindowInput,
+  alertWindowSeconds,
+  isAlertActionId,
+  isOpenAlert,
+} from './alerts';
 
 const alert: AlertView = {
   id: 'a',
@@ -34,5 +42,32 @@ describe('dispatcher alert lifecycle projection', () => {
     expect(new Date(unix * 1000).toISOString()).toBe('2026-09-20T06:30:00.000Z');
     expect(alertWindowInput(unix)).toBe('2026-09-20T09:30');
     expect(() => alertWindowSeconds('invalid')).toThrow();
+  });
+  it('documents every server action with short copy and a decision trade-off', () => {
+    const serverActions = [
+      'reschedule',
+      'move_window',
+      'add_engineer',
+      'keep_manual',
+      'keep_as_is',
+      'restore_auto',
+      'skip_lunch',
+      'keep_lunch',
+      'message',
+      'remove_shift',
+      'message_remove',
+      'extend',
+    ] as const;
+    expect(Object.keys(ALERT_ACTION_SPECS)).toEqual(serverActions);
+    for (const action of serverActions) {
+      const spec = ALERT_ACTION_SPECS[action];
+      expect(ALERT_ACTION_LABELS[action]).toBe(spec.label);
+      expect(spec.label.split(/\s+/u).length).toBeLessThanOrEqual(3);
+      expect(spec.effect.length).toBeGreaterThan(20);
+      expect(spec.benefit.length).toBeGreaterThan(20);
+      expect(spec.drawback.length).toBeGreaterThan(20);
+      expect(isAlertActionId(action)).toBe(true);
+    }
+    expect(isAlertActionId('ai')).toBe(false);
   });
 });

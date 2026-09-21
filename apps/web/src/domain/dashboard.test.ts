@@ -22,6 +22,26 @@ import {
 } from './dashboard';
 
 describe('dev dashboard fixture', () => {
+  it('counts pending current-day work without claiming it is assigned and excludes tomorrow', () => {
+    const snapshot = createDevSnapshot();
+    const request = snapshot.requests[0];
+    if (!request) throw new Error('request fixture missing');
+    const start = Date.parse(`${snapshot.workDate}T09:00:00+03:00`) / 1000;
+    const pending = {
+      ...request,
+      assignmentState: 'pending' as const,
+      lifecycle: 'submitted' as const,
+      windowStartAt: start,
+      windowEndAt: start + 3600,
+    };
+    expect(unassignedRequests({ ...snapshot, requests: [pending] })).toEqual([pending]);
+    expect(
+      unassignedRequests({
+        ...snapshot,
+        requests: [{ ...pending, windowStartAt: start + 86400, windowEndAt: start + 90000 }],
+      }),
+    ).toEqual([]);
+  });
   it('keeps two skill-blocked requests unassigned', () => {
     const snapshot = createDevSnapshot();
     const unassigned = unassignedRequests(snapshot);

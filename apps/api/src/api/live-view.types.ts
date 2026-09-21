@@ -65,6 +65,8 @@ export interface LiveEngineerStateView {
     readonly additionalDurationSec: number;
   } | null;
   readonly routeState: 'active' | 'awaiting_plan' | 'exhausted';
+  /** Personal readiness after 17:00; independent of dispatcher alert resolution. */
+  readonly canFinishDay: boolean;
   readonly progress: LiveRouteProgressView | null;
   readonly stats: LiveStatsView;
 }

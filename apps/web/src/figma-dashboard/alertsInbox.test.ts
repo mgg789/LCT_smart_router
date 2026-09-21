@@ -10,6 +10,36 @@ import {
 import type { ToastNotification } from './toasts';
 
 describe('ALERTS inbox', () => {
+  it('hides a stale unassigned card once the request read already reports an assignment', () => {
+    const snapshot = createDevSnapshot();
+    const request = snapshot.requests[0];
+    const alert = snapshot.alerts[0];
+    if (!request || !alert) throw new Error('fixture is incomplete');
+    const inbox = inboxFromSources(
+      {
+        ...snapshot,
+        requests: [{ ...request, assignmentState: 'assigned' }],
+        alerts: [{ ...alert, code: 'unassigned', requestIds: [request.id], resolvedAt: null }],
+      },
+      [],
+    );
+    expect(inbox.alerts).toEqual([]);
+  });
+  it('keeps equal-time alerts deterministic and appends newer alerts', () => {
+    const snapshot = createDevSnapshot();
+    const base = snapshot.alerts[0];
+    if (!base) throw new Error('fixture needs an alert');
+    const alerts = ['b', 'a'].map((id) => ({ ...base, id, createdAt: 100 }));
+    const order = (items: typeof alerts) =>
+      inboxFromSources({ ...snapshot, alerts: items }, []).alerts.map((item) => item.id);
+    expect(order(alerts)).toEqual(['alert:a', 'alert:b']);
+    expect(order([...alerts].reverse())).toEqual(['alert:a', 'alert:b']);
+    expect(order([{ ...base, id: 'c', createdAt: 200 }, ...alerts])).toEqual([
+      'alert:a',
+      'alert:b',
+      'alert:c',
+    ]);
+  });
   it('puts unresolved snapshot alerts above notices and sorts each block by arrival', () => {
     const snapshot = createDevSnapshot();
     const toasts: ToastNotification[] = [
@@ -22,7 +52,9 @@ describe('ALERTS inbox', () => {
     expect(inbox.alerts.some((item) => item.id === 'demo-alert')).toBe(false);
     expect(inbox.notices.map((item) => item.id)).toEqual(['n-new', 'n-old']);
     expect(inbox.alerts[0]?.requestId).toBe('10490');
-    expect(inbox.alerts[0]?.primaryLabel).toBe('К заявке');
+    expect(inbox.alerts[0]?.sourceAlert).toBe(
+      snapshot.alerts.find((alert) => alert.id === 'alert-video'),
+    );
     expect(inbox.alerts[0]?.body.startsWith('Причина:')).toBe(true);
     expect(
       inbox.alerts.every((item) => item.id.startsWith('alert:') || item.id === 'demo-alert'),
@@ -85,8 +117,7 @@ describe('ALERTS inbox', () => {
     expect(inbox.alerts[0]?.title).toBe('окно заявки');
     expect(inbox.alerts[0]?.badge).toBe('Срочная');
     expect(inbox.alerts[0]?.requestId).toBe('10441');
-    expect(inbox.alerts[0]?.primaryLabel).toBe('К заявке');
-    expect(inbox.alerts[0]?.secondaryLabel).toBe('Сменить окно');
+    expect(inbox.alerts[0]?.sourceAlert).toBeNull();
   });
 
   it('keeps the «К заявке» action only when the alert names a request', () => {
@@ -100,7 +131,6 @@ describe('ALERTS inbox', () => {
       },
     ]);
     expect(inbox.alerts[0]?.requestId).toBeNull();
-    expect(inbox.alerts[0]?.primaryLabel).toBeNull();
   });
 
   it('treats only alert/error as inbox alerts and normalizes ms timestamps', () => {

@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import { FIGMA_ASSETS } from './assets';
 import { FigmaIcon } from './primitives';
 
 /**
@@ -10,10 +9,14 @@ export function InboxButton({
   variant,
   children,
   onClick,
+  disabled,
+  describedBy,
 }: {
   variant: 'bee' | 'outline' | 'ink';
   children: ReactNode;
   onClick?: () => void;
+  disabled?: boolean;
+  describedBy?: string;
 }) {
   const tone =
     variant === 'bee'
@@ -24,7 +27,9 @@ export function InboxButton({
   return (
     <button
       type="button"
-      className={`flex items-center justify-center overflow-clip rounded-[20px] px-[32px] py-[16px] font-semibold text-[20px] tracking-[-0.6px] transition duration-300 ease-out hover:scale-[1.02] active:scale-[0.97] ${tone}`}
+      disabled={disabled}
+      aria-describedby={describedBy}
+      className={`flex items-center justify-center overflow-clip rounded-[20px] px-[32px] py-[16px] font-semibold text-[20px] tracking-[-0.6px] transition duration-150 ease-out hover:scale-[1.02] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-45 ${tone}`}
       onClick={onClick}
     >
       {children}
@@ -40,20 +45,16 @@ export function InboxAlertCardView({
   engineerName,
   badge,
   body,
-  primaryLabel,
-  secondaryLabel,
-  onPrimary,
+  actions,
 }: {
   title: string;
   engineerName: string | null;
   badge: string | null;
   body: string;
-  primaryLabel: string | null;
-  secondaryLabel: string | null;
-  onPrimary?: () => void;
+  actions: ReactNode;
 }) {
   return (
-    <article className="flex h-[211px] w-full flex-col overflow-clip rounded-[20px] bg-white px-[30px] pt-[19px] pb-[24px]">
+    <article className="flex min-h-[211px] w-full flex-col rounded-[20px] bg-white px-[30px] pt-[19px] pb-[24px]">
       <InboxCardHeader
         title={title}
         engineerName={engineerName}
@@ -69,15 +70,7 @@ export function InboxAlertCardView({
       <p className="mt-[16px] max-w-[1234px] font-semibold text-[20px] tracking-[-0.34px] text-figma-muted">
         {body}
       </p>
-      <div className="mt-auto flex flex-wrap items-center gap-[20px]">
-        {primaryLabel ? (
-          <InboxButton variant="bee" onClick={onPrimary}>
-            {primaryLabel}
-          </InboxButton>
-        ) : null}
-        {secondaryLabel ? <InboxButton variant="outline">{secondaryLabel}</InboxButton> : null}
-        <InboxAiLink tone="ink" />
-      </div>
+      {actions}
     </article>
   );
 }
@@ -156,28 +149,5 @@ function InboxCardHeader({
       ) : null}
       {afterTitle}
     </div>
-  );
-}
-
-function InboxAiLink({ tone }: { tone: 'ink' | 'white' }) {
-  return (
-    <button
-      type="button"
-      disabled
-      aria-disabled
-      title="Скоро"
-      className={`flex cursor-not-allowed items-center gap-[8px] font-semibold text-[18px] tracking-[-0.54px] opacity-45 ${
-        tone === 'white' ? 'text-white' : 'text-figma-ink'
-      }`}
-    >
-      Разобрать в AI
-      <FigmaIcon
-        src={FIGMA_ASSETS.iconArrowCircle}
-        alt=""
-        width={22}
-        height={22}
-        className={tone === 'white' ? 'brightness-0 invert' : undefined}
-      />
-    </button>
   );
 }

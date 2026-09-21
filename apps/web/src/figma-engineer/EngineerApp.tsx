@@ -511,15 +511,17 @@ export function EngineerApp({
                   }}
                 >
                   <p className="font-semibold text-figma-ink" style={{ fontSize: eu(24) }}>
-                    {live?.engineer.routeState === 'awaiting_plan'
-                      ? 'Ожидаем новый маршрут'
-                      : 'На сегодня все заявки пройдены'}
+                    {live?.engineer.canFinishDay
+                      ? 'Работа на сегодня завершена'
+                      : 'Ожидаем новые заявки'}
                   </p>
                   <p
                     className="font-medium text-figma-muted"
                     style={{ marginTop: eu(8), fontSize: eu(18) }}
                   >
-                    Когда диспетчер применит план, список появится здесь.
+                    {live?.engineer.canFinishDay
+                      ? 'Ваши заявки завершены, можно ехать домой. Диспетчер продолжит работу с алертами.'
+                      : 'До 17:00 остаёмся на связи. После 17:00 можно закончить день, когда ваша работа завершена и нет новых назначений.'}
                   </p>
                 </div>
               ) : null}

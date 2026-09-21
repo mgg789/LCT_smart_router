@@ -203,6 +203,9 @@ export class FactsService {
           lifecycle: 'submitted',
           assignmentState: 'unassigned',
           windowEndAt: { gte: BigInt(occurredAt) },
+          windowStartAt: {
+            lt: BigInt(Math.floor((occurredAt + 10800) / 86400) * 86400 - 10800 + 86400),
+          },
         },
       })) > 0;
     const shouldReplan = materialVariance || openUnassignedDemand;

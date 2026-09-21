@@ -56,6 +56,7 @@ const engineer = {
   availability: 'online',
   activeRequestId: null,
   routeState: 'active',
+  canFinishDay: false,
   progress: null,
   stats: {
     completedCount: 0,

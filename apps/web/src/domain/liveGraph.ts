@@ -31,6 +31,29 @@ export interface LiveGraphProjection {
   readonly activeSegments: readonly LiveGraphSegment[];
 }
 
+/** Collapses lunch out of the map only; the pipeline retains its timed lunch vertex. */
+export function withoutMapLunch(graph: LiveGraphProjection): LiveGraphProjection {
+  const mapNodes = graph.mapNodes.filter((node) => node.kind !== 'lunch');
+  const mapSegments = segmentsFor(mapNodes);
+  const activeSegments = mapSegments.filter((edge) => {
+    const start = graph.mapNodes.findIndex((node) => node.key === edge.from.key);
+    const end = graph.mapNodes.findIndex((node) => node.key === edge.to.key);
+    return graph.mapSegments
+      .slice(start, end)
+      .some((part) => graph.activeSegmentKeys.has(part.key));
+  });
+  return {
+    ...graph,
+    mapNodes,
+    mapSegments,
+    activeSegments,
+    activeSegmentKeys: new Set(activeSegments.map((edge) => edge.key)),
+    activeNodeKeys: new Set(
+      [...graph.activeNodeKeys].filter((key) => mapNodes.some((node) => node.key === key)),
+    ),
+  };
+}
+
 /**
  * Projects a route and its durable movement fact into map and pipeline state.
  * Wait stops are intentionally excluded: they are schedule intervals, not

@@ -839,6 +839,12 @@ export class DispatchController {
     return { alert: outcome.result };
   }
 
+  @Get('alerts/:id/window-proposal')
+  @ApiOperation({ summary: 'Preview a feasible same-day customer window without applying it' })
+  async proposeAlertWindow(@Param('id') id: string) {
+    return this.alertsService.proposeWindow(id);
+  }
+
   @Get('shift')
   @ApiOperation({ summary: 'Day close status; open alerts are a hard close gate' })
   async shift(@Query('workDate') workDate?: string) {
@@ -1102,9 +1108,15 @@ export class DispatchController {
   }
 
   private async decoratePlan(plan: ReturnType<typeof toPlanView>) {
-    const trafficEnabled = this.router.isConfigured()
-      ? ((await this.router.getTechnicalSettings()).trafficEnabled ?? true)
-      : true;
+    let trafficEnabled = true;
+    if (this.router.isConfigured()) {
+      try {
+        trafficEnabled = (await this.router.getTechnicalSettings()).trafficEnabled ?? true;
+      } catch {
+        // Technical settings are optional decoration. The last applied plan must remain
+        // readable while Router is unavailable; routing health is reported separately.
+      }
+    }
     return this.mapRouting.enrichPlan(plan, trafficEnabled);
   }
 }

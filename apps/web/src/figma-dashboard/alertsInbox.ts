@@ -8,6 +8,7 @@ import { shortRequestId } from './requestsTable';
 import { DEMO_TOASTS, type ToastKind, type ToastNotification } from './toasts';
 
 export type InboxAlertCard = {
+  sourceAlert: AlertView | null;
   id: string;
   createdAt: number;
   title: string;
@@ -15,8 +16,6 @@ export type InboxAlertCard = {
   badge: string | null;
   engineerName: string | null;
   requestId: string | null;
-  primaryLabel: string | null;
-  secondaryLabel: string | null;
 };
 
 export type InboxNoticeCard = {
@@ -70,7 +69,22 @@ export function inboxFromSources(
 ): { alerts: InboxAlertCard[]; notices: InboxNoticeCard[] } {
   const snapshotAlerts = snapshot?.alerts ?? [];
   const openAlerts = snapshotAlerts.filter(
-    (alert) => alert.kind !== 'notice' && alert.resolvedAt === null,
+    (alert) =>
+      alert.kind !== 'notice' &&
+      alert.resolvedAt === null &&
+      // Independent dashboard reads can straddle an assignment transaction.
+      // Never offer an obsolete unassigned action for already assigned work.
+      !(
+        alert.code === 'unassigned' &&
+        alert.requestIds.length > 0 &&
+        snapshot &&
+        alert.requestIds.every((id) => {
+          const request = requestById(snapshot, id);
+          return (
+            request && (request.assignmentState === 'assigned' || request.lifecycle !== 'submitted')
+          );
+        })
+      ),
   );
   const openNotices = snapshotAlerts.filter(
     (alert) => alert.kind === 'notice' && alert.seenAt === null,
@@ -78,14 +92,16 @@ export function inboxFromSources(
   const sourceToasts =
     demoMode && snapshot === null && toasts.length === 0 ? demoInboxToasts() : toasts;
   const covered = new Set(snapshotAlerts.map((alert) => `alert:${alert.id}`));
-  const alerts = sortByArrival([
+  const alerts = [
     ...(snapshot ? openAlerts.map((alert) => alertCardFromSnapshot(snapshot, alert)) : []),
     ...sourceToasts
       .filter(
         (toast) => snapshot === null && isInboxAlertKind(toast.kind) && !covered.has(toast.id),
       )
       .map(alertCardFromToast),
-  ]);
+  ].sort(
+    (a, b) => arrivalSeconds(a.createdAt) - arrivalSeconds(b.createdAt) || a.id.localeCompare(b.id),
+  );
   const notices = sortByArrival([
     ...openNotices.map((notice) => ({
       id: `alert:${notice.id}`,
@@ -144,6 +160,7 @@ function alertCardFromSnapshot(snapshot: DashboardSnapshot, alert: AlertView): I
     );
   return {
     id: `alert:${alert.id}`,
+    sourceAlert: alert,
     createdAt: alert.createdAt,
     title:
       request && unassigned
@@ -158,27 +175,18 @@ function alertCardFromSnapshot(snapshot: DashboardSnapshot, alert: AlertView): I
         : `Результат в ${formatClock(alert.createdAt)}`,
     engineerName: engineer?.displayName ?? null,
     requestId: request?.id ?? null,
-    primaryLabel: lunch ? 'Оставить без обеда' : request ? 'К заявке' : null,
-    secondaryLabel: lunch
-      ? 'Исключить заявку'
-      : request
-        ? unassigned
-          ? 'Сменить окно'
-          : 'Изменить условия'
-        : null,
   };
 }
 
 function alertCardFromToast(toast: ToastNotification): InboxAlertCard {
   return {
     id: toast.id,
+    sourceAlert: null,
     createdAt: toast.createdAt,
     title: toast.title.replace(/^Алёрт:\s*/u, ''),
     body: formatAlertReason(toast.body),
     badge: 'Срочная',
     engineerName: null,
     requestId: toast.requestId ?? null,
-    primaryLabel: toast.requestId ? 'К заявке' : null,
-    secondaryLabel: 'Сменить окно',
   };
 }

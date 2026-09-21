@@ -712,11 +712,14 @@ export function MainDashboardPage() {
               ) : null}
               {stackViewKey(stackNav) === 'alerts' ? (
                 <AlertsView
+                  token={dash.token ?? undefined}
                   snapshot={dash.snapshot}
                   toasts={toasts}
                   demoMode={dash.isDemo}
                   motionOn={motionOn}
                   onMarkNoticeSeen={dash.markNoticeSeen}
+                  onResolve={dash.resolveAlert}
+                  writesDisabled={dash.writesDisabled || dash.busy}
                   onOpenRequest={(requestId) => {
                     setStackDir(stackSlideDir(stackNav, 'requests'));
                     setStackNav('requests');
@@ -741,7 +744,7 @@ export function MainDashboardPage() {
                   snapshot={visibleSnapshot}
                   selectedEngineerId={dash.selectedEngineerId}
                   motionOn={motionOn}
-                  busy={dash.busy}
+                  busy={dash.busy || dash.writesDisabled}
                   onSelectEngineer={dash.selectEngineer}
                   onLinkEmail={dash.saveEngineerLogin}
                   onDeleteEngineer={dash.deleteEngineer}

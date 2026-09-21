@@ -37,6 +37,7 @@ interface LiveEngineerView {
       next: { requestId: string | null; at: number } | null;
     } | null;
     routeState: 'active' | 'awaiting_plan' | 'exhausted';
+    canFinishDay: boolean;
   };
   current: { request: { id: string }; phase: string } | null;
   lunch: { startedAt: number; endAt: number } | null;
@@ -1413,8 +1414,102 @@ describe('LIVE workday', () => {
     );
   });
 
-  it('finishes the day when no submitted request can still be served', async () => {
+  it('releases only the finished engineer after 17:00 despite other work and alerts', async () => {
     const engineer = await liveCreateEngineer();
+    const other = await liveCreateEngineer();
+    const request = await liveCreateRequest();
+    await liveApplyPlan(engineer.id, [request]);
+    await liveStart();
+    assert.equal((await liveAction(engineer.token, { kind: 'online' })).status, 201);
+    const initial = await liveView(engineer.token);
+    const stop = initial.route?.stops.find((item) => item.requestId === request.id);
+    assert.ok(stop);
+    const setTime = (at: number) =>
+      liveSetLogicalNow(
+        initial.workday.id,
+        initial.workday.logicalStartAt,
+        initial.workday.logicalEndAt,
+        at,
+        initial.workday.speedDurationSec,
+      );
+    await setTime(stop.startAt);
+    assert.equal(
+      (await liveAction(engineer.token, { kind: 'start', requestId: request.id })).status,
+      201,
+    );
+    const cutoff = Date.parse(`${workDate()}T17:00:00+03:00`) / 1000;
+    await setTime(cutoff);
+    assert.equal(
+      (await liveView(engineer.token)).engineer.canFinishDay,
+      false,
+      'own active job blocks release',
+    );
+    assert.equal(
+      (await liveAction(engineer.token, { kind: 'finish', requestId: request.id })).status,
+      201,
+    );
+    const otherRequest = await liveCreateRequest();
+    await liveApplyPlan(other.id, [otherRequest]);
+    const alert = await prisma.alert.create({
+      data: {
+        code: 'plan_degraded',
+        severity: 'warning',
+        workDate: workDate(),
+        engineerIds: [other.id],
+        requestIds: [otherRequest.id],
+        reasons: {},
+        isBlocking: true,
+        createdAt: BigInt(cutoff),
+      },
+    });
+    try {
+      await setTime(cutoff - 120);
+      assert.equal((await liveView(engineer.token)).engineer.canFinishDay, false, 'before 17:00');
+      await setTime(cutoff + 60);
+      assert.equal(
+        (await liveView(engineer.token)).engineer.canFinishDay,
+        true,
+        'other work and alert do not block',
+      );
+      const next = await liveCreateRequest();
+      await liveApplyPlan(engineer.id, [next]);
+      assert.equal(
+        (await liveView(engineer.token)).engineer.canFinishDay,
+        false,
+        'new own assignment revokes readiness',
+      );
+      await prisma.appliedPlanRoute.deleteMany({ where: { engineerId: engineer.id } });
+      assert.equal(
+        (await liveView(engineer.token)).engineer.canFinishDay,
+        false,
+        'missing route is not proof of completion',
+      );
+      assert.equal((await liveAction(other.token, { kind: 'online' })).status, 201);
+      await liveApplyPlan(other.id, [next]);
+      assert.equal(
+        (await liveView(engineer.token)).engineer.canFinishDay,
+        true,
+        'actual reassignment releases the former owner',
+      );
+      await liveApplyPlan(other.id, []);
+      assert.equal(
+        (await liveView(engineer.token)).engineer.canFinishDay,
+        true,
+        'a later empty plan must not restore the former owner',
+      );
+      assert.equal(
+        (await liveView(other.token)).engineer.canFinishDay,
+        false,
+        'the last witnessed owner still has unfinished work after an empty plan',
+      );
+    } finally {
+      await prisma.alert.delete({ where: { id: alert.id } });
+    }
+  });
+
+  it('waits until 17:00 and all current-day work and alerts are cleared, ignoring tomorrow', async () => {
+    const engineer = await liveCreateEngineer();
+    const removedEngineer = await liveCreateEngineer();
     const submitted = await prisma.request.findMany({
       where: { lifecycle: 'submitted' },
       select: {
@@ -1452,8 +1547,89 @@ describe('LIVE workday', () => {
     });
     try {
       await liveStart();
-
-      const response = await call('GET', '/api/v1/engineer/live', engineer.token);
+      const initial = await liveView(engineer.token);
+      let response = await call('GET', '/api/v1/engineer/live', engineer.token);
+      assert.equal(
+        ((await response.json()) as { workday: { status: string } }).workday.status,
+        'running',
+      );
+      const pending = await liveCreateRequest();
+      const alert = await prisma.alert.create({
+        data: {
+          code: 'plan_degraded',
+          severity: 'warning',
+          workDate: workDate(),
+          engineerIds: [],
+          requestIds: [],
+          reasons: {},
+          isBlocking: true,
+          createdAt: BigInt(now()),
+        },
+      });
+      const cutoff = Date.parse(`${workDate()}T17:00:00+03:00`) / 1000;
+      await liveSetLogicalNow(
+        initial.workday.id,
+        initial.workday.logicalStartAt,
+        initial.workday.logicalEndAt,
+        cutoff,
+        initial.workday.speedDurationSec,
+      );
+      response = await call('GET', '/api/v1/engineer/live', engineer.token);
+      assert.equal(
+        ((await response.json()) as { workday: { status: string } }).workday.status,
+        'running',
+        'new submitted work blocks finish',
+      );
+      await prisma.request.update({
+        where: { id: pending.id },
+        data: {
+          windowStartAt: BigInt(cutoff + 86400),
+          windowEndAt: BigInt(cutoff + 90000),
+        },
+      });
+      response = await call('GET', '/api/v1/engineer/live', engineer.token);
+      assert.equal(
+        ((await response.json()) as { workday: { status: string } }).workday.status,
+        'running',
+        'unresolved alert blocks finish',
+      );
+      await prisma.alert.delete({ where: { id: alert.id } });
+      // Earlier scenarios may retain unrelated alert history; only open current-day
+      // blockers are cleared here in the isolated test database.
+      await prisma.alert.updateMany({
+        where: { resolvedAt: null, isBlocking: true },
+        data: { resolvedAt: BigInt(cutoff), invalidatedAt: BigInt(cutoff) },
+      });
+      // Removing an engineer from the shift is authoritative even if stale break/lunch
+      // markers survived the same dispatcher action. Neither marker may strand the
+      // global workday after all current-day demand and blocking alerts are cleared.
+      await prisma.engineerDay.update({
+        where: {
+          engineerId_workDate: { engineerId: removedEngineer.id, workDate: workDate() },
+        },
+        data: {
+          availability: 'offline',
+          attendanceOptOut: true,
+          lunchTaken: true,
+          lunchStartedAt: BigInt(cutoff),
+          lunchDurationSec: 30 * 60,
+        },
+      });
+      await prisma.liveEngineerState.update({
+        where: {
+          workdayId_engineerId: {
+            workdayId: initial.workday.id,
+            engineerId: removedEngineer.id,
+          },
+        },
+        data: {
+          lineStatus: 'technical_break',
+          technicalBreakStartedAt: BigInt(cutoff),
+          technicalBreakPlannedEndAt: BigInt(cutoff + 15 * 60),
+          technicalBreakOverdueAt: BigInt(cutoff + 20 * 60),
+        },
+      });
+      response = await call('GET', '/api/v1/engineer/live', engineer.token);
       assert.equal(response.status, 200, await response.clone().text());
       const view = (await response.json()) as {
         workday: {
@@ -1464,7 +1640,9 @@ describe('LIVE workday', () => {
         };
       };
       assert.equal(view.workday.status, 'finished');
-      assert.equal(view.workday.completionReason, 'schedule_exhausted');
+      assert.ok(
+        ['schedule_exhausted', 'logical_end'].includes(view.workday.completionReason ?? ''),
+      );
       assert.ok(view.workday.finishedAt);
       assert.equal(view.workday.liveNow, view.workday.finishedAt);
     } finally {
