@@ -1927,6 +1927,7 @@ export class LiveService {
             : BigInt(Number(stored.startedAt) + stored.serviceDurationSec));
         // Before the deadline this extends the remaining norm; once overdue it
         // extends from now. An early report must never shorten the original task.
+        // Both duration columns move together so the workbook identity holds.
         const expected =
           Math.max(logicalNow, Number(originalFinish)) + (input.additionalDurationSec ?? 0);
         if (priorPromise?.promisedFinishRecordedAt === null || priorPromise === null) {

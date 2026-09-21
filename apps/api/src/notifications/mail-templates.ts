@@ -556,6 +556,7 @@ export function renderMail(
         base,
       );
     }
+    // Catalogue completeness only — SMTP is disabled for this category.
     case 'engineer_attention_required': {
       const href = appLink(base, '/engineer');
       const calledIn = payload.alertCode === 'called_in';
@@ -584,6 +585,7 @@ export function renderMail(
         base,
       );
     }
+    // Catalogue completeness only — SMTP is disabled for this category.
     case 'plan_rebuilt': {
       return genericMail(
         'План обновлён',

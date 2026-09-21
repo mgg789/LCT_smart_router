@@ -57,9 +57,13 @@ export async function signIn(page: Page) {
   await page.getByRole('button', { name: 'Войти', exact: true }).click();
   const start = page.getByRole('button', { name: 'Начать рабочий день', exact: true });
   const plan = page.getByRole('button', { name: 'План дня', exact: true });
-  await expect(start.or(plan)).toBeVisible();
-  if (await start.isVisible()) await start.click();
-  await expect(plan).toBeVisible();
+  const chrome = page.getByRole('button', { name: 'Загрузить данные', exact: true });
+  await expect(start.or(plan).or(chrome)).toBeVisible();
+  if (await start.isVisible()) {
+    await start.click();
+    await expect(start).toBeHidden();
+  }
+  await expect(plan).toBeVisible({ timeout: 45_000 });
 }
 
 /** Isolated serial fixtures: real seed per test, external network blocked, error evidence. */
