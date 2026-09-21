@@ -1,5 +1,6 @@
+import { MessageCircle } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
-import type { AlertResolutionProposal, ExplainTarget } from '../api/ai';
+import type { AlertResolutionProposal, DispatchChatTarget, ExplainTarget } from '../api/ai';
 import { DashboardApiError } from '../api/client';
 import type { AlertResolutionInput, AlertView, DashboardSnapshot } from '../api/types';
 import {
@@ -26,6 +27,10 @@ interface Props {
   ) => Promise<AlertResolutionProposal | { refused: true; why: string }>;
   readonly token?: string | null;
   readonly onOpenChat?: (context?: ExplainTarget) => void;
+  /** Opens a dispatcher chat with an engineer or a request's customer named on the alert.
+   * Absent in the demo/cached contours, same as `onAiResolve` -- there is no dashboard
+   * session to open a chat from, so the button simply does not render (see its own test). */
+  readonly onOpenDispatchChat?: (target: DispatchChatTarget) => Promise<unknown>;
 }
 
 /** Persistent decision inbox: transient toast dismissal does not alter these records. */
@@ -38,6 +43,7 @@ export function AlertsPage({
   onAiResolve,
   token = null,
   onOpenChat,
+  onOpenDispatchChat,
 }: Props) {
   const [section, setSection] = useState<'open' | 'history' | 'notices'>('open');
   const [pending, setPending] = useState<string | null>(null);
@@ -165,6 +171,7 @@ export function AlertsPage({
               onAiResolve={onAiResolve ? () => onAiResolve(alert.id) : undefined}
               token={token}
               onOpenChat={onOpenChat}
+              onOpenDispatchChat={onOpenDispatchChat}
             />
           ))}
         </div>
@@ -184,6 +191,7 @@ function AlertCard({
   onAiResolve,
   token,
   onOpenChat,
+  onOpenDispatchChat,
 }: {
   readonly alert: AlertView;
   readonly snapshot: DashboardSnapshot;
@@ -195,6 +203,7 @@ function AlertCard({
   readonly onAiResolve?: () => Promise<AlertResolutionProposal | { refused: true; why: string }>;
   readonly token?: string | null;
   readonly onOpenChat?: (context?: ExplainTarget) => void;
+  readonly onOpenDispatchChat?: (target: DispatchChatTarget) => Promise<unknown>;
 }) {
   const request = snapshot.requests.find((item) => alert.requestIds.includes(item.id));
   const additionalEngineers = snapshot.engineers.filter(
@@ -291,13 +300,29 @@ function AlertCard({
         </div>
       </div>
       {alert.engineerIds.map((id) => (
-        <p key={id} className="mt-1 text-sm">
-          {snapshot.engineers.find((item) => item.id === id)?.displayName ?? id}
+        <p key={id} className="mt-1 flex items-center gap-1.5 text-sm">
+          <span>{snapshot.engineers.find((item) => item.id === id)?.displayName ?? id}</span>
+          {onOpenDispatchChat ? (
+            <WriteChatButton
+              target={{ kind: 'engineer', engineerId: id }}
+              disabled={disabled}
+              onOpen={onOpenDispatchChat}
+            />
+          ) : null}
         </p>
       ))}
       {alert.requestIds.map((id) => (
-        <p key={id} className="mt-1 text-sm text-muted">
-          {snapshot.requests.find((item) => item.id === id)?.addressText ?? `Заявка ${id}`}
+        <p key={id} className="mt-1 flex items-center gap-1.5 text-sm text-muted">
+          <span>
+            {snapshot.requests.find((item) => item.id === id)?.addressText ?? `Заявка ${id}`}
+          </span>
+          {onOpenDispatchChat ? (
+            <WriteChatButton
+              target={{ kind: 'request', requestId: id }}
+              disabled={disabled}
+              onOpen={onOpenDispatchChat}
+            />
+          ) : null}
         </p>
       ))}
       {alert.reasons.length > 0 && (
@@ -518,5 +543,61 @@ function AlertCard({
         </>
       )}
     </article>
+  );
+}
+
+/**
+ * Icon-only «Написать» next to a named engineer or request: opens a dispatcher chat with
+ * that person. Mirrors `ExplainButton`'s compact styling. `CHAT_TARGET_UNREACHABLE` (an
+ * imported customer, or an engineer with no app login) gets a short Russian explanation
+ * instead of the raw server message -- the fix is "phone them", not "try again".
+ */
+function WriteChatButton({
+  target,
+  disabled,
+  onOpen,
+}: {
+  readonly target: DispatchChatTarget;
+  readonly disabled: boolean;
+  readonly onOpen: (target: DispatchChatTarget) => Promise<unknown>;
+}) {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleClick() {
+    setPending(true);
+    setError(null);
+    try {
+      await onOpen(target);
+    } catch (cause) {
+      setError(
+        cause instanceof DashboardApiError && cause.code === 'CHAT_TARGET_UNREACHABLE'
+          ? 'Нет входа в приложение — позвоните.'
+          : cause instanceof Error
+            ? cause.message
+            : 'Не удалось открыть чат',
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <button
+        type="button"
+        onClick={() => void handleClick()}
+        disabled={disabled || pending}
+        title="Написать"
+        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-line bg-white text-ink disabled:opacity-40"
+      >
+        <MessageCircle className="h-3 w-3" />
+      </button>
+      {error ? (
+        <span role="alert" className="text-[11px] text-muted">
+          {error}
+        </span>
+      ) : null}
+    </span>
   );
 }

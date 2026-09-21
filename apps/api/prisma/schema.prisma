@@ -321,6 +321,14 @@ enum AiHandoffState {
   closed
 }
 
+/// Who opened the handover. A dialogue the dispatcher started themselves is never
+/// «waiting for a dispatcher», so the queue badge must be able to tell the two apart
+/// without inspecting who wrote the first message.
+enum AiHandoffOrigin {
+  user
+  dispatcher
+}
+
 enum AiProviderKind {
   agents
   openai_chat
@@ -1313,17 +1321,42 @@ model AiBudget {
   @@map("ai_budgets")
 }
 
-/// One dispatcher call-for-help. `requestIds`/`engineerIds` are the working set the
-/// dispatcher is being asked about, not a resolved plan or an assignment.
+/// One stretch of a dialogue carried by a human instead of the assistant, from the moment
+/// it is handed over to the moment the dispatcher ends it. `requestIds`/`engineerIds` are
+/// the working set the dispatcher is being asked about, not a resolved plan or an
+/// assignment.
+///
+/// A closed row is history, not litter: the dispatcher's list keeps showing it after the
+/// handover ends, and a later escalation of the same dialogue creates a *new* row rather
+/// than reopening this one. That is what makes "how many times did we have to step in"
+/// answerable from the table alone.
 model AiHandoff {
   id String @id @default(uuid())
 
   conversationId        String @map("conversation_id")
+  /// Who asked for the handover: the client or engineer when the assistant escalated,
+  /// the dispatcher themselves when they opened the chat from the dashboard.
   requestedByAccountId  String @map("requested_by_account_id")
+  /// Always the *counterpart's* role -- the client or engineer on the other side of the
+  /// chat -- never `dispatcher`, whichever side opened it. The dispatcher's list groups
+  /// by this field, so it has to mean the same thing in both directions.
   actorRole             Role @map("actor_role")
+  initiatedBy           AiHandoffOrigin @default(user) @map("initiated_by")
   requestIds            String[] @map("request_ids")
   engineerIds           String[] @map("engineer_ids")
   state                 AiHandoffState @default(waiting)
+  /// Highest message `seq` the dispatcher has acknowledged in this handover; the unread
+  /// badge counts the counterpart's messages above it. Per handover rather than per
+  /// account because this product has one dispatcher (context/32 section 2.1) -- a second
+  /// one would need a separate read-cursor table, not a change to this column.
+  dispatcherLastReadSeq Int @default(0) @map("dispatcher_last_read_seq")
+  /// Message `seq` the dialogue had reached when the handover opened, and the one it had
+  /// reached when it ended. Together they make an episode a real object: the dispatcher's
+  /// list can draw the "handed over here" divider at the right place, and a chat closed
+  /// last week keeps showing the conversation as it stood then instead of silently
+  /// growing new messages the person who closed it never saw.
+  startSeq              Int @default(0) @map("start_seq")
+  endSeq                Int? @map("end_seq")
   createdAt             BigInt @map("created_at")
   firstReplyAt          BigInt? @map("first_reply_at")
   closedAt              BigInt? @map("closed_at")
@@ -1332,6 +1365,8 @@ model AiHandoff {
 
   conversation AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
+  /// The dispatcher's chat list: open handovers first, then closed ones, newest first.
+  @@index([state, createdAt])
   @@map("ai_handoffs")
 }
 

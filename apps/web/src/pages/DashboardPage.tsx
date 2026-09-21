@@ -10,8 +10,9 @@ import {
   ShieldCog,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { AiAssistMode, ExplainTarget } from '../api/ai';
+import type { AiAssistMode, DispatchChatTarget, DispatchChatView, ExplainTarget } from '../api/ai';
 import { suggestAlertResolution } from '../api/ai';
+import { DashboardApiError } from '../api/client';
 import type { LiveEngineerState, LiveWorkday } from '../api/live';
 import type { EquipmentType } from '../api/types';
 import { AlertsPage } from '../components/AlertsPage';
@@ -72,11 +73,26 @@ export function DashboardPage() {
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistMode, setAssistMode] = useState<AiAssistMode>('help');
   const [assistantContext, setAssistantContext] = useState<ExplainTarget | undefined>(undefined);
+  const [selectedChatHandoffId, setSelectedChatHandoffId] = useState<string | null>(null);
 
   const openAssistant = useCallback((context?: ExplainTarget) => {
     setAssistantContext(context);
     setAssistantOpen(true);
   }, []);
+
+  /** The single «Написать» entry point: every dashboard button that opens a dispatcher chat
+   * (request panel, engineer row, unassigned row, alert card) goes through this, so opening
+   * one always also jumps to the «Чаты» tab and selects the row -- never just a silent
+   * background open the dispatcher has to go hunting for. */
+  const handleOpenDispatchChat = useCallback(
+    async (target: DispatchChatTarget): Promise<DispatchChatView> => {
+      const chat = await dash.openDispatchChat(target);
+      setActiveTab('chats');
+      setSelectedChatHandoffId(chat.handoff.id);
+      return chat;
+    },
+    [dash.openDispatchChat],
+  );
 
   const handleOperationApplied = useCallback(() => {
     void dash.refresh();
@@ -460,6 +476,14 @@ export function DashboardPage() {
                           onOpenChat={openAssistant}
                           className="mt-3 shrink-0"
                         />
+                        <WriteChatButton
+                          target={{ kind: 'engineer', engineerId: engineer.engineerId }}
+                          disabled={dash.writesDisabled}
+                          onOpen={handleOpenDispatchChat}
+                          label="Написать инженеру"
+                          compact
+                          className="mt-3 shrink-0"
+                        />
                       </li>
                     );
                   })}
@@ -506,6 +530,14 @@ export function DashboardPage() {
                               target={{ scope: 'request', requestId: request.id }}
                               compact
                               onOpenChat={openAssistant}
+                              className="mt-2 shrink-0"
+                            />
+                            <WriteChatButton
+                              target={{ kind: 'request', requestId: request.id }}
+                              disabled={dash.writesDisabled}
+                              onOpen={handleOpenDispatchChat}
+                              label="Написать клиенту"
+                              compact
                               className="mt-2 shrink-0"
                             />
                           </li>
@@ -601,7 +633,11 @@ export function DashboardPage() {
               />
             </section>
 
-            <RequestPanel dash={dash} onOpenChat={openAssistant} />
+            <RequestPanel
+              dash={dash}
+              onOpenChat={openAssistant}
+              onOpenDispatchChat={handleOpenDispatchChat}
+            />
           </div>
         ) : activeTab === 'policies' ? (
           <PolicyComparisonPage
@@ -650,6 +686,7 @@ export function DashboardPage() {
                 : undefined
             }
             onOpenChat={openAssistant}
+            onOpenDispatchChat={handleOpenDispatchChat}
           />
         ) : activeTab === 'chats' ? (
           <ChatsPage
@@ -661,6 +698,11 @@ export function DashboardPage() {
             onSendMessage={dash.sendDispatchChatMessage}
             onFinish={dash.finishDispatchChat}
             onRefresh={() => void dash.refreshDispatchChats()}
+            onMarkRead={(conversationId, seq) =>
+              void dash.markDispatchChatRead(conversationId, seq)
+            }
+            selectedHandoffId={selectedChatHandoffId}
+            onSelectHandoff={setSelectedChatHandoffId}
           />
         ) : activeTab === 'settings' ? (
           <ApiTokensPage token={dash.token} />
@@ -1008,12 +1050,94 @@ function LoginScreen({ loading, error, onPassword, onRequestCode, onCode }: Logi
   );
 }
 
+/**
+ * The «Написать» affordance next to `ExplainButton` everywhere a request or engineer is
+ * named: opens (or re-enters) a dispatcher chat with that person and jumps to the «Чаты»
+ * tab. Mirrors `ExplainButton`'s compact/tone/fullWidth styling so the two sit together
+ * without reading as different components.
+ *
+ * `CHAT_TARGET_UNREACHABLE` (an imported customer, or an engineer with no app login) is
+ * the one refusal worth naming here rather than showing the raw server message -- the fix
+ * is "phone them", not "try again".
+ */
+function WriteChatButton({
+  target,
+  disabled,
+  onOpen,
+  label = 'Написать',
+  compact = false,
+  tone = 'light',
+  fullWidth = false,
+  className,
+}: {
+  readonly target: DispatchChatTarget;
+  readonly disabled: boolean;
+  readonly onOpen: (target: DispatchChatTarget) => Promise<unknown>;
+  readonly label?: string;
+  readonly compact?: boolean;
+  readonly tone?: 'light' | 'dark';
+  readonly fullWidth?: boolean;
+  readonly className?: string;
+}) {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleClick() {
+    setPending(true);
+    setError(null);
+    try {
+      await onOpen(target);
+    } catch (cause) {
+      setError(
+        cause instanceof DashboardApiError && cause.code === 'CHAT_TARGET_UNREACHABLE'
+          ? 'У собеседника нет входа в приложение — свяжитесь по телефону.'
+          : cause instanceof Error
+            ? cause.message
+            : 'Не удалось открыть чат',
+      );
+    } finally {
+      setPending(false);
+    }
+  }
+
+  const toneClass =
+    tone === 'dark' ? 'border-white/20 bg-white/10 text-white' : 'border-line bg-white text-ink';
+
+  return (
+    <div className={className}>
+      <button
+        type="button"
+        onClick={() => void handleClick()}
+        disabled={disabled || pending}
+        title={label}
+        className={`${
+          compact
+            ? 'inline-flex h-7 w-7 items-center justify-center rounded-full border disabled:opacity-40'
+            : `inline-flex items-center justify-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium disabled:opacity-40 ${
+                fullWidth ? 'w-full py-2.5 text-sm' : ''
+              }`
+        } ${toneClass}`}
+      >
+        <MessageCircle className="h-3.5 w-3.5 shrink-0" />
+        {compact ? null : pending ? 'Открываем…' : label}
+      </button>
+      {error ? (
+        <p role="alert" className="mt-1 max-w-[12rem] text-[11px] text-muted">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function RequestPanel({
   dash,
   onOpenChat,
+  onOpenDispatchChat,
 }: {
   readonly dash: ReturnType<typeof useDashboard>;
   readonly onOpenChat: (context?: ExplainTarget) => void;
+  readonly onOpenDispatchChat: (target: DispatchChatTarget) => Promise<DispatchChatView>;
 }) {
   const snapshot = dash.snapshot;
   if (!snapshot) {
@@ -1158,6 +1282,24 @@ function RequestPanel({
             tone="dark"
             fullWidth
             onOpenChat={onOpenChat}
+          />
+        ) : null}
+        <WriteChatButton
+          target={{ kind: 'request', requestId: request.id }}
+          disabled={dash.writesDisabled}
+          onOpen={onOpenDispatchChat}
+          label="Написать клиенту"
+          tone="dark"
+          fullWidth
+        />
+        {assignment?.engineerId ? (
+          <WriteChatButton
+            target={{ kind: 'engineer', engineerId: assignment.engineerId }}
+            disabled={dash.writesDisabled}
+            onOpen={onOpenDispatchChat}
+            label="Написать инженеру"
+            tone="dark"
+            fullWidth
           />
         ) : null}
       </div>

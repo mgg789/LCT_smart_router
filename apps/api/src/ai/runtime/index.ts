@@ -1,6 +1,7 @@
 export * from './agent-runtime.service';
 export * from './ai-event.types';
 export * from './budget.service';
+export * from './chat-event.bus';
 export * from './conversation.service';
 export * from './dispatch-chats.service';
 export * from './run-event.bus';

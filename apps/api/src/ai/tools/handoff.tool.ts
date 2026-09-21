@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { effectiveRole } from '../../auth';
 import { SysError } from '../../common/errors';
 import { type Tx, UnitOfWork } from '../../persistence';
+import { ChatEventBus } from '../runtime/chat-event.bus';
 import { type AiRunEventInput, RunEventBus } from '../runtime/run-event.bus';
 import { RunRegistry } from '../runtime/run-registry';
 import { StopService } from '../runtime/stop.service';
@@ -15,6 +16,7 @@ export interface HandoffToolDeps {
   readonly stop: StopService;
   readonly bus: RunEventBus;
   readonly registry: RunRegistry;
+  readonly chatBus: ChatEventBus;
 }
 
 /**
@@ -46,31 +48,49 @@ export function buildCallDispatchHelperTool(
         throw SysError.forbidden('This actor has no role to request a dispatcher handoff as');
       }
 
-      const { handoffId, created } = await deps.uow.run(async (tx) => {
+      const { handoff, conversation, created } = await deps.uow.run(async (tx) => {
         const existing = await tx.aiHandoff.findFirst({
           where: { conversationId: ctx.conversationId, state: { not: 'closed' } },
         });
         if (existing) {
-          return { handoffId: existing.id, created: false };
+          const current = await tx.aiConversation.findUniqueOrThrow({
+            where: { id: ctx.conversationId },
+          });
+          return { handoff: existing, conversation: current, created: false };
         }
-        const handoff = await tx.aiHandoff.create({
+        // Everything already said is the context the dispatcher is being handed, so the
+        // episode starts at the current end of the dialogue and shows what came before it.
+        const last = await tx.aiMessage.aggregate({
+          where: { conversationId: ctx.conversationId },
+          _max: { seq: true },
+        });
+        const opened = await tx.aiHandoff.create({
           data: {
             conversationId: ctx.conversationId,
             requestedByAccountId: ctx.accountId,
             actorRole: role,
+            initiatedBy: 'user',
             requestIds: [],
             engineerIds: ctx.engineerId ? [ctx.engineerId] : [],
             state: 'waiting',
+            startSeq: last._max.seq ?? 0,
             createdAt: BigInt(ctx.now),
           },
         });
         await moveToDispatcherMode(tx, ctx.conversationId, ctx.now);
-        return { handoffId: handoff.id, created: true };
+        const current = await tx.aiConversation.findUniqueOrThrow({
+          where: { id: ctx.conversationId },
+        });
+        return { handoff: opened, conversation: current, created: true };
       });
+      const handoffId = handoff.id;
 
       if (created) {
         await emitLive(deps, ctx.runId, { type: 'help_requested', handoffId });
         await emitLive(deps, ctx.runId, { type: 'mode_changed', mode: 'dispatcher' });
+        // Published only once the transaction above has committed, which is what puts the
+        // new chat on the dispatcher's screen without them refreshing the page.
+        deps.chatBus.publishState({ conversation, handoff });
       }
 
       // Ends this run without another generation (see the doc comment above); the model

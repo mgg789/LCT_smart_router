@@ -87,6 +87,17 @@ export const ERROR_CODES = {
    */
   AI_HANDOFF_NOT_ACTIVE: HttpStatus.CONFLICT,
 
+  /**
+   * The dispatcher asked to open a chat with someone who cannot receive one: a request
+   * whose customer was imported without an account, or an engineer who has no login yet
+   * (`Engineer.accountId` is nullable exactly for that case, context/37 section 3.1).
+   *
+   * Its own code rather than a `NOT_FOUND`, because the request or the engineer does
+   * exist -- what is missing is a way to reach them, and the dispatcher should be told to
+   * phone instead of being shown a "not found" they would reasonably read as a bug.
+   */
+  CHAT_TARGET_UNREACHABLE: HttpStatus.CONFLICT,
+
   /** Unexpected failure; details are logged, not returned. */
   INTERNAL_ERROR: HttpStatus.INTERNAL_SERVER_ERROR,
 } as const;

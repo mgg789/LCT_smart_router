@@ -22,6 +22,7 @@ interface ConversationBody {
 
 interface MessageBody {
   readonly id: string;
+  readonly seq: number;
   readonly author: string;
   readonly authorAccountId: string | null;
   readonly text: string;
@@ -30,13 +31,22 @@ interface MessageBody {
 interface HandoffBody {
   readonly id: string;
   readonly state: string;
+  readonly initiatedBy: string;
   readonly firstReplyAt: number | null;
+  readonly endSeq: number | null;
 }
 
 interface DispatchChatBody {
   readonly handoff: HandoffBody;
   readonly conversation: ConversationBody;
   readonly messages: MessageBody[];
+  readonly unreadCount: number;
+}
+
+interface SendMessageBody {
+  readonly runId: string | null;
+  readonly messageSeq: number;
+  readonly handedOver: boolean;
 }
 
 interface ErrorBody {
@@ -59,6 +69,16 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
   let dispatcherAccountId: string;
   const emails: string[] = [];
   const conversationIds: string[] = [];
+  const requestIds: string[] = [];
+  const engineerIds: string[] = [];
+
+  // Unique per row so parallel test files (and parallel `it`s in this one) never collide
+  // on the non-unique `arrivalOrder`/`inputOrder` columns.
+  let sequenceCounter = 0;
+  const nextSequence = () => {
+    sequenceCounter += 1;
+    return 700_000 + sequenceCounter;
+  };
 
   const now = () => Math.floor(Date.now() / 1000);
 
@@ -128,6 +148,132 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
     return conversation.id;
   };
 
+  /** Signs a role in the login-code way, but for any role -- `signInClient` above only
+   *  ever asks for `client`. An `engineer` login only succeeds once the role is already
+   *  granted (`AuthService.verifyLoginCode`'s own comment on why), which every caller here
+   *  satisfies by creating the `Engineer` row (and its account role) first. */
+  const signInAs = async (email: string, role: 'client' | 'engineer'): Promise<string> => {
+    const issued = await fetch(`${baseUrl}/api/v1/auth/login-code`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    const { devCode } = (await issued.json()) as { devCode: string };
+    const verified = await fetch(`${baseUrl}/api/v1/auth/login-code/verify`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, code: devCode, role }),
+    });
+    assert.equal(verified.status, 201, await verified.clone().text());
+    return ((await verified.json()) as { token: string }).token;
+  };
+
+  /** A request reachable through the dashboard's "chat with this client" button: seeded
+   *  directly with Prisma (never through `/dispatch/requests`, whose own validation is
+   *  covered by `requests.test.ts`) since target resolution only ever reads `clientAccountId`
+   *  and never checks lifecycle. Omitting `clientAccountId` produces the unreachable case. */
+  const createRequestRow = async (clientAccountId?: string) => {
+    const at = now();
+    const request = await prisma.request.create({
+      data: {
+        arrivalOrder: nextSequence(),
+        addressText: 'Москва, ул. Тестовая, д. 10',
+        needsGeocoding: false,
+        lat: 55.75,
+        lon: 37.61,
+        normProfileCode: 'local',
+        normativeTravelDurationSec: 600,
+        technicalDurationSec: 600,
+        documentationDurationSec: 300,
+        serviceDurationSec: 900,
+        windowStartAt: BigInt(at + 300),
+        windowEndAt: BigInt(at + 3_600),
+        requiredSkill: 'connection',
+        origin: 'manual',
+        contactName: 'Тестовый клиент',
+        createdAt: BigInt(at),
+        updatedAt: BigInt(at),
+        ...(clientAccountId ? { clientAccountId } : {}),
+      },
+    });
+    requestIds.push(request.id);
+    return request;
+  };
+
+  /** An engineer reachable through "chat with this engineer": a bare profile row, exactly
+   *  what a request or an engineer imported without a login looks like when `accountId` is
+   *  omitted (context/37 section 3.1). */
+  const createEngineerRow = async (accountId?: string) => {
+    const at = BigInt(now());
+    const engineer = await prisma.engineer.create({
+      data: {
+        displayName: 'Тестовый инженер',
+        inputOrder: nextSequence(),
+        skills: ['connection'],
+        transportType: 'car',
+        origin: 'manual',
+        createdAt: at,
+        updatedAt: at,
+        ...(accountId ? { accountId } : {}),
+      },
+    });
+    engineerIds.push(engineer.id);
+    return engineer;
+  };
+
+  /** An engineer with a real login, for the `engineer`-target half of the dashboard's chat
+   *  button: the account and its role must exist before `signInAs` can issue a token
+   *  (`AuthService.verifyLoginCode`'s own comment on why). */
+  const createEngineerWithAccount = async () => {
+    const email = `${unique('dispatch-chat-engineer')}@example.test`;
+    emails.push(email);
+    const at = BigInt(now());
+    const account = await prisma.account.create({
+      data: { email, createdAt: at, updatedAt: at },
+    });
+    await prisma.accountRole.create({
+      data: { accountId: account.id, role: 'engineer', grantedAt: at },
+    });
+    const engineer = await createEngineerRow(account.id);
+    const token = await signInAs(email, 'engineer');
+    return { email, accountId: account.id, engineer, token };
+  };
+
+  const openChat = (target: unknown, text?: string) =>
+    call('POST', '/api/v1/dispatch/chats', dispatcherToken, {
+      operationId: randomUUID(),
+      target,
+      ...(text === undefined ? {} : { text }),
+    });
+
+  const sendDispatcherReply = (conversationId: string, text: string, operationId = randomUUID()) =>
+    call('POST', `/api/v1/dispatch/chats/${conversationId}/messages`, dispatcherToken, {
+      operationId,
+      text,
+    });
+
+  const finishChat = (conversationId: string, operationId = randomUUID()) =>
+    call('POST', `/api/v1/dispatch/chats/${conversationId}/finish`, dispatcherToken, {
+      operationId,
+    });
+
+  const readChat = (conversationId: string, seq: number, operationId = randomUUID()) =>
+    call('POST', `/api/v1/dispatch/chats/${conversationId}/read`, dispatcherToken, {
+      operationId,
+      seq,
+    });
+
+  const listChats = () => call('GET', '/api/v1/dispatch/chats', dispatcherToken);
+
+  const sendClientMessage = (token: string, conversationId: string, text: string) =>
+    call('POST', `/api/v1/ai/conversations/${conversationId}/messages`, token, {
+      operationId: randomUUID(),
+      text,
+    });
+
+  const findChat = (chats: DispatchChatBody[], conversationId: string) =>
+    chats.find((chat) => chat.conversation.id === conversationId);
+
   before(async () => {
     databaseUrl();
     prisma = createTestClient();
@@ -154,6 +300,12 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
   });
 
   after(async () => {
+    if (engineerIds.length > 0) {
+      await prisma.engineer.deleteMany({ where: { id: { in: engineerIds } } });
+    }
+    if (requestIds.length > 0) {
+      await prisma.request.deleteMany({ where: { id: { in: requestIds } } });
+    }
     if (conversationIds.length > 0) {
       await prisma.aiHandoff.deleteMany({ where: { conversationId: { in: conversationIds } } });
       await prisma.aiMessage.deleteMany({ where: { conversationId: { in: conversationIds } } });
@@ -233,7 +385,7 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
     assert.equal(stillListed?.messages.length, 3);
   });
 
-  it('finish restores ai mode, keeps history, drops the chat from the list, and refuses a later reply', async () => {
+  it('finish restores ai mode, keeps history, keeps the closed chat listed, and refuses a later reply', async () => {
     const email = `${unique('dispatch-chat-finish')}@example.test`;
     emails.push(email);
     const clientToken = await signInClient(email);
@@ -260,7 +412,9 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
     assert.ok(handoffRow.closedAt !== null);
     assert.equal(handoffRow.closedByAccountId, dispatcherAccountId);
 
-    // History is not deleted by closing the chat (context/36 §9.3).
+    // History is not deleted by closing the chat (context/36 §9.3): the seeded question,
+    // the dispatcher's reply, and the closing system note `finish` itself writes into the
+    // same dialogue so the client sees the turn happen.
     const history = await call(
       'GET',
       `/api/v1/ai/conversations/${conversationId}/messages`,
@@ -268,16 +422,17 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
     );
     assert.equal(history.status, 200, await history.clone().text());
     const historyBody = (await history.json()) as { messages: MessageBody[] };
-    assert.equal(historyBody.messages.length, 2);
+    assert.equal(historyBody.messages.length, 3);
 
+    // A finished chat keeps hanging in the list -- ending a handover is not deleting it
+    // (context/36 §9.3), and this is what lets the dispatcher re-read what was agreed.
     const afterFinishList = await call('GET', '/api/v1/dispatch/chats', dispatcherToken);
     const afterFinishChats = ((await afterFinishList.json()) as { chats: DispatchChatBody[] })
       .chats;
-    assert.equal(
-      afterFinishChats.some((chat) => chat.conversation.id === conversationId),
-      false,
-      'a finished handover must not still be on the dispatcher page',
-    );
+    const closedChat = afterFinishChats.find((chat) => chat.conversation.id === conversationId);
+    assert.ok(closedChat, 'a finished handover stays on the dispatcher page');
+    assert.equal(closedChat?.handoff.state, 'closed');
+    assert.equal(closedChat?.unreadCount, 0, 'a finished chat never badges');
 
     // A late reply from a stale dispatcher tab must not silently reopen the handover.
     const lateReply = await call(
@@ -326,5 +481,458 @@ describe('dispatch chats: the dispatcher side of a handover', () => {
       false,
       'an ordinary ai-mode conversation must never appear in the dispatcher queue',
     );
+  });
+
+  it("opens a chat with a request's client: creates the handover, a joined message and the opening text, and a second press does not duplicate either", async () => {
+    const email = `${unique('dispatch-chat-open-req')}@example.test`;
+    emails.push(email);
+    // Only the account matters here, not a token to act as it.
+    await signInClient(email);
+    const clientAccount = await prisma.account.findUniqueOrThrow({ where: { email } });
+    const request = await createRequestRow(clientAccount.id);
+
+    const opened = await openChat(
+      { kind: 'request', requestId: request.id },
+      'Добрый день, уточняю по заявке',
+    );
+    assert.equal(opened.status, 201, await opened.clone().text());
+    const chat = ((await opened.json()) as { chat: DispatchChatBody }).chat;
+    conversationIds.push(chat.conversation.id);
+
+    assert.equal(chat.handoff.initiatedBy, 'dispatcher');
+    assert.equal(chat.conversation.mode, 'dispatcher');
+    assert.equal(chat.messages.length, 2, 'the joined system message plus the opening text');
+    assert.equal(chat.messages[0]?.author, 'system');
+    assert.equal(chat.messages[1]?.author, 'dispatcher');
+    assert.equal(chat.messages[1]?.text, 'Добрый день, уточняю по заявке');
+
+    // The dialogue is the client's own conversation -- not a second, parallel thread.
+    const storedConversation = await prisma.aiConversation.findUniqueOrThrow({
+      where: { id: chat.conversation.id },
+    });
+    assert.equal(storedConversation.accountId, clientAccount.id);
+    assert.equal(storedConversation.role, 'client');
+
+    // Pressing the button again is not an error and must not open a second handover or
+    // repeat the joined message.
+    const openedAgain = await openChat({ kind: 'request', requestId: request.id });
+    assert.equal(openedAgain.status, 201, await openedAgain.clone().text());
+    const chatAgain = ((await openedAgain.json()) as { chat: DispatchChatBody }).chat;
+    assert.equal(
+      chatAgain.handoff.id,
+      chat.handoff.id,
+      'the running handover is returned, not a new one',
+    );
+    assert.equal(chatAgain.messages.length, 2, 'no duplicate joined message on a second press');
+
+    const openHandoverCount = await prisma.aiHandoff.count({
+      where: { conversationId: chat.conversation.id, state: { not: 'closed' } },
+    });
+    assert.equal(openHandoverCount, 1);
+  });
+
+  it('opens a chat with an engineer, addressed by engineerId', async () => {
+    const { accountId, engineer } = await createEngineerWithAccount();
+
+    const opened = await openChat({ kind: 'engineer', engineerId: engineer.id });
+    assert.equal(opened.status, 201, await opened.clone().text());
+    const chat = ((await opened.json()) as { chat: DispatchChatBody }).chat;
+    conversationIds.push(chat.conversation.id);
+
+    assert.equal(chat.handoff.initiatedBy, 'dispatcher');
+    assert.equal(chat.conversation.mode, 'dispatcher');
+    assert.equal(
+      chat.messages.length,
+      1,
+      'just the joined system message -- no opening text was sent this time',
+    );
+    assert.equal(chat.messages[0]?.author, 'system');
+
+    const storedConversation = await prisma.aiConversation.findUniqueOrThrow({
+      where: { id: chat.conversation.id },
+    });
+    assert.equal(storedConversation.accountId, accountId);
+    assert.equal(storedConversation.role, 'engineer');
+  });
+
+  it("a client's message while handed over starts no run, spends no budget, and flips the chat back to waiting", async () => {
+    const email = `${unique('dispatch-chat-no-run')}@example.test`;
+    emails.push(email);
+    const clientToken = await signInClient(email);
+    const clientAccount = await prisma.account.findUniqueOrThrow({ where: { email } });
+    const request = await createRequestRow(clientAccount.id);
+
+    const opened = await openChat({ kind: 'request', requestId: request.id });
+    const chat = ((await opened.json()) as { chat: DispatchChatBody }).chat;
+    conversationIds.push(chat.conversation.id);
+    assert.equal(
+      chat.handoff.state,
+      'answered',
+      'nobody is waiting on the dispatcher in a chat they just opened themselves',
+    );
+
+    const sent = await sendClientMessage(clientToken, chat.conversation.id, 'А когда именно?');
+    assert.equal(sent.status, 201, await sent.clone().text());
+    const sentBody = (await sent.json()) as SendMessageBody;
+    assert.equal(sentBody.runId, null);
+    assert.equal(sentBody.handedOver, true);
+
+    assert.equal(
+      await prisma.aiRun.count({ where: { conversationId: chat.conversation.id } }),
+      0,
+      'a message into a handed-over dialogue must never reserve budget for a model call',
+    );
+
+    const handoffRow = await prisma.aiHandoff.findUniqueOrThrow({ where: { id: chat.handoff.id } });
+    assert.equal(handoffRow.state, 'waiting');
+  });
+
+  it("the dispatcher's reply is attributed to them, moves the chat to answered, stamps firstReplyAt once, and clears the unread badge", async () => {
+    const email = `${unique('dispatch-chat-reply')}@example.test`;
+    emails.push(email);
+    const clientToken = await signInClient(email);
+    const clientAccount = await prisma.account.findUniqueOrThrow({ where: { email } });
+    const request = await createRequestRow(clientAccount.id);
+
+    const opened = await openChat({ kind: 'request', requestId: request.id });
+    const chat = ((await opened.json()) as { chat: DispatchChatBody }).chat;
+    conversationIds.push(chat.conversation.id);
+
+    await sendClientMessage(clientToken, chat.conversation.id, 'Есть новости?');
+    const listAfterClient = await listChats();
+    const listedAfterClient = findChat(
+      ((await listAfterClient.json()) as { chats: DispatchChatBody[] }).chats,
+      chat.conversation.id,
+    );
+    assert.equal(listedAfterClient?.unreadCount, 1);
+
+    const firstReply = await sendDispatcherReply(chat.conversation.id, 'Да, инженер выехал');
+    assert.equal(firstReply.status, 201, await firstReply.clone().text());
+    const firstReplyBody = (await firstReply.json()) as {
+      message: MessageBody;
+      chat: DispatchChatBody;
+    };
+    assert.equal(firstReplyBody.message.author, 'dispatcher');
+    assert.equal(firstReplyBody.message.authorAccountId, dispatcherAccountId);
+    assert.equal(firstReplyBody.chat.handoff.state, 'answered');
+    assert.equal(firstReplyBody.chat.unreadCount, 0, 'replying is itself the acknowledgement');
+    const firstReplyAt = firstReplyBody.chat.handoff.firstReplyAt;
+    assert.ok(firstReplyAt !== null);
+
+    const secondReply = await sendDispatcherReply(chat.conversation.id, 'Будет через 15 минут');
+    assert.equal(secondReply.status, 201, await secondReply.clone().text());
+    const secondReplyBody = (await secondReply.json()) as { chat: DispatchChatBody };
+    assert.equal(
+      secondReplyBody.chat.handoff.firstReplyAt,
+      firstReplyAt,
+      'a later reply must not move firstReplyAt again',
+    );
+  });
+
+  it('finish returns the conversation to ai mode and closes the handover; the chat stays listed as closed with no badge, and a later message starts a new run', async () => {
+    const email = `${unique('dispatch-chat-finish2')}@example.test`;
+    emails.push(email);
+    const clientToken = await signInClient(email);
+    const clientAccount = await prisma.account.findUniqueOrThrow({ where: { email } });
+    const request = await createRequestRow(clientAccount.id);
+
+    const opened = await openChat({ kind: 'request', requestId: request.id }, 'Слушаю вас');
+    const chat = ((await opened.json()) as { chat: DispatchChatBody }).chat;
+    conversationIds.push(chat.conversation.id);
+
+    const finished = await finishChat(chat.conversation.id);
+    assert.equal(finished.status, 201, await finished.clone().text());
+    const finishedBody = (await finished.json()) as {
+      conversation: ConversationBody;
+      chat: DispatchChatBody;
+    };
+    assert.equal(finishedBody.conversation.mode, 'ai');
+    assert.equal(finishedBody.chat.handoff.state, 'closed');
+    assert.ok(finishedBody.chat.handoff.endSeq !== null);
+
+    const afterFinishList = await listChats();
+    const listedClosed = findChat(
+      ((await afterFinishList.json()) as { chats: DispatchChatBody[] }).chats,
+      chat.conversation.id,
+    );
+    assert.ok(
+      listedClosed,
+      'a finished chat stays on the dispatcher page -- this is the point of the feature',
+    );
+    assert.equal(listedClosed?.handoff.state, 'closed');
+    assert.equal(listedClosed?.unreadCount, 0);
+
+    const sentAgain = await sendClientMessage(
+      clientToken,
+      chat.conversation.id,
+      'Ещё вопрос ассистенту',
+    );
+    assert.equal(sentAgain.status, 201, await sentAgain.clone().text());
+    const sentAgainBody = (await sentAgain.json()) as SendMessageBody;
+    assert.equal(sentAgainBody.handedOver, false);
+    assert.ok(sentAgainBody.runId, 'the assistant takes the dialogue back and answers again');
+  });
+
+  it('a second escalation of the same dialogue opens a new handover row rather than reviving the closed one, and both appear in the list', async () => {
+    const email = `${unique('dispatch-chat-reescalate')}@example.test`;
+    emails.push(email);
+    // Only the account matters here, not a token to act as it.
+    await signInClient(email);
+    const clientAccount = await prisma.account.findUniqueOrThrow({ where: { email } });
+    const request = await createRequestRow(clientAccount.id);
+
+    const firstOpen = await openChat({ kind: 'request', requestId: request.id });
+    const firstChat = ((await firstOpen.json()) as { chat: DispatchChatBody }).chat;
+    conversationIds.push(firstChat.conversation.id);
+    await finishChat(firstChat.conversation.id);
+
+    const secondOpen = await openChat(
+      { kind: 'request', requestId: request.id },
+      'Снова нужна помощь',
+    );
+    assert.equal(secondOpen.status, 201, await secondOpen.clone().text());
+    const secondChat = ((await secondOpen.json()) as { chat: DispatchChatBody }).chat;
+    assert.notEqual(secondChat.handoff.id, firstChat.handoff.id);
+    assert.equal(
+      secondChat.conversation.id,
+      firstChat.conversation.id,
+      'the same dialogue, not a new one',
+    );
+    assert.equal(secondChat.handoff.state, 'answered');
+
+    const list = await listChats();
+    const chats = ((await list.json()) as { chats: DispatchChatBody[] }).chats;
+    const rowsForThisConversation = chats.filter(
+      (row) => row.conversation.id === firstChat.conversation.id,
+    );
+    const ids = rowsForThisConversation.map((row) => row.handoff.id).sort();
+    assert.deepEqual(ids, [firstChat.handoff.id, secondChat.handoff.id].sort());
+  });
+
+  it('refuses to finish a conversation that was never handed to a dispatcher', async () => {
+    const email = `${unique('dispatch-chat-finish-never')}@example.test`;
+    emails.push(email);
+    const clientToken = await signInClient(email);
+    const opened = await call('POST', '/api/v1/ai/conversations', clientToken, {});
+    const conversation = ((await opened.json()) as { conversation: ConversationBody }).conversation;
+    conversationIds.push(conversation.id);
+
+    const finish = await finishChat(conversation.id);
+    assert.equal(finish.status, 409, await finish.clone().text());
+    const body = (await finish.json()) as ErrorBody;
+    assert.equal(body.error.code, 'AI_HANDOFF_NOT_ACTIVE');
+  });
+
+  it('refuses to open a chat with an unreachable target -- a request with no client account, or an engineer with no login -- as a conflict, not a 404', async () => {
+    const requestWithNoClient = await createRequestRow();
+    const engineerWithNoAccount = await createEngineerRow();
+
+    const byRequest = await openChat({ kind: 'request', requestId: requestWithNoClient.id });
+    assert.equal(byRequest.status, 409, await byRequest.clone().text());
+    assert.equal(((await byRequest.json()) as ErrorBody).error.code, 'CHAT_TARGET_UNREACHABLE');
+
+    const byEngineer = await openChat({ kind: 'engineer', engineerId: engineerWithNoAccount.id });
+    assert.equal(byEngineer.status, 409, await byEngineer.clone().text());
+    assert.equal(((await byEngineer.json()) as ErrorBody).error.code, 'CHAT_TARGET_UNREACHABLE');
+  });
+
+  it("a client's token is refused on every dispatcher chat endpoint", async () => {
+    const email = `${unique('dispatch-chat-client-token')}@example.test`;
+    emails.push(email);
+    const clientToken = await signInClient(email);
+    const request = await createRequestRow();
+
+    const list = await call('GET', '/api/v1/dispatch/chats', clientToken);
+    assert.equal(list.status, 403);
+
+    const open = await call('POST', '/api/v1/dispatch/chats', clientToken, {
+      operationId: randomUUID(),
+      target: { kind: 'request', requestId: request.id },
+    });
+    assert.equal(open.status, 403);
+
+    const reply = await call(
+      'POST',
+      `/api/v1/dispatch/chats/${randomUUID()}/messages`,
+      clientToken,
+      { operationId: randomUUID(), text: 'x' },
+    );
+    assert.equal(reply.status, 403);
+
+    const finish = await call(
+      'POST',
+      `/api/v1/dispatch/chats/${randomUUID()}/finish`,
+      clientToken,
+      { operationId: randomUUID() },
+    );
+    assert.equal(finish.status, 403);
+
+    const read = await call('POST', `/api/v1/dispatch/chats/${randomUUID()}/read`, clientToken, {
+      operationId: randomUUID(),
+      seq: 1,
+    });
+    assert.equal(read.status, 403);
+  });
+
+  it('replaying the same operationId on a reply returns the first outcome and writes no second message', async () => {
+    const email = `${unique('dispatch-chat-idem')}@example.test`;
+    emails.push(email);
+    await signInClient(email);
+    const clientAccount = await prisma.account.findUniqueOrThrow({ where: { email } });
+    const request = await createRequestRow(clientAccount.id);
+
+    const opened = await openChat({ kind: 'request', requestId: request.id });
+    const chat = ((await opened.json()) as { chat: DispatchChatBody }).chat;
+    conversationIds.push(chat.conversation.id);
+
+    const operationId = randomUUID();
+    const first = await sendDispatcherReply(
+      chat.conversation.id,
+      'Одна и та же реплика',
+      operationId,
+    );
+    assert.equal(first.status, 201, await first.clone().text());
+    const firstBody = (await first.json()) as { message: MessageBody };
+    // A dispatcher reply's own `operationId` column stays null -- that field exists to
+    // link a *client's* message to the run it started, not for this idempotency ledger --
+    // so duplication is checked by count, not by looking the retried write up by it.
+    const countAfterFirst = await prisma.aiMessage.count({
+      where: { conversationId: chat.conversation.id },
+    });
+
+    const replay = await sendDispatcherReply(
+      chat.conversation.id,
+      'Одна и та же реплика',
+      operationId,
+    );
+    assert.equal(replay.status, 201, await replay.clone().text());
+    const replayBody = (await replay.json()) as { message: MessageBody };
+    assert.equal(
+      replayBody.message.id,
+      firstBody.message.id,
+      'the replay returns the same message, not a freshly written one',
+    );
+
+    const countAfterReplay = await prisma.aiMessage.count({
+      where: { conversationId: chat.conversation.id },
+    });
+    assert.equal(
+      countAfterReplay,
+      countAfterFirst,
+      'the retried request must not write a second message',
+    );
+  });
+
+  it("a closed handover's messages stop at endSeq, while a live one shows the whole history including what came before the handover", async () => {
+    const email = `${unique('dispatch-chat-window')}@example.test`;
+    emails.push(email);
+    const clientToken = await signInClient(email);
+    const clientAccount = await prisma.account.findUniqueOrThrow({ where: { email } });
+    const request = await createRequestRow(clientAccount.id);
+
+    const opened = await call('POST', '/api/v1/ai/conversations', clientToken, {});
+    const conversation = ((await opened.json()) as { conversation: ConversationBody }).conversation;
+    conversationIds.push(conversation.id);
+
+    await prisma.aiMessage.create({
+      data: {
+        conversationId: conversation.id,
+        seq: 1,
+        author: 'user',
+        kind: 'text',
+        text: 'Разговор с ассистентом до передачи',
+        actions: [],
+        createdAt: BigInt(now()),
+      },
+    });
+
+    const openedChat = await openChat(
+      { kind: 'request', requestId: request.id },
+      'Подключаюсь к диалогу',
+    );
+    const chat = ((await openedChat.json()) as { chat: DispatchChatBody }).chat;
+    assert.equal(
+      chat.conversation.id,
+      conversation.id,
+      "the chat opens the client's own existing dialogue",
+    );
+    // Live: the whole history is visible, including the message written before the handover.
+    assert.equal(chat.messages.length, 3);
+    assert.equal(chat.messages[0]?.seq, 1);
+
+    const finished = await finishChat(conversation.id);
+    const finishedBody = (await finished.json()) as { chat: DispatchChatBody };
+    const endSeq = finishedBody.chat.handoff.endSeq;
+    assert.ok(endSeq !== null);
+    assert.equal(finishedBody.chat.messages.length, 4);
+
+    // Written into the same dialogue after the handover closed -- must not appear under
+    // the closed row.
+    await prisma.aiMessage.create({
+      data: {
+        conversationId: conversation.id,
+        seq: (endSeq ?? 0) + 1,
+        author: 'user',
+        kind: 'text',
+        text: 'После завершения чата',
+        actions: [],
+        createdAt: BigInt(now()),
+      },
+    });
+
+    const list = await listChats();
+    const closedRow = findChat(
+      ((await list.json()) as { chats: DispatchChatBody[] }).chats,
+      conversation.id,
+    );
+    assert.ok(closedRow);
+    assert.equal(closedRow?.handoff.id, chat.handoff.id);
+    assert.equal(closedRow?.messages.length, 4, 'the window stops at endSeq');
+    assert.ok(closedRow?.messages.every((message) => message.seq <= (endSeq ?? 0)));
+  });
+
+  it("unreadCount counts only the counterpart's messages above the read cursor, and read only ever moves the cursor forward", async () => {
+    const email = `${unique('dispatch-chat-unread')}@example.test`;
+    emails.push(email);
+    const clientToken = await signInClient(email);
+    const clientAccount = await prisma.account.findUniqueOrThrow({ where: { email } });
+    const request = await createRequestRow(clientAccount.id);
+
+    const opened = await openChat({ kind: 'request', requestId: request.id });
+    const chat = ((await opened.json()) as { chat: DispatchChatBody }).chat;
+    conversationIds.push(chat.conversation.id);
+
+    await sendClientMessage(clientToken, chat.conversation.id, 'Вопрос первый');
+    await sendClientMessage(clientToken, chat.conversation.id, 'Вопрос второй');
+
+    const afterTwo = await listChats();
+    const rowAfterTwo = findChat(
+      ((await afterTwo.json()) as { chats: DispatchChatBody[] }).chats,
+      chat.conversation.id,
+    );
+    assert.equal(
+      rowAfterTwo?.unreadCount,
+      2,
+      "only the client's two messages count, not the earlier system 'joined' message",
+    );
+    const clientMessages = (rowAfterTwo?.messages ?? []).filter(
+      (message) => message.author === 'user',
+    );
+    const [firstClientMessage, secondClientMessage] = clientMessages;
+    assert.ok(firstClientMessage && secondClientMessage);
+
+    const partial = await readChat(chat.conversation.id, firstClientMessage.seq);
+    const partialBody = (await partial.json()) as { chat: DispatchChatBody | null };
+    assert.equal(partialBody.chat?.unreadCount, 1, 'only the still-unacknowledged message remains');
+
+    // A stale tab replaying an older cursor must not resurrect a badge the newer read
+    // already cleared.
+    const backwards = await readChat(chat.conversation.id, 0);
+    const backwardsBody = (await backwards.json()) as { chat: DispatchChatBody | null };
+    assert.equal(backwardsBody.chat?.unreadCount, 1, 'the cursor never moves backwards');
+
+    const full = await readChat(chat.conversation.id, secondClientMessage.seq);
+    const fullBody = (await full.json()) as { chat: DispatchChatBody | null };
+    assert.equal(fullBody.chat?.unreadCount, 0);
   });
 });
