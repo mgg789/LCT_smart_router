@@ -169,99 +169,104 @@ const settings = {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('live dashboard client', () => {
-  it('aggregates backend resources and normalizes structured reasons', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: string | URL | Request) => {
-        const path = new URL(String(input), 'http://local').pathname;
-        if (path.endsWith('/requests')) return json({ requests: [request] });
-        if (path.endsWith('/engineers')) return json({ engineers: [engineer] });
-        if (path.endsWith('/plan')) {
-          return json({
-            mode: 'auto',
-            modeVersion: 1,
-            plan: {
-              revision: 7,
-              origin: 'auto',
-              planAsOf: 1_800_000_000,
-              appliedAt: 1_800_000_100,
-              routes: [],
-              assignments: [
+  it.each([false, true])(
+    'aggregates business data even with Router unavailable=%s',
+    async (routerDown) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: string | URL | Request) => {
+          const path = new URL(String(input), 'http://local').pathname;
+          if (path.endsWith('/requests')) return json({ requests: [request] });
+          if (path.endsWith('/engineers')) return json({ engineers: [engineer] });
+          if (path.endsWith('/plan')) {
+            return json({
+              mode: 'auto',
+              modeVersion: 1,
+              plan: {
+                revision: 7,
+                origin: 'auto',
+                planAsOf: 1_800_000_000,
+                appliedAt: 1_800_000_100,
+                routes: [],
+                assignments: [
+                  {
+                    requestId: 'request-1',
+                    status: 'assigned',
+                    engineerId: 'engineer-1',
+                    reasons: [
+                      {
+                        code: 'CONSTRAINTS_SATISFIED',
+                        text: 'Constraints verified.',
+                        basis: 'constraint_check',
+                        facts: { skill: 'office' },
+                      },
+                    ],
+                  },
+                ],
+              },
+              appliedResult: null,
+              lastResult: null,
+            });
+          }
+          if (path.endsWith('/alerts'))
+            return json({
+              alerts: [
                 {
-                  requestId: 'request-1',
-                  status: 'assigned',
-                  engineerId: 'engineer-1',
-                  reasons: [
-                    {
-                      code: 'CONSTRAINTS_SATISFIED',
-                      text: 'Constraints verified.',
-                      basis: 'constraint_check',
-                      facts: { skill: 'office' },
-                    },
-                  ],
+                  id: 'risk',
+                  code: 'time_risk',
+                  kind: 'alert',
+                  severity: 'warning',
+                  engineerIds: ['engineer-1'],
+                  requestIds: ['request-1'],
+                  reasons: [{ plannedStartAt: 1_800_000_600, windowEndAt: 1_800_000_000 }],
+                  restoreOption: { engineer_id: 'engineer-1', reject_request_ids: ['request-1'] },
+                  actions: ['move_window'],
+                  createdAt: 1_800_000_000,
+                  seenAt: null,
+                  resolvedAt: null,
                 },
               ],
-            },
-            appliedResult: null,
-            lastResult: null,
-          });
-        }
-        if (path.endsWith('/alerts'))
-          return json({
-            alerts: [
-              {
-                id: 'risk',
-                code: 'time_risk',
-                kind: 'alert',
-                severity: 'warning',
-                engineerIds: ['engineer-1'],
-                requestIds: ['request-1'],
-                reasons: [{ plannedStartAt: 1_800_000_600, windowEndAt: 1_800_000_000 }],
-                restoreOption: { engineer_id: 'engineer-1', reject_request_ids: ['request-1'] },
-                actions: ['move_window'],
-                createdAt: 1_800_000_000,
-                seenAt: null,
-                resolvedAt: null,
-              },
-            ],
-          });
-        if (path.endsWith('/shift'))
-          return json({ workDate: '2026-09-17', closedAt: null, unresolvedCount: 0 });
-        if (path.endsWith('/policies')) {
-          return json({
-            policies: [
-              {
-                policyId: 'compact',
-                title: 'Compact',
-                description: 'Use fewer engineers',
-                isDefault: true,
-              },
-            ],
-            active: { policyId: 'compact', version: 1, changedAt: 1_800_000_000 },
-          });
-        }
-        if (path.endsWith('/router/technical-settings')) return json(settings);
-        throw new Error(`Unexpected request: ${path}`);
-      }),
-    );
+            });
+          if (path.endsWith('/shift'))
+            return json({ workDate: '2026-09-17', closedAt: null, unresolvedCount: 0 });
+          if (path.endsWith('/policies')) {
+            return json({
+              policies: [
+                {
+                  policyId: 'compact',
+                  title: 'Compact',
+                  description: 'Use fewer engineers',
+                  isDefault: true,
+                },
+              ],
+              active: { policyId: 'compact', version: 1, changedAt: 1_800_000_000 },
+            });
+          }
+          if (path.endsWith('/router/technical-settings'))
+            return routerDown ? new Response('{}', { status: 503 }) : json(settings);
+          throw new Error(`Unexpected request: ${path}`);
+        }),
+      );
 
-    const snapshot = await loadDashboardSnapshot('session-token');
+      const snapshot = await loadDashboardSnapshot('session-token');
 
-    expect(snapshot.workDate).toBe('2026-09-17');
-    expect(snapshot.policyId).toBe('compact');
-    expect(snapshot.requests).toHaveLength(1);
-    expect(snapshot.alerts[0]?.reasons[0]).toContain('Опоздание: 10 мин.');
-    expect(snapshot.alerts[0]?.restoreOption).toEqual({
-      engineer_id: 'engineer-1',
-      reject_request_ids: ['request-1'],
-    });
-    expect(snapshot.plan.plan?.assignments[0]?.reasons.assignment?.factors[0]).toMatchObject({
-      code: 'CONSTRAINTS_SATISFIED',
-      detail: 'Constraints verified.',
-      basis: 'constraint_check',
-      facts: { skill: 'office' },
-    });
-  });
+      expect(snapshot.workDate).toBe('2026-09-17');
+      expect(snapshot.policyId).toBe('compact');
+      if (routerDown) expect(snapshot.routerSettings).toBeNull();
+      expect(snapshot.requests).toHaveLength(1);
+      expect(snapshot.alerts[0]?.reasons[0]).toContain('Опоздание: 10 мин.');
+      expect(snapshot.alerts[0]?.restoreOption).toEqual({
+        engineer_id: 'engineer-1',
+        reject_request_ids: ['request-1'],
+      });
+      expect(snapshot.plan.plan?.assignments[0]?.reasons.assignment?.factors[0]).toMatchObject({
+        code: 'CONSTRAINTS_SATISFIED',
+        detail: 'Constraints verified.',
+        basis: 'constraint_check',
+        facts: { skill: 'office' },
+      });
+    },
+  );
 
   it('preserves all technical settings when toggling lunches', async () => {
     let sentBody: unknown = null;

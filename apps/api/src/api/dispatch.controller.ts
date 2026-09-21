@@ -74,6 +74,8 @@ import {
 } from './dto/engineer.dto';
 import { type StartLiveWorkdayDto, startLiveWorkdaySchema } from './dto/live.dto';
 import {
+  type ManualPreviewDto,
+  manualPreviewSchema,
   type ReassignDto,
   type ReorderDto,
   reassignSchema,
@@ -889,8 +891,8 @@ export class DispatchController {
       },
       async (context) =>
         dto.mode === 'manual'
-          ? this.control.enterManual(context)
-          : this.control.returnToAuto(context),
+          ? this.control.enterManual(context, dto.reason, dto)
+          : this.control.returnToAuto(context, dto),
     );
     return { control: outcome.result };
   }
@@ -906,9 +908,44 @@ export class DispatchController {
         targetRef: dto.requestId,
         payload: dto,
       },
-      async (context) => this.manual.reassign(context, dto.requestId, dto.engineerId),
+      async (context) => this.manual.reassign(context, dto.requestId, dto.engineerId, dto),
     );
     return outcome.result;
+  }
+
+  @Post('plan/manual-preview')
+  @ApiOperation({ summary: 'Preview a manual gesture without changing the working plan' })
+  async manualPreview(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(manualPreviewSchema)) dto: ManualPreviewDto,
+  ) {
+    return this.prisma.$transaction((tx) =>
+      this.manual.preview(
+        { tx, now: this.clock.nowSeconds(), actor, operationId: dto.operationId },
+        dto,
+        dto,
+      ),
+    );
+  }
+
+  @Get('plan/manual-history')
+  @ApiOperation({ summary: 'Persistent manual transitions and edits, newest first' })
+  async manualHistory() {
+    const rows = await this.prisma.auditLog.findMany({
+      where: { action: { in: ['control.transition', 'plan.manual'] } },
+      orderBy: [{ at: 'desc' }, { id: 'desc' }],
+      take: 100,
+    });
+    return {
+      entries: rows.map((row) => ({
+        id: row.id,
+        at: Number(row.at),
+        actorId: row.actorId,
+        action: row.action,
+        operationId: row.operationId,
+        details: row.details,
+      })),
+    };
   }
 
   @Post('plan/reorder')
@@ -922,7 +959,7 @@ export class DispatchController {
         targetRef: dto.engineerId,
         payload: dto,
       },
-      async (context) => this.manual.reorder(context, dto.engineerId, dto.requestIds),
+      async (context) => this.manual.reorder(context, dto.engineerId, dto.requestIds, dto),
     );
     return outcome.result;
   }

@@ -8,6 +8,7 @@ import type {
 export type EngineerJobVariant = 'upcoming' | 'regular';
 
 export type EngineerJobItem = {
+  readonly timingUnverified?: boolean;
   readonly kind: 'job';
   readonly variant: EngineerJobVariant;
   readonly stop: PlanStopView;
@@ -72,6 +73,7 @@ export function engineerListItems(
     if (upcoming) upcomingAssigned = true;
     items.push({
       kind: 'job',
+      timingUnverified: plan?.origin === 'manual' && request.startedAt === null,
       variant: upcoming ? 'upcoming' : 'regular',
       stop,
       request,
@@ -92,6 +94,7 @@ export function engineerLunchWindow(
   actual?: { readonly startAt: number; readonly endAt: number } | null,
 ): EngineerLunchItem | null {
   if (actual) return { kind: 'lunch', ...actual };
+  if (plan?.origin === 'manual') return null;
   const planned = plan?.route?.stops.find((stop) => stop.kind === 'lunch');
   if (planned) {
     return { kind: 'lunch', startAt: planned.startAt, endAt: planned.endAt };

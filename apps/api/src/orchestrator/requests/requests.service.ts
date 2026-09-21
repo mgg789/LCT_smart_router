@@ -3,7 +3,7 @@ import { SysError } from '../../common/errors';
 import type { EquipmentType, Priority, Prisma, Request } from '../../generated/prisma/client';
 import { NotificationsService } from '../../notifications';
 import { assertWriteApplied, type OperationContext } from '../../operations';
-import type { Tx } from '../../persistence';
+import { lockWorkingPlan, type Tx } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import { nearestRegion, type RegionPoint, regionCenters } from './region-geocenter';
 import { findWorkType, fitWindowToService } from './work-type.catalog';
@@ -138,6 +138,7 @@ export class RequestsService {
     requestId: string,
     expectedVersion: number | null | undefined,
   ): Promise<Request> {
+    await lockWorkingPlan(context.tx);
     const current = await this.loadOwned(context.tx, requestId);
 
     if (current.lifecycle !== 'draft') {
@@ -197,6 +198,7 @@ export class RequestsService {
     expectedVersion: number | null | undefined,
     input: RescheduleInput,
   ): Promise<Request> {
+    await lockWorkingPlan(context.tx);
     const current = await this.loadOwned(context.tx, requestId);
     assertChangeable(current);
     const window = fitWindowToService(
@@ -253,6 +255,7 @@ export class RequestsService {
     expectedVersion: number | null | undefined,
     input: DispatcherUpdateInput,
   ): Promise<Request> {
+    await lockWorkingPlan(context.tx);
     const current = await this.loadOwned(context.tx, requestId);
     assertChangeable(current);
 
@@ -335,6 +338,7 @@ export class RequestsService {
     expectedVersion: number | null | undefined,
     reason: string | null,
   ): Promise<Request> {
+    await lockWorkingPlan(context.tx);
     const current = await this.loadOwned(context.tx, requestId);
     if (current.lifecycle === 'cancelled') {
       return current;

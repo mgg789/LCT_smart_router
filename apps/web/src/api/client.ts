@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { formatClock } from '../lib/time';
+import type { PlanExpectation } from './manual';
 import type {
   AlertResolutionInput,
   ApiTokenCategory,
@@ -166,6 +167,7 @@ const routeSchema = z.object({
   lunchTimeSec: z.number().int(),
   assignedCount: z.number().int(),
   lunchStatus: lunchStatusSchema,
+  timingStatus: z.enum(['calculated', 'unverified']).optional(),
   stops: z.array(planStopSchema),
   legs: z
     .array(planLegSchema)
@@ -742,10 +744,11 @@ export function reassignDispatchRequest(
   token: string,
   requestId: string,
   engineerId: string,
+  expected: PlanExpectation,
 ): Promise<unknown> {
   return requestJson('/api/v1/dispatch/plan/reassign', z.unknown(), token, {
     method: 'POST',
-    body: JSON.stringify({ operationId: crypto.randomUUID(), requestId, engineerId }),
+    body: JSON.stringify({ operationId: crypto.randomUUID(), requestId, engineerId, ...expected }),
   });
 }
 
@@ -863,7 +866,11 @@ export async function loadDashboardSnapshot(token: string): Promise<DashboardSna
     requestJson('/api/v1/dispatch/plan', dispatchPlanSchema, token),
     requestJson('/api/v1/dispatch/alerts', z.object({ alerts: z.array(alertSchema) }), token),
     requestJson('/api/v1/dispatch/policies', policiesSchema, token),
-    getRouterTechnicalSettings(token),
+    getRouterTechnicalSettings(token, 1500).catch((error: unknown) => {
+      if (error instanceof DashboardApiError && (error.status === 401 || error.status === 403))
+        throw error;
+      return null;
+    }),
   ]);
 
   const plan = planResponse.plan
@@ -886,9 +893,14 @@ export async function loadDashboardSnapshot(token: string): Promise<DashboardSna
     timeZone: 'Europe/Moscow',
     nowAt: Math.floor(Date.now() / 1000),
     policyId: policies.active.policyId,
-    lunchesEnabled: settings.lunchesEnabled,
+    lunchesEnabled:
+      settings?.lunchesEnabled ??
+      engineers.engineers.some((engineer) => engineer.day?.lunch.enabled),
     routerSettings: settings,
-    routerContextVersion: settings.routerContextVersion,
+    routerContextVersion:
+      settings?.routerContextVersion ??
+      planResponse.appliedResult?.routerContextVersion ??
+      'unavailable',
     policies: policies.policies,
     engineers: engineers.engineers,
     requests: requests.requests,
@@ -910,8 +922,17 @@ export async function selectRoutingPolicy(token: string, policyId: PolicyId): Pr
 }
 
 /** Reads Router-owned technical settings through the backend boundary. */
-export function getRouterTechnicalSettings(token: string): Promise<RouterTechnicalSettings> {
-  return requestJson('/api/v1/dispatch/router/technical-settings', technicalSettingsSchema, token);
+export function getRouterTechnicalSettings(
+  token: string,
+  timeoutMs = 12_000,
+): Promise<RouterTechnicalSettings> {
+  return requestJson(
+    '/api/v1/dispatch/router/technical-settings',
+    technicalSettingsSchema,
+    token,
+    {},
+    timeoutMs,
+  );
 }
 
 /** Replaces the complete Router-owned settings revision through the backend CAS boundary. */
@@ -956,10 +977,15 @@ export async function setLunchesEnabled(token: string, enabled: boolean): Promis
 }
 
 /** Switches the dispatch control mode through an idempotent backend operation. */
-export async function setDispatchMode(token: string, mode: 'auto' | 'manual'): Promise<void> {
+export async function setDispatchMode(
+  token: string,
+  mode: 'auto' | 'manual',
+  expected: PlanExpectation,
+  reason?: string,
+): Promise<void> {
   await requestJson('/api/v1/dispatch/mode', z.unknown(), token, {
     method: 'POST',
-    body: JSON.stringify({ operationId: crypto.randomUUID(), mode }),
+    body: JSON.stringify({ operationId: crypto.randomUUID(), mode, ...expected, reason }),
   });
 }
 

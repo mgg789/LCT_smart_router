@@ -1,4 +1,4 @@
-import { Injectable, Optional } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { z } from 'zod';
 import { lunchCoverageWitness, policyCoverageRegressed } from './coverage-policy';
 
@@ -22,6 +22,10 @@ import {
   SnapshotBuilder,
   SnapshotPublisher,
 } from '../../routing/mount-data-eng';
+import {
+  assertPlanExpectation,
+  transitionControl,
+} from '../../routing/router-gateway/control-transition';
 import { RouterClient } from '../../routing/router-gateway/router-client.port';
 import {
   DEFAULT_EXECUTION_TIMING_POLICY,
@@ -52,6 +56,8 @@ const manualEvidenceSchema = z.object({
 });
 
 export interface ResolveAlertInput {
+  readonly expectedModeVersion?: number;
+  readonly expectedPlanRevision?: number;
   readonly action: AlertAction;
   readonly reason?: string;
   readonly minutes?: number;
@@ -88,6 +94,9 @@ export interface AlertView {
  */
 @Injectable()
 export class AlertsService {
+  private readonly logger = new Logger(AlertsService.name);
+  private manualEvaluationInFlight: Promise<void> | null = null;
+  private manualEvaluationRetryAt = 0;
   constructor(
     private readonly prisma: PrismaService,
     private readonly uow: UnitOfWork,
@@ -191,7 +200,7 @@ export class AlertsService {
 
   /** Refreshes timer-derived conditions before a dashboard reads the queue. */
   async list(workDate?: string): Promise<AlertView[]> {
-    await this.evaluateManualPlan();
+    void this.refreshManualEvaluation();
     await this.uow.run((tx) => this.refresh(tx, this.clock.nowSeconds(), workDate));
     const scope = workDate ? { workDate } : {};
     // Open work is never hidden by an arbitrarily long resolved history.
@@ -212,9 +221,27 @@ export class AlertsService {
 
   /** Used by the coordinator; no dashboard request is required for alert creation. */
   async refreshAll(): Promise<void> {
-    await this.evaluateManualPlan();
+    await this.refreshManualEvaluation();
     const now = this.clock.nowSeconds();
     await this.uow.run((tx) => this.refresh(tx, now));
+  }
+
+  /** Coalesces background checks; a slow/unavailable Router must never block manual reads. */
+  private refreshManualEvaluation(): Promise<void> {
+    if (this.manualEvaluationInFlight) return this.manualEvaluationInFlight;
+    if (this.clock.nowSeconds() < this.manualEvaluationRetryAt) return Promise.resolve();
+    const work = this.evaluateManualPlan()
+      .catch((error: unknown) => {
+        this.logger.warn(
+          `Manual evaluation unavailable: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      })
+      .finally(() => {
+        this.manualEvaluationInFlight = null;
+        this.manualEvaluationRetryAt = this.clock.nowSeconds() + 15;
+      });
+    this.manualEvaluationInFlight = work;
+    return work;
   }
 
   /** Calculates manual costs outside database transactions, caching only exact identities. */
@@ -528,6 +555,16 @@ export class AlertsService {
     input: ResolveAlertInput,
   ): Promise<AlertView> {
     await lockAlertQueue(context.tx);
+    if (input.action === 'keep_manual' || input.action === 'restore_auto') {
+      if (input.expectedModeVersion === undefined || input.expectedPlanRevision === undefined)
+        throw SysError.validationFailed(
+          'Control and plan versions are required for mode decisions',
+        );
+      await assertPlanExpectation(context.tx, {
+        expectedModeVersion: input.expectedModeVersion,
+        expectedPlanRevision: input.expectedPlanRevision,
+      });
+    }
     await this.refresh(context.tx, context.now, undefined, context.businessTime);
     if (!context.businessTime)
       context = { ...context, now: await businessNow(context.tx, context.now), businessTime: true };
@@ -574,7 +611,7 @@ export class AlertsService {
   async shiftStatus(
     workDate: string,
   ): Promise<{ workDate: string; closedAt: number | null; unresolvedCount: number }> {
-    await this.evaluateManualPlan();
+    void this.refreshManualEvaluation();
     await this.uow.run((tx) => this.refresh(tx, this.clock.nowSeconds(), workDate));
     const [closure, unresolvedCount] = await Promise.all([
       this.prisma.shiftClosure.findUnique({ where: { workDate } }),
@@ -780,16 +817,7 @@ export class AlertsService {
         include: { plan: true },
       });
       if (pointer?.plan.origin === 'manual')
-        await context.tx.controlState.update({
-          where: { id: 'singleton' },
-          data: {
-            mode: 'manual',
-            frozenPlanId: pointer.plan.id,
-            changedAt: BigInt(context.now),
-            changedBy: context.actor.id,
-            modeVersion: { increment: 1 },
-          },
-        });
+        await transitionControl(context, 'manual', input.reason);
       return;
     }
     if (input.action === 'keep_as_is') return;
@@ -811,16 +839,13 @@ export class AlertsService {
           'VALIDATION_FAILED',
           'No current automatic result is available; retry when Router is ready',
         );
-      await context.tx.controlState.update({
-        where: { id: 'singleton' },
-        data: {
-          mode: 'auto',
-          frozenPlanId: null,
-          changedAt: BigInt(context.now),
-          changedBy: context.actor.id,
-          modeVersion: { increment: 1 },
-        },
-      });
+      await transitionControl(context, 'auto');
+      await this.publisher.publishIfChanged(
+        context.tx,
+        context.now,
+        PUBLICATION_TRIGGERS.CONTROL_AUTO_RESTORED,
+        { businessTime: context.businessTime },
+      );
       return;
     }
     if (input.action === 'skip_lunch' || input.action === 'keep_lunch') {

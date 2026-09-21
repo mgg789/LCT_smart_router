@@ -64,7 +64,18 @@ export function projectLiveGraph(
   route: PlanRouteView | null,
   progress: LiveRouteProgress | null,
   visibleRequestIds?: ReadonlySet<string>,
+  preservePlanOrder = route?.timingStatus === 'unverified',
 ): LiveGraphProjection {
+  // LIVE and plan are separate reads. A stale forecast of the next visit must not
+  // reintroduce a job that a newer manual revision assigned to another engineer.
+  const forecastId = progress?.next?.requestId;
+  if (
+    preservePlanOrder &&
+    progress?.next?.kind === 'job' &&
+    !route?.stops.some((stop) => stop.requestId === forecastId)
+  ) {
+    progress = { ...progress, next: null };
+  }
   // LIVE arrival promises and actual arrivals supersede stale solver timestamps.
   const overrides = progress
     ? [progress.anchor, progress.lunch, progress.next].filter(isPoint)
@@ -88,7 +99,7 @@ export function projectLiveGraph(
         ...planned,
         ...factual.map((point) => nodeFromPoint(point, nodeSequence(point, planned))),
       ]);
-  const orderedTimeline = orderTimeline(timelineNodes);
+  const orderedTimeline = preservePlanOrder ? timelineNodes : orderTimeline(timelineNodes);
 
   // Slice using the complete order before removing completed jobs. Otherwise a
   // removed factual anchor makes an old lunch reappear behind the active span.

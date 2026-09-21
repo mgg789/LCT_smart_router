@@ -78,7 +78,10 @@ export function requestDetailFromSnapshot(
     : null;
   const route = assignment?.engineerId ? routeForEngineer(snapshot, assignment.engineerId) : null;
   const stop = route?.stops.find((item) => item.requestId === request.id);
-  const etaAt = stop?.arrivalAt ?? request.expectedCompletionAt ?? null;
+  const etaAt =
+    snapshot.plan.plan?.origin === 'manual'
+      ? null
+      : (stop?.arrivalAt ?? request.expectedCompletionAt ?? null);
   const tags = requestDetailTags(request);
   return {
     id: request.id,

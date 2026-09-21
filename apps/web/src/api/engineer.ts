@@ -116,6 +116,7 @@ const routeSchema = z.object({
   waitingTimeSec: z.number().int(),
   lunchTimeSec: z.number().int(),
   assignedCount: z.number().int(),
+  timingStatus: z.enum(['calculated', 'unverified']).optional(),
   lunchStatus: z.enum([
     'none',
     'planned',

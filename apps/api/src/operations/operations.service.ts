@@ -119,6 +119,17 @@ export class OperationsService {
       }
 
       if (error instanceof SysError) {
+        // A concurrent retry can wait behind the original operation's plan lock and
+        // then observe its new revision. Return that committed outcome, not a false
+        // version conflict for the same intention.
+        const committed = await this.prisma.operation.findUnique({
+          where: { operationId: request.operationId },
+        });
+        if (committed)
+          return {
+            result: this.replay<T>(committed.payloadFingerprint, fingerprint, committed.response),
+            replayed: true,
+          };
         // The handler's transaction is gone, so the refusal is recorded in its own.
         await this.recordRefusal(request, fingerprint, now, error);
       }

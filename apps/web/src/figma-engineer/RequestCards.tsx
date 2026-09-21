@@ -119,7 +119,7 @@ function UpcomingCard({
             className="font-murs leading-none tracking-[-0.02em] text-figma-ink"
             style={{ fontSize: eu(40) }}
           >
-            {formatPlanTime(item.stop.startAt)}
+            {item.timingUnverified ? 'Без ETA' : formatPlanTime(item.stop.startAt)}
           </p>
           <p
             className="break-words font-semibold tracking-[-0.02em] text-figma-dim"
@@ -234,7 +234,7 @@ function RegularCard({
           className="font-murs leading-none tracking-[-0.02em] text-figma-ink"
           style={{ fontSize: eu(40) }}
         >
-          {formatPlanTime(item.stop.startAt)}
+          {item.timingUnverified ? 'Без ETA' : formatPlanTime(item.stop.startAt)}
         </p>
         <p
           className="break-words font-semibold tracking-[-0.02em] text-figma-dim"

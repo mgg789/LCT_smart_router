@@ -16,13 +16,15 @@ export interface PlanStopView {
   readonly requestId: string | null;
   readonly lat: number;
   readonly lon: number;
-  /** Computed schedule, never a confirmed fact. */
+  /** Automatic schedule; archival/window references when route timing is unverified, never facts. */
   readonly arrivalAt: number;
   readonly startAt: number;
   readonly endAt: number;
 }
 
 export interface PlanRouteView {
+  /** Manual schedules are archival until a new automatic plan is accepted. */
+  readonly timingStatus?: 'calculated' | 'unverified';
   readonly engineerId: string;
   readonly startLat: number;
   readonly startLon: number;
@@ -80,6 +82,7 @@ export function toPlanView(plan: AppliedPlanCurrentShape): PlanView {
     planAsOf: Number(plan.planAsOf),
     appliedAt: Number(plan.appliedAt),
     routes: plan.routes.map((route) => ({
+      timingStatus: plan.origin === 'manual' ? 'unverified' : 'calculated',
       engineerId: route.engineerId,
       startLat: route.startLat,
       startLon: route.startLon,

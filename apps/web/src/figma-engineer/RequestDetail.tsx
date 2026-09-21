@@ -57,7 +57,9 @@ export function RequestDetail({
           className="min-w-0 font-murs tracking-[-0.02em] text-figma-ink"
           style={{ fontSize: eu(40) }}
         >
-          {arrivalHeadline(item.stop.startAt, nowMs)}
+          {item.timingUnverified
+            ? 'Ручной порядок · время не рассчитано'
+            : arrivalHeadline(item.stop.startAt, nowMs)}
         </h1>
       </header>
 

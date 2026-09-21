@@ -163,6 +163,15 @@ describe('dispatcher alert lifecycle', () => {
       (error: unknown) => error instanceof SysError && error.code === 'SHIFT_CLOSE_BLOCKED',
     );
     const resolveId = randomUUID();
+    const control = await prisma.controlState.findUniqueOrThrow({ where: { id: 'singleton' } });
+    const pointer = await prisma.appliedPlanCurrent.findUnique({
+      where: { id: 'singleton' },
+      include: { plan: true },
+    });
+    const expectedPlan = {
+      expectedModeVersion: control.modeVersion,
+      expectedPlanRevision: pointer?.plan.revision ?? 0,
+    };
     opIds.push(resolveId);
     const request = {
       operationId: resolveId,
@@ -172,7 +181,11 @@ describe('dispatcher alert lifecycle', () => {
       payload: { action: 'keep_manual', reason: 'dispatcher reviewed' },
     };
     const first = await operations.execute(request, (context) =>
-      alerts.resolve(context, id, { action: 'keep_manual', reason: 'dispatcher reviewed' }),
+      alerts.resolve(context, id, {
+        action: 'keep_manual',
+        reason: 'dispatcher reviewed',
+        ...expectedPlan,
+      }),
     );
     const repeat = await operations.execute(request, () => {
       throw new Error('handler must not run');

@@ -20,7 +20,13 @@ import type {
   LiveWorkday,
 } from '../../generated/prisma/client';
 import type { OperationContext } from '../../operations';
-import { APP_STATE_KEYS, PrismaService, type Tx, UnitOfWork } from '../../persistence';
+import {
+  APP_STATE_KEYS,
+  lockWorkingPlan,
+  PrismaService,
+  type Tx,
+  UnitOfWork,
+} from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import { AppliedPlanService } from '../../routing/router-gateway';
 import { DemoStandService } from '../demo-stand';
@@ -77,6 +83,7 @@ export class LiveService {
 
   /** Starts the pending day exactly once and forces a fresh Router publication at t=0. */
   async start(context: OperationContext): Promise<DispatchLiveView> {
+    await lockWorkingPlan(context.tx);
     const pending = await this.ensureDay(context.tx, context.now);
     await context.tx.$queryRaw`SELECT id FROM live_workdays WHERE id = ${pending.id} FOR UPDATE`;
     const day = await context.tx.liveWorkday.findUniqueOrThrow({ where: { id: pending.id } });
@@ -136,6 +143,7 @@ export class LiveService {
   async synchronizeGlobalLunchSwitch(enabled: boolean): Promise<void> {
     const wallNow = this.clock.nowSeconds();
     await this.uow.run(async (tx) => {
+      await lockWorkingPlan(tx);
       const day = await this.ensureDay(tx, wallNow);
       const lunch = standardLunchWindow(day.workDate);
       const changed = await tx.engineerDay.updateMany({
@@ -178,6 +186,7 @@ export class LiveService {
     availability: Availability,
     expectedOnlineAt: number | null,
   ) {
+    await lockWorkingPlan(context.tx);
     const day = await context.tx.liveWorkday.findFirst({ where: { status: 'running' } });
     if (!day)
       return this.engineers.setAvailability(context, engineerId, availability, expectedOnlineAt);
@@ -221,6 +230,7 @@ export class LiveService {
     engineerId: string,
     input: LiveActionDto,
   ): Promise<EngineerLiveView> {
+    await lockWorkingPlan(context.tx);
     const day = await this.ensureDay(context.tx, context.now);
     if (day.status !== 'running') {
       throw new SysError('VALIDATION_FAILED', 'The dispatcher has not started the workday');
@@ -554,6 +564,9 @@ export class LiveService {
   }
 
   private async ensureDay(tx: Tx, wallNow: number): Promise<LiveWorkday> {
+    // First dispatcher/engineer reads initialize durable state. Serialize that
+    // read-then-upsert with start and edits, including an empty-update upsert race.
+    await lockWorkingPlan(tx);
     const generationRow = await tx.appState.findUnique({
       where: { key: APP_STATE_KEYS.GENERATION },
     });
@@ -1452,7 +1465,7 @@ export class LiveService {
         stop.kind === 'job' &&
         stop.requestId &&
         !assumed.has(stop.requestId) &&
-        stop.endAt >= liveNow,
+        (plan?.origin === 'manual' || stop.endAt >= liveNow),
     );
     const requestIds = stops.flatMap((stop) => (stop.requestId ? [stop.requestId] : []));
     const requests = await tx.request.findMany({
@@ -1669,9 +1682,8 @@ export class LiveService {
         await context.tx.request.update({
           where: { id: input.requestId },
           data: {
-            ...(actualStart !== null && actualStart !== undefined
-              ? { serviceDurationSec: expected - actualStart }
-              : {}),
+            // Extra time is an execution forecast, not a change to the original
+            // normative components (whose sum is enforced by PostgreSQL).
             expectedCompletionAt: BigInt(expected),
             continuationAvailableAt: BigInt(expected),
             overrunDetectedAt: null,
@@ -1797,6 +1809,7 @@ export class LiveService {
     timing: ExecutionTimingPolicyValue = this.timing.current(),
   ): Promise<void> {
     if (day.status !== 'running') return;
+    await lockWorkingPlan(tx);
     // All readers and the timer serialize automatic transitions for one day. Without
     // this, two tabs crossing the no-show boundary could publish competing snapshots.
     await tx.$queryRaw`SELECT id FROM live_workdays WHERE id = ${day.id} FOR UPDATE`;
@@ -1896,7 +1909,7 @@ export class LiveService {
       );
     }
     const plan = await this.plans.current(tx);
-    for (const route of plan?.routes ?? []) {
+    for (const route of plan?.origin === 'manual' ? [] : (plan?.routes ?? [])) {
       const lunch = route.stops.find(
         (stop) =>
           stop.kind === 'lunch' && stop.startAt <= BigInt(liveNow) && BigInt(liveNow) < stop.endAt,
@@ -1983,7 +1996,7 @@ export class LiveService {
       select: { engineerId: true },
     });
     const appActiveEngineers = new Set(appActiveFacts.map((fact) => fact.engineerId));
-    for (const route of plan?.routes ?? []) {
+    for (const route of plan?.origin === 'manual' ? [] : (plan?.routes ?? [])) {
       const liveState = await tx.liveEngineerState.findUnique({
         where: { workdayId_engineerId: { workdayId: day.id, engineerId: route.engineerId } },
       });
@@ -2152,15 +2165,26 @@ export class LiveService {
         liveStates: { some: { workdayId: day.id } },
         startedAt: { not: null },
       },
-      select: { id: true, startedAt: true, serviceDurationSec: true, overrunDetectedAt: true },
+      select: {
+        id: true,
+        startedAt: true,
+        serviceDurationSec: true,
+        expectedCompletionAt: true,
+        overrunDetectedAt: true,
+      },
     });
     let materialChanged = false;
     for (const request of materialOverruns) {
+      const expectedEnd = Number(
+        request.expectedCompletionAt ??
+          (request.startedAt === null
+            ? 0n
+            : request.startedAt + BigInt(request.serviceDurationSec)),
+      );
       if (
         request.startedAt !== null &&
         request.overrunDetectedAt === null &&
-        liveNow >
-          Number(request.startedAt) + request.serviceDurationSec + timing.taskOverrunToleranceSec
+        liveNow > expectedEnd + timing.taskOverrunToleranceSec
       ) {
         await tx.request.update({
           where: { id: request.id },
@@ -2171,11 +2195,7 @@ export class LiveService {
           },
         });
       }
-      if (
-        request.startedAt === null ||
-        liveNow <= Number(request.startedAt) + request.serviceDurationSec + MATERIAL_DELAY_SEC
-      )
-        continue;
+      if (request.startedAt === null || liveNow <= expectedEnd + MATERIAL_DELAY_SEC) continue;
       const key = `live.material-overrun.${day.id}.${request.id}`;
       if (await tx.appState.findUnique({ where: { key } })) continue;
       await tx.appState.create({

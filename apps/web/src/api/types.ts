@@ -182,6 +182,7 @@ export interface PlanStopView {
 }
 
 export interface PlanRouteView {
+  readonly timingStatus?: 'calculated' | 'unverified';
   readonly engineerId: string;
   readonly startLat: number;
   readonly startLon: number;
@@ -296,6 +297,8 @@ export interface AlertView {
 
 /** A dispatcher decision; absolute window bounds use Unix seconds. */
 export interface AlertResolutionInput {
+  readonly expectedModeVersion?: number;
+  readonly expectedPlanRevision?: number;
   readonly expectedRequestVersion?: number;
   readonly operationId: string;
   readonly action: string;
@@ -339,7 +342,7 @@ export interface DashboardSnapshot {
   readonly policyId: PolicyId;
   readonly lunchesEnabled: boolean;
   /** Full Router-owned settings when the snapshot came from the live API. */
-  readonly routerSettings?: RouterTechnicalSettings;
+  readonly routerSettings?: RouterTechnicalSettings | null;
   readonly routerContextVersion: string;
   readonly policies: readonly PolicySpec[];
   readonly engineers: Array<EngineerView & { day: EngineerDayView | null }>;

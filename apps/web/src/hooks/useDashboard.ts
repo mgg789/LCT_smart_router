@@ -13,7 +13,6 @@ import {
   loadPolicyComparison,
   loginDispatcher,
   markDispatchNoticeSeen,
-  reassignDispatchRequest,
   requestDispatcherLoginCode,
   resolveDispatchAlert,
   restartDemoStand,
@@ -28,6 +27,7 @@ import {
   verifyDispatcherLoginCode,
 } from '../api/client';
 import { type DispatchLiveView, loadDispatchLive, startLiveWorkday } from '../api/live';
+import { applyManualChange, type ManualChange, type PlanExpectation } from '../api/manual';
 import type {
   AlertResolutionInput,
   CreateDispatchEngineerInput,
@@ -134,7 +134,7 @@ export function useDashboard() {
   const [liveWorkday, setLiveWorkday] = useState<DispatchLiveView | null>(null);
   const [liveLoading, setLiveLoading] = useState(token !== null);
   const [startingWorkday, setStartingWorkday] = useState(false);
-  const refreshInFlight = useRef(false);
+  const refreshInFlight = useRef<Promise<DashboardSnapshot | null> | null>(null);
   const liveRefreshInFlight = useRef(false);
   const comparisonInFlight = useRef(false);
   const readGeneration = useRef(0);
@@ -145,7 +145,7 @@ export function useDashboard() {
     readGeneration.current += 1;
     liveReadGeneration.current += 1;
     comparisonRequestId.current += 1;
-    refreshInFlight.current = false;
+    refreshInFlight.current = null;
     liveRefreshInFlight.current = false;
     comparisonInFlight.current = false;
     setPolicyComparison(null);
@@ -190,43 +190,48 @@ export function useDashboard() {
   );
 
   const refresh = useCallback(async () => {
-    if (!token || sourceRef.current === 'demo' || refreshInFlight.current) {
+    if (!token || sourceRef.current === 'demo') {
       return null;
     }
+    // Explicit editor refreshes join polling instead of reporting a false failure.
+    if (refreshInFlight.current) return refreshInFlight.current;
     if (recoverySessionExpired(sessionStorage)) {
       handleSessionFailure('Сессия закончилась. Войдите снова.');
       return null;
     }
     const generation = readGeneration.current;
-    refreshInFlight.current = true;
-    try {
-      const next = await loadDashboardSnapshot(token);
-      if (generation !== readGeneration.current) {
+    const work = (async () => {
+      try {
+        const next = await loadDashboardSnapshot(token);
+        if (generation !== readGeneration.current) {
+          return null;
+        }
+        setSnapshot(next);
+        setFocus((current) => reconcileDashboardFocus(next, current));
+        setOperationWarning(null);
+        setDiagnostic(null);
+        setError(null);
+        return next;
+      } catch (cause) {
+        if (generation !== readGeneration.current) {
+          return null;
+        }
+        reportFailure(cause);
+        if (cause instanceof DashboardApiError && (cause.status === 401 || cause.status === 403)) {
+          handleSessionFailure('Сессия закончилась. Войдите снова.');
+          return null;
+        }
+        setError(errorMessage(cause));
         return null;
+      } finally {
+        if (generation === readGeneration.current) {
+          refreshInFlight.current = null;
+          setLoading(false);
+        }
       }
-      setSnapshot(next);
-      setFocus((current) => reconcileDashboardFocus(next, current));
-      setOperationWarning(null);
-      setDiagnostic(null);
-      setError(null);
-      return next;
-    } catch (cause) {
-      if (generation !== readGeneration.current) {
-        return null;
-      }
-      reportFailure(cause);
-      if (cause instanceof DashboardApiError && (cause.status === 401 || cause.status === 403)) {
-        handleSessionFailure('Сессия закончилась. Войдите снова.');
-        return null;
-      }
-      setError(errorMessage(cause));
-      return null;
-    } finally {
-      if (generation === readGeneration.current) {
-        refreshInFlight.current = false;
-        setLoading(false);
-      }
-    }
+    })();
+    refreshInFlight.current = work;
+    return work;
   }, [handleSessionFailure, token, reportFailure, setSnapshot]);
 
   /** Reads the authoritative workday clock and engineer event projection. */
@@ -534,6 +539,10 @@ export function useDashboard() {
         return false;
       }
       const previous = snapshot;
+      if (previous.plan.mode === 'manual') {
+        setError('Сначала явно верните AUTO через переключатель режима. Ручной план сохранён.');
+        return false;
+      }
       const solveStartedAtMs = performance.now();
       const previousResultId = previous.plan.appliedResult?.resultId ?? null;
       const previousRevision = previous.plan.plan?.revision ?? null;
@@ -554,10 +563,6 @@ export function useDashboard() {
         });
       }
       try {
-        if (previous.plan.mode === 'manual') {
-          await setDispatchMode(token, 'auto');
-          pushEvent('Для перестроения включён авторежим — иначе Router не применит новый план.');
-        }
         if (previous.routerSettings && !sameRouterSettings(previous.routerSettings, nextSettings)) {
           const updated = await updateRouterTechnicalSettings(token, {
             ...nextSettings,
@@ -717,15 +722,15 @@ export function useDashboard() {
   }, [baseline, pendingDelta, rebuild]);
 
   const setMode = useCallback(
-    async (mode: 'auto' | 'manual') => {
+    async (mode: 'auto' | 'manual', expected: PlanExpectation, reason?: string) => {
       if (!token || sourceRef.current !== 'live') {
-        return;
+        throw new Error('Изменение режима доступно только на рабочем сервере');
       }
       invalidateAsyncReads();
       const generation = readGeneration.current;
       setError(null);
       try {
-        await setDispatchMode(token, mode);
+        await setDispatchMode(token, mode, expected, reason);
         if (generation !== readGeneration.current) return;
         await refresh();
         pushEvent(
@@ -733,11 +738,14 @@ export function useDashboard() {
         );
       } catch (cause) {
         if (generation !== readGeneration.current) return;
-        reportFailure(cause);
-        setOperationWarning(
-          'Результат изменения режима не подтверждён. Проверьте состояние на сервере.',
-        );
+        if (!(cause instanceof DashboardApiError) || cause.status === 0) {
+          reportFailure(cause);
+          setOperationWarning(
+            'Результат изменения режима не подтверждён. Проверьте состояние на сервере.',
+          );
+        } else if (cause.status === 409) await refresh();
         setError(errorMessage(cause));
+        throw cause;
       }
     },
     [invalidateAsyncReads, pushEvent, refresh, token, reportFailure],
@@ -973,16 +981,11 @@ export function useDashboard() {
     [performEntityMutation],
   );
 
-  const assignRequest = useCallback(
-    (requestId: string, engineerId: string) => {
-      const engineer = snapshotRef.current?.engineers.find((item) => item.id === engineerId);
-      return performEntityMutation(
-        async (session) => {
-          await setDispatchMode(session, 'manual');
-          await reassignDispatchRequest(session, requestId, engineerId);
-        },
-        `Заявка назначена инженеру ${engineer?.displayName ?? engineerId}.`,
-      );
+  const editManualPlan = useCallback(
+    (change: ManualChange, expected: PlanExpectation, operationId: string) => {
+      return performEntityMutation(async (session) => {
+        await applyManualChange(session, change, expected, operationId);
+      }, 'Ручной план сохранён. Время и дорожные показатели требуют проверки.');
     },
     [performEntityMutation],
   );
@@ -1258,7 +1261,7 @@ export function useDashboard() {
     unlinkEngineerLogin,
     createRequest,
     cancelRequest,
-    assignRequest,
+    editManualPlan,
     createEngineer,
     deleteEngineer,
     uploadDataset,

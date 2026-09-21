@@ -768,9 +768,11 @@ export function DayMap({
       ) : null}
       {soloRequestId ? null : (
         <div className="pointer-events-none absolute bottom-3 left-3 rounded-xl bg-white/90 px-3 py-2 text-[11px] text-muted shadow">
-          {selectedEngineerId
-            ? 'Показан план выбранного инженера. Пунктир — геоцентры, серая линия — OSRM, зелёная — маршрут 2ГИС или Яндекс.'
-            : 'План дня без live-позиции инженеров. Пунктир — геоцентры, серая линия — OSRM, зелёная — маршрут 2ГИС или Яндекс.'}
+          {snapshot.plan.plan?.origin === 'manual'
+            ? 'Ручной порядок. Линии соединяют точки; дороги и время после правки не пересчитаны.'
+            : selectedEngineerId
+              ? 'Показан план выбранного инженера. Пунктир — геоцентры, серая линия — OSRM, зелёная — маршрут 2ГИС или Яндекс.'
+              : 'План дня без live-позиции инженеров. Пунктир — геоцентры, серая линия — OSRM, зелёная — маршрут 2ГИС или Яндекс.'}
         </div>
       )}
       <div className="absolute right-2 bottom-1 rounded bg-white/90 px-2 text-[10px] text-muted">

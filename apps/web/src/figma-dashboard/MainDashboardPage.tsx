@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { updateDispatcherSettings } from '../api/client';
 import type { LiveRouteProgress } from '../api/live';
+import type { ManualChange } from '../api/manual';
 import type { PolicyId, RequestView } from '../api/types';
 import { DayMap } from '../components/DayMap';
 import {
@@ -55,6 +56,7 @@ import {
   rightPanelMode,
   withLiveRouteStops,
 } from './fromSnapshot';
+import { ManualPlanDialog } from './ManualPlanDialog';
 import { PolicyComparisonView } from './PolicyComparisonView';
 import { FigmaIcon, FigmaText } from './primitives';
 import { RequestDetailView } from './RequestDetailView';
@@ -145,6 +147,7 @@ export function MainDashboardPage() {
   const reduceMotion = useReducedMotion();
   const dash = useDashboard();
   const [policyOpen, setPolicyOpen] = useState(false);
+  const [manualDialog, setManualDialog] = useState<{ change?: ManualChange } | null>(null);
   const [activeNav, setActiveNav] = useState<NavItemId>('day');
   const [stackNav, setStackNav] = useState<NavItemId>('day');
   const [stackDir, setStackDir] = useState(0);
@@ -330,7 +333,7 @@ export function MainDashboardPage() {
   const lunchOn = dash.snapshot?.lunchesEnabled ?? false;
   const trafficOn = dash.snapshot?.routerSettings?.trafficEnabled ?? false;
   const requestCount = view?.requestCount ?? 0;
-  const totalKm = view?.totalKm ?? 0;
+  const totalKm = view ? view.totalKm : null;
   const planLabel = view?.planLabel ?? 'Данные рабочего дня загружаются';
 
   const applyPolicy = (nextPolicy: PolicyId) => {
@@ -548,6 +551,7 @@ export function MainDashboardPage() {
         />
         <PolicyControl
           open={policyOpen}
+          manualDisabled={dash.writesDisabled}
           policyLabel={policyTitle}
           policies={policies}
           selectedId={policyId}
@@ -563,10 +567,35 @@ export function MainDashboardPage() {
           onLunchToggle={applyLunch}
           onTrafficToggle={applyTraffic}
           onManualMode={() => {
-            if (!dash.snapshot) return;
-            void dash.setMode(dash.snapshot.plan.mode === 'auto' ? 'manual' : 'auto');
+            if (!dash.snapshot || dash.writesDisabled) return;
+            setPolicyOpen(false);
+            setManualDialog({});
           }}
         />
+        {dash.snapshot?.plan.mode === 'manual' ? (
+          <button
+            type="button"
+            className="absolute left-[920px] top-[10px] z-30 h-[51px] rounded-[20px] bg-figma-bee px-[20px] font-semibold text-figma-ink"
+            disabled={dash.writesDisabled}
+            onClick={() => setManualDialog({})}
+          >
+            MANUAL · Управление планом
+          </button>
+        ) : null}
+        {manualDialog && dash.snapshot && dash.token ? (
+          <ManualPlanDialog
+            snapshot={dash.snapshot}
+            token={dash.token}
+            action="manual"
+            initialChange={manualDialog.change}
+            engineerId={dash.selectedEngineerId}
+            motionOn={motionOn}
+            onMode={dash.setMode}
+            onApply={dash.editManualPlan}
+            onRefresh={dash.refresh}
+            onClose={() => setManualDialog(null)}
+          />
+        ) : null}
         <NotificationControl
           open={notifOpen}
           count={inbox.count}
@@ -632,7 +661,7 @@ export function MainDashboardPage() {
           open={settingsOpen}
           motionOn={motionOn}
           token={dash.token}
-          routerSettings={dash.snapshot?.routerSettings}
+          routerSettings={dash.snapshot?.routerSettings ?? undefined}
           submitting={dash.busy}
           onClose={() => setSettingsOpen(false)}
           onSave={async ({ dispatcher, router }) => {
@@ -907,7 +936,9 @@ export function MainDashboardPage() {
                     dash.writesDisabled
                       ? undefined
                       : async (engineerId) => {
-                          await dash.assignRequest(openedRequestId, engineerId);
+                          setManualDialog({
+                            change: { kind: 'reassign', requestId: openedRequestId, engineerId },
+                          });
                         }
                   }
                 />
@@ -1230,6 +1261,7 @@ function AddEntityButton({ motionOn, onOpen }: { motionOn: boolean; onOpen: () =
 
 function PolicyControl({
   open,
+  manualDisabled,
   policyLabel: selectedLabel,
   policies,
   selectedId,
@@ -1243,6 +1275,7 @@ function PolicyControl({
   onManualMode,
 }: {
   open: boolean;
+  manualDisabled: boolean;
   policyLabel: string;
   policies: { id: PolicyId; label: string }[];
   selectedId: PolicyId;
@@ -1360,7 +1393,8 @@ function PolicyControl({
         <button
           type="button"
           onClick={onManualMode}
-          className="absolute left-[16px] flex h-[67px] w-[331px] items-center justify-center rounded-[20px] bg-figma-bee p-[20px] transition-transform duration-150 hover:scale-[1.01]"
+          disabled={manualDisabled}
+          className="absolute left-[16px] flex h-[67px] w-[331px] items-center justify-center rounded-[20px] bg-figma-bee p-[20px] transition-transform duration-150 hover:scale-[1.01] disabled:opacity-45"
           style={{ top: 363 + extra }}
         >
           <span className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
@@ -1435,7 +1469,7 @@ function EngineersColumn({
   engineers: EngineerCard[];
   totalCount: number;
   requestCount: number;
-  totalKm: number;
+  totalKm: number | null;
   planLabel: string;
   unassignedTitle: string;
   unassignedReason: string;
@@ -1471,7 +1505,9 @@ function EngineersColumn({
           className="mx-[10px]"
         />
         <FigmaText className="figma-nowrap font-extrabold text-[28px] tracking-[-0.476px] text-figma-ink">
-          {totalKm} км
+          <span title={totalKm === null ? 'Пробег не пересчитан после ручной правки' : undefined}>
+            {totalKm === null ? '— км' : `${totalKm} км`}
+          </span>
         </FigmaText>
       </div>
       <FigmaText className="figma-nowrap absolute left-[30px] top-[68px] z-0 font-semibold text-[18px] tracking-[-0.306px] text-figma-muted">
@@ -1639,7 +1675,11 @@ function EngineerRow({
           {truncateEnd(engineer.name)}
         </span>
         <FigmaText className="figma-nowrap shrink-0 font-bold text-[16px] tracking-[0.16px] text-black">
-          {engineer.km} км
+          <span
+            title={engineer.km === null ? 'Пробег не пересчитан после ручной правки' : undefined}
+          >
+            {engineer.km === null ? '— км' : `${engineer.km} км`}
+          </span>
         </FigmaText>
       </div>
       <div className="absolute left-[69px] top-[49px] flex items-center gap-[8px] font-medium text-[16px] tracking-[-0.272px] text-figma-muted">

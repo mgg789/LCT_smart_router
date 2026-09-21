@@ -406,11 +406,18 @@ twogis: {provider, configured, ok, message}, yandex: {…}}`. Проба идё�
 (`#16A34A`). Без ключей карт план остаётся с геометрией Router; золотой план не
 меняется.
 
-**POST `/dispatch/mode`** — `{operationId, mode: "auto"|"manual"}` → `{control}`. В MANUAL автоматические результаты не применяются.
+**POST `/dispatch/mode`** — `{operationId, mode: "auto"|"manual", expectedModeVersion, expectedPlanRevision, reason?}` → `{control}`. Для MANUAL обязательна непустая причина; версия `0` означает отсутствие первого плана. В MANUAL автоматические результаты не применяются.
 
-**POST `/dispatch/plan/reassign`** — `{operationId, requestId, engineerId}` — перенос неначатой работы (ручной режим).
+**POST `/dispatch/plan/reassign`** — `{operationId, requestId, engineerId, expectedModeVersion, expectedPlanRevision}` — перенос неначатой работы (ручной режим).
 
-**POST `/dispatch/plan/reorder`** — `{operationId, engineerId, requestIds: [...]}` — зафиксировать порядок очереди инженера.
+**POST `/dispatch/plan/reorder`** — `{operationId, engineerId, requestIds: [...], expectedModeVersion, expectedPlanRevision}` — полный порядок редактируемой части очереди без повторов. Защищённые и нерабочие остановки сохраняют места.
+
+**POST `/dispatch/plan/manual-preview`** — payload соответствующей операции плюс `kind`;
+проверка без записи. **GET `/dispatch/plan/manual-history`** — постоянный журнал последних
+100 переходов и правок. Подробности и набор 4/2: [MANUAL](manual-control.md).
+`routes[].timingStatus: "unverified"` запрещает показывать скопированные времена и
+метрики как новый расчёт. Дашборд продолжает читать рабочий план при недоступном Router;
+в этом случае `snapshot.routerSettings` может быть `null`.
 
 ### 6.6 Алерты
 

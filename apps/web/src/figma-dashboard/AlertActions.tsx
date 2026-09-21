@@ -17,6 +17,7 @@ import {
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { DashboardApiError, loadAlertWindowProposal } from '../api/client';
+import { manualExpectation } from '../api/manual';
 import type { AlertResolutionInput, AlertView, DashboardSnapshot } from '../api/types';
 import {
   ALERT_ACTION_SPECS,
@@ -265,6 +266,7 @@ function ResolutionForm({
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [expectedRequestVersion, setExpectedRequestVersion] = useState(request?.version);
+  const [expectedPlan] = useState(() => manualExpectation(snapshot.plan));
   const [proposalStatus, setProposalStatus] = useState('loading');
   const [proposalText, setProposalText] = useState('Подбираем выполнимое окно через Router…');
   useEffect(() => {
@@ -330,6 +332,7 @@ function ResolutionForm({
       if (!(alert.actions ?? []).includes(action) || alert.resolvedAt !== null)
         throw new Error('Этот вариант больше недоступен. Обновите список алертов.');
       const input: Omit<AlertResolutionInput, 'operationId'> = {
+        ...(action === 'keep_manual' || action === 'restore_auto' ? expectedPlan : {}),
         action,
         ...(reason.trim() ? { reason: reason.trim() } : {}),
         ...(action === 'move_window'

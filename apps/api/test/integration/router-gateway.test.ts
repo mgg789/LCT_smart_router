@@ -923,6 +923,18 @@ describe('router gateway', () => {
   });
 
   describe('manual control', () => {
+    const expectation = async () => {
+      const state = (await (
+        await call('GET', '/api/v1/dispatch/plan', dispatcherToken)
+      ).json()) as {
+        modeVersion: number;
+        plan: { revision: number } | null;
+      };
+      return {
+        expectedModeVersion: state.modeVersion,
+        expectedPlanRevision: state.plan?.revision ?? 0,
+      };
+    };
     it('stops applying results and keeps the plan visible', async () => {
       const request = await submitRequest();
       await feed(
@@ -951,6 +963,8 @@ describe('router gateway', () => {
       const manual = await call('POST', '/api/v1/dispatch/mode', dispatcherToken, {
         operationId: randomUUID(),
         mode: 'manual',
+        reason: 'Gateway regression',
+        ...(await expectation()),
       });
       assert.equal(manual.status, 201);
 
@@ -990,6 +1004,7 @@ describe('router gateway', () => {
       await call('POST', '/api/v1/dispatch/mode', dispatcherToken, {
         operationId: randomUUID(),
         mode: 'auto',
+        ...(await expectation()),
       });
     });
 
@@ -999,6 +1014,7 @@ describe('router gateway', () => {
         operationId: randomUUID(),
         requestId: request.id,
         engineerId,
+        ...(await expectation()),
       });
       assert.equal(response.status, 409);
       assert.equal(
