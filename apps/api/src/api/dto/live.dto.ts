@@ -56,6 +56,11 @@ export const liveActionSchema = z.discriminatedUnion('kind', [
     kind: z.literal('break_finish'),
     engineerId: z.string().min(1).optional(),
   }),
+  operationEnvelopeSchema.extend({
+    kind: z.literal('offline'),
+    engineerId: z.string().min(1).optional(),
+    note,
+  }),
 ]);
 
 export type LiveActionDto = z.infer<typeof liveActionSchema>;

@@ -9,11 +9,15 @@ import type { AiConversation, AiMessage } from '../generated/prisma/client';
  */
 export interface AiConversationView {
   readonly id: string;
+  readonly role: string;
   readonly mode: string;
   readonly assistMode: string;
   readonly roleProfile: string;
+  /** Which request/engineer/alert the dialogue was opened about, if any. */
+  readonly contextRef: unknown;
   readonly title: string | null;
   readonly createdAt: number;
+  readonly updatedAt: number;
   readonly lastMessageAt: number;
   readonly closedAt: number | null;
   readonly version: number;
@@ -22,11 +26,14 @@ export interface AiConversationView {
 export function toConversationView(conversation: AiConversation): AiConversationView {
   return {
     id: conversation.id,
+    role: conversation.role,
     mode: conversation.mode,
     assistMode: conversation.assistMode,
     roleProfile: conversation.roleProfile,
+    contextRef: conversation.contextRef,
     title: conversation.title,
     createdAt: bigIntToSeconds(conversation.createdAt),
+    updatedAt: bigIntToSeconds(conversation.updatedAt),
     lastMessageAt: bigIntToSeconds(conversation.lastMessageAt),
     closedAt: bigIntToSecondsOrNull(conversation.closedAt),
     version: conversation.version,
@@ -42,6 +49,9 @@ export interface AiMessageView {
   readonly actions: readonly unknown[];
   readonly runId: string | null;
   readonly operationId: string | null;
+  /** Set only for `dispatcher` authorship, so a reply is attributable to the human who
+   *  actually sent it (schema.prisma's own comment on the column). */
+  readonly authorAccountId: string | null;
   readonly createdAt: number;
 }
 
@@ -55,6 +65,7 @@ export function toMessageView(message: AiMessage): AiMessageView {
     actions: Array.isArray(message.actions) ? message.actions : [],
     runId: message.runId,
     operationId: message.operationId,
+    authorAccountId: message.authorAccountId,
     createdAt: bigIntToSeconds(message.createdAt),
   };
 }

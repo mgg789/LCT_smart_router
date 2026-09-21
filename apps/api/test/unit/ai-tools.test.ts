@@ -1,14 +1,20 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { z } from 'zod';
-import type { AiOperationService } from '../../src/ai/operations';
+import type { AiOperationService, PrepareOperationInput } from '../../src/ai/operations';
 import { buildClientTools } from '../../src/ai/tools/client.tools';
+import type { DispatcherReadToolDeps } from '../../src/ai/tools/dispatcher-read.tools';
+import { buildDispatcherReadTools } from '../../src/ai/tools/dispatcher-read.tools';
+import type { DispatcherWriteToolDeps } from '../../src/ai/tools/dispatcher-write.tools';
+import { buildDispatcherWriteTools } from '../../src/ai/tools/dispatcher-write.tools';
 import { buildEngineerTools } from '../../src/ai/tools/engineer.tools';
 import { buildCallDispatchHelperTool, type HandoffToolDeps } from '../../src/ai/tools/handoff.tool';
 import { buildSearchDocumentationTool } from '../../src/ai/tools/knowledge.tool';
 import type { KnowledgeSearchPort } from '../../src/ai/tools/knowledge-search.port';
-import type { AnyToolSpec } from '../../src/ai/tools/tool.types';
+import type { AnyToolSpec, ToolContext } from '../../src/ai/tools/tool.types';
+import type { Actor } from '../../src/auth';
 import type { AppConfigService } from '../../src/common/config';
+import { SysError } from '../../src/common/errors';
 import type { LiveService } from '../../src/orchestrator/live/live.service';
 import type { RequestsService } from '../../src/orchestrator/requests/requests.service';
 
@@ -48,6 +54,32 @@ function realCatalogueUnderTest(): readonly AnyToolSpec[] {
   const handoff = buildCallDispatchHelperTool(inert as unknown as HandoffToolDeps);
 
   return [...client, ...engineer, search, handoff];
+}
+
+/**
+ * Builds the real dispatcher catalogues (`dispatcher_readonly` + the `dispatcher_fix`
+ * preparers on top) the same inert-stand-in way `realCatalogueUnderTest` does above --
+ * declarations only, `run()` is never called here.
+ */
+function dispatcherCatalogueUnderTest(): readonly AnyToolSpec[] {
+  const inert = new Proxy(
+    {},
+    {
+      get() {
+        throw new Error('This test only inspects tool declarations; it must not call a dependency');
+      },
+    },
+  );
+  const config = {
+    get: (key: string) => (key === 'APP_TIME_ZONE' ? 'Europe/Moscow' : inert),
+  } as unknown as AppConfigService;
+
+  const read = buildDispatcherReadTools(inert as unknown as DispatcherReadToolDeps);
+  const write = buildDispatcherWriteTools({
+    aiOperations: inert as unknown as AiOperationService,
+    config,
+  } satisfies DispatcherWriteToolDeps);
+  return [...read, ...write];
 }
 
 /** Walks a JSON Schema object depth-first, yielding every property name it declares at
@@ -208,5 +240,225 @@ describe('AI tool catalogue scoping', () => {
     ]);
     assert.ok(!names.includes('start_visit'));
     assert.ok(!names.includes('finish_visit'));
+  });
+
+  it('gives dispatcher_readonly its own thirteen read tools (ToolRegistry adds search_documentation on top)', () => {
+    const names = dispatcherCatalogueUnderTest()
+      .filter((tool) => !tool.name.startsWith('prepare_'))
+      .map((tool) => tool.name)
+      .sort();
+    assert.deepEqual(names, [
+      'compare_policies',
+      'evaluate_manual_order',
+      'get_day_plan',
+      'get_policies',
+      'get_request',
+      'get_request_history',
+      'get_router_settings',
+      'get_shift_status',
+      'get_situation',
+      'get_snapshot_diagnostics',
+      'list_alerts',
+      'list_engineers',
+      'list_requests',
+    ]);
+  });
+
+  it('gives dispatcher_fix exactly the twelve documented preparers on top of the read tools', () => {
+    const names = dispatcherCatalogueUnderTest()
+      .filter((tool) => tool.name.startsWith('prepare_'))
+      .map((tool) => tool.name)
+      .sort();
+    assert.deepEqual(names, [
+      'prepare_cancel_request',
+      'prepare_close_shift',
+      'prepare_create_request',
+      'prepare_engineer_technical_break',
+      'prepare_mark_alert_seen',
+      'prepare_move_window',
+      'prepare_reschedule_request',
+      'prepare_resolve_alert',
+      'prepare_select_policy',
+      'prepare_set_engineer_availability',
+      'prepare_set_engineer_workday',
+      'prepare_update_request',
+    ]);
+  });
+});
+
+/**
+ * `engineerId`/`clientEmail` legitimately appear in the dispatcher catalogue: a dispatcher
+ * names *another* person as the object of an action -- reassigning to an engineer,
+ * creating a request for a customer by address -- and that object always comes from a
+ * model argument, the same way `AlertsService.resolve`'s own `engineerId` (the
+ * `add_engineer` target) and `DispatchController.create`'s own `clientEmail` do at the
+ * HTTP boundary. What must still never happen is a dispatcher tool taking `accountId`,
+ * `segment` or `role` at all (there is no legitimate object reading for those in this
+ * catalogue), or `engineerId`/`clientEmail` standing in for the *acting* dispatcher, which
+ * this catalogue has no ToolContext field for in the first place -- a dispatcher session's
+ * own identity is `ctx.actor`, never `ctx.accountId` treated as "whose data this is" the
+ * way a client or engineer session's `ctx.accountId`/`ctx.engineerId` is.
+ */
+const DISPATCHER_FORBIDDEN_ARGUMENT_NAMES = ['accountId', 'segment', 'role'];
+
+describe('AI dispatcher tool schemas never take accountId, segment or role', () => {
+  for (const tool of dispatcherCatalogueUnderTest()) {
+    it(`"${tool.name}" declares none of ${DISPATCHER_FORBIDDEN_ARGUMENT_NAMES.join(', ')}`, () => {
+      const jsonSchema = z.toJSONSchema(tool.schema);
+      const found = [...propertyNames(jsonSchema)].filter((name) =>
+        DISPATCHER_FORBIDDEN_ARGUMENT_NAMES.includes(name),
+      );
+      assert.deepEqual(found, [], `"${tool.name}" must not declare ${found.join(', ')}`);
+    });
+  }
+});
+
+describe('AI dispatcher tool schemas never take a raw epoch number for a time', () => {
+  const byName = new Map(dispatcherCatalogueUnderTest().map((tool) => [tool.name, tool]));
+
+  it('prepare_move_window takes a local date and local start/end times', () => {
+    const tool = byName.get('prepare_move_window');
+    assert.ok(tool);
+    const jsonSchema = z.toJSONSchema(tool.schema) as {
+      properties: Record<string, { type: string }>;
+    };
+    assert.equal(jsonSchema.properties.windowDate?.type, 'string');
+    assert.equal(jsonSchema.properties.windowStartLocal?.type, 'string');
+    assert.equal(jsonSchema.properties.windowEndLocal?.type, 'string');
+  });
+
+  it('prepare_set_engineer_workday takes local shift times, not epoch seconds', () => {
+    const tool = byName.get('prepare_set_engineer_workday');
+    assert.ok(tool);
+    const jsonSchema = z.toJSONSchema(tool.schema) as {
+      properties: Record<string, { type: string }>;
+    };
+    assert.equal(jsonSchema.properties.workDate?.type, 'string');
+    assert.equal(jsonSchema.properties.shiftStartLocal?.type, 'string');
+    assert.equal(jsonSchema.properties.shiftEndLocal?.type, 'string');
+  });
+
+  it('prepare_close_shift takes a local date', () => {
+    const tool = byName.get('prepare_close_shift');
+    assert.ok(tool);
+    const jsonSchema = z.toJSONSchema(tool.schema) as {
+      properties: Record<string, { type: string }>;
+    };
+    assert.equal(jsonSchema.properties.workDate?.type, 'string');
+  });
+});
+
+const engineerActor: Actor = {
+  kind: 'account',
+  source: 'ui',
+  id: 'engineer-1',
+  role: 'engineer',
+  tokenCategory: null,
+  accountId: 'engineer-1',
+};
+
+function engineerToolContext(): ToolContext {
+  return {
+    actor: engineerActor,
+    accountId: 'engineer-1',
+    engineerId: 'eng-1',
+    conversationId: 'conv-1',
+    runId: 'run-1',
+    segments: ['engineer'],
+    now: 1_700_000_000,
+  };
+}
+
+/** A LIVE service stand-in whose `assertLegacyMutationAllowed` reports the workday as
+ *  running or not, matching the real method's own throw-to-mean-"running" contract
+ *  (`liveWorkdayRunning` in engineer.tools.ts). */
+function liveWithWorkdayRunning(running: boolean): LiveService {
+  return {
+    assertLegacyMutationAllowed: async () => {
+      if (running) throw new SysError('VALIDATION_FAILED', 'LIVE workday is running');
+    },
+  } as unknown as LiveService;
+}
+
+describe('change_status_to(0) during a running LIVE workday', () => {
+  it('prepares live.engineer.offline carrying the given reason, not the legacy switch', async () => {
+    const calls: PrepareOperationInput[] = [];
+    const aiOperations = {
+      prepare: async (input: PrepareOperationInput) => {
+        calls.push(input);
+        return {
+          operationId: 'op-1',
+          state: 'awaiting_confirmation' as const,
+          preview: [],
+          expiresAt: 0,
+        };
+      },
+    } as unknown as AiOperationService;
+    const tools = buildEngineerTools({
+      aiOperations,
+      live: liveWithWorkdayRunning(true),
+      config: { get: () => 'Europe/Moscow' } as unknown as AppConfigService,
+    });
+    const changeStatusTo = tools.find((tool) => tool.name === 'change_status_to');
+    assert.ok(changeStatusTo);
+
+    const result = await changeStatusTo.run(engineerToolContext(), {
+      status: 0,
+      note: 'Плохое самочувствие, продолжить не смогу',
+    });
+
+    assert.ok(result.ok);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]?.action, 'live.engineer.offline');
+    assert.equal(calls[0]?.targetRef, 'eng-1');
+    assert.deepEqual(calls[0]?.payload, { note: 'Плохое самочувствие, продолжить не смогу' });
+  });
+
+  it('refuses to prepare anything without a reason', async () => {
+    const aiOperations = {
+      prepare: async () => {
+        throw new Error('must not be called without a reason');
+      },
+    } as unknown as AiOperationService;
+    const tools = buildEngineerTools({
+      aiOperations,
+      live: liveWithWorkdayRunning(true),
+      config: { get: () => 'Europe/Moscow' } as unknown as AppConfigService,
+    });
+    const changeStatusTo = tools.find((tool) => tool.name === 'change_status_to');
+    assert.ok(changeStatusTo);
+
+    await assert.rejects(
+      () => changeStatusTo.run(engineerToolContext(), { status: 0 }),
+      (error: unknown) => error instanceof SysError && error.code === 'VALIDATION_FAILED',
+    );
+  });
+
+  it('status: 1 still prepares live.engineer.online, unaffected by the offline change', async () => {
+    const calls: PrepareOperationInput[] = [];
+    const aiOperations = {
+      prepare: async (input: PrepareOperationInput) => {
+        calls.push(input);
+        return {
+          operationId: 'op-2',
+          state: 'awaiting_confirmation' as const,
+          preview: [],
+          expiresAt: 0,
+        };
+      },
+    } as unknown as AiOperationService;
+    const tools = buildEngineerTools({
+      aiOperations,
+      live: liveWithWorkdayRunning(true),
+      config: { get: () => 'Europe/Moscow' } as unknown as AppConfigService,
+    });
+    const changeStatusTo = tools.find((tool) => tool.name === 'change_status_to');
+    assert.ok(changeStatusTo);
+
+    const result = await changeStatusTo.run(engineerToolContext(), { status: 1 });
+
+    assert.ok(result.ok);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0]?.action, 'live.engineer.online');
   });
 });

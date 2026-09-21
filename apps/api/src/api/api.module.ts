@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { AlertResolverModule } from '../ai/alerts';
+import { ExplainModule } from '../ai/explain';
 import { AlertsModule } from '../orchestrator/alerts';
 import { EngineersModule } from '../orchestrator/engineers';
 import { FactsModule } from '../orchestrator/facts';
@@ -29,6 +31,8 @@ import { EngineerController } from './engineer.controller';
     ImportsModule,
     ResetModule,
     LiveModule,
+    ExplainModule,
+    AlertResolverModule,
   ],
   controllers: [
     AuthController,

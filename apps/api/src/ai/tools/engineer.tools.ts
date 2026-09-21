@@ -46,6 +46,10 @@ const changeStatusSchema = z.object({
   /** `1` to go online, `0` to go offline. Not a boolean: this mirrors the two states the
    *  underlying `Availability` enum actually has, with no third value to invent. */
   status: z.union([z.literal(0), z.literal(1)]),
+  /** Why the engineer is standing down. Required only for `status: 0`; asking for it
+   *  when going online would just invite an invented reason for something that needs
+   *  none. */
+  note: z.string().trim().min(1).max(2_000).optional(),
 });
 type ChangeStatusArgs = z.infer<typeof changeStatusSchema>;
 
@@ -278,24 +282,32 @@ export function buildEngineerTools(deps: EngineerToolDeps): readonly ToolSpec[] 
   const changeStatusTo: ToolSpec<ChangeStatusArgs> = {
     name: 'change_status_to',
     description:
-      '`status: 1` to go online, `status: 0` to go offline. While a LIVE workday is ' +
-      'running an engineer cannot go offline through this tool -- suggest a technical ' +
-      'break, or that the dispatcher takes the engineer offline.',
+      '`status: 1` to go online, `status: 0` to go offline (stand down for the rest of ' +
+      'the day; needs a reason). While a LIVE workday is running, both go through the ' +
+      "LIVE action spine instead of the legacy availability switch -- offline doesn't " +
+      'cancel any remaining work, it just returns it to the pool for replanning.',
     schema: changeStatusSchema,
     async run(ctx, args) {
       const running = await liveWorkdayRunning(deps.live);
       if (running) {
         if (args.status === 0) {
-          // No engineer-facing "go offline" exists while LIVE runs: `liveActionSchema`
-          // has no `offline` member, and only the dispatcher can set `no_show_offline`
-          // (`LiveService.setDispatcherAvailability`). Refusing honestly here, rather
-          // than inventing a third availability path, is a deliberate product gap this
-          // change reports rather than papers over.
-          throw new SysError(
-            'VALIDATION_FAILED',
-            'Cannot go offline while the workday is running. Take a technical break ' +
-              'instead, or ask the dispatcher to take you offline.',
-          );
+          // `liveActionSchema`'s `offline` member (`LiveService.goOffline`) is the
+          // engineer-facing counterpart to the dispatcher's own
+          // `setDispatcherAvailability`: it sets `stood_down`, never `no_show_offline`,
+          // because this engineer did show up.
+          if (!args.note) {
+            throw new SysError('VALIDATION_FAILED', 'Ask why the engineer is going offline');
+          }
+          const op = await deps.aiOperations.prepare({
+            actor: ctx.actor,
+            accountId: ctx.accountId,
+            conversationId: ctx.conversationId,
+            runId: ctx.runId,
+            action: 'live.engineer.offline',
+            targetRef: requireEngineerId(ctx),
+            payload: { note: args.note },
+          });
+          return prepared(op.operationId, op.state, op.preview, 'Prepared going offline');
         }
         const op = await deps.aiOperations.prepare({
           actor: ctx.actor,

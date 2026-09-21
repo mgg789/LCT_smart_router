@@ -66,11 +66,15 @@ export class ReplayProvider extends LlmProvider {
       yield { type: 'reasoning', content: fixture.reasoningContent };
     }
 
+    const chunkDelayMs = fixture?.chunkDelayMs ?? DEFAULT_CHUNK_DELAY_MS;
     for (let index = 0; index < text.length; index += chunkSize) {
       if (input.signal.aborted) {
         yield abortedEvent();
         this.recordOk();
         return;
+      }
+      if (index > 0) {
+        await delay(chunkDelayMs);
       }
       yield { type: 'text_delta', text: text.slice(index, index + chunkSize) };
     }
@@ -143,8 +147,32 @@ const replayFixtureSchema = z.object({
     .optional(),
   /** Characters per `text_delta`, so a fixture can exercise the streaming UI realistically. */
   chunkSize: z.number().int().positive().max(2000).optional(),
+  /**
+   * Milliseconds to wait between deltas.
+   *
+   * A real provider paces its own output over the network, and the offline contour has to
+   * look like the thing it stands in for: without a pause the whole answer is emitted in
+   * one synchronous burst, so a demo shows finished text instead of text arriving, and a
+   * reader that attaches a moment later sees no deltas at all -- they are deliberately not
+   * persisted, so anything emitted before the first subscriber is gone. Default is the
+   * smallest pause that still yields to the event loop.
+   */
+  chunkDelayMs: z.number().int().nonnegative().max(2000).optional(),
 });
 type ReplayFixture = z.infer<typeof replayFixtureSchema>;
+
+/**
+ * Pause between replayed deltas when a fixture does not choose one. Small enough to keep
+ * tests fast, large enough that the loop actually yields, which is what lets a subscriber
+ * attach mid-answer instead of finding the run already over.
+ */
+const DEFAULT_CHUNK_DELAY_MS = 25;
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+}
 
 /** Deterministic file key: trimmed, lower-cased and whitespace-collapsed so "Hello!" and
  *  "  hello!  " hit the same recorded fixture. */

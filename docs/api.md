@@ -770,17 +770,46 @@ Router.
 подразумевает, что была возвращена отрисовываемая дорожная полилиния.
 
 Приёмка сверяет `input_hash` **и** `input_publication_id` со снимком, опубликованным
-сейчас, плюс версию контекста. Что намеренно остаётся открытым:
+сейчас, плюс версию контекста.
 
-* **Пакет обоснований пока не потребляется.** Router также возвращает
-  `input_publication_id`, `policy_id`, `policy_criteria`, `search_path`,
-  `technical_settings`, `main_evidence` и `baseline_evidence`. `routerResultSchema`
-  сохраняет их (это loose object), но пока ничто ниже по потоку не действует на
-  обоснования — а пакет обоснований и есть поддерживаемый вход для объяснений на карте.
-  Подключение его к UI — следующий контракт, а не тихое слияние.
+* **Пакет обоснований потребляется.** Router также возвращает `input_publication_id`,
+  `policy_id`, `policy_criteria`, `search_path`, `technical_settings`, `main_evidence`
+  и `baseline_evidence`. `routerResultSchema` сохраняет их целиком (loose object);
+  `EvidenceReader` (`src/ai/explain/evidence.reader.ts`) — типизированный читатель
+  поверх этого же хранимого payload, честный в отсутствии: результат без evidence,
+  без baseline или с невалидным пакетом даёт `null`, а не выдуманную структуру.
+  `GET /dispatch/requests/:id/evidence` отдаёт диспетчеру `{requestId, main, baseline}`
+  для одной заявки — полный `RequestEvidence` с `candidates[]`/`blockers[]` по каждому
+  рассмотренному инженеру. Тот же читатель питает `POST /ai/explain` (раздел ниже).
+  Остаётся не сделанным: сквозной постраничный просмотр «блокеры инженера X по всем
+  заявкам» — только по одной заявке за раз, что документировано как рабочая граница в
+  `docs/knowledge/dispatcher-situations.md`.
 
 Отладочный эндпоинт `POST /api/v1/dispatch/debug/router-result` остаётся тестовым входом,
 прогоняющим те же самые проверки приёмки, — никогда вторым способом применить план.
+
+### Протокол tool-вызовов AI-gateway — реализован
+
+**Больше не отсутствует.** Полный контур описан в [ai.md](./ai.md); здесь — только то,
+чего не хватало в этом разделе раньше.
+
+| Что нужно | Эндпоинт |
+|---|---|
+| Открыть/получить диалог своей роли | `POST /api/v1/ai/conversations` |
+| Дочитать сообщения после курсора | `GET /api/v1/ai/conversations/:id/messages?afterSeq=` |
+| Отправить сообщение (запускает run, если диалог не передан диспетчеру) | `POST /api/v1/ai/conversations/:id/messages` |
+| Поток событий запуска (SSE, резюмируемый) | `GET /api/v1/ai/runs/:runId/events?afterSeq=` |
+| Остановить запуск | `POST /api/v1/ai/runs/:runId/stop` |
+| Подтвердить / отменить подготовленную операцию | `POST /api/v1/ai/operations/:id/apply` / `.../cancel` |
+| Explain-микроагент (без tools, температура 0) | `POST /api/v1/ai/explain` |
+| Предложение по разрешению алерта | `POST /api/v1/ai/alerts/:id/suggest` |
+
+Модель никогда не пишет напрямую: каждый изменяющий tool лишь готовит `AiOperation`
+через тот же `OperationsService.execute`, что и обычный HTTP-путь, а применяет её
+подтверждение человека — `prepare → confirm/cancel` (`ai.md` §«Prepare → confirm →
+apply»). Инструменты исполняет `AgentRuntimeService`/`AiToolDispatcher`, а не сама
+Agents SDK — обоснование выбора и три реализации провайдера (`agents`, `openai_chat`,
+`replay`) тоже в `ai.md`.
 
 ### Сериализация снимка — общая с Router Core
 
@@ -797,9 +826,9 @@ sys и Router должны хешировать **одни и те же байт
 
 ### Вне скоупа этой сборки
 
-Протокол инструментов `AI-gateway` и транспорт `SMTP-gateway`. sys будет записывать
-почтовые интенты; доставка — дело внешнего почтового сервера, который в этот контур не
-входит.
+Публикация SPF/DKIM `SMTP-gateway` в DNS (см. §5) — sys записывает и отправляет
+почтовые интенты через Postfix, но доставка до почтового ящика получателя остаётся
+делом внешнего почтового сервера и DNS-записей, которые в этот контур не входят.
 
 ## 11. Приватный API Router Core
 

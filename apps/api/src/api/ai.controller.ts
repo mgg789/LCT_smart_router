@@ -24,6 +24,8 @@ import {
   RunRegistry,
   StopService,
 } from '../ai';
+import { AlertResolverService } from '../ai/alerts';
+import { ExplainService } from '../ai/explain';
 import { type Actor, CurrentActor, effectiveRole } from '../auth';
 import { AppConfigService } from '../common/config';
 import { SysError } from '../common/errors';
@@ -45,8 +47,12 @@ import {
   type CreateAiConversationDto,
   confirmAiOperationSchema,
   createAiConversationSchema,
+  type ExplainRequestDto,
+  explainRequestSchema,
   type PostAiMessageDto,
   postAiMessageSchema,
+  type SuggestAlertResolutionDto,
+  suggestAlertResolutionSchema,
 } from './dto/ai.dto';
 
 interface SendMessageResponse {
@@ -88,7 +94,46 @@ export class AiController {
     private readonly prisma: PrismaService,
     private readonly clock: Clock,
     private readonly config: AppConfigService,
+    private readonly explain: ExplainService,
+    private readonly alertResolver: AlertResolverService,
   ) {}
+
+  @Post('explain')
+  @ApiOperation({
+    summary:
+      'Dispatcher-only explanation micro-agent: single-step, no-tool, temperature-0 run seeded with calculation-backed context',
+  })
+  async explainSelection(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(explainRequestSchema)) dto: ExplainRequestDto,
+  ): Promise<{ runId: string }> {
+    this.requireAccount(actor);
+    if (effectiveRole(actor) !== 'dispatcher') {
+      // An honest explanation needs the roster -- who else was idle, who else had the
+      // skill -- which a customer must never see (task brief for `src/ai/explain/**`).
+      // `client` is therefore not an offered scope at all, and this whole surface is
+      // dispatcher-only.
+      throw SysError.forbidden('Explanations are a dispatcher tool');
+    }
+    return this.explain.startExplainRun(actor, dto);
+  }
+
+  @Post('alerts/:id/suggest')
+  @ApiOperation({
+    summary:
+      'LLM-assisted alert resolution proposal, prepared through the alert.resolve operation spine',
+  })
+  async suggestAlertResolution(
+    @CurrentActor() actor: Actor,
+    @Param('id') id: string,
+    @Body(zodBody(suggestAlertResolutionSchema)) _dto: SuggestAlertResolutionDto,
+  ) {
+    this.requireAccount(actor);
+    if (effectiveRole(actor) !== 'dispatcher') {
+      throw SysError.forbidden('Alert resolution suggestions are a dispatcher tool');
+    }
+    return this.alertResolver.suggest(actor, id);
+  }
 
   @Post('conversations')
   @ApiOperation({ summary: 'Get or create the open conversation for this account and lane' })

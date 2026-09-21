@@ -107,6 +107,11 @@ enum LiveEngineerLineStatus {
   pending
   online
   no_show_offline
+  /// The engineer was on the line and left it deliberately -- distinct from
+  /// `no_show_offline`, which is set only by the automatic sweep for someone who never
+  /// showed up. An engineer who worked part of the day did show up; this status must
+  /// never be reported to the dispatcher as a no-show.
+  stood_down
   technical_break
 }
 

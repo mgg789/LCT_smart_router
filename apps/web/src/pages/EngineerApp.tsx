@@ -1,5 +1,6 @@
 import { Menu } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ExplainTarget } from '../api/ai';
 import { DashboardApiError } from '../api/client';
 import {
   confirmEngineerEmailChange,
@@ -27,6 +28,8 @@ import type {
   PlanStopView,
   RequestView,
 } from '../api/types';
+import { DockedAssistant } from '../components/ai/DockedAssistant';
+import { ExplainButton } from '../components/ai/ExplainButton';
 import { EngineerMap } from '../components/engineer/EngineerMap';
 import { formatWindow, formatWindowCountdown } from '../engineer/format';
 import { formatLiveCountdown, liveNowAt, moscowTimeInputAt } from '../engineer/live';
@@ -143,6 +146,16 @@ function EngineerSignedIn({
   const [checkingIn, setCheckingIn] = useState(false);
   const [attendanceError, setAttendanceError] = useState<string | null>(null);
   const checkInOperation = useRef<string | null>(null);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantContext, setAssistantContext] = useState<ExplainTarget | undefined>(undefined);
+  const openAssistant = useCallback(
+    (requestId?: string) => {
+      setAssistantContext(requestId ? { scope: 'request', requestId } : undefined);
+      setAssistantOpen(true);
+      setMenuOpen(false);
+    },
+    [setMenuOpen],
+  );
   const plan = useMemo<EngineerPlanResponse | null>(() => {
     if (!storedPlan || !live || live.workday.status === 'pending') return storedPlan;
     const current = live.current?.request;
@@ -274,6 +287,7 @@ function EngineerSignedIn({
             <p className="px-3 py-2 text-sm font-semibold">{profile?.displayName ?? '…'}</p>
             <MenuButton label="Маршрут на день" onClick={() => navigate({ name: 'route' })} />
             <p className="px-3 py-2 text-sm text-muted">Поддержка</p>
+            <MenuButton label="Спросить ассистента" onClick={() => openAssistant()} />
             <MenuButton label="Настройки" onClick={() => navigate({ name: 'settings' })} />
             <MenuButton label="Выйти" onClick={onSignedOut} />
           </nav>
@@ -332,6 +346,7 @@ function EngineerSignedIn({
             onAction={applyLiveAction}
             actionError={actionError}
             onOpenRequest={(requestId) => navigate({ name: 'request', requestId })}
+            onAskAssistant={openAssistant}
           />
         ) : null}
         {loading && profile === null ? (
@@ -378,9 +393,20 @@ function EngineerSignedIn({
             live={live}
             error={error}
             onOpenRequest={(requestId) => navigate({ name: 'request', requestId })}
+            token={token}
           />
         ) : null}
       </main>
+      <DockedAssistant
+        open={assistantOpen}
+        dock="bottom"
+        token={token}
+        surface="engineer"
+        title="Ассистент"
+        contextRef={assistantContext}
+        onClose={() => setAssistantOpen(false)}
+        onOperationApplied={() => void reload()}
+      />
     </div>
   );
 }
@@ -502,12 +528,14 @@ function EngineerLivePanel({
   onAction,
   actionError,
   onOpenRequest,
+  onAskAssistant,
 }: {
   readonly live: EngineerLiveView;
   readonly receivedAtMs: number;
   readonly onAction: (action: EngineerLiveAction) => Promise<boolean>;
   readonly actionError: string | null;
   readonly onOpenRequest: (requestId: string) => void;
+  readonly onAskAssistant: (requestId?: string) => void;
 }) {
   const nowAt = useLiveNow(live, receivedAtMs);
   const [busy, setBusy] = useState(false);
@@ -617,14 +645,18 @@ function EngineerLivePanel({
           {formatLiveCountdown(live.workday.engineerStartDeadlineAt - nowAt)}
         </p>
         <h1 className="mt-2 text-xl font-semibold">
-          {live.engineer.lineStatus === 'no_show_offline' || deadlinePassed
-            ? 'Вы не вышли на линию вовремя'
-            : 'Маршрут готов'}
+          {live.engineer.lineStatus === 'stood_down'
+            ? 'Вы снялись с линии'
+            : live.engineer.lineStatus === 'no_show_offline' || deadlinePassed
+              ? 'Вы не вышли на линию вовремя'
+              : 'Маршрут готов'}
         </h1>
         <p className="mt-3 text-sm text-muted">
-          {live.engineer.lineStatus === 'no_show_offline' || deadlinePassed
-            ? 'План перераспределяется без вашей бригады. Можно выйти сейчас — оставшаяся работа будет пересчитана.'
-            : 'Подтвердите готовность, чтобы открыть список заявок.'}
+          {live.engineer.lineStatus === 'stood_down'
+            ? 'Оставшаяся работа будет пересчитана. Можно вернуться на линию в любой момент.'
+            : live.engineer.lineStatus === 'no_show_offline' || deadlinePassed
+              ? 'План перераспределяется без вашей бригады. Можно выйти сейчас — оставшаяся работа будет пересчитана.'
+              : 'Подтвердите готовность, чтобы открыть список заявок.'}
         </p>
         {actionError ? (
           <p role="alert" className="mt-3 text-sm text-red-700">
@@ -632,7 +664,8 @@ function EngineerLivePanel({
           </p>
         ) : null}
         {live.engineer.lineStatus === 'pending' ||
-        live.engineer.lineStatus === 'no_show_offline' ? (
+        live.engineer.lineStatus === 'no_show_offline' ||
+        live.engineer.lineStatus === 'stood_down' ? (
           <button
             type="button"
             disabled={busy}
@@ -806,6 +839,7 @@ function EngineerLivePanel({
           onDelayMinutes={setDelayMinutes}
           onEquipment={setEquipment}
           onCancel={() => setProblemOpen(false)}
+          onAskAssistant={() => onAskAssistant(current.request.id)}
           onSubmit={() => {
             const additionalDurationSec = Number(delayMinutes) * 60;
             if (
@@ -876,6 +910,7 @@ function ProblemForm({
   onDelayMinutes,
   onEquipment,
   onCancel,
+  onAskAssistant,
   onSubmit,
   busy,
   error,
@@ -889,6 +924,7 @@ function ProblemForm({
   readonly onDelayMinutes: (value: string) => void;
   readonly onEquipment: (value: string) => void;
   readonly onCancel: () => void;
+  readonly onAskAssistant: () => void;
   readonly onSubmit: () => void;
   readonly busy: boolean;
   readonly error: string | null;
@@ -908,6 +944,13 @@ function ProblemForm({
         className="w-full max-w-md rounded-3xl bg-white p-5 shadow-xl"
       >
         <h2 className="text-lg font-semibold">Сообщить о проблеме</h2>
+        <button
+          type="button"
+          onClick={onAskAssistant}
+          className="mt-2 text-sm font-medium text-muted underline"
+        >
+          Не знаю, что выбрать — спросить ассистента
+        </button>
         {error ? (
           <p role="alert" className="mt-3 text-sm text-red-700">
             {error}
@@ -989,6 +1032,7 @@ function EngineerDayPage({
   live,
   error,
   onOpenRequest,
+  token,
 }: {
   readonly profile: EngineerView | null;
   readonly day: EngineerDayView | null;
@@ -997,6 +1041,7 @@ function EngineerDayPage({
   readonly live: EngineerLiveView | null;
   readonly error: string | null;
   readonly onOpenRequest: (requestId: string) => void;
+  readonly token: string;
 }) {
   const items = useMemo(() => dayItems(plan), [plan]);
 
@@ -1045,6 +1090,7 @@ function EngineerDayPage({
                   transport={profile?.transportType ?? 'car'}
                   nowAt={nowAt}
                   onOpen={() => onOpenRequest(item.request.id)}
+                  token={token}
                 />
               </li>
             ),
@@ -1367,26 +1413,33 @@ function RequestCard({
   transport,
   nowAt,
   onOpen,
+  token,
 }: {
   readonly request: RequestView;
   readonly stop: PlanStopView;
   readonly transport: EngineerView['transportType'];
   readonly nowAt: number;
   readonly onOpen: () => void;
+  readonly token: string;
 }) {
   return (
     <article className="rounded-2xl border border-line bg-white p-4">
       <button type="button" onClick={onOpen} className="w-full text-left">
         <RequestDetails request={request} stop={stop} nowAt={nowAt} />
       </button>
-      {request.lat !== null && request.lon !== null ? (
-        <a
-          href={mapsDirectionsUrl(request.lat, request.lon, transport)}
-          className="mt-3 block rounded-full bg-bee py-2 text-center text-sm font-semibold"
-        >
-          Маршрут в картах
-        </a>
-      ) : null}
+      <div className="mt-3 flex items-center gap-2">
+        {request.lat !== null && request.lon !== null ? (
+          <a
+            href={mapsDirectionsUrl(request.lat, request.lon, transport)}
+            className="flex-1 rounded-full bg-bee py-2 text-center text-sm font-semibold"
+          >
+            Маршрут в картах
+          </a>
+        ) : null}
+        {/* Engineer scope: this explain call is bound to the engineer's own request, never
+         * the wider roster -- the server enforces that from the engineer's role profile. */}
+        <ExplainButton token={token} target={{ scope: 'request', requestId: request.id }} compact />
+      </div>
     </article>
   );
 }

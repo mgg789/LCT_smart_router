@@ -1096,6 +1096,110 @@ describe('LIVE workday', () => {
     );
   });
 
+  it('stands an engineer down mid-day as `stood_down`, distinct from a no-show, and republishes availability', async () => {
+    const engineer = await liveCreateEngineer();
+    const request = await liveCreateRequest();
+    await liveApplyPlan(engineer.id, [request]);
+    await liveStart();
+    assert.equal((await liveAction(engineer.token, { kind: 'online' })).status, 201);
+    assert.equal((await liveView(engineer.token)).engineer.lineStatus, 'online');
+    const offline = await liveAction(engineer.token, {
+      kind: 'offline',
+      note: 'Плохо себя чувствую, продолжить не смогу',
+    });
+    assert.equal(offline.status, 201, await offline.clone().text());
+    const after = await liveView(engineer.token);
+    assert.equal(after.engineer.lineStatus, 'stood_down');
+    assert.notEqual(after.engineer.lineStatus, 'no_show_offline');
+    const day = await prisma.engineerDay.findUniqueOrThrow({
+      where: { engineerId_workDate: { engineerId: engineer.id, workDate: workDate() } },
+    });
+    assert.equal(day.availability, 'offline');
+    // The remaining stop is neither completed nor cancelled here: it returns to the pool
+    // through the replan the availability change triggers.
+    assert.equal(
+      (await prisma.request.findUniqueOrThrow({ where: { id: request.id } })).lifecycle,
+      'submitted',
+    );
+    assert.equal(
+      await prisma.liveRequestState.count({
+        where: { requestId: request.id, assumedCompletedAt: { not: null } },
+      }),
+      0,
+    );
+    const current = await prisma.routingCurrent.findUniqueOrThrow({
+      where: { id: 'singleton' },
+      include: { snapshot: true },
+    });
+    assert.equal(current.snapshot.trigger, 'engineer.availability_changed');
+  });
+
+  it('refuses to go offline while on a technical break', async () => {
+    const engineer = await liveCreateEngineer();
+    const request = await liveCreateRequest();
+    await liveApplyPlan(engineer.id, [request]);
+    await liveStart();
+    assert.equal((await liveAction(engineer.token, { kind: 'online' })).status, 201);
+    assert.equal((await liveAction(engineer.token, { kind: 'break_start' })).status, 201);
+    const refused = await liveAction(engineer.token, {
+      kind: 'offline',
+      note: 'Пытаюсь уйти прямо во время перерыва',
+    });
+    assert.equal(refused.status, 422, await refused.clone().text());
+    assert.equal((await liveView(engineer.token)).engineer.lineStatus, 'technical_break');
+  });
+
+  it('refuses to go offline with a visit in progress', async () => {
+    const engineer = await liveCreateEngineer();
+    const request = await liveCreateRequest();
+    await liveApplyPlan(engineer.id, [request]);
+    await liveStart();
+    assert.equal((await liveAction(engineer.token, { kind: 'online' })).status, 201);
+    const before = await liveView(engineer.token);
+    const job = before.route?.stops.find((stop) => stop.requestId === request.id);
+    assert.ok(job);
+    await liveSetLogicalNow(
+      before.workday.id,
+      before.workday.logicalStartAt,
+      before.workday.logicalEndAt,
+      job.startAt + 1,
+      before.workday.speedDurationSec,
+    );
+    assert.equal(
+      (await liveAction(engineer.token, { kind: 'start', requestId: request.id })).status,
+      201,
+    );
+    const refused = await liveAction(engineer.token, {
+      kind: 'offline',
+      note: 'Пытаюсь уйти во время визита',
+    });
+    assert.equal(refused.status, 409, await refused.clone().text());
+    assert.equal((await liveView(engineer.token)).engineer.lineStatus, 'online');
+    assert.equal(
+      (await prisma.request.findUniqueOrThrow({ where: { id: request.id } })).lifecycle,
+      'in_progress',
+    );
+  });
+
+  it('still marks a genuine no-show as `no_show_offline`, unaffected by the stand-down action', async () => {
+    const engineer = await liveCreateEngineer();
+    const request = await liveCreateRequest();
+    await liveApplyPlan(engineer.id, [request]);
+    await liveStart();
+    const initial = await liveView(engineer.token);
+    assert.equal(initial.engineer.lineStatus, 'pending');
+    await liveSetLogicalNow(
+      initial.workday.id,
+      initial.workday.logicalStartAt,
+      initial.workday.logicalEndAt,
+      initial.workday.logicalStartAt + 30 * 60 + 1,
+      initial.workday.speedDurationSec,
+    );
+    const noShow = await liveView(engineer.token);
+    assert.equal(noShow.engineer.lineStatus, 'no_show_offline');
+    assert.notEqual(noShow.engineer.lineStatus, 'stood_down');
+  });
+
   it('finishes the day when no submitted request can still be served', async () => {
     const engineer = await liveCreateEngineer();
     const submitted = await prisma.request.findMany({

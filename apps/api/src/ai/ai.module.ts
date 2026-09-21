@@ -1,4 +1,6 @@
-import { Global, Module, type OnModuleInit } from '@nestjs/common';
+import { existsSync } from 'node:fs';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { Global, Logger, Module, type OnModuleInit } from '@nestjs/common';
 import { AppConfigService } from '../common/config';
 import type { Env } from '../common/config/env.schema';
 import { HealthRegistry } from '../common/health';
@@ -22,6 +24,7 @@ import {
   AI_FALLBACK_PROVIDER,
   BudgetService,
   ConversationService,
+  DispatchChatsService,
   RunEventBus,
   RunRegistry,
   StopService,
@@ -31,6 +34,42 @@ import { AiToolDispatcher, KnowledgeSearchPort, RoleProfileService, ToolRegistry
 
 type PrimaryProviderKind = Env['LLM_PROVIDER'];
 type FallbackProviderKind = Env['LLM_FALLBACK_PROVIDER'];
+
+/**
+ * Resolves the replay fixture directory independently of the process working directory.
+ *
+ * `AI_REPLAY_DIR` is written the way a person reads the repository (`apps/api/test/...`),
+ * but the process is not always started from the repository root: `pnpm --filter api start`
+ * runs from `apps/api`, the compiled tests run from `dist-test`, and the container runs
+ * from its own workdir. A plain relative path therefore resolves differently in each, and
+ * the failure is silent -- a missing fixture is the ordinary case for free-typed input, so
+ * every lookup would simply miss and the offline contour would answer its honest fallback
+ * to everything, never showing a scripted answer. Anchoring on the `api` package root
+ * makes the same configured value mean the same directory everywhere.
+ */
+function resolveReplayDirectory(configured: string): string {
+  if (isAbsolute(configured)) {
+    return configured;
+  }
+  let candidate = __dirname;
+  for (let depth = 0; depth < 8; depth += 1) {
+    if (existsSync(join(candidate, 'package.json'))) {
+      const fromPackage = resolve(candidate, configured);
+      if (existsSync(fromPackage)) {
+        return fromPackage;
+      }
+      // The value is written from the repository root (`apps/api/...`); try that too
+      // before falling back, so both spellings resolve to the same directory.
+      const fromRepoRoot = resolve(candidate, '..', '..', configured);
+      if (existsSync(fromRepoRoot)) {
+        return fromRepoRoot;
+      }
+      break;
+    }
+    candidate = dirname(candidate);
+  }
+  return resolve(configured);
+}
 
 /** Builds the concrete provider for a configured kind. Shared between the primary and
  *  fallback factories below so the two never drift on how a client is constructed. */
@@ -42,12 +81,13 @@ function buildProvider(
   switch (kind) {
     case 'off':
       return new OffProvider();
-    case 'replay':
-      return new ReplayProvider(
-        config.get('AI_REPLAY_DIR'),
-        config.get('AI_REPLAY_SCENARIO'),
-        clock,
-      );
+    case 'replay': {
+      const directory = resolveReplayDirectory(config.get('AI_REPLAY_DIR'));
+      // Logged once, because a wrong directory is otherwise indistinguishable from a
+      // corpus of questions nobody recorded an answer for.
+      new Logger('AiModule').log(`Replay fixtures resolved to ${directory}`);
+      return new ReplayProvider(directory, config.get('AI_REPLAY_SCENARIO'), clock);
+    }
     case 'openai_chat':
       return new OpenAiChatProvider(
         createDeepseekClient({
@@ -88,8 +128,15 @@ function buildFallbackProvider(
  *
  * `RequestsModule`/`EngineersModule`/`LiveModule` are imported so the tool catalogues and
  * the AI action catalogue (`src/ai/operations/ai-action.catalog.ts`) can call the exact
- * same orchestrator services `ClientController`/`EngineerController` call -- never a
- * second implementation of a business rule.
+ * same orchestrator services `ClientController`/`EngineerController`/`DispatchController`
+ * call -- never a second implementation of a business rule. `AlertsService`,
+ * `PolicyService`, `RouterClient`, `AppliedPlanService`, `ControlStateService` and
+ * `SnapshotBuilder`/`SnapshotPublisher` reach the dispatcher tool catalogues
+ * (`src/ai/tools/dispatcher-read.tools.ts`, `dispatcher-write.tools.ts`) the same way
+ * `PrismaService` already reached `AiOperationService` before this change: their owning
+ * modules (`AlertsModule`, `PolicyModule`, `RouterGatewayModule`, `MountDataEngModule`,
+ * `PersistenceModule`) are all `@Global()` and already loaded by `AppModule`, so no new
+ * import is needed here for them.
  *
  * `KnowledgeSearchPort` (src/ai/tools/knowledge-search.port.ts) is bound to the real
  * `KnowledgeService` from `src/ai/knowledge/` -- a parallel piece of work this module
@@ -124,6 +171,7 @@ function buildFallbackProvider(
     ConversationService,
     BudgetService,
     StopService,
+    DispatchChatsService,
     RoleProfileService,
     AiOperationService,
     ToolRegistry,
@@ -139,6 +187,7 @@ function buildFallbackProvider(
     ConversationService,
     BudgetService,
     StopService,
+    DispatchChatsService,
     RoleProfileService,
     AiOperationService,
     ToolRegistry,

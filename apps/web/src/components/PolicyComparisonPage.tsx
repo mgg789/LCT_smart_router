@@ -1,6 +1,8 @@
+import type { ExplainTarget } from '../api/ai';
 import type { DashboardSnapshot, PolicyComparisonResponse, StrategyId } from '../api/types';
 import { POLICY_DESCRIPTIONS, POLICY_LABELS } from '../lib/reasons';
 import { formatClock, formatDurationMin, formatKm } from '../lib/time';
+import { ExplainButton } from './ai/ExplainButton';
 
 interface PolicyComparisonPageProps {
   readonly recorded?: boolean;
@@ -10,6 +12,8 @@ interface PolicyComparisonPageProps {
   readonly loading: boolean;
   readonly error: string | null;
   readonly onRefresh: () => void;
+  readonly token?: string | null;
+  readonly onOpenChat?: (context?: ExplainTarget) => void;
 }
 
 /** Renders a non-mutating comparison of every Router policy and the official FIFO baseline. */
@@ -21,6 +25,8 @@ export function PolicyComparisonPage({
   loading,
   error,
   onRefresh,
+  token = null,
+  onOpenChat,
 }: PolicyComparisonPageProps) {
   const appliedInputHash = snapshot.plan.appliedResult?.inputHash ?? null;
   const isStale =
@@ -171,6 +177,15 @@ export function PolicyComparisonPage({
                                 <span className="mt-1 inline-block text-[12px] text-red-700">
                                   План непригоден
                                 </span>
+                              ) : null}
+                              {row.kind === 'policy' ? (
+                                <ExplainButton
+                                  token={token}
+                                  target={{ scope: 'policy', policyId: row.strategyId }}
+                                  compact
+                                  onOpenChat={onOpenChat}
+                                  className="mt-2"
+                                />
                               ) : null}
                             </td>
                             <td className="px-3 py-4 font-medium">

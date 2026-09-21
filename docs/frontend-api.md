@@ -161,6 +161,47 @@ Authorization: Bearer <token>
 
 **GET `/dispatch/requests/:id/history`** → `{history: [{changedAt, operationId, reason, previous}], asOf}` — журнал прежних условий.
 
+**GET `/dispatch/requests/:id/evidence`** → `{requestId, main, baseline}` — расчётные факты
+и `candidates[]`/`blockers[]` по одной заявке из сохранённого пакета Router
+(`RouterResult.payload.main_evidence`/`baseline_evidence`, реализованный контракт из §11).
+`main`/`baseline` — это `RequestEvidence` (`core/contracts.py`) или `null`, если
+применённый план не несёт пакета обоснований (более старый результат, или Router его не
+вернул) — честная пустая форма, а не выдуманная. Поля внутри переданы как есть
+(snake_case, как у Router), включая `reasons[].basis` — тот же `constraint_check`/
+`calculation_outcome` из §11 — и `candidates[].blockers[]`, который отвечает «почему не
+Петров» и «почему у Сидорова пусто». Пример:
+
+```json
+{
+  "requestId": "req-1",
+  "main": {
+    "request_id": "req-1", "status": "unassigned",
+    "priority": "normal", "required_skill": "connection",
+    "required_transport": null, "required_equipment": null,
+    "service_duration_sec": 900,
+    "window_start_at": 1789459200, "window_end_at": 1789462800,
+    "engineer_id": null, "stop_id": null, "predecessor_request_id": null,
+    "arrival_at": null, "start_at": null, "end_at": null,
+    "waiting_time_sec": null, "window_start_offset_sec": null,
+    "window_end_margin_sec": null, "travel_time_sec": null, "distance_km": null,
+    "reason_codes": ["NO_FEASIBLE_ASSIGNMENT_FOUND"],
+    "reasons": [{"code": "NO_FEASIBLE_ASSIGNMENT_FOUND", "text": "…", "basis": "calculation_outcome", "facts": {}}],
+    "candidates": [{
+      "engineer_id": "eng-1", "label": "Иван Кузнецов",
+      "skills": ["connection"], "transport_type": "car",
+      "equipment_stock": null, "release_at": null, "shift_end_at": 1789480000,
+      "skill_match": true, "transport_match": true, "equipment_match": true,
+      "available": true, "solo_feasible": true,
+      "append_at_route_end_feasible": false,
+      "append_start_at": null, "append_end_at": null,
+      "append_incremental_travel_time_sec": null, "append_incremental_distance_km": null,
+      "assigned_job_count": 3, "blockers": ["current_route_append_infeasible"]
+    }]
+  },
+  "baseline": null
+}
+```
+
 ### 6.2 Инженеры
 
 **GET `/dispatch/engineers`** → `{engineers: [EngineerView & {day: EngineerDayView|null}]}`
@@ -426,12 +467,173 @@ SPA `/engineer/` (вход по коду, список заявок и обед�
 заявки (`/client/requests/:id`, отмена — с `?action=cancel`) и выполняются живой
 сессией заказчика.
 
-## 9. Health (вне `/api/v1`, без авторизации)
+## 9. AI-контур `/api/v1/ai/...` (роли `client`/`engineer`/`dispatcher`)
+
+Полное поведение подсистемы: [ai.md](./ai.md). Здесь — только то, что нужно, чтобы
+написать клиент: транспорт, контракт события и конкретные тела запросов.
+
+### 9.1 Поток событий читайте `fetch` + `ReadableStream`, не `EventSource`
+
+`GET /ai/runs/:runId/events?afterSeq=` — Server-Sent Events, но подключайтесь к нему
+через `fetch(url, {headers: {authorization: 'Bearer <token>'}})` и
+`response.body.getReader()` (готовая реализация — `streamAssistantRun` в
+`apps/web/src/api/ai.ts`), **никогда** через `EventSource`. Причина не стилистическая:
+`EventSource` физически не может отправить заголовок `Authorization`, а этот проект
+запрещает класть bearer-токен в URL (он тогда осел бы в истории браузера, логах прокси
+и заголовке `Referer` любого следующего запроса страницы). `fetch`-стриминг — единственный
+транспорт, который одновременно удовлетворяет модели авторизации и этому правилу; не
+«упрощайте» обратно на `EventSource` — это молча вернёт нешифрованный, неаутентифицированный поток.
+
+Кадры разделены пустой строкой (`\r?\n\r?\n`), как того требует формат SSE; строки
+`data:` внутри кадра склеиваются в один JSON. Комментарии/heartbeat-кадры (`: ping`)
+не несут `data:` и должны быть проигнорированы, не поданы в парсер. Разбор
+незавершённого кадра, пришедшего разрезанным по границе чанка, откладывается до
+следующего чтения — не пытайтесь распарсить частичный остаток.
+
+### 9.2 `?afterSeq=` — правило возобновления
+
+И `GET /ai/runs/:runId/events`, и `GET /ai/conversations/:id/messages` принимают
+`afterSeq` (по умолчанию 0) и отдают строго то, что пришло после него — `seq` назначает
+сервер, строго растёт внутри своей последовательности (запуска — для событий, диалога —
+для сообщений), и это единственный курсор, который обязан хранить клиент. Перезагрузка
+страницы посреди генерации — обычное возобновление с последнего увиденного `seq`, а не
+потерянный ответ. Одно исключение из «читайте всё, что дошло»: `message_delta`
+никогда не персистится и не переигрывается после разрыва — после реконнекта вы получите
+уже готовое `message` этой реплики плюс живые дельты со следующей, но не дорисуете
+частичный текст, который не можете доказать.
+
+### 9.3 Объединение событий запуска
+
+Ровно то же объединение `AiRunEvent`, что в `runtime/ai-event.types.ts` на сервере,
+зеркалится в `apps/web/src/api/ai.ts` как `aiRunEventSchema` (Zod, `discriminatedUnion`
+по `type`):
+
+| `type` | Персистится | Несёт |
+|---|---|---|
+| `run_started` | да | `runId`, `conversationId` |
+| `message_delta` | **нет** | потоковый фрагмент текста (`messageId`, `text`) |
+| `message` | да | готовая реплика: `kind`, `text`, `actions[]` (см. §9.4) |
+| `tool_started` / `tool_result` | да | `toolName` + человекочитаемое намерение / безопасная сводка результата |
+| `operation_prepared` / `operation_state` | да | карточка подготовлена / сменила состояние (см. §9.5) |
+| `help_requested` / `mode_changed` | да | диалог передан диспетчеру / сменил режим `ai`↔`dispatcher` |
+| `quota` | да | `remainingMicros`, `remainingMessages`, `resetAt` |
+| `stopped` | да | `reason`: `user`/`handover`/`budget`/`shutdown` |
+| `error` | да | `code`, `message` — терминальный отказ отрендерен как событие, не как HTTP-ошибка (поток обязан никогда не ошибаться после того, как заголовки SSE уже отправлены) |
+| `run_finished` | да | `state`, `usage` — конец запуска, можно закрывать соединение (`isTerminalAiEvent`) |
+
+Только `message` несёт одну из четырёх согласованных визуальных форм (`kind`):
+`text`, `text_action`, `text_action_cancel`, `text_confirmation`. Остальные типы —
+системные; не расширяйте словарь, который может отрендерить модель, добавлением новых
+`kind` без изменения контракта на обеих сторонах.
+
+### 9.4 Кнопки действий никогда не собирают payload на клиенте
+
+`AiActionButton.kind`: `confirm_operation` / `cancel_operation` / `open_object`.
+`operationId` адресует уже провалидированную сервером подготовленную операцию — клиент
+отправляет его обратно для подтверждения/отмены и никогда сам не собирает бизнес-тело
+запроса. `target` (только для `open_object`) — что должен выбрать дашборд
+(`{type: 'request'|'engineer'|'alert', id}`), никогда URL от модели.
+
+### 9.5 Состояния операции — `outcome_unknown` не значит «отменено»
+
+`AiOperationState`: `prepared` → `awaiting_confirmation` → `running` → одно из
+`applied` / `rejected` / `cancelled_before_apply` / `outcome_unknown`.
+
+`cancelled_before_apply` и `outcome_unknown` — не синонимы и не варианты одного и того
+же «ничего не случилось»:
+
+- `cancelled_before_apply` — карточку **отменили до применения** (кнопка «Отменить»,
+  либо истёк срок `expiresAt` без ответа человека). Записи точно не было.
+- `outcome_unknown` — запись **могла применённой, а могла и нет**: сбой произошёл после
+  вызова `OperationsService.execute`, но до того, как сервер получил подтверждённый
+  ответ. Показывайте это состояние как честную неопределённость (например, «не удалось
+  подтвердить исход — проверьте объект напрямую»), никогда не как «отменено» и никогда
+  как «выполнено» — обе интерпретации были бы догадкой, а не прочитанным фактом.
+
+Остановка запуска (`stopped`) никогда сама по себе не переводит уже применённую карточку
+обратно — если запись случилась, откат — отдельная, обычная разрешённая бизнес-операция,
+а не побочный эффект нажатия «Остановить».
+
+### 9.6 Диалог, сообщение, поток — конкретные тела
+
+**POST `/ai/conversations`** — `{contextRef?, assistMode?}` → `{conversation}`.
+Возвращает существующий открытый диалог своей роли+ланы или создаёт новый.
+`assistMode` (`help`/`fix`) значим только для диспетчера и переключает durable
+общесистемный флаг (`ai.md` §5.1), а не разовое поле этого диалога; для клиента и
+инженера игнорируется.
+
+**GET `/ai/conversations/:id/messages?afterSeq=`** → `{messages: AiMessage[]}` — тот же
+курсор постраничного чтения, что и в §9.2.
+
+**POST `/ai/conversations/:id/messages`** — конверт операций (§4) плюс `{text}` →
+`{runId, messageSeq, handedOver, quota?}`. `handedOver: true` и `runId: null` означают:
+диалог уже передан человеку-диспетчеру (`conversation.mode === 'dispatcher'`) — запуск
+не стартует, квота не тратится, ответа от AI не будет, пока диспетчер не завершит
+передачу. Иначе слушайте `GET /ai/runs/:runId/events`.
+
+**POST `/ai/runs/:runId/stop`** — `{operationId}` → `{stopped: true}`. Запуск всё равно
+закончится штатным `stopped`-событием в потоке (§9.3), а не мгновенно обрубится на этом
+ответе.
+
+**POST `/ai/operations/:id/apply`** / **`.../cancel`** — `{operationId}` →
+`OperationOutcomeView` (`{aiOperationId, state, result?, error?}`, §9.5). Определяющее
+состояние всё равно приходит как `operation_state` в потоке запуска, который подготовил
+карточку — ответ на `apply`/`cancel` можно использовать для мгновенного UI-отклика, но
+не как единственный источник истины, если поток ещё открыт.
+
+Explain-агент (`POST /ai/explain`) и предложение по алерту (`POST
+/ai/alerts/:id/suggest`) — отдельные, дополняющие эндпоинты; их тела и правила отказа
+описаны в «Дополнение 20.09.2026» ниже и в [ai.md](./ai.md) §5.2.
+
+### 9.7 `/dispatch/chats*` — диспетчерская сторона DF-19
+
+Только для роли `dispatcher` (`@Roles('dispatcher')`, как весь остальной `/dispatch`).
+Открытие вкладки — обычное чтение и ничего не меняет (context/36 §9.1).
+
+**GET `/dispatch/chats`** → `{chats: DispatchChatView[]}`, только диалоги в режиме
+`dispatcher`, каждый —
+
+```json
+{
+  "handoff": {
+    "id": "...", "conversationId": "...",
+    "requestedByAccountId": "...", "actorRole": "client"|"engineer"|"dispatcher",
+    "requestIds": ["..."], "engineerIds": ["..."],
+    "state": "waiting"|"answered"|"closed",
+    "createdAt": 0, "firstReplyAt": null
+  },
+  "conversation": AiConversation,
+  "messages": AiMessage[]
+}
+```
+
+Ожидание/ответ читайте по `handoff.state`/`handoff.firstReplyAt`, **не** по
+`conversation.mode` — в этом списке `mode` всегда `dispatcher`, поэтому само по себе оно
+не различает «ждём» и «ответили» (context/38 §7.4: до первого ответа — честное ожидание,
+никогда ложное «оператор подключён»).
+
+**POST `/dispatch/chats/:id/messages`** — `{operationId, text}` → `{message: AiMessage}`.
+`:id` — id диалога (`conversation.id`, тот же, что в `DispatchChatView`). Ответ сохраняется
+с `author: "dispatcher"` и заполненным `authorAccountId`; рана не стартует и квота не
+тратится. Первый такой ответ переводит связанный `AiHandoff` из `waiting` в `answered` и
+проставляет `firstReplyAt`; повторный ответ это не двигает.
+
+**POST `/dispatch/chats/:id/finish`** — `{operationId}` → `{conversation: AiConversation}`
+(теперь `mode: "ai"`). История и уже применённые действия не удаляются и не откатываются
+(context/36 §9.3).
+
+Оба write-эндпоинта отвечают `409 AI_HANDOFF_NOT_ACTIVE`, если для диалога сейчас нет
+открытого `AiHandoff` — диалог никогда не передавался диспетчеру, либо передача уже
+завершена. Это осознанно один и тот же код для обоих случаев: поздний ответ диспетчера
+из уже закрытой вкладки не должен молча переоткрыть передачу (context/36 §9.4) — клиент
+просто перечитывает `GET /dispatch/chats`.
+
+## 10. Health (вне `/api/v1`, без авторизации)
 
 `GET /health/live` → процесс жив. `GET /health/ready` → 503, если недоступна БД.
 `GET /health/services` → `{services: {postgres, router, ai, smtp: {status: "up"|"not_configured"|"down"}}}` — используйте, чтобы честно показать состояние контура.
 
-## 10. Объяснения: причины назначений
+## 11. Объяснения: причины назначений
 
 `assignments[].reasons` (и `routes[].reasons`, и `alerts[].reasons`) — массив причин
 от решателя, не текст для показа как есть:
@@ -450,7 +652,7 @@ SPA `/engineer/` (вход по коду, список заявок и обед�
 `REQUIRED_LUNCH_UNPLACED`; общее: `CONSTRAINTS_SATISFIED`. Незнакомый код показывайте
 как есть, не выдумывая формулировку.
 
-## 11. Типовой поток дашборда
+## 12. Типовой поток дашборда
 
 1. `POST /auth/login-code` + `verify` с `role: "dispatcher"` (или запасной
    `POST /auth/dispatcher/password`) → токен; `GET /health/services` — баннер состояния.
@@ -458,14 +660,14 @@ SPA `/engineer/` (вход по коду, список заявок и обед�
    (`POST /dispatch/data/import {regions:"all"}`).
 3. `GET /dispatch/requests` + `GET /dispatch/engineers` + `GET /dispatch/plan` — день.
 4. `GET /dispatch/alerts`; неназначенные — из `plan.assignments` (`status: "unassigned"`)
-   с причинами из §10.
+   с причинами из §11.
 5. Действия: выбор политики, технастройки, перенос/перестановка (MANUAL), создание/
    правка заявок, отключение инженера — каждый вызов с новым `operationId`.
 6. Обновление: polling `GET /dispatch/plan` (+ `requests`, `alerts`) — SSE пока нет.
 7. Сравнение политик: `GET /dispatch/policy-comparison` по кнопке (тяжёлый, до 90 с
    на холодном снимке), 409 — перечитать; 503 во время rebuild — повторить.
 
-## 12. Что важно не сломать
+## 13. Что важно не сломать
 
 - Время — только целые секунды; таймзона — только на рендере.
 - `operationId` на каждое намерение; ретрай — тем же id.
@@ -489,3 +691,36 @@ SPA `/engineer/` (вход по коду, список заявок и обед�
 и FIFO. Клиент читает старые шестистрочные записи без миграции. Полное покрытие
 не отменяет окна, смены, доступность дорог и оборудование; невозможные назначения
 сохраняются как unassigned. Замеры и ограничения: `docs/policy-efficiency.md`.
+
+## Дополнение 20.09.2026: evidence, explain-агент и предложения по алертам
+
+Реализован контракт из §11: `GET /dispatch/requests/:id/evidence` (см. §6.1)
+и два диспетчерских AI-эндпоинта, дополняющих §9. Оба — только для роли `dispatcher`; сценарий `client`
+у explain-агента отсутствует намеренно: честное объяснение требует состава смены
+(кто ещё был свободен, у кого был навык), а это заказчику не показывают.
+
+**POST `/ai/explain`** — `{scope, requestId?, engineerId?, alertId?, policyId?, question?}`
+→ `{runId}`. `scope`: `request` (назначена/не назначена), `engineer` (маршрут или
+простой), `route` (порядок маршрута), `alert`, `policy` (сравнение политик),
+`degraded` (оценка ручного плана). Ответ — обычный запуск ассистента: слушайте
+`GET /ai/runs/:runId/events` (SSE) так же, как для обычного чата. Один шаг, без
+инструментов, температура 0 — первая реплика уже содержит детерминированное объяснение
+(`facts → influence → result`, тот же порядок, что и в `apps/web/src/lib/explanations.ts`)
+плюс `reasons`/`basis` и `evidence.candidates[]`/`blockers[]` из §6.1/§11; модель только
+переформулирует эти данные, не считает и не изобретает ничего своего (AGENTS.md §9.5,
+D-11, D-3).
+
+**POST `/ai/alerts/:id/suggest`** — `{operationId}` →
+`{proposal, aiOperationId}` или `{refused: true, why}`. `proposal` — провалидированное
+предложение: `action` (только из конечного каталога `alertActionsFor(alert.code)`),
+опционально `minutes`, `windowDate`/`windowStartLocal`/`windowEndLocal` (локальные дата и
+время, не эпоха), `engineerId` (только из вычисленного сервером списка кандидатов на
+`add_engineer` — офлайн, подходящий навык и регион), `reason`, `confidence`,
+`rejected[]` (до трёх других вариантов и почему их не выбрали). Отказ (`refused: true`)
+означает: ответ модели не прошёл валидацию каталога/кандидатов, либо прошёл, но не
+выполнил реальное условие `alerts.service.ts#applyAction` (например, `move_window` без
+упорядоченных границ, `add_engineer` без провалидированного `engineerId`,
+`shift_no_show`-`extend` не на 15 минут, `restore_auto` без `restoreOption`). Повторного
+запроса модели при отказе нет — отказ отдаётся диспетчеру как есть. При успехе
+предложение уже подготовлено как операция `alert.resolve` (`aiOperationId`) — подтверждение
+идёт тем же путём, что и `POST /ai/operations/:id/apply` для любой другой карточки.

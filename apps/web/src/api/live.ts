@@ -2,7 +2,12 @@ import { z } from 'zod';
 import { requestJson } from './client';
 import type { PlanRouteView, PlanStopView, RequestView } from './types';
 
-export type LiveLineStatus = 'pending' | 'online' | 'no_show_offline' | 'technical_break';
+export type LiveLineStatus =
+  | 'pending'
+  | 'online'
+  | 'no_show_offline'
+  | 'stood_down'
+  | 'technical_break';
 export type LivePhase = 'awaiting_window' | 'ready_to_start' | 'in_progress';
 
 export interface LiveWorkday {
@@ -199,7 +204,7 @@ const workdaySchema: z.ZodType<LiveWorkday> = z.object({
 const engineerSchema: z.ZodType<LiveEngineerState> = z.object({
   id: z.string(),
   name: z.string(),
-  lineStatus: z.enum(['pending', 'online', 'no_show_offline', 'technical_break']),
+  lineStatus: z.enum(['pending', 'online', 'no_show_offline', 'stood_down', 'technical_break']),
   availability: z.string(),
   activeRequestId: z.string().nullable(),
   routeState: z.enum(['active', 'awaiting_plan', 'exhausted']),

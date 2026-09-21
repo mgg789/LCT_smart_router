@@ -37,3 +37,38 @@ export type AfterSeqQueryDto = z.infer<typeof afterSeqQuerySchema>;
  *  note on why this is a separate id from the prepared card's own). */
 export const confirmAiOperationSchema = z.object({ operationId: z.uuid() });
 export type ConfirmAiOperationDto = z.infer<typeof confirmAiOperationSchema>;
+
+/**
+ * Body of `POST /ai/explain`.
+ *
+ * `client` is deliberately not an offered scope: an honest explanation needs the roster
+ * (who else was idle, who else had the skill), which a customer must never see (task
+ * brief for `src/ai/explain/**`).
+ */
+export const explainRequestSchema = z
+  .object({
+    scope: z.enum(['request', 'engineer', 'route', 'alert', 'policy', 'degraded']),
+    requestId: z.string().min(1).optional(),
+    engineerId: z.string().min(1).optional(),
+    alertId: z.string().min(1).optional(),
+    policyId: z.string().min(1).optional(),
+    question: z.string().trim().min(1).max(2000).optional(),
+  })
+  .refine((value) => (value.scope === 'request' ? value.requestId !== undefined : true), {
+    message: 'scope "request" needs requestId',
+  })
+  .refine(
+    (value) =>
+      value.scope === 'engineer' || value.scope === 'route' ? value.engineerId !== undefined : true,
+    {
+      message: 'scope "engineer"/"route" needs engineerId',
+    },
+  )
+  .refine((value) => (value.scope === 'alert' ? value.alertId !== undefined : true), {
+    message: 'scope "alert" needs alertId',
+  });
+export type ExplainRequestDto = z.infer<typeof explainRequestSchema>;
+
+/** Body of `POST /ai/alerts/:id/suggest`. */
+export const suggestAlertResolutionSchema = z.object({ operationId: z.uuid() });
+export type SuggestAlertResolutionDto = z.infer<typeof suggestAlertResolutionSchema>;

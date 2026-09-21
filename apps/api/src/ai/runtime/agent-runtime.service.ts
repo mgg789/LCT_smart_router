@@ -4,8 +4,9 @@ import type { Actor } from '../../auth';
 import { AppConfigService } from '../../common/config';
 import { SysError } from '../../common/errors';
 import { Clock } from '../../common/time';
-import type { AiConversation } from '../../generated/prisma/client';
+import type { AiConversation, AiRoleProfile } from '../../generated/prisma/client';
 import { PrismaService, UnitOfWork } from '../../persistence';
+import { buildDispatcherSystemPrompt } from '../profiles/dispatcher.profile';
 import {
   type LlmMessage,
   LlmProvider,
@@ -226,7 +227,12 @@ export class AgentRuntimeService implements OnModuleInit {
 
         const turnInput: LlmTurnInput = {
           model,
-          system: systemPromptFor(conversation.roleProfile),
+          system: systemPromptFor(
+            conversation.roleProfile,
+            this.clock.nowSeconds(),
+            this.config.get('APP_TIME_ZONE'),
+            tools.map((tool) => tool.name),
+          ),
           messages,
           tools,
           maxOutputTokens,
@@ -382,7 +388,24 @@ export class AgentRuntimeService implements OnModuleInit {
   }
 }
 
-function systemPromptFor(roleProfile: string): string {
+/** Dispatcher profiles get their own prompt builder (`profiles/dispatcher.profile.ts`),
+ *  built fresh each turn from the business clock and this turn's actual tool names; the
+ *  client and engineer profiles keep this module's own short generic prompt until they
+ *  get the same treatment as a later, separate change. */
+function systemPromptFor(
+  roleProfile: AiRoleProfile,
+  now: number,
+  timeZone: string,
+  toolNames: readonly string[],
+): string {
+  if (roleProfile === 'dispatcher_readonly' || roleProfile === 'dispatcher_fix') {
+    return buildDispatcherSystemPrompt({
+      assistMode: roleProfile === 'dispatcher_fix' ? 'fix' : 'help',
+      now,
+      timeZone,
+      toolNames,
+    });
+  }
   return (
     'You are the Navix field-engineer routing assistant. Answer concisely and factually. ' +
     `You are currently assisting in the "${roleProfile}" context. ` +

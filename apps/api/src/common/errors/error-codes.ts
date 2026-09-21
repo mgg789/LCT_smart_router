@@ -78,6 +78,15 @@ export const ERROR_CODES = {
    */
   AI_UNAVAILABLE: HttpStatus.SERVICE_UNAVAILABLE,
 
+  /**
+   * A dispatcher chat write (`POST /dispatch/chats/:id/messages` or `.../finish`) named a
+   * conversation with no open `AiHandoff` right now -- it was never escalated to a human,
+   * or the handover already ended. A late reply from a stale dispatcher tab must not
+   * silently reopen it (context/36 section 9.4); the caller re-reads `GET /dispatch/chats`
+   * instead.
+   */
+  AI_HANDOFF_NOT_ACTIVE: HttpStatus.CONFLICT,
+
   /** Unexpected failure; details are logged, not returned. */
   INTERNAL_ERROR: HttpStatus.INTERNAL_SERVER_ERROR,
 } as const;

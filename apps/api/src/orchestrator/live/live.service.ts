@@ -217,7 +217,12 @@ export class LiveService {
     await this.advanceIn(context.tx, day, context.now, liveNow);
     const state = await this.requireEngineerState(context.tx, day.id, engineerId, context.now);
     const businessContext: OperationContext = { ...context, now: liveNow, businessTime: true };
-    if (input.kind !== 'online' && input.kind !== 'break_finish' && state.lineStatus !== 'online') {
+    if (
+      input.kind !== 'online' &&
+      input.kind !== 'break_finish' &&
+      input.kind !== 'offline' &&
+      state.lineStatus !== 'online'
+    ) {
       throw SysError.forbidden('Go online before recording LIVE work actions', {
         lineStatus: state.lineStatus,
       });
@@ -371,6 +376,10 @@ export class LiveService {
 
       case 'break_finish':
         await this.finishBreak(businessContext, state, engineerId);
+        break;
+
+      case 'offline':
+        await this.goOffline(businessContext, state, engineerId);
         break;
     }
     return this.engineerViewIn(context.tx, engineerId, context.now);
@@ -1587,6 +1596,51 @@ export class LiveService {
         resolvedAt: null,
       },
       data: { resolvedAt: BigInt(context.now) },
+    });
+  }
+
+  /**
+   * The engineer's own mid-day stand-down. Distinct from the automatic `no_show_offline`
+   * sweep: this engineer was on the line and is leaving it by an explicit decision, so the
+   * line status must say exactly that rather than imply they never showed up.
+   *
+   * Mirrors `setDispatcherAvailability`'s invariants: a technical break is only ever
+   * finished explicitly, and a visit in progress must be finished or reported first --
+   * going offline decides nothing about it. The remaining route is not cancelled here; it
+   * returns to the pool through the availability-change publication below.
+   */
+  private async goOffline(
+    context: OperationContext,
+    state: LiveEngineerState,
+    engineerId: string,
+  ): Promise<void> {
+    if (state.lineStatus === 'technical_break') {
+      throw new SysError(
+        'VALIDATION_FAILED',
+        'The engineer must finish the technical break explicitly',
+      );
+    }
+    const active = await context.tx.request.findFirst({
+      where: { lifecycle: 'in_progress', facts: { some: { engineerId, kind: 'started' } } },
+      select: { id: true },
+    });
+    if (active) {
+      throw new SysError(
+        'WORK_ALREADY_STARTED',
+        'Finish or report the active visit before going offline',
+        { details: { requestId: active.id } },
+      );
+    }
+    // `setAvailability` publishes `ENGINEER_AVAILABILITY_CHANGED` itself, exactly as
+    // `setDispatcherAvailability` relies on for the same trigger.
+    await this.engineers.setAvailability(context, engineerId, 'offline', null);
+    await context.tx.liveEngineerState.update({
+      where: { id: state.id },
+      data: {
+        lineStatus: 'stood_down',
+        updatedAt: BigInt(context.now),
+        version: { increment: 1 },
+      },
     });
   }
 

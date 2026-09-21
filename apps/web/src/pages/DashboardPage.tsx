@@ -1,11 +1,25 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { BellRing, HardHat, Map as MapIcon, Plus, Settings, ShieldCog } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import {
+  BellRing,
+  Bot,
+  HardHat,
+  Map as MapIcon,
+  MessageCircle,
+  Plus,
+  Settings,
+  ShieldCog,
+} from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { AiAssistMode, ExplainTarget } from '../api/ai';
+import { suggestAlertResolution } from '../api/ai';
 import type { LiveEngineerState, LiveWorkday } from '../api/live';
 import type { EquipmentType } from '../api/types';
 import { AlertsPage } from '../components/AlertsPage';
 import { AlertToasts } from '../components/AlertToasts';
 import { ApiTokensPage } from '../components/ApiTokensPage';
+import { DockedAssistant } from '../components/ai/DockedAssistant';
+import { ExplainButton } from '../components/ai/ExplainButton';
+import { ChatsPage } from '../components/ChatsPage';
 import { DataUploadModal } from '../components/DataUploadModal';
 import { DayMap } from '../components/DayMap';
 import { EngineersPage } from '../components/EngineersPage';
@@ -42,6 +56,7 @@ const NAV = [
   { id: 'policies', label: 'Политики', icon: ShieldCog },
   { id: 'engineers', label: 'Инженеры', icon: HardHat },
   { id: 'alerts', label: 'Алерты', icon: BellRing },
+  { id: 'chats', label: 'Чаты', icon: MessageCircle },
   { id: 'settings', label: 'Настройки', icon: Settings },
 ] as const;
 
@@ -54,6 +69,19 @@ export function DashboardPage() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<DashboardTab>('day');
   const [selectedRegion, setSelectedRegion] = useState<RegionSelection>(ALL_REGIONS);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistMode, setAssistMode] = useState<AiAssistMode>('help');
+  const [assistantContext, setAssistantContext] = useState<ExplainTarget | undefined>(undefined);
+
+  const openAssistant = useCallback((context?: ExplainTarget) => {
+    setAssistantContext(context);
+    setAssistantOpen(true);
+  }, []);
+
+  const handleOperationApplied = useCallback(() => {
+    void dash.refresh();
+    void dash.refreshLive();
+  }, [dash.refresh, dash.refreshLive]);
 
   const regions = useMemo(() => (snapshot ? regionOptions(snapshot) : []), [snapshot]);
   const visibleSnapshot = useMemo(
@@ -201,9 +229,25 @@ export function DashboardPage() {
                     {snapshot.alerts.filter(isOpenAlert).length}
                   </span>
                 )}
+                {item.id === 'chats' && dash.dispatchChatsUnreadCount > 0 && (
+                  <span className="absolute -right-1 -top-1 rounded-full bg-bee px-1 text-xs font-semibold text-ink">
+                    {dash.dispatchChatsUnreadCount}
+                  </span>
+                )}
               </button>
             );
           })}
+          <button
+            type="button"
+            title="Ассистент"
+            aria-label="Открыть ассистента"
+            onClick={() => openAssistant()}
+            className={`relative flex h-10 w-10 items-center justify-center rounded-xl ${
+              assistantOpen ? 'bg-ink text-white' : 'text-muted hover:bg-canvas'
+            }`}
+          >
+            <Bot className="h-5 w-5" strokeWidth={1.8} />
+          </button>
         </nav>
         <button
           type="button"
@@ -375,11 +419,11 @@ export function DashboardPage() {
                         ).length
                       : engineer.doneCount;
                     return (
-                      <li key={engineer.engineerId}>
+                      <li key={engineer.engineerId} className="flex items-start gap-1">
                         <button
                           type="button"
                           onClick={() => dash.selectEngineer(engineer.engineerId)}
-                          className={`flex w-full items-start gap-3 rounded-2xl px-3 py-3 text-left ${
+                          className={`flex min-w-0 flex-1 items-start gap-3 rounded-2xl px-3 py-3 text-left ${
                             selected ? 'bg-canvas' : 'hover:bg-canvas/70'
                           }`}
                         >
@@ -409,6 +453,13 @@ export function DashboardPage() {
                             {liveState ? <LiveEngineerPipeline state={liveState} /> : null}
                           </span>
                         </button>
+                        <ExplainButton
+                          token={dash.token}
+                          target={{ scope: 'engineer', engineerId: engineer.engineerId }}
+                          compact
+                          onOpenChat={openAssistant}
+                          className="mt-3 shrink-0"
+                        />
                       </li>
                     );
                   })}
@@ -432,11 +483,11 @@ export function DashboardPage() {
                         const reasonCode = assignmentFor(visibleSnapshot, request.id)?.reasons
                           .assignment?.factors[0]?.code;
                         return (
-                          <li key={request.id}>
+                          <li key={request.id} className="flex items-start gap-1">
                             <button
                               type="button"
                               onClick={() => dash.selectRequest(request.id)}
-                              className={`w-full rounded-xl px-2 py-2 text-left text-sm ${
+                              className={`min-w-0 flex-1 rounded-xl px-2 py-2 text-left text-sm ${
                                 selected ? 'bg-white' : 'hover:bg-white/50'
                               }`}
                             >
@@ -450,6 +501,13 @@ export function DashboardPage() {
                                 </span>
                               ) : null}
                             </button>
+                            <ExplainButton
+                              token={dash.token}
+                              target={{ scope: 'request', requestId: request.id }}
+                              compact
+                              onOpenChat={openAssistant}
+                              className="mt-2 shrink-0"
+                            />
                           </li>
                         );
                       })}
@@ -496,7 +554,7 @@ export function DashboardPage() {
                         сдвинуты · риски окон {dash.pendingDelta.slaBefore} →{' '}
                         {dash.pendingDelta.slaAfter}
                       </p>
-                      <div className="mt-3 flex gap-2">
+                      <div className="mt-3 flex flex-wrap items-start gap-2">
                         <button
                           type="button"
                           onClick={dash.acceptDelta}
@@ -513,6 +571,12 @@ export function DashboardPage() {
                             Вернуть прежние настройки
                           </button>
                         ) : null}
+                        <ExplainButton
+                          token={dash.token}
+                          target={{ scope: 'degraded', policyId: snapshot.policyId }}
+                          label="Почему план изменился"
+                          onOpenChat={openAssistant}
+                        />
                       </div>
                     </motion.div>
                   ) : null}
@@ -532,10 +596,12 @@ export function DashboardPage() {
                     : null
                 }
                 onSelectRequest={dash.selectRequest}
+                token={dash.token}
+                onOpenChat={openAssistant}
               />
             </section>
 
-            <RequestPanel dash={dash} />
+            <RequestPanel dash={dash} onOpenChat={openAssistant} />
           </div>
         ) : activeTab === 'policies' ? (
           <PolicyComparisonPage
@@ -546,6 +612,8 @@ export function DashboardPage() {
             loading={dash.policyComparisonLoading}
             error={dash.policyComparisonError}
             onRefresh={() => void dash.refreshPolicyComparison()}
+            token={dash.token}
+            onOpenChat={openAssistant}
           />
         ) : activeTab === 'engineers' ? (
           <EngineersPage
@@ -564,10 +632,35 @@ export function DashboardPage() {
         ) : activeTab === 'alerts' ? (
           <AlertsPage
             snapshot={snapshot}
+            token={dash.token}
             writesDisabled={dash.writesDisabled || dash.busy}
             onResolve={dash.resolveAlert}
             onSeen={dash.markNoticeSeen}
             onCloseShift={dash.closeShift}
+            onAiResolve={
+              dash.token
+                ? async (alertId) => {
+                    const result = await suggestAlertResolution(
+                      dash.token as string,
+                      alertId,
+                      crypto.randomUUID(),
+                    );
+                    return 'proposal' in result ? result.proposal : result;
+                  }
+                : undefined
+            }
+            onOpenChat={openAssistant}
+          />
+        ) : activeTab === 'chats' ? (
+          <ChatsPage
+            token={dash.token}
+            chats={dash.dispatchChats}
+            loading={dash.dispatchChatsLoading}
+            error={dash.dispatchChatsError}
+            writesDisabled={dash.writesDisabled}
+            onSendMessage={dash.sendDispatchChatMessage}
+            onFinish={dash.finishDispatchChat}
+            onRefresh={() => void dash.refreshDispatchChats()}
           />
         ) : activeTab === 'settings' ? (
           <ApiTokensPage token={dash.token} />
@@ -583,6 +676,54 @@ export function DashboardPage() {
       {dash.liveWorkday?.workday.status === 'finished' ? (
         <WorkdayFinishedPanel workday={dash.liveWorkday.workday} />
       ) : null}
+      <DockedAssistant
+        open={assistantOpen}
+        dock="side"
+        token={dash.token}
+        surface="dispatcher"
+        title="Ассистент"
+        contextRef={assistantContext}
+        assistMode={assistMode}
+        headerExtra={<AssistModePill mode={assistMode} onChange={setAssistMode} />}
+        notice={
+          assistMode === 'fix'
+            ? 'Режим fix: ассистент готовит операции (перенос, замена исполнителя и т.п.) для вашего подтверждения — сам он ничего не применяет.'
+            : 'Режим help: ассистент только отвечает на вопросы, ничего не меняет.'
+        }
+        onClose={() => setAssistantOpen(false)}
+        onOperationApplied={handleOperationApplied}
+        onOpenObject={(target) => {
+          if (target.type === 'request') dash.selectRequest(target.id);
+          else if (target.type === 'engineer') dash.selectEngineer(target.id);
+          else setActiveTab('alerts');
+        }}
+      />
+    </div>
+  );
+}
+
+function AssistModePill({
+  mode,
+  onChange,
+}: {
+  readonly mode: AiAssistMode;
+  readonly onChange: (mode: AiAssistMode) => void;
+}) {
+  return (
+    <div className="flex rounded-full border border-line p-0.5 text-xs">
+      {(['help', 'fix'] as const).map((value) => (
+        <button
+          key={value}
+          type="button"
+          aria-pressed={mode === value}
+          onClick={() => onChange(value)}
+          className={`rounded-full px-2.5 py-1 font-medium ${
+            mode === value ? 'bg-bee text-ink' : 'text-muted'
+          }`}
+        >
+          {value}
+        </button>
+      ))}
     </div>
   );
 }
@@ -716,6 +857,9 @@ function livePipelineLabel(state: LiveEngineerState): { label: string; className
   }
   if (state.lineStatus === 'no_show_offline') {
     return { label: 'Не вышел на линию', className: 'bg-red-50 text-red-700' };
+  }
+  if (state.lineStatus === 'stood_down') {
+    return { label: 'Снялся с линии', className: 'bg-amber-50 text-amber-800' };
   }
   if (state.activeRequestId) {
     return {
@@ -864,7 +1008,13 @@ function LoginScreen({ loading, error, onPassword, onRequestCode, onCode }: Logi
   );
 }
 
-function RequestPanel({ dash }: { readonly dash: ReturnType<typeof useDashboard> }) {
+function RequestPanel({
+  dash,
+  onOpenChat,
+}: {
+  readonly dash: ReturnType<typeof useDashboard>;
+  readonly onOpenChat: (context?: ExplainTarget) => void;
+}) {
   const snapshot = dash.snapshot;
   if (!snapshot) {
     return null;
@@ -875,6 +1025,11 @@ function RequestPanel({ dash }: { readonly dash: ReturnType<typeof useDashboard>
     snapshot.engineers.find((item) => item.id === assignment?.engineerId) ?? dash.selectedEngineer;
   const route = dash.selectedRoute;
   const explanation = explainSelection(snapshot, request, assignment, engineer, route);
+  const explainTarget: ExplainTarget | null = request
+    ? { scope: 'request', requestId: request.id }
+    : engineer
+      ? { scope: 'engineer', engineerId: engineer.id }
+      : null;
 
   if (!request) {
     return (
@@ -890,7 +1045,12 @@ function RequestPanel({ dash }: { readonly dash: ReturnType<typeof useDashboard>
             : 'Все маршруты дня'}
         </h2>
         {explanation ? (
-          <ExplanationBlock explanation={explanation} />
+          <ExplanationBlock
+            explanation={explanation}
+            target={explainTarget}
+            token={dash.token}
+            onOpenChat={onOpenChat}
+          />
         ) : (
           <p className="mt-3 text-sm text-white/70">
             На карте все инженеры. Клик по заявке или человеку открывает один маршрут.
@@ -971,7 +1131,14 @@ function RequestPanel({ dash }: { readonly dash: ReturnType<typeof useDashboard>
         </p>
       </div>
 
-      {explanation ? <ExplanationBlock explanation={explanation} /> : null}
+      {explanation ? (
+        <ExplanationBlock
+          explanation={explanation}
+          target={explainTarget}
+          token={dash.token}
+          onOpenChat={onOpenChat}
+        />
+      ) : null}
 
       <div className="mt-4 space-y-2">
         <button
@@ -983,19 +1150,32 @@ function RequestPanel({ dash }: { readonly dash: ReturnType<typeof useDashboard>
             ? 'Сменить исполнителя — нужен ручной режим'
             : 'Вернуть автоматический режим'}
         </button>
-        <button
-          type="button"
-          disabled
-          className="w-full rounded-full border border-white/20 py-3 text-sm text-white/40"
-        >
-          Разобрать с ассистентом — нет API
-        </button>
+        {explainTarget ? (
+          <ExplainButton
+            token={dash.token}
+            target={explainTarget}
+            label="Разобрать с ассистентом"
+            tone="dark"
+            fullWidth
+            onOpenChat={onOpenChat}
+          />
+        ) : null}
       </div>
     </aside>
   );
 }
 
-function ExplanationBlock({ explanation }: { readonly explanation: CaseExplanation }) {
+function ExplanationBlock({
+  explanation,
+  target,
+  token,
+  onOpenChat,
+}: {
+  readonly explanation: CaseExplanation;
+  readonly target?: ExplainTarget | null;
+  readonly token?: string | null;
+  readonly onOpenChat?: (context?: ExplainTarget) => void;
+}) {
   return (
     <div className="mt-6 min-h-0 flex-1 overflow-auto">
       <h3 className="text-[17px] font-semibold">{explanation.title}</h3>
@@ -1019,6 +1199,17 @@ function ExplanationBlock({ explanation }: { readonly explanation: CaseExplanati
         <p className="text-[12px] font-medium uppercase tracking-wide text-white/50">Результат</p>
         <p className="mt-2 text-sm text-white">{explanation.result}</p>
       </section>
+      {target ? (
+        <section className="mt-4">
+          <ExplainButton
+            token={token ?? null}
+            target={{ ...target, question: 'Уточни, почему это решение именно такое.' }}
+            label="Спросить ассистента"
+            tone="dark"
+            onOpenChat={onOpenChat}
+          />
+        </section>
+      ) : null}
     </div>
   );
 }

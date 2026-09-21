@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
+import type { ExplainTarget } from '../api/ai';
 import type { LiveBreak, LiveHistoryItem, LiveRouteProgress } from '../api/live';
 import type { DashboardSnapshot, PlanRouteView, RequestView } from '../api/types';
 import { requestById } from '../domain/dashboard';
 import { projectLiveGraph, segmentKey } from '../domain/liveGraph';
 import { engineerColor } from '../lib/reasons';
 import { formatClock } from '../lib/time';
+import { ExplainButton } from './ai/ExplainButton';
 
 interface RouteTimelineProps {
   readonly snapshot: DashboardSnapshot;
@@ -17,6 +19,9 @@ interface RouteTimelineProps {
   /** Factual movement state, independent of the latest solver route revision. */
   readonly progress?: LiveRouteProgress | null;
   readonly onSelectRequest: (requestId: string) => void;
+  /** Assistant token; the per-stop explain affordance is hidden without one. */
+  readonly token?: string | null;
+  readonly onOpenChat?: (context?: ExplainTarget) => void;
 }
 
 function stopStatus(request: RequestView | null, kind: string): string {
@@ -57,6 +62,8 @@ export function RouteTimeline({
   breaks,
   progress = null,
   onSelectRequest,
+  token = null,
+  onOpenChat,
 }: RouteTimelineProps) {
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const [canScroll, setCanScroll] = useState(false);
@@ -283,6 +290,15 @@ export function RouteTimeline({
                         {stopStatus(request, vertex.kind)}
                       </span>
                     </button>
+                    {vertex.requestId ? (
+                      <ExplainButton
+                        token={token}
+                        target={{ scope: 'request', requestId: vertex.requestId }}
+                        compact
+                        onOpenChat={onOpenChat}
+                        className="mt-1"
+                      />
+                    ) : null}
                   </li>
                 ),
               };

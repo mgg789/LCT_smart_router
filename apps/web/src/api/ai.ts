@@ -360,6 +360,157 @@ export function cancelAiOperation(token: string, operationId: string): Promise<A
 }
 
 // ---------------------------------------------------------------------------------------
+// One-shot explain: POST /ai/explain returns a runId, streamed with the same run-events
+// endpoint as a conversation run. Unlike a conversation, this never persists and never
+// hands off to a dispatcher -- it is a quick "why" against one object on screen.
+// ---------------------------------------------------------------------------------------
+
+export const explainScopeSchema = z.enum([
+  'request',
+  'engineer',
+  'route',
+  'alert',
+  'policy',
+  'degraded',
+]);
+export type ExplainScope = z.infer<typeof explainScopeSchema>;
+
+/** The exact `/ai/explain` request body -- also reused as a conversation `contextRef` when
+ * an explain affordance escalates into the full assistant drawer/sheet, since `contextRef`
+ * is defined as "a small server-defined selector object" and this already is one. */
+export interface ExplainTarget {
+  readonly scope: ExplainScope;
+  readonly requestId?: string;
+  readonly engineerId?: string;
+  readonly alertId?: string;
+  readonly policyId?: string;
+  readonly question?: string;
+}
+
+/** Starts a one-shot explain run. Stream its events with `streamAssistantRun`. */
+export function requestAiExplain(token: string, target: ExplainTarget): Promise<{ runId: string }> {
+  return requestJson('/api/v1/ai/explain', z.object({ runId: z.string() }), token, {
+    method: 'POST',
+    body: JSON.stringify(target),
+  });
+}
+
+// ---------------------------------------------------------------------------------------
+// «Решить с AI»: a proposed alert resolution the dispatcher still applies by hand through
+// the existing resolution form -- the assistant only pre-fills it.
+// ---------------------------------------------------------------------------------------
+
+export const alertResolutionProposalSchema = z.object({
+  action: z.string(),
+  minutes: z.number().optional(),
+  windowDate: z.string().optional(),
+  windowStartLocal: z.string().optional(),
+  windowEndLocal: z.string().optional(),
+  engineerId: z.string().optional(),
+  reason: z.string(),
+  confidence: z.number(),
+  rejected: z.array(z.object({ action: z.string(), why: z.string() })),
+});
+export type AlertResolutionProposal = z.infer<typeof alertResolutionProposalSchema>;
+
+const alertSuggestResultSchema = z.union([
+  z.object({ proposal: alertResolutionProposalSchema, aiOperationId: z.string() }),
+  z.object({ refused: z.literal(true), why: z.string() }),
+]);
+export type AlertSuggestResult = z.infer<typeof alertSuggestResultSchema>;
+
+/** Asks the assistant to propose how to resolve one open alert. Never applies anything. */
+export function suggestAlertResolution(
+  token: string,
+  alertId: string,
+  operationId: string,
+): Promise<AlertSuggestResult> {
+  return requestJson(
+    `/api/v1/ai/alerts/${encodeURIComponent(alertId)}/suggest`,
+    alertSuggestResultSchema,
+    token,
+    { method: 'POST', body: JSON.stringify({ operationId }) },
+  );
+}
+
+// ---------------------------------------------------------------------------------------
+// Dispatcher chat handovers: conversations a human dispatcher has been handed, for the
+// «Чаты» tab. Every entry is already `conversation.mode === 'dispatcher'` (the server
+// only lists those), so wait/answered comes from the handoff's own `state` below, not
+// from `mode` -- unlike `HandoffBanner`'s single-conversation view, where reaching
+// `dispatcher` mode at all *is* the "a human replied" signal.
+// ---------------------------------------------------------------------------------------
+
+export const aiHandoffStateSchema = z.enum(['waiting', 'answered', 'closed']);
+export type AiHandoffState = z.infer<typeof aiHandoffStateSchema>;
+
+/**
+ * Who started the handover and in what role, the related request/engineer ids, when it
+ * began, and whether a human has replied yet. `state`/`firstReplyAt` -- never
+ * `conversation.mode` -- decide waiting vs answered: every chat this endpoint lists is
+ * already in `dispatcher` mode, so mode alone cannot tell the two apart.
+ */
+export const aiHandoffSchema = z.object({
+  id: z.string(),
+  conversationId: z.string(),
+  requestedByAccountId: z.string(),
+  actorRole: z.enum(['client', 'engineer', 'dispatcher']),
+  requestIds: z.array(z.string()),
+  engineerIds: z.array(z.string()),
+  state: aiHandoffStateSchema,
+  createdAt: z.number().int(),
+  firstReplyAt: z.number().int().nullable(),
+});
+export type AiHandoffView = z.infer<typeof aiHandoffSchema>;
+
+export const dispatchChatSchema = z.object({
+  handoff: aiHandoffSchema,
+  conversation: aiConversationSchema,
+  messages: z.array(aiMessageSchema),
+  /** Missing on an older server: treated as nothing new, never as a false positive. */
+  unreadCount: z.number().int().nonnegative().default(0),
+});
+export type DispatchChatView = z.infer<typeof dispatchChatSchema>;
+
+/** Conversations currently handed to a human dispatcher. */
+export function loadDispatchChats(token: string): Promise<{ chats: DispatchChatView[] }> {
+  return requestJson(
+    '/api/v1/dispatch/chats',
+    z.object({ chats: z.array(dispatchChatSchema) }),
+    token,
+  );
+}
+
+/** Sends the dispatcher's own reply into a handed-over conversation. */
+export function sendDispatchChatMessage(
+  token: string,
+  chatId: string,
+  operationId: string,
+  text: string,
+): Promise<{ message: AiMessage }> {
+  return requestJson(
+    `/api/v1/dispatch/chats/${encodeURIComponent(chatId)}/messages`,
+    z.object({ message: aiMessageSchema }),
+    token,
+    { method: 'POST', body: JSON.stringify({ operationId, text }) },
+  );
+}
+
+/** Returns the conversation to the AI. History stays -- nothing here deletes messages. */
+export function finishDispatchChat(
+  token: string,
+  chatId: string,
+  operationId: string,
+): Promise<{ conversation: AiConversation }> {
+  return requestJson(
+    `/api/v1/dispatch/chats/${encodeURIComponent(chatId)}/finish`,
+    z.object({ conversation: aiConversationSchema }),
+    token,
+    { method: 'POST', body: JSON.stringify({ operationId }) },
+  );
+}
+
+// ---------------------------------------------------------------------------------------
 // The SSE run stream
 // ---------------------------------------------------------------------------------------
 

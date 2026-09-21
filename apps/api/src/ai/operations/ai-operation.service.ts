@@ -7,10 +7,13 @@ import { canonicalHash } from '../../common/json';
 import { Clock } from '../../common/time';
 import type { AiOperation, AiOperationState } from '../../generated/prisma/client';
 import { AuditService, OperationsService } from '../../operations';
+import { AlertsService } from '../../orchestrator/alerts';
 import { EngineersService } from '../../orchestrator/engineers/engineers.service';
 import { LiveService } from '../../orchestrator/live/live.service';
+import { PolicyService } from '../../orchestrator/policy';
 import { RequestsService } from '../../orchestrator/requests/requests.service';
 import { PrismaService, UnitOfWork } from '../../persistence';
+import { SnapshotPublisher } from '../../routing/mount-data-eng';
 import type { AiPreviewRow } from '../runtime/ai-event.types';
 import { type AiRunEventInput, RunEventBus } from '../runtime/run-event.bus';
 import { RunRegistry } from '../runtime/run-registry';
@@ -84,11 +87,18 @@ export class AiOperationService {
     requests: RequestsService,
     live: LiveService,
     engineers: EngineersService,
+    alerts: AlertsService,
+    policy: PolicyService,
+    publisher: SnapshotPublisher,
   ) {
     this.catalog = buildAiActionCatalog({
       requests,
       live,
       engineers,
+      alerts,
+      policy,
+      publisher,
+      prisma,
       timeZone: config.get('APP_TIME_ZONE'),
     });
   }

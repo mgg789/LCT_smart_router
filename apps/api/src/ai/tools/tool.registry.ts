@@ -2,15 +2,25 @@ import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { AppConfigService } from '../../common/config';
 import type { AiRoleProfile } from '../../generated/prisma/client';
+import { AlertsService } from '../../orchestrator/alerts';
 import { LiveService } from '../../orchestrator/live/live.service';
+import { PolicyService } from '../../orchestrator/policy';
 import { RequestsService } from '../../orchestrator/requests/requests.service';
-import { UnitOfWork } from '../../persistence';
+import { PrismaService, UnitOfWork } from '../../persistence';
+import { SnapshotBuilder } from '../../routing/mount-data-eng';
+import {
+  AppliedPlanService,
+  ControlStateService,
+  RouterClient,
+} from '../../routing/router-gateway';
 import { AiOperationService } from '../operations';
 import type { LlmToolSpec } from '../provider';
 import { RunEventBus } from '../runtime/run-event.bus';
 import { RunRegistry } from '../runtime/run-registry';
 import { StopService } from '../runtime/stop.service';
 import { buildClientTools } from './client.tools';
+import { buildDispatcherReadTools } from './dispatcher-read.tools';
+import { buildDispatcherWriteTools } from './dispatcher-write.tools';
 import { buildEngineerTools } from './engineer.tools';
 import { buildCallDispatchHelperTool } from './handoff.tool';
 import { buildSearchDocumentationTool } from './knowledge.tool';
@@ -20,11 +30,14 @@ import type { AnyToolSpec } from './tool.types';
 /**
  * Which tools a role profile may call.
  *
- * A dispatcher profile currently gets no mutating catalogue of its own -- this change
- * builds the client and engineer catalogues (task boundary); a dispatcher tool catalogue
- * is a later, separate decision, so `catalogueFor('dispatcher_readonly' | 'dispatcher_fix')`
- * returns an empty list rather than reusing another profile's tools it was never asked to
- * expose to a dispatcher's own session.
+ * `dispatcher_readonly` gets the read catalogue (`dispatcher-read.tools.ts`) plus
+ * `search_documentation`; `dispatcher_fix` gets those same read tools plus the preparer
+ * catalogue (`dispatcher-write.tools.ts`). A read-only dispatcher never sees a preparer
+ * tool at all -- the model cannot call what is not in its own `llmSpecsFor` list -- and
+ * even if it somehow did, `AiToolDispatcher.dispatch` would still refuse it through
+ * `find(profile, name)` returning nothing, and `AiOperationService.prepare`/`confirm`
+ * refuse it again independently by role profile (`ai-action.catalog.ts`'s own
+ * `allowedProfiles` on every entry). Three places agree, not one.
  */
 @Injectable()
 export class ToolRegistry {
@@ -40,17 +53,39 @@ export class ToolRegistry {
     stop: StopService,
     bus: RunEventBus,
     registry: RunRegistry,
+    prisma: PrismaService,
+    plans: AppliedPlanService,
+    control: ControlStateService,
+    alerts: AlertsService,
+    policy: PolicyService,
+    router: RouterClient,
+    builder: SnapshotBuilder,
   ) {
     const searchDocumentation = buildSearchDocumentationTool(knowledge);
     const callDispatchHelper = buildCallDispatchHelperTool({ uow, stop, bus, registry });
     const clientTools = buildClientTools({ aiOperations, requests, config });
     const engineerTools = buildEngineerTools({ aiOperations, live, config });
+    const dispatcherReadTools = buildDispatcherReadTools({
+      prisma,
+      live,
+      plans,
+      control,
+      requests,
+      alerts,
+      policy,
+      router,
+      builder,
+    });
+    const dispatcherWriteTools = buildDispatcherWriteTools({ aiOperations, config });
+
+    const dispatcherReadonlyTools = [...dispatcherReadTools, searchDocumentation];
+    const dispatcherFixTools = [...dispatcherReadonlyTools, ...dispatcherWriteTools];
 
     this.catalogues = {
       client: [...clientTools, searchDocumentation, callDispatchHelper],
       engineer: [...engineerTools, searchDocumentation, callDispatchHelper],
-      dispatcher_readonly: [],
-      dispatcher_fix: [],
+      dispatcher_readonly: dispatcherReadonlyTools,
+      dispatcher_fix: dispatcherFixTools,
     };
   }
 

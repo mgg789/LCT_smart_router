@@ -48,7 +48,7 @@ export interface LiveRouteProgressView {
 export interface LiveEngineerStateView {
   readonly id: string;
   readonly name: string;
-  readonly lineStatus: 'pending' | 'online' | 'no_show_offline' | 'technical_break';
+  readonly lineStatus: 'pending' | 'online' | 'no_show_offline' | 'stood_down' | 'technical_break';
   readonly availability: string;
   readonly activeRequestId: string | null;
   readonly technicalBreak: {

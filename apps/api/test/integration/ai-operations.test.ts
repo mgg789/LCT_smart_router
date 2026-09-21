@@ -104,6 +104,62 @@ describe('AI operation prepare/confirm spine', () => {
     return { actor, conversation, run };
   }
 
+  /** A signed-in dispatcher account, already in fix mode, with an open conversation and a
+   *  finished run to attach prepared cards to -- the dispatcher counterpart of
+   *  `newClientSession` above. */
+  async function newDispatcherSession(): Promise<{
+    actor: Actor;
+    conversation: AiConversation;
+    run: AiRun;
+  }> {
+    const now = Math.floor(Date.now() / 1000);
+    const email = `${unique('ai-op-dispatcher-fix')}@example.test`;
+    const account = await prisma.account.create({
+      data: { email, createdAt: BigInt(now), updatedAt: BigInt(now) },
+    });
+    accountIds.push(account.id);
+    await prisma.accountRole.create({
+      data: { accountId: account.id, role: 'dispatcher', grantedAt: BigInt(now) },
+    });
+    const conversation = await prisma.aiConversation.create({
+      data: {
+        accountId: account.id,
+        role: 'dispatcher',
+        roleProfile: 'dispatcher_fix',
+        assistMode: 'fix',
+        createdAt: BigInt(now),
+        updatedAt: BigInt(now),
+        lastMessageAt: BigInt(now),
+      },
+    });
+    conversationIds.push(conversation.id);
+    const run = await prisma.aiRun.create({
+      data: {
+        conversationId: conversation.id,
+        accountId: account.id,
+        quotaDay: '2026-01-01',
+        quotaAccountId: account.id,
+        roleProfile: 'dispatcher_fix',
+        state: 'completed',
+        providerKind: 'replay',
+        model: 'test',
+        reservedMicros: 0,
+        startedAt: BigInt(now),
+        finishedAt: BigInt(now),
+      },
+    });
+    const actor: Actor = {
+      kind: 'account',
+      source: 'ui',
+      id: account.id,
+      role: 'dispatcher',
+      tokenCategory: null,
+      accountId: account.id,
+    };
+    await roleProfiles.setDispatcherAssistMode('fix');
+    return { actor, conversation, run };
+  }
+
   const requestPayload = () => ({
     contactName: `Test Contact ${unique('name')}`,
     addressText: 'Test street 1',
@@ -263,6 +319,55 @@ describe('AI operation prepare/confirm spine', () => {
 
     const row = await prisma.aiOperation.findUniqueOrThrow({ where: { id: prepared.operationId } });
     assert.equal(row.state, 'rejected');
+
+    await roleProfiles.setDispatcherAssistMode('help');
+  });
+
+  it('a dispatcher preparer (policy.select) goes prepare -> confirm -> applied', async () => {
+    const { actor, conversation, run } = await newDispatcherSession();
+
+    const prepared = await aiOperations.prepare({
+      actor,
+      accountId: actor.accountId as string,
+      conversationId: conversation.id,
+      runId: run.id,
+      action: 'policy.select',
+      targetRef: 'compact',
+      payload: { policyId: 'compact' },
+    });
+    assert.equal(prepared.state, 'awaiting_confirmation');
+    assert.ok(prepared.preview.length > 0);
+
+    const stored = await prisma.aiOperation.findUniqueOrThrow({
+      where: { id: prepared.operationId },
+    });
+    assert.equal(stored.state, 'awaiting_confirmation');
+    assert.equal(stored.action, 'policy.select');
+
+    // Nothing happened yet -- the card only prepares, it never writes
+    // (dispatcher-write.tools.ts's own house rule).
+    const beforeConfirm = await prisma.activePolicy.findUnique({ where: { id: 'singleton' } });
+
+    const outcome = await aiOperations.confirm({
+      actor,
+      aiOperationId: prepared.operationId,
+      operationId: randomUUID(),
+    });
+    assert.equal(outcome.state, 'applied');
+    const applied = outcome.result as { policyId: string };
+    assert.equal(applied.policyId, 'compact');
+
+    const finalRow = await prisma.aiOperation.findUniqueOrThrow({
+      where: { id: prepared.operationId },
+    });
+    assert.equal(finalRow.state, 'applied');
+
+    const active = await prisma.activePolicy.findUniqueOrThrow({ where: { id: 'singleton' } });
+    assert.equal(active.policyId, 'compact');
+    if (beforeConfirm) {
+      // The write only actually moved the version at confirm time, not at prepare time.
+      assert.ok(active.version >= beforeConfirm.version);
+    }
 
     await roleProfiles.setDispatcherAssistMode('help');
   });

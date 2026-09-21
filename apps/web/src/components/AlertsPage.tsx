@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { AlertResolutionProposal, ExplainTarget } from '../api/ai';
 import { DashboardApiError } from '../api/client';
 import type { AlertResolutionInput, AlertView, DashboardSnapshot } from '../api/types';
 import {
@@ -10,6 +11,7 @@ import {
   isOpenAlert,
 } from '../domain/alerts';
 import { formatClock, formatDayTitle } from '../lib/time';
+import { ExplainButton } from './ai/ExplainButton';
 
 interface Props {
   readonly snapshot: DashboardSnapshot;
@@ -17,10 +19,26 @@ interface Props {
   readonly onResolve: (id: string, input: AlertResolutionInput) => Promise<void>;
   readonly onSeen: (id: string) => Promise<void>;
   readonly onCloseShift: (date: string, operationId: string) => Promise<void>;
+  /** Present only when a live token can pay for the call. Absent in the demo/cached
+   * contours -- there the «Решить с AI» button stays disabled regardless of `writesDisabled`. */
+  readonly onAiResolve?: (
+    alertId: string,
+  ) => Promise<AlertResolutionProposal | { refused: true; why: string }>;
+  readonly token?: string | null;
+  readonly onOpenChat?: (context?: ExplainTarget) => void;
 }
 
 /** Persistent decision inbox: transient toast dismissal does not alter these records. */
-export function AlertsPage({ snapshot, writesDisabled, onResolve, onSeen, onCloseShift }: Props) {
+export function AlertsPage({
+  snapshot,
+  writesDisabled,
+  onResolve,
+  onSeen,
+  onCloseShift,
+  onAiResolve,
+  token = null,
+  onOpenChat,
+}: Props) {
   const [section, setSection] = useState<'open' | 'history' | 'notices'>('open');
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -144,6 +162,9 @@ export function AlertsPage({ snapshot, writesDisabled, onResolve, onSeen, onClos
               pending={pending === alert.id}
               onResolve={(input) => run(alert.id, () => onResolve(alert.id, input))}
               onSeen={() => run(alert.id, () => onSeen(alert.id)).catch(() => undefined)}
+              onAiResolve={onAiResolve ? () => onAiResolve(alert.id) : undefined}
+              token={token}
+              onOpenChat={onOpenChat}
             />
           ))}
         </div>
@@ -160,6 +181,9 @@ function AlertCard({
   pending,
   onResolve,
   onSeen,
+  onAiResolve,
+  token,
+  onOpenChat,
 }: {
   readonly alert: AlertView;
   readonly snapshot: DashboardSnapshot;
@@ -168,6 +192,9 @@ function AlertCard({
   readonly pending: boolean;
   readonly onResolve: (input: AlertResolutionInput) => Promise<void>;
   readonly onSeen: () => Promise<void>;
+  readonly onAiResolve?: () => Promise<AlertResolutionProposal | { refused: true; why: string }>;
+  readonly token?: string | null;
+  readonly onOpenChat?: (context?: ExplainTarget) => void;
 }) {
   const request = snapshot.requests.find((item) => alert.requestIds.includes(item.id));
   const additionalEngineers = snapshot.engineers.filter(
@@ -184,10 +211,37 @@ function AlertCard({
   const [start, setStart] = useState(request ? alertWindowInput(request.windowStartAt) : '');
   const [end, setEnd] = useState(request ? alertWindowInput(request.windowEndAt) : '');
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiProposal, setAiProposal] = useState<AlertResolutionProposal | null>(null);
+  const [aiRefusal, setAiRefusal] = useState<string | null>(null);
   const retry = useRef<{ fingerprint: string; operationId: string } | null>(null);
   const notice = alert.kind === 'notice';
   const open = isOpenAlert(alert);
   const elapsed = alertDecisionSeconds(alert, now);
+  async function runAiResolve() {
+    if (!onAiResolve) return;
+    setAiLoading(true);
+    setAiRefusal(null);
+    try {
+      const result = await onAiResolve();
+      if ('refused' in result) {
+        setAiRefusal(result.why);
+        return;
+      }
+      setAiProposal(result);
+      setAction(result.action);
+      if (result.minutes !== undefined) setMinutes(result.minutes);
+      if (result.engineerId !== undefined) setEngineerId(result.engineerId);
+      if (result.windowStartLocal !== undefined) setStart(result.windowStartLocal);
+      if (result.windowEndLocal !== undefined) setEnd(result.windowEndLocal);
+      setReason(result.reason);
+      setValidationError(null);
+    } catch (cause) {
+      setAiRefusal(cause instanceof Error ? cause.message : 'Ассистент недоступен');
+    } finally {
+      setAiLoading(false);
+    }
+  }
   async function submit() {
     setValidationError(null);
     try {
@@ -220,11 +274,21 @@ function AlertCard({
     <article
       className={`rounded-2xl border border-line border-l-4 p-5 ${notice ? 'border-l-line bg-canvas' : 'border-l-bee'}`}
     >
-      <div className="flex flex-wrap justify-between gap-2">
+      <div className="flex flex-wrap items-start justify-between gap-2">
         <h2 className="font-semibold">{alertTitle(alert.code)}</h2>
-        <span className="text-xs text-muted">
-          {alert.workDate ?? snapshot.workDate} · {formatClock(alert.createdAt)}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted">
+            {alert.workDate ?? snapshot.workDate} · {formatClock(alert.createdAt)}
+          </span>
+          {!notice ? (
+            <ExplainButton
+              token={token ?? null}
+              target={{ scope: 'alert', alertId: alert.id }}
+              compact
+              onOpenChat={onOpenChat}
+            />
+          ) : null}
+        </div>
       </div>
       {alert.engineerIds.map((id) => (
         <p key={id} className="mt-1 text-sm">
@@ -299,13 +363,47 @@ function AlertCard({
             ))}
             <button
               type="button"
-              disabled
-              title="Выбор варианта с AI появится позже"
-              className="rounded-full border border-line px-4 py-2 text-sm opacity-40"
+              disabled={disabled || !onAiResolve || aiLoading}
+              onClick={() => void runAiResolve()}
+              className="rounded-full border border-line px-4 py-2 text-sm disabled:opacity-40"
             >
-              Решить с AI · скоро
+              {aiLoading ? 'Спрашиваем ассистента…' : 'Решить с AI'}
             </button>
           </div>
+          {aiRefusal && !aiProposal && (
+            <p role="status" className="mt-3 rounded-xl bg-canvas p-3 text-sm text-muted">
+              Ассистент не предложил решение: {aiRefusal}
+            </p>
+          )}
+          {aiProposal && (
+            <div className="mt-3 rounded-xl bg-bee/15 p-3 text-sm">
+              <p className="font-semibold">
+                Предложение ассистента:{' '}
+                {ALERT_ACTION_LABELS[aiProposal.action] ?? aiProposal.action}
+              </p>
+              <p className="mt-1 text-muted">{aiProposal.reason}</p>
+              <p className="mt-1 text-[12px] text-muted">
+                Уверенность: {Math.round(aiProposal.confidence * 100)}%
+              </p>
+              {aiProposal.rejected.length > 0 && (
+                <div className="mt-2">
+                  <p className="text-[12px] font-medium uppercase tracking-wide text-muted">
+                    Отклонённые варианты
+                  </p>
+                  <ul className="mt-1 list-disc space-y-1 pl-5 text-[12px] text-muted">
+                    {aiProposal.rejected.map((item) => (
+                      <li key={item.action}>
+                        {ALERT_ACTION_LABELS[item.action] ?? item.action} — {item.why}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <p className="mt-2 text-[12px] text-muted">
+                Форма ниже заполнена этим предложением. Проверьте и нажмите «Применить решение».
+              </p>
+            </div>
+          )}
           {action && (
             <form
               className="mt-4 space-y-3 rounded-xl bg-canvas p-4"

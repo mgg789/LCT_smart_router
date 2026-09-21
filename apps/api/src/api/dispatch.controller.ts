@@ -1,5 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { EvidenceReader } from '../ai/explain';
+import { DispatchChatsService } from '../ai/runtime';
 import { type Actor, CurrentActor, Roles } from '../auth';
 import { AppConfigService } from '../common/config';
 import { SysError } from '../common/errors';
@@ -31,6 +33,13 @@ import {
   RouterClient,
 } from '../routing/router-gateway';
 import {
+  type AiConversationView,
+  type AiMessageView,
+  toConversationView,
+  toMessageView,
+} from './ai-view';
+import { type DispatchChatView, toDispatchChatView } from './dispatch-chat-view';
+import {
   type CloseShiftDto,
   closeShiftSchema,
   type ResolveAlertDto,
@@ -44,6 +53,12 @@ import {
   type UploadDataPackageDto,
   uploadDataPackageSchema,
 } from './dto/data.dto';
+import {
+  type FinishDispatchChatDto,
+  finishDispatchChatSchema,
+  type SendDispatchChatMessageDto,
+  sendDispatchChatMessageSchema,
+} from './dto/dispatch-chat.dto';
 import {
   type CreateEngineerDto,
   createEngineerSchema,
@@ -124,6 +139,8 @@ export class DispatchController {
     private readonly prisma: PrismaService,
     private readonly clock: Clock,
     private readonly live: LiveService,
+    private readonly evidence: EvidenceReader,
+    private readonly dispatchChats: DispatchChatsService,
   ) {}
 
   @Get('live')
@@ -143,6 +160,67 @@ export class DispatchController {
       async (context) => this.live.start(context),
     );
     return outcome.result;
+  }
+
+  /**
+   * DF-19's dispatcher-facing surface: conversations currently handed from the AI to a
+   * human. Only `dispatcher`-mode conversations appear -- opening this page is a read and
+   * changes nothing (context/36 section 9.1's "Открытие вкладки диспетчером не является
+   * условием выключения агента").
+   */
+  @Get('chats')
+  @ApiOperation({ summary: 'Conversations currently handed from the AI to a dispatcher' })
+  async listChats(): Promise<{ chats: DispatchChatView[] }> {
+    const rows = await this.dispatchChats.listActive();
+    return { chats: rows.map(toDispatchChatView) };
+  }
+
+  @Post('chats/:id/messages')
+  @ApiOperation({
+    summary: "Send the dispatcher's own reply into a handed-over conversation",
+  })
+  async sendChatMessage(
+    @CurrentActor() actor: Actor,
+    @Param('id') id: string,
+    @Body(zodBody(sendDispatchChatMessageSchema)) dto: SendDispatchChatMessageDto,
+  ): Promise<{ message: AiMessageView }> {
+    const dispatcherAccountId = this.requireDispatcherAccount(actor);
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'dispatch_chat.message.send',
+        targetRef: id,
+        payload: dto,
+      },
+      async (context) =>
+        this.dispatchChats.reply(context.tx, context.now, id, dispatcherAccountId, dto.text),
+    );
+    return { message: toMessageView(outcome.result) };
+  }
+
+  @Post('chats/:id/finish')
+  @ApiOperation({
+    summary: 'End a handover: the AI resumes, history and applied actions stay',
+  })
+  async finishChat(
+    @CurrentActor() actor: Actor,
+    @Param('id') id: string,
+    @Body(zodBody(finishDispatchChatSchema)) dto: FinishDispatchChatDto,
+  ): Promise<{ conversation: AiConversationView }> {
+    const dispatcherAccountId = this.requireDispatcherAccount(actor);
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'dispatch_chat.finish',
+        targetRef: id,
+        payload: dto,
+      },
+      async (context) =>
+        this.dispatchChats.finish(context.tx, context.now, id, dispatcherAccountId),
+    );
+    return { conversation: toConversationView(outcome.result) };
   }
 
   @Get('requests')
@@ -305,6 +383,24 @@ export class DispatchController {
       })),
       asOf: this.clock.nowSeconds(),
     };
+  }
+
+  @Get('requests/:id/evidence')
+  @ApiOperation({
+    summary: 'Router evidence for one request: per-request facts and candidate[]/blockers[]',
+  })
+  async requestEvidence(@Param('id') id: string) {
+    // The evidence package travels inside the applied plan's own stored Router result
+    // (`RouterResult.payload.main_evidence`/`baseline_evidence`, `result.types.ts`'s own
+    // note on why the loose object keeps them whole). A plan applied before evidence
+    // existed -- or with no Router result at all -- has none: that is an honest empty
+    // shape, never an invented one (docs/api.md section 10's "next contract").
+    const plan = await this.plans.current(this.prisma);
+    if (!plan?.routerResult) {
+      return { requestId: id, main: null, baseline: null };
+    }
+    const pair = this.evidence.forRequest(plan.routerResult.payload, id);
+    return { requestId: id, main: pair.main, baseline: pair.baseline };
   }
 
   @Get('engineers')
@@ -983,5 +1079,15 @@ export class DispatchController {
       async (context) => this.resetService.run(context, dto.kind, dto.confirmation),
     );
     return outcome.result;
+  }
+
+  /** A dispatcher chat reply or "Завершить передачу" needs a real human behind it, the
+   *  same confirmation `reset` above requires: an integration key carries the dispatcher's
+   *  authority but not a person who could actually be answering a customer. */
+  private requireDispatcherAccount(actor: Actor): string {
+    if (actor.kind !== 'account' || !actor.accountId) {
+      throw SysError.forbidden('A dispatcher chat reply is confirmed from the Dashboard');
+    }
+    return actor.accountId;
   }
 }

@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  type DispatchChatView,
+  finishDispatchChat as finishDispatchChatApi,
+  loadDispatchChats,
+  sendDispatchChatMessage as sendDispatchChatMessageApi,
+} from '../api/ai';
+import {
   closeDispatchShift,
   DashboardApiError,
   importOfficialDataset,
@@ -129,23 +135,33 @@ export function useDashboard() {
   const [liveWorkday, setLiveWorkday] = useState<DispatchLiveView | null>(null);
   const [liveLoading, setLiveLoading] = useState(token !== null);
   const [startingWorkday, setStartingWorkday] = useState(false);
+  const [dispatchChats, setDispatchChats] = useState<DispatchChatView[] | null>(null);
+  const [dispatchChatsLoading, setDispatchChatsLoading] = useState(false);
+  const [dispatchChatsError, setDispatchChatsError] = useState<string | null>(null);
   const refreshInFlight = useRef(false);
   const liveRefreshInFlight = useRef(false);
   const comparisonInFlight = useRef(false);
+  const dispatchChatsInFlight = useRef(false);
   const readGeneration = useRef(0);
   const liveReadGeneration = useRef(0);
   const comparisonRequestId = useRef(0);
+  const dispatchChatsGeneration = useRef(0);
 
   const invalidateAsyncReads = useCallback(() => {
     readGeneration.current += 1;
     liveReadGeneration.current += 1;
     comparisonRequestId.current += 1;
+    dispatchChatsGeneration.current += 1;
     refreshInFlight.current = false;
     liveRefreshInFlight.current = false;
     comparisonInFlight.current = false;
+    dispatchChatsInFlight.current = false;
     setPolicyComparison(null);
     setPolicyComparisonLoading(false);
     setPolicyComparisonError(null);
+    setDispatchChats(null);
+    setDispatchChatsLoading(false);
+    setDispatchChatsError(null);
   }, []);
 
   const handleSessionFailure = useCallback(
@@ -250,6 +266,70 @@ export function useDashboard() {
     }
   }, [handleSessionFailure, reportFailure, token]);
 
+  /** Reads conversations currently handed to a human dispatcher, for the «Чаты» tab and its
+   * nav badge. Follows the same in-flight/generation guard as `refresh`/`refreshLive`. */
+  const refreshDispatchChats = useCallback(async () => {
+    if (!token || sourceRef.current !== 'live' || dispatchChatsInFlight.current) {
+      return null;
+    }
+    const generation = dispatchChatsGeneration.current;
+    dispatchChatsInFlight.current = true;
+    setDispatchChatsLoading(true);
+    try {
+      const next = await loadDispatchChats(token);
+      if (generation !== dispatchChatsGeneration.current) return null;
+      setDispatchChats(next.chats);
+      setDispatchChatsError(null);
+      return next.chats;
+    } catch (cause) {
+      if (generation !== dispatchChatsGeneration.current) return null;
+      reportFailure(cause);
+      if (cause instanceof DashboardApiError && (cause.status === 401 || cause.status === 403)) {
+        handleSessionFailure('Сессия закончилась. Войдите снова.');
+        return null;
+      }
+      setDispatchChatsError(errorMessage(cause));
+      return null;
+    } finally {
+      if (generation === dispatchChatsGeneration.current) {
+        dispatchChatsInFlight.current = false;
+        setDispatchChatsLoading(false);
+      }
+    }
+  }, [handleSessionFailure, reportFailure, token]);
+
+  /** Sends the dispatcher's own reply into a handed-over conversation and folds it into
+   * local state immediately -- the next poll reconciles with the server's copy. */
+  const sendDispatchChatMessage = useCallback(
+    async (chatId: string, text: string) => {
+      if (!token) return;
+      const message = await sendDispatchChatMessageApi(token, chatId, crypto.randomUUID(), text);
+      setDispatchChats((current) =>
+        (current ?? []).map((chat) =>
+          chat.conversation.id === chatId
+            ? { ...chat, messages: [...chat.messages, message.message], unreadCount: 0 }
+            : chat,
+        ),
+      );
+    },
+    [token],
+  );
+
+  /** Returns one conversation to the AI. History stays in place -- nothing here deletes it. */
+  const finishDispatchChat = useCallback(
+    async (chatId: string) => {
+      if (!token) return;
+      await finishDispatchChatApi(token, chatId, crypto.randomUUID());
+      await refreshDispatchChats();
+    },
+    [refreshDispatchChats, token],
+  );
+
+  const dispatchChatsUnreadCount = useMemo(
+    () => (dispatchChats ?? []).reduce((sum, chat) => sum + chat.unreadCount, 0),
+    [dispatchChats],
+  );
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -257,6 +337,13 @@ export function useDashboard() {
   useEffect(() => {
     void refreshLive();
   }, [refreshLive]);
+
+  useEffect(() => {
+    if (!token || source === 'demo') return;
+    void refreshDispatchChats();
+    const interval = window.setInterval(() => void refreshDispatchChats(), 8_000);
+    return () => window.clearInterval(interval);
+  }, [token, source, refreshDispatchChats]);
 
   useEffect(() => {
     if (!token || source === 'demo' || rebuilding || liveWorkday?.workday.status === 'running') {
@@ -1075,6 +1162,13 @@ export function useDashboard() {
     liveWorkday,
     liveLoading,
     startingWorkday,
+    dispatchChats,
+    dispatchChatsLoading,
+    dispatchChatsError,
+    dispatchChatsUnreadCount,
+    refreshDispatchChats,
+    sendDispatchChatMessage,
+    finishDispatchChat,
     engineers,
     unassigned,
     selectedEngineerId,
@@ -1197,6 +1291,7 @@ function liveEngineerEvent(engineer: LiveEngineerState): string {
   if (engineer.pendingDelayProblem) return 'сообщил о задержке';
   if (engineer.lineStatus === 'technical_break') return 'на техническом перерыве';
   if (engineer.lineStatus === 'no_show_offline') return 'не вышел на линию';
+  if (engineer.lineStatus === 'stood_down') return 'снялся с линии';
   if (engineer.activeRequestId) return `работает с заявкой №${engineer.activeRequestId}`;
   if (engineer.lineStatus === 'online') return 'вышел на линию';
   return 'ожидает выхода на линию';

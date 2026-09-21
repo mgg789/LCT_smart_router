@@ -353,6 +353,7 @@ function availabilityLabel(availability: string): string {
 function liveLineLabel(state: LiveEngineerState | undefined, availability: string): string {
   if (state?.lineStatus === 'pending') return 'Ожидает выхода';
   if (state?.lineStatus === 'no_show_offline') return 'Не вышел на линию';
+  if (state?.lineStatus === 'stood_down') return 'Снялся с линии';
   if (state?.lineStatus === 'technical_break') return 'Техперерыв';
   if (state?.lineStatus === 'online') return 'На линии';
   return availabilityLabel(availability);
