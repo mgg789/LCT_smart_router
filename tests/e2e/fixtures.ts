@@ -57,8 +57,9 @@ export async function signIn(page: Page) {
   await page.getByRole('button', { name: 'Войти', exact: true }).click();
   const start = page.getByRole('button', { name: 'Начать рабочий день', exact: true });
   const plan = page.getByRole('button', { name: 'План дня', exact: true });
-  const chrome = page.getByRole('button', { name: 'Загрузить данные', exact: true });
-  await expect(start.or(plan).or(chrome)).toBeVisible();
+  // After smoke the chrome («Загрузить данные») is already on screen with «План дня».
+  // Wait only for the day controls; `.first()` keeps strict mode if both exist.
+  await expect(start.or(plan).first()).toBeVisible({ timeout: 45_000 });
   if (await start.isVisible()) {
     await start.click();
     await expect(start).toBeHidden();

@@ -38,6 +38,10 @@
 `problem` принимает `problemKind` (`delay`, `missing_equipment`, `other`, `impossible`),
 обязательный `note`; задержка — `additionalDurationSec`, оборудование —
 `missingEquipment` (`router`, `set_top_box`, `smart_speaker`).
+Задержка на уже начатой заявке пишет только прогноз (`expectedCompletionAt`,
+`continuationAvailableAt`) и не меняет каталожный `serviceDurationSec` — его сумма
+технической и документационной составляющих фиксирована CHECK-ом. Карточка инженера
+берёт показанную длительность из `expectedCompletionAt − startedAt`.
 Время факта клиент не передаёт. Действия возвращают актуальное представление LIVE.
 
 `DispatchLiveView.history` сохраняет выполненные, отменённые и пройденные по графику

@@ -364,8 +364,10 @@ describe('LIVE workday', () => {
     const stored = await prisma.request.findUniqueOrThrow({ where: { id: request.id } });
     assert.equal(stored.lifecycle, 'in_progress');
     assert.equal(stored.completedAt, null);
-    assert.ok(stored.serviceDurationSec >= 40 * 60);
-    assert.ok(stored.serviceDurationSec < 12 * 3600);
+    assert.equal(
+      stored.serviceDurationSec,
+      stored.technicalDurationSec + stored.documentationDurationSec,
+    );
     const problem = await prisma.requestFact.findFirstOrThrow({
       where: { requestId: request.id, kind: 'problem' },
     });
@@ -1333,8 +1335,10 @@ describe('LIVE workday', () => {
     );
     const afterDelay = await prisma.request.findUniqueOrThrow({ where: { id: request.id } });
     assert.equal(afterDelay.overrunDetectedAt, null);
-    assert.ok(afterDelay.serviceDurationSec >= 2400);
-    assert.ok(afterDelay.serviceDurationSec < 12 * 3600);
+    assert.equal(
+      afterDelay.serviceDurationSec,
+      afterDelay.technicalDurationSec + afterDelay.documentationDurationSec,
+    );
     assert.equal(
       (
         await liveAction(engineer.token, {

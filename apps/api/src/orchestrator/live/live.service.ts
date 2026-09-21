@@ -1630,6 +1630,8 @@ export class LiveService {
       await context.tx.request.update({
         where: { id: input.requestId },
         data: {
+          // Keep the workbook identity: service_duration_sec = technical + documentation.
+          technicalDurationSec: stored.technicalDurationSec + extra,
           serviceDurationSec: nextDuration,
           windowEndAt: BigInt(windowEndAt),
           updatedAt: BigInt(context.now),
@@ -1664,23 +1666,17 @@ export class LiveService {
     if (input.problemKind === 'delay') {
       if (current.phase === 'in_progress') {
         const extra = input.additionalDurationSec ?? 0;
-        const liveNow = this.liveNow(day, context.now);
-        const expectedWall = context.now + extra;
+        // `act()` already mapped wall time onto the logical clock in `context.now`.
+        const expected = context.now + extra;
         const actualStart = current.current?.request.startedAt;
         const norm = current.current?.request.serviceDurationSec;
-        // startedAt is logical LIVE time; expectedCompletionAt stays on the wall
-        // clock of the fact. Mixing those domains produced a ~10^9 "duration"
-        // that blew up snapshot publication (CI 500 on delay).
-        const nextDuration =
-          actualStart === null || actualStart === undefined
-            ? null
-            : Math.max(1, liveNow + extra - actualStart);
         await context.tx.request.update({
           where: { id: input.requestId },
           data: {
-            ...(nextDuration !== null ? { serviceDurationSec: nextDuration } : {}),
-            expectedCompletionAt: BigInt(expectedWall),
-            continuationAvailableAt: BigInt(expectedWall),
+            // Catalogue `serviceDurationSec` must stay technical+documentation. The
+            // engineer card reads the delay from expectedCompletionAt − startedAt.
+            expectedCompletionAt: BigInt(expected),
+            continuationAvailableAt: BigInt(expected),
             overrunDetectedAt: null,
             updatedAt: BigInt(context.now),
             version: { increment: 1 },
@@ -1690,7 +1686,7 @@ export class LiveService {
           actualStart !== null &&
           actualStart !== undefined &&
           norm !== undefined &&
-          liveNow + extra > actualStart + norm + MATERIAL_DELAY_SEC
+          expected > actualStart + norm + MATERIAL_DELAY_SEC
         ) {
           await this.publisher.publishIfChanged(
             context.tx,
