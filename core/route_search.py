@@ -86,7 +86,18 @@ class RouteEvaluator:
         if release is None and len(jobs) == 1:
             release = self.terminal_releases[index]
         if release is None:
-            return None if jobs else RouteState(jobs)
+            if jobs:
+                return None
+            # Public policy_score/from_route retain this constant penalty even when
+            # the route is disabled. A freshly constructed candidate must match a seed.
+            return RouteState(
+                jobs,
+                lunch_missed=int(
+                    engineer.lunch.enabled
+                    and not engineer.lunch_taken
+                    and not engineer.lunch.required
+                ),
+            )
         if any(index not in self.allowed[job] for job in jobs):
             return None
         if engineer.lunch.enabled and not engineer.lunch_taken:

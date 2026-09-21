@@ -2,11 +2,12 @@
 
 import json
 from itertools import permutations
+from random import Random
 from types import SimpleNamespace
 
 import pytest
-from core.contracts import GeoPoint, Policy
-from core.engine import SearchSettings, solve
+from core.contracts import EquipmentStock, GeoPoint, LunchInput, Policy, RouterTaskSnapshot
+from core.engine import SearchSettings, apply_system_policy, solve
 from core.geo import GraphTravel, TravelQuote, configure_travel
 from core.policy import policy_score
 from core.route_search import RouteEvaluator
@@ -79,6 +80,31 @@ def test_balanced_search_score_matches_public_score_for_terminal_release(snapsho
         *internal[2:],
     )
     assert normalized == public
+
+
+def test_unavailable_optional_lunch_has_the_same_score_in_seeds_and_new_candidates(snapshot, graph):
+    """The same empty route must not gain/lose a penalty depending on its construction path."""
+    now = snapshot.planning_as_of
+    engineer = snapshot.engineers[0].model_copy(
+        update={
+            "availability": "offline",
+            "available_from": None,
+            "expected_online_at": None,
+            "lunch": LunchInput(
+                enabled=True,
+                required=False,
+                duration_sec=300,
+                window_start_at=now + 1000,
+                window_end_at=now + 2000,
+            ),
+        }
+    )
+    task = snapshot.model_copy(update={"engineers": [engineer]})
+    travel = GraphTravel(graph)
+    evaluator = RouteEvaluator(task, travel)
+    canonical = fixed_order(task, engineer, [], travel)
+    assert canonical is not None
+    assert evaluator.evaluate(0, ()) == evaluator.from_route(canonical)
 
 
 @pytest.mark.parametrize("traffic", [False, True])
@@ -232,3 +258,75 @@ def test_policy_benchmark_exposes_the_search_settings_it_actually_uses(
     report = json.loads(output.read_text(encoding="utf-8"))
     assert report["search_settings"]["solution_limit"] == expected_limit
     assert all(settings.solution_limit == expected_limit for settings in seen)
+
+
+def test_fast_evaluator_matches_canonical_under_seeded_constraints(snapshot, graph):
+    """Exercise 2000 combinations of windows, shifts, lunch, stock, transport and availability."""
+    source = snapshot
+    roads = GraphTravel(graph)
+    rng = Random(20260921)
+    now = source.planning_as_of
+    feasible = 0
+    checked = 0
+    for case in range(2000):
+        enabled = rng.choice([False, True])
+        lunch = LunchInput(
+            enabled=enabled,
+            duration_sec=300 if enabled else None,
+            window_start_at=now + 600 if enabled else None,
+            window_end_at=now + 3000 if enabled else None,
+            required=enabled and rng.choice([False, True]),
+        )
+        shift = rng.choice([1200, 2400, 3600, 6000])
+        engineer = source.engineers[0].model_copy(
+            update={
+                "shift_end_at": now + shift,
+                "available_from": rng.choice([None, now, now + 600, now + shift + 100]),
+                "transport_type": rng.choice(["car", "walk", "bike", "transit"]),
+                "availability": rng.choice(["online", "offline"]),
+                "expected_online_at": rng.choice([None, now + 300, now + 1800]),
+                "lunch": lunch,
+                "lunch_taken": False,
+                "equipment_stock": EquipmentStock(
+                    router=rng.randrange(3), set_top_box=0, smart_speaker=0
+                ),
+            }
+        )
+        requests = []
+        for i in range(6):
+            start = rng.randrange(0, 2400)
+            requests.append(
+                source.requests[0].model_copy(
+                    update={
+                        "request_id": f"r{i}",
+                        "arrival_order": i,
+                        "location": rng.choice(graph.nodes).location,
+                        "window_start_at": now + start,
+                        "window_end_at": now + start + rng.randrange(60, 2400),
+                        "service_duration_sec": rng.choice([60, 300, 900]),
+                        "priority": rng.choice(["normal", "urgent"]),
+                        "required_transport": rng.choice([None, None, "car"]),
+                        "required_equipment": rng.choice([None, None, "router"]),
+                    }
+                )
+            )
+        task = source.model_copy(update={"engineers": [engineer], "requests": requests})
+        task = RouterTaskSnapshot.model_validate(task.model_dump())
+        settings = SearchSettings(
+            lunches_enabled=enabled,
+            traffic_enabled=rng.choice([False, True]),
+            window_lateness_tolerance_sec=rng.choice([0, 600, 1200]),
+        )
+        task = apply_system_policy(task, settings)
+        travel = configure_travel(roads, settings.technical(), now)
+        jobs = tuple(rng.sample([r.request_id for r in requests], rng.randrange(7)))
+        evaluator = RouteEvaluator(task, travel)
+        fast = evaluator.evaluate(0, jobs)
+        canonical = fixed_order(task, task.engineers[0], list(jobs), travel)
+        checked += 1
+        assert (fast is None) == (canonical is None), f"feasibility mismatch in case {case}: {jobs}"
+        if fast is not None:
+            assert fast == evaluator.from_route(canonical), f"score mismatch in case {case}: {jobs}"
+        feasible += fast is not None
+    assert checked == 2000
+    assert feasible > 100
