@@ -17,8 +17,33 @@ export const CLIENT_PROBLEMS = [
 ] as const;
 
 export type ClientProblem = (typeof CLIENT_PROBLEMS)[number];
-export type ClientScreenId = 'new' | 'list' | 'support';
-export type ClientRequestStatus = 'en_route' | 'planned' | 'done';
+
+/**
+ * Customer wording on the form, and the catalogue code the router actually plans.
+ * The customer never types a skill or a duration.
+ */
+export const CLIENT_PROBLEM_WORK: Record<
+  ClientProblem,
+  { workType: string; requiredEquipment?: 'router' }
+> = {
+  'Интернет не работает': { workType: 'no_link' },
+  'Починить роутер': { workType: 'router_replacement', requiredEquipment: 'router' },
+  'IP-телефония': { workType: 'information' },
+  'Подключение офиса': { workType: 'connection_request' },
+  'Настроить Wi-Fi': { workType: 'cable_work' },
+  'Другое...': { workType: 'information' },
+};
+
+export type ClientScreenId = 'new' | 'list' | 'support' | 'sent';
+export type ClientRequestStatus =
+  | 'en_route'
+  | 'planned'
+  | 'done'
+  | 'assigned'
+  | 'unassigned'
+  | 'in_progress'
+  | 'completed'
+  | 'cancelled';
 
 /** Local preview card — first pass has no client API. */
 export interface ClientRequestView {
@@ -46,11 +71,21 @@ export interface ClientRequestView {
 
 export interface ClientRequestDraft {
   problem: ClientProblem | '';
+  contactName: string;
   address: string;
   windowStart: string;
   windowEnd: string;
   email: string;
   point: ClientMapPoint | null;
+}
+
+/** Fields remembered on the account after at least one sent request. */
+export interface ClientProfileMemory {
+  email: string;
+  contactName: string | null;
+  addressText: string | null;
+  lat: number | null;
+  lon: number | null;
 }
 
 const WORK_DATE = '2026-09-15';
@@ -67,6 +102,7 @@ export const CLIENT_PROFILE = {
 
 export const EMPTY_CLIENT_DRAFT: ClientRequestDraft = {
   problem: 'Интернет не работает',
+  contactName: '',
   address: '',
   windowStart: '12:00',
   windowEnd: '14:00',
@@ -159,15 +195,106 @@ export function splitClientRequests(requests: readonly ClientRequestView[]): {
   };
 }
 
-/** True when the Figma form has enough to show «Отправить» as enabled. */
-export function canSubmitClientForm(draft: ClientRequestDraft): boolean {
+/**
+ * Open work on «Мои заявки»: assigned, not yet assigned (including a result
+ * that is still pending), and a visit already in progress.
+ * Completed and cancelled stay in the archive.
+ */
+export function isActualClientRequest(input: {
+  lifecycle: string;
+  assignmentState: string;
+}): boolean {
+  if (input.lifecycle === 'in_progress') return true;
+  if (input.lifecycle !== 'submitted') return false;
   return (
-    draft.problem.length > 0 &&
-    draft.address.trim().length > 0 &&
-    isClock(draft.windowStart) &&
-    isClock(draft.windowEnd) &&
-    draft.email.trim().includes('@')
+    input.assignmentState === 'assigned' ||
+    input.assignmentState === 'unassigned' ||
+    input.assignmentState === 'pending'
   );
+}
+
+/** Russian status the customer sees. Pending is still «not assigned». */
+export function clientStatusLabel(input: { lifecycle: string; assignmentState: string }): string {
+  if (input.lifecycle === 'in_progress') return 'В работе';
+  if (input.lifecycle === 'completed') return 'Выполнена';
+  if (input.lifecycle === 'cancelled') return 'Отменена';
+  if (input.lifecycle === 'submitted' && input.assignmentState === 'assigned') return 'Назначена';
+  if (input.lifecycle === 'submitted') return 'Не назначена';
+  return 'Черновик';
+}
+
+/** True when the form has enough to ask for the email code. */
+export function canSubmitClientForm(draft: ClientRequestDraft): boolean {
+  return clientPrepareBody(draft) !== null;
+}
+
+/**
+ * Body of `POST /client/requests/submitted`, without the operation id.
+ * Returns null until name, address, map point, window and email are usable.
+ * The request itself is not created here.
+ */
+export function clientPrepareBody(
+  draft: ClientRequestDraft,
+  nowMs = Date.now(),
+): {
+  contactName: string;
+  addressText: string;
+  lat: number;
+  lon: number;
+  workType: string;
+  requiredEquipment?: 'router';
+  windowStartAt: number;
+  windowEndAt: number;
+  urgent: boolean;
+  problemText: string;
+} | null {
+  if (draft.problem.length === 0) return null;
+  const contactName = draft.contactName.trim();
+  const addressText = draft.address.trim();
+  const email = draft.email.trim();
+  if (contactName.length === 0 || addressText.length === 0 || !email.includes('@')) return null;
+  if (!isClock(draft.windowStart) || !isClock(draft.windowEnd) || draft.point === null) return null;
+  const [startHour, startMinute] = parseClock(draft.windowStart);
+  const [endHour, endMinute] = parseClock(draft.windowEnd);
+  const workDate = moscowWorkDate(nowMs);
+  const windowStartAt = moscowAt(workDate, startHour, startMinute);
+  const windowEndAt = moscowAt(workDate, endHour, endMinute);
+  if (windowEndAt <= windowStartAt) return null;
+  const work = CLIENT_PROBLEM_WORK[draft.problem];
+  return {
+    contactName,
+    addressText,
+    lat: draft.point.lat,
+    lon: draft.point.lon,
+    workType: work.workType,
+    ...(work.requiredEquipment === undefined ? {} : { requiredEquipment: work.requiredEquipment }),
+    windowStartAt,
+    windowEndAt,
+    urgent: false,
+    problemText: draft.problem,
+  };
+}
+
+/**
+ * Fills only the blanks. A value the customer already typed stays.
+ * Name, address and the map point appear only after a sent request exists.
+ */
+export function prefillClientDraft(
+  draft: ClientRequestDraft,
+  profile: ClientProfileMemory,
+): ClientRequestDraft {
+  return {
+    ...draft,
+    email: draft.email.trim().length > 0 ? draft.email : profile.email,
+    contactName:
+      draft.contactName.trim().length > 0 ? draft.contactName : (profile.contactName ?? ''),
+    address: draft.address.trim().length > 0 ? draft.address : (profile.addressText ?? ''),
+    point:
+      draft.point ??
+      (profile.lat !== null && profile.lon !== null
+        ? { lat: profile.lat, lon: profile.lon }
+        : null),
+  };
 }
 
 /** Next visible ticket number from the current preview list. */

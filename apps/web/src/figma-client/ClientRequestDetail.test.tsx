@@ -1,10 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it } from 'vitest';
-import {
-  CLIENT_DETAIL_NOW_MS,
-  CLIENT_PREVIEW_REQUESTS,
-} from './clientPreview';
 import { ClientRequestDetail } from './ClientRequestDetail';
+import { CLIENT_DETAIL_NOW_MS, CLIENT_PREVIEW_REQUESTS } from './clientPreview';
 
 it('keeps the Figma request ticket and planned-start block', () => {
   const item = CLIENT_PREVIEW_REQUESTS[0];
@@ -23,5 +20,7 @@ it('keeps the Figma request ticket and planned-start block', () => {
   expect(html).toContain('Адрес на карте');
   expect(html).toContain('плановое начало визита');
   expect(html).toContain('Изменить время');
+  expect(html).toContain('data-seo-path="/client/requests/req-1042"');
+  expect(html).toContain('data-seo-title=');
   expect(html).toContain('rounded-full bg-figma-ink');
 });

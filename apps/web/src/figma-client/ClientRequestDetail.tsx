@@ -6,6 +6,7 @@ import { eu } from '../figma-engineer/engineerScale';
 import { RequestMap } from '../figma-engineer/RequestMap';
 import { CLIENT_ASSETS } from './assets';
 import type { ClientRequestView } from './clientPreview';
+import { clientRequestSeo } from './clientRequestSeo';
 
 /**
  * Figma REQUEST 115:713 — back + time-until, map, planned start, dark ticket.
@@ -23,9 +24,13 @@ export function ClientRequestDetail({
   onBack: () => void;
   onChangeTime: () => void;
 }) {
+  const seo = clientRequestSeo(item);
   return (
     <section
       className="flex min-h-dvh flex-col"
+      data-seo-path={seo.path}
+      data-seo-title={seo.title}
+      data-seo-description={seo.description}
       style={{ padding: `${eu(36)} ${eu(40)} ${eu(40)}` }}
     >
       <header className="flex items-center" style={{ gap: eu(20) }}>
@@ -102,13 +107,13 @@ export function ClientRequestDetail({
           padding: `${eu(36)} ${eu(24)} ${eu(32)}`,
         }}
       >
-        <p className="font-murs leading-none tracking-[-0.02em] text-figma-ink" style={{ fontSize: eu(72) }}>
+        <p
+          className="font-murs leading-none tracking-[-0.02em] text-figma-ink"
+          style={{ fontSize: eu(72) }}
+        >
           {formatPlanTime(item.startAt)}
         </p>
-        <p
-          className="font-medium text-figma-muted"
-          style={{ marginTop: eu(16), fontSize: eu(22) }}
-        >
+        <p className="font-medium text-figma-muted" style={{ marginTop: eu(16), fontSize: eu(22) }}>
           плановое начало визита
         </p>
         <span
@@ -137,10 +142,7 @@ export function ClientRequestDetail({
             aria-hidden
           />
         </div>
-        <p
-          className="font-medium text-white/70"
-          style={{ marginTop: eu(10), fontSize: eu(22) }}
-        >
+        <p className="font-medium text-white/70" style={{ marginTop: eu(10), fontSize: eu(22) }}>
           {item.workTypeTitle}
         </p>
         <Chip>{item.problemTitle}</Chip>
@@ -204,5 +206,8 @@ function Chip({ children }: { children: string }) {
 
 /** Drops the «Офис - » prefix so the ticket street chip matches Figma. */
 function streetOnly(address: string): string {
-  return address.replace(/^Офис\s+-\s+/u, '').replace(/^ул\.\s+/u, '').trim();
+  return address
+    .replace(/^Офис\s+-\s+/u, '')
+    .replace(/^ул\.\s+/u, '')
+    .trim();
 }

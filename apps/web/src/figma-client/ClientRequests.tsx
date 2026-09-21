@@ -200,11 +200,17 @@ function FeaturedCard({
                 ) : null}
               </div>
             </div>
-            <StatusPill label={item.statusLabel} live={item.status === 'en_route'} />
+            <StatusPill
+              label={item.statusLabel}
+              live={item.status === 'en_route' || item.status === 'in_progress'}
+            />
           </div>
         ) : (
           <div style={{ marginTop: eu(16) }}>
-            <StatusPill label={item.statusLabel} live={item.status === 'en_route'} />
+            <StatusPill
+              label={item.statusLabel}
+              live={item.status === 'en_route' || item.status === 'in_progress'}
+            />
           </div>
         )}
       </div>
@@ -266,6 +272,8 @@ function ArchiveCard({
             style={{ marginTop: eu(12), fontSize: eu(20) }}
           >
             {item.workTypeTitle}
+            {' · '}
+            {item.statusLabel}
           </p>
           <span
             className="inline-flex items-center rounded-full bg-figma-ink/70 font-semibold text-white"

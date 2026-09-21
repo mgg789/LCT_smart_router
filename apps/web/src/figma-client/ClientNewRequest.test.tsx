@@ -14,6 +14,7 @@ it('renders oval reason chips, a pickable map and the AI gradient action', () =>
     />,
   );
   expect(html).toContain('Новая заявка');
+  expect(html).toContain('ФИО');
   expect(html).toContain('Интернет не работает');
   expect(html).toContain('calc(100 * var(--eu))');
   expect(html).toContain('Карта адреса заявки');

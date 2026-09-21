@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it } from 'vitest';
-import { CLIENT_PREVIEW_REQUESTS } from './clientPreview';
 import { ClientRequests } from './ClientRequests';
+import { CLIENT_PREVIEW_REQUESTS } from './clientPreview';
 
 it('shows the live card, new-request action and archive rows from Figma MAIN', () => {
   const html = renderToStaticMarkup(

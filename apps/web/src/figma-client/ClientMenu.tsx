@@ -21,7 +21,7 @@ export function ClientMenu({
 }: {
   open: boolean;
   motionOn: boolean;
-  email: string;
+  email: string | null;
   active: ClientScreenId;
   onClose: () => void;
   onNavigate: (id: ClientScreenId) => void;
@@ -76,12 +76,14 @@ export function ClientMenu({
               className="relative z-10 flex min-h-0 flex-1 flex-col bg-white"
               style={{ padding: `${eu(24)} ${eu(20)} ${eu(28)}` }}
             >
-              <p
-                className="relative break-all font-semibold tracking-[-0.02em] text-figma-muted"
-                style={{ fontSize: eu(24) }}
-              >
-                {email}
-              </p>
+              {email ? (
+                <p
+                  className="relative break-all font-semibold tracking-[-0.02em] text-figma-muted"
+                  style={{ fontSize: eu(24) }}
+                >
+                  {email}
+                </p>
+              ) : null}
               <nav className="relative flex flex-col" style={{ marginTop: eu(28), gap: eu(20) }}>
                 <MenuItem
                   label="Мои заявки"

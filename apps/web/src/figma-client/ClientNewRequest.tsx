@@ -5,10 +5,10 @@ import { eu } from '../figma-engineer/engineerScale';
 import { CLIENT_ASSETS } from './assets';
 import { ClientPickMap } from './ClientPickMap';
 import {
-  canSubmitClientForm,
   CLIENT_PROBLEMS,
   type ClientMapPoint,
   type ClientRequestDraft,
+  canSubmitClientForm,
 } from './clientPreview';
 
 const tap = { duration: 0.16 };
@@ -85,6 +85,30 @@ export function ClientNewRequest({
             );
           })}
         </div>
+
+        <label
+          htmlFor="client-name"
+          className="font-semibold text-[#f1f1f1]"
+          style={{ marginTop: eu(24), fontSize: eu(24) }}
+        >
+          ФИО
+        </label>
+        <input
+          id="client-name"
+          type="text"
+          autoComplete="name"
+          placeholder="Иван Иванов"
+          value={draft.contactName}
+          onChange={(event) => onChange({ ...draft, contactName: event.target.value })}
+          className="w-full bg-[#555] font-medium text-white outline-none placeholder:text-white/60"
+          style={{
+            marginTop: eu(12),
+            height: eu(80),
+            borderRadius: eu(20),
+            paddingInline: eu(24),
+            fontSize: eu(22),
+          }}
+        />
 
         <label className="sr-only" htmlFor="client-address">
           Адрес
