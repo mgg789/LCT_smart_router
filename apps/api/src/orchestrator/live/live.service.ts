@@ -2165,11 +2165,29 @@ export class LiveService {
     const unfinished = await tx.request.count({
       where: { lifecycle: 'in_progress', liveStates: { some: { workdayId: day.id } } },
     });
+    // Removing an engineer from the shift is a final dispatcher decision for this day.
+    // Stale LIVE markers must not keep the dispatcher session open afterwards: an
+    // engineer can have entered a break/lunch immediately before the removal action.
+    // A regular technical break still blocks because its day is not opted out.
+    const participatingDays = await tx.engineerDay.findMany({
+      where: { workDate: day.workDate, attendanceOptOut: false },
+      select: { engineerId: true },
+    });
+    const participatingEngineerIds = participatingDays.map((item) => item.engineerId);
     const technicalBreak = await tx.liveEngineerState.count({
-      where: { workdayId: day.id, lineStatus: 'technical_break' },
+      where: {
+        workdayId: day.id,
+        engineerId: { in: participatingEngineerIds },
+        lineStatus: 'technical_break',
+      },
     });
     const lunches = await tx.engineerDay.findMany({
-      where: { workDate: day.workDate, lunchTaken: true, lunchStartedAt: { not: null } },
+      where: {
+        workDate: day.workDate,
+        attendanceOptOut: false,
+        lunchTaken: true,
+        lunchStartedAt: { not: null },
+      },
       select: { lunchStartedAt: true, lunchDurationSec: true },
     });
     const activeLunch = lunches.some(

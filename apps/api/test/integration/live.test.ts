@@ -1509,6 +1509,7 @@ describe('LIVE workday', () => {
 
   it('waits until 17:00 and all current-day work and alerts are cleared, ignoring tomorrow', async () => {
     const engineer = await liveCreateEngineer();
+    const removedEngineer = await liveCreateEngineer();
     const submitted = await prisma.request.findMany({
       where: { lifecycle: 'submitted' },
       select: {
@@ -1598,6 +1599,35 @@ describe('LIVE workday', () => {
       await prisma.alert.updateMany({
         where: { resolvedAt: null, isBlocking: true },
         data: { resolvedAt: BigInt(cutoff), invalidatedAt: BigInt(cutoff) },
+      });
+      // Removing an engineer from the shift is authoritative even if stale break/lunch
+      // markers survived the same dispatcher action. Neither marker may strand the
+      // global workday after all current-day demand and blocking alerts are cleared.
+      await prisma.engineerDay.update({
+        where: {
+          engineerId_workDate: { engineerId: removedEngineer.id, workDate: workDate() },
+        },
+        data: {
+          availability: 'offline',
+          attendanceOptOut: true,
+          lunchTaken: true,
+          lunchStartedAt: BigInt(cutoff),
+          lunchDurationSec: 30 * 60,
+        },
+      });
+      await prisma.liveEngineerState.update({
+        where: {
+          workdayId_engineerId: {
+            workdayId: initial.workday.id,
+            engineerId: removedEngineer.id,
+          },
+        },
+        data: {
+          lineStatus: 'technical_break',
+          technicalBreakStartedAt: BigInt(cutoff),
+          technicalBreakPlannedEndAt: BigInt(cutoff + 15 * 60),
+          technicalBreakOverdueAt: BigInt(cutoff + 20 * 60),
+        },
       });
       response = await call('GET', '/api/v1/engineer/live', engineer.token);
       assert.equal(response.status, 200, await response.clone().text());
