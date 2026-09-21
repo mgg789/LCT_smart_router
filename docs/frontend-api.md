@@ -510,10 +510,22 @@ SPA `/engineer/` (вход по коду, список заявок и обед�
 `GET /client/work-types` → `{workTypes: [{code, title}]}` — каталог типов работ (выбор
 в форме; код = ключ для `POST .../requests {workType}`). `POST /client/requests`
 (черновик) → `POST /client/requests/:id/submit` (подтверждение) → заявка становится
-задачей; `POST /client/requests/:id/reschedule`; `POST /client/requests/:id/cancel`
+задачей. Приложение `/client/` этот двухшаговый путь не использует: код на почту — это
+подтверждение, и следом один вызов `POST /client/requests/submitted` (то же тело, что у
+черновика) создаёт заявку уже отправленной, в одной транзакции, как
+`POST /dispatch/requests`. До кода на сервере ничего не пишется.
+
+`GET /client/profile` → `{email, contactName, addressText, lat, lon}`. Почта — всегда
+логин сессии. Имя, адрес и точка — из последней отправленной заявки; если такой не
+было, три поля `null`. Черновик профиль не заполняет. Интеграционный ключ профиля не
+имеет.
+
+`POST /client/requests/:id/reschedule`; `POST /client/requests/:id/cancel`
 (`{operationId, expectedVersion?, reason?}` → `{request}`) — отмена своей неначатой
-заявки; `GET /client/requests`, `GET /client/requests/:id` — только свои заявки.
-Тела — как §6.1 минус `clientEmail`.
+заявки. `GET /client/requests` — открытые свои заявки (`draft` / `submitted` /
+`in_progress`). `GET /client/requests?scope=all` — история всего отправленного, включая
+`completed` и `cancelled`; черновики в неё не входят. `GET /client/requests/:id` — одна
+своя заявка. Тела записей — как §6.1 минус `clientEmail` для сессии.
 
 `PATCH /client/notifications` — `{operationId, enabled}` → `{enabled}`: выключает
 событийные письма адреса (каталог писем — `docs/api.md` §5); коды входа приходят

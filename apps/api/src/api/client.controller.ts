@@ -203,13 +203,87 @@ export class ClientController {
     return outcome.result;
   }
 
+  @Get('profile')
+  @ApiOperation({
+    summary: 'Signed-in customer: email, and the address and name from the last sent request',
+  })
+  async profile(@CurrentActor() actor: Actor): Promise<{
+    email: string;
+    contactName: string | null;
+    addressText: string | null;
+    lat: number | null;
+    lon: number | null;
+  }> {
+    if (!actor.accountId) {
+      throw SysError.forbidden('An integration key has no customer profile');
+    }
+    const account = await this.prisma.account.findUniqueOrThrow({
+      where: { id: actor.accountId },
+    });
+    const latest = await this.prisma.request.findFirst({
+      where: {
+        clientAccountId: actor.accountId,
+        lifecycle: { in: ['submitted', 'in_progress', 'completed', 'cancelled'] },
+      },
+      orderBy: [{ submittedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+    return {
+      email: account.email,
+      contactName: latest?.contactName ?? null,
+      addressText: latest?.addressText ?? null,
+      lat: latest?.lat ?? null,
+      lon: latest?.lon ?? null,
+    };
+  }
+
+  @Post('requests/submitted')
+  @ApiOperation({
+    summary: 'Create a request that is already submitted, the same way the dispatcher does',
+  })
+  async createSubmitted(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(prepareRequestSchema)) dto: PrepareRequestDto,
+  ): Promise<{ request: RequestView }> {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'request.create',
+        payload: dto,
+      },
+      async (context) => {
+        const clientAccountId = await this.clientAccountOf(context.tx, actor, dto.clientEmail);
+        const prepared = await this.requests.prepare(context, clientAccountId, {
+          contactName: dto.contactName,
+          addressText: dto.addressText,
+          lat: dto.lat ?? null,
+          lon: dto.lon ?? null,
+          workType: dto.workType,
+          ...(dto.requiredEquipment === undefined
+            ? {}
+            : { requiredEquipment: dto.requiredEquipment }),
+          windowStartAt: dto.windowStartAt,
+          windowEndAt: dto.windowEndAt,
+          urgent: dto.urgent,
+          problemText: dto.problemText ?? null,
+        });
+        // The customer already confirmed the address with a login code before this call.
+        // Nothing is stored as a draft they could see: the request enters distribution
+        // in the same transaction, as a dispatcher-created request does.
+        return toRequestView(await this.requests.submit(context, prepared.id, prepared.version));
+      },
+    );
+    return { request: outcome.result };
+  }
+
   @Get('requests')
   @ApiOperation({
-    summary: 'Active requests of the signed-in customer, or of the clientEmail a key names',
+    summary: 'Requests of the signed-in customer, or of the clientEmail a key names',
   })
   async list(
     @CurrentActor() actor: Actor,
     @Query('clientEmail') clientEmail?: string,
+    @Query('scope') scope?: string,
   ): Promise<{ requests: RequestView[] }> {
     const clientAccountId = await this.existingClientAccountOf(actor, clientEmail);
     if (clientAccountId === null) {
@@ -217,11 +291,16 @@ export class ClientController {
       return { requests: [] };
     }
     const requests = await this.prisma.request.findMany({
-      // A completed request leaves the active list but stays in the database and in the
-      // history (context/32 section 4.4).
+      // The default list is the open work. `scope=all` is the history of everything
+      // that was actually sent: completed and cancelled stay, drafts do not.
       where: {
         clientAccountId,
-        lifecycle: { in: ['draft', 'submitted', 'in_progress'] },
+        lifecycle: {
+          in:
+            scope === 'all'
+              ? ['submitted', 'in_progress', 'completed', 'cancelled']
+              : ['draft', 'submitted', 'in_progress'],
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
