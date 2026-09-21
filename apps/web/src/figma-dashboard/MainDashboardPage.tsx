@@ -607,8 +607,11 @@ export function MainDashboardPage() {
             setUserMenuOpen((value) => !value);
           }}
           onSettings={() => {
-            setUserMenuOpen(false);
             setSettingsOpen(true);
+            // Close after the click action finishes. Closing in the same tick
+            // unmounts «Настройки» under AnimatePresence and Playwright retries
+            // a click that already opened the dialog.
+            window.setTimeout(() => setUserMenuOpen(false), 0);
           }}
           onEndDay={() => {
             setUserMenuOpen(false);
@@ -1092,6 +1095,8 @@ function UserMenu({
         onClick={onToggle}
         className="relative z-50 flex items-center gap-[20px]"
         aria-label="Меню пользователя"
+        aria-expanded={open}
+        aria-haspopup="menu"
         whileHover={motionOn ? { scale: 1.04 } : undefined}
         whileTap={motionOn ? { scale: 0.98 } : undefined}
         transition={{ duration: 0.16 }}

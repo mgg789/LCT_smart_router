@@ -67,6 +67,29 @@ export async function signIn(page: Page) {
   await expect(plan).toBeVisible({ timeout: 45_000 });
 }
 
+/**
+ * Open dispatcher Settings from the avatar menu.
+ * Selecting a menu item unmounts the dropdown; Playwright then reports
+ * "element was detached" even when the dialog already opened. Retry until
+ * the dialog is visible instead of treating that detach as a failed click.
+ */
+export async function openDispatcherSettings(page: Page) {
+  const dialog = page.getByRole('dialog', { name: 'Настройки' });
+  const avatar = page.getByRole('button', { name: 'Меню пользователя', exact: true });
+  const item = page.getByRole('button', { name: 'Настройки', exact: true });
+
+  await expect(async () => {
+    if (await dialog.isVisible()) return;
+    await expect(avatar).toBeVisible({ timeout: 5_000 });
+    if ((await avatar.getAttribute('aria-expanded')) !== 'true') {
+      await avatar.click({ timeout: 5_000 });
+    }
+    await expect(item).toBeVisible({ timeout: 3_000 });
+    await item.click({ timeout: 5_000 });
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+  }).toPass({ timeout: 30_000 });
+}
+
 /** Isolated serial fixtures: real seed per test, external network blocked, error evidence. */
 export const test = base.extend<{ live: LiveDay; browserHealth: undefined }>({
   browserHealth: [
