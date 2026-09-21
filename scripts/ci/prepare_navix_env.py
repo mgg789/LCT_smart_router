@@ -3,7 +3,19 @@
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
+
+
+def _upsert_key(text: str, key: str, value: str) -> str:
+    """Set KEY=value, replacing an existing assignment of the same key."""
+    pattern = re.compile(rf"^{re.escape(key)}=.*$", re.MULTILINE)
+    line = f"{key}={value}"
+    if pattern.search(text):
+        return pattern.sub(line, text)
+    if text and not text.endswith("\n"):
+        text += "\n"
+    return f"{text}{line}\n"
 
 
 def prepare_env(
@@ -26,6 +38,8 @@ def prepare_env(
     text = text.replace("API_PORT=127.0.0.1:18080", "API_PORT=18080")
     text = text.replace("API_PORT=8000", "API_PORT=18080")
     text = text.replace("ROUTER_PORT=8100", "ROUTER_PORT=18100")
+    text = _upsert_key(text, "DEMO_STAND", "true")
+    text = _upsert_key(text, "speed_up_work_stub", "1800")
     path.write_text(text, encoding="utf-8")
 
 

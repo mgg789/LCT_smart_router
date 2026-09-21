@@ -23,6 +23,7 @@ import type { OperationContext } from '../../operations';
 import { APP_STATE_KEYS, PrismaService, type Tx, UnitOfWork } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import { AppliedPlanService } from '../../routing/router-gateway';
+import { DemoStandService } from '../demo-stand';
 import { EngineersService } from '../engineers';
 import { workDateOf } from '../engineers/workday';
 import { FactsService } from '../facts';
@@ -64,11 +65,13 @@ export class LiveService {
     private readonly timing: ExecutionTimingPolicy,
     private readonly plans: AppliedPlanService,
     private readonly publisher: SnapshotPublisher,
+    private readonly demoStand: DemoStandService,
   ) {}
 
   /** Dispatcher entry: creates the durable pending card but does not start its clock. */
   async dispatchView(): Promise<DispatchLiveView> {
     await this.advanceOnce();
+    await this.demoStand.reconcile();
     return this.uow.run(async (tx) => this.dispatchViewIn(tx, this.clock.nowSeconds()));
   }
 
@@ -463,6 +466,7 @@ export class LiveService {
       engineers: await this.engineerStatesView(tx, full, wallNow),
       breaks: await this.breakHistory(tx, full),
       history: await this.historyView(tx, full),
+      demoStand: this.demoStand.enabled,
     };
   }
 

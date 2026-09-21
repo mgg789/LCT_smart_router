@@ -48,6 +48,8 @@ class PrepareNavixEnvTest(TestCase):
             self.assertIn("ROUTER_PORT=18100", text)
             self.assertNotIn("dev_password", text)
             self.assertNotIn("change-me-before-deploying", text)
+            self.assertIn("DEMO_STAND=true\n", text)
+            self.assertIn("speed_up_work_stub=1800\n", text)
 
 
 if __name__ == "__main__":

@@ -7,6 +7,7 @@ import { Clock } from '../common/time';
 import { zodBody } from '../common/validation';
 import { OperationsService } from '../operations';
 import { AlertsService } from '../orchestrator/alerts';
+import { DemoStandService } from '../orchestrator/demo-stand';
 import { EngineersService, workDateOf } from '../orchestrator/engineers';
 import {
   DATASET_REGIONS,
@@ -46,7 +47,9 @@ import {
   type ImportDatasetDto,
   importDatasetSchema,
   type ResetDto,
+  type RestartDemoDto,
   resetSchema,
+  restartDemoSchema,
   type UploadDataPackageDto,
   uploadDataPackageSchema,
 } from './dto/data.dto';
@@ -133,6 +136,7 @@ export class DispatchController {
     private readonly imports: DatasetImportService,
     private readonly uploadImports: UploadImportService,
     private readonly resetService: ResetService,
+    private readonly demoStand: DemoStandService,
     private readonly config: AppConfigService,
     private readonly operations: OperationsService,
     private readonly prisma: PrismaService,
@@ -979,6 +983,7 @@ export class DispatchController {
       initialized: byKey.get(APP_STATE_KEYS.INITIALIZED) ?? false,
       startupProfile: byKey.get(APP_STATE_KEYS.STARTUP_PROFILE) ?? null,
       generation: byKey.get(APP_STATE_KEYS.GENERATION) ?? 1,
+      demoStand: this.demoStand.enabled,
       availableRegions,
       imports: packages.map((item) => ({
         source: item.source,
@@ -1045,6 +1050,30 @@ export class DispatchController {
     return outcome.result;
   }
 
+  @Post('data/restart-demo')
+  @ApiOperation({
+    summary: 'Rewind the public 14/2 demo day (DEMO_STAND only); keeps the dispatcher session',
+  })
+  async restartDemo(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(restartDemoSchema)) dto: RestartDemoDto,
+  ) {
+    if (actor.kind !== 'account') {
+      throw SysError.forbidden('Demo rewind is confirmed from the Dashboard');
+    }
+    this.demoStand.assertEnabled();
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'data.restart_demo',
+        payload: dto,
+      },
+      async (context) => this.demoStand.restore(context),
+    );
+    return outcome.result;
+  }
+
   @Post('data/reset')
   @ApiOperation({ summary: 'Reset to the test data, or to an empty working set' })
   async reset(@CurrentActor() actor: Actor, @Body(zodBody(resetSchema)) dto: ResetDto) {
@@ -1061,7 +1090,13 @@ export class DispatchController {
         payload: dto,
         confirmation: dto.confirmation,
       },
-      async (context) => this.resetService.run(context, dto.kind, dto.confirmation),
+      async (context) => {
+        if (dto.kind === 'demo' && this.demoStand.enabled) {
+          ResetService.assertConfirmation(dto.kind, dto.confirmation);
+          return this.demoStand.restore(context);
+        }
+        return this.resetService.run(context, dto.kind, dto.confirmation);
+      },
     );
     return outcome.result;
   }

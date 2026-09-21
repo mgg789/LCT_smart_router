@@ -90,6 +90,8 @@ export interface DispatchLiveView {
     readonly outcome: 'completed' | 'cancelled' | 'assumed_completed';
     readonly terminalAt: number;
   }>;
+  /** True only on the public navix contour that rewinds the 14/2 day. */
+  readonly demoStand: boolean;
 }
 
 export interface EngineerLiveView {

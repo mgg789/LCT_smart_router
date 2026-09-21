@@ -95,6 +95,8 @@ export interface DispatchLiveView {
   readonly breaks: readonly LiveBreak[];
   /** Completed/cancelled visits retained only for the dispatcher pipeline after a replan. */
   readonly history: readonly LiveHistoryItem[];
+  /** Public navix contour that rewinds the 14/2 day. Absent locally. */
+  readonly demoStand?: boolean;
 }
 
 /** A durable technical-break marker, independent of the latest solver route. */
@@ -272,6 +274,7 @@ const dispatchLiveSchema: z.ZodType<DispatchLiveView> = z.object({
     )
     .optional()
     .default([]),
+  demoStand: z.boolean().optional().default(false),
 });
 
 export type EngineerLiveAction =

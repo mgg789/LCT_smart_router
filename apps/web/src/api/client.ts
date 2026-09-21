@@ -308,6 +308,28 @@ export async function closeDispatchShift(
   });
 }
 
+const demoStandRestoreSchema = z.object({
+  restored: z.literal(true),
+  workDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  requestsCreated: z.number().int().nonnegative(),
+  engineersCreated: z.number().int().nonnegative(),
+  generation: z.number().int().positive(),
+});
+
+/** Rewinds the public 14/2 demo day. No-op contract unless the API has DEMO_STAND. */
+export function restartDemoStand(token: string): Promise<z.infer<typeof demoStandRestoreSchema>> {
+  return requestJson(
+    '/api/v1/dispatch/data/restart-demo',
+    demoStandRestoreSchema,
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({ operationId: crypto.randomUUID() }),
+    },
+    35_000,
+  );
+}
+
 const policiesSchema = z.object({
   policies: z.array(
     z.object({

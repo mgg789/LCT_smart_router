@@ -463,10 +463,17 @@ twogis: {provider, configured, ok, message}, yandex: {…}}`. Проба идё�
 
 | Тело | Что делает |
 |---|---|
-| `{operationId, kind: "demo", confirmation: "reset to test data"}` | Сброс к тестовому набору |
+| `{operationId, kind: "demo", confirmation: "reset to test data"}` | Сброс к тестовому набору. На `DEMO_STAND` это тот же rewind, что `restart-demo` |
 | `{operationId, kind: "empty", confirmation: "erase all application data"}` | Полный сброс «всё в ноль» |
 
-Без точной фразы подтверждения — отказ; после сброса сессии живут, данные пусты.
+Без точной фразы подтверждения — отказ. Обычный `empty` сбрасывает и сессии.
+На публичном стенде `kind: "demo"` сохраняет сессию диспетчера и заново сеет 14/2.
+
+**POST `/dispatch/data/restart-demo`** — только при `DEMO_STAND=true`, только сессия
+диспетчера: `{operationId}` → `{restored, workDate, requestsCreated, engineersCreated, generation}`.
+Иначе `NOT_FOUND`. Живой день (`running`) кнопка всё равно перематывает; автосдвиг даты
+running-день не трогает. `GET /dispatch/live` и `GET /dispatch/data/state` отдают
+`demoStand: true` на этом контуре.
 
 ### 6.8 Отладочные
 

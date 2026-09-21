@@ -127,6 +127,15 @@ export const envSchema = z.object({
    * unavailable and the caller must pick a point on the map instead.
    */
   LOCATION_IQ_TOKEN: z.string().min(1).optional(),
+
+  /**
+   * Public demo stand: seed today's 14/2 live-demo, accelerate the day, and rewind after
+   * the shift or «День заново». Leave unset/false on developer machines.
+   */
+  DEMO_STAND: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
 });
 
 export type Env = z.infer<typeof envSchema>;

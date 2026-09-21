@@ -13,6 +13,12 @@ export interface ResetOutcome {
   readonly startupProfile: ResetKind;
 }
 
+export interface ClearWorkingSetOptions {
+  /** Keep dispatcher Dashboard sessions so the same operator can continue. */
+  readonly preserveDispatcherSessions?: boolean;
+  readonly startupProfile?: ResetKind;
+}
+
 /**
  * The two destructive data actions of the Dashboard.
  *
@@ -44,11 +50,8 @@ export class ResetService {
     return kind === 'demo' ? 'reset to test data' : 'erase all application data';
   }
 
-  async run(
-    context: OperationContext,
-    kind: ResetKind,
-    confirmation: string,
-  ): Promise<ResetOutcome> {
+  /** Throws unless the caller repeated the exact confirmation phrase. */
+  static assertConfirmation(kind: ResetKind, confirmation: string): void {
     const expected = ResetService.confirmationFor(kind);
     if (confirmation !== expected) {
       throw new SysError('CONFIRMATION_REQUIRED', 'This action needs an explicit confirmation', {
@@ -64,17 +67,40 @@ export class ResetService {
         },
       });
     }
+  }
 
-    const previousPublicationSeq = await this.clearApplicationData(context.tx);
+  async run(
+    context: OperationContext,
+    kind: ResetKind,
+    confirmation: string,
+  ): Promise<ResetOutcome> {
+    ResetService.assertConfirmation(kind, confirmation);
+    const { generation } = await this.clearWorkingSet(context, { startupProfile: kind });
+    this.logger.warn(`Application data reset to "${kind}" state; generation ${generation}`);
+    return { kind, generation, startupProfile: kind };
+  }
+
+  /**
+   * Erases the working set and advances generation. Used by the confirmed Dashboard
+   * reset and by the public demo-stand rewind, which then re-imports today's 14/2 day.
+   */
+  async clearWorkingSet(
+    context: OperationContext,
+    options: ClearWorkingSetOptions = {},
+  ): Promise<{ generation: number }> {
+    const previousPublicationSeq = await this.clearApplicationData(context.tx, {
+      preserveDispatcherSessions: options.preserveDispatcherSessions === true,
+    });
 
     // A new generation marks the boundary of the new working set, so a late write from
     // before the reset cannot be applied to it (context/37 section 9.6).
     const generation = await this.nextGeneration(context.tx, context.now);
+    const profile = options.startupProfile ?? 'empty';
 
     // The startup profile is what stops a restart from quietly reloading the demo data:
     // an empty `requests` table is not proof that the system was never initialised
     // (context/37 section 9.5).
-    await this.setState(context.tx, context.now, APP_STATE_KEYS.STARTUP_PROFILE, kind);
+    await this.setState(context.tx, context.now, APP_STATE_KEYS.STARTUP_PROFILE, profile);
     await this.setState(context.tx, context.now, APP_STATE_KEYS.INITIALIZED, true);
 
     // The contour gets a valid, empty task through the ordinary mechanism. sys does not
@@ -84,9 +110,7 @@ export class ResetService {
       where: { id: 'singleton' },
       data: { pointerVersion: previousPublicationSeq + 1 },
     });
-
-    this.logger.warn(`Application data reset to "${kind}" state; generation ${generation}`);
-    return { kind, generation, startupProfile: kind };
+    return { generation };
   }
 
   /**
@@ -96,7 +120,10 @@ export class ResetService {
    * reset there is no manual plan left to protect, and the concept leaves the resulting
    * mode unspecified rather than requiring MANUAL to persist (context/37 section 9.3).
    */
-  private async clearApplicationData(tx: Tx): Promise<number> {
+  private async clearApplicationData(
+    tx: Tx,
+    options: { preserveDispatcherSessions: boolean },
+  ): Promise<number> {
     const currentPublication = await tx.routingCurrent.findUnique({
       where: { id: 'singleton' },
       select: { pointerVersion: true },
@@ -132,7 +159,11 @@ export class ResetService {
     await tx.externalIdMap.deleteMany({});
     await tx.importPackage.deleteMany({});
 
-    await tx.session.deleteMany({});
+    if (options.preserveDispatcherSessions) {
+      await tx.session.deleteMany({ where: { role: { not: 'dispatcher' } } });
+    } else {
+      await tx.session.deleteMany({});
+    }
     await tx.loginCode.deleteMany({});
     await tx.apiToken.deleteMany({});
     await tx.operation.deleteMany({});

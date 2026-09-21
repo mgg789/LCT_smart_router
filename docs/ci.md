@@ -191,6 +191,8 @@ docker compose -f docker-compose.yml up -d --build --remove-orphans
 может использовать `NODE_ENV=development` и `AUTH_DEV_EXPOSE_CODES=true`, но публичный
 navix-контур обязан работать с `NODE_ENV=production` и `AUTH_DEV_EXPOSE_CODES=false`.
 Bootstrap проверяет это до вывода ключа деплоя; коды на публичном стенде доставляет SMTP.
+Публичный демо-день включается только серверным `.env`: `DEMO_STAND=true`,
+`speed_up_work_stub=1800`. `LOCATION_IQ_TOKEN` туда же, не в репозиторий и не в CI-секреты.
 
 ### Секреты и разовые настройки хоста
 

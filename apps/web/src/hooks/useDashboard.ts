@@ -14,6 +14,7 @@ import {
   markDispatchNoticeSeen,
   requestDispatcherLoginCode,
   resolveDispatchAlert,
+  restartDemoStand,
   selectRoutingPolicy,
   setDispatchMode,
   setEngineerAttendanceOptOut,
@@ -1034,6 +1035,16 @@ export function useDashboard() {
     [performAlertOperation],
   );
 
+  const restartDemoDay = useCallback(async () => {
+    if (!token) throw new Error('Нужна живая сессия диспетчера');
+    invalidateAsyncReads();
+    const generation = readGeneration.current;
+    const summary = await restartDemoStand(token);
+    if (generation !== readGeneration.current) return summary;
+    await Promise.all([refresh(), refreshLive()]);
+    return summary;
+  }, [invalidateAsyncReads, refresh, refreshLive, token]);
+
   const uploadDataset = useCallback(
     async (file: DataUploadFile): Promise<DataUploadSummary> => {
       if (!token || sourceRef.current !== 'live' || uploadingData) {
@@ -1223,6 +1234,7 @@ export function useDashboard() {
     setAttendanceOptOut,
     markNoticeSeen,
     closeShift,
+    restartDemoDay,
   };
 }
 

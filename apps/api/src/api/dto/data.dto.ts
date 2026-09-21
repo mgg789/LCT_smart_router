@@ -169,3 +169,9 @@ export const resetSchema = z.object({
   confirmation: z.string().min(1),
 });
 export type ResetDto = z.infer<typeof resetSchema>;
+
+/** Rewinds the public 14/2 demo day. The UI confirmation word is the human gate. */
+export const restartDemoSchema = z.object({
+  operationId: z.uuid(),
+});
+export type RestartDemoDto = z.infer<typeof restartDemoSchema>;

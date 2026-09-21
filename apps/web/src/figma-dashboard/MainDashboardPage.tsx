@@ -75,6 +75,7 @@ import {
 } from './toasts';
 import { WelcomeScreen } from './WelcomeScreen';
 import {
+  clearWorkDayStarted,
   hasStartedWorkDay,
   markWorkDayStarted,
   moscowWorkDate,
@@ -605,6 +606,7 @@ export function MainDashboardPage() {
             setUserMenuOpen(false);
             setDangerAction('endDay');
           }}
+          demoStand={dash.liveWorkday?.demoStand === true}
           onRestartDay={() => {
             setUserMenuOpen(false);
             setDangerAction('restartDay');
@@ -664,12 +666,35 @@ export function MainDashboardPage() {
               return;
             }
             if (id === 'restartDay' || id === 'resetData') {
-              pushToast({
-                id: `unsupported-${id}`,
-                kind: 'system',
-                title: 'Действие пока недоступно',
-                body: 'В текущем API нет безопасного контракта для перезапуска дня или сброса данных.',
-              });
+              if (!dash.liveWorkday?.demoStand) {
+                pushToast({
+                  id: `unsupported-${id}`,
+                  kind: 'system',
+                  title: 'Действие пока недоступно',
+                  body: 'Перезапуск дня доступен на публичном демо-стенде.',
+                });
+                return;
+              }
+              void dash
+                .restartDemoDay()
+                .then(() => {
+                  clearWorkDayStarted(window.localStorage);
+                  setWelcomeOpen(true);
+                  pushToast({
+                    id: 'demo-day-restarted',
+                    kind: 'system',
+                    title: 'День сброшен',
+                    body: 'Исходный набор из 14 заявок и двух инженеров готов. Почта бригады снята.',
+                  });
+                })
+                .catch((cause: unknown) => {
+                  pushToast({
+                    id: 'demo-day-restart-error',
+                    kind: 'error',
+                    title: 'Не удалось начать день заново',
+                    body: cause instanceof Error ? cause.message : 'Повторите действие позже.',
+                  });
+                });
               return;
             }
             void dash.signOut();
@@ -1013,6 +1038,7 @@ function NotificationControl({
 function UserMenu({
   open,
   motionOn,
+  demoStand,
   onToggle,
   onSettings,
   onEndDay,
@@ -1022,6 +1048,7 @@ function UserMenu({
 }: {
   open: boolean;
   motionOn: boolean;
+  demoStand: boolean;
   onToggle: () => void;
   onSettings: () => void;
   onEndDay: () => void;
@@ -1080,15 +1107,19 @@ function UserMenu({
               <MenuAction motionOn={motionOn} tone="bee" onClick={onEndDay}>
                 Завершить день
               </MenuAction>
-              <MenuAction motionOn={motionOn} tone="danger" onClick={onRestartDay}>
-                День заново
-              </MenuAction>
+              {demoStand ? (
+                <MenuAction motionOn={motionOn} tone="danger" onClick={onRestartDay}>
+                  День заново
+                </MenuAction>
+              ) : null}
             </div>
             <div className="mx-auto my-[8px] h-px w-[40px] bg-figma-ink/20" />
             <div className="flex flex-col gap-[8px]">
-              <MenuAction motionOn={motionOn} tone="danger" onClick={onReset}>
-                Сбросить данные
-              </MenuAction>
+              {demoStand ? (
+                <MenuAction motionOn={motionOn} tone="danger" onClick={onReset}>
+                  Сбросить данные
+                </MenuAction>
+              ) : null}
               <MenuAction motionOn={motionOn} tone="danger" onClick={onSignOut}>
                 Выйти
               </MenuAction>
