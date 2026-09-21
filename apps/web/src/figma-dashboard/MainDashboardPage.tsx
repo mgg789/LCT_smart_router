@@ -794,6 +794,7 @@ export function MainDashboardPage() {
               {stackViewKey(stackNav) === 'requests' ? (
                 <RequestsView
                   snapshot={dash.snapshot}
+                  history={dash.liveWorkday?.history}
                   selectedRequestId={dash.selectedRequest?.id ?? null}
                   onSelect={(requestId) => {
                     setOpenedRequestId(requestId);

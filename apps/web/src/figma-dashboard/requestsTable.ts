@@ -1,3 +1,4 @@
+import type { LiveHistoryItem } from '../api/live';
 import type { DashboardSnapshot, RequestView } from '../api/types';
 import { assignmentFor } from '../domain/dashboard';
 import { skillLabel } from '../lib/reasons';
@@ -81,14 +82,23 @@ export function shortRequestAddress(address: string): string {
 }
 
 /**
- * One table row per snapshot request, with the assigned engineer when the plan has one.
+ * Current assignments own open work; durable LIVE history supplies terminal owners
+ * after an automatic remaining-day plan has intentionally omitted completed visits.
  */
-export function rowsFromSnapshot(snapshot: DashboardSnapshot): RequestTableRow[] {
+export function rowsFromSnapshot(
+  snapshot: DashboardSnapshot,
+  history: readonly LiveHistoryItem[] = [],
+): RequestTableRow[] {
+  const historicalOwners = new Map(history.map((item) => [item.request.id, item.engineerId]));
   return snapshot.requests.map((request) => {
     const assignment = assignmentFor(snapshot, request.id);
-    const engineer = assignment
-      ? (snapshot.engineers.find((item) => item.id === assignment.engineerId) ?? null)
-      : null;
+    const status = requestRowStatus(request);
+    const engineerId =
+      assignment?.engineerId ??
+      (status === 'done' || status === 'cancelled' || request.assumedCompletedAt
+        ? historicalOwners.get(request.id)
+        : null);
+    const engineer = snapshot.engineers.find((item) => item.id === engineerId);
     return {
       id: request.id,
       number: request.id,
@@ -97,7 +107,7 @@ export function rowsFromSnapshot(snapshot: DashboardSnapshot): RequestTableRow[]
       window: `${formatClock(request.windowStartAt)}-${formatClock(request.windowEndAt)}`,
       windowStartAt: request.windowStartAt,
       engineer: engineer?.displayName ?? '—',
-      status: requestRowStatus(request),
+      status,
     };
   });
 }
