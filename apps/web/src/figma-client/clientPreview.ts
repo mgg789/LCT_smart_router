@@ -248,7 +248,8 @@ export function clientPrepareBody(
   urgent: boolean;
   problemText: string;
 } | null {
-  if (draft.problem.length === 0) return null;
+  const problem = draft.problem;
+  if (problem === '') return null;
   const contactName = draft.contactName.trim();
   const addressText = draft.address.trim();
   const email = draft.email.trim();
@@ -260,7 +261,7 @@ export function clientPrepareBody(
   const windowStartAt = moscowAt(workDate, startHour, startMinute);
   const windowEndAt = moscowAt(workDate, endHour, endMinute);
   if (windowEndAt <= windowStartAt) return null;
-  const work = CLIENT_PROBLEM_WORK[draft.problem];
+  const work = CLIENT_PROBLEM_WORK[problem];
   return {
     contactName,
     addressText,
@@ -271,7 +272,7 @@ export function clientPrepareBody(
     windowStartAt,
     windowEndAt,
     urgent: false,
-    problemText: draft.problem,
+    problemText: problem,
   };
 }
 
