@@ -154,6 +154,37 @@ export function parseClock(value: string): { hour: number; minute: number } | nu
   return { hour, minute };
 }
 
+/** On-site norms mirrored from the System Layer catalogue. */
+export const WORK_TYPE_SERVICE_SEC: Record<WorkTypeCode, number> = {
+  connection_request: 4200,
+  convergence: 4200,
+  equipment_order: 1200,
+  router_replacement: 1200,
+  stb_replacement: 1200,
+  gigabit_switch: 4200,
+  outage: 4800,
+  no_link: 4800,
+  disconnects: 4800,
+  low_speed: 4800,
+  port_errors: 4800,
+  ip_169: 4800,
+  cable_work: 1800,
+  monitoring: 1800,
+  other_errors: 1800,
+  information: 1800,
+};
+
+/** Stretch a typed window so the work norm actually fits. */
+export function fitWindowToService(
+  window: { windowStartAt: number; windowEndAt: number },
+  workType: string,
+): { windowStartAt: number; windowEndAt: number } {
+  const service =
+    workType in WORK_TYPE_SERVICE_SEC ? WORK_TYPE_SERVICE_SEC[workType as WorkTypeCode] : 0;
+  if (window.windowEndAt - window.windowStartAt >= service) return window;
+  return { windowStartAt: window.windowStartAt, windowEndAt: window.windowStartAt + service };
+}
+
 /** Converts two HH:MM fields on the snapshot work date into Unix seconds. */
 export function windowFromClocks(
   workDate: string,

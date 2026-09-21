@@ -1,4 +1,4 @@
-import type { DashboardSnapshot, EquipmentType, RequestView } from '../api/types';
+import type { DashboardSnapshot, EngineerView, EquipmentType, RequestView } from '../api/types';
 import { assignmentFor, routeForEngineer } from '../domain/dashboard';
 import { skillLabel } from '../lib/reasons';
 import { formatClock } from '../lib/time';
@@ -22,6 +22,9 @@ export type RequestDetailModel = {
   contactName: string | null;
   windowLabel: string;
   engineerLabel: string;
+  assigned: boolean;
+  assignable: boolean;
+  cancellable: boolean;
 };
 
 /** Dispatcher label for a stored equipment type. */
@@ -88,6 +91,9 @@ export function requestDetailFromSnapshot(
     contactName: request.contactName,
     windowLabel: requestWindowLabel(request.windowStartAt, request.windowEndAt, etaAt),
     engineerLabel: engineer ? `Инженер: ${engineer.displayName}` : 'Инженер: —',
+    assigned: requestIsAssigned(request, assignment?.engineerId ?? null),
+    assignable: requestIsAssignable(request),
+    cancellable: requestIsCancellable(request),
   };
 }
 
@@ -104,7 +110,65 @@ export function requestDetailFromRow(row: RequestTableRow): RequestDetailModel {
     contactName: null,
     windowLabel: row.window,
     engineerLabel: row.engineer !== '—' ? `Инженер: ${row.engineer}` : 'Инженер: —',
+    assigned: row.engineer !== '—',
+    assignable: row.status !== 'done' && row.status !== 'cancelled',
+    cancellable: row.status !== 'done' && row.status !== 'cancelled',
   };
+}
+
+/** Yellow action copy: assign only when nobody owns the visit yet. */
+export function requestAssignLabel(assigned: boolean): string {
+  return assigned ? 'Переназначить инженера' : 'Назначить инженера';
+}
+
+export function requestIsAssigned(
+  request: Pick<RequestView, 'assignmentState'>,
+  engineerId: string | null,
+): boolean {
+  return (
+    engineerId !== null ||
+    request.assignmentState === 'assigned' ||
+    request.assignmentState === 'in_progress'
+  );
+}
+
+/** True when the dispatcher can still hand the visit to an engineer. */
+export function requestIsAssignable(
+  request: Pick<RequestView, 'lifecycle' | 'assignmentState'>,
+): boolean {
+  return (
+    request.lifecycle !== 'completed' &&
+    request.lifecycle !== 'cancelled' &&
+    request.lifecycle !== 'in_progress' &&
+    request.assignmentState !== 'done'
+  );
+}
+
+/** Cancel is allowed only before the engineer has started on site. */
+export function requestIsCancellable(
+  request: Pick<RequestView, 'lifecycle' | 'startedAt'>,
+): boolean {
+  return (
+    request.lifecycle !== 'completed' &&
+    request.lifecycle !== 'cancelled' &&
+    request.startedAt === null
+  );
+}
+
+/** Compatible engineers the dispatcher can hand this visit to. */
+export function assignableEngineers(
+  snapshot: DashboardSnapshot,
+  requestId: string,
+): EngineerView[] {
+  const request = snapshot.requests.find((item) => item.id === requestId);
+  if (!request) return [];
+  const currentId = assignmentFor(snapshot, request.id)?.engineerId ?? null;
+  return snapshot.engineers.filter((engineer) => {
+    if (engineer.id === currentId) return false;
+    if (request.requiredSkill && !engineer.skills.includes(request.requiredSkill)) return false;
+    if (request.region && engineer.region && engineer.region !== request.region) return false;
+    return true;
+  });
 }
 
 function capitalizeRu(value: string): string {

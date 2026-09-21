@@ -266,16 +266,24 @@ export function MainDashboardPage() {
 
   const toastHydrated = useRef(false);
   useEffect(() => {
-    if (dash.rebuilding)
-      pushToast({
-        id: 'dispatcher-rebuild',
-        kind: 'progress',
-        title: 'Пересчитываем маршруты',
-        body: 'Дождитесь подтверждения нового плана.',
-        progress: 0,
-        etaLabel: 'Выполняется',
-      });
-    else updateToast('dispatcher-rebuild', { progress: 100 });
+    if (!dash.rebuilding) {
+      updateToast('dispatcher-rebuild', { progress: 100 });
+      return;
+    }
+    pushToast({
+      id: 'dispatcher-rebuild',
+      kind: 'progress',
+      title: 'Пересчитываем маршруты',
+      body: 'Дождитесь подтверждения нового плана.',
+      progress: 8,
+      etaLabel: 'Выполняется',
+    });
+    let value = 8;
+    const timer = window.setInterval(() => {
+      value = Math.min(92, value + 7);
+      updateToast('dispatcher-rebuild', { progress: value });
+    }, 350);
+    return () => window.clearInterval(timer);
   }, [dash.rebuilding]);
   useEffect(() => {
     const openAlerts = (dash.snapshot?.alerts ?? []).filter((alert) => alert.resolvedAt === null);
@@ -886,6 +894,22 @@ export function MainDashboardPage() {
                     setOpenedRequestId(null);
                     dash.clearFocus();
                   }}
+                  onCancelVisit={
+                    dash.writesDisabled
+                      ? undefined
+                      : async () => {
+                          await dash.cancelRequest(openedRequestId);
+                          setOpenedRequestId(null);
+                          dash.clearFocus();
+                        }
+                  }
+                  onAssignEngineer={
+                    dash.writesDisabled
+                      ? undefined
+                      : async (engineerId) => {
+                          await dash.assignRequest(openedRequestId, engineerId);
+                        }
+                  }
                 />
               </motion.div>
             ) : null}

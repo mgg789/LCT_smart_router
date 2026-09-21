@@ -22,6 +22,19 @@ export type EngineerLunchItem = {
 
 export type EngineerListItem = EngineerJobItem | EngineerLunchItem;
 
+/**
+ * Duration shown on the engineer home card: planned norm, plus a reported delay
+ * when LIVE already stored a later expected completion.
+ */
+export function visibleServiceDurationSec(request: RequestView): number {
+  const started = request.startedAt;
+  const expected = request.expectedCompletionAt;
+  if (typeof started === 'number' && typeof expected === 'number' && expected > started) {
+    return expected - started;
+  }
+  return request.serviceDurationSec;
+}
+
 /** A job still ahead of the engineer — not finished and not cancelled. */
 export function isOpenJob(request: RequestView): boolean {
   return (

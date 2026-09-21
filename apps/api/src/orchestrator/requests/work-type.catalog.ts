@@ -252,6 +252,22 @@ export function findWorkTypeByTitle(title: string): WorkTypeSpec | undefined {
   return BY_TITLE.get(normalizeTitle(title));
 }
 
+/**
+ * A customer window shorter than the work norm cannot host the visit: the solver then
+ * reports "no feasible window" even when an idle skilled engineer is on shift.
+ * Stretch only the end; the start the dispatcher typed stays the promised arrival.
+ */
+export function fitWindowToService(
+  windowStartAt: number,
+  windowEndAt: number,
+  serviceDurationSec: number,
+): { windowStartAt: number; windowEndAt: number } {
+  if (windowEndAt - windowStartAt >= serviceDurationSec) {
+    return { windowStartAt, windowEndAt };
+  }
+  return { windowStartAt, windowEndAt: windowStartAt + serviceDurationSec };
+}
+
 /** Collapses whitespace and case so a stray double space does not lose a mapping. */
 function normalizeTitle(title: string): string {
   return title.trim().replace(/\s+/g, ' ').toLowerCase();

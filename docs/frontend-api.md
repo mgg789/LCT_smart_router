@@ -40,7 +40,7 @@ Authorization: Bearer <token>
 | Метод | Путь | Тело | Ответ | Заметки |
 |---|---|---|---|---|
 | POST | `/api/v1/auth/dispatcher/password` | `{email, password}` | `{token, role: "dispatcher", expiresAt}` | Публичный запасной вход. Пароль диспетчера задаётся в `.env` (`DISPATCHER_EMAIL`/`DISPATCHER_PASSWORD`); SMTP не нужен. Основной путь дашборда — `login-code` + `verify` с `role: "dispatcher"` |
-| POST | `/api/v1/auth/login-code` | `{email}` | `{email, expiresAt, devCode?}` | Публичный. Ответ одинаковый для известного и неизвестного адреса. `devCode` появляется только при `AUTH_DEV_EXPOSE_CODES=true`; при настроенном SMTP код уходит письмом |
+| POST | `/api/v1/auth/login-code` | `{email}` | `{email, expiresAt, devCode?}` | Публичный. Ответ одинаковый для известного и неизвестного адреса. `devCode` только в local development (`AUTH_DEV_EXPOSE_CODES=true` и не `DEMO_STAND`). На публичном стенде код уходит письмом, диспетчер входит паролем |
 | POST | `/api/v1/auth/login-code/verify` | `{email, code: "123456", role}` | `{token, role, expiresAt}` | `role` ∈ `client/engineer/dispatcher`; роль `engineer` выдаётся только существующему инженеру |
 | GET | `/api/v1/auth/session` | — | `{kind, source, role, accountId, tokenCategory}` | Кто за предъявленным токеном |
 | DELETE | `/api/v1/auth/session` | — | `{signedOut: true}` | Идемпотентный выход |

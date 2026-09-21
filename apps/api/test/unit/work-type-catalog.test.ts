@@ -5,6 +5,7 @@ import { describe, it } from 'node:test';
 import {
   findWorkType,
   findWorkTypeByTitle,
+  fitWindowToService,
   WORK_NORM_PROFILES,
   WORK_TYPES,
 } from '../../src/orchestrator/requests/work-type.catalog';
@@ -82,5 +83,10 @@ describe('work type normative catalogue', () => {
         assert.equal(findWorkTypeByTitle(title)?.skill, expectedSkill, `${scenario}: ${title}`);
       }
     }
+  });
+
+  it('stretches a short customer window to the work norm without moving the start', () => {
+    assert.deepEqual(fitWindowToService(100, 160, 80), { windowStartAt: 100, windowEndAt: 180 });
+    assert.deepEqual(fitWindowToService(100, 200, 80), { windowStartAt: 100, windowEndAt: 200 });
   });
 });

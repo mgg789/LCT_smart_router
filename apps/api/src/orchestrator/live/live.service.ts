@@ -1618,10 +1618,24 @@ export class LiveService {
       throw new SysError('VALIDATION_FAILED', 'Only a delay may carry an additional duration');
     }
     if (input.problemKind === 'delay' && current.phase !== 'in_progress') {
-      throw new SysError(
-        'VALIDATION_FAILED',
-        'Report additional time only while the visit is in progress',
+      const extra = input.additionalDurationSec ?? 0;
+      const stored = await context.tx.request.findUniqueOrThrow({
+        where: { id: input.requestId },
+      });
+      const nextDuration = stored.serviceDurationSec + extra;
+      const windowEndAt = Math.max(
+        Number(stored.windowEndAt),
+        Number(stored.windowStartAt) + nextDuration,
       );
+      await context.tx.request.update({
+        where: { id: input.requestId },
+        data: {
+          serviceDurationSec: nextDuration,
+          windowEndAt: BigInt(windowEndAt),
+          updatedAt: BigInt(context.now),
+          version: { increment: 1 },
+        },
+      });
     }
     if (input.problemKind === 'missing_equipment' && input.missingEquipment === undefined) {
       throw new SysError('VALIDATION_FAILED', 'Choose the missing equipment');
@@ -1648,30 +1662,41 @@ export class LiveService {
       additionalDurationSec: input.additionalDurationSec ?? null,
     });
     if (input.problemKind === 'delay') {
-      const expected = context.now + (input.additionalDurationSec ?? 0);
-      await context.tx.request.update({
-        where: { id: input.requestId },
-        data: {
-          expectedCompletionAt: BigInt(expected),
-          continuationAvailableAt: BigInt(expected),
-          overrunDetectedAt: null,
-          updatedAt: BigInt(context.now),
-          version: { increment: 1 },
-        },
-      });
-      const actualStart = current.current?.request.startedAt;
-      const norm = current.current?.request.serviceDurationSec;
-      if (
-        actualStart !== null &&
-        actualStart !== undefined &&
-        norm !== undefined &&
-        expected > actualStart + norm + MATERIAL_DELAY_SEC
-      ) {
+      if (current.phase === 'in_progress') {
+        const expected = context.now + (input.additionalDurationSec ?? 0);
+        const actualStart = current.current?.request.startedAt;
+        const norm = current.current?.request.serviceDurationSec;
+        await context.tx.request.update({
+          where: { id: input.requestId },
+          data: {
+            ...(actualStart !== null && actualStart !== undefined
+              ? { serviceDurationSec: expected - actualStart }
+              : {}),
+            expectedCompletionAt: BigInt(expected),
+            continuationAvailableAt: BigInt(expected),
+            overrunDetectedAt: null,
+            updatedAt: BigInt(context.now),
+            version: { increment: 1 },
+          },
+        });
+        if (
+          actualStart !== null &&
+          actualStart !== undefined &&
+          norm !== undefined &&
+          expected > actualStart + norm + MATERIAL_DELAY_SEC
+        ) {
+          await this.publisher.publishIfChanged(
+            context.tx,
+            context.now,
+            PUBLICATION_TRIGGERS.ENGINEER_FORECAST_CHANGED,
+            { businessTime: true },
+          );
+        }
+      } else {
         await this.publisher.publishIfChanged(
           context.tx,
           context.now,
-          PUBLICATION_TRIGGERS.ENGINEER_FORECAST_CHANGED,
-          { businessTime: true },
+          PUBLICATION_TRIGGERS.REQUEST_CONDITIONS_CHANGED,
         );
       }
       return;

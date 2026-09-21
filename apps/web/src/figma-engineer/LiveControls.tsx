@@ -29,7 +29,7 @@ export function LiveControls({
   const [time, setTime] = useState('');
   const [problem, setProblem] = useState<
     'eta' | 'delay' | 'missing_equipment' | 'other' | 'impossible'
-  >('other');
+  >('delay');
   const [minutes, setMinutes] = useState(40);
   const [equipment, setEquipment] = useState<'router' | 'set_top_box' | 'smart_speaker'>('router');
   const [note, setNote] = useState('');
@@ -204,7 +204,7 @@ export function LiveControls({
                         setProblem(value);
                     }}
                   >
-                    {working ? <option value="delay">Задержка</option> : null}
+                    <option value="delay">Нужно больше времени</option>
                     {!working ? <option value="eta">Опаздываю к заявке</option> : null}
                     <option value="missing_equipment">Нет оборудования</option>
                     <option value="other">Другая проблема</option>
@@ -225,7 +225,7 @@ export function LiveControls({
                 ) : null}
                 {problem === 'delay' ? (
                   <label>
-                    Нужно ещё минут
+                    Нужно больше времени, мин.
                     <input
                       className={field}
                       type="number"
@@ -273,7 +273,7 @@ export function LiveControls({
                   {problem === 'eta'
                     ? 'Установить время прибытия'
                     : problem === 'delay'
-                      ? 'Сообщить задержку'
+                      ? 'Сохранить новую длительность'
                       : 'Отменить заявку с причиной'}
                 </button>
                 {error ? <p role="alert">{error}</p> : null}

@@ -78,7 +78,7 @@ export function LoginCard({
         ? requestEngineerLoginCode(nextEmail)
         : requestDispatcherLoginCode(nextEmail));
       setEmail(issued.email);
-      if (issued.devCode) setDevCode(issued.devCode);
+      if (import.meta.env.DEV && issued.devCode) setDevCode(issued.devCode);
       setExpiresAt(issued.expiresAt);
       setNowMs(Date.now());
       setCells(emptyOtpCells());

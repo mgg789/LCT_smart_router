@@ -4,7 +4,11 @@ import { FigmaIcon } from '../figma-dashboard/primitives';
 import { skillLabel } from '../lib/reasons';
 import { ENGINEER_ASSETS } from './assets';
 import { formatMinutesRu, formatPlanTime, formatPlanWindow } from './engineerClock';
-import type { EngineerJobItem, EngineerLunchItem } from './engineerDay';
+import {
+  type EngineerJobItem,
+  type EngineerLunchItem,
+  visibleServiceDurationSec,
+} from './engineerDay';
 import { eu } from './engineerScale';
 
 const tap = { duration: 0.16 };
@@ -135,7 +139,7 @@ function UpcomingCard({
               height={4}
               style={{ width: eu(4), height: eu(4) }}
             />
-            <span>{formatMinutesRu(item.request.serviceDurationSec)}</span>
+            <span>{formatMinutesRu(visibleServiceDurationSec(item.request))}</span>
           </div>
           {actions === undefined ? (
             <span

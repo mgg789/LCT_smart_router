@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { createDevSnapshot } from '../fixtures/dev-day';
 import { moscowAt } from '../lib/time';
 import {
+  requestAssignLabel,
   requestDetailFromRow,
   requestDetailFromSnapshot,
   requestDetailTags,
   requestEquipmentLabel,
+  requestIsAssigned,
   requestWindowLabel,
 } from './requestDetail';
 import { DEMO_REQUEST_ROWS, shortRequestId } from './requestsTable';
@@ -43,6 +45,10 @@ describe('Figma REQUET detail model', () => {
     expect(detail?.email).toBeNull();
     expect(detail?.engineerLabel.startsWith('Инженер:')).toBe(true);
     expect(detail?.windowLabel).toMatch(/^\d{2}:\d{2}-\d{2}:\d{2}/);
+    expect(typeof detail?.assigned).toBe('boolean');
+    expect(requestAssignLabel(false)).toBe('Назначить инженера');
+    expect(requestAssignLabel(true)).toBe('Переназначить инженера');
+    expect(requestIsAssigned({ assignmentState: 'unassigned' }, null)).toBe(false);
   });
 
   it('keeps the offline table row readable when there is no snapshot', () => {
