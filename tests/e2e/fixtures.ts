@@ -52,9 +52,10 @@ export async function signIn(page: Page) {
     true,
   );
   await page.getByRole('button', { name: 'Войти паролем', exact: true }).click();
-  await page.getByLabel('Email', { exact: true }).fill(process.env.DISPATCHER_EMAIL ?? '');
+  await page.getByLabel('Почта', { exact: true }).fill(process.env.DISPATCHER_EMAIL ?? '');
   await page.getByLabel('Пароль', { exact: true }).fill(process.env.DISPATCHER_PASSWORD ?? '');
   await page.getByRole('button', { name: 'Войти', exact: true }).click();
+  await page.getByRole('button', { name: 'Начать рабочий день', exact: true }).click();
   await expect(page.getByRole('button', { name: 'План дня', exact: true })).toBeVisible();
 }
 

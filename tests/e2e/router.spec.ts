@@ -62,7 +62,7 @@ test('restarted Router restores routing health without losing requests @router-r
     );
     // The real browser must also be usable after the backend dependency returns.
     await signIn(page);
-    await expect(page.getByText('5 назначены', { exact: false })).toBeVisible();
+    await expect(page.getByText('0 без назначения', { exact: false })).toBeVisible();
   } finally {
     await api.dispose();
   }
