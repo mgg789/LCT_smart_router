@@ -13,6 +13,7 @@ Dockerfile    text eol=lf
 .gitignore    text eol=lf
 .gitattributes text eol=lf
 scripts/ci/run-regression.sh text eol=lf
+*.sh          text eol=lf
 tests/e2e/contour.env text eol=lf
 
 # The golden vector is a byte-for-byte contract with Router Core: a CRLF here would

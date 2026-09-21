@@ -184,12 +184,13 @@ docker compose -f docker-compose.yml up -d --build --remove-orphans
 `navix.droidje.com` и проксирует туда. `web` уже проксирует `/api/` на `api:8000`.
 На этом хосте `.env` обязан переносить занятые порты:
 
-- `API_PORT=127.0.0.1:18080` — хостовый `:8000` занят;
+- `API_PORT=18080` — хостовый `:8000` занят; compose сам привязывает API к `127.0.0.1`;
 - `ROUTER_PORT=18100` — хостовый `127.0.0.1:8100` занят (`binom-landing-test`).
 
-Внутри сети compose по-прежнему `api:8000` и `router:8100`. Это остаётся
-демо-контур: `NODE_ENV=development` и `AUTH_DEV_EXPOSE_CODES=true` — приложение
-отказывается сочетать открытые коды входа с `production`.
+Внутри сети compose по-прежнему `api:8000` и `router:8100`. Локальная разработка
+может использовать `NODE_ENV=development` и `AUTH_DEV_EXPOSE_CODES=true`, но публичный
+navix-контур обязан работать с `NODE_ENV=production` и `AUTH_DEV_EXPOSE_CODES=false`.
+Bootstrap проверяет это до вывода ключа деплоя; коды на публичном стенде доставляет SMTP.
 
 ### Секреты и разовые настройки хоста
 
@@ -219,7 +220,8 @@ docker compose -f docker-compose.yml up -d --build --remove-orphans
 
 `scripts/ci/bootstrap-navix-host.sh` создаёт pull-ключ SourceCraft и серверный
 `.env` (случайные пароли БД и диспетчера, loopback API на `18080`, публикация
-router на `18100`). Учётные данные диспетчера живут только в
+router на `18100`). Повторный запуск также переводит старое значение
+`API_PORT=127.0.0.1:18080` в числовой формат, который ожидает Compose. Учётные данные диспетчера живут только в
 `/home/mgg/navix/.env`.
 
 Хостовый nginx CI не пишет. После появления клона, на сервере:

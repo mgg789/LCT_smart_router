@@ -163,7 +163,8 @@ read-only, так что обновлённый пакет не требует �
 
 **Порт занят.** Переопределите `API_PORT`, `ROUTER_PORT`, `POSTGRES_PORT` или
 `WEB_PORT` в `.env`. Postgres и router остаются на `127.0.0.1`. На демо-хосте MGG
-живой ремап: `API_PORT=127.0.0.1:18080` и `ROUTER_PORT=18100` (`docs/ci.md`).
+живой ремап: `API_PORT=18080` и `ROUTER_PORT=18100`; compose привязывает API к
+`127.0.0.1` (`docs/ci.md`).
 
 **Health-эндпоинты отвечают, а функциональности нет.** Сверьтесь с таблицей блоков
 в [architecture.md](./architecture.md) §2 и списком контрактов в §5.
