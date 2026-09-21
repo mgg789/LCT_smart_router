@@ -7,7 +7,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../../src/app.module';
 import type { Actor } from '../../src/auth';
 import { SysError } from '../../src/common/errors';
-import type { Engineer, PrismaClient } from '../../src/generated/prisma/client';
+import type { Alert, Engineer, EngineerDay, PrismaClient } from '../../src/generated/prisma/client';
 import { OperationsService } from '../../src/operations';
 import { AlertsService } from '../../src/orchestrator/alerts';
 import { EngineersService } from '../../src/orchestrator/engineers';
@@ -618,7 +618,7 @@ describe('dispatcher alert lifecycle', () => {
         'keep_lunch',
         'add_engineer',
       ] as const) {
-        const issue = await prisma.alert.create({
+        const issue: Alert = await prisma.alert.create({
           data: {
             code:
               action === 'add_engineer'
@@ -652,7 +652,7 @@ describe('dispatcher alert lifecycle', () => {
             before.snapshotId,
             'removing an already offline engineer must not republish',
           );
-        const resolved = await prisma.alert.findUniqueOrThrow({ where: { id: issue.id } });
+        const resolved: Alert = await prisma.alert.findUniqueOrThrow({ where: { id: issue.id } });
         assert.equal(resolved.resolutionAction, action);
         const task = JSON.parse(current.snapshot.payload) as RouterTaskSnapshot;
         assert.equal(task.planning_as_of, business, action);
@@ -664,7 +664,7 @@ describe('dispatcher alert lifecycle', () => {
           task.requests.some((item) => item.request_id === request.id),
           `${action}: work remains`,
         );
-        const unaffected = await prisma.engineerDay.findUniqueOrThrow({
+        const unaffected: EngineerDay = await prisma.engineerDay.findUniqueOrThrow({
           where: { engineerId_workDate: { engineerId: availableEngineer.id, workDate } },
         });
         assert.equal(unaffected.availability, 'online');
