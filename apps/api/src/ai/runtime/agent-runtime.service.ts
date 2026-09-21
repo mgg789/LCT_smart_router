@@ -6,7 +6,9 @@ import { SysError } from '../../common/errors';
 import { Clock } from '../../common/time';
 import type { AiConversation, AiRoleProfile } from '../../generated/prisma/client';
 import { PrismaService, UnitOfWork } from '../../persistence';
+import { buildClientSystemPrompt } from '../profiles/client.profile';
 import { buildDispatcherSystemPrompt } from '../profiles/dispatcher.profile';
+import { buildEngineerSystemPrompt } from '../profiles/engineer.profile';
 import {
   type LlmMessage,
   LlmProvider,
@@ -388,10 +390,11 @@ export class AgentRuntimeService implements OnModuleInit {
   }
 }
 
-/** Dispatcher profiles get their own prompt builder (`profiles/dispatcher.profile.ts`),
- *  built fresh each turn from the business clock and this turn's actual tool names; the
- *  client and engineer profiles keep this module's own short generic prompt until they
- *  get the same treatment as a later, separate change. */
+/** Every role profile gets its own prompt builder (`profiles/dispatcher.profile.ts`,
+ *  `profiles/client.profile.ts`, `profiles/engineer.profile.ts`), built fresh each turn
+ *  from the business clock and this turn's actual tool names so a prompt can never drift
+ *  from the catalogue that backs it or claim a "today" that is not the moment the run
+ *  actually started. */
 function systemPromptFor(
   roleProfile: AiRoleProfile,
   now: number,
@@ -406,12 +409,10 @@ function systemPromptFor(
       toolNames,
     });
   }
-  return (
-    'You are the Navix field-engineer routing assistant. Answer concisely and factually. ' +
-    `You are currently assisting in the "${roleProfile}" context. ` +
-    'Never invent a status, a schedule or an action; only describe what tools or the ' +
-    'conversation actually establish.'
-  );
+  if (roleProfile === 'client') {
+    return buildClientSystemPrompt({ now, timeZone, toolNames });
+  }
+  return buildEngineerSystemPrompt({ now, timeZone, toolNames });
 }
 
 function costMicrosFor(

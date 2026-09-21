@@ -97,6 +97,42 @@ describe('knowledge corpus and search', () => {
     );
   });
 
+  it('falls all the way through to the OR stage for a long natural-language question', async () => {
+    // Every term ANDed (stages 1 and 2) matches nothing: no single article contains
+    // "интернета", "индикатор", "линк" and "no_link" together. The OR stage (stage 3)
+    // matches any of them, and this exact phrasing is the one observed live against the
+    // real DeepSeek API returning nothing for a question `cli-01-work-types-in-plain-words`
+    // answers directly.
+    const hits = await service.search(
+      'нет интернета, не горит индикатор линк, тип работ no_link',
+      ['client'],
+      10,
+    );
+    assert.ok(
+      hits.some((hit) => hit.slug === 'cli-01-work-types-in-plain-words'),
+      `expected cli-01-work-types-in-plain-words among ${JSON.stringify(hits.map((hit) => hit.slug))}`,
+    );
+  });
+
+  it('the OR stage still respects the segment filter', async () => {
+    // The same wide query, restricted to segments the answering article is not in --
+    // widening which terms must match must never widen which segments are reachable.
+    const hits = await service.search(
+      'нет интернета, не горит индикатор линк, тип работ no_link',
+      ['engineer', 'dispatcher'],
+      50,
+    );
+    for (const hit of hits) {
+      assert.notEqual(hit.segment, 'client');
+    }
+  });
+
+  it('a precise short query still returns its precise match without widening to OR', async () => {
+    const hits = await service.search('нет оборудования', ['engineer'], 5);
+    assert.ok(hits.length > 0, 'expected a direct hit for a precise short query');
+    assert.equal(hits[0]?.slug, 'eng-09-missing-equipment');
+  });
+
   it('uses the ai_documents_fts index rather than a sequential scan', async () => {
     const query = 'заявка';
     // Isolates the `@@` predicate the GIN index actually covers. The full `search()`

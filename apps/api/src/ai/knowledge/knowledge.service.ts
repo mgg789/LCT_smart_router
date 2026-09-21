@@ -76,13 +76,31 @@ export class KnowledgeService implements OnModuleInit {
    * trusted `segments` argument it passes in, which means changing the tool-dispatch
    * code, not anything a model can say in a message.
    *
-   * Tries `websearch_to_tsquery` first (handles free-form phrasing, quoting and `-word`
-   * exclusion the way a search box would); if that yields nothing -- a plausible outcome
-   * for a short or unusual query -- retries once through `plainto_tsquery`, which is
-   * more permissive about what counts as a token, before concluding "not found". Ranked
-   * by `ts_rank_cd` over the same weighted `title`/`summary`/`body` expression the
-   * `ai_documents_fts` GIN index is built on; the two must stay textually identical or
-   * PostgreSQL will not use the index (see that migration's comment).
+   * Three stages, tried in order, each only run when the one before it found nothing:
+   *
+   *   1. `websearch_to_tsquery` -- handles free-form phrasing, quoting and `-word`
+   *      exclusion the way a search box would.
+   *   2. `plainto_tsquery` -- more permissive about what counts as a token than stage 1;
+   *      it rescues a query stage 1 rejected as a syntax error (e.g. a lone `-word`), but
+   *      combines terms with AND exactly like stage 1 does, so it does not help a long
+   *      question that no single document contains every word of.
+   *   3. The same lexemes as stage 2, combined with OR instead of AND (`plainto_tsquery`'s
+   *      own text form has its `&` connectors replaced with `|`, in SQL, so there is no
+   *      second tokenizer to disagree with Postgres's own and no string-built query to
+   *      inject through). This is the stage that turns a natural-language question --
+   *      several words, only some of which any single article actually contains -- into a
+   *      match at all.
+   *
+   * Stages 1 and 2 stay first, and stay AND, so a short precise query keeps getting its
+   * single precise document rather than being buried under everything that shares one
+   * common word with it; stage 3 is deliberately the widening fallback of last resort, not
+   * the default, and `ts_rank_cd` is what still keeps the best-matching document on top
+   * once stage 3 admits looser matches. Do not delete stage 1 or 2 to "simplify" this to
+   * just the OR stage: that would trade every precise query's precision for the recall
+   * only a handful of long questions need. All three rank by `ts_rank_cd` over the same
+   * weighted `title`/`summary`/`body` expression the `ai_documents_fts` GIN index is built
+   * on; that expression must stay textually identical in every stage and in the index
+   * definition, or PostgreSQL will not use the index (see that migration's comment).
    */
   async search(
     query: string,
@@ -101,7 +119,11 @@ export class KnowledgeService implements OnModuleInit {
     if (primary.length > 0) {
       return primary;
     }
-    return this.searchPlain(trimmedQuery, segments, limit);
+    const plain = await this.searchPlain(trimmedQuery, segments, limit);
+    if (plain.length > 0) {
+      return plain;
+    }
+    return this.searchOr(trimmedQuery, segments, limit);
   }
 
   private async searchWebsearch(
@@ -152,6 +174,48 @@ export class KnowledgeService implements OnModuleInit {
           setweight(to_tsvector(${FTS_LANGUAGE}, summary), 'B') ||
           setweight(to_tsvector(${FTS_LANGUAGE}, body), 'C')
         ) @@ plainto_tsquery(${FTS_LANGUAGE}, ${query})
+      ORDER BY rank DESC
+      LIMIT ${limit}
+    `;
+    return toHits(rows);
+  }
+
+  /**
+   * Stage 3: `plainto_tsquery`'s own lexemes, ANDed connectors rewritten to OR in SQL
+   * (`replace(..., '&', '|')`) rather than by tokenising `query` a second time here --
+   * whatever Postgres decided counts as a term and how it stems it is exactly what this
+   * stage searches with, so there is no place for a second opinion about stemming to
+   * disagree with stage 2, and no user-authored string is ever spliced into the query
+   * text itself. See `search()`'s own doc comment for why this stage exists at all and
+   * why it runs last.
+   */
+  private async searchOr(
+    query: string,
+    segments: AiKnowledgeSegment[],
+    limit: number,
+  ): Promise<KnowledgeSearchHit[]> {
+    const rows = await this.prisma.$queryRaw<SearchRow[]>`
+      WITH q AS (
+        SELECT CAST(
+          replace(CAST(plainto_tsquery(${FTS_LANGUAGE}, ${query}) AS text), '&', '|')
+          AS tsquery
+        ) AS tq
+      )
+      SELECT
+        id, slug, section, title, summary, body, segment, actions,
+        ts_rank_cd(
+          setweight(to_tsvector(${FTS_LANGUAGE}, title), 'A') ||
+          setweight(to_tsvector(${FTS_LANGUAGE}, summary), 'B') ||
+          setweight(to_tsvector(${FTS_LANGUAGE}, body), 'C'),
+          q.tq
+        ) AS rank
+      FROM ai_documents, q
+      WHERE segment = ANY(${segments}::"AiKnowledgeSegment"[])
+        AND (
+          setweight(to_tsvector(${FTS_LANGUAGE}, title), 'A') ||
+          setweight(to_tsvector(${FTS_LANGUAGE}, summary), 'B') ||
+          setweight(to_tsvector(${FTS_LANGUAGE}, body), 'C')
+        ) @@ q.tq
       ORDER BY rank DESC
       LIMIT ${limit}
     `;
