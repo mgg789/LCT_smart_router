@@ -1,0 +1,9 @@
+<svg preserveAspectRatio="xMidYMid meet" overflow="visible" style="display: block;" width="26" height="26" viewBox="0 0 26 26" fill="none" xmlns="http://www.w3.org/2000/svg">
+<title>shrink map</title>
+<g id="shrink 1">
+<path id="Vector" d="M16.25 16.25L22.75 22.75M21.45 16.25H16.25V21.45" stroke="#F1F1F1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_2" d="M4.55 16.25H9.75V21.45M9.75 16.25L3.25 22.75" stroke="#F1F1F1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_3" d="M21.45 9.75H16.25V4.55M16.25 9.75L22.75 3.25" stroke="#F1F1F1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_4" d="M4.55 9.75H9.75V4.55M9.75 9.75L3.25 3.25" stroke="#F1F1F1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+</svg>

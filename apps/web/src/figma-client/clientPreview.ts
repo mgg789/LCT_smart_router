@@ -2,6 +2,11 @@ import { moscowWorkDate } from '../figma-dashboard/welcomeDay';
 import { moscowAt } from '../lib/time';
 import { CLIENT_ASSETS } from './assets';
 
+export type ClientMapPoint = { lat: number; lon: number };
+
+/** Default Moscow center until the client picks a point on the form map. */
+export const CLIENT_MAP_CENTER: ClientMapPoint = { lat: 55.7558, lon: 37.6173 };
+
 export const CLIENT_PROBLEMS = [
   'Интернет не работает',
   'Починить роутер',
@@ -12,7 +17,7 @@ export const CLIENT_PROBLEMS = [
 ] as const;
 
 export type ClientProblem = (typeof CLIENT_PROBLEMS)[number];
-export type ClientScreenId = 'new' | 'list' | 'support' | 'settings';
+export type ClientScreenId = 'new' | 'list' | 'support';
 export type ClientRequestStatus = 'en_route' | 'planned' | 'done';
 
 /** Local preview card — first pass has no client API. */
@@ -45,7 +50,7 @@ export interface ClientRequestDraft {
   windowStart: string;
   windowEnd: string;
   email: string;
-  consent: boolean;
+  point: ClientMapPoint | null;
 }
 
 const WORK_DATE = '2026-09-15';
@@ -57,7 +62,6 @@ export const CLIENT_DETAIL_NOW_MS = moscowAt(WORK_DATE, 11, 55) * 1000;
 export const CLIENT_LIST_NOW_MS = moscowAt(WORK_DATE, 20, 14) * 1000;
 
 export const CLIENT_PROFILE = {
-  company: 'ООО “Горизонт”',
   email: 'ivanfromgorizont@gmail.com',
 } as const;
 
@@ -67,7 +71,7 @@ export const EMPTY_CLIENT_DRAFT: ClientRequestDraft = {
   windowStart: '12:00',
   windowEnd: '14:00',
   email: '',
-  consent: false,
+  point: null,
 };
 
 export const CLIENT_PREVIEW_REQUESTS: ClientRequestView[] = [
@@ -79,7 +83,7 @@ export const CLIENT_PREVIEW_REQUESTS: ClientRequestView[] = [
     windowEndAt: moscowAt(WORK_DATE, 14, 0),
     addressText: 'ул. Таганская, 24',
     office: 'офис 302',
-    company: CLIENT_PROFILE.company,
+    company: 'ООО “Горизонт”',
     workTypeTitle: 'Подключение офиса',
     problemTitle: 'Подключение интернета',
     description: 'Здесь описание проблемы',
@@ -101,7 +105,7 @@ export const CLIENT_PREVIEW_REQUESTS: ClientRequestView[] = [
     windowEndAt: moscowAt(WORK_DATE, 10, 20),
     addressText: 'Офис - ул. Лесная, 7',
     office: null,
-    company: CLIENT_PROFILE.company,
+    company: 'ООО “Горизонт”',
     workTypeTitle: 'Замена роутера',
     problemTitle: 'Замена роутера',
     description: 'Роутер заменён, связь восстановлена.',
@@ -123,7 +127,7 @@ export const CLIENT_PREVIEW_REQUESTS: ClientRequestView[] = [
     windowEndAt: moscowAt(WORK_DATE, 10, 20),
     addressText: 'Офис - ул. Лесная, 7',
     office: null,
-    company: CLIENT_PROFILE.company,
+    company: 'ООО “Горизонт”',
     workTypeTitle: 'Замена роутера',
     problemTitle: 'Замена роутера',
     description: 'Роутер заменён, связь восстановлена.',
@@ -158,7 +162,6 @@ export function splitClientRequests(requests: readonly ClientRequestView[]): {
 /** True when the Figma form has enough to show «Отправить» as enabled. */
 export function canSubmitClientForm(draft: ClientRequestDraft): boolean {
   return (
-    draft.consent &&
     draft.problem.length > 0 &&
     draft.address.trim().length > 0 &&
     isClock(draft.windowStart) &&
@@ -173,8 +176,8 @@ export function nextClientRequestNumber(requests: readonly ClientRequestView[]):
 }
 
 /**
- * Turns the local form into a list card. Coordinates stay on Moscow
- * until a geocoder exists — the first pass is UI-only.
+ * Turns the local form into a list card. A picked map point wins;
+ * otherwise the form stays on the Moscow preview center.
  */
 export function requestFromDraft(
   draft: ClientRequestDraft,
@@ -183,6 +186,7 @@ export function requestFromDraft(
 ): ClientRequestView {
   const [startHour, startMinute] = parseClock(draft.windowStart);
   const [endHour, endMinute] = parseClock(draft.windowEnd);
+  const point = draft.point ?? CLIENT_MAP_CENTER;
   return {
     id: `draft-${number}`,
     number,
@@ -191,7 +195,7 @@ export function requestFromDraft(
     windowEndAt: moscowAt(workDate, endHour, endMinute),
     addressText: draft.address.trim(),
     office: null,
-    company: CLIENT_PROFILE.company,
+    company: '',
     workTypeTitle: draft.problem || 'Новая заявка',
     problemTitle: draft.problem || 'Новая заявка',
     description: 'Заявка отправлена. Описание появится после разбора диспетчером.',
@@ -201,8 +205,8 @@ export function requestFromDraft(
     engineerName: null,
     engineerEtaLabel: null,
     engineerPortrait: null,
-    lat: 55.7558,
-    lon: 37.6173,
+    lat: point.lat,
+    lon: point.lon,
     archived: false,
   };
 }

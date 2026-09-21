@@ -58,12 +58,12 @@ export function ClientApp() {
 
   const submit = () => {
     if (!canSubmitClientForm(draft)) {
-      setNotice('Заполните адрес, почту и согласие на уведомления.');
+      setNotice('Заполните адрес и почту.');
       return;
     }
     const created = requestFromDraft(draft, nextClientRequestNumber(requests));
     setRequests((previous) => [created, ...previous]);
-    setDraft({ ...EMPTY_CLIENT_DRAFT, email: draft.email, consent: draft.consent });
+    setDraft({ ...EMPTY_CLIENT_DRAFT, email: draft.email });
     setNotice('Заявка сохранена локально. Клиентский API ещё не подключён.');
     setScreen('list');
   };
@@ -106,6 +106,14 @@ export function ClientApp() {
                 {engineerHeaderStamp(CLIENT_LIST_NOW_MS)}
               </p>
             ) : null}
+            {screen === 'new' ? (
+              <p
+                className="min-w-0 font-murs tracking-[0.02em] text-figma-ink"
+                style={{ fontSize: eu(40), position: 'relative', top: 2 }}
+              >
+                NAVIX
+              </p>
+            ) : null}
           </header>
 
           {screen === 'new' ? (
@@ -135,14 +143,6 @@ export function ClientApp() {
             <ComingSoon
               title="Поддержка"
               body="Чат с поддержкой появится отдельным экраном. Сейчас можно вернуться к заявкам."
-              motionOn={motionOn}
-              onBack={() => go('list')}
-            />
-          ) : null}
-          {screen === 'settings' ? (
-            <ComingSoon
-              title="Настройки"
-              body="Профиль и уведомления появятся после клиентского API. Сейчас можно вернуться к заявкам."
               motionOn={motionOn}
               onBack={() => go('list')}
             />
@@ -181,7 +181,6 @@ export function ClientApp() {
           <ClientMenu
             open={menuOpen}
             motionOn={motionOn}
-            company={CLIENT_PROFILE.company}
             email={draft.email.trim() || CLIENT_PROFILE.email}
             active={screen}
             onClose={() => setMenuOpen(false)}

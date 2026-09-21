@@ -1,20 +1,22 @@
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { useState } from 'react';
 import { FigmaIcon } from '../figma-dashboard/primitives';
-import { engineerMapsUrl } from '../figma-engineer/engineerRoute';
 import { eu } from '../figma-engineer/engineerScale';
-import { RequestMap } from '../figma-engineer/RequestMap';
 import { CLIENT_ASSETS } from './assets';
+import { ClientPickMap } from './ClientPickMap';
 import {
   canSubmitClientForm,
   CLIENT_PROBLEMS,
+  type ClientMapPoint,
   type ClientRequestDraft,
 } from './clientPreview';
 
 const tap = { duration: 0.16 };
+const slideEase = [0.22, 1, 0.36, 1] as const;
 
 /**
- * Figma FIRST 115:344 — dark new-request form. Field heights follow the
- * engineer phone tokens, not the undersized Figma artboard.
+ * Figma FIRST 115:405 — dark new-request form with oval reason chips,
+ * pickable map and an expanding map overlay (122:2471).
  */
 export function ClientNewRequest({
   draft,
@@ -29,28 +31,17 @@ export function ClientNewRequest({
   onSubmit: () => void;
   onAskAi: () => void;
 }) {
+  const motionOn = !useReducedMotion();
+  const [mapOpen, setMapOpen] = useState(false);
   const ready = canSubmitClientForm(draft);
-  const mapPoint = { lat: 55.7558, lon: 37.6173, addressText: draft.address.trim() };
+  const pick = (point: ClientMapPoint) => onChange({ ...draft, point });
 
   return (
     <section className="flex flex-col">
-      <div className="flex flex-col items-center" style={{ marginTop: eu(28), gap: eu(16) }}>
-        <FigmaIcon
-          src={CLIENT_ASSETS.logo}
-          alt=""
-          width={170}
-          height={170}
-          style={{ width: eu(140), height: eu(140) }}
-        />
-        <p className="font-murs tracking-[0.02em] text-figma-ink" style={{ fontSize: eu(48) }}>
-          NAVIX
-        </p>
-      </div>
-
       <form
         className="flex flex-col bg-figma-ink"
         style={{
-          marginTop: eu(36),
+          marginTop: eu(24),
           borderRadius: eu(26),
           padding: `${eu(30)} ${eu(30)} ${eu(32)}`,
         }}
@@ -63,7 +54,7 @@ export function ClientNewRequest({
           Новая заявка
         </h1>
         <p
-          className="font-medium text-white/70"
+          className="font-semibold text-white/60"
           style={{ marginTop: eu(12), fontSize: eu(20), lineHeight: eu(26) }}
         >
           подберём инженера и назовём точное время визита
@@ -80,14 +71,13 @@ export function ClientNewRequest({
                 whileTap={{ scale: 0.98 }}
                 transition={tap}
                 aria-pressed={selected}
-                className="font-medium tracking-[-0.02em] text-white"
+                className="font-medium tracking-[-0.02em] text-figma-ink"
                 style={{
-                  minHeight: eu(56),
-                  borderRadius: eu(20),
+                  minHeight: eu(48),
+                  borderRadius: eu(100),
                   padding: `${eu(14)} ${eu(24)}`,
                   fontSize: eu(20),
-                  background: selected ? 'rgba(255, 199, 44, 0.16)' : '#3a3c43',
-                  border: selected ? `${eu(3)} solid var(--color-figma-bee)` : `${eu(2)} solid transparent`,
+                  background: selected ? 'var(--color-figma-bee)' : 'var(--color-figma-track)',
                 }}
               >
                 {problem}
@@ -106,7 +96,7 @@ export function ClientNewRequest({
           placeholder="Адрес"
           value={draft.address}
           onChange={(event) => onChange({ ...draft, address: event.target.value })}
-          className="w-full bg-[#3a3c43] font-medium text-white outline-none placeholder:text-white/45"
+          className="w-full bg-[#555] font-medium text-white outline-none placeholder:text-white/60"
           style={{
             marginTop: eu(24),
             height: eu(80),
@@ -118,23 +108,24 @@ export function ClientNewRequest({
 
         <div
           className="relative overflow-hidden bg-white"
-          style={{ marginTop: eu(16), height: eu(287), borderRadius: eu(20) }}
+          style={{ marginTop: eu(16), height: eu(287), borderRadius: eu(26) }}
         >
-          <RequestMap lat={mapPoint.lat} lon={mapPoint.lon} />
+          <ClientPickMap point={draft.point} onPick={pick} />
           <motion.button
             type="button"
-            onClick={() => window.open(engineerMapsUrl(mapPoint), '_blank', 'noopener,noreferrer')}
-            whileTap={{ scale: 0.98 }}
-            className="absolute flex items-center rounded-full bg-figma-ink"
-            style={{
-              left: eu(16),
-              bottom: eu(16),
-              padding: `${eu(14)} ${eu(24)}`,
-            }}
+            aria-label="Открыть карту"
+            onClick={() => setMapOpen(true)}
+            whileTap={{ scale: 0.96 }}
+            className="absolute"
+            style={{ right: eu(14), bottom: eu(14), width: eu(50), height: eu(50) }}
           >
-            <span className="whitespace-nowrap font-semibold text-white" style={{ fontSize: eu(20) }}>
-              Указать на карте
-            </span>
+            <FigmaIcon
+              src={CLIENT_ASSETS.expand}
+              alt=""
+              width={50}
+              height={50}
+              style={{ width: eu(50), height: eu(50) }}
+            />
           </motion.button>
         </div>
 
@@ -155,8 +146,8 @@ export function ClientNewRequest({
 
         <label
           htmlFor="client-email"
-          className="font-medium text-white"
-          style={{ marginTop: eu(24), fontSize: eu(22) }}
+          className="font-semibold text-[#f1f1f1]"
+          style={{ marginTop: eu(24), fontSize: eu(32) }}
         >
           Email
         </label>
@@ -167,7 +158,7 @@ export function ClientNewRequest({
           placeholder="example@gmail.com"
           value={draft.email}
           onChange={(event) => onChange({ ...draft, email: event.target.value })}
-          className="w-full bg-[#3a3c43] font-medium text-white outline-none placeholder:text-white/45"
+          className="w-full bg-[#555] font-medium text-white outline-none placeholder:text-white/60"
           style={{
             marginTop: eu(12),
             height: eu(80),
@@ -195,43 +186,34 @@ export function ClientNewRequest({
           type="button"
           onClick={onAskAi}
           whileTap={{ scale: 0.98 }}
-          className="flex w-full items-center justify-center font-semibold tracking-[-0.03em] text-white"
+          className="client-ai-border flex w-full items-center justify-center font-semibold tracking-[-0.03em]"
           style={{
             marginTop: eu(16),
             height: eu(80),
             gap: eu(12),
             borderRadius: eu(20),
-            border: `${eu(2)} solid rgba(255,255,255,0.35)`,
             fontSize: eu(28),
           }}
         >
-          <FigmaIcon
-            src={CLIENT_ASSETS.sparkles}
-            alt=""
-            width={26}
-            height={26}
-            className="brightness-0 invert"
-            style={{ width: eu(26), height: eu(26) }}
+          <span
+            aria-hidden
+            className="client-ai-fill shrink-0"
+            style={{
+              width: eu(26),
+              height: eu(26),
+              WebkitMaskImage: `url(${CLIENT_ASSETS.sparkles})`,
+              maskImage: `url(${CLIENT_ASSETS.sparkles})`,
+              WebkitMaskRepeat: 'no-repeat',
+              maskRepeat: 'no-repeat',
+              WebkitMaskPosition: 'center',
+              maskPosition: 'center',
+              WebkitMaskSize: 'contain',
+              maskSize: 'contain',
+            }}
           />
-          Заявка с AI
+          <span className="client-ai-fill client-ai-text">Заявка с AI</span>
         </motion.button>
       </form>
-
-      <label
-        className="flex items-start"
-        style={{ marginTop: eu(24), gap: eu(16) }}
-      >
-        <input
-          type="checkbox"
-          checked={draft.consent}
-          onChange={(event) => onChange({ ...draft, consent: event.target.checked })}
-          className="shrink-0 accent-figma-ink"
-          style={{ width: eu(30), height: eu(30), marginTop: eu(4) }}
-        />
-        <span className="font-medium text-figma-dim" style={{ fontSize: eu(18), lineHeight: eu(24) }}>
-          Я согласен(а) на обработку данных и получение уведомлений по email
-        </span>
-      </label>
 
       {notice ? (
         <p
@@ -241,6 +223,43 @@ export function ClientNewRequest({
           {notice}
         </p>
       ) : null}
+
+      <AnimatePresence>
+        {mapOpen ? (
+          <motion.div
+            key="client-map-expand"
+            className="absolute inset-0 z-30 overflow-hidden bg-figma-ink"
+            initial={motionOn ? { opacity: 0, scale: 0.96 } : false}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={motionOn ? { opacity: 0, scale: 0.96 } : undefined}
+            transition={motionOn ? { duration: 0.28, ease: slideEase } : { duration: 0 }}
+            style={{ borderRadius: eu(26) }}
+          >
+            <ClientPickMap point={draft.point} onPick={pick} />
+            <motion.button
+              type="button"
+              aria-label="Свернуть карту"
+              onClick={() => setMapOpen(false)}
+              whileTap={{ scale: 0.96 }}
+              className="absolute flex items-center justify-center rounded-full bg-figma-ink"
+              style={{
+                right: eu(24),
+                bottom: eu(24),
+                width: eu(50),
+                height: eu(50),
+              }}
+            >
+              <FigmaIcon
+                src={CLIENT_ASSETS.shrink}
+                alt=""
+                width={26}
+                height={26}
+                style={{ width: eu(26), height: eu(26) }}
+              />
+            </motion.button>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </section>
   );
 }
@@ -258,7 +277,7 @@ function ClockField({
 }) {
   return (
     <div className="flex min-w-0 flex-1 flex-col">
-      <label htmlFor={id} className="font-medium text-white" style={{ fontSize: eu(20) }}>
+      <label htmlFor={id} className="font-murs text-white" style={{ fontSize: eu(24) }}>
         {label}
       </label>
       <input
@@ -266,13 +285,14 @@ function ClockField({
         type="time"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="w-full bg-[#3a3c43] font-medium text-white outline-none"
+        className="client-time-input w-full bg-[#555] font-medium text-white outline-none"
         style={{
           marginTop: eu(10),
           height: eu(80),
           borderRadius: eu(20),
           paddingInline: eu(20),
           fontSize: eu(22),
+          colorScheme: 'dark',
         }}
       />
     </div>

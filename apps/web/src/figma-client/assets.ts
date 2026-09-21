@@ -10,10 +10,11 @@ export const CLIENT_ASSETS = {
   dot: ENGINEER_ASSETS.dot,
   gear: ENGINEER_ASSETS.gear,
   map: ENGINEER_ASSETS.map,
-  menuBlobs: ENGINEER_ASSETS.menuBlobs,
   logo: FIGMA_ASSETS.logo,
   sparkles: FIGMA_ASSETS.iconSparkles,
   list: FIGMA_ASSETS.navRequests,
   support: '/figma/client-support.svg',
+  expand: '/figma/client-map-expand.svg',
+  shrink: '/figma/client-map-shrink.svg',
   portrait: FIGMA_ASSETS.engPortrait1,
 } as const;

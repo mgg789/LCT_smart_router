@@ -1,0 +1,16 @@
+<svg preserveAspectRatio="xMidYMid meet" overflow="visible" style="display: block;" width="50" height="50" viewBox="0 0 50 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+<title>expand map</title>
+<g id="Group 12346">
+<circle id="Ellipse 122" cx="25" cy="25" r="25" fill="#272930"/>
+<g id="expand 1">
+<path id="Vector" d="M28.25 28.25L34.75 34.75" stroke="#F1F1F1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_2" d="M28.25 21.75L34.75 15.25" stroke="#F1F1F1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_3" d="M34.75 29.3333V34.75H29.3333" stroke="#F1F1F1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_4" d="M34.75 20.6667V15.25H29.3333" stroke="#F1F1F1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_5" d="M15.25 29.3333V34.75H20.6667" stroke="#F1F1F1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_6" d="M15.25 34.75L21.75 28.25" stroke="#F1F1F1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_7" d="M15.25 20.6667V15.25H20.6667" stroke="#F1F1F1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path id="Vector_8" d="M21.75 21.75L15.25 15.25" stroke="#F1F1F1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+</g>
+</svg>

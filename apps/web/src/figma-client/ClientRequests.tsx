@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { formatMinutesRu, formatPlanTime, formatPlanWindow } from '../figma-engineer/engineerClock';
 import { eu } from '../figma-engineer/engineerScale';
+import { RequestMap } from '../figma-engineer/RequestMap';
 import { CLIENT_ASSETS } from './assets';
 import { type ClientRequestView, splitClientRequests } from './clientPreview';
 
@@ -171,7 +172,7 @@ function FeaturedCard({
               Открыть карточку
             </span>
           </div>
-          <MapThumb />
+          <MapThumb lat={item.lat} lon={item.lon} />
         </div>
         {item.engineerName ? (
           <div
@@ -239,22 +240,23 @@ function ArchiveCard({
             onOpen();
           }
         }}
-        className="flex w-full items-start justify-between overflow-hidden bg-white text-left"
+        className="flex w-full items-start justify-between overflow-hidden text-left"
         style={{
           gap: eu(16),
           borderRadius: eu(20),
           padding: `${eu(25)} ${eu(30)}`,
+          background: 'rgba(255, 255, 255, 0.7)',
         }}
       >
         <div className="min-w-0 flex-1">
           <p
-            className="font-murs leading-none tracking-[-0.02em] text-figma-ink"
+            className="font-murs leading-none tracking-[-0.02em] text-figma-ink/70"
             style={{ fontSize: eu(40) }}
           >
             {formatPlanTime(item.startAt)}
           </p>
           <p
-            className="break-words font-semibold tracking-[-0.02em] text-figma-dim"
+            className="break-words font-semibold tracking-[-0.02em] text-figma-dim/70"
             style={{ marginTop: eu(14), fontSize: eu(24) }}
           >
             {item.addressText}
@@ -266,7 +268,7 @@ function ArchiveCard({
             {item.workTypeTitle}
           </p>
           <span
-            className="inline-flex items-center rounded-full bg-figma-ink font-semibold text-white"
+            className="inline-flex items-center rounded-full bg-figma-ink/70 font-semibold text-white"
             style={{
               marginTop: eu(16),
               padding: `${eu(7)} ${eu(30)}`,
@@ -276,7 +278,7 @@ function ArchiveCard({
             {formatPlanWindow(item.windowStartAt, item.windowEndAt)}
           </span>
         </div>
-        <MapThumb />
+        <MapThumb lat={item.lat} lon={item.lon} />
       </div>
     </motion.article>
   );
@@ -299,27 +301,13 @@ function StatusPill({ label, live }: { label: string; live: boolean }) {
   );
 }
 
-function MapThumb() {
+function MapThumb({ lat, lon }: { lat: number; lon: number }) {
   return (
     <div
-      className="relative shrink-0 overflow-hidden bg-figma-soft"
+      className="pointer-events-none relative shrink-0 overflow-hidden bg-figma-soft"
       style={{ width: eu(170), height: eu(164), borderRadius: eu(20) }}
     >
-      <img alt="" src={CLIENT_ASSETS.map} className="h-full w-full object-cover" />
-      <FigmaIcon
-        src={CLIENT_ASSETS.pin}
-        alt=""
-        width={40}
-        height={40}
-        className="absolute"
-        style={{
-          width: eu(40),
-          height: eu(40),
-          left: '50%',
-          top: '50%',
-          transform: 'translate(-50%, -70%)',
-        }}
-      />
+      <RequestMap lat={lat} lon={lon} />
     </div>
   );
 }

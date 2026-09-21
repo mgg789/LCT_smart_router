@@ -15,19 +15,18 @@ it('features the en-route card and keeps the two Figma archive rows', () => {
   expect(split.archive.map((item) => item.number)).toEqual(['1038', '1037']);
 });
 
-it('blocks send until consent, address and email are filled', () => {
+it('blocks send until address and email are filled', () => {
   expect(canSubmitClientForm(EMPTY_CLIENT_DRAFT)).toBe(false);
   expect(
     canSubmitClientForm({
       ...EMPTY_CLIENT_DRAFT,
       address: 'ул. Лесная, 7',
       email: 'ivanfromgorizont@gmail.com',
-      consent: true,
     }),
   ).toBe(true);
 });
 
-it('numbers a submitted draft after the highest preview ticket', () => {
+it('keeps a picked map point on the submitted draft', () => {
   const number = nextClientRequestNumber(CLIENT_PREVIEW_REQUESTS);
   expect(number).toBe('1043');
   const created = requestFromDraft(
@@ -35,7 +34,7 @@ it('numbers a submitted draft after the highest preview ticket', () => {
       ...EMPTY_CLIENT_DRAFT,
       address: 'ул. Лесная, 7',
       email: 'ivanfromgorizont@gmail.com',
-      consent: true,
+      point: { lat: 55.78, lon: 37.59 },
     },
     number,
     '2026-09-15',
@@ -43,4 +42,6 @@ it('numbers a submitted draft after the highest preview ticket', () => {
   expect(created.status).toBe('planned');
   expect(created.archived).toBe(false);
   expect(created.addressText).toBe('ул. Лесная, 7');
+  expect(created.lat).toBe(55.78);
+  expect(created.lon).toBe(37.59);
 });

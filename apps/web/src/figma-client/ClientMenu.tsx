@@ -7,13 +7,12 @@ import type { ClientScreenId } from './clientPreview';
 const ease = [0.22, 1, 0.36, 1] as const;
 
 /**
- * Left drawer from Figma MAIN MENU 115:843 — company, requests / support /
- * settings, yellow «Новая заявка». Same 501-wide sheet as the engineer menu.
+ * Left drawer from Figma MAIN MENU 115:843 — email, requests / support,
+ * yellow «Новая заявка». Flush to the phone's left and bottom corners.
  */
 export function ClientMenu({
   open,
   motionOn,
-  company,
   email,
   active,
   onClose,
@@ -22,7 +21,6 @@ export function ClientMenu({
 }: {
   open: boolean;
   motionOn: boolean;
-  company: string;
   email: string;
   active: ClientScreenId;
   onClose: () => void;
@@ -57,13 +55,10 @@ export function ClientMenu({
               width: eu(501),
               borderTopRightRadius: eu(26),
               borderBottomRightRadius: eu(26),
+              borderTopLeftRadius: 0,
+              borderBottomLeftRadius: 0,
             }}
           >
-            <img
-              alt=""
-              src={CLIENT_ASSETS.menuBlobs}
-              className="pointer-events-none absolute bottom-0 left-0 z-0 w-full max-w-none"
-            />
             <div
               className="relative z-10 flex shrink-0 flex-col items-center justify-center bg-figma-ink"
               style={{ height: eu(445), gap: eu(20) }}
@@ -78,18 +73,12 @@ export function ClientMenu({
               />
             </div>
             <div
-              className="relative z-10 flex min-h-0 flex-1 flex-col"
+              className="relative z-10 flex min-h-0 flex-1 flex-col bg-white"
               style={{ padding: `${eu(24)} ${eu(20)} ${eu(28)}` }}
             >
               <p
-                className="relative break-words font-murs tracking-[0.02em] text-figma-ink"
-                style={{ fontSize: eu(32) }}
-              >
-                {company}
-              </p>
-              <p
                 className="relative break-all font-semibold tracking-[-0.02em] text-figma-muted"
-                style={{ marginTop: eu(8), fontSize: eu(24) }}
+                style={{ fontSize: eu(24) }}
               >
                 {email}
               </p>
@@ -110,17 +99,9 @@ export function ClientMenu({
                   active={active === 'support'}
                   onClick={() => onNavigate('support')}
                 />
-                <MenuItem
-                  label="Настройки"
-                  icon={CLIENT_ASSETS.gear}
-                  iconWidth={32}
-                  iconHeight={32}
-                  active={active === 'settings'}
-                  onClick={() => onNavigate('settings')}
-                />
               </nav>
               <div
-                className="relative mt-auto flex flex-col"
+                className="relative mt-auto flex flex-col bg-white"
                 style={{ gap: eu(20), paddingTop: eu(28) }}
               >
                 <motion.button

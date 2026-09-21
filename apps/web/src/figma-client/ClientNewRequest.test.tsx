@@ -3,7 +3,7 @@ import { expect, it } from 'vitest';
 import { ClientNewRequest } from './ClientNewRequest';
 import { EMPTY_CLIENT_DRAFT } from './clientPreview';
 
-it('renders the Figma new-request form with send disabled until consent', () => {
+it('renders oval reason chips, a pickable map and the AI gradient action', () => {
   const html = renderToStaticMarkup(
     <ClientNewRequest
       draft={EMPTY_CLIENT_DRAFT}
@@ -15,8 +15,11 @@ it('renders the Figma new-request form with send disabled until consent', () => 
   );
   expect(html).toContain('Новая заявка');
   expect(html).toContain('Интернет не работает');
-  expect(html).toContain('Указать на карте');
+  expect(html).toContain('calc(100 * var(--eu))');
+  expect(html).toContain('Карта адреса заявки');
+  expect(html).toContain('Открыть карту');
   expect(html).toContain('Заявка с AI');
-  expect(html).toContain('disabled');
-  expect(html).toContain('Я согласен(а) на обработку данных');
+  expect(html).toContain('client-ai-border');
+  expect(html).not.toContain('Указать на карте');
+  expect(html).not.toContain('Я согласен(а)');
 });
