@@ -56,8 +56,9 @@ test('connection loss preserves the real day, disables writes and recovers', asy
   await signIn(page);
   await expect(page.getByRole('button', { name: 'Загрузить данные', exact: true })).toBeVisible();
   const ids = live.plan.assignments.map((item) => item.requestId).sort();
-  await context.setOffline(true);
   await page.getByRole('button', { name: 'Инженеры', exact: true }).click();
+  const availabilityRequest = '**/api/v1/dispatch/engineers/*/availability';
+  await context.route(availabilityRequest, (route) => route.abort('internetdisconnected'));
   await page.getByRole('button', { name: 'Снять со смены', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Снять со смены', exact: true })).toBeDisabled({
     timeout: 20_000,
@@ -71,7 +72,7 @@ test('connection loss preserves the real day, disables writes and recovers', asy
       ),
   );
   expect(stored.snapshot.requests.map((item) => item.id).sort()).toEqual(ids);
-  await context.setOffline(false);
+  await context.unroute(availabilityRequest);
   await expect(page.getByRole('button', { name: 'Снять со смены', exact: true })).toBeEnabled();
   expect((await readPlan(live.api)).assignments.map((item) => item.requestId).sort()).toEqual(ids);
 });
