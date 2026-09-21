@@ -4,6 +4,7 @@
     "includes": [
       "apps/**",
       "packages/**",
+      "tests/e2e/**",
       "biome.json",
       "package.json",
       "!**/node_modules",
@@ -12,6 +13,7 @@
       "!**/test-results",
       "!**/playwright-report",
       "!**/generated",
+      "!**/artifacts",
       "!**/.mimosa"
     ]
   },

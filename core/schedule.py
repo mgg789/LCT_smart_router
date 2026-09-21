@@ -24,6 +24,13 @@ from core.contracts import (
 from core.geo import TravelQuote, quote_at
 from core.policy import policy_score
 
+# A route may overrun its shift only at its final customer visit.  This is a
+# bounded recovery rule for the last viable request of the day.
+TERMINAL_SHIFT_OVERTIME_SEC = 20 * 60
+# The same terminal exception is bounded independently from the configurable
+# ordinary customer-window grace.  It is never available to an intermediate job.
+TERMINAL_WINDOW_LATENESS_TOLERANCE_SEC = 20 * 60
+
 
 class TravelProvider(Protocol):
     """Immutable map context; return None only for known unreachable travel."""
@@ -37,8 +44,8 @@ class TravelProvider(Protocol):
         ...
 
 
-def release_at(snapshot: RouterTaskSnapshot, engineer: Engineer) -> int | None:
-    """Conservative release; unknown or expired offline forecasts are unavailable."""
+def _candidate_release(snapshot: RouterTaskSnapshot, engineer: Engineer, limit: int) -> int | None:
+    """Resolve availability against one supplied route-completion limit."""
     if engineer.available_from is None:
         return None
     release = max(
@@ -54,11 +61,39 @@ def release_at(snapshot: RouterTaskSnapshot, engineer: Engineer) -> int | None:
         ):
             return None
         release = max(release, engineer.expected_online_at)
-    return release if release <= min(engineer.shift_end_at, snapshot.horizon_end_at) else None
+    return release if release <= limit else None
 
 
-def eligible(snapshot: RouterTaskSnapshot, engineer: Engineer, request: Request) -> bool:
-    """Check region, skill, transport, equipment and release constraints."""
+def release_at(snapshot: RouterTaskSnapshot, engineer: Engineer) -> int | None:
+    """Conservative ordinary release; unknown or expired offline forecasts are unavailable."""
+    return _candidate_release(
+        snapshot, engineer, min(engineer.shift_end_at, snapshot.horizon_end_at)
+    )
+
+
+def job_completion_limit(
+    snapshot: RouterTaskSnapshot, engineer: Engineer, *, terminal: bool
+) -> int:
+    """Return the hard completion limit for a job in this route position.
+
+    Only a job directly followed by route end may use the fixed twenty-minute
+    shift recovery allowance.  Its customer-window allowance is checked
+    separately and is likewise terminal-only.
+    """
+    limit = engineer.shift_end_at + (TERMINAL_SHIFT_OVERTIME_SEC if terminal else 0)
+    horizon = snapshot.horizon_end_at + (TERMINAL_SHIFT_OVERTIME_SEC if terminal else 0)
+    return min(limit, horizon)
+
+
+def terminal_release_at(snapshot: RouterTaskSnapshot, engineer: Engineer) -> int | None:
+    """Permit a known-late engineer only for an otherwise terminal recovery visit."""
+    return _candidate_release(
+        snapshot, engineer, job_completion_limit(snapshot, engineer, terminal=True)
+    )
+
+
+def _matches_static_constraints(engineer: Engineer, request: Request) -> bool:
+    """Check assignment compatibility independently from the time release rule."""
     return (
         (request.region is None or engineer.region is None or request.region == engineer.region)
         and request.required_skill in engineer.skills
@@ -67,7 +102,22 @@ def eligible(snapshot: RouterTaskSnapshot, engineer: Engineer, request: Request)
             request.required_equipment is None
             or engineer.equipment_stock.quantity(request.required_equipment) > 0
         )
+    )
+
+
+def eligible(snapshot: RouterTaskSnapshot, engineer: Engineer, request: Request) -> bool:
+    """Check region, skill, transport, equipment and release constraints."""
+    return (
+        _matches_static_constraints(engineer, request)
         and release_at(snapshot, engineer) is not None
+    )
+
+
+def terminal_eligible(snapshot: RouterTaskSnapshot, engineer: Engineer, request: Request) -> bool:
+    """Check whether a job can be the sole post-shift terminal recovery visit."""
+    return (
+        _matches_static_constraints(engineer, request)
+        and terminal_release_at(snapshot, engineer) is not None
     )
 
 
@@ -107,13 +157,16 @@ def schedule_steps(
     # A plain dict lookup. The name deliberately avoids colliding with the famous HTTP
     # client package: static SSRF rules flag that shape even though no network call exists.
     request_map = {r.request_id: r for r in snapshot.requests}
+    terminal_candidate = len(steps) == 1 and steps[0] is not None
     release = release_at(snapshot, engineer)
+    if release is None and terminal_candidate:
+        release = terminal_release_at(snapshot, engineer)
     if release is None and steps:
         return None
     if len([x for x in steps if x is not None]) != len(set(x for x in steps if x is not None)):
         return None
     lunch_count = steps.count(None)
-    active_lunch = engineer.lunch.enabled and not engineer.lunch_taken
+    active_lunch = release is not None and engineer.lunch.enabled and not engineer.lunch_taken
     if lunch_count > 1 or (lunch_count and not active_lunch):
         return None
     if active_lunch and engineer.lunch.required and lunch_count != 1:
@@ -157,7 +210,7 @@ def schedule_steps(
         stops.append(stop)
         return stop
 
-    for request_id in steps:
+    for step_index, request_id in enumerate(steps):
         if request_id is None:
             lunch = engineer.lunch
             start = max(clock, lunch.window_start_at)
@@ -170,7 +223,10 @@ def schedule_steps(
             clock = end
             continue
         request = request_map.get(request_id)
-        if request is None or not eligible(snapshot, engineer, request):
+        if request is None or not (
+            eligible(snapshot, engineer, request)
+            or (terminal_candidate and terminal_eligible(snapshot, engineer, request))
+        ):
             return None
         quote = quote_at(
             travel,
@@ -185,7 +241,16 @@ def schedule_steps(
         start = max(arrival, request.window_start_at)
         end = start + request.service_duration_sec
         tolerance = getattr(getattr(travel, "settings", None), "window_lateness_tolerance_sec", 0)
-        if start > request.window_end_at + tolerance or end > end_limit:
+        # The customer window covers the end of the normative work, not only arrival.
+        # This is intentionally the same predicate used by the OR-Tools seed and the
+        # fast neighbourhood evaluator.
+        window_tolerance = max(
+            tolerance,
+            TERMINAL_WINDOW_LATENESS_TOLERANCE_SEC if step_index == len(steps) - 1 else 0,
+        )
+        if end > request.window_end_at + window_tolerance or end > job_completion_limit(
+            snapshot, engineer, terminal=step_index == len(steps) - 1
+        ):
             return None
         previous_stop = stops[-1].stop_id if stops else None
         if start > arrival:
@@ -213,7 +278,7 @@ def schedule_steps(
             )
         )
         clock, location = end, request.location
-    if not engineer.lunch.enabled:
+    if not engineer.lunch.enabled or release is None:
         lunch_result = LunchResult(status="disabled")
     elif engineer.lunch_taken:
         lunch_result = LunchResult(status="already_taken")
@@ -247,13 +312,24 @@ def fixed_order(
     snapshot: RouterTaskSnapshot, engineer: Engineer, jobs: list[str], travel: TravelProvider
 ) -> EngineerRoute | None:
     """Try permitted lunch anchors without reordering jobs; prefer a feasible lunch."""
+    if release_at(snapshot, engineer) is None and not jobs:
+        return schedule_steps(snapshot, engineer, [], travel)
     if engineer.lunch.enabled and not engineer.lunch_taken:
-        for position in range(len(jobs) + 1):
+        # Prefer an actual field stop once work has begun. Position zero remains a
+        # feasibility fallback (and the only choice for a lunch-only route), but trying it
+        # first placed every engineer's lunch at the shared regional depot.
+        positions = [*range(1, len(jobs) + 1), 0] if jobs else [0]
+        candidates = []
+        for position in positions:
             route = schedule_steps(
                 snapshot, engineer, jobs[:position] + [None] + jobs[position:], travel
             )
             if route is not None:
-                return route
+                candidates.append(route)
+        if candidates:
+            # Keep coverage/order fixed; place lunch where it consumes the least
+            # productive time. Stable ties retain the field-stop preference.
+            return min(candidates, key=lambda r: (r.finish_at or 0, r.metrics.waiting_time_sec))
         if engineer.lunch.required:
             return None
     route = schedule_steps(snapshot, engineer, jobs, travel)
@@ -429,7 +505,7 @@ def assigned_reason(
         start_at=None if stop is None else stop.start_at,
         window_start_at=request.window_start_at,
         window_end_at=request.window_end_at,
-        window_end_margin_sec=None if stop is None else request.window_end_at - stop.start_at,
+        window_end_margin_sec=None if stop is None else request.window_end_at - stop.end_at,
         window_start_offset_sec=None if stop is None else stop.start_at - request.window_start_at,
         assigned_count=None if route is None else route.metrics.assigned_count,
         service_duration_sec=request.service_duration_sec,
@@ -475,7 +551,7 @@ def assemble_plan(
     totals["distance_km"] = sum(round(r.metrics.distance_km * 1000) for r in routes) / 1000
     windows = {request.request_id: request.window_end_at for request in snapshot.requests}
     slacks = [
-        windows[stop.request_id] - stop.start_at
+        windows[stop.request_id] - stop.end_at
         for route in routes
         for stop in route.stops
         if stop.kind == "job"
@@ -544,10 +620,34 @@ def assemble_plan(
 
 
 def baseline(snapshot: RouterTaskSnapshot, travel: TravelProvider) -> Plan:
-    """FIFO jobs, first feasible engineer in input_order, append only; no optimization."""
+    """Build a FIFO baseline, reserving terminal overtime for its final extension.
+
+    The ordinary append pass preserves the historical on-shift FIFO comparison.
+    Only after every regular request was considered can one overrun-only job be
+    appended as the engineer's actual terminal visit.
+    """
     engineers = sorted(snapshot.engineers, key=lambda e: e.input_order)
     orders: dict[str, list[str]] = {e.engineer_id: [] for e in engineers}
+    deferred: list[Request] = []
     for request in sorted(snapshot.requests, key=lambda r: r.arrival_order):
+        for engineer in engineers:
+            order = orders[engineer.engineer_id] + [request.request_id]
+            route = (
+                fixed_order(snapshot, engineer, order, travel)
+                if eligible(snapshot, engineer, request)
+                else None
+            )
+            uses_terminal_overtime = bool(
+                route
+                and route.finish_at is not None
+                and route.finish_at > job_completion_limit(snapshot, engineer, terminal=False)
+            )
+            if route is not None and not uses_terminal_overtime:
+                orders[engineer.engineer_id] = order
+                break
+        else:
+            deferred.append(request)
+    for request in deferred:
         for engineer in engineers:
             order = orders[engineer.engineer_id] + [request.request_id]
             if eligible(snapshot, engineer, request) and fixed_order(
@@ -569,6 +669,66 @@ def baseline(snapshot: RouterTaskSnapshot, travel: TravelProvider) -> Plan:
 def score(snapshot: RouterTaskSnapshot, plan: Plan) -> tuple[int, ...]:
     """Compare a candidate with the exact versioned policy selected by the snapshot."""
     return policy_score(snapshot, plan)
+
+
+def lunch_coverage_alerts(
+    snapshot: RouterTaskSnapshot, plan: Plan, travel: TravelProvider
+) -> list[PlanningAlert]:
+    """Prove a one-job coverage gain without lunch, never mutate the accepted route.
+
+    A bounded insertion witness is sufficient evidence, not a claim of global optimality.
+    Existing job order and assignments stay fixed in both counterfactual candidates.
+    """
+    unassigned = [a.request_id for a in plan.assignments if a.status == "unassigned"]
+    if not unassigned:
+        return []
+    engineers = {e.engineer_id: e for e in snapshot.engineers}
+    alerts = []
+    for route in plan.routes:
+        engineer = engineers[route.engineer_id]
+        lunch = next((s for s in route.stops if s.kind == "lunch"), None)
+        if not lunch or lunch.start_at <= snapshot.planning_as_of or engineer.lunch_taken:
+            continue
+        without = engineer.model_copy(
+            update={
+                "lunch": engineer.lunch.model_copy(update={"enabled": False, "required": False})
+            }
+        )
+        jobs = [s.request_id for s in route.stops if s.kind == "job"]
+        witness = None
+        for request_id in unassigned:
+            for index in range(len(jobs) + 1):
+                candidate = jobs[:index] + [request_id] + jobs[index:]
+                if fixed_order(snapshot, without, candidate, travel) is None:
+                    continue
+                with_lunch = fixed_order(snapshot, engineer, candidate, travel)
+                if with_lunch is not None and with_lunch.lunch.status == "scheduled":
+                    continue
+                witness = request_id
+                break
+            if witness:
+                break
+        if witness:
+            alerts.append(
+                PlanningAlert(
+                    alert_id=f"lunch-coverage:{engineer.engineer_id}",
+                    code="LUNCH_COVERAGE_GAIN",
+                    severity="warning",
+                    engineer_ids=[engineer.engineer_id],
+                    request_ids=[witness],
+                    reasons=[
+                        reason(
+                            "LUNCH_COVERAGE_GAIN",
+                            "Removing lunch permits one additional job.",
+                            outcome=True,
+                            additional_assigned_count=1,
+                            request_id=witness,
+                            lunch_start_at=lunch.start_at,
+                        )
+                    ],
+                )
+            )
+    return alerts
 
 
 def validate_plan(snapshot: RouterTaskSnapshot, plan: Plan, travel: TravelProvider) -> None:
@@ -666,4 +826,9 @@ def validate_plan(snapshot: RouterTaskSnapshot, plan: Plan, travel: TravelProvid
         require(bool(assignment.reasons), "missing explanation")
     assembled = assemble_plan(snapshot, plan.routes)
     require(plan.summary == assembled.summary, "plan totals")
-    require(plan.alerts == assembled.alerts, "plan alerts")
+    coverage_alerts = (
+        lunch_coverage_alerts(snapshot, plan, travel)
+        if any(alert.code == "LUNCH_COVERAGE_GAIN" for alert in plan.alerts)
+        else []
+    )
+    require(plan.alerts == assembled.alerts + coverage_alerts, "plan alerts")

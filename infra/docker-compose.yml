@@ -28,7 +28,9 @@ services:
     ports:
       - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-lct} -d ${POSTGRES_DB:-lct}']
+      # The init-only postmaster accepts Unix sockets, then restarts. Consumers
+      # use TCP, so readiness must wait for the final TCP-listening server.
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U ${POSTGRES_USER:-lct} -d ${POSTGRES_DB:-lct}']
       interval: 5s
       timeout: 5s
       retries: 20

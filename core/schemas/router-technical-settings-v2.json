@@ -69,7 +69,7 @@
       "type": "string"
     },
     "window_lateness_tolerance_sec": {
-      "default": 0,
+      "default": 600,
       "maximum": 1200,
       "minimum": 0,
       "title": "Window Lateness Tolerance Sec",

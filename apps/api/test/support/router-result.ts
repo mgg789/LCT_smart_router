@@ -25,6 +25,8 @@ export interface BuildResultOptions {
   readonly unassigned?: Array<{ requestId: string; code: string; text: string }>;
   readonly isUsable?: boolean;
   readonly scheduledLunchFor?: string[];
+  /** Inserts the scheduled lunch after this route-local assigned item for LIVE tests. */
+  readonly lunchAfterAssignedIndex?: number;
   readonly alerts?: Array<{ alertId: string; code: string; requestIds: string[] }>;
   readonly withRoadLeg?: boolean;
 }
@@ -56,17 +58,24 @@ export function buildRouterResult(options: BuildResultOptions): unknown {
       end_at: item.startAt + item.durationSec,
     }));
     if (withLunch) {
-      const last = stops.at(-1);
-      const lunchStart = (last?.end_at ?? options.planningAsOf) + 600;
-      stops.push({
+      const afterIndex = Math.max(
+        -1,
+        Math.min(options.lunchAfterAssignedIndex ?? stops.length - 1, stops.length - 1),
+      );
+      const previous = stops[afterIndex];
+      const lunchStart = (previous?.end_at ?? options.planningAsOf) + 600;
+      stops.splice(afterIndex + 1, 0, {
         stop_id: `${engineerId}-lunch`,
-        sequence: stops.length,
+        sequence: afterIndex + 1,
         kind: 'lunch' as unknown as 'job',
         request_id: null as unknown as string,
         location: { lat: items[0]?.lat ?? 55.75, lon: items[0]?.lon ?? 37.62 },
         arrival_at: lunchStart,
         start_at: lunchStart,
-        end_at: lunchStart + 2700,
+        end_at: lunchStart + 1800,
+      });
+      stops.forEach((stop, index) => {
+        stop.sequence = index;
       });
     }
 
@@ -103,7 +112,7 @@ export function buildRouterResult(options: BuildResultOptions): unknown {
         travel_time_sec: 1800,
         work_time_sec: items.reduce((total, item) => total + item.durationSec, 0),
         waiting_time_sec: 0,
-        lunch_time_sec: withLunch ? 2700 : 0,
+        lunch_time_sec: withLunch ? 1800 : 0,
         assigned_count: items.length,
       },
       reasons: [

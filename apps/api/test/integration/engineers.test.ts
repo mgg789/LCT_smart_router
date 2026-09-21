@@ -2,9 +2,10 @@ import '../support/env';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
-import { after, before, describe, it } from 'node:test';
+import { after, before, describe, it, mock } from 'node:test';
 import type { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { z } from 'zod';
 import { AppModule } from '../../src/app.module';
 import { type Actor } from '../../src/auth';
 import { AllExceptionsFilter } from '../../src/common/errors';
@@ -108,6 +109,9 @@ describe('engineers and working days', () => {
   };
 
   before(async () => {
+    const morning = new Date();
+    morning.setUTCHours(9, 0, 0, 0);
+    mock.timers.enable({ apis: ['Date'], now: morning });
     process.env.NODE_ENV = 'test';
     process.env.AUTH_DEV_EXPOSE_CODES = 'true';
     databaseUrl();
@@ -162,6 +166,7 @@ describe('engineers and working days', () => {
       await prisma.account.deleteMany({ where: { email: { in: emails } } });
     }
     await prisma.$disconnect();
+    mock.timers.reset();
     await app?.close();
   });
 
@@ -183,6 +188,68 @@ describe('engineers and working days', () => {
     const token = await signIn(email);
     const profile = await call('GET', '/api/v1/engineer/profile', token);
     assert.equal(profile.status, 200);
+  });
+
+  it('lists the linked login address instead of presenting the engineer as unlinked', async () => {
+    const { email, engineer } = await createEngineer();
+    const response = await call('GET', '/api/v1/dispatch/engineers', dispatcherToken);
+    assert.equal(response.status, 200);
+    const body = z
+      .object({
+        engineers: z.array(
+          z.object({ id: z.string(), email: z.string().nullable(), hasAccount: z.boolean() }),
+        ),
+      })
+      .parse(await response.json());
+    const listed = body.engineers.find((item) => item.id === engineer.id);
+    assert.equal(listed?.hasAccount, true);
+    assert.equal(listed?.email, email);
+  });
+
+  it('creates a routing profile before a login email is known', async () => {
+    const { engineer } = await createEngineer({ email: undefined });
+    assert.equal(engineer.hasAccount, false);
+    assert.equal(engineer.email, null);
+
+    const stored = await prisma.engineer.findUniqueOrThrow({ where: { id: engineer.id } });
+    assert.equal(stored.accountId, null);
+  });
+
+  it('archives an offline engineer, revokes access and hides the profile from the roster', async () => {
+    const { email, engineer } = await createEngineer();
+    const token = await signIn(email);
+
+    const response = await call(
+      'DELETE',
+      `/api/v1/dispatch/engineers/${engineer.id}`,
+      dispatcherToken,
+      { operationId: randomUUID(), expectedVersion: engineer.version },
+    );
+    assert.equal(response.status, 200, await response.clone().text());
+    const archived = ((await response.json()) as EngineerBody).engineer;
+    assert.equal(archived.hasAccount, false);
+    assert.equal(archived.email, null);
+
+    const stored = await prisma.engineer.findUniqueOrThrow({ where: { id: engineer.id } });
+    assert.notEqual(stored.archivedAt, null);
+    assert.equal(stored.accountId, null);
+
+    const listed = await call('GET', '/api/v1/dispatch/engineers', dispatcherToken);
+    const body = (await listed.json()) as { engineers: Array<{ id: string }> };
+    assert.equal(
+      body.engineers.some((item) => item.id === engineer.id),
+      false,
+    );
+    assert.equal((await call('GET', '/api/v1/engineer/profile', token)).status, 401);
+
+    const account = await prisma.account.findUniqueOrThrow({
+      where: { email },
+      include: { roles: true },
+    });
+    assert.equal(
+      account.roles.some((role) => role.role === 'engineer'),
+      false,
+    );
   });
 
   it('gives each engineer their own input order', async () => {
@@ -411,6 +478,102 @@ describe('engineers and working days', () => {
     assert.equal(day.expectedOnlineAt, null);
   });
 
+  it('mails one day summary per day when the engineer goes offline, and none on a break', async () => {
+    const { email, engineer } = await createEngineer();
+    const token = await signIn(email);
+    const now = Math.floor(Date.now() / 1000);
+    const workDate = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Europe/Moscow',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(new Date(now * 1000));
+    const keyOf = () => `engineer_day_summary:${engineer.id}:${workDate}`;
+    const intents = async () =>
+      prisma.notificationIntent.findMany({ where: { businessEventKey: keyOf() } });
+
+    // One started, finished and problem-marked visit today: an hour of confirmed work.
+    const request = await prisma.request.create({
+      data: {
+        arrivalOrder: 9_900_001,
+        addressText: 'Москва, ул. Тестовая, д. 3',
+        needsGeocoding: false,
+        lat: 55.76,
+        lon: 37.64,
+        normProfileCode: 'base',
+        normativeTravelDurationSec: 1800,
+        technicalDurationSec: 600,
+        documentationDurationSec: 600,
+        // The database check requires service time to equal technical plus documentation.
+        serviceDurationSec: 1200,
+        windowStartAt: BigInt(now - 3 * HOUR),
+        windowEndAt: BigInt(now - HOUR),
+        requiredSkill: 'connection',
+        lifecycle: 'completed',
+        origin: 'manual',
+        createdAt: BigInt(now - 4 * HOUR),
+        updatedAt: BigInt(now - HOUR),
+      },
+    });
+    await prisma.requestFact.createMany({
+      data: (
+        [
+          { kind: 'started', occurredAt: now - 2 * HOUR },
+          { kind: 'finished', occurredAt: now - HOUR },
+          { kind: 'problem', occurredAt: now - 30 * 60 },
+        ] as const
+      ).map((fact) => ({
+        requestId: request.id,
+        engineerId: engineer.id,
+        kind: fact.kind,
+        occurredAt: BigInt(fact.occurredAt),
+        recordedAt: BigInt(fact.occurredAt),
+        operationId: randomUUID(),
+      })),
+    });
+
+    const offline = await call('POST', '/api/v1/engineer/availability', token, {
+      operationId: randomUUID(),
+      availability: 'offline',
+    });
+    assert.equal(offline.status, 201, await offline.clone().text());
+    const recorded = await intents();
+    assert.equal(recorded.length, 1);
+    const payload = recorded[0]?.payload as { workMinutes: number; finishedCount: number };
+    assert.equal(payload.finishedCount, 1);
+    assert.equal(payload.workMinutes, 60);
+
+    // The summary is once per work date, not once per switch: coming back online and
+    // leaving again repeats the same business day, not a new letter.
+    await call('POST', '/api/v1/engineer/availability', token, {
+      operationId: randomUUID(),
+      availability: 'online',
+    });
+    await call('POST', '/api/v1/engineer/availability', token, {
+      operationId: randomUUID(),
+      availability: 'offline',
+    });
+    assert.equal((await intents()).length, 1);
+
+    // A technical stop is an offline too, but it is not the end of the day.
+    const other = await createEngineer();
+    const otherToken = await signIn(other.email);
+    await call('POST', '/api/v1/engineer/technical-break', otherToken, {
+      operationId: randomUUID(),
+    });
+    const otherKey = `engineer_day_summary:${other.engineer.id}:${workDate}`;
+    assert.equal(
+      (await prisma.notificationIntent.findMany({ where: { businessEventKey: otherKey } })).length,
+      0,
+    );
+
+    await prisma.notificationIntent.deleteMany({
+      where: { businessEventKey: { startsWith: 'engineer_day_summary:' } },
+    });
+    await prisma.requestFact.deleteMany({ where: { requestId: request.id } });
+    await prisma.request.delete({ where: { id: request.id } });
+  });
+
   it('reports a conflict when the engineer and the dispatcher edit the same profile', async () => {
     const { email, engineer } = await createEngineer();
     const token = await signIn(email);
@@ -592,6 +755,59 @@ describe('engineers and working days', () => {
       body: JSON.stringify({ email, code: devCode, role: 'engineer' }),
     });
     assert.equal(verify.status, 401);
+  });
+
+  it('lets the dispatcher replace an engineer login without deleting the profile', async () => {
+    const { email, engineer } = await createEngineer();
+    const oldToken = await signIn(email);
+    const nextEmail = `${unique('changed')}@example.test`;
+    emails.push(nextEmail);
+
+    const changed = await call(
+      'PUT',
+      `/api/v1/dispatch/engineers/${engineer.id}/email`,
+      dispatcherToken,
+      {
+        operationId: randomUUID(),
+        expectedVersion: engineer.version,
+        email: nextEmail,
+      },
+    );
+    assert.equal(changed.status, 200, await changed.clone().text());
+    const view = ((await changed.json()) as EngineerBody).engineer;
+    assert.equal(view.id, engineer.id);
+    assert.equal(view.email, nextEmail);
+    assert.equal(view.version, engineer.version + 1);
+
+    assert.equal((await call('GET', '/api/v1/engineer/profile', oldToken)).status, 401);
+    const nextToken = await signIn(nextEmail);
+    const profile = await call('GET', '/api/v1/engineer/profile', nextToken);
+    assert.equal(profile.status, 200);
+    assert.equal(
+      ((await profile.json()) as { engineer: EngineerBody['engineer'] }).engineer.id,
+      engineer.id,
+    );
+
+    const oldAccount = await prisma.account.findUniqueOrThrow({
+      where: { email },
+      include: { roles: true },
+    });
+    assert.equal(
+      oldAccount.roles.some((role) => role.role === 'engineer'),
+      false,
+    );
+
+    const staleNoOp = await call(
+      'PUT',
+      `/api/v1/dispatch/engineers/${engineer.id}/email`,
+      dispatcherToken,
+      {
+        operationId: randomUUID(),
+        expectedVersion: engineer.version,
+        email: nextEmail,
+      },
+    );
+    assert.equal(staleNoOp.status, 409, await staleNoOp.clone().text());
   });
 
   it('lets only the dispatcher link logins to engineers', async () => {

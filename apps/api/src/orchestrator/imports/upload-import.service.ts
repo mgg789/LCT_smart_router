@@ -185,7 +185,7 @@ export class UploadImportService {
             shiftStartAt: BigInt(engineerInput.shiftStartAt),
             shiftEndAt: BigInt(engineerInput.shiftEndAt),
             lunchEnabled: true,
-            lunchDurationSec: 45 * 60,
+            lunchDurationSec: 30 * 60,
             lunchWindowStartAt: BigInt(lunch.start),
             lunchWindowEndAt: BigInt(lunch.end),
             lunchRequired: false,

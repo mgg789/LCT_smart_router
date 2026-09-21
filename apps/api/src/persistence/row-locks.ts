@@ -22,3 +22,13 @@ export async function lockControlState(tx: Tx): Promise<void> {
 export async function lockRoutingCurrent(tx: Tx): Promise<void> {
   await tx.$queryRaw`SELECT id FROM routing_current WHERE id = 'singleton' FOR UPDATE`;
 }
+
+/** Serialises alert detection, resolution and day closure for the transaction lifetime. */
+export async function lockAlertQueue(tx: Tx): Promise<void> {
+  // Keep the same lock order as Router result acceptance. Alert actions may publish a
+  // snapshot, while acceptance stores Router alerts; advisory-only locking here would
+  // form an AB/BA cycle with control_state -> routing_current -> alert queue.
+  await lockControlState(tx);
+  await lockRoutingCurrent(tx);
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(731024)`;
+}

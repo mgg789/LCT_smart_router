@@ -507,3 +507,31 @@ export function withPlan(
     },
   };
 }
+
+/**
+ * Projects a route onto the dispatcher map after work has become a fact.
+ * Historical vertices remain in the route timeline, while the map keeps only
+ * upcoming or in-progress jobs and redraws edges without historical geometry.
+ */
+export function remainingRouteForLiveMap(
+  snapshot: DashboardSnapshot,
+  route: PlanRouteView,
+): PlanRouteView | null {
+  const visibleRequestIds = new Set(
+    snapshot.requests
+      .filter(
+        (request) =>
+          request.lifecycle !== 'completed' &&
+          request.lifecycle !== 'cancelled' &&
+          (request.assumedCompletedAt === null || request.assumedCompletedAt === undefined),
+      )
+      .map((request) => request.id),
+  );
+  const stops = route.stops.filter(
+    (stop) => stop.requestId === null || visibleRequestIds.has(stop.requestId),
+  );
+  if (!stops.some((stop) => stop.requestId !== null)) {
+    return null;
+  }
+  return { ...route, stops, legs: [] };
+}

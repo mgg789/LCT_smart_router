@@ -92,6 +92,33 @@ enum Availability {
   offline
 }
 
+/// Durable lifecycle of the one dispatcher-controlled LIVE session for a work date.
+/// It is deliberately separate from routing snapshots: a plan may be rebuilt many
+/// times during one started day without resetting the business clock.
+enum LiveWorkdayStatus {
+  pending
+  running
+  finished
+}
+
+/// UI and audit state of an engineer in LIVE. Availability remains the Router-facing
+/// capacity flag; line status explains why it has that value.
+enum LiveEngineerLineStatus {
+  pending
+  online
+  no_show_offline
+  technical_break
+}
+
+/// An engineer-reported operational problem. The request lifecycle remains the
+/// authoritative business outcome; this code preserves the reason for LIVE views.
+enum LiveProblemKind {
+  delay
+  missing_equipment
+  other
+  impossible
+}
+
 /// How a request's time window came to be, so an assumption is never mistaken for data
 /// the customer actually gave (context/18 section 6.2).
 enum WindowOrigin {
@@ -159,13 +186,24 @@ enum OperationState {
   outcome_unknown
 }
 
-/// Mail catalogue of context/36 section 10. There is deliberately no completion mail and
-/// no pre-visit reminder.
+/// Mail catalogue of context/36 section 10.
+///
+/// The 2026-09-20 product decision supersedes the earlier "no completion mail" rule:
+/// every customer-visible transition of a request now has a letter, and an engineer
+/// gets one day-summary mail when their day is closed. There is deliberately still no
+/// pre-visit reminder (nothing in the system observes time passing for a customer).
 enum NotificationCategory {
   account_login_code
   request_received
   engineer_assigned
+  engineer_confirmed
   visit_change_required
+  request_rescheduled
+  request_cancelled
+  request_completed
+  engineer_day_summary
+  engineer_attention_required
+  plan_rebuilt
 }
 
 /// Lifecycle of a mail intent. There is no `delivered` state: our control ends when the
@@ -207,6 +245,9 @@ model Account {
   id        String @id @default(uuid())
   /// Stored lower-cased; the application normalises before writing.
   email     String @unique
+  /// The customer's right to silence (card #65, 2026-09-20): when false, event letters
+  /// stop. Login codes ignore this flag -- a way in must never be silenceable.
+  mailNotificationsEnabled Boolean @default(true) @map("mail_notifications_enabled")
   createdAt BigInt @map("created_at")
   updatedAt BigInt @map("updated_at")
   version   Int    @default(1)
@@ -316,6 +357,7 @@ model Engineer {
   depot   Depot?        @relation(fields: [depotId], references: [id])
   days    EngineerDay[]
   facts   RequestFact[]
+  liveStates LiveEngineerState[]
 
   @@index([inputOrder])
   @@map("engineers")
@@ -345,6 +387,13 @@ model EngineerDay {
   /// True means the single lunch of the day is used up, not that it has finished.
   lunchTaken         Boolean      @default(false) @map("lunch_taken")
   lunchStartedAt     BigInt? @map("lunch_started_at")
+  /// An engineer may explicitly opt out of silence monitoring for this day. This does
+  /// not take them off the line and is visible to the dispatcher.
+  attendanceOptOut   Boolean @default(false) @map("attendance_opt_out")
+  /// Confirmed app activity/check-in. A timer never invents this fact.
+  lastAttendanceAt   BigInt? @map("last_attendance_at")
+  /// Explicit call-in grace for an additional engineer, never inferred from silence.
+  attendanceGraceUntil BigInt? @map("attendance_grace_until")
   /// Morning stock already including the one spare unit for every used equipment kind.
   equipmentRouter       Int @default(0) @map("equipment_router")
   equipmentSetTopBox    Int @default(0) @map("equipment_set_top_box")
@@ -441,6 +490,7 @@ model Request {
   facts         RequestFact[]
   assignments   AppliedPlanAssignment[]
   stops         AppliedPlanStop[]
+  liveStates    LiveRequestState[]
 
   @@index([lifecycle, assignmentState])
   @@index([arrivalOrder])
@@ -483,6 +533,107 @@ model RequestFact {
 
   @@index([requestId, occurredAt])
   @@map("request_facts")
+}
+
+// ---------------------------------------------------------------------------
+// LIVE workday state
+// ---------------------------------------------------------------------------
+
+/// A started dispatcher session and its virtual business timeline. `startedAtWallSec`
+/// is only used to derive the virtual clock; every planning value remains Unix seconds
+/// in the existing logical timeline.
+model LiveWorkday {
+  id               String            @id @default(uuid())
+  generation       Int
+  workDate         String            @map("work_date")
+  status           LiveWorkdayStatus @default(pending)
+  logicalStartAt   BigInt            @map("logical_start_at")
+  logicalEndAt     BigInt            @map("logical_end_at")
+  startedAtWallSec BigInt?           @map("started_at_wall_sec")
+  finishedAt       BigInt?           @map("finished_at")
+  completionReason String?           @map("completion_reason")
+  speedDurationSec Int?              @map("speed_duration_sec")
+  createdAt        BigInt            @map("created_at")
+  updatedAt        BigInt            @map("updated_at")
+  version          Int               @default(1)
+
+  engineers LiveEngineerState[]
+  requests  LiveRequestState[]
+
+  @@unique([generation, workDate])
+  @@index([status, workDate])
+  @@map("live_workdays")
+}
+
+/// Per-engineer LIVE presence and technical-break state. These fields never replace
+/// confirmed execution facts or the persistent routing availability in EngineerDay.
+model LiveEngineerState {
+  id                    String                 @id @default(uuid())
+  workdayId             String                 @map("workday_id")
+  engineerId            String                 @map("engineer_id")
+  lineStatus            LiveEngineerLineStatus @default(pending) @map("line_status")
+  lineStartedAt         BigInt?                @map("line_started_at")
+  noShowAt              BigInt?                @map("no_show_at")
+  technicalBreakStartedAt BigInt?              @map("technical_break_started_at")
+  technicalBreakPlannedEndAt BigInt?           @map("technical_break_planned_end_at")
+  technicalBreakOverdueAt BigInt?              @map("technical_break_overdue_at")
+  /// Last request vertex that the engineer explicitly or silently reached. It remains
+  /// visible after finish/cancellation until the next request is started.
+  routeAnchorRequestId    String?                @map("route_anchor_request_id")
+  routeAnchorReachedAt    BigInt?                @map("route_anchor_reached_at")
+  routeAnchorDepartedAt   BigInt?                @map("route_anchor_departed_at")
+  /// Immutable first vertex of the LIVE workday. Replans must never relocate it.
+  routeOriginLat          Float?                 @map("route_origin_lat")
+  routeOriginLon          Float?                 @map("route_origin_lon")
+  routeOriginAt           BigInt?                @map("route_origin_at")
+  /// Coordinates of an entered automatic lunch. They outlive a remaining-day replan
+  /// that correctly removes the consumed lunch stop from Router input.
+  activeLunchLat          Float?                 @map("active_lunch_lat")
+  activeLunchLon          Float?                 @map("active_lunch_lon")
+  activeLunchStartedAt    BigInt?                @map("active_lunch_started_at")
+  createdAt             BigInt                 @map("created_at")
+  updatedAt             BigInt                 @map("updated_at")
+  version               Int                    @default(1)
+
+  workday  LiveWorkday @relation(fields: [workdayId], references: [id], onDelete: Cascade)
+  engineer Engineer    @relation(fields: [engineerId], references: [id], onDelete: Cascade)
+
+  @@unique([workdayId, engineerId])
+  @@index([engineerId])
+  @@index([routeAnchorRequestId])
+  @@map("live_engineer_states")
+}
+
+/// LIVE-only interpretation of a request. `assumedCompletedAt` records the explicit
+/// product rule that an engineer who does not mark anything is assumed to follow the
+/// schedule; it is not a fabricated RequestFact or a Request.lifecycle transition.
+model LiveRequestState {
+  id                    String          @id @default(uuid())
+  workdayId             String          @map("workday_id")
+  requestId             String          @map("request_id")
+  assumedStartedAt      BigInt?         @map("assumed_started_at")
+  assumedCompletedAt    BigInt?         @map("assumed_completed_at")
+  reportedEtaAt         BigInt?         @map("reported_eta_at")
+  /// Original plan owner pinned by an explicit ETA while Router rebuilds the remainder.
+  reservedEngineerId    String?         @map("reserved_engineer_id")
+  /// An infeasible ETA invalidates this engineer's current accepted route until a newer
+  /// plan revision arrives. The request itself remains available to every Router candidate.
+  replanPendingEngineerId String?        @map("replan_pending_engineer_id")
+  replanPendingPlanRevision Int?         @map("replan_pending_plan_revision")
+  replanRequestedAt      BigInt?         @map("replan_requested_at")
+  problemKind           LiveProblemKind? @map("problem_kind")
+  problemNote           String?         @map("problem_note")
+  additionalDurationSec Int?            @map("additional_duration_sec")
+  createdAt             BigInt          @map("created_at")
+  updatedAt             BigInt          @map("updated_at")
+  version               Int             @default(1)
+
+  workday LiveWorkday @relation(fields: [workdayId], references: [id], onDelete: Cascade)
+  request Request     @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@unique([workdayId, requestId])
+  @@index([requestId])
+  @@map("live_request_states")
 }
 
 // ---------------------------------------------------------------------------
@@ -723,6 +874,10 @@ model ActivePolicy {
 model Alert {
   id String @id @default(uuid())
 
+  /// `alert` needs a dispatcher decision; `notice` is informational and never blocks
+  /// closing the day.
+  kind           String @default("alert")
+  dedupKey       String? @unique @map("dedup_key")
   code           String
   severity       AlertSeverity
   engineerIds    String[] @map("engineer_ids")
@@ -732,12 +887,30 @@ model Alert {
   /// (context/33 section 6).
   restoreOption  Json? @map("restore_option")
   sourceResultId String? @map("source_result_id")
+  workDate       String? @map("work_date")
+  isBlocking     Boolean @default(true) @map("is_blocking")
   createdAt      BigInt @map("created_at")
   seenAt         BigInt? @map("seen_at")
   resolvedAt     BigInt? @map("resolved_at")
+  invalidatedAt  BigInt? @map("invalidated_at")
+  resolutionAction String? @map("resolution_action")
+  resolutionReason String? @map("resolution_reason")
+  resolutionDelaySec Int? @map("resolution_delay_sec")
 
   @@index([createdAt])
+  @@index([workDate, resolvedAt, invalidatedAt])
   @@map("alerts")
+}
+
+/// A dispatcher closes a local work day only after every decision-required alert has a
+/// recorded outcome. The row is retained as an audit fact rather than inferred later.
+model ShiftClosure {
+  workDate  String @id @map("work_date")
+  closedAt  BigInt @map("closed_at")
+  closedBy  String? @map("closed_by")
+  operationId String @unique @map("operation_id")
+
+  @@map("shift_closures")
 }
 
 // ---------------------------------------------------------------------------

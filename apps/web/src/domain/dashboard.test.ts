@@ -14,6 +14,7 @@ import {
   planWithLunches,
   reconcileDashboardFocus,
   regionalDistanceKm,
+  remainingRouteForLiveMap,
   requestById,
   routeVertices,
   unassignedRequests,
@@ -26,6 +27,36 @@ describe('dev dashboard fixture', () => {
     const unassigned = unassignedRequests(snapshot);
     expect(unassigned.map((item) => item.id)).toEqual(['10490', '10491']);
     expect(snapshot.requests).toHaveLength(24);
+  });
+
+  it('keeps completed, cancelled and silently assumed jobs in history but removes them from live map edges', () => {
+    const snapshot = createDevSnapshot();
+    const route = snapshot.plan.plan?.routes[0];
+    const [completedId, cancelledId, assumedId] =
+      route?.stops.flatMap((stop) => (stop.requestId ? [stop.requestId] : [])).slice(0, 3) ?? [];
+    if (!route || !completedId || !cancelledId || !assumedId) {
+      throw new Error('fixture route needs three jobs');
+    }
+    const updated = {
+      ...snapshot,
+      requests: snapshot.requests.map((request) =>
+        request.id === completedId
+          ? { ...request, lifecycle: 'completed' as const }
+          : request.id === cancelledId
+            ? { ...request, lifecycle: 'cancelled' as const }
+            : request.id === assumedId
+              ? { ...request, assumedCompletedAt: 1_800_000_000 }
+              : request,
+      ),
+    };
+
+    const mapRoute = remainingRouteForLiveMap(updated, route);
+
+    expect(mapRoute?.stops.map((stop) => stop.requestId)).not.toContain(completedId);
+    expect(mapRoute?.stops.map((stop) => stop.requestId)).not.toContain(cancelledId);
+    expect(mapRoute?.stops.map((stop) => stop.requestId)).not.toContain(assumedId);
+    expect(mapRoute?.legs).toEqual([]);
+    expect(route.stops.map((stop) => stop.requestId)).toContain(completedId);
   });
 
   it('summarizes Sokolov route from the applied plan', () => {

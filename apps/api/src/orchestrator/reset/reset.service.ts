@@ -108,9 +108,15 @@ export class ResetService {
     await tx.appliedPlan.deleteMany({});
     await tx.routerResult.deleteMany({});
     await tx.alert.deleteMany({});
+    await tx.shiftClosure.deleteMany({});
 
     await tx.routingCurrent.deleteMany({});
     await tx.routingSnapshot.deleteMany({});
+
+    // A LIVE day is generation-scoped.  It must disappear before the engineers and
+    // requests it references, otherwise a coordinator tick after reset can attach the
+    // newly imported crew to an old running day.
+    await tx.liveWorkday.deleteMany({});
 
     await tx.requestFact.deleteMany({});
     await tx.requestConditionHistory.deleteMany({});

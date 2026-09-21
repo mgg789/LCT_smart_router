@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { renderMail } from '../../src/notifications/mail-templates';
 
-const CTX = { appBaseUrl: 'https://navix.droidje.com' };
+const CTX = { appBaseUrl: 'https://navix.droidje.com', timeZone: 'Europe/Moscow' };
 
 describe('mail templates', () => {
   it('puts the login code in both HTML and text without inventing a delivery status', () => {
@@ -39,7 +39,63 @@ describe('mail templates', () => {
     const assigned = renderMail('engineer_assigned', { requestId: 'req-2' }, CTX);
     const change = renderMail('visit_change_required', { requestId: 'req-2' }, CTX);
     assert.match(assigned.subject, /назначен/i);
-    assert.match(change.subject, /окно/i);
+    assert.match(change.subject, /время/i);
     assert.notEqual(assigned.subject, change.subject);
+  });
+
+  it('gives the re-agreement letter the two answer buttons: new time or cancel', () => {
+    const change = renderMail('visit_change_required', { requestId: 'req-3' }, CTX);
+    assert.match(change.html, /Выбрать новое время/);
+    assert.match(change.html, /Отменить заявку/);
+    assert.match(change.html, /client\/requests\/req-3\?action=cancel/);
+    assert.match(change.text, /новое время|отмените/i);
+  });
+
+  it('shows the new window in the customer-initiated reschedule letter', () => {
+    const rendered = renderMail(
+      'request_rescheduled',
+      {
+        requestId: 'req-4',
+        // 2026-09-21 10:00–12:00 Moscow time (UTC+3).
+        windowStartAt: 1789974000,
+        windowEndAt: 1789981200,
+      },
+      CTX,
+    );
+    assert.match(rendered.subject, /изменено/i);
+    assert.match(rendered.html, /21\.09\.2026, 10:00/);
+    assert.match(rendered.html, /21\.09\.2026, 12:00/);
+    assert.match(rendered.text, /21\.09\.2026, 10:00/);
+  });
+
+  it('renders cancellation, completion and confirmed start as distinct letters', () => {
+    const cancelled = renderMail('request_cancelled', { requestId: 'req-5' }, CTX);
+    const completed = renderMail('request_completed', { requestId: 'req-5' }, CTX);
+    const confirmed = renderMail('engineer_confirmed', { requestId: 'req-5' }, CTX);
+    assert.match(cancelled.subject, /отменена/i);
+    assert.match(completed.subject, /выполнена/i);
+    assert.match(confirmed.subject, /приступил/i);
+    assert.notEqual(cancelled.subject, completed.subject);
+    assert.notEqual(completed.subject, confirmed.subject);
+  });
+
+  it('lists only the confirmed facts in the engineer day summary', () => {
+    const rendered = renderMail(
+      'engineer_day_summary',
+      {
+        engineerId: 'eng-1',
+        workDate: '2026-09-20',
+        startedCount: 5,
+        finishedCount: 4,
+        problemCount: 1,
+        workMinutes: 245,
+      },
+      CTX,
+    );
+    assert.match(rendered.subject, /Итоги дня 2026-09-20/);
+    assert.match(rendered.html, /Выполнено: <strong>4<\/strong>/);
+    assert.match(rendered.html, /4 ч 5 мин/);
+    assert.match(rendered.text, /взято в работу 5/);
+    assert.match(rendered.text, /выполнено 4/);
   });
 });

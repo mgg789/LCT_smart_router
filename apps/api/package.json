@@ -8,7 +8,7 @@
     "build": "tsc -p tsconfig.build.json",
     "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput & node --watch dist/src/main.js",
     "start": "node dist/src/main.js",
-    "test:build": "tsc -p tsconfig.json",
+    "test:build": "node -e \"require('node:fs').rmSync('dist-test', { recursive: true, force: true })\" && tsc -p tsconfig.json",
     "test": "pnpm test:build && node --test --test-concurrency=1 \"dist-test/test/**/*.test.js\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "smoke": "pnpm test:build && node dist-test/scripts/smoke.js"

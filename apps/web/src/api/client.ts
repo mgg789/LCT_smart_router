@@ -1,13 +1,22 @@
 import { z } from 'zod';
+import { formatClock } from '../lib/time';
 import type {
+  AlertResolutionInput,
   ApiTokenCategory,
   ApiTokenSummary,
   AssignmentReasons,
   AuthSession,
+  CreateDispatchEngineerInput,
+  CreateDispatchRequestInput,
   CreatedApiToken,
   DashboardSnapshot,
   DataUploadFile,
   DataUploadSummary,
+  DispatcherSettingsPatch,
+  DispatcherSettingsView,
+  EngineerDayView,
+  GeocodeHit,
+  MapProvidersStatus,
   OfficialImportSummary,
   PlanAssignmentView,
   PolicyComparisonResponse,
@@ -55,11 +64,15 @@ const requestSchema = z.object({
   expectedCompletionAt: z.number().int().nullable(),
   continuationAvailableAt: z.number().int().nullable(),
   overrunDetectedAt: z.number().int().nullable(),
+  assumedStartedAt: z.number().int().nullable().optional().default(null),
+  assumedCompletedAt: z.number().int().nullable().optional().default(null),
   completedAt: z.number().int().nullable(),
   cancelledAt: z.number().int().nullable(),
 });
 
 const engineerDaySchema = z.object({
+  attendanceOptOut: z.boolean().default(false),
+  lastAttendanceAt: z.number().int().nullable().default(null),
   engineerId: z.string(),
   workDate: z.string(),
   version: z.number().int(),
@@ -119,6 +132,7 @@ const planLegSchema = z.object({
   travelTimeSec: z.number().int().nonnegative(),
   distanceKm: z.number().nonnegative(),
   travelSource: z.enum(['approximate', 'road_matrix', 'route_api', 'traffic_api']),
+  geometryProvider: z.enum(['twogis', 'yandex']).optional(),
   trafficFactor: z.number().min(1),
   geometry: z
     .object({
@@ -205,11 +219,94 @@ const alertSchema = z.object({
   engineerIds: z.array(z.string()),
   requestIds: z.array(z.string()),
   reasons: z.array(z.unknown()),
-  restoreOption: z.string().nullable(),
+  restoreOption: z
+    .union([
+      z.string(),
+      z.object({ engineer_id: z.string(), reject_request_ids: z.array(z.string()) }),
+    ])
+    .nullable(),
   createdAt: z.number().int(),
   seenAt: z.number().int().nullable(),
   resolvedAt: z.number().int().nullable(),
+  kind: z.enum(['alert', 'notice']).default('alert'),
+  actions: z.array(z.string()).default([]),
+  workDate: z.string().nullable().default(null),
+  resolutionAction: z.string().nullable().default(null),
+  resolutionReason: z.string().nullable().default(null),
+  resolutionDelaySec: z.number().int().nonnegative().nullable().default(null),
 });
+
+const shiftSchema = z.object({
+  workDate: z.string(),
+  closedAt: z.number().int().nullable(),
+  unresolvedCount: z.number().int().nonnegative(),
+});
+
+/** Executes one allowed decision; the caller keeps operationId stable for retries. */
+export async function resolveDispatchAlert(
+  token: string,
+  id: string,
+  input: AlertResolutionInput,
+): Promise<void> {
+  await requestJson(
+    `/api/v1/dispatch/alerts/${encodeURIComponent(id)}/resolve`,
+    z.unknown(),
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+/** Exempts this working day from attendance checks while preserving shift bounds. */
+export async function setEngineerAttendanceOptOut(
+  token: string,
+  day: EngineerDayView,
+  attendanceOptOut: boolean,
+): Promise<void> {
+  await requestJson(
+    `/api/v1/dispatch/engineers/${encodeURIComponent(day.engineerId)}/workday`,
+    z.object({ day: engineerDaySchema }),
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        operationId: crypto.randomUUID(),
+        workDate: day.workDate,
+        shiftStartAt: day.shiftStartAt,
+        shiftEndAt: day.shiftEndAt,
+        lunch: {
+          enabled: day.lunch.enabled,
+          durationSec: day.lunch.durationSec,
+          windowStartAt: day.lunch.windowStartAt,
+          windowEndAt: day.lunch.windowEndAt,
+        },
+        lunchRequired: day.lunch.required,
+        attendanceOptOut,
+      }),
+    },
+  );
+}
+
+/** Marks an ordinary notice as read without resolving an actionable alert. */
+export async function markDispatchNoticeSeen(token: string, id: string): Promise<void> {
+  await requestJson(`/api/v1/dispatch/alerts/${encodeURIComponent(id)}/seen`, z.unknown(), token, {
+    method: 'POST',
+  });
+}
+
+/** Requests closure after the server checks for unresolved problems. */
+export async function closeDispatchShift(
+  token: string,
+  workDate: string,
+  operationId: string,
+): Promise<void> {
+  await requestJson('/api/v1/dispatch/shift/close', z.unknown(), token, {
+    method: 'POST',
+    body: JSON.stringify({ operationId, workDate }),
+  });
+}
 
 const policiesSchema = z.object({
   policies: z.array(
@@ -524,6 +621,125 @@ export async function revokeApiToken(sessionToken: string, id: string): Promise<
 
 const engineerProfileSchema = engineerSchema.omit({ day: true });
 
+const dispatcherSettingsSchema = z.object({
+  dayStartMin: z.number().int(),
+  dayEndMin: z.number().int(),
+  noShowSec: z.number().int(),
+  overdueSec: z.number().int(),
+  timeRiskSec: z.number().int(),
+  repeatAfterSec: z.number().int(),
+  twogisApiKeySet: z.boolean(),
+  twogisApiKeyLast4: z.string().nullable(),
+  yandexApiKeySet: z.boolean(),
+  yandexApiKeyLast4: z.string().nullable(),
+});
+
+const geocodeHitSchema = z.object({
+  displayName: z.string(),
+  lat: z.number(),
+  lon: z.number(),
+});
+
+const mapProviderStatusSchema = z.object({
+  provider: z.enum(['twogis', 'yandex']),
+  configured: z.boolean(),
+  ok: z.boolean().nullable(),
+  message: z.string(),
+});
+
+/** Reads dispatcher-owned day clocks, alert timers and map-key presence. */
+export function getDispatcherSettings(token: string): Promise<DispatcherSettingsView> {
+  return requestJson('/api/v1/dispatch/settings', dispatcherSettingsSchema, token);
+}
+
+/** Replaces dispatcher-owned operational settings. Empty map keys are omitted, not cleared. */
+export function updateDispatcherSettings(
+  token: string,
+  patch: DispatcherSettingsPatch,
+): Promise<DispatcherSettingsView> {
+  return requestJson('/api/v1/dispatch/settings', dispatcherSettingsSchema, token, {
+    method: 'PUT',
+    body: JSON.stringify({ operationId: crypto.randomUUID(), ...patch }),
+  });
+}
+
+/** Probes configured 2GIS / Yandex keys with a short Moscow sample route. */
+export function getMapProvidersStatus(token: string): Promise<MapProvidersStatus> {
+  return requestJson(
+    '/api/v1/dispatch/settings/maps/status',
+    z.object({
+      active: z.enum(['twogis', 'yandex', 'none']),
+      twogis: mapProviderStatusSchema,
+      yandex: mapProviderStatusSchema,
+    }),
+    token,
+  );
+}
+
+/** LocationIQ autocomplete. Pass a free-form address or city+street. */
+export async function geocodeAddress(
+  token: string,
+  query: { q?: string; city?: string; street?: string },
+): Promise<GeocodeHit[]> {
+  const params = new URLSearchParams();
+  if (query.q) params.set('q', query.q);
+  if (query.city) params.set('city', query.city);
+  if (query.street) params.set('street', query.street);
+  const result = await requestJson(
+    `/api/v1/dispatch/geocode?${params.toString()}`,
+    z.object({ hits: z.array(geocodeHitSchema) }),
+    token,
+  );
+  return result.hits;
+}
+
+/** Creates and immediately submits an unplanned request from the compact dashboard form. */
+export function createDispatchRequest(
+  token: string,
+  input: CreateDispatchRequestInput,
+): Promise<{ request: z.infer<typeof requestSchema> }> {
+  return requestJson('/api/v1/dispatch/requests', z.object({ request: requestSchema }), token, {
+    method: 'POST',
+    body: JSON.stringify({ operationId: crypto.randomUUID(), ...input }),
+  });
+}
+
+/** Adds a routing profile, with Engineer App access only when an email was supplied. */
+export function createDispatchEngineer(
+  token: string,
+  input: CreateDispatchEngineerInput,
+): Promise<{ engineer: z.infer<typeof engineerProfileSchema> }> {
+  return requestJson(
+    '/api/v1/dispatch/engineers',
+    z.object({ engineer: engineerProfileSchema }),
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({ operationId: crypto.randomUUID(), ...input }),
+    },
+  );
+}
+
+/** Archives a routing profile while preserving its historical plans and facts. */
+export function deleteDispatchEngineer(
+  token: string,
+  engineerId: string,
+  expectedVersion?: number,
+): Promise<{ engineer: z.infer<typeof engineerProfileSchema> }> {
+  return requestJson(
+    `/api/v1/dispatch/engineers/${encodeURIComponent(engineerId)}`,
+    z.object({ engineer: engineerProfileSchema }),
+    token,
+    {
+      method: 'DELETE',
+      body: JSON.stringify({
+        operationId: crypto.randomUUID(),
+        ...(expectedVersion === undefined ? {} : { expectedVersion }),
+      }),
+    },
+  );
+}
+
 /** Removes the login from a brigade. The routing profile stays; live sessions die. */
 export function unlinkEngineerAccount(
   token: string,
@@ -557,6 +773,28 @@ export function linkEngineerAccount(
   );
 }
 
+/** Replaces an existing Engineer App login and revokes sessions of the old address. */
+export function changeEngineerEmail(
+  token: string,
+  engineerId: string,
+  email: string,
+  expectedVersion?: number,
+): Promise<{ engineer: z.infer<typeof engineerProfileSchema> }> {
+  return requestJson(
+    `/api/v1/dispatch/engineers/${encodeURIComponent(engineerId)}/email`,
+    z.object({ engineer: engineerProfileSchema }),
+    token,
+    {
+      method: 'PUT',
+      body: JSON.stringify({
+        operationId: crypto.randomUUID(),
+        email,
+        ...(expectedVersion === undefined ? {} : { expectedVersion }),
+      }),
+    },
+  );
+}
+
 /** Loads and validates all resources required by the dispatcher day screen. */
 export async function loadDashboardSnapshot(token: string): Promise<DashboardSnapshot> {
   const [requests, engineers, planResponse, alerts, policies, settings] = await Promise.all([
@@ -580,9 +818,15 @@ export async function loadDashboardSnapshot(token: string): Promise<DashboardSna
     : null;
   const workDate =
     engineers.engineers.find((engineer) => engineer.day)?.day?.workDate ?? moscowDate(new Date());
+  const shift = await requestJson(
+    `/api/v1/dispatch/shift?workDate=${encodeURIComponent(workDate)}`,
+    shiftSchema,
+    token,
+  );
 
   return {
     workDate,
+    shift,
     timeZone: 'Europe/Moscow',
     nowAt: Math.floor(Date.now() / 1000),
     policyId: policies.active.policyId,
@@ -815,8 +1059,39 @@ function formatUnknownReason(reason: unknown): string {
   if (typeof reason === 'string') {
     return reason;
   }
-  const parsed = reasonSchema.safeParse(reason);
-  return parsed.success ? parsed.data.text : 'Подробности доступны в структурированных данных';
+  const parsed = z.object({ text: z.string() }).safeParse(reason);
+  if (parsed.success) return parsed.data.text;
+  const facts = z
+    .object({
+      expectedAt: z.number().optional(),
+      shiftStartAt: z.number().optional(),
+      thresholdAt: z.number().optional(),
+      lastAttendanceAt: z.number().nullable().optional(),
+      plannedStartAt: z.number().optional(),
+      windowEndAt: z.number().optional(),
+      assignment: z.string().optional(),
+      lunchStatus: z.string().optional(),
+      assignedBefore: z.number().optional(),
+      assignedAfter: z.number().optional(),
+    })
+    .safeParse(reason);
+  if (facts.success) {
+    const value = facts.data;
+    if (value.shiftStartAt !== undefined && value.thresholdAt !== undefined)
+      return `Смена началась в ${formatClock(value.shiftStartAt)}. К ${formatClock(value.thresholdAt)} отметка о выходе не поступила.`;
+    if (value.plannedStartAt !== undefined && value.windowEndAt !== undefined) {
+      return `Начало по плану — ${formatClock(value.plannedStartAt)}, конец окна — ${formatClock(value.windowEndAt)}. Опоздание: ${Math.ceil((value.plannedStartAt - value.windowEndAt) / 60)} мин.`;
+    }
+    if (value.expectedAt !== undefined)
+      return `Ожидалась отметка к ${formatClock(value.expectedAt)}. ${value.lastAttendanceAt ? `Последняя отметка: ${formatClock(value.lastAttendanceAt)}.` : 'Отметок пока нет.'}`;
+    if (value.assignment === 'unassigned')
+      return 'Для заявки не найдено допустимое назначение. Нужно изменить условия или добавить инженера.';
+    if (value.lunchStatus)
+      return 'Обед не помещается в текущий маршрут. Требуется выбор диспетчера.';
+    if (value.assignedBefore !== undefined && value.assignedAfter !== undefined)
+      return `Назначено заявок: ${value.assignedBefore} → ${value.assignedAfter}.`;
+  }
+  return 'Подробности доступны в структурированных данных';
 }
 
 export async function requestJson<T>(

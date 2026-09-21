@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { DashboardPage } from './pages/DashboardPage';
-import { EngineerApp } from './pages/EngineerApp';
+import { EngineerAuthPage } from './figma-dashboard/EngineerAuthPage';
+import { MainDashboardPage } from './figma-dashboard/MainDashboardPage';
 
 /** Splits the dispatcher Dashboard from the Engineer App on `/engineer`. */
 export function App() {
@@ -12,7 +12,7 @@ export function App() {
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
-  return engineer ? <EngineerApp /> : <DashboardPage />;
+  return engineer ? <EngineerAuthPage /> : <MainDashboardPage />;
 }
 
 function isEngineerPath(pathname: string): boolean {

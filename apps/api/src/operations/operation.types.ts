@@ -49,6 +49,8 @@ export interface OperationContext {
   readonly now: number;
   readonly actor: Actor;
   readonly operationId: string;
+  /** Set only by LIVE when `now` is already a virtual business timestamp. */
+  readonly businessTime?: boolean;
 }
 
 export type OperationHandler<T> = (context: OperationContext) => Promise<T>;
