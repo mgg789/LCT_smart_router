@@ -70,7 +70,7 @@ test('connection loss preserves the real day, disables writes and recovers', asy
       await page.evaluate((): unknown =>
         JSON.parse(sessionStorage.getItem('lct.saved-day.v1') ?? 'null'),
       ),
-  );
+    );
   expect(stored.snapshot.requests.map((item) => item.id).sort()).toEqual(ids);
   await context.unroute(availabilityRequest);
   await expect(page.getByRole('button', { name: 'Снять со смены', exact: true })).toBeEnabled();

@@ -164,7 +164,7 @@ export function AlertsView({
                         card.requestId ? (
                           <InboxButton
                             variant="outline"
-                            onClick={() => onOpenRequest(card.requestId!)}
+                            onClick={() => card.requestId && onOpenRequest(card.requestId)}
                           >
                             <ArrowUpRight
                               size={22}

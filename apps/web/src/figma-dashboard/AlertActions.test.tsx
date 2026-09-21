@@ -1,5 +1,5 @@
-import { renderToStaticMarkup } from 'react-dom/server';
 import type { ReactNode } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { AlertView } from '../api/types';
 import { createDevSnapshot } from '../fixtures/dev-day';
