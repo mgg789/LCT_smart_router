@@ -2,10 +2,13 @@ import type { Variants } from 'framer-motion';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useState } from 'react';
 import { useLocation, useOutlet } from 'react-router-dom';
+import { useAlertAnnouncements } from '@/features/alert/announce';
+import { useRecalculationNotice } from '@/features/policy/select-policy';
 import { slide, useMotionOn } from '@/shared/lib';
 import { navIndexOf } from '../model/navItems';
 import { AppHeader } from './AppHeader';
 import { SidebarRail } from './SidebarRail';
+import { ToastViewport } from './ToastViewport';
 
 /**
  * A section slides along the rail's axis. `custom` is the direction of travel;
@@ -32,6 +35,9 @@ export function AppLayout() {
   const { pathname } = useLocation();
   const outlet = useOutlet();
   const motionOn = useMotionOn();
+  // Notices are the frame's, not a section's: they keep coming whatever is open.
+  useAlertAnnouncements();
+  useRecalculationNotice();
 
   // Direction is state adjusted during render rather than a ref written in it:
   // StrictMode renders twice, and a ref would read "no movement" the second time.
@@ -65,6 +71,7 @@ export function AppLayout() {
           </AnimatePresence>
         </main>
       </div>
+      <ToastViewport />
     </div>
   );
 }

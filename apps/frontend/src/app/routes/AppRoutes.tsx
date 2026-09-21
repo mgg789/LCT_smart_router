@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
+import { AiPage } from '@/pages/ai';
 import { AlertsPage } from '@/pages/alerts';
 import { EngineersPage } from '@/pages/engineers';
 import { LoginPage } from '@/pages/login';
@@ -20,11 +21,6 @@ const PENDING_SECTIONS = [
     title: 'Чаты',
     note: 'Данных нет: System Layer не отдаёт переписку — контракта на чаты пока не существует.',
   },
-  {
-    path: ROUTES.ai,
-    title: 'AI',
-    note: 'Данных нет: контракта на AI-ассистента в System Layer пока не существует.',
-  },
 ];
 
 export function AppRoutes() {
@@ -38,6 +34,7 @@ export function AppRoutes() {
           <Route element={<EngineersPage />} path={ROUTES.engineers} />
           <Route element={<AlertsPage />} path={ROUTES.alerts} />
           <Route element={<PolicyPage />} path={ROUTES.policy} />
+          <Route element={<AiPage />} path={ROUTES.ai} />
           {PENDING_SECTIONS.map((section) => (
             <Route
               element={<SectionPlaceholder note={section.note} title={section.title} />}

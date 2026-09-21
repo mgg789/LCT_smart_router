@@ -64,3 +64,17 @@ body {
 input[type="search"]::-webkit-search-cancel-button {
   appearance: none;
 }
+
+/*
+ * A progress bar that knows something is under way but not how far: the
+ * contract reports no recalculation progress, so the bar runs rather than
+ * claiming a share it cannot know.
+ */
+@keyframes toast-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(290%);
+  }
+}

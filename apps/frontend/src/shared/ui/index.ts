@@ -1,3 +1,5 @@
+export type { AiAvatarProps } from './ai-avatar/AiAvatar';
+export { AiAvatar } from './ai-avatar/AiAvatar';
 export type { ArcCarouselProps } from './arc-carousel/ArcCarousel';
 export { ArcCarousel } from './arc-carousel/ArcCarousel';
 export type { ButtonProps, ButtonVariant } from './button/Button';
@@ -21,3 +23,5 @@ export type { SwitchProps } from './switch/Switch';
 export { Switch } from './switch/Switch';
 export type { TextFieldProps } from './text-field/TextField';
 export { TextField } from './text-field/TextField';
+export type { ToastProps } from './toast/Toast';
+export { Toast } from './toast/Toast';

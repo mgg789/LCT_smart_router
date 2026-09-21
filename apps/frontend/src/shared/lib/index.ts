@@ -18,5 +18,13 @@ export {
   formatRange,
   formatTime,
 } from './time';
+export type { Toast as ToastData, ToastKind } from './toasts';
+export {
+  notify,
+  RECALC_TOAST_ID,
+  TOAST_DURATION_MS,
+  TOAST_LIMIT,
+  useToastStore,
+} from './toasts';
 export type { ElementSize } from './useElementSize';
 export { useElementSize } from './useElementSize';
