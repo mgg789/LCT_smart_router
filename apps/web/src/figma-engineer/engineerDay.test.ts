@@ -11,6 +11,7 @@ import {
   engineerLunchWindow,
   isOpenJob,
   missingRequestIds,
+  visibleServiceDurationSec,
 } from './engineerDay';
 
 function stop(partial: Partial<PlanStopView> & Pick<PlanStopView, 'kind'>): PlanStopView {
@@ -198,6 +199,15 @@ describe('engineerDay', () => {
 
   it('treats cancelled jobs as closed', () => {
     expect(isOpenJob(request({ id: 'x', lifecycle: 'cancelled' }))).toBe(false);
+  });
+
+  it('prefers a reported expected completion over the catalogue 30 minutes', () => {
+    expect(visibleServiceDurationSec(request({ id: 'norm' }))).toBe(2700);
+    expect(
+      visibleServiceDurationSec(
+        request({ id: 'delayed', startedAt: 100, expectedCompletionAt: 100 + 70 * 60 }),
+      ),
+    ).toBe(70 * 60);
   });
 
   it('builds the Figma sample as upcoming, lunch, then regular cards', () => {

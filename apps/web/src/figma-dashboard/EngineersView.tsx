@@ -524,7 +524,8 @@ export function EngineersView({
 
       <div
         ref={ringRef}
-        className="engineer-ring-stage absolute inset-0"
+        className="engineer-ring-stage absolute inset-0 z-0"
+        aria-hidden
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -650,6 +651,7 @@ function EngineerDossier({
 
   return (
     <div
+      data-engineer-dossier
       className="absolute z-10 overflow-hidden rounded-[20px] bg-white"
       style={{ left: 180, top: 132, width: 1710, height: 418 }}
     >
@@ -731,6 +733,8 @@ function EngineerDossier({
             <div className="mt-auto flex gap-[38px]">
               <motion.button
                 type="button"
+                data-availability-action
+                aria-label={offline ? 'Вернуть на смену' : 'Снять со смены'}
                 disabled={busy}
                 className="flex h-[67px] w-[241px] items-center justify-center rounded-[20px] bg-figma-bee font-semibold text-[20px] tracking-[-0.6px] text-figma-ink disabled:opacity-50"
                 whileHover={motionOn ? { scale: 1.03, filter: 'brightness(1.08)' } : undefined}

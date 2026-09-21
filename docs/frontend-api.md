@@ -40,7 +40,7 @@ Authorization: Bearer <token>
 | Метод | Путь | Тело | Ответ | Заметки |
 |---|---|---|---|---|
 | POST | `/api/v1/auth/dispatcher/password` | `{email, password}` | `{token, role: "dispatcher", expiresAt}` | Публичный запасной вход. Пароль диспетчера задаётся в `.env` (`DISPATCHER_EMAIL`/`DISPATCHER_PASSWORD`); SMTP не нужен. Основной путь дашборда — `login-code` + `verify` с `role: "dispatcher"` |
-| POST | `/api/v1/auth/login-code` | `{email}` | `{email, expiresAt, devCode?}` | Публичный. Ответ одинаковый для известного и неизвестного адреса. `devCode` появляется только при `AUTH_DEV_EXPOSE_CODES=true`; при настроенном SMTP код уходит письмом |
+| POST | `/api/v1/auth/login-code` | `{email}` | `{email, expiresAt, devCode?}` | Публичный. Ответ одинаковый для известного и неизвестного адреса. `devCode` только в local development (`AUTH_DEV_EXPOSE_CODES=true` и не `DEMO_STAND`). На публичном стенде код уходит письмом, диспетчер входит паролем |
 | POST | `/api/v1/auth/login-code/verify` | `{email, code: "123456", role}` | `{token, role, expiresAt}` | `role` ∈ `client/engineer/dispatcher`; роль `engineer` выдаётся только существующему инженеру |
 | GET | `/api/v1/auth/session` | — | `{kind, source, role, accountId, tokenCategory}` | Кто за предъявленным токеном |
 | DELETE | `/api/v1/auth/session` | — | `{signedOut: true}` | Идемпотентный выход |
@@ -468,6 +468,8 @@ twogis: {provider, configured, ok, message}, yandex: {…}}`. Проба идё�
 
 Без точной фразы подтверждения — отказ. Обычный `empty` сбрасывает и сессии.
 На публичном стенде `kind: "demo"` сохраняет сессию диспетчера и заново сеет 14/2.
+Сброс сериализуется с LIVE-опросом: сначала дни, затем `control_state` и
+`routing_current`, иначе concurrent `GET /dispatch/live` даёт 500 на reset.
 
 **POST `/dispatch/data/restart-demo`** — только при `DEMO_STAND=true`, только сессия
 диспетчера: `{operationId}` → `{restored, workDate, requestsCreated, engineersCreated, generation}`.
@@ -517,7 +519,8 @@ SPA `/engineer/` (вход по коду, список заявок и обед�
 
 `PATCH /client/notifications` — `{operationId, enabled}` → `{enabled}`: выключает
 событийные письма адреса (каталог писем — `docs/api.md` §5); коды входа приходят
-всегда. Кнопки из писем («Выбрать новое время» / «Отменить заявку») ведут в карточку
+всегда. `plan_rebuilt` и `engineer_attention_required` на почту не уходят —
+только in-app. Кнопки из писем («Выбрать новое время» / «Отменить заявку») ведут в карточку
 заявки (`/client/requests/:id`, отмена — с `?action=cancel`) и выполняются живой
 сессией заказчика.
 

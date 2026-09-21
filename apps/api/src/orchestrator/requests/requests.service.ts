@@ -6,7 +6,7 @@ import { assertWriteApplied, type OperationContext } from '../../operations';
 import type { Tx } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import { nearestRegion, type RegionPoint, regionCenters } from './region-geocenter';
-import { findWorkType } from './work-type.catalog';
+import { findWorkType, fitWindowToService } from './work-type.catalog';
 
 export interface PrepareRequestInput {
   readonly contactName: string | null;
@@ -75,6 +75,11 @@ export class RequestsService {
       });
     }
     assertWindow(input.windowStartAt, input.windowEndAt);
+    const window = fitWindowToService(
+      input.windowStartAt,
+      input.windowEndAt,
+      spec.serviceDurationSec,
+    );
 
     const lat = input.lat ?? null;
     const lon = input.lon ?? null;
@@ -110,8 +115,8 @@ export class RequestsService {
             ? defaultEquipment(spec.code)
             : input.requiredEquipment,
         priority: resolvePriority(spec.priority, input.urgent),
-        windowStartAt: BigInt(input.windowStartAt),
-        windowEndAt: BigInt(input.windowEndAt),
+        windowStartAt: BigInt(window.windowStartAt),
+        windowEndAt: BigInt(window.windowEndAt),
         lifecycle: 'draft',
         assignmentState: 'pending',
         origin: 'system_rule',
@@ -192,17 +197,22 @@ export class RequestsService {
     expectedVersion: number | null | undefined,
     input: RescheduleInput,
   ): Promise<Request> {
-    assertWindow(input.windowStartAt, input.windowEndAt);
     const current = await this.loadOwned(context.tx, requestId);
     assertChangeable(current);
+    const window = fitWindowToService(
+      input.windowStartAt,
+      input.windowEndAt,
+      current.serviceDurationSec,
+    );
+    assertWindow(window.windowStartAt, window.windowEndAt);
 
     await this.archiveConditions(context, current);
 
     const updated = await context.tx.request.updateMany({
       where: { id: requestId, version: expectedVersion ?? current.version },
       data: {
-        windowStartAt: BigInt(input.windowStartAt),
-        windowEndAt: BigInt(input.windowEndAt),
+        windowStartAt: BigInt(window.windowStartAt),
+        windowEndAt: BigInt(window.windowEndAt),
         windowOrigin: 'explicit',
         // The previous assignment does not confirm the new conditions, so the outcome
         // returns to pending and waits for a current result (context/36 section 3).
@@ -218,12 +228,12 @@ export class RequestsService {
     // stays a no-op, moving to another window confirms again (context/36 section 10).
     await this.notifications.record(context.tx, context.now, {
       category: 'request_rescheduled',
-      businessEventKey: `request_rescheduled:${requestId}:${input.windowStartAt}:${input.windowEndAt}`,
+      businessEventKey: `request_rescheduled:${requestId}:${window.windowStartAt}:${window.windowEndAt}`,
       recipientAccountId: current.clientAccountId,
       payload: {
         requestId,
-        windowStartAt: input.windowStartAt,
-        windowEndAt: input.windowEndAt,
+        windowStartAt: window.windowStartAt,
+        windowEndAt: window.windowEndAt,
       },
     });
 
@@ -246,8 +256,13 @@ export class RequestsService {
     const current = await this.loadOwned(context.tx, requestId);
     assertChangeable(current);
 
-    const windowStartAt = input.windowStartAt ?? Number(current.windowStartAt);
-    const windowEndAt = input.windowEndAt ?? Number(current.windowEndAt);
+    const requestedWindow = fitWindowToService(
+      input.windowStartAt ?? Number(current.windowStartAt),
+      input.windowEndAt ?? Number(current.windowEndAt),
+      current.serviceDurationSec,
+    );
+    const windowStartAt = requestedWindow.windowStartAt;
+    const windowEndAt = requestedWindow.windowEndAt;
     assertWindow(windowStartAt, windowEndAt);
 
     await this.archiveConditions(context, current);

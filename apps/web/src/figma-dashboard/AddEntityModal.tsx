@@ -6,6 +6,7 @@ import {
   ADD_TAB_LABEL,
   ADD_TABS,
   type AddTab,
+  fitWindowToService,
   SKILL_OPTIONS,
   type SkillId,
   selectableRegions,
@@ -286,7 +287,13 @@ function RequestForm({
           onError(window);
           return;
         }
-        void onSubmit({ workType, addressText: addressText.trim(), lat, lon, ...window })
+        void onSubmit({
+          workType,
+          addressText: addressText.trim(),
+          lat,
+          lon,
+          ...fitWindowToService(window, workType),
+        })
           .then(() => {
             setAddressText('');
             setLat(null);

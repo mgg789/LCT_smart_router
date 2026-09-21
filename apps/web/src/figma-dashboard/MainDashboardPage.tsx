@@ -266,16 +266,24 @@ export function MainDashboardPage() {
 
   const toastHydrated = useRef(false);
   useEffect(() => {
-    if (dash.rebuilding)
-      pushToast({
-        id: 'dispatcher-rebuild',
-        kind: 'progress',
-        title: 'Пересчитываем маршруты',
-        body: 'Дождитесь подтверждения нового плана.',
-        progress: 0,
-        etaLabel: 'Выполняется',
-      });
-    else updateToast('dispatcher-rebuild', { progress: 100 });
+    if (!dash.rebuilding) {
+      updateToast('dispatcher-rebuild', { progress: 100 });
+      return;
+    }
+    pushToast({
+      id: 'dispatcher-rebuild',
+      kind: 'progress',
+      title: 'Пересчитываем маршруты',
+      body: 'Дождитесь подтверждения нового плана.',
+      progress: 8,
+      etaLabel: 'Выполняется',
+    });
+    let value = 8;
+    const timer = window.setInterval(() => {
+      value = Math.min(92, value + 7);
+      updateToast('dispatcher-rebuild', { progress: value });
+    }, 350);
+    return () => window.clearInterval(timer);
   }, [dash.rebuilding]);
   useEffect(() => {
     const openAlerts = (dash.snapshot?.alerts ?? []).filter((alert) => alert.resolvedAt === null);
@@ -599,8 +607,11 @@ export function MainDashboardPage() {
             setUserMenuOpen((value) => !value);
           }}
           onSettings={() => {
-            setUserMenuOpen(false);
             setSettingsOpen(true);
+            // Close after the click action finishes. Closing in the same tick
+            // unmounts «Настройки» under AnimatePresence and Playwright retries
+            // a click that already opened the dialog.
+            window.setTimeout(() => setUserMenuOpen(false), 0);
           }}
           onEndDay={() => {
             setUserMenuOpen(false);
@@ -886,6 +897,22 @@ export function MainDashboardPage() {
                     setOpenedRequestId(null);
                     dash.clearFocus();
                   }}
+                  onCancelVisit={
+                    dash.writesDisabled
+                      ? undefined
+                      : async () => {
+                          await dash.cancelRequest(openedRequestId);
+                          setOpenedRequestId(null);
+                          dash.clearFocus();
+                        }
+                  }
+                  onAssignEngineer={
+                    dash.writesDisabled
+                      ? undefined
+                      : async (engineerId) => {
+                          await dash.assignRequest(openedRequestId, engineerId);
+                        }
+                  }
                 />
               </motion.div>
             ) : null}
@@ -948,6 +975,7 @@ function SidebarNav({
               key={item.id}
               type="button"
               disabled={locked}
+              aria-label={item.label}
               aria-disabled={locked}
               title={locked ? 'Скоро' : undefined}
               onClick={() => onSelect(item.id)}
@@ -1059,7 +1087,7 @@ function UserMenu({
   return (
     <div
       data-user-menu
-      className="absolute"
+      className="absolute z-[85]"
       style={{ left: HEADER_AVATAR_LEFT, top: HEADER_AVATAR_TOP }}
     >
       <motion.button
@@ -1067,6 +1095,8 @@ function UserMenu({
         onClick={onToggle}
         className="relative z-50 flex items-center gap-[20px]"
         aria-label="Меню пользователя"
+        aria-expanded={open}
+        aria-haspopup="menu"
         whileHover={motionOn ? { scale: 1.04 } : undefined}
         whileTap={motionOn ? { scale: 0.98 } : undefined}
         transition={{ duration: 0.16 }}
@@ -1151,6 +1181,7 @@ function MenuAction({
   return (
     <motion.button
       type="button"
+      aria-label={children}
       onClick={onClick}
       className={`flex h-[44px] w-full items-center justify-center rounded-[12px] font-semibold text-[16px] ${palette}`}
       whileHover={motionOn ? { scale: 1.03, filter: 'brightness(1.08)' } : undefined}

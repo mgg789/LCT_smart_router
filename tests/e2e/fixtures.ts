@@ -57,9 +57,57 @@ export async function signIn(page: Page) {
   await page.getByRole('button', { name: 'Войти', exact: true }).click();
   const start = page.getByRole('button', { name: 'Начать рабочий день', exact: true });
   const plan = page.getByRole('button', { name: 'План дня', exact: true });
-  await expect(start.or(plan)).toBeVisible();
-  if (await start.isVisible()) await start.click();
-  await expect(plan).toBeVisible();
+  // After smoke the chrome («Загрузить данные») is already on screen with «План дня».
+  // Wait only for the day controls; `.first()` keeps strict mode if both exist.
+  await expect(start.or(plan).first()).toBeVisible({ timeout: 45_000 });
+  if (await start.isVisible()) {
+    await start.click();
+    await expect(start).toBeHidden();
+  }
+  await expect(plan).toBeVisible({ timeout: 45_000 });
+  await expect(page.locator('[data-name="MAIN"] [data-user-menu]')).toBeVisible({
+    timeout: 45_000,
+  });
+}
+
+/**
+ * Open dispatcher Settings from the avatar menu.
+ * Selecting a menu item unmounts the dropdown; Playwright then reports
+ * "element was detached" even when the dialog already opened. Retry until
+ * the dialog is visible instead of treating that detach as a failed click.
+ */
+export async function openDispatcherSettings(page: Page) {
+  const dialog = page.getByRole('dialog', { name: 'Настройки' });
+  // DOM locator: the right-edge avatar can be missing from the a11y tree when
+  // the 1920 artboard is CSS-scaled inside a narrower overflow-hidden frame.
+  const avatar = page.locator('[data-user-menu] button').first();
+  const item = page.getByRole('button', { name: 'Настройки', exact: true });
+
+  await expect(async () => {
+    if (await dialog.isVisible()) return;
+    await expect(avatar).toBeVisible({ timeout: 5_000 });
+    if ((await avatar.getAttribute('aria-expanded')) !== 'true') {
+      await avatar.click({ timeout: 5_000, force: true });
+    }
+    await expect(item).toBeVisible({ timeout: 3_000 });
+    await item.click({ timeout: 5_000 });
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+  }).toPass({ timeout: 30_000 });
+}
+
+/**
+ * Open the Engineers tab and return the dossier availability control.
+ * Prefer the DOM node: the 3D ring (`perspective` + `preserve-3d`) plus the
+ * dossier's `overflow-hidden` often drop the button from Chromium's a11y tree,
+ * so `getByRole('Снять со смены')` times out even when the control is painted.
+ */
+export async function engineerAvailabilityControl(page: Page) {
+  await page.getByRole('button', { name: 'Инженеры', exact: true }).click();
+  const dossier = page.locator('[data-name="ENGINEERS"] [data-engineer-dossier]');
+  await expect(dossier).toBeVisible({ timeout: 20_000 });
+  const control = dossier.locator('[data-availability-action]');
+  await expect(control).toBeVisible({ timeout: 20_000 });
+  return control;
 }
 
 /** Isolated serial fixtures: real seed per test, external network blocked, error evidence. */
@@ -89,23 +137,39 @@ export const test = base.extend<{ live: LiveDay; browserHealth: undefined }>({
   ],
   live: async ({ playwright }, use, testInfo) => {
     // Reuse the established public-API seed, golden-node calculation and urgent-event gate.
-    const { stdout, stderr } = await run(
-      process.execPath,
-      ['apps/api/dist-test/scripts/smoke.js'],
-      {
+    // One extra attempt covers a leftover LIVE poll racing the empty reset; Playwright
+    // itself still has retries: 0 so a real product failure is not hidden.
+    const runSmoke = () =>
+      run(process.execPath, ['apps/api/dist-test/scripts/smoke.js'], {
         timeout: 100_000,
         maxBuffer: 2 * 1024 * 1024,
-      },
-    ).catch(async (cause: unknown) => {
-      const failure = z.object({ stdout: z.string(), stderr: z.string() }).safeParse(cause);
-      if (failure.success) {
-        await testInfo.attach('seed-smoke-failure', {
-          body: failure.data.stdout + failure.data.stderr,
-          contentType: 'text/plain',
-        });
+      });
+    let stdout = '';
+    let stderr = '';
+    let lastCause: unknown;
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      try {
+        const result = await runSmoke();
+        stdout = result.stdout;
+        stderr = result.stderr;
+        lastCause = undefined;
+        break;
+      } catch (cause: unknown) {
+        lastCause = cause;
+        const failure = z.object({ stdout: z.string(), stderr: z.string() }).safeParse(cause);
+        if (failure.success) {
+          await testInfo.attach(`seed-smoke-failure-${attempt}`, {
+            body: failure.data.stdout + failure.data.stderr,
+            contentType: 'text/plain',
+          });
+          stdout = failure.data.stdout;
+          stderr = failure.data.stderr;
+        }
       }
-      throw cause;
-    });
+    }
+    if (lastCause) {
+      throw lastCause;
+    }
     await testInfo.attach('seed-smoke', { body: stdout + stderr, contentType: 'text/plain' });
     expect(stdout).toContain('SMOKE GATE GREEN');
     const anonymous = await playwright.request.newContext();

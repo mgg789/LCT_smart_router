@@ -1,12 +1,15 @@
 import { motion, useReducedMotion } from 'framer-motion';
 import { X } from 'lucide-react';
-import type { DashboardSnapshot } from '../api/types';
+import { useState } from 'react';
+import type { DashboardSnapshot, EngineerView } from '../api/types';
 import { DayMap } from '../components/DayMap';
 import { FIGMA_ASSETS } from './assets';
 import { Copyable } from './Copyable';
 import { FigmaIcon, FigmaText } from './primitives';
 import {
+  assignableEngineers,
   type RequestDetailModel,
+  requestAssignLabel,
   requestDetailFromRow,
   requestDetailFromSnapshot,
 } from './requestDetail';
@@ -31,11 +34,15 @@ export function RequestDetailView({
   requestId,
   motionOn,
   onBack,
+  onCancelVisit,
+  onAssignEngineer,
 }: {
   snapshot: DashboardSnapshot | null;
   requestId: string;
   motionOn: boolean;
   onBack: () => void;
+  onCancelVisit?: () => Promise<void>;
+  onAssignEngineer?: (engineerId: string) => Promise<void>;
 }) {
   const reduceMotion = useReducedMotion();
   const animate = motionOn && !reduceMotion;
@@ -111,13 +118,31 @@ export function RequestDetailView({
         >
           <X size={22} strokeWidth={2.25} className="text-figma-ink" />
         </motion.button>
-        <RequestDetailPanel model={model} motionOn={animate} />
+        <RequestDetailPanel
+          model={model}
+          motionOn={animate}
+          candidates={snapshot ? assignableEngineers(snapshot, requestId) : []}
+          onCancelVisit={onCancelVisit}
+          onAssignEngineer={onAssignEngineer}
+        />
       </motion.aside>
     </>
   );
 }
 
-function RequestDetailPanel({ model, motionOn }: { model: RequestDetailModel; motionOn: boolean }) {
+function RequestDetailPanel({
+  model,
+  motionOn,
+  candidates,
+  onCancelVisit,
+  onAssignEngineer,
+}: {
+  model: RequestDetailModel;
+  motionOn: boolean;
+  candidates: EngineerView[];
+  onCancelVisit?: () => Promise<void>;
+  onAssignEngineer?: (engineerId: string) => Promise<void>;
+}) {
   const facts = [
     { id: 'address', value: model.address },
     { id: 'email', value: model.email ?? '—' },
@@ -165,35 +190,131 @@ function RequestDetailPanel({ model, motionOn }: { model: RequestDetailModel; mo
           </Copyable>
         ))}
       </div>
-      <div className="mt-auto flex flex-col gap-[16px]">
-        <motion.button
-          type="button"
-          disabled
-          aria-disabled
-          title="Скоро"
-          className="flex h-[61px] w-[430px] cursor-not-allowed items-center justify-center rounded-[20px] border-[0.5px] border-white bg-figma-ink font-medium text-[20px] text-white opacity-45"
-        >
-          Написать клиенту
-        </motion.button>
-        <motion.button
-          type="button"
-          className="flex h-[61px] w-[430px] items-center justify-center rounded-[20px] bg-figma-bee font-medium text-[20px] text-figma-ink"
-          whileHover={motionOn ? { scale: 1.03, filter: 'brightness(1.08)' } : undefined}
-          whileTap={motionOn ? { scale: 0.98 } : undefined}
-          transition={{ duration: 0.16 }}
-        >
-          Переназначить инженера
-        </motion.button>
-        <motion.button
-          type="button"
-          className="flex h-[61px] w-[430px] items-center justify-center rounded-[20px] bg-figma-cancel font-medium text-[20px] text-white"
-          whileHover={motionOn ? { scale: 1.03, filter: 'brightness(1.08)' } : undefined}
-          whileTap={motionOn ? { scale: 0.98 } : undefined}
-          transition={{ duration: 0.16 }}
-        >
-          Отменить визит
-        </motion.button>
-      </div>
+      <RequestDetailActions
+        model={model}
+        motionOn={motionOn}
+        candidates={candidates}
+        onCancelVisit={onCancelVisit}
+        onAssignEngineer={onAssignEngineer}
+      />
+    </div>
+  );
+}
+
+function RequestDetailActions({
+  model,
+  motionOn,
+  candidates,
+  onCancelVisit,
+  onAssignEngineer,
+}: {
+  model: RequestDetailModel;
+  motionOn: boolean;
+  candidates: EngineerView[];
+  onCancelVisit?: () => Promise<void>;
+  onAssignEngineer?: (engineerId: string) => Promise<void>;
+}) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [engineerId, setEngineerId] = useState(candidates[0]?.id ?? '');
+  const [pending, setPending] = useState<'assign' | 'cancel' | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const run = async (kind: 'assign' | 'cancel', work: () => Promise<void>) => {
+    if (pending) return;
+    setPending(kind);
+    setError(null);
+    try {
+      await work();
+      setPickerOpen(false);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Не удалось выполнить действие.');
+    } finally {
+      setPending(null);
+    }
+  };
+  return (
+    <div className="mt-auto flex flex-col gap-[16px]">
+      <motion.button
+        type="button"
+        disabled
+        aria-disabled
+        title="Скоро"
+        className="flex h-[61px] w-[430px] cursor-not-allowed items-center justify-center rounded-[20px] border-[0.5px] border-white bg-figma-ink font-medium text-[20px] text-white opacity-45"
+      >
+        Написать клиенту
+      </motion.button>
+      <motion.button
+        type="button"
+        disabled={!model.assignable || !onAssignEngineer || pending !== null}
+        className="flex h-[61px] w-[430px] items-center justify-center rounded-[20px] bg-figma-bee font-medium text-[20px] text-figma-ink disabled:opacity-45"
+        whileHover={motionOn ? { scale: 1.03, filter: 'brightness(1.08)' } : undefined}
+        whileTap={motionOn ? { scale: 0.98 } : undefined}
+        transition={{ duration: 0.16 }}
+        onClick={() => {
+          setError(null);
+          setPickerOpen(true);
+          if (!engineerId && candidates[0]) setEngineerId(candidates[0].id);
+        }}
+      >
+        {requestAssignLabel(model.assigned)}
+      </motion.button>
+      {pickerOpen ? (
+        <div className="rounded-[16px] bg-white/10 p-[16px] text-white">
+          <label className="block font-medium text-[16px]">
+            Инженер
+            <select
+              className="mt-[8px] block w-full rounded-[12px] bg-white p-[10px] text-figma-ink"
+              value={engineerId}
+              onChange={(event) => setEngineerId(event.target.value)}
+            >
+              {candidates.length === 0 ? <option value="">Нет подходящих</option> : null}
+              {candidates.map((engineer) => (
+                <option key={engineer.id} value={engineer.id}>
+                  {engineer.displayName}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="mt-[12px] flex gap-[10px]">
+            <button
+              type="button"
+              disabled={!engineerId || !onAssignEngineer || pending !== null}
+              className="rounded-[16px] bg-figma-bee px-[18px] py-[10px] font-semibold text-figma-ink disabled:opacity-45"
+              onClick={() => {
+                if (!onAssignEngineer || !engineerId) return;
+                void run('assign', () => onAssignEngineer(engineerId));
+              }}
+            >
+              {pending === 'assign' ? 'Назначаем…' : 'Назначить'}
+            </button>
+            <button
+              type="button"
+              className="rounded-[16px] border border-white/40 px-[18px] py-[10px] text-white"
+              onClick={() => setPickerOpen(false)}
+            >
+              Отмена
+            </button>
+          </div>
+        </div>
+      ) : null}
+      <motion.button
+        type="button"
+        disabled={!model.cancellable || !onCancelVisit || pending !== null}
+        className="flex h-[61px] w-[430px] items-center justify-center rounded-[20px] bg-figma-cancel font-medium text-[20px] text-white disabled:opacity-45"
+        whileHover={motionOn ? { scale: 1.03, filter: 'brightness(1.08)' } : undefined}
+        whileTap={motionOn ? { scale: 0.98 } : undefined}
+        transition={{ duration: 0.16 }}
+        onClick={() => {
+          if (!onCancelVisit) return;
+          void run('cancel', onCancelVisit);
+        }}
+      >
+        {pending === 'cancel' ? 'Отменяем…' : 'Отменить визит'}
+      </motion.button>
+      {error ? (
+        <p role="alert" className="font-medium text-[16px] text-white">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }

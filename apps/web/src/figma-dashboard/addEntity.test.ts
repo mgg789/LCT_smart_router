@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   addSessionOffice,
   addSessionRegion,
+  fitWindowToService,
   officesForRegion,
   regionIdFromLabel,
   resetAddedEntities,
@@ -27,6 +28,16 @@ describe('addEntity catalog helpers', () => {
     expect(windowFromClocks('2026-09-19', '14:00', '11:00')).toBe(
       'Окно должно заканчиваться позже начала',
     );
+  });
+
+  it('stretches an hour-long outage window to the 80-minute norm', () => {
+    const hour = windowFromClocks('2026-09-19', '17:45', '18:45');
+    expect(typeof hour).not.toBe('string');
+    if (typeof hour === 'string') throw new Error(hour);
+    expect(fitWindowToService(hour, 'outage')).toEqual({
+      windowStartAt: hour.windowStartAt,
+      windowEndAt: hour.windowStartAt + 80 * 60,
+    });
   });
 
   it('builds a moscow window from clocks', () => {

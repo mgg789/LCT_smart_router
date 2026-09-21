@@ -715,6 +715,40 @@ export async function geocodeAddress(
   return result.hits;
 }
 
+/** Cancels a visit that has not started. */
+export function cancelDispatchRequest(
+  token: string,
+  requestId: string,
+  expectedVersion?: number,
+  reason?: string,
+): Promise<{ request: z.infer<typeof requestSchema> }> {
+  return requestJson(
+    `/api/v1/dispatch/requests/${encodeURIComponent(requestId)}/cancel`,
+    z.object({ request: requestSchema }),
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        operationId: crypto.randomUUID(),
+        ...(expectedVersion === undefined ? {} : { expectedVersion }),
+        ...(reason === undefined ? {} : { reason }),
+      }),
+    },
+  );
+}
+
+/** Moves an unstarted visit onto another engineer. Requires manual control. */
+export function reassignDispatchRequest(
+  token: string,
+  requestId: string,
+  engineerId: string,
+): Promise<unknown> {
+  return requestJson('/api/v1/dispatch/plan/reassign', z.unknown(), token, {
+    method: 'POST',
+    body: JSON.stringify({ operationId: crypto.randomUUID(), requestId, engineerId }),
+  });
+}
+
 /** Creates and immediately submits an unplanned request from the compact dashboard form. */
 export function createDispatchRequest(
   token: string,

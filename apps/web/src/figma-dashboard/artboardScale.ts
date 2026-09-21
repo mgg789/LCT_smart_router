@@ -5,20 +5,29 @@ import { FIGMA_ARTBOARD } from './fixtures';
 const LETTERBOX_BLEED = 4;
 
 /**
+ * Fit of the 1920×1080 mockup into a window. Used on the first paint so a
+ * smaller viewport does not briefly layout the full artboard and clip the
+ * right-edge avatar out of the accessibility tree.
+ */
+export function readArtboardScale(viewport?: { width: number; height: number }): number {
+  const width =
+    viewport?.width ?? (typeof window === 'undefined' ? FIGMA_ARTBOARD.width : window.innerWidth);
+  const height =
+    viewport?.height ??
+    (typeof window === 'undefined' ? FIGMA_ARTBOARD.height : window.innerHeight);
+  return Math.min(width / FIGMA_ARTBOARD.width, height / FIGMA_ARTBOARD.height);
+}
+
+/**
  * Fits the 1920×1080 mockup into the viewport without changing its internal layout.
  * At exactly 1920×1080 the scale is 1, so browser screenshots stay pixel-identical.
  */
 export function useArtboardScale(): number {
-  const [scale, setScale] = useState(1);
+  const [scale, setScale] = useState(readArtboardScale);
 
   useEffect(() => {
     const update = () => {
-      setScale(
-        Math.min(
-          window.innerWidth / FIGMA_ARTBOARD.width,
-          window.innerHeight / FIGMA_ARTBOARD.height,
-        ),
-      );
+      setScale(readArtboardScale());
     };
     update();
     window.addEventListener('resize', update);

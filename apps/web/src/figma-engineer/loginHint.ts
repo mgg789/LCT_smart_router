@@ -12,8 +12,10 @@ export type EngineerCodeHint =
 export function engineerCodeHint(input: {
   devCode?: string;
   remainingSec: number;
+  /** Local Vite/dev only. Built stands never print a mailbox code. */
+  showDevCode?: boolean;
 }): EngineerCodeHint {
-  if (input.devCode) {
+  if (input.showDevCode && input.devCode) {
     return { kind: 'demo', text: `Демо код ${input.devCode} без срока` };
   }
   if (input.remainingSec > 0) {

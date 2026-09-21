@@ -23,7 +23,8 @@ export default defineConfig({
   workers: 1,
   forbidOnly: true,
   retries: 0,
-  timeout: 120_000,
+  // Headroom for one extra smoke seed if empty reset races a leftover LIVE poll.
+  timeout: 180_000,
   expect: { timeout: 20_000 },
   grep: phase === 'browser' ? undefined : new RegExp(`@${phase}`),
   grepInvert: phase === 'browser' ? /@router-/ : undefined,
@@ -40,7 +41,10 @@ export default defineConfig({
     launchOptions: {
       args: ['--use-gl=angle', '--use-angle=swiftshader'],
     },
-    viewport: { width: 1440, height: 1000 },
+    // Match the 1920×1080 artboard. A 1440-wide clip + CSS scale left the
+    // avatar (left: 1800) out of Chromium's accessibility tree, so
+    // getByRole('Меню пользователя') was not found after a successful sign-in.
+    viewport: { width: 1920, height: 1080 },
     serviceWorkers: 'block',
     actionTimeout: 15_000,
     navigationTimeout: 30_000,

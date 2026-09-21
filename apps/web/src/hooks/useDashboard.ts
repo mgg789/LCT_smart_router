@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  cancelDispatchRequest,
   changeEngineerEmail,
   closeDispatchShift,
   createDispatchEngineer,
@@ -12,6 +13,7 @@ import {
   loadPolicyComparison,
   loginDispatcher,
   markDispatchNoticeSeen,
+  reassignDispatchRequest,
   requestDispatcherLoginCode,
   resolveDispatchAlert,
   restartDemoStand,
@@ -956,6 +958,35 @@ export function useDashboard() {
     [performEntityMutation],
   );
 
+  const cancelRequest = useCallback(
+    (requestId: string) => {
+      const current = snapshotRef.current?.requests.find((item) => item.id === requestId);
+      return performEntityMutation(async (session) => {
+        await cancelDispatchRequest(
+          session,
+          requestId,
+          current?.version,
+          'cancelled by dispatcher',
+        );
+      }, 'Визит отменён.');
+    },
+    [performEntityMutation],
+  );
+
+  const assignRequest = useCallback(
+    (requestId: string, engineerId: string) => {
+      const engineer = snapshotRef.current?.engineers.find((item) => item.id === engineerId);
+      return performEntityMutation(
+        async (session) => {
+          await setDispatchMode(session, 'manual');
+          await reassignDispatchRequest(session, requestId, engineerId);
+        },
+        `Заявка назначена инженеру ${engineer?.displayName ?? engineerId}.`,
+      );
+    },
+    [performEntityMutation],
+  );
+
   const createEngineer = useCallback(
     (input: CreateDispatchEngineerInput) =>
       performEntityMutation(async (session) => {
@@ -1226,6 +1257,8 @@ export function useDashboard() {
     saveEngineerLogin,
     unlinkEngineerLogin,
     createRequest,
+    cancelRequest,
+    assignRequest,
     createEngineer,
     deleteEngineer,
     uploadDataset,
