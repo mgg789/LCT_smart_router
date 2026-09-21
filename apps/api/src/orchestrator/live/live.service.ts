@@ -1663,17 +1663,24 @@ export class LiveService {
     });
     if (input.problemKind === 'delay') {
       if (current.phase === 'in_progress') {
-        const expected = context.now + (input.additionalDurationSec ?? 0);
+        const extra = input.additionalDurationSec ?? 0;
+        const liveNow = this.liveNow(day, context.now);
+        const expectedWall = context.now + extra;
         const actualStart = current.current?.request.startedAt;
         const norm = current.current?.request.serviceDurationSec;
+        // startedAt is logical LIVE time; expectedCompletionAt stays on the wall
+        // clock of the fact. Mixing those domains produced a ~10^9 "duration"
+        // that blew up snapshot publication (CI 500 on delay).
+        const nextDuration =
+          actualStart === null || actualStart === undefined
+            ? null
+            : Math.max(1, liveNow + extra - actualStart);
         await context.tx.request.update({
           where: { id: input.requestId },
           data: {
-            ...(actualStart !== null && actualStart !== undefined
-              ? { serviceDurationSec: expected - actualStart }
-              : {}),
-            expectedCompletionAt: BigInt(expected),
-            continuationAvailableAt: BigInt(expected),
+            ...(nextDuration !== null ? { serviceDurationSec: nextDuration } : {}),
+            expectedCompletionAt: BigInt(expectedWall),
+            continuationAvailableAt: BigInt(expectedWall),
             overrunDetectedAt: null,
             updatedAt: BigInt(context.now),
             version: { increment: 1 },
@@ -1683,7 +1690,7 @@ export class LiveService {
           actualStart !== null &&
           actualStart !== undefined &&
           norm !== undefined &&
-          expected > actualStart + norm + MATERIAL_DELAY_SEC
+          liveNow + extra > actualStart + norm + MATERIAL_DELAY_SEC
         ) {
           await this.publisher.publishIfChanged(
             context.tx,

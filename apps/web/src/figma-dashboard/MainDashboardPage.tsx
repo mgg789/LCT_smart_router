@@ -972,6 +972,7 @@ function SidebarNav({
               key={item.id}
               type="button"
               disabled={locked}
+              aria-label={item.label}
               aria-disabled={locked}
               title={locked ? 'Скоро' : undefined}
               onClick={() => onSelect(item.id)}
@@ -1083,7 +1084,7 @@ function UserMenu({
   return (
     <div
       data-user-menu
-      className="absolute"
+      className="absolute z-[85]"
       style={{ left: HEADER_AVATAR_LEFT, top: HEADER_AVATAR_TOP }}
     >
       <motion.button
@@ -1175,6 +1176,7 @@ function MenuAction({
   return (
     <motion.button
       type="button"
+      aria-label={children}
       onClick={onClick}
       className={`flex h-[44px] w-full items-center justify-center rounded-[12px] font-semibold text-[16px] ${palette}`}
       whileHover={motionOn ? { scale: 1.03, filter: 'brightness(1.08)' } : undefined}

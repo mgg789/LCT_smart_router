@@ -17,6 +17,12 @@ export interface NotificationIntentInput {
 }
 
 /**
+ * In-app notices that must never become SMTP. `plan_rebuilt` and
+ * `engineer_attention_required` stay on the dashboard; mailing them is spam.
+ */
+export const MAIL_DISABLED_CATEGORIES = new Set(['plan_rebuilt', 'engineer_attention_required']);
+
+/**
  * Records what sys has decided to send.
  *
  * sys composes the letter; SMTP-gateway submits it. Until the external server
@@ -39,8 +45,14 @@ export class NotificationsService {
    *
    * A recipient who silenced their letters stops event mail, but never a login code: a
    * way in must not be silenceable (card #65, 2026-09-20).
+   *
+   * `MAIL_DISABLED_CATEGORIES` are recorded as dashboard notices only — no intent row.
    */
   async record(tx: Tx, now: number, input: NotificationIntentInput): Promise<void> {
+    if (MAIL_DISABLED_CATEGORIES.has(input.category)) {
+      this.logger.log(`Mail disabled for ${input.category}; no intent recorded`);
+      return;
+    }
     const account =
       input.recipientAccountId === null || input.recipientAccountId === undefined
         ? null

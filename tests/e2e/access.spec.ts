@@ -3,7 +3,9 @@ import { expect, signIn, test } from './fixtures';
 
 test('dispatcher creates and revokes an integration key through the UI', async ({ page, live }) => {
   await signIn(page);
+  await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Меню пользователя', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Настройки', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Настройки', exact: true }).click();
   await page.getByRole('button', { name: 'API', exact: true }).click();
   await page.getByLabel('Название', { exact: true }).fill('Regression client');
@@ -22,7 +24,9 @@ test('dispatcher creates and revokes an integration key through the UI', async (
   // A client-category key must never gain dispatcher access.
   expect((await live.api.get('/api/v1/dispatch/plan', { headers })).status()).toBe(403);
   await page.reload();
+  await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Меню пользователя', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Настройки', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Настройки', exact: true }).click();
   await page.getByRole('button', { name: 'API', exact: true }).click();
   await expect(page.getByText('Regression client', { exact: true })).toBeVisible();
