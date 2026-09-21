@@ -4,6 +4,7 @@ import type {
   PlanStopView,
   RequestView,
 } from '../api/types';
+import { routeTimingUnverified } from '../domain/mapForecast';
 
 export type EngineerJobVariant = 'upcoming' | 'regular';
 
@@ -73,7 +74,8 @@ export function engineerListItems(
     if (upcoming) upcomingAssigned = true;
     items.push({
       kind: 'job',
-      timingUnverified: plan?.origin === 'manual' && request.startedAt === null,
+      timingUnverified:
+        routeTimingUnverified(plan?.route, plan?.origin ?? undefined) && request.startedAt === null,
       variant: upcoming ? 'upcoming' : 'regular',
       stop,
       request,

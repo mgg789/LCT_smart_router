@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { formatClock } from '../lib/time';
 import type { PlanExpectation } from './manual';
+import { mapForecastSchema, mapObservationSchema } from './mapForecast';
 import type {
   AlertResolutionInput,
   ApiTokenCategory,
@@ -133,6 +134,7 @@ const planLegSchema = z.object({
   travelTimeSec: z.number().int().nonnegative(),
   distanceKm: z.number().nonnegative(),
   travelSource: z.enum(['approximate', 'road_matrix', 'route_api', 'traffic_api']),
+  mapObservation: mapObservationSchema.optional(),
   geometryProvider: z.enum(['twogis', 'yandex']).optional(),
   trafficFactor: z.number().min(1),
   geometry: z
@@ -167,7 +169,8 @@ const routeSchema = z.object({
   lunchTimeSec: z.number().int(),
   assignedCount: z.number().int(),
   lunchStatus: lunchStatusSchema,
-  timingStatus: z.enum(['calculated', 'unverified']).optional(),
+  timingStatus: z.enum(['calculated', 'unverified', 'forecast']).optional(),
+  mapForecast: mapForecastSchema.optional(),
   stops: z.array(planStopSchema),
   legs: z
     .array(planLegSchema)
@@ -669,6 +672,9 @@ const mapProviderStatusSchema = z.object({
   configured: z.boolean(),
   ok: z.boolean().nullable(),
   message: z.string(),
+  requests: z.number().int().nonnegative().optional(),
+  cacheHits: z.number().int().nonnegative().optional(),
+  checkedAt: z.number().int().nullable().optional(),
 });
 
 /** Reads dispatcher-owned day clocks, alert timers and map-key presence. */

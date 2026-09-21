@@ -127,6 +127,9 @@ export interface MapProviderStatus {
   readonly configured: boolean;
   readonly ok: boolean | null;
   readonly message: string;
+  readonly requests?: number;
+  readonly cacheHits?: number;
+  readonly checkedAt?: number | null;
 }
 
 export interface MapProvidersStatus {
@@ -182,7 +185,12 @@ export interface PlanStopView {
 }
 
 export interface PlanRouteView {
-  readonly timingStatus?: 'calculated' | 'unverified';
+  readonly timingStatus?: 'calculated' | 'unverified' | 'forecast';
+  readonly mapForecast?: {
+    readonly observedAt: number | null;
+    readonly state: 'fresh' | 'mixed' | 'stale' | 'fallback';
+    readonly warnings: readonly string[];
+  };
   readonly engineerId: string;
   readonly startLat: number;
   readonly startLon: number;
@@ -222,6 +230,12 @@ export interface PlanLegView {
   readonly travelSource: TravelSource;
   /** Present when sys replaced Router geometry with a map-provider polyline. */
   readonly geometryProvider?: 'twogis' | 'yandex';
+  readonly mapObservation?: {
+    readonly observedAt: number;
+    readonly expiresAt: number;
+    readonly cacheState: 'live' | 'cached' | 'stale';
+    readonly trafficMode: 'current' | 'statistics' | 'none';
+  };
   /** Forecast/provider multiplier already included in travelTimeSec. */
   readonly trafficFactor: number;
   /** Ordered WGS84 points returned by the routing provider. */

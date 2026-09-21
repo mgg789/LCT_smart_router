@@ -428,7 +428,9 @@ export function MainDashboardPage() {
     );
   }
 
-  if (dash.source === 'live' && dash.liveLoading && !dash.liveWorkday && !dash.snapshot) {
+  // A cached/fast plan does not prove that the workday has started. Wait for LIVE
+  // before exposing actions, otherwise its late pending response replaces the UI mid-click.
+  if (dash.source === 'live' && !dash.liveWorkday) {
     return (
       <WelcomeScreen
         requestCount={null}
@@ -669,7 +671,8 @@ export function MainDashboardPage() {
               throw new Error('Нужна живая сессия диспетчера');
             }
             await updateDispatcherSettings(dash.token, dispatcher);
-            dash.applyRoutingSettings(dash.snapshot.policyId, router);
+            if (router) dash.applyRoutingSettings(dash.snapshot.policyId, router);
+            else await dash.refresh();
             setSettingsOpen(false);
           }}
         />
@@ -1511,7 +1514,7 @@ function EngineersColumn({
           </span>
         </FigmaText>
       </div>
-      <FigmaText className="figma-nowrap absolute left-[30px] top-[68px] z-0 font-semibold text-[18px] tracking-[-0.306px] text-figma-muted">
+      <FigmaText className="absolute left-[30px] right-[30px] top-[68px] z-0 line-clamp-2 font-semibold text-[16px] leading-[20px] tracking-[-0.306px] text-figma-muted">
         {planLabel}
       </FigmaText>
       <div

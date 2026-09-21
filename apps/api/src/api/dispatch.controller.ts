@@ -1164,7 +1164,7 @@ export class DispatchController {
   }
 
   @Get('settings/maps/status')
-  @ApiOperation({ summary: 'Probe configured map providers with a short Moscow sample route' })
+  @ApiOperation({ summary: 'Observed map-provider health and request counts; no billable probe' })
   async mapStatus() {
     return this.mapRouting.probe();
   }

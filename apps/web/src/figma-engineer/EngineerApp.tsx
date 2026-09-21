@@ -14,6 +14,7 @@ import {
   sendEngineerLiveAction,
 } from '../api/live';
 import type { EngineerDayView, EngineerPlanResponse, EngineerView } from '../api/types';
+import { mapForecastLabel } from '../domain/mapForecast';
 import { TRANSPORT_OPTIONS } from '../figma-dashboard/addEntity';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { ENGINEER_ASSETS } from './assets';
@@ -457,6 +458,14 @@ export function EngineerApp({
               >
                 Список заявок
               </h1>
+              {mapForecastLabel(plan?.route) ? (
+                <p
+                  className="font-medium text-figma-muted"
+                  style={{ marginTop: eu(12), fontSize: eu(20) }}
+                >
+                  {mapForecastLabel(plan?.route)}
+                </p>
+              ) : null}
               {notice ? (
                 <p
                   className="font-medium text-figma-muted"

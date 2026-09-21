@@ -769,7 +769,9 @@ export function DayMap({
       {soloRequestId ? null : (
         <div className="pointer-events-none absolute bottom-3 left-3 rounded-xl bg-white/90 px-3 py-2 text-[11px] text-muted shadow">
           {snapshot.plan.plan?.origin === 'manual'
-            ? 'Ручной порядок. Линии соединяют точки; дороги и время после правки не пересчитаны.'
+            ? snapshot.plan.plan.routes.some((route) => route.timingStatus === 'forecast')
+              ? 'Ручной порядок сохранён. Зелёные дороги — API карт; прогноз и свежесть данных указаны у маршрута.'
+              : 'Ручной порядок. Линии соединяют точки; дороги и время после правки не пересчитаны.'
             : selectedEngineerId
               ? 'Показан план выбранного инженера. Пунктир — геоцентры, серая линия — OSRM, зелёная — маршрут 2ГИС или Яндекс.'
               : 'План дня без live-позиции инженеров. Пунктир — геоцентры, серая линия — OSRM, зелёная — маршрут 2ГИС или Яндекс.'}

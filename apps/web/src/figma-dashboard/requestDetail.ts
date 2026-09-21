@@ -1,5 +1,6 @@
 import type { DashboardSnapshot, EngineerView, EquipmentType, RequestView } from '../api/types';
 import { assignmentFor, routeForEngineer } from '../domain/dashboard';
+import { routeTimingUnverified } from '../domain/mapForecast';
 import { skillLabel } from '../lib/reasons';
 import { formatClock } from '../lib/time';
 import { requestUrgency } from './fromSnapshot';
@@ -78,10 +79,9 @@ export function requestDetailFromSnapshot(
     : null;
   const route = assignment?.engineerId ? routeForEngineer(snapshot, assignment.engineerId) : null;
   const stop = route?.stops.find((item) => item.requestId === request.id);
-  const etaAt =
-    snapshot.plan.plan?.origin === 'manual'
-      ? null
-      : (stop?.arrivalAt ?? request.expectedCompletionAt ?? null);
+  const etaAt = routeTimingUnverified(route, snapshot.plan.plan?.origin)
+    ? null
+    : (stop?.arrivalAt ?? request.expectedCompletionAt ?? null);
   const tags = requestDetailTags(request);
   return {
     id: request.id,

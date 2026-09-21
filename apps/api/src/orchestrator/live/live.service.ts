@@ -37,6 +37,7 @@ import {
   ExecutionTimingPolicy,
   type ExecutionTimingPolicyValue,
 } from '../facts/execution-timing-policy';
+import { MapRoutingService } from '../settings/map-routing.service';
 
 import { etaNeedsReplan, MATERIAL_DELAY_SEC, NEXT_VISIT_GAP_SEC } from './replan-policy';
 
@@ -62,6 +63,7 @@ export class LiveService {
   private advanceInFlight: Promise<void> | null = null;
 
   constructor(
+    private readonly maps: MapRoutingService,
     private readonly prisma: PrismaService,
     private readonly uow: UnitOfWork,
     private readonly clock: Clock,
@@ -76,6 +78,7 @@ export class LiveService {
 
   /** Dispatcher entry: creates the durable pending card but does not start its clock. */
   async dispatchView(): Promise<DispatchLiveView> {
+    await this.refreshMapForecast();
     await this.advanceOnce();
     await this.demoStand.reconcile();
     return this.uow.run(async (tx) => this.dispatchViewIn(tx, this.clock.nowSeconds()));
@@ -118,8 +121,15 @@ export class LiveService {
 
   /** Engineer entry. A session resolves its own subject in the controller. */
   async engineerView(engineerId: string): Promise<EngineerLiveView> {
+    await this.refreshMapForecast();
     await this.advanceOnce();
     return this.uow.run(async (tx) => this.engineerViewIn(tx, engineerId, this.clock.nowSeconds()));
+  }
+
+  /** External map I/O precedes the LIVE transaction; all locked readers use the same cache. */
+  private async refreshMapForecast(): Promise<void> {
+    const plan = await this.plans.current(this.prisma);
+    if (plan) await this.maps.enrichPlan(toPlanView(plan));
   }
 
   /** Legacy mutation endpoints must not bypass LIVE ordering or its business clock. */
@@ -1286,7 +1296,9 @@ export class LiveService {
   ) {
     const plan = await this.plans.current(tx);
     let route = plan
-      ? (toPlanView(plan).routes.find((item) => item.engineerId === engineerId) ?? null)
+      ? ((await this.maps.cachedPlan(toPlanView(plan), tx)).routes.find(
+          (item) => item.engineerId === engineerId,
+        ) ?? null)
       : null;
     const stateRows =
       'requests' in day
@@ -1909,7 +1921,13 @@ export class LiveService {
       );
     }
     const plan = await this.plans.current(tx);
-    for (const route of plan?.origin === 'manual' ? [] : (plan?.routes ?? [])) {
+    const forecastRoutes =
+      plan && plan.origin !== 'manual'
+        ? (await this.maps.cachedPlan(toPlanView(plan), tx)).routes.filter(
+            (route) => route.timingStatus !== 'unverified',
+          )
+        : [];
+    for (const route of forecastRoutes) {
       const lunch = route.stops.find(
         (stop) =>
           stop.kind === 'lunch' && stop.startAt <= BigInt(liveNow) && BigInt(liveNow) < stop.endAt,
@@ -1936,7 +1954,7 @@ export class LiveService {
         },
         data: {
           lunchTaken: true,
-          lunchStartedAt: lunch.startAt,
+          lunchStartedAt: BigInt(lunch.startAt),
           updatedAt: BigInt(wallNow),
           version: { increment: 1 },
         },
@@ -1947,7 +1965,7 @@ export class LiveService {
           data: {
             activeLunchLat: lunch.lat,
             activeLunchLon: lunch.lon,
-            activeLunchStartedAt: lunch.startAt,
+            activeLunchStartedAt: BigInt(lunch.startAt),
             updatedAt: BigInt(wallNow),
             version: { increment: 1 },
           },
@@ -1996,7 +2014,7 @@ export class LiveService {
       select: { engineerId: true },
     });
     const appActiveEngineers = new Set(appActiveFacts.map((fact) => fact.engineerId));
-    for (const route of plan?.origin === 'manual' ? [] : (plan?.routes ?? [])) {
+    for (const route of forecastRoutes) {
       const liveState = await tx.liveEngineerState.findUnique({
         where: { workdayId_engineerId: { workdayId: day.id, engineerId: route.engineerId } },
       });

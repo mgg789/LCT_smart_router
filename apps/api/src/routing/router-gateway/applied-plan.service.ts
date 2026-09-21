@@ -215,6 +215,7 @@ export class AppliedPlanService {
             legId: leg.leg_id,
             fromStopId: leg.from_stop_id,
             toStopId: leg.to_stop_id,
+            toStopSequence: route.stops.find((stop) => stop.stop_id === leg.to_stop_id)?.sequence,
             departureAt: leg.departure_at,
             arrivalAt: leg.arrival_at,
             travelTimeSec: leg.travel_time_sec,

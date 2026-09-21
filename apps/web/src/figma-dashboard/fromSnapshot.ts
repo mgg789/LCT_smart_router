@@ -18,6 +18,7 @@ import {
   unassignedRequests,
 } from '../domain/dashboard';
 import { projectLiveGraph } from '../domain/liveGraph';
+import { mapForecastLabel, routeTimingUnverified } from '../domain/mapForecast';
 import { explainSelection } from '../lib/explanations';
 import { factorLabel, POLICY_LABELS, skillLabel, transportLabel } from '../lib/reasons';
 import { formatClock, formatDayTitle, formatDurationMin } from '../lib/time';
@@ -187,9 +188,10 @@ export function dashboardViewFromSnapshot(
     dateLabel: figmaDateLabel(snapshot.workDate),
     requestCount: snapshot.requests.length,
     planLabel:
-      snapshot.plan.plan?.origin === 'manual'
+      snapshot.plan.plan?.routes.map(mapForecastLabel).find(Boolean) ??
+      (snapshot.plan.plan?.origin === 'manual'
         ? 'MANUAL · время не пересчитано'
-        : `${unassigned.length} без назначения - план от ${formatClock(planAsOf)}`,
+        : `${unassigned.length} без назначения - план от ${formatClock(planAsOf)}`),
     unassignedTitle: unassignedCountTitle(unassigned.length),
     unassignedReason: firstUnassignedAssignment?.reasons.assignment?.factors[0]?.code
       ? factorLabel(firstUnassignedAssignment.reasons.assignment.factors[0].code)
@@ -198,10 +200,11 @@ export function dashboardViewFromSnapshot(
         : 'Все заявки назначены',
     firstUnassignedId: firstUnassigned?.id ?? null,
     engineers,
-    totalKm:
-      snapshot.plan.plan?.origin === 'manual'
-        ? null
-        : engineers.reduce((sum, item) => sum + (item.km ?? 0), 0),
+    totalKm: snapshot.plan.plan?.routes.some((item) =>
+      routeTimingUnverified(item, snapshot.plan.plan?.origin),
+    )
+      ? null
+      : engineers.reduce((sum, item) => sum + (item.km ?? 0), 0),
     displayedEngineerId,
     displayedRequest: request
       ? requestPanelFromSnapshot(request, assignment, explanation?.title ?? null)
@@ -263,7 +266,10 @@ export function withLiveRouteStops(
             ? (state?.lineStartedAt ?? state?.noShowAt ?? live?.workday.logicalStartAt ?? node.at)
             : node.at,
         time:
-          snapshot.plan.plan?.origin === 'manual' &&
+          routeTimingUnverified(
+            routeForEngineer(snapshot, engineer.id),
+            snapshot.plan.plan?.origin,
+          ) &&
           node.kind !== 'start' &&
           !request?.startedAt &&
           !terminal
@@ -379,7 +385,9 @@ function engineerCardFromSummary(
   return {
     id: summary.engineerId,
     name: summary.displayName,
-    km: snapshot.plan.plan?.origin === 'manual' ? null : Math.round(summary.distanceKm),
+    km: routeTimingUnverified(route, snapshot.plan.plan?.origin)
+      ? null
+      : Math.round(summary.distanceKm),
     status: transportLabel(summary.transportType),
     shift:
       summary.shiftStartAt && summary.shiftEndAt
@@ -388,9 +396,10 @@ function engineerCardFromSummary(
     requestCount: summary.assignedCount,
     doneCount: summary.doneCount,
     routeUpdated:
-      snapshot.plan.plan?.origin === 'manual'
+      mapForecastLabel(route) ??
+      (snapshot.plan.plan?.origin === 'manual'
         ? 'MANUAL · время не пересчитано'
-        : `план обновлён в ${formatClock(planAsOf)}`,
+        : `план обновлён в ${formatClock(planAsOf)}`),
     stops: routeStopsFromRoute(snapshot, route),
     request: request
       ? requestPanelFromSnapshot(request, assignment, explanation?.title ?? null)
@@ -446,10 +455,14 @@ function routeStopsFromRoute(
   if (!route) return [];
   return route.stops
     .filter((stop) => stop.kind !== 'wait')
-    .map((stop) => stopToCard(snapshot, stop));
+    .map((stop) => stopToCard(snapshot, stop, route));
 }
 
-function stopToCard(snapshot: DashboardSnapshot, stop: PlanStopView): RouteStop {
+function stopToCard(
+  snapshot: DashboardSnapshot,
+  stop: PlanStopView,
+  route: PlanRouteView,
+): RouteStop {
   if (stop.kind === 'lunch') {
     return {
       time: formatClock(stop.startAt),
@@ -473,7 +486,7 @@ function stopToCard(snapshot: DashboardSnapshot, stop: PlanStopView): RouteStop 
   const request = stop.requestId ? requestById(snapshot, stop.requestId) : null;
   return {
     time:
-      snapshot.plan.plan?.origin === 'manual' && !request?.startedAt
+      routeTimingUnverified(route, snapshot.plan.plan?.origin) && !request?.startedAt
         ? '—'
         : formatClock(request?.startedAt ?? stop.startAt),
     place: request ? routeStopAddress(request.addressText) : 'Заявка',

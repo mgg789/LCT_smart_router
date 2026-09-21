@@ -24,7 +24,13 @@ export interface PlanStopView {
 
 export interface PlanRouteView {
   /** Manual schedules are archival until a new automatic plan is accepted. */
-  readonly timingStatus?: 'calculated' | 'unverified';
+  readonly timingStatus?: 'calculated' | 'unverified' | 'forecast';
+  /** Live ETA for the same order; separate from the immutable solver revision and execution facts. */
+  readonly mapForecast?: {
+    readonly observedAt: number | null;
+    readonly state: 'fresh' | 'mixed' | 'stale' | 'fallback';
+    readonly warnings: readonly string[];
+  };
   readonly engineerId: string;
   readonly startLat: number;
   readonly startLon: number;
@@ -43,6 +49,8 @@ export interface PlanRouteView {
 
 /** One planned movement between stops, with geometry only when Router had a road route. */
 export interface PlanRouteLegView {
+  /** Original stop sequence retained even when a provider uses opaque stop IDs. */
+  readonly toStopSequence?: number;
   readonly legId: string;
   readonly fromStopId: string | null;
   readonly toStopId: string;
@@ -57,6 +65,12 @@ export interface PlanRouteLegView {
   readonly trafficFactor: number;
   /** Present when sys replaced Router geometry with a map-provider polyline. */
   readonly geometryProvider?: 'twogis' | 'yandex';
+  readonly mapObservation?: {
+    readonly observedAt: number;
+    readonly expiresAt: number;
+    readonly cacheState: 'live' | 'cached' | 'stale';
+    readonly trafficMode: 'current' | 'statistics' | 'none';
+  };
 }
 
 export interface PlanView {
@@ -144,6 +158,7 @@ function planLegs(value: unknown): PlanRouteLegView[] {
     return [
       {
         legId: leg.legId,
+        ...(typeof leg.toStopSequence === 'number' ? { toStopSequence: leg.toStopSequence } : {}),
         fromStopId: typeof leg.fromStopId === 'string' ? leg.fromStopId : null,
         toStopId: leg.toStopId,
         departureAt: leg.departureAt,

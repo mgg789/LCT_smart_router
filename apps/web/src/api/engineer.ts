@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { requestJson } from './client';
+import { mapForecastSchema, mapObservationSchema } from './mapForecast';
 import type {
   EngineerAuthSession,
   EngineerDayView,
@@ -96,6 +97,8 @@ const planLegSchema = z.object({
   travelTimeSec: z.number().int().nonnegative(),
   distanceKm: z.number().nonnegative(),
   travelSource: z.enum(['approximate', 'road_matrix', 'route_api', 'traffic_api']),
+  mapObservation: mapObservationSchema.optional(),
+  geometryProvider: z.enum(['twogis', 'yandex']).optional(),
   trafficFactor: z.number().min(1),
   geometry: z
     .object({
@@ -116,7 +119,8 @@ const routeSchema = z.object({
   waitingTimeSec: z.number().int(),
   lunchTimeSec: z.number().int(),
   assignedCount: z.number().int(),
-  timingStatus: z.enum(['calculated', 'unverified']).optional(),
+  timingStatus: z.enum(['calculated', 'unverified', 'forecast']).optional(),
+  mapForecast: mapForecastSchema.optional(),
   lunchStatus: z.enum([
     'none',
     'planned',
