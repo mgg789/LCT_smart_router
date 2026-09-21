@@ -1,10 +1,11 @@
 import { motion, useReducedMotion } from 'framer-motion';
+import { ArrowUpRight } from 'lucide-react';
 import { useLayoutEffect, useRef } from 'react';
 import type { AlertResolutionInput, DashboardSnapshot } from '../api/types';
 import { AlertActions } from './AlertActions';
 import { type InboxNoticeCard, inboxFromSources } from './alertsInbox';
 import { FIGMA_ASSETS } from './assets';
-import { InboxAlertCardView, InboxNoticeCardView } from './inboxCard';
+import { InboxAlertCardView, InboxButton, InboxNoticeCardView } from './inboxCard';
 import { FigmaIcon, FigmaText } from './primitives';
 import { dismissToast, type ToastKind, type ToastNotification } from './toasts';
 
@@ -152,7 +153,6 @@ export function AlertsView({
                   engineerName={card.engineerName}
                   badge={card.badge}
                   body={card.body}
-                  primaryLabel={card.requestId ? 'К заявке' : null}
                   actions={
                     <AlertActions
                       token={token}
@@ -160,14 +160,23 @@ export function AlertsView({
                       snapshot={snapshot}
                       disabled={writesDisabled}
                       onResolve={onResolve}
+                      leadingAction={
+                        card.requestId ? (
+                          <InboxButton
+                            variant="outline"
+                            onClick={() => onOpenRequest(card.requestId!)}
+                          >
+                            <ArrowUpRight
+                              size={22}
+                              strokeWidth={1.8}
+                              aria-hidden="true"
+                              className="mr-[10px] shrink-0"
+                            />
+                            К заявке
+                          </InboxButton>
+                        ) : null
+                      }
                     />
-                  }
-                  onPrimary={
-                    card.requestId
-                      ? () => {
-                          if (card.requestId) onOpenRequest(card.requestId);
-                        }
-                      : undefined
                   }
                 />
               </motion.div>

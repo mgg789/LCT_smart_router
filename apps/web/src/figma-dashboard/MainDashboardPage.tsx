@@ -744,7 +744,7 @@ export function MainDashboardPage() {
                   snapshot={visibleSnapshot}
                   selectedEngineerId={dash.selectedEngineerId}
                   motionOn={motionOn}
-                  busy={dash.busy}
+                  busy={dash.busy || dash.writesDisabled}
                   onSelectEngineer={dash.selectEngineer}
                   onLinkEmail={dash.saveEngineerLogin}
                   onDeleteEngineer={dash.deleteEngineer}

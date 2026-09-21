@@ -1,10 +1,16 @@
 import { renderToStaticMarkup } from 'react-dom/server';
+import type { ReactNode } from 'react';
 import { describe, expect, it } from 'vitest';
 import type { AlertView } from '../api/types';
 import { createDevSnapshot } from '../fixtures/dev-day';
 import { AlertActions } from './AlertActions';
 
-function render(actions: string[], options: Partial<AlertView> = {}, disabled = false) {
+function render(
+  actions: string[],
+  options: Partial<AlertView> = {},
+  disabled = false,
+  leadingAction?: ReactNode,
+) {
   const alert: AlertView = {
     id: 'alert-test',
     code: 'time_risk',
@@ -25,6 +31,7 @@ function render(actions: string[], options: Partial<AlertView> = {}, disabled = 
       alert={alert}
       snapshot={createDevSnapshot()}
       disabled={disabled}
+      leadingAction={leadingAction}
       onResolve={async () => {
         throw new Error('Rendering must not resolve alerts');
       }}
@@ -48,6 +55,15 @@ describe('alert resolution choices', () => {
     expect(html).toContain('Плюсы:');
     expect(html).toContain('Минусы:');
     expect(html).not.toContain('Снять со смены');
+  });
+  it('renders request navigation before the decision choices in the compact action row', () => {
+    const html = render(
+      ['reschedule', 'move_window'],
+      {},
+      false,
+      <button type="button">К заявке</button>,
+    );
+    expect(html.indexOf('К заявке')).toBeLessThan(html.indexOf('На завтра'));
   });
   it('keeps absent and unknown server actions from becoming fake working buttons', () => {
     expect(render([]).match(/<button /g)).toHaveLength(1);

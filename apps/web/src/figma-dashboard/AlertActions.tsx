@@ -14,7 +14,7 @@ import {
   Utensils,
   UtensilsCrossed,
 } from 'lucide-react';
-import { useEffect, useId, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { DashboardApiError, loadAlertWindowProposal } from '../api/client';
 import type { AlertResolutionInput, AlertView, DashboardSnapshot } from '../api/types';
@@ -53,12 +53,15 @@ export function AlertActions({
   snapshot,
   disabled,
   onResolve,
+  leadingAction,
 }: {
   token?: string;
   alert: AlertView | null;
   snapshot: DashboardSnapshot | null;
   disabled: boolean;
   onResolve: (id: string, input: AlertResolutionInput) => Promise<void>;
+  /** Optional navigation action rendered before the server-authorized decisions. */
+  leadingAction?: ReactNode;
 }) {
   const [selected, setSelected] = useState<AlertActionId | null>(null);
   const [pending, setPending] = useState(false);
@@ -67,6 +70,7 @@ export function AlertActions({
   return (
     <div className="mt-[20px]">
       <div className="flex flex-wrap gap-[12px]">
+        {leadingAction}
         {actions.map((action) =>
           isAlertActionId(action) ? (
             <ExplainedAction

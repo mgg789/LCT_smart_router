@@ -1,4 +1,3 @@
-import { ArrowUpRight } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { FigmaIcon } from './primitives';
 
@@ -46,16 +45,12 @@ export function InboxAlertCardView({
   engineerName,
   badge,
   body,
-  primaryLabel,
-  onPrimary,
   actions,
 }: {
   title: string;
   engineerName: string | null;
   badge: string | null;
   body: string;
-  primaryLabel: string | null;
-  onPrimary?: () => void;
   actions: ReactNode;
 }) {
   return (
@@ -75,19 +70,6 @@ export function InboxAlertCardView({
       <p className="mt-[16px] max-w-[1234px] font-semibold text-[20px] tracking-[-0.34px] text-figma-muted">
         {body}
       </p>
-      <div className="mt-[16px] flex flex-wrap items-center gap-[20px]">
-        {primaryLabel ? (
-          <InboxButton variant="bee" onClick={onPrimary}>
-            <ArrowUpRight
-              size={22}
-              strokeWidth={1.8}
-              aria-hidden="true"
-              className="mr-[10px] shrink-0"
-            />
-            {primaryLabel}
-          </InboxButton>
-        ) : null}
-      </div>
       {actions}
     </article>
   );

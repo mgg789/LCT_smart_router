@@ -203,6 +203,8 @@ export function useDashboard() {
       }
       setSnapshot(next);
       setFocus((current) => reconcileDashboardFocus(next, current));
+      setOperationWarning(null);
+      setDiagnostic(null);
       setError(null);
       return next;
     } catch (cause) {
@@ -975,13 +977,14 @@ export function useDashboard() {
   );
 
   const performAlertOperation = useCallback(
-    async (operation: (session: string) => Promise<void>) => {
+    async (operation: (session: string) => Promise<void>, onSuccess?: () => void) => {
       if (!token || sourceRef.current !== 'live' || loading || operationWarning !== null) {
         throw new Error('Для решения алертов нужно подключение к рабочему серверу');
       }
       const generation = readGeneration.current;
       try {
         await operation(token);
+        onSuccess?.();
       } catch (cause) {
         if (
           generation === readGeneration.current &&
@@ -998,8 +1001,20 @@ export function useDashboard() {
 
   const resolveAlert = useCallback(
     (id: string, input: AlertResolutionInput) =>
-      performAlertOperation((session) => resolveDispatchAlert(session, id, input)),
-    [performAlertOperation],
+      performAlertOperation(
+        (session) => resolveDispatchAlert(session, id, input),
+        input.action === 'move_window' || input.action === 'restore_auto'
+          ? undefined
+          : () => {
+              const current = snapshotRef.current;
+              if (!current) return;
+              setSnapshot({
+                ...current,
+                alerts: current.alerts.filter((alert) => alert.id !== id),
+              });
+            },
+      ),
+    [performAlertOperation, setSnapshot],
   );
 
   const setAttendanceOptOut = useCallback(
