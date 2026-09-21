@@ -65,6 +65,9 @@ export async function signIn(page: Page) {
     await expect(start).toBeHidden();
   }
   await expect(plan).toBeVisible({ timeout: 45_000 });
+  await expect(page.locator('[data-name="MAIN"] [data-user-menu]')).toBeVisible({
+    timeout: 45_000,
+  });
 }
 
 /**
@@ -75,14 +78,16 @@ export async function signIn(page: Page) {
  */
 export async function openDispatcherSettings(page: Page) {
   const dialog = page.getByRole('dialog', { name: 'Настройки' });
-  const avatar = page.getByRole('button', { name: 'Меню пользователя', exact: true });
+  // DOM locator: the right-edge avatar can be missing from the a11y tree when
+  // the 1920 artboard is CSS-scaled inside a narrower overflow-hidden frame.
+  const avatar = page.locator('[data-user-menu] button').first();
   const item = page.getByRole('button', { name: 'Настройки', exact: true });
 
   await expect(async () => {
     if (await dialog.isVisible()) return;
     await expect(avatar).toBeVisible({ timeout: 5_000 });
     if ((await avatar.getAttribute('aria-expanded')) !== 'true') {
-      await avatar.click({ timeout: 5_000 });
+      await avatar.click({ timeout: 5_000, force: true });
     }
     await expect(item).toBeVisible({ timeout: 3_000 });
     await item.click({ timeout: 5_000 });
