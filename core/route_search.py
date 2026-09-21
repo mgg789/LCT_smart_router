@@ -65,6 +65,7 @@ class RouteEvaluator:
         self.ends = [min(e.shift_end_at, snapshot.horizon_end_at) for e in self.engineers]
         self.cache: dict[tuple[int, tuple[str, ...]], RouteState | None] = {}
         self.evaluations = 0
+        self._criteria: dict[str, tuple[str, ...]] = {}
         self.tolerance = getattr(
             getattr(travel, "settings", None), "window_lateness_tolerance_sec", 0
         )
@@ -154,13 +155,28 @@ class RouteEvaluator:
 
     def score(self, states: list[RouteState], policy_id: str) -> tuple[int, ...]:
         """Match public policy_score; counts are negated up to constant totals."""
-        slacks = [s.slack for s in states if s.slack is not None]
-        loads = [s.busy for i, s in enumerate(states) if self.releases[i] is not None]
+        if policy_id not in self._criteria:
+            policy = self.snapshot.policy.model_copy(update={"policy_id": policy_id})
+            self._criteria[policy_id] = compile_policy(policy).ordered_criteria
+        criteria = self._criteria[policy_id]
+        needs_loads = "max_workload_ratio" in criteria or "workload_spread" in criteria
+        slacks = (
+            [s.slack for s in states if s.slack is not None]
+            if "window_end_risk" in criteria
+            else []
+        )
+        # A terminal recovery visit can start after ordinary release became unavailable.
+        # Its work still counts, with the same capacity denominator as public policy_score.
+        releases = [
+            release if release is not None else self.terminal_releases[i] if state.jobs else None
+            for i, (state, release) in enumerate(zip(states, self.releases))
+            if needs_loads
+        ]
+        loads = [s.busy for s, release in zip(states, releases) if release is not None]
         utilization = [
-            (s.busy * 10000 + max(1, self.ends[i] - self.releases[i]) - 1)
-            // max(1, self.ends[i] - self.releases[i])
-            for i, s in enumerate(states)
-            if self.releases[i] is not None
+            (s.busy * 10000 + max(1, self.ends[i] - release) - 1) // max(1, self.ends[i] - release)
+            for i, (s, release) in enumerate(zip(states, releases))
+            if release is not None
         ]
         values = {
             "urgent_unassigned": -sum(s.urgent for s in states),
@@ -172,16 +188,21 @@ class RouteEvaluator:
             "additional_engineers": sum(
                 bool(state.jobs) and engineer.engineer_id.startswith("covering-")
                 for engineer, state in zip(self.engineers, states)
-            ),
-            "window_start_delay": sum(s.delay for s in states),
-            "max_jobs_per_engineer": max((len(s.jobs) for s in states), default=0),
+            )
+            if "additional_engineers" in criteria
+            else 0,
+            "window_start_delay": sum(s.delay for s in states)
+            if "window_start_delay" in criteria
+            else 0,
+            "max_jobs_per_engineer": max((len(s.jobs) for s in states), default=0)
+            if "max_jobs_per_engineer" in criteria
+            else 0,
             "total_lateness": sum(s.lateness for s in states),
             "window_end_risk": -min(slacks) if slacks else 0,
             "max_workload_ratio": max(utilization, default=0),
             "workload_spread": max(loads, default=0) - min(loads, default=0),
         }
-        policy = self.snapshot.policy.model_copy(update={"policy_id": policy_id})
-        return tuple(values[c] for c in compile_policy(policy).ordered_criteria)
+        return tuple(values[c] for c in criteria)
 
     def materialize(self, states: list[RouteState]) -> Plan | None:
         """Build and independently validate routes using the canonical scheduler."""

@@ -564,7 +564,7 @@ def assemble_plan(
         + route.metrics.waiting_time_sec
         + route.metrics.lunch_time_sec
         for route in routes
-        if release_at(snapshot, engineers[route.engineer_id]) is not None
+        if route.start_at is not None or release_at(snapshot, engineers[route.engineer_id]) is not None
     ]
     summary = PlanMetrics(
         late_assigned_count=sum(slack < 0 for slack in slacks),
