@@ -70,7 +70,7 @@ class RoadApiTravel:
             }
             if departure_at is not None:
                 params["departure"] = str(departure_at)
-            response = httpx.get(f"{self.base_url}/route2", params=params, timeout=12.0)
+            response = httpx.get(f"{self.base_url}/route2", params=params, timeout=30.0)
             response.raise_for_status()
             data = response.json()
             quote = decode_road_api(data)
