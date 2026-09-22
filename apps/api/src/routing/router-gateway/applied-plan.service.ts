@@ -92,6 +92,44 @@ export class AppliedPlanService {
   }
 
   /**
+   * Stops and engineer ids of the working plan, without road geometry.
+   *
+   * The LIVE clock reads this every second. `current()` also loads every polyline
+   * and the raw Router package, which held the database long enough that passports,
+   * engineer actions and the clock itself stopped answering.
+   */
+  async currentSchedule(tx: Tx) {
+    const pointer = await tx.appliedPlanCurrent.findUnique({
+      where: { id: 'singleton' },
+      select: {
+        plan: {
+          select: {
+            routes: {
+              select: {
+                engineerId: true,
+                stops: {
+                  orderBy: { sequence: 'asc' },
+                  select: {
+                    sequence: true,
+                    kind: true,
+                    requestId: true,
+                    lat: true,
+                    lon: true,
+                    arrivalAt: true,
+                    startAt: true,
+                    endAt: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    return pointer?.plan ?? null;
+  }
+
+  /**
    * Freezes the current plan as the starting point for manual control.
    *
    * Switching to MANUAL does not make the plan immutable; it makes the dispatcher its

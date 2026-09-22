@@ -139,6 +139,9 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-lct}:${POSTGRES_PASSWORD:-lct_dev_password}@postgres:5432/${POSTGRES_DB:-lct}?schema=public
       DATASET_ROOT: /app/data/dataset/anonymized
       ROUTER_BASE_URL: http://router:8100
+      # Same host road API the router uses. The API only borrows its polyline for
+      # legs the solver stored as a straight chord (walk access, outside-graph pairs).
+      ROUTER_ROAD_API_URL: ${ROUTER_ROAD_API_URL:-http://host.docker.internal:8123}
       ROUTER_POLL_INTERVAL_MS: ${ROUTER_POLL_INTERVAL_MS:-500}
       ROUTER_REQUEST_TIMEOUT_MS: ${ROUTER_REQUEST_TIMEOUT_MS:-3000}
     volumes:

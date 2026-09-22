@@ -296,4 +296,131 @@ describe('LIVE map factual projection', () => {
     expect(segments.every((segment) => segment.fromKey === 'job:done')).toBe(true);
     expect(segments.every((segment) => segment.toKey === 'job:next')).toBe(true);
   });
+
+  it('keeps a road polyline when OSRM snapped the ends onto the carriageway', () => {
+    const route: PlanRouteView = {
+      engineerId: 'engineer',
+      startLat: 55.74,
+      startLon: 37.6,
+      startAt: 0,
+      finishAt: 200,
+      distanceKm: 2,
+      travelTimeSec: 40,
+      workTimeSec: 40,
+      waitingTimeSec: 0,
+      lunchTimeSec: 0,
+      assignedCount: 1,
+      lunchStatus: 'none',
+      stops: [
+        {
+          sequence: 1,
+          kind: 'job',
+          requestId: 'done',
+          lat: 55.75,
+          lon: 37.61,
+          arrivalAt: 100,
+          startAt: 100,
+          endAt: 120,
+        },
+        {
+          sequence: 2,
+          kind: 'job',
+          requestId: 'next',
+          lat: 55.76,
+          lon: 37.62,
+          arrivalAt: 160,
+          startAt: 160,
+          endAt: 200,
+        },
+      ],
+      legs: [
+        {
+          legId: 'snapped-road',
+          fromStopId: 'done',
+          toStopId: 'next',
+          departureAt: 120,
+          arrivalAt: 160,
+          travelTimeSec: 40,
+          distanceKm: 2,
+          travelSource: 'traffic_api',
+          trafficFactor: 1.2,
+          geometry: {
+            points: [
+              { lat: 55.75025, lon: 37.61 },
+              { lat: 55.755, lon: 37.615 },
+              { lat: 55.76, lon: 37.6197 },
+            ],
+          },
+        },
+      ],
+    };
+    const graph = projectLiveGraph(route, null, new Set(['done', 'next']));
+    const segments = visiblePlannedSegments(route, graph);
+    expect(segments).toHaveLength(1);
+    expect(segments[0]).toMatchObject({
+      fromKey: 'job:done',
+      toKey: 'job:next',
+      source: 'traffic_api',
+      approximate: false,
+    });
+    expect(segments[0]?.coordinates).toHaveLength(3);
+  });
+
+  it('keeps a traffic-api shape on the stops the leg connects', () => {
+    const route: PlanRouteView = {
+      engineerId: 'engineer',
+      startLat: 55.74,
+      startLon: 37.6,
+      startAt: 0,
+      finishAt: 200,
+      distanceKm: 2,
+      travelTimeSec: 40,
+      workTimeSec: 40,
+      waitingTimeSec: 0,
+      lunchTimeSec: 0,
+      assignedCount: 1,
+      lunchStatus: 'none',
+      stops: [
+        {
+          sequence: 1,
+          kind: 'job',
+          requestId: 'next',
+          lat: 55.76,
+          lon: 37.62,
+          arrivalAt: 160,
+          startAt: 160,
+          endAt: 200,
+        },
+      ],
+      legs: [
+        {
+          legId: 'far-road',
+          fromStopId: null,
+          toStopId: 'next',
+          departureAt: 0,
+          arrivalAt: 160,
+          travelTimeSec: 40,
+          distanceKm: 2,
+          travelSource: 'traffic_api',
+          trafficFactor: 1,
+          geometry: {
+            points: [
+              { lat: 55.7, lon: 37.5 },
+              { lat: 55.71, lon: 37.55 },
+              { lat: 55.72, lon: 37.58 },
+            ],
+          },
+        },
+      ],
+    };
+    const graph = projectLiveGraph(route, null, new Set(['next']));
+    const segments = visiblePlannedSegments(route, graph);
+    expect(segments).toHaveLength(1);
+    expect(segments[0]).toMatchObject({
+      fromKey: 'start',
+      toKey: 'job:next',
+      source: 'traffic_api',
+      approximate: false,
+    });
+  });
 });

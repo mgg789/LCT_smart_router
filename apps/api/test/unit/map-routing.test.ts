@@ -168,4 +168,82 @@ describe('map routing transport and composite geometry', () => {
     assert.equal(leg?.arrivalAt, 1500);
     assert.deepEqual(leg?.geometry?.points, [a, b, c, d]);
   });
+
+  it('draws an MKAD road polyline for a straight chord and leaves an outside pair dashed', async () => {
+    const previous = process.env.ROUTER_ROAD_API_URL;
+    process.env.ROUTER_ROAD_API_URL = 'http://road.test';
+    globalThis.fetch = async (input) => {
+      const url = new URL(String(input));
+      const start = url.searchParams.get('a') ?? '';
+      if (start.startsWith('55.75')) {
+        return Response.json({ mode: 'straight', geometry: [[c.lat, c.lon], [d.lat, d.lon]] });
+      }
+      return Response.json({
+        mode: 'road',
+        geometry: [
+          [a.lat, a.lon],
+          [55.725, 37.751],
+          [b.lat, b.lon],
+        ],
+      });
+    };
+    const segments: PlanRouteSegmentView[] = [
+      {
+        geometry: { points: [a, b] },
+        travelSource: 'approximate',
+        travelTimeSec: 300,
+        distanceKm: 1,
+      },
+      { geometry: { points: [b, c] }, travelSource: 'metro', travelTimeSec: 800, distanceKm: 5 },
+      {
+        geometry: { points: [c, d] },
+        travelSource: 'approximate',
+        travelTimeSec: 300,
+        distanceKm: 1,
+      },
+    ];
+    try {
+      const result = await new MapRoutingService({
+        read: async () => DEFAULT_DISPATCHER_SETTINGS,
+      }).enrichPlan(plan(segments), false, new Map());
+      const leg = result.routes[0]?.legs[0];
+      assert.equal(leg?.segments?.[0]?.travelSource, 'traffic_api');
+      assert.equal(leg?.segments?.[0]?.travelTimeSec, 300);
+      assert.ok((leg?.segments?.[0]?.geometry.points.length ?? 0) >= 3);
+      assert.deepEqual(leg?.segments?.[1], segments[1]);
+      assert.equal(leg?.segments?.[2]?.travelSource, 'approximate');
+      assert.equal(leg?.travelTimeSec, 1400);
+    } finally {
+      if (previous === undefined) delete process.env.ROUTER_ROAD_API_URL;
+      else process.env.ROUTER_ROAD_API_URL = previous;
+    }
+  });
+
+  it('keeps the chord when the road API is not configured', async () => {
+    const previous = process.env.ROUTER_ROAD_API_URL;
+    delete process.env.ROUTER_ROAD_API_URL;
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls += 1;
+      throw new Error('Must not call');
+    };
+    const segments: PlanRouteSegmentView[] = [
+      {
+        geometry: { points: [a, b] },
+        travelSource: 'approximate',
+        travelTimeSec: 300,
+        distanceKm: 1,
+      },
+    ];
+    try {
+      const result = await new MapRoutingService({
+        read: async () => DEFAULT_DISPATCHER_SETTINGS,
+      }).enrichPlan(plan(segments), false, new Map());
+      assert.equal(calls, 0);
+      assert.equal(result.routes[0]?.legs[0]?.segments?.[0]?.travelSource, 'approximate');
+    } finally {
+      if (previous === undefined) delete process.env.ROUTER_ROAD_API_URL;
+      else process.env.ROUTER_ROAD_API_URL = previous;
+    }
+  });
 });

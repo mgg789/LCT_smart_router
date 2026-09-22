@@ -61,11 +61,13 @@ export function ToastColumn({
   motionOn,
   scale,
   onCollapse,
+  onToastAction,
 }: {
   open: boolean;
   motionOn: boolean;
   scale: number;
   onCollapse: () => void;
+  onToastAction?: (toast: ToastNotification) => void;
 }) {
   const visible = useVisibleColumnToasts();
   const shown = open || visible.length > 0;
@@ -181,6 +183,7 @@ export function ToastColumn({
                   scale={scale}
                   interactive={shown}
                   onLeave={(startX) => beginLeave(toast, top, startX)}
+                  onAction={onToastAction ? () => onToastAction(toast) : undefined}
                 />
               );
             })}
@@ -209,6 +212,7 @@ function ToastCard({
   scale,
   interactive,
   onLeave,
+  onAction,
 }: {
   toast: ToastNotification;
   top: number;
@@ -216,6 +220,7 @@ function ToastCard({
   scale: number;
   interactive: boolean;
   onLeave: (startX: number) => void;
+  onAction?: () => void;
 }) {
   const [offsetX, setOffsetX] = useState(0);
   const [dragging, setDragging] = useState(false);
@@ -282,8 +287,9 @@ function ToastCard({
       motionOn={motionOn}
       interactive={interactive}
       onClose={() => leave(offsetX)}
+      onAction={onAction}
       onPointerDown={(event) => {
-        if ((event.target as HTMLElement).closest('[data-toast-close]')) return;
+        if ((event.target as HTMLElement).closest('[data-toast-close], [data-toast-action]')) return;
         if (event.button !== 0) return;
         try {
           event.currentTarget.setPointerCapture(event.pointerId);
@@ -306,6 +312,7 @@ function ToastFace({
   interactive = false,
   onClose,
   onLeft,
+  onAction,
   onPointerDown,
 }: {
   toast: ToastNotification;
@@ -317,6 +324,7 @@ function ToastFace({
   interactive?: boolean;
   onClose?: () => void;
   onLeft?: () => void;
+  onAction?: () => void;
   onPointerDown?: (event: ReactPointerEvent<HTMLElement>) => void;
 }) {
   const alert = toast.kind === 'alert';
@@ -383,12 +391,31 @@ function ToastFace({
         )}
       </div>
       <p
-        className={`figma-nowrap absolute left-[68px] top-[19px] max-w-[300px] overflow-hidden font-semibold text-[20px] leading-none text-ellipsis ${
-          danger || !alert ? 'text-white' : 'text-figma-ink'
-        }`}
+        className={`figma-nowrap absolute left-[68px] top-[19px] overflow-hidden font-semibold text-[20px] leading-none text-ellipsis ${
+          toast.actionLabel ? 'max-w-[168px]' : 'max-w-[300px]'
+        } ${danger || !alert ? 'text-white' : 'text-figma-ink'}`}
       >
         {toast.title}
       </p>
+      {toast.actionLabel && !leaving ? (
+        <motion.button
+          type="button"
+          data-toast-action
+          initial={motionOn ? { opacity: 0, scale: 0.86 } : false}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={motionOn ? { duration: 0.22, delay: 0.12, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
+          className={`absolute right-[52px] top-[14px] h-[28px] rounded-full px-3 text-[13px] font-semibold ${
+            danger || !alert ? 'bg-white/15 text-white' : 'bg-figma-ink/10 text-figma-ink'
+          }`}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            onAction?.();
+          }}
+        >
+          {toast.actionLabel}
+        </motion.button>
+      ) : null}
       {leaving ? null : (
         <button
           type="button"

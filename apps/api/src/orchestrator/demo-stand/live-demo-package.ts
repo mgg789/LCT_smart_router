@@ -88,6 +88,11 @@ export function buildLiveDemo(workDate: string, datasetRoot: string): UploadData
         start: depot.location,
         shiftStartAt: start,
         shiftEndAt: end,
+        // Only Волков is issued devices, so router and set-top jobs stay on his route.
+        equipmentStock:
+          index === 0
+            ? { router: 2, setTopBox: 1, smartSpeaker: 0 }
+            : { router: 0, setTopBox: 0, smartSpeaker: 0 },
       })),
       {
         externalId: 'live-engineer-3',
@@ -97,6 +102,7 @@ export function buildLiveDemo(workDate: string, datasetRoot: string): UploadData
         start: walkingStart.location,
         shiftStartAt: start,
         shiftEndAt: end,
+        equipmentStock: { router: 0, setTopBox: 0, smartSpeaker: 0 },
       },
     ],
     requests: geocodes.entries.slice(1, 15).map((point, index) => {
@@ -114,6 +120,10 @@ export function buildLiveDemo(workDate: string, datasetRoot: string): UploadData
         priority: 'normal' as const,
         requiredSkill: 'local' as const,
         ...(index < 2 ? { requiredTransport: 'walk' as const } : {}),
+        // Two car jobs need a router and one needs a set-top box. Stock for both
+        // sits with Волков, so the solver has to keep those stops on his route.
+        ...(index === 3 || index === 4 ? { requiredEquipment: 'router' as const } : {}),
+        ...(index === 5 ? { requiredEquipment: 'set_top_box' as const } : {}),
         workType: 'local_repair',
       };
     }),

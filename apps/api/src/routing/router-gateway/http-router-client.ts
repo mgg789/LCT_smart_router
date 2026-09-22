@@ -8,6 +8,7 @@ import {
   type ManualEvaluationInput,
   type PolicyComparison,
   RouterClient,
+  type RouterResultStatus,
   type RouterTechnicalSettingsState,
   type RouterTechnicalSettingsUpdate,
   type UpdateRouterTechnicalSettings,
@@ -120,6 +121,25 @@ export class HttpRouterClient extends RouterClient {
   constructor(private readonly options: HttpRouterClientOptions) {
     super();
     this.baseUrl = options.baseUrl.replace(/\/+$/, '');
+  }
+
+  /** Returns only enough to tell whether the full package changed. */
+  override async getResultStatus(): Promise<RouterResultStatus> {
+    const raw = await this.fetchJson('/v1/result-status');
+    const parsed = z
+      .object({
+        status: z.enum(['pending', 'ready', 'error']),
+        result_id: z.string().nullable(),
+        input_publication_id: z.string().nullable(),
+        input_hash: z.string().nullable(),
+        computed_at: z.number().nullable(),
+        errors: z.array(z.object({ code: z.string(), message: z.string() })),
+      })
+      .safeParse(raw);
+    if (!parsed.success) {
+      throw new Error(`Router /v1/result-status response is invalid: ${parsed.error.message}`);
+    }
+    return parsed.data;
   }
 
   /** Returns the latest atomic Router package after boundary validation. */

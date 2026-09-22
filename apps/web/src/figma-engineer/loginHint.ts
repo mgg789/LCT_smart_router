@@ -12,7 +12,7 @@ export type EngineerCodeHint =
 export function engineerCodeHint(input: {
   devCode?: string;
   remainingSec: number;
-  /** Local Vite/dev only. Built stands never print a mailbox code. */
+  /** True when the API returned a code. A production bundle still prints it. */
   showDevCode?: boolean;
 }): EngineerCodeHint {
   if (input.showDevCode && input.devCode) {

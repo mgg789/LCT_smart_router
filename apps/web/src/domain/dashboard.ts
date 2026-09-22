@@ -389,25 +389,41 @@ export function activityLabel(kind: ActivityKind): string {
   return 'не выехал';
 }
 
-export function computePlanDelta(before: PlanView, after: PlanView, solveMs: number): PlanDelta {
+const WINDOW_SHIFT_SEC = 5 * 60;
+
+/**
+ * Short comparison of two applied plans.
+ *
+ * `engineerNames` turns ids into the names shown on the lunch line and on a handoff.
+ * A missing name falls back to the first eight characters of the id.
+ */
+export function computePlanDelta(
+  before: PlanView,
+  after: PlanView,
+  solveMs: number,
+  engineerNames: ReadonlyMap<string, string> = new Map(),
+): PlanDelta {
   const beforeByRequest = new Map(before.assignments.map((item) => [item.requestId, item]));
   let transferred = 0;
   let shifted = 0;
-  const notes: string[] = [];
+  const lines: PlanDelta['lines'] = [];
 
   for (const next of after.assignments) {
     const prev = beforeByRequest.get(next.requestId);
     if (!prev) {
-      notes.push(`Новая заявка ${next.requestId} попала в план`);
+      lines.push({ requestId: next.requestId, engineerName: null, text: 'Новая заявка' });
       continue;
     }
     if (prev.engineerId !== next.engineerId) {
       transferred += 1;
-      notes.push(
-        next.engineerId === null
-          ? `${next.requestId}: заявка снята с исполнителя`
-          : `${next.requestId}: сменился исполнитель`,
-      );
+      lines.push({
+        requestId: next.requestId,
+        engineerName: null,
+        text:
+          next.engineerId === null
+            ? 'Не назначена'
+            : `${crewName(prev.engineerId, engineerNames)} → ${crewName(next.engineerId, engineerNames)}`,
+      });
     }
   }
 
@@ -424,15 +440,51 @@ export function computePlanDelta(before: PlanView, after: PlanView, solveMs: num
         continue;
       }
       const previousStart = beforeStops.get(stop.requestId);
-      if (previousStart !== undefined && Math.abs(previousStart - stop.startAt) >= 5 * 60) {
+      if (
+        previousStart !== undefined &&
+        Math.abs(previousStart - stop.startAt) >= WINDOW_SHIFT_SEC
+      ) {
         shifted += 1;
+        lines.push({ requestId: stop.requestId, engineerName: null, text: 'Окно сдвинуто' });
       }
     }
   }
 
+  const beforeLunch = lunchArrival(before);
+  const afterLunch = lunchArrival(after);
+  const engineerIds = new Set([...beforeLunch.keys(), ...afterLunch.keys()]);
+  for (const engineerId of engineerIds) {
+    const previousAt = beforeLunch.get(engineerId);
+    const nextAt = afterLunch.get(engineerId);
+    const moved =
+      previousAt === undefined ||
+      nextAt === undefined ||
+      Math.abs(previousAt - nextAt) >= WINDOW_SHIFT_SEC;
+    if (!moved) continue;
+    lines.push({
+      requestId: null,
+      engineerName: crewName(engineerId, engineerNames),
+      text: 'Обед сдвинут',
+    });
+  }
+
   const slaBefore = countSlaRisks(before);
   const slaAfter = countSlaRisks(after);
-  return { transferred, shifted, slaBefore, slaAfter, solveMs, notes };
+  return { transferred, shifted, slaBefore, slaAfter, solveMs, lines };
+}
+
+function crewName(id: string | null, names: ReadonlyMap<string, string>): string {
+  if (!id) return 'Не назначена';
+  return names.get(id) ?? id.slice(0, 8);
+}
+
+function lunchArrival(plan: PlanView): Map<string, number> {
+  const result = new Map<string, number>();
+  for (const route of plan.routes) {
+    const lunch = route.stops.find((stop) => stop.kind === 'lunch');
+    if (lunch) result.set(route.engineerId, lunch.arrivalAt);
+  }
+  return result;
 }
 
 function countSlaRisks(plan: PlanView): number {

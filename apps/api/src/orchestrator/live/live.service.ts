@@ -33,9 +33,13 @@ import {
 } from '../facts/execution-timing-policy';
 import { RewardsService } from '../rewards';
 
-import { etaNeedsReplan, MATERIAL_DELAY_SEC, NEXT_VISIT_GAP_SEC } from './replan-policy';
-
-const NO_SHOW_SEC = 30 * 60;
+import {
+  etaNeedsReplan,
+  lineStatusAfterDispatcherAvailability,
+  MATERIAL_DELAY_SEC,
+  NEXT_VISIT_GAP_SEC,
+  NO_SHOW_SEC,
+} from './replan-policy';
 const TECHNICAL_BREAK_SEC = 15 * 60;
 const TECHNICAL_BREAK_OVERDUE_SEC = 20 * 60;
 const WINDOW_COMPLETION_GRACE_SEC = MATERIAL_DELAY_SEC;
@@ -213,15 +217,18 @@ export class LiveService {
         'The engineer must finish the technical break explicitly',
       );
     const liveNow = this.liveNow(day, context.now);
+    const line = lineStatusAfterDispatcherAvailability(
+      availability,
+      state.lineStartedAt,
+      liveNow,
+      Number(day.logicalStartAt),
+    );
     await context.tx.liveEngineerState.update({
       where: { id: state.id },
       data: {
-        lineStatus:
-          availability === 'offline'
-            ? 'no_show_offline'
-            : state.lineStartedAt === null
-              ? 'pending'
-              : 'online',
+        lineStatus: line.lineStatus,
+        lineStartedAt: line.lineStartedAt,
+        noShowAt: availability === 'online' ? null : state.noShowAt,
         updatedAt: BigInt(context.now),
         version: { increment: 1 },
       },
@@ -749,6 +756,15 @@ export class LiveService {
         updatedAt: BigInt(wallNow),
       },
     });
+  }
+
+  /** Archived and synthetic leftovers are not a roster the coordinator can mutate. */
+  private async activeRosterEngineer(tx: Tx, engineerId: string): Promise<boolean> {
+    const engineer = await tx.engineer.findFirst({
+      where: { id: engineerId, archivedAt: null },
+      select: { id: true },
+    });
+    return engineer !== null;
   }
 
   private async ensureEngineerStates(tx: Tx, workdayId: string, wallNow: number): Promise<void> {
@@ -1979,6 +1995,10 @@ export class LiveService {
             version: { increment: 1 },
           },
         });
+        // An archived covering crew can still have a pending LIVE row. Taking it
+        // offline goes through the roster, which only loads active engineers, and
+        // that lookup must not fail the whole day clock.
+        if (!(await this.activeRosterEngineer(tx, state.engineerId))) continue;
         const operation: OperationContext = {
           tx,
           now: liveNow,
@@ -2044,6 +2064,7 @@ export class LiveService {
           },
           operationId: `live-break-overdue-${day.id}-${state.engineerId}-${state.technicalBreakStartedAt}`,
         };
+        if (!(await this.activeRosterEngineer(tx, state.engineerId))) continue;
         await this.engineers.setAvailability(operation, state.engineerId, 'offline', null, {
           publish: false,
         });
@@ -2058,7 +2079,7 @@ export class LiveService {
         { businessTime: true },
       );
     }
-    const plan = await this.plans.current(tx);
+    const plan = await this.plans.currentSchedule(tx);
     for (const route of plan?.routes ?? []) {
       const lunch = route.stops.find(
         (stop) =>

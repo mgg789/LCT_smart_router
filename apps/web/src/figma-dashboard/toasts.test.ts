@@ -14,6 +14,7 @@ import {
   TOAST_CARD_HEIGHT,
   TOAST_GAP,
   TOAST_PEEK_MS,
+  TOAST_PLAN_PEEK_MS,
   TOAST_STACK_BOTTOM,
   TOAST_STACK_TOP,
   toastFromAlert,
@@ -153,6 +154,24 @@ describe('toast stack', () => {
     });
     expect(notice.kind).toBe('route');
     expect(notice.title).toBe('План перестроился');
+    expect(notice.actionLabel).toBe('Подробнее');
+    expect(notice.peekMs).toBe(TOAST_PLAN_PEEK_MS);
+  });
+
+  it('keeps the plan-rebuilt card visible longer than a normal notice', () => {
+    vi.useFakeTimers();
+    setToastColumnPinned(false);
+    pushToast({
+      id: 'plan',
+      kind: 'route',
+      title: 'План перестроился',
+      peekMs: TOAST_PLAN_PEEK_MS,
+      actionLabel: 'Подробнее',
+    });
+    vi.advanceTimersByTime(TOAST_PEEK_MS);
+    expect(visibleToastsForColumn().map((item) => item.id)).toEqual(['plan']);
+    vi.advanceTimersByTime(TOAST_PLAN_PEEK_MS - TOAST_PEEK_MS);
+    expect(visibleToastsForColumn()).toEqual([]);
   });
 
   it('collapses the column on a rightward two-finger wheel swipe', () => {

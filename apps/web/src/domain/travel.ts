@@ -28,8 +28,6 @@ export function mapRouteSegments(route: PlanRouteView): MapRouteSegment[] {
     return route.legs.flatMap((leg) => {
       const providerPoints = leg.geometry?.points ?? [];
       const nested = leg.segments ?? [];
-      const nestedPoints = nested.flatMap((segment) => segment.geometry.points);
-      const aggregatePoints = providerPoints.length >= 2 ? providerPoints : nestedPoints;
       // A prepared road graph (road_matrix) carries a real road polyline only when the
       // path has intermediate shape: a two-point road_matrix leg is the disclosed
       // node-to-node straightness of an un-enriched matrix, so it stays approximate
@@ -53,19 +51,13 @@ export function mapRouteSegments(route: PlanRouteView): MapRouteSegment[] {
         lon: route.startLon,
       };
       const destination = stopAtArrival(route, leg.arrivalAt) ?? origin;
-      const routeEndpoints =
-        aggregatePoints.length >= 2
-          ? ([
-              [aggregatePoints[0]?.lon ?? origin.lon, aggregatePoints[0]?.lat ?? origin.lat],
-              [
-                aggregatePoints.at(-1)?.lon ?? destination.lon,
-                aggregatePoints.at(-1)?.lat ?? destination.lat,
-              ],
-            ] as const)
-          : ([
-              [origin.lon, origin.lat],
-              [destination.lon, destination.lat],
-            ] as const);
+      // Bind the line to the stop pins, not to the carriageway ends. OSRM snaps
+      // those ends off the building, and the nearest pin within 80 m can be a
+      // different stop, which drops the road and draws a straight dashed chord.
+      const routeEndpoints = [
+        [origin.lon, origin.lat],
+        [destination.lon, destination.lat],
+      ] as const;
       if (nested.length > 0) {
         return nested.map((segment) => {
           const points = segment.geometry.points.map((point) => [point.lon, point.lat] as const);

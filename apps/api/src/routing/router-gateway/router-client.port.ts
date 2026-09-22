@@ -3,6 +3,16 @@ import { SysError } from '../../common/errors';
 import type { RouterTaskSnapshot } from '../mount-data-eng/snapshot.types';
 import type { RouterResult } from './result.types';
 
+/** Poll identity. It deliberately omits the plan so a status check stays small. */
+export interface RouterResultStatus {
+  readonly status: RouterResult['status'];
+  readonly result_id: string | null;
+  readonly input_publication_id: string | null;
+  readonly input_hash: string | null;
+  readonly computed_at: number | null;
+  readonly errors: ReadonlyArray<{ readonly code: string; readonly message: string }>;
+}
+
 /** Read-only proposal evaluated against a fresh sys projection and existing job orders. */
 export interface WindowProposalInput {
   snapshot: RouterTaskSnapshot;
@@ -128,6 +138,23 @@ export abstract class RouterClient {
   }
   /** The current result, whatever its status. */
   abstract getResult(): Promise<RouterResult>;
+
+  /**
+   * Identity of the current result without the plan body.
+   *
+   * The default reads the full package. The HTTP client overrides it so a
+   * half-second poll does not parse road geometry on every tick.
+   */
+  getResultStatus(): Promise<RouterResultStatus> {
+    return this.getResult().then((result) => ({
+      status: result.status,
+      result_id: result.result_id ?? null,
+      input_publication_id: result.input_publication_id ?? null,
+      input_hash: result.input_hash ?? null,
+      computed_at: result.computed_at ?? null,
+      errors: result.errors.map((item) => ({ code: item.code, message: item.message })),
+    }));
+  }
 
   /**
    * The context version in force **now**.

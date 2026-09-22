@@ -28,6 +28,15 @@ export interface UploadEngineerInput {
   readonly start: { readonly lat: number; readonly lon: number };
   readonly shiftStartAt: number;
   readonly shiftEndAt: number;
+  /**
+   * Start-of-day stock. When any engineer in the package sets it, that stock is
+   * used as-is and the round-robin issue is skipped.
+   */
+  readonly equipmentStock?: {
+    readonly router: number;
+    readonly setTopBox: number;
+    readonly smartSpeaker: number;
+  };
 }
 
 export interface UploadDataPackageInput {
@@ -395,6 +404,18 @@ function allocateUploadedEquipment(
   requests: readonly UploadRequestInput[],
   engineers: readonly UploadEngineerInput[],
 ): Map<string, EquipmentColumns> {
+  if (engineers.some((engineer) => engineer.equipmentStock !== undefined)) {
+    return new Map(
+      engineers.map((engineer) => [
+        engineer.externalId,
+        {
+          equipmentRouter: engineer.equipmentStock?.router ?? 0,
+          equipmentSetTopBox: engineer.equipmentStock?.setTopBox ?? 0,
+          equipmentSmartSpeaker: engineer.equipmentStock?.smartSpeaker ?? 0,
+        },
+      ]),
+    );
+  }
   const result = new Map(engineers.map((engineer) => [engineer.externalId, emptyEquipment()]));
   const cursors = new Map<EquipmentType, number>();
   for (const request of requests) {

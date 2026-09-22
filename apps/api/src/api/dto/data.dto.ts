@@ -43,6 +43,14 @@ const uploadEngineer = z
     start: coordinate,
     shiftStartAt: z.number().int().nonnegative(),
     shiftEndAt: z.number().int().nonnegative(),
+    equipmentStock: z
+      .object({
+        router: z.number().int().nonnegative().max(100),
+        setTopBox: z.number().int().nonnegative().max(100),
+        smartSpeaker: z.number().int().nonnegative().max(100),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .refine((value) => value.shiftEndAt > value.shiftStartAt, {

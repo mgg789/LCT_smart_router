@@ -61,6 +61,7 @@ import { FigmaIcon, FigmaText } from './primitives';
 import { ReplanDeltaCard } from './ReplanDeltaCard';
 import { RequestDetailView } from './RequestDetailView';
 import { RequestsView } from './RequestsView';
+import { requestEquipmentLabel } from './requestDetail';
 import { shortRequestId } from './requestsTable';
 import { routeProgressMarker } from './routeProgress';
 import { SettingsModal } from './SettingsModal';
@@ -153,6 +154,10 @@ export function MainDashboardPage() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [notifOpen, setNotifOpen] = useState(false);
+  const [deltaOpen, setDeltaOpen] = useState(false);
+  useEffect(() => {
+    setDeltaOpen(false);
+  }, [dash.pendingDelta]);
   const toasts = useToasts();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [regionOpen, setRegionOpen] = useState(false);
@@ -601,17 +606,30 @@ export function MainDashboardPage() {
             setNotifOpen(false);
             setToastColumnPinned(false);
           }}
+          onToastAction={(toast) => {
+            if (toast.actionLabel && dash.pendingDelta) setDeltaOpen(true);
+          }}
         />
         <AnimatePresence>
-          {dash.pendingDelta ? (
+          {deltaOpen && dash.pendingDelta ? (
             <ReplanDeltaCard
               key="replan-delta"
               delta={dash.pendingDelta}
               canReject={dash.canRejectDelta}
               busy={dash.rebuilding}
               motionOn={motionOn}
-              onAccept={dash.acceptDelta}
+              onAccept={() => {
+                setDeltaOpen(false);
+                dash.acceptDelta();
+              }}
               onReject={dash.rejectDelta}
+              onOpenRequest={(requestId) => {
+                setDeltaOpen(false);
+                setStackDir(stackSlideDir(stackNav, 'day'));
+                setStackNav('day');
+                setActiveNav('day');
+                dash.selectRequest(requestId);
+              }}
             />
           ) : null}
         </AnimatePresence>
@@ -2156,7 +2174,7 @@ function DetailPanel({
   const urgency = request ? requestUrgency(request) : null;
   const equipment = request
     ? request.requiredEquipment
-      ? 'С оборудованием'
+      ? requestEquipmentLabel(request.requiredEquipment)
       : 'Нет оборудования'
     : null;
 

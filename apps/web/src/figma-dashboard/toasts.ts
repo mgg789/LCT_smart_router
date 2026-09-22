@@ -15,6 +15,8 @@ export const TOAST_EXIT_X = 520;
 export const TOAST_SWIPE_COLLAPSE = 80;
 /** How long one transient card stays over the interface before returning to the panel. */
 export const TOAST_PEEK_MS = 4000;
+/** Plan-rebuilt stays up long enough to hit the details button. */
+export const TOAST_PLAN_PEEK_MS = 9000;
 
 /**
  * macOS natural scrolling flips wheel delta versus Windows/Linux trackpads.
@@ -59,6 +61,10 @@ export type ToastNotification = {
   etaLabel?: string;
   /** Request the toast is anchored to, when the event names one («К заявке» navigation). */
   requestId?: string | null;
+  /** How long a collapsed column keeps this card visible. Defaults to {@link TOAST_PEEK_MS}. */
+  peekMs?: number;
+  /** Oval action drawn on the card, for example «Подробнее». */
+  actionLabel?: string;
 };
 
 export type ToastDraft = {
@@ -70,6 +76,8 @@ export type ToastDraft = {
   progress?: number;
   etaLabel?: string;
   requestId?: string | null;
+  peekMs?: number;
+  actionLabel?: string;
 };
 
 type ToastListener = () => void;
@@ -104,7 +112,7 @@ function beginPeek(toast: ToastNotification): void {
       peekTimers.delete(toast.id);
       peekIds.delete(toast.id);
       emit();
-    }, TOAST_PEEK_MS),
+    }, toast.peekMs ?? TOAST_PEEK_MS),
   );
 }
 
@@ -299,6 +307,8 @@ function normalizeToast(draft: ToastDraft): ToastNotification | null {
     progress,
     etaLabel: draft.kind === 'progress' ? draft.etaLabel : undefined,
     requestId: draft.requestId ?? null,
+    peekMs: draft.peekMs,
+    actionLabel: draft.actionLabel,
   };
 }
 
@@ -416,6 +426,9 @@ export function toastFromAlert(alert: AlertView): ToastDraft {
         : (alert.reasons[0] ?? title),
     createdAt: alert.createdAt,
     requestId: alert.requestIds[0] ?? null,
+    ...(alert.code === 'plan_rebuilt'
+      ? { peekMs: TOAST_PLAN_PEEK_MS, actionLabel: 'Подробнее' }
+      : {}),
   };
 }
 

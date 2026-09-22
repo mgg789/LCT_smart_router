@@ -680,7 +680,11 @@ function EngineerDossier({
 
         <div className="mt-[16px] flex min-h-[32px] items-center gap-[10px]">
           {emailOpen ? (
-            <form className="flex min-w-0 items-center gap-[10px]" onSubmit={onSubmitEmail}>
+            <form
+              id="engineer-email"
+              className="flex min-w-0 items-center gap-[10px]"
+              onSubmit={onSubmitEmail}
+            >
               <input
                 value={emailDraft}
                 onChange={(event) => onEmailDraft(event.target.value)}
@@ -741,15 +745,16 @@ function EngineerDossier({
             <FactRow icon={FIGMA_ASSETS.engOffice} label="Офис" value={engineer.officeLabel} />
             <div className="mt-auto flex gap-[38px]">
               <motion.button
-                type="button"
+                type={emailOpen ? 'submit' : 'button'}
+                form={emailOpen ? 'engineer-email' : undefined}
                 disabled={busy}
                 className="flex h-[67px] w-[241px] items-center justify-center rounded-[20px] bg-figma-bee font-semibold text-[20px] tracking-[-0.6px] text-figma-ink disabled:opacity-50"
                 whileHover={motionOn ? { scale: 1.03, filter: 'brightness(1.08)' } : undefined}
                 whileTap={motionOn ? { scale: 0.98 } : undefined}
                 transition={tap}
-                onClick={onAvailability}
+                onClick={emailOpen ? undefined : onAvailability}
               >
-                {offline ? 'Вернуть на смену' : 'Снять со смены'}
+                {emailOpen ? 'Сохранить' : offline ? 'Вернуть на смену' : 'Снять со смены'}
               </motion.button>
               {deleteAsk ? (
                 <div className="flex flex-col gap-[8px]">

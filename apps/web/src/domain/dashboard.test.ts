@@ -206,9 +206,18 @@ describe('dev dashboard fixture', () => {
           : assignment,
       ),
     };
-    const delta = computePlanDelta(CURRENT_PLAN, after, 100);
+    const delta = computePlanDelta(
+      CURRENT_PLAN,
+      after,
+      100,
+      new Map([[first.engineerId ?? '', 'Алексей Волков']]),
+    );
     expect(delta.transferred).toBe(1);
-    expect(delta.notes).toContain(`${first.requestId}: заявка снята с исполнителя`);
+    expect(delta.lines).toContainEqual({
+      requestId: first.requestId,
+      engineerName: null,
+      text: 'Не назначена',
+    });
   });
 
   it('accepts a rebuild only after a newer plan and accepted Router result', () => {

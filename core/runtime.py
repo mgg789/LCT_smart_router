@@ -124,7 +124,7 @@ class PostgresSnapshotReader:
         with psycopg.connect(
             self._dsn,
             connect_timeout=3,
-            options="-c default_transaction_read_only=on -c statement_timeout=3000",
+            options="-c default_transaction_read_only=on -c statement_timeout=10000",
         ) as connection:
             rows = connection.execute(
                 "SELECT publication_id, publication_seq, payload_utf8, payload_sha256, "
@@ -429,10 +429,33 @@ class RouterRuntime:
         ]
         return content_hash(json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8"))
 
-    def read_result(self) -> RouterResult:
-        """Return an isolated copy so callers cannot mutate published plans."""
+    def result_status(self) -> dict:
+        """Identity of the current result without copying the plan.
+
+        The poll that decides whether anything new arrived runs several times a
+        second. Copying road geometry on each of those reads stalled the API.
+        """
         with self._lock:
-            return self.result.model_copy(deep=True)
+            result = self.result
+            return {
+                "status": result.status,
+                "result_id": result.result_id,
+                "input_publication_id": result.input_publication_id,
+                "input_hash": result.input_hash,
+                "computed_at": result.computed_at,
+                "errors": [{"code": item.code, "message": item.message} for item in result.errors],
+            }
+
+    def read_result(self) -> RouterResult:
+        """Return an isolated copy so callers cannot mutate published plans.
+
+        The copy happens outside the runtime lock. Copying a plan with road
+        geometry takes long enough to stall every other request, including the
+        poll that publishes the next result.
+        """
+        with self._lock:
+            current = self.result
+        return current.model_copy(deep=True)
 
     def evaluate_manual(self, input_hash: str, context_version: str, routes: dict) -> dict:
         """Evaluate fixed orders against the current automatic result, without solving.
@@ -677,7 +700,12 @@ class RouterRuntime:
             if not reported_code.startswith("SNAPSHOT_"):
                 reported_code = "SNAPSHOT_READ_FAILED"
             with self._lock:
-                self._invalidate()
+                # A locked or slow database must not abandon a solve already in
+                # flight or a plan the API is still serving. Invalidating here
+                # bumped the generation, discarded the result and started another
+                # calculation, which locked the database again. The next tick retries.
+                if self._future is not None or self.result.status == "ready":
+                    return
                 self.result = RouterResult(
                     status="error",
                     router_context_version=self.context_version,
@@ -688,8 +716,6 @@ class RouterRuntime:
                         )
                     ],
                 )
-                if self._future is not None and self._future.done():
-                    self._future = None
             return
         with self._lock:
             if publication.publication_seq < self._last_publication_seq:

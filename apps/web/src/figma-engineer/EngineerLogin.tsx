@@ -49,7 +49,7 @@ export function EngineerLogin({
   const hint = engineerCodeHint({
     devCode,
     remainingSec: remaining,
-    showDevCode: import.meta.env.DEV,
+    showDevCode: Boolean(devCode),
   });
 
   useEffect(() => {

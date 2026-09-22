@@ -82,6 +82,16 @@ interface RoutingBaseline {
 }
 
 /** Owns authentication and the live Dashboard-to-backend state flow. */
+function engineerNameMap(
+  ...groups: Array<ReadonlyArray<{ id: string; displayName: string }> | undefined>
+): ReadonlyMap<string, string> {
+  const names = new Map<string, string>();
+  for (const group of groups) {
+    for (const engineer of group ?? []) names.set(engineer.id, engineer.displayName);
+  }
+  return names;
+}
+
 export function useDashboard() {
   const [token, setToken] = useState<string | null>(() => sessionStorage.getItem(SESSION_KEY));
   const [recovered] = useState(() => restoreDay(sessionStorage, token !== null));
@@ -270,9 +280,13 @@ export function useDashboard() {
     if (!token || source === 'demo' || rebuilding || liveWorkday?.workday.status === 'running') {
       return;
     }
-    const interval = window.setInterval(() => void refresh(), 10_000);
+    const interval = window.setInterval(() => {
+      void refresh();
+      // A failed first LIVE read must not leave the clock dark for the whole session.
+      void refreshLive();
+    }, 10_000);
     return () => window.clearInterval(interval);
-  }, [rebuilding, refresh, token, source, liveWorkday?.workday.status]);
+  }, [rebuilding, refresh, refreshLive, token, source, liveWorkday?.workday.status]);
 
   useEffect(() => {
     if (!token || source === 'demo' || rebuilding || liveWorkday?.workday.status !== 'running') {
@@ -439,7 +453,12 @@ export function useDashboard() {
       setError(null);
       setPendingDelta(
         previous && recorded.snapshot.plan.plan && id !== 'initial'
-          ? computePlanDelta(previous, recorded.snapshot.plan.plan, 0)
+          ? computePlanDelta(
+              previous,
+              recorded.snapshot.plan.plan,
+              0,
+              engineerNameMap(snapshotRef.current?.engineers, recorded.snapshot.engineers),
+            )
           : null,
       );
       setBaseline(null);
@@ -596,6 +615,7 @@ export function useDashboard() {
               previous.plan.plan,
               next.plan.plan,
               Math.round(performance.now() - solveStartedAtMs),
+              engineerNameMap(previous.engineers, next.engineers),
             ),
           );
         }
@@ -837,6 +857,7 @@ export function useDashboard() {
               previous.plan.plan,
               next.plan.plan,
               Math.round(performance.now() - solveStartedAtMs),
+              engineerNameMap(previous.engineers, next.engineers),
             ),
           );
         }

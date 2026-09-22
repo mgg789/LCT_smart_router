@@ -1,6 +1,5 @@
 import { Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import type { PrismaService } from '../../persistence';
-import type { RouterResult } from './result.types';
 import type { ResultAcceptanceService } from './result-acceptance.service';
 import type { RouterClient } from './router-client.port';
 
@@ -63,14 +62,24 @@ export class RouterResultCoordinator implements OnModuleInit, OnModuleDestroy {
 
   private async pollAndApply(): Promise<void> {
     try {
-      const result = await this.client.getResult();
-      if (result.status === 'pending') {
+      const status = await this.client.getResultStatus();
+      if (status.status === 'pending') {
         return;
       }
-
-      const identity = this.resultIdentity(result);
+      const identity = this.resultIdentity({
+        status: status.status,
+        result_id: status.result_id,
+        input_publication_id: status.input_publication_id,
+        input_hash: status.input_hash,
+        computed_at: status.computed_at,
+        errors: status.errors,
+      });
       const restoreManualPlan = await this.hasPendingManualRestore();
       if (identity === this.handledIdentity && !restoreManualPlan) {
+        return;
+      }
+      const result = await this.client.getResult();
+      if (result.status === 'pending') {
         return;
       }
 
@@ -107,7 +116,14 @@ export class RouterResultCoordinator implements OnModuleInit, OnModuleDestroy {
     return control?.mode === 'auto' && current?.plan.origin === 'manual';
   }
 
-  private resultIdentity(result: RouterResult): string {
+  private resultIdentity(result: {
+    status: string;
+    result_id?: string | null;
+    input_publication_id?: string | null;
+    input_hash?: string | null;
+    computed_at?: number | null;
+    errors?: ReadonlyArray<{ code: string; message: string }>;
+  }): string {
     if (result.result_id) {
       return result.result_id;
     }

@@ -68,6 +68,11 @@ def create_app(runtime: RouterRuntime) -> FastAPI:
         """Return the active resource context for sys acceptance checks."""
         return runtime.state()
 
+    @app.get("/v1/result-status")
+    def result_status() -> dict:
+        """Cheap poll identity. The full plan stays on ``/v1/result``."""
+        return runtime.result_status()
+
     @app.get("/v1/result", response_model=RouterResult)
     def result() -> RouterResult:
         """Read the latest atomic pair, preserving result_id on repeated reads."""

@@ -394,3 +394,24 @@ def test_covering_comparison_does_not_leak_extra_crews_into_other_policies(snaps
         for name, row in rows.items()
         if name != "covering"
     )
+
+
+def test_snapshot_read_failure_is_visible_before_any_solve(graph):
+    runtime = RouterRuntime(Reader(None), graph, executor=ControlledExecutor())
+    runtime.tick()
+    result = runtime.read_result()
+    assert result.status == "error"
+    assert result.errors[0].code == "SNAPSHOT_READ_FAILED"
+    runtime.close()
+
+
+def test_snapshot_read_failure_keeps_an_inflight_solve(graph):
+    runtime = RouterRuntime(Reader(None), graph, executor=ControlledExecutor())
+    runtime._future = Future()
+    runtime._active_generation = runtime._generation
+    generation = runtime._generation
+    runtime.tick()
+    assert runtime._future is not None and not runtime._future.done()
+    assert runtime._generation == generation
+    assert runtime.read_result().status == "pending"
+    runtime.close()

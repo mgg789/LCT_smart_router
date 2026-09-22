@@ -7,6 +7,9 @@ const FETCH_TIMEOUT_MS = 5_000;
 const CACHE_LIMIT = 400;
 /** Paid geometry adds little information below this straight-line distance. */
 export const MAP_API_MIN_DISTANCE_M = 300;
+/** How long a road-shape miss (outage or outside MKAD) is remembered. */
+/** A carriageway between two stops does not move. A one-minute TTL made every open dashboard re-request the whole day and the API stopped answering. */
+const ROAD_SHAPE_TTL_MS = 6 * 60 * 60 * 1000;
 const TWOGIS_URL = 'https://routing.api.2gis.com/routing/7.0.0/global';
 const YANDEX_URL = 'https://api.routing.yandex.net/v2/route';
 
@@ -38,6 +41,14 @@ export interface MapProviderStatus {
 @Injectable()
 export class MapRoutingService {
   private readonly cache = new Map<string, MapRoute>();
+  private readonly roadShapeInflight = new Map<
+    string,
+    Promise<Array<{ lat: number; lon: number }> | null>
+  >();
+  private readonly roadShapeCache = new Map<
+    string,
+    { expiresAt: number; points: Array<{ lat: number; lon: number }> | null }
+  >();
 
   constructor(
     @Inject(DispatcherSettingsService)
@@ -51,7 +62,9 @@ export class MapRoutingService {
   ): Promise<PlanView> {
     const configured = await this.settings.read();
     if (!configured.twogisApiKey && !configured.yandexApiKey) {
-      return plan;
+      // No paid map provider: draw the MKAD road API polyline instead of a chord.
+      // A `straight` answer or an outage leaves the dashed fallback in place.
+      return this.attachMkadRoadShapes(plan);
     }
     const routes = await Promise.all(
       plan.routes.map(async (route) => {
@@ -158,6 +171,119 @@ export class MapRoutingService {
       this.remember(cacheKey, fetched);
     }
     return fetched;
+  }
+
+  /**
+   * Replaces a straight chord with the MKAD `/route2` polyline when that answer is
+   * an on-road shape. Durations stay the solver's. `mode=straight` (outside MKAD)
+   * and a failed call keep the dashed chord.
+   */
+  private async attachMkadRoadShapes(plan: PlanView): Promise<PlanView> {
+    if (!roadApiBase()) return plan;
+    const routes = await Promise.all(
+      plan.routes.map(async (route) => {
+        const legs = await Promise.all(
+          route.legs.map(async (leg) => {
+            if (leg.segments?.length) {
+              const segments = await Promise.all(
+                leg.segments.map((segment) => this.attachSegmentRoadShape(segment)),
+              );
+              const changed = segments.some((segment, index) => segment !== leg.segments?.[index]);
+              if (!changed) return leg;
+              return {
+                ...leg,
+                segments,
+                geometry: {
+                  points: segments.flatMap((segment, index) =>
+                    index === 0 ? segment.geometry.points : segment.geometry.points.slice(1),
+                  ),
+                },
+              };
+            }
+            if (
+              leg.travelSource === 'metro' ||
+              !needsRoadShape(leg.travelSource, leg.geometry?.points.length ?? 0)
+            ) {
+              return leg;
+            }
+            const from = leg.geometry?.points[0] ??
+              pointBefore(route, leg.departureAt) ?? {
+                lat: route.startLat,
+                lon: route.startLon,
+              };
+            const to = leg.geometry?.points.at(-1) ?? pointAt(route, leg.arrivalAt);
+            if (!to) return leg;
+            const points = await this.roadPolyline(from, to);
+            if (!points) return leg;
+            return {
+              ...leg,
+              geometry: { points: withEndpoints(points, from, to) },
+              travelSource: 'traffic_api' as const,
+            };
+          }),
+        );
+        return { ...route, legs };
+      }),
+    );
+    return { ...plan, routes };
+  }
+
+  private async attachSegmentRoadShape(
+    segment: PlanRouteSegmentView,
+  ): Promise<PlanRouteSegmentView> {
+    if (!needsRoadShape(segment.travelSource, segment.geometry.points.length)) return segment;
+    const from = segment.geometry.points[0];
+    const to = segment.geometry.points.at(-1);
+    if (!from || !to) return segment;
+    const points = await this.roadPolyline(from, to);
+    if (!points) return segment;
+    return {
+      ...segment,
+      geometry: { points: withEndpoints(points, from, to) },
+      travelSource: 'traffic_api',
+    };
+  }
+
+  /** On-road polyline, or null when the backend is down or the pair leaves MKAD. */
+  private async roadPolyline(
+    from: { lat: number; lon: number },
+    to: { lat: number; lon: number },
+  ): Promise<Array<{ lat: number; lon: number }> | null> {
+    const base = roadApiBase();
+    if (!base) return null;
+    const key = createHash('sha256')
+      .update(JSON.stringify({ road: roundPoint(from), to: roundPoint(to), base }))
+      .digest('hex');
+    const cached = this.roadShapeCache.get(key);
+    if (cached && cached.expiresAt > Date.now()) return cached.points;
+    const existing = this.roadShapeInflight.get(key);
+    if (existing) return existing;
+    const pending = this.fetchRoadPolyline(base, key, from, to).finally(() => {
+      if (this.roadShapeInflight.get(key) === pending) this.roadShapeInflight.delete(key);
+    });
+    this.roadShapeInflight.set(key, pending);
+    return pending;
+  }
+
+  private async fetchRoadPolyline(
+    base: string,
+    key: string,
+    from: { lat: number; lon: number },
+    to: { lat: number; lon: number },
+  ): Promise<Array<{ lat: number; lon: number }> | null> {
+    const url = new URL('/route2', `${base}/`);
+    url.searchParams.set('a', `${from.lat},${from.lon}`);
+    url.searchParams.set('b', `${to.lat},${to.lon}`);
+    const json = await requestJson(url, { headers: { Accept: 'application/json' } });
+    const points = decodeRoadPolyline(json);
+    // A miss stays briefly so a down backend is retried. A drawn road stays for the day.
+    const ttl = points ? ROAD_SHAPE_TTL_MS : 15_000;
+    this.roadShapeCache.set(key, { expiresAt: Date.now() + ttl, points });
+    if (this.roadShapeCache.size > CACHE_LIMIT) {
+      const first = this.roadShapeCache.keys().next().value;
+      if (typeof first === 'string') this.roadShapeCache.delete(first);
+    }
+    return points;
   }
 
   private async enrichSegment(
@@ -336,6 +462,33 @@ export class MapRoutingService {
       this.cache.delete(first);
     }
   }
+}
+
+function roadApiBase(): string | null {
+  const raw = process.env.ROUTER_ROAD_API_URL?.trim();
+  if (!raw) return null;
+  return raw.replace(/\/$/, '');
+}
+
+/** A two-point chord is not a road. Metro rides and an existing road polyline stay. */
+function needsRoadShape(source: PlanRouteSegmentView['travelSource'], pointCount: number): boolean {
+  if (source === 'metro') return false;
+  if ((source === 'route_api' || source === 'traffic_api') && pointCount >= 2) return false;
+  return pointCount <= 2 || source === 'approximate' || source === 'road_matrix';
+}
+
+function decodeRoadPolyline(json: unknown): Array<{ lat: number; lon: number }> | null {
+  if (!json || typeof json !== 'object') return null;
+  const body = json as { mode?: unknown; geometry?: unknown };
+  if (body.mode !== 'road' || !Array.isArray(body.geometry) || body.geometry.length < 3) return null;
+  const points = body.geometry.flatMap((pair) => {
+    if (!Array.isArray(pair) || pair.length < 2) return [];
+    const lat = Number(pair[0]);
+    const lon = Number(pair[1]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return [];
+    return [{ lat, lon }];
+  });
+  return points.length >= 3 ? points : null;
 }
 
 function straightLineMetres(

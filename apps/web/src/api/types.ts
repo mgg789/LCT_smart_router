@@ -416,13 +416,21 @@ export interface EngineerPlanResponse {
   readonly requests: RequestView[];
 }
 
+/** One short line in the replan panel. A request line opens that request. */
+export interface PlanDeltaLine {
+  readonly requestId: string | null;
+  /** Engineer display name for a lunch move. Request lines leave this empty. */
+  readonly engineerName: string | null;
+  readonly text: string;
+}
+
 export interface PlanDelta {
   readonly transferred: number;
   readonly shifted: number;
   readonly slaBefore: number;
   readonly slaAfter: number;
   readonly solveMs: number;
-  readonly notes: string[];
+  readonly lines: PlanDeltaLine[];
 }
 
 export interface PolicyComparisonMetrics {
@@ -487,6 +495,11 @@ export interface DataUploadEngineer {
   readonly start: { readonly lat: number; readonly lon: number };
   readonly shiftStartAt: number;
   readonly shiftEndAt: number;
+  readonly equipmentStock?: {
+    readonly router: number;
+    readonly setTopBox: number;
+    readonly smartSpeaker: number;
+  };
 }
 
 export interface DataUploadFile {

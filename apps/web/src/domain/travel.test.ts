@@ -238,9 +238,13 @@ describe('map travel geometry', () => {
       [37.53, 55.71],
       [37.58, 55.74],
     ]);
+    const firstStop = route.stops[0];
+    expect(firstStop).toBeTruthy();
+    expect(segments[0]?.routeEndpoints).toEqual(segments[1]?.routeEndpoints);
+    expect(segments[2]?.routeEndpoints).toEqual(segments[1]?.routeEndpoints);
     expect(segments[1]?.routeEndpoints).toEqual([
-      [37.5, 55.7],
-      [37.61, 55.75],
+      [route.startLon, route.startLat],
+      [firstStop?.lon, firstStop?.lat],
     ]);
   });
 

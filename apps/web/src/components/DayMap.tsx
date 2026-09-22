@@ -125,12 +125,21 @@ export function visiblePlannedSegments(
   return visible;
 }
 
+/**
+ * The MKAD road API snaps a quote onto the carriageway. Observed offsets from a
+ * building pin are about 15–40 m, so an exact coordinate match drops the polyline
+ * and the map falls back to a straight dashed chord.
+ */
+const ROAD_ENDPOINT_SNAP_M = 80;
+
 function resolveVisibleEndpoint(
   route: PlanRouteView,
   visibleNodes: readonly LiveGraphNode[],
   coordinate: readonly [number, number],
 ): LiveGraphNode | null {
-  const direct = visibleNodes.find((node) => hasCoordinate(node, coordinate));
+  const exact = visibleNodes.find((node) => hasCoordinate(node, coordinate));
+  if (exact) return exact;
+  const direct = nearestNodeWithin(visibleNodes, coordinate, ROAD_ENDPOINT_SNAP_M);
   if (direct) return direct;
   const vertices = routeVertices(route);
   const waitIndex = vertices.findIndex(
@@ -145,6 +154,35 @@ function resolveVisibleEndpoint(
         (node) => node.kind === following.kind && hasCoordinate(node, coordinate),
       ) ?? null)
     : null;
+}
+
+function nearestNodeWithin(
+  nodes: readonly LiveGraphNode[],
+  coordinate: readonly [number, number],
+  maxMeters: number,
+): LiveGraphNode | null {
+  let best: LiveGraphNode | null = null;
+  let bestMeters = maxMeters;
+  for (const node of nodes) {
+    const meters = haversineMeters([node.lon, node.lat], coordinate);
+    if (best === null ? meters <= maxMeters : meters < bestMeters) {
+      best = node;
+      bestMeters = meters;
+    }
+  }
+  return best;
+}
+
+function haversineMeters(from: readonly [number, number], to: readonly [number, number]): number {
+  const radius = 6_371_000;
+  const toRad = (degrees: number) => (degrees * Math.PI) / 180;
+  const dLat = toRad(to[1] - from[1]);
+  const dLon = toRad(to[0] - from[0]);
+  const lat1 = toRad(from[1]);
+  const lat2 = toRad(to[1]);
+  const half =
+    Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return 2 * radius * Math.asin(Math.min(1, Math.sqrt(half)));
 }
 
 function hasCoordinate(
