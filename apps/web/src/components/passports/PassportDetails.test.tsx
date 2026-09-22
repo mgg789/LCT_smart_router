@@ -37,6 +37,14 @@ describe('passport views', () => {
     expect(renderToStaticMarkup(<PassportOffer token="test" requestId="r1" />)).toBe('');
     const html = renderToStaticMarkup(<MonthlyPoints token="test" />);
     expect(html).toContain('—');
+    expect(html).toContain('/figma/carambola.svg');
+    expect(html).not.toContain('за месяц');
+    expect(html).not.toContain('Новый отсчёт');
     expect(html).not.toContain('>0');
+  });
+
+  it('uses the dispatcher fact-card surface inside the dark request panel', () => {
+    const html = renderToStaticMarkup(<PassportDetails passport={passport} surface="dispatch" />);
+    expect(html).toContain('bg-white/10');
   });
 });

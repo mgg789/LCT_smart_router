@@ -549,7 +549,10 @@ export function EngineerApp({
                         item.kind === 'job' ? () => void startJob(item.request.id) : undefined
                       }
                     />
-                    {!designPreview && item.kind === 'job' && item.variant === 'upcoming' ? (
+                    {!designPreview &&
+                    item.kind === 'job' &&
+                    live?.current?.request.id === item.request.id &&
+                    live.current.phase === 'in_progress' ? (
                       <PassportOffer
                         key={item.request.id}
                         token={token}

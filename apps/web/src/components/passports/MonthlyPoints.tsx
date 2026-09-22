@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { loadMonthlyPoints } from '../../api/passports';
 
-/** Shows a server total and refreshes on saves, focus and month rollover. */
+/** Shows the compact monthly score and refreshes on saves, focus and month rollover. */
 export function MonthlyPoints({ token, engineerId }: { token: string; engineerId?: string }) {
   const key = `${token}:${engineerId ?? 'self'}`;
   const [result, setResult] = useState<{
@@ -37,11 +37,17 @@ export function MonthlyPoints({ token, engineerId }: { token: string; engineerId
   }, [token, engineerId, key]);
   const current = result?.key === key ? result : null;
   return (
-    <div className="rounded-[20px] bg-figma-bee px-4 py-3 text-figma-ink" aria-live="polite">
-      <p className="font-semibold">{current?.points ?? '—'} баллов за месяц</p>
-      <p className="mt-1 text-xs">
-        {current?.failed ? 'Не удалось загрузить баллы' : 'Новый отсчёт — 1 числа'}
-      </p>
+    <div
+      className="inline-flex min-h-9 items-center gap-2 rounded-full bg-figma-bee px-3 py-2 font-semibold text-figma-ink"
+      role="status"
+      aria-label={
+        current?.failed ? 'Не удалось загрузить баллы' : `${current?.points ?? '—'} баллов`
+      }
+      aria-live="polite"
+      title={current?.failed ? 'Не удалось загрузить баллы' : 'Баллы за текущий месяц'}
+    >
+      <span>{current?.points ?? '—'}</span>
+      <img src="/figma/carambola.svg" alt="" className="size-5" />
     </div>
   );
 }

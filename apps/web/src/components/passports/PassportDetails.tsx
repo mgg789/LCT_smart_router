@@ -2,11 +2,18 @@ import { CONNECTION_TYPES, type ObjectPassport, type PassportAudience } from '..
 import { usePassport } from './usePassport';
 
 /** Read-only building facts shared by all visits, including future route stops. */
-export function PassportDetails({ passport }: { passport: ObjectPassport }) {
+export function PassportDetails({
+  passport,
+  surface = 'engineer',
+}: {
+  passport: ObjectPassport;
+  surface?: PassportAudience;
+}) {
+  const dispatcher = surface === 'dispatch';
   return (
     <section
       aria-label="Паспорт объекта"
-      className="shrink-0 rounded-[20px] bg-figma-ink p-5 text-white"
+      className={`shrink-0 rounded-[20px] p-5 text-white ${dispatcher ? 'bg-white/10' : 'bg-figma-ink'}`}
     >
       <h2 className="font-semibold text-lg">Паспорт объекта</h2>
       <p className="mt-1 break-words text-sm text-white/70">{passport.address}</p>
@@ -56,7 +63,7 @@ export function RequestPassport({
         Загружаем паспорт…
       </p>
     );
-  return data.passport ? <PassportDetails passport={data.passport} /> : null;
+  return data.passport ? <PassportDetails passport={data.passport} surface={audience} /> : null;
 }
 
 function Fact({ label, value }: { label: string; value: string }) {
