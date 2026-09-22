@@ -16,8 +16,8 @@ export interface IssuedLoginCode {
   readonly email: string;
   readonly expiresAt: number;
   /**
-   * Present only when `AUTH_DEV_EXPOSE_CODES` is on, which production refuses. The
-   * SMTP-gateway delivers the same code by mail when `SMTP_HOST` is configured.
+   * Present only in local development (`AUTH_DEV_EXPOSE_CODES` and not `DEMO_STAND`).
+   * Production refuses the flag. The SMTP-gateway delivers the same code by mail.
    */
   readonly devCode?: string;
 }
@@ -76,7 +76,12 @@ export class LoginCodeService {
   }
 
   toPublic(issued: IssuedLoginCodeInternal): IssuedLoginCode {
-    const exposeCodes = this.config.get('AUTH_DEV_EXPOSE_CODES');
+    // Public demo stand keeps code login, but never prints the code: the dispatcher
+    // mailbox is synthetic and engineers receive a real SMTP message.
+    const exposeCodes =
+      this.config.get('AUTH_DEV_EXPOSE_CODES') &&
+      this.config.get('NODE_ENV') !== 'production' &&
+      !this.config.get('DEMO_STAND');
     return exposeCodes
       ? { email: issued.email, expiresAt: issued.expiresAt, devCode: issued.code }
       : { email: issued.email, expiresAt: issued.expiresAt };

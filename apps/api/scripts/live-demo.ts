@@ -1,68 +1,10 @@
-import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { config } from 'dotenv';
 import { z } from 'zod';
-import type { UploadDataPackageInput } from '../src/orchestrator/imports/upload-import.service';
+import { buildLiveDemo } from '../src/orchestrator/demo-stand/live-demo-package';
 
-const geocodesSchema = z.object({
-  entries: z
-    .array(
-      z.object({
-        address: z.string(),
-        location: z.object({ lat: z.number(), lon: z.number() }),
-      }),
-    )
-    .min(15),
-});
-
-/** Builds a deterministic synthetic 09:00–20:00 Moscow day using cached real map nodes. */
-export function buildLiveDemo(workDate: string, root: string): UploadDataPackageInput {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(workDate)) throw new Error('Expected YYYY-MM-DD');
-  const start = Date.parse(`${workDate}T09:00:00+03:00`) / 1000;
-  if (
-    !Number.isSafeInteger(start) ||
-    new Date(start * 1000).toISOString().slice(0, 10) !== workDate
-  ) {
-    throw new Error('Invalid calendar date');
-  }
-  const end = start + 11 * 3600;
-  const geocodes = geocodesSchema.parse(
-    JSON.parse(readFileSync(resolve(root, 'data/dataset/geocoded/east.json'), 'utf8')),
-  );
-  const depot = geocodes.entries[0];
-  if (!depot) throw new Error('Missing cached depot');
-  const digest = createHash('sha256').update(`live-demo-v1-${workDate}`).digest('hex');
-  const operationId = `${digest.slice(0, 8)}-${digest.slice(8, 12)}-4${digest.slice(13, 16)}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
-  return {
-    operationId,
-    schemaVersion: '1.0',
-    mode: 'new_region',
-    region: 'east',
-    sourceVersion: `live-demo-v1-${workDate}`,
-    depot: { addressText: depot.address, ...depot.location },
-    engineers: ['Алексей Волков', 'Михаил Орлов'].map((displayName, index) => ({
-      externalId: `live-engineer-${index + 1}`,
-      displayName,
-      skills: ['local', 'connection', 'emergency'],
-      transportType: 'car',
-      start: depot.location,
-      shiftStartAt: start,
-      shiftEndAt: end,
-    })),
-    requests: geocodes.entries.slice(1, 15).map((point, index) => ({
-      externalId: `live-request-${String(index + 1).padStart(2, '0')}`,
-      addressText: point.address,
-      ...point.location,
-      serviceDurationSec: 1800,
-      windowStartAt: start + 20 * 60 + Math.floor(index / 2) * 75 * 60,
-      windowEndAt: start + 80 * 60 + Math.floor(index / 2) * 75 * 60,
-      priority: 'normal',
-      requiredSkill: 'local',
-      workType: 'local_repair',
-    })),
-  };
-}
+export { buildLiveDemo } from '../src/orchestrator/demo-stand/live-demo-package';
 
 /** Imports only into an empty local contour; never resets an existing working set. */
 async function main(): Promise<void> {
@@ -114,7 +56,12 @@ async function main(): Promise<void> {
   const result = z
     .object({ requestsCreated: z.number(), engineersCreated: z.number() })
     .passthrough();
-  const raw = await call('/dispatch/data/upload', login.token, buildLiveDemo(workDate, root));
+  const datasetRoot = resolve(root, process.env.DATASET_ROOT ?? 'data/dataset/anonymized');
+  const raw = await call(
+    '/dispatch/data/upload',
+    login.token,
+    buildLiveDemo(workDate, datasetRoot),
+  );
   const summary = result.parse(raw);
   console.log(
     `LIVE demo prepared: ${summary.requestsCreated} requests, ${summary.engineersCreated} engineers, ${workDate} 09:00–20:00 Europe/Moscow. Day has not been started.`,

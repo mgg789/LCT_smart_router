@@ -50,7 +50,7 @@ class EquipmentStock(Record):
 
 
 class Request(Record):
-    """An unstarted job; its customer window constrains service start only."""
+    """An unstarted job; service must finish within its customer window plus applicable grace."""
 
     request_id: ID
     arrival_order: Seconds

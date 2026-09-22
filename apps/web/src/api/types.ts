@@ -79,6 +79,76 @@ export interface EngineerView {
   readonly email: string | null;
 }
 
+/** Fields collected by the compact dispatcher request form. */
+export interface CreateDispatchRequestInput {
+  readonly workType: string;
+  readonly addressText: string;
+  readonly windowStartAt: number;
+  readonly windowEndAt: number;
+  readonly lat?: number | null;
+  readonly lon?: number | null;
+  readonly contactName?: string;
+  readonly clientEmail?: string;
+}
+
+/** Dispatcher-owned clocks, alert timers and map-key presence. Secrets are never listed. */
+export interface DispatcherSettingsView {
+  readonly dayStartMin: number;
+  readonly dayEndMin: number;
+  readonly noShowSec: number;
+  readonly overdueSec: number;
+  readonly timeRiskSec: number;
+  readonly repeatAfterSec: number;
+  readonly twogisApiKeySet: boolean;
+  readonly twogisApiKeyLast4: string | null;
+  readonly yandexApiKeySet: boolean;
+  readonly yandexApiKeyLast4: string | null;
+}
+
+export interface DispatcherSettingsPatch {
+  readonly dayStartMin?: number;
+  readonly dayEndMin?: number;
+  readonly noShowSec?: number;
+  readonly overdueSec?: number;
+  readonly timeRiskSec?: number;
+  readonly repeatAfterSec?: number;
+  readonly twogisApiKey?: string | null;
+  readonly yandexApiKey?: string | null;
+}
+
+export interface GeocodeHit {
+  readonly displayName: string;
+  readonly lat: number;
+  readonly lon: number;
+}
+
+export interface MapProviderStatus {
+  readonly provider: 'twogis' | 'yandex';
+  readonly configured: boolean;
+  readonly ok: boolean | null;
+  readonly message: string;
+  readonly requests?: number;
+  readonly cacheHits?: number;
+  readonly checkedAt?: number | null;
+}
+
+export interface MapProvidersStatus {
+  readonly active: 'twogis' | 'yandex' | 'none';
+  readonly twogis: MapProviderStatus;
+  readonly yandex: MapProviderStatus;
+}
+
+/** A routing profile can be created before a login email is known. */
+export interface CreateDispatchEngineerInput {
+  readonly displayName: string;
+  readonly skills: Array<'local' | 'connection' | 'emergency'>;
+  readonly transportType: 'car' | 'walk' | 'bike' | 'transit';
+  readonly region: string;
+  readonly email: string | null;
+  readonly homeLat?: number | null;
+  readonly homeLon?: number | null;
+}
+
 export interface EngineerDayView {
   /** Day-specific exemption from attendance alerts, independent of login access. */
   readonly attendanceOptOut?: boolean;
@@ -115,6 +185,12 @@ export interface PlanStopView {
 }
 
 export interface PlanRouteView {
+  readonly timingStatus?: 'calculated' | 'unverified' | 'forecast';
+  readonly mapForecast?: {
+    readonly observedAt: number | null;
+    readonly state: 'fresh' | 'mixed' | 'stale' | 'fallback';
+    readonly warnings: readonly string[];
+  };
   readonly engineerId: string;
   readonly startLat: number;
   readonly startLon: number;
@@ -152,6 +228,14 @@ export interface PlanLegView {
   readonly travelTimeSec: number;
   readonly distanceKm: number;
   readonly travelSource: TravelSource;
+  /** Present when sys replaced Router geometry with a map-provider polyline. */
+  readonly geometryProvider?: 'twogis' | 'yandex';
+  readonly mapObservation?: {
+    readonly observedAt: number;
+    readonly expiresAt: number;
+    readonly cacheState: 'live' | 'cached' | 'stale';
+    readonly trafficMode: 'current' | 'statistics' | 'none';
+  };
   /** Forecast/provider multiplier already included in travelTimeSec. */
   readonly trafficFactor: number;
   /** Ordered WGS84 points returned by the routing provider. */
@@ -227,6 +311,9 @@ export interface AlertView {
 
 /** A dispatcher decision; absolute window bounds use Unix seconds. */
 export interface AlertResolutionInput {
+  readonly expectedModeVersion?: number;
+  readonly expectedPlanRevision?: number;
+  readonly expectedRequestVersion?: number;
   readonly operationId: string;
   readonly action: string;
   readonly reason?: string;
@@ -269,7 +356,7 @@ export interface DashboardSnapshot {
   readonly policyId: PolicyId;
   readonly lunchesEnabled: boolean;
   /** Full Router-owned settings when the snapshot came from the live API. */
-  readonly routerSettings?: RouterTechnicalSettings;
+  readonly routerSettings?: RouterTechnicalSettings | null;
   readonly routerContextVersion: string;
   readonly policies: readonly PolicySpec[];
   readonly engineers: Array<EngineerView & { day: EngineerDayView | null }>;

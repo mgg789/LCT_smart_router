@@ -115,26 +115,23 @@ export class AppliedPlanService {
    * A manual edit is a new revision like any other, so the history stays a single line
    * and the origin of each plan is visible.
    */
-  async beginManualRevision(tx: Tx, now: number, actorId: string, note: string) {
+  async beginManualRevision(tx: Tx, now: number, actorId: string, note: string, planningAt = now) {
     const current = await this.current(tx);
-    if (!current) {
-      throw SysError.notFound('Applied plan');
-    }
 
     const revision = await tx.appliedPlan.create({
       data: {
         origin: 'manual',
-        routerResultId: current.routerResultId,
+        routerResultId: current?.routerResultId ?? null,
         // A manual plan describes the moment it was edited, not the moment of the
         // automatic result it started from.
-        planAsOf: BigInt(now),
+        planAsOf: BigInt(planningAt),
         appliedAt: BigInt(now),
         createdBy: actorId,
         note,
       },
     });
 
-    for (const route of current.routes) {
+    for (const route of current?.routes ?? []) {
       const copy = await tx.appliedPlanRoute.create({
         data: {
           planId: revision.id,
@@ -171,14 +168,21 @@ export class AppliedPlanService {
       }
     }
 
-    for (const item of current.assignments) {
+    for (const item of current?.assignments ?? []) {
       await tx.appliedPlanAssignment.create({
         data: {
           planId: revision.id,
           requestId: item.requestId,
           status: item.status,
           engineerId: item.engineerId,
-          reasons: item.reasons as object,
+          reasons: [
+            {
+              code: 'MANUAL_PLAN',
+              basis: 'dispatcher',
+              text: 'Manual plan; previous automatic checks are archival',
+              facts: { sourcePlanRevision: current?.revision ?? null },
+            },
+          ],
         },
       });
     }
@@ -211,6 +215,7 @@ export class AppliedPlanService {
             legId: leg.leg_id,
             fromStopId: leg.from_stop_id,
             toStopId: leg.to_stop_id,
+            toStopSequence: route.stops.find((stop) => stop.stop_id === leg.to_stop_id)?.sequence,
             departureAt: leg.departure_at,
             arrivalAt: leg.arrival_at,
             travelTimeSec: leg.travel_time_sec,

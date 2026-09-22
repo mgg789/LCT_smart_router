@@ -123,7 +123,6 @@ describe('AI tool schemas never let the model choose the subject', () => {
     assert.deepEqual(names, [
       'call_dispatch_helper',
       'change_status_to',
-      'confirm_on_time',
       'create_request',
       'finish_technical_break',
       'get_my_route',
@@ -220,7 +219,7 @@ describe('AI tool catalogue scoping', () => {
     assert.deepEqual(tools.map((tool) => tool.name).sort(), ['create_request', 'list_my_requests']);
   });
 
-  it('gives the engineer exactly the nine liveActionSchema-mapped tools, no start/finish visit', () => {
+  it('gives the engineer exactly the eight liveActionSchema-mapped tools, no start/finish visit', () => {
     const tools = buildEngineerTools({
       aiOperations: {} as unknown as AiOperationService,
       live: {} as unknown as LiveService,
@@ -229,7 +228,6 @@ describe('AI tool catalogue scoping', () => {
     const names = tools.map((tool) => tool.name).sort();
     assert.deepEqual(names, [
       'change_status_to',
-      'confirm_on_time',
       'finish_technical_break',
       'get_my_route',
       'report_cannot_complete',

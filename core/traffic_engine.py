@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import math
 from datetime import datetime
+from functools import lru_cache
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
@@ -21,14 +22,20 @@ _FORECAST_TRAFFIC_VERSION = "moscow-radial-v1"
 _MOSCOW_CENTER = GeoPoint(lat=55.7558, lon=37.6173)
 
 
-def forecast_traffic_factor(departure_at: int, origin: GeoPoint, destination: GeoPoint) -> float:
-    """Return a versioned Moscow radial factor for one planned departure."""
+@lru_cache(maxsize=4096)
+def _radius(lat: float, lon: float) -> float:
+    """Cache only static spatial data, never a departure-dependent provider observation."""
     from core.geo import haversine_m
 
+    return haversine_m(GeoPoint(lat=lat, lon=lon), _MOSCOW_CENTER)
+
+
+def forecast_traffic_factor(departure_at: int, origin: GeoPoint, destination: GeoPoint) -> float:
+    """Return a versioned Moscow radial factor for one planned departure."""
     local = datetime.fromtimestamp(departure_at, ZoneInfo("Europe/Moscow"))
     minute = local.hour * 60 + local.minute
-    origin_radius = haversine_m(origin, _MOSCOW_CENTER)
-    destination_radius = haversine_m(destination, _MOSCOW_CENTER)
+    origin_radius = _radius(origin.lat, origin.lon)
+    destination_radius = _radius(destination.lat, destination.lon)
     radial_delta = destination_radius - origin_radius
     direction = "outbound" if radial_delta > 500 else "inbound" if radial_delta < -500 else "cross"
 

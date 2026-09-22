@@ -145,6 +145,10 @@ const alertActionSchema = z.enum([
   'move_window',
   'add_engineer',
   'keep_manual',
+  // The alert endpoint accepts this one too (orchestrator/alerts/alert-policy.ts),
+  // and `time_risk` offers nothing else — without it the assistant cannot propose
+  // the only decision that alert has.
+  'keep_as_is',
   'restore_auto',
   'skip_lunch',
   'keep_lunch',
@@ -197,9 +201,6 @@ export const setWorkdayPayloadSchema = z.object({
 export type SetWorkdayPayload = z.infer<typeof setWorkdayPayloadSchema>;
 
 export const liveNoArgsPayloadSchema = z.object({});
-
-export const liveOnTimePayloadSchema = z.object({ requestId: requestIdSchema });
-export type LiveOnTimePayload = z.infer<typeof liveOnTimePayloadSchema>;
 
 export const liveEtaPayloadSchema = z.object({
   requestId: requestIdSchema,
@@ -728,34 +729,9 @@ export function buildAiActionCatalog(deps: AiActionCatalogDeps): ReadonlyMap<str
     },
   });
 
-  catalog.set('live.engineer.on_time', {
-    zodSchema: liveOnTimePayloadSchema,
-    allowedProfiles: ['engineer'],
-    async precheck(args) {
-      const engineerId = requireEngineerId(args.targetRef);
-      const payload = args.payload as LiveOnTimePayload;
-      const view = await deps.live.engineerView(engineerId);
-      if (view.current?.request.id !== payload.requestId) {
-        throw new SysError('VALIDATION_FAILED', 'This is not the nearest current visit');
-      }
-    },
-    async preview(args) {
-      const payload = args.payload as LiveOnTimePayload;
-      return [
-        { label: 'Действие', value: 'Подтвердить прибытие вовремя' },
-        { label: 'Заявка', value: payload.requestId },
-      ];
-    },
-    async apply({ context, targetRef, payload }) {
-      const input = payload as LiveOnTimePayload;
-      return deps.live.act(context, requireEngineerId(targetRef), {
-        operationId: context.operationId,
-        kind: 'on_time',
-        requestId: input.requestId,
-      });
-    },
-  });
-
+  // There is no `on_time` action any more: the engineer reports an arrival time
+  // instead (docs/live.md, «Удалён `on_time`»), which `live.engineer.eta` below
+  // prepares. A tool for an action the API refuses could only fail at confirm.
   catalog.set('live.engineer.eta', {
     zodSchema: liveEtaPayloadSchema,
     allowedProfiles: ['engineer'],

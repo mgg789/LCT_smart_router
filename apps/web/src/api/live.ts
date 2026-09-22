@@ -58,9 +58,13 @@ export interface LiveEngineerState {
   readonly id: string;
   readonly name: string;
   readonly lineStatus: LiveLineStatus;
+  readonly lineStartedAt?: number | null;
+  readonly noShowAt?: number | null;
+  readonly lunchInterval?: { readonly startAt: number; readonly endAt: number } | null;
   readonly availability: string;
   readonly activeRequestId: string | null;
   readonly routeState: 'active' | 'awaiting_plan' | 'exhausted';
+  readonly canFinishDay: boolean;
   readonly progress: LiveRouteProgress | null;
   readonly stats: LiveStats;
   readonly technicalBreak: {
@@ -96,6 +100,8 @@ export interface DispatchLiveView {
   readonly breaks: readonly LiveBreak[];
   /** Completed/cancelled visits retained only for the dispatcher pipeline after a replan. */
   readonly history: readonly LiveHistoryItem[];
+  /** Public navix contour that rewinds the 14/2 day. Absent locally. */
+  readonly demoStand?: boolean;
 }
 
 /** A durable technical-break marker, independent of the latest solver route. */
@@ -205,9 +211,16 @@ const engineerSchema: z.ZodType<LiveEngineerState> = z.object({
   id: z.string(),
   name: z.string(),
   lineStatus: z.enum(['pending', 'online', 'no_show_offline', 'stood_down', 'technical_break']),
+  lineStartedAt: z.number().int().nullable().optional(),
+  noShowAt: z.number().int().nullable().optional(),
+  lunchInterval: z
+    .object({ startAt: z.number().int(), endAt: z.number().int() })
+    .nullable()
+    .optional(),
   availability: z.string(),
   activeRequestId: z.string().nullable(),
   routeState: z.enum(['active', 'awaiting_plan', 'exhausted']),
+  canFinishDay: z.boolean().default(false),
   progress: progressSchema.nullable(),
   stats: liveStatsSchema,
   technicalBreak: z
@@ -266,11 +279,11 @@ const dispatchLiveSchema: z.ZodType<DispatchLiveView> = z.object({
     )
     .optional()
     .default([]),
+  demoStand: z.boolean().optional().default(false),
 });
 
 export type EngineerLiveAction =
   | { readonly kind: 'online' }
-  | { readonly kind: 'on_time'; readonly requestId: string }
   | { readonly kind: 'eta'; readonly requestId: string; readonly etaAt: number }
   | { readonly kind: 'start' | 'finish'; readonly requestId: string }
   | {

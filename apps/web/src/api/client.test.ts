@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  changeEngineerEmail,
+  createDispatchEngineer,
+  createDispatchRequest,
   DashboardApiError,
+  deleteDispatchEngineer,
   loadDashboardSnapshot,
   loadPolicyComparison,
   selectRoutingPolicy,
@@ -165,99 +169,104 @@ const settings = {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('live dashboard client', () => {
-  it('aggregates backend resources and normalizes structured reasons', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: string | URL | Request) => {
-        const path = new URL(String(input), 'http://local').pathname;
-        if (path.endsWith('/requests')) return json({ requests: [request] });
-        if (path.endsWith('/engineers')) return json({ engineers: [engineer] });
-        if (path.endsWith('/plan')) {
-          return json({
-            mode: 'auto',
-            modeVersion: 1,
-            plan: {
-              revision: 7,
-              origin: 'auto',
-              planAsOf: 1_800_000_000,
-              appliedAt: 1_800_000_100,
-              routes: [],
-              assignments: [
+  it.each([false, true])(
+    'aggregates business data even with Router unavailable=%s',
+    async (routerDown) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: string | URL | Request) => {
+          const path = new URL(String(input), 'http://local').pathname;
+          if (path.endsWith('/requests')) return json({ requests: [request] });
+          if (path.endsWith('/engineers')) return json({ engineers: [engineer] });
+          if (path.endsWith('/plan')) {
+            return json({
+              mode: 'auto',
+              modeVersion: 1,
+              plan: {
+                revision: 7,
+                origin: 'auto',
+                planAsOf: 1_800_000_000,
+                appliedAt: 1_800_000_100,
+                routes: [],
+                assignments: [
+                  {
+                    requestId: 'request-1',
+                    status: 'assigned',
+                    engineerId: 'engineer-1',
+                    reasons: [
+                      {
+                        code: 'CONSTRAINTS_SATISFIED',
+                        text: 'Constraints verified.',
+                        basis: 'constraint_check',
+                        facts: { skill: 'office' },
+                      },
+                    ],
+                  },
+                ],
+              },
+              appliedResult: null,
+              lastResult: null,
+            });
+          }
+          if (path.endsWith('/alerts'))
+            return json({
+              alerts: [
                 {
-                  requestId: 'request-1',
-                  status: 'assigned',
-                  engineerId: 'engineer-1',
-                  reasons: [
-                    {
-                      code: 'CONSTRAINTS_SATISFIED',
-                      text: 'Constraints verified.',
-                      basis: 'constraint_check',
-                      facts: { skill: 'office' },
-                    },
-                  ],
+                  id: 'risk',
+                  code: 'time_risk',
+                  kind: 'alert',
+                  severity: 'warning',
+                  engineerIds: ['engineer-1'],
+                  requestIds: ['request-1'],
+                  reasons: [{ plannedStartAt: 1_800_000_600, windowEndAt: 1_800_000_000 }],
+                  restoreOption: { engineer_id: 'engineer-1', reject_request_ids: ['request-1'] },
+                  actions: ['move_window'],
+                  createdAt: 1_800_000_000,
+                  seenAt: null,
+                  resolvedAt: null,
                 },
               ],
-            },
-            appliedResult: null,
-            lastResult: null,
-          });
-        }
-        if (path.endsWith('/alerts'))
-          return json({
-            alerts: [
-              {
-                id: 'risk',
-                code: 'time_risk',
-                kind: 'alert',
-                severity: 'warning',
-                engineerIds: ['engineer-1'],
-                requestIds: ['request-1'],
-                reasons: [{ plannedStartAt: 1_800_000_600, windowEndAt: 1_800_000_000 }],
-                restoreOption: { engineer_id: 'engineer-1', reject_request_ids: ['request-1'] },
-                actions: ['move_window'],
-                createdAt: 1_800_000_000,
-                seenAt: null,
-                resolvedAt: null,
-              },
-            ],
-          });
-        if (path.endsWith('/shift'))
-          return json({ workDate: '2026-09-17', closedAt: null, unresolvedCount: 0 });
-        if (path.endsWith('/policies')) {
-          return json({
-            policies: [
-              {
-                policyId: 'compact',
-                title: 'Compact',
-                description: 'Use fewer engineers',
-                isDefault: true,
-              },
-            ],
-            active: { policyId: 'compact', version: 1, changedAt: 1_800_000_000 },
-          });
-        }
-        if (path.endsWith('/router/technical-settings')) return json(settings);
-        throw new Error(`Unexpected request: ${path}`);
-      }),
-    );
+            });
+          if (path.endsWith('/shift'))
+            return json({ workDate: '2026-09-17', closedAt: null, unresolvedCount: 0 });
+          if (path.endsWith('/policies')) {
+            return json({
+              policies: [
+                {
+                  policyId: 'compact',
+                  title: 'Compact',
+                  description: 'Use fewer engineers',
+                  isDefault: true,
+                },
+              ],
+              active: { policyId: 'compact', version: 1, changedAt: 1_800_000_000 },
+            });
+          }
+          if (path.endsWith('/router/technical-settings'))
+            return routerDown ? new Response('{}', { status: 503 }) : json(settings);
+          throw new Error(`Unexpected request: ${path}`);
+        }),
+      );
 
-    const snapshot = await loadDashboardSnapshot('session-token');
+      const snapshot = await loadDashboardSnapshot('session-token');
 
-    expect(snapshot.workDate).toBe('2026-09-17');
-    expect(snapshot.policyId).toBe('compact');
-    expect(snapshot.requests).toHaveLength(1);
-    expect(snapshot.alerts[0]?.reasons[0]).toContain('Опоздание: 10 мин.');
-    expect(snapshot.alerts[0]?.restoreOption).toEqual({
-      engineer_id: 'engineer-1',
-      reject_request_ids: ['request-1'],
-    });
-    expect(snapshot.plan.plan?.assignments[0]?.reasons.assignment?.factors[0]).toMatchObject({
-      code: 'CONSTRAINTS_SATISFIED',
-      detail: 'Constraints verified.',
-      basis: 'constraint_check',
-      facts: { skill: 'office' },
-    });
-  });
+      expect(snapshot.workDate).toBe('2026-09-17');
+      expect(snapshot.policyId).toBe('compact');
+      if (routerDown) expect(snapshot.routerSettings).toBeNull();
+      expect(snapshot.requests).toHaveLength(1);
+      expect(snapshot.alerts[0]?.reasons[0]).toContain('Опоздание: 10 мин.');
+      expect(snapshot.alerts[0]?.restoreOption).toEqual({
+        engineer_id: 'engineer-1',
+        reject_request_ids: ['request-1'],
+      });
+      expect(snapshot.plan.plan?.assignments[0]?.reasons.assignment?.factors[0]).toMatchObject({
+        code: 'CONSTRAINTS_SATISFIED',
+        detail: 'Constraints verified.',
+        basis: 'constraint_check',
+        facts: { skill: 'office' },
+      });
+    },
+  );
 
   it('preserves all technical settings when toggling lunches', async () => {
     let sentBody: unknown = null;
@@ -376,6 +385,65 @@ describe('live dashboard client', () => {
     const inputHash = await setEngineerAvailability('session-token', 'engineer/1', 'offline');
     expect(sentBody).toMatchObject({ availability: 'offline', expectedOnlineAt: null });
     expect(inputHash).toBe('availability-input');
+  });
+
+  it('sends the compact create, email change and archive contracts used by the Figma dashboard', async () => {
+    const calls: Array<{ path: string; method: string; body: Record<string, unknown> }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const path = String(input);
+        calls.push({
+          path,
+          method: init?.method ?? 'GET',
+          body: JSON.parse(String(init?.body)) as Record<string, unknown>,
+        });
+        return path.endsWith('/requests')
+          ? json({ request })
+          : json({ engineer: { ...engineer, day: undefined } });
+      }),
+    );
+
+    await createDispatchRequest('session-token', {
+      workType: 'monitoring',
+      addressText: 'Москва, ул. Новая, 2',
+      windowStartAt: 1_800_000_000,
+      windowEndAt: 1_800_003_600,
+    });
+    await createDispatchEngineer('session-token', {
+      displayName: 'Новый инженер',
+      skills: ['connection'],
+      transportType: 'car',
+      region: 'east',
+      email: null,
+    });
+    await changeEngineerEmail('session-token', 'engineer/1', 'new@example.test', 6);
+    await deleteDispatchEngineer('session-token', 'engineer/1', 7);
+
+    expect(calls[0]).toMatchObject({
+      path: expect.stringContaining('/api/v1/dispatch/requests'),
+      method: 'POST',
+      body: { operationId: expect.any(String), workType: 'monitoring' },
+    });
+    expect(calls[1]).toMatchObject({
+      path: expect.stringContaining('/api/v1/dispatch/engineers'),
+      method: 'POST',
+      body: { operationId: expect.any(String), email: null },
+    });
+    expect(calls[2]).toMatchObject({
+      path: expect.stringContaining('/api/v1/dispatch/engineers/engineer%2F1/email'),
+      method: 'PUT',
+      body: {
+        operationId: expect.any(String),
+        email: 'new@example.test',
+        expectedVersion: 6,
+      },
+    });
+    expect(calls[3]).toMatchObject({
+      path: expect.stringContaining('/api/v1/dispatch/engineers/engineer%2F1'),
+      method: 'DELETE',
+      body: { operationId: expect.any(String), expectedVersion: 7 },
+    });
   });
 
   it('adds an idempotency key to a locally validated data package', async () => {

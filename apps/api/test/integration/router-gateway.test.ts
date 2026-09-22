@@ -283,6 +283,38 @@ describe('router gateway', () => {
     assert.match(body.detail ?? '', /publication/i);
   });
 
+  it('refuses an in-flight result after a free request window was deferred without publication', async () => {
+    const request = await submitRequest();
+    const before = await prisma.request.findUniqueOrThrow({ where: { id: request.id } });
+    const result = buildRouterResult({
+      resultId: unique('deferred-window'),
+      inputHash: await publishedHash(),
+      contextVersion: 'ctx-1',
+      planningAsOf: now(),
+      assigned: [
+        {
+          requestId: request.id,
+          engineerId,
+          lat: request.lat,
+          lon: request.lon,
+          startAt: now() + HOUR,
+          durationSec: 1800,
+        },
+      ],
+    });
+    await prisma.request.update({
+      where: { id: request.id },
+      data: {
+        windowStartAt: before.windowStartAt + 86400n,
+        windowEndAt: before.windowEndAt + 86400n,
+      },
+    });
+    const { body } = await feed(result, 'ctx-1');
+    assert.equal(body.accepted, false);
+    assert.equal(body.reason, 'SNAPSHOT_STALE');
+    assert.match(body.detail ?? '', /windows changed/);
+  });
+
   it('refuses a result computed under a context that is no longer active', async () => {
     const request = await submitRequest();
     const result = buildRouterResult({
@@ -891,6 +923,18 @@ describe('router gateway', () => {
   });
 
   describe('manual control', () => {
+    const expectation = async () => {
+      const state = (await (
+        await call('GET', '/api/v1/dispatch/plan', dispatcherToken)
+      ).json()) as {
+        modeVersion: number;
+        plan: { revision: number } | null;
+      };
+      return {
+        expectedModeVersion: state.modeVersion,
+        expectedPlanRevision: state.plan?.revision ?? 0,
+      };
+    };
     it('stops applying results and keeps the plan visible', async () => {
       const request = await submitRequest();
       await feed(
@@ -919,6 +963,8 @@ describe('router gateway', () => {
       const manual = await call('POST', '/api/v1/dispatch/mode', dispatcherToken, {
         operationId: randomUUID(),
         mode: 'manual',
+        reason: 'Gateway regression',
+        ...(await expectation()),
       });
       assert.equal(manual.status, 201);
 
@@ -958,6 +1004,7 @@ describe('router gateway', () => {
       await call('POST', '/api/v1/dispatch/mode', dispatcherToken, {
         operationId: randomUUID(),
         mode: 'auto',
+        ...(await expectation()),
       });
     });
 
@@ -967,6 +1014,7 @@ describe('router gateway', () => {
         operationId: randomUUID(),
         requestId: request.id,
         engineerId,
+        ...(await expectation()),
       });
       assert.equal(response.status, 409);
       assert.equal(

@@ -49,6 +49,9 @@ export interface LiveEngineerStateView {
   readonly id: string;
   readonly name: string;
   readonly lineStatus: 'pending' | 'online' | 'no_show_offline' | 'stood_down' | 'technical_break';
+  readonly lineStartedAt: number | null;
+  readonly noShowAt: number | null;
+  readonly lunchInterval: { readonly startAt: number; readonly endAt: number } | null;
   readonly availability: string;
   readonly activeRequestId: string | null;
   readonly technicalBreak: {
@@ -62,6 +65,8 @@ export interface LiveEngineerStateView {
     readonly additionalDurationSec: number;
   } | null;
   readonly routeState: 'active' | 'awaiting_plan' | 'exhausted';
+  /** Personal readiness after 17:00; independent of dispatcher alert resolution. */
+  readonly canFinishDay: boolean;
   readonly progress: LiveRouteProgressView | null;
   readonly stats: LiveStatsView;
 }
@@ -85,6 +90,8 @@ export interface DispatchLiveView {
     readonly outcome: 'completed' | 'cancelled' | 'assumed_completed';
     readonly terminalAt: number;
   }>;
+  /** True only on the public navix contour that rewinds the 14/2 day. */
+  readonly demoStand: boolean;
 }
 
 export interface EngineerLiveView {

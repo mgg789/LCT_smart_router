@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createDevSnapshot } from '../fixtures/dev-day';
-import { mapRouteSegments } from './travel';
+import { mapRouteSegments, routeLineKind } from './travel';
 
 describe('map travel geometry', () => {
   it('uses provider geometry only for route and traffic API legs', () => {
@@ -249,5 +249,14 @@ describe('map travel geometry', () => {
       [lunch.lon, lunch.lat],
       [wait.lon, wait.lat],
     ]);
+  });
+
+  it('classifies dashed centroids, gray OSRM and green map-provider lines', () => {
+    expect(routeLineKind({ approximate: true, source: 'approximate' })).toBe('centroid');
+    expect(routeLineKind({ approximate: false, source: 'road_matrix' })).toBe('osrm');
+    expect(routeLineKind({ approximate: false, source: 'route_api' })).toBe('osrm');
+    expect(
+      routeLineKind({ approximate: false, source: 'traffic_api', geometryProvider: 'twogis' }),
+    ).toBe('map');
   });
 });

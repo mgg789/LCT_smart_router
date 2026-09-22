@@ -23,6 +23,12 @@ export async function lockRoutingCurrent(tx: Tx): Promise<void> {
   await tx.$queryRaw`SELECT id FROM routing_current WHERE id = 'singleton' FOR UPDATE`;
 }
 
+/** Acquire before LIVE/request row locks so execution and manual edits share one order. */
+export async function lockWorkingPlan(tx: Tx): Promise<void> {
+  await lockControlState(tx);
+  await lockRoutingCurrent(tx);
+}
+
 /** Serialises alert detection, resolution and day closure for the transaction lifetime. */
 export async function lockAlertQueue(tx: Tx): Promise<void> {
   // Keep the same lock order as Router result acceptance. Alert actions may publish a

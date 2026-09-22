@@ -178,6 +178,13 @@ describe('request lifecycle', () => {
     assert.equal(outage.continuationAvailableAt, null);
     assert.equal(outage.overrunDetectedAt, null);
 
+    const tightOutage = await prepare({
+      workType: 'outage',
+      windowStartAt: DAY + 17 * HOUR + 45 * 60,
+      windowEndAt: DAY + 18 * HOUR + 45 * 60,
+    });
+    assert.equal(tightOutage.windowEndAt - tightOutage.windowStartAt, 4800);
+
     const replacement = await prepare({ workType: 'router_replacement' });
     assert.equal(replacement.requiredSkill, 'connection');
     assert.equal(replacement.priority, 'normal');
@@ -225,6 +232,24 @@ describe('request lifecycle', () => {
       assert.equal(request.assignmentState, 'pending');
       assert.equal(request.priority, urgent ? 'urgent' : 'normal');
     }
+  });
+
+  it('accepts a compact dispatcher request before customer identity is known', async () => {
+    const response = await call('POST', '/api/v1/dispatch/requests', dispatcherToken, {
+      operationId: randomUUID(),
+      addressText: 'Москва, ул. Новая, д. 2',
+      workType: 'monitoring',
+      windowStartAt: DAY + 9 * HOUR,
+      windowEndAt: DAY + 11 * HOUR,
+    });
+    assert.equal(response.status, 201, await response.clone().text());
+    const request = ((await response.json()) as RequestBody).request;
+    requestIds.push(request.id);
+
+    const stored = await prisma.request.findUniqueOrThrow({ where: { id: request.id } });
+    assert.equal(stored.clientAccountId, null);
+    assert.equal(stored.contactName, null);
+    assert.equal(stored.lifecycle, 'submitted');
   });
 
   it('marks a request without coordinates instead of inventing them', async () => {

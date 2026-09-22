@@ -19,11 +19,6 @@ export const liveActionSchema = z.discriminatedUnion('kind', [
     engineerId: z.string().min(1).optional(),
   }),
   operationEnvelopeSchema.extend({
-    kind: z.literal('on_time'),
-    engineerId: z.string().min(1).optional(),
-    requestId,
-  }),
-  operationEnvelopeSchema.extend({
     kind: z.literal('eta'),
     engineerId: z.string().min(1).optional(),
     requestId,

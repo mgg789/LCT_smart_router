@@ -29,6 +29,20 @@ export function explainSelection(
   engineer: EngineerView | null,
   route: PlanRouteView | null,
 ): CaseExplanation | null {
+  if (snapshot.plan.plan?.origin === 'manual')
+    return {
+      title: 'Ручной план диспетчера',
+      facts: request
+        ? [
+            `Заявка №${request.id}: ${request.addressText}.`,
+            `Окно клиента ${formatClock(request.windowStartAt)}–${formatClock(request.windowEndAt)}.`,
+          ]
+        : [],
+      influence:
+        'Назначения и порядок сохранены диспетчером. Причина перехода и изменения доступны в журнале ручного управления.',
+      result:
+        'Время прибытия, дорожные показатели и допустимость расписания не пересчитаны. Факты выполнения сохраняются отдельно.',
+    };
   if (request) {
     if (assignment?.status === 'unassigned') {
       return explainUnassigned(snapshot, request, assignment);

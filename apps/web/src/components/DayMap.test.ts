@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { PlanRouteView } from '../api/types';
-import { projectLiveGraph } from '../domain/liveGraph';
+import { projectLiveGraph, withoutMapLunch } from '../domain/liveGraph';
 import {
   liveProgressPoints,
+  liveProgressPosition,
   liveProgressSegments,
   lunchMarkerCoordinates,
   visiblePlannedSegments,
@@ -24,19 +25,22 @@ describe('LIVE map factual projection', () => {
     };
     expect(liveProgressSegments(progress)).toEqual([{ from: anchor, to: next }]);
     expect(liveProgressPoints(progress)).toEqual([anchor]);
+    expect(liveProgressPosition(progress)).toEqual({ lat: 55.751, lon: 37.611 });
   });
 
-  it('projects lunch as both legs and the lunch vertex at once', () => {
+  it('connects visits across lunch on the map but retains lunch in the pipeline', () => {
     const lunch = { kind: 'lunch' as const, requestId: null, lat: 55.755, lon: 37.615, at: 150 };
     const progress = { phase: 'lunch' as const, origin, anchor, lunch, next, occurredAt: 150 };
-    expect(liveProgressSegments(progress)).toEqual([
-      { from: anchor, to: lunch },
-      { from: lunch, to: next },
-    ]);
-    expect(liveProgressPoints(progress)).toEqual([anchor, lunch]);
+    expect(liveProgressSegments(progress)).toEqual([{ from: anchor, to: next }]);
+    expect(liveProgressPoints(progress)).toEqual([anchor]);
+    expect(liveProgressPosition(progress)?.lat).toBeCloseTo(55.755);
+    expect(liveProgressPosition(progress)?.lon).toBeCloseTo(37.615);
+    const graph = withoutMapLunch(projectLiveGraph(null, progress));
+    expect(graph.mapNodes.some((node) => node.kind === 'lunch')).toBe(false);
+    expect(graph.timelineNodes.some((node) => node.kind === 'lunch')).toBe(true);
   });
 
-  it('moves a collocated lunch marker between its adjacent visits', () => {
+  it('never invents a location for a collocated lunch marker', () => {
     const graph = projectLiveGraph(null, {
       phase: 'traveling',
       origin,
@@ -48,8 +52,8 @@ describe('LIVE map factual projection', () => {
     const lunchIndex = graph.mapNodes.findIndex((node) => node.kind === 'lunch');
 
     const [lon, lat] = lunchMarkerCoordinates(graph.mapNodes, lunchIndex);
-    expect(lon).toBeCloseTo(37.615);
-    expect(lat).toBeCloseTo(55.755);
+    expect(lon).toBe(anchor.lon);
+    expect(lat).toBe(anchor.lat);
   });
 
   it('keeps a distinct lunch marker at its Router position', () => {

@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "checkedAt": "2026-09-21T12:45:12.501Z",
+  "completedRows": 4,
+  "owners": {
+    "MANUAL — Анна": 2,
+    "MANUAL — Борис": 2
+  },
+  "errors": [],
+  "sourceCommit": "1e1c1fa91e44d023b2fb0b7f531410c7de1aa526"
+}

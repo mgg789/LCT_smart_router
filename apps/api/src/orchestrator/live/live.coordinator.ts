@@ -1,5 +1,6 @@
 import { Injectable, Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import { AppConfigService } from '../../common/config';
+import { DemoStandService } from '../demo-stand';
 import { LiveService } from './live.service';
 
 /**
@@ -15,6 +16,7 @@ export class LiveCoordinator implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly config: AppConfigService,
     private readonly live: LiveService,
+    private readonly demoStand: DemoStandService,
   ) {}
 
   onModuleInit(): void {
@@ -33,6 +35,7 @@ export class LiveCoordinator implements OnModuleInit, OnModuleDestroy {
     if (this.inFlight) return this.inFlight;
     const current = this.live
       .advanceOnce()
+      .then(() => this.demoStand.reconcile())
       .catch((error: unknown) => {
         this.logger.warn(
           `LIVE advance failed; will retry: ${error instanceof Error ? error.message : String(error)}`,
