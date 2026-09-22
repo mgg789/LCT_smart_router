@@ -144,6 +144,8 @@ def live_osrm_from_env() -> OSRMTravel | None:
 
 
 def attach_live_roads(travel: TravelSource) -> TravelSource:
-    """Keep the prepared graph; overlay live OSRM on centroid or unknown legs."""
-    overlay = live_osrm_from_env()
+    """Keep the prepared graph; overlay the MKAD road API or live OSRM where it is configured."""
+    from core.road_api import compose_live_overlay
+
+    overlay = compose_live_overlay(live_osrm_from_env())
     return MixedTravel(travel, overlay) if overlay is not None else travel

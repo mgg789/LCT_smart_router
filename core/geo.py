@@ -518,10 +518,26 @@ class MixedTravel:
         self.provenance: TravelProvenance = getattr(overlay, "provenance", "route_api")
         self._warned_profiles: set[Transport] = set()
 
+    def quote_at(
+        self,
+        origin: GeoPoint,
+        destination: GeoPoint,
+        profile: Transport,
+        departure_at: int,
+    ) -> TravelQuote | None:
+        """Pass the departure clock through to a live road API when it replaces the graph."""
+        return self._quote(origin, destination, profile, departure_at)
+
     def _needs_overlay(
-        self, origin: GeoPoint, destination: GeoPoint, quote: TravelQuote | None
+        self, origin: GeoPoint, destination: GeoPoint, quote: TravelQuote | None, profile: Transport
     ) -> bool:
         """Upgrade centroid, approximate and missing graph legs when a better source exists."""
+        if (
+            profile == "car"
+            and getattr(self.overlay, "replaces_car_graph", False)
+            and (quote is None or quote.distance_m > 0)
+        ):
+            return True
         if quote is None or quote.provenance == "approximate":
             return True
         graph = getattr(self.travel, "graph", None)
@@ -537,13 +553,31 @@ class MixedTravel:
         self, origin: GeoPoint, destination: GeoPoint, profile: Transport
     ) -> TravelQuote | None:
         """Prefer exact road-graph costs; overlay only the legs that are not road-quality."""
-        base = self.travel.quote(origin, destination, profile)
+        return self._quote(origin, destination, profile, None)
+
+    def _quote(
+        self,
+        origin: GeoPoint,
+        destination: GeoPoint,
+        profile: Transport,
+        departure_at: int | None,
+    ) -> TravelQuote | None:
+        """Quote the base graph, then a live overlay when this leg is not already road-quality."""
+        base = (
+            self.travel.quote(origin, destination, profile)
+            if departure_at is None
+            else quote_at(self.travel, origin, destination, profile, departure_at)
+        )
         if (base is not None and base.distance_m == 0) or not self._needs_overlay(
-            origin, destination, base
+            origin, destination, base, profile
         ):
             return base
         try:
-            return self.overlay.quote(origin, destination, profile)
+            return (
+                self.overlay.quote(origin, destination, profile)
+                if departure_at is None
+                else quote_at(self.overlay, origin, destination, profile, departure_at)
+            )
         except TravelUnavailable as exc:
             if profile not in self._warned_profiles:
                 logging.getLogger(__name__).warning(

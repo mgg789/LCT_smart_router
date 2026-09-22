@@ -125,7 +125,8 @@ General options](https://project-osrm.org/docs/v5.24.0/api/#general-options).
 
 | Переменная | Назначение |
 |---|---|
-| `ROUTER_OSRM_CAR_URL` | Автомобильный профиль; при отсутствии используется старый `ROUTER_OSRM_URL` |
+| `ROUTER_ROAD_API_URL` | Низкоуровневый car API МКАД (`/route2`): дороги OSRM и его прогноз пробок. Заменяет подготовленный автомобильный граф. Метро сюда не входит |
+| `ROUTER_OSRM_CAR_URL` | Автомобильный профиль; при отсутствии используется старый `ROUTER_OSRM_URL`. Не используется для car, если задан `ROUTER_ROAD_API_URL` |
 | `ROUTER_OSRM_WALK_URL` | Отдельный пешеходный профиль |
 | `ROUTER_OSRM_BIKE_URL` | Отдельный велосипедный профиль |
 | `ROUTER_OSRM_OFFLINE=true` | Только уже подготовленный кэш, без HTTP |

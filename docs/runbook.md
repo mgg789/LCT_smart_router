@@ -114,6 +114,19 @@ Router Core имеет собственный CLI (`solve`, `serve`, `benchmark`
 контуре запускается как `serve --official-regions east southeast south_central`
 с durable-технастройками в томе `router-state`.
 
+Автомобильные плечи внутри МКАД идут в низкоуровневый API графа
+`moscow-road-graph` (`ROUTER_ROAD_API_URL`, по умолчанию
+`http://host.docker.internal:8123`). Это OSRM по дорогам плюс прогноз пробок
+самого API; метро в этот вызов не входит. Сервер API:
+
+```bash
+# osrm-routed уже слушает 127.0.0.1:5111
+python3 /path/to/moscow-road-graph/demo/server.py
+```
+
+Если API недоступен, плечо остаётся на подготовленном графе сценария.
+Пеший профиль и метро считаются отдельно.
+
 ## 4. Загрузка датасета
 
 Контур стартует пустым. Загрузка одного, нескольких или всех регионов данных
