@@ -31,6 +31,16 @@ export function PassportOffer({ token, requestId }: { token: string; requestId: 
         Паспорт сохранён · +35 баллов
       </p>
     );
+  if (data?.unavailableReason === 'ADDRESS_NOT_RESOLVED') {
+    return (
+      <p className="mt-3 text-sm text-figma-muted">
+        Не удалось определить здание для паспорта.{' '}
+        <button type="button" onClick={refresh} className="underline">
+          Повторить
+        </button>
+      </p>
+    );
+  }
   if (!data?.canFill) return null;
   return (
     <>

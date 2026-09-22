@@ -10,11 +10,12 @@ export function announcePassportSaved(): void {
 export function usePassport(token: string, audience: PassportAudience, requestId: string) {
   const [result, setResult] = useState<{
     key: string;
+    revision: number;
     data: PassportState | null;
     error: string | null;
   } | null>(null);
   const [revision, setRevision] = useState(0);
-  const key = `${audience}:${requestId}:${token}:${revision}`;
+  const key = `${audience}:${requestId}:${token}`;
   const refresh = useCallback(() => setRevision((value) => value + 1), []);
   useEffect(() => {
     let disposed = false;
@@ -24,10 +25,10 @@ export function usePassport(token: string, audience: PassportAudience, requestId
       pending = true;
       try {
         const data = await loadPassport(token, audience, requestId);
-        if (!disposed) setResult({ key, data, error: null });
+        if (!disposed) setResult({ key, revision, data, error: null });
       } catch {
         if (!disposed)
-          setResult({ key, data: null, error: 'Не удалось загрузить паспорт объекта' });
+          setResult({ key, revision, data: null, error: 'Не удалось загрузить паспорт объекта' });
       } finally {
         pending = false;
       }
@@ -42,10 +43,11 @@ export function usePassport(token: string, audience: PassportAudience, requestId
       window.removeEventListener('object-passport-saved', refresh);
       window.removeEventListener('focus', refresh);
     };
-  }, [token, audience, requestId, key, refresh]);
+  }, [token, audience, requestId, key, refresh, revision]);
   return {
     data: result?.key === key ? result.data : null,
     error: result?.key === key ? result.error : null,
+    refreshing: result?.key !== key || result.revision !== revision,
     refresh,
   };
 }
