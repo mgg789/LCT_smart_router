@@ -24,6 +24,7 @@ import { Copyable } from './Copyable';
 import type { DangerActionId } from './confirmPhrase';
 import { DataUploadModal } from './DataUploadModal';
 import { DispatcherAuthPage } from './DispatcherAuthPage';
+import { DispatcherDayResults } from './DispatcherDayResults';
 import {
   isNavLocked,
   sidebarWheelNav,
@@ -162,6 +163,7 @@ export function MainDashboardPage() {
   );
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [dangerAction, setDangerAction] = useState<DangerActionId | null>(null);
+  const [resultsOpen, setResultsOpen] = useState(false);
   const [openedRequestId, setOpenedRequestId] = useState<string | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<RegionSelection>(ALL_REGIONS);
 
@@ -626,7 +628,7 @@ export function MainDashboardPage() {
           }}
           onEndDay={() => {
             setUserMenuOpen(false);
-            setDangerAction('endDay');
+            setResultsOpen(true);
           }}
           demoStand={dash.liveWorkday?.demoStand === true}
           onRestartDay={() => {
@@ -658,6 +660,17 @@ export function MainDashboardPage() {
             setSettingsOpen(false);
           }}
         />
+        {dash.token ? (
+          <DispatcherDayResults
+            token={dash.token}
+            live={dash.liveWorkday}
+            shift={dash.snapshot?.shift}
+            open={resultsOpen}
+            onOpen={() => setResultsOpen(true)}
+            onClose={() => setResultsOpen(false)}
+            closeShift={dash.closeShift}
+          />
+        ) : null}
         <ConfirmDangerModal
           actionId={dangerAction}
           motionOn={motionOn}

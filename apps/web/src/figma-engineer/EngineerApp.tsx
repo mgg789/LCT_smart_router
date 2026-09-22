@@ -24,6 +24,7 @@ import {
   DESIGN_PREVIEW_PLAN,
   DESIGN_PREVIEW_PROFILE,
 } from './designPreview';
+import { EngineerDayResults } from './EngineerDayResults';
 import { EngineerMenu, type EngineerMenuId } from './EngineerMenu';
 import { EngineerSettings } from './EngineerSettings';
 import { engineerHeaderStamp } from './engineerClock';
@@ -257,6 +258,7 @@ export function EngineerApp({
     setActionBusy(true);
     try {
       const next = await sendEngineerLiveAction(token, action);
+      window.dispatchEvent(new Event('engineer-rewards-changed'));
       const receivedAt = Date.now();
       setError(null);
       const terminalId =
@@ -603,6 +605,7 @@ export function EngineerApp({
         {live ? (
           <LiveDayOverlay live={live} now={logicalNow} busy={actionBusy} send={applyLiveAction} />
         ) : null}
+        {live && !designPreview ? <EngineerDayResults token={token} live={live} /> : null}
         <AnimatePresence>
           {screen === 'settings' ? (
             <motion.div

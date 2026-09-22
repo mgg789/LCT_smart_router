@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { loadMonthlyPoints } from '../../api/passports';
+import { RewardDetails } from '../rewards/RewardDetails';
 
 /** Shows the compact monthly score and refreshes on saves, focus and month rollover. */
 export function MonthlyPoints({ token, engineerId }: { token: string; engineerId?: string }) {
+  const [open, setOpen] = useState(false);
   const key = `${token}:${engineerId ?? 'self'}`;
   const [result, setResult] = useState<{
     key: string;
@@ -27,27 +29,38 @@ export function MonthlyPoints({ token, engineerId }: { token: string; engineerId
     void read();
     const timer = window.setInterval(() => void read(), 30_000);
     window.addEventListener('object-passport-saved', read);
+    window.addEventListener('engineer-rewards-changed', read);
     window.addEventListener('focus', read);
     return () => {
       disposed = true;
       window.clearInterval(timer);
       window.removeEventListener('object-passport-saved', read);
+      window.removeEventListener('engineer-rewards-changed', read);
       window.removeEventListener('focus', read);
     };
   }, [token, engineerId, key]);
   const current = result?.key === key ? result : null;
   return (
-    <div
-      className="inline-flex min-h-9 items-center gap-2 rounded-full bg-figma-bee px-3 py-2 font-semibold text-figma-ink"
-      role="status"
-      aria-label={
-        current?.failed ? 'Не удалось загрузить баллы' : `${current?.points ?? '—'} баллов`
-      }
-      aria-live="polite"
-      title={current?.failed ? 'Не удалось загрузить баллы' : 'Баллы за текущий месяц'}
-    >
-      <span>{current?.points ?? '—'}</span>
-      <img src="/figma/carambola.svg" alt="" className="size-5" />
-    </div>
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="inline-flex min-h-9 items-center gap-2 rounded-full bg-figma-bee px-3 py-2 font-semibold text-figma-ink"
+        aria-label={
+          current?.failed ? 'Не удалось загрузить баллы' : `${current?.points ?? '—'} баллов`
+        }
+        aria-live="polite"
+        title={current?.failed ? 'Не удалось загрузить баллы' : 'Баллы за текущий месяц'}
+      >
+        <span>{current?.points ?? '—'}</span>
+        <img src="/figma/carambola.svg" alt="" className="size-5" />
+      </button>
+      <RewardDetails
+        token={token}
+        engineerId={engineerId}
+        open={open}
+        onClose={() => setOpen(false)}
+      />
+    </>
   );
 }

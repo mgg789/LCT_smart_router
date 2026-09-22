@@ -37,7 +37,7 @@ export const passportStateSchema = z.object({
 
 /** Monthly totals derive from persisted award history rather than a browser counter. */
 export const monthlyPointsSchema = z.object({
-  monthlyPoints: z.number().int().nonnegative(),
+  monthlyPoints: z.number().int(),
   month: z.string(),
 });
 
@@ -66,7 +66,7 @@ export function savePassport(
     `/api/v1/engineer/requests/${encodeURIComponent(requestId)}/passport`,
     passportStateSchema.extend({
       pointsAwarded: z.number().int(),
-      monthlyPoints: z.number().int().nonnegative(),
+      monthlyPoints: z.number().int(),
     }),
     token,
     { method: 'POST', body: JSON.stringify({ operationId, ...input }) },
