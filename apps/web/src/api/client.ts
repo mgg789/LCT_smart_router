@@ -471,6 +471,9 @@ export class DashboardApiError extends Error {
     readonly status: number,
     readonly path = '',
     readonly requestId: string | null = null,
+    /** The server's machine-readable `ErrorCode` (see `error-codes.ts`), when the body
+     *  carried one -- null for a transport failure or a body that predates this field. */
+    readonly code: string | null = null,
   ) {
     super(message);
     this.name = 'DashboardApiError';
@@ -1233,6 +1236,7 @@ export async function requestJson<T>(
         response.status,
         path,
         response.headers.get('x-request-id'),
+        apiErrorCode(body),
       );
     }
     const parsed = schema.safeParse(body);
@@ -1277,6 +1281,16 @@ function apiErrorMessage(body: unknown, status: number): string {
     return parsed.data.error;
   }
   return parsed.data.error?.message ?? `HTTP ${status}`;
+}
+
+/** Pulls the `ErrorCode` out of `{ error: { code } }` (see `AllExceptionsFilter`), when the
+ *  body has that shape -- null for anything else, including a legacy bare-message body. */
+function apiErrorCode(body: unknown): string | null {
+  const parsed = z
+    .object({ error: z.object({ code: z.string() }).passthrough().optional() })
+    .passthrough()
+    .safeParse(body);
+  return parsed.success ? (parsed.data.error?.code ?? null) : null;
 }
 
 function moscowDate(date: Date): string {

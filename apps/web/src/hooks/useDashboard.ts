@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  type ChatStreamOutcome,
+  type DispatchChatTarget,
   type DispatchChatView,
   finishDispatchChat as finishDispatchChatApi,
   loadDispatchChats,
+  openDispatchChat as openDispatchChatApi,
+  readDispatchChat as readDispatchChatApi,
   sendDispatchChatMessage as sendDispatchChatMessageApi,
+  streamDispatcherChatEvents,
 } from '../api/ai';
 import {
   cancelDispatchRequest,
@@ -75,6 +80,7 @@ import {
   saveDay,
   startRecoverySession,
 } from '../domain/resilience';
+import { useChatStream } from './useChatStream';
 
 const SESSION_KEY = 'lct.dispatcher.session';
 const DEFAULT_REBUILD_TIMEOUT_MS = 90_000;
@@ -285,68 +291,161 @@ export function useDashboard() {
   }, [handleSessionFailure, reportFailure, token]);
 
   /** Reads conversations currently handed to a human dispatcher, for the «Чаты» tab and its
-   * nav badge. Follows the same in-flight/generation guard as `refresh`/`refreshLive`. */
-  const refreshDispatchChats = useCallback(async () => {
-    if (!token || sourceRef.current !== 'live' || dispatchChatsInFlight.current) {
-      return null;
-    }
-    const generation = dispatchChatsGeneration.current;
-    dispatchChatsInFlight.current = true;
-    setDispatchChatsLoading(true);
-    try {
-      const next = await loadDispatchChats(token);
-      if (generation !== dispatchChatsGeneration.current) return null;
-      setDispatchChats(next.chats);
-      setDispatchChatsError(null);
-      return next.chats;
-    } catch (cause) {
-      if (generation !== dispatchChatsGeneration.current) return null;
-      reportFailure(cause);
-      if (cause instanceof DashboardApiError && (cause.status === 401 || cause.status === 403)) {
-        handleSessionFailure('Сессия закончилась. Войдите снова.');
+   * nav badge. Follows the same in-flight/generation guard as `refresh`/`refreshLive`.
+   * `closedLimit` forwards straight to the endpoint; omitted, the server's own default (30
+   * finished chats) applies. */
+  const refreshDispatchChats = useCallback(
+    async (closedLimit?: number) => {
+      if (!token || sourceRef.current !== 'live' || dispatchChatsInFlight.current) {
         return null;
       }
-      setDispatchChatsError(errorMessage(cause));
-      return null;
-    } finally {
-      if (generation === dispatchChatsGeneration.current) {
-        dispatchChatsInFlight.current = false;
-        setDispatchChatsLoading(false);
+      const generation = dispatchChatsGeneration.current;
+      dispatchChatsInFlight.current = true;
+      setDispatchChatsLoading(true);
+      try {
+        const next = await loadDispatchChats(token, closedLimit);
+        if (generation !== dispatchChatsGeneration.current) return null;
+        setDispatchChats(next.chats);
+        setDispatchChatsError(null);
+        return next.chats;
+      } catch (cause) {
+        if (generation !== dispatchChatsGeneration.current) return null;
+        reportFailure(cause);
+        if (cause instanceof DashboardApiError && (cause.status === 401 || cause.status === 403)) {
+          handleSessionFailure('Сессия закончилась. Войдите снова.');
+          return null;
+        }
+        setDispatchChatsError(errorMessage(cause));
+        return null;
+      } finally {
+        if (generation === dispatchChatsGeneration.current) {
+          dispatchChatsInFlight.current = false;
+          setDispatchChatsLoading(false);
+        }
       }
-    }
-  }, [handleSessionFailure, reportFailure, token]);
-
-  /** Sends the dispatcher's own reply into a handed-over conversation and folds it into
-   * local state immediately -- the next poll reconciles with the server's copy. */
-  const sendDispatchChatMessage = useCallback(
-    async (chatId: string, text: string) => {
-      if (!token) return;
-      const message = await sendDispatchChatMessageApi(token, chatId, crypto.randomUUID(), text);
-      setDispatchChats((current) =>
-        (current ?? []).map((chat) =>
-          chat.conversation.id === chatId
-            ? { ...chat, messages: [...chat.messages, message.message], unreadCount: 0 }
-            : chat,
-        ),
-      );
     },
-    [token],
+    [handleSessionFailure, reportFailure, token],
   );
 
-  /** Returns one conversation to the AI. History stays in place -- nothing here deletes it. */
-  const finishDispatchChat = useCallback(
-    async (chatId: string) => {
-      if (!token) return;
-      await finishDispatchChatApi(token, chatId, crypto.randomUUID());
-      await refreshDispatchChats();
+  /** Replaces one row wholesale with the server's own copy -- every write endpoint below
+   * (`open`/`send`/`finish`/`read`) now returns its committed `chat`, so there is no more
+   * hand-patching individual fields that can drift from what the server actually stored. */
+  const replaceDispatchChat = useCallback((chat: DispatchChatView) => {
+    setDispatchChats((current) => {
+      const list = current ?? [];
+      const index = list.findIndex((item) => item.handoff.id === chat.handoff.id);
+      if (index === -1) return [chat, ...list];
+      const next = list.slice();
+      next[index] = chat;
+      return next;
+    });
+  }, []);
+
+  /** Opens (or re-enters) a chat with a request's customer or an engineer from the
+   * dashboard's own «Написать» buttons, rather than the assistant escalating. Returns the
+   * opened row so the caller can jump the «Чаты» tab straight to it. */
+  const openDispatchChat = useCallback(
+    async (target: DispatchChatTarget, text?: string): Promise<DispatchChatView> => {
+      if (!token) throw new Error('Открытие чата доступно только в живом контуре');
+      const result = await openDispatchChatApi(token, crypto.randomUUID(), target, text);
+      replaceDispatchChat(result.chat);
+      return result.chat;
     },
-    [refreshDispatchChats, token],
+    [replaceDispatchChat, token],
+  );
+
+  /** Sends the dispatcher's own reply into a handed-over conversation. */
+  const sendDispatchChatMessage = useCallback(
+    async (conversationId: string, text: string) => {
+      if (!token) return;
+      const result = await sendDispatchChatMessageApi(
+        token,
+        conversationId,
+        crypto.randomUUID(),
+        text,
+      );
+      replaceDispatchChat(result.chat);
+    },
+    [replaceDispatchChat, token],
+  );
+
+  /** Returns one conversation to the AI. History stays in place -- nothing here deletes it.
+   * The row stays in the list (now `closed`), it does not disappear. */
+  const finishDispatchChat = useCallback(
+    async (conversationId: string) => {
+      if (!token) return;
+      const result = await finishDispatchChatApi(token, conversationId, crypto.randomUUID());
+      replaceDispatchChat(result.chat);
+    },
+    [replaceDispatchChat, token],
+  );
+
+  /** Clears a chat's unread badge up to `seq`. A `null` response (chat not found, e.g. an
+   * already-finished cursor that moved on) is a legitimate no-op, not a failure. */
+  const markDispatchChatRead = useCallback(
+    async (conversationId: string, seq: number) => {
+      if (!token) return;
+      const result = await readDispatchChatApi(token, conversationId, crypto.randomUUID(), seq);
+      if (result.chat) replaceDispatchChat(result.chat);
+    },
+    [replaceDispatchChat, token],
   );
 
   const dispatchChatsUnreadCount = useMemo(
     () => (dispatchChats ?? []).reduce((sum, chat) => sum + chat.unreadCount, 0),
     [dispatchChats],
   );
+
+  /** Folds one live chat-stream frame into local state without a round trip: a `message`
+   * lands directly in its still-open row (deduplicated by `seq`, since a message already
+   * fetched by the initial `refreshDispatchChats` may also arrive over the stream), while a
+   * `state` event (a handover opening, answered, or closed) changes which rows exist at all,
+   * so it falls back to a full list refresh rather than trying to patch one row in place. A
+   * malformed frame is dropped here -- the next `state` event or poll reconciles either way. */
+  const handleChatStreamEvent = useCallback(
+    (outcome: ChatStreamOutcome) => {
+      if (!outcome.ok) return;
+      const event = outcome.event;
+      if (event.type === 'state') {
+        void refreshDispatchChats();
+        return;
+      }
+      setDispatchChats((current) => {
+        if (!current) return current;
+        let changed = false;
+        const next = current.map((chat) => {
+          if (chat.conversation.id !== event.conversationId || chat.handoff.state === 'closed') {
+            return chat;
+          }
+          if (chat.messages.some((item) => item.seq === event.message.seq)) return chat;
+          changed = true;
+          return {
+            ...chat,
+            messages: [...chat.messages, event.message].sort((a, b) => a.seq - b.seq),
+            unreadCount: event.message.author === 'user' ? chat.unreadCount + 1 : chat.unreadCount,
+          };
+        });
+        return changed ? next : current;
+      });
+    },
+    [refreshDispatchChats],
+  );
+
+  /** Pre-binds the token the hook's own `connect` contract expects -- `useChatStream` only
+   * ever invokes this while `enabled` (which requires a token) is true, so the fallback is
+   * never actually exercised. */
+  const connectDispatchChatStream = useCallback(
+    (onEvent: (outcome: ChatStreamOutcome) => void, signal: AbortSignal) =>
+      streamDispatcherChatEvents(token ?? '', onEvent, signal),
+    [token],
+  );
+
+  const { connected: dispatchChatStreamConnected } = useChatStream({
+    token,
+    enabled: token !== null && source === 'live',
+    connect: connectDispatchChatStream,
+    onEvent: handleChatStreamEvent,
+  });
 
   useEffect(() => {
     void refresh();
@@ -359,9 +458,12 @@ export function useDashboard() {
   useEffect(() => {
     if (!token || source === 'demo') return;
     void refreshDispatchChats();
+    // The live chat stream already pushes messages and state changes as they happen; this
+    // poll is only the fallback for while it is not connected (startup, a dropped socket).
+    if (dispatchChatStreamConnected) return;
     const interval = window.setInterval(() => void refreshDispatchChats(), 8_000);
     return () => window.clearInterval(interval);
-  }, [token, source, refreshDispatchChats]);
+  }, [token, source, refreshDispatchChats, dispatchChatStreamConnected]);
 
   useEffect(() => {
     if (!token || source === 'demo' || rebuilding || liveWorkday?.workday.status === 'running') {
@@ -1344,8 +1446,10 @@ export function useDashboard() {
     dispatchChatsError,
     dispatchChatsUnreadCount,
     refreshDispatchChats,
+    openDispatchChat,
     sendDispatchChatMessage,
     finishDispatchChat,
+    markDispatchChatRead,
     engineers,
     unassigned,
     selectedEngineerId,

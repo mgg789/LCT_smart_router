@@ -1,7 +1,18 @@
-import { Body, Controller, Get, type MessageEvent, Param, Post, Query, Sse } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Logger,
+  type MessageEvent,
+  Param,
+  Post,
+  Query,
+  Sse,
+} from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   catchError,
+  EMPTY,
   endWith,
   ignoreElements,
   interval,
@@ -17,7 +28,9 @@ import {
   AiOperationService,
   type AiRunEvent,
   BudgetService,
+  ChatEventBus,
   ConversationService,
+  DispatchChatsService,
   isTerminalAiEvent,
   type OperationOutcomeView,
   RoleProfileService,
@@ -40,6 +53,8 @@ import {
   toConversationView,
   toMessageView,
 } from './ai-view';
+import { type ChatStreamEvent, chatEventStream, toChatMessageEvent } from './chat-stream';
+import { toHandoffView } from './dispatch-chat-view';
 import {
   type AfterSeqQueryDto,
   afterSeqQuerySchema,
@@ -54,6 +69,7 @@ import {
   type SuggestAlertResolutionDto,
   suggestAlertResolutionSchema,
 } from './dto/ai.dto';
+import { fromAsync } from './sse';
 
 interface SendMessageResponse {
   readonly runId: string | null;
@@ -96,7 +112,11 @@ export class AiController {
     private readonly config: AppConfigService,
     private readonly explain: ExplainService,
     private readonly alertResolver: AlertResolverService,
+    private readonly chatEvents: ChatEventBus,
+    private readonly dispatchChats: DispatchChatsService,
   ) {}
+
+  private readonly logger = new Logger(AiController.name);
 
   @Post('explain')
   @ApiOperation({
@@ -208,9 +228,30 @@ export class AiController {
             authorAccountId: accountId,
           },
         );
-        return { messageSeq: message.seq };
+        // A message written into a handed-over dialogue is the dispatcher's to answer,
+        // so the chat goes back to "needs a reply" and their badge counts it. Returns
+        // `null` for an ordinary assistant conversation, which is not their business.
+        const handoff = await this.dispatchChats.markAwaitingDispatcher(context.tx, conversationId);
+        return { messageSeq: message.seq, messageId: message.id, handoffId: handoff?.id ?? null };
       },
     );
+
+    // Published after the transaction commits, never inside it (`ChatEventBus`'s own note
+    // on why), and not at all on a replayed retry -- the first attempt already announced
+    // this message, and a dispatcher seeing it twice would read it as the person repeating
+    // themselves.
+    if (!outcome.replayed) {
+      const written = await this.prisma.aiMessage.findUnique({
+        where: { id: outcome.result.messageId },
+      });
+      if (written) {
+        this.chatEvents.publishMessage({
+          conversationId,
+          handoffId: outcome.result.handoffId,
+          message: written,
+        });
+      }
+    }
 
     if (conversation.mode === 'dispatcher') {
       // The assistant stays silent for the rest of this dialogue (schema.prisma's own
@@ -248,6 +289,56 @@ export class AiController {
       handedOver: false,
       quota: started.quota,
     };
+  }
+
+  /**
+   * Server-sent events for one dialogue: every message written into it, by whoever, plus
+   * the current mode whenever it changes hands.
+   *
+   * This is what makes a dispatcher's reply appear in the customer's chat the moment it is
+   * sent, with no run to attach to -- a human answering is not a model call, so there is no
+   * `runId` and `runs/:runId/events` has nothing to stream. Resumable exactly like that
+   * endpoint (`?afterSeq=` is the last message `seq` the reader rendered), and open to both
+   * modes on purpose: a reader does not have to tear the connection down and open another
+   * one when the assistant hands the dialogue over or takes it back.
+   */
+  @Sse('conversations/:id/events')
+  @ApiOperation({ summary: 'Server-sent events for one dialogue, resumable with ?afterSeq=' })
+  async conversationEvents(
+    @CurrentActor() actor: Actor,
+    @Param('id') conversationId: string,
+    @Query(zodBody(afterSeqQuerySchema)) query: AfterSeqQueryDto,
+  ): Promise<Observable<MessageEvent>> {
+    await this.assertOwned(actor, conversationId);
+
+    const heartbeatMs = this.config.get('AI_SSE_HEARTBEAT_MS');
+    const heartbeat$: Observable<MessageEvent> = interval(heartbeatMs).pipe(
+      map(() => ({ type: 'heartbeat', data: {} }) satisfies MessageEvent),
+    );
+
+    const main$: Observable<MessageEvent> = chatEventStream({
+      live: this.chatEvents.forConversation(conversationId),
+      replay: () => this.replayConversation(conversationId, query.afterSeq),
+    }).pipe(
+      map(toChatMessageEvent),
+      catchError((error: unknown) => {
+        // The global exception filter answers with `response.status().json()`, which after
+        // SSE headers are sent is `ERR_HTTP_HEADERS_SENT` and a dead socket, so this stream
+        // must never error. Unlike a run, a chat has no terminal event to end on honestly:
+        // completing the response is what a reader already handles, because it is also what
+        // an ordinary network drop looks like, and their next `?afterSeq=` loses nothing.
+        this.logger.error(
+          `Chat stream for conversation ${conversationId} failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        return EMPTY;
+      }),
+      share(),
+    );
+    const stop$ = main$.pipe(ignoreElements(), endWith(true));
+
+    return merge(main$, heartbeat$).pipe(takeUntil(stop$));
   }
 
   @Sse('runs/:runId/events')
@@ -395,6 +486,45 @@ export class AiController {
     }
   }
 
+  /**
+   * What a reader missed, as stream events: the messages after their cursor, then the
+   * dialogue's current mode and chat.
+   *
+   * The state event comes last on purpose -- it is the present, and the messages are the
+   * past. `at` is the moment of replay rather than of writing; each message carries its own
+   * `createdAt`, which is the timestamp a reader renders.
+   */
+  private async replayConversation(
+    conversationId: string,
+    afterSeq: number,
+  ): Promise<ChatStreamEvent[]> {
+    const at = this.clock.nowSeconds();
+    const [messages, conversation, handoff] = await Promise.all([
+      this.conversations.listMessages(conversationId, afterSeq),
+      this.prisma.aiConversation.findUnique({ where: { id: conversationId } }),
+      this.prisma.aiHandoff.findFirst({
+        where: { conversationId },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+    const events: ChatStreamEvent[] = messages.map((message) => ({
+      type: 'message',
+      at,
+      conversationId,
+      message: toMessageView(message),
+    }));
+    if (conversation) {
+      events.push({
+        type: 'state',
+        at,
+        conversationId,
+        mode: conversation.mode,
+        handoff: handoff ? toHandoffView(handoff) : null,
+      });
+    }
+    return events;
+  }
+
   private requireAccount(actor: Actor): string {
     if (!actor.accountId) {
       throw SysError.forbidden(
@@ -419,28 +549,4 @@ export class AiController {
 
 function toMessageEvent(event: AiRunEvent): MessageEvent {
   return { type: event.type, data: event, id: String(event.seq) };
-}
-
-/** Adapts an async generator to an RxJS `Observable`, since `Sse()` needs one. */
-function fromAsync<T>(source: AsyncGenerator<T>): Observable<T> {
-  return new Observable<T>((subscriber) => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        for await (const value of source) {
-          if (cancelled) {
-            return;
-          }
-          subscriber.next(value);
-        }
-        subscriber.complete();
-      } catch (error) {
-        subscriber.error(error);
-      }
-    })();
-    return () => {
-      cancelled = true;
-      void source.return?.(undefined);
-    };
-  });
 }

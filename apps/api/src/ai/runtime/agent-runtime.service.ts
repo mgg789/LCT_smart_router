@@ -21,6 +21,7 @@ import {
 import { ToolRegistry } from '../tools/tool.registry';
 import type { AiRunEvent, AiRunState } from './ai-event.types';
 import { type BudgetReservation, BudgetService } from './budget.service';
+import { ChatEventBus } from './chat-event.bus';
 import { ConversationService } from './conversation.service';
 import { RunEventBus } from './run-event.bus';
 import { type RunHandle, RunRegistry } from './run-registry';
@@ -81,6 +82,7 @@ export class AgentRuntimeService implements OnModuleInit {
     @Inject(AI_FALLBACK_PROVIDER) private readonly fallbackProvider: LlmProvider | null,
     private readonly toolDispatcher: ToolDispatcher,
     private readonly toolRegistry: ToolRegistry,
+    private readonly chatBus: ChatEventBus,
   ) {}
 
   /**
@@ -297,6 +299,16 @@ export class AgentRuntimeService implements OnModuleInit {
             kind: 'text',
             text,
             actions: [],
+          });
+          // Also announced on the conversation channel, so a second tab of the same chat
+          // -- which has no handle on this run and therefore receives none of its events
+          // -- still sees the answer arrive. `handoffId` is null because the assistant
+          // only ever speaks in a dialogue no human has taken over, so this never reaches
+          // the dispatcher's inbox.
+          this.chatBus.publishMessage({
+            conversationId: conversation.id,
+            handoffId: null,
+            message: messageRow,
           });
           break;
         }

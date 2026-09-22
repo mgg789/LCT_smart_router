@@ -15,6 +15,7 @@ import {
 } from '../../routing/router-gateway';
 import { AiOperationService } from '../operations';
 import type { LlmToolSpec } from '../provider';
+import { ChatEventBus } from '../runtime/chat-event.bus';
 import { RunEventBus } from '../runtime/run-event.bus';
 import { RunRegistry } from '../runtime/run-registry';
 import { StopService } from '../runtime/stop.service';
@@ -53,6 +54,7 @@ export class ToolRegistry {
     stop: StopService,
     bus: RunEventBus,
     registry: RunRegistry,
+    chatBus: ChatEventBus,
     prisma: PrismaService,
     plans: AppliedPlanService,
     control: ControlStateService,
@@ -62,7 +64,7 @@ export class ToolRegistry {
     builder: SnapshotBuilder,
   ) {
     const searchDocumentation = buildSearchDocumentationTool(knowledge);
-    const callDispatchHelper = buildCallDispatchHelperTool({ uow, stop, bus, registry });
+    const callDispatchHelper = buildCallDispatchHelperTool({ uow, stop, bus, registry, chatBus });
     const clientTools = buildClientTools({ aiOperations, requests, config });
     const engineerTools = buildEngineerTools({ aiOperations, live, config });
     const dispatcherReadTools = buildDispatcherReadTools({

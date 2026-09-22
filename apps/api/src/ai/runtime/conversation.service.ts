@@ -18,6 +18,9 @@ export interface GetOrCreateConversationInput {
   readonly roleProfile: AiRoleProfile;
   /** Which request/engineer/alert the dialogue was opened about, if any. */
   readonly contextRef?: Record<string, unknown> | null;
+  /** Used only when a conversation is created; an existing one keeps the title it has,
+   *  so reopening a chat never renames a dialogue under the person reading it. */
+  readonly title?: string | null;
 }
 
 export interface AppendMessageInput {
@@ -57,27 +60,39 @@ export class ConversationService {
    * has no row yet to lock.
    */
   async getOrCreate(input: GetOrCreateConversationInput): Promise<AiConversation> {
-    return this.uow.run(async (tx) => {
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`ai-conv:${input.accountId}:${input.roleProfile}`}))`;
-      const existing = await tx.aiConversation.findFirst({
-        where: { accountId: input.accountId, roleProfile: input.roleProfile, closedAt: null },
-        orderBy: { lastMessageAt: 'desc' },
-      });
-      if (existing) {
-        return existing;
-      }
-      const now = BigInt(this.clock.nowSeconds());
-      return tx.aiConversation.create({
-        data: {
-          accountId: input.accountId,
-          role: input.role,
-          roleProfile: input.roleProfile,
-          ...(input.contextRef ? { contextRef: input.contextRef as object } : {}),
-          createdAt: now,
-          updatedAt: now,
-          lastMessageAt: now,
-        },
-      });
+    return this.uow.run(async (tx) => this.getOrCreateInTx(tx, input));
+  }
+
+  /**
+   * The same find-or-create, joined to a transaction the caller already owns.
+   *
+   * A dispatcher opening a chat with a client has to create that client's conversation,
+   * the handover and the opening message in one unit, so it cannot call
+   * {@link getOrCreate} -- that would open a second transaction, and the advisory lock it
+   * takes there would sit behind row locks held by the first one. Same lock, same
+   * predicate, one transaction.
+   */
+  async getOrCreateInTx(tx: Tx, input: GetOrCreateConversationInput): Promise<AiConversation> {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`ai-conv:${input.accountId}:${input.roleProfile}`}))`;
+    const existing = await tx.aiConversation.findFirst({
+      where: { accountId: input.accountId, roleProfile: input.roleProfile, closedAt: null },
+      orderBy: { lastMessageAt: 'desc' },
+    });
+    if (existing) {
+      return existing;
+    }
+    const now = BigInt(this.clock.nowSeconds());
+    return tx.aiConversation.create({
+      data: {
+        accountId: input.accountId,
+        role: input.role,
+        roleProfile: input.roleProfile,
+        ...(input.contextRef ? { contextRef: input.contextRef as object } : {}),
+        ...(input.title ? { title: input.title } : {}),
+        createdAt: now,
+        updatedAt: now,
+        lastMessageAt: now,
+      },
     });
   }
 

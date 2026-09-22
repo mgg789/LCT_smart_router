@@ -13,14 +13,17 @@ import {
   type AiRunState,
   type AiStreamOutcome,
   applyAiOperation,
+  type ChatStreamOutcome,
   cancelAiOperation,
   createAiConversation,
   loadAiMessages,
   sendAiMessage,
   stopAiRun,
   streamAssistantRun,
+  streamConversationEvents,
 } from '../api/ai';
 import { DashboardApiError } from '../api/client';
+import { useChatStream } from './useChatStream';
 
 /** Where the chat panel is mounted. Drives the role profile a new conversation opens as. */
 export type AssistantSurface = 'client' | 'engineer' | 'dispatcher' | 'lab';
@@ -229,14 +232,24 @@ export function useAssistantChat({
     });
   }, []);
 
-  /** Adds or replaces a server-confirmed message and advances the resume cursor. */
+  /**
+   * Adds or replaces a server-confirmed message and advances the resume cursor.
+   *
+   * Matches on `id` first -- the ordinary case, since the same persisted message always
+   * carries the same real id everywhere it is delivered from (a run event's `messageId`,
+   * the chat stream's `message.id`, a poll's `AiMessage.id`). It also matches on `seq`: the
+   * optimistic local echo (`sendMessage` below) never gets a real id, only a real `seq` once
+   * the send resolves, so the chat stream's own copy of that same user message -- which does
+   * carry the real id, and can arrive before or after the send's own response -- has to be
+   * recognised as the same message by `seq` alone. Either way exactly one row survives.
+   */
   const appendAuthoritative = useCallback((message: AssistantChatMessage) => {
     setMessages((current) => {
-      const index = current.findIndex((item) => item.id === message.id);
-      if (index === -1) return [...current, message];
-      const next = current.slice();
-      next[index] = message;
-      return next;
+      const withoutDuplicate = current.filter(
+        (item) =>
+          item.id !== message.id && !(Number.isFinite(message.seq) && item.seq === message.seq),
+      );
+      return [...withoutDuplicate, message].sort((a, b) => a.seq - b.seq);
     });
     if (message.seq > lastMessageSeqRef.current) lastMessageSeqRef.current = message.seq;
   }, []);
@@ -489,16 +502,69 @@ export function useAssistantChat({
     };
   }, [token, key, surface, assistMode, appendAuthoritative, persist, runStream]);
 
-  // The dispatcher handover poll: only while a human, not the model, owns this dialogue.
+  // Bound to the *current* conversation and read cursor on every (re)connect attempt --
+  // `useChatStream` calls this afresh on each attempt, so a reconnect after a drop resumes
+  // from wherever this reader has actually rendered up to, not from wherever it started.
+  const connectChatStream = useCallback(
+    (onEvent: (outcome: ChatStreamOutcome) => void, signal: AbortSignal) => {
+      const conv = conversationRef.current;
+      if (!token || !conv) return Promise.resolve();
+      return streamConversationEvents(conv.id, token, lastMessageSeqRef.current, onEvent, signal);
+    },
+    [token],
+  );
+
+  const handleChatStreamEvent = useCallback(
+    (outcome: ChatStreamOutcome) => {
+      if (!outcome.ok) return; // a malformed or contract-mismatched frame has nothing to fold in
+      const event = outcome.event;
+      switch (event.type) {
+        case 'message':
+          // Also clears a still-streaming assistant placeholder if it finished on this side
+          // before the run stream's own `message` event got here -- both feeds carry it.
+          setStreaming((current) => (current?.id === event.message.id ? null : current));
+          appendAuthoritative(messageFromApi(event.message));
+          break;
+        case 'state':
+          updateConversation((prev) => ({ ...prev, mode: event.mode }));
+          setHandoffStatus(
+            event.mode === 'dispatcher'
+              ? event.handoff?.state === 'waiting'
+                ? 'waiting'
+                : 'answered'
+              : null,
+          );
+          break;
+      }
+      persist({});
+    },
+    [appendAuthoritative, persist, updateConversation],
+  );
+
+  /** The primary path for a dispatcher-carried dialogue (`pollDispatcherMessages` below is
+   *  only its fallback): every message and handover change, for as long as a conversation is
+   *  open, regardless of which mode it is in right now. A dispatcher-initiated chat needs no
+   *  special case here -- it is just a `state` event flipping the mode, followed by `message`
+   *  events, exactly like every other handover. */
+  const { connected: chatStreamConnected } = useChatStream({
+    token,
+    enabled: conversation !== null,
+    connect: connectChatStream,
+    onEvent: handleChatStreamEvent,
+  });
+
+  // The dispatcher handover poll: only while a human, not the model, owns this dialogue, and
+  // only as the fallback for a proxy that buffers SSE -- it stops the moment the chat stream
+  // above is connected, which is the primary path.
   useEffect(() => {
-    if (!token || conversation?.mode !== 'dispatcher') return;
+    if (!token || conversation?.mode !== 'dispatcher' || chatStreamConnected) return;
     const generation = generationRef.current;
     const timer = window.setInterval(
       () => void pollDispatcherMessages(generation),
       DISPATCHER_POLL_MS,
     );
     return () => window.clearInterval(timer);
-  }, [token, conversation?.mode, pollDispatcherMessages]);
+  }, [token, conversation?.mode, chatStreamConnected, pollDispatcherMessages]);
 
   const sendMessage = useCallback(
     async (text: string) => {
@@ -532,13 +598,20 @@ export function useAssistantChat({
           await pollDispatcherMessages(generationRef.current);
           return;
         }
-        // `messageSeq` is the seq the server just assigned to this user message.
-        setMessages((current) =>
-          current.map((item) =>
-            item.id === localId ? { ...item, seq: result.messageSeq, pending: false } : item,
-          ),
-        );
-        lastMessageSeqRef.current = Math.max(lastMessageSeqRef.current, result.messageSeq);
+        // `messageSeq` is the seq the server just assigned to this user message. Routed
+        // through `appendAuthoritative`, not a plain patch, so it also absorbs the chat
+        // stream's own copy of this same message if that already arrived first (see that
+        // function's own note on the race).
+        appendAuthoritative({
+          id: localId,
+          seq: result.messageSeq,
+          author: 'user',
+          kind: 'text',
+          text: trimmed,
+          actions: [],
+          createdAt: localMessage.createdAt,
+          pending: false,
+        });
         setQuota(result.quota);
         if (result.quota.remainingMessages <= 0) setUnavailable('quota');
         persist({ runId: result.runId, lastEventSeq: 0 });
@@ -557,7 +630,7 @@ export function useAssistantChat({
         setSending(false);
       }
     },
-    [token, conversation, sending, persist, runStream, pollDispatcherMessages],
+    [token, conversation, sending, persist, runStream, pollDispatcherMessages, appendAuthoritative],
   );
 
   const stop = useCallback(async () => {

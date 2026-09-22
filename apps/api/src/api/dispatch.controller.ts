@@ -1,12 +1,38 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Logger,
+  type MessageEvent,
+  Param,
+  Patch,
+  Post,
+  Put,
+  Query,
+  Sse,
+} from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  catchError,
+  EMPTY,
+  endWith,
+  ignoreElements,
+  interval,
+  map,
+  merge,
+  Observable,
+  share,
+  takeUntil,
+} from 'rxjs';
 import { EvidenceReader } from '../ai/explain';
-import { DispatchChatsService } from '../ai/runtime';
+import { ChatEventBus, type DispatchChatRow, DispatchChatsService } from '../ai/runtime';
 import { type Actor, CurrentActor, Roles } from '../auth';
 import { AppConfigService } from '../common/config';
 import { SysError } from '../common/errors';
 import { Clock } from '../common/time';
 import { zodBody } from '../common/validation';
+import type { AiMessage } from '../generated/prisma/client';
 import { OperationsService } from '../operations';
 import { AlertsService } from '../orchestrator/alerts';
 import { DemoStandService } from '../orchestrator/demo-stand';
@@ -45,6 +71,7 @@ import {
   toConversationView,
   toMessageView,
 } from './ai-view';
+import { chatEventStream, toChatMessageEvent } from './chat-stream';
 import { type DispatchChatView, toDispatchChatView } from './dispatch-chat-view';
 import {
   type CloseShiftDto,
@@ -65,6 +92,12 @@ import {
 import {
   type FinishDispatchChatDto,
   finishDispatchChatSchema,
+  type ListDispatchChatsQueryDto,
+  listDispatchChatsQuerySchema,
+  type OpenDispatchChatDto,
+  openDispatchChatSchema,
+  type ReadDispatchChatDto,
+  readDispatchChatSchema,
   type SendDispatchChatMessageDto,
   sendDispatchChatMessageSchema,
 } from './dto/dispatch-chat.dto';
@@ -161,10 +194,13 @@ export class DispatchController {
     private readonly live: LiveService,
     private readonly evidence: EvidenceReader,
     private readonly dispatchChats: DispatchChatsService,
+    private readonly chatBus: ChatEventBus,
     private readonly dispatcherSettings: DispatcherSettingsService,
     private readonly geocoding: GeocodingService,
     private readonly mapRouting: MapRoutingService,
   ) {}
+
+  private readonly logger = new Logger(DispatchController.name);
 
   @Get('live')
   @ApiOperation({ summary: 'Durable LIVE workday state for the dispatcher dashboard' })
@@ -186,27 +222,127 @@ export class DispatchController {
   }
 
   /**
-   * DF-19's dispatcher-facing surface: conversations currently handed from the AI to a
-   * human. Only `dispatcher`-mode conversations appear -- opening this page is a read and
-   * changes nothing (context/36 section 9.1's "Открытие вкладки диспетчером не является
-   * условием выключения агента").
+   * The dispatcher's chat list: dialogues a human is carrying right now, plus the ones
+   * they have already finished.
+   *
+   * Finished chats stay because ending one is not deleting it (context/36 section 9.3) --
+   * the dispatcher has to be able to re-read what was agreed with a customer at eleven
+   * o'clock. A closed row shows the dialogue as it stood when it was closed, never the
+   * messages the assistant has exchanged since.
+   *
+   * Opening this page is a read and changes nothing: it is explicitly not what switches
+   * the agent off (context/36 section 9.1, «Открытие вкладки диспетчером не является
+   * условием выключения агента»).
    */
   @Get('chats')
-  @ApiOperation({ summary: 'Conversations currently handed from the AI to a dispatcher' })
-  async listChats(): Promise<{ chats: DispatchChatView[] }> {
-    const rows = await this.dispatchChats.listActive();
+  @ApiOperation({ summary: 'Chats with clients and engineers: live ones, then finished ones' })
+  async listChats(
+    @Query(zodBody(listDispatchChatsQuerySchema)) query: ListDispatchChatsQueryDto,
+  ): Promise<{ chats: DispatchChatView[] }> {
+    const rows = await this.dispatchChats.list({ closedLimit: query.closedLimit });
     return { chats: rows.map(toDispatchChatView) };
   }
 
+  /**
+   * Server-sent events for every chat a human is carrying: each message as it is written,
+   * and each change of hands.
+   *
+   * Carries no catch-up read of its own. A dispatcher's list is a page of many dialogues,
+   * and the honest way to resume it after a gap is `GET /dispatch/chats`, which returns
+   * every episode with its unread count already computed -- replaying a per-conversation
+   * cursor here would mean the browser holding one cursor per chat and still having to
+   * refetch for any chat it had not yet seen.
+   */
+  @Sse('chats/events')
+  @ApiOperation({ summary: 'Live messages across every chat handed to the dispatcher' })
+  chatEvents(): Observable<MessageEvent> {
+    const heartbeatMs = this.config.get('AI_SSE_HEARTBEAT_MS');
+    const heartbeat$: Observable<MessageEvent> = interval(heartbeatMs).pipe(
+      map(() => ({ type: 'heartbeat', data: {} }) satisfies MessageEvent),
+    );
+
+    const main$: Observable<MessageEvent> = chatEventStream({
+      live: this.chatBus.inbox(),
+      replay: async () => [],
+    }).pipe(
+      map(toChatMessageEvent),
+      catchError((error: unknown) => {
+        // After SSE headers are sent the global exception filter can only produce
+        // `ERR_HTTP_HEADERS_SENT` and a dead socket, so this stream never errors: it ends,
+        // which is what an ordinary network drop looks like, and the browser reconnects and
+        // refetches the list.
+        this.logger.error(
+          `Dispatcher chat stream failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+        return EMPTY;
+      }),
+      share(),
+    );
+    const stop$ = main$.pipe(ignoreElements(), endWith(true));
+
+    return merge(main$, heartbeat$).pipe(takeUntil(stop$));
+  }
+
+  /**
+   * Opens a chat with the client of a request, or with an engineer, from the dashboard.
+   *
+   * This is the second way a chat begins -- the first is the assistant deciding it needs a
+   * human and calling `call_dispatch_helper`. Both end in the same place: one `AiHandoff`
+   * over the person's own dialogue, so their history is in front of the dispatcher from the
+   * first moment and the answer lands where they are already looking.
+   *
+   * Pressing the button again while the chat is already open returns it rather than
+   * failing: that is what the dispatcher meant by pressing it.
+   */
+  @Post('chats')
+  @ApiOperation({ summary: 'Open a chat with a request customer or an engineer' })
+  async openChat(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(openDispatchChatSchema)) dto: OpenDispatchChatDto,
+  ): Promise<{ chat: DispatchChatView }> {
+    const dispatcherAccountId = this.requireDispatcherAccount(actor);
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'dispatch_chat.open',
+        payload: dto,
+      },
+      async (context) => {
+        const opened = await this.dispatchChats.openWithTarget(
+          context.tx,
+          context.now,
+          dispatcherAccountId,
+          dto.target,
+          dto.text,
+        );
+        return {
+          handoffId: opened.handoff.id,
+          messageIds: opened.messages.map((message) => message.id),
+          created: opened.created,
+        };
+      },
+    );
+
+    const chat = await this.requireChat(outcome.result.handoffId);
+    if (!outcome.replayed) {
+      if (outcome.result.created) {
+        this.publishChatState(chat);
+      }
+      this.publishChatMessages(chat, outcome.result.messageIds);
+    }
+    return { chat: toDispatchChatView(chat) };
+  }
+
   @Post('chats/:id/messages')
-  @ApiOperation({
-    summary: "Send the dispatcher's own reply into a handed-over conversation",
-  })
+  @ApiOperation({ summary: "Send the dispatcher's own reply into a chat" })
   async sendChatMessage(
     @CurrentActor() actor: Actor,
     @Param('id') id: string,
     @Body(zodBody(sendDispatchChatMessageSchema)) dto: SendDispatchChatMessageDto,
-  ): Promise<{ message: AiMessageView }> {
+  ): Promise<{ message: AiMessageView; chat: DispatchChatView }> {
     const dispatcherAccountId = this.requireDispatcherAccount(actor);
     const outcome = await this.operations.execute(
       {
@@ -216,21 +352,41 @@ export class DispatchController {
         targetRef: id,
         payload: dto,
       },
-      async (context) =>
-        this.dispatchChats.reply(context.tx, context.now, id, dispatcherAccountId, dto.text),
+      async (context) => {
+        const written = await this.dispatchChats.reply(
+          context.tx,
+          context.now,
+          id,
+          dispatcherAccountId,
+          dto.text,
+        );
+        return { handoffId: written.handoff.id, messageId: written.message.id };
+      },
     );
-    return { message: toMessageView(outcome.result) };
+
+    const chat = await this.requireChat(outcome.result.handoffId);
+    if (!outcome.replayed) {
+      this.publishChatMessages(chat, [outcome.result.messageId]);
+    }
+    return {
+      message: toMessageView(this.requireChatMessage(chat, outcome.result.messageId)),
+      chat: toDispatchChatView(chat),
+    };
   }
 
+  /**
+   * Ends a chat: the assistant takes the dialogue back and the row stays in the list.
+   *
+   * Nothing the dispatcher applied while they were carrying it is reverted -- a chat is a
+   * conversation, not a transaction (context/36 section 9.3).
+   */
   @Post('chats/:id/finish')
-  @ApiOperation({
-    summary: 'End a handover: the AI resumes, history and applied actions stay',
-  })
+  @ApiOperation({ summary: 'End a chat: the AI resumes, history and applied actions stay' })
   async finishChat(
     @CurrentActor() actor: Actor,
     @Param('id') id: string,
     @Body(zodBody(finishDispatchChatSchema)) dto: FinishDispatchChatDto,
-  ): Promise<{ conversation: AiConversationView }> {
+  ): Promise<{ conversation: AiConversationView; chat: DispatchChatView }> {
     const dispatcherAccountId = this.requireDispatcherAccount(actor);
     const outcome = await this.operations.execute(
       {
@@ -240,10 +396,102 @@ export class DispatchController {
         targetRef: id,
         payload: dto,
       },
-      async (context) =>
-        this.dispatchChats.finish(context.tx, context.now, id, dispatcherAccountId),
+      async (context) => {
+        const written = await this.dispatchChats.finish(
+          context.tx,
+          context.now,
+          id,
+          dispatcherAccountId,
+        );
+        return { handoffId: written.handoff.id, messageId: written.message.id };
+      },
     );
-    return { conversation: toConversationView(outcome.result) };
+
+    const chat = await this.requireChat(outcome.result.handoffId);
+    if (!outcome.replayed) {
+      this.publishChatMessages(chat, [outcome.result.messageId]);
+      this.publishChatState(chat);
+    }
+    return { conversation: toConversationView(chat.conversation), chat: toDispatchChatView(chat) };
+  }
+
+  /**
+   * Marks a chat read up to a message sequence, which is what clears its unread badge.
+   *
+   * The cursor only moves forward, so a second tab replaying an older value cannot bring
+   * back a badge the first one cleared, and a chat that has already been finished is a
+   * no-op -- there is nothing left to acknowledge.
+   */
+  @Post('chats/:id/read')
+  @ApiOperation({ summary: 'Acknowledge a chat up to a message sequence' })
+  async readChat(
+    @CurrentActor() actor: Actor,
+    @Param('id') id: string,
+    @Body(zodBody(readDispatchChatSchema)) dto: ReadDispatchChatDto,
+  ): Promise<{ chat: DispatchChatView | null }> {
+    this.requireDispatcherAccount(actor);
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'dispatch_chat.read',
+        targetRef: id,
+        payload: dto,
+      },
+      async (context) => {
+        const handoff = await this.dispatchChats.markRead(context.tx, id, dto.seq);
+        return { handoffId: handoff?.id ?? null };
+      },
+    );
+    const handoffId = outcome.result.handoffId;
+    if (!handoffId) {
+      return { chat: null };
+    }
+    const chat = await this.dispatchChats.byHandoffId(handoffId);
+    return { chat: chat ? toDispatchChatView(chat) : null };
+  }
+
+  /** The episode a write just changed, re-read so the response and the broadcast carry the
+   *  committed state rather than the rows the handler started from. */
+  private async requireChat(handoffId: string): Promise<DispatchChatRow> {
+    const chat = await this.dispatchChats.byHandoffId(handoffId);
+    if (!chat) {
+      throw SysError.notFound('Chat', { handoffId });
+    }
+    return chat;
+  }
+
+  private requireChatMessage(chat: DispatchChatRow, messageId: string): AiMessage {
+    const message = chat.messages.find((candidate) => candidate.id === messageId);
+    if (!message) {
+      throw SysError.notFound('Message', { messageId });
+    }
+    return message;
+  }
+
+  /**
+   * Announces the messages this request wrote, after the transaction that wrote them has
+   * committed (`ChatEventBus`'s own note on why never inside it).
+   *
+   * Skipped entirely on a replayed retry: the first attempt already announced them, and a
+   * customer seeing the dispatcher's sentence arrive twice would read it as the dispatcher
+   * repeating themselves.
+   */
+  private publishChatMessages(chat: DispatchChatRow, messageIds: readonly string[]): void {
+    for (const messageId of messageIds) {
+      const message = chat.messages.find((candidate) => candidate.id === messageId);
+      if (message) {
+        this.chatBus.publishMessage({
+          conversationId: chat.conversation.id,
+          handoffId: chat.handoff.id,
+          message,
+        });
+      }
+    }
+  }
+
+  private publishChatState(chat: DispatchChatRow): void {
+    this.chatBus.publishState({ conversation: chat.conversation, handoff: chat.handoff });
   }
 
   @Get('requests')

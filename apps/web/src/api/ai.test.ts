@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { type AiStreamOutcome, streamAssistantRun } from './ai';
+import {
+  type AiStreamOutcome,
+  type ChatStreamOutcome,
+  streamAssistantRun,
+  streamChatEvents,
+} from './ai';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -105,6 +110,58 @@ describe('streamAssistantRun frame parsing', () => {
     controller.abort();
     triggerAbort();
     await expect(run).resolves.toBeUndefined();
+    expect(outcomes).toHaveLength(0);
+  });
+
+  it('skips a heartbeat frame (data: {}) instead of reporting a broken one', async () => {
+    const event = { type: 'stopped', seq: 3, at: 300, reason: 'user' };
+    const outcomes = await collect('run1', ['data: {}\n\n', `data: ${JSON.stringify(event)}\n\n`]);
+    expect(outcomes).toEqual([{ ok: true, event }]);
+  });
+});
+
+async function collectChat(chunks: readonly string[]): Promise<ChatStreamOutcome[]> {
+  stubStreamingFetch(chunks);
+  const outcomes: ChatStreamOutcome[] = [];
+  await streamChatEvents('https://example.test/stream', 'token', (outcome) =>
+    outcomes.push(outcome),
+  );
+  return outcomes;
+}
+
+describe('streamChatEvents frame parsing', () => {
+  it('parses a message frame against chatStreamEventSchema', async () => {
+    const message = {
+      id: 'm1',
+      conversationId: 'c1',
+      seq: 1,
+      author: 'dispatcher',
+      kind: 'text',
+      text: 'Привет',
+      actions: [],
+      runId: null,
+      operationId: null,
+      authorAccountId: 'a1',
+      createdAt: 100,
+    };
+    const event = { type: 'message', at: 100, conversationId: 'c1', message };
+    const outcomes = await collectChat([`data: ${JSON.stringify(event)}\n\n`]);
+    expect(only(outcomes)).toEqual({ ok: true, event });
+  });
+
+  it('reports a frame with an unknown type instead of dropping it silently', async () => {
+    const outcomes = await collectChat([
+      `data: ${JSON.stringify({ type: 'bogus', at: 1, conversationId: 'c1' })}\n\n`,
+    ]);
+    const outcome = only(outcomes);
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.error.message).toContain('не соответствует контракту');
+    }
+  });
+
+  it('skips a heartbeat frame (data: {}) with no ok:false outcome', async () => {
+    const outcomes = await collectChat(['data: {}\n\n']);
     expect(outcomes).toHaveLength(0);
   });
 });
