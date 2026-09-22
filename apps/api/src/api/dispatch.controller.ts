@@ -15,6 +15,7 @@ import {
   UploadImportService,
 } from '../orchestrator/imports';
 import { LiveService } from '../orchestrator/live';
+import { PassportsService } from '../orchestrator/passports';
 import { PolicyService } from '../orchestrator/policy';
 import { RequestsService } from '../orchestrator/requests';
 import { ResetService } from '../orchestrator/reset';
@@ -145,6 +146,7 @@ export class DispatchController {
     private readonly dispatcherSettings: DispatcherSettingsService,
     private readonly geocoding: GeocodingService,
     private readonly mapRouting: MapRoutingService,
+    private readonly passports: PassportsService,
   ) {}
 
   @Get('live')
@@ -189,6 +191,19 @@ export class DispatchController {
     return {
       requests: requests.map((request) => toRequestView(request, states.get(request.id) ?? null)),
     };
+  }
+
+  @Get('requests/:id/passport')
+  @ApiOperation({ summary: 'Object passport for any dispatcher-visible request' })
+  async passport(@Param('id') requestId: string) {
+    return this.passports.dispatcherRead(requestId);
+  }
+
+  @Get('engineers/:id/points')
+  @ApiOperation({ summary: 'Current Moscow-month passport points of an engineer' })
+  async engineerPoints(@Param('id') engineerId: string) {
+    await this.engineers.byId(this.prisma, engineerId);
+    return this.passports.monthlyPoints(engineerId);
   }
 
   @Post('requests')

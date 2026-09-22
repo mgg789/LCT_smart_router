@@ -444,6 +444,8 @@ profile`, `availability`, `technical-break`, `lunch/*`, `requests/:id/facts`)
 | PUT | `/api/v1/dispatch/settings` | Частичная замена тех же полей; `null` на ключе карты снимает его |
 | GET | `/api/v1/dispatch/settings/maps/status` | Проба 2ГИС/Яндекс коротким московским маршрутом, активный провайдер |
 | GET | `/api/v1/dispatch/geocode` | Структурный поиск LocationIQ (`street`+`city` или свободный `q`) |
+| GET | `/api/v1/dispatch/requests/:id/passport` | Паспорт объекта существующей заявки; диспетчер может только читать |
+| GET | `/api/v1/dispatch/engineers/:id/points` | Текущие московские месячные очки инженера за паспорта |
 | GET | `/api/v1/dispatch/debug/snapshot` | Опубликованная задача ровно так, как её читает Router |
 
 `mount-data-eng` публикует **всю текущую задачу**, никогда поток изменений. Завершённая,
@@ -941,7 +943,7 @@ HTTP `409`; некорректные тела — `422`.
 
 Техническая ревизия Router содержит `windowLatenessToleranceSec` (0…1200 секунд, продуктовый default 600), `trafficEnabled` и `equipmentEnabled` (default true); Python использует snake_case. Передача — через существующие endpoint технических настроек и CAS contextVersion. Предыдущие поля обязательны и сохраняются. Окно клиента остаётся исходным; допуск ограничивает нормативное завершение после закрытия окна и отличается от допусков revalidation.
 
-Метрики сравнения дополнены `lateAssignedCount`, `totalLatenessSec`, `minWindowSlackSec` (null без назначений), `workloadSpreadSec`, `maxWorkloadSec`. Отсутствующие поля старых записей читаются с defaults 0/null; такие записи не доказывают измерение новых показателей. Полный смысл и формулы — `docs/solver.md`, сверочные значения — `docs/policy-efficiency.md`.
+Метрики сравнения дополнены `lateAssignedCount`, `totalLatenessSec`, `minWindowSlackSec` (null без назначений), `workloadSpreadSec`, `maxWorkloadSec`. Веб-клиент требует эти поля: отсутствие измерения больше не подменяется нулём. Записанные демосравнения пересобраны штатным генератором. Полный смысл и формулы — `docs/solver.md`, сверочные значения — `docs/policy-efficiency.md`.
 
 ## Дополнение: «Полное покрытие» в сравнении (18.09.2026)
 
@@ -968,3 +970,27 @@ serviceStartAt, serviceEndAt}}` либо `{status: "none", requestVersion, propo
 устаревшая форма получает `409 VERSION_CONFLICT` и не перезаписывает более свежее окно.
 Одинаковые preview-входы кешируются до 10 секунд (до 32 ключей); ошибки не кешируются.
 Карточка закрывается только после подтверждённого назначения/терминального состояния заявки.
+
+## Паспорта зданий и месячные баллы (22.09.2026)
+
+Паспорт общий для всех заявок здания. Чтение: `GET /engineer/requests/:id/passport`
+для своей текущей или назначенной заявки; `GET /dispatch/requests/:id/passport` для
+диспетчера. Ответ `{passport,canFill,unavailableReason?}`; даты — Unix seconds.
+
+`POST /engineer/requests/:id/passport` принимает `operationId`, `connectionType`
+(`fiber|ethernet|dsl|radio|other`), `difficulty` (1…3) и необязательные `equipment`,
+`accessNotes`, `comment` (до 2000 символов каждое). Сохранить можно только паспорт
+текущего LIVE-визита, если он отсутствует или старше 45 суток. Проверка повторяется
+в транзакции; блокировка здания предотвращает две награды при конкурентном заполнении.
+Ответ содержит паспорт, `pointsAwarded:35`, `monthlyPoints`, `canFill:false`.
+Повтор того же намерения идемпотентен, в том числе после перехода к следующему визиту.
+
+`GET /engineer/points` и `GET /dispatch/engineers/:id/points` возвращают
+`{monthlyPoints,month}` за текущий московский месяц. С первого числа сумма начинается
+с нуля без удаления журнала начислений. «День заново» очищает журнал вместе с
+демоданными и создаёт 11 свежих паспортов для 14 зданий.
+
+Явный адрес нормализуется без квартиры/офиса; корпус и строение различаются.
+Для точек без адреса применяется тот же LocationIQ в обратном направлении, с
+постоянным кешем и таймаутом 4 секунды. Неопределённый дом не объединяется по близости.
+Подробные DTO и состояния — `docs/frontend-api.md`, таблицы — `docs/data.md`.

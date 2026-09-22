@@ -9,6 +9,7 @@ import { OperationsService } from '../../operations';
 import { PrismaService } from '../../persistence';
 import { workDateOf } from '../engineers/workday';
 import { UploadImportService } from '../imports';
+import { canonicalTextAddress } from '../passports/passport-policy';
 import { ResetService } from '../reset';
 import {
   buildLiveDemo,
@@ -60,6 +61,34 @@ export class DemoStandService implements OnModuleInit {
   async onModuleInit(): Promise<void> {
     if (!this.enabled) return;
     await this.reconcileOnce();
+    // A schema upgrade must also seed an already-running 14-point demo without
+    // resetting its workday, linked engineers or recorded execution facts.
+    if (
+      (await this.prisma.building.count()) === 0 &&
+      (await this.prisma.request.count()) === 14 &&
+      (await this.prisma.importPackage.findFirst({
+        where: {
+          source: liveDemoPackageSource(
+            workDateOf(this.clock.nowSeconds(), this.config.get('APP_TIME_ZONE')),
+          ),
+        },
+        select: { id: true },
+      }))
+    ) {
+      await this.operations.execute(
+        {
+          operationId: randomUUID(),
+          actor: SYSTEM_ACTOR,
+          action: 'data.seed_passports',
+          payload: {},
+        },
+        async (context) => {
+          if ((await context.tx.building.count()) === 0)
+            await this.seedObjectPassportFixture(context);
+          return { seeded: true };
+        },
+      );
+    }
   }
 
   /** Refuses the public restore contract when the contour is not the demo stand. */
@@ -106,6 +135,7 @@ export class DemoStandService implements OnModuleInit {
       packageInput,
       this.config.get('DATASET_TIME_ZONE_OFFSET_SEC'),
     );
+    await this.seedObjectPassportFixture(context);
     this.logger.warn(
       `Demo stand restored ${summary.requestsCreated} requests / ${summary.engineersCreated} engineers for ${workDate}`,
     );
@@ -116,6 +146,58 @@ export class DemoStandService implements OnModuleInit {
       engineersCreated: summary.engineersCreated,
       generation,
     };
+  }
+
+  /** Seeds the 14-request public demo deterministically without a network dependency:
+   * exactly three object cards remain absent while the other eleven are fresh. */
+  private async seedObjectPassportFixture(context: OperationContext): Promise<void> {
+    const requests = await context.tx.request.findMany({
+      orderBy: { arrivalOrder: 'asc' },
+      select: { addressText: true, lat: true, lon: true },
+    });
+    for (const [index, request] of requests.entries()) {
+      const address = canonicalTextAddress(request.addressText);
+      if (!address) throw new Error('Demo building address cannot be normalized');
+      const building = await context.tx.building.upsert({
+        where: { canonicalAddress: address },
+        update: { updatedAt: BigInt(context.now) },
+        create: {
+          canonicalAddress: address,
+          createdAt: BigInt(context.now),
+          updatedAt: BigInt(context.now),
+        },
+      });
+      if (request.lat !== null && request.lon !== null) {
+        await context.tx.reverseGeocodeCache.upsert({
+          where: { coordinateKey: `${request.lat.toFixed(6)},${request.lon.toFixed(6)}` },
+          update: {
+            canonicalAddress: address,
+            provider: 'demo-fixture',
+            resolvedAt: BigInt(context.now),
+          },
+          create: {
+            coordinateKey: `${request.lat.toFixed(6)},${request.lon.toFixed(6)}`,
+            canonicalAddress: address,
+            provider: 'demo-fixture',
+            resolvedAt: BigInt(context.now),
+          },
+        });
+      }
+      if (index < 3) continue;
+      await context.tx.objectPassport.upsert({
+        where: { buildingId: building.id },
+        update: { updatedAt: BigInt(context.now) },
+        create: {
+          buildingId: building.id,
+          connectionType: 'fiber',
+          difficulty: 2,
+          equipment: '',
+          accessNotes: '',
+          comment: '',
+          updatedAt: BigInt(context.now),
+        },
+      });
+    }
   }
 
   private async reconcileOnce(): Promise<void> {

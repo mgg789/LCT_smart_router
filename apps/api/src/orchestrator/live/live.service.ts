@@ -115,6 +115,23 @@ export class LiveService {
     return this.uow.run(async (tx) => this.engineerViewIn(tx, engineerId, this.clock.nowSeconds()));
   }
 
+  /** Verifies the current LIVE stop inside the caller's transaction, serialized
+   * with engineer actions and automatic day transitions. */
+  async assertCurrentRequestIn(
+    tx: Tx,
+    engineerId: string,
+    requestId: string,
+    wallNow: number,
+  ): Promise<void> {
+    const day = await this.ensureDay(tx, wallNow);
+    await tx.$queryRaw`SELECT id FROM live_workdays WHERE id = ${day.id} FOR UPDATE`;
+    const full = await this.dayWithStates(tx, day.id);
+    if (full.status !== 'running')
+      throw SysError.forbidden('The dispatcher has not started the workday');
+    const current = await this.currentFor(tx, full, engineerId, this.liveNow(full, wallNow));
+    this.assertCurrentRequest(current, requestId);
+  }
+
   /** Legacy mutation endpoints must not bypass LIVE ordering or its business clock. */
   async assertLegacyMutationAllowed(): Promise<void> {
     const running = await this.prisma.liveWorkday.findFirst({

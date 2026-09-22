@@ -237,6 +237,15 @@ enum ApiTokenCategory {
   master
 }
 
+/// Physical access technology recorded for a building, never inferred from a request.
+enum ConnectionType {
+  fiber
+  ethernet
+  dsl
+  radio
+  other
+}
+
 // ---------------------------------------------------------------------------
 // Identity and access
 // ---------------------------------------------------------------------------
@@ -358,6 +367,7 @@ model Engineer {
   days    EngineerDay[]
   facts   RequestFact[]
   liveStates LiveEngineerState[]
+  passportPoints EngineerPassportPoint[]
 
   @@index([inputOrder])
   @@map("engineers")
@@ -495,6 +505,62 @@ model Request {
   @@index([lifecycle, assignmentState])
   @@index([arrivalOrder])
   @@map("requests")
+}
+
+/// A canonical building address. It is resolved before a passport write, so an outage
+/// cannot silently merge nearby coordinates into one physical object.
+model Building {
+  id               String @id @default(uuid())
+  canonicalAddress String @unique @map("canonical_address")
+  createdAt        BigInt @map("created_at")
+  updatedAt        BigInt @map("updated_at")
+
+  passport ObjectPassport?
+
+  @@map("buildings")
+}
+
+/// Durable LocationIQ reverse results. Coordinate keys are rounded only for cache
+/// lookup; the stored canonical address is always provider/fixture supplied.
+model ReverseGeocodeCache {
+  coordinateKey    String @id @map("coordinate_key")
+  canonicalAddress String @map("canonical_address")
+  provider         String
+  resolvedAt       BigInt @map("resolved_at")
+
+  @@map("reverse_geocode_cache")
+}
+
+/// One current object passport per building. New saves replace fields on this row;
+/// Operations and the points ledger preserve the historical who/when trail.
+model ObjectPassport {
+  id             String @id @default(uuid())
+  buildingId     String @unique @map("building_id")
+  connectionType ConnectionType @map("connection_type")
+  difficulty     Int
+  equipment      String?
+  accessNotes    String? @map("access_notes")
+  comment        String?
+  updatedAt      BigInt @map("updated_at")
+
+  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  @@map("object_passports")
+}
+
+/// Immutable reward entries. The operation id is unique so a transport retry cannot
+/// award a second 35-point update even if the operation journal is later inspected.
+model EngineerPassportPoint {
+  id          String @id @default(uuid())
+  engineerId  String @map("engineer_id")
+  operationId String @unique @map("operation_id")
+  points      Int
+  awardedAt   BigInt @map("awarded_at")
+
+  engineer Engineer @relation(fields: [engineerId], references: [id], onDelete: Cascade)
+
+  @@index([engineerId, awardedAt])
+  @@map("engineer_passport_points")
 }
 
 /// Previous conditions of a request. A reschedule replaces the single set of live

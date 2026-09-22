@@ -145,6 +145,10 @@ export class ResetService {
     // newly imported crew to an old running day.
     await tx.liveWorkday.deleteMany({});
 
+    await tx.engineerPassportPoint.deleteMany({});
+    await tx.objectPassport.deleteMany({});
+    await tx.building.deleteMany({});
+    await tx.reverseGeocodeCache.deleteMany({});
     await tx.requestFact.deleteMany({});
     await tx.requestConditionHistory.deleteMany({});
     await tx.request.deleteMany({});
