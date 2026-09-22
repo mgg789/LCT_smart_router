@@ -57,6 +57,7 @@ import {
 } from './fromSnapshot';
 import { PolicyComparisonView } from './PolicyComparisonView';
 import { FigmaIcon, FigmaText } from './primitives';
+import { ReplanDeltaCard } from './ReplanDeltaCard';
 import { RequestDetailView } from './RequestDetailView';
 import { RequestsView } from './RequestsView';
 import { shortRequestId } from './requestsTable';
@@ -587,6 +588,19 @@ export function MainDashboardPage() {
             setToastColumnPinned(false);
           }}
         />
+        <AnimatePresence>
+          {dash.pendingDelta ? (
+            <ReplanDeltaCard
+              key="replan-delta"
+              delta={dash.pendingDelta}
+              canReject={dash.canRejectDelta}
+              busy={dash.rebuilding}
+              motionOn={motionOn}
+              onAccept={dash.acceptDelta}
+              onReject={dash.rejectDelta}
+            />
+          ) : null}
+        </AnimatePresence>
         <DataUploadModal
           open={uploadOpen}
           submitting={dash.uploadingData}

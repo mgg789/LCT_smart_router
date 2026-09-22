@@ -401,9 +401,13 @@ export function computePlanDelta(before: PlanView, after: PlanView, solveMs: num
       notes.push(`Новая заявка ${next.requestId} попала в план`);
       continue;
     }
-    if (prev.engineerId !== next.engineerId && next.engineerId !== null) {
+    if (prev.engineerId !== next.engineerId) {
       transferred += 1;
-      notes.push(`${next.requestId}: сменился исполнитель`);
+      notes.push(
+        next.engineerId === null
+          ? `${next.requestId}: заявка снята с исполнителя`
+          : `${next.requestId}: сменился исполнитель`,
+      );
     }
   }
 
