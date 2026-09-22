@@ -118,6 +118,24 @@ describe('object passports', () => {
 
   const responseError = async (response: Response) => bodyOf<ErrorBody>(response);
 
+  const markStarted = async (requestId: string, engineerId: string) => {
+    const startedAt = now();
+    await prisma.request.update({
+      where: { id: requestId },
+      data: { lifecycle: 'in_progress', startedAt: BigInt(startedAt) },
+    });
+    await prisma.requestFact.create({
+      data: {
+        requestId,
+        engineerId,
+        kind: 'started',
+        occurredAt: BigInt(startedAt),
+        recordedAt: BigInt(startedAt),
+        operationId: randomUUID(),
+      },
+    });
+  };
+
   before(async () => {
     assert.ok(
       process.env.TEST_DATABASE_URL,
@@ -375,7 +393,25 @@ describe('object passports', () => {
     assert.equal(current.status, 200, await current.clone().text());
     const currentBody = await bodyOf<PassportBody>(current);
     assert.equal(currentBody.passport, null);
-    assert.equal(currentBody.canFill, true);
+    assert.equal(currentBody.canFill, false);
+    assert.equal(currentBody.unavailableReason, 'WORK_NOT_STARTED');
+
+    const deniedBeforeStart = await call(
+      'POST',
+      `/api/v1/engineer/requests/${currentAId}/passport`,
+      engineerAToken,
+      passportInput(),
+    );
+    assert.equal(deniedBeforeStart.status, 403);
+
+    await Promise.all([markStarted(currentAId, engineerAId), markStarted(currentBId, engineerBId)]);
+    const started = await call(
+      'GET',
+      `/api/v1/engineer/requests/${currentAId}/passport`,
+      engineerAToken,
+    );
+    assert.equal(started.status, 200, await started.clone().text());
+    assert.equal((await bodyOf<PassportBody>(started)).canFill, true);
 
     const future = await call(
       'GET',

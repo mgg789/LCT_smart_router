@@ -45,21 +45,23 @@ export class PassportsService {
 
   /** Reads shared building facts only for the current or assigned request. */
   async engineerRead(engineerId: string, requestId: string) {
-    const current = await this.isLiveCurrent(engineerId, requestId);
-    if (!current) await this.assertAssigned(engineerId, requestId);
+    const liveState = await this.liveRequestState(engineerId, requestId);
+    if (liveState === 'none') await this.assertAssigned(engineerId, requestId);
     const building = await this.resolveBuilding(requestId);
     const passport = building === null ? null : await this.passportFor(building.canonicalAddress);
     const stale = passport?.stale ?? true;
     return {
       passport: passport?.view ?? null,
-      canFill: building !== null && current && stale,
+      canFill: building !== null && liveState === 'started' && stale,
       ...(building === null
         ? { unavailableReason: 'ADDRESS_NOT_RESOLVED' }
-        : !current
+        : liveState === 'none'
           ? { unavailableReason: 'REQUEST_NOT_CURRENT' }
-          : !stale
-            ? { unavailableReason: 'PASSPORT_FRESH' }
-            : {}),
+          : liveState !== 'started'
+            ? { unavailableReason: 'WORK_NOT_STARTED' }
+            : !stale
+              ? { unavailableReason: 'PASSPORT_FRESH' }
+              : {}),
     };
   }
 
@@ -80,10 +82,13 @@ export class PassportsService {
     engineerId: string,
     requestId: string,
   ): Promise<{ canonicalAddress: string; requestVersion: number }> {
-    if (!(await this.isLiveCurrent(engineerId, requestId))) {
-      throw SysError.forbidden('Only the current LIVE request may receive a passport', {
-        requestId,
-      });
+    if ((await this.liveRequestState(engineerId, requestId)) !== 'started') {
+      throw SysError.forbidden(
+        'Only started work on the current LIVE request may receive a passport',
+        {
+          requestId,
+        },
+      );
     }
     const request = await this.prisma.request.findUniqueOrThrow({
       where: { id: requestId },
@@ -108,8 +113,20 @@ export class PassportsService {
     await this.live.assertCurrentRequestIn(context.tx, engineerId, requestId, context.now);
     const request = await context.tx.request.findUniqueOrThrow({
       where: { id: requestId },
-      select: { version: true },
+      select: {
+        version: true,
+        lifecycle: true,
+        facts: {
+          where: { engineerId, kind: 'started' },
+          select: { id: true },
+          take: 1,
+        },
+      },
     });
+    if (request.lifecycle !== 'in_progress' || request.facts.length === 0)
+      throw SysError.forbidden('Passport updates require started work on this request', {
+        requestId,
+      });
     if (request.version !== prepared.requestVersion)
       throw new SysError('VERSION_CONFLICT', 'The request changed while opening its passport');
     const result = await this.writeCurrent(
@@ -240,14 +257,18 @@ export class PassportsService {
 
   /** Delegates current-stop calculation to the LIVE state machine; it intentionally
    * never accepts a client-supplied boolean or treats an assigned future stop as live. */
-  private async isLiveCurrent(engineerId: string, requestId: string): Promise<boolean> {
+  private async liveRequestState(
+    engineerId: string,
+    requestId: string,
+  ): Promise<'started' | 'current' | 'none'> {
     const running = await this.prisma.liveWorkday.findFirst({
       where: { status: 'running' },
       select: { id: true },
     });
-    if (!running) return false;
+    if (!running) return 'none';
     const view = await this.live.engineerView(engineerId);
-    return view.current?.request.id === requestId;
+    if (view.current?.request.id !== requestId) return 'none';
+    return view.current.phase === 'in_progress' ? 'started' : 'current';
   }
 
   /** Gets a provider-backed address or a durable cache result. No coordinate rounding

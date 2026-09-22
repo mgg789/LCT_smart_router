@@ -511,8 +511,8 @@ running-день не трогает. `GET /dispatch/live` и `GET /dispatch/dat
 | POST | `/engineer/lunch/start` · `/finish` | `{operationId}` → `{day}` |
 | GET | `/engineer/plan` | → `{planAsOf, origin, revision, route: PlanRouteView|null, requests: RequestView[]}` — свой маршрут применённого плана и карточки заявок этого маршрута |
 | GET | `/engineer/requests/:id` | → `{request: RequestView, stop: PlanStopView}` — только если заявка стоит в применённом маршруте этого инженера; иначе `NOT_FOUND` |
-| GET | `/engineer/requests/:id/passport` | → `{passport,canFill,unavailableReason?}` — паспорт доступен для назначенной заявки, включая будущую; `canFill` только у текущего LIVE-визита и лишь когда паспорта нет или он устарел |
-| POST | `/engineer/requests/:id/passport` | `{operationId,connectionType,difficulty,equipment?,accessNotes?,comment?}` → `{passport,pointsAwarded:35,monthlyPoints}`; только собственный текущий LIVE-визит, одна награда за цикл обновления |
+| GET | `/engineer/requests/:id/passport` | → `{passport,canFill,unavailableReason?}` — паспорт доступен для назначенной заявки, включая будущую; `canFill` только после старта текущего LIVE-визита и лишь когда паспорта нет или он устарел (`WORK_NOT_STARTED` до старта) |
+| POST | `/engineer/requests/:id/passport` | `{operationId,connectionType,difficulty,equipment?,accessNotes?,comment?}` → `{passport,pointsAwarded:35,monthlyPoints}`; только собственный начатый текущий LIVE-визит, одна награда за цикл обновления |
 | GET | `/engineer/points` | → `{monthlyPoints,month}` — очки паспорта за текущий московский месяц |
 | POST | `/engineer/requests/:id/facts` | `{operationId, kind: "arrived"\|"arrived_blocked"\|"started"\|"finished"\|"problem", occurredAt?, note?}` → факт исполнения; отмечать можно только то, что назначено применённым планом; финиш без старта — 422 |
 

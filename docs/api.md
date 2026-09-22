@@ -980,7 +980,8 @@ serviceStartAt, serviceEndAt}}` либо `{status: "none", requestVersion, propo
 `POST /engineer/requests/:id/passport` принимает `operationId`, `connectionType`
 (`fiber|ethernet|dsl|radio|other`), `difficulty` (1…3) и необязательные `equipment`,
 `accessNotes`, `comment` (до 2000 символов каждое). Сохранить можно только паспорт
-текущего LIVE-визита, если он отсутствует или старше 45 суток. Проверка повторяется
+текущего LIVE-визита после факта `started`, если он отсутствует или старше 45 суток. До
+старта чтение возвращает `canFill:false` и `unavailableReason:"WORK_NOT_STARTED"`. Проверка повторяется
 в транзакции; блокировка здания предотвращает две награды при конкурентном заполнении.
 Ответ содержит паспорт, `pointsAwarded:35`, `monthlyPoints`, `canFill:false`.
 Повтор того же намерения идемпотентен, в том числе после перехода к следующему визиту.
