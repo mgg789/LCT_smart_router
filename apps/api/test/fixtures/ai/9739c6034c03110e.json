@@ -1,0 +1,6 @@
+{
+  "reply": "Let me look into that for you.",
+  "toolCalls": [{ "name": "loop_forever_tool", "arguments": { "step": 1 } }],
+  "usage": { "promptTokens": 10, "completionTokens": 8 },
+  "chunkSize": 20
+}

@@ -1,0 +1,6 @@
+{
+  "reasoningContent": "The customer is asking about the status of their own request; a status lookup is a read, not a change, so no confirmation is needed.",
+  "reply": "Let me check that for you -- one moment.",
+  "usage": { "promptTokens": 18, "completionTokens": 10 },
+  "chunkSize": 24
+}

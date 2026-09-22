@@ -1,11 +1,12 @@
-import { Global, Module, type OnModuleInit } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { HealthController } from './health.controller';
 import { HealthRegistry } from './health.registry';
 
 /**
  * Declares the integrations the design expects, so that `/health/services` tells the
- * truth about this build instead of staying silent about what is missing. A branch that
- * implements one of them registers a real probe under the same name.
+ * truth about this build instead of staying silent about what is missing. Router, SMTP
+ * and AI each register their own real probe from their own feature module rather than
+ * from here: there is nothing left in this build that is merely declared and not wired.
  */
 @Global()
 @Module({
@@ -13,11 +14,4 @@ import { HealthRegistry } from './health.registry';
   providers: [HealthRegistry],
   exports: [HealthRegistry],
 })
-export class HealthModule implements OnModuleInit {
-  constructor(private readonly registry: HealthRegistry) {}
-
-  onModuleInit(): void {
-    this.registry.registerNotConfigured('ai', 'AI-gateway is out of scope of this build');
-    // router and smtp register their own probes from their feature modules.
-  }
-}
+export class HealthModule {}

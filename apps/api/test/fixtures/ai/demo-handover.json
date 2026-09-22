@@ -1,0 +1,11 @@
+{
+  "reply": "I'll bring in a dispatcher to take a look at this with you.",
+  "toolCalls": [
+    {
+      "name": "request_dispatcher_handover",
+      "arguments": { "reason": "customer asked for a human" }
+    }
+  ],
+  "usage": { "promptTokens": 20, "completionTokens": 15 },
+  "chunkSize": 30
+}

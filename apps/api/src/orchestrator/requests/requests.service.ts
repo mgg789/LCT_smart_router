@@ -3,7 +3,7 @@ import { SysError } from '../../common/errors';
 import type { EquipmentType, Priority, Prisma, Request } from '../../generated/prisma/client';
 import { NotificationsService } from '../../notifications';
 import { assertWriteApplied, type OperationContext } from '../../operations';
-import { lockWorkingPlan, type Tx } from '../../persistence';
+import { lockWorkingPlan, PrismaService, type Tx } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import { nearestRegion, type RegionPoint, regionCenters } from './region-geocenter';
 import { findWorkType, fitWindowToService } from './work-type.catalog';
@@ -52,6 +52,7 @@ export interface DispatcherUpdateInput {
 @Injectable()
 export class RequestsService {
   constructor(
+    private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly publisher: SnapshotPublisher,
   ) {}
@@ -384,6 +385,46 @@ export class RequestsService {
     );
 
     return this.reload(context.tx, requestId);
+  }
+
+  /**
+   * The signed-in customer's own request, or a truthful "not found".
+   *
+   * Shared by `ClientController` and the AI client catalogue so the ownership rule -- an
+   * account may only see and act on its own requests -- lives in exactly one place. A
+   * request belonging to someone else is reported as absent rather than forbidden:
+   * confirming that it exists is itself a disclosure (context/42 DF-06). An integration
+   * key has no account of its own to compare against; a caller with no `clientAccountId`
+   * to check is a caller bug, not a business case, so this always enforces the match.
+   */
+  async ownedByAccount(clientAccountId: string, requestId: string): Promise<Request> {
+    const request = await this.byId(requestId);
+    if (request.clientAccountId !== clientAccountId) {
+      throw SysError.notFound('Request', { requestId });
+    }
+    return request;
+  }
+
+  /** Loads a request by id with no ownership check -- an integration key's full access
+   *  within its category (context/41 section 3.2), not bound to one customer account. */
+  async byId(requestId: string): Promise<Request> {
+    const request = await this.prisma.request.findUnique({ where: { id: requestId } });
+    if (!request) {
+      throw SysError.notFound('Request', { requestId });
+    }
+    return request;
+  }
+
+  /** Active (not yet completed or cancelled) requests of one customer account, newest
+   *  first -- the same list `ClientController.list` shows. */
+  async listActive(clientAccountId: string): Promise<Request[]> {
+    return this.prisma.request.findMany({
+      where: {
+        clientAccountId,
+        lifecycle: { in: ['draft', 'submitted', 'in_progress'] },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
   /** Loads a request, or reports that it does not exist. */

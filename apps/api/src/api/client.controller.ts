@@ -216,15 +216,9 @@ export class ClientController {
       // A never-seen address owns no requests; a read does not create the account.
       return { requests: [] };
     }
-    const requests = await this.prisma.request.findMany({
-      // A completed request leaves the active list but stays in the database and in the
-      // history (context/32 section 4.4).
-      where: {
-        clientAccountId,
-        lifecycle: { in: ['draft', 'submitted', 'in_progress'] },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
+    // A completed request leaves the active list but stays in the database and in the
+    // history (context/32 section 4.4).
+    const requests = await this.requests.listActive(clientAccountId);
     return { requests: requests.map((request) => toRequestView(request)) };
   }
 
@@ -305,16 +299,19 @@ export class ClientController {
     return account?.id ?? null;
   }
 
+  /**
+   * Which request this call acts on.
+   *
+   * A session acts on its own requests only; an integration key has full access inside
+   * its category and is not bound to one customer account (context/41 section 3.2), the
+   * same two-way split `EngineerController.subjectOf` applies to the engineer contour.
+   * The ownership check itself lives in `RequestsService.ownedByAccount`, shared with the
+   * AI client catalogue's `list_my_requests` tool so the rule exists exactly once.
+   */
   private async assertOwned(actor: Actor, requestId: string) {
-    const request = await this.prisma.request.findUnique({ where: { id: requestId } });
-    if (!request) {
-      throw SysError.notFound('Request', { requestId });
+    if (actor.accountId) {
+      return this.requests.ownedByAccount(actor.accountId, requestId);
     }
-    if (actor.accountId && request.clientAccountId !== actor.accountId) {
-      // Reported as absent rather than forbidden: confirming that someone else's request
-      // exists is itself a disclosure.
-      throw SysError.notFound('Request', { requestId });
-    }
-    return request;
+    return this.requests.byId(requestId);
   }
 }

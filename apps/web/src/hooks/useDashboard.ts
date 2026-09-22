@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  type DispatchChatView,
+  finishDispatchChat as finishDispatchChatApi,
+  loadDispatchChats,
+  sendDispatchChatMessage as sendDispatchChatMessageApi,
+} from '../api/ai';
+import {
   cancelDispatchRequest,
   changeEngineerEmail,
   closeDispatchShift,
@@ -26,7 +32,12 @@ import {
   uploadDataPackage,
   verifyDispatcherLoginCode,
 } from '../api/client';
-import { type DispatchLiveView, loadDispatchLive, startLiveWorkday } from '../api/live';
+import {
+  type DispatchLiveView,
+  type LiveEngineerState,
+  loadDispatchLive,
+  startLiveWorkday,
+} from '../api/live';
 import { applyManualChange, type ManualChange, type PlanExpectation } from '../api/manual';
 import type {
   AlertResolutionInput,
@@ -134,23 +145,33 @@ export function useDashboard() {
   const [liveWorkday, setLiveWorkday] = useState<DispatchLiveView | null>(null);
   const [liveLoading, setLiveLoading] = useState(token !== null);
   const [startingWorkday, setStartingWorkday] = useState(false);
+  const [dispatchChats, setDispatchChats] = useState<DispatchChatView[] | null>(null);
+  const [dispatchChatsLoading, setDispatchChatsLoading] = useState(false);
+  const [dispatchChatsError, setDispatchChatsError] = useState<string | null>(null);
   const refreshInFlight = useRef<Promise<DashboardSnapshot | null> | null>(null);
   const liveRefreshInFlight = useRef(false);
   const comparisonInFlight = useRef(false);
+  const dispatchChatsInFlight = useRef(false);
   const readGeneration = useRef(0);
   const liveReadGeneration = useRef(0);
   const comparisonRequestId = useRef(0);
+  const dispatchChatsGeneration = useRef(0);
 
   const invalidateAsyncReads = useCallback(() => {
     readGeneration.current += 1;
     liveReadGeneration.current += 1;
     comparisonRequestId.current += 1;
+    dispatchChatsGeneration.current += 1;
     refreshInFlight.current = null;
     liveRefreshInFlight.current = false;
     comparisonInFlight.current = false;
+    dispatchChatsInFlight.current = false;
     setPolicyComparison(null);
     setPolicyComparisonLoading(false);
     setPolicyComparisonError(null);
+    setDispatchChats(null);
+    setDispatchChatsLoading(false);
+    setDispatchChatsError(null);
   }, []);
 
   const handleSessionFailure = useCallback(
@@ -263,6 +284,70 @@ export function useDashboard() {
     }
   }, [handleSessionFailure, reportFailure, token]);
 
+  /** Reads conversations currently handed to a human dispatcher, for the «Чаты» tab and its
+   * nav badge. Follows the same in-flight/generation guard as `refresh`/`refreshLive`. */
+  const refreshDispatchChats = useCallback(async () => {
+    if (!token || sourceRef.current !== 'live' || dispatchChatsInFlight.current) {
+      return null;
+    }
+    const generation = dispatchChatsGeneration.current;
+    dispatchChatsInFlight.current = true;
+    setDispatchChatsLoading(true);
+    try {
+      const next = await loadDispatchChats(token);
+      if (generation !== dispatchChatsGeneration.current) return null;
+      setDispatchChats(next.chats);
+      setDispatchChatsError(null);
+      return next.chats;
+    } catch (cause) {
+      if (generation !== dispatchChatsGeneration.current) return null;
+      reportFailure(cause);
+      if (cause instanceof DashboardApiError && (cause.status === 401 || cause.status === 403)) {
+        handleSessionFailure('Сессия закончилась. Войдите снова.');
+        return null;
+      }
+      setDispatchChatsError(errorMessage(cause));
+      return null;
+    } finally {
+      if (generation === dispatchChatsGeneration.current) {
+        dispatchChatsInFlight.current = false;
+        setDispatchChatsLoading(false);
+      }
+    }
+  }, [handleSessionFailure, reportFailure, token]);
+
+  /** Sends the dispatcher's own reply into a handed-over conversation and folds it into
+   * local state immediately -- the next poll reconciles with the server's copy. */
+  const sendDispatchChatMessage = useCallback(
+    async (chatId: string, text: string) => {
+      if (!token) return;
+      const message = await sendDispatchChatMessageApi(token, chatId, crypto.randomUUID(), text);
+      setDispatchChats((current) =>
+        (current ?? []).map((chat) =>
+          chat.conversation.id === chatId
+            ? { ...chat, messages: [...chat.messages, message.message], unreadCount: 0 }
+            : chat,
+        ),
+      );
+    },
+    [token],
+  );
+
+  /** Returns one conversation to the AI. History stays in place -- nothing here deletes it. */
+  const finishDispatchChat = useCallback(
+    async (chatId: string) => {
+      if (!token) return;
+      await finishDispatchChatApi(token, chatId, crypto.randomUUID());
+      await refreshDispatchChats();
+    },
+    [refreshDispatchChats, token],
+  );
+
+  const dispatchChatsUnreadCount = useMemo(
+    () => (dispatchChats ?? []).reduce((sum, chat) => sum + chat.unreadCount, 0),
+    [dispatchChats],
+  );
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -270,6 +355,13 @@ export function useDashboard() {
   useEffect(() => {
     void refreshLive();
   }, [refreshLive]);
+
+  useEffect(() => {
+    if (!token || source === 'demo') return;
+    void refreshDispatchChats();
+    const interval = window.setInterval(() => void refreshDispatchChats(), 8_000);
+    return () => window.clearInterval(interval);
+  }, [token, source, refreshDispatchChats]);
 
   useEffect(() => {
     if (!token || source === 'demo' || rebuilding || liveWorkday?.workday.status === 'running') {
@@ -315,6 +407,32 @@ export function useDashboard() {
       ...previous,
     ]);
   }, []);
+
+  /** Puts every change of a crew's LIVE state into the dispatcher's event feed. */
+  const previousLiveEngineers = useRef<Map<string, string>>(new Map());
+  useEffect(() => {
+    if (liveWorkday?.workday.status !== 'running') {
+      previousLiveEngineers.current = new Map();
+      return;
+    }
+    const next = new Map(
+      liveWorkday.engineers.map((engineer) => [
+        engineer.id,
+        `${engineer.lineStatus}:${engineer.activeRequestId ?? ''}:${engineer.pendingDelayProblem?.requestId ?? ''}`,
+      ]),
+    );
+    const previous = previousLiveEngineers.current;
+    if (previous.size > 0) {
+      for (const engineer of liveWorkday.engineers) {
+        const before = previous.get(engineer.id);
+        const after = next.get(engineer.id);
+        if (before !== undefined && before !== after) {
+          pushEvent(`LIVE: ${engineer.name} — ${liveEngineerEvent(engineer)}.`);
+        }
+      }
+    }
+    previousLiveEngineers.current = next;
+  }, [liveWorkday, pushEvent]);
 
   const acceptSession = useCallback(
     (session: Awaited<ReturnType<typeof loginDispatcher>>, generation: number) => {
@@ -1221,6 +1339,13 @@ export function useDashboard() {
     liveWorkday,
     liveLoading,
     startingWorkday,
+    dispatchChats,
+    dispatchChatsLoading,
+    dispatchChatsError,
+    dispatchChatsUnreadCount,
+    refreshDispatchChats,
+    sendDispatchChatMessage,
+    finishDispatchChat,
     engineers,
     unassigned,
     selectedEngineerId,
@@ -1345,4 +1470,14 @@ function errorMessage(cause: unknown): string {
 
 function engineerName(snapshot: DashboardSnapshot, engineerId: string): string {
   return snapshot.engineers.find((item) => item.id === engineerId)?.displayName ?? engineerId;
+}
+
+function liveEngineerEvent(engineer: LiveEngineerState): string {
+  if (engineer.pendingDelayProblem) return 'сообщил о задержке';
+  if (engineer.lineStatus === 'technical_break') return 'на техническом перерыве';
+  if (engineer.lineStatus === 'no_show_offline') return 'не вышел на линию';
+  if (engineer.lineStatus === 'stood_down') return 'снялся с линии';
+  if (engineer.activeRequestId) return `работает с заявкой №${engineer.activeRequestId}`;
+  if (engineer.lineStatus === 'online') return 'вышел на линию';
+  return 'ожидает выхода на линию';
 }
