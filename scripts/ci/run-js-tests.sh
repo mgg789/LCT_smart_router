@@ -48,6 +48,11 @@ docker run --rm --network host \
     pnpm --filter web test
     pnpm --filter web typecheck
     test -f .env || cp .env.example .env
+    # NODE_ENV=test makes ConfigModule ignore the file copied above, while a unit test
+    # that boots no app still validates the whole environment as soon as its import
+    # graph reaches ConfigModule.forRoot. Integration tests read .env by hand (see
+    # test/support/env.ts); exporting the dispatcher pair covers the rest of the suite.
+    eval "$(grep -E "^DISPATCHER_(EMAIL|PASSWORD)=" .env | sed "s/^/export /")"
     pnpm --filter api exec prisma generate
     pnpm --filter api exec prisma migrate deploy
     pnpm --filter api test
