@@ -15,7 +15,10 @@ export function ClientSent({
   onAnother: () => void;
 }) {
   return (
-    <section className="flex flex-col" style={{ marginTop: eu(48) }}>
+    <section
+      className="flex flex-1 flex-col justify-center"
+      style={{ paddingTop: eu(48), paddingBottom: eu(96) }}
+    >
       <h1 className="font-murs tracking-[-0.02em] text-figma-ink" style={{ fontSize: eu(44) }}>
         Заявка отправлена
       </h1>
