@@ -147,6 +147,7 @@ describe('object passports', () => {
     await prisma.$connect();
 
     await prisma.engineerPassportPoint.deleteMany({});
+    await prisma.engineerReward.deleteMany({});
     await prisma.objectPassport.deleteMany({});
     await prisma.reverseGeocodeCache.deleteMany({});
     await prisma.liveRequestState.deleteMany({});
@@ -364,6 +365,7 @@ describe('object passports', () => {
 
   after(async () => {
     await prisma.engineerPassportPoint.deleteMany({});
+    await prisma.engineerReward.deleteMany({});
     await prisma.objectPassport.deleteMany({});
     await prisma.reverseGeocodeCache.deleteMany({});
     await prisma.liveRequestState.deleteMany({ where: { workdayId } });
@@ -454,9 +456,31 @@ describe('object passports', () => {
     assert.equal(firstBody.pointsAwarded, 35);
     assert.equal(firstBody.monthlyPoints, 35);
 
+    const rewardDay = await call(
+      'GET',
+      `/api/v1/engineer/rewards/day?workdayId=${workdayId}`,
+      engineerAToken,
+    );
+    assert.equal(rewardDay.status, 200, await rewardDay.clone().text());
+    const rewardDayBody = await bodyOf<{ entries: Array<{ category: string; points: number }> }>(
+      rewardDay,
+    );
+    assert.ok(
+      rewardDayBody.entries.some((entry) => entry.category === 'passport' && entry.points === 35),
+    );
+
     const pointsAfterFirst = await call('GET', '/api/v1/engineer/points', engineerAToken);
     assert.equal(pointsAfterFirst.status, 200, await pointsAfterFirst.clone().text());
     assert.equal((await bodyOf<{ monthlyPoints: number }>(pointsAfterFirst)).monthlyPoints, 35);
+
+    const ownRewards = await call('GET', '/api/v1/engineer/rewards', engineerAToken);
+    assert.equal(ownRewards.status, 200, await ownRewards.clone().text());
+    const crossEngineerRewards = await call(
+      'GET',
+      `/api/v1/engineer/rewards?engineerId=${engineerBId}`,
+      engineerAToken,
+    );
+    assert.equal(crossEngineerRewards.status, 403, await crossEngineerRewards.clone().text());
 
     const replay = await call(
       'POST',
@@ -594,6 +618,127 @@ describe('object passports', () => {
     );
     assert.equal(dispatcherRead.status, 200, await dispatcherRead.clone().text());
     assert.equal((await bodyOf<PassportBody>(dispatcherRead)).passport?.difficulty, 2);
+
+    const penaltyFact = await prisma.requestFact.findFirstOrThrow({
+      where: { requestId: currentAId, engineerId: engineerAId },
+      select: { id: true },
+    });
+    const penaltyBody = {
+      operationId: randomUUID(),
+      engineerId: engineerAId,
+      requestId: currentAId,
+      factId: penaltyFact.id,
+      reason: 'Dispatcher confirmed a documented avoidable breach after reviewing the fact.',
+    };
+    const deniedPenalty = await call(
+      'POST',
+      `/api/v1/dispatch/engineers/${engineerAId}/rewards/penalty`,
+      engineerAToken,
+      penaltyBody,
+    );
+    assert.equal(deniedPenalty.status, 403);
+    const penalty = await call(
+      'POST',
+      `/api/v1/dispatch/engineers/${engineerAId}/rewards/penalty`,
+      dispatcherToken,
+      penaltyBody,
+    );
+    assert.equal(penalty.status, 201, await penalty.clone().text());
+    assert.equal((await bodyOf<{ points: number }>(penalty)).points, -50);
+    const penaltyReplay = await call(
+      'POST',
+      `/api/v1/dispatch/engineers/${engineerAId}/rewards/penalty`,
+      dispatcherToken,
+      penaltyBody,
+    );
+    assert.equal(penaltyReplay.status, 201);
+    assert.equal(
+      await prisma.engineerReward.count({
+        where: { engineerId: engineerAId, category: 'penalty' },
+      }),
+      1,
+    );
+    const penaltyDay = await call(
+      'GET',
+      `/api/v1/engineer/rewards/day?workdayId=${encodeURIComponent(workdayId)}`,
+      engineerAToken,
+    );
+    assert.equal(penaltyDay.status, 200, await penaltyDay.clone().text());
+    const differentPenaltyOperation = await call(
+      'POST',
+      `/api/v1/dispatch/engineers/${engineerAId}/rewards/penalty`,
+      dispatcherToken,
+      { ...penaltyBody, operationId: randomUUID() },
+    );
+    assert.equal(differentPenaltyOperation.status, 201);
+    assert.equal(
+      await prisma.engineerReward.count({
+        where: { engineerId: engineerAId, category: 'penalty' },
+      }),
+      1,
+    );
+    const secondPenaltyFact = await prisma.requestFact.create({
+      data: {
+        requestId: currentAId,
+        engineerId: engineerAId,
+        kind: 'problem',
+        occurredAt: BigInt(now()),
+        recordedAt: BigInt(now()),
+        note: 'A second documented violation on the same request',
+        operationId: randomUUID(),
+      },
+    });
+    const concurrentPenalties = await Promise.all(
+      [0, 1].map(() =>
+        call('POST', `/api/v1/dispatch/engineers/${engineerAId}/rewards/penalty`, dispatcherToken, {
+          ...penaltyBody,
+          operationId: randomUUID(),
+          factId: secondPenaltyFact.id,
+          reason: 'Dispatcher confirmed a second documented breach after reviewing the fact.',
+        }),
+      ),
+    );
+    for (const response of concurrentPenalties)
+      assert.equal(response.status, 201, await response.clone().text());
+    assert.equal(
+      await prisma.engineerReward.count({
+        where: { engineerId: engineerAId, category: 'penalty' },
+      }),
+      2,
+    );
+    const penaltyDayAfter = await call(
+      'GET',
+      `/api/v1/engineer/rewards/day?workdayId=${encodeURIComponent(workdayId)}`,
+      engineerAToken,
+    );
+    assert.equal(penaltyDayAfter.status, 200, await penaltyDayAfter.clone().text());
+    assert.equal(
+      (await bodyOf<{ categories: { penalty: number } }>(penaltyDayAfter)).categories.penalty,
+      -100,
+    );
+
+    const beforeSynthetic = await prisma.engineerReward.aggregate({
+      where: { engineerId: engineerAId },
+      _sum: { points: true },
+    });
+    await prisma.engineerReward.createMany({
+      data: Array.from({ length: 60 }, (_, index) => ({
+        engineerId: engineerAId,
+        category: 'passport' as const,
+        points: 1,
+        operationId: randomUUID(),
+        dedupKey: `synthetic:${randomUUID()}`,
+        awardedAt: BigInt(now()),
+        reason: `Synthetic monthly entry ${index}`,
+        evidence: { test: true, index },
+      })),
+    });
+    const fullSummary = await call('GET', '/api/v1/engineer/rewards', engineerAToken);
+    assert.equal(fullSummary.status, 200, await fullSummary.clone().text());
+    assert.equal(
+      (await bodyOf<{ monthlyPoints: number }>(fullSummary)).monthlyPoints,
+      (beforeSynthetic._sum.points ?? 0) + 60,
+    );
   });
 
   it('resolves map coordinates once and shares the explicit building passport', async () => {

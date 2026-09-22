@@ -146,6 +146,7 @@ export class ResetService {
     await tx.liveWorkday.deleteMany({});
 
     await tx.engineerPassportPoint.deleteMany({});
+    await tx.engineerReward.deleteMany({});
     await tx.objectPassport.deleteMany({});
     await tx.building.deleteMany({});
     await tx.reverseGeocodeCache.deleteMany({});

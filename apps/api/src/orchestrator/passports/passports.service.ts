@@ -6,14 +6,13 @@ import type { ConnectionType } from '../../generated/prisma/client';
 import type { OperationContext } from '../../operations';
 import { PrismaService, type Tx } from '../../persistence';
 import { LiveService } from '../live';
+import { RewardsService } from '../rewards';
 import type { PassportWriteDto } from './passport.dto';
 import {
   canonicalBuildingAddress,
   canonicalTextAddress,
   isCoordinateAddress,
   isStale,
-  moscowMonth,
-  moscowMonthBounds,
 } from './passport-policy';
 
 const POINTS_PER_UPDATE = 35;
@@ -41,6 +40,7 @@ export class PassportsService {
     private readonly config: AppConfigService,
     private readonly clock: Clock,
     private readonly live: LiveService,
+    private readonly rewards: RewardsService,
   ) {}
 
   /** Reads shared building facts only for the current or assigned request. */
@@ -136,7 +136,29 @@ export class PassportsService {
       engineerId,
       input,
     );
-    const monthlyPoints = await this.monthlyPointsIn(context.tx, engineerId, context.now);
+    const liveState = await context.tx.liveRequestState.findFirst({
+      where: { requestId, workday: { status: 'running' } },
+      select: { workdayId: true },
+    });
+    await this.rewards.awardPassport(context.tx, {
+      engineerId,
+      requestId,
+      operationId: input.operationId,
+      awardedAt: context.now,
+      logicalAt: context.now,
+      workdayId: liveState?.workdayId ?? null,
+    });
+    // Keep the pre-ledger table readable for one release so existing integrations and
+    // historical exports remain compatible; monthly reads are served by RewardsService.
+    await context.tx.engineerPassportPoint.create({
+      data: {
+        engineerId,
+        operationId: input.operationId,
+        points: POINTS_PER_UPDATE,
+        awardedAt: BigInt(context.now),
+      },
+    });
+    const monthlyPoints = await this.rewards.monthlyPointsIn(context.tx, engineerId, context.now);
     return {
       ...result,
       canFill: false,
@@ -148,17 +170,14 @@ export class PassportsService {
 
   /** Sums the durable ledger for the Moscow month containing the wall-clock timestamp. */
   async monthlyPoints(engineerId: string, now = this.clock.nowSeconds()) {
-    return {
-      monthlyPoints: await this.monthlyPointsIn(this.prisma, engineerId, now),
-      month: moscowMonth(now),
-    };
+    return this.rewards.monthlyPoints(engineerId, now);
   }
 
   private async writeCurrent(
     tx: Tx,
     now: number,
     address: string,
-    engineerId: string,
+    _engineerId: string,
     input: PassportWriteDto,
   ) {
     const building = await tx.building.upsert({
@@ -184,14 +203,6 @@ export class PassportsService {
     const passport = existing
       ? await tx.objectPassport.update({ where: { id: existing.id }, data })
       : await tx.objectPassport.create({ data: { buildingId: building.id, ...data } });
-    await tx.engineerPassportPoint.create({
-      data: {
-        engineerId,
-        operationId: input.operationId,
-        points: POINTS_PER_UPDATE,
-        awardedAt: BigInt(now),
-      },
-    });
     return { passport: this.toView(passport, address, now) };
   }
 
@@ -331,18 +342,5 @@ export class PassportsService {
     } finally {
       clearTimeout(timer);
     }
-  }
-
-  private async monthlyPointsIn(
-    client: Pick<PrismaService, 'engineerPassportPoint'> | Pick<Tx, 'engineerPassportPoint'>,
-    engineerId: string,
-    now: number,
-  ): Promise<number> {
-    const [start, end] = moscowMonthBounds(now);
-    const total = await client.engineerPassportPoint.aggregate({
-      where: { engineerId, awardedAt: { gte: BigInt(start), lt: BigInt(end) } },
-      _sum: { points: true },
-    });
-    return total._sum.points ?? 0;
   }
 }

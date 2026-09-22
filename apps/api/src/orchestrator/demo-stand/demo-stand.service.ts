@@ -223,9 +223,13 @@ export class DemoStandService implements OnModuleInit {
 
     const finished = await this.prisma.liveWorkday.findFirst({
       where: { status: 'finished' },
-      select: { id: true },
+      orderBy: { finishedAt: 'desc' },
+      select: { workDate: true },
     });
-    if (finished) return true;
+    // A finished day is the durable input for the end-of-day summary. Keep it visible
+    // until the Moscow calendar advances; only an old finished day needs a new demo
+    // package. Calling reconcile from a dashboard poll must not erase that summary.
+    if (finished && finished.workDate !== workDate) return true;
 
     const expectedSource = liveDemoPackageSource(workDate);
     const latest = await this.prisma.importPackage.findFirst({

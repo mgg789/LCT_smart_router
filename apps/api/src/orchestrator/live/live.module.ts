@@ -4,11 +4,19 @@ import { RouterGatewayModule } from '../../routing/router-gateway';
 import { DemoStandModule } from '../demo-stand';
 import { EngineersModule } from '../engineers';
 import { FactsModule } from '../facts';
+import { RewardsModule } from '../rewards';
 import { LiveCoordinator } from './live.coordinator';
 import { LiveService } from './live.service';
 
 @Module({
-  imports: [EngineersModule, FactsModule, MountDataEngModule, RouterGatewayModule, DemoStandModule],
+  imports: [
+    EngineersModule,
+    FactsModule,
+    RewardsModule,
+    MountDataEngModule,
+    RouterGatewayModule,
+    DemoStandModule,
+  ],
   providers: [LiveService, LiveCoordinator],
   exports: [LiveService, LiveCoordinator],
 })

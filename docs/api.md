@@ -995,3 +995,42 @@ serviceStartAt, serviceEndAt}}` либо `{status: "none", requestVersion, propo
 Для точек без адреса применяется тот же LocationIQ в обратном направлении, с
 постоянным кешем и таймаутом 4 секунды. Неопределённый дом не объединяется по близости.
 Подробные DTO и состояния — `docs/frontend-api.md`, таблицы — `docs/data.md`.
+
+## Награды инженеров (22.09.2026)
+
+Единый immutable ledger хранится в `engineer_rewards`: категории `arrival`,
+`completion`, `passport`, `penalty`; `operationId` и `dedupKey` идемпотентны.
+Для arrival/completion ключом остаётся пара `(requestId, category)`, для penalty —
+связка `(requestId, factId)`, поэтому два разных подтверждённых факта одной заявки
+дают два отдельных штрафа. Существующие записи `engineer_passport_points` переносятся миграцией
+в категорию `passport`, а legacy endpoint баллов продолжает возвращать
+`{monthlyPoints, month}`.
+
+`GET /api/v1/engineer/rewards` и
+`GET /api/v1/dispatch/engineers/:id/rewards` возвращают московский месяц,
+`monthlyPoints`, `earnedPoints`, `penaltyPoints`, `teamAverage`, `teamRatio`,
+суммы по категориям и последние записи. `teamAverage` и `teamRatio` равны `null`,
+если нет положительного среднего. В среднем учитываются архивные инженеры с
+активностью месяца и действующие инженеры без начислений; деление на ноль запрещено.
+
+`GET /api/v1/engineer/rewards/day?workdayId=...` и
+`GET /api/v1/dispatch/engineers/:id/rewards/day?workdayId=...` возвращают награды
+одного LIVE workday. Прибытие начисляет 40 за факт `start`/`arrived`, если он не
+позже замороженного планового старта; принятый заранее ETA даёт 30 только при
+факте в интервале `[ETA-600, ETA]`. Завершение начисляет 40 в пределах исходного
+норматива или 30 по заранее принятому продлённому обещанию в том же коридоре.
+Автоматические отметки LIVE не начисляют баллов. В evidence сохраняются wall-time
+месяца и logical-time действия.
+
+«Проблема → нужно больше времени» доступна во время работы, в том числе до
+нормативного срока. Дополнительные минуты продлевают более позднее из текущего
+ожидаемого завершения и текущего бизнес-времени; раннее сообщение не сокращает
+норматив. Для награды фиксируется первое обещание, повторный перенос его не заменяет.
+
+`GET /api/v1/dispatch/engineers/:id/reward-facts` показывает явные факты для
+аудированной санкции. `POST /api/v1/dispatch/engineers/:id/rewards/penalty`
+принимает `operationId`, `requestId`, `factId` и причину минимум 30 символов и
+создаёт ровно одну запись `-50`; автоматических отрицательных начислений нет.
+
+Контракты оценки дня (`/dispatch/performance/day`, `/engineer/performance/day`) и
+месячного PDF (`/dispatch/reports/monthly/YYYY-MM`) описаны в [performance.md](./performance.md).

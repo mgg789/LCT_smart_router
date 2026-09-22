@@ -471,6 +471,15 @@ export function renderMail(
         base,
       );
     }
+    case 'dispatcher_monthly_report': {
+      const month = asString(payload.month);
+      return genericMail(
+        `NAVIX · Итоги месяца ${month}`,
+        `<p style="margin:0 0 20px;">Во вложении — результаты команды за ${escapeHtml(month)}: баллы инженеров, выполненные заявки и качество управления рабочими днями.</p><p style="margin:0;">Спасибо, что помогаете команде работать точнее.</p>`,
+        `Результаты команды за ${month} — в приложенном PDF: баллы инженеров, выполненные заявки и качество управления рабочими днями.`,
+        base,
+      );
+    }
     case 'plan_rebuilt': {
       return genericMail(
         'План обновлён',

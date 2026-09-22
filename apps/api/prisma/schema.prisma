@@ -149,6 +149,15 @@ enum FactKind {
   lunch_finished
 }
 
+/// A signed immutable reward entry. Positive categories come from explicit facts;
+/// penalties are manual dispatcher decisions with an audited reason.
+enum EngineerRewardCategory {
+  arrival
+  completion
+  passport
+  penalty
+}
+
 enum StopKind {
   job
   lunch
@@ -202,6 +211,7 @@ enum NotificationCategory {
   request_cancelled
   request_completed
   engineer_day_summary
+  dispatcher_monthly_report
   engineer_attention_required
   plan_rebuilt
 }
@@ -368,6 +378,7 @@ model Engineer {
   facts   RequestFact[]
   liveStates LiveEngineerState[]
   passportPoints EngineerPassportPoint[]
+  rewards EngineerReward[]
 
   @@index([inputOrder])
   @@map("engineers")
@@ -501,6 +512,7 @@ model Request {
   assignments   AppliedPlanAssignment[]
   stops         AppliedPlanStop[]
   liveStates    LiveRequestState[]
+  rewards       EngineerReward[]
 
   @@index([lifecycle, assignmentState])
   @@index([arrivalOrder])
@@ -561,6 +573,29 @@ model EngineerPassportPoint {
 
   @@index([engineerId, awardedAt])
   @@map("engineer_passport_points")
+}
+
+/// Unified immutable engineer reward ledger. `awardedAt` is the wall-clock month
+/// bucket; evidence may include the logical LIVE timestamp of the action.
+model EngineerReward {
+  id          String                 @id @default(uuid())
+  engineerId  String                 @map("engineer_id")
+  requestId   String?                @map("request_id")
+  workdayId   String?                @map("workday_id")
+  category    EngineerRewardCategory
+  points      Int
+  operationId String                 @unique @map("operation_id")
+  dedupKey    String                 @unique @map("dedup_key")
+  awardedAt   BigInt                 @map("awarded_at")
+  reason      String
+  evidence    Json
+
+  engineer Engineer @relation(fields: [engineerId], references: [id], onDelete: Cascade)
+  request  Request?  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([engineerId, awardedAt])
+  @@index([workdayId])
+  @@map("engineer_rewards")
 }
 
 /// Previous conditions of a request. A reschedule replaces the single set of live
@@ -680,6 +715,12 @@ model LiveRequestState {
   assumedStartedAt      BigInt?         @map("assumed_started_at")
   assumedCompletedAt    BigInt?         @map("assumed_completed_at")
   reportedEtaAt         BigInt?         @map("reported_eta_at")
+  reportedEtaRecordedAt BigInt?         @map("reported_eta_recorded_at")
+  reportedEtaBaselineAt BigInt?         @map("reported_eta_baseline_at")
+  promisedFinishAt      BigInt?         @map("promised_finish_at")
+  promisedFinishRecordedAt BigInt?      @map("promised_finish_recorded_at")
+  promisedFinishBaselineAt BigInt?      @map("promised_finish_baseline_at")
+  /// Latest accepted promise audit data used by revised-timing reward policy.
   /// Original plan owner pinned by an explicit ETA while Router rebuilds the remainder.
   reservedEngineerId    String?         @map("reserved_engineer_id")
   /// An infeasible ETA invalidates this engineer's current accepted route until a newer

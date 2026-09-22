@@ -15,6 +15,7 @@ import {
   UploadImportService,
 } from '../orchestrator/imports';
 import { LiveService } from '../orchestrator/live';
+import { businessNow } from '../orchestrator/live/business-clock';
 import { PassportsService } from '../orchestrator/passports';
 import { PolicyService } from '../orchestrator/policy';
 import { RequestsService } from '../orchestrator/requests';
@@ -25,7 +26,7 @@ import {
   MapRoutingService,
   moscowMinutesToUnix,
 } from '../orchestrator/settings';
-import { APP_STATE_KEYS, PrismaService } from '../persistence';
+import { APP_STATE_KEYS, PrismaService, UnitOfWork } from '../persistence';
 import {
   PUBLICATION_TRIGGERS,
   SnapshotBuilder,
@@ -141,6 +142,7 @@ export class DispatchController {
     private readonly config: AppConfigService,
     private readonly operations: OperationsService,
     private readonly prisma: PrismaService,
+    private readonly uow: UnitOfWork,
     private readonly clock: Clock,
     private readonly live: LiveService,
     private readonly dispatcherSettings: DispatcherSettingsService,
@@ -711,6 +713,18 @@ export class DispatchController {
         'Planning data changed while the policy comparison was calculated; retry the read',
       );
     }
+    // Persist the exact measured rows only after the publication identity has been
+    // rechecked. Extra-engineer covering rows remain in the evidence, while the roster
+    // hash is derived from the published base input and is used during policy selection.
+    const rosterEngineerIds = readRosterEngineerIds(current.snapshot.payload);
+    await this.uow.run(async (tx) => {
+      await this.policyService.recordComparison(
+        tx,
+        comparison,
+        rosterEngineerIds,
+        await businessNow(this.prisma, this.clock.nowSeconds()),
+      );
+    });
     return comparison;
   }
 
@@ -1168,5 +1182,18 @@ export class DispatchController {
       }
     }
     return this.mapRouting.enrichPlan(plan, trafficEnabled);
+  }
+}
+
+function readRosterEngineerIds(payload: string): string[] {
+  try {
+    const parsed = JSON.parse(payload) as { engineers?: Array<{ engineer_id?: unknown }> };
+    return (parsed.engineers ?? [])
+      .flatMap((engineer) =>
+        typeof engineer.engineer_id === 'string' ? [engineer.engineer_id] : [],
+      )
+      .sort();
+  } catch {
+    return [];
   }
 }
