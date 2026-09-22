@@ -3,12 +3,13 @@ import { SysError } from '../../common/errors';
 import type { EquipmentType, Priority, Prisma, Request } from '../../generated/prisma/client';
 import { NotificationsService } from '../../notifications';
 import { assertWriteApplied, type OperationContext } from '../../operations';
-import { PrismaService, type Tx } from '../../persistence';
+import { lockWorkingPlan, PrismaService, type Tx } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
-import { findWorkType } from './work-type.catalog';
+import { nearestRegion, type RegionPoint, regionCenters } from './region-geocenter';
+import { findWorkType, fitWindowToService } from './work-type.catalog';
 
 export interface PrepareRequestInput {
-  readonly contactName: string;
+  readonly contactName: string | null;
   readonly addressText: string;
   readonly lat?: number | null;
   readonly lon?: number | null;
@@ -65,7 +66,7 @@ export class RequestsService {
    */
   async prepare(
     context: OperationContext,
-    clientAccountId: string,
+    clientAccountId: string | null,
     input: PrepareRequestInput,
   ): Promise<Request> {
     const spec = findWorkType(input.workType);
@@ -75,8 +76,16 @@ export class RequestsService {
       });
     }
     assertWindow(input.windowStartAt, input.windowEndAt);
+    const window = fitWindowToService(
+      input.windowStartAt,
+      input.windowEndAt,
+      spec.serviceDurationSec,
+    );
 
-    const hasPoint = typeof input.lat === 'number' && typeof input.lon === 'number';
+    const lat = input.lat ?? null;
+    const lon = input.lon ?? null;
+    const hasPoint = typeof lat === 'number' && typeof lon === 'number';
+    const region = hasPoint ? await resolveRegion(context.tx, { lat, lon }) : null;
 
     return context.tx.request.create({
       data: {
@@ -85,8 +94,9 @@ export class RequestsService {
         arrivalOrder: 0,
         contactName: input.contactName,
         addressText: input.addressText,
-        lat: input.lat ?? null,
-        lon: input.lon ?? null,
+        region,
+        lat,
+        lon,
         // A request without a point is excluded from the published snapshot with a
         // counted diagnostic rather than given invented coordinates.
         needsGeocoding: !hasPoint,
@@ -106,8 +116,8 @@ export class RequestsService {
             ? defaultEquipment(spec.code)
             : input.requiredEquipment,
         priority: resolvePriority(spec.priority, input.urgent),
-        windowStartAt: BigInt(input.windowStartAt),
-        windowEndAt: BigInt(input.windowEndAt),
+        windowStartAt: BigInt(window.windowStartAt),
+        windowEndAt: BigInt(window.windowEndAt),
         lifecycle: 'draft',
         assignmentState: 'pending',
         origin: 'system_rule',
@@ -129,6 +139,7 @@ export class RequestsService {
     requestId: string,
     expectedVersion: number | null | undefined,
   ): Promise<Request> {
+    await lockWorkingPlan(context.tx);
     const current = await this.loadOwned(context.tx, requestId);
 
     if (current.lifecycle !== 'draft') {
@@ -188,17 +199,23 @@ export class RequestsService {
     expectedVersion: number | null | undefined,
     input: RescheduleInput,
   ): Promise<Request> {
-    assertWindow(input.windowStartAt, input.windowEndAt);
+    await lockWorkingPlan(context.tx);
     const current = await this.loadOwned(context.tx, requestId);
     assertChangeable(current);
+    const window = fitWindowToService(
+      input.windowStartAt,
+      input.windowEndAt,
+      current.serviceDurationSec,
+    );
+    assertWindow(window.windowStartAt, window.windowEndAt);
 
     await this.archiveConditions(context, current);
 
     const updated = await context.tx.request.updateMany({
       where: { id: requestId, version: expectedVersion ?? current.version },
       data: {
-        windowStartAt: BigInt(input.windowStartAt),
-        windowEndAt: BigInt(input.windowEndAt),
+        windowStartAt: BigInt(window.windowStartAt),
+        windowEndAt: BigInt(window.windowEndAt),
         windowOrigin: 'explicit',
         // The previous assignment does not confirm the new conditions, so the outcome
         // returns to pending and waits for a current result (context/36 section 3).
@@ -214,12 +231,12 @@ export class RequestsService {
     // stays a no-op, moving to another window confirms again (context/36 section 10).
     await this.notifications.record(context.tx, context.now, {
       category: 'request_rescheduled',
-      businessEventKey: `request_rescheduled:${requestId}:${input.windowStartAt}:${input.windowEndAt}`,
+      businessEventKey: `request_rescheduled:${requestId}:${window.windowStartAt}:${window.windowEndAt}`,
       recipientAccountId: current.clientAccountId,
       payload: {
         requestId,
-        windowStartAt: input.windowStartAt,
-        windowEndAt: input.windowEndAt,
+        windowStartAt: window.windowStartAt,
+        windowEndAt: window.windowEndAt,
       },
     });
 
@@ -239,18 +256,28 @@ export class RequestsService {
     expectedVersion: number | null | undefined,
     input: DispatcherUpdateInput,
   ): Promise<Request> {
+    await lockWorkingPlan(context.tx);
     const current = await this.loadOwned(context.tx, requestId);
     assertChangeable(current);
 
-    const windowStartAt = input.windowStartAt ?? Number(current.windowStartAt);
-    const windowEndAt = input.windowEndAt ?? Number(current.windowEndAt);
+    const requestedWindow = fitWindowToService(
+      input.windowStartAt ?? Number(current.windowStartAt),
+      input.windowEndAt ?? Number(current.windowEndAt),
+      current.serviceDurationSec,
+    );
+    const windowStartAt = requestedWindow.windowStartAt;
+    const windowEndAt = requestedWindow.windowEndAt;
     assertWindow(windowStartAt, windowEndAt);
 
     await this.archiveConditions(context, current);
 
     const movingPoint = input.lat !== undefined || input.lon !== undefined;
-    const lat = input.lat ?? current.lat;
-    const lon = input.lon ?? current.lon;
+    const lat = input.lat === undefined ? current.lat : input.lat;
+    const lon = input.lon === undefined ? current.lon : input.lon;
+    const region =
+      typeof lat === 'number' && typeof lon === 'number'
+        ? await resolveRegion(context.tx, { lat, lon }, current.id)
+        : current.region;
 
     const updated = await context.tx.request.updateMany({
       where: { id: requestId, version: expectedVersion ?? current.version },
@@ -258,6 +285,7 @@ export class RequestsService {
         windowStartAt: BigInt(windowStartAt),
         windowEndAt: BigInt(windowEndAt),
         addressText: input.addressText ?? current.addressText,
+        region,
         lat,
         lon,
         needsGeocoding: movingPoint ? lat === null || lon === null : current.needsGeocoding,
@@ -311,6 +339,7 @@ export class RequestsService {
     expectedVersion: number | null | undefined,
     reason: string | null,
   ): Promise<Request> {
+    await lockWorkingPlan(context.tx);
     const current = await this.loadOwned(context.tx, requestId);
     if (current.lifecycle === 'cancelled') {
       return current;
@@ -504,6 +533,64 @@ function defaultEquipment(workType: string): EquipmentType | null {
 
 function numberOrNull(value: bigint | null): number | null {
   return value === null ? null : Number(value);
+}
+
+/**
+ * Picks the planning region whose existing-request geocenter is closest to the
+ * new point. Regions without request points fall back to engineer homes, then depots.
+ */
+async function resolveRegion(
+  tx: Tx,
+  point: { lat: number; lon: number },
+  excludeRequestId?: string,
+): Promise<string | null> {
+  const requestRows = await tx.request.findMany({
+    where: {
+      region: { not: null },
+      lat: { not: null },
+      lon: { not: null },
+      lifecycle: { not: 'cancelled' },
+      ...(excludeRequestId ? { id: { not: excludeRequestId } } : {}),
+    },
+    select: { region: true, lat: true, lon: true },
+  });
+  let centers = regionCenters(toRegionPoints(requestRows));
+  if (centers.size === 0) {
+    const engineerRows = await tx.engineer.findMany({
+      where: {
+        archivedAt: null,
+        region: { not: null },
+        homeLat: { not: null },
+        homeLon: { not: null },
+      },
+      select: { region: true, homeLat: true, homeLon: true },
+    });
+    centers = regionCenters(
+      engineerRows.flatMap((row) =>
+        row.region && row.homeLat !== null && row.homeLon !== null
+          ? [{ region: row.region, lat: row.homeLat, lon: row.homeLon }]
+          : [],
+      ),
+    );
+  }
+  if (centers.size === 0) {
+    const depotRows = await tx.depot.findMany({
+      where: { lat: { not: null }, lon: { not: null } },
+      select: { region: true, lat: true, lon: true },
+    });
+    centers = regionCenters(toRegionPoints(depotRows));
+  }
+  return nearestRegion(point, centers);
+}
+
+function toRegionPoints(
+  rows: ReadonlyArray<{ region: string | null; lat: number | null; lon: number | null }>,
+): RegionPoint[] {
+  return rows.flatMap((row) =>
+    row.region && row.lat !== null && row.lon !== null
+      ? [{ region: row.region, lat: row.lat, lon: row.lon }]
+      : [],
+  );
 }
 
 async function nextArrivalOrder(tx: Tx): Promise<number> {

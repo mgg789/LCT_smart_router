@@ -1,5 +1,12 @@
 # Контракты «фронт ↔ бэк» для нового фронтенда
 
+Уточнение LIVE от 20.09.2026: вход в аккаунт не означает выход на смену; требуется
+явное действие `online`. `on_time` больше не принимается. Поля `lineStartedAt`,
+`noShowAt`, `lunchInterval` сохраняют историю независимо от версии маршрута.
+Карточка ближайшей заявки использует `eta/start/finish/problem`; ETA можно сообщить
+и после планового прибытия через модальное окно проблемы. Риск времени допускает
+решение `keep_as_is`. Чат/поддержка и AI не подключены; кнопки не имитируют отправку.
+
 > Самодостаточный документ для разработчика фронтенда: всё, что нужно для подключения
 > к System Layer (`apps/api`) — аутентификация, конвенции, каждый эндпоинт с телом
 > запроса и формой ответа, справочники и типовые потоки.
@@ -33,7 +40,7 @@ Authorization: Bearer <token>
 | Метод | Путь | Тело | Ответ | Заметки |
 |---|---|---|---|---|
 | POST | `/api/v1/auth/dispatcher/password` | `{email, password}` | `{token, role: "dispatcher", expiresAt}` | Публичный запасной вход. Пароль диспетчера задаётся в `.env` (`DISPATCHER_EMAIL`/`DISPATCHER_PASSWORD`); SMTP не нужен. Основной путь дашборда — `login-code` + `verify` с `role: "dispatcher"` |
-| POST | `/api/v1/auth/login-code` | `{email}` | `{email, expiresAt, devCode?}` | Публичный. Ответ одинаковый для известного и неизвестного адреса. `devCode` появляется только при `AUTH_DEV_EXPOSE_CODES=true`; при настроенном SMTP код уходит письмом |
+| POST | `/api/v1/auth/login-code` | `{email}` | `{email, expiresAt, devCode?}` | Публичный. Ответ одинаковый для известного и неизвестного адреса. `devCode` только в local development (`AUTH_DEV_EXPOSE_CODES=true` и не `DEMO_STAND`). На публичном стенде код уходит письмом, диспетчер входит паролем |
 | POST | `/api/v1/auth/login-code/verify` | `{email, code: "123456", role}` | `{token, role, expiresAt}` | `role` ∈ `client/engineer/dispatcher`; роль `engineer` выдаётся только существующему инженеру |
 | GET | `/api/v1/auth/session` | — | `{kind, source, role, accountId, tokenCategory}` | Кто за предъявленным токеном |
 | DELETE | `/api/v1/auth/session` | — | `{signedOut: true}` | Идемпотентный выход |
@@ -139,7 +146,7 @@ Authorization: Bearer <token>
 «начато», `overrunDetectedAt` — координатором превышений, `continuationAvailableAt` —
 когда инженер реально освободится.
 
-**POST `/dispatch/requests`** — создать заявку от имени клиента (сразу отправлена):
+**POST `/dispatch/requests`** — создать заявку с дашборда (сразу отправлена):
 
 ```json
 {
@@ -153,6 +160,12 @@ Authorization: Bearer <token>
 }
 ```
 → `{request: RequestView}`. Навык/длительность/профиль нормы выводятся из `workType`.
+`clientEmail` и `contactName` необязательны для компактной диспетчерской формы. Если
+адрес не передан, заявка остаётся без клиентского аккаунта и событийные письма не
+создаются; адрес и имя не заменяются фиктивными значениями. Компактная форма Figma
+передаёт `lat`/`lon` из LocationIQ autocomplete (`GET /dispatch/geocode`) или
+клика по OSM; без точки заявка не создаётся. `region` на сервере ставится
+ближайшим геоцентром уже существующих заявок региона.
 
 **PATCH `/dispatch/requests/:id`** — изменить условия неначатой заявки:
 `{operationId, expectedVersion?, windowStartAt?, windowEndAt?, addressText?, lat?, lon?, urgent?, requiredEquipment?}` (хотя бы одно поле) → `{request}`.
@@ -229,9 +242,13 @@ Authorization: Bearer <token>
 и прогресс работы — три разных вещи, не смешивать в один статус. `email` — адрес
 входа, когда он привязан (`hasAccount: true`); у импортированных бригад `null`.
 
-**POST `/dispatch/engineers`** — `{operationId, email, displayName, skills[1..3], transportType, region?, homeLat?, homeLon?}` → `{engineer}`.
+**POST `/dispatch/engineers`** — `{operationId, email?, displayName, skills[1..3], transportType, region?, homeLat?, homeLon?}` → `{engineer}`. Без `email` создаётся только профиль маршрутизации (`hasAccount: false`); логин можно выдать позже через `link-account`.
+
+**DELETE `/dispatch/engineers/:id`** — `{operationId, expectedVersion?}` → `{engineer}`. Мягко архивирует профиль, снимает роль инженера и отзывает его живые сессии. Исторические планы и факты сохраняют ссылку на профиль. Инженера на LIVE-линии или с незавершённой работой сначала нужно снять с линии и освободить.
 
 **POST `/dispatch/engineers/link-account`** — `{operationId, engineerId, email}` → `{engineer}`. Выдать логин профилю без адреса (бригада из импорта): аккаунт создаётся, роль инженера выдаётся, параметры планирования не меняются. Повторная привязка и адрес, уже являющийся логином другого инженера, — `VALIDATION_FAILED`. После привязки инженер входит через `POST /auth/login-code` + `verify` с `role: "engineer"`.
+
+**PUT `/dispatch/engineers/:id/email`** — `{operationId, expectedVersion?, email}` → `{engineer}`. Диспетчер заменяет привязанный логин из основной панели инженера. Сессии и роль старого адреса отзываются, новый адрес получает роль инженера; профиль, планы и параметры маршрутизации не меняются.
 
 **POST `/dispatch/engineers/unlink-account`** — `{operationId, engineerId}` → `{engineer}`. Снимает логин: `hasAccount: false`, `email: null`, роль инженера удаляется, живые сессии инженера отзываются. Профиль и план не меняются. Новый `verify` с `role: "engineer"` на этот адрес — `401`.
 
@@ -279,12 +296,40 @@ Authorization: Bearer <token>
 ### 6.4 Технастройки Router (обеды, допуски, дорога)
 
 В LIVE-ответах `workday` дополнен `finishedAt`, `completionReason` и `stats`.
+
+Новый Figma-интерфейс инженера использует эти LIVE-контракты без отдельной локальной
+машины состояний: до окна — `on_time`/`eta`, в открытом окне — `start`, в работе —
+`finish`/`problem`. Задержка передаёт дополнительные секунды, остальные проблемы —
+причину отмены (для оборудования также его тип). Обед и технический перерыв блокируют
+карточки; завершение техперерыва отправляет `break_finish`. Вход авторизованного
+инженера в запущенный день отправляет `online`, включая поздний возврат после no-show.
+Polling не запускает второй запрос поверх незавершённого и не перезаписывает результат
+действия устаревшим ответом; новые заявки подтягиваются вместе с очередной версией плана.
+
+Диспетчерский нижний маршрут строится по тому же `projectLiveGraph`, что карта:
+начало смены, заявки и обед; ожидания окон не являются вершинами. История из `history`
+сохраняет завершённые/отменённые визиты после пересчёта, `breaks` добавляет технические
+отметки. Выход на смену окрашивает старт зелёным, движение выделяет ребро и позицию,
+визит — текущую вершину. Дата и время в рабочих экранах берутся из логических часов.
+Алёрты сохраняются во вкладке «Алерты»; ручное разрешение не добавлено в этом проходе.
 Каждый инженер получает `routeState` (`active`, `awaiting_plan`, `exhausted`), свои
 `stats` и фактический `progress`. У `progress` есть фаза, неизменяемая точка начала дня
 `origin`, последняя достигнутая точка `anchor`, следующая точка `next` и опциональная
 точка `lunch`. `lunch` задаёт составной путь `anchor → lunch → next` до начала следующей
 заявки. Карта и пайплайн строят активные вершины и рёбра из одной проекции этих полей,
 не показывают `wait` отдельной вершиной и не используют синтетический `route.start`.
+Фактическая точка `progress.lunch` заменяет плановую точку обеда вместе со временем,
+а не добавляется к ней. Совпадение координат обеда и заявки не переносит маркер
+между адресами: карта всегда сохраняет географическое положение из данных.
+Обе карты (диспетчер и детали заявки инженера) используют онлайн-подложку улиц с
+локальным резервом. Единичная ошибка тайла не переключает уже загруженную карту
+в офлайн; начальной загрузке даётся 15 секунд. Событие отсутствия сети включает
+локальную подложку, восстановление сети возвращает онлайн-карту.
+В деталях заявки действия прижаты вниз доступного экрана, кнопка навигации овальная.
+Успешное начало/окончание техперерыва не выводит текстовое уведомление в списке заявок.
+В списке и меню инженера фактический интервал `lunch` / `engineer.lunchInterval`
+приоритетнее старой плановой остановки; после окончания фактического обеда
+устаревший плановый интервал повторно не показывается.
 Элемент истории содержит `terminalAt`; сортировка завершённых и отменённых заявок
 выполняется по этому фактическому времени.
 
@@ -316,6 +361,42 @@ Authorization: Bearer <token>
 → `{...те же 8 полей, operationId, status: "accepted", routerContextVersion}`.
 CAS по `expectedContextVersion`: устарели — 409 `VERSION_CONFLICT`, перечитать GET.
 Каждое поле ограничено 0…86400. Обеды включаются здесь же (`lunchesEnabled: true`).
+
+Модалка «Настройки» пишет сразу два контура: пороги Router — сюда, часы дня /
+alert-таймеры / ключи карт — в `/dispatch/settings`.
+
+**GET `/dispatch/settings`** →
+
+```json
+{
+  "dayStartMin": 540, "dayEndMin": 1260,
+  "noShowSec": 1800, "overdueSec": 300, "timeRiskSec": 300, "repeatAfterSec": 900,
+  "twogisApiKeySet": true, "twogisApiKeyLast4": "ab12",
+  "yandexApiKeySet": false, "yandexApiKeyLast4": null
+}
+```
+
+Минуты — от полуночи Москвы. Секреты карт никогда не возвращаются, только наличие
+и последние 4 символа.
+
+**PUT `/dispatch/settings`** — `{operationId, dayStartMin?, dayEndMin?, noShowSec?,
+overdueSec?, timeRiskSec?, repeatAfterSec?, twogisApiKey?, yandexApiKey?}` → тот же
+вид, что GET. Опущенное поле не меняется; `null` или пустая строка на ключе карты
+снимает его. Смена `dayStartMin`/`dayEndMin` переписывает смену сегодняшних
+`EngineerDay`, у которых ещё нет линии.
+
+**GET `/dispatch/settings/maps/status`** → `{active: "twogis"|"yandex"|"none",
+twogis: {provider, configured, ok, message}, yandex: {…}}`. Проба идёт параллельно;
+если отвечают оба — `active=twogis`.
+
+**GET `/dispatch/geocode?q=`** или `?city=&street=` → `{hits: [{displayName, lat, lon}]}`.
+Сервер зовёт LocationIQ **autocomplete** (`/v1/autocomplete`) с одним `q` — так
+находятся криво набранные адреса. `city`+`street` склеиваются в `q`, если его нет.
+Без `LOCATION_IQ_TOKEN` — `NOT_CONFIGURED`; точку тогда задают кликом по карте.
+
+Новая заявка с `lat`/`lon` получает `region` ближайшего геоцентра уже существующих
+заявок этого региона. Если у региона ещё нет точек — геоцентр считают по домам
+инженеров, затем по депо.
 
 ### 6.5 План дня и режим управления
 
@@ -359,11 +440,34 @@ CAS по `expectedContextVersion`: устарели — 409 `VERSION_CONFLICT`, 
 `kind` остановки: `job` / `lunch` / `wait`; `arrivalAt ≤ startAt ≤ endAt` — расчётные
 значения, не факты.
 
-**POST `/dispatch/mode`** — `{operationId, mode: "auto"|"manual"}` → `{control}`. В MANUAL автоматические результаты не применяются.
+Нога маршрута (`routes[].legs[]`) несёт `travelSource`
+(`approximate` | `road_matrix` | `route_api` | `traffic_api`) и, если sys подменил
+геометрию ответом карт, `geometryProvider: "twogis"|"yandex"`. Карта рисует геоцентры
+пунктиром цвета инженера, OSRM — серой сплошной, 2ГИС/Яндекс — зелёной сплошной
+(`#16A34A`). Без ключей карт план остаётся с геометрией Router; золотой план не
+меняется.
 
-**POST `/dispatch/plan/reassign`** — `{operationId, requestId, engineerId}` — перенос неначатой работы (ручной режим).
+**POST `/dispatch/mode`** — `{operationId, mode: "auto"|"manual", expectedModeVersion, expectedPlanRevision, reason?}` → `{control}`. Для MANUAL обязательна непустая причина; версия `0` означает отсутствие первого плана. В MANUAL автоматические результаты не применяются.
 
-**POST `/dispatch/plan/reorder`** — `{operationId, engineerId, requestIds: [...]}` — зафиксировать порядок очереди инженера.
+**POST `/dispatch/plan/reassign`** — `{operationId, requestId, engineerId, expectedModeVersion, expectedPlanRevision}` — перенос неначатой работы (ручной режим).
+
+**POST `/dispatch/plan/reorder`** — `{operationId, engineerId, requestIds: [...], expectedModeVersion, expectedPlanRevision}` — полный порядок редактируемой части очереди без повторов. Защищённые и нерабочие остановки сохраняют места.
+
+**POST `/dispatch/plan/manual-preview`** — payload соответствующей операции плюс `kind`;
+проверка без записи. **GET `/dispatch/plan/manual-history`** — постоянный журнал последних
+100 переходов и правок. Подробности и набор 4/2: [MANUAL](manual-control.md).
+`routes[].timingStatus: "unverified"` запрещает показывать скопированные времена и
+метрики как новый расчёт. Дашборд продолжает читать рабочий план при недоступном Router;
+в этом случае `snapshot.routerSettings` может быть `null`.
+
+При подключённых картах `timingStatus: "forecast"` разрешает показывать новый ETA
+даже для MANUAL: меняется прогноз времени, а не порядок/назначения. `mapForecast`
+указывает свежесть, смешанный источник и риски окон/смены; `legs[].mapObservation`
+содержит время наблюдения и режим пробок. Эти поля читаются одинаково в API
+диспетчера и инженера. Детали — [прогноз карт](api.md#прогноз-карт-поверх-рабочего-плана-dro-101).
+Сохранение вкладки «Карты» не меняет настройки Router и не запускает оптимизацию;
+после сохранения обновляется текущий прогноз. Диагностика показывает счётчик запросов
+текущего процесса, а общий остаток квоты проверяется в кабинете 2ГИС.
 
 ### 6.6 Алерты
 
@@ -416,10 +520,17 @@ CAS по `expectedContextVersion`: устарели — 409 `VERSION_CONFLICT`, 
 
 | Тело | Что делает |
 |---|---|
-| `{operationId, kind: "demo", confirmation: "reset to test data"}` | Сброс к тестовому набору |
+| `{operationId, kind: "demo", confirmation: "reset to test data"}` | Сброс к тестовому набору. На `DEMO_STAND` это тот же rewind, что `restart-demo` |
 | `{operationId, kind: "empty", confirmation: "erase all application data"}` | Полный сброс «всё в ноль» |
 
-Без точной фразы подтверждения — отказ; после сброса сессии живут, данные пусты.
+Без точной фразы подтверждения — отказ. Обычный `empty` сбрасывает и сессии.
+На публичном стенде `kind: "demo"` сохраняет сессию диспетчера и заново сеет 14/2.
+
+**POST `/dispatch/data/restart-demo`** — только при `DEMO_STAND=true`, только сессия
+диспетчера: `{operationId}` → `{restored, workDate, requestsCreated, engineersCreated, generation}`.
+Иначе `NOT_FOUND`. Живой день (`running`) кнопка всё равно перематывает; автосдвиг даты
+running-день не трогает. `GET /dispatch/live` и `GET /dispatch/data/state` отдают
+`demoStand: true` на этом контуре.
 
 ### 6.8 Отладочные
 

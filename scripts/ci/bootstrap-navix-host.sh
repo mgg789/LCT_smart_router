@@ -3,6 +3,7 @@
 # Does not install nginx (needs interactive sudo) and does not print secrets.
 set -euo pipefail
 
+repo_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 app_dir="${MGG_APP_DIR:-/home/mgg/navix}"
 example_src="${NAVIX_ENV_EXAMPLE:-/tmp/navix.env.example}"
 
@@ -32,22 +33,25 @@ if [ ! -f "$app_dir/.env" ]; then
     exit 1
   fi
   cp "$example_src" "$app_dir/.env"
+  chmod 600 "$app_dir/.env"
   pg_pw="$(openssl rand -hex 16)"
   router_pw="$(openssl rand -hex 16)"
   disp_pw="$(openssl rand -hex 12)"
-  python3 - "$app_dir/.env" "$pg_pw" "$router_pw" "$disp_pw" <<'PY'
-from pathlib import Path
-import sys
-path, pg_pw, router_pw, disp_pw = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
-text = Path(path).read_text()
-text = text.replace("lct_dev_password", pg_pw)
-text = text.replace("router_dev_password", router_pw)
-text = text.replace("change-me-before-deploying", disp_pw)
-        text = text.replace("API_PORT=8000", "API_PORT=127.0.0.1:18080")
-        text = text.replace("ROUTER_PORT=8100", "ROUTER_PORT=18100")
-Path(path).write_text(text)
-PY
-  chmod 600 "$app_dir/.env"
+  python3 "$repo_dir/scripts/ci/prepare_navix_env.py" "$app_dir/.env" \
+    --postgres-password "$pg_pw" \
+    --router-password "$router_pw" \
+    --dispatcher-password "$disp_pw"
+fi
+python3 "$repo_dir/scripts/ci/prepare_navix_env.py" "$app_dir/.env"
+chmod 600 "$app_dir/.env"
+if grep -Eq '=(change-me-before-deploying|lct_dev_password|router_dev_password)$' "$app_dir/.env"; then
+  echo "unsafe placeholder remains in $app_dir/.env; repair it before deployment" >&2
+  exit 1
+fi
+if ! grep -qx 'NODE_ENV=production' "$app_dir/.env" ||
+   ! grep -qx 'AUTH_DEV_EXPOSE_CODES=false' "$app_dir/.env"; then
+  echo "public contour must use NODE_ENV=production and hide login codes" >&2
+  exit 1
 fi
 
 echo "SOURCECRAFT_DEPLOY_PUB_BEGIN"

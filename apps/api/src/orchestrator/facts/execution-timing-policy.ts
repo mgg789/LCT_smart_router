@@ -1,5 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { RouterClient, type RouterTechnicalSettings } from '../../routing/router-gateway';
+import {
+  RouterClient,
+  type RouterTechnicalSettings,
+} from '../../routing/router-gateway/router-client.port';
 
 /** Thresholds that turn confirmed execution variance into a new routing task. */
 export interface ExecutionTimingPolicyValue {

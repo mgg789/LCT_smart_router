@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AlertResolverModule } from '../ai/alerts';
 import { ExplainModule } from '../ai/explain';
 import { AlertsModule } from '../orchestrator/alerts';
+import { DemoStandModule } from '../orchestrator/demo-stand';
 import { EngineersModule } from '../orchestrator/engineers';
 import { FactsModule } from '../orchestrator/facts';
 import { ImportsModule } from '../orchestrator/imports';
@@ -30,6 +31,7 @@ import { EngineerController } from './engineer.controller';
     FactsModule,
     ImportsModule,
     ResetModule,
+    DemoStandModule,
     LiveModule,
     ExplainModule,
     AlertResolverModule,

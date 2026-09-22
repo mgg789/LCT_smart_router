@@ -1,21 +1,40 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { z } from 'zod';
+import { lunchCoverageWitness, policyCoverageRegressed } from './coverage-policy';
+
+export { lunchCoverageWitness, policyCoverageRegressed } from './coverage-policy';
+
 import { SysError } from '../../common/errors';
+import { canonicalHash } from '../../common/json';
 import { Clock } from '../../common/time';
 import { Prisma } from '../../generated/prisma/client';
 import { NotificationsService } from '../../notifications';
 import type { OperationContext } from '../../operations';
-import { lockAlertQueue, PrismaService, type Tx, UnitOfWork } from '../../persistence';
-import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
+import {
+  lockAlertQueue,
+  lockRoutingCurrent,
+  PrismaService,
+  type Tx,
+  UnitOfWork,
+} from '../../persistence';
+import {
+  PUBLICATION_TRIGGERS,
+  SnapshotBuilder,
+  SnapshotPublisher,
+} from '../../routing/mount-data-eng';
+import {
+  assertPlanExpectation,
+  transitionControl,
+} from '../../routing/router-gateway/control-transition';
 import { RouterClient } from '../../routing/router-gateway/router-client.port';
+import {
+  DEFAULT_EXECUTION_TIMING_POLICY,
+  ExecutionTimingPolicy,
+} from '../facts/execution-timing-policy';
+import { businessNow } from '../live/business-clock';
+import { DispatcherSettingsService } from '../settings/dispatcher-settings.service';
 import { type AlertAction, alertActionsFor, resolutionDelay } from './alert-policy';
 
-const NO_SHOW_SECONDS = 30 * 60;
-const OVERDUE_SECONDS = 5 * 60;
-// Router's exact tolerance is contextual; before it is exposed in a plan result, a five
-// minute floor prevents a harmless one-second schedule variance becoming dispatcher work.
-const TIME_RISK_SECONDS = 5 * 60;
-const REPEAT_AFTER_SECONDS = 15 * 60;
 /** Router's immutable comparison evidence for one manual plan on one exact input. */
 const manualEvaluationSchema = z.object({
   input_hash: z.string().min(1),
@@ -37,11 +56,14 @@ const manualEvidenceSchema = z.object({
 });
 
 export interface ResolveAlertInput {
+  readonly expectedModeVersion?: number;
+  readonly expectedPlanRevision?: number;
   readonly action: AlertAction;
   readonly reason?: string;
   readonly minutes?: number;
   readonly windowStartAt?: number;
   readonly windowEndAt?: number;
+  readonly expectedRequestVersion?: number;
   readonly engineerId?: string;
 }
 
@@ -72,6 +94,9 @@ export interface AlertView {
  */
 @Injectable()
 export class AlertsService {
+  private readonly logger = new Logger(AlertsService.name);
+  private manualEvaluationInFlight: Promise<void> | null = null;
+  private manualEvaluationRetryAt = 0;
   constructor(
     private readonly prisma: PrismaService,
     private readonly uow: UnitOfWork,
@@ -79,11 +104,103 @@ export class AlertsService {
     private readonly publisher: SnapshotPublisher,
     private readonly notifications: NotificationsService,
     private readonly router: RouterClient,
+    @Optional() private readonly timing?: ExecutionTimingPolicy,
+    @Optional() private readonly dispatcherSettings?: DispatcherSettingsService,
+    @Optional() private readonly snapshotBuilder?: SnapshotBuilder,
   ) {}
+
+  private readonly windowCache = new Map<
+    string,
+    { expiresAt: number; value: ReturnType<RouterClient['proposeWindow']> }
+  >();
+
+  /** Builds a fresh, unpublished preview; network work never holds a DB transaction. */
+  async proposeWindow(id: string) {
+    const builder = this.snapshotBuilder;
+    if (!builder) throw SysError.notConfigured('Router snapshot builder');
+    const prepare = (planningAt?: number) =>
+      this.uow.run(async (tx) => {
+        const alert = await tx.alert.findUnique({ where: { id } });
+        if (!alert || alert.resolvedAt !== null || !alert.requestIds[0])
+          throw new SysError('VALIDATION_FAILED', 'An open request alert is required');
+        const request = await tx.request.findUnique({ where: { id: alert.requestIds[0] } });
+        if (request?.lifecycle !== 'submitted')
+          throw new SysError('WORK_ALREADY_STARTED', 'Only submitted work can change windows');
+        const now = planningAt ?? (await businessNow(tx, this.clock.nowSeconds()));
+        const built = await builder.build(tx, now);
+        const current = await tx.appliedPlanCurrent.findUnique({
+          where: { id: 'singleton' },
+          include: {
+            plan: { include: { routes: { include: { stops: { orderBy: { sequence: 'asc' } } } } } },
+          },
+        });
+        const ids = new Set(built.snapshot.requests.map((item) => item.request_id));
+        if (!ids.has(request.id))
+          throw new SysError(
+            'VALIDATION_FAILED',
+            'Request is outside the current planning horizon',
+          );
+        const engineers = new Set(built.snapshot.engineers.map((item) => item.engineer_id));
+        const routes = Object.fromEntries(
+          (current?.plan.routes ?? [])
+            .filter((route) => engineers.has(route.engineerId))
+            .map((route) => [
+              route.engineerId,
+              route.stops.flatMap((stop) =>
+                stop.requestId && ids.has(stop.requestId) ? [stop.requestId] : [],
+              ),
+            ]),
+        );
+        const date = new Date((now + 10800) * 1000).toISOString().slice(0, 10);
+        return {
+          requestVersion: request.version,
+          input: {
+            snapshot: built.snapshot,
+            request_id: request.id,
+            routes,
+            day_end_at: Date.parse(`${date}T00:00:00+03:00`) / 1000 + 86400,
+          },
+          identity: canonicalHash({
+            task: built.taskFingerprint,
+            plan: current?.planId ?? null,
+            version: request.version,
+          }),
+        };
+      });
+    const prepared = await prepare();
+    const key = canonicalHash(prepared.input);
+    const cached = this.windowCache.get(key);
+    let value = cached && cached.expiresAt > Date.now() ? cached.value : null;
+    if (!value) {
+      if (this.windowCache.size >= 32) this.windowCache.clear();
+      value = this.router.proposeWindow(prepared.input);
+      this.windowCache.set(key, { expiresAt: Date.now() + 10_000, value });
+      value.catch(() => this.windowCache.delete(key));
+    }
+    const result = await value;
+    if ((await prepare(prepared.input.snapshot.planning_as_of)).identity !== prepared.identity)
+      throw new SysError(
+        'VALIDATION_FAILED',
+        'The plan changed while calculating; request a fresh window',
+      );
+    return { ...result, requestVersion: prepared.requestVersion };
+  }
+
+  private async thresholds(db: PrismaService | Tx = this.prisma) {
+    if (!this.dispatcherSettings) {
+      return {
+        noShowSec: 30 * 60,
+        overdueSec: 5 * 60,
+        timeRiskSec: 5 * 60,
+        repeatAfterSec: 15 * 60,
+      };
+    }
+    return this.dispatcherSettings.read(db);
+  }
 
   /** Refreshes timer-derived conditions before a dashboard reads the queue. */
   async list(workDate?: string): Promise<AlertView[]> {
-    await this.evaluateManualPlan();
+    void this.refreshManualEvaluation();
     await this.uow.run((tx) => this.refresh(tx, this.clock.nowSeconds(), workDate));
     const scope = workDate ? { workDate } : {};
     // Open work is never hidden by an arbitrarily long resolved history.
@@ -104,9 +221,27 @@ export class AlertsService {
 
   /** Used by the coordinator; no dashboard request is required for alert creation. */
   async refreshAll(): Promise<void> {
-    await this.evaluateManualPlan();
+    await this.refreshManualEvaluation();
     const now = this.clock.nowSeconds();
     await this.uow.run((tx) => this.refresh(tx, now));
+  }
+
+  /** Coalesces background checks; a slow/unavailable Router must never block manual reads. */
+  private refreshManualEvaluation(): Promise<void> {
+    if (this.manualEvaluationInFlight) return this.manualEvaluationInFlight;
+    if (this.clock.nowSeconds() < this.manualEvaluationRetryAt) return Promise.resolve();
+    const work = this.evaluateManualPlan()
+      .catch((error: unknown) => {
+        this.logger.warn(
+          `Manual evaluation unavailable: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      })
+      .finally(() => {
+        this.manualEvaluationInFlight = null;
+        this.manualEvaluationRetryAt = this.clock.nowSeconds() + 15;
+      });
+    this.manualEvaluationInFlight = work;
+    return work;
   }
 
   /** Calculates manual costs outside database transactions, caching only exact identities. */
@@ -207,11 +342,41 @@ export class AlertsService {
     },
   ): Promise<void> {
     await lockAlertQueue(tx);
+    const liveDay = await tx.liveWorkday.findFirst({
+      where: { status: 'running' },
+      orderBy: { startedAtWallSec: 'desc' },
+      select: { id: true },
+    });
     const code = canonicalRouterCode(input.code);
+    if (liveDay && ['time_risk', 'unassigned'].includes(code)) return;
     const workDate = input.workDate ?? (await this.workDateForEngineer(tx, input.engineerIds[0]));
+    now = await businessNow(tx, now, workDate ?? undefined);
+    if (liveDay && code === 'lunch_conflict') {
+      const witness = lunchCoverageWitness(input.reasons);
+      const day = input.engineerIds[0]
+        ? await tx.engineerDay.findUnique({
+            where: {
+              engineerId_workDate: {
+                engineerId: input.engineerIds[0],
+                workDate: workDate ?? '',
+              },
+            },
+            select: { availability: true, lunchTaken: true, lunchWindowEndAt: true },
+          })
+        : null;
+      if (
+        !witness ||
+        witness.lunch_start_at <= now ||
+        !day ||
+        day.availability !== 'online' ||
+        day.lunchTaken ||
+        (day.lunchWindowEndAt !== null && now >= Number(day.lunchWindowEndAt))
+      )
+        return;
+    }
     // Router reuses e.g. lunch:{engineer} across dates. A condition, not a transient
     // result id, is the durable identity of the alert episode.
-    const conditionKey = `router:${code}:${workDate ?? 'unknown'}:${[...input.engineerIds].sort().join(',')}:${[...input.requestIds].sort().join(',')}:${input.id}`;
+    const conditionKey = `router:${code}:${workDate ?? 'unknown'}:${[...input.engineerIds].sort().join(',')}:${[...input.requestIds].sort().join(',')}`;
     const existing = await tx.alert.findFirst({
       where: {
         OR: [{ dedupKey: conditionKey }, { dedupKey: { startsWith: `${conditionKey}:episode:` } }],
@@ -259,6 +424,7 @@ export class AlertsService {
         sourceResultId: { not: resultId },
         resolvedAt: null,
         invalidatedAt: null,
+        OR: [{ resolutionAction: null }, { resolutionAction: { not: 'move_window' } }],
       },
       data: { invalidatedAt: BigInt(now), resolvedAt: BigInt(now), resolutionAction: 'superseded' },
     });
@@ -275,20 +441,103 @@ export class AlertsService {
 
   /** A plan application is visible as a notification but can never hold up the shift. */
   async recordPlanRebuilt(tx: Tx, now: number, resultId: string | null): Promise<void> {
+    now = await businessNow(tx, now);
     const dedupKey = `notice:plan_rebuilt:${resultId ?? now}`;
-    if (await tx.alert.findUnique({ where: { dedupKey } })) return;
-    await tx.alert.create({
-      data: {
-        kind: 'notice',
-        dedupKey,
-        code: 'plan_rebuilt',
-        severity: 'info',
-        engineerIds: [],
-        requestIds: [],
-        reasons: { resultId },
-        isBlocking: false,
-        sourceResultId: resultId,
-        createdAt: BigInt(now),
+    if (!(await tx.alert.findUnique({ where: { dedupKey } }))) {
+      await tx.alert.create({
+        data: {
+          kind: 'notice',
+          dedupKey,
+          code: 'plan_rebuilt',
+          severity: 'info',
+          engineerIds: [],
+          requestIds: [],
+          reasons: { resultId },
+          isBlocking: false,
+          sourceResultId: resultId,
+          createdAt: BigInt(now),
+        },
+      });
+    }
+    await this.evaluatePolicyCoverage(tx, now, resultId);
+  }
+
+  /** Raises coverage degradation only for the automatic result following a policy change. */
+  private async evaluatePolicyCoverage(
+    tx: Tx,
+    now: number,
+    resultId: string | null,
+  ): Promise<void> {
+    const row = await tx.appState.findUnique({ where: { key: 'alerts.policy-coverage-baseline' } });
+    if (!row || !resultId) return;
+    const baseline = z
+      .object({
+        requestIds: z.array(z.string()),
+        policyId: z.string(),
+        policyVersion: z.number().int(),
+        operationId: z.string(),
+        workDate: z.string().nullable(),
+        expiresAt: z.number().nullable(),
+      })
+      .safeParse(row.value);
+    if (!baseline.success) return;
+    if (baseline.data.expiresAt !== null && now > baseline.data.expiresAt) {
+      await tx.appState.delete({ where: { key: row.key } });
+      return;
+    }
+    const current = await tx.appliedPlanCurrent.findUnique({
+      where: { id: 'singleton' },
+      include: { plan: { include: { routerResult: true, assignments: true } } },
+    });
+    if (!current?.plan.routerResult || current.plan.routerResult.resultId !== resultId) return;
+    const payload = current.plan.routerResult.payload;
+    const publishedPolicy =
+      payload && typeof payload === 'object' && !Array.isArray(payload) && 'policy_id' in payload
+        ? String((payload as { policy_id: unknown }).policy_id)
+        : null;
+    if (publishedPolicy !== baseline.data.policyId) return;
+    const activePolicy = await tx.activePolicy.findUnique({ where: { id: 'singleton' } });
+    if (
+      activePolicy?.policyId !== baseline.data.policyId ||
+      activePolicy.version !== baseline.data.policyVersion
+    )
+      return;
+    const submitted = await tx.request.findMany({
+      where: { id: { in: baseline.data.requestIds }, lifecycle: 'submitted' },
+      select: { id: true },
+    });
+    const currentAssigned = new Set(
+      current.plan.assignments
+        .filter((assignment) => assignment.status === 'assigned')
+        .map((assignment) => assignment.requestId),
+    );
+    await tx.appState.delete({ where: { key: row.key } });
+    const newSubmittedAssignedIds = submitted
+      .map((request) => request.id)
+      .filter((id) => currentAssigned.has(id));
+    if (
+      !policyCoverageRegressed(
+        submitted.map((request) => request.id),
+        newSubmittedAssignedIds,
+      )
+    )
+      return;
+    const lost = submitted.map((request) => request.id).filter((id) => !currentAssigned.has(id));
+    const key = `system:plan_degraded:policy:${baseline.data.policyVersion}:${resultId}`;
+    await this.ensure(tx, now, {
+      key,
+      code: 'plan_degraded',
+      severity: 'warning',
+      engineerIds: [],
+      requestIds: lost,
+      workDate: baseline.data.workDate,
+      reasons: {
+        policyId: baseline.data.policyId,
+        policyVersion: baseline.data.policyVersion,
+        operationId: baseline.data.operationId,
+        baselineAssignedRequestIds: baseline.data.requestIds,
+        lostSubmittedRequestIds: lost,
+        expiresAt: baseline.data.expiresAt,
       },
     });
   }
@@ -306,7 +555,19 @@ export class AlertsService {
     input: ResolveAlertInput,
   ): Promise<AlertView> {
     await lockAlertQueue(context.tx);
-    await this.refresh(context.tx, context.now);
+    if (input.action === 'keep_manual' || input.action === 'restore_auto') {
+      if (input.expectedModeVersion === undefined || input.expectedPlanRevision === undefined)
+        throw SysError.validationFailed(
+          'Control and plan versions are required for mode decisions',
+        );
+      await assertPlanExpectation(context.tx, {
+        expectedModeVersion: input.expectedModeVersion,
+        expectedPlanRevision: input.expectedPlanRevision,
+      });
+    }
+    await this.refresh(context.tx, context.now, undefined, context.businessTime);
+    if (!context.businessTime)
+      context = { ...context, now: await businessNow(context.tx, context.now), businessTime: true };
     const alert = await context.tx.alert.findUnique({ where: { id } });
     if (!alert) throw SysError.notFound('Alert', { alertId: id });
     if (alert.kind !== 'alert') {
@@ -320,14 +581,14 @@ export class AlertsService {
       });
     }
     await this.applyAction(context, alert, input);
-    if (input.action === 'restore_auto') {
-      // The bus applies a still-current package after commit. Keep the hard blocker until
-      // that application actually replaces the manual revision; an outage is not success.
+    if (input.action === 'restore_auto' || input.action === 'move_window') {
+      // Saving a window or requesting AUTO is not proof of a feasible assignment.
+      // Keep the blocker until a subsequent accepted plan confirms the outcome.
       return this.view(
         await context.tx.alert.update({
           where: { id },
           data: {
-            resolutionAction: 'restore_auto',
+            resolutionAction: input.action,
             resolutionReason: input.reason ?? null,
           },
         }),
@@ -350,7 +611,7 @@ export class AlertsService {
   async shiftStatus(
     workDate: string,
   ): Promise<{ workDate: string; closedAt: number | null; unresolvedCount: number }> {
-    await this.evaluateManualPlan();
+    void this.refreshManualEvaluation();
     await this.uow.run((tx) => this.refresh(tx, this.clock.nowSeconds(), workDate));
     const [closure, unresolvedCount] = await Promise.all([
       this.prisma.shiftClosure.findUnique({ where: { workDate } }),
@@ -404,10 +665,15 @@ export class AlertsService {
     const engineerId = input.engineerId ?? alert.engineerIds[0];
     if (input.action === 'reschedule' || input.action === 'move_window') {
       if (!requestId) throw new SysError('VALIDATION_FAILED', 'This alert names no request');
+      await lockRoutingCurrent(context.tx);
       const request = await context.tx.request.findUnique({ where: { id: requestId } });
       if (!request || request.lifecycle !== 'submitted') {
         throw new SysError('WORK_ALREADY_STARTED', 'Only a submitted request can be rescheduled');
       }
+      if (input.action === 'move_window' && input.expectedRequestVersion !== request.version)
+        throw new SysError('VERSION_CONFLICT', 'Request changed; reopen the window form', {
+          details: { currentVersion: request.version },
+        });
       const start =
         input.action === 'reschedule'
           ? Number(request.windowStartAt) + 86_400
@@ -417,6 +683,30 @@ export class AlertsService {
       if (start === undefined || end === undefined || end <= start) {
         throw new SysError('VALIDATION_FAILED', 'Moving a window needs both ordered bounds');
       }
+      const liveDay = await context.tx.liveWorkday.findFirst({ where: { status: 'running' } });
+      const assignedStop = await context.tx.appliedPlanStop.findFirst({
+        where: { requestId, route: { plan: { current: { isNot: null } } } },
+        select: { id: true },
+      });
+      const liveOwnership = liveDay
+        ? await context.tx.liveRequestState.findFirst({
+            where: {
+              requestId,
+              workdayId: liveDay.id,
+              OR: [{ assumedStartedAt: { not: null } }, { reservedEngineerId: { not: null } }],
+            },
+            select: { id: true },
+          })
+        : null;
+      // Deferring free work outside today's horizon does not alter anyone's route.
+      // Future publications will read the new window; stale in-flight results are
+      // rejected by the acceptance service's window check.
+      const deferFreeWork =
+        liveDay !== null &&
+        request.assignmentState === 'unassigned' &&
+        assignedStop === null &&
+        liveOwnership === null &&
+        start >= Date.parse(`${liveDay.workDate}T00:00:00+03:00`) / 1000 + 86_400;
       await context.tx.requestConditionHistory.create({
         data: {
           requestId,
@@ -429,8 +719,8 @@ export class AlertsService {
           reason: input.reason ?? input.action,
         },
       });
-      await context.tx.request.update({
-        where: { id: requestId },
+      const changed = await context.tx.request.updateMany({
+        where: { id: requestId, version: request.version },
         data: {
           windowStartAt: BigInt(start),
           windowEndAt: BigInt(end),
@@ -439,11 +729,15 @@ export class AlertsService {
           version: { increment: 1 },
         },
       });
-      await this.publisher.publishIfChanged(
-        context.tx,
-        context.now,
-        PUBLICATION_TRIGGERS.REQUEST_CONDITIONS_CHANGED,
-      );
+      if (changed.count !== 1)
+        throw new SysError('VERSION_CONFLICT', 'Request changed during resolution');
+      if (!deferFreeWork)
+        await this.publisher.publishIfChanged(
+          context.tx,
+          context.now,
+          PUBLICATION_TRIGGERS.REQUEST_CONDITIONS_CHANGED,
+          { businessTime: true },
+        );
       return;
     }
     if (input.action === 'add_engineer') {
@@ -488,7 +782,7 @@ export class AlertsService {
         data: {
           availability: 'online',
           attendanceOptOut: false,
-          attendanceGraceUntil: BigInt(context.now + NO_SHOW_SECONDS),
+          attendanceGraceUntil: BigInt(context.now + (await this.thresholds(context.tx)).noShowSec),
           updatedAt: BigInt(context.now),
           version: { increment: 1 },
         },
@@ -511,6 +805,7 @@ export class AlertsService {
         context.tx,
         context.now,
         PUBLICATION_TRIGGERS.ENGINEER_AVAILABILITY_CHANGED,
+        { businessTime: true },
       );
       return;
     }
@@ -522,18 +817,10 @@ export class AlertsService {
         include: { plan: true },
       });
       if (pointer?.plan.origin === 'manual')
-        await context.tx.controlState.update({
-          where: { id: 'singleton' },
-          data: {
-            mode: 'manual',
-            frozenPlanId: pointer.plan.id,
-            changedAt: BigInt(context.now),
-            changedBy: context.actor.id,
-            modeVersion: { increment: 1 },
-          },
-        });
+        await transitionControl(context, 'manual', input.reason);
       return;
     }
+    if (input.action === 'keep_as_is') return;
     if (input.action === 'restore_auto') {
       if (!this.router.isConfigured())
         throw SysError.notConfigured('Router automatic plan restoration');
@@ -552,16 +839,13 @@ export class AlertsService {
           'VALIDATION_FAILED',
           'No current automatic result is available; retry when Router is ready',
         );
-      await context.tx.controlState.update({
-        where: { id: 'singleton' },
-        data: {
-          mode: 'auto',
-          frozenPlanId: null,
-          changedAt: BigInt(context.now),
-          changedBy: context.actor.id,
-          modeVersion: { increment: 1 },
-        },
-      });
+      await transitionControl(context, 'auto');
+      await this.publisher.publishIfChanged(
+        context.tx,
+        context.now,
+        PUBLICATION_TRIGGERS.CONTROL_AUTO_RESTORED,
+        { businessTime: context.businessTime },
+      );
       return;
     }
     if (input.action === 'skip_lunch' || input.action === 'keep_lunch') {
@@ -587,6 +871,7 @@ export class AlertsService {
         context.tx,
         context.now,
         PUBLICATION_TRIGGERS.LUNCH_RESTORED,
+        { businessTime: true },
       );
       return;
     }
@@ -624,6 +909,7 @@ export class AlertsService {
         context.tx,
         context.now,
         PUBLICATION_TRIGGERS.ENGINEER_AVAILABILITY_CHANGED,
+        { businessTime: true },
       );
       return;
     }
@@ -646,17 +932,167 @@ export class AlertsService {
   }
 
   /** Derives open alerts only from facts/schedules that actually exist. */
-  private async refresh(tx: Tx, now: number, scopeDate?: string): Promise<void> {
+  private async refresh(
+    tx: Tx,
+    now: number,
+    scopeDate?: string,
+    businessTime = false,
+  ): Promise<void> {
     await lockAlertQueue(tx);
+    if (!businessTime) now = await businessNow(tx, now, scopeDate);
+    const thresholds = await this.thresholds(tx);
     const active = new Set<string>();
+    const windowChanges = await tx.alert.findMany({
+      where: { resolutionAction: 'move_window', resolvedAt: null, invalidatedAt: null },
+      select: { id: true, requestIds: true, createdAt: true },
+    });
+    const awaitingWindow = new Set<string>();
+    for (const alert of windowChanges) {
+      const request = alert.requestIds[0]
+        ? await tx.request.findUnique({ where: { id: alert.requestIds[0] } })
+        : null;
+      if (request?.lifecycle === 'submitted' && request.assignmentState !== 'assigned') {
+        awaitingWindow.add(alert.id);
+      } else {
+        await tx.alert.update({
+          where: { id: alert.id },
+          data: {
+            resolvedAt: BigInt(now),
+            resolutionDelaySec: resolutionDelay(now - Number(alert.createdAt)),
+          },
+        });
+      }
+    }
+    // Router and system episodes both become obsolete once the request is no
+    // longer free work. Preserve the audit row, but remove it from the open queue.
+    const unassignedAlerts = await tx.alert.findMany({
+      where: { code: 'unassigned', resolvedAt: null, invalidatedAt: null },
+      select: { id: true, requestIds: true },
+    });
+    for (const alert of unassignedAlerts) {
+      if (awaitingWindow.has(alert.id)) continue;
+      if (alert.requestIds.length === 0) continue;
+      const remaining = await tx.request.count({
+        where: {
+          id: { in: alert.requestIds },
+          lifecycle: 'submitted',
+          assignmentState: 'unassigned',
+        },
+      });
+      if (remaining === 0)
+        await tx.alert.update({
+          where: { id: alert.id },
+          data: {
+            resolvedAt: BigInt(now),
+            invalidatedAt: BigInt(now),
+            resolutionAction: 'superseded',
+          },
+        });
+    }
+    const liveRunning = await tx.liveWorkday.findFirst({
+      where: {
+        status: { in: ['running', 'finished'] },
+        ...(scopeDate ? { workDate: scopeDate } : {}),
+      },
+      orderBy: { startedAtWallSec: 'desc' },
+      select: { id: true },
+    });
+    const routerAlerts = await tx.alert.findMany({
+      where: { dedupKey: { startsWith: 'router:' }, invalidatedAt: null },
+      select: { id: true, code: true, reasons: true, engineerIds: true, workDate: true },
+    });
+    for (const alert of routerAlerts) {
+      const lunchDay =
+        alert.code === 'lunch_conflict' && alert.engineerIds[0] && alert.workDate
+          ? await tx.engineerDay.findUnique({
+              where: {
+                engineerId_workDate: { engineerId: alert.engineerIds[0], workDate: alert.workDate },
+              },
+              include: { engineer: true },
+            })
+          : null;
+      if (
+        alert.code === 'lunch_conflict' &&
+        ((liveRunning && lunchCoverageWitness(alert.reasons) === null) ||
+          (lunchDay &&
+            (lunchDay.engineer.archivedAt !== null ||
+              lunchDay.availability !== 'online' ||
+              lunchDay.lunchTaken ||
+              !lunchDay.lunchEnabled ||
+              now >= Number(lunchDay.lunchWindowEndAt ?? lunchDay.shiftEndAt))))
+      ) {
+        await tx.alert.update({
+          where: { id: alert.id },
+          data: {
+            invalidatedAt: BigInt(now),
+            resolvedAt: BigInt(now),
+            resolutionAction: 'superseded',
+          },
+        });
+        continue;
+      }
+      const lunchStartAt = lunchCoverageWitness(alert.reasons)?.lunch_start_at ?? null;
+      if (lunchStartAt !== null && now >= lunchStartAt) {
+        await tx.alert.update({
+          where: { id: alert.id },
+          data: {
+            invalidatedAt: BigInt(now),
+            resolvedAt: BigInt(now),
+            resolutionAction: 'superseded',
+          },
+        });
+      }
+    }
+    const liveWindowAlerts = await tx.alert.findMany({
+      where: { code: 'LIVE_WINDOW_COMPLETION_RISK', resolvedAt: null, invalidatedAt: null },
+      select: { id: true, requestIds: true, engineerIds: true },
+    });
+    const accepted =
+      liveWindowAlerts.length > 0
+        ? await tx.appliedPlanCurrent.findUnique({
+            where: { id: 'singleton' },
+            select: { plan: { select: { revision: true } } },
+          })
+        : null;
+    for (const alert of liveWindowAlerts) {
+      const requestId = alert.requestIds[0];
+      const request = requestId ? await tx.request.findUnique({ where: { id: requestId } }) : null;
+      const state = requestId
+        ? await tx.liveRequestState.findFirst({
+            where: { requestId, workday: { status: 'running' } },
+          })
+        : null;
+      // Releasing an infeasible ETA clears reportedEtaAt intentionally. The
+      // incident belongs to the pending reassignment until the window expires.
+      const activeRisk =
+        request !== null &&
+        request.lifecycle === 'submitted' &&
+        now <= Number(request.windowEndAt) &&
+        state !== null &&
+        state.replanPendingEngineerId !== null &&
+        (accepted === null || accepted.plan.revision === state.replanPendingPlanRevision) &&
+        alert.engineerIds.includes(state.replanPendingEngineerId);
+      if (!activeRisk) {
+        await tx.alert.update({
+          where: { id: alert.id },
+          data: {
+            invalidatedAt: BigInt(now),
+            resolvedAt: BigInt(now),
+            resolutionAction: 'superseded',
+          },
+        });
+      }
+    }
     const days = await tx.engineerDay.findMany({
-      where: scopeDate ? { workDate: scopeDate } : {},
-      include: { engineer: { select: { accountId: true } } },
+      where: scopeDate
+        ? { workDate: scopeDate, engineer: { archivedAt: null } }
+        : { engineer: { archivedAt: null } },
+      include: { engineer: { select: { accountId: true, archivedAt: true } } },
     });
     for (const day of days) {
-      if (!day.engineer.accountId || day.attendanceOptOut) continue;
+      if (day.attendanceOptOut) continue;
       if (
-        now >= Number(day.shiftStartAt) + NO_SHOW_SECONDS &&
+        now >= Number(day.shiftStartAt) + thresholds.noShowSec &&
         now <= Number(day.shiftEndAt) &&
         (day.attendanceGraceUntil === null || now >= Number(day.attendanceGraceUntil)) &&
         (day.lastAttendanceAt === null || day.lastAttendanceAt < day.shiftStartAt)
@@ -672,29 +1108,7 @@ export class AlertsService {
           workDate: day.workDate,
           reasons: {
             shiftStartAt: Number(day.shiftStartAt),
-            thresholdAt: Number(day.shiftStartAt) + NO_SHOW_SECONDS,
-          },
-        });
-      }
-      const expected = overdueExpectation(day);
-      if (
-        expected !== null &&
-        (day.attendanceGraceUntil === null || now >= Number(day.attendanceGraceUntil)) &&
-        now >= expected + OVERDUE_SECONDS &&
-        Number(day.lastAttendanceAt ?? 0n) < expected
-      ) {
-        const key = `system:engineer_overdue:${day.id}:${expected}`;
-        active.add(key);
-        await this.ensure(tx, now, {
-          key,
-          code: 'engineer_overdue',
-          severity: 'warning',
-          engineerIds: [day.engineerId],
-          requestIds: [],
-          workDate: day.workDate,
-          reasons: {
-            expectedAt: expected,
-            lastAttendanceAt: day.lastAttendanceAt === null ? null : Number(day.lastAttendanceAt),
+            thresholdAt: Number(day.shiftStartAt) + thresholds.noShowSec,
           },
         });
       }
@@ -705,7 +1119,7 @@ export class AlertsService {
     for (const request of requests) {
       const date = workDateForMoment(Number(request.windowStartAt), days) ?? scopeDate ?? null;
       if (scopeDate && date !== scopeDate) continue;
-      const key = `system:unassigned:${date}:${request.id}:${request.windowStartAt}:${request.windowEndAt}`;
+      const key = `system:unassigned:${date}:${request.id}`;
       active.add(key);
       await this.ensure(tx, now, {
         key,
@@ -717,52 +1131,15 @@ export class AlertsService {
         reasons: { assignment: 'unassigned' },
       });
     }
-    const activeWork = await tx.request.findMany({
-      where: { lifecycle: 'in_progress', expectedCompletionAt: { not: null } },
-    });
-    for (const request of activeWork) {
-      const expectedAt = Number(request.expectedCompletionAt ?? 0n);
-      if (now < expectedAt + OVERDUE_SECONDS) continue;
-      const start = await tx.requestFact.findFirst({
-        where: { requestId: request.id, kind: 'started' },
-        orderBy: { occurredAt: 'desc' },
-      });
-      if (!start?.engineerId) continue;
-      const day = days.find(
-        (candidate) =>
-          candidate.engineerId === start.engineerId &&
-          now >= Number(candidate.shiftStartAt) &&
-          now <= Number(candidate.shiftEndAt),
-      );
-      if (
-        !day ||
-        !day.engineer.accountId ||
-        day.attendanceOptOut ||
-        (day.attendanceGraceUntil !== null && now < Number(day.attendanceGraceUntil)) ||
-        Number(day.lastAttendanceAt ?? 0n) >= expectedAt
-      )
-        continue;
-      const key = `system:engineer_overdue:work:${request.id}:${expectedAt}`;
-      active.add(key);
-      await this.ensure(tx, now, {
-        key,
-        code: 'engineer_overdue',
-        severity: 'warning',
-        engineerIds: [start.engineerId],
-        requestIds: [request.id],
-        workDate: day.workDate,
-        reasons: {
-          state: 'at_job',
-          expectedAt,
-          lastAttendanceAt: day.lastAttendanceAt === null ? null : Number(day.lastAttendanceAt),
-        },
-      });
-    }
     const pointer = await tx.appliedPlanCurrent.findUnique({
       where: { id: 'singleton' },
       include: { plan: { include: { routes: { include: { stops: true } }, assignments: true } } },
     });
     if (pointer?.plan) {
+      const completedFacts = await tx.requestFact.findMany({
+        where: { kind: 'finished', engineerId: { not: null } },
+        select: { engineerId: true, occurredAt: true },
+      });
       const requestsById = new Map(
         (
           await tx.request.findMany({
@@ -770,36 +1147,80 @@ export class AlertsService {
           })
         ).map((x) => [x.id, x]),
       );
+      const timing = this.timing?.current() ?? DEFAULT_EXECUTION_TIMING_POLICY;
+      const liveStates = await tx.liveRequestState.findMany({
+        where: { workday: { status: 'running' } },
+        include: { request: true, workday: true },
+      });
+      const liveStateByRequest = new Map(liveStates.map((state) => [state.requestId, state]));
+      for (const state of liveStates) {
+        const request = state.request;
+        if (
+          !['submitted', 'in_progress'].includes(request.lifecycle) ||
+          state.assumedCompletedAt !== null
+        )
+          continue;
+        const route = pointer.plan.routes.find((candidate) =>
+          candidate.stops.some((stop) => stop.requestId === request.id),
+        );
+        const stop = route?.stops
+          .filter((candidate) => candidate.requestId === request.id)
+          .sort((a, b) => a.sequence - b.sequence)[0];
+        const engineerId = route?.engineerId ?? state.reservedEngineerId;
+        if (!engineerId) continue;
+        const original = await tx.appState.findUnique({
+          where: { key: `live.arrival-baseline.${state.workdayId}.${request.id}` },
+        });
+        const parsed = z.object({ plannedStartAt: z.number() }).safeParse(original?.value);
+        const plannedStartAt = parsed.success
+          ? parsed.data.plannedStartAt
+          : Number(stop?.startAt ?? request.startedAt ?? request.windowStartAt);
+        const etaRisk =
+          request.lifecycle === 'submitted' &&
+          now <= Number(request.windowEndAt) &&
+          state.reportedEtaAt !== null &&
+          Number(state.reportedEtaAt) > plannedStartAt + timing.taskOverrunToleranceSec;
+        const windowRisk =
+          request.lifecycle === 'submitted' &&
+          now <= Number(request.windowEndAt) &&
+          state.reportedEtaAt !== null &&
+          Number(state.reportedEtaAt) + request.serviceDurationSec >
+            Number(request.windowEndAt) + timing.taskOverrunToleranceSec;
+        const workRisk =
+          request.lifecycle === 'in_progress' &&
+          request.startedAt !== null &&
+          now >
+            Number(request.startedAt) + request.serviceDurationSec + timing.taskOverrunToleranceSec;
+        if (!etaRisk && !windowRisk && !workRisk) continue;
+        const date = state.workday.workDate;
+        if (scopeDate && date !== scopeDate) continue;
+        const key = `system:time_risk:${date}:${request.id}:${engineerId}`;
+        active.add(key);
+        await this.ensure(tx, now, {
+          key,
+          code: 'time_risk',
+          severity: 'warning',
+          engineerIds: [engineerId],
+          requestIds: [request.id],
+          workDate: date,
+          reasons: {
+            text: workRisk
+              ? 'Работа длится дольше нормативного времени с учётом допуска.'
+              : windowRisk
+                ? 'Прогноз завершения заявки выходит за окно клиента с учётом допуска.'
+                : 'Инженер сообщил прибытие позже планового времени с учётом допуска.',
+            plannedStartAt,
+            reportedEtaAt: state.reportedEtaAt === null ? null : Number(state.reportedEtaAt),
+            windowEndAt: Number(request.windowEndAt),
+            startedAt: request.startedAt === null ? null : Number(request.startedAt),
+            thresholdSec: timing.taskOverrunToleranceSec,
+            etaRisk,
+            windowRisk,
+            workRisk,
+          },
+        });
+      }
       for (const route of pointer.plan.routes) {
-        for (const stop of route.stops) {
-          if (!stop.requestId) continue;
-          const request = requestsById.get(stop.requestId);
-          if (
-            !request ||
-            request.assignmentState !== 'assigned' ||
-            request.lifecycle !== 'submitted' ||
-            pointer.plan.origin !== 'auto' ||
-            Number(stop.startAt) <= Number(request.windowEndAt) + TIME_RISK_SECONDS
-          )
-            continue;
-          const date = workDateForMoment(Number(stop.startAt), days) ?? scopeDate ?? null;
-          if (scopeDate && date !== scopeDate) continue;
-          const key = `system:time_risk:${date}:${stop.requestId}:${route.engineerId}:${request.windowEndAt}`;
-          active.add(key);
-          await this.ensure(tx, now, {
-            key,
-            code: 'time_risk',
-            severity: 'warning',
-            engineerIds: [route.engineerId],
-            requestIds: [stop.requestId],
-            workDate: date,
-            reasons: {
-              plannedStartAt: Number(stop.startAt),
-              windowEndAt: Number(request.windowEndAt),
-              thresholdSec: TIME_RISK_SECONDS,
-            },
-          });
-        }
         const day = days.find(
           (candidate) =>
             candidate.engineerId === route.engineerId &&
@@ -822,17 +1243,25 @@ export class AlertsService {
         if (
           pointer.plan.origin === 'auto' &&
           day &&
-          day.engineer.accountId &&
-          day.lastAttendanceAt !== null &&
+          completedFacts.some(
+            (fact) =>
+              fact.engineerId === route.engineerId &&
+              Number(fact.occurredAt) >= Number(day.shiftStartAt) &&
+              Number(fact.occurredAt) <= Number(day.shiftEndAt),
+          ) &&
           day.availability === 'online' &&
           !working &&
           !day.attendanceOptOut &&
           (day.attendanceGraceUntil === null || now >= Number(day.attendanceGraceUntil)) &&
           lateStop &&
-          now >= Number(lateStop.arrivalAt) + OVERDUE_SECONDS &&
-          Number(day.lastAttendanceAt) < Number(lateStop.arrivalAt)
+          (lateStop.requestId
+            ? (liveStateByRequest.get(lateStop.requestId)?.reportedEtaAt ?? null) === null
+            : false) &&
+          now >
+            Number(lateStop.startAt) + (thresholds.overdueSec || timing.taskOverrunToleranceSec) &&
+          Number(day.lastAttendanceAt ?? 0n) < Number(lateStop.arrivalAt)
         ) {
-          const key = `system:engineer_overdue:edge:${day.id}:${lateStop.requestId}:${lateStop.arrivalAt}`;
+          const key = `system:engineer_overdue:edge:${day.id}:${lateStop.requestId}`;
           active.add(key);
           await this.ensure(tx, now, {
             key,
@@ -852,6 +1281,7 @@ export class AlertsService {
       for (const day of days) {
         if (
           !day.lunchEnabled ||
+          now >= Number(day.lunchWindowEndAt ?? day.shiftEndAt) ||
           !day.lunchRequired ||
           day.lunchTaken ||
           day.availability !== 'online' ||
@@ -859,7 +1289,7 @@ export class AlertsService {
         )
           continue;
         const route = pointer.plan.routes.find((x) => x.engineerId === day.engineerId);
-        if (!route || route.lunchStatus !== 'scheduled') {
+        if (!liveRunning && (!route || route.lunchStatus !== 'scheduled')) {
           const key = `system:lunch_conflict:${day.id}`;
           active.add(key);
           await this.ensure(tx, now, {
@@ -873,7 +1303,7 @@ export class AlertsService {
           });
         }
       }
-      if (pointer.plan.origin === 'manual') {
+      if (pointer.plan.origin === 'manual' && !liveRunning) {
         const row = await tx.appState.findUnique({ where: { key: 'alerts.manual-evaluation' } });
         const evidence = manualEvidenceSchema.safeParse(row?.value);
         const publication = await tx.routingCurrent.findUnique({
@@ -886,8 +1316,8 @@ export class AlertsService {
           evidence.data.inputHash === publication?.snapshot.inputHash
             ? evidence.data.evaluation
             : null;
-        if (!evaluation || evaluation.degraded) {
-          const code = evaluation ? 'plan_degraded' : 'plan_review_required';
+        if (!evaluation) {
+          const code = 'plan_review_required';
           const key = `system:${code}:${pointer.plan.id}`;
           active.add(key);
           await this.ensure(tx, now, {
@@ -898,9 +1328,7 @@ export class AlertsService {
             requestIds: [],
             workDate: scopeDate ?? null,
             reasons: {
-              text: evaluation
-                ? `Ручной план хуже автоматического по критерию «${criterionLabel(evaluation.criterion)}» политики «${evaluation.policy_id}».`
-                : 'Оценка ручного плана временно недоступна. Проверьте решение вручную или восстановите автоматический вариант.',
+              text: 'Оценка ручного плана временно недоступна. Проверьте решение вручную или восстановите автоматический вариант.',
               ...(evaluation ?? {}),
             },
           });
@@ -919,10 +1347,17 @@ export class AlertsService {
         resolvedAt: true,
         resolutionAction: true,
         createdAt: true,
+        reasons: true,
       },
     });
     for (const alert of openSystem) {
+      if (awaitingWindow.has(alert.id)) continue;
       const dedupKey = alert.dedupKey;
+      if (dedupKey?.startsWith('system:plan_degraded:policy:')) {
+        const reasons = z.object({ expiresAt: z.number().nullable() }).safeParse(alert.reasons);
+        if (reasons.success && (reasons.data.expiresAt === null || now <= reasons.data.expiresAt))
+          continue;
+      }
       if (
         alert.resolutionAction === 'restore_auto' &&
         alert.resolvedAt === null &&
@@ -970,20 +1405,61 @@ export class AlertsService {
         workDate: input.workDate,
         resolvedAt: null,
         invalidatedAt: null,
-        engineerIds: { hasEvery: input.engineerIds },
-        requestIds: { hasEvery: input.requestIds },
+        OR: [
+          { dedupKey: { startsWith: input.key } },
+          // Reuse a Router condition, never an unrelated system episode whose
+          // different reconciliation key would immediately expire it.
+          { dedupKey: { startsWith: 'router:' } },
+        ],
+        engineerIds: { equals: input.engineerIds },
+        requestIds: { equals: input.requestIds },
       },
     });
-    if (matchingOpen) return;
+    if (matchingOpen) {
+      await tx.alert.update({
+        where: { id: matchingOpen.id },
+        data: { reasons: input.reasons, severity: input.severity },
+      });
+      return;
+    }
     const latest = await tx.alert.findFirst({
       where: { dedupKey: { startsWith: input.key } },
       orderBy: { createdAt: 'desc' },
     });
+    // A no-show is one attendance episode for one engineer-day. Resolution changes
+    // the action state but must not make the same absence produce duplicate episodes.
+    if (latest?.code === 'shift_no_show') {
+      if (latest.resolutionAction === 'extend') {
+        await tx.alert.update({
+          where: { id: latest.id },
+          data: {
+            resolvedAt: null,
+            invalidatedAt: null,
+            resolutionAction: null,
+            resolutionReason: null,
+            resolutionDelaySec: null,
+            reasons: input.reasons,
+          },
+        });
+      }
+      return;
+    }
     if (latest?.resolvedAt != null && latest.invalidatedAt === null) {
+      if (latest.resolutionAction === 'move_window') {
+        await tx.alert.update({
+          where: { id: latest.id },
+          data: {
+            resolvedAt: null,
+            resolutionDelaySec: null,
+            reasons: input.reasons,
+          },
+        });
+        return;
+      }
       if (!['shift_no_show', 'engineer_overdue'].includes(input.code)) return;
       if (
         latest.resolutionAction === 'message' &&
-        now - Number(latest.resolvedAt) < REPEAT_AFTER_SECONDS
+        now - Number(latest.resolvedAt) < (await this.thresholds(tx)).repeatAfterSec
       )
         return;
     }
@@ -1056,6 +1532,8 @@ export class AlertsService {
 
 function canonicalRouterCode(code: string): string {
   const normalized = code.toLowerCase();
+  if (normalized === 'live_window_completion_risk') return 'time_risk';
+  if (normalized === 'lunch_coverage_gain') return 'lunch_conflict';
   if (normalized === 'routing_fail') return 'unassigned';
   if (
     ['required_lunch_unplaced', 'lunch_not_placed', 'lunch_skipped_for_work'].includes(normalized)
@@ -1063,24 +1541,10 @@ function canonicalRouterCode(code: string): string {
     return 'lunch_conflict';
   return normalized;
 }
-function overdueExpectation(day: {
-  availability: string;
-  expectedOnlineAt: bigint | null;
-  lunchTaken: boolean;
-  lunchStartedAt: bigint | null;
-  lunchDurationSec: number | null;
-  lastAttendanceAt: bigint | null;
-}): number | null {
-  if (
-    (day.availability === 'technical_break' ||
-      (day.availability === 'offline' && day.lastAttendanceAt !== null)) &&
-    day.expectedOnlineAt !== null
-  )
-    return Number(day.expectedOnlineAt);
-  if (day.lunchTaken && day.lunchStartedAt !== null && day.lunchDurationSec !== null)
-    return Number(day.lunchStartedAt) + day.lunchDurationSec;
-  return null;
+function hasLunchCoverageWitness(reasons: object): boolean {
+  return lunchCoverageWitness(reasons) !== null;
 }
+
 function workDateForMoment(
   moment: number,
   _days: Array<{ workDate: string; shiftStartAt: bigint; shiftEndAt: bigint }>,

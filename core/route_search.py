@@ -65,6 +65,7 @@ class RouteEvaluator:
         self.ends = [min(e.shift_end_at, snapshot.horizon_end_at) for e in self.engineers]
         self.cache: dict[tuple[int, tuple[str, ...]], RouteState | None] = {}
         self.evaluations = 0
+        self._criteria: dict[str, tuple[str, ...]] = {}
         self.tolerance = getattr(
             getattr(travel, "settings", None), "window_lateness_tolerance_sec", 0
         )
@@ -85,7 +86,18 @@ class RouteEvaluator:
         if release is None and len(jobs) == 1:
             release = self.terminal_releases[index]
         if release is None:
-            return None if jobs else RouteState(jobs)
+            if jobs:
+                return None
+            # Public policy_score/from_route retain this constant penalty even when
+            # the route is disabled. A freshly constructed candidate must match a seed.
+            return RouteState(
+                jobs,
+                lunch_missed=int(
+                    engineer.lunch.enabled
+                    and not engineer.lunch_taken
+                    and not engineer.lunch.required
+                ),
+            )
         if any(index not in self.allowed[job] for job in jobs):
             return None
         if engineer.lunch.enabled and not engineer.lunch_taken:
@@ -111,12 +123,8 @@ class RouteEvaluator:
                 self.tolerance,
                 TERMINAL_WINDOW_LATENESS_TOLERANCE_SEC if position == len(jobs) - 1 else 0,
             )
-            if (
-                margin < -window_tolerance
-                or clock
-                > job_completion_limit(
-                    self.snapshot, engineer, terminal=position == len(jobs) - 1
-                )
+            if margin < -window_tolerance or clock > job_completion_limit(
+                self.snapshot, engineer, terminal=position == len(jobs) - 1
             ):
                 return None
             travel += road.duration_sec
@@ -158,13 +166,28 @@ class RouteEvaluator:
 
     def score(self, states: list[RouteState], policy_id: str) -> tuple[int, ...]:
         """Match public policy_score; counts are negated up to constant totals."""
-        slacks = [s.slack for s in states if s.slack is not None]
-        loads = [s.busy for i, s in enumerate(states) if self.releases[i] is not None]
+        if policy_id not in self._criteria:
+            policy = self.snapshot.policy.model_copy(update={"policy_id": policy_id})
+            self._criteria[policy_id] = compile_policy(policy).ordered_criteria
+        criteria = self._criteria[policy_id]
+        needs_loads = "max_workload_ratio" in criteria or "workload_spread" in criteria
+        slacks = (
+            [s.slack for s in states if s.slack is not None]
+            if "window_end_risk" in criteria
+            else []
+        )
+        # A terminal recovery visit can start after ordinary release became unavailable.
+        # Its work still counts, with the same capacity denominator as public policy_score.
+        releases = [
+            release if release is not None else self.terminal_releases[i] if state.jobs else None
+            for i, (state, release) in enumerate(zip(states, self.releases))
+            if needs_loads
+        ]
+        loads = [s.busy for s, release in zip(states, releases) if release is not None]
         utilization = [
-            (s.busy * 10000 + max(1, self.ends[i] - self.releases[i]) - 1)
-            // max(1, self.ends[i] - self.releases[i])
-            for i, s in enumerate(states)
-            if self.releases[i] is not None
+            (s.busy * 10000 + max(1, self.ends[i] - release) - 1) // max(1, self.ends[i] - release)
+            for i, (s, release) in enumerate(zip(states, releases))
+            if release is not None
         ]
         values = {
             "urgent_unassigned": -sum(s.urgent for s in states),
@@ -176,16 +199,21 @@ class RouteEvaluator:
             "additional_engineers": sum(
                 bool(state.jobs) and engineer.engineer_id.startswith("covering-")
                 for engineer, state in zip(self.engineers, states)
-            ),
-            "window_start_delay": sum(s.delay for s in states),
-            "max_jobs_per_engineer": max((len(s.jobs) for s in states), default=0),
+            )
+            if "additional_engineers" in criteria
+            else 0,
+            "window_start_delay": sum(s.delay for s in states)
+            if "window_start_delay" in criteria
+            else 0,
+            "max_jobs_per_engineer": max((len(s.jobs) for s in states), default=0)
+            if "max_jobs_per_engineer" in criteria
+            else 0,
             "total_lateness": sum(s.lateness for s in states),
             "window_end_risk": -min(slacks) if slacks else 0,
             "max_workload_ratio": max(utilization, default=0),
             "workload_spread": max(loads, default=0) - min(loads, default=0),
         }
-        policy = self.snapshot.policy.model_copy(update={"policy_id": policy_id})
-        return tuple(values[c] for c in compile_policy(policy).ordered_criteria)
+        return tuple(values[c] for c in criteria)
 
     def materialize(self, states: list[RouteState]) -> Plan | None:
         """Build and independently validate routes using the canonical scheduler."""
@@ -212,7 +240,8 @@ def improve_routes(
 
     `effort` is the configured nominal search budget in milliseconds. Deterministic
     route-evaluation quotas bound local search; wall-clock runtime is measured by
-    the caller separately. Four complete construction passes are never truncated.
+    the caller separately. Construction passes also defer terminal-only visits so
+    an early relaxed deadline cannot consume the entire remaining route.
     """
     evaluator = RouteEvaluator(snapshot, travel)
     empty = [evaluator.evaluate(i, ()) for i in range(len(evaluator.engineers))]
@@ -252,7 +281,7 @@ def improve_routes(
         ("balanced", lambda r: (r.priority != "urgent", r.window_start_at, r.window_end_at)),
     )
 
-    def insert(states, request, objective, excluded=-1):
+    def insert(states, request, objective, excluded=-1, *, regular_only=False):
         best = None
         for i in evaluator.allowed[request.request_id]:
             if i == excluded:
@@ -261,6 +290,13 @@ def improve_routes(
             for pos in range(len(old.jobs) + 1):
                 jobs = old.jobs[:pos] + (request.request_id,) + old.jobs[pos:]
                 candidate = evaluator.evaluate(i, jobs)
+                if (
+                    regular_only
+                    and candidate is not None
+                    and candidate.slack is not None
+                    and candidate.slack < -evaluator.tolerance
+                ):
+                    continue
                 if candidate is not None:
                     states[i] = candidate
                     key = evaluator.score(states, objective)
@@ -275,6 +311,17 @@ def improve_routes(
         states = list(empty)
         for request in sorted(requests, key=order):
             insert(states, request, objective)
+        portfolio.append(states)
+        # Preserve the original candidate, but also construct the ordinary day
+        # first. Terminal grace is an end-of-route recovery, not a reason to stop
+        # searching at an early window while later jobs remain feasible.
+        states = list(empty)
+        for request in sorted(requests, key=order):
+            insert(states, request, objective, regular_only=True)
+        assigned = {job for state in states for job in state.jobs}
+        for request in sorted(requests, key=order):
+            if request.request_id not in assigned:
+                insert(states, request, objective)
         portfolio.append(states)
     # Truly independent regions may select different construction orders. A weak
     # seed in one disconnected component must not discard a strong seed elsewhere.
@@ -317,6 +364,16 @@ def improve_routes(
                 if reduced is None:
                     continue
                 states[source] = reduced
+                # Refill with uncovered work before restoring the removed job.
+                # Otherwise a terminal-only late visit is immediately reinserted
+                # and can block every later window, even when replacing it would
+                # increase coverage. Accept or roll back the whole neighbourhood.
+                previously_assigned = {j for state in original for j in state.jobs}
+                for request in sorted(requests, key=variants[0][1]):
+                    if evaluator.evaluations >= quota:
+                        break
+                    if request.request_id not in previously_assigned:
+                        insert(states, request, policy_id)
                 insert(states, evaluator.requests[job], policy_id)
                 candidate_score = evaluator.score(states, policy_id)
                 if candidate_score < current_score:

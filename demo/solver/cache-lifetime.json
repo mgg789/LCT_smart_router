@@ -1,0 +1,7 @@
+{
+  "created_contexts": 100,
+  "retained_contexts_after_release": 0,
+  "graph_quote_cache_limit": 32768,
+  "spatial_radius_cache_limit": 4096,
+  "peak_rss_measured": false
+}

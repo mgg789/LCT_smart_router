@@ -5,6 +5,7 @@ import hashlib
 import json
 import platform
 import subprocess
+from dataclasses import asdict
 from pathlib import Path
 
 import ortools
@@ -19,16 +20,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--budget-ms", type=int, default=2000)
+    parser.add_argument("--solution-limit", type=int, default=SearchSettings().solution_limit)
     parser.add_argument("--access-buffer-sec", type=int, default=600)
     parser.add_argument("--no-traffic", action="store_true")
     parser.add_argument("--lateness-minutes", type=int, choices=(0, 5, 10, 15, 20), default=0)
     parser.add_argument("--repeat", type=int, default=1)
     args = parser.parse_args()
-    if args.repeat < 1:
-        parser.error("--repeat must be positive")
+    if args.repeat < 1 or args.solution_limit < 1:
+        parser.error("--repeat and --solution-limit must be positive")
     settings = SearchSettings(
         time_limit_ms=args.budget_ms,
-        solution_limit=64,
+        solution_limit=args.solution_limit,
         access_buffer_sec=args.access_buffer_sec,
         traffic_enabled=not args.no_traffic,
         window_lateness_tolerance_sec=args.lateness_minutes * 60,
@@ -41,6 +43,7 @@ def main() -> None:
         "python": platform.python_version(),
         "ortools": ortools.__version__,
         "settings": settings.technical().model_dump(),
+        "search_settings": asdict(settings),
         "search_budget_ms": args.budget_ms,
         "repeat": args.repeat,
         "scenarios": [],

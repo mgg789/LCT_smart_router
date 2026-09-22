@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
+import { EngineerAuthPage } from './figma-dashboard/EngineerAuthPage';
+import { MainDashboardPage } from './figma-dashboard/MainDashboardPage';
 import { AiLabPage } from './pages/AiLabPage';
 import { ClientApp } from './pages/ClientApp';
-import { DashboardPage } from './pages/DashboardPage';
-import { EngineerApp } from './pages/EngineerApp';
 
 export type AppRoute = 'engineer' | 'client' | 'ai-lab' | 'dashboard';
 
@@ -26,8 +26,12 @@ export function App() {
   }, []);
 
   switch (route) {
+    // The Figma shells are the dispatcher's and the engineer's interface now: the
+    // pages these two routes used to open went away with the legacy screens
+    // (`refactor(web): remove legacy interface screens`). The client app and the
+    // AI lab are untouched by that change and stay where they were.
     case 'engineer':
-      return <EngineerApp />;
+      return <EngineerAuthPage />;
     case 'client':
       return <ClientApp />;
     // AiLabPage renders nothing outside a dev build (or VITE_AI_LAB=1) -- it is never
@@ -35,6 +39,6 @@ export function App() {
     case 'ai-lab':
       return <AiLabPage />;
     case 'dashboard':
-      return <DashboardPage />;
+      return <MainDashboardPage />;
   }
 }

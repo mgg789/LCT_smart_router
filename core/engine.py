@@ -33,6 +33,7 @@ from core.schedule import (
     eligible,
     fixed_order,
     job_completion_limit,
+    lunch_coverage_alerts,
     release_at,
     schedule_steps,
     score,
@@ -323,7 +324,12 @@ def _search(
 
     # Resolve every external lookup before entering a C++ callback. Exceptions must
     # never cross SWIG and become an accidental zero-cost arc.
-    physical = sorted(set(jobs.values()) | set(starts))
+    # Several work orders can share an address/centroid. The cache key is spatial,
+    # so warm each coordinate pair once rather than repeating it for every job ID.
+    physical_by_point = {}
+    for node in sorted(set(jobs.values()) | set(starts)):
+        physical_by_point.setdefault((nodes[node].point.lat, nodes[node].point.lon), node)
+    physical = list(physical_by_point.values())
     profile_representatives = {}
     for e, engineer in enumerate(engineers):
         profile_representatives.setdefault(engineer.transport_type, e)
@@ -420,7 +426,8 @@ def _search(
         allowed = [
             e
             for e, engineer in enumerate(engineers)
-            if eligible(snapshot, engineer, request) or terminal_eligible(snapshot, engineer, request)
+            if eligible(snapshot, engineer, request)
+            or terminal_eligible(snapshot, engineer, request)
         ]
         routing.VehicleVar(index).SetValues([-1] + allowed)
         lower = max(0, request.window_start_at - origin)
@@ -457,12 +464,9 @@ def _search(
                 normal_limit = job_completion_limit(snapshot, engineer, terminal=False) - origin
                 normal_window_limit = min(normal_upper, horizon)
                 terminal_window_limit = terminal_upper
-                inactive_time_slack = max(
-                    time_horizon * 2, time_horizon - normal_window_limit
-                )
+                inactive_time_slack = max(time_horizon * 2, time_horizon - normal_window_limit)
                 solver.Add(
-                    time_dimension.CumulVar(index)
-                    + request.service_duration_sec
+                    time_dimension.CumulVar(index) + request.service_duration_sec
                     <= normal_limit
                     + TERMINAL_SHIFT_OVERTIME_SEC * next_is_end
                     + inactive_time_slack * (1 - on_vehicle)
@@ -772,7 +776,9 @@ def _union_memory_engineers(
         if route.engineer_id.startswith("covering-") and route.metrics.assigned_count > 0
     }
     extras = [
-        engineer for engineer in memory.snapshot.engineers if engineer.engineer_id not in known
+        engineer
+        for engineer in memory.snapshot.engineers
+        if engineer.engineer_id not in known
         and engineer.engineer_id in used
         and engineer.engineer_id.startswith("covering-")
         and any(
@@ -824,9 +830,7 @@ def _improve_covering(
         projected = baseline(search_snapshot, travel)
     if not projected.is_usable:
         return projected
-    candidates = improve_routes(
-        search_snapshot, travel, [projected], effort, construct=construct
-    )
+    candidates = improve_routes(search_snapshot, travel, [projected], effort, construct=construct)
     usable = [candidate for candidate in candidates if candidate.is_usable]
     chosen = (
         min(usable, key=lambda candidate: score(search_snapshot, candidate))
@@ -860,9 +864,7 @@ def _cover_leftovers(
 
     original = official_roster(snapshot)
     existing_extras = [
-        engineer
-        for engineer in snapshot.engineers
-        if engineer.engineer_id.startswith("covering-")
+        engineer for engineer in snapshot.engineers if engineer.engineer_id.startswith("covering-")
     ]
     extras = _covering_extra_engineers(snapshot, leftover_requests, travel)
     expanded = original.model_copy(
@@ -882,8 +884,7 @@ def _cover_leftovers(
             "engineers": [
                 engineer
                 for engineer in expanded.engineers
-                if not engineer.engineer_id.startswith("covering-")
-                or engineer.engineer_id in used
+                if not engineer.engineer_id.startswith("covering-") or engineer.engineer_id in used
             ]
         }
     )
@@ -931,11 +932,18 @@ def _cover_leftovers(
         ):
             current_snapshot, current = trial_snapshot, trial
     final_used = {r.engineer_id for r in current.routes if r.metrics.assigned_count > 0}
-    current_snapshot = current_snapshot.model_copy(update={"engineers": [
-        e for e in current_snapshot.engineers
-        if not e.engineer_id.startswith("covering-") or e.engineer_id in final_used
-    ]})
-    final = _canonical_plan(current_snapshot, current.routes, travel) if current.is_usable else current
+    current_snapshot = current_snapshot.model_copy(
+        update={
+            "engineers": [
+                e
+                for e in current_snapshot.engineers
+                if not e.engineer_id.startswith("covering-") or e.engineer_id in final_used
+            ]
+        }
+    )
+    final = (
+        _canonical_plan(current_snapshot, current.routes, travel) if current.is_usable else current
+    )
     validate_plan(current_snapshot, final, travel)
     return current_snapshot.engineers, final.routes
 
@@ -1077,6 +1085,9 @@ def _solve_prepared(
             memory.plan, projected, settings.task_start_lateness_tolerance_sec
         )
     ):
+        projected = projected.model_copy(
+            update={"alerts": projected.alerts + lunch_coverage_alerts(snapshot, projected, travel)}
+        )
         return EngineOutput(projected, base, "REVALIDATE", memory)
     path = "REPAIR_AND_IMPROVE" if projected else "COLD_START"
     search_base = base if search_snapshot is snapshot else baseline(search_snapshot, travel)
@@ -1138,6 +1149,9 @@ def _solve_prepared(
         if main is None:
             raise ValueError("OPTIONAL_LUNCH_ENRICHMENT_FAILED")
     validate_plan(snapshot, main, travel)
+    main = main.model_copy(
+        update={"alerts": main.alerts + lunch_coverage_alerts(snapshot, main, travel)}
+    )
     return EngineOutput(
         main, base, path, EngineMemory(snapshot.model_copy(deep=True), main, context_version)
     )

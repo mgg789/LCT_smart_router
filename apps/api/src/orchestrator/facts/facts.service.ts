@@ -4,8 +4,10 @@ import type { FactKind, Request } from '../../generated/prisma/client';
 import { NotificationsService } from '../../notifications';
 import type { OperationContext } from '../../operations';
 import type { Tx } from '../../persistence';
+import { lockControlState, lockRoutingCurrent } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import { AppliedPlanService } from '../../routing/router-gateway/applied-plan.service';
+import { finishNeedsReplan } from '../live/replan-policy';
 import { ExecutionTimingPolicy, type ExecutionTimingPolicyValue } from './execution-timing-policy';
 
 export type ReportableFact = 'arrived' | 'arrived_blocked' | 'started' | 'finished' | 'problem';
@@ -45,6 +47,10 @@ export class FactsService {
     note: string | null,
     timing: ExecutionTimingPolicyValue,
   ): Promise<Request> {
+    // Admission and execution must observe one assignment: a start may not race a
+    // manual move and leave the confirmed engineer different from the plan's owner.
+    await lockControlState(context.tx);
+    await lockRoutingCurrent(context.tx);
     const request = await this.assertAssigned(context.tx, engineerId, requestId);
 
     switch (kind) {
@@ -128,12 +134,13 @@ export class FactsService {
       recipientAccountId: request.clientAccountId,
       payload: { requestId: request.id, engineerId },
     });
-    await this.publisher.publishIfChanged(
-      context.tx,
-      context.now,
-      PUBLICATION_TRIGGERS.REQUEST_EXECUTION_STARTED,
-      { businessTime: context.businessTime },
-    );
+    if (!context.businessTime)
+      await this.publisher.publishIfChanged(
+        context.tx,
+        context.now,
+        PUBLICATION_TRIGGERS.REQUEST_EXECUTION_STARTED,
+        { businessTime: context.businessTime },
+      );
     return this.reload(context.tx, request.id);
   }
 
@@ -176,7 +183,37 @@ export class FactsService {
     const overrunSec = actualDurationSec - request.serviceDurationSec;
     const materialEarly = earlyGainSec >= timing.earlyFinishReplanThresholdSec;
     const materialLate = overrunSec > timing.taskOverrunToleranceSec;
-    const materialVariance = materialEarly || materialLate || request.overrunDetectedAt !== null;
+    const currentPlan = context.businessTime ? await this.plans.current(context.tx) : null;
+    const route = currentPlan?.routes.find((item) => item.engineerId === engineerId);
+    const sequence = route?.stops.find((stop) => stop.requestId === request.id)?.sequence;
+    const next =
+      sequence === undefined
+        ? null
+        : route?.stops
+            .filter((stop) => stop.kind === 'job' && stop.sequence > sequence)
+            .sort((a, b) => a.sequence - b.sequence)[0];
+    const materialVariance = context.businessTime
+      ? finishNeedsReplan(
+          occurredAt,
+          startedAt,
+          request.serviceDurationSec,
+          timing.taskOverrunToleranceSec,
+          next ? Number(next.startAt) : null,
+        )
+      : materialEarly || materialLate || request.overrunDetectedAt !== null;
+    const openUnassignedDemand =
+      context.businessTime &&
+      (await context.tx.request.count({
+        where: {
+          lifecycle: 'submitted',
+          assignmentState: 'unassigned',
+          windowEndAt: { gte: BigInt(occurredAt) },
+          windowStartAt: {
+            lt: BigInt(Math.floor((occurredAt + 10800) / 86400) * 86400 - 10800 + 86400),
+          },
+        },
+      })) > 0;
+    const shouldReplan = materialVariance || openUnassignedDemand;
 
     await this.write(context, engineerId, request.id, 'finished', occurredAt, note);
     await context.tx.request.update({
@@ -186,12 +223,16 @@ export class FactsService {
         completedAt: BigInt(occurredAt),
         // Small deviations are deliberately absorbed by the existing route. Material
         // variance releases the route from the confirmed finish at the task location.
-        continuationAvailableAt: BigInt(materialVariance ? occurredAt : expectedCompletionAt),
+        continuationAvailableAt: BigInt(shouldReplan ? occurredAt : expectedCompletionAt),
         updatedAt: BigInt(context.now),
         version: { increment: 1 },
       },
     });
-    if (materialVariance) {
+    // A normal finish still releases capacity. If the current LIVE pool contains work
+    // waiting for assignment, publish once so Router can use that capacity. The
+    // continuation is also moved to the actual finish above, avoiding the old forecast
+    // pinning the engineer in the next snapshot.
+    if (shouldReplan) {
       await this.publisher.publishIfChanged(
         context.tx,
         context.now,

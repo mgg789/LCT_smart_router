@@ -1,0 +1,19 @@
+{
+  "at": "2026-09-21T14:42:19.389Z",
+  "errors": [],
+  "beforeRevision": 7,
+  "manualRevision": 8,
+  "manualOrder": [
+    "46ad1442-c0b8-45dd-b7dc-00cd1065bbc6",
+    "c9e99322-4013-48f4-afe7-4de198b063a3",
+    "c64a9d75-8339-4fb3-9c0a-aa252794acd8",
+    "3e0045a2-b9e2-4db8-90cf-82da85ebd672"
+  ],
+  "manualForecast": {
+    "observedAt": 1790001453,
+    "state": "fresh",
+    "warnings": []
+  },
+  "autoRevision": 9,
+  "autoMode": "auto"
+}

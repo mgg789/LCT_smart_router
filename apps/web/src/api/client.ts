@@ -1,16 +1,24 @@
 import { z } from 'zod';
 import { formatClock } from '../lib/time';
+import type { PlanExpectation } from './manual';
+import { mapForecastSchema, mapObservationSchema } from './mapForecast';
 import type {
   AlertResolutionInput,
   ApiTokenCategory,
   ApiTokenSummary,
   AssignmentReasons,
   AuthSession,
+  CreateDispatchEngineerInput,
+  CreateDispatchRequestInput,
   CreatedApiToken,
   DashboardSnapshot,
   DataUploadFile,
   DataUploadSummary,
+  DispatcherSettingsPatch,
+  DispatcherSettingsView,
   EngineerDayView,
+  GeocodeHit,
+  MapProvidersStatus,
   OfficialImportSummary,
   PlanAssignmentView,
   PolicyComparisonResponse,
@@ -126,6 +134,8 @@ const planLegSchema = z.object({
   travelTimeSec: z.number().int().nonnegative(),
   distanceKm: z.number().nonnegative(),
   travelSource: z.enum(['approximate', 'road_matrix', 'route_api', 'traffic_api']),
+  mapObservation: mapObservationSchema.optional(),
+  geometryProvider: z.enum(['twogis', 'yandex']).optional(),
   trafficFactor: z.number().min(1),
   geometry: z
     .object({
@@ -159,6 +169,8 @@ const routeSchema = z.object({
   lunchTimeSec: z.number().int(),
   assignedCount: z.number().int(),
   lunchStatus: lunchStatusSchema,
+  timingStatus: z.enum(['calculated', 'unverified', 'forecast']).optional(),
+  mapForecast: mapForecastSchema.optional(),
   stops: z.array(planStopSchema),
   legs: z
     .array(planLegSchema)
@@ -299,6 +311,28 @@ export async function closeDispatchShift(
     method: 'POST',
     body: JSON.stringify({ operationId, workDate }),
   });
+}
+
+const demoStandRestoreSchema = z.object({
+  restored: z.literal(true),
+  workDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  requestsCreated: z.number().int().nonnegative(),
+  engineersCreated: z.number().int().nonnegative(),
+  generation: z.number().int().positive(),
+});
+
+/** Rewinds the public 14/2 demo day. No-op contract unless the API has DEMO_STAND. */
+export function restartDemoStand(token: string): Promise<z.infer<typeof demoStandRestoreSchema>> {
+  return requestJson(
+    '/api/v1/dispatch/data/restart-demo',
+    demoStandRestoreSchema,
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({ operationId: crypto.randomUUID() }),
+    },
+    35_000,
+  );
 }
 
 const policiesSchema = z.object({
@@ -614,6 +648,163 @@ export async function revokeApiToken(sessionToken: string, id: string): Promise<
 
 const engineerProfileSchema = engineerSchema.omit({ day: true });
 
+const dispatcherSettingsSchema = z.object({
+  dayStartMin: z.number().int(),
+  dayEndMin: z.number().int(),
+  noShowSec: z.number().int(),
+  overdueSec: z.number().int(),
+  timeRiskSec: z.number().int(),
+  repeatAfterSec: z.number().int(),
+  twogisApiKeySet: z.boolean(),
+  twogisApiKeyLast4: z.string().nullable(),
+  yandexApiKeySet: z.boolean(),
+  yandexApiKeyLast4: z.string().nullable(),
+});
+
+const geocodeHitSchema = z.object({
+  displayName: z.string(),
+  lat: z.number(),
+  lon: z.number(),
+});
+
+const mapProviderStatusSchema = z.object({
+  provider: z.enum(['twogis', 'yandex']),
+  configured: z.boolean(),
+  ok: z.boolean().nullable(),
+  message: z.string(),
+  requests: z.number().int().nonnegative().optional(),
+  cacheHits: z.number().int().nonnegative().optional(),
+  checkedAt: z.number().int().nullable().optional(),
+});
+
+/** Reads dispatcher-owned day clocks, alert timers and map-key presence. */
+export function getDispatcherSettings(token: string): Promise<DispatcherSettingsView> {
+  return requestJson('/api/v1/dispatch/settings', dispatcherSettingsSchema, token);
+}
+
+/** Replaces dispatcher-owned operational settings. Empty map keys are omitted, not cleared. */
+export function updateDispatcherSettings(
+  token: string,
+  patch: DispatcherSettingsPatch,
+): Promise<DispatcherSettingsView> {
+  return requestJson('/api/v1/dispatch/settings', dispatcherSettingsSchema, token, {
+    method: 'PUT',
+    body: JSON.stringify({ operationId: crypto.randomUUID(), ...patch }),
+  });
+}
+
+/** Probes configured 2GIS / Yandex keys with a short Moscow sample route. */
+export function getMapProvidersStatus(token: string): Promise<MapProvidersStatus> {
+  return requestJson(
+    '/api/v1/dispatch/settings/maps/status',
+    z.object({
+      active: z.enum(['twogis', 'yandex', 'none']),
+      twogis: mapProviderStatusSchema,
+      yandex: mapProviderStatusSchema,
+    }),
+    token,
+  );
+}
+
+/** LocationIQ autocomplete. Pass a free-form address or city+street. */
+export async function geocodeAddress(
+  token: string,
+  query: { q?: string; city?: string; street?: string },
+): Promise<GeocodeHit[]> {
+  const params = new URLSearchParams();
+  if (query.q) params.set('q', query.q);
+  if (query.city) params.set('city', query.city);
+  if (query.street) params.set('street', query.street);
+  const result = await requestJson(
+    `/api/v1/dispatch/geocode?${params.toString()}`,
+    z.object({ hits: z.array(geocodeHitSchema) }),
+    token,
+  );
+  return result.hits;
+}
+
+/** Cancels a visit that has not started. */
+export function cancelDispatchRequest(
+  token: string,
+  requestId: string,
+  expectedVersion?: number,
+  reason?: string,
+): Promise<{ request: z.infer<typeof requestSchema> }> {
+  return requestJson(
+    `/api/v1/dispatch/requests/${encodeURIComponent(requestId)}/cancel`,
+    z.object({ request: requestSchema }),
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        operationId: crypto.randomUUID(),
+        ...(expectedVersion === undefined ? {} : { expectedVersion }),
+        ...(reason === undefined ? {} : { reason }),
+      }),
+    },
+  );
+}
+
+/** Moves an unstarted visit onto another engineer. Requires manual control. */
+export function reassignDispatchRequest(
+  token: string,
+  requestId: string,
+  engineerId: string,
+  expected: PlanExpectation,
+): Promise<unknown> {
+  return requestJson('/api/v1/dispatch/plan/reassign', z.unknown(), token, {
+    method: 'POST',
+    body: JSON.stringify({ operationId: crypto.randomUUID(), requestId, engineerId, ...expected }),
+  });
+}
+
+/** Creates and immediately submits an unplanned request from the compact dashboard form. */
+export function createDispatchRequest(
+  token: string,
+  input: CreateDispatchRequestInput,
+): Promise<{ request: z.infer<typeof requestSchema> }> {
+  return requestJson('/api/v1/dispatch/requests', z.object({ request: requestSchema }), token, {
+    method: 'POST',
+    body: JSON.stringify({ operationId: crypto.randomUUID(), ...input }),
+  });
+}
+
+/** Adds a routing profile, with Engineer App access only when an email was supplied. */
+export function createDispatchEngineer(
+  token: string,
+  input: CreateDispatchEngineerInput,
+): Promise<{ engineer: z.infer<typeof engineerProfileSchema> }> {
+  return requestJson(
+    '/api/v1/dispatch/engineers',
+    z.object({ engineer: engineerProfileSchema }),
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({ operationId: crypto.randomUUID(), ...input }),
+    },
+  );
+}
+
+/** Archives a routing profile while preserving its historical plans and facts. */
+export function deleteDispatchEngineer(
+  token: string,
+  engineerId: string,
+  expectedVersion?: number,
+): Promise<{ engineer: z.infer<typeof engineerProfileSchema> }> {
+  return requestJson(
+    `/api/v1/dispatch/engineers/${encodeURIComponent(engineerId)}`,
+    z.object({ engineer: engineerProfileSchema }),
+    token,
+    {
+      method: 'DELETE',
+      body: JSON.stringify({
+        operationId: crypto.randomUUID(),
+        ...(expectedVersion === undefined ? {} : { expectedVersion }),
+      }),
+    },
+  );
+}
+
 /** Removes the login from a brigade. The routing profile stays; live sessions die. */
 export function unlinkEngineerAccount(
   token: string,
@@ -647,6 +838,28 @@ export function linkEngineerAccount(
   );
 }
 
+/** Replaces an existing Engineer App login and revokes sessions of the old address. */
+export function changeEngineerEmail(
+  token: string,
+  engineerId: string,
+  email: string,
+  expectedVersion?: number,
+): Promise<{ engineer: z.infer<typeof engineerProfileSchema> }> {
+  return requestJson(
+    `/api/v1/dispatch/engineers/${encodeURIComponent(engineerId)}/email`,
+    z.object({ engineer: engineerProfileSchema }),
+    token,
+    {
+      method: 'PUT',
+      body: JSON.stringify({
+        operationId: crypto.randomUUID(),
+        email,
+        ...(expectedVersion === undefined ? {} : { expectedVersion }),
+      }),
+    },
+  );
+}
+
 /** Loads and validates all resources required by the dispatcher day screen. */
 export async function loadDashboardSnapshot(token: string): Promise<DashboardSnapshot> {
   const [requests, engineers, planResponse, alerts, policies, settings] = await Promise.all([
@@ -659,7 +872,11 @@ export async function loadDashboardSnapshot(token: string): Promise<DashboardSna
     requestJson('/api/v1/dispatch/plan', dispatchPlanSchema, token),
     requestJson('/api/v1/dispatch/alerts', z.object({ alerts: z.array(alertSchema) }), token),
     requestJson('/api/v1/dispatch/policies', policiesSchema, token),
-    getRouterTechnicalSettings(token),
+    getRouterTechnicalSettings(token, 1500).catch((error: unknown) => {
+      if (error instanceof DashboardApiError && (error.status === 401 || error.status === 403))
+        throw error;
+      return null;
+    }),
   ]);
 
   const plan = planResponse.plan
@@ -682,9 +899,14 @@ export async function loadDashboardSnapshot(token: string): Promise<DashboardSna
     timeZone: 'Europe/Moscow',
     nowAt: Math.floor(Date.now() / 1000),
     policyId: policies.active.policyId,
-    lunchesEnabled: settings.lunchesEnabled,
+    lunchesEnabled:
+      settings?.lunchesEnabled ??
+      engineers.engineers.some((engineer) => engineer.day?.lunch.enabled),
     routerSettings: settings,
-    routerContextVersion: settings.routerContextVersion,
+    routerContextVersion:
+      settings?.routerContextVersion ??
+      planResponse.appliedResult?.routerContextVersion ??
+      'unavailable',
     policies: policies.policies,
     engineers: engineers.engineers,
     requests: requests.requests,
@@ -706,8 +928,17 @@ export async function selectRoutingPolicy(token: string, policyId: PolicyId): Pr
 }
 
 /** Reads Router-owned technical settings through the backend boundary. */
-export function getRouterTechnicalSettings(token: string): Promise<RouterTechnicalSettings> {
-  return requestJson('/api/v1/dispatch/router/technical-settings', technicalSettingsSchema, token);
+export function getRouterTechnicalSettings(
+  token: string,
+  timeoutMs = 12_000,
+): Promise<RouterTechnicalSettings> {
+  return requestJson(
+    '/api/v1/dispatch/router/technical-settings',
+    technicalSettingsSchema,
+    token,
+    {},
+    timeoutMs,
+  );
 }
 
 /** Replaces the complete Router-owned settings revision through the backend CAS boundary. */
@@ -752,10 +983,15 @@ export async function setLunchesEnabled(token: string, enabled: boolean): Promis
 }
 
 /** Switches the dispatch control mode through an idempotent backend operation. */
-export async function setDispatchMode(token: string, mode: 'auto' | 'manual'): Promise<void> {
+export async function setDispatchMode(
+  token: string,
+  mode: 'auto' | 'manual',
+  expected: PlanExpectation,
+  reason?: string,
+): Promise<void> {
   await requestJson('/api/v1/dispatch/mode', z.unknown(), token, {
     method: 'POST',
-    body: JSON.stringify({ operationId: crypto.randomUUID(), mode }),
+    body: JSON.stringify({ operationId: crypto.randomUUID(), mode, ...expected, reason }),
   });
 }
 
@@ -944,6 +1180,30 @@ function formatUnknownReason(reason: unknown): string {
       return `Назначено заявок: ${value.assignedBefore} → ${value.assignedAfter}.`;
   }
   return 'Подробности доступны в структурированных данных';
+}
+
+/** Read-only same-day insertion preview; none is distinct from unavailable Router. */
+export function loadAlertWindowProposal(token: string, alertId: string) {
+  return requestJson(
+    `/api/v1/dispatch/alerts/${encodeURIComponent(alertId)}/window-proposal`,
+    z.discriminatedUnion('status', [
+      z.object({ status: z.literal('none'), proposal: z.null(), requestVersion: z.number().int() }),
+      z.object({
+        status: z.literal('available'),
+        requestVersion: z.number().int(),
+        proposal: z.object({
+          engineerId: z.string(),
+          windowStartAt: z.number(),
+          windowEndAt: z.number(),
+          serviceStartAt: z.number(),
+          serviceEndAt: z.number(),
+        }),
+      }),
+    ]),
+    token,
+    {},
+    35_000,
+  );
 }
 
 export async function requestJson<T>(

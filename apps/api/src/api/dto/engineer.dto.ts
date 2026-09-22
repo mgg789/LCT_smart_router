@@ -27,7 +27,8 @@ export const engineerActionSchema = operationOnlySchema.extend({
 export type EngineerActionDto = z.infer<typeof engineerActionSchema>;
 
 export const createEngineerSchema = operationEnvelopeSchema.extend({
-  email: z.email(),
+  /** A routing profile may be created before access to the Engineer App is granted. */
+  email: z.email().nullish(),
   displayName: z.string().min(1).max(200),
   /**
    * Required at creation: adding an address creates the access, but an engineer Router
@@ -42,6 +43,10 @@ export const createEngineerSchema = operationEnvelopeSchema.extend({
 });
 export type CreateEngineerDto = z.infer<typeof createEngineerSchema>;
 
+/** Reversible profile removal. Historical plans and facts keep their engineer id. */
+export const archiveEngineerSchema = operationEnvelopeSchema;
+export type ArchiveEngineerDto = z.infer<typeof archiveEngineerSchema>;
+
 /**
  * Links a login address to an engineer profile that exists without one, such as a brigade
  * that arrived with an import (context/37 section 3.1). The dispatcher grants the access;
@@ -53,6 +58,12 @@ export const linkEngineerAccountSchema = operationEnvelopeSchema.extend({
   email: z.email(),
 });
 export type LinkEngineerAccountDto = z.infer<typeof linkEngineerAccountSchema>;
+
+/** Replaces the login address of an existing engineer profile. */
+export const changeEngineerEmailSchema = operationEnvelopeSchema.extend({
+  email: z.email(),
+});
+export type ChangeEngineerEmailDto = z.infer<typeof changeEngineerEmailSchema>;
 
 /**
  * Removes the login the dispatcher previously granted. The routing profile stays;

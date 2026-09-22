@@ -1,0 +1,8 @@
+{
+  "known_limitation": "Cross-context heuristic coverage is not monotone when constraints relax",
+  "static_search_assigned": 165,
+  "traffic_order_revalidated_without_traffic_assigned": 167,
+  "witness_validated": true,
+  "changed_solver_behavior": false,
+  "reason_not_changed": "The solver promises bounded heuristic search, not global optimality or monotonic quality across different travel contexts. Expanding the candidate portfolio changes search behavior and should be benchmarked separately from the correctness/cache fixes."
+}

@@ -7,9 +7,68 @@ from core.contracts import Policy, RouterTechnicalSettings
 from core.engine import SearchSettings, solve
 from core.geo import GraphTravel, TravelQuote, configure_travel
 from core.policy import policy_score
-from core.route_search import RouteEvaluator
+from core.route_search import RouteEvaluator, improve_routes
 from core.runtime import calculate_policy_comparison
 from core.schedule import assemble_plan, baseline, fixed_order, validate_plan
+
+
+@pytest.mark.parametrize("policy", ["fast", "compact", "sla", "balanced", "eco"])
+@pytest.mark.parametrize(
+    "lower,upper,seed_jobs,expected",
+    [
+        (1000, 4600, ["early-a", "early-b"], 3),
+        (0, 1800, ["early-a"], 2),
+    ],
+)
+def test_replaces_terminal_only_visit_to_recover_multiple_later_jobs(
+    snapshot, policy, lower, upper, seed_jobs, expected
+):
+    """Terminal grace visits must not block multiple later regular-window jobs."""
+    start = snapshot.planning_as_of
+
+    class FixedRoads:
+        settings = RouterTechnicalSettings(window_lateness_tolerance_sec=600)
+
+        def quote_at(self, origin, destination, profile, departure_at):
+            return TravelQuote(800, 1000, (origin, destination), "traffic_api")
+
+    requests = [
+        snapshot.requests[0].model_copy(
+            update={
+                "request_id": job,
+                "arrival_order": index,
+                "service_duration_sec": 1800,
+                "window_start_at": start + lower,
+                "window_end_at": start + upper,
+            }
+        )
+        for index, (job, lower, upper) in enumerate(
+            [
+                ("early-a", lower, upper),
+                ("early-b", lower, upper),
+                ("late-a", 7000, 10600),
+                ("late-b", 11000, 14600),
+            ]
+        )
+    ]
+    task = snapshot.model_copy(
+        update={
+            "requests": requests,
+            "policy": Policy(policy_id=policy, parameters={}),
+        }
+    )
+    travel = FixedRoads()
+    trapped = fixed_order(task, task.engineers[0], seed_jobs, travel)
+    assert trapped is not None
+    assert fixed_order(task, task.engineers[0], seed_jobs + ["late-a"], travel) is None
+    candidates = improve_routes(task, travel, [assemble_plan(task, [trapped])], effort=100)
+    best = min(candidates, key=lambda plan: policy_score(task, plan))
+    assert best.summary.assigned_count == expected
+    assert {a.request_id for a in best.assignments if a.status == "assigned"} >= {
+        "late-a",
+        "late-b",
+    }
+    validate_plan(task, best, travel)
 
 
 class RushHourRoads:
@@ -130,7 +189,12 @@ def test_completion_window_grace_tries_another_engineer(snapshot, graph):
     assignment = output.main.assignments[0]
     assert assignment.status == "assigned"
     assert assignment.engineer_id == "eng-2"
-    stop = next(stop for route in output.main.routes for stop in route.stops if stop.request_id == request.request_id)
+    stop = next(
+        stop
+        for route in output.main.routes
+        for stop in route.stops
+        if stop.request_id == request.request_id
+    )
     assert stop.end_at <= request.window_end_at + 600
 
 

@@ -218,25 +218,9 @@ export function buildEngineerTools(deps: EngineerToolDeps): readonly ToolSpec[] 
     },
   };
 
-  const confirmOnTime: ToolSpec = {
-    name: 'confirm_on_time',
-    description: 'Confirm the engineer will reach the current visit on time.',
-    schema: emptySchema,
-    async run(ctx) {
-      const engineerId = requireEngineerId(ctx);
-      const requestId = await currentRequestId(deps.live, engineerId);
-      const op = await deps.aiOperations.prepare({
-        actor: ctx.actor,
-        accountId: ctx.accountId,
-        conversationId: ctx.conversationId,
-        runId: ctx.runId,
-        action: 'live.engineer.on_time',
-        targetRef: engineerId,
-        payload: { requestId },
-      });
-      return prepared(op.operationId, op.state, op.preview, 'Prepared an on-time confirmation');
-    },
-  };
+  // `confirm_on_time` used to sit here. The LIVE contract dropped the `on_time`
+  // action (docs/live.md): an engineer who is on schedule says nothing, and one
+  // who is not reports an arrival time through `report_eta` above.
 
   const startTechnicalBreak: ToolSpec = {
     name: 'start_technical_break',
@@ -360,7 +344,6 @@ export function buildEngineerTools(deps: EngineerToolDeps): readonly ToolSpec[] 
     reportMissingEquipment,
     reportCannotComplete,
     reportEta,
-    confirmOnTime,
     startTechnicalBreak,
     finishTechnicalBreak,
     changeStatusTo,

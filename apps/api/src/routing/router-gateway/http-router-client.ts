@@ -11,6 +11,8 @@ import {
   type RouterTechnicalSettingsState,
   type RouterTechnicalSettingsUpdate,
   type UpdateRouterTechnicalSettings,
+  type WindowProposal,
+  type WindowProposalInput,
 } from './router-client.port';
 
 const comparisonMetricsSchema = z.object({
@@ -85,6 +87,33 @@ export interface HttpRouterClientOptions {
 
 /** Reads validated results and context from Router Core over the private Docker network. */
 export class HttpRouterClient extends RouterClient {
+  /** Uses canonical Router travel and scheduling, without publication side effects. */
+  override async proposeWindow(input: WindowProposalInput): Promise<WindowProposal> {
+    const raw = await this.fetchJson(
+      '/v1/window-proposal',
+      {
+        method: 'POST',
+        body: JSON.stringify(input),
+        headers: { 'content-type': 'application/json' },
+      },
+      30_000,
+    );
+    return z
+      .discriminatedUnion('status', [
+        z.object({ status: z.literal('none'), proposal: z.null() }),
+        z.object({
+          status: z.literal('available'),
+          proposal: z.object({
+            engineerId: z.string(),
+            windowStartAt: z.number().int(),
+            windowEndAt: z.number().int(),
+            serviceStartAt: z.number().int(),
+            serviceEndAt: z.number().int(),
+          }),
+        }),
+      ])
+      .parse(raw);
+  }
   private readonly baseUrl: string;
 
   constructor(private readonly options: HttpRouterClientOptions) {

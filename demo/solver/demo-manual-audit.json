@@ -1,0 +1,306 @@
+{
+  "entries": [
+    {
+      "id": "40587001-bfbb-48fa-9100-bb58e28db9a3",
+      "at": 1790017245,
+      "actorId": "e815f63e-c52f-4d4f-a418-495359886ce4",
+      "action": "control.transition",
+      "operationId": "066800d1-3a5a-4a49-9ae8-7fd1aa11ff1b",
+      "details": {
+        "to": "auto",
+        "from": "manual",
+        "reason": null,
+        "modeVersion": 3,
+        "sourcePlanRevision": 7
+      }
+    },
+    {
+      "id": "7b00c073-d9fa-4a8d-abb0-d8b5152476c4",
+      "at": 1790017243,
+      "actorId": "e815f63e-c52f-4d4f-a418-495359886ce4",
+      "action": "plan.manual",
+      "operationId": "251554ef-3a0a-4559-9ba8-5677307e635b",
+      "details": {
+        "after": [
+          {
+            "engineerId": "276e0d62-a1f4-4dd8-a147-acb2fe480f2c",
+            "requestIds": [
+              "f5cd5853-c04e-4d0f-b119-0d0209da5386",
+              "97777eff-fee1-47c2-b9a1-3cb088d69c54",
+              "f4e11296-2125-40e8-b2b9-307cd5367e6a",
+              "d171a5b0-23e5-4c44-91b1-5a47933a6691",
+              "8634d04b-7ef5-4b53-9d5c-249267ec3944",
+              "c5d72f20-2847-42b8-b709-163d5ec32b6e",
+              "7c47fc76-d9a1-4dee-b74c-ab7b6fc952a3"
+            ]
+          },
+          {
+            "engineerId": "74f847f2-0ea4-4cfb-bb88-8a1c7c191fdf",
+            "requestIds": [
+              "c2143be2-1afc-4b4a-b5b1-03e271eb6501",
+              "275ade15-dc1f-4b01-8b9c-1cc667677798",
+              "206d6f23-def0-4200-862b-03f9897abfa9",
+              "5f851cc2-1844-49d7-b9e0-97f13f753ab1",
+              "a216fc1a-a2f9-4a60-b9c8-1bbfeb64dac1"
+            ]
+          }
+        ],
+        "before": [
+          {
+            "engineerId": "276e0d62-a1f4-4dd8-a147-acb2fe480f2c",
+            "requestIds": [
+              "f5cd5853-c04e-4d0f-b119-0d0209da5386",
+              "97777eff-fee1-47c2-b9a1-3cb088d69c54",
+              "f4e11296-2125-40e8-b2b9-307cd5367e6a",
+              "d171a5b0-23e5-4c44-91b1-5a47933a6691",
+              "8634d04b-7ef5-4b53-9d5c-249267ec3944",
+              "c5d72f20-2847-42b8-b709-163d5ec32b6e"
+            ]
+          },
+          {
+            "engineerId": "74f847f2-0ea4-4cfb-bb88-8a1c7c191fdf",
+            "requestIds": [
+              "7c47fc76-d9a1-4dee-b74c-ab7b6fc952a3",
+              "c2143be2-1afc-4b4a-b5b1-03e271eb6501",
+              "275ade15-dc1f-4b01-8b9c-1cc667677798",
+              "206d6f23-def0-4200-862b-03f9897abfa9",
+              "5f851cc2-1844-49d7-b9e0-97f13f753ab1",
+              "a216fc1a-a2f9-4a60-b9c8-1bbfeb64dac1"
+            ]
+          }
+        ],
+        "change": {
+          "kind": "reassign",
+          "requestId": "7c47fc76-d9a1-4dee-b74c-ab7b6fc952a3",
+          "engineerId": "276e0d62-a1f4-4dd8-a147-acb2fe480f2c"
+        },
+        "warnings": [
+          {
+            "code": "TIMING_UNVERIFIED",
+            "requestId": "f5cd5853-c04e-4d0f-b119-0d0209da5386",
+            "engineerId": "276e0d62-a1f4-4dd8-a147-acb2fe480f2c"
+          },
+          {
+            "code": "WINDOW_CONFLICT",
+            "requestId": "97777eff-fee1-47c2-b9a1-3cb088d69c54",
+            "engineerId": "276e0d62-a1f4-4dd8-a147-acb2fe480f2c"
+          },
+          {
+            "code": "TIMING_UNVERIFIED",
+            "requestId": "97777eff-fee1-47c2-b9a1-3cb088d69c54",
+            "engineerId": "276e0d62-a1f4-4dd8-a147-acb2fe480f2c"
+          },
+          {
+            "code": "TIMING_UNVERIFIED",
+            "requestId": "f4e11296-2125-40e8-b2b9-307cd5367e6a",
+            "engineerId": "276e0d62-a1f4-4dd8-a147-acb2fe480f2c"
+          },
+          {
+            "code": "TIMING_UNVERIFIED",
+            "requestId": "d171a5b0-23e5-4c44-91b1-5a47933a6691",
+            "engineerId": "276e0d62-a1f4-4dd8-a147-acb2fe480f2c"
+          },
+          {
+            "code": "TIMING_UNVERIFIED",
+            "requestId": "8634d04b-7ef5-4b53-9d5c-249267ec3944",
+            "engineerId": "276e0d62-a1f4-4dd8-a147-acb2fe480f2c"
+          },
+          {
+            "code": "TIMING_UNVERIFIED",
+            "requestId": "c5d72f20-2847-42b8-b709-163d5ec32b6e",
+            "engineerId": "276e0d62-a1f4-4dd8-a147-acb2fe480f2c"
+          },
+          {
+            "code": "WINDOW_CONFLICT",
+            "requestId": "7c47fc76-d9a1-4dee-b74c-ab7b6fc952a3",
+            "engineerId": "276e0d62-a1f4-4dd8-a147-acb2fe480f2c"
+          },
+          {
+            "code": "TIMING_UNVERIFIED",
+            "requestId": "7c47fc76-d9a1-4dee-b74c-ab7b6fc952a3",
+            "engineerId": "276e0d62-a1f4-4dd8-a147-acb2fe480f2c"
+          },
+          {
+            "code": "TIMING_UNVERIFIED",
+            "requestId": "c2143be2-1afc-4b4a-b5b1-03e271eb6501",
+            "engineerId": "74f847f2-0ea4-4cfb-bb88-8a1c7c191fdf"
+          },
+          {
+            "code": "TIMING_UNVERIFIED",
+            "requestId": "275ade15-dc1f-4b01-8b9c-1cc667677798",
+            "engineerId": "74f847f2-0ea4-4cfb-bb88-8a1c7c191fdf"
+          },
+          {
+            "code": "TIMING_UNVERIFIED",
+            "requestId": "206d6f23-def0-4200-862b-03f9897abfa9",
+            "engineerId": "74f847f2-0ea4-4cfb-bb88-8a1c7c191fdf"
+          },
+          {
+            "code": "TIMING_UNVERIFIED",
+            "requestId": "5f851cc2-1844-49d7-b9e0-97f13f753ab1",
+            "engineerId": "74f847f2-0ea4-4cfb-bb88-8a1c7c191fdf"
+          },
+          {
+            "code": "TIMING_UNVERIFIED",
+            "requestId": "a216fc1a-a2f9-4a60-b9c8-1bbfeb64dac1",
+            "engineerId": "74f847f2-0ea4-4cfb-bb88-8a1c7c191fdf"
+          }
+        ],
+        "planRevision": 7,
+        "sourcePlanRevision": 6
+      }
+    },
+    {
+      "id": "3c9cb602-77ad-4323-8f36-4448d3747f2a",
+      "at": 1790017239,
+      "actorId": "e815f63e-c52f-4d4f-a418-495359886ce4",
+      "action": "plan.manual",
+      "operationId": "bd51752a-3693-412b-ae87-40e47546819d",
+      "details": {
+        "after": [
+          {
+            "engineerId": "276e0d62-a1f4-4dd8-a147-acb2fe480f2c",
+            "requestIds": [
+              "f5cd5853-c04e-4d0f-b119-0d0209da5386",
+              "97777eff-fee1-47c2-b9a1-3cb088d69c54",
+              "f4e11296-2125-40e8-b2b9-307cd5367e6a",
+              "d171a5b0-23e5-4c44-91b1-5a47933a6691",
+              "8634d04b-7ef5-4b53-9d5c-249267ec3944",
+              "c5d72f20-2847-42b8-b709-163d5ec32b6e"
+            ]
+          },
+          {
+            "engineerId": "74f847f2-0ea4-4cfb-bb88-8a1c7c191fdf",
+            "requestIds": [
+              "7c47fc76-d9a1-4dee-b74c-ab7b6fc952a3",
+              "c2143be2-1afc-4b4a-b5b1-03e271eb6501",
+              "275ade15-dc1f-4b01-8b9c-1cc667677798",
+              "206d6f23-def0-4200-862b-03f9897abfa9",
+              "5f851cc2-1844-49d7-b9e0-97f13f753ab1",
+              "a216fc1a-a2f9-4a60-b9c8-1bbfeb64dac1"
+            ]
+          }
+        ],
+        "before": [
+          {
+            "engineerId": "276e0d62-a1f4-4dd8-a147-acb2fe480f2c",
+            "requestIds": [
+              "97777eff-fee1-47c2-b9a1-3cb088d69c54",
+              "f5cd5853-c04e-4d0f-b119-0d0209da5386",
+              "f4e11296-2125-40e8-b2b9-307cd5367e6a",
+              "d171a5b0-23e5-4c44-91b1-5a47933a6691",
+              "8634d04b-7ef5-4b53-9d5c-249267ec3944",
+              "c5d72f20-2847-42b8-b709-163d5ec32b6e"
+            ]
+          },
+          {
+            "engineerId": "74f847f2-0ea4-4cfb-bb88-8a1c7c191fdf",
+            "requestIds": [
+              "7c47fc76-d9a1-4dee-b74c-ab7b6fc952a3",
+              "c2143be2-1afc-4b4a-b5b1-03e271eb6501",
+              "275ade15-dc1f-4b01-8b9c-1cc667677798",
+              "206d6f23-def0-4200-862b-03f9897abfa9",
+              "5f851cc2-1844-49d7-b9e0-97f13f753ab1",
+              "a216fc1a-a2f9-4a60-b9c8-1bbfeb64dac1"
+            ]
+          }
+        ],
+        "change": {
+          "kind": "reorder",
+          "engineerId": "276e0d62-a1f4-4dd8-a147-acb2fe480f2c",
+          "requestIds": [
+            "f5cd5853-c04e-4d0f-b119-0d0209da5386",
+            "97777eff-fee1-47c2-b9a1-3cb088d69c54",
+            "f4e11296-2125-40e8-b2b9-307cd5367e6a",
+            "d171a5b0-23e5-4c44-91b1-5a47933a6691",
+            "8634d04b-7ef5-4b53-9d5c-249267ec3944",
+            "c5d72f20-2847-42b8-b709-163d5ec32b6e"
+          ]
+        },
+        "warnings": [
+          {
+            "code": "TIMING_UNVERIFIED",
+            "requestId": "f5cd5853-c04e-4d0f-b119-0d0209da5386",
+            "engineerId": "276e0d62-a1f4-4dd8-a147-acb2fe480f2c"
+          },
+          {
+            "code": "WINDOW_CONFLICT",
+            "requestId": "97777eff-fee1-47c2-b9a1-3cb088d69c54",
+            "engineerId": "276e0d62-a1f4-4dd8-a147-acb2fe480f2c"
+          },
+          {
+            "code": "TIMING_UNVERIFIED",
+            "requestId": "97777eff-fee1-47c2-b9a1-3cb088d69c54",
+            "engineerId": "276e0d62-a1f4-4dd8-a147-acb2fe480f2c"
+          },
+          {
+            "code": "TIMING_UNVERIFIED",
+            "requestId": "f4e11296-2125-40e8-b2b9-307cd5367e6a",
+            "engineerId": "276e0d62-a1f4-4dd8-a147-acb2fe480f2c"
+          },
+          {
+            "code": "TIMING_UNVERIFIED",
+            "requestId": "d171a5b0-23e5-4c44-91b1-5a47933a6691",
+            "engineerId": "276e0d62-a1f4-4dd8-a147-acb2fe480f2c"
+          },
+          {
+            "code": "TIMING_UNVERIFIED",
+            "requestId": "8634d04b-7ef5-4b53-9d5c-249267ec3944",
+            "engineerId": "276e0d62-a1f4-4dd8-a147-acb2fe480f2c"
+          },
+          {
+            "code": "TIMING_UNVERIFIED",
+            "requestId": "c5d72f20-2847-42b8-b709-163d5ec32b6e",
+            "engineerId": "276e0d62-a1f4-4dd8-a147-acb2fe480f2c"
+          },
+          {
+            "code": "TIMING_UNVERIFIED",
+            "requestId": "7c47fc76-d9a1-4dee-b74c-ab7b6fc952a3",
+            "engineerId": "74f847f2-0ea4-4cfb-bb88-8a1c7c191fdf"
+          },
+          {
+            "code": "TIMING_UNVERIFIED",
+            "requestId": "c2143be2-1afc-4b4a-b5b1-03e271eb6501",
+            "engineerId": "74f847f2-0ea4-4cfb-bb88-8a1c7c191fdf"
+          },
+          {
+            "code": "TIMING_UNVERIFIED",
+            "requestId": "275ade15-dc1f-4b01-8b9c-1cc667677798",
+            "engineerId": "74f847f2-0ea4-4cfb-bb88-8a1c7c191fdf"
+          },
+          {
+            "code": "TIMING_UNVERIFIED",
+            "requestId": "206d6f23-def0-4200-862b-03f9897abfa9",
+            "engineerId": "74f847f2-0ea4-4cfb-bb88-8a1c7c191fdf"
+          },
+          {
+            "code": "TIMING_UNVERIFIED",
+            "requestId": "5f851cc2-1844-49d7-b9e0-97f13f753ab1",
+            "engineerId": "74f847f2-0ea4-4cfb-bb88-8a1c7c191fdf"
+          },
+          {
+            "code": "TIMING_UNVERIFIED",
+            "requestId": "a216fc1a-a2f9-4a60-b9c8-1bbfeb64dac1",
+            "engineerId": "74f847f2-0ea4-4cfb-bb88-8a1c7c191fdf"
+          }
+        ],
+        "planRevision": 6,
+        "sourcePlanRevision": 5
+      }
+    },
+    {
+      "id": "ee5e726e-2b0d-42a2-aed0-e74cabc408d4",
+      "at": 1790017238,
+      "actorId": "e815f63e-c52f-4d4f-a418-495359886ce4",
+      "action": "control.transition",
+      "operationId": "c4d7310e-f78d-4ec4-b6b6-96199be2e0ea",
+      "details": {
+        "to": "manual",
+        "from": "auto",
+        "reason": "DRO-102: диспетчер меняет порядок после задержки инженера",
+        "modeVersion": 2,
+        "sourcePlanRevision": 5
+      }
+    }
+  ]
+}

@@ -24,6 +24,11 @@ export const APP_STATE_KEYS = {
    * one dispatcher (auth/actor.ts's comment on `ApiTokenCategory`).
    */
   AI_DISPATCHER_ASSIST_MODE: 'ai_dispatcher_assist_mode',
+  /**
+   * Dispatcher-owned operational controls: day bounds, alert timers and map keys.
+   * Secrets in the value are never written to logs or returned in full.
+   */
+  DISPATCHER_SETTINGS: 'dispatcher.settings',
 } as const;
 
 export type AppStateKey = (typeof APP_STATE_KEYS)[keyof typeof APP_STATE_KEYS];
