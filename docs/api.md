@@ -267,6 +267,8 @@ watchdog/транспорта, а не доказательство достав
 | Метод | Путь | Назначение |
 |---|---|---|
 | GET | `/api/v1/client/work-types` | Виды работ на выбор |
+| GET | `/api/v1/client/geocode` | Публичный поиск адреса (`q`); без сессии |
+| GET | `/api/v1/client/geocode/reverse` | Публичный адрес точки (`lat`, `lon`) |
 | POST | `/api/v1/client/requests` | Подготовить заявку (черновик) |
 | POST | `/api/v1/client/requests/:id/submit` | Подтвердить содержимое и отправить |
 | POST | `/api/v1/client/requests/:id/reschedule` | Сразу изменить дату и окно |
@@ -524,7 +526,7 @@ profile`, `availability`, `technical-break`, `lunch/*`, `requests/:id/facts`)
 параллельно зовёт 2ГИС и Яндекс, если ключи заданы: при двух ответах берётся 2ГИС,
 иначе Яндекс; нога получает `geometryProvider`. Без ключей остаётся геометрия
 Router (геоцентры / OSRM). `GET /dispatch/geocode` — LocationIQ autocomplete (`LOCATION_IQ_TOKEN`);
-точка заявки иначе задаётся кликом на карте. Заявка с координатами получает
+без токена тот же поиск идёт в Nominatim. Заявка с координатами получает
 `region` ближайшего геоцентра уже существующих заявок региона.
 
 - `GET /api/v1/dispatch/router/technical-settings` читает их из `GET /v1/context` Router

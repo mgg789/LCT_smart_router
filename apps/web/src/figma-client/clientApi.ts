@@ -64,6 +64,45 @@ export interface IssuedClientSession {
   readonly expiresAt: number;
 }
 
+const geocodeHitSchema = z.object({
+  displayName: z.string(),
+  lat: z.number(),
+  lon: z.number(),
+});
+
+/** One resolved address. The form uses it both for search and for a map click. */
+export type ClientGeocodeHit = z.infer<typeof geocodeHitSchema>;
+
+/**
+ * Autocomplete for the new-request form.
+ * No session header: the form is filled before the mailbox is confirmed,
+ * and a stale bearer would be rejected even on this public route.
+ */
+export async function searchClientAddress(query: string): Promise<ClientGeocodeHit[]> {
+  const params = new URLSearchParams({ q: query });
+  const result = await requestJson(
+    `/api/v1/client/geocode?${params.toString()}`,
+    z.object({ hits: z.array(geocodeHitSchema) }),
+  );
+  return result.hits;
+}
+
+/**
+ * Street address for a map click.
+ * Null when the geocoder has no name; the form then writes the coordinates.
+ */
+export async function reverseClientPoint(point: {
+  lat: number;
+  lon: number;
+}): Promise<ClientGeocodeHit | null> {
+  const params = new URLSearchParams({ lat: String(point.lat), lon: String(point.lon) });
+  const result = await requestJson(
+    `/api/v1/client/geocode/reverse?${params.toString()}`,
+    z.object({ hit: geocodeHitSchema.nullable() }),
+  );
+  return result.hit;
+}
+
 /** Mails a one-time code. Does not create an account and does not create a request. */
 export function requestClientLoginCode(email: string): Promise<IssuedClientCode> {
   return requestJson('/api/v1/auth/login-code', loginCodeSchema, undefined, {

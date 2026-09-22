@@ -95,6 +95,11 @@ export function ClientPickMap({
     } else {
       markerRef.current = new maplibregl.Marker().setLngLat([point.lon, point.lat]).addTo(map);
     }
+    const center = map.getCenter();
+    const far = Math.abs(center.lng - point.lon) > 0.01 || Math.abs(center.lat - point.lat) > 0.01;
+    if (far) {
+      map.easeTo({ center: [point.lon, point.lat], duration: 350 });
+    }
   }, [point]);
 
   return (

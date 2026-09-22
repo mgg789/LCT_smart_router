@@ -351,7 +351,7 @@ twogis: {provider, configured, ok, message}, yandex: {…}}`. Проба идё�
 **GET `/dispatch/geocode?q=`** или `?city=&street=` → `{hits: [{displayName, lat, lon}]}`.
 Сервер зовёт LocationIQ **autocomplete** (`/v1/autocomplete`) с одним `q` — так
 находятся криво набранные адреса. `city`+`street` склеиваются в `q`, если его нет.
-Без `LOCATION_IQ_TOKEN` — `NOT_CONFIGURED`; точку тогда задают кликом по карте.
+Без `LOCATION_IQ_TOKEN` тот же поиск идёт в Nominatim (не чаще одного запроса в секунду).
 
 Новая заявка с `lat`/`lon` получает `region` ближайшего геоцентра уже существующих
 заявок этого региона. Если у региона ещё нет точек — геоцентр считают по домам
@@ -514,6 +514,11 @@ SPA `/engineer/` (вход по коду, список заявок и обед�
 подтверждение, и следом один вызов `POST /client/requests/submitted` (то же тело, что у
 черновика) создаёт заявку уже отправленной, в одной транзакции, как
 `POST /dispatch/requests`. До кода на сервере ничего не пишется.
+
+`GET /client/geocode?q=` и `GET /client/geocode/reverse?lat=&lon=` — публичные, без сессии.
+Поиск → `{hits: [{displayName, lat, lon}]}`, клик по карте → `{hit: {displayName, lat, lon}|null}`.
+Провайдер тот же, что у `GET /dispatch/geocode`: LocationIQ, а без токена — Nominatim.
+Клиент не шлёт `Authorization`: просроченный bearer отклоняется и на публичном маршруте.
 
 `GET /client/profile` → `{email, contactName, addressText, lat, lon}`. Почта — всегда
 логин сессии. Имя, адрес и точка — из последней отправленной заявки; если такой не

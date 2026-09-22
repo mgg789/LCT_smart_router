@@ -1,11 +1,12 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { type Actor, CurrentActor, Roles } from '../auth';
+import { type Actor, CurrentActor, Public, Roles } from '../auth';
 import { SysError } from '../common/errors';
 import { Clock } from '../common/time';
 import { zodBody } from '../common/validation';
 import { assertWriteApplied, OperationsService } from '../operations';
 import { RequestsService, WORK_TYPES } from '../orchestrator/requests';
+import { GeocodingService } from '../orchestrator/settings/geocoding.service';
 import { PrismaService, type Tx } from '../persistence';
 import {
   type CancelRequestDto,
@@ -42,6 +43,7 @@ export class ClientController {
     private readonly operations: OperationsService,
     private readonly prisma: PrismaService,
     private readonly clock: Clock,
+    private readonly geocoding: GeocodingService,
   ) {}
 
   @Get('work-types')
@@ -50,6 +52,28 @@ export class ClientController {
     return {
       workTypes: WORK_TYPES.map((type) => ({ code: type.code, title: type.title })),
     };
+  }
+
+  /**
+   * Address search for the anonymous new-request form.
+   * Public so a point can be chosen before the mailbox is confirmed.
+   */
+  @Public()
+  @Get('geocode')
+  @ApiOperation({ summary: 'Autocomplete an address before the client is signed in' })
+  async geocode(@Query('q') q?: string) {
+    return { hits: await this.geocoding.search({ q }) };
+  }
+
+  /**
+   * Street name for a map click. Null when the provider has no name;
+   * the form then keeps the coordinates as the address text.
+   */
+  @Public()
+  @Get('geocode/reverse')
+  @ApiOperation({ summary: 'Address for a point chosen on the client map' })
+  async reverseGeocode(@Query('lat') lat?: string, @Query('lon') lon?: string) {
+    return { hit: await this.geocoding.reverse(Number(lat), Number(lon)) };
   }
 
   @Post('requests')

@@ -123,8 +123,8 @@ export const envSchema = z.object({
   SMTP_APP_BASE_URL: z.url().default('https://navix.droidje.com'),
 
   /**
-   * LocationIQ key for dispatcher address search. Absent means geocoding stays
-   * unavailable and the caller must pick a point on the map instead.
+   * LocationIQ key for address search. Absent means the same calls use Nominatim,
+   * paced to one request per second, so a local stand still resolves an address.
    */
   LOCATION_IQ_TOKEN: z.string().min(1).optional(),
 

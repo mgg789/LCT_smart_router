@@ -5,6 +5,7 @@ import { ENGINEER_ASSETS } from '../figma-engineer/assets';
 export const CLIENT_ASSETS = {
   menu: ENGINEER_ASSETS.menu,
   back: ENGINEER_ASSETS.back,
+  backCircle: '/figma/client-back-circle.svg',
   pin: ENGINEER_ASSETS.pin,
   route: ENGINEER_ASSETS.route,
   dot: ENGINEER_ASSETS.dot,

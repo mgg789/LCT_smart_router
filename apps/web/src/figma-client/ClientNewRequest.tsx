@@ -1,9 +1,10 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { eu } from '../figma-engineer/engineerScale';
 import { CLIENT_ASSETS } from './assets';
 import { ClientPickMap } from './ClientPickMap';
+import { type ClientGeocodeHit, reverseClientPoint, searchClientAddress } from './clientApi';
 import {
   CLIENT_PROBLEMS,
   type ClientMapPoint,
@@ -33,8 +34,84 @@ export function ClientNewRequest({
 }) {
   const motionOn = !useReducedMotion();
   const [mapOpen, setMapOpen] = useState(false);
+  const [hits, setHits] = useState<ClientGeocodeHit[]>([]);
+  const [searching, setSearching] = useState(false);
+  const draftRef = useRef(draft);
+  const onChangeRef = useRef(onChange);
+  const typing = useRef(false);
+  const searchGen = useRef(0);
+  const pickGen = useRef(0);
+  draftRef.current = draft;
+  onChangeRef.current = onChange;
   const ready = canSubmitClientForm(draft);
-  const pick = (point: ClientMapPoint) => onChange({ ...draft, point });
+
+  useEffect(() => {
+    if (!typing.current) return;
+    const query = draft.address.trim();
+    if (query.length < 3) {
+      setHits([]);
+      setSearching(false);
+      return;
+    }
+    const generation = ++searchGen.current;
+    setSearching(true);
+    const handle = window.setTimeout(() => {
+      void searchClientAddress(query)
+        .then((found) => {
+          if (generation !== searchGen.current || !typing.current) return;
+          const next = found.slice(0, 4);
+          setHits(next);
+          const first = next[0];
+          if (!first) return;
+          onChangeRef.current({
+            ...draftRef.current,
+            point: { lat: first.lat, lon: first.lon },
+          });
+        })
+        .catch(() => {
+          if (generation === searchGen.current) setHits([]);
+        })
+        .finally(() => {
+          if (generation === searchGen.current) setSearching(false);
+        });
+    }, 400);
+    return () => window.clearTimeout(handle);
+  }, [draft.address]);
+
+  const chooseHit = (hit: ClientGeocodeHit) => {
+    typing.current = false;
+    searchGen.current += 1;
+    setHits([]);
+    setSearching(false);
+    onChange({
+      ...draftRef.current,
+      address: hit.displayName,
+      point: { lat: hit.lat, lon: hit.lon },
+    });
+  };
+
+  const pick = (point: ClientMapPoint) => {
+    const generation = ++pickGen.current;
+    searchGen.current += 1;
+    typing.current = false;
+    setHits([]);
+    setSearching(false);
+    onChange({ ...draftRef.current, point });
+    const coordinates = `${point.lat.toFixed(5)}, ${point.lon.toFixed(5)}`;
+    void reverseClientPoint(point)
+      .then((hit) => {
+        if (generation !== pickGen.current) return;
+        onChangeRef.current({
+          ...draftRef.current,
+          address: hit?.displayName ?? coordinates,
+          point: hit ? { lat: hit.lat, lon: hit.lon } : point,
+        });
+      })
+      .catch(() => {
+        if (generation !== pickGen.current) return;
+        onChangeRef.current({ ...draftRef.current, address: coordinates, point });
+      });
+  };
 
   return (
     <section className="flex flex-col">
@@ -119,7 +196,10 @@ export function ClientNewRequest({
           autoComplete="street-address"
           placeholder="Адрес"
           value={draft.address}
-          onChange={(event) => onChange({ ...draft, address: event.target.value })}
+          onChange={(event) => {
+            typing.current = true;
+            onChange({ ...draft, address: event.target.value, point: null });
+          }}
           className="w-full bg-[#555] font-medium text-white outline-none placeholder:text-white/60"
           style={{
             marginTop: eu(24),
@@ -129,6 +209,32 @@ export function ClientNewRequest({
             fontSize: eu(22),
           }}
         />
+        {searching ? (
+          <p className="font-medium text-white/60" style={{ marginTop: eu(8), fontSize: eu(16) }}>
+            Ищем адрес…
+          </p>
+        ) : null}
+        {hits.length > 0 ? (
+          <ul className="flex flex-col" style={{ marginTop: eu(8), gap: eu(6) }}>
+            {hits.map((hit) => (
+              <li key={`${hit.lat}:${hit.lon}:${hit.displayName}`}>
+                <button
+                  type="button"
+                  onClick={() => chooseHit(hit)}
+                  className="w-full bg-white text-left font-medium text-figma-ink"
+                  style={{
+                    borderRadius: eu(16),
+                    padding: `${eu(12)} ${eu(16)}`,
+                    fontSize: eu(18),
+                    lineHeight: eu(24),
+                  }}
+                >
+                  {hit.displayName}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
 
         <div
           className="relative overflow-hidden bg-white"

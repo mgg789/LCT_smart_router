@@ -334,13 +334,17 @@ export function useDashboard() {
       try {
         acceptSession(await loginDispatcher(email, password), generation);
       } catch (cause) {
-        if (generation !== readGeneration.current) return;
-        reportFailure(cause);
-        setError(errorMessage(cause));
-        setLoading(false);
+        // A wrong mailbox or password is a failed attempt, not an expired session.
+        // The login card only paints an error when this promise rejects; swallowing
+        // it left the form unchanged.
+        if (generation === readGeneration.current) {
+          setLoading(false);
+          setError(errorMessage(cause));
+        }
+        throw cause;
       }
     },
-    [acceptSession, reportFailure],
+    [acceptSession],
   );
 
   /** Adopts the dispatcher session returned by the Figma login card without
