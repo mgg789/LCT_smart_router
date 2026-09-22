@@ -52,6 +52,7 @@ class SearchSettings:
     lunches_enabled: bool = False
     traffic_enabled: bool = True
     equipment_enabled: bool = True
+    metro_enabled: bool = False
     # A customer visit is feasible when its *completion* is within this grace after
     # the promised window.  LIVE uses ten minutes by default; callers may still make
     # the Router stricter or relax it explicitly within the bounded product limit.
@@ -95,6 +96,7 @@ class SearchSettings:
             lunches_enabled=self.lunches_enabled,
             traffic_enabled=self.traffic_enabled,
             equipment_enabled=self.equipment_enabled,
+            metro_enabled=self.metro_enabled,
             window_lateness_tolerance_sec=self.window_lateness_tolerance_sec,
             departure_lateness_tolerance_sec=self.departure_lateness_tolerance_sec,
             task_start_lateness_tolerance_sec=self.task_start_lateness_tolerance_sec,
@@ -688,7 +690,11 @@ def _covering_template_can_serve(
     """Check static demand compatibility before cloning a covering template."""
     if request.region is not None and engineer.region not in (None, request.region):
         return False
-    if request.required_transport not in (None, engineer.transport_type):
+    if not (
+        request.required_transport is None
+        or request.required_transport == engineer.transport_type
+        or {request.required_transport, engineer.transport_type} <= {"walk", "transit"}
+    ):
         return False
     if (
         request.required_equipment is not None

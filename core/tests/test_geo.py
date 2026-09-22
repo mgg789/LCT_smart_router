@@ -8,7 +8,10 @@ from core.geo import (
     AddressCandidate,
     Gazetteer,
     GraphTravel,
+    MixedTravel,
+    ProfilePolicyTravel,
     RoadGraph,
+    TravelQuote,
     configure_forecast_traffic,
     configure_travel,
     forecast_traffic_factor,
@@ -118,3 +121,36 @@ def test_geocoder_preserves_ambiguity(graph):
     catalog = Gazetteer(candidates)
     assert len(catalog.lookup("  МОСКВА,  дом 1  ")) == 2
     assert catalog.lookup("Missing address") == []
+
+
+class _ProfileTravel:
+    """Deterministic provider exposing ordering violations for policy-boundary tests."""
+
+    version = "profile-fixture"
+
+    def quote(self, origin, destination, profile):
+        duration = {"car": 10, "walk": 100, "bike": 200, "transit": 100}[profile]
+        return TravelQuote(duration, 1_000, (origin, destination), "route_api")
+
+
+def test_common_profile_policy_covers_unknown_fallback_overlay_and_traffic(graph):
+    """No source may bypass car micro-edge or bicycle ordering invariants."""
+    origin = GeoPoint(lat=55.7501, lon=37.6001)
+    destination = GeoPoint(lat=55.7501, lon=37.6020)
+    fallback = ProfilePolicyTravel(GraphTravel(graph))
+    assert fallback.quote(origin, destination, "car").duration_sec == fallback.quote(
+        origin, destination, "walk"
+    ).duration_sec
+
+    overlay = ProfilePolicyTravel(MixedTravel(GraphTravel(graph), _ProfileTravel()))
+    assert overlay.quote(origin, destination, "car").duration_sec == overlay.quote(
+        origin, destination, "walk"
+    ).duration_sec
+    assert overlay.quote(origin, destination, "bike").duration_sec < overlay.quote(
+        origin, destination, "walk"
+    ).duration_sec
+
+    morning = int(datetime(2026, 8, 17, 8, 0, tzinfo=ZoneInfo("Europe/Moscow")).timestamp())
+    traffic = configure_forecast_traffic(_ProfileTravel(), morning)
+    policy_traffic = ProfilePolicyTravel(traffic)
+    assert policy_traffic.quote_at(origin, destination, "car", morning).duration_sec == 100
