@@ -11,7 +11,9 @@ const skills = z
   .min(1)
   .max(3);
 
-const transportType = z.enum(['car', 'walk', 'bike', 'transit']);
+const transportType = z
+  .enum(['car', 'walk', 'bike', 'transit'])
+  .transform((value) => (value === 'transit' ? 'walk' : value));
 
 /** For actions that carry no arguments beyond the intention itself, on the caller's own
  * engineer. An integration key instead extends the body with `engineerId`

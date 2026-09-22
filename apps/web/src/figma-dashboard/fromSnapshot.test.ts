@@ -75,12 +75,19 @@ describe('Figma MAIN snapshot mapper', () => {
     expect(notificationFromAlert(firstAlert).icon).toBe('delay');
   });
 
-  it('keeps other router settings when only lunch or traffic changes', () => {
-    const snapshot = createDevSnapshot();
+  it('keeps other router settings when only lunch, traffic or metro changes', () => {
+    const snapshot = {
+      ...createDevSnapshot(),
+      routerSettings: {
+        ...nextRouterSettings(createDevSnapshot(), {}),
+        metroEnabled: true,
+      },
+    };
     const next = nextRouterSettings(snapshot, { lunchesEnabled: true, trafficEnabled: true });
     expect(next.lunchesEnabled).toBe(true);
     expect(next.trafficEnabled).toBe(true);
     expect(next.routerContextVersion).toBe(snapshot.routerContextVersion);
     expect(next.accessBufferSec).toBe(600);
+    expect(next.metroEnabled).toBe(true);
   });
 });

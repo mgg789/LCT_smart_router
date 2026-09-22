@@ -95,13 +95,27 @@ const planLegSchema = z.object({
   arrivalAt: z.number().int(),
   travelTimeSec: z.number().int().nonnegative(),
   distanceKm: z.number().nonnegative(),
-  travelSource: z.enum(['approximate', 'road_matrix', 'route_api', 'traffic_api']),
+  travelSource: z.enum(['approximate', 'road_matrix', 'route_api', 'traffic_api', 'metro']),
+  geometryProvider: z.enum(['twogis', 'yandex']).optional(),
   trafficFactor: z.number().min(1),
   geometry: z
     .object({
       points: z.array(z.object({ lat: z.number(), lon: z.number() })).min(2),
     })
     .nullable(),
+  segments: z
+    .array(
+      z.object({
+        geometry: z.object({
+          points: z.array(z.object({ lat: z.number(), lon: z.number() })).min(2),
+        }),
+        travelSource: z.enum(['approximate', 'road_matrix', 'route_api', 'traffic_api', 'metro']),
+        travelTimeSec: z.number().int().nonnegative(),
+        distanceKm: z.number().nonnegative(),
+        geometryProvider: z.enum(['twogis', 'yandex']).optional(),
+      }),
+    )
+    .optional(),
 });
 
 const routeSchema = z.object({

@@ -59,7 +59,7 @@ export function toEngineerView(
     displayName: engineer.displayName,
     inputOrder: engineer.inputOrder,
     skills: engineer.skills,
-    transportType: engineer.transportType,
+    transportType: engineer.transportType === 'transit' ? 'walk' : engineer.transportType,
     region: engineer.region,
     homeLat: engineer.homeLat,
     homeLon: engineer.homeLon,

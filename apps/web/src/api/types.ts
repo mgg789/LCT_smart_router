@@ -208,7 +208,7 @@ export interface PlanRouteView {
   readonly legs: PlanLegView[];
 }
 
-export type TravelSource = 'approximate' | 'road_matrix' | 'route_api' | 'traffic_api';
+export type TravelSource = 'approximate' | 'road_matrix' | 'route_api' | 'traffic_api' | 'metro';
 
 export interface PlanLegView {
   readonly legId: string;
@@ -219,6 +219,16 @@ export interface PlanLegView {
   readonly travelTimeSec: number;
   readonly distanceKm: number;
   readonly travelSource: TravelSource;
+  /** Optional access/metro/egress geometry while `geometry` remains the aggregate leg. */
+  readonly segments?: ReadonlyArray<{
+    readonly geometry: {
+      readonly points: ReadonlyArray<{ readonly lat: number; readonly lon: number }>;
+    };
+    readonly travelSource: TravelSource;
+    readonly travelTimeSec: number;
+    readonly distanceKm: number;
+    readonly geometryProvider?: 'twogis' | 'yandex';
+  }>;
   /** Present when sys replaced Router geometry with a map-provider polyline. */
   readonly geometryProvider?: 'twogis' | 'yandex';
   /** Forecast/provider multiplier already included in travelTimeSec. */
@@ -351,6 +361,7 @@ export interface DashboardSnapshot {
 
 export interface RouterTechnicalSettings {
   readonly lunchesEnabled: boolean;
+  readonly metroEnabled: boolean;
   readonly departureLatenessToleranceSec: number;
   readonly taskStartLatenessToleranceSec: number;
   /** Customer-window lateness allowance, measured from the original window. */

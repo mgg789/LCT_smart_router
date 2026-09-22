@@ -15,6 +15,8 @@ import {
   UploadImportService,
 } from '../orchestrator/imports';
 import { LiveService } from '../orchestrator/live';
+import { businessNow } from '../orchestrator/live/business-clock';
+import { PassportsService } from '../orchestrator/passports';
 import { PolicyService } from '../orchestrator/policy';
 import { RequestsService } from '../orchestrator/requests';
 import { ResetService } from '../orchestrator/reset';
@@ -24,7 +26,7 @@ import {
   MapRoutingService,
   moscowMinutesToUnix,
 } from '../orchestrator/settings';
-import { APP_STATE_KEYS, PrismaService } from '../persistence';
+import { APP_STATE_KEYS, PrismaService, UnitOfWork } from '../persistence';
 import {
   PUBLICATION_TRIGGERS,
   SnapshotBuilder,
@@ -140,11 +142,13 @@ export class DispatchController {
     private readonly config: AppConfigService,
     private readonly operations: OperationsService,
     private readonly prisma: PrismaService,
+    private readonly uow: UnitOfWork,
     private readonly clock: Clock,
     private readonly live: LiveService,
     private readonly dispatcherSettings: DispatcherSettingsService,
     private readonly geocoding: GeocodingService,
     private readonly mapRouting: MapRoutingService,
+    private readonly passports: PassportsService,
   ) {}
 
   @Get('live')
@@ -189,6 +193,19 @@ export class DispatchController {
     return {
       requests: requests.map((request) => toRequestView(request, states.get(request.id) ?? null)),
     };
+  }
+
+  @Get('requests/:id/passport')
+  @ApiOperation({ summary: 'Object passport for any dispatcher-visible request' })
+  async passport(@Param('id') requestId: string) {
+    return this.passports.dispatcherRead(requestId);
+  }
+
+  @Get('engineers/:id/points')
+  @ApiOperation({ summary: 'Current Moscow-month passport points of an engineer' })
+  async engineerPoints(@Param('id') engineerId: string) {
+    await this.engineers.byId(this.prisma, engineerId);
+    return this.passports.monthlyPoints(engineerId);
   }
 
   @Post('requests')
@@ -637,6 +654,7 @@ export class DispatchController {
       taskStartLatenessToleranceSec: dto.taskStartLatenessToleranceSec,
       windowLatenessToleranceSec: dto.windowLatenessToleranceSec,
       trafficEnabled: dto.trafficEnabled,
+      metroEnabled: dto.metroEnabled,
       equipmentEnabled: dto.equipmentEnabled,
       travelTimeMode: dto.travelTimeMode,
       accessBufferSec: dto.accessBufferSec,
@@ -696,6 +714,18 @@ export class DispatchController {
         'Planning data changed while the policy comparison was calculated; retry the read',
       );
     }
+    // Persist the exact measured rows only after the publication identity has been
+    // rechecked. Extra-engineer covering rows remain in the evidence, while the roster
+    // hash is derived from the published base input and is used during policy selection.
+    const rosterEngineerIds = readRosterEngineerIds(current.snapshot.payload);
+    await this.uow.run(async (tx) => {
+      await this.policyService.recordComparison(
+        tx,
+        comparison,
+        rosterEngineerIds,
+        await businessNow(this.prisma, this.clock.nowSeconds()),
+      );
+    });
     return comparison;
   }
 
@@ -1152,6 +1182,27 @@ export class DispatchController {
         // readable while Router is unavailable; routing health is reported separately.
       }
     }
-    return this.mapRouting.enrichPlan(plan, trafficEnabled);
+    const engineers = await this.prisma.engineer.findMany({
+      where: { id: { in: plan.routes.map((route) => route.engineerId) } },
+      select: { id: true, transportType: true },
+    });
+    return this.mapRouting.enrichPlan(
+      plan,
+      trafficEnabled,
+      new Map(engineers.map((engineer) => [engineer.id, engineer.transportType])),
+    );
+  }
+}
+
+function readRosterEngineerIds(payload: string): string[] {
+  try {
+    const parsed = JSON.parse(payload) as { engineers?: Array<{ engineer_id?: unknown }> };
+    return (parsed.engineers ?? [])
+      .flatMap((engineer) =>
+        typeof engineer.engineer_id === 'string' ? [engineer.engineer_id] : [],
+      )
+      .sort();
+  } catch {
+    return [];
   }
 }

@@ -18,6 +18,7 @@ from core.contracts import (
     RouteLeg,
     RouteMetrics,
     RouterTaskSnapshot,
+    RouteSegment,
     RouteStop,
     Transport,
 )
@@ -97,12 +98,17 @@ def _matches_static_constraints(engineer: Engineer, request: Request) -> bool:
     return (
         (request.region is None or engineer.region is None or request.region == engineer.region)
         and request.required_skill in engineer.skills
-        and request.required_transport in (None, engineer.transport_type)
+        and _transport_matches(request.required_transport, engineer.transport_type)
         and (
             request.required_equipment is None
             or engineer.equipment_stock.quantity(request.required_equipment) > 0
         )
     )
+
+
+def _transport_matches(required: Transport | None, actual: Transport) -> bool:
+    """Accept the two persisted pedestrian aliases while preserving other hard modes."""
+    return required is None or required == actual or {required, actual} <= {"walk", "transit"}
 
 
 def eligible(snapshot: RouterTaskSnapshot, engineer: Engineer, request: Request) -> bool:
@@ -275,6 +281,15 @@ def schedule_steps(
                 ),
                 travel_source=quote.provenance,
                 traffic_factor=quote.traffic_factor,
+                segments=[
+                    RouteSegment(
+                        geometry=Geometry(points=list(segment.points)),
+                        travel_source=segment.provenance,
+                        duration_sec=segment.duration_sec,
+                        distance_m=segment.distance_m,
+                    )
+                    for segment in quote.segments
+                ],
             )
         )
         clock, location = end, request.location
@@ -399,7 +414,7 @@ def _candidate_pool(snapshot: RouterTaskSnapshot, request: Request, routes: list
     transport = [
         engineer
         for engineer in skilled
-        if request.required_transport in (None, engineer.transport_type)
+        if _transport_matches(request.required_transport, engineer.transport_type)
     ]
     idle_regional = [engineer for engineer in regional if engineer.engineer_id not in busy]
     idle_skilled = [engineer for engineer in skilled if engineer.engineer_id not in busy]

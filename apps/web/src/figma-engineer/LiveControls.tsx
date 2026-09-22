@@ -66,9 +66,9 @@ export function LiveControls({
           {working ? (
             <button
               type="button"
-              aria-label={current.overrunAt !== null ? 'Проблема' : 'Время работы'}
+              aria-label="Проблема или дополнительное время"
               className={`${button} flex-1 ${current.overrunAt !== null ? 'bg-figma-cancel' : 'bg-figma-ink'} text-white disabled:opacity-100`}
-              disabled={busy || current.overrunAt === null}
+              disabled={busy}
               onClick={() => setForm('problem')}
             >
               {formatLiveCountdown(now - (current.request.startedAt ?? now))}
@@ -225,7 +225,7 @@ export function LiveControls({
                 ) : null}
                 {problem === 'delay' ? (
                   <label>
-                    Нужно больше времени, мин.
+                    Дополнительно к текущему сроку, мин.
                     <input
                       className={field}
                       type="number"
@@ -258,6 +258,12 @@ export function LiveControls({
                       <option value="smart_speaker">Умная колонка</option>
                     </select>
                   </label>
+                ) : null}
+                {problem === 'eta' || problem === 'delay' ? (
+                  <p className="text-sm text-figma-dim">
+                    За точный прогноз — 30 баллов. Отметьтесь не позже обещанного времени и не более
+                    чем на 10 минут раньше. Указывайте время без запаса.
+                  </p>
                 ) : null}
                 <label>
                   Описание
@@ -308,6 +314,7 @@ export function LiveDayOverlay({
   const pending = live.workday.status === 'pending';
   const finished = live.workday.status === 'finished';
   const entry = shouldEnterLiveLine(live);
+  if (finished) return null;
   if (!pending && !finished && !stop && !live.lunch && !entry) return null;
   const end = stop?.plannedEndAt ?? live.lunch?.endAt ?? now;
   return (

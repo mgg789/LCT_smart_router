@@ -5,23 +5,31 @@ export interface MapRouteSegment {
   readonly coordinates: ReadonlyArray<readonly [number, number]>;
   readonly source: TravelSource;
   readonly approximate: boolean;
+  readonly travelTimeSec?: number;
+  readonly distanceKm?: number;
   readonly geometryProvider?: 'twogis' | 'yandex';
+  /** Aggregate leg endpoints used to keep mixed access/metro/egress pieces on one graph edge. */
+  readonly routeEndpoints?: readonly [readonly [number, number], readonly [number, number]];
 }
 
-/** Visual class of a planned leg: dashed centroids, gray OSRM, green map APIs. */
+/** Visual class of a planned leg: dashed centroids, gray road routes, green map APIs, purple metro. */
 export function routeLineKind(
   segment: Pick<MapRouteSegment, 'approximate' | 'source' | 'geometryProvider'>,
-): 'centroid' | 'osrm' | 'map' {
-  if (segment.approximate || segment.source === 'approximate') return 'centroid';
+): 'centroid' | 'osrm' | 'map' | 'metro' {
+  if (segment.source === 'metro') return 'metro';
   if (segment.geometryProvider === 'twogis' || segment.geometryProvider === 'yandex') return 'map';
+  if (segment.approximate || segment.source === 'approximate') return 'centroid';
   return 'osrm';
 }
 
 /** Builds map line segments without presenting a straight approximation as road geometry. */
 export function mapRouteSegments(route: PlanRouteView): MapRouteSegment[] {
   if (route.legs.length > 0) {
-    return route.legs.map((leg) => {
+    return route.legs.flatMap((leg) => {
       const providerPoints = leg.geometry?.points ?? [];
+      const nested = leg.segments ?? [];
+      const nestedPoints = nested.flatMap((segment) => segment.geometry.points);
+      const aggregatePoints = providerPoints.length >= 2 ? providerPoints : nestedPoints;
       // A prepared road graph (road_matrix) carries a real road polyline only when the
       // path has intermediate shape: a two-point road_matrix leg is the disclosed
       // node-to-node straightness of an un-enriched matrix, so it stays approximate
@@ -45,16 +53,50 @@ export function mapRouteSegments(route: PlanRouteView): MapRouteSegment[] {
         lon: route.startLon,
       };
       const destination = stopAtArrival(route, leg.arrivalAt) ?? origin;
-      return {
-        coordinates: exactGeometry ??
-          endpointGeometry ?? [
-            [origin.lon, origin.lat] as const,
-            [destination.lon, destination.lat] as const,
-          ],
-        source: leg.travelSource,
-        approximate: exactGeometry === null,
-        ...(leg.geometryProvider ? { geometryProvider: leg.geometryProvider } : {}),
-      };
+      const routeEndpoints =
+        aggregatePoints.length >= 2
+          ? ([
+              [aggregatePoints[0]?.lon ?? origin.lon, aggregatePoints[0]?.lat ?? origin.lat],
+              [
+                aggregatePoints.at(-1)?.lon ?? destination.lon,
+                aggregatePoints.at(-1)?.lat ?? destination.lat,
+              ],
+            ] as const)
+          : ([
+              [origin.lon, origin.lat],
+              [destination.lon, destination.lat],
+            ] as const);
+      if (nested.length > 0) {
+        return nested.map((segment) => {
+          const points = segment.geometry.points.map((point) => [point.lon, point.lat] as const);
+          return {
+            coordinates: points,
+            source: segment.travelSource,
+            approximate:
+              segment.travelSource === 'approximate' ||
+              (segment.travelSource === 'road_matrix' && points.length <= 2),
+            travelTimeSec: segment.travelTimeSec,
+            distanceKm: segment.distanceKm,
+            routeEndpoints,
+            ...(segment.geometryProvider ? { geometryProvider: segment.geometryProvider } : {}),
+          };
+        });
+      }
+      return [
+        {
+          coordinates: exactGeometry ??
+            endpointGeometry ?? [
+              [origin.lon, origin.lat] as const,
+              [destination.lon, destination.lat] as const,
+            ],
+          source: leg.travelSource,
+          approximate: exactGeometry === null && leg.travelSource !== 'metro',
+          travelTimeSec: leg.travelTimeSec,
+          distanceKm: leg.distanceKm,
+          routeEndpoints,
+          ...(leg.geometryProvider ? { geometryProvider: leg.geometryProvider } : {}),
+        },
+      ];
     });
   }
 

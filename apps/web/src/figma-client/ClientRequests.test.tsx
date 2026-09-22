@@ -15,12 +15,13 @@ it('shows the live card, new-request action and archive rows from Figma MAIN', (
   );
   expect(html).toContain('Список заявок');
   expect(html).toContain('ул. Таганская, 24');
-  expect(html).toContain('Открыть карточку');
+  expect(html).not.toContain('Открыть карточку');
   expect(html).toContain('Алексей Соколов');
   expect(html).toContain('в пути');
   expect(html).toContain('Архив');
   expect(html).toContain('Офис - ул. Лесная, 7');
   expect(html).toContain('Новая заявка');
   expect(html).toContain('Местоположение заявки');
-  expect(html).toContain('rgba(255, 255, 255, 0.7)');
+  expect(html).toContain('opacity:0.7');
+  expect(html).toContain('opacity:1');
 });

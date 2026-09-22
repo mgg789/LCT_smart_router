@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { factorLabel, modeLabel, reasonDetail } from './reasons';
+import { factorLabel, modeLabel, reasonDetail, transportLabel } from './reasons';
 
 describe('dispatcher copy', () => {
   it('translates solver reason codes instead of English evidence text', () => {
@@ -19,5 +19,6 @@ describe('dispatcher copy', () => {
     );
     expect(modeLabel('auto')).toBe('Авто');
     expect(modeLabel('manual')).toBe('Вручную');
+    expect(transportLabel('transit')).toBe('пешком');
   });
 });

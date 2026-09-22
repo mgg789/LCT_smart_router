@@ -626,6 +626,7 @@ class RouterRuntime:
                 lunches_enabled=requested.lunches_enabled,
                 traffic_enabled=requested.traffic_enabled,
                 equipment_enabled=requested.equipment_enabled,
+                metro_enabled=requested.metro_enabled,
                 window_lateness_tolerance_sec=requested.window_lateness_tolerance_sec,
                 departure_lateness_tolerance_sec=requested.departure_lateness_tolerance_sec,
                 task_start_lateness_tolerance_sec=requested.task_start_lateness_tolerance_sec,

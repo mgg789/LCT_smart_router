@@ -29,12 +29,14 @@ import { engineerColor, skillMark } from '../lib/reasons';
 
 const OSRM_LINE = '#8A8F98';
 const MAP_API_LINE = '#16A34A';
+const METRO_LINE = '#8B5CF6';
 
 function routeStroke(
   segment: Pick<MapRouteSegment, 'approximate' | 'source' | 'geometryProvider'>,
   engineerId: string,
 ) {
   const kind = routeLineKind(segment);
+  if (kind === 'metro') return mapPaintColor(METRO_LINE);
   if (kind === 'map') return mapPaintColor(MAP_API_LINE);
   if (kind === 'osrm') return mapPaintColor(OSRM_LINE);
   return mapPaintColor(engineerColor(engineerId));
@@ -98,29 +100,29 @@ export function visiblePlannedSegments(
   route: PlanRouteView,
   graph: LiveGraphProjection,
 ): readonly VisiblePlannedSegment[] {
-  const preferred = new Map<string, VisiblePlannedSegment>();
+  const visible: VisiblePlannedSegment[] = [];
+  const seenGeometry = new Set<string>();
   for (const segment of mapRouteSegments(route)) {
     const first = segment.coordinates[0];
     const last = segment.coordinates[segment.coordinates.length - 1];
     if (!first || !last) continue;
-    const from = resolveVisibleEndpoint(route, graph.mapNodes, first);
-    const to = resolveVisibleEndpoint(route, graph.mapNodes, last);
+    const routeFirst = segment.routeEndpoints?.[0] ?? first;
+    const routeLast = segment.routeEndpoints?.[1] ?? last;
+    const from = resolveVisibleEndpoint(route, graph.mapNodes, routeFirst);
+    const to = resolveVisibleEndpoint(route, graph.mapNodes, routeLast);
     if (!from || !to || from.key === to.key) continue;
     const key = `${from.key}->${to.key}`;
     if (!graph.mapSegments.some((edge) => edge.key === key)) continue;
-    const rank = (value: MapRouteSegment) =>
-      value.approximate
-        ? 0
-        : value.source === 'traffic_api'
-          ? 3
-          : value.source === 'route_api'
-            ? 2
-            : 1;
-    const existing = preferred.get(key);
-    if (!existing || rank(segment) > rank(existing))
-      preferred.set(key, { ...segment, fromKey: from.key, toKey: to.key });
+    // Mixed legs intentionally keep access, metro and egress as separate lines.
+    // Deduplicate only an exact repeated shape from a malformed/duplicated payload.
+    const geometryKey = `${key}:${segment.source}:${segment.coordinates
+      .map((point) => `${point[0]},${point[1]}`)
+      .join(';')}`;
+    if (seenGeometry.has(geometryKey)) continue;
+    seenGeometry.add(geometryKey);
+    visible.push({ ...segment, fromKey: from.key, toKey: to.key });
   }
-  return [...preferred.values()];
+  return visible;
 }
 
 function resolveVisibleEndpoint(
@@ -322,16 +324,14 @@ export function DayMap({
         const region = route ? routeRegion(snapshot, route) : null;
         const planned = route ? visiblePlannedSegments(route, graph) : [];
         const covered = (from: LiveGraphNode, to: LiveGraphNode) =>
-          planned.some((segment) => {
-            const first = segment.coordinates[0];
-            const last = segment.coordinates.at(-1);
-            return first && last && hasCoordinate(from, first) && hasCoordinate(to, last);
-          });
+          planned.some((segment) => segment.fromKey === from.key && segment.toKey === to.key);
         const segments = [
           ...planned.map((segment) => ({
             approximate: segment.approximate,
             source: segment.source,
             geometryProvider: segment.geometryProvider,
+            travelTimeSec: segment.travelTimeSec,
+            distanceKm: segment.distanceKm,
             coordinates: segment.coordinates,
           })),
           ...graph.mapSegments
@@ -371,19 +371,18 @@ export function DayMap({
         graph.activeSegments.map((segment) => {
           const road = route
             ? visiblePlannedSegments(route, graph).find((candidate) => {
-                const first = candidate.coordinates[0];
-                const last = candidate.coordinates.at(-1);
-                return (
-                  first &&
-                  last &&
-                  hasCoordinate(segment.from, first) &&
-                  hasCoordinate(segment.to, last)
-                );
+                return candidate.fromKey === segment.from.key && candidate.toKey === segment.to.key;
               })
             : null;
           return {
             type: 'Feature' as const,
-            properties: { engineerId, color: mapPaintColor(engineerColor(engineerId)) },
+            properties: {
+              engineerId,
+              color:
+                road && routeLineKind(road) === 'metro'
+                  ? routeStroke(road, engineerId)
+                  : mapPaintColor(engineerColor(engineerId)),
+            },
             geometry: {
               type: 'LineString' as const,
               coordinates: road?.coordinates ?? [
@@ -769,8 +768,8 @@ export function DayMap({
       {soloRequestId ? null : (
         <div className="pointer-events-none absolute bottom-3 left-3 rounded-xl bg-white/90 px-3 py-2 text-[11px] text-muted shadow">
           {selectedEngineerId
-            ? 'Показан план выбранного инженера. Пунктир — геоцентры, серая линия — OSRM, зелёная — маршрут 2ГИС или Яндекс.'
-            : 'План дня без live-позиции инженеров. Пунктир — геоцентры, серая линия — OSRM, зелёная — маршрут 2ГИС или Яндекс.'}
+            ? 'Показан план выбранного инженера. Пунктир — геоцентры, серая — дорожный маршрут, зелёная — 2ГИС или Яндекс, фиолетовая — метро.'
+            : 'План дня без live-позиции инженеров. Пунктир — геоцентры, серая — дорожный маршрут, зелёная — 2ГИС или Яндекс, фиолетовая — метро.'}
         </div>
       )}
       <div className="absolute right-2 bottom-1 rounded bg-white/90 px-2 text-[10px] text-muted">

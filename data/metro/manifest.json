@@ -1,0 +1,70 @@
+{
+  "manifest_version": "1.0",
+  "converter": "data/metro/build_moscow.py",
+  "provenance": {
+    "routes": {
+      "endpoint": "https://overpass-api.de/api/interpreter",
+      "query": "[out:json][timeout:180]; relation[route=subway][network=Московский метрополитен](55.4,36.8,56.1,38.3); out body; >; out skel qt;",
+      "retrieved_at": "2026-09-22T08:15:26Z"
+    },
+    "boundary": {
+      "url": "https://nominatim.openstreetmap.org/lookup?osm_ids=R102269&format=jsonv2&polygon_geojson=1",
+      "query": "osm_ids=R102269, format=jsonv2, polygon_geojson=1",
+      "retrieved_at": "2026-09-22"
+    }
+  },
+  "raw_inputs": [
+    {
+      "filename": "moscow_subway_routes.json",
+      "origin": "source/moscow_subway_routes.json",
+      "bytes": 1881008,
+      "sha256": "d3942682ed9e7cec936c061c01b4909506d51905ce5cf1f5908563df49f232b5",
+      "gzip_bytes": 222902,
+      "gzip_sha256": "322ee83b331bfb5e7b179c319c108d049821fdb1321454734ce2463ab5b0141e"
+    },
+    {
+      "filename": "moscow_boundary_nominatim.json",
+      "origin": "source/moscow_boundary_nominatim.json",
+      "bytes": 93754,
+      "sha256": "dd86fb4bfd20a0c09c09330c045d373162d0fc9a9b69747a580e171a0e74cd8a",
+      "gzip_bytes": 33199,
+      "gzip_sha256": "debf81f25c18764fe016200b6123bc9985bf32ef6e779de6d16299d9d15b5d50"
+    }
+  ],
+  "artifact": {
+    "path": "core/resources/metro/moscow.json",
+    "bytes": 451620,
+    "sha256": "f6f105ba22c45b6301dbae7ad9b8088e68130d4bfd43ba3085f60c2757a48de2"
+  },
+  "counts": {
+    "stations": 278,
+    "edges": 648,
+    "ride_edges": 528,
+    "transfer_edges": 120,
+    "line_ids": [
+      "1",
+      "10",
+      "11",
+      "12",
+      "15",
+      "16",
+      "17",
+      "2",
+      "3",
+      "4",
+      "4A",
+      "5",
+      "6",
+      "7",
+      "8",
+      "8A",
+      "9"
+    ]
+  },
+  "method": {
+    "ride_duration": "ceil(distance_m * 1.15 / 41 km/h), minimum 60 sec",
+    "transfer_duration": "ceil(distance_m / 1.4 m/s), minimum 60 sec walking estimate; runtime adds 240 sec",
+    "station_grouping": "normalized line/name across platform directions; shared line 4А stops canonicalized to line 4",
+    "boundary": "Nominatim geometry for OSM relation 102269, includes New Moscow"
+  }
+}

@@ -14,6 +14,7 @@ import {
   sendEngineerLiveAction,
 } from '../api/live';
 import type { EngineerDayView, EngineerPlanResponse, EngineerView } from '../api/types';
+import { PassportOffer } from '../components/passports/PassportOffer';
 import { TRANSPORT_OPTIONS } from '../figma-dashboard/addEntity';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { ENGINEER_ASSETS } from './assets';
@@ -23,6 +24,7 @@ import {
   DESIGN_PREVIEW_PLAN,
   DESIGN_PREVIEW_PROFILE,
 } from './designPreview';
+import { EngineerDayResults } from './EngineerDayResults';
 import { EngineerMenu, type EngineerMenuId } from './EngineerMenu';
 import { EngineerSettings } from './EngineerSettings';
 import { engineerHeaderStamp } from './engineerClock';
@@ -256,6 +258,7 @@ export function EngineerApp({
     setActionBusy(true);
     try {
       const next = await sendEngineerLiveAction(token, action);
+      window.dispatchEvent(new Event('engineer-rewards-changed'));
       const receivedAt = Date.now();
       setError(null);
       const terminalId =
@@ -527,25 +530,38 @@ export function EngineerApp({
               ) : null}
               <div className="flex flex-col" style={{ marginTop: eu(20), gap: eu(20) }}>
                 {items.map((item, index) => (
-                  <EngineerListCard
-                    key={item.kind === 'lunch' ? `lunch-${item.startAt}` : item.request.id}
-                    item={item}
-                    motionOn={motionOn}
-                    delay={index * 0.04}
-                    actions={live && item.kind === 'job' ? controls(item.request.id) : undefined}
-                    startPending={item.kind === 'job' && startPendingId === item.request.id}
-                    onOpen={
-                      item.kind === 'job'
-                        ? () => {
-                            setOpenedJob(item);
-                            setScreen('day');
-                            setNotice(null);
-                          }
-                        : undefined
-                    }
-                    onRoute={item.kind === 'job' ? () => openRoute(item) : undefined}
-                    onStart={item.kind === 'job' ? () => void startJob(item.request.id) : undefined}
-                  />
+                  <div key={item.kind === 'lunch' ? `lunch-${item.startAt}` : item.request.id}>
+                    <EngineerListCard
+                      item={item}
+                      motionOn={motionOn}
+                      delay={index * 0.04}
+                      actions={live && item.kind === 'job' ? controls(item.request.id) : undefined}
+                      startPending={item.kind === 'job' && startPendingId === item.request.id}
+                      onOpen={
+                        item.kind === 'job'
+                          ? () => {
+                              setOpenedJob(item);
+                              setScreen('day');
+                              setNotice(null);
+                            }
+                          : undefined
+                      }
+                      onRoute={item.kind === 'job' ? () => openRoute(item) : undefined}
+                      onStart={
+                        item.kind === 'job' ? () => void startJob(item.request.id) : undefined
+                      }
+                    />
+                    {!designPreview &&
+                    item.kind === 'job' &&
+                    live?.current?.request.id === item.request.id &&
+                    live.current.phase === 'in_progress' ? (
+                      <PassportOffer
+                        key={item.request.id}
+                        token={token}
+                        requestId={item.request.id}
+                      />
+                    ) : null}
+                  </div>
                 ))}
               </div>
             </>
@@ -571,6 +587,7 @@ export function EngineerApp({
             >
               <div className="h-full overflow-y-auto">
                 <RequestDetail
+                  token={designPreview ? undefined : token}
                   item={detailJob}
                   actions={live ? controls(detailJob.request.id, true) : undefined}
                   nowMs={designPreview ? DESIGN_PREVIEW_NOW_MS : logicalNow * 1000}
@@ -588,6 +605,7 @@ export function EngineerApp({
         {live ? (
           <LiveDayOverlay live={live} now={logicalNow} busy={actionBusy} send={applyLiveAction} />
         ) : null}
+        {live && !designPreview ? <EngineerDayResults token={token} live={live} /> : null}
         <AnimatePresence>
           {screen === 'settings' ? (
             <motion.div
@@ -626,6 +644,7 @@ export function EngineerApp({
 
         {overlayOpen ? null : (
           <EngineerMenu
+            token={designPreview ? undefined : token}
             open={menuOpen}
             motionOn={motionOn}
             name={name}

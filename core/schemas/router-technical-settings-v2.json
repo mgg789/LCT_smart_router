@@ -40,6 +40,11 @@
       "title": "Lunches Enabled",
       "type": "boolean"
     },
+    "metro_enabled": {
+      "default": false,
+      "title": "Metro Enabled",
+      "type": "boolean"
+    },
     "task_overrun_tolerance_sec": {
       "default": 600,
       "maximum": 86400,

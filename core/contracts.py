@@ -11,7 +11,7 @@ Transport = Literal["car", "walk", "bike", "transit"]
 Skill = Literal["local", "connection", "emergency"]
 EquipmentType = Literal["router", "set_top_box", "smart_speaker"]
 TravelTimeMode = Literal["graph_with_access_buffer", "fixed_normative"]
-TravelProvenance = Literal["approximate", "road_matrix", "route_api", "traffic_api"]
+TravelProvenance = Literal["approximate", "road_matrix", "route_api", "traffic_api", "metro"]
 
 
 class Record(BaseModel):
@@ -130,6 +130,7 @@ class RouterTechnicalSettings(Record):
     lunches_enabled: bool = False
     traffic_enabled: bool = True
     equipment_enabled: bool = True
+    metro_enabled: bool = False
     window_lateness_tolerance_sec: int = Field(default=600, ge=0, le=1200)
     departure_lateness_tolerance_sec: int = Field(default=0, ge=0, le=86400)
     task_start_lateness_tolerance_sec: int = Field(default=0, ge=0, le=86400)
@@ -201,6 +202,15 @@ class Geometry(Record):
     points: list[GeoPoint]
 
 
+class RouteSegment(Record):
+    """One ordered portion of a composite leg with its own route provenance."""
+
+    geometry: Geometry
+    travel_source: TravelProvenance
+    duration_sec: Seconds
+    distance_m: int = Field(ge=0)
+
+
 class RouteStop(Record):
     """Non-overlapping work, waiting or lunch interval."""
 
@@ -236,12 +246,18 @@ class RouteLeg(Record):
     geometry: Geometry | None
     travel_source: TravelProvenance
     traffic_factor: Annotated[float, Field(ge=1.0)] = 1.0
+    segments: list[RouteSegment] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def check_interval(self) -> Self:
         """Travel duration equals elapsed time on the selected leg."""
         if self.arrival_at - self.departure_at != self.travel_time_sec:
             raise ValueError("leg timestamps disagree with travel duration")
+        if self.segments and (
+            sum(segment.duration_sec for segment in self.segments) != self.travel_time_sec
+            or sum(segment.distance_m for segment in self.segments) != round(self.distance_km * 1000)
+        ):
+            raise ValueError("leg segments disagree with aggregate travel")
         return self
 
 

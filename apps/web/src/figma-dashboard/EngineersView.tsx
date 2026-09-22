@@ -11,6 +11,7 @@ import {
   useState,
 } from 'react';
 import type { DashboardSnapshot } from '../api/types';
+import { MonthlyPoints } from '../components/passports/MonthlyPoints';
 import { useArtboardScale, useLetterboxInsets } from './artboardScale';
 import { ENGINEER_PORTRAITS, FIGMA_ASSETS } from './assets';
 import {
@@ -59,6 +60,7 @@ const RING_POOL_SIZE = RING_RENDER_SPAN * 2 + 1;
  * Figma ENGINEERS (49:5129): selected-engineer dossier plus the five-card ring.
  */
 export function EngineersView({
+  token,
   snapshot,
   selectedEngineerId,
   motionOn,
@@ -68,6 +70,7 @@ export function EngineersView({
   onDeleteEngineer,
   onSetAvailability,
 }: {
+  token?: string;
   snapshot: DashboardSnapshot | null;
   selectedEngineerId: string | null;
   motionOn: boolean;
@@ -479,6 +482,7 @@ export function EngineersView({
     <section ref={stageRef} className="engineer-ring-page absolute inset-0" data-name="ENGINEERS">
       {focused ? (
         <EngineerDossier
+          token={token}
           engineer={focused}
           motionOn={motionOn}
           busy={busy || emailBusy}
@@ -613,6 +617,7 @@ export function EngineersView({
 }
 
 function EngineerDossier({
+  token,
   engineer,
   motionOn,
   busy,
@@ -629,6 +634,7 @@ function EngineerDossier({
   onCancelDelete,
   onConfirmDelete,
 }: {
+  token?: string;
   engineer: EngineerProfile;
   motionOn: boolean;
   busy: boolean;
@@ -660,6 +666,11 @@ function EngineerDossier({
           className="absolute left-[-132px] top-0 size-[418px] object-cover blur-[15px]"
         />
         <div className="absolute inset-0 bg-figma-ink" />
+        {token ? (
+          <div className="absolute bottom-6 inset-x-4">
+            <MonthlyPoints token={token} engineerId={engineer.id} />
+          </div>
+        ) : null}
       </div>
 
       <div className="absolute bottom-[32px] left-[306px] right-[48px] top-[35px] flex flex-col">

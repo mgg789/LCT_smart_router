@@ -59,6 +59,7 @@ export function ClientRequests({
           <ArchiveCard
             key={item.id}
             item={item}
+            archived={false}
             motionOn={motionOn}
             delay={(index + 1) * 0.04}
             onOpen={() => onOpen(item.id)}
@@ -92,6 +93,7 @@ export function ClientRequests({
           <ArchiveCard
             key={item.id}
             item={item}
+            archived
             motionOn={motionOn}
             delay={index * 0.04}
             onOpen={() => onOpen(item.id)}
@@ -165,12 +167,6 @@ function FeaturedCard({
               />
               <span>{formatMinutesRu(item.durationSec)}</span>
             </div>
-            <span
-              className="inline-flex items-center rounded-full bg-figma-bee font-semibold text-figma-ink"
-              style={{ marginTop: eu(16), padding: `${eu(10)} ${eu(24)}`, fontSize: eu(20) }}
-            >
-              Открыть карточку
-            </span>
           </div>
           <MapThumb lat={item.lat} lon={item.lon} />
         </div>
@@ -220,11 +216,13 @@ function FeaturedCard({
 
 function ArchiveCard({
   item,
+  archived,
   motionOn,
   delay,
   onOpen,
 }: {
   item: ClientRequestView;
+  archived: boolean;
   motionOn: boolean;
   delay: number;
   onOpen: () => void;
@@ -246,23 +244,26 @@ function ArchiveCard({
             onOpen();
           }
         }}
-        className="flex w-full items-start justify-between overflow-hidden text-left"
+        className="flex w-full items-start justify-between overflow-hidden bg-white text-left"
         style={{
           gap: eu(16),
           borderRadius: eu(20),
           padding: `${eu(25)} ${eu(30)}`,
-          background: 'rgba(255, 255, 255, 0.7)',
+          opacity: archived ? 0.7 : 1,
         }}
       >
         <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center justify-between" style={{ gap: eu(12) }}>
+            <p
+              className="font-murs leading-none tracking-[-0.02em] text-figma-ink"
+              style={{ fontSize: eu(40) }}
+            >
+              {formatPlanTime(item.startAt)}
+            </p>
+            {archived ? <StatusPill label={item.statusLabel} live={false} /> : null}
+          </div>
           <p
-            className="font-murs leading-none tracking-[-0.02em] text-figma-ink/70"
-            style={{ fontSize: eu(40) }}
-          >
-            {formatPlanTime(item.startAt)}
-          </p>
-          <p
-            className="break-words font-semibold tracking-[-0.02em] text-figma-dim/70"
+            className="break-words font-semibold tracking-[-0.02em] text-figma-dim"
             style={{ marginTop: eu(14), fontSize: eu(24) }}
           >
             {item.addressText}
@@ -272,8 +273,7 @@ function ArchiveCard({
             style={{ marginTop: eu(12), fontSize: eu(20) }}
           >
             {item.workTypeTitle}
-            {' · '}
-            {item.statusLabel}
+            {archived ? null : ` · ${item.statusLabel}`}
           </p>
           <span
             className="inline-flex items-center rounded-full bg-figma-ink/70 font-semibold text-white"

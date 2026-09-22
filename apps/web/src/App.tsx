@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { appSurface } from './appSurface';
+import { appSurface, appSurfaceTitle } from './appSurface';
 import { ClientPage } from './figma-client/ClientPage';
 import { EngineerAuthPage } from './figma-dashboard/EngineerAuthPage';
 import { MainDashboardPage } from './figma-dashboard/MainDashboardPage';
@@ -13,6 +13,10 @@ export function App() {
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
+
+  useEffect(() => {
+    document.title = appSurfaceTitle(surface);
+  }, [surface]);
 
   if (surface === 'client') return <ClientPage />;
   if (surface === 'engineer') return <EngineerAuthPage />;

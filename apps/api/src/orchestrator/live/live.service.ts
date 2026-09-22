@@ -31,6 +31,7 @@ import {
   ExecutionTimingPolicy,
   type ExecutionTimingPolicyValue,
 } from '../facts/execution-timing-policy';
+import { RewardsService } from '../rewards';
 
 import { etaNeedsReplan, MATERIAL_DELAY_SEC, NEXT_VISIT_GAP_SEC } from './replan-policy';
 
@@ -62,6 +63,7 @@ export class LiveService {
     private readonly config: AppConfigService,
     private readonly engineers: EngineersService,
     private readonly facts: FactsService,
+    private readonly rewards: RewardsService,
     private readonly timing: ExecutionTimingPolicy,
     private readonly plans: AppliedPlanService,
     private readonly publisher: SnapshotPublisher,
@@ -113,6 +115,23 @@ export class LiveService {
   async engineerView(engineerId: string): Promise<EngineerLiveView> {
     await this.advanceOnce();
     return this.uow.run(async (tx) => this.engineerViewIn(tx, engineerId, this.clock.nowSeconds()));
+  }
+
+  /** Verifies the current LIVE stop inside the caller's transaction, serialized
+   * with engineer actions and automatic day transitions. */
+  async assertCurrentRequestIn(
+    tx: Tx,
+    engineerId: string,
+    requestId: string,
+    wallNow: number,
+  ): Promise<void> {
+    const day = await this.ensureDay(tx, wallNow);
+    await tx.$queryRaw`SELECT id FROM live_workdays WHERE id = ${day.id} FOR UPDATE`;
+    const full = await this.dayWithStates(tx, day.id);
+    if (full.status !== 'running')
+      throw SysError.forbidden('The dispatcher has not started the workday');
+    const current = await this.currentFor(tx, full, engineerId, this.liveNow(full, wallNow));
+    this.assertCurrentRequest(current, requestId);
   }
 
   /** Legacy mutation endpoints must not bypass LIVE ordering or its business clock. */
@@ -319,6 +338,7 @@ export class LiveService {
         const plannedStartAt = z
           .object({ plannedStartAt: z.number() })
           .parse(original.value).plannedStartAt;
+        const originalArrivalDeadline = plannedStartAt;
         // Forecasts are promises about a completed visit. A late start whose normative
         // service would already exceed the customer window plus the product grace must
         // be released back to the Router instead of pinning a knowingly futile drive.
@@ -342,8 +362,18 @@ export class LiveService {
           );
           return this.engineerViewIn(context.tx, engineerId, context.now);
         }
+        const priorEta = await context.tx.liveRequestState.findUnique({
+          where: { workdayId_requestId: { workdayId: day.id, requestId: input.requestId } },
+          select: { reportedEtaBaselineAt: true },
+        });
         await this.upsertRequestState(context.tx, day.id, input.requestId, context.now, {
           reportedEtaAt: BigInt(reportedEtaAt),
+          // Promise ordering is evaluated on the accelerated LIVE clock. The ledger
+          // still uses context.now as its wall-time month bucket.
+          reportedEtaRecordedAt: BigInt(liveNow),
+          ...(priorEta?.reportedEtaBaselineAt === null || priorEta === null
+            ? { reportedEtaBaselineAt: BigInt(originalArrivalDeadline) }
+            : {}),
           reservedEngineerId: engineerId,
         });
         if (
@@ -370,6 +400,15 @@ export class LiveService {
         if (current.phase !== 'ready_to_start') {
           throw new SysError('VALIDATION_FAILED', 'This visit is not ready to start yet');
         }
+        const acceptedPromise = await context.tx.liveRequestState.findUnique({
+          where: { workdayId_requestId: { workdayId: day.id, requestId: input.requestId } },
+          select: {
+            reportedEtaAt: true,
+            reportedEtaRecordedAt: true,
+            reportedEtaBaselineAt: true,
+            reservedEngineerId: true,
+          },
+        });
         await this.facts.record(
           businessContext,
           engineerId,
@@ -379,6 +418,38 @@ export class LiveService {
           null,
           this.timing.current(),
         );
+        await this.rewards.evaluateArrival(context, {
+          engineerId,
+          requestId: input.requestId,
+          workdayId: day.id,
+          actualAt: liveNow,
+          // Once an ETA reservation overlays the route, current.stop.startAt is the
+          // promise itself. Preserve the first plan baseline for the ordinary 40-point
+          // branch; otherwise a revised promise would be misclassified as ordinary.
+          plannedAt:
+            acceptedPromise?.reportedEtaBaselineAt === null || acceptedPromise === null
+              ? (current.stop?.startAt ?? liveNow)
+              : Number(acceptedPromise.reportedEtaBaselineAt),
+          windowStartAt: current.current?.request.windowStartAt ?? liveNow,
+          promiseAt:
+            acceptedPromise?.reportedEtaAt === null || acceptedPromise === null
+              ? null
+              : Number(acceptedPromise.reportedEtaAt),
+          promiseRecordedAt:
+            acceptedPromise?.reportedEtaRecordedAt === null || acceptedPromise === null
+              ? null
+              : Number(acceptedPromise.reportedEtaRecordedAt),
+          baselineAt:
+            acceptedPromise?.reportedEtaBaselineAt === null || acceptedPromise === null
+              ? null
+              : Number(acceptedPromise.reportedEtaBaselineAt),
+          ownerMatches:
+            acceptedPromise?.reservedEngineerId === undefined
+              ? true
+              : acceptedPromise.reservedEngineerId === null ||
+                acceptedPromise.reservedEngineerId === engineerId,
+          logicalActionAt: liveNow,
+        });
         await this.upsertRequestState(context.tx, day.id, input.requestId, context.now, {
           reservedEngineerId: engineerId,
         });
@@ -399,6 +470,19 @@ export class LiveService {
       }
 
       case 'finish': {
+        const activeRequest = await context.tx.request.findUniqueOrThrow({
+          where: { id: input.requestId },
+          select: { serviceDurationSec: true, startedAt: true },
+        });
+        const acceptedPromise = await context.tx.liveRequestState.findFirst({
+          where: { workdayId: day.id, requestId: input.requestId },
+          select: {
+            promisedFinishAt: true,
+            promisedFinishRecordedAt: true,
+            promisedFinishBaselineAt: true,
+            reservedEngineerId: true,
+          },
+        });
         await this.facts.record(
           businessContext,
           engineerId,
@@ -408,12 +492,50 @@ export class LiveService {
           null,
           this.timing.current(),
         );
+        if (activeRequest.startedAt !== null) {
+          // A delay mutates the request's current duration for routing. The first
+          // accepted promise keeps the original norm frozen for the 40-vs-30 decision.
+          const originalFinishAt =
+            acceptedPromise?.promisedFinishBaselineAt === null || acceptedPromise === null
+              ? Number(activeRequest.startedAt) + activeRequest.serviceDurationSec
+              : Number(acceptedPromise.promisedFinishBaselineAt);
+          const promisedFinishAt =
+            acceptedPromise?.promisedFinishAt === null || acceptedPromise === null
+              ? null
+              : Number(acceptedPromise.promisedFinishAt);
+          await this.rewards.evaluateCompletion(context, {
+            engineerId,
+            requestId: input.requestId,
+            workdayId: day.id,
+            actualAt: liveNow,
+            originalFinishAt,
+            promiseAt: promisedFinishAt,
+            promiseRecordedAt:
+              acceptedPromise?.promisedFinishRecordedAt === null || acceptedPromise === null
+                ? null
+                : Number(acceptedPromise.promisedFinishRecordedAt),
+            baselineAt:
+              acceptedPromise?.promisedFinishBaselineAt === null || acceptedPromise === null
+                ? originalFinishAt
+                : Number(acceptedPromise.promisedFinishBaselineAt),
+            allowAfterBaseline:
+              acceptedPromise?.promisedFinishAt !== null &&
+              acceptedPromise?.promisedFinishBaselineAt !== null &&
+              acceptedPromise !== null &&
+              Number(acceptedPromise.promisedFinishAt) >
+                Number(acceptedPromise.promisedFinishBaselineAt),
+            ownerMatches:
+              acceptedPromise?.reservedEngineerId === null ||
+              acceptedPromise?.reservedEngineerId === engineerId,
+            logicalActionAt: liveNow,
+          });
+        }
         await this.departAnchor(context.tx, state, input.requestId, liveNow, context.now);
         break;
       }
 
       case 'problem':
-        await this.problem(businessContext, day, state, engineerId, input);
+        await this.problem(businessContext, day, state, engineerId, input, liveNow);
         break;
 
       case 'break_start':
@@ -1608,6 +1730,7 @@ export class LiveService {
     state: LiveEngineerState,
     engineerId: string,
     input: Extract<LiveActionDto, { kind: 'problem' }>,
+    logicalNow: number,
   ) {
     const current = await this.currentFor(context.tx, day, engineerId, context.now);
     this.assertCurrentRequest(current, input.requestId);
@@ -1621,6 +1744,12 @@ export class LiveService {
       const extra = input.additionalDurationSec ?? 0;
       const stored = await context.tx.request.findUniqueOrThrow({
         where: { id: input.requestId },
+        select: {
+          serviceDurationSec: true,
+          documentationDurationSec: true,
+          windowStartAt: true,
+          windowEndAt: true,
+        },
       });
       const nextDuration = stored.serviceDurationSec + extra;
       const windowEndAt = Math.max(
@@ -1631,6 +1760,7 @@ export class LiveService {
         where: { id: input.requestId },
         data: {
           serviceDurationSec: nextDuration,
+          technicalDurationSec: nextDuration - stored.documentationDurationSec,
           windowEndAt: BigInt(windowEndAt),
           updatedAt: BigInt(context.now),
           version: { increment: 1 },
@@ -1655,6 +1785,10 @@ export class LiveService {
         operationId: context.operationId,
       },
     });
+    const priorPromise = await context.tx.liveRequestState.findUnique({
+      where: { workdayId_requestId: { workdayId: day.id, requestId: input.requestId } },
+      select: { promisedFinishRecordedAt: true },
+    });
     await this.upsertRequestState(context.tx, day.id, input.requestId, context.now, {
       reservedEngineerId: engineerId,
       problemKind: input.problemKind,
@@ -1663,14 +1797,43 @@ export class LiveService {
     });
     if (input.problemKind === 'delay') {
       if (current.phase === 'in_progress') {
-        const expected = context.now + (input.additionalDurationSec ?? 0);
         const actualStart = current.current?.request.startedAt;
         const norm = current.current?.request.serviceDurationSec;
+        const stored = await context.tx.request.findUniqueOrThrow({
+          where: { id: input.requestId },
+          select: {
+            expectedCompletionAt: true,
+            startedAt: true,
+            serviceDurationSec: true,
+            documentationDurationSec: true,
+          },
+        });
+        const originalFinish =
+          stored.expectedCompletionAt ??
+          (stored.startedAt === null
+            ? BigInt(logicalNow)
+            : BigInt(Number(stored.startedAt) + stored.serviceDurationSec));
+        // Before the deadline this extends the remaining norm; once overdue it
+        // extends from now. An early report must never shorten the original task.
+        const expected =
+          Math.max(logicalNow, Number(originalFinish)) + (input.additionalDurationSec ?? 0);
+        if (priorPromise?.promisedFinishRecordedAt === null || priorPromise === null) {
+          await this.upsertRequestState(context.tx, day.id, input.requestId, context.now, {
+            promisedFinishAt: BigInt(expected),
+            // Promise ordering is evaluated on the accelerated LIVE clock; the
+            // reward row itself retains the wall timestamp for month accounting.
+            promisedFinishRecordedAt: BigInt(logicalNow),
+            promisedFinishBaselineAt: originalFinish,
+          });
+        }
         await context.tx.request.update({
           where: { id: input.requestId },
           data: {
             ...(actualStart !== null && actualStart !== undefined
-              ? { serviceDurationSec: expected - actualStart }
+              ? {
+                  serviceDurationSec: expected - actualStart,
+                  technicalDurationSec: expected - actualStart - stored.documentationDurationSec,
+                }
               : {}),
             expectedCompletionAt: BigInt(expected),
             continuationAvailableAt: BigInt(expected),

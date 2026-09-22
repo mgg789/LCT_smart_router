@@ -45,6 +45,11 @@
       "title": "Lunches Enabled",
       "type": "boolean"
     },
+    "metro_enabled": {
+      "default": false,
+      "title": "Metro Enabled",
+      "type": "boolean"
+    },
     "operation_id": {
       "maxLength": 128,
       "minLength": 1,

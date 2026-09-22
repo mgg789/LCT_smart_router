@@ -97,7 +97,8 @@ export const TRANSPORT_LABELS: Record<string, string> = {
   car: 'авто',
   walk: 'пешком',
   bike: 'велосипед',
-  transit: 'общественный транспорт',
+  // Legacy API snapshots used `transit`; the dispatcher UI now groups it with walking.
+  transit: 'пешком',
 };
 
 /** Dispatcher label for a stored skill code. Unknown codes stay as-is. */

@@ -1,14 +1,17 @@
 import { createHash } from 'node:crypto';
-import { Injectable } from '@nestjs/common';
-import type { PlanView } from '../../api/plan-view';
+import { Inject, Injectable } from '@nestjs/common';
+import type { PlanRouteSegmentView, PlanView } from '../../api/plan-view';
 import { DispatcherSettingsService } from './dispatcher-settings.service';
 
 const FETCH_TIMEOUT_MS = 5_000;
 const CACHE_LIMIT = 400;
+/** Paid geometry adds little information below this straight-line distance. */
+export const MAP_API_MIN_DISTANCE_M = 300;
 const TWOGIS_URL = 'https://routing.api.2gis.com/routing/7.0.0/global';
 const YANDEX_URL = 'https://api.routing.yandex.net/v2/route';
 
 export type MapProvider = 'twogis' | 'yandex';
+type SurfaceTransport = 'car' | 'walk' | 'bike';
 
 export interface MapRoute {
   readonly provider: MapProvider;
@@ -36,29 +39,67 @@ export interface MapProviderStatus {
 export class MapRoutingService {
   private readonly cache = new Map<string, MapRoute>();
 
-  constructor(private readonly settings: DispatcherSettingsService) {}
+  constructor(
+    @Inject(DispatcherSettingsService)
+    private readonly settings: Pick<DispatcherSettingsService, 'read'>,
+  ) {}
 
-  async enrichPlan(plan: PlanView, trafficEnabled: boolean): Promise<PlanView> {
+  async enrichPlan(
+    plan: PlanView,
+    trafficEnabled: boolean,
+    transports: ReadonlyMap<string, string> = new Map(),
+  ): Promise<PlanView> {
     const configured = await this.settings.read();
     if (!configured.twogisApiKey && !configured.yandexApiKey) {
       return plan;
     }
     const routes = await Promise.all(
       plan.routes.map(async (route) => {
+        const profile = transports.get(route.engineerId);
+        if (!profile || !['car', 'walk', 'bike', 'transit'].includes(profile)) return route;
+        const transport: SurfaceTransport =
+          profile === 'car' ? 'car' : profile === 'bike' ? 'bike' : 'walk';
         const legs = await Promise.all(
           route.legs.map(async (leg) => {
-            const origin = pointBefore(route, leg.departureAt) ?? {
-              lat: route.startLat,
-              lon: route.startLon,
-            };
-            const destination = pointAt(route, leg.arrivalAt);
+            if (leg.segments?.length) {
+              const isMetro = leg.segments.some((segment) => segment.travelSource === 'metro');
+              const segments = await Promise.all(
+                leg.segments.map((segment) =>
+                  segment.travelSource === 'metro'
+                    ? segment
+                    : this.enrichSegment(
+                        segment,
+                        isMetro ? 'walk' : transport,
+                        !isMetro && trafficEnabled && transport === 'car',
+                      ),
+                ),
+              );
+              return {
+                ...leg,
+                segments,
+                geometry: {
+                  points: segments.flatMap((segment, index) =>
+                    index === 0 ? segment.geometry.points : segment.geometry.points.slice(1),
+                  ),
+                },
+              };
+            }
+            // Old metro plans without segment boundaries must never become driving routes.
+            if (leg.travelSource === 'metro') return leg;
+            const origin = leg.geometry?.points[0] ??
+              pointBefore(route, leg.departureAt) ?? {
+                lat: route.startLat,
+                lon: route.startLon,
+              };
+            const destination = leg.geometry?.points.at(-1) ?? pointAt(route, leg.arrivalAt);
             if (!destination) {
               return leg;
             }
             const mapped = await this.route(
               { lat: origin.lat, lon: origin.lon },
               { lat: destination.lat, lon: destination.lon },
-              trafficEnabled,
+              trafficEnabled && transport === 'car',
+              transport,
             );
             if (!mapped || mapped.points.length < 2) {
               return leg;
@@ -66,16 +107,9 @@ export class MapRoutingService {
             return {
               ...leg,
               geometry: {
-                points: mapped.points.map((point) => ({ lat: point.lat, lon: point.lon })),
+                points: withEndpoints(mapped.points, origin, destination),
               },
-              travelSource: (mapped.traffic
-                ? 'traffic_api'
-                : 'route_api') as typeof leg.travelSource,
-              trafficFactor: mapped.traffic
-                ? Math.max(1, mapped.durationSec / Math.max(1, leg.travelTimeSec))
-                : leg.trafficFactor,
-              distanceKm: mapped.distanceKm > 0 ? mapped.distanceKm : leg.distanceKm,
-              travelTimeSec: mapped.durationSec > 0 ? mapped.durationSec : leg.travelTimeSec,
+              // Decoration cannot rewrite accepted costs while leaving arrival times intact.
               geometryProvider: mapped.provider,
             };
           }),
@@ -90,7 +124,10 @@ export class MapRoutingService {
     from: { lat: number; lon: number },
     to: { lat: number; lon: number },
     traffic: boolean,
+    transport: SurfaceTransport = 'car',
   ): Promise<MapRoute | null> {
+    if (straightLineMetres(from, to) <= MAP_API_MIN_DISTANCE_M) return null;
+    traffic = traffic && transport === 'car';
     const settings = await this.settings.read();
     const cacheKey = createHash('sha256')
       .update(
@@ -98,6 +135,7 @@ export class MapRoutingService {
           from: roundPoint(from),
           to: roundPoint(to),
           traffic,
+          transport,
           twogis: Boolean(settings.twogisApiKey),
           yandex: Boolean(settings.yandexApiKey),
         }),
@@ -114,11 +152,30 @@ export class MapRoutingService {
       traffic,
       settings.twogisApiKey,
       settings.yandexApiKey,
+      transport,
     );
     if (fetched) {
       this.remember(cacheKey, fetched);
     }
     return fetched;
+  }
+
+  private async enrichSegment(
+    segment: PlanRouteSegmentView,
+    transport: SurfaceTransport,
+    traffic: boolean,
+  ): Promise<PlanRouteSegmentView> {
+    const from = segment.geometry.points[0];
+    const to = segment.geometry.points.at(-1);
+    if (!from || !to) return segment;
+    const mapped = await this.route(from, to, traffic, transport);
+    return mapped && mapped.points.length >= 2
+      ? {
+          ...segment,
+          geometry: { points: withEndpoints(mapped.points, from, to) },
+          geometryProvider: mapped.provider,
+        }
+      : segment;
   }
 
   async probe(): Promise<{
@@ -143,11 +200,12 @@ export class MapRoutingService {
     traffic: boolean,
     twogisKey: string | null,
     yandexKey: string | null,
+    transport: SurfaceTransport,
   ): Promise<MapRoute | null> {
     if (twogisKey && yandexKey) {
       const [twogis, yandex] = await Promise.allSettled([
-        this.fetchTwogis(from, to, traffic, twogisKey),
-        this.fetchYandex(from, to, traffic, yandexKey),
+        this.fetchTwogis(from, to, traffic, twogisKey, transport),
+        this.fetchYandex(from, to, traffic, yandexKey, transport),
       ]);
       if (twogis.status === 'fulfilled' && twogis.value) {
         return twogis.value;
@@ -158,10 +216,10 @@ export class MapRoutingService {
       return null;
     }
     if (twogisKey) {
-      return this.fetchTwogis(from, to, traffic, twogisKey).catch(() => null);
+      return this.fetchTwogis(from, to, traffic, twogisKey, transport).catch(() => null);
     }
     if (yandexKey) {
-      return this.fetchYandex(from, to, traffic, yandexKey).catch(() => null);
+      return this.fetchYandex(from, to, traffic, yandexKey, transport).catch(() => null);
     }
     return null;
   }
@@ -194,6 +252,7 @@ export class MapRoutingService {
     to: { lat: number; lon: number },
     traffic: boolean,
     key: string,
+    transport: SurfaceTransport = 'car',
   ): Promise<MapRoute | null> {
     const url = new URL(TWOGIS_URL);
     url.searchParams.set('key', key);
@@ -203,9 +262,9 @@ export class MapRoutingService {
         { type: 'stop', lon: to.lon, lat: to.lat },
       ],
       locale: 'ru',
-      transport: 'driving',
+      transport: transport === 'car' ? 'driving' : transport === 'bike' ? 'bicycle' : 'walking',
       route_mode: 'fastest',
-      traffic_mode: traffic ? 'jam' : 'statistics',
+      ...(transport === 'car' ? { traffic_mode: traffic ? 'jam' : 'statistics' } : {}),
       output: 'detailed',
     };
     const json = await requestJson(url, {
@@ -240,14 +299,16 @@ export class MapRoutingService {
     to: { lat: number; lon: number },
     traffic: boolean,
     key: string,
+    transport: SurfaceTransport = 'car',
   ): Promise<MapRoute | null> {
     const url = new URL(YANDEX_URL);
     url.searchParams.set('apikey', key);
     url.searchParams.set('waypoints', `${from.lat},${from.lon}|${to.lat},${to.lon}`);
-    url.searchParams.set('mode', traffic ? 'driving' : 'driving');
-    if (traffic) {
-      url.searchParams.set('traffic', 'enabled');
-    }
+    url.searchParams.set(
+      'mode',
+      transport === 'walk' ? 'walking' : transport === 'bike' ? 'bicycle' : 'driving',
+    );
+    if (transport === 'car' && !traffic) url.searchParams.set('traffic', 'disabled');
     const json = await requestJson(url, { headers: { Accept: 'application/json' } });
     if (!json || typeof json !== 'object') {
       return null;
@@ -275,6 +336,30 @@ export class MapRoutingService {
       this.cache.delete(first);
     }
   }
+}
+
+function straightLineMetres(
+  from: { lat: number; lon: number },
+  to: { lat: number; lon: number },
+): number {
+  const radians = Math.PI / 180;
+  const value =
+    Math.sin(((to.lat - from.lat) * radians) / 2) ** 2 +
+    Math.cos(from.lat * radians) *
+      Math.cos(to.lat * radians) *
+      Math.sin(((to.lon - from.lon) * radians) / 2) ** 2;
+  return 6_371_008.8 * 2 * Math.asin(Math.min(1, Math.sqrt(value)));
+}
+
+function withEndpoints(
+  points: ReadonlyArray<{ lat: number; lon: number }>,
+  from: { lat: number; lon: number },
+  to: { lat: number; lon: number },
+): Array<{ lat: number; lon: number }> {
+  return [from, ...points, to].filter(
+    (point, index, all) =>
+      index === 0 || point.lat !== all[index - 1]?.lat || point.lon !== all[index - 1]?.lon,
+  );
 }
 
 async function requestJson(url: URL, init: RequestInit): Promise<unknown> {
@@ -346,6 +431,9 @@ function pointsFromUnknown(value: unknown): Array<{ lat: number; lon: number }> 
   if (typeof value === 'string') {
     return parseLineString(value);
   }
+  if (value && typeof value === 'object' && 'selection' in value) {
+    return pointsFromUnknown(value.selection);
+  }
   if (!Array.isArray(value)) {
     return [];
   }
@@ -361,6 +449,7 @@ function pointsFromUnknown(value: unknown): Array<{ lat: number; lon: number }> 
       return [{ lon: first, lat: second }];
     }
     if (item && typeof item === 'object') {
+      if ('selection' in item) return pointsFromUnknown(item.selection);
       const lat = Number((item as { lat?: unknown }).lat);
       const lon = Number((item as { lon?: unknown }).lon);
       if (Number.isFinite(lat) && Number.isFinite(lon)) {

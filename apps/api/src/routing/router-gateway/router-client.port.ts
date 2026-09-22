@@ -31,6 +31,8 @@ export interface RouterTechnicalSettings {
   readonly windowLatenessToleranceSec?: number;
   /** Whether Router may use traffic-aware travel times. */
   readonly trafficEnabled?: boolean;
+  /** Whether pedestrian journeys may use the offline Moscow metro graph. */
+  readonly metroEnabled?: boolean;
   /** Whether Router must enforce equipment compatibility. */
   readonly equipmentEnabled?: boolean;
   /** How Router converts a graph quote into the planning duration of a road leg. */
