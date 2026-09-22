@@ -197,4 +197,103 @@ describe('LIVE map factual projection', () => {
       segments.every((segment) => nodeKeys.has(segment.fromKey) && nodeKeys.has(segment.toKey)),
     ).toBe(true);
   });
+
+  it('does not collapse mixed access, metro and egress geometry during selection', () => {
+    const route: PlanRouteView = {
+      engineerId: 'engineer',
+      startLat: 55.74,
+      startLon: 37.6,
+      startAt: 0,
+      finishAt: 300,
+      distanceKm: 4,
+      travelTimeSec: 200,
+      workTimeSec: 100,
+      waitingTimeSec: 0,
+      lunchTimeSec: 0,
+      assignedCount: 2,
+      lunchStatus: 'none',
+      stops: [
+        {
+          sequence: 1,
+          kind: 'job',
+          requestId: 'done',
+          lat: 55.75,
+          lon: 37.61,
+          arrivalAt: 100,
+          startAt: 100,
+          endAt: 120,
+        },
+        {
+          sequence: 2,
+          kind: 'job',
+          requestId: 'next',
+          lat: 55.76,
+          lon: 37.62,
+          arrivalAt: 160,
+          startAt: 160,
+          endAt: 200,
+        },
+      ],
+      legs: [
+        {
+          legId: 'mixed-visible-path',
+          fromStopId: 'done',
+          toStopId: 'next',
+          departureAt: 120,
+          arrivalAt: 160,
+          travelTimeSec: 40,
+          distanceKm: 2,
+          travelSource: 'road_matrix',
+          trafficFactor: 1,
+          geometry: {
+            points: [
+              { lat: 55.75, lon: 37.61 },
+              { lat: 55.76, lon: 37.62 },
+            ],
+          },
+          segments: [
+            {
+              geometry: {
+                points: [
+                  { lat: 55.75, lon: 37.61 },
+                  { lat: 55.752, lon: 37.613 },
+                ],
+              },
+              travelSource: 'route_api',
+              travelTimeSec: 10,
+              distanceKm: 0.4,
+            },
+            {
+              geometry: {
+                points: [
+                  { lat: 55.752, lon: 37.613 },
+                  { lat: 55.758, lon: 37.618 },
+                ],
+              },
+              travelSource: 'metro',
+              travelTimeSec: 20,
+              distanceKm: 1.2,
+            },
+            {
+              geometry: {
+                points: [
+                  { lat: 55.758, lon: 37.618 },
+                  { lat: 55.76, lon: 37.62 },
+                ],
+              },
+              travelSource: 'route_api',
+              travelTimeSec: 10,
+              distanceKm: 0.4,
+            },
+          ],
+        },
+      ],
+    };
+    const graph = projectLiveGraph(route, null, new Set(['done', 'next']));
+    const segments = visiblePlannedSegments(route, graph);
+    expect(segments).toHaveLength(3);
+    expect(segments.map((segment) => segment.source)).toEqual(['route_api', 'metro', 'route_api']);
+    expect(segments.every((segment) => segment.fromKey === 'job:done')).toBe(true);
+    expect(segments.every((segment) => segment.toKey === 'job:next')).toBe(true);
+  });
 });

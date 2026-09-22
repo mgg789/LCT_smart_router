@@ -53,6 +53,7 @@ type GeneralDraft = {
   timeRiskMin: number;
   repeatAfterMin: number;
   lunchesEnabled: boolean;
+  metroEnabled: boolean;
   equipmentEnabled: boolean;
   trafficEnabled: boolean;
 };
@@ -249,6 +250,7 @@ export function SettingsModal({
                 router: {
                   ...routerSettings,
                   lunchesEnabled: draft.lunchesEnabled,
+                  metroEnabled: draft.metroEnabled,
                   windowLatenessToleranceSec: draft.latenessMin * 60,
                   departureLatenessToleranceSec: draft.latenessMin * 60,
                   taskStartLatenessToleranceSec: draft.latenessMin * 60,
@@ -292,6 +294,7 @@ function generalFrom(
     timeRiskMin: Math.round((settings?.timeRiskSec ?? 300) / 60),
     repeatAfterMin: Math.round((settings?.repeatAfterSec ?? 900) / 60),
     lunchesEnabled: router?.lunchesEnabled ?? false,
+    metroEnabled: router?.metroEnabled ?? false,
     equipmentEnabled: router?.equipmentEnabled ?? true,
     trafficEnabled: router?.trafficEnabled ?? true,
   };
@@ -451,6 +454,11 @@ function GeneralForm({
           label="Пробки от карт"
           checked={draft.trafficEnabled}
           onChange={() => setField('trafficEnabled', !draft.trafficEnabled)}
+        />
+        <SettingSwitch
+          label="Маршруты с метро"
+          checked={draft.metroEnabled}
+          onChange={() => setField('metroEnabled', !draft.metroEnabled)}
         />
       </div>
     </div>

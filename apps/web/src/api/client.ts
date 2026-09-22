@@ -131,7 +131,7 @@ const planLegSchema = z.object({
   arrivalAt: z.number().int(),
   travelTimeSec: z.number().int().nonnegative(),
   distanceKm: z.number().nonnegative(),
-  travelSource: z.enum(['approximate', 'road_matrix', 'route_api', 'traffic_api']),
+  travelSource: z.enum(['approximate', 'road_matrix', 'route_api', 'traffic_api', 'metro']),
   geometryProvider: z.enum(['twogis', 'yandex']).optional(),
   trafficFactor: z.number().min(1),
   geometry: z
@@ -141,6 +141,23 @@ const planLegSchema = z.object({
         .min(2),
     })
     .nullable(),
+  segments: z
+    .array(
+      z.object({
+        geometry: z.object({
+          points: z
+            .array(
+              z.object({ lat: z.number().min(-90).max(90), lon: z.number().min(-180).max(180) }),
+            )
+            .min(2),
+        }),
+        travelSource: z.enum(['approximate', 'road_matrix', 'route_api', 'traffic_api', 'metro']),
+        travelTimeSec: z.number().int().nonnegative(),
+        distanceKm: z.number().nonnegative(),
+        geometryProvider: z.enum(['twogis', 'yandex']).optional(),
+      }),
+    )
+    .optional(),
 });
 
 const lunchStatusSchema = z.enum([
@@ -344,6 +361,7 @@ const policiesSchema = z.object({
 
 const technicalSettingsSchema = z.object({
   lunchesEnabled: z.boolean(),
+  metroEnabled: z.boolean().default(false),
   departureLatenessToleranceSec: z.number().int().nonnegative(),
   taskStartLatenessToleranceSec: z.number().int().nonnegative(),
   windowLatenessToleranceSec: z.number().int().nonnegative().max(1_200).default(0),
@@ -929,6 +947,7 @@ export async function updateRouterTechnicalSettings(
         operationId: crypto.randomUUID(),
         expectedContextVersion: settings.routerContextVersion,
         lunchesEnabled: settings.lunchesEnabled,
+        metroEnabled: settings.metroEnabled,
         departureLatenessToleranceSec: settings.departureLatenessToleranceSec,
         taskStartLatenessToleranceSec: settings.taskStartLatenessToleranceSec,
         windowLatenessToleranceSec: settings.windowLatenessToleranceSec,

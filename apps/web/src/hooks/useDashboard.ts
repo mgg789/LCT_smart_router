@@ -650,6 +650,7 @@ export function useDashboard() {
           ? 'допуск переработки обновлён'
           : null,
         nextSettings.trafficEnabled !== current.trafficEnabled ? 'режим пробок обновлён' : null,
+        nextSettings.metroEnabled !== current.metroEnabled ? 'режим метро обновлён' : null,
         nextSettings.equipmentEnabled !== current.equipmentEnabled
           ? 'режим оборудования обновлён'
           : null,
@@ -1287,6 +1288,7 @@ function sameRouterSettings(
     left.taskStartLatenessToleranceSec === right.taskStartLatenessToleranceSec &&
     left.windowLatenessToleranceSec === right.windowLatenessToleranceSec &&
     left.trafficEnabled === right.trafficEnabled &&
+    left.metroEnabled === right.metroEnabled &&
     left.equipmentEnabled === right.equipmentEnabled &&
     left.travelTimeMode === right.travelTimeMode &&
     left.accessBufferSec === right.accessBufferSec &&
@@ -1300,6 +1302,7 @@ function sameRouterSettings(
 function defaultRouterSettings(snapshot: DashboardSnapshot): RouterTechnicalSettings {
   return {
     lunchesEnabled: snapshot.lunchesEnabled,
+    metroEnabled: false,
     departureLatenessToleranceSec: 0,
     taskStartLatenessToleranceSec: 0,
     windowLatenessToleranceSec: 0,

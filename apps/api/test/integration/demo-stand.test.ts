@@ -101,7 +101,7 @@ describe('public demo stand rewind', () => {
     await prisma?.$disconnect();
   });
 
-  it('seeds fourteen requests and two engineers for the current Moscow date', async () => {
+  it('seeds fourteen requests and three engineers for the current Moscow date', async () => {
     const live = await call('GET', '/api/v1/dispatch/live', dispatcherToken);
     assert.equal(live.status, 200, await live.clone().text());
     const body = (await live.json()) as {
@@ -112,7 +112,7 @@ describe('public demo stand rewind', () => {
     assert.equal(body.workday.workDate, moscowDate());
     assert.equal(body.workday.status, 'pending');
     assert.equal(await prisma.request.count(), 14);
-    assert.equal(await prisma.engineer.count({ where: { archivedAt: null } }), 2);
+    assert.equal(await prisma.engineer.count({ where: { archivedAt: null } }), 3);
     assert.equal(await prisma.objectPassport.count(), 11);
     assert.equal(await prisma.building.count(), 14);
     const requests = await prisma.request.findMany({
@@ -132,6 +132,24 @@ describe('public demo stand rewind', () => {
     );
     assert.equal(passports.filter((item) => item.passport === null).length, 3);
     assert.ok(passports.every((item) => item.unavailableReason === undefined));
+  });
+
+  it('preserves an existing same-day v1 package until explicit rewind', async () => {
+    const source = `upload:east:live-demo-v2-${moscowDate()}`;
+    const ids = (
+      await prisma.request.findMany({ orderBy: { id: 'asc' }, select: { id: true } })
+    ).map((row) => row.id);
+    await prisma.importPackage.updateMany({
+      where: { source },
+      data: { source: source.replace('v2-', 'v1-') },
+    });
+    await app.get(DemoStandService).onModuleInit();
+    assert.deepEqual(
+      (await prisma.request.findMany({ orderBy: { id: 'asc' }, select: { id: true } })).map(
+        (row) => row.id,
+      ),
+      ids,
+    );
   });
 
   it('rewinds linked mail and extra requests without signing the dispatcher out', async () => {
@@ -175,7 +193,7 @@ describe('public demo stand rewind', () => {
     assert.equal(summary.restored, true);
     assert.equal(summary.workDate, moscowDate());
     assert.equal(summary.requestsCreated, 14);
-    assert.equal(summary.engineersCreated, 2);
+    assert.equal(summary.engineersCreated, 3);
 
     const stillIn = await call('GET', '/api/v1/dispatch/live', dispatcherToken);
     assert.equal(stillIn.status, 200, await stillIn.clone().text());
@@ -188,7 +206,7 @@ describe('public demo stand rewind', () => {
         engineers: Array<{ email: string | null; hasAccount: boolean }>;
       }
     ).engineers;
-    assert.equal(listed.length, 2);
+    assert.equal(listed.length, 3);
     assert.ok(listed.every((item) => item.hasAccount === false && item.email === null));
     assert.equal(await prisma.account.count({ where: { email } }), 0);
   });

@@ -49,7 +49,6 @@ export const TRANSPORT_OPTIONS = [
   { id: 'car', label: 'Авто' },
   { id: 'walk', label: 'Пешком' },
   { id: 'bike', label: 'Велосипед' },
-  { id: 'transit', label: 'Общественный транспорт' },
 ] as const;
 
 export type TransportId = (typeof TRANSPORT_OPTIONS)[number]['id'];

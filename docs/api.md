@@ -1034,3 +1034,22 @@ serviceStartAt, serviceEndAt}}` либо `{status: "none", requestVersion, propo
 
 Контракты оценки дня (`/dispatch/performance/day`, `/engineer/performance/day`) и
 месячного PDF (`/dispatch/reports/monthly/YYYY-MM`) описаны в [performance.md](./performance.md).
+
+### Метро и транспортные профили
+
+Технические настройки Router поддерживают `metro_enabled` (по умолчанию `false`);
+публичные GET/PUT настройки диспетчера используют `metroEnabled`. Изменение
+проходит прежний CAS по версии контекста и запускает пересчёт.
+Ввод `transit` сохраняет обратную совместимость, но нормализуется в `walk`
+в профилях, загрузках и публикуемом снимке.
+
+Router leg может содержать `segments`: `{geometry: {points}, travel_source,
+duration_sec, distance_m}`. Публичный план сохраняет их как `{geometry,
+travelSource, travelTimeSec, distanceKm, geometryProvider?}`. Новый источник
+`metro` требует сегментов; API проверяет стыки и суммы времени/расстояния до
+применения результата. Старые обычные планы без сегментов продолжают читаться.
+
+Уточнение геометрии 2GIS/Яндекс выбирает профиль инженера (`driving`, `walking`,
+`bicycle`) и не меняет стоимость уже принятого плана. Метро-сегмент не отправляется
+в автомобильный роутер; отдельно уточняются пешие подход и выход. При расстоянии
+между концами до 300 м включительно внешний API карт не вызывается.

@@ -46,25 +46,61 @@ const routeStop = z.object({
   end_at: unixSeconds,
 });
 
-const routeLeg = z.object({
-  leg_id: z.string().min(1),
-  from_stop_id: z.string().min(1).nullable(),
-  to_stop_id: z.string().min(1),
-  departure_at: unixSeconds,
-  arrival_at: unixSeconds,
-  travel_time_sec: z.number().int().nonnegative(),
-  distance_km: z.number().nonnegative(),
-  geometry: z
-    .object({ points: z.array(geoPoint) })
-    .nullable()
-    .optional(),
-  /** Fidelity selected by Router; a matrix does not imply drawable road geometry. */
-  travel_source: z
-    .enum(['approximate', 'road_matrix', 'route_api', 'traffic_api'])
-    .default('approximate'),
-  /** Deterministic forecast or provider multiplier already included in travel_time_sec. */
-  traffic_factor: z.number().min(1).default(1),
+const travelSource = z.enum(['approximate', 'road_matrix', 'route_api', 'traffic_api', 'metro']);
+const routeSegment = z.object({
+  geometry: z.object({ points: z.array(geoPoint).min(2) }),
+  travel_source: travelSource,
+  duration_sec: z.number().int().nonnegative(),
+  distance_m: z.number().int().nonnegative(),
 });
+
+const routeLeg = z
+  .object({
+    leg_id: z.string().min(1),
+    from_stop_id: z.string().min(1).nullable(),
+    to_stop_id: z.string().min(1),
+    departure_at: unixSeconds,
+    arrival_at: unixSeconds,
+    travel_time_sec: z.number().int().nonnegative(),
+    distance_km: z.number().nonnegative(),
+    geometry: z
+      .object({ points: z.array(geoPoint) })
+      .nullable()
+      .optional(),
+    /** Fidelity selected by Router; a matrix does not imply drawable road geometry. */
+    travel_source: travelSource.default('approximate'),
+    segments: z.array(routeSegment).optional(),
+    /** Deterministic forecast or provider multiplier already included in travel_time_sec. */
+    traffic_factor: z.number().min(1).default(1),
+  })
+  .superRefine((leg, context) => {
+    const segments = leg.segments ?? [];
+    if (segments.length === 0) {
+      if (leg.travel_source === 'metro')
+        context.addIssue({ code: 'custom', message: 'Metro requires segments' });
+      return;
+    }
+    if (
+      segments.reduce((sum, segment) => sum + segment.duration_sec, 0) !== leg.travel_time_sec ||
+      Math.abs(
+        segments.reduce((sum, segment) => sum + segment.distance_m, 0) / 1000 - leg.distance_km,
+      ) > 0.001
+    ) {
+      context.addIssue({ code: 'custom', message: 'Segment costs must equal the parent leg' });
+    }
+    for (let index = 1; index < segments.length; index += 1) {
+      const before = segments[index - 1]?.geometry.points.at(-1);
+      const after = segments[index]?.geometry.points[0];
+      if (
+        !before ||
+        !after ||
+        Math.abs(before.lat - after.lat) > 0.000001 ||
+        Math.abs(before.lon - after.lon) > 0.000001
+      ) {
+        context.addIssue({ code: 'custom', message: 'Segments must join at their endpoints' });
+      }
+    }
+  });
 
 /** Distinguishable lunch outcomes; a lunch that did not fit is never shown as scheduled. */
 const lunchResult = z.object({

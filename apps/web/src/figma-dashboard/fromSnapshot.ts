@@ -81,6 +81,7 @@ export function nextRouterSettings(
   const current = snapshot.routerSettings;
   return {
     lunchesEnabled: snapshot.lunchesEnabled,
+    metroEnabled: current?.metroEnabled ?? false,
     departureLatenessToleranceSec: current?.departureLatenessToleranceSec ?? 0,
     taskStartLatenessToleranceSec: current?.taskStartLatenessToleranceSec ?? 0,
     windowLatenessToleranceSec: current?.windowLatenessToleranceSec ?? 0,

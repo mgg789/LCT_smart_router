@@ -58,6 +58,7 @@ const technicalSettingsSchema = z.object({
   task_start_lateness_tolerance_sec: z.number().int().nonnegative().max(86_400),
   window_lateness_tolerance_sec: z.number().int().nonnegative().max(1_200).optional(),
   traffic_enabled: z.boolean().optional(),
+  metro_enabled: z.boolean().optional(),
   equipment_enabled: z.boolean().optional(),
   travel_time_mode: z.enum(['graph_with_access_buffer', 'fixed_normative']),
   access_buffer_sec: z.number().int().nonnegative().max(86_400),
@@ -172,6 +173,7 @@ export class HttpRouterClient extends RouterClient {
           ? {}
           : { window_lateness_tolerance_sec: input.windowLatenessToleranceSec }),
         ...(input.trafficEnabled === undefined ? {} : { traffic_enabled: input.trafficEnabled }),
+        ...(input.metroEnabled === undefined ? {} : { metro_enabled: input.metroEnabled }),
         ...(input.equipmentEnabled === undefined
           ? {}
           : { equipment_enabled: input.equipmentEnabled }),
@@ -332,6 +334,7 @@ function toTechnicalSettings(
       ? {}
       : { windowLatenessToleranceSec: settings.window_lateness_tolerance_sec }),
     ...(settings.traffic_enabled === undefined ? {} : { trafficEnabled: settings.traffic_enabled }),
+    ...(settings.metro_enabled === undefined ? {} : { metroEnabled: settings.metro_enabled }),
     ...(settings.equipment_enabled === undefined
       ? {}
       : { equipmentEnabled: settings.equipment_enabled }),

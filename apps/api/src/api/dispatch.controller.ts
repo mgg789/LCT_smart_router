@@ -654,6 +654,7 @@ export class DispatchController {
       taskStartLatenessToleranceSec: dto.taskStartLatenessToleranceSec,
       windowLatenessToleranceSec: dto.windowLatenessToleranceSec,
       trafficEnabled: dto.trafficEnabled,
+      metroEnabled: dto.metroEnabled,
       equipmentEnabled: dto.equipmentEnabled,
       travelTimeMode: dto.travelTimeMode,
       accessBufferSec: dto.accessBufferSec,
@@ -1181,7 +1182,15 @@ export class DispatchController {
         // readable while Router is unavailable; routing health is reported separately.
       }
     }
-    return this.mapRouting.enrichPlan(plan, trafficEnabled);
+    const engineers = await this.prisma.engineer.findMany({
+      where: { id: { in: plan.routes.map((route) => route.engineerId) } },
+      select: { id: true, transportType: true },
+    });
+    return this.mapRouting.enrichPlan(
+      plan,
+      trafficEnabled,
+      new Map(engineers.map((engineer) => [engineer.id, engineer.transportType])),
+    );
   }
 }
 

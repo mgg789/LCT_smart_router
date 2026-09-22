@@ -13,7 +13,7 @@ import { canonicalTextAddress } from '../passports/passport-policy';
 import { ResetService } from '../reset';
 import {
   buildLiveDemo,
-  LIVE_DEMO_PACKAGE_PREFIX,
+  LIVE_DEMO_PACKAGE_PREFIXES,
   liveDemoPackageSource,
 } from './live-demo-package';
 
@@ -231,13 +231,16 @@ export class DemoStandService implements OnModuleInit {
     // package. Calling reconcile from a dashboard poll must not erase that summary.
     if (finished && finished.workDate !== workDate) return true;
 
-    const expectedSource = liveDemoPackageSource(workDate);
+    // A version bump must not erase a same-day v1 run or its completed summary.
+    const expectedSources = LIVE_DEMO_PACKAGE_PREFIXES.map((prefix) => `${prefix}${workDate}`);
     const latest = await this.prisma.importPackage.findFirst({
-      where: { source: { startsWith: LIVE_DEMO_PACKAGE_PREFIX } },
+      where: {
+        OR: LIVE_DEMO_PACKAGE_PREFIXES.map((prefix) => ({ source: { startsWith: prefix } })),
+      },
       orderBy: { appliedAt: 'desc' },
       select: { source: true },
     });
-    if (!latest || latest.source !== expectedSource) return true;
+    if (!latest || !expectedSources.includes(latest.source)) return true;
 
     const requestCount = await this.prisma.request.count();
     return requestCount === 0;

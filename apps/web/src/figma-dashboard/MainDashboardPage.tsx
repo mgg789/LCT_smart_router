@@ -115,7 +115,7 @@ const ADD_BUTTON_SIZE = 43;
 const ADD_BUTTON_GAP = 16;
 const ADD_BUTTON_LEFT = POLICY_LEFT - ADD_BUTTON_GAP - ADD_BUTTON_SIZE;
 const ADD_BUTTON_TOP = POLICY_TOP + (51 - ADD_BUTTON_SIZE) / 2;
-const POLICY_OPEN_HEIGHT = 497;
+const POLICY_OPEN_HEIGHT = 541;
 const NOTIF_PANEL_LEFT = 1407;
 const NOTIF_PANEL_TOP = 26 - HEADER_LIFT;
 const HEADER_AVATAR_LEFT = 1800;
@@ -332,6 +332,7 @@ export function MainDashboardPage() {
   );
   const lunchOn = dash.snapshot?.lunchesEnabled ?? false;
   const trafficOn = dash.snapshot?.routerSettings?.trafficEnabled ?? false;
+  const metroOn = dash.snapshot?.routerSettings?.metroEnabled ?? false;
   const requestCount = view?.requestCount ?? 0;
   const totalKm = view?.totalKm ?? 0;
   const planLabel = view?.planLabel ?? 'Данные рабочего дня загружаются';
@@ -353,6 +354,15 @@ export function MainDashboardPage() {
       dash.snapshot.policyId,
       nextRouterSettings(dash.snapshot, {
         trafficEnabled: !(dash.snapshot.routerSettings?.trafficEnabled ?? false),
+      }),
+    );
+  };
+  const applyMetro = () => {
+    if (!dash.snapshot) return;
+    dash.applyRoutingSettings(
+      dash.snapshot.policyId,
+      nextRouterSettings(dash.snapshot, {
+        metroEnabled: !(dash.snapshot.routerSettings?.metroEnabled ?? false),
       }),
     );
   };
@@ -556,6 +566,7 @@ export function MainDashboardPage() {
           selectedId={policyId}
           lunchOn={lunchOn}
           trafficOn={trafficOn}
+          metroOn={metroOn}
           motionOn={motionOn}
           onToggle={() => {
             setUserMenuOpen(false);
@@ -565,6 +576,7 @@ export function MainDashboardPage() {
           onSelect={applyPolicy}
           onLunchToggle={applyLunch}
           onTrafficToggle={applyTraffic}
+          onMetroToggle={applyMetro}
           onManualMode={() => {
             if (!dash.snapshot) return;
             void dash.setMode(dash.snapshot.plan.mode === 'auto' ? 'manual' : 'auto');
@@ -1264,11 +1276,13 @@ function PolicyControl({
   selectedId,
   lunchOn,
   trafficOn,
+  metroOn,
   motionOn,
   onToggle,
   onSelect,
   onLunchToggle,
   onTrafficToggle,
+  onMetroToggle,
   onManualMode,
 }: {
   open: boolean;
@@ -1277,11 +1291,13 @@ function PolicyControl({
   selectedId: PolicyId;
   lunchOn: boolean;
   trafficOn: boolean;
+  metroOn: boolean;
   motionOn: boolean;
   onToggle: () => void;
   onSelect: (policy: PolicyId) => void;
   onLunchToggle: () => void;
   onTrafficToggle: () => void;
+  onMetroToggle: () => void;
   onManualMode: () => void;
 }) {
   const options =
@@ -1348,7 +1364,7 @@ function PolicyControl({
       </div>
       <div
         className={`relative w-[363px] ${open ? '' : 'pointer-events-none'}`}
-        style={{ height: 460 + extra }}
+        style={{ height: 504 + extra }}
       >
         {options.map((option, index) => (
           <motion.button
@@ -1386,11 +1402,18 @@ function PolicyControl({
           motionOn={motionOn}
           onToggle={onTrafficToggle}
         />
+        <PolicySwitch
+          on={metroOn}
+          label="Маршруты с метро"
+          top={362 + extra}
+          motionOn={motionOn}
+          onToggle={onMetroToggle}
+        />
         <button
           type="button"
           onClick={onManualMode}
           className="absolute left-[16px] flex h-[67px] w-[331px] items-center justify-center rounded-[20px] bg-figma-bee p-[20px] transition-transform duration-150 hover:scale-[1.01]"
-          style={{ top: 363 + extra }}
+          style={{ top: 407 + extra }}
         >
           <span className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
             Ручное управление

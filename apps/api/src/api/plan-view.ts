@@ -1,6 +1,15 @@
 import type { AppliedPlanCurrentShape } from './plan-view.types';
 
-export type TravelSource = 'approximate' | 'road_matrix' | 'route_api' | 'traffic_api';
+export type TravelSource = 'approximate' | 'road_matrix' | 'route_api' | 'traffic_api' | 'metro';
+
+/** A contiguous part of one journey; metro vertices are geometry, not visit stops. */
+export interface PlanRouteSegmentView {
+  readonly geometry: { readonly points: Array<{ readonly lat: number; readonly lon: number }> };
+  readonly travelSource: TravelSource;
+  readonly travelTimeSec: number;
+  readonly distanceKm: number;
+  readonly geometryProvider?: 'twogis' | 'yandex';
+}
 
 /**
  * What an interface is given about the working plan.
@@ -55,6 +64,7 @@ export interface PlanRouteLegView {
   readonly trafficFactor: number;
   /** Present when sys replaced Router geometry with a map-provider polyline. */
   readonly geometryProvider?: 'twogis' | 'yandex';
+  readonly segments?: PlanRouteSegmentView[];
 }
 
 export interface PlanView {
@@ -150,6 +160,9 @@ function planLegs(value: unknown): PlanRouteLegView[] {
         geometry: points ? { points } : null,
         travelSource: leg.travelSource,
         trafficFactor: leg.trafficFactor,
+        ...(Array.isArray(leg.segments) && leg.segments.length
+          ? { segments: planSegments(leg.segments) }
+          : {}),
         ...(leg.geometryProvider === 'twogis' || leg.geometryProvider === 'yandex'
           ? { geometryProvider: leg.geometryProvider }
           : {}),
@@ -163,6 +176,57 @@ function isTravelSource(value: unknown): value is TravelSource {
     value === 'approximate' ||
     value === 'road_matrix' ||
     value === 'route_api' ||
-    value === 'traffic_api'
+    value === 'traffic_api' ||
+    value === 'metro'
   );
+}
+
+function planSegments(value: unknown[]): PlanRouteSegmentView[] {
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const segment = item as Record<string, unknown>;
+    if (
+      !isTravelSource(segment.travelSource) ||
+      typeof segment.travelTimeSec !== 'number' ||
+      !Number.isFinite(segment.travelTimeSec) ||
+      segment.travelTimeSec < 0 ||
+      typeof segment.distanceKm !== 'number' ||
+      !Number.isFinite(segment.distanceKm) ||
+      segment.distanceKm < 0 ||
+      !segment.geometry ||
+      typeof segment.geometry !== 'object'
+    )
+      return [];
+    const points = (segment.geometry as { points?: unknown }).points;
+    if (
+      !Array.isArray(points) ||
+      points.length < 2 ||
+      !points.every(
+        (point) =>
+          point &&
+          typeof point === 'object' &&
+          Number.isFinite(point.lat) &&
+          Number.isFinite(point.lon) &&
+          Math.abs(point.lat) <= 90 &&
+          Math.abs(point.lon) <= 180,
+      )
+    )
+      return [];
+    return [
+      {
+        geometry: {
+          points: points.map((point: { lat: number; lon: number }) => ({
+            lat: point.lat,
+            lon: point.lon,
+          })),
+        },
+        travelSource: segment.travelSource,
+        travelTimeSec: segment.travelTimeSec,
+        distanceKm: segment.distanceKm,
+        ...(segment.geometryProvider === 'twogis' || segment.geometryProvider === 'yandex'
+          ? { geometryProvider: segment.geometryProvider }
+          : {}),
+      },
+    ];
+  });
 }

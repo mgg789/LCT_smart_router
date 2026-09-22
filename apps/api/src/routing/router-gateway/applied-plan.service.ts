@@ -218,6 +218,16 @@ export class AppliedPlanService {
             geometry: leg.geometry ?? null,
             travelSource: leg.travel_source,
             trafficFactor: leg.traffic_factor,
+            ...(leg.segments?.length
+              ? {
+                  segments: leg.segments.map((segment) => ({
+                    geometry: segment.geometry,
+                    travelSource: segment.travel_source,
+                    travelTimeSec: segment.duration_sec,
+                    distanceKm: segment.distance_m / 1000,
+                  })),
+                }
+              : {}),
           })),
           reasons: route.reasons as object,
         },
