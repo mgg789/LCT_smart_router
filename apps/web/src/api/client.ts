@@ -21,11 +21,23 @@ import type {
   PlanAssignmentView,
   PolicyComparisonResponse,
   PolicyId,
+  RoadImportSummary,
   RouterTechnicalSettings,
 } from './types';
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
 const policyIdSchema = z.enum(['compact', 'fast', 'sla', 'balanced', 'eco', 'covering']);
+
+const roadImportSummarySchema = z.object({
+  operationId: z.string().min(1),
+  status: z.enum(['accepted', 'replayed']),
+  graphVersion: z.string().min(1),
+  routerContextVersion: z.string().min(1),
+  inputSha256: z.string().length(64),
+  profiles: z.array(z.enum(['car', 'walk', 'bike', 'transit'])),
+  nodes: z.number().int().nonnegative(),
+  edges: z.number().int().nonnegative(),
+});
 
 const requestSchema = z.object({
   id: z.string(),
@@ -114,7 +126,21 @@ const engineerSchema = z.object({
 
 const planStopSchema = z.object({
   sequence: z.number().int(),
-  kind: z.enum(['job', 'lunch', 'wait', 'start']),
+  kind: z.enum(['job', 'lunch', 'wait', 'start', 'handoff']),
+  handoff: z
+    .object({
+      handoff_id: z.string(),
+      donor_engineer_id: z.string(),
+      receiver_engineer_id: z.string(),
+      request_id: z.string(),
+      items: z.object({
+        router: z.number().int().nonnegative(),
+        set_top_box: z.number().int().nonnegative(),
+        smart_speaker: z.number().int().nonnegative(),
+      }),
+    })
+    .nullable()
+    .optional(),
   requestId: z.string().nullable(),
   lat: z.number(),
   lon: z.number(),
@@ -367,6 +393,7 @@ const technicalSettingsSchema = z.object({
   windowLatenessToleranceSec: z.number().int().nonnegative().max(1_200).default(0),
   trafficEnabled: z.boolean().default(true),
   equipmentEnabled: z.boolean().default(true),
+  equipmentTransfersEnabled: z.boolean().default(false),
   travelTimeMode: z.enum(['graph_with_access_buffer', 'fixed_normative']),
   accessBufferSec: z.number().int().nonnegative(),
   fixedTravelTimeSec: z.number().int().positive(),
@@ -672,6 +699,9 @@ const dispatcherSettingsSchema = z.object({
   twogisApiKeyLast4: z.string().nullable(),
   yandexApiKeySet: z.boolean(),
   yandexApiKeyLast4: z.string().nullable(),
+  equipmentCapacityWalk: z.number().int().nonnegative().default(5),
+  equipmentCapacityBike: z.number().int().nonnegative().default(12),
+  equipmentCapacityCar: z.number().int().nonnegative().default(30),
 });
 
 const geocodeHitSchema = z.object({
@@ -953,6 +983,7 @@ export async function updateRouterTechnicalSettings(
         windowLatenessToleranceSec: settings.windowLatenessToleranceSec,
         trafficEnabled: settings.trafficEnabled,
         equipmentEnabled: settings.equipmentEnabled,
+        equipmentTransfersEnabled: settings.equipmentTransfersEnabled,
         travelTimeMode: settings.travelTimeMode,
         accessBufferSec: settings.accessBufferSec,
         fixedTravelTimeSec: settings.fixedTravelTimeSec,
@@ -1024,6 +1055,18 @@ export function uploadDataPackage(token: string, file: DataUploadFile): Promise<
   return requestJson('/api/v1/dispatch/data/upload', dataUploadSummarySchema, token, {
     method: 'POST',
     body: JSON.stringify({ operationId: crypto.randomUUID(), ...file }),
+  });
+}
+
+/** Imports one native OSRM JSON or gzip payload without adding user-defined envelope fields. */
+export function importRoadData(token: string, payloadBase64: string): Promise<RoadImportSummary> {
+  return requestJson('/api/v1/dispatch/data/road-import', roadImportSummarySchema, token, {
+    method: 'POST',
+    body: JSON.stringify({
+      operationId: crypto.randomUUID(),
+      profile: 'car',
+      payloadBase64,
+    }),
   });
 }
 

@@ -17,6 +17,7 @@ from core.contracts import (
     Policy,
     PolicyComparison,
     PolicyComparisonRow,
+    RegionalProgress,
     RouterResult,
     RouterTaskSnapshot,
     RouterTechnicalSettings,
@@ -31,14 +32,35 @@ from core.engine import (
 )
 from core.evidence import build_plan_evidence
 from core.geo import GraphTravel, RoadGraph, configure_travel, content_hash
+from core.roadimport import ImportedRoadOverlay
 from core.osrm import OSRMTravel, attach_live_roads
 from core.policy import POLICY_CATALOG_VERSION, compile_policy
 from core.route_search import improve_routes
-from core.schedule import baseline, score, validate_plan
+from core.schedule import assemble_plan, baseline, score, validate_plan
 from core.settings import StoredTechnicalSettingsOperation, TechnicalSettingsStore
 
 MAX_SNAPSHOT_BYTES = 16 * 1024 * 1024
 COMPARISON_POLICY_IDS = ("fast", "compact", "sla", "balanced", "eco")
+
+
+def _regional_snapshots(snapshot: RouterTaskSnapshot) -> dict[str, RouterTaskSnapshot]:
+    """Partition disconnected regional work; legacy rows remain in one default pool."""
+    labels = sorted({item.region or "__default__" for item in [*snapshot.requests, *snapshot.engineers]})
+    return {
+        label: snapshot.model_copy(update={
+            "requests": [request for request in snapshot.requests if (request.region or "__default__") == label],
+            "engineers": [engineer for engineer in snapshot.engineers if (engineer.region or "__default__") == label],
+            "pending_equipment_handoffs": [handoff for handoff in snapshot.pending_equipment_handoffs if any(
+                engineer.engineer_id == handoff.donor_engineer_id and (engineer.region or "__default__") == label for engineer in snapshot.engineers
+            )],
+        })
+        for label in labels
+    }
+
+
+def _regional_payload(snapshot: RouterTaskSnapshot) -> bytes:
+    """Produce canonical worker bytes; the publication hash remains the outer contract."""
+    return json.dumps(snapshot.model_dump(mode="json"), sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
 @dataclass(frozen=True)
@@ -186,6 +208,18 @@ def calculate(
             input_hash=content_hash(raw),
             router_context_version=context_version,
             errors=[Diagnostic(code="INPUT_INVALID", message=str(exc))],
+        ), None
+    overdue = next(
+        (handoff for handoff in snapshot.pending_equipment_handoffs if handoff.meeting_at < snapshot.planning_as_of),
+        None,
+    )
+    if overdue is not None:
+        return RouterResult(
+            status="error", input_publication_id=publication_id, input_hash=content_hash(raw),
+            planning_as_of=snapshot.planning_as_of, computed_at=int(time.time()),
+            router_context_version=context_version, policy_id=snapshot.policy.policy_id,
+            technical_settings=settings.technical(),
+            errors=[Diagnostic(code="WAITING_HANDOFF", message="Confirmed equipment meeting is overdue.", entity_id=overdue.handoff_id)],
         ), None
     provider = GraphTravel(graph) if isinstance(graph, RoadGraph) else graph
     provider = attach_live_roads(provider)
@@ -373,6 +407,7 @@ class RouterRuntime:
             raise ValueError("poll interval must be positive")
         self.reader = reader
         self._graph = copy.deepcopy(graph)
+        self._base_graph = copy.deepcopy(graph)
         self._settings_store = settings_store
         self.settings = settings or SearchSettings()
         saved = settings_store.load() if settings_store is not None else None
@@ -381,6 +416,8 @@ class RouterRuntime:
                 self.settings,
                 lunches_enabled=saved.lunches_enabled,
                 traffic_enabled=saved.traffic_enabled,
+                metro_enabled=saved.metro_enabled,
+                equipment_transfers_enabled=saved.equipment_transfers_enabled,
                 equipment_enabled=saved.equipment_enabled,
                 window_lateness_tolerance_sec=saved.window_lateness_tolerance_sec,
                 departure_lateness_tolerance_sec=saved.departure_lateness_tolerance_sec,
@@ -400,6 +437,10 @@ class RouterRuntime:
         self._key = None
         self._pending: bytes | None = None
         self._pending_publication_id: str | None = None
+        self._regional_queue: list[tuple[str, bytes]] = []
+        self._regional_outputs: dict[str, tuple[RouterResult, EngineOutput | None]] = {}
+        self._regional_snapshot: RouterTaskSnapshot | None = None
+        self._active_region = ""
         self._last_publication_seq = -1
         self._memory: EngineMemory | None = None
         self._stop = threading.Event()
@@ -594,14 +635,75 @@ class RouterRuntime:
                 "status": self.result.status,
                 "active": self._future is not None,
                 "engine_path": self.last_path,
+                "regional_progress": self.result.regional_progress,
                 "technical_settings": self.settings.technical().model_dump(),
             }
+
+    def _publish_regional_cumulative(self, raw: bytes, publication_id: str, context_version: str) -> None:
+        """Publish only completed region routes; incomplete regions stay explicitly pending."""
+        snapshot = self._regional_snapshot
+        if snapshot is None:
+            return
+        completed = [item for item in self._regional_outputs.values() if item[0].status == "ready"]
+        if not completed:
+            return
+        routes = [route for result, _ in completed for route in (result.main.routes if result.main else [])]
+        baseline_routes = [route for result, _ in completed for route in (result.baseline.routes if result.baseline else [])]
+        main = assemble_plan(snapshot, routes)
+        baseline_plan = assemble_plan(snapshot, baseline_routes)
+        progress = []
+        for region, part in _regional_snapshots(snapshot).items():
+            completed_result = self._regional_outputs.get(region)
+            progress.append(RegionalProgress(
+                region=region,
+                status="pending" if completed_result is None else completed_result[0].status,
+                request_count=len(part.requests),
+            ))
+        # The comprehension above intentionally keeps a result entry and a pending
+        # entry mutually exclusive; sort makes API progress stable.
+        status = "ready" if all(item.status == "ready" for item in progress) else "partial"
+        if status == "partial":
+            ready_regions = {item.region for item in progress if item.status == "ready"}
+            def scope(plan):
+                assignments = [assignment for assignment in plan.assignments if (next(
+                    request for request in snapshot.requests if request.request_id == assignment.request_id
+                ).region or "__default__") in ready_regions]
+                summary = plan.summary.model_copy(update={
+                    "requests_total": len(assignments),
+                    "unassigned_count": sum(item.status == "unassigned" for item in assignments),
+                    "urgent_total": sum(next(request for request in snapshot.requests if request.request_id == item.request_id).priority == "urgent" for item in assignments),
+                    "urgent_assigned_count": sum(item.status == "assigned" and next(request for request in snapshot.requests if request.request_id == item.request_id).priority == "urgent" for item in assignments),
+                })
+                return plan.model_copy(update={"assignments": assignments, "summary": summary})
+            main, baseline_plan = scope(main), scope(baseline_plan)
+        main_evidence = (
+            completed[0][0].main_evidence if status == "partial" else
+            build_plan_evidence(snapshot, main, configure_travel(GraphTravel(self._graph) if isinstance(self._graph, RoadGraph) else self._graph, self.settings.technical(), snapshot.planning_as_of))
+        )
+        baseline_evidence = (
+            completed[0][0].baseline_evidence if status == "partial" else
+            build_plan_evidence(snapshot, baseline_plan, configure_travel(GraphTravel(self._graph) if isinstance(self._graph, RoadGraph) else self._graph, self.settings.technical(), snapshot.planning_as_of))
+        )
+        self.result = RouterResult(
+            status=status, result_id=str(uuid4()), input_publication_id=publication_id,
+            input_hash=content_hash(raw), planning_as_of=snapshot.planning_as_of,
+            computed_at=int(time.time()), router_context_version=context_version,
+            policy_id=snapshot.policy.policy_id, technical_settings=self.settings.technical(),
+            search_path="REGIONAL_SEQUENTIAL", policy_criteria=list(compile_policy(snapshot.policy).ordered_criteria),
+            main=main, baseline=baseline_plan,
+            main_evidence=main_evidence, baseline_evidence=baseline_evidence,
+            regional_progress=progress,
+        )
 
     def _invalidate(self):
         self._generation += 1
         self._key = None
         self._pending = None
         self._pending_publication_id = None
+        self._regional_queue = []
+        self._regional_outputs = {}
+        self._regional_snapshot = None
+        self._active_region = ""
         self.last_path = None
         self._comparison_cache.clear()
         self.result = RouterResult(status="pending", router_context_version=self.context_version)
@@ -609,8 +711,22 @@ class RouterRuntime:
     def update_graph(self, graph: RoadGraph) -> None:
         """Activate a validated resource atomically; old workers keep their own graph."""
         with self._lock:
-            if graph != self._graph:
+            if graph != self._base_graph:
+                self._base_graph = graph.model_copy(deep=True)
                 self._graph = graph.model_copy(deep=True)
+                self._invalidate()
+
+    def update_road_overlay(self, graph: RoadGraph) -> None:
+        """Activate persistent imported edges without replacing the configured base provider."""
+        base = (
+            GraphTravel(self._base_graph)
+            if isinstance(self._base_graph, RoadGraph)
+            else self._base_graph
+        )
+        overlay = ImportedRoadOverlay(base, graph)
+        with self._lock:
+            if overlay.version != getattr(self._graph, "version", None):
+                self._graph = overlay
                 self._invalidate()
 
     def set_tolerance(
@@ -649,6 +765,7 @@ class RouterRuntime:
                 lunches_enabled=requested.lunches_enabled,
                 traffic_enabled=requested.traffic_enabled,
                 equipment_enabled=requested.equipment_enabled,
+                equipment_transfers_enabled=requested.equipment_transfers_enabled,
                 metro_enabled=requested.metro_enabled,
                 window_lateness_tolerance_sec=requested.window_lateness_tolerance_sec,
                 departure_lateness_tolerance_sec=requested.departure_lateness_tolerance_sec,
@@ -700,10 +817,16 @@ class RouterRuntime:
             if not reported_code.startswith("SNAPSHOT_"):
                 reported_code = "SNAPSHOT_READ_FAILED"
             with self._lock:
-                # A locked or slow database must not abandon a solve already in
-                # flight or a plan the API is still serving. Invalidating here
-                # bumped the generation, discarded the result and started another
-                # calculation, which locked the database again. The next tick retries.
+                # A locked database must not abandon a solve still running or a
+                # plan already on screen, and it must not bump the generation:
+                # that made the next successful read look new and start a second
+                # calculation. A solve that finished during the outage is dropped
+                # unconfirmed so it cannot be published as the current plan.
+                if self._future is not None and self._future.done():
+                    self._future = None
+                    self._key = None
+                    self._pending = None
+                    self._pending_publication_id = None
                 if self._future is not None or self.result.status == "ready":
                     return
                 self.result = RouterResult(
@@ -739,6 +862,17 @@ class RouterRuntime:
                 self._key = key
                 self._pending = raw
                 self._pending_publication_id = publication.publication_id
+                try:
+                    self._regional_snapshot = parse_snapshot(raw)
+                    regional = [
+                        (region, _regional_payload(part))
+                        for region, part in _regional_snapshots(self._regional_snapshot).items()
+                    ]
+                    self._regional_queue = regional if len(regional) > 1 else []
+                    self._regional_outputs = {}
+                except Exception:
+                    self._regional_snapshot = None
+                    self._regional_queue = []
                 self.result = RouterResult(
                     status="pending",
                     input_publication_id=publication.publication_id,
@@ -749,7 +883,14 @@ class RouterRuntime:
                 try:
                     result, output = self._future.result()
                     if self._active_generation == self._generation:
-                        self.result = result
+                        if self._active_region:
+                            # Queue head is removed only on submission, so the completed
+                            # region is carried by the active worker marker.
+                            self._regional_outputs[self._active_region] = (result, output)
+                            self._publish_regional_cumulative(raw, publication.publication_id, key[1])
+                            self._active_region = ""
+                        else:
+                            self.result = result
                         if output is not None:
                             self._memory, self.last_path = output.memory, output.path
                 except Exception as exc:
@@ -768,9 +909,15 @@ class RouterRuntime:
             if self._future is None and self._pending is not None:
                 self._active_generation = self._generation
                 try:
+                    if self._regional_queue:
+                        self._active_region, regional_raw = self._regional_queue.pop(0)
+                        worker_raw = regional_raw
+                    else:
+                        self._active_region = ""
+                        worker_raw = self._pending
                     self._future = self._executor.submit(
                         calculate,
-                        self._pending,
+                        worker_raw,
                         self._graph,
                         self.settings,
                         key[1],
@@ -789,8 +936,9 @@ class RouterRuntime:
                             )
                         ],
                     )
-                self._pending = None
-                self._pending_publication_id = None
+                if not self._regional_queue:
+                    self._pending = None
+                    self._pending_publication_id = None
 
     def start(self) -> None:
         """Start exactly one polling thread; repeated calls do not spawn coordinators."""

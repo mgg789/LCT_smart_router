@@ -207,12 +207,13 @@ export type ActivityKind =
   | 'finished';
 
 export interface RouteVertex {
-  readonly kind: 'start' | 'job' | 'lunch' | 'wait';
+  readonly kind: 'start' | 'job' | 'lunch' | 'wait' | 'handoff';
   readonly lat: number;
   readonly lon: number;
   readonly startAt: number;
   readonly endAt: number;
   readonly requestId: string | null;
+  readonly handoffId?: string | null;
   readonly sequence: number;
 }
 
@@ -253,6 +254,7 @@ export function routeVertices(route: PlanRouteView): RouteVertex[] {
     startAt: stop.startAt,
     endAt: stop.endAt,
     requestId: stop.requestId,
+    handoffId: stop.handoff?.handoff_id ?? null,
     sequence: stop.sequence,
   }));
   return [start, ...rest];

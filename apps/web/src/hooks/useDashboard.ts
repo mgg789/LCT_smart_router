@@ -8,6 +8,7 @@ import {
   DashboardApiError,
   deleteDispatchEngineer,
   importOfficialDataset,
+  importRoadData,
   linkEngineerAccount,
   loadDashboardSnapshot,
   loadPolicyComparison,
@@ -40,6 +41,7 @@ import type {
   PlanDelta,
   PolicyComparisonResponse,
   PolicyId,
+  RoadImportSummary,
   RouterTechnicalSettings,
 } from '../api/types';
 import { demoScenarios, recordedScenario } from '../demo/scenarios';
@@ -1159,6 +1161,41 @@ export function useDashboard() {
     ],
   );
 
+  const importRoadResource = useCallback(
+    async (payloadBase64: string): Promise<RoadImportSummary> => {
+      if (!token || sourceRef.current !== 'live' || uploadingData) {
+        throw new Error('Загрузка данных уже выполняется');
+      }
+      invalidateAsyncReads();
+      const generation = readGeneration.current;
+      setUploadingData(true);
+      setError(null);
+      try {
+        const summary = await importRoadData(token, payloadBase64);
+        if (generation !== readGeneration.current) return summary;
+        await refreshLive();
+        pushEvent(
+          summary.status === 'replayed'
+            ? 'Дорожный ресурс уже был импортирован.'
+            : `Дорожный ресурс принят: ${summary.edges} рёбер, ${summary.nodes} узлов.`,
+        );
+        return summary;
+      } catch (cause) {
+        if (generation === readGeneration.current) {
+          reportFailure(cause);
+          setOperationWarning(
+            'Импорт дорожного ресурса не подтверждён. Проверьте журнал операций.',
+          );
+          setError(errorMessage(cause));
+        }
+        throw cause;
+      } finally {
+        setUploadingData(false);
+      }
+    },
+    [invalidateAsyncReads, pushEvent, refreshLive, reportFailure, token, uploadingData],
+  );
+
   const importOfficialTzDataset = useCallback(async (): Promise<OfficialImportSummary> => {
     if (!token || sourceRef.current !== 'live' || uploadingData) {
       throw new Error('Загрузка данных уже выполняется');
@@ -1288,6 +1325,7 @@ export function useDashboard() {
     createEngineer,
     deleteEngineer,
     uploadDataset,
+    importRoadResource,
     importOfficialTzDataset,
     resolveAlert,
     setAttendanceOptOut,
@@ -1315,6 +1353,7 @@ function sameRouterSettings(
     left.trafficEnabled === right.trafficEnabled &&
     left.metroEnabled === right.metroEnabled &&
     left.equipmentEnabled === right.equipmentEnabled &&
+    left.equipmentTransfersEnabled === right.equipmentTransfersEnabled &&
     left.travelTimeMode === right.travelTimeMode &&
     left.accessBufferSec === right.accessBufferSec &&
     left.fixedTravelTimeSec === right.fixedTravelTimeSec &&
@@ -1333,6 +1372,7 @@ function defaultRouterSettings(snapshot: DashboardSnapshot): RouterTechnicalSett
     windowLatenessToleranceSec: 0,
     trafficEnabled: true,
     equipmentEnabled: true,
+    equipmentTransfersEnabled: false,
     travelTimeMode: 'graph_with_access_buffer',
     accessBufferSec: 600,
     fixedTravelTimeSec: 1_200,

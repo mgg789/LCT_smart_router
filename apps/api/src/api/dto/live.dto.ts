@@ -15,6 +15,11 @@ export type StartLiveWorkdayDto = z.infer<typeof startLiveWorkdaySchema>;
  */
 export const liveActionSchema = z.discriminatedUnion('kind', [
   operationEnvelopeSchema.extend({
+    kind: z.literal('handoff_confirm'),
+    engineerId: z.string().min(1).optional(),
+    handoffId: z.string().min(1),
+  }),
+  operationEnvelopeSchema.extend({
     kind: z.literal('online'),
     engineerId: z.string().min(1).optional(),
   }),

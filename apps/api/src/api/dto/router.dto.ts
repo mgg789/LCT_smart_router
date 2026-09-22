@@ -12,6 +12,7 @@ export const updateRouterTechnicalSettingsSchema = z.object({
   windowLatenessToleranceSec: z.number().int().nonnegative().max(1_200).optional(),
   trafficEnabled: z.boolean().optional(),
   metroEnabled: z.boolean().optional(),
+  equipmentTransfersEnabled: z.boolean().optional(),
   equipmentEnabled: z.boolean().optional(),
   travelTimeMode: z.enum(['graph_with_access_buffer', 'fixed_normative']),
   accessBufferSec: toleranceSeconds,

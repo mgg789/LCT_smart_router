@@ -14,6 +14,7 @@ import { formatClock, formatDurationMin, formatKm } from './time';
 export interface CaseExplanation {
   readonly title: string;
   readonly facts: string[];
+  readonly baseFacts?: string[];
   readonly influence: string;
   readonly result: string;
 }
@@ -29,18 +30,74 @@ export function explainSelection(
   engineer: EngineerView | null,
   route: PlanRouteView | null,
 ): CaseExplanation | null {
+  let explanation: CaseExplanation | null;
   if (request) {
     if (assignment?.status === 'unassigned') {
-      return explainUnassigned(snapshot, request, assignment);
+      explanation = explainUnassigned(snapshot, request, assignment);
+    } else {
+      explanation = explainAssigned(snapshot, request, assignment, engineer, route);
     }
-    return explainAssigned(snapshot, request, assignment, engineer, route);
+  } else if (engineer) {
+    explanation =
+      route && route.assignedCount > 0
+        ? explainRoute(snapshot, engineer, route)
+        : explainIdleEngineer(snapshot, engineer);
+  } else {
+    explanation = null;
   }
-  if (engineer) {
-    return route && route.assignedCount > 0
-      ? explainRoute(snapshot, engineer, route)
-      : explainIdleEngineer(snapshot, engineer);
+  return explanation
+    ? { ...explanation, baseFacts: compactFacts(snapshot, request, engineer, route) }
+    : null;
+}
+
+/** Concise dispatcher facts for the default explanation mode. */
+function compactFacts(
+  snapshot: DashboardSnapshot,
+  request: RequestView | null,
+  engineer: EngineerView | null,
+  route: PlanRouteView | null,
+): string[] {
+  const selected = engineer ? snapshot.engineers.find((item) => item.id === engineer.id) : null;
+  const lines: string[] = [];
+  if (request) {
+    lines.push(
+      `Оборудование: ${request.requiredEquipment ? equipmentLabel(request.requiredEquipment) : 'не требуется'}${request.requiredEquipment ? ', 1 шт.' : ''}.`,
+    );
+    lines.push(`Окно: ${formatClock(request.windowStartAt)}–${formatClock(request.windowEndAt)}.`);
+    lines.push(`Компетенция: ${skillLabel(request.requiredSkill)}.`);
+  } else if (engineer) {
+    lines.push(`Компетенции: ${engineer.skills.map(skillLabel).join(', ') || 'не указаны'}.`);
   }
-  return null;
+  if (route && selected?.day?.equipmentStock) {
+    const stock = selected.day.equipmentStock;
+    if (!request) {
+      lines.push(
+        `Оборудование утром: роутеры ${stock.router}, приставки ${stock.setTopBox}, колонки ${stock.smartSpeaker}.`,
+      );
+    }
+  }
+  const lunch = route?.stops.find((stop) => stop.kind === 'lunch');
+  const actualLunchStart = selected?.day?.lunch.startedAt ?? lunch?.startAt ?? null;
+  if (actualLunchStart !== null) {
+    const actualLunchEnd = lunch?.endAt ?? selected?.day?.lunch.windowEndAt ?? null;
+    const plannedLunchStart = selected?.day?.lunch.windowStartAt ?? null;
+    const shifted =
+      plannedLunchStart !== null && Math.abs(actualLunchStart - plannedLunchStart) >= 60;
+    lines.push(
+      `Обед: ${formatClock(actualLunchStart)}${actualLunchEnd ? `–${formatClock(actualLunchEnd)}` : ''}${shifted ? ' (сдвинут)' : ''}.`,
+    );
+  } else if (selected?.day?.lunch.enabled === false || route?.lunchStatus === 'disabled') {
+    lines.push('Обед: выключен.');
+  }
+  return lines;
+}
+
+function equipmentLabel(type: NonNullable<RequestView['requiredEquipment']>): string {
+  return {
+    router: 'роутер',
+    set_top_box: 'ТВ-приставка',
+    smart_speaker: 'умная колонка',
+  }[type];
 }
 
 function explainAssigned(

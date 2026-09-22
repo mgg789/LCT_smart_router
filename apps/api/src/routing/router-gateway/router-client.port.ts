@@ -33,6 +33,26 @@ export interface WindowProposal {
   } | null;
 }
 
+/** One native OSRM JSON or gzip payload forwarded to Router Core. */
+export interface RouterRoadImportInput {
+  readonly operationId: string;
+  readonly profile: 'car' | 'walk' | 'bike' | 'transit';
+  readonly source?: string;
+  readonly payloadBase64: string;
+}
+
+/** Accepted graph merge and the context identity it invalidated. */
+export interface RouterRoadImportResult {
+  readonly operationId: string;
+  readonly status: 'accepted' | 'replayed';
+  readonly graphVersion: string;
+  readonly routerContextVersion: string;
+  readonly inputSha256: string;
+  readonly profiles: ReadonlyArray<'car' | 'walk' | 'bike' | 'transit'>;
+  readonly nodes: number;
+  readonly edges: number;
+}
+
 export interface RouterTechnicalSettings {
   readonly lunchesEnabled: boolean;
   readonly departureLatenessToleranceSec: number;
@@ -43,6 +63,8 @@ export interface RouterTechnicalSettings {
   readonly trafficEnabled?: boolean;
   /** Whether pedestrian journeys may use the offline Moscow metro graph. */
   readonly metroEnabled?: boolean;
+  /** Allow same-region, capacity-safe paired equipment meetings. */
+  readonly equipmentTransfersEnabled?: boolean;
   /** Whether Router must enforce equipment compatibility. */
   readonly equipmentEnabled?: boolean;
   /** How Router converts a graph quote into the planning duration of a road leg. */
@@ -128,6 +150,10 @@ export interface PolicyComparison {
  * A port keeps the optional null transport and private-network HTTP transport interchangeable.
  */
 export abstract class RouterClient {
+  /** Imports one validated offline OSRM resource into Router's persistent graph. */
+  importRoadData(_input: RouterRoadImportInput): Promise<RouterRoadImportResult> {
+    throw SysError.notConfigured('Router road import');
+  }
   /** Finds an actual same-day insertion without altering the live plan. */
   proposeWindow(_input: WindowProposalInput): Promise<WindowProposal> {
     throw SysError.notConfigured('Router window proposal');

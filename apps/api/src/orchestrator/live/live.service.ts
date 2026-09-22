@@ -26,6 +26,7 @@ import { AppliedPlanService } from '../../routing/router-gateway';
 import { DemoStandService } from '../demo-stand';
 import { EngineersService } from '../engineers';
 import { workDateOf } from '../engineers/workday';
+import { assertNoPendingHandoff, confirmHandoff, handoffView } from '../equipment/handoffs';
 import { FactsService } from '../facts';
 import {
   ExecutionTimingPolicy,
@@ -136,6 +137,7 @@ export class LiveService {
       throw SysError.forbidden('The dispatcher has not started the workday');
     const current = await this.currentFor(tx, full, engineerId, this.liveNow(full, wallNow));
     this.assertCurrentRequest(current, requestId);
+    await assertNoPendingHandoff(tx, engineerId, requestId, this.liveNow(full, wallNow));
   }
 
   /** Legacy mutation endpoints must not bypass LIVE ordering or its business clock. */
@@ -262,6 +264,20 @@ export class LiveService {
     }
 
     switch (input.kind) {
+      case 'handoff_confirm':
+        await confirmHandoff(context.tx, input.handoffId, engineerId, day.workDate, liveNow);
+        if (
+          (await context.tx.equipmentHandoff.findUnique({ where: { id: input.handoffId } }))
+            ?.completedAt !== null
+        ) {
+          await this.publisher.publishIfChanged(
+            context.tx,
+            liveNow,
+            PUBLICATION_TRIGGERS.EQUIPMENT_ISSUED,
+            { businessTime: true },
+          );
+        }
+        break;
       case 'online':
         if (state.lineStartedAt !== null) {
           if (state.lineStatus !== 'online')
@@ -402,6 +418,7 @@ export class LiveService {
       }
 
       case 'start': {
+        await assertNoPendingHandoff(context.tx, engineerId, input.requestId, liveNow);
         const current = await this.currentFor(context.tx, day, engineerId, liveNow);
         this.assertCurrentRequest(current, input.requestId);
         if (current.phase !== 'ready_to_start') {
@@ -596,6 +613,12 @@ export class LiveService {
       breaks: await this.breakHistory(tx, full),
       history: await this.historyView(tx, full),
       demoStand: this.demoStand.enabled,
+      handoffs: (
+        await tx.equipmentHandoff.findMany({
+          where: { workDate: full.workDate },
+          orderBy: { meetingAt: 'asc' },
+        })
+      ).map(handoffView),
     };
   }
 
@@ -677,6 +700,15 @@ export class LiveService {
       ),
       engineer,
       route: current.route,
+      handoffs: (
+        await tx.equipmentHandoff.findMany({
+          where: {
+            workDate: full.workDate,
+            OR: [{ donorEngineerId: engineerId }, { receiverEngineerId: engineerId }],
+          },
+          orderBy: { meetingAt: 'asc' },
+        })
+      ).map(handoffView),
       current: current.current,
       lunch,
     };
@@ -2213,7 +2245,17 @@ export class LiveService {
         select: { id: true },
       });
       if (activeVisit) continue;
+      const pendingMeetings = await tx.equipmentHandoff.findMany({
+        where: {
+          workDate: day.workDate,
+          completedAt: null,
+          OR: [{ donorEngineerId: route.engineerId }, { receiverEngineerId: route.engineerId }],
+        },
+      });
       for (const stop of route.stops) {
+        // A clock cannot manufacture receipt of physical equipment.
+        if (pendingMeetings.some((meeting) => Number(meeting.meetingAt) <= Number(stop.startAt)))
+          break;
         if (
           stop.kind !== 'job' ||
           !stop.requestId ||
@@ -2269,6 +2311,7 @@ export class LiveService {
           await this.upsertRequestState(tx, day.id, stop.requestId, wallNow, {
             assumedStartedAt: BigInt(assumedStartAt),
             assumedCompletedAt: BigInt(assumedEndAt),
+            reservedEngineerId: route.engineerId,
           });
           await tx.liveEngineerState.update({
             where: { id: liveState.id },

@@ -10,6 +10,7 @@ import { PerformanceModule } from '../orchestrator/performance';
 import { RequestsModule } from '../orchestrator/requests';
 import { ResetModule } from '../orchestrator/reset';
 import { RewardsModule } from '../orchestrator/rewards';
+import { RoadImportModule } from '../orchestrator/road-import';
 import { AuthController } from './auth.controller';
 import { ClientController } from './client.controller';
 import { DispatchController } from './dispatch.controller';
@@ -42,6 +43,7 @@ import { RewardsController } from './rewards.controller';
     RewardsModule,
     PerformanceModule,
     MonthlyReportsModule,
+    RoadImportModule,
   ],
   controllers: [
     AuthController,

@@ -7,6 +7,7 @@ function liveView(
   lineStatus: EngineerLiveView['engineer']['lineStatus'],
 ): EngineerLiveView {
   return {
+    handoffs: [],
     workday: {
       id: 'day-1',
       workDate: '2026-09-20',

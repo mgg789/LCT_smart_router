@@ -1,3 +1,4 @@
+import type { HandoffView } from '../orchestrator/equipment/handoffs';
 import type { PlanRouteView, PlanStopView } from './plan-view';
 import type { RequestView } from './request-view';
 
@@ -72,6 +73,7 @@ export interface LiveEngineerStateView {
 }
 
 export interface DispatchLiveView {
+  readonly handoffs: HandoffView[];
   readonly workday: LiveWorkdayView;
   readonly engineers: LiveEngineerStateView[];
   /** Technical-stop markers reconstructed from the durable operation journal. */
@@ -95,6 +97,7 @@ export interface DispatchLiveView {
 }
 
 export interface EngineerLiveView {
+  readonly handoffs: HandoffView[];
   readonly workday: LiveWorkdayView;
   readonly engineer: LiveEngineerStateView;
   readonly route: PlanRouteView | null;

@@ -128,6 +128,7 @@ export class ResetService {
       where: { id: 'singleton' },
       select: { pointerVersion: true },
     });
+    await tx.equipmentHandoff.deleteMany({});
     await tx.appliedPlanCurrent.deleteMany({});
     await tx.appliedPlanStop.deleteMany({});
     await tx.appliedPlanRoute.deleteMany({});

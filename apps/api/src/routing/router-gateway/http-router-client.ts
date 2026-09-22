@@ -9,6 +9,8 @@ import {
   type PolicyComparison,
   RouterClient,
   type RouterResultStatus,
+  type RouterRoadImportInput,
+  type RouterRoadImportResult,
   type RouterTechnicalSettingsState,
   type RouterTechnicalSettingsUpdate,
   type UpdateRouterTechnicalSettings,
@@ -60,6 +62,7 @@ const technicalSettingsSchema = z.object({
   window_lateness_tolerance_sec: z.number().int().nonnegative().max(1_200).optional(),
   traffic_enabled: z.boolean().optional(),
   metro_enabled: z.boolean().optional(),
+  equipment_transfers_enabled: z.boolean().optional(),
   equipment_enabled: z.boolean().optional(),
   travel_time_mode: z.enum(['graph_with_access_buffer', 'fixed_normative']),
   access_buffer_sec: z.number().int().nonnegative().max(86_400),
@@ -89,6 +92,41 @@ export interface HttpRouterClientOptions {
 
 /** Reads validated results and context from Router Core over the private Docker network. */
 export class HttpRouterClient extends RouterClient {
+  /** Forwards one browser-uploaded native OSRM payload to the private Core boundary. */
+  override async importRoadData(input: RouterRoadImportInput): Promise<RouterRoadImportResult> {
+    const raw = await this.fetchJson('/v1/road-import', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        operation_id: input.operationId,
+        profile: input.profile,
+        ...(input.source === undefined ? {} : { source: input.source }),
+        payload_base64: input.payloadBase64,
+      }),
+    });
+    const parsed = z
+      .object({
+        operation_id: z.string().min(1),
+        status: z.enum(['accepted', 'replayed']),
+        graph_version: z.string().min(1),
+        router_context_version: z.string().min(1),
+        input_sha256: z.string().length(64),
+        profiles: z.array(z.enum(['car', 'walk', 'bike', 'transit'])),
+        nodes: z.number().int().nonnegative(),
+        edges: z.number().int().nonnegative(),
+      })
+      .parse(raw);
+    return {
+      operationId: parsed.operation_id,
+      status: parsed.status,
+      graphVersion: parsed.graph_version,
+      routerContextVersion: parsed.router_context_version,
+      inputSha256: parsed.input_sha256,
+      profiles: parsed.profiles,
+      nodes: parsed.nodes,
+      edges: parsed.edges,
+    };
+  }
   /** Uses canonical Router travel and scheduling, without publication side effects. */
   override async proposeWindow(input: WindowProposalInput): Promise<WindowProposal> {
     const raw = await this.fetchJson(
@@ -128,7 +166,7 @@ export class HttpRouterClient extends RouterClient {
     const raw = await this.fetchJson('/v1/result-status');
     const parsed = z
       .object({
-        status: z.enum(['pending', 'ready', 'error']),
+        status: z.enum(['pending', 'partial', 'ready', 'error']),
         result_id: z.string().nullable(),
         input_publication_id: z.string().nullable(),
         input_hash: z.string().nullable(),
@@ -193,6 +231,9 @@ export class HttpRouterClient extends RouterClient {
           ? {}
           : { window_lateness_tolerance_sec: input.windowLatenessToleranceSec }),
         ...(input.trafficEnabled === undefined ? {} : { traffic_enabled: input.trafficEnabled }),
+        ...(input.equipmentTransfersEnabled === undefined
+          ? {}
+          : { equipment_transfers_enabled: input.equipmentTransfersEnabled }),
         ...(input.metroEnabled === undefined ? {} : { metro_enabled: input.metroEnabled }),
         ...(input.equipmentEnabled === undefined
           ? {}
@@ -354,6 +395,9 @@ function toTechnicalSettings(
       ? {}
       : { windowLatenessToleranceSec: settings.window_lateness_tolerance_sec }),
     ...(settings.traffic_enabled === undefined ? {} : { trafficEnabled: settings.traffic_enabled }),
+    ...(settings.equipment_transfers_enabled === undefined
+      ? {}
+      : { equipmentTransfersEnabled: settings.equipment_transfers_enabled }),
     ...(settings.metro_enabled === undefined ? {} : { metroEnabled: settings.metro_enabled }),
     ...(settings.equipment_enabled === undefined
       ? {}

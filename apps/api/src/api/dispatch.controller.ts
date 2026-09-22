@@ -20,6 +20,7 @@ import { PassportsService } from '../orchestrator/passports';
 import { PolicyService } from '../orchestrator/policy';
 import { RequestsService } from '../orchestrator/requests';
 import { ResetService } from '../orchestrator/reset';
+import { RoadImportService } from '../orchestrator/road-import';
 import {
   DispatcherSettingsService,
   GeocodingService,
@@ -94,6 +95,7 @@ import {
   dispatcherCreateRequestSchema,
   dispatcherUpdateRequestSchema,
 } from './dto/request.dto';
+import { type RoadImportDto, roadImportSchema } from './dto/road-import.dto';
 import {
   type UpdateRouterTechnicalSettingsDto,
   updateRouterTechnicalSettingsSchema,
@@ -137,6 +139,7 @@ export class DispatchController {
     private readonly router: RouterClient,
     private readonly imports: DatasetImportService,
     private readonly uploadImports: UploadImportService,
+    private readonly roadImports: RoadImportService,
     private readonly resetService: ResetService,
     private readonly demoStand: DemoStandService,
     private readonly config: AppConfigService,
@@ -1076,6 +1079,29 @@ export class DispatchController {
           dto.engineerCountPerRegion ?? {},
         );
       },
+    );
+    return outcome.result;
+  }
+
+  @Post('data/road-import')
+  @Post('road-import')
+  @ApiOperation({ summary: 'Import a native OSRM JSON or gzip road resource' })
+  async importRoadData(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(roadImportSchema)) dto: RoadImportDto,
+  ) {
+    if (!this.router.isConfigured()) {
+      throw SysError.notConfigured('Router Core');
+    }
+    const outcome = await this.operations.executeExternal(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'router.road_import',
+        targetRef: dto.profile,
+        payload: dto,
+      },
+      () => this.roadImports.importRoadData(dto),
     );
     return outcome.result;
   }

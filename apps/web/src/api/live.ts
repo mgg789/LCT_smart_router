@@ -2,6 +2,24 @@ import { z } from 'zod';
 import { requestJson } from './client';
 import type { PlanRouteView, PlanStopView, RequestView } from './types';
 
+export interface HandoffView {
+  readonly id: string;
+  readonly donorEngineerId: string;
+  readonly receiverEngineerId: string;
+  readonly requestId: string;
+  readonly items: {
+    readonly router: number;
+    readonly set_top_box: number;
+    readonly smart_speaker: number;
+  };
+  readonly lat: number;
+  readonly lon: number;
+  readonly meetingAt: number;
+  readonly donorConfirmedAt: number | null;
+  readonly receiverConfirmedAt: number | null;
+  readonly completedAt: number | null;
+}
+
 export type LiveLineStatus = 'pending' | 'online' | 'no_show_offline' | 'technical_break';
 export type LivePhase = 'awaiting_window' | 'ready_to_start' | 'in_progress';
 
@@ -31,8 +49,9 @@ export interface LiveStats {
 }
 
 export interface LiveRoutePoint {
-  readonly kind: 'start' | 'job' | 'lunch';
+  readonly kind: 'start' | 'job' | 'lunch' | 'handoff';
   readonly requestId: string | null;
+  readonly handoffId?: string | null;
   readonly lat: number;
   readonly lon: number;
   readonly at: number;
@@ -75,6 +94,7 @@ export interface LiveEngineerState {
 }
 
 export interface EngineerLiveView {
+  readonly handoffs: HandoffView[];
   readonly workday: LiveWorkday;
   readonly engineer: LiveEngineerState;
   /** The just-applied route is included with the live snapshot for an atomic refresh. */
@@ -90,6 +110,7 @@ export interface EngineerLiveView {
 }
 
 export interface DispatchLiveView {
+  readonly handoffs: HandoffView[];
   readonly workday: LiveWorkday;
   readonly engineers: LiveEngineerState[];
   readonly breaks: readonly LiveBreak[];
@@ -154,9 +175,40 @@ const requestSchema: z.ZodType<RequestView> = z.object({
   completedAt: z.number().int().nullable(),
   cancelledAt: z.number().int().nullable(),
 });
+const handoffSchema: z.ZodType<HandoffView> = z.object({
+  id: z.string(),
+  donorEngineerId: z.string(),
+  receiverEngineerId: z.string(),
+  requestId: z.string(),
+  items: z.object({
+    router: z.number().int().nonnegative(),
+    set_top_box: z.number().int().nonnegative(),
+    smart_speaker: z.number().int().nonnegative(),
+  }),
+  lat: z.number(),
+  lon: z.number(),
+  meetingAt: z.number().int(),
+  donorConfirmedAt: z.number().int().nullable(),
+  receiverConfirmedAt: z.number().int().nullable(),
+  completedAt: z.number().int().nullable(),
+});
 const stopSchema: z.ZodType<PlanStopView> = z.object({
   sequence: z.number().int(),
-  kind: z.enum(['job', 'lunch', 'wait', 'start']),
+  kind: z.enum(['job', 'lunch', 'wait', 'start', 'handoff']),
+  handoff: z
+    .object({
+      handoff_id: z.string(),
+      donor_engineer_id: z.string(),
+      receiver_engineer_id: z.string(),
+      request_id: z.string(),
+      items: z.object({
+        router: z.number().int().nonnegative(),
+        set_top_box: z.number().int().nonnegative(),
+        smart_speaker: z.number().int().nonnegative(),
+      }),
+    })
+    .nullable()
+    .optional(),
   requestId: z.string().nullable(),
   lat: z.number(),
   lon: z.number(),
@@ -234,6 +286,7 @@ const engineerSchema: z.ZodType<LiveEngineerState> = z.object({
     .nullable(),
 });
 const engineerLiveSchema: z.ZodType<EngineerLiveView> = z.object({
+  handoffs: z.array(handoffSchema).default([]),
   workday: workdaySchema,
   engineer: engineerSchema,
   route: z.custom<PlanRouteView | null>((value) => value === null || typeof value === 'object'),
@@ -249,6 +302,7 @@ const engineerLiveSchema: z.ZodType<EngineerLiveView> = z.object({
   lunch: z.object({ startedAt: z.number().int(), endAt: z.number().int() }).nullable(),
 });
 const dispatchLiveSchema: z.ZodType<DispatchLiveView> = z.object({
+  handoffs: z.array(handoffSchema).default([]),
   workday: workdaySchema,
   engineers: z.array(engineerSchema),
   breaks: z
@@ -289,6 +343,7 @@ export type EngineerLiveAction =
       readonly additionalDurationSec?: number;
       readonly missingEquipment?: 'router' | 'set_top_box' | 'smart_speaker';
     }
+  | { readonly kind: 'handoff_confirm'; readonly handoffId: string }
   | { readonly kind: 'break_start' | 'break_finish' };
 
 /** Reads the dispatcher-wide live state. */

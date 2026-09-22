@@ -229,13 +229,15 @@ export function EngineerApp({
 
   const items = useMemo(
     () =>
-      engineerListItems(plan, live ? null : day, lunch)
+      engineerListItems(plan, live ? null : day, lunch, live?.handoffs ?? [], live?.engineer.id)
         .filter((item) =>
           item.kind === 'lunch'
             ? !live || item.endAt > logicalNow
-            : item.request.lifecycle !== 'completed' &&
-              item.request.lifecycle !== 'cancelled' &&
-              (!item.request.assumedCompletedAt || live?.engineer.stats.completedCount === 0),
+            : item.kind === 'handoff'
+              ? true
+              : item.request.lifecycle !== 'completed' &&
+                item.request.lifecycle !== 'cancelled' &&
+                (!item.request.assumedCompletedAt || live?.engineer.stats.completedCount === 0),
         )
         .map((item) =>
           item.kind === 'job' && live
@@ -530,12 +532,29 @@ export function EngineerApp({
               ) : null}
               <div className="flex flex-col" style={{ marginTop: eu(20), gap: eu(20) }}>
                 {items.map((item, index) => (
-                  <div key={item.kind === 'lunch' ? `lunch-${item.startAt}` : item.request.id}>
+                  <div
+                    key={
+                      item.kind === 'lunch'
+                        ? `lunch-${item.startAt}`
+                        : item.kind === 'handoff'
+                          ? `handoff-${item.handoff.id}`
+                          : item.request.id
+                    }
+                  >
                     <EngineerListCard
                       item={item}
                       motionOn={motionOn}
                       delay={index * 0.04}
                       actions={live && item.kind === 'job' ? controls(item.request.id) : undefined}
+                      handoffAction={
+                        live && item.kind === 'handoff'
+                          ? () =>
+                              void applyLiveAction({
+                                kind: 'handoff_confirm',
+                                handoffId: item.handoff.id,
+                              })
+                          : undefined
+                      }
                       startPending={item.kind === 'job' && startPendingId === item.request.id}
                       onOpen={
                         item.kind === 'job'

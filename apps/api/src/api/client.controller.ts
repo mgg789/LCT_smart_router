@@ -249,7 +249,8 @@ export class ClientController {
         clientAccountId: actor.accountId,
         lifecycle: { in: ['submitted', 'in_progress', 'completed', 'cancelled'] },
       },
-      orderBy: [{ submittedAt: 'desc' }, { createdAt: 'desc' }],
+      // Business timestamps have second precision; arrival order breaks same-second ties.
+      orderBy: [{ submittedAt: 'desc' }, { createdAt: 'desc' }, { arrivalOrder: 'desc' }],
     });
     return {
       email: account.email,

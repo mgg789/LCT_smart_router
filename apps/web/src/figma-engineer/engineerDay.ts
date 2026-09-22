@@ -1,3 +1,4 @@
+import type { HandoffView } from '../api/live';
 import type {
   EngineerDayView,
   EngineerPlanResponse,
@@ -20,7 +21,14 @@ export type EngineerLunchItem = {
   readonly endAt: number;
 };
 
-export type EngineerListItem = EngineerJobItem | EngineerLunchItem;
+export type EngineerHandoffItem = {
+  readonly kind: 'handoff';
+  readonly stop: PlanStopView;
+  readonly handoff: HandoffView;
+  readonly role: 'donor' | 'receiver';
+};
+
+export type EngineerListItem = EngineerJobItem | EngineerLunchItem | EngineerHandoffItem;
 
 /**
  * Duration shown on the engineer home card: planned norm, plus a reported delay
@@ -54,6 +62,8 @@ export function engineerListItems(
   plan: EngineerPlanResponse | null,
   day: EngineerDayView | null,
   lunchOverride?: EngineerLunchItem | null,
+  handoffs: readonly HandoffView[] = [],
+  engineerId?: string,
 ): EngineerListItem[] {
   const items: EngineerListItem[] = [];
   const byId = new Map((plan?.requests ?? []).map((request) => [request.id, request]));
@@ -61,6 +71,19 @@ export function engineerListItems(
   const lunch = lunchOverride === undefined ? engineerLunchWindow(plan, day) : lunchOverride;
 
   for (const stop of plan?.route?.stops ?? []) {
+    if (stop.kind === 'handoff') {
+      const id = stop.handoff?.handoff_id;
+      const handoff = handoffs.find((item) => item.id === id);
+      if (handoff && engineerId) {
+        items.push({
+          kind: 'handoff',
+          stop,
+          handoff,
+          role: handoff.donorEngineerId === engineerId ? 'donor' : 'receiver',
+        });
+      }
+      continue;
+    }
     if (stop.kind === 'lunch') {
       if (lunch && !items.some((item) => item.kind === 'lunch')) items.push(lunch);
       continue;

@@ -2,7 +2,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { updateDispatcherSettings } from '../api/client';
-import type { LiveRouteProgress } from '../api/live';
+import type { HandoffView, LiveRouteProgress } from '../api/live';
 import type { PolicyId, RequestView } from '../api/types';
 import { DayMap } from '../components/DayMap';
 import {
@@ -116,7 +116,7 @@ const ADD_BUTTON_SIZE = 43;
 const ADD_BUTTON_GAP = 16;
 const ADD_BUTTON_LEFT = POLICY_LEFT - ADD_BUTTON_GAP - ADD_BUTTON_SIZE;
 const ADD_BUTTON_TOP = POLICY_TOP + (51 - ADD_BUTTON_SIZE) / 2;
-const POLICY_OPEN_HEIGHT = 541;
+const POLICY_OPEN_HEIGHT = 585;
 const NOTIF_PANEL_LEFT = 1407;
 const NOTIF_PANEL_TOP = 26 - HEADER_LIFT;
 const HEADER_AVATAR_LEFT = 1800;
@@ -235,6 +235,10 @@ export function MainDashboardPage() {
       ),
     [dash.liveWorkday],
   );
+  const engineerNames = useMemo(
+    () => new Map((dash.snapshot?.engineers ?? []).map((item) => [item.id, item.displayName])),
+    [dash.snapshot],
+  );
   const selectedEngineer = dash.selectedEngineerId
     ? (visibleEngineers.find((item) => item.id === dash.selectedEngineerId) ?? null)
     : null;
@@ -338,6 +342,7 @@ export function MainDashboardPage() {
   const lunchOn = dash.snapshot?.lunchesEnabled ?? false;
   const trafficOn = dash.snapshot?.routerSettings?.trafficEnabled ?? false;
   const metroOn = dash.snapshot?.routerSettings?.metroEnabled ?? false;
+  const equipmentTransfersOn = dash.snapshot?.routerSettings?.equipmentTransfersEnabled ?? false;
   const requestCount = view?.requestCount ?? 0;
   const totalKm = view?.totalKm ?? 0;
   const planLabel = view?.planLabel ?? 'Данные рабочего дня загружаются';
@@ -368,6 +373,17 @@ export function MainDashboardPage() {
       dash.snapshot.policyId,
       nextRouterSettings(dash.snapshot, {
         metroEnabled: !(dash.snapshot.routerSettings?.metroEnabled ?? false),
+      }),
+    );
+  };
+  const applyEquipmentTransfers = () => {
+    if (!dash.snapshot) return;
+    dash.applyRoutingSettings(
+      dash.snapshot.policyId,
+      nextRouterSettings(dash.snapshot, {
+        equipmentTransfersEnabled: !(
+          dash.snapshot.routerSettings?.equipmentTransfersEnabled ?? false
+        ),
       }),
     );
   };
@@ -572,6 +588,7 @@ export function MainDashboardPage() {
           lunchOn={lunchOn}
           trafficOn={trafficOn}
           metroOn={metroOn}
+          equipmentTransfersOn={equipmentTransfersOn}
           motionOn={motionOn}
           onToggle={() => {
             setUserMenuOpen(false);
@@ -582,6 +599,7 @@ export function MainDashboardPage() {
           onLunchToggle={applyLunch}
           onTrafficToggle={applyTraffic}
           onMetroToggle={applyMetro}
+          onEquipmentTransfersToggle={applyEquipmentTransfers}
           onManualMode={() => {
             if (!dash.snapshot) return;
             void dash.setMode(dash.snapshot.plan.mode === 'auto' ? 'manual' : 'auto');
@@ -644,6 +662,7 @@ export function MainDashboardPage() {
           }}
           onUpload={dash.uploadDataset}
           onImportOfficial={dash.importOfficialTzDataset}
+          onRoadImport={dash.importRoadResource}
         />
         <UserMenu
           open={userMenuOpen}
@@ -833,6 +852,7 @@ export function MainDashboardPage() {
                 <EngineersView
                   token={dash.source === 'live' ? (dash.token ?? undefined) : undefined}
                   snapshot={visibleSnapshot}
+                  handoffs={dash.liveWorkday?.handoffs ?? []}
                   selectedEngineerId={dash.selectedEngineerId}
                   motionOn={motionOn}
                   busy={dash.busy || dash.writesDisabled}
@@ -882,6 +902,7 @@ export function MainDashboardPage() {
                     selectedRequestId={dash.selectedRequest?.id ?? null}
                     progressByEngineer={liveProgress}
                     completedByEngineer={liveCompleted}
+                    handoffs={dash.liveWorkday?.handoffs ?? []}
                     frame={mapFrame}
                     regionLabel={regionLabel}
                     regions={[
@@ -909,6 +930,8 @@ export function MainDashboardPage() {
                         key="route-card"
                         engineer={selectedEngineer}
                         progress={liveProgress.get(selectedEngineer.id) ?? null}
+                        handoffs={dash.liveWorkday?.handoffs ?? []}
+                        engineerNames={engineerNames}
                         motionOn={motionOn}
                         onSelectRequest={dash.selectRequest}
                       />
@@ -1295,12 +1318,14 @@ function PolicyControl({
   lunchOn,
   trafficOn,
   metroOn,
+  equipmentTransfersOn,
   motionOn,
   onToggle,
   onSelect,
   onLunchToggle,
   onTrafficToggle,
   onMetroToggle,
+  onEquipmentTransfersToggle,
   onManualMode,
 }: {
   open: boolean;
@@ -1310,12 +1335,14 @@ function PolicyControl({
   lunchOn: boolean;
   trafficOn: boolean;
   metroOn: boolean;
+  equipmentTransfersOn: boolean;
   motionOn: boolean;
   onToggle: () => void;
   onSelect: (policy: PolicyId) => void;
   onLunchToggle: () => void;
   onTrafficToggle: () => void;
   onMetroToggle: () => void;
+  onEquipmentTransfersToggle: () => void;
   onManualMode: () => void;
 }) {
   const options =
@@ -1382,7 +1409,7 @@ function PolicyControl({
       </div>
       <div
         className={`relative w-[363px] ${open ? '' : 'pointer-events-none'}`}
-        style={{ height: 504 + extra }}
+        style={{ height: 548 + extra }}
       >
         {options.map((option, index) => (
           <motion.button
@@ -1427,11 +1454,18 @@ function PolicyControl({
           motionOn={motionOn}
           onToggle={onMetroToggle}
         />
+        <PolicySwitch
+          on={equipmentTransfersOn}
+          label="Передача оборудования"
+          top={406 + extra}
+          motionOn={motionOn}
+          onToggle={onEquipmentTransfersToggle}
+        />
         <button
           type="button"
           onClick={onManualMode}
           className="absolute left-[16px] flex h-[67px] w-[331px] items-center justify-center rounded-[20px] bg-figma-bee p-[20px] transition-transform duration-150 hover:scale-[1.01]"
-          style={{ top: 407 + extra }}
+          style={{ top: 451 + extra }}
         >
           <span className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
             Ручное управление
@@ -1740,6 +1774,7 @@ function MapCard({
   selectedRequestId,
   progressByEngineer,
   completedByEngineer,
+  handoffs,
   frame,
   regionLabel,
   regions,
@@ -1755,6 +1790,7 @@ function MapCard({
   selectedRequestId: string | null;
   progressByEngineer: NonNullable<Parameters<typeof DayMap>[0]['progressByEngineer']>;
   completedByEngineer: ReadonlyMap<string, number>;
+  handoffs: NonNullable<Parameters<typeof DayMap>[0]['handoffs']>;
   frame: { left: number; top: number; width: number; height: number };
   regionLabel: string;
   regions: { id: RegionSelection; label: string }[];
@@ -1780,6 +1816,7 @@ function MapCard({
             selectedRequestId={selectedRequestId}
             progressByEngineer={progressByEngineer}
             completedByEngineer={completedByEngineer}
+            handoffs={handoffs}
             onSelectRequest={onSelectRequest}
           />
         ) : (
@@ -1918,11 +1955,15 @@ function RouteCard({
   progress,
   motionOn,
   onSelectRequest,
+  handoffs,
+  engineerNames,
 }: {
   engineer: EngineerCard;
   progress: LiveRouteProgress | null;
   motionOn: boolean;
   onSelectRequest: (requestId: string) => void;
+  handoffs: readonly HandoffView[];
+  engineerNames: ReadonlyMap<string, string>;
 }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const skipClick = useRef(false);
@@ -1938,6 +1979,7 @@ function RouteCard({
   } | null>(null);
   const [thumb, setThumb] = useState({ left: 174, width: 321, visible: false });
   const [grabbing, setGrabbing] = useState(false);
+  const [selectedHandoff, setSelectedHandoff] = useState<HandoffView | null>(null);
 
   const updateThumb = useCallback(() => {
     const el = scrollerRef.current;
@@ -2081,6 +2123,10 @@ function RouteCard({
                       if (skipClick.current) return;
                       onSelectRequest(requestId);
                     }}
+                    onSelectHandoff={(handoffId) => {
+                      if (skipClick.current) return;
+                      setSelectedHandoff(handoffs.find((item) => item.id === handoffId) ?? null);
+                    }}
                   />
                 ))}
               </div>
@@ -2088,6 +2134,27 @@ function RouteCard({
           </div>
         </motion.div>
       </AnimatePresence>
+      {selectedHandoff ? (
+        <div className="absolute left-[30px] right-[30px] top-[158px] z-20 rounded-[16px] border-2 border-[#2563EB] bg-white px-[16px] py-[10px] text-[14px] text-figma-ink shadow-lg">
+          <div className="flex items-center justify-between gap-3">
+            <strong>Передача оборудования</strong>
+            <button
+              type="button"
+              onClick={() => setSelectedHandoff(null)}
+              aria-label="Закрыть детали передачи"
+            >
+              ×
+            </button>
+          </div>
+          <p className="mt-1 text-figma-muted">
+            {engineerNames.get(selectedHandoff.donorEngineerId) ?? selectedHandoff.donorEngineerId}
+            {' → '}
+            {engineerNames.get(selectedHandoff.receiverEngineerId) ??
+              selectedHandoff.receiverEngineerId}
+          </p>
+          <p className="mt-1 text-figma-muted">{handoffItemsLabel(selectedHandoff.items)}</p>
+        </div>
+      ) : null}
       {thumb.visible ? (
         <button
           type="button"
@@ -2113,28 +2180,32 @@ function RouteStopTopic({
   index,
   motionOn,
   onSelectRequest,
+  onSelectHandoff,
 }: {
   stop: RouteStop;
   index: number;
   motionOn: boolean;
   onSelectRequest: (requestId: string) => void;
+  onSelectHandoff: (handoffId: string) => void;
 }) {
-  const clickable = Boolean(stop.requestId);
+  const clickable = Boolean(stop.requestId || stop.handoffId);
+  const handoff = stop.kind === 'handoff';
   return (
     <motion.button
       type="button"
       disabled={!clickable}
       onClick={() => {
-        if (stop.requestId) onSelectRequest(stop.requestId);
+        if (stop.handoffId) onSelectHandoff(stop.handoffId);
+        else if (stop.requestId) onSelectRequest(stop.requestId);
       }}
-      className={`relative shrink-0 text-left ${clickable ? 'cursor-pointer' : 'cursor-default'}`}
+      className={`relative shrink-0 text-left ${handoff ? 'rounded-[12px] border-2 border-[#2563EB] px-[4px]' : ''} ${clickable ? 'cursor-pointer' : 'cursor-default'}`}
       style={{ width: ROUTE_STOP_WIDTH }}
       initial={motionOn ? { opacity: 0, y: 8 } : false}
       animate={{ opacity: 1, y: 0 }}
       transition={{ ...fadeSoft, delay: index * 0.04 }}
     >
       <span
-        className={`absolute top-[10px] rounded-full ${stop.failed || stop.status === 'отменено' ? 'bg-figma-cancel' : stop.active ? 'bg-figma-bee ring-4 ring-figma-ink' : stop.completed ? 'bg-figma-done' : 'bg-figma-ink'}`}
+        className={`absolute top-[10px] rounded-full ${handoff ? 'bg-[#2563EB] ring-2 ring-[#2563EB]/30' : stop.failed || stop.status === 'отменено' ? 'bg-figma-cancel' : stop.active ? 'bg-figma-bee ring-4 ring-figma-ink' : stop.completed ? 'bg-figma-done' : 'bg-figma-ink'}`}
         style={{ left: ROUTE_DOT_LEFT, width: ROUTE_DOT_SIZE, height: ROUTE_DOT_SIZE }}
       />
       <FigmaText className="figma-nowrap absolute left-0 top-[46px] w-[240px] text-center font-semibold text-[24px] tracking-[-0.408px] text-black">
@@ -2152,10 +2223,19 @@ function RouteStopTopic({
               : 'text-figma-hint'
         }`}
       >
-        {routeStopStatusLabel(stop.status)}
+        {handoff ? 'ПЕРЕДАЧА' : routeStopStatusLabel(stop.status)}
       </FigmaText>
     </motion.button>
   );
+}
+
+function handoffItemsLabel(items: HandoffView['items']): string {
+  const labels = [
+    items.router ? `роутер ×${items.router}` : null,
+    items.set_top_box ? `ТВ-приставка ×${items.set_top_box}` : null,
+    items.smart_speaker ? `умная колонка ×${items.smart_speaker}` : null,
+  ].filter((item): item is string => item !== null);
+  return labels.join(', ') || 'Оборудование не указано';
 }
 
 function DetailPanel({
@@ -2171,6 +2251,7 @@ function DetailPanel({
   motionOn: boolean;
   onClose: () => void;
 }) {
+  const [explanationMode, setExplanationMode] = useState<'base' | 'long'>('base');
   const urgency = request ? requestUrgency(request) : null;
   const equipment = request
     ? request.requiredEquipment
@@ -2238,60 +2319,93 @@ function DetailPanel({
         ) : (
           <div className="h-[36px]" />
         )}
-        <div className="mt-[16px] flex min-h-[216px] w-full flex-col rounded-[20px] bg-figma-dim px-[20px] py-[22px]">
-          <FigmaText className="font-medium text-[28px] tracking-[-0.84px] text-white">
-            Факты
-          </FigmaText>
-          <p className="mt-[12px] font-medium text-[18px] leading-[24px] tracking-[-0.3px] text-white/70">
-            {explanation?.facts.join(' ') || 'Нет фактов по этому выбору.'}
-          </p>
-        </div>
-        <div className="mt-[16px] flex min-h-[216px] w-full flex-col rounded-[20px] bg-figma-dim px-[20px] py-[22px]">
-          <FigmaText className="font-medium text-[28px] tracking-[-0.84px] text-white">
-            {mode === 'plan' ? 'Как они повлияли' : 'Как влияет'}
-          </FigmaText>
-          <p className="mt-[12px] font-medium text-[18px] leading-[24px] tracking-[-0.3px] text-white/70">
-            {explanation?.influence || 'Нет объяснения влияния.'}
-          </p>
-        </div>
-        {mode === 'plan' ? (
-          <div className="mt-[16px] flex min-h-[67px] w-full items-center rounded-[20px] bg-figma-dim px-[20px] py-[16px]">
-            <p className="font-medium text-[20px] leading-[24px] tracking-[-0.6px] text-white">
-              {explanation?.result || 'Нет итога по смене.'}
-            </p>
+        <fieldset className="mt-[16px] flex gap-[8px]">
+          <legend className="sr-only">Режим объяснения</legend>
+          <button
+            type="button"
+            onClick={() => setExplanationMode('base')}
+            className={`rounded-full px-[14px] py-[8px] text-[15px] font-semibold ${explanationMode === 'base' ? 'bg-figma-bee text-figma-ink' : 'bg-figma-dim text-white/70'}`}
+          >
+            База
+          </button>
+          <button
+            type="button"
+            disabled
+            aria-disabled
+            title="AI-сервис пока не подключён"
+            className="cursor-not-allowed rounded-full bg-figma-dim px-[14px] py-[8px] text-[15px] font-semibold text-white/35"
+          >
+            AI
+          </button>
+          <button
+            type="button"
+            onClick={() => setExplanationMode('long')}
+            className={`rounded-full px-[14px] py-[8px] text-[15px] font-semibold ${explanationMode === 'long' ? 'bg-figma-bee text-figma-ink' : 'bg-figma-dim text-white/70'}`}
+          >
+            Подробно
+          </button>
+        </fieldset>
+        {explanationMode === 'base' ? (
+          <div className="mt-[16px] flex min-h-[216px] w-full flex-col rounded-[20px] bg-figma-dim px-[20px] py-[22px]">
+            <FigmaText className="font-medium text-[28px] tracking-[-0.84px] text-white">
+              Факты
+            </FigmaText>
+            <ul className="mt-[12px] space-y-[8px] font-medium text-[18px] leading-[24px] tracking-[-0.3px] text-white/70">
+              {(
+                explanation?.baseFacts ??
+                explanation?.facts ?? ['Нет фактов по этому выбору.']
+              ).map((fact) => (
+                <li key={fact}>{fact}</li>
+              ))}
+            </ul>
           </div>
         ) : (
-          <div className="mt-[16px] flex gap-[12px]">
-            <div className="flex h-[67px] min-w-0 flex-1 items-center rounded-[20px] bg-figma-dim px-[20px]">
-              <p className="figma-nowrap font-medium text-[20px] tracking-[-0.6px] text-white">
-                {request ? formatDurationMin(request.serviceDurationSec) : '—'}
+          <>
+            <div className="mt-[16px] flex min-h-[216px] w-full flex-col rounded-[20px] bg-figma-dim px-[20px] py-[22px]">
+              <FigmaText className="font-medium text-[28px] tracking-[-0.84px] text-white">
+                Факты
+              </FigmaText>
+              <p className="mt-[12px] font-medium text-[18px] leading-[24px] tracking-[-0.3px] text-white/70">
+                {explanation?.facts.join(' ') || 'Нет фактов по этому выбору.'}
               </p>
             </div>
-            <button
-              type="button"
-              disabled
-              aria-disabled
-              title="Скоро"
-              className="flex h-[67px] flex-1 cursor-not-allowed items-center justify-center rounded-[20px] bg-figma-bee px-[16px] opacity-45"
-            >
-              <span className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
-                Написать
-              </span>
-            </button>
-          </div>
+            <div className="mt-[16px] flex min-h-[216px] w-full flex-col rounded-[20px] bg-figma-dim px-[20px] py-[22px]">
+              <FigmaText className="font-medium text-[28px] tracking-[-0.84px] text-white">
+                {mode === 'plan' ? 'Как они повлияли' : 'Как влияет'}
+              </FigmaText>
+              <p className="mt-[12px] font-medium text-[18px] leading-[24px] tracking-[-0.3px] text-white/70">
+                {explanation?.influence || 'Нет объяснения влияния.'}
+              </p>
+            </div>
+            {mode === 'plan' ? (
+              <div className="mt-[16px] flex min-h-[67px] w-full items-center rounded-[20px] bg-figma-dim px-[20px] py-[16px]">
+                <p className="font-medium text-[20px] leading-[24px] tracking-[-0.6px] text-white">
+                  {explanation?.result || 'Нет итога по смене.'}
+                </p>
+              </div>
+            ) : (
+              <div className="mt-[16px] flex gap-[12px]">
+                <div className="flex h-[67px] min-w-0 flex-1 items-center rounded-[20px] bg-figma-dim px-[20px]">
+                  <p className="figma-nowrap font-medium text-[20px] tracking-[-0.6px] text-white">
+                    {request ? formatDurationMin(request.serviceDurationSec) : '—'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled
+                  aria-disabled
+                  title="Скоро"
+                  className="flex h-[67px] flex-1 cursor-not-allowed items-center justify-center rounded-[20px] bg-figma-bee px-[16px] opacity-45"
+                >
+                  <span className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
+                    Написать
+                  </span>
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
-      {mode === 'plan' ? (
-        <button
-          type="button"
-          disabled
-          className="absolute left-[27px] bottom-[24px] flex h-[67px] w-[430px] items-center justify-center rounded-[20px] border border-solid border-white bg-figma-ink px-[8px] opacity-60"
-        >
-          <span className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-white">
-            Разобрать с AI
-          </span>
-        </button>
-      ) : null}
     </motion.aside>
   );
 }

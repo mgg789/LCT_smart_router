@@ -347,6 +347,70 @@
       "title": "EngineerRoute",
       "type": "object"
     },
+    "EquipmentHandoff": {
+      "additionalProperties": false,
+      "description": "One physical same-region equipment meeting, represented on both routes.",
+      "properties": {
+        "donor_engineer_id": {
+          "minLength": 1,
+          "title": "Donor Engineer Id",
+          "type": "string"
+        },
+        "handoff_id": {
+          "minLength": 1,
+          "title": "Handoff Id",
+          "type": "string"
+        },
+        "items": {
+          "$ref": "#/$defs/EquipmentStock"
+        },
+        "receiver_engineer_id": {
+          "minLength": 1,
+          "title": "Receiver Engineer Id",
+          "type": "string"
+        },
+        "request_id": {
+          "minLength": 1,
+          "title": "Request Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "handoff_id",
+        "donor_engineer_id",
+        "receiver_engineer_id",
+        "request_id",
+        "items"
+      ],
+      "title": "EquipmentHandoff",
+      "type": "object"
+    },
+    "EquipmentStock": {
+      "additionalProperties": false,
+      "description": "Immutable start-of-day stock carried by one engineer.",
+      "properties": {
+        "router": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Router",
+          "type": "integer"
+        },
+        "set_top_box": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Set Top Box",
+          "type": "integer"
+        },
+        "smart_speaker": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Smart Speaker",
+          "type": "integer"
+        }
+      },
+      "title": "EquipmentStock",
+      "type": "object"
+    },
     "GeoPoint": {
       "additionalProperties": false,
       "description": "WGS84 geographic coordinates in degrees, never GeoJSON lon/lat arrays.",
@@ -720,6 +784,38 @@
         "basis"
       ],
       "title": "Reason",
+      "type": "object"
+    },
+    "RegionalProgress": {
+      "additionalProperties": false,
+      "description": "One independently solved region in a cumulatively published result.",
+      "properties": {
+        "region": {
+          "minLength": 1,
+          "title": "Region",
+          "type": "string"
+        },
+        "request_count": {
+          "minimum": 0,
+          "title": "Request Count",
+          "type": "integer"
+        },
+        "status": {
+          "enum": [
+            "pending",
+            "ready",
+            "error"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "region",
+        "status",
+        "request_count"
+      ],
+      "title": "RegionalProgress",
       "type": "object"
     },
     "RequestEvidence": {
@@ -1153,11 +1249,23 @@
           "title": "End At",
           "type": "integer"
         },
+        "handoff": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EquipmentHandoff"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "kind": {
           "enum": [
             "job",
             "lunch",
-            "wait"
+            "wait",
+            "handoff"
           ],
           "title": "Kind",
           "type": "string"
@@ -1231,6 +1339,11 @@
         "equipment_enabled": {
           "default": true,
           "title": "Equipment Enabled",
+          "type": "boolean"
+        },
+        "equipment_transfers_enabled": {
+          "default": false,
+          "title": "Equipment Transfers Enabled",
           "type": "boolean"
         },
         "fixed_travel_time_sec": {
@@ -1411,6 +1524,13 @@
       "default": null,
       "title": "Policy Id"
     },
+    "regional_progress": {
+      "items": {
+        "$ref": "#/$defs/RegionalProgress"
+      },
+      "title": "Regional Progress",
+      "type": "array"
+    },
     "result_id": {
       "anyOf": [
         {
@@ -1456,6 +1576,7 @@
     "status": {
       "enum": [
         "pending",
+        "partial",
         "ready",
         "error"
       ],

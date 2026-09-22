@@ -33,10 +33,27 @@ const reason = z.object({
   facts: z.record(z.string(), z.unknown()).default({}),
 });
 
+/** Transfer metadata shared by exactly two synchronized stops. */
+export const handoffMetadataSchema = z.object({
+  handoff_id: z.string().min(1),
+  donor_engineer_id: z.string().min(1),
+  receiver_engineer_id: z.string().min(1),
+  request_id: z.string().min(1),
+  items: z
+    .object({
+      router: z.number().int().nonnegative(),
+      set_top_box: z.number().int().nonnegative(),
+      smart_speaker: z.number().int().nonnegative(),
+    })
+    .refine((items) => items.router + items.set_top_box + items.smart_speaker === 1),
+});
+export type HandoffMetadata = z.infer<typeof handoffMetadataSchema>;
+
 const routeStop = z.object({
   stop_id: z.string().min(1),
   sequence: z.number().int().nonnegative(),
-  kind: z.enum(['job', 'lunch', 'wait']),
+  kind: z.enum(['job', 'lunch', 'wait', 'handoff']),
+  handoff: handoffMetadataSchema.nullable().optional(),
   /** The request for a `job`; `null` for lunch and waiting. */
   request_id: z.string().min(1).nullable(),
   location: geoPoint,
@@ -210,7 +227,7 @@ const diagnostic = z.object({
 export const routerResultSchema = z.looseObject({
   schema_version: z.string().min(1),
   /** State of getting a new result, not the status of any request. */
-  status: z.enum(['pending', 'ready', 'error']),
+  status: z.enum(['pending', 'partial', 'ready', 'error']),
   result_id: z.string().min(1).nullable(),
   /** Immutable publication row Router read, checked in addition to the byte hash. */
   input_publication_id: z.string().min(1).nullable(),
@@ -223,6 +240,15 @@ export const routerResultSchema = z.looseObject({
   router_context_version: z.string().min(1).nullable(),
   main: planSchema.nullable(),
   baseline: planSchema.nullable(),
+  regional_progress: z
+    .array(
+      z.object({
+        region: z.string().min(1),
+        status: z.enum(['pending', 'ready', 'error']),
+        request_count: z.number().int().nonnegative(),
+      }),
+    )
+    .optional(),
   /** Errors of preparation or computation -- not a list of unassigned requests. */
   errors: z.array(diagnostic).default([]),
 });

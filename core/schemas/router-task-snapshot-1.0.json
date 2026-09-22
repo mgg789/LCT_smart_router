@@ -29,6 +29,12 @@
           "title": "Engineer Id",
           "type": "string"
         },
+        "equipment_capacity": {
+          "maximum": 1000,
+          "minimum": 0,
+          "title": "Equipment Capacity",
+          "type": "integer"
+        },
         "equipment_stock": {
           "$ref": "#/$defs/EquipmentStock"
         },
@@ -127,7 +133,7 @@
     },
     "EquipmentStock": {
       "additionalProperties": false,
-      "description": "Immutable start-of-day stock carried by one engineer; units never transfer.",
+      "description": "Immutable start-of-day stock carried by one engineer.",
       "properties": {
         "router": {
           "default": 0,
@@ -232,6 +238,54 @@
         "required"
       ],
       "title": "LunchInput",
+      "type": "object"
+    },
+    "PendingEquipmentHandoff": {
+      "additionalProperties": false,
+      "description": "Sys-confirmed meeting retained as a frozen future execution fact.",
+      "properties": {
+        "donor_engineer_id": {
+          "minLength": 1,
+          "title": "Donor Engineer Id",
+          "type": "string"
+        },
+        "handoff_id": {
+          "minLength": 1,
+          "title": "Handoff Id",
+          "type": "string"
+        },
+        "items": {
+          "$ref": "#/$defs/EquipmentStock"
+        },
+        "location": {
+          "$ref": "#/$defs/GeoPoint"
+        },
+        "meeting_at": {
+          "minimum": 0,
+          "title": "Meeting At",
+          "type": "integer"
+        },
+        "receiver_engineer_id": {
+          "minLength": 1,
+          "title": "Receiver Engineer Id",
+          "type": "string"
+        },
+        "request_id": {
+          "minLength": 1,
+          "title": "Request Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "handoff_id",
+        "donor_engineer_id",
+        "receiver_engineer_id",
+        "request_id",
+        "items",
+        "location",
+        "meeting_at"
+      ],
+      "title": "PendingEquipmentHandoff",
       "type": "object"
     },
     "Policy": {
@@ -412,6 +466,13 @@
       "minimum": 0,
       "title": "Horizon Start At",
       "type": "integer"
+    },
+    "pending_equipment_handoffs": {
+      "items": {
+        "$ref": "#/$defs/PendingEquipmentHandoff"
+      },
+      "title": "Pending Equipment Handoffs",
+      "type": "array"
     },
     "planning_as_of": {
       "minimum": 0,

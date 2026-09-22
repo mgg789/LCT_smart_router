@@ -350,6 +350,7 @@ def routing_context_version(travel: TravelSource, settings: RouterTechnicalSetti
         "forecast_version": _FORECAST_TRAFFIC_VERSION,
         "traffic_enabled": settings.traffic_enabled,
         "equipment_enabled": settings.equipment_enabled,
+        "equipment_transfers_enabled": settings.equipment_transfers_enabled,
         "metro_enabled": settings.metro_enabled,
         "window_lateness_tolerance_sec": settings.window_lateness_tolerance_sec,
         "travel_time_mode": settings.travel_time_mode,

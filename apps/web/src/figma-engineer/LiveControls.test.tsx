@@ -20,6 +20,7 @@ const stats = {
 const request = DESIGN_PREVIEW_PLAN.requests[0];
 if (!request) throw new Error('Missing test visit');
 const live: EngineerLiveView = {
+  handoffs: [],
   workday: {
     id: 'day',
     workDate: '2026-09-20',

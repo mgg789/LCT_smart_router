@@ -28,6 +28,11 @@
       "title": "Equipment Enabled",
       "type": "boolean"
     },
+    "equipment_transfers_enabled": {
+      "default": false,
+      "title": "Equipment Transfers Enabled",
+      "type": "boolean"
+    },
     "fixed_travel_time_sec": {
       "default": 1200,
       "exclusiveMinimum": 0,

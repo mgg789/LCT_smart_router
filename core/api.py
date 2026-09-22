@@ -2,7 +2,12 @@
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+import base64
+import json
+import os
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import Field
 
 from core.contracts import (
@@ -13,6 +18,7 @@ from core.contracts import (
     RouterTechnicalSettings,
 )
 from core.runtime import RouterRuntime
+from core.roadimport import RoadGraphStore, RoadImportError, import_into_runtime
 
 
 class ToleranceRequest(Record):
@@ -47,7 +53,7 @@ class WindowProposalRequest(Record):
     day_end_at: int = Field(gt=0)
 
 
-def create_app(runtime: RouterRuntime) -> FastAPI:
+def create_app(runtime: RouterRuntime, road_store: RoadGraphStore | None = None) -> FastAPI:
     """Create the single-worker internal API; bind to loopback/private service network."""
 
     @asynccontextmanager
@@ -57,6 +63,14 @@ def create_app(runtime: RouterRuntime) -> FastAPI:
         runtime.close()
 
     app = FastAPI(title="LCT Router Core", version="2.0", lifespan=lifespan)
+
+    configured_path = (
+        os.environ.get("ROUTER_ROAD_GRAPH_PATH", "").strip() or ".router/road-import.json"
+    )
+    configured_store = road_store or RoadGraphStore(Path(configured_path))
+    persisted_graph = configured_store.load()
+    if persisted_graph is not None:
+        runtime.update_road_overlay(persisted_graph)
 
     @app.get("/health")
     def health() -> dict:
@@ -72,6 +86,55 @@ def create_app(runtime: RouterRuntime) -> FastAPI:
     def result_status() -> dict:
         """Cheap poll identity. The full plan stays on ``/v1/result``."""
         return runtime.result_status()
+
+    @app.post("/v1/road-import")
+    async def road_import(request: Request) -> dict:
+        """Accept one authenticated-by-sys operation and activate its offline graph.
+
+        Binary uploads use ``X-Operation-Id`` and optional ``X-Road-Profile``
+        headers.  JSON callers may send ``payload_base64`` with the same fields;
+        this keeps the private boundary usable by browsers without multipart
+        parsing while preserving gzip bytes exactly.
+        """
+        raw = await request.body()
+        operation_id = request.headers.get("x-operation-id", "").strip()
+        profile = request.headers.get("x-road-profile")
+        source = request.headers.get("x-road-source")
+        if request.headers.get("content-type", "").split(";", 1)[0].lower() == "application/json":
+            try:
+                envelope = json.loads(raw.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise HTTPException(status_code=422, detail="INVALID_JSON") from exc
+            if not isinstance(envelope, dict):
+                raise HTTPException(status_code=422, detail="INVALID_DOCUMENT")
+            envelope_operation = envelope.get("operation_id", operation_id)
+            if not isinstance(envelope_operation, str):
+                raise HTTPException(status_code=422, detail="INVALID_OPERATION_ID")
+            operation_id = envelope_operation.strip()
+            profile = envelope.get("profile", profile)
+            source = envelope.get("source", source)
+            if source is not None and not isinstance(source, str):
+                raise HTTPException(status_code=422, detail="INVALID_SOURCE")
+            encoded = envelope.get("payload_base64")
+            if not isinstance(encoded, str):
+                raise HTTPException(status_code=422, detail="payload_base64 is required")
+            try:
+                raw = base64.b64decode(encoded, validate=True)
+            except (ValueError, TypeError) as exc:
+                raise HTTPException(status_code=422, detail="INVALID_BASE64") from exc
+        try:
+            result = import_into_runtime(runtime, configured_store, operation_id, raw, profile, source)
+        except RoadImportError as exc:
+            conflicts = {
+                "OPERATION_CONFLICT",
+                "DUPLICATE_DIRECTED_EDGE",
+                "NODE_COORDINATE_CONFLICT",
+                "EDGE_GEOMETRY_CONFLICT",
+                "EDGE_DISTANCE_CONFLICT",
+            }
+            status = 409 if exc.code in conflicts else 413 if exc.code == "IMPORT_TOO_LARGE" else 422
+            raise HTTPException(status_code=status, detail=exc.code) from exc
+        return result.as_dict()
 
     @app.get("/v1/result", response_model=RouterResult)
     def result() -> RouterResult:

@@ -43,6 +43,11 @@ def main() -> None:
             command.add_argument("--host", default="127.0.0.1")
             command.add_argument("--port", type=int, default=8100)
             command.add_argument("--settings", type=Path, default=Path(".router/settings.json"))
+            command.add_argument(
+                "--road-store",
+                type=Path,
+                help="persistent imported-road overlay (default: beside --settings)",
+            )
     geocode = commands.add_parser("geocode")
     geocoding_source = geocode.add_mutually_exclusive_group(required=True)
     geocoding_source.add_argument("--catalog", type=Path)
@@ -224,6 +229,9 @@ def main() -> None:
         import uvicorn
 
         from core.api import create_app
+        from core.roadimport import RoadGraphStore
+
+        road_store = args.road_store or args.settings.with_name("road-import.json")
 
         uvicorn.run(
             create_app(
@@ -232,7 +240,8 @@ def main() -> None:
                     graph,
                     settings,
                     settings_store=FileTechnicalSettingsStore(args.settings),
-                )
+                ),
+                road_store=RoadGraphStore(road_store),
             ),
             host=args.host,
             port=args.port,

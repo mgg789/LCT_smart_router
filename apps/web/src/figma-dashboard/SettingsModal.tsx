@@ -55,7 +55,11 @@ type GeneralDraft = {
   lunchesEnabled: boolean;
   metroEnabled: boolean;
   equipmentEnabled: boolean;
+  equipmentTransfersEnabled: boolean;
   trafficEnabled: boolean;
+  equipmentCapacityWalk: number;
+  equipmentCapacityBike: number;
+  equipmentCapacityCar: number;
 };
 
 /**
@@ -85,6 +89,9 @@ export function SettingsModal({
       overdueSec: number;
       timeRiskSec: number;
       repeatAfterSec: number;
+      equipmentCapacityWalk: number;
+      equipmentCapacityBike: number;
+      equipmentCapacityCar: number;
       twogisApiKey?: string | null;
       yandexApiKey?: string | null;
     };
@@ -236,6 +243,9 @@ export function SettingsModal({
                   overdueSec: draft.overdueMin * 60,
                   timeRiskSec: draft.timeRiskMin * 60,
                   repeatAfterSec: draft.repeatAfterMin * 60,
+                  equipmentCapacityWalk: draft.equipmentCapacityWalk,
+                  equipmentCapacityBike: draft.equipmentCapacityBike,
+                  equipmentCapacityCar: draft.equipmentCapacityCar,
                   ...(clearTwogis
                     ? { twogisApiKey: null }
                     : twogisKey
@@ -258,6 +268,7 @@ export function SettingsModal({
                   earlyFinishReplanThresholdSec: draft.earlyFinishReplanMin * 60,
                   taskOverrunToleranceSec: draft.taskOverrunMin * 60,
                   equipmentEnabled: draft.equipmentEnabled,
+                  equipmentTransfersEnabled: draft.equipmentTransfersEnabled,
                   trafficEnabled: draft.trafficEnabled,
                 },
               }).catch((cause: unknown) => {
@@ -296,7 +307,11 @@ function generalFrom(
     lunchesEnabled: router?.lunchesEnabled ?? false,
     metroEnabled: router?.metroEnabled ?? false,
     equipmentEnabled: router?.equipmentEnabled ?? true,
+    equipmentTransfersEnabled: router?.equipmentTransfersEnabled ?? false,
     trafficEnabled: router?.trafficEnabled ?? true,
+    equipmentCapacityWalk: settings?.equipmentCapacityWalk ?? 5,
+    equipmentCapacityBike: settings?.equipmentCapacityBike ?? 12,
+    equipmentCapacityCar: settings?.equipmentCapacityCar ?? 30,
   };
 }
 
@@ -440,6 +455,27 @@ function GeneralForm({
         />
       </div>
       <div className="mt-[20px] space-y-[12px]">
+        <p className="font-semibold text-[16px] text-figma-ink">Максимум оборудования с собой</p>
+        <div className="grid grid-cols-3 gap-[12px]">
+          <CapacityField
+            id="settings-capacity-walk"
+            label="Пешком"
+            value={draft.equipmentCapacityWalk}
+            onChange={(value) => setField('equipmentCapacityWalk', value)}
+          />
+          <CapacityField
+            id="settings-capacity-bike"
+            label="Велосипед"
+            value={draft.equipmentCapacityBike}
+            onChange={(value) => setField('equipmentCapacityBike', value)}
+          />
+          <CapacityField
+            id="settings-capacity-car"
+            label="Авто"
+            value={draft.equipmentCapacityCar}
+            onChange={(value) => setField('equipmentCapacityCar', value)}
+          />
+        </div>
         <SettingSwitch
           label="Обеды в плане"
           checked={draft.lunchesEnabled}
@@ -459,6 +495,11 @@ function GeneralForm({
           label="Маршруты с метро"
           checked={draft.metroEnabled}
           onChange={() => setField('metroEnabled', !draft.metroEnabled)}
+        />
+        <SettingSwitch
+          label="Передача оборудования"
+          checked={draft.equipmentTransfersEnabled}
+          onChange={() => setField('equipmentTransfersEnabled', !draft.equipmentTransfersEnabled)}
         />
       </div>
     </div>
@@ -787,6 +828,34 @@ function MinuteField({
         className={FIELD}
       />
     </Field>
+  );
+}
+
+function CapacityField({
+  id,
+  label,
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <label className="block font-medium text-[14px] text-figma-muted" htmlFor={id}>
+      {label}
+      <input
+        id={id}
+        type="number"
+        min={0}
+        max={1000}
+        step={1}
+        value={value}
+        onChange={(event) => onChange(Math.max(0, Number(event.target.value) || 0))}
+        className={FIELD}
+      />
+    </label>
   );
 }
 

@@ -103,6 +103,10 @@ export interface DispatcherSettingsView {
   readonly twogisApiKeyLast4: string | null;
   readonly yandexApiKeySet: boolean;
   readonly yandexApiKeyLast4: string | null;
+  /** Default morning capacity by transport; values are dispatcher-owned settings. */
+  readonly equipmentCapacityWalk: number;
+  readonly equipmentCapacityBike: number;
+  readonly equipmentCapacityCar: number;
 }
 
 export interface DispatcherSettingsPatch {
@@ -114,6 +118,9 @@ export interface DispatcherSettingsPatch {
   readonly repeatAfterSec?: number;
   readonly twogisApiKey?: string | null;
   readonly yandexApiKey?: string | null;
+  readonly equipmentCapacityWalk?: number;
+  readonly equipmentCapacityBike?: number;
+  readonly equipmentCapacityCar?: number;
 }
 
 export interface GeocodeHit {
@@ -172,7 +179,19 @@ export interface EngineerDayView {
 
 export interface PlanStopView {
   readonly sequence: number;
-  readonly kind: 'job' | 'lunch' | 'wait' | 'start';
+  readonly kind: 'job' | 'lunch' | 'wait' | 'start' | 'handoff';
+  /** Router handoff metadata is snake_case to match the core result contract. */
+  readonly handoff?: {
+    readonly handoff_id: string;
+    readonly donor_engineer_id: string;
+    readonly receiver_engineer_id: string;
+    readonly request_id: string;
+    readonly items: {
+      readonly router: number;
+      readonly set_top_box: number;
+      readonly smart_speaker: number;
+    };
+  } | null;
   readonly requestId: string | null;
   readonly lat: number;
   readonly lon: number;
@@ -368,6 +387,8 @@ export interface RouterTechnicalSettings {
   readonly windowLatenessToleranceSec: number;
   readonly trafficEnabled: boolean;
   readonly equipmentEnabled: boolean;
+  /** Reserved for a future handoff workflow; the UI keeps it disabled by default. */
+  readonly equipmentTransfersEnabled: boolean;
   readonly travelTimeMode: 'graph_with_access_buffer' | 'fixed_normative';
   readonly accessBufferSec: number;
   readonly fixedTravelTimeSec: number;
@@ -534,4 +555,16 @@ export interface OfficialImportSummary {
   readonly requestsWithoutCoordinates: number;
   readonly warnings: string[];
   readonly errors: string[];
+}
+
+/** Result returned after the dispatcher imports a native OSRM road resource. */
+export interface RoadImportSummary {
+  readonly operationId: string;
+  readonly status: 'accepted' | 'replayed';
+  readonly graphVersion: string;
+  readonly routerContextVersion: string;
+  readonly inputSha256: string;
+  readonly profiles: ReadonlyArray<'car' | 'walk' | 'bike' | 'transit'>;
+  readonly nodes: number;
+  readonly edges: number;
 }

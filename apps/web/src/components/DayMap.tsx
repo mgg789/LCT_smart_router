@@ -1,6 +1,6 @@
 import maplibregl from 'maplibre-gl';
 import { useEffect, useRef, useState } from 'react';
-import type { LiveRouteProgress } from '../api/live';
+import type { HandoffView, LiveRouteProgress } from '../api/live';
 import type { DashboardSnapshot, PlanRouteView } from '../api/types';
 import { routeVertices, unassignedRequests } from '../domain/dashboard';
 import {
@@ -32,9 +32,10 @@ const MAP_API_LINE = '#16A34A';
 const METRO_LINE = '#8B5CF6';
 
 function routeStroke(
-  segment: Pick<MapRouteSegment, 'approximate' | 'source' | 'geometryProvider'>,
+  segment: Pick<MapRouteSegment, 'approximate' | 'source' | 'geometryProvider' | 'handoffId'>,
   engineerId: string,
 ) {
+  if (segment.handoffId) return mapPaintColor('#2563EB');
   const kind = routeLineKind(segment);
   if (kind === 'metro') return mapPaintColor(METRO_LINE);
   if (kind === 'map') return mapPaintColor(MAP_API_LINE);
@@ -51,6 +52,7 @@ interface DayMapProps {
   /** Server-owned positions survive a remaining-day route rebuild. */
   readonly progressByEngineer?: ReadonlyMap<string, LiveRouteProgress | null>;
   readonly completedByEngineer?: ReadonlyMap<string, number>;
+  readonly handoffs?: readonly HandoffView[];
   readonly onSelectRequest: (requestId: string) => void;
 }
 
@@ -234,6 +236,7 @@ export function DayMap({
   soloRequestId = null,
   progressByEngineer,
   completedByEngineer,
+  handoffs = [],
   onSelectRequest,
 }: DayMapProps) {
   const [forceLocal, setForceLocal] = useState(!navigator.onLine);
@@ -368,6 +371,7 @@ export function DayMap({
             approximate: segment.approximate,
             source: segment.source,
             geometryProvider: segment.geometryProvider,
+            handoffId: segment.handoffId,
             travelTimeSec: segment.travelTimeSec,
             distanceKm: segment.distanceKm,
             coordinates: segment.coordinates,
@@ -416,8 +420,9 @@ export function DayMap({
             type: 'Feature' as const,
             properties: {
               engineerId,
-              color:
-                road && routeLineKind(road) === 'metro'
+              color: road?.handoffId
+                ? mapPaintColor('#2563EB')
+                : road && routeLineKind(road) === 'metro'
                   ? routeStroke(road, engineerId)
                   : mapPaintColor(engineerColor(engineerId)),
             },
@@ -455,9 +460,27 @@ export function DayMap({
         ];
       });
 
+      const handoffFeatures = projections.flatMap(({ engineerId, graph }) =>
+        graph.mapNodes.flatMap((node) => {
+          if (node.kind !== 'handoff' || !node.handoffId) return [];
+          const handoff = handoffs.find((item) => item.id === node.handoffId);
+          return [
+            {
+              type: 'Feature' as const,
+              properties: {
+                handoffId: node.handoffId,
+                engineerId,
+                completed: handoff?.completedAt ? 1 : 0,
+              },
+              geometry: { type: 'Point' as const, coordinates: [node.lon, node.lat] as const },
+            },
+          ];
+        }),
+      );
       const stopFeatures = projections.flatMap(({ engineerId, graph, progress }) =>
         graph.mapNodes.flatMap((node, index) => {
           if (node.kind === 'start') return [];
+          if (node.kind === 'handoff') return [];
           if (node.kind === 'lunch') {
             const coordinates = lunchMarkerCoordinates(graph.mapNodes, index);
             return [
@@ -700,6 +723,20 @@ export function DayMap({
         });
       });
 
+      upsert(map, 'handoffs', { type: 'FeatureCollection', features: handoffFeatures }, () => {
+        map.addLayer({
+          id: 'handoff-point',
+          type: 'circle',
+          source: 'handoffs',
+          paint: {
+            'circle-radius': 8,
+            'circle-color': '#2563EB',
+            'circle-stroke-width': 3,
+            'circle-stroke-color': MAP_CANVAS,
+          },
+        });
+      });
+
       const fitKey = `${retry}:${forceLocal}:${selectedEngineerId ?? 'all'}:${selectedRequestId ?? ''}:${soloRequestId ?? ''}`;
       if (fittedKeyRef.current !== fitKey) {
         fittedKeyRef.current = fitKey;
@@ -746,6 +783,7 @@ export function DayMap({
     snapshot,
     progressByEngineer,
     completedByEngineer,
+    handoffs,
     forceLocal,
     retry,
   ]);
@@ -806,8 +844,8 @@ export function DayMap({
       {soloRequestId ? null : (
         <div className="pointer-events-none absolute bottom-3 left-3 rounded-xl bg-white/90 px-3 py-2 text-[11px] text-muted shadow">
           {selectedEngineerId
-            ? 'Показан план выбранного инженера. Пунктир — геоцентры, серая — дорожный маршрут, зелёная — 2ГИС или Яндекс, фиолетовая — метро.'
-            : 'План дня без live-позиции инженеров. Пунктир — геоцентры, серая — дорожный маршрут, зелёная — 2ГИС или Яндекс, фиолетовая — метро.'}
+            ? 'Показан план выбранного инженера. Сплошная серая — дорога внутри МКАД, фиолетовая — метро, зелёная — 2ГИС или Яндекс, синяя — передача. Пунктир только за МКАД или без дорожного сервиса.'
+            : 'План дня. Сплошная серая — дорога внутри МКАД, фиолетовая — метро, зелёная — 2ГИС или Яндекс, синяя — передача. Пунктир только за МКАД или без дорожного сервиса.'}
         </div>
       )}
       <div className="absolute right-2 bottom-1 rounded bg-white/90 px-2 text-[10px] text-muted">

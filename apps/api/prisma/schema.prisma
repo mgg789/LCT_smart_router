@@ -159,6 +159,7 @@ enum EngineerRewardCategory {
 }
 
 enum StopKind {
+  handoff
   job
   lunch
   wait
@@ -899,6 +900,7 @@ model AppliedPlanStop {
   sequence  Int
   kind      StopKind
   requestId String? @map("request_id")
+  handoff   Json?
   lat       Float
   lon       Float
   /// Computed schedule, not confirmed facts: arrival <= start <= end.
@@ -1132,4 +1134,23 @@ model ExternalIdMap {
   @@unique([source, entityType, externalId])
   @@index([internalId])
   @@map("external_id_map")
+}
+
+/// Accepted paired meeting. Stock moves once, only after both authenticated confirmations.
+model EquipmentHandoff {
+  id String @id
+  workDate String @map("work_date")
+  donorEngineerId String @map("donor_engineer_id")
+  receiverEngineerId String @map("receiver_engineer_id")
+  requestId String @map("request_id")
+  items Json
+  lat Float
+  lon Float
+  meetingAt BigInt @map("meeting_at")
+  donorConfirmedAt BigInt? @map("donor_confirmed_at")
+  receiverConfirmedAt BigInt? @map("receiver_confirmed_at")
+  completedAt BigInt? @map("completed_at")
+  createdAt BigInt @map("created_at")
+  @@index([workDate, completedAt])
+  @@map("equipment_handoffs")
 }

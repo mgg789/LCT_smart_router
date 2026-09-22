@@ -1,4 +1,4 @@
-import type { DispatchLiveView, LiveBreak } from '../api/live';
+import type { DispatchLiveView, HandoffView, LiveBreak } from '../api/live';
 import type {
   AlertView,
   DashboardSnapshot,
@@ -87,6 +87,7 @@ export function nextRouterSettings(
     windowLatenessToleranceSec: current?.windowLatenessToleranceSec ?? 0,
     trafficEnabled: current?.trafficEnabled ?? false,
     equipmentEnabled: current?.equipmentEnabled ?? true,
+    equipmentTransfersEnabled: current?.equipmentTransfersEnabled ?? false,
     travelTimeMode: current?.travelTimeMode ?? 'graph_with_access_buffer',
     accessBufferSec: current?.accessBufferSec ?? 600,
     fixedTravelTimeSec: current?.fixedTravelTimeSec ?? 900,
@@ -265,9 +266,11 @@ export function withLiveRouteStops(
             ? 'Выход на смену'
             : node.kind === 'lunch'
               ? 'Обед'
-              : request
-                ? routeStopAddress(request.addressText)
-                : 'Заявка',
+              : node.kind === 'handoff'
+                ? 'Передача оборудования'
+                : request
+                  ? routeStopAddress(request.addressText)
+                  : 'Заявка',
         status:
           node.kind === 'start'
             ? state?.lineStartedAt
@@ -277,13 +280,21 @@ export function withLiveRouteStops(
                 : 'ожидаем выхода'
             : node.kind === 'lunch'
               ? 'обед'
-              : stopStatus(request),
+              : node.kind === 'handoff'
+                ? handoffStatus(live?.handoffs ?? [], node.handoffId, state?.id)
+                : stopStatus(request),
         active: node.kind !== 'start' && graph.activeNodeKeys.has(node.key),
         failed: node.kind === 'start' && Boolean(state?.noShowAt),
         completed:
           node.kind === 'start'
             ? entered
-            : request?.lifecycle === 'completed' || Boolean(request?.assumedCompletedAt),
+            : node.kind === 'handoff'
+              ? Boolean(live?.handoffs.find((item) => item.id === node.handoffId)?.completedAt)
+              : request?.lifecycle === 'completed' || Boolean(request?.assumedCompletedAt),
+        handoffId: node.handoffId ?? undefined,
+        handoff: node.handoffId
+          ? live?.handoffs.find((item) => item.id === node.handoffId)
+          : undefined,
       };
     });
     for (const item of history) {
@@ -382,6 +393,23 @@ function engineerCardFromSummary(
   };
 }
 
+function handoffStatus(
+  handoffs: readonly HandoffView[],
+  handoffId: string | null | undefined,
+  engineerId: string | undefined,
+): string {
+  const handoff = handoffs.find((item) => item.id === handoffId);
+  if (!handoff) return 'передача';
+  if (handoff.completedAt !== null) return 'выполнено';
+  if (
+    (engineerId === handoff.donorEngineerId && handoff.donorConfirmedAt !== null) ||
+    (engineerId === handoff.receiverEngineerId && handoff.receiverConfirmedAt !== null)
+  ) {
+    return 'ждём партнёра';
+  }
+  return engineerId === handoff.donorEngineerId ? 'Передать' : 'Принять';
+}
+
 function requestPanelFromSnapshot(
   request: RequestView,
   assignment: PlanAssignmentView | null,
@@ -447,6 +475,17 @@ function stopToCard(snapshot: DashboardSnapshot, stop: PlanStopView): RouteStop 
       status: 'старт смены',
       requestId: null,
       kind: 'start',
+      at: stop.startAt,
+    };
+  }
+  if (stop.kind === 'handoff') {
+    return {
+      time: formatClock(stop.startAt),
+      place: 'Передача оборудования',
+      status: 'передача',
+      requestId: null,
+      kind: 'handoff',
+      handoffId: stop.handoff?.handoff_id,
       at: stop.startAt,
     };
   }

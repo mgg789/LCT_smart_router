@@ -922,6 +922,144 @@ describe('router gateway', () => {
     });
   });
 
+  it('applies one ready region while preserving a started pending region exactly', async () => {
+    const east = await submitRequest();
+    const west = await submitRequest();
+    requestIds.push(east.id, west.id);
+    await prisma.request.update({ where: { id: east.id }, data: { region: 'partial-east' } });
+    await prisma.request.update({ where: { id: west.id }, data: { region: 'partial-west' } });
+
+    const eastProfile = await prisma.engineer.findUniqueOrThrow({ where: { id: engineerId } });
+    const eastUpdate = await call(
+      'PATCH',
+      `/api/v1/dispatch/engineers/${engineerId}`,
+      dispatcherToken,
+      {
+        operationId: randomUUID(),
+        expectedVersion: eastProfile.version,
+        region: 'partial-east',
+      },
+    );
+    assert.equal(eastUpdate.status, 200, await eastUpdate.clone().text());
+
+    const westEmail = `${unique('partial-west-eng')}@example.test`;
+    emails.push(westEmail);
+    const westCreated = await call('POST', '/api/v1/dispatch/engineers', dispatcherToken, {
+      operationId: randomUUID(),
+      email: westEmail,
+      displayName: 'Partial West Engineer',
+      skills: ['connection'],
+      transportType: 'car',
+      region: 'partial-west',
+      homeLat: 55.72,
+      homeLon: 37.58,
+    });
+    assert.equal(westCreated.status, 201, await westCreated.clone().text());
+    const westEngineerId = ((await westCreated.json()) as { engineer: { id: string } }).engineer.id;
+    engineerIds.push(westEngineerId);
+
+    const initial = buildRouterResult({
+      resultId: unique('regional-base'),
+      inputHash: await publishedHash(),
+      contextVersion: 'ctx-regional',
+      planningAsOf: now(),
+      assigned: [
+        {
+          requestId: east.id,
+          engineerId,
+          lat: east.lat,
+          lon: east.lon,
+          startAt: now() + HOUR,
+          durationSec: 1200,
+        },
+        {
+          requestId: west.id,
+          engineerId: westEngineerId,
+          lat: west.lat,
+          lon: west.lon,
+          startAt: now() + HOUR,
+          durationSec: 1200,
+        },
+      ],
+      scheduledLunchFor: [westEngineerId],
+      withRoadLeg: true,
+    });
+    assert.equal((await feed(initial, 'ctx-regional')).body.accepted, true);
+    const initialPlan = await prisma.appliedPlanCurrent.findUniqueOrThrow({
+      where: { id: 'singleton' },
+      include: { plan: { include: { assignments: true } } },
+    });
+    assert.equal(
+      initialPlan.plan.assignments.find((assignment) => assignment.requestId === west.id)?.stopId,
+      `${westEngineerId}-stop-0`,
+      'initial assignment persists the Router stop id before the regional merge',
+    );
+
+    // No republish: this is exactly the live-fact fence that must not make a preserved
+    // regional route reject an otherwise fresh east-only increment.
+    await prisma.request.update({
+      where: { id: west.id },
+      data: { startedAt: BigInt(now()), lifecycle: 'in_progress' },
+    });
+    const partial = structuredClone(
+      buildRouterResult({
+        resultId: unique('regional-east'),
+        inputPublicationId: await publishedPublicationId(),
+        inputHash: await publishedHash(),
+        contextVersion: 'ctx-regional',
+        planningAsOf: now(),
+        assigned: [
+          {
+            requestId: east.id,
+            engineerId,
+            lat: east.lat,
+            lon: east.lon,
+            startAt: now() + HOUR + 300,
+            durationSec: 1200,
+          },
+        ],
+      }),
+    ) as {
+      status: string;
+      regional_progress: Array<{
+        region: string;
+        status: 'pending' | 'ready' | 'error';
+        request_count: number;
+      }>;
+    };
+    partial.status = 'partial';
+    partial.regional_progress = [
+      { region: 'partial-east', status: 'ready', request_count: 1 },
+      { region: 'partial-west', status: 'pending', request_count: 1 },
+      { region: '__default__', status: 'pending', request_count: 0 },
+    ];
+    const outcome = await feed(partial, 'ctx-regional');
+    assert.equal(outcome.body.accepted, true, outcome.body.detail);
+
+    const current = await prisma.appliedPlanCurrent.findUniqueOrThrow({
+      where: { id: 'singleton' },
+      include: { plan: { include: { routes: { include: { stops: true } }, assignments: true } } },
+    });
+    const preserved = current.plan.routes.find((route) => route.engineerId === westEngineerId);
+    assert.ok(preserved, 'pending west route remains in the new revision');
+    assert.equal(preserved.lunchStatus, 'scheduled');
+    assert.ok(
+      Array.isArray(preserved.legs) && preserved.legs.length > 0,
+      'road geometry is retained',
+    );
+    const lunch = preserved.stops.find((stop) => stop.kind === 'lunch');
+    assert.ok(lunch, 'scheduled lunch stop is retained');
+    const westAssignment = current.plan.assignments.find(
+      (assignment) => assignment.requestId === west.id,
+    );
+    assert.equal(westAssignment?.status, 'assigned');
+    assert.equal(
+      westAssignment?.stopId,
+      `${westEngineerId}-stop-0`,
+      'preserved assignment retains the original Router stop id',
+    );
+  });
+
   describe('manual control', () => {
     it('stops applying results and keeps the plan visible', async () => {
       const request = await submitRequest();

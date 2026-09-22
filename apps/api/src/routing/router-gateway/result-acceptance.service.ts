@@ -6,7 +6,7 @@ import { NotificationsService } from '../../notifications';
 import type { Tx } from '../../persistence';
 import { lockControlState, lockRoutingCurrent, PrismaService, UnitOfWork } from '../../persistence';
 import { AppliedPlanService } from './applied-plan.service';
-import { type RouterResult, routerResultSchema } from './result.types';
+import { planSchema, type RouterPlan, type RouterResult, routerResultSchema } from './result.types';
 
 export interface AcceptanceOutcome {
   readonly accepted: boolean;
@@ -15,6 +15,73 @@ export interface AcceptanceOutcome {
   readonly detail?: string;
   readonly resultId?: string | null;
   readonly planRevision?: number;
+}
+
+/**
+ * Applied-plan route legs are stored in the UI projection form.  Rebuild Router's
+ * snake-case contract explicitly; a cast would persist an invalid package on the next
+ * automatic revision and silently lose road geometry.
+ */
+function reverseStoredLegs(value: unknown): unknown[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((raw) => {
+    const leg = z
+      .object({
+        legId: z.string().min(1),
+        fromStopId: z.string().min(1).nullable(),
+        toStopId: z.string().min(1),
+        departureAt: z.number().int(),
+        arrivalAt: z.number().int(),
+        travelTimeSec: z.number().int().nonnegative(),
+        distanceKm: z.number().nonnegative(),
+        geometry: z
+          .object({ points: z.array(z.object({ lat: z.number(), lon: z.number() })) })
+          .nullable(),
+        travelSource: z.enum(['approximate', 'road_matrix', 'route_api', 'traffic_api', 'metro']),
+        trafficFactor: z.number().min(1),
+        segments: z
+          .array(
+            z.object({
+              geometry: z.object({
+                points: z.array(z.object({ lat: z.number(), lon: z.number() })).min(2),
+              }),
+              travelSource: z.enum([
+                'approximate',
+                'road_matrix',
+                'route_api',
+                'traffic_api',
+                'metro',
+              ]),
+              travelTimeSec: z.number().int().nonnegative(),
+              distanceKm: z.number().nonnegative(),
+            }),
+          )
+          .optional(),
+      })
+      .parse(raw);
+    return {
+      leg_id: leg.legId,
+      from_stop_id: leg.fromStopId,
+      to_stop_id: leg.toStopId,
+      departure_at: leg.departureAt,
+      arrival_at: leg.arrivalAt,
+      travel_time_sec: leg.travelTimeSec,
+      distance_km: leg.distanceKm,
+      geometry: leg.geometry,
+      travel_source: leg.travelSource,
+      traffic_factor: leg.trafficFactor,
+      ...(leg.segments
+        ? {
+            segments: leg.segments.map((segment) => ({
+              geometry: segment.geometry,
+              travel_source: segment.travelSource,
+              duration_sec: segment.travelTimeSec,
+              distance_m: Math.round(segment.distanceKm * 1000),
+            })),
+          }
+        : {}),
+    };
+  });
 }
 
 /**
@@ -145,11 +212,6 @@ export class ResultAcceptanceService {
         return { accepted: false, reason: 'ALREADY_APPLIED', resultId: result.result_id };
       }
 
-      const conflict = await this.conflictWithFacts(tx, result);
-      if (conflict) {
-        return this.reject(tx, result, 'RESULT_NOT_APPLICABLE', conflict);
-      }
-
       // A free request can be deferred without rebuilding an unrelated LIVE route.
       // Even an unassigned outcome from the old snapshot must not overwrite it.
       const inputWindows = z
@@ -185,13 +247,27 @@ export class ResultAcceptanceService {
           'Request windows changed after publication',
         );
 
-      const stored = await this.storePackage(tx, result, true, null);
-      const plan = await this.plans.applyAutomatic(tx, this.clock.nowSeconds(), result, stored.id);
-      await this.recordAssignmentNotifications(tx, result);
+      const merged = await this.mergePartial(tx, result, current.snapshot.payload);
+      if (merged.rejectionDetail) {
+        return this.reject(tx, result, 'RESULT_NOT_APPLICABLE', merged.rejectionDetail);
+      }
+      const conflict = await this.conflictWithFacts(tx, merged.factCheck);
+      if (conflict) {
+        return this.reject(tx, result, 'RESULT_NOT_APPLICABLE', conflict);
+      }
+
+      const stored = await this.storePackage(tx, merged.applicable, true, null);
+      const plan = await this.plans.applyAutomatic(
+        tx,
+        this.clock.nowSeconds(),
+        merged.applicable,
+        stored.id,
+      );
+      await this.recordAssignmentNotifications(tx, merged.applicable);
 
       this.logger.log(
         `Applied result ${result.result_id} as plan revision ${plan.revision}: ` +
-          `${result.main.summary.assigned_count}/${result.main.summary.requests_total} assigned`,
+          `${merged.applicable.main?.summary.assigned_count ?? 0}/${merged.applicable.main?.summary.requests_total ?? 0} assigned`,
       );
 
       return { accepted: true, resultId: result.result_id, planRevision: plan.revision };
@@ -205,6 +281,186 @@ export class ResultAcceptanceService {
    * published snapshot are deliberately separate (context/32 section 3). So the plan is
    * compared with the facts before it is allowed to become the working plan.
    */
+  /**
+   * Merges a cumulative regional response with the part of the current plan Router has
+   * not solved yet.  Applied-plan rows use UI-shaped JSON, so their legs are converted
+   * back to the Router contract and validated before they can enter another revision.
+   */
+  private async mergePartial(
+    tx: Tx,
+    result: RouterResult,
+    payload: string,
+  ): Promise<{ applicable: RouterResult; factCheck: RouterResult; rejectionDetail?: string }> {
+    if (result.status !== 'partial' || !result.main) {
+      return { applicable: result, factCheck: result };
+    }
+    const input = z
+      .object({
+        requests: z.array(
+          z.object({
+            request_id: z.string(),
+            region: z.string().nullable().optional(),
+            priority: z.enum(['normal', 'urgent']).optional(),
+          }),
+        ),
+        engineers: z.array(
+          z.object({ engineer_id: z.string(), region: z.string().nullable().optional() }),
+        ),
+      })
+      .parse(JSON.parse(payload));
+    const ready = new Set(
+      (result.regional_progress ?? [])
+        .filter((item) => item.status === 'ready')
+        .map((item) => item.region),
+    );
+    if (ready.size === 0) {
+      return {
+        applicable: result,
+        factCheck: result,
+        rejectionDetail: 'A partial result must identify at least one ready region',
+      };
+    }
+    const requestRegion = new Map(
+      input.requests.map((item) => [item.request_id, item.region ?? '__default__']),
+    );
+    const engineerRegion = new Map(
+      input.engineers.map((item) => [item.engineer_id, item.region ?? '__default__']),
+    );
+    const unknownRoute = result.main.routes.find(
+      (route) => !ready.has(engineerRegion.get(route.engineer_id) ?? ''),
+    );
+    if (unknownRoute) {
+      return {
+        applicable: result,
+        factCheck: result,
+        rejectionDetail: `Partial result contains an unready or unknown engineer route: ${unknownRoute.engineer_id}`,
+      };
+    }
+    const unknownAssignment = result.main.assignments.find(
+      (assignment) => !ready.has(requestRegion.get(assignment.request_id) ?? ''),
+    );
+    if (unknownAssignment) {
+      return {
+        applicable: result,
+        factCheck: result,
+        rejectionDetail: `Partial result contains an unready or unknown request: ${unknownAssignment.request_id}`,
+      };
+    }
+    if (
+      new Set(result.main.routes.map((route) => route.engineer_id)).size !==
+        result.main.routes.length ||
+      new Set(result.main.assignments.map((assignment) => assignment.request_id)).size !==
+        result.main.assignments.length
+    ) {
+      return {
+        applicable: result,
+        factCheck: result,
+        rejectionDetail: 'Partial result contains duplicate route or assignment identities',
+      };
+    }
+    const previous = await this.plans.current(tx);
+    if (!previous) return { applicable: result, factCheck: result };
+
+    const stopIds = new Map(
+      previous.assignments
+        .filter((assignment) => assignment.stopId !== null)
+        .map((assignment) => [assignment.requestId, assignment.stopId] as const),
+    );
+    const preservedRoutes = previous.routes
+      .filter((route) => !ready.has(engineerRegion.get(route.engineerId) ?? '__default__'))
+      .map((route) => ({
+        engineer_id: route.engineerId,
+        start_location: { lat: route.startLat, lon: route.startLon },
+        start_at: route.startAt === null ? null : Number(route.startAt),
+        finish_at: route.finishAt === null ? null : Number(route.finishAt),
+        stops: route.stops.map((stop) => ({
+          // Router stop ids are not materialised separately.  Job stops retain the
+          // persisted assignment id; non-job stops receive a stable revision-local id.
+          stop_id:
+            stop.requestId === null
+              ? `preserved:${route.engineerId}:${stop.sequence}`
+              : (stopIds.get(stop.requestId) ?? `preserved:${route.engineerId}:${stop.sequence}`),
+          sequence: stop.sequence,
+          kind: stop.kind,
+          request_id: stop.requestId,
+          handoff: stop.handoff ?? null,
+          location: { lat: stop.lat, lon: stop.lon },
+          arrival_at: Number(stop.arrivalAt),
+          start_at: Number(stop.startAt),
+          end_at: Number(stop.endAt),
+        })),
+        legs: reverseStoredLegs(route.legs),
+        lunch: {
+          status: route.lunchStatus,
+          stop_id:
+            route.lunchStatus === 'scheduled'
+              ? `preserved:${route.engineerId}:${route.stops.find((stop) => stop.kind === 'lunch')?.sequence ?? 0}`
+              : null,
+          reasons: [],
+          alert_id: null,
+        },
+        metrics: {
+          distance_km: route.distanceKm,
+          travel_time_sec: route.travelTimeSec,
+          work_time_sec: route.workTimeSec,
+          waiting_time_sec: route.waitingTimeSec,
+          lunch_time_sec: route.lunchTimeSec,
+          assigned_count: route.assignedCount,
+        },
+        reasons: route.reasons,
+      }));
+    const preservedAssignments = previous.assignments
+      .filter((item) => !ready.has(requestRegion.get(item.requestId) ?? '__default__'))
+      .map((item) => ({
+        request_id: item.requestId,
+        status: item.status,
+        engineer_id: item.engineerId,
+        stop_id: item.stopId,
+        reasons: item.reasons,
+      }));
+    const combinedRoutes = [...result.main.routes, ...preservedRoutes];
+    const combinedAssignments = [...result.main.assignments, ...preservedAssignments];
+    const urgentRequests = new Set(
+      input.requests
+        .filter((request) => request.priority === 'urgent')
+        .map((request) => request.request_id),
+    );
+    const summary = {
+      requests_total: combinedAssignments.length,
+      assigned_count: combinedAssignments.filter((assignment) => assignment.status === 'assigned')
+        .length,
+      unassigned_count: combinedAssignments.filter(
+        (assignment) => assignment.status === 'unassigned',
+      ).length,
+      urgent_total: combinedAssignments.filter((assignment) =>
+        urgentRequests.has(assignment.request_id),
+      ).length,
+      urgent_assigned_count: combinedAssignments.filter(
+        (assignment) =>
+          assignment.status === 'assigned' && urgentRequests.has(assignment.request_id),
+      ).length,
+      engineers_used: combinedRoutes.filter((route) => route.metrics.assigned_count > 0).length,
+      distance_km: combinedRoutes.reduce((sum, route) => sum + route.metrics.distance_km, 0),
+      travel_time_sec: combinedRoutes.reduce(
+        (sum, route) => sum + route.metrics.travel_time_sec,
+        0,
+      ),
+      work_time_sec: combinedRoutes.reduce((sum, route) => sum + route.metrics.work_time_sec, 0),
+      waiting_time_sec: combinedRoutes.reduce(
+        (sum, route) => sum + route.metrics.waiting_time_sec,
+        0,
+      ),
+      lunch_time_sec: combinedRoutes.reduce((sum, route) => sum + route.metrics.lunch_time_sec, 0),
+    };
+    const main: RouterPlan = planSchema.parse({
+      ...result.main,
+      routes: combinedRoutes,
+      assignments: combinedAssignments,
+      summary,
+    });
+    return { applicable: { ...result, main }, factCheck: result };
+  }
+
   private async conflictWithFacts(tx: Tx, result: RouterResult): Promise<string | null> {
     const assignedIds = (result.main?.assignments ?? [])
       .filter((item) => item.status === 'assigned')

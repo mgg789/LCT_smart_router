@@ -700,6 +700,13 @@ describe('request lifecycle', () => {
     assert.equal(sent.lifecycle, 'submitted');
     requestIds.push(sent.id);
 
+    // Second-precision timestamps can tie after several submissions from one customer.
+    // The newest arrival must win independently of database row order.
+    const storedSent = await prisma.request.findUniqueOrThrow({ where: { id: sent.id } });
+    await prisma.request.updateMany({
+      where: { id: { in: requestIds }, submittedAt: { not: null } },
+      data: { submittedAt: storedSent.submittedAt, createdAt: storedSent.createdAt },
+    });
     const profile = await call('GET', '/api/v1/client/profile', clientToken);
     assert.equal(profile.status, 200, await profile.clone().text());
     const remembered = (await profile.json()) as {

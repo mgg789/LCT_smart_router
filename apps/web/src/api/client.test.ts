@@ -5,6 +5,8 @@ import {
   createDispatchRequest,
   DashboardApiError,
   deleteDispatchEngineer,
+  getDispatcherSettings,
+  importRoadData,
   loadDashboardSnapshot,
   loadPolicyComparison,
   selectRoutingPolicy,
@@ -291,8 +293,35 @@ describe('live dashboard client', () => {
       windowLatenessToleranceSec: 0,
       trafficEnabled: true,
       equipmentEnabled: true,
+      equipmentTransfersEnabled: false,
     });
     expect(contextVersion).toBe('context-2');
+  });
+
+  it('fills the documented morning equipment capacities for legacy settings responses', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        json({
+          dayStartMin: 540,
+          dayEndMin: 1080,
+          noShowSec: 900,
+          overdueSec: 900,
+          timeRiskSec: 1800,
+          repeatAfterSec: 120,
+          twogisApiKeySet: false,
+          twogisApiKeyLast4: null,
+          yandexApiKeySet: false,
+          yandexApiKeyLast4: null,
+        }),
+      ),
+    );
+
+    await expect(getDispatcherSettings('session-token')).resolves.toMatchObject({
+      equipmentCapacityWalk: 5,
+      equipmentCapacityBike: 12,
+      equipmentCapacityCar: 30,
+    });
   });
 
   it('returns the exact publication hash created by a policy selection', async () => {
@@ -489,6 +518,36 @@ describe('live dashboard client', () => {
       operationId: expect.any(String),
       schemaVersion: '1.0',
       mode: 'append_requests',
+    });
+  });
+});
+
+describe('road import client', () => {
+  it('sends only the road-import envelope accepted by the API', async () => {
+    let sentBody: Record<string, unknown> | null = null;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+        sentBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return json({
+          operationId: 'operation-1',
+          status: 'accepted',
+          graphVersion: 'graph-1',
+          routerContextVersion: 'context-2',
+          inputSha256: 'a'.repeat(64),
+          profiles: ['car'],
+          nodes: 2,
+          edges: 1,
+        });
+      }),
+    );
+
+    await importRoadData('session-token', 'eyJ0ZXN0IjoxfQ==');
+
+    expect(sentBody).toEqual({
+      operationId: expect.any(String),
+      profile: 'car',
+      payloadBase64: 'eyJ0ZXN0IjoxfQ==',
     });
   });
 });

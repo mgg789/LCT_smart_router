@@ -8,6 +8,8 @@ export interface MapRouteSegment {
   readonly travelTimeSec?: number;
   readonly distanceKm?: number;
   readonly geometryProvider?: 'twogis' | 'yandex';
+  /** Handoff-adjacent edges are blue while retaining their source dash/solid style. */
+  readonly handoffId?: string;
   /** Aggregate leg endpoints used to keep mixed access/metro/egress pieces on one graph edge. */
   readonly routeEndpoints?: readonly [readonly [number, number], readonly [number, number]];
 }
@@ -51,6 +53,9 @@ export function mapRouteSegments(route: PlanRouteView): MapRouteSegment[] {
         lon: route.startLon,
       };
       const destination = stopAtArrival(route, leg.arrivalAt) ?? origin;
+      const handoffId =
+        stopBefore(route, leg.departureAt)?.handoff?.handoff_id ??
+        stopAtArrival(route, leg.arrivalAt)?.handoff?.handoff_id;
       // Bind the line to the stop pins, not to the carriageway ends. OSRM snaps
       // those ends off the building, and the nearest pin within 80 m can be a
       // different stop, which drops the road and draws a straight dashed chord.
@@ -70,6 +75,7 @@ export function mapRouteSegments(route: PlanRouteView): MapRouteSegment[] {
             travelTimeSec: segment.travelTimeSec,
             distanceKm: segment.distanceKm,
             routeEndpoints,
+            ...(handoffId ? { handoffId } : {}),
             ...(segment.geometryProvider ? { geometryProvider: segment.geometryProvider } : {}),
           };
         });
@@ -86,6 +92,7 @@ export function mapRouteSegments(route: PlanRouteView): MapRouteSegment[] {
           travelTimeSec: leg.travelTimeSec,
           distanceKm: leg.distanceKm,
           routeEndpoints,
+          ...(handoffId ? { handoffId } : {}),
           ...(leg.geometryProvider ? { geometryProvider: leg.geometryProvider } : {}),
         },
       ];
@@ -101,6 +108,9 @@ export function mapRouteSegments(route: PlanRouteView): MapRouteSegment[] {
       ],
       source: 'approximate',
       approximate: true,
+      ...(fallback.from.handoffId || fallback.to.handoffId
+        ? { handoffId: fallback.from.handoffId ?? fallback.to.handoffId ?? undefined }
+        : {}),
     };
   });
 }

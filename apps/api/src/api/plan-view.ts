@@ -1,3 +1,7 @@
+import {
+  type HandoffMetadata,
+  handoffMetadataSchema,
+} from '../routing/router-gateway/result.types';
 import type { AppliedPlanCurrentShape } from './plan-view.types';
 
 export type TravelSource = 'approximate' | 'road_matrix' | 'route_api' | 'traffic_api' | 'metro';
@@ -21,6 +25,7 @@ export interface PlanRouteSegmentView {
  */
 export interface PlanStopView {
   readonly sequence: number;
+  readonly handoff?: HandoffMetadata | null;
   readonly kind: string;
   readonly requestId: string | null;
   readonly lat: number;
@@ -105,6 +110,7 @@ export function toPlanView(plan: AppliedPlanCurrentShape): PlanView {
       legs: planLegs(route.legs),
       stops: route.stops.map((stop) => ({
         sequence: stop.sequence,
+        handoff: handoffMetadataSchema.safeParse(stop.handoff).data ?? null,
         kind: stop.kind,
         requestId: stop.requestId,
         lat: stop.lat,

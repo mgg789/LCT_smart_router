@@ -50,6 +50,50 @@ describe('map travel geometry', () => {
     expect(segment?.coordinates).toHaveLength(2);
   });
 
+  it('marks handoff-adjacent edges while preserving their source style', () => {
+    const route = createDevSnapshot().plan.plan?.routes[0];
+    expect(route).toBeTruthy();
+    if (!route) return;
+    const first = route.stops[0];
+    expect(first).toBeTruthy();
+    if (!first) return;
+    const segment = mapRouteSegments({
+      ...route,
+      stops: [
+        {
+          ...first,
+          kind: 'handoff',
+          handoff: {
+            handoff_id: 'handoff-1',
+            donor_engineer_id: 'engineer-1',
+            receiver_engineer_id: 'engineer-2',
+            request_id: 'request-1',
+            items: { router: 1, set_top_box: 0, smart_speaker: 0 },
+          },
+        },
+      ],
+      legs: [
+        {
+          legId: 'handoff-leg',
+          fromStopId: null,
+          toStopId: 'handoff-1',
+          departureAt: route.startAt ?? 0,
+          arrivalAt: first.arrivalAt,
+          travelTimeSec: 500,
+          distanceKm: 2,
+          travelSource: 'road_matrix',
+          trafficFactor: 1,
+          geometry: null,
+        },
+      ],
+    })[0];
+    expect(segment).toMatchObject({
+      handoffId: 'handoff-1',
+      source: 'road_matrix',
+      approximate: true,
+    });
+  });
+
   it('keeps a road-matrix leg schematic when no road geometry was supplied', () => {
     const route = createDevSnapshot().plan.plan?.routes[0];
     expect(route).toBeTruthy();

@@ -36,6 +36,12 @@ export class ManualPlanService {
     toEngineerId: string,
   ): Promise<{ planRevision: number }> {
     await this.control.assertManual(context.tx);
+    if (await context.tx.equipmentHandoff.count({ where: { completedAt: null } })) {
+      throw new SysError(
+        'VALIDATION_FAILED',
+        'Complete accepted equipment meetings before manually changing route order',
+      );
+    }
     await this.assertNotStarted(context.tx, requestId);
 
     const engineer = await context.tx.engineer.findUnique({ where: { id: toEngineerId } });
@@ -118,6 +124,12 @@ export class ManualPlanService {
     orderedRequestIds: string[],
   ): Promise<{ planRevision: number }> {
     await this.control.assertManual(context.tx);
+    if (await context.tx.equipmentHandoff.count({ where: { completedAt: null } })) {
+      throw new SysError(
+        'VALIDATION_FAILED',
+        'Complete accepted equipment meetings before manually changing route order',
+      );
+    }
     for (const requestId of orderedRequestIds) {
       await this.assertNotStarted(context.tx, requestId);
     }

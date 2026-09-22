@@ -1,3 +1,4 @@
+import type { HandoffMetadata } from '../router-gateway/result.types';
 /**
  * `RouterTaskSnapshot` — the published input sector.
  *
@@ -85,6 +86,8 @@ export interface SnapshotEngineer {
   readonly expected_online_at: UnixSeconds | null;
   /** Morning issue already includes one spare for every equipment kind used by the crew. */
   readonly equipment_stock: SnapshotEquipmentStock;
+  /** Total physical carrying limit across all kinds; supplied by company settings. */
+  readonly equipment_capacity?: number;
   /** The single lunch of the day has been used. Router schedules no second one. */
   readonly lunch_taken: boolean;
   readonly lunch: SnapshotLunch;
@@ -96,6 +99,9 @@ export interface SnapshotPolicy {
 }
 
 export interface RouterTaskSnapshot {
+  readonly pending_equipment_handoffs?: Array<
+    HandoffMetadata & { location: GeoPoint; meeting_at: number }
+  >;
   readonly schema_version: string;
   /** Moment of this publication of changed data. It does not tick on its own. */
   readonly planning_as_of: UnixSeconds;

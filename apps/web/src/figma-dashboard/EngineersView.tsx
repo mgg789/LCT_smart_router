@@ -10,6 +10,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import type { HandoffView } from '../api/live';
 import type { DashboardSnapshot } from '../api/types';
 import { MonthlyPoints } from '../components/passports/MonthlyPoints';
 import { useArtboardScale, useLetterboxInsets } from './artboardScale';
@@ -62,6 +63,7 @@ const RING_POOL_SIZE = RING_RENDER_SPAN * 2 + 1;
 export function EngineersView({
   token,
   snapshot,
+  handoffs = [],
   selectedEngineerId,
   motionOn,
   busy,
@@ -72,6 +74,7 @@ export function EngineersView({
 }: {
   token?: string;
   snapshot: DashboardSnapshot | null;
+  handoffs?: readonly HandoffView[];
   selectedEngineerId: string | null;
   motionOn: boolean;
   busy: boolean;
@@ -83,7 +86,10 @@ export function EngineersView({
   const reduceMotion = useReducedMotion();
   const scale = useArtboardScale();
   const letterbox = useLetterboxInsets(scale);
-  const roster = useMemo(() => engineerProfilesFromSnapshot(snapshot), [snapshot]);
+  const roster = useMemo(
+    () => engineerProfilesFromSnapshot(snapshot, handoffs),
+    [handoffs, snapshot],
+  );
   const centerMv = useMotionValue(0);
   const [focusedIndex, setFocusedIndex] = useState(0);
   const [query, setQuery] = useState('');
@@ -834,14 +840,34 @@ function EngineerActivityPane({ engineer }: { engineer: EngineerProfile }) {
         <FigmaText className="font-murs text-[32px] tracking-[0.64px] text-black">
           {activity.title}
         </FigmaText>
+        {activity.subtitle ? (
+          <FigmaText className="mt-[8px] font-semibold text-[18px] leading-[24px] tracking-[-0.306px] text-figma-muted">
+            {activity.subtitle}
+          </FigmaText>
+        ) : null}
+        {activity.startClock ? (
+          <FigmaText className="mt-[8px] font-semibold text-[18px] tracking-[-0.306px] text-figma-muted">
+            Начало {activity.startClock}
+          </FigmaText>
+        ) : null}
         {activity.untilClock ? (
           <FigmaText className="mt-auto font-murs text-[64px] tracking-[1.28px] text-black">
             {activity.untilClock}
           </FigmaText>
         ) : null}
         <FigmaText className="mt-[8px] font-semibold text-[18px] tracking-[-0.306px] text-figma-muted">
-          {activity.kind === 'lunch' ? 'Ожидаемое завершение' : 'Ожидаемое возвращение'}
+          {activity.kind === 'lunch'
+            ? 'Ожидаемое завершение'
+            : activity.kind === 'handoff'
+              ? 'Окно встречи'
+              : 'Ожидаемое возвращение'}
         </FigmaText>
+        {activity.nextTitle ? (
+          <FigmaText className="mt-[12px] font-semibold text-[18px] tracking-[-0.306px] text-figma-muted">
+            Следующая: {activity.nextTitle}
+            {activity.nextClock ? ` · ${activity.nextClock}` : ''}
+          </FigmaText>
+        ) : null}
       </div>
     );
   }
@@ -865,6 +891,8 @@ function EngineerActivityPane({ engineer }: { engineer: EngineerProfile }) {
             <span>{activity.arrived}</span>
           </>
         ) : null}
+        <FigmaIcon src={FIGMA_ASSETS.engDot} alt="" width={5} height={5} />
+        <span>начало {activity.startClock}</span>
       </div>
       <FigmaText className="mt-auto font-murs text-[64px] tracking-[1.28px] text-black">
         {activity.finishClock}
@@ -874,7 +902,9 @@ function EngineerActivityPane({ engineer }: { engineer: EngineerProfile }) {
         {activity.nextClock ? (
           <>
             <FigmaIcon src={FIGMA_ASSETS.engDot} alt="" width={5} height={5} />
-            <span>Следующая заявка в {activity.nextClock}</span>
+            <span>
+              {activity.nextTitle ?? 'Следующая заявка'} в {activity.nextClock}
+            </span>
           </>
         ) : null}
       </div>

@@ -3,6 +3,12 @@ import { SysError } from '../../common/errors';
 import { type AppliedPlan, Prisma } from '../../generated/prisma/client';
 import { AlertsService } from '../../orchestrator/alerts';
 import { workDateOf } from '../../orchestrator/engineers/workday';
+import {
+  equipmentCapacity,
+  equipmentWithSpares,
+  readEquipmentSettings,
+} from '../../orchestrator/equipment/equipment-policy';
+import { persistHandoffs } from '../../orchestrator/equipment/handoffs';
 import type { Tx } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../mount-data-eng';
 import type { RouterPlan, RouterResult } from './result.types';
@@ -57,8 +63,9 @@ export class AppliedPlanService {
     } else {
       await this.archiveCoveringEngineers(tx, now);
     }
+    await persistHandoffs(tx, main, workDateOf(result.planning_as_of ?? now, 'Europe/Moscow'), now);
     await this.materialise(tx, plan.id, main);
-    await this.issueMorningEquipment(tx, now, main);
+    await this.issueMorningEquipment(tx, now, main, result.status === 'partial');
     await this.syncAssignmentStates(tx, now, main);
     await this.movePointer(tx, now, plan.id);
     await this.storeAlerts(
@@ -199,6 +206,7 @@ export class AppliedPlanService {
             sequence: stop.sequence,
             kind: stop.kind,
             requestId: stop.requestId,
+            handoff: stop.handoff === null ? Prisma.DbNull : stop.handoff,
             lat: stop.lat,
             lon: stop.lon,
             arrivalAt: stop.arrivalAt,
@@ -216,6 +224,7 @@ export class AppliedPlanService {
           requestId: item.requestId,
           status: item.status,
           engineerId: item.engineerId,
+          stopId: item.stopId,
           reasons: item.reasons as object,
         },
       });
@@ -278,6 +287,7 @@ export class AppliedPlanService {
             sequence: stop.sequence,
             kind: stop.kind,
             requestId: stop.request_id,
+            handoff: stop.handoff ?? Prisma.DbNull,
             lat: stop.location.lat,
             lon: stop.location.lon,
             arrivalAt: BigInt(stop.arrival_at),
@@ -295,6 +305,7 @@ export class AppliedPlanService {
           requestId: item.request_id,
           status: item.status,
           engineerId: item.engineer_id,
+          stopId: item.stop_id,
           // Checkable grounds from the solver, stored as they arrived.
           reasons: item.reasons as object,
         },
@@ -306,7 +317,12 @@ export class AppliedPlanService {
    * Freezes the first plan's demand plus one spare as physical engineer-owned stock.
    * Later replans may consume the spare but cannot move stock or issue new units.
    */
-  private async issueMorningEquipment(tx: Tx, now: number, plan: RouterPlan): Promise<void> {
+  private async issueMorningEquipment(
+    tx: Tx,
+    now: number,
+    plan: RouterPlan,
+    regionalIncrement = false,
+  ): Promise<void> {
     const engineerIds = plan.routes.map((route) => route.engineer_id);
     if (engineerIds.length === 0) {
       return;
@@ -314,6 +330,7 @@ export class AppliedPlanService {
     const days = await tx.engineerDay.findMany({
       where: { engineerId: { in: engineerIds }, equipmentIssuedAt: null },
       orderBy: { workDate: 'desc' },
+      include: { engineer: true },
     });
     if (days.length === 0) {
       return;
@@ -348,6 +365,7 @@ export class AppliedPlanService {
       demand.set(assignment.engineer_id, row);
     }
 
+    const equipmentSettings = await readEquipmentSettings(tx);
     const seen = new Set<string>();
     for (const day of days) {
       if (seen.has(day.engineerId)) {
@@ -362,16 +380,29 @@ export class AppliedPlanService {
       await tx.engineerDay.update({
         where: { id: day.id },
         data: {
-          equipmentRouter: row.equipmentRouter > 0 ? row.equipmentRouter + 1 : 0,
-          equipmentSetTopBox: row.equipmentSetTopBox > 0 ? row.equipmentSetTopBox + 1 : 0,
-          equipmentSmartSpeaker: row.equipmentSmartSpeaker > 0 ? row.equipmentSmartSpeaker + 1 : 0,
+          ...(regionalIncrement ||
+          plan.routes
+            .find((route) => route.engineer_id === day.engineerId)
+            ?.stops.some((stop) => stop.kind === 'handoff')
+            ? {
+                equipmentRouter: day.equipmentRouter,
+                equipmentSetTopBox: day.equipmentSetTopBox,
+                equipmentSmartSpeaker: day.equipmentSmartSpeaker,
+              }
+            : equipmentWithSpares(
+                row,
+                equipmentCapacity(day.engineer.transportType, equipmentSettings),
+              )),
           equipmentIssuedAt: BigInt(now),
           updatedAt: BigInt(now),
           version: { increment: 1 },
         },
       });
     }
-    await this.publisher.publishIfChanged(tx, now, PUBLICATION_TRIGGERS.EQUIPMENT_ISSUED);
+    // A partial issue freezes the existing physical basket; it does not change the
+    // snapshot or invalidate the other regional calculations still in flight.
+    if (!regionalIncrement)
+      await this.publisher.publishIfChanged(tx, now, PUBLICATION_TRIGGERS.EQUIPMENT_ISSUED);
   }
 
   /**

@@ -90,4 +90,18 @@ describe('Figma MAIN snapshot mapper', () => {
     expect(next.accessBufferSec).toBe(600);
     expect(next.metroEnabled).toBe(true);
   });
+
+  it('preserves the future equipment transfer flag during unrelated setting edits', () => {
+    const base = createDevSnapshot();
+    const snapshot = {
+      ...base,
+      routerSettings: {
+        ...nextRouterSettings(base, {}),
+        equipmentTransfersEnabled: true,
+      },
+    };
+    expect(nextRouterSettings(snapshot, { lunchesEnabled: true }).equipmentTransfersEnabled).toBe(
+      true,
+    );
+  });
 });
