@@ -53,7 +53,7 @@ export class AuthService implements OnModuleInit {
 
   /** Step one of the email path. Issuing a code says nothing about who may sign in. */
   async requestLoginCode(email: string): Promise<IssuedLoginCode> {
-    const issued = await this.uow.run(async (tx) => {
+    const issued = await this.uow.observe(async (tx) => {
       const created = await this.loginCodes.issueIn(tx, email);
       await this.notifications.record(tx, created.issuedAt, {
         category: 'account_login_code',

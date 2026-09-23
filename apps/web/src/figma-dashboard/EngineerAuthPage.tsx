@@ -10,8 +10,6 @@ import {
   readEngineerSession,
   writeEngineerSession,
 } from '../figma-engineer/session';
-import { AuthToastLayer } from './AuthToastLayer';
-
 /**
  * Engineer sign-in at `/engineer`. A live session opens the Figma day list.
  */
@@ -61,7 +59,6 @@ export function EngineerAuthPage() {
 
   return (
     <main className="min-h-full bg-figma-canvas">
-      <AuthToastLayer />
       <EngineerLogin motionOn={motionOn} onSession={accept} />
     </main>
   );

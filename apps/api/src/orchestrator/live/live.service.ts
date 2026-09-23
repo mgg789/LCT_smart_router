@@ -75,11 +75,17 @@ export class LiveService {
     private readonly demoStand: DemoStandService,
   ) {}
 
-  /** Dispatcher entry: creates the durable pending card but does not start its clock. */
+  /**
+   * Dispatcher entry.
+   *
+   * The clock and the demo reconcile keep running in the background. Waiting for
+   * them here put every dashboard poll behind the routing lock, and the browser
+   * then had no free connection left for login or icons.
+   */
   async dispatchView(): Promise<DispatchLiveView> {
-    await this.advanceOnce();
-    await this.demoStand.reconcile();
-    return this.uow.run(async (tx) => this.dispatchViewIn(tx, this.clock.nowSeconds()));
+    void this.advanceOnce();
+    void this.demoStand.reconcile();
+    return this.uow.observe(async (tx) => this.dispatchViewIn(tx, this.clock.nowSeconds()));
   }
 
   /** Starts the pending day exactly once and forces a fresh Router publication at t=0. */
@@ -118,8 +124,10 @@ export class LiveService {
 
   /** Engineer entry. A session resolves its own subject in the controller. */
   async engineerView(engineerId: string): Promise<EngineerLiveView> {
-    await this.advanceOnce();
-    return this.uow.run(async (tx) => this.engineerViewIn(tx, engineerId, this.clock.nowSeconds()));
+    void this.advanceOnce();
+    return this.uow.observe(async (tx) =>
+      this.engineerViewIn(tx, engineerId, this.clock.nowSeconds()),
+    );
   }
 
   /** Verifies the current LIVE stop inside the caller's transaction, serialized

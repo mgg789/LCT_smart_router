@@ -16,6 +16,17 @@ export class UnitOfWork {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
+   * Reads and login-only writes. They must not take the routing singletons.
+   *
+   * `run` reserves those rows for the whole transaction. A live poll does that on
+   * every request, so a plan apply or a clock tick left login, mail codes and the
+   * next poll waiting on one lock until the browser gave up at 12 seconds.
+   */
+  observe<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
+    return this.prisma.$transaction(fn, { timeout: 15_000 });
+  }
+
+  /**
    * Runs one business change and everything that must be consistent with it.
    *
    * The rule this exists to enforce: a business write, the record of who made it and the

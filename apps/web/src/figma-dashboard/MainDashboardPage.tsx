@@ -2211,14 +2211,14 @@ function RouteStopTopic({
         if (stop.handoffId) onSelectHandoff(stop.handoffId);
         else if (stop.requestId) onSelectRequest(stop.requestId);
       }}
-      className={`relative shrink-0 text-left ${handoff ? 'rounded-[12px] border-2 border-[#2563EB] px-[4px]' : ''} ${clickable ? 'cursor-pointer' : 'cursor-default'}`}
+      className={`relative shrink-0 text-left ${clickable ? 'cursor-pointer' : 'cursor-default'}`}
       style={{ width: ROUTE_STOP_WIDTH }}
       initial={motionOn ? { opacity: 0, y: 8 } : false}
       animate={{ opacity: 1, y: 0 }}
       transition={{ ...fadeSoft, delay: index * 0.04 }}
     >
       <span
-        className={`absolute top-[10px] rounded-full ${handoff ? 'bg-[#2563EB] ring-2 ring-[#2563EB]/30' : stop.failed || stop.status === 'отменено' ? 'bg-figma-cancel' : stop.active ? 'bg-figma-bee ring-4 ring-figma-ink' : stop.completed ? 'bg-figma-done' : 'bg-figma-ink'}`}
+        className={`absolute top-[10px] rounded-full ${handoff ? 'bg-[#2563EB]' : stop.failed || stop.status === 'отменено' ? 'bg-figma-cancel' : stop.active ? 'bg-figma-bee ring-4 ring-figma-ink' : stop.completed ? 'bg-figma-done' : 'bg-figma-ink'}`}
         style={{ left: ROUTE_DOT_LEFT, width: ROUTE_DOT_SIZE, height: ROUTE_DOT_SIZE }}
       />
       <FigmaText className="figma-nowrap absolute left-0 top-[46px] w-[240px] text-center font-semibold text-[24px] tracking-[-0.408px] text-black">

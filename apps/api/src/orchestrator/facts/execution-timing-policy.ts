@@ -32,22 +32,22 @@ export class ExecutionTimingPolicy {
   constructor(private readonly router: RouterClient) {}
 
   /**
-   * Returns the current Router-owned thresholds, or the last safe local copy.
+   * Returns the last safe thresholds immediately.
    *
-   * LIVE calls this on every clock tick. Asking Router each time queued behind
-   * an in-progress solve and the tick, and therefore every engineer action,
-   * waited out the request timeout.
+   * LIVE calls this on every clock tick. Waiting here for Router put the tick,
+   * and every screen waiting on that tick, behind a solve. A refresh runs beside
+   * the tick and replaces the cache when it returns.
    */
   read(): Promise<ExecutionTimingPolicyValue> {
-    if (!this.router.isConfigured() || Date.now() - this.refreshedAt < SETTINGS_TTL_MS) {
-      return Promise.resolve(this.cached);
+    if (this.router.isConfigured() && Date.now() - this.refreshedAt >= SETTINGS_TTL_MS) {
+      if (!this.inFlight) {
+        const pending = this.refresh().finally(() => {
+          if (this.inFlight === pending) this.inFlight = null;
+        });
+        this.inFlight = pending;
+      }
     }
-    if (this.inFlight) return this.inFlight;
-    const pending = this.refresh().finally(() => {
-      if (this.inFlight === pending) this.inFlight = null;
-    });
-    this.inFlight = pending;
-    return pending;
+    return Promise.resolve(this.cached);
   }
 
   private async refresh(): Promise<ExecutionTimingPolicyValue> {

@@ -4,6 +4,8 @@ import { DashboardApiError } from '../api/client';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { engineerHeaderStamp } from '../figma-engineer/engineerClock';
 import { eu } from '../figma-engineer/engineerScale';
+import { PhoneErrorNotice } from '../figma-engineer/PhoneErrorNotice';
+import { isPhoneFailureNotice } from '../figma-engineer/phoneNotice';
 import { CLIENT_ASSETS } from './assets';
 import { ClientEmailGate } from './ClientEmailGate';
 import { ClientMenu } from './ClientMenu';
@@ -273,9 +275,15 @@ export function ClientApp() {
     window.history.pushState({}, '', clientRequestPath(id));
   };
 
+  const failure = isPhoneFailureNotice(notice) ? notice : null;
+  const inlineNotice = failure ? null : notice;
+
   return (
     <main className="min-h-full overflow-x-hidden bg-figma-canvas">
       <div className="engineer-phone client-phone relative h-dvh overflow-hidden">
+        {failure ? (
+          <PhoneErrorNotice title="Ошибка" body={failure} onClose={() => setNotice(null)} />
+        ) : null}
         <div
           className="flex h-full min-h-0 flex-col overflow-y-auto"
           style={{ padding: `${eu(36)} ${eu(40)} ${eu(40)}` }}
@@ -324,7 +332,7 @@ export function ClientApp() {
           {screen === 'new' ? (
             <ClientNewRequest
               draft={draft}
-              notice={busy ? 'Отправляем…' : notice}
+              notice={busy ? 'Отправляем…' : inlineNotice}
               onChange={setDraft}
               onSubmit={submit}
               onAskAi={() =>
@@ -345,7 +353,7 @@ export function ClientApp() {
           {screen === 'list' ? (
             <ClientRequests
               requests={requests}
-              notice={notice}
+              notice={inlineNotice}
               motionOn={motionOn}
               onOpen={openCard}
               onNewRequest={() => go('new')}
@@ -375,7 +383,7 @@ export function ClientApp() {
                 <ClientRequestDetail
                   item={opened}
                   nowMs={nowMs}
-                  notice={notice}
+                  notice={inlineNotice}
                   onBack={() => {
                     setOpenedId(null);
                     setNotice(null);
@@ -406,7 +414,7 @@ export function ClientApp() {
                 codeStep={gate.codeStep}
                 devCode={gate.devCode}
                 busy={busy}
-                notice={notice}
+                notice={inlineNotice}
                 onEmailChange={(email) => setGate({ ...gate, email })}
                 onRequestCode={() => {
                   void askCode(gate.email.trim());
