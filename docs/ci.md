@@ -30,6 +30,10 @@ pull request не запускаются.
 | `regression` | pull request в `main` | Полное приложение, smoke, Chromium, остановка/возврат Router; отчёты при падении |
 | `cd` | push в `main` (после мержа) | те же проверки, затем compose + SMTP deploy, затем health сервисов |
 
+`ci` и `regression` выполняются на self-hosted воркерах MGG (раздел
+«Self-hosted воркеры» ниже), `cd` — на облачных воркерах SourceCraft, чтобы
+деплой не зависел от доступности нашего хоста.
+
 Красный прогон `ci` на pull request в `main` — условие мержа. Защита веток в
 [`.sourcecraft/branches.yaml`](../.sourcecraft/branches.yaml) блокирует прямой push
 и force-push в `main`, а также force-push/удаление `dev`.
@@ -38,7 +42,11 @@ pull request не запускаются.
 
 - **lint** — `pnpm lint` (Biome) и `ruff check core`.
 - **test-js** — Vitest веба + typecheck; `node:test` API против одноразового
-  контейнера `pgvector/pgvector:pg17` (`scripts/ci/run-js-tests.sh`). Одноразовый
+  контейнера `pgvector/pgvector:pg17` (`scripts/ci/run-js-tests.sh`). Сайдкар
+  публикуется на loopback-порту, выведенном из PID скрипта: на общем воркер-хосте
+  `5432` занят демо-стендом, а `$$` разводит параллельные прогоны. Пароль сайдкара
+  приходит из секрета `LCT_CI_PG_PASSWORD`; публичный одноразовый дефолт —
+  `scripts/ci/js-tests.env` (паттерн `contour.env`). Одноразовый
   DSN передаётся и как `TEST_DATABASE_URL`, чтобы тесты, защищённые от случайного
   запуска на локальной рабочей БД, выполнялись внутри этого изолированного контура.
 - **test-core** — `pytest core/tests`, включая golden-проверки официальных регионов:
@@ -145,6 +153,33 @@ PR/мерж тимлида. Код в `dev` и зелёный локальный
 работу удалённого workflow. Перед релизным слиянием проверяются `ci` и `regression`;
 требование успешных проверок для допуска к merge — отдельная настройка SourceCraft,
 наличие workflow её не заменяет.
+
+## Self-hosted воркеры (MGG)
+
+`ci` и `regression` выполняются на двух self-hosted воркерах SourceCraft на
+хосте MGG (`mgg@178.140.207.217:2222`, каталог `/home/mgg/scw`). Воркер — это
+бинарник `self-hosted-processor` (shell executor), авторизующийся PAT-токеном
+с ролью «Repository admin»; официальный гайд: SourceCraft →
+«Setting up a self-hosted worker».
+
+| Воркер | Теги | max_slots | Что берёт | Пик RAM |
+|---|---|---|---|---|
+| `light` | `mgg`, `mgg-light` | 1 | все задачи `ci` (последовательно) | ~3,5 ГиБ (test-js) |
+| `full` | `mgg`, `mgg-full` | 1 | `test-regression` (полный compose-стек) | ~4 ГиБ |
+
+Маршрутизация — полем `runs_on` в `.sourcecraft/ci.yaml`: `ci` →
+`[self-hosted, mgg-light]`, `regression` → `[self-hosted, mgg-full]`. Худший
+одновременный пик — регрессия + test-js ≈ 7,5 ГиБ при ~9 ГиБ свободных после
+урезания GitLab (puma 5 → 1 воркер, `gitlab.rb`, бакап рядом); запас ≥ 1 ГиБ
+и swap 4 ГиБ — амортизатор. `cd` остаётся на облачных воркерах: деплой не
+должен зависеть от нашего хоста, и на время простоя хоста PR-проверки просто
+ждут в очереди, а деплои продолжают идти.
+
+Эксплуатация (`ssh` от `mgg`): `/home/mgg/scw/start-all.sh`, `start.sh|stop.sh
+<light|full>`, логи `/home/mgg/scw/<воркер>/worker.log`, PAT обновляется
+`/home/mgg/scw/install-pat.sh <токен>` (он же включает автостарт `@reboot`).
+Образы регрессии остаются в docker-кэше — при заполнении диска
+`docker system prune` (сейчас reclaimable ~140 ГиБ).
 
 ## Deploy
 
@@ -257,3 +292,14 @@ sudo bash /home/mgg/navix/scripts/ci/install-navix-nginx.sh
 2. Разложить deploy-ключ на сервер и приватную половину в SourceCraft **до** первого
    мержа в `main`.
 3. Мерж тимлида `dev` → `main`. Этот коммит активирует триггеры и должен запустить `cd`.
+
+Для self-hosted воркеров (ветка `feat/ci-self-hosted-workers`):
+
+1. Урезать GitLab на MGG (puma 1 воркер) и запустить воркеры
+   (`install-pat.sh` + `start-all.sh`) — до переключения маршрутизации.
+2. Создать секрет репозитория `LCT_CI_PG_PASSWORD` **до** мержа в `main`:
+   старый конфиг с `main` прогоняет PR без env-инъекции, скрипт берёт дефолт
+   из `scripts/ci/js-tests.env`.
+3. Мерж в `dev`, затем тимлид `dev` → `main` — с этого момента `ci`/`regression`
+   идут на воркеры MGG. После этого дефолт из `js-tests.env` можно убрать
+   отдельным коммитом (скрипт продолжит требовать переменную).
