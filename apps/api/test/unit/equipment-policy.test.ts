@@ -5,6 +5,7 @@ import {
   equipmentCapacity,
   equipmentTotal,
   equipmentWithSpares,
+  morningIssueBasket,
 } from '../../src/orchestrator/equipment/equipment-policy';
 import {
   DEFAULT_DISPATCHER_SETTINGS,
@@ -36,6 +37,15 @@ describe('physical equipment capacity', () => {
       0,
     );
     assert.throws(() => equipmentWithSpares(demand, 3), /exceeds/);
+    assert.equal(morningIssueBasket(demand, 0, 30), null);
+    assert.deepEqual(
+      morningIssueBasket(
+        { equipmentRouter: 1, equipmentSetTopBox: 0, equipmentSmartSpeaker: 0 },
+        1,
+        30,
+      ),
+      { equipmentRouter: 2, equipmentSetTopBox: 0, equipmentSmartSpeaker: 0 },
+    );
     assert.equal(equipmentTotal(demand), 4);
   });
   it('caps only provisional baskets and preserves unrelated settings', () => {

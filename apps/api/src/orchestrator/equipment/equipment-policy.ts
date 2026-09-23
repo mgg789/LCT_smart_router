@@ -28,6 +28,22 @@ export function equipmentTotal(stock: EquipmentColumns): number {
   return columns.reduce((sum, key) => sum + stock[key], 0);
 }
 
+/**
+ * Basket written on the first accepted plan, or null when that plan assigned nobody.
+ *
+ * The import solve can be accepted before anyone is free. Freezing its empty demand
+ * would erase stock loaded with the roster, and later policies could not place the
+ * equipment requests.
+ */
+export function morningIssueBasket(
+  demand: EquipmentColumns,
+  assignedCount: number,
+  capacity: number,
+): EquipmentColumns | null {
+  if (assignedCount === 0) return null;
+  return equipmentWithSpares(demand, capacity);
+}
+
 /** Demand has priority; spare units are added in stable type order only when they fit. */
 export function equipmentWithSpares(demand: EquipmentColumns, capacity: number): EquipmentColumns {
   if (equipmentTotal(demand) > capacity)

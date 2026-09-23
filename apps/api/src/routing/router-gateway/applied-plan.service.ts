@@ -5,7 +5,7 @@ import { AlertsService } from '../../orchestrator/alerts';
 import { workDateOf } from '../../orchestrator/engineers/workday';
 import {
   equipmentCapacity,
-  equipmentWithSpares,
+  morningIssueBasket,
   readEquipmentSettings,
 } from '../../orchestrator/equipment/equipment-policy';
 import { persistHandoffs } from '../../orchestrator/equipment/handoffs';
@@ -396,8 +396,10 @@ export class AppliedPlanService {
   }
 
   /**
-   * Freezes the first plan's demand plus one spare as physical engineer-owned stock.
-   * Later replans may consume the spare but cannot move stock or issue new units.
+   * Freezes the first assigning plan's demand plus one spare as physical stock.
+   * An engineer with no assignments is left unissued, so an empty import plan cannot
+   * erase the roster basket. Later replans may consume the spare but cannot move stock
+   * or issue new units.
    */
   private async issueMorningEquipment(
     tx: Tx,
@@ -449,6 +451,7 @@ export class AppliedPlanService {
 
     const equipmentSettings = await readEquipmentSettings(tx);
     const seen = new Set<string>();
+    let issued = false;
     for (const day of days) {
       if (seen.has(day.engineerId)) {
         continue;
@@ -459,22 +462,33 @@ export class AppliedPlanService {
         equipmentSetTopBox: 0,
         equipmentSmartSpeaker: 0,
       };
+      const assignedToEngineer = plan.assignments.filter(
+        (assignment) =>
+          assignment.status === 'assigned' && assignment.engineer_id === day.engineerId,
+      ).length;
+      const keepsLoadedStock =
+        regionalIncrement ||
+        plan.routes
+          .find((route) => route.engineer_id === day.engineerId)
+          ?.stops.some((stop) => stop.kind === 'handoff');
+      const basket = keepsLoadedStock
+        ? {
+            equipmentRouter: day.equipmentRouter,
+            equipmentSetTopBox: day.equipmentSetTopBox,
+            equipmentSmartSpeaker: day.equipmentSmartSpeaker,
+          }
+        : morningIssueBasket(
+            row,
+            assignedToEngineer,
+            equipmentCapacity(day.engineer.transportType, equipmentSettings),
+          );
+      // No assignments yet: leave the imported basket unissued so the workday plan can use it.
+      if (basket === null) continue;
+      issued = true;
       await tx.engineerDay.update({
         where: { id: day.id },
         data: {
-          ...(regionalIncrement ||
-          plan.routes
-            .find((route) => route.engineer_id === day.engineerId)
-            ?.stops.some((stop) => stop.kind === 'handoff')
-            ? {
-                equipmentRouter: day.equipmentRouter,
-                equipmentSetTopBox: day.equipmentSetTopBox,
-                equipmentSmartSpeaker: day.equipmentSmartSpeaker,
-              }
-            : equipmentWithSpares(
-                row,
-                equipmentCapacity(day.engineer.transportType, equipmentSettings),
-              )),
+          ...basket,
           equipmentIssuedAt: BigInt(now),
           updatedAt: BigInt(now),
           version: { increment: 1 },
@@ -483,7 +497,7 @@ export class AppliedPlanService {
     }
     // A partial issue freezes the existing physical basket; it does not change the
     // snapshot or invalidate the other regional calculations still in flight.
-    if (!regionalIncrement)
+    if (issued && !regionalIncrement)
       await this.publisher.publishIfChanged(tx, now, PUBLICATION_TRIGGERS.EQUIPMENT_ISSUED);
   }
 

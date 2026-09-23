@@ -173,6 +173,11 @@ class RouteEvaluator:
                 bool(state.jobs) and engineer.engineer_id.startswith("covering-")
                 for engineer, state in zip(self.engineers, states)
             ),
+            "extra_assignments": sum(
+                len(state.jobs)
+                for engineer, state in zip(self.engineers, states)
+                if engineer.engineer_id.startswith("covering-")
+            ),
             "window_start_delay": sum(s.delay for s in states),
             "max_jobs_per_engineer": max((len(s.jobs) for s in states), default=0),
             "total_lateness": sum(s.lateness for s in states),

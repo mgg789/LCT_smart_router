@@ -358,6 +358,17 @@ def _search(
             return int(nodes[b].kind == "job" and first_anchor)
         if metric == "job_count":
             return int(nodes[b].kind == "job")
+        if metric == "additional_engineers":
+            if not engineers[e].engineer_id.startswith("covering-"):
+                return 0
+            first_anchor = nodes[a].kind == "start" or (
+                nodes[a].kind == "lunch" and nodes[a].anchor == starts[e]
+            )
+            return int(nodes[b].kind == "job" and first_anchor)
+        if metric == "extra_assignments":
+            return int(
+                nodes[b].kind == "job" and engineers[e].engineer_id.startswith("covering-")
+            )
         if nodes[b].kind == "end":
             return nodes[a].service if metric == "clock" else 0
         road = quote(a, b, e)
@@ -370,7 +381,15 @@ def _search(
         return road.duration_sec + (nodes[a].service if metric == "clock" else 0)
 
     callbacks: dict[str, list[int]] = {}
-    for metric in ("clock", "travel", "distance", "engineers_used", "job_count"):
+    for metric in (
+        "clock",
+        "travel",
+        "distance",
+        "engineers_used",
+        "job_count",
+        "additional_engineers",
+        "extra_assignments",
+    ):
         callbacks[metric] = [
             routing.RegisterTransitCallback(
                 lambda a, b, e=e, metric=metric: transit(a, b, e, metric)
@@ -547,6 +566,27 @@ def _search(
         ]
         used_expressions.append(solver.Max(assigned) if assigned else solver.IntConst(0))
     engineers_used = solver.Sum(used_expressions)
+    reserve_indexes = [
+        e
+        for e, engineer in enumerate(engineers)
+        if engineer.engineer_id.startswith("covering-")
+    ]
+    additional_engineers = (
+        solver.Sum([used_expressions[e] for e in reserve_indexes])
+        if reserve_indexes
+        else solver.IntConst(0)
+    )
+    extra_assignments = (
+        solver.Sum(
+            [
+                solver.IsEqualCstVar(routing.VehicleVar(manager.NodeToIndex(node)), e)
+                for e in reserve_indexes
+                for node in jobs.values()
+            ]
+        )
+        if reserve_indexes
+        else solver.IntConst(0)
+    )
     window_start_delay = solver.Sum(
         [
             solver.Max(
@@ -570,6 +610,8 @@ def _search(
             "travel_time": travel_sum,
             "distance": distance_sum,
             "engineers_used": engineers_used,
+            "additional_engineers": additional_engineers,
+            "extra_assignments": extra_assignments,
             "window_start_delay": window_start_delay,
             "max_jobs_per_engineer": max_jobs_per_engineer,
         }
@@ -585,6 +627,8 @@ def _search(
         "travel_time": callbacks["travel"],
         "distance": callbacks["distance"],
         "engineers_used": callbacks["engineers_used"],
+        "additional_engineers": callbacks["additional_engineers"],
+        "extra_assignments": callbacks["extra_assignments"],
     }
     if stage == "max_jobs_per_engineer":
         job_count_dimension.SetGlobalSpanCostCoefficient(1)
