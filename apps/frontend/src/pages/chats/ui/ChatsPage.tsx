@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowRight, MessagesSquare, Plus, Search } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import type { ChatTarget, DispatchChatView } from '@/entities/chat';
 import {
   dispatchChatsQueryKey,
@@ -212,6 +213,16 @@ export function ChatsPage() {
   const [tab, setTab] = useState<ContactKind>('engineers');
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // «Перейти в чат» from another screen names the crew in the address, so landing
+  // here opens that conversation instead of whoever happens to be first.
+  const [searchParams] = useSearchParams();
+  const askedEngineer = searchParams.get('engineer');
+  useEffect(() => {
+    if (!askedEngineer) return;
+    setTab('engineers');
+    setSelectedId(askedEngineer);
+  }, [askedEngineer]);
 
   const contacts = useMemo(
     () =>

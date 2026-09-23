@@ -24,6 +24,31 @@ const DRAG_SLOP = 6;
 /** How far a card has faded once it is this many places from the front. */
 const FADE: Record<number, number> = { 0: 1, 1: 1, 2: 0.4, 3: 0 };
 
+/** The furthest place from the front that is still drawn at all. */
+const DEEPEST_VISIBLE = Math.max(
+  ...Object.entries(FADE)
+    .filter(([, opacity]) => opacity > 0)
+    .map(([distance]) => Number(distance)),
+);
+
+/**
+ * How far below the top of the box a card that many places from the front reaches.
+ *
+ * Not simply the ring's drop: each card is also rotated about its own centre, so
+ * its upright height is the wrong measure — a tilted rectangle needs
+ * `w·sin θ + h·cos θ`. Leaving the rotation out is what let the outermost pair be
+ * cut off along the bottom, because the box was built for a card that was never
+ * drawn upright.
+ */
+function reachBelow(cardWidth: number, cardHeight: number, distance: number): number {
+  const radians = (distance * STEP_DEG * Math.PI) / 180;
+  return (
+    RADIUS * (1 - Math.cos(radians)) +
+    cardHeight / 2 +
+    (cardWidth * Math.sin(radians) + cardHeight * Math.cos(radians)) / 2
+  );
+}
+
 export interface ArcCarouselProps<T> {
   items: T[];
   /** Index of the card at the top of the arc. */
@@ -103,8 +128,14 @@ export function ArcCarousel<T>({
   });
   const suppressClick = useRef(false);
 
-  const { width: hostWidth } = useElementSize(hostRef);
-  const scale = hostWidth > 0 ? Math.min(1, Math.max(0.55, hostWidth / DESIGN_WIDTH)) : 1;
+  const { width: hostWidth, height: hostHeight } = useElementSize(hostRef);
+  /** Vertical room one unscaled deck needs for everything it actually shows. */
+  const span = reachBelow(cardWidth, cardHeight, DEEPEST_VISIBLE);
+  // Width sets the size the deck wants; a box shorter than that shrinks it the
+  // rest of the way, so the arc stays whole instead of being clipped to fit.
+  const byWidth = hostWidth > 0 ? Math.min(1, Math.max(0.55, hostWidth / DESIGN_WIDTH)) : 1;
+  const byHeight = hostHeight > 0 ? hostHeight / span : Number.POSITIVE_INFINITY;
+  const scale = Math.min(byWidth, byHeight);
   const radius = RADIUS * scale;
   const width = cardWidth * scale;
   const height = cardHeight * scale;
@@ -190,7 +221,7 @@ export function ArcCarousel<T>({
       onWheel={onWheel}
       ref={hostRef}
       style={{
-        height: boxHeight ?? height + radius * (1 - Math.cos((STEP_DEG * Math.PI) / 180)),
+        height: boxHeight ?? span * scale,
         // The deck dissolves towards both ends instead of stopping at a hard edge.
         maskImage: 'linear-gradient(to right, transparent, #000 18%, #000 82%, transparent)',
       }}

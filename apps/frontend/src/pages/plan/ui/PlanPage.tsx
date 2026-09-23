@@ -57,6 +57,34 @@ export function PlanPage() {
 
   const dayAnchor = plan?.planAsOf ?? requests[0]?.windowStartAt ?? null;
 
+  /**
+   * The requests the arrows walk through, in the order the dispatcher sees them.
+   *
+   * Which list that is follows the request itself: one a crew is carrying belongs
+   * to that crew's queue, in route order; one nobody took belongs to the
+   * unassigned pile. Mixing them would let a step jump between two different
+   * readings of the day.
+   */
+  const siblings = useMemo(() => {
+    if (!selectedRequest) return [];
+    // The plan lists a row for unassigned work too, with no engineer on it, so
+    // the crew — not the presence of a row — is what says there is a queue.
+    const carriedBy = selectedAssignment?.engineerId ?? null;
+    if (carriedBy === null) return unassignedRequests(requests).map((request) => request.id);
+    const route = plan?.routes.find((candidate) => candidate.engineerId === carriedBy);
+    return (route?.stops ?? [])
+      .filter((stop) => stop.kind === 'job' && stop.requestId !== null)
+      .map((stop) => stop.requestId as string);
+  }, [selectedRequest, selectedAssignment, plan, requests]);
+
+  /** Moves to the next or previous sibling, wrapping so the ends meet. */
+  const stepRequest = (delta: -1 | 1) => {
+    if (siblings.length === 0) return;
+    const at = siblings.indexOf(selectedRequestId ?? '');
+    const next = at < 0 ? 0 : (at + delta + siblings.length) % siblings.length;
+    setSelectedRequestId(siblings[next] ?? null);
+  };
+
   const showFirstUnassigned = () => {
     const first = unassignedRequests(requests)[0];
     if (first) setSelectedRequestId(first.id);
@@ -112,6 +140,16 @@ export function PlanPage() {
 
           <RequestPanel
             assignment={selectedAssignment}
+            beside={
+              siblings.length > 1
+                ? {
+                    index: Math.max(0, siblings.indexOf(selectedRequestId ?? '')),
+                    total: siblings.length,
+                    of: selectedAssignment?.engineerId ? 'queue' : 'unassigned',
+                    onStep: stepRequest,
+                  }
+                : undefined
+            }
             engineer={assignedEngineer}
             engineers={engineers}
             mode={stateQuery.data?.mode ?? null}
