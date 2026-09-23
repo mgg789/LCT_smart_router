@@ -449,6 +449,15 @@ twogis: {provider, configured, ok, message}, yandex: {…}}`. Проба идё�
 
 **POST `/dispatch/mode`** — `{operationId, mode: "auto"|"manual", expectedModeVersion, expectedPlanRevision, reason?}` → `{control}`. Для MANUAL обязательна непустая причина; версия `0` означает отсутствие первого плана. В MANUAL автоматические результаты не применяются.
 
+Новый диспетчерский фронтенд (`apps/frontend`) запрашивает причину перед переходом
+в MANUAL, берёт обе версии из `GET /dispatch/plan` и после успешной операции перечитывает
+план. При `VERSION_CONFLICT` он показывает причину отказа и обновляет состояние;
+повторная правка требует нового действия диспетчера. Возврат в AUTO отправляет те же
+версии без причины. В карточке заявки MANUAL-переназначение и кнопки изменения порядка
+также передают версии; порядок содержит все ещё не начатые заявки бригады.
+Кнопка начала подготовленного LIVE-дня вызывает `POST /dispatch/live/start`, после
+чего перечитываются состояние дня, заявки и план.
+
 **POST `/dispatch/plan/reassign`** — `{operationId, requestId, engineerId, expectedModeVersion, expectedPlanRevision}` — перенос неначатой работы (ручной режим).
 
 **POST `/dispatch/plan/reorder`** — `{operationId, engineerId, requestIds: [...], expectedModeVersion, expectedPlanRevision}` — полный порядок редактируемой части очереди без повторов. Защищённые и нерабочие остановки сохраняют места.

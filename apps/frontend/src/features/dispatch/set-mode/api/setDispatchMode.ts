@@ -6,13 +6,20 @@ export interface SetDispatchModeResult {
   control: { mode: DispatchMode; modeVersion: number };
 }
 
+export interface SetDispatchModeInput {
+  mode: DispatchMode;
+  expectedModeVersion: number;
+  expectedPlanRevision: number;
+  reason?: string;
+}
+
 /**
  * `POST /dispatch/mode` — in MANUAL the System Layer stops applying router
- * results; the Router keeps calculating, its output just is not taken up.
+ * results. Both transitions use current version guards; entering MANUAL requires a reason.
  */
-export function setDispatchMode(mode: DispatchMode): Promise<SetDispatchModeResult> {
+export function setDispatchMode(input: SetDispatchModeInput): Promise<SetDispatchModeResult> {
   return authorizedRequest<SetDispatchModeResult>('/dispatch/mode', {
     method: 'POST',
-    body: { operationId: newOperationId(), mode },
+    body: { operationId: newOperationId(), ...input },
   });
 }

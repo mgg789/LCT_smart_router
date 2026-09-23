@@ -1,4 +1,5 @@
 import { ArrowDownLeft } from 'lucide-react';
+import { useState } from 'react';
 import { useDispatchState } from '@/entities/plan';
 import type { PolicyId } from '@/entities/policy';
 import { policyTitle, usePolicies } from '@/entities/policy';
@@ -71,6 +72,8 @@ export function PolicyPopover({ onClose }: PolicyPopoverProps) {
   const selectPolicy = useSelectPolicy();
   const toggleLunches = useToggleLunches();
   const setMode = useSetDispatchMode();
+  const [enteringManual, setEnteringManual] = useState(false);
+  const [reason, setReason] = useState('');
 
   const activeId = policies.data?.active.policyId;
   const isManual = dispatchState.data?.mode === 'manual';
@@ -79,6 +82,25 @@ export function PolicyPopover({ onClose }: PolicyPopoverProps) {
   const handleSelect = (policyId: PolicyId) => {
     if (policyId === activeId) return;
     selectPolicy.mutate(policyId);
+  };
+
+  const changeMode = (mode: 'auto' | 'manual') => {
+    const current = dispatchState.data;
+    if (!current) return;
+    setMode.mutate(
+      {
+        mode,
+        expectedModeVersion: current.modeVersion,
+        expectedPlanRevision: current.plan?.revision ?? 0,
+        ...(mode === 'manual' ? { reason: reason.trim() } : {}),
+      },
+      {
+        onSuccess: () => {
+          setEnteringManual(false);
+          setReason('');
+        },
+      },
+    );
   };
 
   return (
@@ -121,15 +143,58 @@ export function PolicyPopover({ onClose }: PolicyPopoverProps) {
       <button
         className="mt-4 flex h-[67px] w-full items-center justify-center rounded-[20px] bg-accent text-[20px] font-semibold tracking-[-0.6px] text-ink disabled:opacity-50"
         disabled={busy || !dispatchState.data}
-        onClick={() => setMode.mutate(isManual ? 'auto' : 'manual')}
+        onClick={() => {
+          if (isManual) changeMode('auto');
+          else {
+            setMode.reset();
+            setEnteringManual(true);
+          }
+        }}
         type="button"
       >
         {isManual ? 'Вернуть автоматический режим' : 'Ручное управление'}
       </button>
 
+      {enteringManual && !isManual ? (
+        <div className="mt-3 space-y-2">
+          <label className="block text-[14px] font-medium text-ink" htmlFor="manual-reason">
+            Причина перехода в MANUAL
+          </label>
+          <textarea
+            className="min-h-20 w-full rounded-xl border border-ink/25 bg-surface p-3 text-[14px] text-ink focus-visible:outline-2 focus-visible:outline-ink"
+            id="manual-reason"
+            maxLength={2000}
+            onChange={(event) => setReason(event.target.value)}
+            value={reason}
+          />
+          <div className="flex gap-2">
+            <button
+              className="flex-1 rounded-xl bg-accent px-3 py-2 text-[14px] font-semibold text-ink disabled:opacity-50"
+              disabled={busy || !reason.trim()}
+              onClick={() => changeMode('manual')}
+              type="button"
+            >
+              Подтвердить MANUAL
+            </button>
+            <button
+              className="rounded-xl border border-ink/25 px-3 py-2 text-[14px] text-ink"
+              onClick={() => {
+                setEnteringManual(false);
+                setReason('');
+              }}
+              type="button"
+            >
+              Отмена
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {selectPolicy.isError || toggleLunches.isError || setMode.isError ? (
         <p className="mt-2 text-[12px] text-danger" role="alert">
-          Действие не применилось. Повторите — состояние на экране не изменилось.
+          {setMode.error?.code === 'VERSION_CONFLICT'
+            ? 'План изменился. Состояние обновлено — проверьте его и повторите действие.'
+            : 'Действие не применилось. Повторите — состояние на экране не изменилось.'}
         </p>
       ) : null}
     </Popover>

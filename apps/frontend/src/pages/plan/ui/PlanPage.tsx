@@ -6,6 +6,7 @@ import { useDispatchLive } from '@/entities/live';
 import { useDispatchState } from '@/entities/plan';
 import { unassignedRequests, useRequests } from '@/entities/request';
 import { useConversation } from '@/features/ai/ask-assistant';
+import { useStartWorkday } from '@/features/live/start-workday';
 import { failedWithoutData } from '@/shared/api';
 import { formatDayTitle } from '@/shared/lib';
 import { DayBoard } from '@/widgets/day-board';
@@ -22,6 +23,7 @@ export function PlanPage() {
   // Optional: without the LIVE day the crews simply show what is ahead of them,
   // so its failure does not take the day screen down with it.
   const liveQuery = useDispatchLive();
+  const startWorkday = useStartWorkday();
 
   // Another section can hand the day a request to open — «К заявке» on an alert.
   const [searchParams] = useSearchParams();
@@ -51,6 +53,18 @@ export function PlanPage() {
     plan?.assignments.find((assignment) => assignment.requestId === selectedRequestId) ?? null;
   const assignedEngineer =
     engineers.find((engineer) => engineer.id === selectedAssignment?.engineerId) ?? null;
+  const selectedRoute =
+    plan?.routes.find((route) => route.engineerId === selectedAssignment?.engineerId) ?? null;
+  const editableRequestIds = (selectedRoute?.stops ?? []).flatMap((stop) => {
+    if (stop.kind !== 'job' || !stop.requestId) return [];
+    const request = requestsById.get(stop.requestId);
+    return request?.lifecycle === 'submitted' &&
+      request.startedAt === null &&
+      request.completedAt === null &&
+      request.cancelledAt === null
+      ? [stop.requestId]
+      : [];
+  });
 
   const loading = engineersQuery.isPending || requestsQuery.isPending || stateQuery.isPending;
   const failed = [engineersQuery, requestsQuery, stateQuery].some(failedWithoutData);
@@ -104,6 +118,27 @@ export function PlanPage() {
         {dayAnchor === null ? 'День' : formatDayTitle(dayAnchor)}
       </h1>
 
+      {liveQuery.data?.workday.status === 'pending' ? (
+        <div className="mt-4 flex flex-wrap items-center gap-4 rounded-[20px] bg-surface p-4">
+          <p className="text-[16px] text-ink">
+            {liveQuery.data.workday.requestCount} заявок на сегодня. Смена ещё не запущена.
+          </p>
+          <button
+            className="rounded-xl bg-accent px-5 py-3 text-[16px] font-semibold text-ink disabled:opacity-50"
+            disabled={startWorkday.isPending}
+            onClick={() => startWorkday.mutate()}
+            type="button"
+          >
+            {startWorkday.isPending ? 'Запускаем день…' : 'Начать рабочий день'}
+          </button>
+          {startWorkday.isError ? (
+            <p className="text-[14px] text-danger" role="alert">
+              День не запустился: {startWorkday.error.code}. Проверьте состояние и повторите.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       {loading ? (
         <p className="pt-10 text-[16px] text-ink/55">Загружаем день…</p>
       ) : (
@@ -152,7 +187,10 @@ export function PlanPage() {
             }
             engineer={assignedEngineer}
             engineers={engineers}
+            editableRequestIds={editableRequestIds}
             mode={stateQuery.data?.mode ?? null}
+            modeVersion={stateQuery.data?.modeVersion ?? null}
+            planRevision={stateQuery.data ? (plan?.revision ?? 0) : null}
             onExplain={
               selectedRequest
                 ? () => {
@@ -165,10 +203,7 @@ export function PlanPage() {
                 : undefined
             }
             request={selectedRequest}
-            route={
-              plan?.routes.find((route) => route.engineerId === selectedAssignment?.engineerId) ??
-              null
-            }
+            route={selectedRoute}
           />
         </div>
       )}
