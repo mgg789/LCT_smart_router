@@ -6,8 +6,21 @@
 set -euo pipefail
 
 pg_name="lct-ci-pg-$$"
-pg_password="lct_ci_password"
-database_url="postgresql://lct:${pg_password}@127.0.0.1:5432/lct?schema=public"
+# The repository secret injected by ci.yaml wins; the committed public
+# disposable default from js-tests.env fills in only while the default branch
+# still carries a ci.yaml without the env injection.
+if [[ -z "${LCT_CI_PG_PASSWORD:-}" ]]; then
+  set -a
+  . "$(dirname "$0")/js-tests.env"
+  set +a
+fi
+pg_password="${LCT_CI_PG_PASSWORD:?LCT_CI_PG_PASSWORD missing (js-tests.env or CI secret)}"
+# A per-run loopback port: a shared worker host may already bind 5432 (the MGG
+# box runs the demo stand's Postgres there) and the sidecar must not be
+# reachable from outside. $$ keeps concurrent runs apart; the rare collision
+# surfaces as an immediate docker bind error, not a flaky test.
+pg_port=$((21000 + $$ % 20000))
+database_url="postgresql://lct:${pg_password}@127.0.0.1:${pg_port}/lct?schema=public"
 
 cleanup() {
   docker rm -f "$pg_name" >/dev/null 2>&1 || true
@@ -18,7 +31,7 @@ docker run -d --name "$pg_name" \
   -e POSTGRES_USER=lct \
   -e POSTGRES_PASSWORD="$pg_password" \
   -e POSTGRES_DB=lct \
-  -p 5432:5432 \
+  -p 127.0.0.1:"${pg_port}":5432 \
   pgvector/pgvector:pg17
 
 for _ in $(seq 1 40); do
