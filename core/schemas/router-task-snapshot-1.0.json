@@ -234,6 +234,33 @@
       "title": "LunchInput",
       "type": "object"
     },
+    "PinnedOrder": {
+      "additionalProperties": false,
+      "description": "Relative order of dispatcher-pinned jobs; other work may be inserted between them.",
+      "properties": {
+        "engineer_id": {
+          "minLength": 1,
+          "title": "Engineer Id",
+          "type": "string"
+        },
+        "request_ids": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 500,
+          "minItems": 2,
+          "title": "Request Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "engineer_id",
+        "request_ids"
+      ],
+      "title": "PinnedOrder",
+      "type": "object"
+    },
     "Policy": {
       "additionalProperties": false,
       "description": "Supported catalog choice; preferences cannot disable hard constraints.",
@@ -292,6 +319,19 @@
         },
         "location": {
           "$ref": "#/$defs/GeoPoint"
+        },
+        "pinned_engineer_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pinned Engineer Id"
         },
         "priority": {
           "enum": [
@@ -412,6 +452,14 @@
       "minimum": 0,
       "title": "Horizon Start At",
       "type": "integer"
+    },
+    "pinned_orders": {
+      "items": {
+        "$ref": "#/$defs/PinnedOrder"
+      },
+      "maxItems": 500,
+      "title": "Pinned Orders",
+      "type": "array"
     },
     "planning_as_of": {
       "minimum": 0,

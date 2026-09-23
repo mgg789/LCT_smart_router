@@ -11,6 +11,7 @@ from core.contracts import (
     RouterResult,
     RouterTaskSnapshot,
     RouterTechnicalSettings,
+    SnapshotPublicationEnvelope,
 )
 from core.runtime import RouterRuntime
 
@@ -29,6 +30,13 @@ class ManualEvaluationRequest(Record):
     input_hash: str = Field(min_length=64, max_length=64)
     router_context_version: str = Field(min_length=1)
     routes: dict[str, list[str]] = Field(max_length=1000)
+
+
+class DispatcherPreviewRequest(Record):
+    """Unpublished exact-byte proposal, evaluated with current Router-owned resources."""
+
+    publication: SnapshotPublicationEnvelope
+    expected_context_version: str = Field(min_length=1)
 
 
 class TechnicalSettingsRequest(RouterTechnicalSettings):
@@ -100,6 +108,21 @@ def create_app(runtime: RouterRuntime) -> FastAPI:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except OSError as exc:
             raise HTTPException(status_code=503, detail="ACTIVE_PUBLICATION_UNAVAILABLE") from exc
+
+    @app.post("/v1/dispatcher-preview", response_model=RouterResult)
+    def dispatcher_preview(request: DispatcherPreviewRequest) -> RouterResult:
+        """Return a candidate only; sys owns confirmation, publication and application."""
+        try:
+            return runtime.preview_dispatcher_plan(
+                request.publication, request.expected_context_version
+            )
+        except RuntimeError as exc:
+            if str(exc) == "PREVIEW_BUSY":
+                raise HTTPException(status_code=429, detail=str(exc)) from exc
+            raise
+        except ValueError as exc:
+            status = 409 if str(exc) == "CONTEXT_CHANGED" else 422
+            raise HTTPException(status_code=status, detail=str(exc)) from exc
 
     @app.post("/v1/window-proposal")
     def window_proposal(request: WindowProposalRequest) -> dict:
