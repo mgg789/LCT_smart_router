@@ -1,46 +1,56 @@
 import { describe, expect, it } from 'vitest';
-import { planQualityAdvice, qualityBand, reliableDaysOutOfTen, unroutedPlanAdvice } from './planQuality';
+import { planQualityAdvice, qualityBand, unroutedPlanAdvice } from './planQuality';
 import { recommendPolicy } from './policyRecommend';
 
 describe('plan quality advice', () => {
-  it('uses the documented reliability bands and the dispatcher titles', () => {
-    expect(qualityBand(0.9)).toBe('green');
-    expect(qualityBand(0.89)).toBe('yellow');
-    expect(qualityBand(0.7)).toBe('yellow');
-    expect(qualityBand(0.69)).toBe('red');
-    expect(reliableDaysOutOfTen(0.74)).toBe(7);
+  it('bands on the expected late count and share, never on zero-late days', () => {
+    expect(qualityBand({ expectedLate: 0.4, expectedLateShare: 0.01, visitsTotal: 50 })).toBe('green');
+    expect(qualityBand({ expectedLate: 2, expectedLateShare: 0.04, visitsTotal: 50 })).toBe('yellow');
+    expect(qualityBand({ expectedLate: 3, expectedLateShare: 0.11, visitsTotal: 50 })).toBe('yellow');
+    expect(qualityBand({ expectedLate: 4, expectedLateShare: 0.2, visitsTotal: 50 })).toBe('red');
+    // A plan can be structurally late even when some days pass cleanly.
+    expect(qualityBand({ expectedLate: 8, expectedLateShare: 0.16, visitsTotal: 50 })).toBe('red');
+  });
+
+  it('uses the dispatcher titles and the honest late count', () => {
+    const plan = (expectedLate: number, expectedLateShare: number) => ({
+      expectedLate,
+      expectedLateShare,
+      visitsTotal: 50,
+    });
     expect(
       planQualityAdvice({
-        robustness: 0.96,
+        plan: plan(0.2, 0.004),
         unassignedCount: 0,
         activePolicy: 'balanced',
         requests: [],
         engineers: [],
       }).title,
-    ).toBe('План отличный');
+    ).toBe('План надёжный');
     expect(
       planQualityAdvice({
-        robustness: 0.74,
+        plan: plan(2, 0.04),
         unassignedCount: 0,
         activePolicy: 'balanced',
         requests: [],
         engineers: [],
       }).title,
     ).toBe('Можно работать');
-    expect(
-      planQualityAdvice({
-        robustness: 0.4,
-        unassignedCount: 0,
-        activePolicy: 'balanced',
-        requests: [],
-        engineers: [],
-      }).title,
-    ).toBe('Высокий риск');
+    const red = planQualityAdvice({
+      plan: plan(8.4, 0.16),
+      unassignedCount: 0,
+      activePolicy: 'balanced',
+      requests: [],
+      engineers: [],
+    });
+    expect(red.title).toBe('Высокий риск');
+    expect(red.summary).toContain('~8');
+    expect(red.summary).toContain('50');
   });
 
   it('does not suggest the policy that is already on, and links the risky request', () => {
     const tense = planQualityAdvice({
-      robustness: 0.74,
+      plan: { expectedLate: 2, expectedLateShare: 0.04, visitsTotal: 50 },
       unassignedCount: 1,
       activePolicy: 'covering',
       requests: [

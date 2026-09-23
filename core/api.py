@@ -17,6 +17,7 @@ from core.contracts import (
     RouterTaskSnapshot,
     RouterTechnicalSettings,
 )
+from core.predict_calibration import PredictCalibration
 from core.runtime import RouterRuntime
 from core.roadimport import RoadGraphStore, RoadImportError, import_into_runtime
 
@@ -54,6 +55,14 @@ class TechnicalSettingsRequest(RouterTechnicalSettings):
 
     operation_id: str = Field(min_length=1, max_length=128)
     expected_context_version: str = Field(min_length=1)
+
+
+class PredictCalibrationRequest(Record):
+    """Complete replacement of the plan-assessment simulator calibration."""
+
+    operation_id: str = Field(min_length=1, max_length=128)
+    expected_version: str | None = None
+    calibration: PredictCalibration
 
 
 class WindowProposalRequest(Record):
@@ -246,5 +255,17 @@ def create_app(runtime: RouterRuntime, road_store: RoadGraphStore | None = None)
             )
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.get("/v1/config/predict-calibration")
+    def get_predict_calibration() -> dict:
+        """Active simulator calibration for the plan-assessment contour."""
+        return runtime.predict_calibration_state()
+
+    @app.put("/v1/config/predict-calibration")
+    def put_predict_calibration(body: PredictCalibrationRequest) -> dict:
+        """Replace the calibration after an optimistic version check; idempotent."""
+        if body.expected_version and body.expected_version != runtime.predict_calibration_state()["version"]:
+            raise HTTPException(status_code=409, detail="CALIBRATION_VERSION_CONFLICT")
+        return runtime.set_predict_calibration(body.calibration, body.operation_id)
 
     return app

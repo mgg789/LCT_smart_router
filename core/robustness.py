@@ -6,7 +6,9 @@ point quotes the plan was built on, and reports dry probabilities.  It never
 re-optimizes or mutates anything: with zero dispersion and zero cancellations
 the outcomes reproduce the deterministic schedule exactly.  A request window
 constrains completion like ``RouteEvaluator`` (finish by window end, terminal
-allowances included), so "late" here means the same thing as in the plan.
+allowances included), and a visit counts as breached only when it overruns the
+window beyond the same tolerance the plan itself accepts — so "late" here means
+the same thing as in the published plan.
 """
 
 from __future__ import annotations
@@ -17,28 +19,20 @@ import math
 import random
 
 from core.contracts import GeoPoint, RouterTaskSnapshot
+from core.predict_calibration import PredictCalibration, factory_calibration
 from core.route_search import RouteEvaluator
 from core.schedule import TERMINAL_WINDOW_LATENESS_TOLERANCE_SEC
 
-CALIBRATION_VERSION = "robustness-v1"
-
-# (name, probability, city-travel multiplier); regimes correlate one day's legs.
-REGIMES = (("normal", 0.65, 1.00), ("rain", 0.30, 1.12), ("heavy", 0.05, 1.25))
-# Control-distribution empirical band for same-day cancellations (context/18 §6.4).
-DEFAULT_CANCEL_RATE = 0.10
-# Lab-calibrated assumptions; replaced by duration-model sigma when it exists.
-DEFAULT_SERVICE_CV = 0.30
-_LEG_CV_SHORT, _LEG_CV_LONG = 0.30, 0.10
 _QUOTE_BUCKET_SEC = 600
 
 
-def _leg_cv(distance_m: float) -> float:
+def _leg_cv(distance_m: float, calibration: PredictCalibration) -> float:
     """Short city legs are noisy; long legs average out (ml-lab calibration)."""
     km = distance_m / 1000
     if km >= 25:
-        return _LEG_CV_LONG
+        return calibration.leg_cv_long
     share = min(1.0, km / 25)
-    return round(_LEG_CV_SHORT + (_LEG_CV_LONG - _LEG_CV_SHORT) * math.sqrt(share), 4)
+    return round(calibration.leg_cv_short + (calibration.leg_cv_long - calibration.leg_cv_short) * math.sqrt(share), 4)
 
 
 def _master_seed(*parts: object) -> str:
@@ -80,22 +74,25 @@ def predict_situation(
     completed: dict[str, list[str]] | None = None,
     cancel_rate: float | None = None,
     dispersion_scale: float = 1.0,
+    calibration: PredictCalibration | None = None,
 ) -> dict:
     """Return dry per-request and plan-level probabilities for one fixed plan.
 
     ``as_of`` with ``completed`` continues the day from the execution state, so
     probabilities are conditional on what already happened.  Deterministic for
-    identical inputs: the seed derives from the plan, situation and calibration
-    version, never from wall-clock time.
+    identical inputs: the seed derives from the plan, the active calibration and
+    the situation, never from wall-clock time.
     """
+    calibration = calibration or factory_calibration()
     evaluator = RouteEvaluator(snapshot, travel)
     _validate_routes(evaluator, routes)
     completed = completed or {}
     _validate_completed(evaluator, routes, completed)
-    cancels = DEFAULT_CANCEL_RATE if cancel_rate is None else cancel_rate
-    names = [r[0] for r in REGIMES]
-    weights = [r[1] for r in REGIMES]
-    multipliers = {r[0]: r[2] for r in REGIMES}
+    cancels = calibration.cancel_rate if cancel_rate is None else cancel_rate
+    regimes = calibration.regimes
+    names = [r.name for r in regimes]
+    weights = [r.probability for r in regimes]
+    multipliers = {r.name: r.travel_multiplier for r in regimes}
     seed = _master_seed(
         snapshot.input_hash if hasattr(snapshot, "input_hash") else "",
         json.dumps(routes, sort_keys=True),
@@ -104,7 +101,7 @@ def predict_situation(
         as_of,
         cancels,
         round(dispersion_scale, 6),
-        CALIBRATION_VERSION,
+        calibration.content_version(),
     )
     engineers = {e.engineer_id: e for e in evaluator.engineers}
     indexes = {e.engineer_id: i for i, e in enumerate(evaluator.engineers)}
@@ -128,6 +125,7 @@ def predict_situation(
     late_per_day: list[int] = []
     max_late_per_day: list[float] = []
     cancelled_total = 0
+    visited_per_day = 0
 
     for sim in range(simulations):
         rng = random.Random(f"{seed}:{sim}")
@@ -161,26 +159,32 @@ def predict_situation(
                 duration = float(road.duration_sec) * regime_mult
                 if dispersion_scale > 0:
                     duration *= rng.lognormvariate(
-                        0.0, _leg_cv(road.distance_m) * dispersion_scale
+                        0.0, _leg_cv(road.distance_m, calibration) * dispersion_scale
                     )
                 arrive = clock + duration
                 start = max(arrive, float(request.window_start_at))
                 service = float(request.service_duration_sec)
                 if dispersion_scale > 0:
-                    service *= rng.lognormvariate(0.0, DEFAULT_SERVICE_CV * dispersion_scale)
+                    service *= rng.lognormvariate(0.0, calibration.service_cv * dispersion_scale)
                 finish = start + service
                 terminal = position == len(order) - 1
                 tolerance = evaluator.tolerance
                 if terminal:
                     tolerance = max(tolerance, TERMINAL_WINDOW_LATENESS_TOLERANCE_SEC)
+                # Solver-consistent breach: the same overrun the plan itself treats as
+                # infeasible. A finish inside the window grace is the plan's accepted
+                # slack, not a failed visit.
+                visited_per_day += 1
                 late_sec = max(0.0, finish - request.window_end_at)
+                breach = finish > request.window_end_at + tolerance
                 entry = stats[request_id]
                 entry["reached"] += 1
-                if late_sec > 0:
+                if breach:
                     entry["late"] += 1
+                    day_late += 1
+                if late_sec > 0:
                     entry["late_sum"] += late_sec
                     entry["lates"].append(late_sec)
-                    day_late += 1
                     day_max_late = max(day_max_late, late_sec)
                 clock = finish
                 point = request.location
@@ -204,20 +208,25 @@ def predict_situation(
             "p90_late_sec": round(lates[min(len(lates) - 1, int(0.9 * len(lates)))]) if lates else 0,
             "cancel_rate_sim": round(1 - reached / simulations, 4),
         }
-    result = {
-        "calibration_version": CALIBRATION_VERSION,
+    visits_total = visited_per_day // simulations
+    return {
+        "calibration_version": f"{calibration.source}:{calibration.content_version()[:12]}",
         "simulations": simulations,
-        "regime": None,
         "assumptions": {
+            "source": calibration.source,
             "cancel_rate": cancels,
-            "service_cv": DEFAULT_SERVICE_CV,
-            "leg_cv": {"short": _LEG_CV_SHORT, "long": _LEG_CV_LONG},
-            "regimes": {name: {"prob": p, "mult": m} for name, p, m in REGIMES},
-            "note": "synthetic-dispersion model; re-calibrate on real execution history",
+            "service_cv": calibration.service_cv,
+            "leg_cv": {"short": calibration.leg_cv_short, "long": calibration.leg_cv_long},
+            "regimes": {r.name: {"prob": r.probability, "mult": r.travel_multiplier} for r in regimes},
+            "note": "synthetic-dispersion model; re-calibrated on real execution facts",
         },
         "plan": {
             "robustness": round(zero_late_days / simulations, 4),
+            "visits_total": visits_total,
             "expected_late": round(sum(late_per_day) / simulations, 2),
+            "expected_late_share": round(
+                sum(late_per_day) / visited_per_day, 4
+            ) if visited_per_day else 0.0,
             "p95_late_count": late_per_day[min(simulations - 1, int(0.95 * simulations))],
             "p95_max_late_sec": round(max_late_per_day[min(simulations - 1, int(0.95 * simulations))]),
             "expected_cancellations": round(cancelled_total / simulations, 2),
@@ -228,4 +237,3 @@ def predict_situation(
             for engineer_id, count in overrun.items()
         },
     }
-    return result

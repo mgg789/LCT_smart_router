@@ -1273,7 +1273,9 @@ export async function allWithLimit<T>(
 const situationPredictionSchema = z.object({
   plan: z.object({
     robustness: z.number().min(0).max(1),
+    visits_total: z.number().int().nonnegative(),
     expected_late: z.number().nonnegative(),
+    expected_late_share: z.number().min(0).max(1),
     p95_late_count: z.number().nonnegative(),
     p95_max_late_sec: z.number().nonnegative(),
   }),
@@ -1291,7 +1293,9 @@ const situationPredictionSchema = z.object({
 
 export interface SituationPredictionView {
   readonly robustness: number;
+  readonly visitsTotal: number;
   readonly expectedLate: number;
+  readonly expectedLateShare: number;
   readonly p95LateCount: number;
   readonly p95MaxLateSec: number;
   readonly requests: Readonly<
@@ -1330,7 +1334,9 @@ export function predictSituation(
     25_000,
   ).then((parsed) => ({
     robustness: parsed.plan.robustness,
+    visitsTotal: parsed.plan.visits_total,
     expectedLate: parsed.plan.expected_late,
+    expectedLateShare: parsed.plan.expected_late_share,
     p95LateCount: parsed.plan.p95_late_count,
     p95MaxLateSec: parsed.plan.p95_max_late_sec,
     requests: Object.fromEntries(
@@ -1359,6 +1365,58 @@ export type DispatchWeather = z.infer<typeof weatherSchema>;
 /** Cached Moscow forecast. The multiplier is already inside car travel times. */
 export function loadDispatchWeather(token: string): Promise<DispatchWeather> {
   return requestJson('/api/v1/dispatch/weather', weatherSchema, token);
+}
+
+const aiViewSchema = z.object({
+  settings: z.object({
+    planCalibrationEnabled: z.boolean(),
+    planCalibrationEnabledRaw: z.boolean().nullable(),
+    llmApiUrl: z.string().nullable(),
+    llmApiKeySet: z.boolean(),
+    llmApiKeyLast4: z.string().nullable(),
+    jevApiUrl: z.string().nullable(),
+    jevApiKeySet: z.boolean(),
+    jevApiKeyLast4: z.string().nullable(),
+  }),
+  status: z.object({
+    source: z.enum(['factory', 'learned']),
+    version: z.string().nullable(),
+    confidence: z.number().min(0).max(1),
+    samples: z.object({
+      service: z.number().int().nonnegative(),
+      legs: z.number().int().nonnegative(),
+      cancelRequests: z.number().int().nonnegative(),
+      executionDays: z.number().int().nonnegative(),
+    }),
+    computedAt: z.number().nullable(),
+    syncedToRouter: z.boolean(),
+  }),
+});
+
+export type AiView = z.infer<typeof aiViewSchema>;
+
+/** AI contour controls plus the live calibration reading. */
+export function getAiSettings(token: string): Promise<AiView> {
+  return requestJson('/api/v1/dispatch/ai', aiViewSchema, token);
+}
+
+export function saveAiSettings(
+  token: string,
+  input: {
+    planCalibrationEnabled?: boolean;
+    llmApiUrl?: string | null;
+    llmApiKey?: string;
+    clearLlmApiKey?: boolean;
+    jevApiUrl?: string | null;
+    jevApiKey?: string;
+    clearJevApiKey?: boolean;
+  },
+): Promise<AiView> {
+  return requestJson('/api/v1/dispatch/ai', aiViewSchema, token, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ operationId: `ai-${Date.now()}`, ...input }),
+  });
 }
 
 export async function requestJson<T>(

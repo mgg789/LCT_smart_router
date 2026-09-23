@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MonthlyReportsModule } from '../notifications/monthly-reports.module';
+import { AiModule } from '../orchestrator/ai';
 import { AlertsModule } from '../orchestrator/alerts';
 import { DemoStandModule } from '../orchestrator/demo-stand';
 import { EngineersModule } from '../orchestrator/engineers';
@@ -34,6 +35,7 @@ import { RewardsController } from './rewards.controller';
   imports: [
     RequestsModule,
     EngineersModule,
+    AiModule,
     AlertsModule,
     FactsModule,
     ImportsModule,

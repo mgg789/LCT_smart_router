@@ -7,6 +7,7 @@ import { Clock } from '../common/time';
 import { zodBody } from '../common/validation';
 import { OperationsService } from '../operations';
 import { AlertsService } from '../orchestrator/alerts';
+import { AiService } from '../orchestrator/ai';
 import { DemoStandService } from '../orchestrator/demo-stand';
 import { EngineersService, workDateOf } from '../orchestrator/engineers';
 import {
@@ -57,6 +58,7 @@ import {
   type UploadDataPackageDto,
   uploadDataPackageSchema,
 } from './dto/data.dto';
+import { type AiSettingsDto, aiSettingsSchema } from './dto/ai.dto';
 import {
   type SituationPredictDto,
   situationPredictSchema,
@@ -153,6 +155,7 @@ export class DispatchController {
     private readonly uow: UnitOfWork,
     private readonly clock: Clock,
     private readonly live: LiveService,
+    private readonly ai: AiService,
     private readonly dispatcherSettings: DispatcherSettingsService,
     private readonly geocoding: GeocodingService,
     private readonly mapRouting: MapRoutingService,
@@ -1231,6 +1234,38 @@ export class DispatchController {
           return this.demoStand.restore(context);
         }
         return this.resetService.run(context, dto.kind, dto.confirmation);
+      },
+    );
+    // A fresh working set has no execution facts, so the plan-assessment model
+    // goes back to the factory assumptions together with the data it fit.
+    if (this.router.isConfigured()) {
+      await this.ai.rollbackToFactory();
+    }
+    return outcome.result;
+  }
+
+  @Get('ai')
+  @ApiOperation({ summary: 'AI contour controls and the plan-calibration reading' })
+  async aiView() {
+    return this.ai.view();
+  }
+
+  @Put('ai')
+  @ApiOperation({ summary: 'Replace AI contour controls (plan calibration, future endpoints)' })
+  async updateAi(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(aiSettingsSchema)) dto: AiSettingsDto,
+  ) {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'dispatch.ai.replace',
+        payload: dto,
+      },
+      async (context) => {
+        await this.ai.replace(context.tx, context.now, dto);
+        return this.ai.view();
       },
     );
     return outcome.result;

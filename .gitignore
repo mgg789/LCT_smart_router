@@ -35,3 +35,7 @@ playwright-report/
 # Local environment files (only .env.example is committed)
 .env.*
 !.env.example
+
+# Learned plan-assessment calibration is machine-local execution state
+# (factory defaults ship in code; see core/predict_calibration.py)
+.router/predict-calibration.json

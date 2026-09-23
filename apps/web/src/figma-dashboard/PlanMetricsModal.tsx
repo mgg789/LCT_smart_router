@@ -100,7 +100,11 @@ export function PlanMetricsModal({
   const advice =
     prediction && snapshot
       ? planQualityAdvice({
-          robustness: prediction.robustness,
+          plan: {
+            expectedLate: prediction.expectedLate,
+            expectedLateShare: prediction.expectedLateShare,
+            visitsTotal: prediction.visitsTotal,
+          },
           unassignedCount: metrics?.unassigned ?? 0,
           activePolicy: snapshot.policyId,
           requests: riskyRequests(snapshot, prediction),
@@ -147,7 +151,7 @@ export function PlanMetricsModal({
             type="button"
             aria-label="Закрыть"
             onClick={onClose}
-            className="flex size-[36px] items-center justify-center rounded-full transition-colors duration-150 hover:bg-figma-canvas"
+            className="flex size-[36px] items-center justify-center transition-transform duration-150 hover:scale-110"
           >
             <span className="-rotate-45">
               <FigmaIcon src={FIGMA_ASSETS.toastCloseInk} alt="" width={20} height={20} />

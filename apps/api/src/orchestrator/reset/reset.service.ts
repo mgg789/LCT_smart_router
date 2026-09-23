@@ -175,6 +175,10 @@ export class ResetService {
     await tx.operation.deleteMany({});
     await tx.auditLog.deleteMany({});
 
+    // AI contour state goes with the facts it was fit on; the dispatcher's
+    // explicit switch is kept, but the learned calibration cache is not.
+    await tx.appState.deleteMany({ where: { key: APP_STATE_KEYS.AI_CALIBRATION } });
+
     // Accounts last, and only the ones that are not the dispatcher: that account is
     // restored from configuration, and deleting it would lock the Dashboard out.
     await tx.accountRole.deleteMany({ where: { role: { in: ['client', 'engineer'] } } });

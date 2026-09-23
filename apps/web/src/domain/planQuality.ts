@@ -3,9 +3,13 @@ import type { PolicyId } from '../api/types';
 /**
  * Dispatcher-facing reading of a dry situation prediction.
  *
- * Bands match the documented thresholds: 90% and above is excellent, 70–90%
- * is workable, below 70% is a high risk. The text never names the simulator
- * and never suggests the policy that is already on.
+ * Bands express what a dispatcher would accept from a typical day, so both the
+ * expected count and the share of late visits matter: "fewer than one late
+ * request" is a normal day at any plan size, "a couple of tight spots" is
+ * workable, and a structurally late plan is red. P(a day with zero late
+ * visits) is deliberately not a band input: on a 50-visit day it sits near
+ * zero for every honest plan and would read every plan as a failure.
+ * The text never names the simulator and never suggests the policy that is on.
  */
 
 export type QualityBand = 'green' | 'yellow' | 'red';
@@ -19,6 +23,12 @@ export interface QualityRequest {
 export interface QualityEngineer {
   readonly name: string;
   readonly overrunProb: number;
+}
+
+export interface QualityPlan {
+  readonly expectedLate: number;
+  readonly expectedLateShare: number;
+  readonly visitsTotal: number;
 }
 
 export interface AdviceLine {
@@ -36,15 +46,10 @@ export interface PlanQualityAdvice {
 }
 
 const TITLES: Record<QualityBand, string> = {
-  green: 'План отличный',
+  green: 'План надёжный',
   yellow: 'Можно работать',
   red: 'Высокий риск',
 };
-
-/** Share of simulated days with no late visit, expressed as a 0–10 count. */
-export function reliableDaysOutOfTen(robustness: number): number {
-  return Math.round(Math.min(1, Math.max(0, robustness)) * 10);
-}
 
 /**
  * Reading for a plan that has no visits to rehearse.
@@ -73,10 +78,10 @@ export function unroutedPlanAdvice(input: {
   };
 }
 
-/** Traffic-light band for one robustness share in 0..1. */
-export function qualityBand(robustness: number): QualityBand {
-  if (robustness >= 0.9) return 'green';
-  if (robustness >= 0.7) return 'yellow';
+/** Traffic-light band for one plan's expected late visits. */
+export function qualityBand(plan: QualityPlan): QualityBand {
+  if (plan.expectedLate < 1 && plan.expectedLateShare < 0.05) return 'green';
+  if (plan.expectedLate <= 3 && plan.expectedLateShare < 0.12) return 'yellow';
   return 'red';
 }
 
@@ -85,14 +90,15 @@ export function qualityBand(robustness: number): QualityBand {
  * a dispatcher can act on. At most three request lines, so the card stays short.
  */
 export function planQualityAdvice(input: {
-  readonly robustness: number;
+  readonly plan: QualityPlan;
   readonly unassignedCount: number;
   readonly activePolicy: PolicyId;
   readonly requests: readonly QualityRequest[];
   readonly engineers: readonly QualityEngineer[];
 }): PlanQualityAdvice {
-  const band = qualityBand(input.robustness);
-  const days = reliableDaysOutOfTen(input.robustness);
+  const band = qualityBand(input.plan);
+  const total = Math.max(1, input.plan.visitsTotal);
+  const latePhrase = lateCountPhrase(input.plan.expectedLate);
   const lines: AdviceLine[] = [];
   if (input.unassignedCount > 0) {
     lines.push(textLine(unassignedLine(input.unassignedCount, input.activePolicy)));
@@ -128,12 +134,21 @@ export function planQualityAdvice(input: {
   if (lines.length === 0) {
     lines.push(textLine('Менять политику не нужно: в большинстве проверок день проходит без опозданий.'));
   }
+  const summary = `В типичный день опаздывает ${latePhrase} из ${total}. Проверка прожила день много раз с разным трафиком и длительностью работ.`;
   return {
     band,
     title: TITLES[band],
-    summary: `${days} из 10 таких дней проходят без опозданий. Проверка гоняет день с разным трафиком и разной длительностью работ.`,
+    summary,
     lines,
   };
+}
+
+/** "~1 заявка", "~2 заявки", "~8 заявок", "меньше одной заявки". */
+function lateCountPhrase(expectedLate: number): string {
+  if (expectedLate < 0.95) return 'меньше одной заявки';
+  const count = Math.round(expectedLate);
+  const form = count % 10 === 1 && count % 100 !== 11 ? 'заявка' : count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 10 || count % 100 >= 20) ? 'заявки' : 'заявок';
+  return `~${count} ${form}`;
 }
 
 function unassignedLine(count: number, active: PolicyId): string {

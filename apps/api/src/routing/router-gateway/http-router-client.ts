@@ -7,6 +7,7 @@ import {
   type ManualEvaluation,
   type ManualEvaluationInput,
   type PolicyComparison,
+  type RouterPredictCalibration,
   RouterClient,
   type RouterResultStatus,
   type RouterRoadImportInput,
@@ -16,10 +17,37 @@ import {
   type SituationPrediction,
   type SituationPredictionInput,
   type RouterWeather,
+  type UpdatePredictCalibrationInput,
   type UpdateRouterTechnicalSettings,
   type WindowProposal,
   type WindowProposalInput,
 } from './router-client.port';
+
+const predictCalibrationSchema = z.object({
+  version: z.string().min(1),
+  calibration: z.object({
+    service_cv: z.number().min(0).max(1),
+    leg_cv_short: z.number().min(0).max(1),
+    leg_cv_long: z.number().min(0).max(1),
+    cancel_rate: z.number().min(0).max(1),
+    source: z.enum(['factory', 'learned']),
+    learned_from: z
+      .object({
+        service_samples: z.number().int().nonnegative(),
+        leg_samples: z.number().int().nonnegative(),
+        cancel_requests: z.number().int().nonnegative(),
+        execution_days: z.number().int().nonnegative(),
+      })
+      .nullable(),
+    regimes: z.array(
+      z.object({
+        name: z.string(),
+        probability: z.number().min(0).max(1),
+        travel_multiplier: z.number(),
+      }),
+    ),
+  }),
+});
 
 const situationPredictionSchema = z.object({
   input_hash: z.string().length(64),
@@ -27,6 +55,7 @@ const situationPredictionSchema = z.object({
   calibration_version: z.string().min(1),
   simulations: z.number().int().positive(),
   assumptions: z.object({
+    source: z.enum(['factory', 'learned']),
     cancel_rate: z.number(),
     service_cv: z.number(),
     leg_cv: z.object({ short: z.number(), long: z.number() }),
@@ -35,7 +64,9 @@ const situationPredictionSchema = z.object({
   }),
   plan: z.object({
     robustness: z.number().min(0).max(1),
+    visits_total: z.number().int().nonnegative(),
     expected_late: z.number().nonnegative(),
+    expected_late_share: z.number().min(0).max(1),
     p95_late_count: z.number().int().nonnegative(),
     p95_max_late_sec: z.number().nonnegative(),
     expected_cancellations: z.number().nonnegative(),
@@ -359,6 +390,40 @@ export class HttpRouterClient extends RouterClient {
     if (!parsed.success) {
       throw new Error(
         `Router /v1/situation-predict response is invalid: ${parsed.error.message}`,
+      );
+    }
+    return parsed.data;
+  }
+
+  /** Reads Router's active plan-assessment simulator calibration. */
+  override async getPredictCalibration(): Promise<RouterPredictCalibration> {
+    const raw = await this.fetchJson('/v1/config/predict-calibration');
+    const parsed = predictCalibrationSchema.safeParse(raw);
+    if (!parsed.success) {
+      throw new Error(
+        `Router /v1/config/predict-calibration response is invalid: ${parsed.error.message}`,
+      );
+    }
+    return parsed.data;
+  }
+
+  /** Replaces Router's plan-assessment calibration after an optimistic version check. */
+  override async updatePredictCalibration(
+    input: UpdatePredictCalibrationInput,
+  ): Promise<RouterPredictCalibration> {
+    const raw = await this.fetchJson('/v1/config/predict-calibration', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        operation_id: input.operationId,
+        ...(input.expectedVersion ? { expected_version: input.expectedVersion } : {}),
+        calibration: input.calibration,
+      }),
+    });
+    const parsed = predictCalibrationSchema.safeParse(raw);
+    if (!parsed.success) {
+      throw new Error(
+        `Router /v1/config/predict-calibration response is invalid: ${parsed.error.message}`,
       );
     }
     return parsed.data;

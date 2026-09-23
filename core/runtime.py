@@ -34,6 +34,7 @@ from core.evidence import build_plan_evidence
 from core.geo import GraphTravel, RoadGraph, StraightTravel, configure_travel, content_hash
 from core.osrm import OSRMTravel
 from core.policy import POLICY_CATALOG_VERSION, compile_policy
+from core.predict_calibration import PredictCalibration, PredictCalibrationStore
 from core.roadimport import ImportedRoadOverlay
 from core.route_search import improve_routes
 from core.schedule import assemble_plan, baseline, score, validate_plan
@@ -427,6 +428,7 @@ class RouterRuntime:
         poll_sec: float = 0.2,
         executor=None,
         settings_store: TechnicalSettingsStore | None = None,
+        predict_calibration_store: "PredictCalibrationStore | None" = None,
     ):
         """Own immutable resource copies; injectable executor supports race tests."""
         if poll_sec <= 0:
@@ -435,6 +437,10 @@ class RouterRuntime:
         self._graph = copy.deepcopy(graph)
         self._base_graph = copy.deepcopy(graph)
         self._settings_store = settings_store
+        self._predict_calibration_store = predict_calibration_store or PredictCalibrationStore(
+            Path(".router/predict-calibration.json")
+        )
+        self._predict_calibration = self._predict_calibration_store.load()
         self.settings = settings or SearchSettings()
         saved = settings_store.load() if settings_store is not None else None
         if saved is not None:
@@ -584,6 +590,23 @@ class RouterRuntime:
                 raise ValueError("PUBLICATION_CHANGED")
         return {"input_hash": input_hash, "router_context_version": context_version, **result}
 
+    def predict_calibration_state(self) -> dict:
+        """Identity and parameters of the active plan-assessment calibration."""
+        return {
+            "version": self._predict_calibration.content_version(),
+            "calibration": self._predict_calibration.model_dump(),
+        }
+
+    def set_predict_calibration(self, calibration: PredictCalibration, operation_id: str) -> dict:
+        """Replace the simulator calibration atomically; the store survives restarts."""
+        self._predict_calibration_store.save(calibration)
+        self._predict_calibration = calibration
+        return {
+            "operation_id": operation_id,
+            "version": calibration.content_version(),
+            "calibration": calibration.model_dump(),
+        }
+
     def predict_situation(
         self,
         input_hash: str,
@@ -626,6 +649,7 @@ class RouterRuntime:
             as_of=as_of,
             completed=completed,
             cancel_rate=cancel_rate,
+            calibration=self._predict_calibration,
         )
         latest = self.reader.read()
         latest_raw = latest if isinstance(latest, bytes) else latest.payload

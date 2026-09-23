@@ -213,6 +213,18 @@ export abstract class RouterClient {
     throw SysError.notConfigured('Router Core situation prediction');
   }
 
+  /** Reads the active plan-assessment simulator calibration. */
+  getPredictCalibration(): Promise<RouterPredictCalibration> {
+    throw SysError.notConfigured('Router Core predict calibration');
+  }
+
+  /** Replaces the plan-assessment calibration; used by the AI self-calibration contour. */
+  updatePredictCalibration(
+    _input: UpdatePredictCalibrationInput,
+  ): Promise<RouterPredictCalibration> {
+    throw SysError.notConfigured('Router Core predict calibration');
+  }
+
   /** Cached Moscow forecast used by the map badge. Multiplier 1 when weather is calm. */
   getWeather(): Promise<RouterWeather> {
     throw SysError.notConfigured('Router Core weather');
@@ -266,6 +278,7 @@ export interface SituationPrediction {
   readonly calibration_version: string;
   readonly simulations: number;
   readonly assumptions: {
+    readonly source: 'factory' | 'learned';
     readonly cancel_rate: number;
     readonly service_cv: number;
     readonly leg_cv: { readonly short: number; readonly long: number };
@@ -273,15 +286,53 @@ export interface SituationPrediction {
     readonly note: string;
   };
   readonly plan: {
-    /** Share of simulations with zero late visits (0..1). */
+    /** Share of simulations with zero breached visits (0..1). */
     readonly robustness: number;
+    readonly visits_total: number;
     readonly expected_late: number;
+    readonly expected_late_share: number;
     readonly p95_late_count: number;
     readonly p95_max_late_sec: number;
     readonly expected_cancellations: number;
   };
   readonly requests: Record<string, SituationRequestPrediction>;
   readonly engineers: Record<string, { readonly overrun_prob: number }>;
+}
+
+/**
+ * Complete dispersion parameters of the plan-assessment simulator. The numbers
+ * come from execution facts (learned) or from the lab assumptions (factory);
+ * regimes stay factory until a real weather-linked execution history exists.
+ */
+export interface PredictCalibrationDocument {
+  readonly service_cv: number;
+  readonly leg_cv_short: number;
+  readonly leg_cv_long: number;
+  readonly cancel_rate: number;
+  readonly source: 'factory' | 'learned';
+  readonly learned_from: null | {
+    readonly service_samples: number;
+    readonly leg_samples: number;
+    readonly cancel_requests: number;
+    readonly execution_days: number;
+  };
+  readonly regimes: ReadonlyArray<{
+    readonly name: string;
+    readonly probability: number;
+    readonly travel_multiplier: number;
+  }>;
+}
+
+export interface RouterPredictCalibration {
+  readonly version: string;
+  readonly calibration: PredictCalibrationDocument;
+}
+
+export interface UpdatePredictCalibrationInput {
+  readonly operationId: string;
+  /** Optimistic lock on the current calibration version; absent means last-write-wins. */
+  readonly expectedVersion?: string;
+  readonly calibration: PredictCalibrationDocument;
 }
 
 /** Exact lexicographic policy evidence on the same snapshot and travel resources. */

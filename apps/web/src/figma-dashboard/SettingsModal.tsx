@@ -3,10 +3,13 @@ import { Copy, KeyRound, Plus } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import {
   createApiToken,
+  getAiSettings,
   getDispatcherSettings,
   getMapProvidersStatus,
   listApiTokens,
   revokeApiToken,
+  saveAiSettings,
+  type AiView,
 } from '../api/client';
 import type {
   ApiTokenCategory,
@@ -31,6 +34,7 @@ const TABS = [
   { id: 'general', label: 'Общее' },
   { id: 'api', label: 'API' },
   { id: 'maps', label: 'Карты' },
+  { id: 'ai', label: 'AI' },
 ] as const;
 type SettingsTab = (typeof TABS)[number]['id'];
 
@@ -202,6 +206,7 @@ export function SettingsModal({
           ) : null}
           {tab === 'general' ? <GeneralForm draft={draft} setField={setField} /> : null}
           {tab === 'api' ? <ApiTokensTab token={token} /> : null}
+          {tab === 'ai' ? <AiForm token={token} /> : null}
           {tab === 'maps' ? (
             <MapsForm
               server={server}
@@ -224,7 +229,7 @@ export function SettingsModal({
           </p>
         ) : null}
 
-        {tab !== 'api' ? (
+        {tab !== 'api' && tab !== 'ai' ? (
           <button
             type="button"
             disabled={submitting || loading || !token || !routerSettings}
@@ -924,4 +929,188 @@ function Field({
       {children}
     </label>
   );
+}
+
+/**
+ * AI contour settings. The calibration switch turns plan-assessment
+ * self-training on execution facts on or off; the LLM and Jev endpoints are
+ * reserved for a future contour and change nothing yet.
+ */
+function AiForm({ token }: { token: string | null }) {
+  const [view, setView] = useState<AiView | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [enabled, setEnabled] = useState(false);
+  const [llmUrl, setLlmUrl] = useState('');
+  const [llmKey, setLlmKey] = useState('');
+  const [jevUrl, setJevUrl] = useState('');
+  const [jevKey, setJevKey] = useState('');
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    setLoading(true);
+    void getAiSettings(token)
+      .then((next) => {
+        if (cancelled) return;
+        setView(next);
+        setEnabled(next.settings.planCalibrationEnabled);
+        setLlmUrl(next.settings.llmApiUrl ?? '');
+        setJevUrl(next.settings.jevApiUrl ?? '');
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : 'Не удалось загрузить AI-настройки');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  const save = (patch: Parameters<typeof saveAiSettings>[1]) => {
+    if (!token) return;
+    setSaving(true);
+    setError(null);
+    void saveAiSettings(token, patch)
+      .then((next) => {
+        setView(next);
+        setEnabled(next.settings.planCalibrationEnabled);
+      })
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : 'Не удалось сохранить AI-настройки');
+      })
+      .finally(() => setSaving(false));
+  };
+
+  const status = view?.status;
+  const percent = Math.round((status?.confidence ?? 0) * 100);
+  const dirty =
+    enabled !== (view?.settings.planCalibrationEnabled ?? false) ||
+    llmUrl !== (view?.settings.llmApiUrl ?? '') ||
+    llmKey.length > 0 ||
+    jevUrl !== (view?.settings.jevApiUrl ?? '') ||
+    jevKey.length > 0;
+
+  return (
+    <div className="pb-[8px]">
+      <SettingSwitch
+        label="Дообучение оценки плана"
+        checked={enabled}
+        onChange={() => save({ planCalibrationEnabled: !enabled })}
+      />
+      <p className="mt-[8px] font-medium text-[14px] leading-[1.4] text-figma-muted">
+        Проверка плана учится на фактах исполнения: чем больше дней отработано, тем точнее
+        оценки надёжности. Выключено — работает заводская калибровка.
+      </p>
+
+      <div className="mt-[20px] rounded-[20px] border border-figma-ink/10 px-[18px] py-[16px]">
+        <div className="flex items-baseline justify-between">
+          <span className="font-semibold text-[16px] text-figma-ink">Точность самонастройки</span>
+          <span className="font-extrabold text-[20px] text-figma-ink">{percent}%</span>
+        </div>
+        <div className="mt-[10px] h-[12px] w-full overflow-hidden rounded-full bg-figma-track">
+          <div
+            className="h-full rounded-full bg-figma-bee transition-[width] duration-300"
+            style={{ width: `${percent}%` }}
+          />
+        </div>
+        <p className="mt-[10px] font-medium text-[14px] leading-[1.4] text-figma-muted">
+          {calibrationCaption(status)}
+        </p>
+        {status ? (
+          <p className="mt-[6px] font-medium text-[13px] text-figma-hint">
+            Источник: {status.source === 'learned' ? 'факты исполнения' : 'заводские допущения'}
+            {status.computedAt ? ` · обновлено ${formatMoscowDate(status.computedAt)}` : ''}
+          </p>
+        ) : null}
+      </div>
+
+      <p className="mt-[24px] font-semibold text-[16px] text-figma-ink">Внешние AI-сервисы</p>
+      <p className="mt-[4px] font-medium text-[14px] text-figma-muted">
+        Зарезервировано для будущего AI-контура. Подключение само по себе ничего не включает.
+      </p>
+      <Field label="LLM: адрес API" htmlFor="ai-llm-url">
+        <input
+          id="ai-llm-url"
+          type="text"
+          placeholder="например, http://localhost:8000/v1"
+          value={llmUrl}
+          onChange={(event) => setLlmUrl(event.target.value)}
+          className={FIELD}
+        />
+      </Field>
+      <Field label={view?.settings.llmApiKeySet ? `Ключ API ···${view.settings.llmApiKeyLast4 ?? ''}` : 'Ключ API (LLM)'} htmlFor="ai-llm-key">
+        <input
+          id="ai-llm-key"
+          type="password"
+          placeholder={view?.settings.llmApiKeySet ? 'Задан — введите новый, чтобы заменить' : 'Ключ пока не задан'}
+          value={llmKey}
+          onChange={(event) => setLlmKey(event.target.value)}
+          className={FIELD}
+        />
+      </Field>
+      <Field label="Jev: адрес API" htmlFor="ai-jev-url">
+        <input
+          id="ai-jev-url"
+          type="text"
+          placeholder="например, http://localhost:8100"
+          value={jevUrl}
+          onChange={(event) => setJevUrl(event.target.value)}
+          className={FIELD}
+        />
+      </Field>
+      <Field label={view?.settings.jevApiKeySet ? `Ключ API ···${view.settings.jevApiKeyLast4 ?? ''}` : 'Ключ API (Jev)'} htmlFor="ai-jev-key">
+        <input
+          id="ai-jev-key"
+          type="password"
+          placeholder={view?.settings.jevApiKeySet ? 'Задан — введите новый, чтобы заменить' : 'Ключ пока не задан'}
+          value={jevKey}
+          onChange={(event) => setJevKey(event.target.value)}
+          className={FIELD}
+        />
+      </Field>
+
+      <button
+        type="button"
+        disabled={saving || loading || !token || !dirty}
+        onClick={() =>
+          save({
+            planCalibrationEnabled: enabled,
+            ...(llmUrl !== (view?.settings.llmApiUrl ?? '') ? { llmApiUrl: llmUrl || null } : {}),
+            ...(llmKey ? { llmApiKey: llmKey } : {}),
+            ...(jevUrl !== (view?.settings.jevApiUrl ?? '') ? { jevApiUrl: jevUrl || null } : {}),
+            ...(jevKey ? { jevApiKey: jevKey } : {}),
+          })
+        }
+        className={`mt-[20px] flex h-[52px] w-full items-center justify-center rounded-[20px] font-medium text-[17px] transition-transform duration-150 ${
+          saving || loading || !token || !dirty
+            ? 'bg-figma-track text-figma-hint'
+            : 'bg-figma-bee text-figma-ink hover:scale-[1.01]'
+        }`}
+      >
+        {saving ? 'Сохраняем…' : 'Сохранить AI-настройки'}
+      </button>
+      {error ? (
+        <p role="alert" className="mt-[10px] font-medium text-[15px] text-figma-danger">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function calibrationCaption(status: AiView['status'] | undefined): string {
+  if (!status) return 'Загружаем…';
+  if (!status.syncedToRouter && status.samples.service === 0) {
+    return 'Фактов исполнения пока нет — работаем на заводских допущениях.';
+  }
+  if (status.confidence >= 1) {
+    return 'Калибровка полностью построена на фактах исполнения.';
+  }
+  const parts = [`${status.samples.service} работ`, `${status.samples.legs} переездов`];
+  if (status.samples.executionDays > 0) parts.push(`${status.samples.executionDays} дн. исполнения`);
+  return `Дообучается на фактах: ${parts.join(', ')}.`;
 }
