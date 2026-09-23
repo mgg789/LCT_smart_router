@@ -47,6 +47,7 @@ export async function renderMonthlyReport(report: MonthlyReportData): Promise<Bu
   };
   const page = (title: string, eyebrow: string) => {
     doc.rect(0, 0, doc.page.width, doc.page.height).fill(PAPER);
+    doc.rect(0, 0, doc.page.width, 8).fill(YELLOW);
     text('NAVIX', 42, 32, 17, INK, true);
     text(report.month, 420, 37, 10, MUTED, false, 130);
     text(eyebrow.toUpperCase(), 42, 86, 9, MUTED, true);
@@ -63,6 +64,15 @@ export async function renderMonthlyReport(report: MonthlyReportData): Promise<Bu
   };
   page('Месяц в движении', report.provisional ? 'Предварительный отчёт' : 'Итоги команды');
   text('Точнее отметки. Надёжнее прогноз. Сильнее команда.', 42, 153, 11, MUTED);
+  const mix = [
+    { value: report.totals.completed, color: YELLOW, label: 'подтверждено' },
+    { value: report.totals.assumedCompleted, color: '#C8C8C8', label: 'по расписанию' },
+    { value: report.totals.cancelled, color: INK, label: 'отменено' },
+  ];
+  const mixTotal = Math.max(
+    1,
+    mix.reduce((sum, part) => sum + Math.max(0, part.value), 0),
+  );
   metric(42, 203, fmt(report.totals.completed), 'Задач с подтверждённым выполнением', true);
   metric(
     42 + (width + 14) / 2,
@@ -78,17 +88,32 @@ export async function renderMonthlyReport(report: MonthlyReportData): Promise<Bu
     'Средний итоговый балл команды',
     true,
   );
-  text('За цифрами стоят действия', 42, 487, 18, INK, true);
+  text('Состав месяца', 42, 458, 12, INK, true);
+  let mixX = 42;
+  doc.roundedRect(42, 480, width, 14, 7).fill('#FFFFFF');
+  for (const part of mix) {
+    const partWidth = (width * Math.max(0, part.value)) / mixTotal;
+    if (partWidth > 0) doc.rect(mixX, 480, partWidth, 14).fill(part.color);
+    mixX += partWidth;
+  }
+  text(
+    mix.map((part) => `${part.label} ${fmt(part.value)}`).join('   ·   '),
+    42,
+    500,
+    9,
+    MUTED,
+  );
+  text('За цифрами стоят действия', 42, 528, 18, INK, true);
   text(
     `Подтверждено работы: ${fmt(report.totals.workMinutes / 60)} ч.\nОтменено заявок: ${fmt(report.totals.cancelled)}.\nПрошло по расписанию без подтверждения: ${fmt(report.totals.assumedCompleted)}.\nРучные корректировки за нарушения: ${fmt(report.totals.penaltyPoints)} баллов.`,
     42,
-    523,
+    560,
     12,
   );
   text(
     'Автоматические предположения не считаются подтверждённой работой и не приносят баллов. Итог инженера сравнивается со средним команды за тот же месяц.',
     42,
-    655,
+    700,
     10,
     MUTED,
   );
@@ -166,11 +191,13 @@ export async function renderMonthlyReport(report: MonthlyReportData): Promise<Bu
       y = 178;
     }
     doc.roundedRect(42, y, width, 48, 10).fill('#FFFFFF');
-    text(day.workDate, 56, y + 16, 10, INK, true, 110);
+    const scoreWidth = day.evaluated ? Math.max(4, ((width - 28) * day.score) / 100) : 0;
+    if (scoreWidth > 0) doc.roundedRect(42, y + 40, scoreWidth, 4, 2).fill(YELLOW);
+    text(day.workDate, 56, y + 12, 10, INK, true, 110);
     text(
       day.evaluated ? `${Math.round(day.score)} / 100` : 'Нет оценки',
       179,
-      y + 16,
+      y + 12,
       10,
       INK,
       true,
