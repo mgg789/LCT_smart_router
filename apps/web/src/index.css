@@ -220,6 +220,27 @@ body {
   --eu: calc(min(100vw, 430px) / 670);
 }
 
+@keyframes ai-reason-shimmer {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(120%);
+  }
+}
+
+.ai-reason-shimmer {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.08) 35%,
+    rgba(255, 255, 255, 0.72) 50%,
+    rgba(255, 255, 255, 0.08) 65%,
+    transparent 100%
+  );
+  animation: ai-reason-shimmer 1.15s ease-in-out infinite;
+}
+
 @keyframes client-ai-flow {
   0% {
     background-position: 0% 50%;

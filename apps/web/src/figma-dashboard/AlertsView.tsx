@@ -65,6 +65,8 @@ export function AlertsView({
   const animate = motionOn && !reduceMotion;
   const inbox = inboxFromSources(snapshot, toasts, demoMode);
   const [clearing, setClearing] = useState(false);
+  const [hiddenNoticeIds, setHiddenNoticeIds] = useState<ReadonlySet<string>>(() => new Set());
+  const visibleNotices = inbox.notices.filter((card) => !hiddenNoticeIds.has(card.id));
   const glassArrow = inbox.alerts.length > 0;
   const listRef = useRef<HTMLDivElement>(null);
   const anchors = useRef<Array<{ id: string; offset: number }>>([]);
@@ -134,7 +136,7 @@ export function AlertsView({
         style={{ top: LIST_TOP, bottom: 28 }}
       >
         <div className="pt-[64px]">
-          {inbox.alerts.length === 0 && inbox.notices.length === 0 ? (
+          {inbox.alerts.length === 0 && visibleNotices.length === 0 ? (
             <p className="pt-[40px] text-center font-medium text-[18px] text-figma-muted">
               Открытых алертов и уведомлений нет
             </p>
@@ -184,7 +186,7 @@ export function AlertsView({
             ))}
           </div>
 
-          {inbox.notices.length > 0 ? (
+          {visibleNotices.length > 0 ? (
             <div className="mb-[16px] mt-[36px] flex items-center gap-[12px]">
               <FigmaText className="font-bold text-[24px] text-figma-ink">Уведомления</FigmaText>
               <motion.button
@@ -192,24 +194,37 @@ export function AlertsView({
                 aria-label="Очистить уведомления"
                 disabled={clearing}
                 onClick={() => {
+                  const cards = visibleNotices;
                   setClearing(true);
+                  const flyMs = animate ? 480 + cards.length * 20 : 0;
                   window.setTimeout(() => {
+                    setHiddenNoticeIds((current) => {
+                      const next = new Set(current);
+                      for (const card of cards) next.add(card.id);
+                      return next;
+                    });
                     dismissAllToasts();
+                    void Promise.all(
+                      cards
+                        .map((card) => card.sourceNoticeId)
+                        .filter((id): id is string => id !== null)
+                        .map((id) => onMarkNoticeSeen(id)),
+                    );
                     setClearing(false);
-                  }, 420);
+                  }, flyMs);
                 }}
-                className="flex size-[36px] items-center justify-center rounded-full text-figma-ink"
-                whileHover={animate ? { scale: 1.08, backgroundColor: 'rgba(39,41,48,0.08)' } : undefined}
+                className="flex size-[43px] items-center justify-center rounded-full bg-figma-ink text-white"
+                whileHover={animate ? { scale: 1.08 } : undefined}
                 whileTap={animate ? { scale: 0.9 } : undefined}
                 transition={{ duration: 0.16 }}
               >
-                <Trash2 size={18} strokeWidth={2} />
+                <Trash2 size={22} strokeWidth={2} />
               </motion.button>
             </div>
           ) : null}
 
           <div className="flex flex-col gap-[20px] pb-[24px]">
-            {inbox.notices.map((card, index) => (
+            {visibleNotices.map((card, index) => (
               <motion.div
                 key={card.id}
                 initial={animate ? { opacity: 0, y: 12 } : false}
@@ -219,9 +234,11 @@ export function AlertsView({
                     : { opacity: 1, y: 0, x: 0, rotate: 0 }
                 }
                 transition={
-                  animate
-                    ? { ...fadeSoft, delay: 0.04 * (inbox.alerts.length + index) }
-                    : { duration: 0 }
+                  clearing
+                    ? { duration: 0.42, ease: fadeSoft.ease, delay: index * 0.02 }
+                    : animate
+                      ? { ...fadeSoft, delay: 0.04 * (inbox.alerts.length + index) }
+                      : { duration: 0 }
                 }
               >
                 <NoticeCard card={card} onMarkSeen={onMarkNoticeSeen} />

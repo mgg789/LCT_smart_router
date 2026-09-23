@@ -1,3 +1,4 @@
+import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { loadDispatchWeather, type DispatchWeather } from '../api/client';
 import { TintIcon } from './TintIcon';
@@ -82,13 +83,23 @@ export function WeatherBadge({ token }: { token: string | null }) {
       >
         <TintIcon src={ICONS[kind]} color={ICON_COLOR[kind]} size={22} />
       </button>
-      {shown ? (
-        <p className="absolute right-0 top-[52px] w-[240px] rounded-[16px] bg-white px-[14px] py-[12px] text-[14px] leading-[1.35] text-figma-ink shadow-[0_12px_32px_rgba(39,41,48,0.18)]">
-          {weather.label}
-          {degrees ? `, ${degrees}` : ''}. Погодный коэффициент учитывается при расчёте времени в
-          пути.{factor}
-        </p>
-      ) : null}
+      <AnimatePresence>
+        {shown ? (
+          <motion.p
+            role="tooltip"
+            className="absolute right-0 top-[52px] w-[240px] rounded-[16px] bg-white px-[14px] py-[12px] text-[14px] leading-[1.35] text-figma-ink shadow-[0_12px_32px_rgba(39,41,48,0.18)]"
+            style={{ transformOrigin: 'top right', transformPerspective: 800 }}
+            initial={{ opacity: 0, rotateX: -16, scale: 0.94, y: -8 }}
+            animate={{ opacity: 1, rotateX: 0, scale: 1, y: 0 }}
+            exit={{ opacity: 0, rotateX: -8, scale: 0.97, y: -4 }}
+            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+          >
+            {weather.label}
+            {degrees ? `, ${degrees}` : ''}. Погодный коэффициент учитывается при расчёте времени в
+            пути.{factor}
+          </motion.p>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 }

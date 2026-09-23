@@ -1,9 +1,9 @@
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { updateDispatcherSettings } from '../api/client';
 import type { HandoffView, LiveRouteProgress } from '../api/live';
-import type { EngineerView, PolicyId, RequestView } from '../api/types';
+import type { EngineerView, PlanDelta, PolicyId, RequestView } from '../api/types';
 import { DayMap } from '../components/DayMap';
 import {
   ALL_REGIONS,
@@ -115,12 +115,12 @@ const SEARCH_OPEN_WIDTH = 351;
 const HEADER_LIFT = 16;
 const POLICY_LEFT = 1329;
 const POLICY_TOP = 26 - HEADER_LIFT;
-const ADD_BUTTON_SIZE = 43;
+const ADD_BUTTON_SIZE = 51;
 const ADD_BUTTON_GAP = 16;
 const METRICS_BUTTON_WIDTH = 232;
 const METRICS_BUTTON_LEFT = POLICY_LEFT - ADD_BUTTON_GAP - METRICS_BUTTON_WIDTH;
 const ADD_BUTTON_LEFT = METRICS_BUTTON_LEFT - ADD_BUTTON_GAP - ADD_BUTTON_SIZE;
-const ADD_BUTTON_TOP = POLICY_TOP + (51 - ADD_BUTTON_SIZE) / 2;
+const ADD_BUTTON_TOP = POLICY_TOP;
 const POLICY_OPEN_HEIGHT = 585;
 const NOTIF_PANEL_LEFT = 1407;
 const NOTIF_PANEL_TOP = 26 - HEADER_LIFT;
@@ -137,6 +137,21 @@ const MAP_EXPANDED = { left: 623, top: PANEL_TOP, width: 1267, height: PANEL_HEI
 const ROUTE_STOP_WIDTH = 260;
 const ROUTE_TOPIC_WIDTH = 240;
 const ROUTE_DOT_SIZE = 20;
+const LAST_PLAN_DELTA_KEY = 'lct.lastPlanDelta';
+
+/** Last rebuild comparison, so «Подробнее» still opens after the live delta was dismissed. */
+function readStoredPlanDelta(): PlanDelta | null {
+  try {
+    const raw = sessionStorage.getItem(LAST_PLAN_DELTA_KEY);
+    if (!raw) return null;
+    const value = JSON.parse(raw) as Partial<PlanDelta>;
+    if (!value || !Array.isArray(value.lines) || typeof value.solveMs !== 'number') return null;
+    return value as PlanDelta;
+  } catch {
+    return null;
+  }
+}
+
 const ROUTE_DOT_LEFT = (ROUTE_TOPIC_WIDTH - ROUTE_DOT_SIZE) / 2;
 const ROUTE_LINE_LEFT = 30 + ROUTE_DOT_LEFT + ROUTE_DOT_SIZE / 2;
 const PROGRESS_TRACK = 321;
@@ -159,9 +174,16 @@ export function MainDashboardPage() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [notifOpen, setNotifOpen] = useState(false);
-  const [deltaOpen, setDeltaOpen] = useState(false);
+  const [reviewDelta, setReviewDelta] = useState<PlanDelta | null>(null);
+  const rememberedDelta = useRef<PlanDelta | null>(readStoredPlanDelta());
   useEffect(() => {
-    setDeltaOpen(false);
+    if (!dash.pendingDelta) return;
+    rememberedDelta.current = dash.pendingDelta;
+    try {
+      sessionStorage.setItem(LAST_PLAN_DELTA_KEY, JSON.stringify(dash.pendingDelta));
+    } catch {
+      /* The panel can still reopen from the in-memory copy. */
+    }
   }, [dash.pendingDelta]);
   const toasts = useToasts();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -372,8 +394,8 @@ export function MainDashboardPage() {
   }, [dash.snapshot]);
 
   useEffect(() => {
-    setToastColumnPinned(notifOpen && activeNav !== 'alerts');
-  }, [activeNav, notifOpen]);
+    setToastColumnPinned(notifOpen);
+  }, [notifOpen]);
 
   const hadToasts = useRef(false);
   useEffect(() => {
@@ -606,10 +628,7 @@ export function MainDashboardPage() {
             setStackNav(id);
             setActiveNav(id);
             setPolicyOpen(false);
-            if (id === 'alerts') {
-              setUserMenuOpen(false);
-              setNotifOpen(false);
-            }
+            if (id === 'alerts') setUserMenuOpen(false);
           }}
           onUpload={() => {
             setPolicyOpen(false);
@@ -703,7 +722,7 @@ export function MainDashboardPage() {
           }}
         />
         <ToastColumn
-          open={notifOpen && activeNav !== 'alerts'}
+          open={notifOpen}
           motionOn={motionOn}
           scale={scale}
           onCollapse={() => {
@@ -711,24 +730,29 @@ export function MainDashboardPage() {
             setToastColumnPinned(false);
           }}
           onToastAction={(toast) => {
-            if (toast.actionLabel && dash.pendingDelta) setDeltaOpen(true);
+            if (!toast.actionLabel) return;
+            const next = dash.pendingDelta ?? rememberedDelta.current;
+            if (next) setReviewDelta(next);
           }}
         />
         <AnimatePresence>
-          {deltaOpen && dash.pendingDelta ? (
+          {reviewDelta ? (
             <ReplanDeltaCard
               key="replan-delta"
-              delta={dash.pendingDelta}
-              canReject={dash.canRejectDelta}
+              delta={reviewDelta}
+              canReject={dash.canRejectDelta && reviewDelta === dash.pendingDelta}
               busy={dash.rebuilding}
               motionOn={motionOn}
               onAccept={() => {
-                setDeltaOpen(false);
-                dash.acceptDelta();
+                setReviewDelta(null);
+                if (dash.pendingDelta) dash.acceptDelta();
               }}
-              onReject={dash.rejectDelta}
+              onReject={() => {
+                setReviewDelta(null);
+                dash.rejectDelta();
+              }}
               onOpenRequest={(requestId) => {
-                setDeltaOpen(false);
+                setReviewDelta(null);
                 setStackDir(stackSlideDir(stackNav, 'day'));
                 setStackNav('day');
                 setActiveNav('day');
@@ -2487,64 +2511,85 @@ function RequestReasons({
   onToggleAi: () => void;
   onToggleLarge: () => void;
 }) {
-  const title = aiOn ? 'AI' : 'Причины';
+  const [aiReady, setAiReady] = useState(false);
+  useEffect(() => {
+    if (!aiOn) {
+      setAiReady(false);
+      return;
+    }
+    const handle = window.setTimeout(() => setAiReady(true), motionOn ? 1500 : 0);
+    return () => window.clearTimeout(handle);
+  }, [aiOn, motionOn]);
   return (
     <div className="mt-[16px]">
       <div className="flex min-h-[216px] w-full flex-col rounded-[20px] bg-figma-dim px-[20px] py-[22px]">
         <div className="flex items-center justify-between gap-[8px]">
-          <FigmaText className="font-medium text-[28px] tracking-[-0.84px] text-white">
-            {title}
+          <FigmaText
+            className={`font-medium text-[28px] tracking-[-0.84px] ${
+              aiOn ? 'client-ai-fill client-ai-text' : 'text-white'
+            }`}
+          >
+            {aiOn ? 'Причины AI' : 'Причины'}
           </FigmaText>
-          <div className="flex items-center gap-[8px]">
-            <ReasonIconButton
-              label={aiOn ? 'Обычные причины' : 'Объяснить с AI'}
-              motionOn={motionOn}
-              onClick={onToggleAi}
-            >
-              {aiOn ? (
-                <TintIcon src="/figma/explain-default.svg" color="#ffffff" size={18} />
-              ) : (
-                <img src="/figma/explain-ai.png" alt="" className="size-[18px] invert" />
-              )}
-            </ReasonIconButton>
-            <AnimatePresence initial={false}>
-              {aiOn ? null : (
-                <motion.span
-                  key="size"
-                  initial={motionOn ? { opacity: 0, scale: 0.8 } : false}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={motionOn ? { opacity: 0, scale: 0.8 } : undefined}
-                  transition={{ duration: 0.16 }}
+          <LayoutGroup>
+            <div className="flex items-center">
+              <motion.div layout={motionOn} transition={{ duration: 0.32, ease: slideEase }}>
+                <ReasonIconButton
+                  label={aiOn ? 'Обычные причины' : 'Объяснить с AI'}
+                  motionOn={motionOn}
+                  onClick={onToggleAi}
                 >
-                  <ReasonIconButton
-                    label={largeOn ? 'Коротко' : 'Подробнее'}
-                    motionOn={motionOn}
-                    onClick={onToggleLarge}
+                  {aiOn ? (
+                    <TintIcon src="/figma/explain-default.svg" color="#ffffff" size={18} />
+                  ) : (
+                    <AiGlyph />
+                  )}
+                </ReasonIconButton>
+              </motion.div>
+              <AnimatePresence initial={false}>
+                {aiOn ? null : (
+                  <motion.span
+                    key="size"
+                    className="inline-flex overflow-hidden"
+                    initial={motionOn ? { width: 0, opacity: 0, marginLeft: 0 } : false}
+                    animate={{ width: 36, opacity: 1, marginLeft: 8 }}
+                    exit={motionOn ? { width: 0, opacity: 0, marginLeft: 0 } : undefined}
+                    transition={{ duration: 0.32, ease: slideEase }}
                   >
-                    <TintIcon
-                      src={largeOn ? '/figma/short-facts.svg' : '/figma/large-facts.svg'}
-                      color="#ffffff"
-                      size={18}
-                    />
-                  </ReasonIconButton>
-                </motion.span>
-              )}
-            </AnimatePresence>
-          </div>
+                    <ReasonIconButton
+                      label={largeOn ? 'Коротко' : 'Подробнее'}
+                      motionOn={motionOn}
+                      onClick={onToggleLarge}
+                    >
+                      <TintIcon
+                        src={largeOn ? '/figma/short-facts.svg' : '/figma/large-facts.svg'}
+                        color="#ffffff"
+                        size={18}
+                      />
+                    </ReasonIconButton>
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </div>
+          </LayoutGroup>
         </div>
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
-            key={aiOn ? 'ai' : largeOn ? 'large' : 'short'}
+            key={aiOn ? (aiReady ? 'ai-text' : 'ai-search') : largeOn ? 'large' : 'short'}
             initial={motionOn ? { opacity: 0, y: 6 } : false}
             animate={{ opacity: 1, y: 0 }}
             exit={motionOn ? { opacity: 0, y: -6 } : undefined}
-            transition={{ duration: 0.18 }}
+            transition={{ duration: 0.22 }}
           >
             {aiOn ? (
-              <p className="mt-[12px] font-medium text-[18px] leading-[24px] text-white/70">
-                Текстовый разбор пока не подключён. Причины решения остаются обычными, без
-                выдуманного текста.
-              </p>
+              aiReady ? (
+                <p className="mt-[12px] font-medium text-[18px] leading-[24px] text-white/70">
+                  Текстовый разбор пока не подключён. Причины решения остаются обычными, без
+                  выдуманного текста.
+                </p>
+              ) : (
+                <AiSearchLines />
+              )
             ) : (
               <IconFactList facts={explanation?.iconFacts ?? []} />
             )}
@@ -2614,6 +2659,44 @@ function IconFactCard({
   );
 }
 
+/** Black sparkle painted with the same moving gradient as the client AI mark. */
+function AiGlyph() {
+  return (
+    <span
+      aria-hidden
+      className="client-ai-fill block size-[18px]"
+      style={{
+        WebkitMaskImage: 'url(/figma/explain-ai.png)',
+        maskImage: 'url(/figma/explain-ai.png)',
+        WebkitMaskRepeat: 'no-repeat',
+        maskRepeat: 'no-repeat',
+        WebkitMaskPosition: 'center',
+        maskPosition: 'center',
+        WebkitMaskSize: 'contain',
+        maskSize: 'contain',
+      }}
+    />
+  );
+}
+
+/** Placeholder bars while a write-up would still be generating. */
+function AiSearchLines() {
+  const widths = ['92%', '74%', '86%', '58%'];
+  return (
+    <div className="mt-[16px] space-y-[12px]" aria-hidden>
+      {widths.map((width) => (
+        <div
+          key={width}
+          className="h-[14px] overflow-hidden rounded-full bg-white/10"
+          style={{ width }}
+        >
+          <div className="ai-reason-shimmer h-full w-full" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function IconFactList({ facts }: { facts: NonNullable<CaseExplanation['iconFacts']> }) {
   if (facts.length === 0) {
     return (
@@ -2625,10 +2708,10 @@ function IconFactList({ facts }: { facts: NonNullable<CaseExplanation['iconFacts
   return (
     <ul className="mt-[12px] space-y-[10px]">
       {facts.map((fact) => (
-        <li key={`${fact.icon}:${fact.text}`} className="flex items-start gap-[10px]">
+        <li key={`${fact.icon}:${fact.text}`} className="flex items-center gap-[10px]">
           <TintIcon src={FACT_ICON[fact.icon]} color="#ffffff" size={20} />
           <span className="font-medium text-[18px] leading-[24px] tracking-[-0.3px] text-white/70">
-            {fact.text}
+            {fact.text.replace(/\.+$/u, '')}
           </span>
         </li>
       ))}

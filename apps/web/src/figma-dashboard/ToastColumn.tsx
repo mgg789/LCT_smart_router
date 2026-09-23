@@ -137,21 +137,32 @@ export function ToastColumn({
               <>
                 <motion.div
                   aria-hidden
-                  className="absolute right-0"
+                  className="pointer-events-none absolute right-0"
                   style={{
                     top: -letterbox.y,
                     bottom: -letterbox.y,
                     right: -letterbox.x,
                     width: VEIL_WIDTH + letterbox.x,
-                    background:
-                      'linear-gradient(to left, rgba(15,16,20,0.28), rgba(15,16,20,0.10) 52%, transparent)',
-                    backdropFilter: 'blur(14px)',
-                    WebkitBackdropFilter: 'blur(14px)',
-                    maskImage: 'linear-gradient(to left, #000 55%, transparent)',
-                    WebkitMaskImage: 'linear-gradient(to left, #000 55%, transparent)',
+                    // One mask per element. Two masks on one node composite as a hard rectangle.
+                    maskImage: 'linear-gradient(to left, #000 42%, transparent)',
+                    WebkitMaskImage: 'linear-gradient(to left, #000 42%, transparent)',
                   }}
                   exit={{ opacity: 0, transition: { duration: 0.26, ease: 'easeOut' } }}
-                />
+                >
+                  <div
+                    className="absolute inset-0"
+                    style={{
+                      background:
+                        'linear-gradient(to left, rgba(15,16,20,0.28), rgba(15,16,20,0.10) 52%, transparent)',
+                      backdropFilter: 'blur(14px)',
+                      WebkitBackdropFilter: 'blur(14px)',
+                      maskImage:
+                        'linear-gradient(to bottom, transparent, #000 88px, #000 calc(100% - 88px), transparent)',
+                      WebkitMaskImage:
+                        'linear-gradient(to bottom, transparent, #000 88px, #000 calc(100% - 88px), transparent)',
+                    }}
+                  />
+                </motion.div>
                 <motion.button
                   type="button"
                   aria-label="Свернуть уведомления"
@@ -180,7 +191,8 @@ export function ToastColumn({
                   top: TOAST_STACK_TOP,
                   left: TOAST_LEFT,
                   width: TOAST_WIDTH,
-                  bottom: 24,
+                  bottom: -letterbox.y,
+                  paddingBottom: 20,
                 }}
               >
                 <div className="relative" style={{ height: Math.max(visible.length, 1) * STRIDE }}>
@@ -437,7 +449,10 @@ function ToastFace({
           type="button"
           data-toast-action
           className="group absolute right-[44px] top-[6px] z-20 flex h-[44px] items-center px-[6px]"
-          onPointerDown={(event) => event.stopPropagation()}
+          style={{ touchAction: 'manipulation' }}
+          onPointerDown={(event) => {
+            event.stopPropagation();
+          }}
           onClick={(event) => {
             event.stopPropagation();
             onAction?.();

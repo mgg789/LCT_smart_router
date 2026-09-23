@@ -1,3 +1,4 @@
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   CalendarClock,
   CalendarDays,
@@ -144,6 +145,7 @@ function ExplainedAction({
   onClick?: () => void;
 }) {
   const id = useId();
+  const reduceMotion = useReducedMotion();
   const anchor = useRef<HTMLFieldSetElement>(null);
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -159,7 +161,7 @@ function ExplainedAction({
     if (showTimer.current) clearTimeout(showTimer.current);
     showTimer.current = null;
     if (hideTimer.current) clearTimeout(hideTimer.current);
-    hideTimer.current = setTimeout(() => setPosition(null), 150);
+    hideTimer.current = setTimeout(() => setPosition(null), 220);
   }
   function show() {
     if (hideTimer.current) clearTimeout(hideTimer.current);
@@ -210,12 +212,25 @@ function ExplainedAction({
       <span id={id} className="sr-only">
         {spec.summary} {spec.effect} Плюсы: {spec.benefit} Минусы: {spec.drawback}
       </span>
-      {position
-        ? createPortal(
-            <div
+      {typeof document === 'undefined'
+        ? null
+        : createPortal(
+        <AnimatePresence>
+          {position ? (
+            <motion.div
+              key="alert-action-hint"
               role="tooltip"
               className="fixed z-[999] max-h-[280px] w-[360px] max-w-[calc(100vw-16px)] overflow-auto rounded-[16px] border border-figma-ink/20 bg-white p-[16px] text-[14px] leading-relaxed text-figma-ink shadow-xl"
-              style={position}
+              style={{
+                left: position.left,
+                top: position.top,
+                transformOrigin: 'top center',
+                transformPerspective: 800,
+              }}
+              initial={reduceMotion ? false : { opacity: 0, rotateX: -18, scale: 0.94, y: -8 }}
+              animate={{ opacity: 1, rotateX: 0, scale: 1, y: 0 }}
+              exit={reduceMotion ? undefined : { opacity: 0, rotateX: -8, scale: 0.97, y: -4 }}
+              transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
               onMouseEnter={show}
               onMouseLeave={hide}
             >
@@ -233,10 +248,11 @@ function ExplainedAction({
                 <strong>Минусы: </strong>
                 {spec.drawback}
               </p>
-            </div>,
-            document.body,
-          )
-        : null}
+            </motion.div>
+          ) : null}
+        </AnimatePresence>,
+        document.body,
+      )}
     </fieldset>
   );
 }
