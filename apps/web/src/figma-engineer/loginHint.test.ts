@@ -3,9 +3,16 @@ import { engineerCodeHint } from './loginHint';
 
 describe('engineerCodeHint', () => {
   it('shows a local demo code without a countdown', () => {
-    expect(engineerCodeHint({ devCode: '833455', remainingSec: 90 })).toEqual({
+    expect(engineerCodeHint({ devCode: '833455', remainingSec: 90, showDevCode: true })).toEqual({
       kind: 'demo',
       text: 'Демо код 833455 без срока',
+    });
+  });
+
+  it('hides a leaked code on a built stand', () => {
+    expect(engineerCodeHint({ devCode: '833455', remainingSec: 90, showDevCode: false })).toEqual({
+      kind: 'countdown',
+      text: 'Новый код через 1:30',
     });
   });
 

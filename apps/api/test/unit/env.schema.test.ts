@@ -26,6 +26,8 @@ describe('environment validation', () => {
     assert.equal(env.ROUTER_BASE_URL, undefined);
     assert.equal(env.ROUTER_POLL_INTERVAL_MS, 500);
     assert.equal(env.ROUTER_REQUEST_TIMEOUT_MS, 3000);
+    assert.equal(env.LOCATION_IQ_TOKEN, undefined);
+    assert.equal(env.DEMO_STAND, false);
   });
 
   it('coerces PORT from its string form', () => {
@@ -67,5 +69,98 @@ describe('environment validation', () => {
     assert.doesNotThrow(() =>
       validateEnv({ ...REQUIRED, NODE_ENV: 'production', AUTH_DEV_EXPOSE_CODES: 'false' }),
     );
+  });
+
+  describe('AI-gateway', () => {
+    it('defaults to an offline, unconfigured contour that needs no key', () => {
+      const env = validateEnv({ ...REQUIRED });
+      assert.equal(env.LLM_PROVIDER, 'off');
+      assert.equal(env.LLM_TOKEN, undefined);
+      assert.equal(env.LLM_FALLBACK_PROVIDER, 'none');
+      assert.equal(env.LLM_MAX_ATTEMPTS, 2);
+      assert.equal(env.AI_REPLAY_DIR, 'apps/api/test/fixtures/ai');
+      assert.equal(env.AI_DEBUG_PROMPTS, false);
+    });
+
+    it('lets the offline replay provider run with no LLM_TOKEN at all', () => {
+      assert.doesNotThrow(() => validateEnv({ ...REQUIRED, LLM_PROVIDER: 'replay' }));
+    });
+
+    it('refuses a live primary provider without LLM_TOKEN', () => {
+      assert.throws(() => validateEnv({ ...REQUIRED, LLM_PROVIDER: 'agents' }), /LLM_TOKEN/);
+      assert.throws(() => validateEnv({ ...REQUIRED, LLM_PROVIDER: 'openai_chat' }), /LLM_TOKEN/);
+      assert.doesNotThrow(() =>
+        validateEnv({ ...REQUIRED, LLM_PROVIDER: 'openai_chat', LLM_TOKEN: 'sk-test' }),
+      );
+    });
+
+    it('refuses an openai_chat fallback without LLM_TOKEN', () => {
+      assert.throws(
+        () =>
+          validateEnv({
+            ...REQUIRED,
+            LLM_PROVIDER: 'replay',
+            LLM_FALLBACK_PROVIDER: 'openai_chat',
+            LLM_MAX_ATTEMPTS: '2',
+          }),
+        /LLM_TOKEN/,
+      );
+      assert.doesNotThrow(() =>
+        validateEnv({
+          ...REQUIRED,
+          LLM_PROVIDER: 'replay',
+          LLM_FALLBACK_PROVIDER: 'openai_chat',
+          LLM_TOKEN: 'sk-test',
+          LLM_MAX_ATTEMPTS: '2',
+        }),
+      );
+    });
+
+    it('refuses a configured fallback with fewer than two attempts in the shared budget', () => {
+      assert.throws(
+        () =>
+          validateEnv({
+            ...REQUIRED,
+            LLM_PROVIDER: 'replay',
+            LLM_FALLBACK_PROVIDER: 'replay',
+            LLM_MAX_ATTEMPTS: '1',
+          }),
+        /LLM_MAX_ATTEMPTS/,
+      );
+      assert.doesNotThrow(() =>
+        validateEnv({
+          ...REQUIRED,
+          LLM_PROVIDER: 'replay',
+          LLM_FALLBACK_PROVIDER: 'replay',
+          LLM_MAX_ATTEMPTS: '2',
+        }),
+      );
+    });
+
+    it('refuses to log full prompts in production', () => {
+      assert.throws(
+        () =>
+          validateEnv({
+            ...REQUIRED,
+            NODE_ENV: 'production',
+            LLM_PROVIDER: 'replay',
+            AI_DEBUG_PROMPTS: 'true',
+          }),
+        /AI_DEBUG_PROMPTS/,
+      );
+      assert.doesNotThrow(() =>
+        validateEnv({
+          ...REQUIRED,
+          NODE_ENV: 'production',
+          LLM_PROVIDER: 'replay',
+          AI_DEBUG_PROMPTS: 'false',
+        }),
+      );
+    });
+  });
+
+  it('enables the public demo stand only when the flag is true', () => {
+    assert.equal(validateEnv({ ...REQUIRED, DEMO_STAND: 'true' }).DEMO_STAND, true);
+    assert.equal(validateEnv({ ...REQUIRED, DEMO_STAND: 'false' }).DEMO_STAND, false);
   });
 });

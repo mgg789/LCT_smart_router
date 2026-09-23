@@ -22,7 +22,10 @@ export const resolveAlertSchema = z.object({
   minutes: z.number().int().min(1).max(240).optional(),
   windowStartAt: unixSeconds.optional(),
   windowEndAt: unixSeconds.optional(),
+  expectedRequestVersion: z.number().int().positive().optional(),
   engineerId: z.string().min(1).optional(),
+  expectedModeVersion: z.number().int().positive().optional(),
+  expectedPlanRevision: z.number().int().nonnegative().optional(),
 });
 export type ResolveAlertDto = z.infer<typeof resolveAlertSchema>;
 

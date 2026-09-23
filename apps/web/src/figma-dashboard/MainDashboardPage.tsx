@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { updateDispatcherSettings } from '../api/client';
 import type { LiveRouteProgress } from '../api/live';
+import type { ManualChange } from '../api/manual';
 import type { PolicyId, RequestView } from '../api/types';
 import { DayMap } from '../components/DayMap';
 import {
@@ -55,6 +56,7 @@ import {
   rightPanelMode,
   withLiveRouteStops,
 } from './fromSnapshot';
+import { ManualPlanDialog } from './ManualPlanDialog';
 import { PolicyComparisonView } from './PolicyComparisonView';
 import { FigmaIcon, FigmaText } from './primitives';
 import { RequestDetailView } from './RequestDetailView';
@@ -75,6 +77,7 @@ import {
 } from './toasts';
 import { WelcomeScreen } from './WelcomeScreen';
 import {
+  clearWorkDayStarted,
   hasStartedWorkDay,
   markWorkDayStarted,
   moscowWorkDate,
@@ -144,6 +147,7 @@ export function MainDashboardPage() {
   const reduceMotion = useReducedMotion();
   const dash = useDashboard();
   const [policyOpen, setPolicyOpen] = useState(false);
+  const [manualDialog, setManualDialog] = useState<{ change?: ManualChange } | null>(null);
   const [activeNav, setActiveNav] = useState<NavItemId>('day');
   const [stackNav, setStackNav] = useState<NavItemId>('day');
   const [stackDir, setStackDir] = useState(0);
@@ -265,16 +269,24 @@ export function MainDashboardPage() {
 
   const toastHydrated = useRef(false);
   useEffect(() => {
-    if (dash.rebuilding)
-      pushToast({
-        id: 'dispatcher-rebuild',
-        kind: 'progress',
-        title: 'Пересчитываем маршруты',
-        body: 'Дождитесь подтверждения нового плана.',
-        progress: 0,
-        etaLabel: 'Выполняется',
-      });
-    else updateToast('dispatcher-rebuild', { progress: 100 });
+    if (!dash.rebuilding) {
+      updateToast('dispatcher-rebuild', { progress: 100 });
+      return;
+    }
+    pushToast({
+      id: 'dispatcher-rebuild',
+      kind: 'progress',
+      title: 'Пересчитываем маршруты',
+      body: 'Дождитесь подтверждения нового плана.',
+      progress: 8,
+      etaLabel: 'Выполняется',
+    });
+    let value = 8;
+    const timer = window.setInterval(() => {
+      value = Math.min(92, value + 7);
+      updateToast('dispatcher-rebuild', { progress: value });
+    }, 350);
+    return () => window.clearInterval(timer);
   }, [dash.rebuilding]);
   useEffect(() => {
     const openAlerts = (dash.snapshot?.alerts ?? []).filter((alert) => alert.resolvedAt === null);
@@ -321,7 +333,7 @@ export function MainDashboardPage() {
   const lunchOn = dash.snapshot?.lunchesEnabled ?? false;
   const trafficOn = dash.snapshot?.routerSettings?.trafficEnabled ?? false;
   const requestCount = view?.requestCount ?? 0;
-  const totalKm = view?.totalKm ?? 0;
+  const totalKm = view ? view.totalKm : null;
   const planLabel = view?.planLabel ?? 'Данные рабочего дня загружаются';
 
   const applyPolicy = (nextPolicy: PolicyId) => {
@@ -416,7 +428,9 @@ export function MainDashboardPage() {
     );
   }
 
-  if (dash.source === 'live' && dash.liveLoading && !dash.liveWorkday && !dash.snapshot) {
+  // A cached/fast plan does not prove that the workday has started. Wait for LIVE
+  // before exposing actions, otherwise its late pending response replaces the UI mid-click.
+  if (dash.source === 'live' && !dash.liveWorkday) {
     return (
       <WelcomeScreen
         requestCount={null}
@@ -539,6 +553,7 @@ export function MainDashboardPage() {
         />
         <PolicyControl
           open={policyOpen}
+          manualDisabled={dash.writesDisabled}
           policyLabel={policyTitle}
           policies={policies}
           selectedId={policyId}
@@ -554,10 +569,35 @@ export function MainDashboardPage() {
           onLunchToggle={applyLunch}
           onTrafficToggle={applyTraffic}
           onManualMode={() => {
-            if (!dash.snapshot) return;
-            void dash.setMode(dash.snapshot.plan.mode === 'auto' ? 'manual' : 'auto');
+            if (!dash.snapshot || dash.writesDisabled) return;
+            setPolicyOpen(false);
+            setManualDialog({});
           }}
         />
+        {dash.snapshot?.plan.mode === 'manual' ? (
+          <button
+            type="button"
+            className="absolute left-[920px] top-[10px] z-30 h-[51px] rounded-[20px] bg-figma-bee px-[20px] font-semibold text-figma-ink"
+            disabled={dash.writesDisabled}
+            onClick={() => setManualDialog({})}
+          >
+            MANUAL · Управление планом
+          </button>
+        ) : null}
+        {manualDialog && dash.snapshot && dash.token ? (
+          <ManualPlanDialog
+            snapshot={dash.snapshot}
+            token={dash.token}
+            action="manual"
+            initialChange={manualDialog.change}
+            engineerId={dash.selectedEngineerId}
+            motionOn={motionOn}
+            onMode={dash.setMode}
+            onApply={dash.editManualPlan}
+            onRefresh={dash.refresh}
+            onClose={() => setManualDialog(null)}
+          />
+        ) : null}
         <NotificationControl
           open={notifOpen}
           count={inbox.count}
@@ -605,6 +645,7 @@ export function MainDashboardPage() {
             setUserMenuOpen(false);
             setDangerAction('endDay');
           }}
+          demoStand={dash.liveWorkday?.demoStand === true}
           onRestartDay={() => {
             setUserMenuOpen(false);
             setDangerAction('restartDay');
@@ -622,7 +663,7 @@ export function MainDashboardPage() {
           open={settingsOpen}
           motionOn={motionOn}
           token={dash.token}
-          routerSettings={dash.snapshot?.routerSettings}
+          routerSettings={dash.snapshot?.routerSettings ?? undefined}
           submitting={dash.busy}
           onClose={() => setSettingsOpen(false)}
           onSave={async ({ dispatcher, router }) => {
@@ -630,7 +671,8 @@ export function MainDashboardPage() {
               throw new Error('Нужна живая сессия диспетчера');
             }
             await updateDispatcherSettings(dash.token, dispatcher);
-            dash.applyRoutingSettings(dash.snapshot.policyId, router);
+            if (router) dash.applyRoutingSettings(dash.snapshot.policyId, router);
+            else await dash.refresh();
             setSettingsOpen(false);
           }}
         />
@@ -664,12 +706,35 @@ export function MainDashboardPage() {
               return;
             }
             if (id === 'restartDay' || id === 'resetData') {
-              pushToast({
-                id: `unsupported-${id}`,
-                kind: 'system',
-                title: 'Действие пока недоступно',
-                body: 'В текущем API нет безопасного контракта для перезапуска дня или сброса данных.',
-              });
+              if (!dash.liveWorkday?.demoStand) {
+                pushToast({
+                  id: `unsupported-${id}`,
+                  kind: 'system',
+                  title: 'Действие пока недоступно',
+                  body: 'Перезапуск дня доступен на публичном демо-стенде.',
+                });
+                return;
+              }
+              void dash
+                .restartDemoDay()
+                .then(() => {
+                  clearWorkDayStarted(window.localStorage);
+                  setWelcomeOpen(true);
+                  pushToast({
+                    id: 'demo-day-restarted',
+                    kind: 'system',
+                    title: 'День сброшен',
+                    body: 'Исходный набор из 14 заявок и двух инженеров готов. Почта бригады снята.',
+                  });
+                })
+                .catch((cause: unknown) => {
+                  pushToast({
+                    id: 'demo-day-restart-error',
+                    kind: 'error',
+                    title: 'Не удалось начать день заново',
+                    body: cause instanceof Error ? cause.message : 'Повторите действие позже.',
+                  });
+                });
               return;
             }
             void dash.signOut();
@@ -712,11 +777,14 @@ export function MainDashboardPage() {
               ) : null}
               {stackViewKey(stackNav) === 'alerts' ? (
                 <AlertsView
+                  token={dash.token ?? undefined}
                   snapshot={dash.snapshot}
                   toasts={toasts}
                   demoMode={dash.isDemo}
                   motionOn={motionOn}
                   onMarkNoticeSeen={dash.markNoticeSeen}
+                  onResolve={dash.resolveAlert}
+                  writesDisabled={dash.writesDisabled || dash.busy}
                   onOpenRequest={(requestId) => {
                     setStackDir(stackSlideDir(stackNav, 'requests'));
                     setStackNav('requests');
@@ -729,6 +797,7 @@ export function MainDashboardPage() {
               {stackViewKey(stackNav) === 'requests' ? (
                 <RequestsView
                   snapshot={dash.snapshot}
+                  history={dash.liveWorkday?.history}
                   selectedRequestId={dash.selectedRequest?.id ?? null}
                   onSelect={(requestId) => {
                     setOpenedRequestId(requestId);
@@ -741,7 +810,7 @@ export function MainDashboardPage() {
                   snapshot={visibleSnapshot}
                   selectedEngineerId={dash.selectedEngineerId}
                   motionOn={motionOn}
-                  busy={dash.busy}
+                  busy={dash.busy || dash.writesDisabled}
                   onSelectEngineer={dash.selectEngineer}
                   onLinkEmail={dash.saveEngineerLogin}
                   onDeleteEngineer={dash.deleteEngineer}
@@ -858,6 +927,24 @@ export function MainDashboardPage() {
                     setOpenedRequestId(null);
                     dash.clearFocus();
                   }}
+                  onCancelVisit={
+                    dash.writesDisabled
+                      ? undefined
+                      : async () => {
+                          await dash.cancelRequest(openedRequestId);
+                          setOpenedRequestId(null);
+                          dash.clearFocus();
+                        }
+                  }
+                  onAssignEngineer={
+                    dash.writesDisabled
+                      ? undefined
+                      : async (engineerId) => {
+                          setManualDialog({
+                            change: { kind: 'reassign', requestId: openedRequestId, engineerId },
+                          });
+                        }
+                  }
                 />
               </motion.div>
             ) : null}
@@ -1010,6 +1097,7 @@ function NotificationControl({
 function UserMenu({
   open,
   motionOn,
+  demoStand,
   onToggle,
   onSettings,
   onEndDay,
@@ -1019,6 +1107,7 @@ function UserMenu({
 }: {
   open: boolean;
   motionOn: boolean;
+  demoStand: boolean;
   onToggle: () => void;
   onSettings: () => void;
   onEndDay: () => void;
@@ -1077,15 +1166,19 @@ function UserMenu({
               <MenuAction motionOn={motionOn} tone="bee" onClick={onEndDay}>
                 Завершить день
               </MenuAction>
-              <MenuAction motionOn={motionOn} tone="danger" onClick={onRestartDay}>
-                День заново
-              </MenuAction>
+              {demoStand ? (
+                <MenuAction motionOn={motionOn} tone="danger" onClick={onRestartDay}>
+                  День заново
+                </MenuAction>
+              ) : null}
             </div>
             <div className="mx-auto my-[8px] h-px w-[40px] bg-figma-ink/20" />
             <div className="flex flex-col gap-[8px]">
-              <MenuAction motionOn={motionOn} tone="danger" onClick={onReset}>
-                Сбросить данные
-              </MenuAction>
+              {demoStand ? (
+                <MenuAction motionOn={motionOn} tone="danger" onClick={onReset}>
+                  Сбросить данные
+                </MenuAction>
+              ) : null}
               <MenuAction motionOn={motionOn} tone="danger" onClick={onSignOut}>
                 Выйти
               </MenuAction>
@@ -1172,6 +1265,7 @@ function AddEntityButton({ motionOn, onOpen }: { motionOn: boolean; onOpen: () =
 
 function PolicyControl({
   open,
+  manualDisabled,
   policyLabel: selectedLabel,
   policies,
   selectedId,
@@ -1185,6 +1279,7 @@ function PolicyControl({
   onManualMode,
 }: {
   open: boolean;
+  manualDisabled: boolean;
   policyLabel: string;
   policies: { id: PolicyId; label: string }[];
   selectedId: PolicyId;
@@ -1302,7 +1397,8 @@ function PolicyControl({
         <button
           type="button"
           onClick={onManualMode}
-          className="absolute left-[16px] flex h-[67px] w-[331px] items-center justify-center rounded-[20px] bg-figma-bee p-[20px] transition-transform duration-150 hover:scale-[1.01]"
+          disabled={manualDisabled}
+          className="absolute left-[16px] flex h-[67px] w-[331px] items-center justify-center rounded-[20px] bg-figma-bee p-[20px] transition-transform duration-150 hover:scale-[1.01] disabled:opacity-45"
           style={{ top: 363 + extra }}
         >
           <span className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
@@ -1377,7 +1473,7 @@ function EngineersColumn({
   engineers: EngineerCard[];
   totalCount: number;
   requestCount: number;
-  totalKm: number;
+  totalKm: number | null;
   planLabel: string;
   unassignedTitle: string;
   unassignedReason: string;
@@ -1413,10 +1509,12 @@ function EngineersColumn({
           className="mx-[10px]"
         />
         <FigmaText className="figma-nowrap font-extrabold text-[28px] tracking-[-0.476px] text-figma-ink">
-          {totalKm} км
+          <span title={totalKm === null ? 'Пробег не пересчитан после ручной правки' : undefined}>
+            {totalKm === null ? '— км' : `${totalKm} км`}
+          </span>
         </FigmaText>
       </div>
-      <FigmaText className="figma-nowrap absolute left-[30px] top-[68px] z-0 font-semibold text-[18px] tracking-[-0.306px] text-figma-muted">
+      <FigmaText className="absolute left-[30px] right-[30px] top-[68px] z-0 line-clamp-2 font-semibold text-[16px] leading-[20px] tracking-[-0.306px] text-figma-muted">
         {planLabel}
       </FigmaText>
       <div
@@ -1581,7 +1679,11 @@ function EngineerRow({
           {truncateEnd(engineer.name)}
         </span>
         <FigmaText className="figma-nowrap shrink-0 font-bold text-[16px] tracking-[0.16px] text-black">
-          {engineer.km} км
+          <span
+            title={engineer.km === null ? 'Пробег не пересчитан после ручной правки' : undefined}
+          >
+            {engineer.km === null ? '— км' : `${engineer.km} км`}
+          </span>
         </FigmaText>
       </div>
       <div className="absolute left-[69px] top-[49px] flex items-center gap-[8px] font-medium text-[16px] tracking-[-0.272px] text-figma-muted">

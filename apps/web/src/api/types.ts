@@ -127,6 +127,9 @@ export interface MapProviderStatus {
   readonly configured: boolean;
   readonly ok: boolean | null;
   readonly message: string;
+  readonly requests?: number;
+  readonly cacheHits?: number;
+  readonly checkedAt?: number | null;
 }
 
 export interface MapProvidersStatus {
@@ -182,6 +185,12 @@ export interface PlanStopView {
 }
 
 export interface PlanRouteView {
+  readonly timingStatus?: 'calculated' | 'unverified' | 'forecast';
+  readonly mapForecast?: {
+    readonly observedAt: number | null;
+    readonly state: 'fresh' | 'mixed' | 'stale' | 'fallback';
+    readonly warnings: readonly string[];
+  };
   readonly engineerId: string;
   readonly startLat: number;
   readonly startLon: number;
@@ -221,6 +230,12 @@ export interface PlanLegView {
   readonly travelSource: TravelSource;
   /** Present when sys replaced Router geometry with a map-provider polyline. */
   readonly geometryProvider?: 'twogis' | 'yandex';
+  readonly mapObservation?: {
+    readonly observedAt: number;
+    readonly expiresAt: number;
+    readonly cacheState: 'live' | 'cached' | 'stale';
+    readonly trafficMode: 'current' | 'statistics' | 'none';
+  };
   /** Forecast/provider multiplier already included in travelTimeSec. */
   readonly trafficFactor: number;
   /** Ordered WGS84 points returned by the routing provider. */
@@ -296,6 +311,9 @@ export interface AlertView {
 
 /** A dispatcher decision; absolute window bounds use Unix seconds. */
 export interface AlertResolutionInput {
+  readonly expectedModeVersion?: number;
+  readonly expectedPlanRevision?: number;
+  readonly expectedRequestVersion?: number;
   readonly operationId: string;
   readonly action: string;
   readonly reason?: string;
@@ -338,7 +356,7 @@ export interface DashboardSnapshot {
   readonly policyId: PolicyId;
   readonly lunchesEnabled: boolean;
   /** Full Router-owned settings when the snapshot came from the live API. */
-  readonly routerSettings?: RouterTechnicalSettings;
+  readonly routerSettings?: RouterTechnicalSettings | null;
   readonly routerContextVersion: string;
   readonly policies: readonly PolicySpec[];
   readonly engineers: Array<EngineerView & { day: EngineerDayView | null }>;
@@ -394,6 +412,19 @@ export interface EngineerAuthSession {
   readonly token: string;
   readonly role: 'engineer';
   readonly expiresAt: number;
+}
+
+export interface ClientAuthSession {
+  readonly token: string;
+  readonly role: 'client';
+  readonly expiresAt: number;
+}
+
+/** One type of work the Client App lets a customer pick; the skill and duration follow
+ * from it server-side and are never typed by the customer. */
+export interface ClientWorkType {
+  readonly code: string;
+  readonly title: string;
 }
 
 export interface EngineerPlanResponse {

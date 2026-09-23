@@ -4,10 +4,12 @@ import type {
   PlanStopView,
   RequestView,
 } from '../api/types';
+import { routeTimingUnverified } from '../domain/mapForecast';
 
 export type EngineerJobVariant = 'upcoming' | 'regular';
 
 export type EngineerJobItem = {
+  readonly timingUnverified?: boolean;
   readonly kind: 'job';
   readonly variant: EngineerJobVariant;
   readonly stop: PlanStopView;
@@ -21,6 +23,19 @@ export type EngineerLunchItem = {
 };
 
 export type EngineerListItem = EngineerJobItem | EngineerLunchItem;
+
+/**
+ * Duration shown on the engineer home card: planned norm, plus a reported delay
+ * when LIVE already stored a later expected completion.
+ */
+export function visibleServiceDurationSec(request: RequestView): number {
+  const started = request.startedAt;
+  const expected = request.expectedCompletionAt;
+  if (typeof started === 'number' && typeof expected === 'number' && expected > started) {
+    return expected - started;
+  }
+  return request.serviceDurationSec;
+}
 
 /** A job still ahead of the engineer — not finished and not cancelled. */
 export function isOpenJob(request: RequestView): boolean {
@@ -59,6 +74,8 @@ export function engineerListItems(
     if (upcoming) upcomingAssigned = true;
     items.push({
       kind: 'job',
+      timingUnverified:
+        routeTimingUnverified(plan?.route, plan?.origin ?? undefined) && request.startedAt === null,
       variant: upcoming ? 'upcoming' : 'regular',
       stop,
       request,
@@ -79,6 +96,7 @@ export function engineerLunchWindow(
   actual?: { readonly startAt: number; readonly endAt: number } | null,
 ): EngineerLunchItem | null {
   if (actual) return { kind: 'lunch', ...actual };
+  if (plan?.origin === 'manual') return null;
   const planned = plan?.route?.stops.find((stop) => stop.kind === 'lunch');
   if (planned) {
     return { kind: 'lunch', startAt: planned.startAt, endAt: planned.endAt };

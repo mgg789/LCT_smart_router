@@ -122,11 +122,70 @@ export const envSchema = z.object({
   SMTP_POLL_INTERVAL_MS: z.coerce.number().int().min(1_000).max(120_000).default(15_000),
   SMTP_APP_BASE_URL: z.url().default('https://navix.droidje.com'),
 
+  // --- AI-gateway ------------------------------------------------------------
+  // `off` keeps the chat surface honestly disabled. `replay` reads recorded fixtures and
+  // needs no network at all, which is what makes the offline demo contour possible
+  // (AGENTS.md section 4.7). `agents` and `openai_chat` both talk to a real,
+  // OpenAI-compatible endpoint through different client surfaces (see
+  // src/ai/provider/llm-provider.port.ts for why two implementations exist).
+  LLM_PROVIDER: z.enum(['off', 'agents', 'openai_chat', 'replay']).default('off'),
+  /** Bearer credential for the configured endpoint. Absent unless a live provider is used. */
+  LLM_TOKEN: z.string().min(1).optional(),
+  /** OpenAI-compatible origin. DeepSeek by default; any compatible endpoint works. */
+  LLM_BASE_URL: z.url().default('https://api.deepseek.com'),
+  LLM_MODEL: z.string().min(1).default('deepseek-flash'),
+  /** Secondary provider tried once the primary's retry budget is spent. */
+  LLM_FALLBACK_PROVIDER: z.enum(['none', 'openai_chat', 'replay']).default('none'),
+  LLM_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(60_000),
+  /**
+   * Per-run attempt budget, shared by primary retries and the one fallback hop -- see
+   * src/ai/provider/retry.policy.ts, the single owner of what this number means.
+   */
+  LLM_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(5).default(2),
+  /** Bound on the tool-call / tool-result round trips inside one assistant turn. */
+  LLM_MAX_TOOL_STEPS: z.coerce.number().int().min(1).max(12).default(6),
+  LLM_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(256).max(8_192).default(1_024),
+  /** How many recent conversation messages are sent to the model as context. */
+  AI_HISTORY_MESSAGES: z.coerce.number().int().min(4).max(100).default(24),
+  /** Keep-alive interval for an open run's SSE connection. */
+  AI_SSE_HEARTBEAT_MS: z.coerce.number().int().min(1_000).max(60_000).default(15_000),
+  AI_DAILY_MESSAGE_LIMIT: z.coerce.number().int().positive().default(30),
+  AI_DAILY_COST_LIMIT_MICROS: z.coerce.number().int().positive().default(200_000),
+  AI_TOTAL_COST_LIMIT_MICROS: z.coerce.number().int().positive().default(4_000_000),
+  /** Pricing used to turn provider usage into micros of the account's cost budget. */
+  AI_UNITS_PER_1K_PROMPT_MICROS: z.coerce.number().int().nonnegative().default(2_000),
+  AI_UNITS_PER_1K_COMPLETION_MICROS: z.coerce.number().int().nonnegative().default(8_000),
+  /** Reserved before a run's real usage is known; refunded down to the settled amount. */
+  AI_RUN_ESTIMATE_MICROS: z.coerce.number().int().positive().default(20_000),
+  /** How long a prepared operation card waits for a human's explicit confirm/cancel
+   *  before it expires on its own (src/ai/operations/ai-operation.service.ts). */
+  AI_OPERATION_TTL_SEC: z.coerce.number().int().positive().default(900),
+  AI_REPLAY_DIR: z.string().min(1).default('apps/api/test/fixtures/ai'),
+  /** Forces one fixture regardless of the last user message; unset lets replay pick by hash. */
+  AI_REPLAY_SCENARIO: z.string().min(1).optional(),
+  /**
+   * Logs full prompts and raw provider responses. Left on only for local debugging: a
+   * transcript can contain a customer's problem description and address.
+   */
+  AI_DEBUG_PROMPTS: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
+
   /**
    * LocationIQ key for dispatcher address search. Absent means geocoding stays
    * unavailable and the caller must pick a point on the map instead.
    */
   LOCATION_IQ_TOKEN: z.string().min(1).optional(),
+
+  /**
+   * Public demo stand: seed today's 14/2 live-demo, accelerate the day, and rewind after
+   * the shift or «День заново». Leave unset/false on developer machines.
+   */
+  DEMO_STAND: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -153,6 +212,35 @@ export function validateEnv(raw: Record<string, unknown>): Env {
     throw new Error(
       'Invalid environment configuration: SMTP_HOST is set but SMTP_USER or SMTP_PASSWORD ' +
         'is missing. Leave SMTP_HOST unset to keep mail unconfigured.',
+    );
+  }
+  if (
+    (parsed.data.LLM_PROVIDER === 'agents' || parsed.data.LLM_PROVIDER === 'openai_chat') &&
+    !parsed.data.LLM_TOKEN
+  ) {
+    throw new Error(
+      'Invalid environment configuration: LLM_PROVIDER requires LLM_TOKEN for a live ' +
+        'provider. Set LLM_PROVIDER=replay or LLM_PROVIDER=off to run without a key.',
+    );
+  }
+  if (parsed.data.LLM_FALLBACK_PROVIDER === 'openai_chat' && !parsed.data.LLM_TOKEN) {
+    throw new Error(
+      'Invalid environment configuration: LLM_FALLBACK_PROVIDER=openai_chat requires ' +
+        'LLM_TOKEN, the same credential the fallback client reuses.',
+    );
+  }
+  if (parsed.data.LLM_FALLBACK_PROVIDER !== 'none' && parsed.data.LLM_MAX_ATTEMPTS < 2) {
+    throw new Error(
+      'Invalid environment configuration: a configured LLM_FALLBACK_PROVIDER needs ' +
+        'LLM_MAX_ATTEMPTS >= 2 -- the fallback hop is spent out of that same budget ' +
+        '(src/ai/provider/retry.policy.ts) and needs at least one attempt of its own.',
+    );
+  }
+  if (parsed.data.NODE_ENV === 'production' && parsed.data.AI_DEBUG_PROMPTS) {
+    throw new Error(
+      'Invalid environment configuration: AI_DEBUG_PROMPTS must not be enabled in ' +
+        "production. It logs full prompts, which can contain a customer's problem " +
+        'description and address.',
     );
   }
   return parsed.data;

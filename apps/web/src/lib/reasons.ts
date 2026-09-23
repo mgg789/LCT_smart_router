@@ -1,4 +1,7 @@
 const FACTOR_LABELS: Record<string, string> = {
+  MANUAL_PLAN: 'Ручной план диспетчера',
+  MANUAL_ASSIGNMENT: 'Назначено диспетчером',
+  MANUAL_SCHEDULE_UNVERIFIED: 'Время и дороги не пересчитаны',
   skill_match: 'Подходит навык',
   skill_missing: 'Нет нужного навыка',
   equipment_ok: 'Есть требуемое оборудование',
@@ -21,6 +24,9 @@ const FACTOR_LABELS: Record<string, string> = {
 };
 
 const REASON_DETAILS: Record<string, string> = {
+  MANUAL_PLAN: 'Ручной порядок; прежние автоматические проверки остались в истории.',
+  MANUAL_ASSIGNMENT: 'Исполнитель выбран диспетчером. Время и дорога не пересчитаны.',
+  MANUAL_SCHEDULE_UNVERIFIED: 'Расписание и дорожные показатели требуют отдельной проверки.',
   CONSTRAINTS_SATISFIED: 'Навык, транспорт и расписание соблюдены.',
   NO_SKILL_MATCH: 'Нет инженера с нужным навыком.',
   NO_TRANSPORT_MATCH: 'Нет инженера с подходящим транспортом.',

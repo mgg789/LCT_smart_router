@@ -31,6 +31,29 @@ export interface LiveGraphProjection {
   readonly activeSegments: readonly LiveGraphSegment[];
 }
 
+/** Collapses lunch out of the map only; the pipeline retains its timed lunch vertex. */
+export function withoutMapLunch(graph: LiveGraphProjection): LiveGraphProjection {
+  const mapNodes = graph.mapNodes.filter((node) => node.kind !== 'lunch');
+  const mapSegments = segmentsFor(mapNodes);
+  const activeSegments = mapSegments.filter((edge) => {
+    const start = graph.mapNodes.findIndex((node) => node.key === edge.from.key);
+    const end = graph.mapNodes.findIndex((node) => node.key === edge.to.key);
+    return graph.mapSegments
+      .slice(start, end)
+      .some((part) => graph.activeSegmentKeys.has(part.key));
+  });
+  return {
+    ...graph,
+    mapNodes,
+    mapSegments,
+    activeSegments,
+    activeSegmentKeys: new Set(activeSegments.map((edge) => edge.key)),
+    activeNodeKeys: new Set(
+      [...graph.activeNodeKeys].filter((key) => mapNodes.some((node) => node.key === key)),
+    ),
+  };
+}
+
 /**
  * Projects a route and its durable movement fact into map and pipeline state.
  * Wait stops are intentionally excluded: they are schedule intervals, not
@@ -41,7 +64,18 @@ export function projectLiveGraph(
   route: PlanRouteView | null,
   progress: LiveRouteProgress | null,
   visibleRequestIds?: ReadonlySet<string>,
+  preservePlanOrder = route?.timingStatus === 'unverified',
 ): LiveGraphProjection {
+  // LIVE and plan are separate reads. A stale forecast of the next visit must not
+  // reintroduce a job that a newer manual revision assigned to another engineer.
+  const forecastId = progress?.next?.requestId;
+  if (
+    preservePlanOrder &&
+    progress?.next?.kind === 'job' &&
+    !route?.stops.some((stop) => stop.requestId === forecastId)
+  ) {
+    progress = { ...progress, next: null };
+  }
   // LIVE arrival promises and actual arrivals supersede stale solver timestamps.
   const overrides = progress
     ? [progress.anchor, progress.lunch, progress.next].filter(isPoint)
@@ -65,7 +99,7 @@ export function projectLiveGraph(
         ...planned,
         ...factual.map((point) => nodeFromPoint(point, nodeSequence(point, planned))),
       ]);
-  const orderedTimeline = orderTimeline(timelineNodes);
+  const orderedTimeline = preservePlanOrder ? timelineNodes : orderTimeline(timelineNodes);
 
   // Slice using the complete order before removing completed jobs. Otherwise a
   // removed factual anchor makes an old lunch reappear behind the active span.

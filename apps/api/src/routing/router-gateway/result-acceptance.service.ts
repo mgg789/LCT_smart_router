@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { z } from 'zod';
 import { SysError } from '../../common/errors';
 import { Clock } from '../../common/time';
 import { NotificationsService } from '../../notifications';
@@ -148,6 +149,41 @@ export class ResultAcceptanceService {
       if (conflict) {
         return this.reject(tx, result, 'RESULT_NOT_APPLICABLE', conflict);
       }
+
+      // A free request can be deferred without rebuilding an unrelated LIVE route.
+      // Even an unassigned outcome from the old snapshot must not overwrite it.
+      const inputWindows = z
+        .object({
+          requests: z.array(
+            z.object({
+              request_id: z.string(),
+              window_start_at: z.number(),
+              window_end_at: z.number(),
+            }),
+          ),
+        })
+        .parse(JSON.parse(current.snapshot.payload));
+      const requests = await tx.request.findMany({
+        where: { id: { in: inputWindows.requests.map((request) => request.request_id) } },
+        select: { id: true, windowStartAt: true, windowEndAt: true },
+      });
+      const windows = new Map(requests.map((request) => [request.id, request]));
+      if (
+        inputWindows.requests.some((input) => {
+          const actual = windows.get(input.request_id);
+          return (
+            !actual ||
+            Number(actual.windowStartAt) !== input.window_start_at ||
+            Number(actual.windowEndAt) !== input.window_end_at
+          );
+        })
+      )
+        return this.reject(
+          tx,
+          result,
+          'SNAPSHOT_STALE',
+          'Request windows changed after publication',
+        );
 
       const stored = await this.storePackage(tx, result, true, null);
       const plan = await this.plans.applyAutomatic(tx, this.clock.nowSeconds(), result, stored.id);

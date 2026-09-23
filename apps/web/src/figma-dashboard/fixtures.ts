@@ -59,7 +59,7 @@ export type EngineerCard = {
   lineFailed?: boolean;
   id: string;
   name: string;
-  km: number;
+  km: number | null;
   status: string;
   shift: string;
   requestCount: number;

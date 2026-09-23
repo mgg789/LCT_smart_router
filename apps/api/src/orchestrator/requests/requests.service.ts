@@ -3,10 +3,10 @@ import { SysError } from '../../common/errors';
 import type { EquipmentType, Priority, Prisma, Request } from '../../generated/prisma/client';
 import { NotificationsService } from '../../notifications';
 import { assertWriteApplied, type OperationContext } from '../../operations';
-import type { Tx } from '../../persistence';
+import { lockWorkingPlan, PrismaService, type Tx } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import { nearestRegion, type RegionPoint, regionCenters } from './region-geocenter';
-import { findWorkType } from './work-type.catalog';
+import { findWorkType, fitWindowToService } from './work-type.catalog';
 
 export interface PrepareRequestInput {
   readonly contactName: string | null;
@@ -52,6 +52,7 @@ export interface DispatcherUpdateInput {
 @Injectable()
 export class RequestsService {
   constructor(
+    private readonly prisma: PrismaService,
     private readonly notifications: NotificationsService,
     private readonly publisher: SnapshotPublisher,
   ) {}
@@ -75,6 +76,11 @@ export class RequestsService {
       });
     }
     assertWindow(input.windowStartAt, input.windowEndAt);
+    const window = fitWindowToService(
+      input.windowStartAt,
+      input.windowEndAt,
+      spec.serviceDurationSec,
+    );
 
     const lat = input.lat ?? null;
     const lon = input.lon ?? null;
@@ -110,8 +116,8 @@ export class RequestsService {
             ? defaultEquipment(spec.code)
             : input.requiredEquipment,
         priority: resolvePriority(spec.priority, input.urgent),
-        windowStartAt: BigInt(input.windowStartAt),
-        windowEndAt: BigInt(input.windowEndAt),
+        windowStartAt: BigInt(window.windowStartAt),
+        windowEndAt: BigInt(window.windowEndAt),
         lifecycle: 'draft',
         assignmentState: 'pending',
         origin: 'system_rule',
@@ -133,6 +139,7 @@ export class RequestsService {
     requestId: string,
     expectedVersion: number | null | undefined,
   ): Promise<Request> {
+    await lockWorkingPlan(context.tx);
     const current = await this.loadOwned(context.tx, requestId);
 
     if (current.lifecycle !== 'draft') {
@@ -192,17 +199,23 @@ export class RequestsService {
     expectedVersion: number | null | undefined,
     input: RescheduleInput,
   ): Promise<Request> {
-    assertWindow(input.windowStartAt, input.windowEndAt);
+    await lockWorkingPlan(context.tx);
     const current = await this.loadOwned(context.tx, requestId);
     assertChangeable(current);
+    const window = fitWindowToService(
+      input.windowStartAt,
+      input.windowEndAt,
+      current.serviceDurationSec,
+    );
+    assertWindow(window.windowStartAt, window.windowEndAt);
 
     await this.archiveConditions(context, current);
 
     const updated = await context.tx.request.updateMany({
       where: { id: requestId, version: expectedVersion ?? current.version },
       data: {
-        windowStartAt: BigInt(input.windowStartAt),
-        windowEndAt: BigInt(input.windowEndAt),
+        windowStartAt: BigInt(window.windowStartAt),
+        windowEndAt: BigInt(window.windowEndAt),
         windowOrigin: 'explicit',
         // The previous assignment does not confirm the new conditions, so the outcome
         // returns to pending and waits for a current result (context/36 section 3).
@@ -218,12 +231,12 @@ export class RequestsService {
     // stays a no-op, moving to another window confirms again (context/36 section 10).
     await this.notifications.record(context.tx, context.now, {
       category: 'request_rescheduled',
-      businessEventKey: `request_rescheduled:${requestId}:${input.windowStartAt}:${input.windowEndAt}`,
+      businessEventKey: `request_rescheduled:${requestId}:${window.windowStartAt}:${window.windowEndAt}`,
       recipientAccountId: current.clientAccountId,
       payload: {
         requestId,
-        windowStartAt: input.windowStartAt,
-        windowEndAt: input.windowEndAt,
+        windowStartAt: window.windowStartAt,
+        windowEndAt: window.windowEndAt,
       },
     });
 
@@ -243,11 +256,17 @@ export class RequestsService {
     expectedVersion: number | null | undefined,
     input: DispatcherUpdateInput,
   ): Promise<Request> {
+    await lockWorkingPlan(context.tx);
     const current = await this.loadOwned(context.tx, requestId);
     assertChangeable(current);
 
-    const windowStartAt = input.windowStartAt ?? Number(current.windowStartAt);
-    const windowEndAt = input.windowEndAt ?? Number(current.windowEndAt);
+    const requestedWindow = fitWindowToService(
+      input.windowStartAt ?? Number(current.windowStartAt),
+      input.windowEndAt ?? Number(current.windowEndAt),
+      current.serviceDurationSec,
+    );
+    const windowStartAt = requestedWindow.windowStartAt;
+    const windowEndAt = requestedWindow.windowEndAt;
     assertWindow(windowStartAt, windowEndAt);
 
     await this.archiveConditions(context, current);
@@ -320,6 +339,7 @@ export class RequestsService {
     expectedVersion: number | null | undefined,
     reason: string | null,
   ): Promise<Request> {
+    await lockWorkingPlan(context.tx);
     const current = await this.loadOwned(context.tx, requestId);
     if (current.lifecycle === 'cancelled') {
       return current;
@@ -365,6 +385,46 @@ export class RequestsService {
     );
 
     return this.reload(context.tx, requestId);
+  }
+
+  /**
+   * The signed-in customer's own request, or a truthful "not found".
+   *
+   * Shared by `ClientController` and the AI client catalogue so the ownership rule -- an
+   * account may only see and act on its own requests -- lives in exactly one place. A
+   * request belonging to someone else is reported as absent rather than forbidden:
+   * confirming that it exists is itself a disclosure (context/42 DF-06). An integration
+   * key has no account of its own to compare against; a caller with no `clientAccountId`
+   * to check is a caller bug, not a business case, so this always enforces the match.
+   */
+  async ownedByAccount(clientAccountId: string, requestId: string): Promise<Request> {
+    const request = await this.byId(requestId);
+    if (request.clientAccountId !== clientAccountId) {
+      throw SysError.notFound('Request', { requestId });
+    }
+    return request;
+  }
+
+  /** Loads a request by id with no ownership check -- an integration key's full access
+   *  within its category (context/41 section 3.2), not bound to one customer account. */
+  async byId(requestId: string): Promise<Request> {
+    const request = await this.prisma.request.findUnique({ where: { id: requestId } });
+    if (!request) {
+      throw SysError.notFound('Request', { requestId });
+    }
+    return request;
+  }
+
+  /** Active (not yet completed or cancelled) requests of one customer account, newest
+   *  first -- the same list `ClientController.list` shows. */
+  async listActive(clientAccountId: string): Promise<Request[]> {
+    return this.prisma.request.findMany({
+      where: {
+        clientAccountId,
+        lifecycle: { in: ['draft', 'submitted', 'in_progress'] },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
   }
 
   /** Loads a request, or reports that it does not exist. */

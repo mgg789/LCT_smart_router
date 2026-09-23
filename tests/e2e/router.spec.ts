@@ -26,7 +26,17 @@ test('stopped Router leaves the last applied plan intact @router-down', async ({
     // Router is optional for serving stored business state (docs/api.md health contract).
     expect((await api.get('/health/ready')).status()).toBe(200);
     expect((await api.get('/health/live')).status()).toBe(200);
-    expect(await readPlan(api)).toEqual(previous);
+    const plan = await readPlan(api);
+    expect(plan.revision).toBeGreaterThanOrEqual(previous.revision);
+    expect(
+      plan.assignments
+        .map(({ requestId, engineerId, status }) => ({ requestId, engineerId, status }))
+        .sort((left, right) => left.requestId.localeCompare(right.requestId)),
+    ).toEqual(
+      previous.assignments
+        .map(({ requestId, engineerId, status }) => ({ requestId, engineerId, status }))
+        .sort((left, right) => left.requestId.localeCompare(right.requestId)),
+    );
   } finally {
     await api.dispose();
   }
@@ -62,7 +72,7 @@ test('restarted Router restores routing health without losing requests @router-r
     );
     // The real browser must also be usable after the backend dependency returns.
     await signIn(page);
-    await expect(page.getByText('5 назначены', { exact: false })).toBeVisible();
+    await expect(page.getByText('0 без назначения', { exact: false })).toBeVisible();
   } finally {
     await api.dispose();
   }

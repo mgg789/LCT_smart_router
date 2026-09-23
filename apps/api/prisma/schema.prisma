@@ -107,6 +107,11 @@ enum LiveEngineerLineStatus {
   pending
   online
   no_show_offline
+  /// The engineer was on the line and left it deliberately -- distinct from
+  /// `no_show_offline`, which is set only by the automatic sweep for someone who never
+  /// showed up. An engineer who worked part of the day did show up; this status must
+  /// never be reported to the dispatcher as a no-show.
+  stood_down
   technical_break
 }
 
@@ -238,6 +243,99 @@ enum ApiTokenCategory {
 }
 
 // ---------------------------------------------------------------------------
+// AI gateway reference values.
+// ---------------------------------------------------------------------------
+
+/// Assigned by the server from the trusted session that opened the conversation. Model
+/// output can never change it -- the profile gates which tools and documents the run may
+/// see, so it has to stay outside anything the model writes.
+enum AiRoleProfile {
+  client
+  engineer
+  dispatcher_readonly
+  dispatcher_fix
+}
+
+/// While a conversation is `dispatcher`, the assistant writes nothing into it: a human
+/// has taken the turn and an AI reply landing on top of theirs is exactly the failure
+/// this mode exists to prevent.
+enum AiConversationMode {
+  ai
+  dispatcher
+}
+
+/// A new dispatcher dialogue always starts in `help`; `fix` is only entered by an
+/// explicit request for a change, never inferred from wording.
+enum AiAssistMode {
+  help
+  fix
+}
+
+enum AiMessageAuthor {
+  user
+  assistant
+  dispatcher
+  system
+}
+
+/// Exactly the four agreed UI forms. Nothing else is ever generated, so a renderer never
+/// has to guess how to draw a message.
+enum AiMessageKind {
+  text
+  text_action
+  text_action_cancel
+  text_confirmation
+}
+
+enum AiRunState {
+  running
+  stopping
+  stopped
+  completed
+  failed
+}
+
+/// A user-requested stop must never be shown as a rollback of an applied write, hence
+/// `cancelled_before_apply` and `outcome_unknown` are their own states rather than a
+/// reuse of `rejected` (mirrors the applied/rejected/conflict/outcome_unknown split on
+/// the system-wide OperationState).
+enum AiOperationState {
+  prepared
+  awaiting_confirmation
+  running
+  applied
+  rejected
+  cancelled_before_apply
+  outcome_unknown
+}
+
+enum AiKnowledgeSegment {
+  client
+  engineer
+  dispatcher
+}
+
+enum AiHandoffState {
+  waiting
+  answered
+  closed
+}
+
+/// Who opened the handover. A dialogue the dispatcher started themselves is never
+/// «waiting for a dispatcher», so the queue badge must be able to tell the two apart
+/// without inspecting who wrote the first message.
+enum AiHandoffOrigin {
+  user
+  dispatcher
+}
+
+enum AiProviderKind {
+  agents
+  openai_chat
+  replay
+}
+
+// ---------------------------------------------------------------------------
 // Identity and access
 // ---------------------------------------------------------------------------
 
@@ -256,6 +354,7 @@ model Account {
   sessions        Session[]
   engineer        Engineer?
   requests        Request[]
+  aiConversations AiConversation[]
 
   @@map("accounts")
 }
@@ -1025,4 +1124,271 @@ model ExternalIdMap {
   @@unique([source, entityType, externalId])
   @@index([internalId])
   @@map("external_id_map")
+}
+
+// ---------------------------------------------------------------------------
+// AI gateway
+// ---------------------------------------------------------------------------
+
+/// One AI or dispatcher-handoff dialogue. `roleProfile` is fixed by the server at
+/// creation from the session that opened it and is never revised later, even if the
+/// account gains or loses a role, so a run's tool access cannot silently drift mid
+/// conversation.
+model AiConversation {
+  id String @id @default(uuid())
+
+  accountId String @map("account_id")
+  role      Role
+  roleProfile AiRoleProfile @map("role_profile")
+  /// Switches to `dispatcher` once a handoff is answered; the assistant stays silent for
+  /// the rest of that mode so an AI reply can never land on top of a dispatcher's.
+  mode        AiConversationMode @default(ai)
+  /// Starts every dispatcher dialogue asking questions; only an explicit request for a
+  /// change moves it to `fix`.
+  assistMode  AiAssistMode @default(help) @map("assist_mode")
+  /// Which request/engineer/alert the dialogue was opened about, if any. Kept as loose
+  /// JSON because the set of linkable entities is expected to grow without a migration.
+  contextRef  Json? @map("context_ref")
+  title       String?
+  createdAt   BigInt @map("created_at")
+  updatedAt   BigInt @map("updated_at")
+  lastMessageAt BigInt @map("last_message_at")
+  /// A conversation is archived, never deleted; closing is a state with its own moment,
+  /// like every other lifecycle in this schema.
+  closedAt    BigInt? @map("closed_at")
+  version     Int @default(1)
+
+  account    Account       @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  messages   AiMessage[]
+  runs       AiRun[]
+  operations AiOperation[]
+  handoffs   AiHandoff[]
+
+  /// "My chats": an account's own conversation list, newest first.
+  @@index([accountId, lastMessageAt])
+  /// The dispatcher handover queue: dialogues currently waiting on a human, newest first.
+  @@index([mode, lastMessageAt])
+  @@map("ai_conversations")
+}
+
+/// One turn in a conversation. `seq` is the paging cursor; at one-second resolution
+/// `createdAt` alone cannot order two messages written in the same tick.
+model AiMessage {
+  id String @id @default(uuid())
+
+  conversationId String @map("conversation_id")
+  seq            Int
+  author         AiMessageAuthor
+  kind           AiMessageKind @default(text)
+  text           String
+  /// Button descriptors: each one a reference to an allowed system action, never a URL or
+  /// script supplied by the model.
+  actions        Json @default("[]")
+  runId          String? @map("run_id")
+  operationId    String? @map("operation_id")
+  /// Set only for `dispatcher` authorship, so a reply can be attributed to the human who
+  /// actually sent it.
+  authorAccountId String? @map("author_account_id")
+  createdAt      BigInt @map("created_at")
+
+  conversation AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  /// The paging cursor for `?afterSeq=` reads within one conversation.
+  @@unique([conversationId, seq])
+  @@map("ai_messages")
+}
+
+/// One model invocation and its budget reservation. Actual spend is settled into
+/// AiBudget; this row is the per-call record of what was reserved and used.
+model AiRun {
+  id String @id @default(uuid())
+
+  conversationId String @map("conversation_id")
+  accountId      String @map("account_id")
+  /// Copied from the active quota bucket at start, so a later calendar-day rollover or an
+  /// account change can never move an already-charged run onto a different bucket.
+  quotaDay       String @map("quota_day")
+  quotaAccountId String @map("quota_account_id")
+  roleProfile    AiRoleProfile @map("role_profile")
+  state          AiRunState @default(running)
+  providerKind   AiProviderKind @map("provider_kind")
+  model          String
+  /// Shared across retries AND the one fallback hop to a secondary provider, so neither
+  /// can multiply the other into an unbounded retry storm.
+  attempts       Int @default(0)
+  usedFallback   Boolean @default(false) @map("used_fallback")
+  /// Null until the provider reports usage: a stalled or failed-before-response run must
+  /// not read as a zero-cost success.
+  promptTokens     Int? @map("prompt_tokens")
+  completionTokens Int? @map("completion_tokens")
+  costMicros     Int @default(0) @map("cost_micros")
+  reservedMicros Int @map("reserved_micros")
+  /// Mirrors the highest AiRunEvent.seq already written, so a resuming client's
+  /// `?afterSeq=` has an upper bound without a separate query.
+  lastEventSeq   Int @default(0) @map("last_event_seq")
+  stopRequestedAt BigInt? @map("stop_requested_at")
+  startedAt      BigInt @map("started_at")
+  finishedAt     BigInt? @map("finished_at")
+  errorCode      String? @map("error_code")
+  version        Int @default(1)
+
+  conversation AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  events       AiRunEvent[]
+
+  /// The startup sweep that reconciles runs a restart left stuck in `running`/`stopping`.
+  @@index([state, startedAt])
+  @@map("ai_runs")
+}
+
+/// Append-only stream of what happened during a run, replayed to a reconnecting client
+/// from its last known position.
+model AiRunEvent {
+  id String @id @default(uuid())
+
+  runId     String @map("run_id")
+  seq       Int
+  type      String
+  payload   Json
+  createdAt BigInt @map("created_at")
+
+  run AiRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  /// The cursor that makes `?afterSeq=` resumption a range scan instead of a sort of the
+  /// whole run.
+  @@unique([runId, seq])
+  @@map("ai_run_events")
+}
+
+/// A proposed system write staged by the AI (or resumed by a dispatcher), shown to the
+/// actor as a confirmable card before OperationsService is ever called. `id` is the
+/// public operation reference shown in the chat -- distinct from `resultOperationId`,
+/// which only exists once the write actually happened.
+model AiOperation {
+  id String @id @default(uuid())
+
+  conversationId String @map("conversation_id")
+  runId          String? @map("run_id")
+  accountId      String @map("account_id")
+  /// The same catalogue string the HTTP controller passes to OperationsService, e.g.
+  /// `request.submit` -- there is exactly one vocabulary of writable actions, not a
+  /// parallel one for AI-originated calls.
+  action         String
+  targetRef      String? @map("target_ref")
+  payload        Json
+  /// Canonical hash of `payload`, re-checked at confirm time: content edited after the
+  /// card was shown forces a new card instead of silently confirming stale arguments.
+  payloadFingerprint String @map("payload_fingerprint")
+  /// Safe public preview rendered by the server, never by the model -- the chat displays
+  /// this, not `payload`.
+  summary        Json
+  expectedVersion Int? @map("expected_version")
+  requiresConfirmation Boolean @default(true) @map("requires_confirmation")
+  state          AiOperationState @default(awaiting_confirmation)
+  createdAt      BigInt @map("created_at")
+  expiresAt      BigInt @map("expires_at")
+  confirmedAt    BigInt? @map("confirmed_at")
+  completedAt    BigInt? @map("completed_at")
+  /// Links to the row OperationsService wrote in the `operations` journal once this card
+  /// was actually applied.
+  resultOperationId String? @map("result_operation_id")
+  result         Json?
+  version        Int @default(1)
+
+  conversation AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  /// The card list shown inside one conversation.
+  @@index([conversationId, state])
+  /// The expiry sweep across every pending card.
+  @@index([state, expiresAt])
+  @@map("ai_operations")
+}
+
+/// Atomic per-day, per-account spend ledger, separate from AiRun so a reservation can be
+/// checked and taken before the run that will spend it even exists.
+model AiBudget {
+  quotaDay       String @map("quota_day")
+  accountId      String @map("account_id")
+  reservedMicros Int @default(0) @map("reserved_micros")
+  settledMicros  Int @default(0) @map("settled_micros")
+  messageCount   Int @default(0) @map("message_count")
+  updatedAt      BigInt @map("updated_at")
+  version        Int @default(1)
+
+  /// Not an optimisation but the correctness anchor for an atomic `INSERT ... ON
+  /// CONFLICT DO UPDATE ... WHERE` reservation, so two browser tabs cannot both pass the
+  /// same remaining-balance check.
+  @@id([quotaDay, accountId])
+  @@map("ai_budgets")
+}
+
+/// One stretch of a dialogue carried by a human instead of the assistant, from the moment
+/// it is handed over to the moment the dispatcher ends it. `requestIds`/`engineerIds` are
+/// the working set the dispatcher is being asked about, not a resolved plan or an
+/// assignment.
+///
+/// A closed row is history, not litter: the dispatcher's list keeps showing it after the
+/// handover ends, and a later escalation of the same dialogue creates a *new* row rather
+/// than reopening this one. That is what makes "how many times did we have to step in"
+/// answerable from the table alone.
+model AiHandoff {
+  id String @id @default(uuid())
+
+  conversationId        String @map("conversation_id")
+  /// Who asked for the handover: the client or engineer when the assistant escalated,
+  /// the dispatcher themselves when they opened the chat from the dashboard.
+  requestedByAccountId  String @map("requested_by_account_id")
+  /// Always the *counterpart's* role -- the client or engineer on the other side of the
+  /// chat -- never `dispatcher`, whichever side opened it. The dispatcher's list groups
+  /// by this field, so it has to mean the same thing in both directions.
+  actorRole             Role @map("actor_role")
+  initiatedBy           AiHandoffOrigin @default(user) @map("initiated_by")
+  requestIds            String[] @map("request_ids")
+  engineerIds           String[] @map("engineer_ids")
+  state                 AiHandoffState @default(waiting)
+  /// Highest message `seq` the dispatcher has acknowledged in this handover; the unread
+  /// badge counts the counterpart's messages above it. Per handover rather than per
+  /// account because this product has one dispatcher (context/32 section 2.1) -- a second
+  /// one would need a separate read-cursor table, not a change to this column.
+  dispatcherLastReadSeq Int @default(0) @map("dispatcher_last_read_seq")
+  /// Message `seq` the dialogue had reached when the handover opened, and the one it had
+  /// reached when it ended. Together they make an episode a real object: the dispatcher's
+  /// list can draw the "handed over here" divider at the right place, and a chat closed
+  /// last week keeps showing the conversation as it stood then instead of silently
+  /// growing new messages the person who closed it never saw.
+  startSeq              Int @default(0) @map("start_seq")
+  endSeq                Int? @map("end_seq")
+  createdAt             BigInt @map("created_at")
+  firstReplyAt          BigInt? @map("first_reply_at")
+  closedAt              BigInt? @map("closed_at")
+  closedByAccountId     String? @map("closed_by_account_id")
+  version               Int @default(1)
+
+  conversation AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  /// The dispatcher's chat list: open handovers first, then closed ones, newest first.
+  @@index([state, createdAt])
+  @@map("ai_handoffs")
+}
+
+/// One curated knowledge card served to the assistant's retrieval step. Content is
+/// authored by the team, never generated, and `sourcePath` keeps every row traceable back
+/// to the file it was built from.
+model AiDocument {
+  id String @id @default(uuid())
+
+  segment    AiKnowledgeSegment
+  slug       String
+  section    String
+  title      String
+  summary    String
+  body       String
+  tags       String[]
+  actions    String[]
+  checksum   String
+  sourcePath String @map("source_path")
+  updatedAt  BigInt @map("updated_at")
+
+  @@unique([slug, section])
+  @@index([segment])
+  @@map("ai_documents")
 }

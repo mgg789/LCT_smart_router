@@ -18,6 +18,7 @@ import {
   unassignedRequests,
 } from '../domain/dashboard';
 import { projectLiveGraph } from '../domain/liveGraph';
+import { mapForecastLabel, routeTimingUnverified } from '../domain/mapForecast';
 import { explainSelection } from '../lib/explanations';
 import { factorLabel, POLICY_LABELS, skillLabel, transportLabel } from '../lib/reasons';
 import { formatClock, formatDayTitle, formatDurationMin } from '../lib/time';
@@ -151,7 +152,7 @@ export function dashboardViewFromSnapshot(
   unassignedReason: string;
   firstUnassignedId: string | null;
   engineers: EngineerCard[];
-  totalKm: number;
+  totalKm: number | null;
   displayedEngineerId: string | null;
   displayedRequest: EngineerRequest;
 } {
@@ -186,7 +187,11 @@ export function dashboardViewFromSnapshot(
   return {
     dateLabel: figmaDateLabel(snapshot.workDate),
     requestCount: snapshot.requests.length,
-    planLabel: `${unassigned.length} без назначения - план от ${formatClock(planAsOf)}`,
+    planLabel:
+      snapshot.plan.plan?.routes.map(mapForecastLabel).find(Boolean) ??
+      (snapshot.plan.plan?.origin === 'manual'
+        ? 'MANUAL · время не пересчитано'
+        : `${unassigned.length} без назначения - план от ${formatClock(planAsOf)}`),
     unassignedTitle: unassignedCountTitle(unassigned.length),
     unassignedReason: firstUnassignedAssignment?.reasons.assignment?.factors[0]?.code
       ? factorLabel(firstUnassignedAssignment.reasons.assignment.factors[0].code)
@@ -195,7 +200,11 @@ export function dashboardViewFromSnapshot(
         : 'Все заявки назначены',
     firstUnassignedId: firstUnassigned?.id ?? null,
     engineers,
-    totalKm: engineers.reduce((sum, item) => sum + item.km, 0),
+    totalKm: snapshot.plan.plan?.routes.some((item) =>
+      routeTimingUnverified(item, snapshot.plan.plan?.origin),
+    )
+      ? null
+      : engineers.reduce((sum, item) => sum + (item.km ?? 0), 0),
     displayedEngineerId,
     displayedRequest: request
       ? requestPanelFromSnapshot(request, assignment, explanation?.title ?? null)
@@ -240,6 +249,8 @@ export function withLiveRouteStops(
     const graph = projectLiveGraph(
       routeForEngineer(snapshot, engineer.id),
       state?.progress ?? null,
+      undefined,
+      snapshot.plan.plan?.origin === 'manual',
     );
     const history = live?.history.filter((item) => item.engineerId === engineer.id) ?? [];
     const stops: RouteStop[] = graph.timelineNodes.map((node) => {
@@ -254,11 +265,23 @@ export function withLiveRouteStops(
           node.kind === 'start'
             ? (state?.lineStartedAt ?? state?.noShowAt ?? live?.workday.logicalStartAt ?? node.at)
             : node.at,
-        time: formatClock(
-          node.kind === 'start'
-            ? (state?.lineStartedAt ?? state?.noShowAt ?? live?.workday.logicalStartAt ?? node.at)
-            : node.at,
-        ),
+        time:
+          routeTimingUnverified(
+            routeForEngineer(snapshot, engineer.id),
+            snapshot.plan.plan?.origin,
+          ) &&
+          node.kind !== 'start' &&
+          !request?.startedAt &&
+          !terminal
+            ? '—'
+            : formatClock(
+                node.kind === 'start'
+                  ? (state?.lineStartedAt ??
+                      state?.noShowAt ??
+                      live?.workday.logicalStartAt ??
+                      node.at)
+                  : node.at,
+              ),
         place:
           node.kind === 'start'
             ? 'Выход на смену'
@@ -322,9 +345,10 @@ export function withLiveRouteStops(
       if (planned) Object.assign(planned, lunch);
       else stops.push(lunch);
     }
-    stops.sort((a, b) =>
-      a.kind === 'start' ? -1 : b.kind === 'start' ? 1 : (a.at ?? 0) - (b.at ?? 0),
-    );
+    if (snapshot.plan.plan?.origin !== 'manual')
+      stops.sort((a, b) =>
+        a.kind === 'start' ? -1 : b.kind === 'start' ? 1 : (a.at ?? 0) - (b.at ?? 0),
+      );
     const doneCount = state
       ? state.stats.completedCount + state.stats.assumedCompletedCount
       : engineer.doneCount;
@@ -361,7 +385,9 @@ function engineerCardFromSummary(
   return {
     id: summary.engineerId,
     name: summary.displayName,
-    km: Math.round(summary.distanceKm),
+    km: routeTimingUnverified(route, snapshot.plan.plan?.origin)
+      ? null
+      : Math.round(summary.distanceKm),
     status: transportLabel(summary.transportType),
     shift:
       summary.shiftStartAt && summary.shiftEndAt
@@ -369,7 +395,11 @@ function engineerCardFromSummary(
         : 'смена не задана',
     requestCount: summary.assignedCount,
     doneCount: summary.doneCount,
-    routeUpdated: `план обновлён в ${formatClock(planAsOf)}`,
+    routeUpdated:
+      mapForecastLabel(route) ??
+      (snapshot.plan.plan?.origin === 'manual'
+        ? 'MANUAL · время не пересчитано'
+        : `план обновлён в ${formatClock(planAsOf)}`),
     stops: routeStopsFromRoute(snapshot, route),
     request: request
       ? requestPanelFromSnapshot(request, assignment, explanation?.title ?? null)
@@ -425,10 +455,14 @@ function routeStopsFromRoute(
   if (!route) return [];
   return route.stops
     .filter((stop) => stop.kind !== 'wait')
-    .map((stop) => stopToCard(snapshot, stop));
+    .map((stop) => stopToCard(snapshot, stop, route));
 }
 
-function stopToCard(snapshot: DashboardSnapshot, stop: PlanStopView): RouteStop {
+function stopToCard(
+  snapshot: DashboardSnapshot,
+  stop: PlanStopView,
+  route: PlanRouteView,
+): RouteStop {
   if (stop.kind === 'lunch') {
     return {
       time: formatClock(stop.startAt),
@@ -451,7 +485,10 @@ function stopToCard(snapshot: DashboardSnapshot, stop: PlanStopView): RouteStop 
   }
   const request = stop.requestId ? requestById(snapshot, stop.requestId) : null;
   return {
-    time: formatClock(stop.startAt),
+    time:
+      routeTimingUnverified(route, snapshot.plan.plan?.origin) && !request?.startedAt
+        ? '—'
+        : formatClock(request?.startedAt ?? stop.startAt),
     place: request ? routeStopAddress(request.addressText) : 'Заявка',
     status: stopStatus(request),
     requestId: stop.requestId,

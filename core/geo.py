@@ -10,6 +10,7 @@ import json
 import logging
 import math
 import unicodedata
+from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -279,6 +280,9 @@ class GraphTravel:
         for edges in self.adjacency.values():
             edges.sort(key=lambda e: (e.target, e.distance_m, e.model_dump_json()))
         self._trees: dict[tuple[str, str], tuple[dict, dict]] = {}
+        self._quotes: OrderedDict[
+            tuple[float, float, float, float, Transport], TravelQuote | None
+        ] = OrderedDict()
 
     def nearest(self, point: GeoPoint, limit_m: float) -> tuple[str, GeoPoint, float] | None:
         """Return a candidate projection with distance; callers must accept it explicitly."""
@@ -298,6 +302,20 @@ class GraphTravel:
         self, origin: GeoPoint, destination: GeoPoint, profile: Transport
     ) -> TravelQuote | None:
         """Return a graph path, or a disclosed deterministic fallback for unknown points."""
+        key = (origin.lat, origin.lon, destination.lat, destination.lon, profile)
+        if key not in self._quotes:
+            value = self._quote(origin, destination, profile)
+            # Keep the cache on this immutable provider, not on a global bound-method LRU.
+            # A live worker may replace many graphs; old resources must be collectable.
+            if len(self._quotes) >= 32768:
+                self._quotes.popitem(last=False)
+            self._quotes[key] = value
+        return self._quotes[key]
+
+    def _quote(
+        self, origin: GeoPoint, destination: GeoPoint, profile: Transport
+    ) -> TravelQuote | None:
+        """Materialize one immutable path; source trees and geometry are reused on later reads."""
         source, target = self._node(origin), self._node(destination)
         if source is None or target is None:
             distance = math.ceil(haversine_m(origin, destination) * _FALLBACK_ROAD_FACTOR)

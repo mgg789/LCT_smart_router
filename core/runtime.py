@@ -469,6 +469,26 @@ class RouterRuntime:
                 raise ValueError("PUBLICATION_CHANGED")
         return {"input_hash": input_hash, "router_context_version": context_version, **result}
 
+    def propose_window(
+        self, snapshot: RouterTaskSnapshot, request_id: str, routes: dict, day_end_at: int
+    ) -> dict:
+        """Preview on fresh sys facts with current travel resources; never mutate runtime."""
+        from core.window_proposal import propose_window
+
+        with self._lock:
+            graph, settings = copy.deepcopy(self._graph), copy.deepcopy(self.settings)
+            version = self.context_version
+        task = apply_system_policy(snapshot, settings)
+        provider = GraphTravel(graph) if isinstance(graph, RoadGraph) else graph
+        provider = configure_travel(
+            attach_live_roads(provider), settings.technical(), task.planning_as_of
+        )
+        result = propose_window(task, provider, request_id, routes, day_end_at)
+        with self._lock:
+            if version != self.context_version:
+                raise ValueError("CONTEXT_CHANGED")
+        return result
+
     def compare_policies(self, search_budget_ms: int | None = None) -> PolicyComparison:
         """Compare seven strategies on the ready publication without mutating Runtime."""
         if search_budget_ms is not None and not 1 <= search_budget_ms <= 8000:

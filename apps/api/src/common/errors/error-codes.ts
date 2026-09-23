@@ -64,6 +64,40 @@ export const ERROR_CODES = {
    */
   SERVICE_NOT_CONFIGURED: HttpStatus.SERVICE_UNAVAILABLE,
 
+  /**
+   * The account's daily message count, daily cost or lifetime cost cap for the AI-gateway
+   * is spent. Reported as its own code rather than a generic conflict so the chat surface
+   * can show a quota message instead of a broken-looking failure (context/35 section 8).
+   */
+  AI_QUOTA_EXHAUSTED: HttpStatus.TOO_MANY_REQUESTS,
+
+  /**
+   * Every configured model provider (and its one fallback hop) failed or is unreachable.
+   * Distinct from `SERVICE_NOT_CONFIGURED`: the deployment does have a provider, it is
+   * just not answering right now, which the chat surface should show as "try again".
+   */
+  AI_UNAVAILABLE: HttpStatus.SERVICE_UNAVAILABLE,
+
+  /**
+   * A dispatcher chat write (`POST /dispatch/chats/:id/messages` or `.../finish`) named a
+   * conversation with no open `AiHandoff` right now -- it was never escalated to a human,
+   * or the handover already ended. A late reply from a stale dispatcher tab must not
+   * silently reopen it (context/36 section 9.4); the caller re-reads `GET /dispatch/chats`
+   * instead.
+   */
+  AI_HANDOFF_NOT_ACTIVE: HttpStatus.CONFLICT,
+
+  /**
+   * The dispatcher asked to open a chat with someone who cannot receive one: a request
+   * whose customer was imported without an account, or an engineer who has no login yet
+   * (`Engineer.accountId` is nullable exactly for that case, context/37 section 3.1).
+   *
+   * Its own code rather than a `NOT_FOUND`, because the request or the engineer does
+   * exist -- what is missing is a way to reach them, and the dispatcher should be told to
+   * phone instead of being shown a "not found" they would reasonably read as a bug.
+   */
+  CHAT_TARGET_UNREACHABLE: HttpStatus.CONFLICT,
+
   /** Unexpected failure; details are logged, not returned. */
   INTERNAL_ERROR: HttpStatus.INTERNAL_SERVER_ERROR,
 } as const;

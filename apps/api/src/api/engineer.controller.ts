@@ -7,6 +7,7 @@ import { OperationsService } from '../operations';
 import { EngineersService, type EngineerWithAccount } from '../orchestrator/engineers';
 import { FactsService } from '../orchestrator/facts';
 import { LiveService } from '../orchestrator/live';
+import { MapRoutingService } from '../orchestrator/settings/map-routing.service';
 import { PrismaService } from '../persistence';
 import { AppliedPlanService } from '../routing/router-gateway';
 import { type AttendanceDto, attendanceSchema } from './dto/alert.dto';
@@ -47,6 +48,7 @@ import { toRequestView } from './request-view';
 @Controller('engineer')
 export class EngineerController {
   constructor(
+    private readonly maps: MapRoutingService,
     private readonly engineers: EngineersService,
     private readonly facts: FactsService,
     private readonly plans: AppliedPlanService,
@@ -376,7 +378,7 @@ export class EngineerController {
         requests: [],
       };
     }
-    const view = toPlanView(plan);
+    const view = await this.maps.enrichPlan(toPlanView(plan));
     const route = view.routes.find((item) => item.engineerId === engineer.id) ?? null;
     return {
       // The engineer works from the plan sys applied, never from a background result of
@@ -413,7 +415,7 @@ export class EngineerController {
     if (!plan) {
       throw SysError.notFound('Request');
     }
-    const view = toPlanView(plan);
+    const view = await this.maps.enrichPlan(toPlanView(plan));
     const route = view.routes.find((item) => item.engineerId === engineer.id) ?? null;
     const stop = route?.stops.find((item) => item.requestId === requestId) ?? null;
     if (stop === null) {

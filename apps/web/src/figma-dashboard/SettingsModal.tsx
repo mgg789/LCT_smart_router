@@ -77,7 +77,7 @@ export function SettingsModal({
   submitting: boolean;
   onClose: () => void;
   onSave: (input: {
-    dispatcher: {
+    dispatcher: Partial<{
       dayStartMin: number;
       dayEndMin: number;
       noShowSec: number;
@@ -86,8 +86,8 @@ export function SettingsModal({
       repeatAfterSec: number;
       twogisApiKey?: string | null;
       yandexApiKey?: string | null;
-    };
-    router: RouterTechnicalSettings;
+    }>;
+    router?: RouterTechnicalSettings;
   }) => Promise<void>;
 }) {
   const [tab, setTab] = useState<SettingsTab>('general');
@@ -219,8 +219,30 @@ export function SettingsModal({
         {tab !== 'api' ? (
           <button
             type="button"
-            disabled={submitting || loading || !token || !routerSettings}
+            disabled={submitting || loading || !token || (tab === 'general' && !routerSettings)}
             onClick={() => {
+              if (tab === 'maps') {
+                setError(null);
+                void onSave({
+                  dispatcher: {
+                    ...(clearTwogis
+                      ? { twogisApiKey: null }
+                      : twogisKey
+                        ? { twogisApiKey: twogisKey }
+                        : {}),
+                    ...(clearYandex
+                      ? { yandexApiKey: null }
+                      : yandexKey
+                        ? { yandexApiKey: yandexKey }
+                        : {}),
+                  },
+                }).catch((cause: unknown) => {
+                  setError(
+                    cause instanceof Error ? cause.message : 'Не удалось сохранить ключи карт',
+                  );
+                });
+                return;
+              }
               if (!routerSettings) return;
               if (minutesFromClock(draft.shiftEnd) <= minutesFromClock(draft.shiftStart)) {
                 setError('Конец дня должен быть позже начала.');
@@ -547,6 +569,11 @@ function MapsForm({
             {status.active === 'none' ? 'нет' : status.active === 'twogis' ? '2ГИС' : 'Яндекс'}
           </p>
           <p className="mt-[6px] text-figma-muted">2ГИС — {status.twogis.message}</p>
+          <p className="mt-[4px] text-figma-muted">
+            Запросов 2ГИС из этого процесса: {status.twogis.requests ?? 0} · из кэша:{' '}
+            {status.twogis.cacheHits ?? 0}. Ограничение: 5 маршрутов в минуту. Общий расход и
+            остаток квоты — в кабинете 2ГИС.
+          </p>
           <p className="mt-[4px] text-figma-muted">Яндекс — {status.yandex.message}</p>
         </div>
       ) : null}

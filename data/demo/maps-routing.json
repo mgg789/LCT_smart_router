@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "1.0",
+  "mode": "new_region",
+  "region": "maps_demo",
+  "sourceVersion": "dro101-v1-2026-09-24",
+  "requests": [
+    {
+      "externalId": "request-1",
+      "addressText": "Город Москва, пр-кт.Волгоградский, д. 128 к 5",
+      "lat": 55.7062794,
+      "lon": 37.7738951,
+      "serviceDurationSec": 1800,
+      "windowStartAt": 1790229600,
+      "windowEndAt": 1790272800,
+      "priority": "normal",
+      "requiredSkill": "connection",
+      "requiredTransport": "car"
+    },
+    {
+      "externalId": "request-2",
+      "addressText": "Город Москва, пер.Маяковского, д. 2",
+      "lat": 55.7397743,
+      "lon": 37.6599082,
+      "serviceDurationSec": 1800,
+      "windowStartAt": 1790229600,
+      "windowEndAt": 1790272800,
+      "priority": "normal",
+      "requiredSkill": "connection",
+      "requiredTransport": "car"
+    },
+    {
+      "externalId": "request-3",
+      "addressText": "Город Москва, ул.Грайвороновская, д. 10 к 2",
+      "lat": 55.7173273,
+      "lon": 37.7266148,
+      "serviceDurationSec": 1800,
+      "windowStartAt": 1790229600,
+      "windowEndAt": 1790272800,
+      "priority": "normal",
+      "requiredSkill": "connection",
+      "requiredTransport": "car"
+    },
+    {
+      "externalId": "request-4",
+      "addressText": "Город Москва, ул.Михайлова, д. 14",
+      "lat": 55.7270299,
+      "lon": 37.7659603,
+      "serviceDurationSec": 1800,
+      "windowStartAt": 1790229600,
+      "windowEndAt": 1790272800,
+      "priority": "normal",
+      "requiredSkill": "connection",
+      "requiredTransport": "car"
+    }
+  ],
+  "engineers": [
+    {
+      "externalId": "engineer-1",
+      "displayName": "2ГИС — Анна",
+      "skills": [
+        "local",
+        "connection",
+        "emergency"
+      ],
+      "transportType": "car",
+      "start": {
+        "lat": 55.6997977,
+        "lon": 37.7725762
+      },
+      "shiftStartAt": 1790229600,
+      "shiftEndAt": 1790272800
+    }
+  ],
+  "depot": {
+    "addressText": "Тестовый старт на графе Восток",
+    "lat": 55.6997977,
+    "lon": 37.7725762
+  }
+}

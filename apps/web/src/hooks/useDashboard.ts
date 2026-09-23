@@ -1,5 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  type ChatStreamOutcome,
+  type DispatchChatTarget,
+  type DispatchChatView,
+  finishDispatchChat as finishDispatchChatApi,
+  loadDispatchChats,
+  openDispatchChat as openDispatchChatApi,
+  readDispatchChat as readDispatchChatApi,
+  sendDispatchChatMessage as sendDispatchChatMessageApi,
+  streamDispatcherChatEvents,
+} from '../api/ai';
+import {
+  cancelDispatchRequest,
   changeEngineerEmail,
   closeDispatchShift,
   createDispatchEngineer,
@@ -14,6 +26,7 @@ import {
   markDispatchNoticeSeen,
   requestDispatcherLoginCode,
   resolveDispatchAlert,
+  restartDemoStand,
   selectRoutingPolicy,
   setDispatchMode,
   setEngineerAttendanceOptOut,
@@ -24,7 +37,13 @@ import {
   uploadDataPackage,
   verifyDispatcherLoginCode,
 } from '../api/client';
-import { type DispatchLiveView, loadDispatchLive, startLiveWorkday } from '../api/live';
+import {
+  type DispatchLiveView,
+  type LiveEngineerState,
+  loadDispatchLive,
+  startLiveWorkday,
+} from '../api/live';
+import { applyManualChange, type ManualChange, type PlanExpectation } from '../api/manual';
 import type {
   AlertResolutionInput,
   CreateDispatchEngineerInput,
@@ -61,6 +80,7 @@ import {
   saveDay,
   startRecoverySession,
 } from '../domain/resilience';
+import { useChatStream } from './useChatStream';
 
 const SESSION_KEY = 'lct.dispatcher.session';
 const DEFAULT_REBUILD_TIMEOUT_MS = 90_000;
@@ -131,23 +151,33 @@ export function useDashboard() {
   const [liveWorkday, setLiveWorkday] = useState<DispatchLiveView | null>(null);
   const [liveLoading, setLiveLoading] = useState(token !== null);
   const [startingWorkday, setStartingWorkday] = useState(false);
-  const refreshInFlight = useRef(false);
+  const [dispatchChats, setDispatchChats] = useState<DispatchChatView[] | null>(null);
+  const [dispatchChatsLoading, setDispatchChatsLoading] = useState(false);
+  const [dispatchChatsError, setDispatchChatsError] = useState<string | null>(null);
+  const refreshInFlight = useRef<Promise<DashboardSnapshot | null> | null>(null);
   const liveRefreshInFlight = useRef(false);
   const comparisonInFlight = useRef(false);
+  const dispatchChatsInFlight = useRef(false);
   const readGeneration = useRef(0);
   const liveReadGeneration = useRef(0);
   const comparisonRequestId = useRef(0);
+  const dispatchChatsGeneration = useRef(0);
 
   const invalidateAsyncReads = useCallback(() => {
     readGeneration.current += 1;
     liveReadGeneration.current += 1;
     comparisonRequestId.current += 1;
-    refreshInFlight.current = false;
+    dispatchChatsGeneration.current += 1;
+    refreshInFlight.current = null;
     liveRefreshInFlight.current = false;
     comparisonInFlight.current = false;
+    dispatchChatsInFlight.current = false;
     setPolicyComparison(null);
     setPolicyComparisonLoading(false);
     setPolicyComparisonError(null);
+    setDispatchChats(null);
+    setDispatchChatsLoading(false);
+    setDispatchChatsError(null);
   }, []);
 
   const handleSessionFailure = useCallback(
@@ -187,41 +217,48 @@ export function useDashboard() {
   );
 
   const refresh = useCallback(async () => {
-    if (!token || sourceRef.current === 'demo' || refreshInFlight.current) {
+    if (!token || sourceRef.current === 'demo') {
       return null;
     }
+    // Explicit editor refreshes join polling instead of reporting a false failure.
+    if (refreshInFlight.current) return refreshInFlight.current;
     if (recoverySessionExpired(sessionStorage)) {
       handleSessionFailure('Сессия закончилась. Войдите снова.');
       return null;
     }
     const generation = readGeneration.current;
-    refreshInFlight.current = true;
-    try {
-      const next = await loadDashboardSnapshot(token);
-      if (generation !== readGeneration.current) {
+    const work = (async () => {
+      try {
+        const next = await loadDashboardSnapshot(token);
+        if (generation !== readGeneration.current) {
+          return null;
+        }
+        setSnapshot(next);
+        setFocus((current) => reconcileDashboardFocus(next, current));
+        setOperationWarning(null);
+        setDiagnostic(null);
+        setError(null);
+        return next;
+      } catch (cause) {
+        if (generation !== readGeneration.current) {
+          return null;
+        }
+        reportFailure(cause);
+        if (cause instanceof DashboardApiError && (cause.status === 401 || cause.status === 403)) {
+          handleSessionFailure('Сессия закончилась. Войдите снова.');
+          return null;
+        }
+        setError(errorMessage(cause));
         return null;
+      } finally {
+        if (generation === readGeneration.current) {
+          refreshInFlight.current = null;
+          setLoading(false);
+        }
       }
-      setSnapshot(next);
-      setFocus((current) => reconcileDashboardFocus(next, current));
-      setError(null);
-      return next;
-    } catch (cause) {
-      if (generation !== readGeneration.current) {
-        return null;
-      }
-      reportFailure(cause);
-      if (cause instanceof DashboardApiError && (cause.status === 401 || cause.status === 403)) {
-        handleSessionFailure('Сессия закончилась. Войдите снова.');
-        return null;
-      }
-      setError(errorMessage(cause));
-      return null;
-    } finally {
-      if (generation === readGeneration.current) {
-        refreshInFlight.current = false;
-        setLoading(false);
-      }
-    }
+    })();
+    refreshInFlight.current = work;
+    return work;
   }, [handleSessionFailure, token, reportFailure, setSnapshot]);
 
   /** Reads the authoritative workday clock and engineer event projection. */
@@ -253,6 +290,163 @@ export function useDashboard() {
     }
   }, [handleSessionFailure, reportFailure, token]);
 
+  /** Reads conversations currently handed to a human dispatcher, for the «Чаты» tab and its
+   * nav badge. Follows the same in-flight/generation guard as `refresh`/`refreshLive`.
+   * `closedLimit` forwards straight to the endpoint; omitted, the server's own default (30
+   * finished chats) applies. */
+  const refreshDispatchChats = useCallback(
+    async (closedLimit?: number) => {
+      if (!token || sourceRef.current !== 'live' || dispatchChatsInFlight.current) {
+        return null;
+      }
+      const generation = dispatchChatsGeneration.current;
+      dispatchChatsInFlight.current = true;
+      setDispatchChatsLoading(true);
+      try {
+        const next = await loadDispatchChats(token, closedLimit);
+        if (generation !== dispatchChatsGeneration.current) return null;
+        setDispatchChats(next.chats);
+        setDispatchChatsError(null);
+        return next.chats;
+      } catch (cause) {
+        if (generation !== dispatchChatsGeneration.current) return null;
+        reportFailure(cause);
+        if (cause instanceof DashboardApiError && (cause.status === 401 || cause.status === 403)) {
+          handleSessionFailure('Сессия закончилась. Войдите снова.');
+          return null;
+        }
+        setDispatchChatsError(errorMessage(cause));
+        return null;
+      } finally {
+        if (generation === dispatchChatsGeneration.current) {
+          dispatchChatsInFlight.current = false;
+          setDispatchChatsLoading(false);
+        }
+      }
+    },
+    [handleSessionFailure, reportFailure, token],
+  );
+
+  /** Replaces one row wholesale with the server's own copy -- every write endpoint below
+   * (`open`/`send`/`finish`/`read`) now returns its committed `chat`, so there is no more
+   * hand-patching individual fields that can drift from what the server actually stored. */
+  const replaceDispatchChat = useCallback((chat: DispatchChatView) => {
+    setDispatchChats((current) => {
+      const list = current ?? [];
+      const index = list.findIndex((item) => item.handoff.id === chat.handoff.id);
+      if (index === -1) return [chat, ...list];
+      const next = list.slice();
+      next[index] = chat;
+      return next;
+    });
+  }, []);
+
+  /** Opens (or re-enters) a chat with a request's customer or an engineer from the
+   * dashboard's own «Написать» buttons, rather than the assistant escalating. Returns the
+   * opened row so the caller can jump the «Чаты» tab straight to it. */
+  const openDispatchChat = useCallback(
+    async (target: DispatchChatTarget, text?: string): Promise<DispatchChatView> => {
+      if (!token) throw new Error('Открытие чата доступно только в живом контуре');
+      const result = await openDispatchChatApi(token, crypto.randomUUID(), target, text);
+      replaceDispatchChat(result.chat);
+      return result.chat;
+    },
+    [replaceDispatchChat, token],
+  );
+
+  /** Sends the dispatcher's own reply into a handed-over conversation. */
+  const sendDispatchChatMessage = useCallback(
+    async (conversationId: string, text: string) => {
+      if (!token) return;
+      const result = await sendDispatchChatMessageApi(
+        token,
+        conversationId,
+        crypto.randomUUID(),
+        text,
+      );
+      replaceDispatchChat(result.chat);
+    },
+    [replaceDispatchChat, token],
+  );
+
+  /** Returns one conversation to the AI. History stays in place -- nothing here deletes it.
+   * The row stays in the list (now `closed`), it does not disappear. */
+  const finishDispatchChat = useCallback(
+    async (conversationId: string) => {
+      if (!token) return;
+      const result = await finishDispatchChatApi(token, conversationId, crypto.randomUUID());
+      replaceDispatchChat(result.chat);
+    },
+    [replaceDispatchChat, token],
+  );
+
+  /** Clears a chat's unread badge up to `seq`. A `null` response (chat not found, e.g. an
+   * already-finished cursor that moved on) is a legitimate no-op, not a failure. */
+  const markDispatchChatRead = useCallback(
+    async (conversationId: string, seq: number) => {
+      if (!token) return;
+      const result = await readDispatchChatApi(token, conversationId, crypto.randomUUID(), seq);
+      if (result.chat) replaceDispatchChat(result.chat);
+    },
+    [replaceDispatchChat, token],
+  );
+
+  const dispatchChatsUnreadCount = useMemo(
+    () => (dispatchChats ?? []).reduce((sum, chat) => sum + chat.unreadCount, 0),
+    [dispatchChats],
+  );
+
+  /** Folds one live chat-stream frame into local state without a round trip: a `message`
+   * lands directly in its still-open row (deduplicated by `seq`, since a message already
+   * fetched by the initial `refreshDispatchChats` may also arrive over the stream), while a
+   * `state` event (a handover opening, answered, or closed) changes which rows exist at all,
+   * so it falls back to a full list refresh rather than trying to patch one row in place. A
+   * malformed frame is dropped here -- the next `state` event or poll reconciles either way. */
+  const handleChatStreamEvent = useCallback(
+    (outcome: ChatStreamOutcome) => {
+      if (!outcome.ok) return;
+      const event = outcome.event;
+      if (event.type === 'state') {
+        void refreshDispatchChats();
+        return;
+      }
+      setDispatchChats((current) => {
+        if (!current) return current;
+        let changed = false;
+        const next = current.map((chat) => {
+          if (chat.conversation.id !== event.conversationId || chat.handoff.state === 'closed') {
+            return chat;
+          }
+          if (chat.messages.some((item) => item.seq === event.message.seq)) return chat;
+          changed = true;
+          return {
+            ...chat,
+            messages: [...chat.messages, event.message].sort((a, b) => a.seq - b.seq),
+            unreadCount: event.message.author === 'user' ? chat.unreadCount + 1 : chat.unreadCount,
+          };
+        });
+        return changed ? next : current;
+      });
+    },
+    [refreshDispatchChats],
+  );
+
+  /** Pre-binds the token the hook's own `connect` contract expects -- `useChatStream` only
+   * ever invokes this while `enabled` (which requires a token) is true, so the fallback is
+   * never actually exercised. */
+  const connectDispatchChatStream = useCallback(
+    (onEvent: (outcome: ChatStreamOutcome) => void, signal: AbortSignal) =>
+      streamDispatcherChatEvents(token ?? '', onEvent, signal),
+    [token],
+  );
+
+  const { connected: dispatchChatStreamConnected } = useChatStream({
+    token,
+    enabled: token !== null && source === 'live',
+    connect: connectDispatchChatStream,
+    onEvent: handleChatStreamEvent,
+  });
+
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -260,6 +454,16 @@ export function useDashboard() {
   useEffect(() => {
     void refreshLive();
   }, [refreshLive]);
+
+  useEffect(() => {
+    if (!token || source === 'demo') return;
+    void refreshDispatchChats();
+    // The live chat stream already pushes messages and state changes as they happen; this
+    // poll is only the fallback for while it is not connected (startup, a dropped socket).
+    if (dispatchChatStreamConnected) return;
+    const interval = window.setInterval(() => void refreshDispatchChats(), 8_000);
+    return () => window.clearInterval(interval);
+  }, [token, source, refreshDispatchChats, dispatchChatStreamConnected]);
 
   useEffect(() => {
     if (!token || source === 'demo' || rebuilding || liveWorkday?.workday.status === 'running') {
@@ -305,6 +509,32 @@ export function useDashboard() {
       ...previous,
     ]);
   }, []);
+
+  /** Puts every change of a crew's LIVE state into the dispatcher's event feed. */
+  const previousLiveEngineers = useRef<Map<string, string>>(new Map());
+  useEffect(() => {
+    if (liveWorkday?.workday.status !== 'running') {
+      previousLiveEngineers.current = new Map();
+      return;
+    }
+    const next = new Map(
+      liveWorkday.engineers.map((engineer) => [
+        engineer.id,
+        `${engineer.lineStatus}:${engineer.activeRequestId ?? ''}:${engineer.pendingDelayProblem?.requestId ?? ''}`,
+      ]),
+    );
+    const previous = previousLiveEngineers.current;
+    if (previous.size > 0) {
+      for (const engineer of liveWorkday.engineers) {
+        const before = previous.get(engineer.id);
+        const after = next.get(engineer.id);
+        if (before !== undefined && before !== after) {
+          pushEvent(`LIVE: ${engineer.name} — ${liveEngineerEvent(engineer)}.`);
+        }
+      }
+    }
+    previousLiveEngineers.current = next;
+  }, [liveWorkday, pushEvent]);
 
   const acceptSession = useCallback(
     (session: Awaited<ReturnType<typeof loginDispatcher>>, generation: number) => {
@@ -529,6 +759,10 @@ export function useDashboard() {
         return false;
       }
       const previous = snapshot;
+      if (previous.plan.mode === 'manual') {
+        setError('Сначала явно верните AUTO через переключатель режима. Ручной план сохранён.');
+        return false;
+      }
       const solveStartedAtMs = performance.now();
       const previousResultId = previous.plan.appliedResult?.resultId ?? null;
       const previousRevision = previous.plan.plan?.revision ?? null;
@@ -549,10 +783,6 @@ export function useDashboard() {
         });
       }
       try {
-        if (previous.plan.mode === 'manual') {
-          await setDispatchMode(token, 'auto');
-          pushEvent('Для перестроения включён авторежим — иначе Router не применит новый план.');
-        }
         if (previous.routerSettings && !sameRouterSettings(previous.routerSettings, nextSettings)) {
           const updated = await updateRouterTechnicalSettings(token, {
             ...nextSettings,
@@ -712,15 +942,15 @@ export function useDashboard() {
   }, [baseline, pendingDelta, rebuild]);
 
   const setMode = useCallback(
-    async (mode: 'auto' | 'manual') => {
+    async (mode: 'auto' | 'manual', expected: PlanExpectation, reason?: string) => {
       if (!token || sourceRef.current !== 'live') {
-        return;
+        throw new Error('Изменение режима доступно только на рабочем сервере');
       }
       invalidateAsyncReads();
       const generation = readGeneration.current;
       setError(null);
       try {
-        await setDispatchMode(token, mode);
+        await setDispatchMode(token, mode, expected, reason);
         if (generation !== readGeneration.current) return;
         await refresh();
         pushEvent(
@@ -728,11 +958,14 @@ export function useDashboard() {
         );
       } catch (cause) {
         if (generation !== readGeneration.current) return;
-        reportFailure(cause);
-        setOperationWarning(
-          'Результат изменения режима не подтверждён. Проверьте состояние на сервере.',
-        );
+        if (!(cause instanceof DashboardApiError) || cause.status === 0) {
+          reportFailure(cause);
+          setOperationWarning(
+            'Результат изменения режима не подтверждён. Проверьте состояние на сервере.',
+          );
+        } else if (cause.status === 409) await refresh();
         setError(errorMessage(cause));
+        throw cause;
       }
     },
     [invalidateAsyncReads, pushEvent, refresh, token, reportFailure],
@@ -953,6 +1186,30 @@ export function useDashboard() {
     [performEntityMutation],
   );
 
+  const cancelRequest = useCallback(
+    (requestId: string) => {
+      const current = snapshotRef.current?.requests.find((item) => item.id === requestId);
+      return performEntityMutation(async (session) => {
+        await cancelDispatchRequest(
+          session,
+          requestId,
+          current?.version,
+          'cancelled by dispatcher',
+        );
+      }, 'Визит отменён.');
+    },
+    [performEntityMutation],
+  );
+
+  const editManualPlan = useCallback(
+    (change: ManualChange, expected: PlanExpectation, operationId: string) => {
+      return performEntityMutation(async (session) => {
+        await applyManualChange(session, change, expected, operationId);
+      }, 'Ручной план сохранён. Время и дорожные показатели требуют проверки.');
+    },
+    [performEntityMutation],
+  );
+
   const createEngineer = useCallback(
     (input: CreateDispatchEngineerInput) =>
       performEntityMutation(async (session) => {
@@ -975,13 +1232,14 @@ export function useDashboard() {
   );
 
   const performAlertOperation = useCallback(
-    async (operation: (session: string) => Promise<void>) => {
+    async (operation: (session: string) => Promise<void>, onSuccess?: () => void) => {
       if (!token || sourceRef.current !== 'live' || loading || operationWarning !== null) {
         throw new Error('Для решения алертов нужно подключение к рабочему серверу');
       }
       const generation = readGeneration.current;
       try {
         await operation(token);
+        onSuccess?.();
       } catch (cause) {
         if (
           generation === readGeneration.current &&
@@ -998,8 +1256,20 @@ export function useDashboard() {
 
   const resolveAlert = useCallback(
     (id: string, input: AlertResolutionInput) =>
-      performAlertOperation((session) => resolveDispatchAlert(session, id, input)),
-    [performAlertOperation],
+      performAlertOperation(
+        (session) => resolveDispatchAlert(session, id, input),
+        input.action === 'move_window' || input.action === 'restore_auto'
+          ? undefined
+          : () => {
+              const current = snapshotRef.current;
+              if (!current) return;
+              setSnapshot({
+                ...current,
+                alerts: current.alerts.filter((alert) => alert.id !== id),
+              });
+            },
+      ),
+    [performAlertOperation, setSnapshot],
   );
 
   const setAttendanceOptOut = useCallback(
@@ -1018,6 +1288,16 @@ export function useDashboard() {
       performAlertOperation((session) => closeDispatchShift(session, workDate, operationId)),
     [performAlertOperation],
   );
+
+  const restartDemoDay = useCallback(async () => {
+    if (!token) throw new Error('Нужна живая сессия диспетчера');
+    invalidateAsyncReads();
+    const generation = readGeneration.current;
+    const summary = await restartDemoStand(token);
+    if (generation !== readGeneration.current) return summary;
+    await Promise.all([refresh(), refreshLive()]);
+    return summary;
+  }, [invalidateAsyncReads, refresh, refreshLive, token]);
 
   const uploadDataset = useCallback(
     async (file: DataUploadFile): Promise<DataUploadSummary> => {
@@ -1161,6 +1441,15 @@ export function useDashboard() {
     liveWorkday,
     liveLoading,
     startingWorkday,
+    dispatchChats,
+    dispatchChatsLoading,
+    dispatchChatsError,
+    dispatchChatsUnreadCount,
+    refreshDispatchChats,
+    openDispatchChat,
+    sendDispatchChatMessage,
+    finishDispatchChat,
+    markDispatchChatRead,
     engineers,
     unassigned,
     selectedEngineerId,
@@ -1200,6 +1489,8 @@ export function useDashboard() {
     saveEngineerLogin,
     unlinkEngineerLogin,
     createRequest,
+    cancelRequest,
+    editManualPlan,
     createEngineer,
     deleteEngineer,
     uploadDataset,
@@ -1208,6 +1499,7 @@ export function useDashboard() {
     setAttendanceOptOut,
     markNoticeSeen,
     closeShift,
+    restartDemoDay,
   };
 }
 
@@ -1282,4 +1574,14 @@ function errorMessage(cause: unknown): string {
 
 function engineerName(snapshot: DashboardSnapshot, engineerId: string): string {
   return snapshot.engineers.find((item) => item.id === engineerId)?.displayName ?? engineerId;
+}
+
+function liveEngineerEvent(engineer: LiveEngineerState): string {
+  if (engineer.pendingDelayProblem) return 'сообщил о задержке';
+  if (engineer.lineStatus === 'technical_break') return 'на техническом перерыве';
+  if (engineer.lineStatus === 'no_show_offline') return 'не вышел на линию';
+  if (engineer.lineStatus === 'stood_down') return 'снялся с линии';
+  if (engineer.activeRequestId) return `работает с заявкой №${engineer.activeRequestId}`;
+  if (engineer.lineStatus === 'online') return 'вышел на линию';
+  return 'ожидает выхода на линию';
 }

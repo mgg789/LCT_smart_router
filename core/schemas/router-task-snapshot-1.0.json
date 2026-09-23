@@ -283,7 +283,7 @@
     },
     "Request": {
       "additionalProperties": false,
-      "description": "An unstarted job; its customer window constrains service start only.",
+      "description": "An unstarted job; service must finish within its customer window plus applicable grace.",
       "properties": {
         "arrival_order": {
           "minimum": 0,

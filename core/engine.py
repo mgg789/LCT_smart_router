@@ -324,7 +324,12 @@ def _search(
 
     # Resolve every external lookup before entering a C++ callback. Exceptions must
     # never cross SWIG and become an accidental zero-cost arc.
-    physical = sorted(set(jobs.values()) | set(starts))
+    # Several work orders can share an address/centroid. The cache key is spatial,
+    # so warm each coordinate pair once rather than repeating it for every job ID.
+    physical_by_point = {}
+    for node in sorted(set(jobs.values()) | set(starts)):
+        physical_by_point.setdefault((nodes[node].point.lat, nodes[node].point.lon), node)
+    physical = list(physical_by_point.values())
     profile_representatives = {}
     for e, engineer in enumerate(engineers):
         profile_representatives.setdefault(engineer.transport_type, e)

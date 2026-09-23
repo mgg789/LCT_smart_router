@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { formatClock } from '../lib/time';
+import type { PlanExpectation } from './manual';
+import { mapForecastSchema, mapObservationSchema } from './mapForecast';
 import type {
   AlertResolutionInput,
   ApiTokenCategory,
@@ -132,6 +134,7 @@ const planLegSchema = z.object({
   travelTimeSec: z.number().int().nonnegative(),
   distanceKm: z.number().nonnegative(),
   travelSource: z.enum(['approximate', 'road_matrix', 'route_api', 'traffic_api']),
+  mapObservation: mapObservationSchema.optional(),
   geometryProvider: z.enum(['twogis', 'yandex']).optional(),
   trafficFactor: z.number().min(1),
   geometry: z
@@ -166,6 +169,8 @@ const routeSchema = z.object({
   lunchTimeSec: z.number().int(),
   assignedCount: z.number().int(),
   lunchStatus: lunchStatusSchema,
+  timingStatus: z.enum(['calculated', 'unverified', 'forecast']).optional(),
+  mapForecast: mapForecastSchema.optional(),
   stops: z.array(planStopSchema),
   legs: z
     .array(planLegSchema)
@@ -308,6 +313,28 @@ export async function closeDispatchShift(
   });
 }
 
+const demoStandRestoreSchema = z.object({
+  restored: z.literal(true),
+  workDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  requestsCreated: z.number().int().nonnegative(),
+  engineersCreated: z.number().int().nonnegative(),
+  generation: z.number().int().positive(),
+});
+
+/** Rewinds the public 14/2 demo day. No-op contract unless the API has DEMO_STAND. */
+export function restartDemoStand(token: string): Promise<z.infer<typeof demoStandRestoreSchema>> {
+  return requestJson(
+    '/api/v1/dispatch/data/restart-demo',
+    demoStandRestoreSchema,
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({ operationId: crypto.randomUUID() }),
+    },
+    35_000,
+  );
+}
+
 const policiesSchema = z.object({
   policies: z.array(
     z.object({
@@ -444,6 +471,9 @@ export class DashboardApiError extends Error {
     readonly status: number,
     readonly path = '',
     readonly requestId: string | null = null,
+    /** The server's machine-readable `ErrorCode` (see `error-codes.ts`), when the body
+     *  carried one -- null for a transport failure or a body that predates this field. */
+    readonly code: string | null = null,
   ) {
     super(message);
     this.name = 'DashboardApiError';
@@ -645,6 +675,9 @@ const mapProviderStatusSchema = z.object({
   configured: z.boolean(),
   ok: z.boolean().nullable(),
   message: z.string(),
+  requests: z.number().int().nonnegative().optional(),
+  cacheHits: z.number().int().nonnegative().optional(),
+  checkedAt: z.number().int().nullable().optional(),
 });
 
 /** Reads dispatcher-owned day clocks, alert timers and map-key presence. */
@@ -691,6 +724,41 @@ export async function geocodeAddress(
     token,
   );
   return result.hits;
+}
+
+/** Cancels a visit that has not started. */
+export function cancelDispatchRequest(
+  token: string,
+  requestId: string,
+  expectedVersion?: number,
+  reason?: string,
+): Promise<{ request: z.infer<typeof requestSchema> }> {
+  return requestJson(
+    `/api/v1/dispatch/requests/${encodeURIComponent(requestId)}/cancel`,
+    z.object({ request: requestSchema }),
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        operationId: crypto.randomUUID(),
+        ...(expectedVersion === undefined ? {} : { expectedVersion }),
+        ...(reason === undefined ? {} : { reason }),
+      }),
+    },
+  );
+}
+
+/** Moves an unstarted visit onto another engineer. Requires manual control. */
+export function reassignDispatchRequest(
+  token: string,
+  requestId: string,
+  engineerId: string,
+  expected: PlanExpectation,
+): Promise<unknown> {
+  return requestJson('/api/v1/dispatch/plan/reassign', z.unknown(), token, {
+    method: 'POST',
+    body: JSON.stringify({ operationId: crypto.randomUUID(), requestId, engineerId, ...expected }),
+  });
 }
 
 /** Creates and immediately submits an unplanned request from the compact dashboard form. */
@@ -807,7 +875,11 @@ export async function loadDashboardSnapshot(token: string): Promise<DashboardSna
     requestJson('/api/v1/dispatch/plan', dispatchPlanSchema, token),
     requestJson('/api/v1/dispatch/alerts', z.object({ alerts: z.array(alertSchema) }), token),
     requestJson('/api/v1/dispatch/policies', policiesSchema, token),
-    getRouterTechnicalSettings(token),
+    getRouterTechnicalSettings(token, 1500).catch((error: unknown) => {
+      if (error instanceof DashboardApiError && (error.status === 401 || error.status === 403))
+        throw error;
+      return null;
+    }),
   ]);
 
   const plan = planResponse.plan
@@ -830,9 +902,14 @@ export async function loadDashboardSnapshot(token: string): Promise<DashboardSna
     timeZone: 'Europe/Moscow',
     nowAt: Math.floor(Date.now() / 1000),
     policyId: policies.active.policyId,
-    lunchesEnabled: settings.lunchesEnabled,
+    lunchesEnabled:
+      settings?.lunchesEnabled ??
+      engineers.engineers.some((engineer) => engineer.day?.lunch.enabled),
     routerSettings: settings,
-    routerContextVersion: settings.routerContextVersion,
+    routerContextVersion:
+      settings?.routerContextVersion ??
+      planResponse.appliedResult?.routerContextVersion ??
+      'unavailable',
     policies: policies.policies,
     engineers: engineers.engineers,
     requests: requests.requests,
@@ -854,8 +931,17 @@ export async function selectRoutingPolicy(token: string, policyId: PolicyId): Pr
 }
 
 /** Reads Router-owned technical settings through the backend boundary. */
-export function getRouterTechnicalSettings(token: string): Promise<RouterTechnicalSettings> {
-  return requestJson('/api/v1/dispatch/router/technical-settings', technicalSettingsSchema, token);
+export function getRouterTechnicalSettings(
+  token: string,
+  timeoutMs = 12_000,
+): Promise<RouterTechnicalSettings> {
+  return requestJson(
+    '/api/v1/dispatch/router/technical-settings',
+    technicalSettingsSchema,
+    token,
+    {},
+    timeoutMs,
+  );
 }
 
 /** Replaces the complete Router-owned settings revision through the backend CAS boundary. */
@@ -900,10 +986,15 @@ export async function setLunchesEnabled(token: string, enabled: boolean): Promis
 }
 
 /** Switches the dispatch control mode through an idempotent backend operation. */
-export async function setDispatchMode(token: string, mode: 'auto' | 'manual'): Promise<void> {
+export async function setDispatchMode(
+  token: string,
+  mode: 'auto' | 'manual',
+  expected: PlanExpectation,
+  reason?: string,
+): Promise<void> {
   await requestJson('/api/v1/dispatch/mode', z.unknown(), token, {
     method: 'POST',
-    body: JSON.stringify({ operationId: crypto.randomUUID(), mode }),
+    body: JSON.stringify({ operationId: crypto.randomUUID(), mode, ...expected, reason }),
   });
 }
 
@@ -1094,6 +1185,30 @@ function formatUnknownReason(reason: unknown): string {
   return 'Подробности доступны в структурированных данных';
 }
 
+/** Read-only same-day insertion preview; none is distinct from unavailable Router. */
+export function loadAlertWindowProposal(token: string, alertId: string) {
+  return requestJson(
+    `/api/v1/dispatch/alerts/${encodeURIComponent(alertId)}/window-proposal`,
+    z.discriminatedUnion('status', [
+      z.object({ status: z.literal('none'), proposal: z.null(), requestVersion: z.number().int() }),
+      z.object({
+        status: z.literal('available'),
+        requestVersion: z.number().int(),
+        proposal: z.object({
+          engineerId: z.string(),
+          windowStartAt: z.number(),
+          windowEndAt: z.number(),
+          serviceStartAt: z.number(),
+          serviceEndAt: z.number(),
+        }),
+      }),
+    ]),
+    token,
+    {},
+    35_000,
+  );
+}
+
 export async function requestJson<T>(
   path: string,
   schema: z.ZodType<T>,
@@ -1121,6 +1236,7 @@ export async function requestJson<T>(
         response.status,
         path,
         response.headers.get('x-request-id'),
+        apiErrorCode(body),
       );
     }
     const parsed = schema.safeParse(body);
@@ -1165,6 +1281,16 @@ function apiErrorMessage(body: unknown, status: number): string {
     return parsed.data.error;
   }
   return parsed.data.error?.message ?? `HTTP ${status}`;
+}
+
+/** Pulls the `ErrorCode` out of `{ error: { code } }` (see `AllExceptionsFilter`), when the
+ *  body has that shape -- null for anything else, including a legacy bare-message body. */
+function apiErrorCode(body: unknown): string | null {
+  const parsed = z
+    .object({ error: z.object({ code: z.string() }).passthrough().optional() })
+    .passthrough()
+    .safeParse(body);
+  return parsed.success ? (parsed.data.error?.code ?? null) : null;
 }
 
 function moscowDate(date: Date): string {

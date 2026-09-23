@@ -178,6 +178,13 @@ describe('request lifecycle', () => {
     assert.equal(outage.continuationAvailableAt, null);
     assert.equal(outage.overrunDetectedAt, null);
 
+    const tightOutage = await prepare({
+      workType: 'outage',
+      windowStartAt: DAY + 17 * HOUR + 45 * 60,
+      windowEndAt: DAY + 18 * HOUR + 45 * 60,
+    });
+    assert.equal(tightOutage.windowEndAt - tightOutage.windowStartAt, 4800);
+
     const replacement = await prepare({ workType: 'router_replacement' });
     assert.equal(replacement.requiredSkill, 'connection');
     assert.equal(replacement.priority, 'normal');

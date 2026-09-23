@@ -1,11 +1,15 @@
 import { Module } from '@nestjs/common';
+import { AlertResolverModule } from '../ai/alerts';
+import { ExplainModule } from '../ai/explain';
 import { AlertsModule } from '../orchestrator/alerts';
+import { DemoStandModule } from '../orchestrator/demo-stand';
 import { EngineersModule } from '../orchestrator/engineers';
 import { FactsModule } from '../orchestrator/facts';
 import { ImportsModule } from '../orchestrator/imports';
 import { LiveModule } from '../orchestrator/live';
 import { RequestsModule } from '../orchestrator/requests';
 import { ResetModule } from '../orchestrator/reset';
+import { AiController } from './ai.controller';
 import { AuthController } from './auth.controller';
 import { ClientController } from './client.controller';
 import { DispatchController } from './dispatch.controller';
@@ -27,8 +31,17 @@ import { EngineerController } from './engineer.controller';
     FactsModule,
     ImportsModule,
     ResetModule,
+    DemoStandModule,
     LiveModule,
+    ExplainModule,
+    AlertResolverModule,
   ],
-  controllers: [AuthController, ClientController, EngineerController, DispatchController],
+  controllers: [
+    AuthController,
+    ClientController,
+    EngineerController,
+    DispatchController,
+    AiController,
+  ],
 })
 export class ApiModule {}
