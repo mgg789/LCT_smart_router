@@ -307,7 +307,7 @@ function RowBadge({ label }: { label: string }) {
 function RecommendBadge() {
   return (
     <span className="rounded-[20px] bg-figma-work-bg px-[10px] py-[3px] font-semibold text-[12px] text-figma-work">
-      рекомендуем
+      Топ
     </span>
   );
 }

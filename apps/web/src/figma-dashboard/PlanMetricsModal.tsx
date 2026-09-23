@@ -8,7 +8,6 @@ import {
   type AdviceLine,
   type PlanQualityAdvice,
 } from '../domain/planQuality';
-import { recommendPolicy, type PolicyRecommendation } from '../domain/policyRecommend';
 import { formatDurationMin, formatKm } from '../lib/time';
 import { shortRequestId } from './requestsTable';
 import { FIGMA_ASSETS } from './assets';
@@ -31,7 +30,6 @@ export function PlanMetricsModal({
   open,
   motionOn,
   snapshot,
-  comparison,
   token,
   onOpenRequest,
   onClose,
@@ -116,18 +114,6 @@ export function PlanMetricsModal({
             rosterOffline: offline,
           })
         : null;
-  const recommendation = snapshot
-    ? recommendPolicy({
-        active: snapshot.policyId,
-        unassignedCount: metrics?.unassigned ?? 0,
-        robustness: prediction?.robustness ?? null,
-        rosterOffline: offline,
-        maxBreach: maxBreach(prediction),
-        maxOverrun: maxOverrun(prediction),
-        rows: comparison?.rows,
-      })
-    : null;
-
   return (
     <ModalLayer open={open} motionOn={motionOn}>
       <ModalScrim label="Закрыть метрики плана" onClose={onClose} />
@@ -179,7 +165,7 @@ export function PlanMetricsModal({
               label="Худшая задержка"
               value={prediction ? formatDurationMin(prediction.p95MaxLateSec) : '…'}
             />
-            {recommendation ? <Recommendation recommendation={recommendation} /> : null}
+            <OptimizeButton />
           </dl>
         ) : (
           <p className="mt-[18px] text-[16px] text-figma-muted">План ещё не применён.</p>
@@ -257,20 +243,34 @@ function AdviceSentence({
   );
 }
 
-function Recommendation({ recommendation }: { recommendation: PolicyRecommendation }) {
+/** Reserved AI action. It does not change the plan until a model is connected. */
+function OptimizeButton() {
   return (
-    <div className="col-span-2 rounded-[18px] bg-figma-soft px-[16px] py-[12px]">
-      <dt className="text-[13px] text-figma-muted">Рекомендуемая политика</dt>
-      <dd className="mt-[2px] font-semibold text-[20px] tracking-[-0.3px] text-figma-ink">
-        {recommendation.label}
-        {recommendation.sameAsActive ? (
-          <span className="ml-[8px] align-middle font-medium text-[13px] text-figma-muted">
-            уже включена
-          </span>
-        ) : null}
-      </dd>
-      <p className="mt-[4px] text-[14px] leading-[1.35] text-figma-muted">{recommendation.reason}</p>
-    </div>
+    <button
+      type="button"
+      disabled
+      aria-disabled
+      title="Скоро"
+      className="col-span-2 flex h-[52px] cursor-not-allowed items-center justify-center gap-[10px] rounded-[18px] bg-figma-ink"
+    >
+      <span
+        aria-hidden
+        className="panel-ai-fill block size-[20px]"
+        style={{
+          WebkitMaskImage: 'url(/figma/explain-ai.png)',
+          maskImage: 'url(/figma/explain-ai.png)',
+          WebkitMaskRepeat: 'no-repeat',
+          maskRepeat: 'no-repeat',
+          WebkitMaskPosition: 'center',
+          maskPosition: 'center',
+          WebkitMaskSize: 'contain',
+          maskSize: 'contain',
+        }}
+      />
+      <span className="panel-ai-fill client-ai-text font-semibold text-[18px] tracking-[-0.3px]">
+        Оптимизировать
+      </span>
+    </button>
   );
 }
 
@@ -317,16 +317,6 @@ function riskyRequests(snapshot: DashboardSnapshot, prediction: SituationPredict
     shortId: shortRequestId(snapshot.requests.find((item) => item.id === requestId)?.id ?? requestId),
     breachProb: row.breachProb,
   }));
-}
-
-function maxBreach(prediction: SituationPredictionView | null): number {
-  if (!prediction) return 0;
-  return Math.max(0, ...Object.values(prediction.requests).map((row) => row.breachProb ?? 0));
-}
-
-function maxOverrun(prediction: SituationPredictionView | null): number {
-  if (!prediction) return 0;
-  return Math.max(0, ...Object.values(prediction.engineers).map((row) => row.overrunProb));
 }
 
 function overrunEngineers(snapshot: DashboardSnapshot, prediction: SituationPredictionView) {

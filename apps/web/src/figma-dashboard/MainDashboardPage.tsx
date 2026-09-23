@@ -2467,11 +2467,14 @@ function DetailPanel({
             <FigmaText className="font-murs text-[32px] leading-[36px] tracking-[-0.544px] text-white">
               {engineer.displayName}
             </FigmaText>
-            {engineer.email ? (
-              <p className="mt-[8px] font-semibold text-[18px] tracking-[-0.3px] text-white/60">
-                {engineer.email}
-              </p>
-            ) : null}
+            <p
+              className={`mt-[8px] font-semibold text-[18px] tracking-[-0.3px] ${
+                engineer.email ? 'text-white/60' : 'invisible'
+              }`}
+              aria-hidden={engineer.email ? undefined : true}
+            >
+              {engineer.email || '\u00a0'}
+            </p>
           </div>
         ) : (
           <div className="h-[36px]" />
@@ -2487,7 +2490,7 @@ function DetailPanel({
             onToggleLarge={() => setLargeOn((value) => !value)}
           />
         ) : (
-          <IconFactCard title="Параметры" facts={explanation?.iconFacts ?? []} />
+          <IconFactCard title="Факты" facts={explanation?.iconFacts ?? []} />
         )}
       </div>
     </motion.aside>
@@ -2526,7 +2529,7 @@ function RequestReasons({
         <div className="flex items-center justify-between gap-[8px]">
           <FigmaText
             className={`font-medium text-[28px] tracking-[-0.84px] ${
-              aiOn ? 'client-ai-fill client-ai-text' : 'text-white'
+              aiOn ? 'panel-ai-fill client-ai-text figma-text-keep-descenders' : 'text-white'
             }`}
           >
             {aiOn ? 'Причины AI' : 'Причины'}
@@ -2654,7 +2657,7 @@ function IconFactCard({
   return (
     <div className="mt-[16px] flex min-h-[216px] w-full flex-col rounded-[20px] bg-figma-dim px-[20px] py-[22px]">
       <FigmaText className="font-medium text-[28px] tracking-[-0.84px] text-white">{title}</FigmaText>
-      <IconFactList facts={facts} />
+      <IconFactList facts={facts} className="mt-[22px]" />
     </div>
   );
 }
@@ -2664,7 +2667,7 @@ function AiGlyph() {
   return (
     <span
       aria-hidden
-      className="client-ai-fill block size-[18px]"
+      className="panel-ai-fill block size-[18px]"
       style={{
         WebkitMaskImage: 'url(/figma/explain-ai.png)',
         maskImage: 'url(/figma/explain-ai.png)',
@@ -2697,16 +2700,22 @@ function AiSearchLines() {
   );
 }
 
-function IconFactList({ facts }: { facts: NonNullable<CaseExplanation['iconFacts']> }) {
+function IconFactList({
+  facts,
+  className = 'mt-[12px]',
+}: {
+  facts: NonNullable<CaseExplanation['iconFacts']>;
+  className?: string;
+}) {
   if (facts.length === 0) {
     return (
-      <p className="mt-[12px] font-medium text-[18px] leading-[24px] text-white/70">
+      <p className={`${className} font-medium text-[18px] leading-[24px] text-white/70`}>
         Нет причин по этому выбору.
       </p>
     );
   }
   return (
-    <ul className="mt-[12px] space-y-[10px]">
+    <ul className={`${className} space-y-[10px]`}>
       {facts.map((fact) => (
         <li key={`${fact.icon}:${fact.text}`} className="flex items-center gap-[10px]">
           <TintIcon src={FACT_ICON[fact.icon]} color="#ffffff" size={20} />

@@ -137,32 +137,21 @@ export function ToastColumn({
               <>
                 <motion.div
                   aria-hidden
-                  className="pointer-events-none absolute right-0"
+                  className="pointer-events-none absolute right-0 z-0"
                   style={{
                     top: -letterbox.y,
                     bottom: -letterbox.y,
                     right: -letterbox.x,
                     width: VEIL_WIDTH + letterbox.x,
-                    // One mask per element. Two masks on one node composite as a hard rectangle.
-                    maskImage: 'linear-gradient(to left, #000 42%, transparent)',
-                    WebkitMaskImage: 'linear-gradient(to left, #000 42%, transparent)',
+                    background:
+                      'linear-gradient(to left, rgba(15,16,20,0.28), rgba(15,16,20,0.10) 52%, transparent)',
+                    backdropFilter: 'blur(14px)',
+                    WebkitBackdropFilter: 'blur(14px)',
+                    maskImage: 'linear-gradient(to left, #000 55%, transparent)',
+                    WebkitMaskImage: 'linear-gradient(to left, #000 55%, transparent)',
                   }}
                   exit={{ opacity: 0, transition: { duration: 0.26, ease: 'easeOut' } }}
-                >
-                  <div
-                    className="absolute inset-0"
-                    style={{
-                      background:
-                        'linear-gradient(to left, rgba(15,16,20,0.28), rgba(15,16,20,0.10) 52%, transparent)',
-                      backdropFilter: 'blur(14px)',
-                      WebkitBackdropFilter: 'blur(14px)',
-                      maskImage:
-                        'linear-gradient(to bottom, transparent, #000 88px, #000 calc(100% - 88px), transparent)',
-                      WebkitMaskImage:
-                        'linear-gradient(to bottom, transparent, #000 88px, #000 calc(100% - 88px), transparent)',
-                    }}
-                  />
-                </motion.div>
+                />
                 <motion.button
                   type="button"
                   aria-label="Свернуть уведомления"
@@ -186,7 +175,7 @@ export function ToastColumn({
             {open ? (
               <div
                 data-toast-scroll
-                className="pointer-events-auto absolute overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                className="pointer-events-auto absolute z-10 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 style={{
                   top: TOAST_STACK_TOP,
                   left: TOAST_LEFT,
