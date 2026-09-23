@@ -15,6 +15,27 @@ from core.official import combine_official_scenarios, load_official_region
 from core.runtime import calculate_policy_comparison
 
 
+def _git_provenance() -> tuple[str, bool]:
+    """Best-effort commit hash and dirty flag for the report header.
+
+    Self-hosted CI workers may materialize the workspace without a .git
+    directory; missing provenance must degrade to "unknown" instead of
+    crashing the whole benchmark run.
+    """
+    try:
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], text=True, stderr=subprocess.DEVNULL
+        ).strip()
+        dirty = bool(
+            subprocess.check_output(
+                ["git", "status", "--porcelain"], text=True, stderr=subprocess.DEVNULL
+            )
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return "unknown", False
+    return commit, dirty
+
+
 def main() -> None:
     """Write measured rows and exact input identities; never edit source datasets."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -37,9 +58,10 @@ def main() -> None:
     )
     names = ("east", "southeast", "south_central")
     regions = [load_official_region(Path("data/dataset/anonymized"), r) for r in names]
+    commit, working_tree_dirty = _git_provenance()
     report = {
-        "commit": subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip(),
-        "working_tree": bool(subprocess.check_output(["git", "status", "--porcelain"], text=True)),
+        "commit": commit,
+        "working_tree": working_tree_dirty,
         "python": platform.python_version(),
         "ortools": ortools.__version__,
         "settings": settings.technical().model_dump(),
