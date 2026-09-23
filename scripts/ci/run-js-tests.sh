@@ -20,7 +20,7 @@ pg_password="${LCT_CI_PG_PASSWORD:?LCT_CI_PG_PASSWORD missing (js-tests.env or C
 # reachable from outside. $$ keeps concurrent runs apart; the rare collision
 # surfaces as an immediate docker bind error, not a flaky test.
 pg_port=$((21000 + $$ % 20000))
-database_url="postgresql://lct:${pg_password}@127.0.0.1:${pg_port}?schema=public"
+database_url="postgresql://lct:${pg_password}@127.0.0.1:${pg_port}/lct?schema=public"
 
 cleanup() {
   docker rm -f "$pg_name" >/dev/null 2>&1 || true
