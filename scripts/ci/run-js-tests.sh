@@ -63,7 +63,4 @@ docker run --rm --network host \
     pnpm --filter api exec prisma generate
     pnpm --filter api exec prisma migrate deploy
     pnpm --filter api test
-    # The node container runs as root; leave the workspace deletable for the
-    # worker user (its platform tear-down otherwise fails on root-owned files).
-    chmod -R a+rwX /app || true
   '
