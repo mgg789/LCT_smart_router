@@ -8,6 +8,7 @@ import { ROUTES } from '@/app/routes/paths';
 import { useAlerts } from '@/entities/alert';
 import { useEngineers } from '@/entities/engineer';
 import { useRequests } from '@/entities/request';
+import { useConversation } from '@/features/ai/ask-assistant';
 import { useMarkAlertSeen } from '@/features/alert/mark-seen';
 import { cn, staggered, useMotionOn } from '@/shared/lib';
 import type { InboxAlertCard, InboxNoticeCard } from '../model/inbox';
@@ -57,16 +58,23 @@ function InboxButton({
   );
 }
 
-/** «Разобрать в AI» under a card — there is no AI contract, so it stays off. */
-function AiLink({ tone }: { tone: 'ink' | 'white' }) {
+/**
+ * «Разобрать в AI» under a card: asks the explain agent about this alert and
+ * moves to the assistant, where the answer streams in.
+ *
+ * The explanation is asked for by scope and id — the screen never composes the
+ * question or the reasoning, and the agent answers in one step from the stored
+ * reasons and evidence.
+ */
+function AiLink({ tone, onExplain }: { tone: 'ink' | 'white'; onExplain: () => void }) {
   return (
     <button
       className={cn(
-        'flex cursor-not-allowed items-center gap-2 font-semibold text-[18px] tracking-[-0.54px] opacity-45',
+        'flex items-center gap-2 font-semibold text-[18px] tracking-[-0.54px]',
+        'transition-opacity duration-150 hover:opacity-70',
         tone === 'white' ? 'text-white' : 'text-ink',
       )}
-      disabled
-      title="AI-ассистента нет: контракта на него в System Layer не существует"
+      onClick={onExplain}
       type="button"
     >
       Разобрать в AI
@@ -78,9 +86,11 @@ function AiLink({ tone }: { tone: 'ink' | 'white' }) {
 function AlertCard({
   card,
   onOpenRequest,
+  onExplain,
 }: {
   card: InboxAlertCard;
   onOpenRequest: (id: string) => void;
+  onExplain: () => void;
 }) {
   const secondary = card.actionLabels[0];
   return (
@@ -120,7 +130,7 @@ function AlertCard({
             {secondary}
           </InboxButton>
         ) : null}
-        <AiLink tone="ink" />
+        <AiLink onExplain={onExplain} tone="ink" />
       </div>
     </article>
   );
@@ -173,6 +183,7 @@ export function AlertsPage() {
   const requestsQuery = useRequests();
   const markSeen = useMarkAlertSeen();
   const navigate = useNavigate();
+  const { ask, explain } = useConversation();
   const motionOn = useMotionOn();
 
   const inbox = useMemo(() => {
@@ -191,6 +202,23 @@ export function AlertsPage() {
   const openRequest = (requestId: string) =>
     navigate(`${ROUTES.plan}?request=${encodeURIComponent(requestId)}`);
 
+  /** Asks the explain agent about one alert, then goes where the answer appears. */
+  const explainAlert = (card: InboxAlertCard) => {
+    void explain({ scope: 'alert', alertId: card.id }, `Разобрать алерт: ${card.title}`);
+    navigate(ROUTES.ai);
+  };
+
+  /**
+   * «Разобрать все» is an ordinary question to the assistant, not a scope: the
+   * explain agent answers about one object at a time, and inventing a combined
+   * verdict here would be this screen reasoning on its own. The assistant reads
+   * the day's alerts with its own tools and answers from them.
+   */
+  const explainAll = () => {
+    void ask('Разбери открытые алерты дня: какие требуют решения в первую очередь и почему?');
+    navigate(ROUTES.ai);
+  };
+
   // Cards arrive one after another; a hidden notice slides away and the rest
   // close the gap behind it.
   const reveal = (index: number) => ({
@@ -206,9 +234,17 @@ export function AlertsPage() {
       <div className="flex shrink-0 flex-wrap items-center gap-8">
         <h1 className="font-display text-[48px] text-ink leading-none">Алерты</h1>
         <button
-          className="flex h-[79px] w-[426px] cursor-not-allowed items-center rounded-full bg-ink px-[10px] opacity-45"
-          disabled
-          title="AI-ассистента нет: контракта на него в System Layer не существует"
+          className={cn(
+            'flex h-[79px] w-[426px] items-center rounded-full bg-ink px-[10px]',
+            'transition-transform duration-150 enabled:active:scale-[0.99] disabled:opacity-45',
+          )}
+          disabled={inbox.alerts.length === 0}
+          onClick={explainAll}
+          title={
+            inbox.alerts.length === 0
+              ? 'Открытых алертов нет'
+              : 'Спросить ассистента об алертах дня'
+          }
           type="button"
         >
           <span className="flex size-[60px] items-center justify-center rounded-full bg-accent text-ink">
@@ -247,7 +283,11 @@ export function AlertsPage() {
             <AnimatePresence>
               {inbox.alerts.map((card, index) => (
                 <motion.li key={card.id} {...reveal(index)}>
-                  <AlertCard card={card} onOpenRequest={openRequest} />
+                  <AlertCard
+                    card={card}
+                    onExplain={() => explainAlert(card)}
+                    onOpenRequest={openRequest}
+                  />
                 </motion.li>
               ))}
             </AnimatePresence>

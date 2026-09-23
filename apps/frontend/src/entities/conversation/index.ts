@@ -3,6 +3,7 @@ export {
   cancelOperation,
   getConversationMessages,
   openConversation,
+  requestExplanation,
   type SendMessageResult,
   sendConversationMessage,
   stopRun,
@@ -21,6 +22,8 @@ export type {
   AiRunEventType,
   AiRunState,
   AiStopReason,
+  ExplainRequest,
+  ExplainScope,
   OperationOutcome,
 } from './model/types';
 export { isTerminalRunEvent } from './model/types';

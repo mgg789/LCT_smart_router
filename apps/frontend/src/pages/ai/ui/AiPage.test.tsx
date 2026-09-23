@@ -21,6 +21,7 @@ function answer(overrides: Partial<AssistantMessage> = {}): AssistantMessage {
     thoughtSec: 4,
     failure: null,
     rating: null,
+    explain: null,
     ...overrides,
   };
 }

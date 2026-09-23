@@ -16,6 +16,11 @@ export interface RequestPanelProps {
   route: PlanRouteView | null;
   engineers: EngineerView[];
   mode: DispatchMode | null;
+  /**
+   * Asks the explain agent about this request. Passed in rather than called here
+   * so the panel stays a view: where the answer is read is the page's business.
+   */
+  onExplain?: () => void;
 }
 
 /** Inner tile of the dark panel. */
@@ -67,6 +72,7 @@ function RequestPanelBody({
   route,
   engineers,
   mode,
+  onExplain,
 }: RequestPanelProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const reassign = useReassignRequest();
@@ -186,15 +192,19 @@ function RequestPanelBody({
         ) : null}
 
         <button
-          className="h-[56px] rounded-full border border-white/70 font-semibold text-[18px] text-white disabled:opacity-45"
-          disabled
-          title="AI-ассистента нет: контракта на него в System Layer не существует"
+          className={cn(
+            'h-[56px] rounded-full border border-white/70 font-semibold text-[18px] text-white',
+            'transition-transform duration-150 enabled:active:scale-[0.99] disabled:opacity-45',
+          )}
+          disabled={!onExplain}
+          onClick={onExplain}
           type="button"
         >
           Разобрать с AI ассистентом
         </button>
         <p className="text-[13px] text-white/50">
-          AI-ассистента пока нет: System Layer не отдаёт такого контракта.
+          Ассистент объяснит назначение этой заявки из тех же причин и доказательств, что показаны
+          выше, — и ничего не посчитает заново.
         </p>
       </div>
     </aside>

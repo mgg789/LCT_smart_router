@@ -161,3 +161,24 @@ export interface OperationOutcome {
 
 /** Which assistant lane the dispatcher is in: read-only help, or prepared writes. */
 export type AiAssistMode = 'help' | 'fix';
+
+/**
+ * What an explanation is asked about (docs/frontend-api.md, «Дополнение 20.09.2026»).
+ *
+ * The dispatcher-only explain agent answers in one step, without tools and at
+ * temperature 0: its first reply already carries the deterministic explanation
+ * (`facts → influence → result`) built from `reasons`/`basis` and the stored
+ * evidence. The model rephrases that data and computes nothing of its own, which
+ * is why the client sends a scope and an id rather than a question it composed.
+ */
+export type ExplainScope = 'request' | 'engineer' | 'route' | 'alert' | 'policy' | 'degraded';
+
+export interface ExplainRequest {
+  scope: ExplainScope;
+  requestId?: string;
+  engineerId?: string;
+  alertId?: string;
+  policyId?: string;
+  /** An optional extra question; the explanation stands without it. */
+  question?: string;
+}

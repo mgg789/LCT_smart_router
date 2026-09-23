@@ -1,4 +1,9 @@
-import type { AiActionButton, AiPreviewRow, AiRunEvent } from '@/entities/conversation';
+import type {
+  AiActionButton,
+  AiPreviewRow,
+  AiRunEvent,
+  ExplainRequest,
+} from '@/entities/conversation';
 
 export type Rating = 'up' | 'down' | null;
 
@@ -32,6 +37,12 @@ export interface AssistantMessage {
   failure: string | null;
   /** The dispatcher's thumbs; kept in the tab — the contract has nowhere to send them. */
   rating: Rating;
+  /**
+   * Set when this answer came from «разобрать», not from a typed question, so
+   * «спросить ещё раз» repeats the same explanation instead of sending the label
+   * that stands in for it as if it were a question.
+   */
+  explain: ExplainRequest | null;
 }
 
 export const STOP_REASON: Record<string, string> = {
@@ -42,7 +53,11 @@ export const STOP_REASON: Record<string, string> = {
 };
 
 /** A fresh answer, before its run has said anything. */
-export function blankAnswer(id: string, questionId: string): AssistantMessage {
+export function blankAnswer(
+  id: string,
+  questionId: string,
+  explain: ExplainRequest | null = null,
+): AssistantMessage {
   return {
     id,
     role: 'assistant',
@@ -55,6 +70,7 @@ export function blankAnswer(id: string, questionId: string): AssistantMessage {
     thoughtSec: null,
     failure: null,
     rating: null,
+    explain,
   };
 }
 

@@ -1,10 +1,11 @@
 import { create } from 'zustand';
-import type { AiActionButton, AiRunEvent } from '@/entities/conversation';
+import type { AiActionButton, AiRunEvent, ExplainRequest } from '@/entities/conversation';
 import {
   applyOperation,
   cancelOperation,
   getConversationMessages,
   openConversation,
+  requestExplanation,
   sendConversationMessage,
   stopRun,
   streamRunEvents,
@@ -32,6 +33,8 @@ interface ConversationState {
   mode: 'ai' | 'dispatcher';
   quota: { remainingMessages: number; resetAt: number } | null;
   ask: (text: string) => Promise<void>;
+  /** «Разобрать» from another screen: one explanation about one named object. */
+  explain: (request: ExplainRequest, label: string) => Promise<void>;
   retry: (assistantId: string) => Promise<void>;
   rate: (assistantId: string, rating: Rating) => void;
   stop: () => Promise<void>;
@@ -82,8 +85,57 @@ export const useConversation = create<ConversationState>()((set, get) => {
     }
   };
 
-  /** Sends one question and drains the run it starts. */
-  const run = async (assistantId: string, question: string) => {
+  /**
+   * Opens the dialogue if needed and posts one question.
+   *
+   * Returns the run to follow, or null when the dialogue is already with a human:
+   * then no run starts and no quota is spent, which is not the assistant failing
+   * to answer, and the screen says so instead.
+   */
+  const sendQuestion = async (assistantId: string, question: string): Promise<string | null> => {
+    let conversationId = get().conversationId;
+    if (!conversationId) {
+      const opened = await openConversation();
+      conversationId = opened.conversation.id;
+      set({
+        conversationId,
+        mode: opened.conversation.mode === 'dispatcher' ? 'dispatcher' : 'ai',
+      });
+    }
+
+    const sent = await sendConversationMessage(conversationId, question);
+    if (sent.quota) {
+      set({
+        quota: { remainingMessages: sent.quota.remainingMessages, resetAt: sent.quota.resetAt },
+      });
+    }
+    if (sent.handedOver || sent.runId === null) {
+      set({ mode: 'dispatcher' });
+      set((state) => ({
+        messages: state.messages.map((message) =>
+          message.id === assistantId && message.role === 'assistant'
+            ? {
+                ...message,
+                streaming: false,
+                failure:
+                  'Диалог ведёт диспетчер — ассистент здесь не отвечает, пока передача не завершена.',
+              }
+            : message,
+        ),
+      }));
+      return null;
+    }
+    return sent.runId;
+  };
+
+  /**
+   * Drains a run into one answer.
+   *
+   * `start` returns the run to follow, or null when there is nothing to follow —
+   * a dialogue already handed to a human. Both the typed question and the
+   * explanation go through here so a reply is read one way, not two.
+   */
+  const drain = async (assistantId: string, start: () => Promise<string | null>) => {
     const patch = (change: (message: AssistantMessage) => AssistantMessage) =>
       set((state) => ({
         messages: state.messages.map((message) =>
@@ -92,37 +144,11 @@ export const useConversation = create<ConversationState>()((set, get) => {
       }));
 
     try {
-      let conversationId = get().conversationId;
-      if (!conversationId) {
-        const opened = await openConversation();
-        conversationId = opened.conversation.id;
-        set({
-          conversationId,
-          mode: opened.conversation.mode === 'dispatcher' ? 'dispatcher' : 'ai',
-        });
-      }
-
-      const sent = await sendConversationMessage(conversationId, question);
-      if (sent.quota) {
-        set({
-          quota: { remainingMessages: sent.quota.remainingMessages, resetAt: sent.quota.resetAt },
-        });
-      }
-      if (sent.handedOver || sent.runId === null) {
-        // Not a failure: a human owns the dialogue, so no run starts and no
-        // quota is spent. Saying «ассистент молчит» would misread the contract.
-        set({ mode: 'dispatcher' });
-        patch((message) => ({
-          ...message,
-          streaming: false,
-          failure:
-            'Диалог ведёт диспетчер — ассистент здесь не отвечает, пока передача не завершена.',
-        }));
-        return;
-      }
+      const runId = await start();
+      if (runId === null) return;
 
       const startedAt = Math.floor(Date.now() / 1000);
-      for await (const event of streamRunEvents(sent.runId)) {
+      for await (const event of streamRunEvents(runId)) {
         applyEvent(assistantId, event, startedAt);
       }
       // A stream that ends without `run_finished` still has to release the pill.
@@ -149,7 +175,16 @@ export const useConversation = create<ConversationState>()((set, get) => {
       set((state) => ({
         messages: [...state.messages, { id: userId, role: 'user', text: question }, answer],
       }));
-      await run(answer.id, question);
+      await drain(answer.id, () => sendQuestion(answer.id, question));
+    },
+
+    explain: async (request, label) => {
+      const userId = nextId('u');
+      const answer = blankAnswer(nextId('a'), userId, request);
+      set((state) => ({
+        messages: [...state.messages, { id: userId, role: 'user', text: label }, answer],
+      }));
+      await drain(answer.id, async () => (await requestExplanation(request)).runId);
     },
 
     retry: async (assistantId) => {
@@ -161,10 +196,17 @@ export const useConversation = create<ConversationState>()((set, get) => {
       if (!target || !question || question.role !== 'user') return;
       set((state) => ({
         messages: state.messages.map((message) =>
-          message.id === assistantId ? blankAnswer(assistantId, target.questionId) : message,
+          message.id === assistantId
+            ? blankAnswer(assistantId, target.questionId, target.explain)
+            : message,
         ),
       }));
-      await run(assistantId, question.text);
+      await drain(
+        assistantId,
+        target.explain
+          ? async () => (await requestExplanation(target.explain as ExplainRequest)).runId
+          : () => sendQuestion(assistantId, question.text),
+      );
     },
 
     rate: (assistantId, rating) =>
@@ -234,6 +276,7 @@ export async function resumeConversation(): Promise<void> {
               thoughtSec: null,
               failure: null,
               rating: null,
+              explain: null,
             },
     ),
   });

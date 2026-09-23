@@ -6,6 +6,7 @@ import type {
   AiConversation,
   AiMessage,
   AiRunEvent,
+  ExplainRequest,
   OperationOutcome,
 } from '../model/types';
 
@@ -101,4 +102,15 @@ export function streamRunEvents(
     token: useSessionStore.getState().session?.token ?? null,
     signal,
   });
+}
+
+/**
+ * `POST /ai/explain` — asks why the plan looks the way it does about one object.
+ *
+ * Answers with a run id and nothing else: the explanation itself arrives over
+ * `GET /ai/runs/:runId/events`, exactly like an ordinary reply, so there is one
+ * way to read an assistant answer rather than two.
+ */
+export function requestExplanation(body: ExplainRequest): Promise<{ runId: string }> {
+  return authorizedRequest('/ai/explain', { method: 'POST', body });
 }

@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { ROUTES } from '@/app/routes/paths';
 import { useEngineers } from '@/entities/engineer';
 import { useDispatchLive } from '@/entities/live';
 import { useDispatchState } from '@/entities/plan';
 import { unassignedRequests, useRequests } from '@/entities/request';
+import { useConversation } from '@/features/ai/ask-assistant';
 import { failedWithoutData } from '@/shared/api';
 import { formatDayTitle } from '@/shared/lib';
 import { DayBoard } from '@/widgets/day-board';
@@ -12,6 +14,8 @@ import { RequestPanel } from '@/widgets/request-panel';
 import { RouteTimeline } from '@/widgets/route-timeline';
 
 export function PlanPage() {
+  const navigate = useNavigate();
+  const { explain } = useConversation();
   const engineersQuery = useEngineers();
   const requestsQuery = useRequests();
   const stateQuery = useDispatchState();
@@ -111,6 +115,17 @@ export function PlanPage() {
             engineer={assignedEngineer}
             engineers={engineers}
             mode={stateQuery.data?.mode ?? null}
+            onExplain={
+              selectedRequest
+                ? () => {
+                    void explain(
+                      { scope: 'request', requestId: selectedRequest.id },
+                      `Разобрать заявку: ${selectedRequest.addressText ?? selectedRequest.id}`,
+                    );
+                    navigate(ROUTES.ai);
+                  }
+                : undefined
+            }
             request={selectedRequest}
             route={
               plan?.routes.find((route) => route.engineerId === selectedAssignment?.engineerId) ??
