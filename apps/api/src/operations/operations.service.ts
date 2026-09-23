@@ -3,7 +3,7 @@ import { SysError, toErrorCode } from '../common/errors';
 import { canonicalHash } from '../common/json';
 import { Clock } from '../common/time';
 import type { OperationState } from '../generated/prisma/client';
-import { PrismaService, UnitOfWork } from '../persistence';
+import { PrismaService, type Tx, UnitOfWork } from '../persistence';
 import { AuditService } from './audit.service';
 import type {
   ExternalOperationHandler,
@@ -16,6 +16,16 @@ interface StoredResponse {
   readonly ok: boolean;
   readonly value?: unknown;
   readonly error?: { code: string; message: string; details: Record<string, unknown> };
+}
+
+/**
+ * How the operation shares the database with plan acceptance.
+ *
+ * `isolated` is for a write that does not publish or accept a plan. The routing
+ * singletons stay free for the solve, and this save does not queue behind it.
+ */
+export interface ExecuteOptions {
+  readonly isolated?: boolean;
 }
 
 /**
@@ -49,8 +59,10 @@ export class OperationsService {
   async execute<T>(
     request: OperationRequest,
     handler: OperationHandler<T>,
+    options: ExecuteOptions = {},
   ): Promise<OperationOutcome<T>> {
     const fingerprint = this.fingerprint(request);
+    const isolated = options.isolated === true;
 
     const existing = await this.prisma.operation.findUnique({
       where: { operationId: request.operationId },
@@ -65,7 +77,7 @@ export class OperationsService {
     const now = this.clock.nowSeconds();
 
     try {
-      const result = await this.uow.run(async (tx) => {
+      const result = await this.boundary(isolated, async (tx) => {
         const value = await handler({
           tx,
           now,
@@ -120,7 +132,9 @@ export class OperationsService {
 
       if (error instanceof SysError) {
         // The handler's transaction is gone, so the refusal is recorded in its own.
-        await this.recordRefusal(request, fingerprint, now, error);
+        // A refusal must use the same boundary as the attempt: journaling it on the
+        // routing lock would make a fast account rejection wait out a plan apply.
+        await this.recordRefusal(request, fingerprint, now, error, isolated);
       }
       throw error;
     }
@@ -330,11 +344,17 @@ export class OperationsService {
     }
   }
 
+  /** `run` when the change shares the plan lock, `runIsolated` when it must not. */
+  private boundary<T>(isolated: boolean, fn: (tx: Tx) => Promise<T>): Promise<T> {
+    return isolated ? this.uow.runIsolated(fn) : this.uow.run(fn);
+  }
+
   private async recordRefusal(
     request: OperationRequest,
     fingerprint: string,
     now: number,
     error: SysError,
+    isolated = false,
   ): Promise<void> {
     const state: OperationState = error.status === 409 ? 'conflict' : 'rejected';
     const response: StoredResponse = {
@@ -343,7 +363,7 @@ export class OperationsService {
     };
 
     try {
-      await this.uow.run(async (tx) => {
+      await this.boundary(isolated, async (tx) => {
         await tx.operation.create({
           data: {
             operationId: request.operationId,

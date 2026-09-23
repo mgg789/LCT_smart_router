@@ -9,7 +9,6 @@ import {
   CLIENT_PROBLEMS,
   type ClientMapPoint,
   type ClientRequestDraft,
-  canSubmitClientForm,
 } from './clientPreview';
 
 const tap = { duration: 0.16 };
@@ -21,12 +20,14 @@ const slideEase = [0.22, 1, 0.36, 1] as const;
  */
 export function ClientNewRequest({
   draft,
+  busy = false,
   notice,
   onChange,
   onSubmit,
   onAskAi,
 }: {
   draft: ClientRequestDraft;
+  busy?: boolean;
   notice: string | null;
   onChange: (next: ClientRequestDraft) => void;
   onSubmit: () => void;
@@ -43,7 +44,11 @@ export function ClientNewRequest({
   const pickGen = useRef(0);
   draftRef.current = draft;
   onChangeRef.current = onChange;
-  const ready = canSubmitClientForm(draft);
+  const noticeRef = useRef<HTMLParagraphElement>(null);
+
+  useEffect(() => {
+    noticeRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [notice]);
 
   useEffect(() => {
     if (!typing.current) return;
@@ -298,19 +303,28 @@ export function ClientNewRequest({
           }}
         />
 
+        {notice ? (
+          <p
+            ref={noticeRef}
+            className={`font-medium ${busy ? 'text-white/70' : 'text-[#ffb4b4]'}`}
+            style={{ marginTop: eu(16), fontSize: eu(16), lineHeight: eu(22) }}
+          >
+            {notice}
+          </p>
+        ) : null}
         <motion.button
           type="submit"
-          disabled={!ready}
+          disabled={busy}
           whileTap={{ scale: 0.98 }}
           className="w-full bg-figma-bee font-semibold tracking-[-0.03em] text-figma-ink disabled:opacity-50"
           style={{
-            marginTop: eu(28),
+            marginTop: notice ? eu(12) : eu(28),
             height: eu(80),
             borderRadius: eu(20),
             fontSize: eu(28),
           }}
         >
-          Отправить
+          {busy ? 'Отправляем…' : 'Отправить'}
         </motion.button>
         <motion.button
           type="button"
@@ -344,15 +358,6 @@ export function ClientNewRequest({
           <span className="client-ai-fill client-ai-text">Заявка с AI</span>
         </motion.button>
       </form>
-
-      {notice ? (
-        <p
-          className="font-medium text-figma-muted"
-          style={{ marginTop: eu(16), fontSize: eu(16), lineHeight: eu(22) }}
-        >
-          {notice}
-        </p>
-      ) : null}
 
       <AnimatePresence>
         {mapOpen ? (

@@ -223,9 +223,29 @@ export function clientStatusLabel(input: { lifecycle: string; assignmentState: s
   return 'Черновик';
 }
 
+/**
+ * Why «Отправить» cannot leave the form yet.
+ * Null when the draft is ready for the mailbox step. The button stays
+ * pressable either way: a disabled control looks like a dead click.
+ */
+export function clientSubmitHint(draft: ClientRequestDraft): string | null {
+  if (draft.problem === '') return 'Выберите, что случилось.';
+  if (draft.contactName.trim().length === 0) return 'Укажите ФИО.';
+  if (draft.address.trim().length === 0) return 'Укажите адрес.';
+  if (!draft.email.trim().includes('@')) return 'Укажите почту.';
+  if (draft.point === null) return 'Отметьте точку на карте или выберите адрес из подсказок.';
+  if (!isClock(draft.windowStart) || !isClock(draft.windowEnd)) return 'Укажите окно визита.';
+  const [startHour, startMinute] = parseClock(draft.windowStart);
+  const [endHour, endMinute] = parseClock(draft.windowEnd);
+  if (endHour * 60 + endMinute <= startHour * 60 + startMinute) {
+    return 'Окно «до» должно быть позже «с».';
+  }
+  return null;
+}
+
 /** True when the form has enough to ask for the email code. */
 export function canSubmitClientForm(draft: ClientRequestDraft): boolean {
-  return clientPrepareBody(draft) !== null;
+  return clientSubmitHint(draft) === null;
 }
 
 /**

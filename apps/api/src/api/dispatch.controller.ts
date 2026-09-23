@@ -452,6 +452,9 @@ export class DispatchController {
       },
       async (context) =>
         toEngineerView(await this.engineers.linkAccount(context, dto.engineerId, dto.email)),
+      // A login address is not a planning input. Acceptance of a route must not
+      // hold this save until the browser gives up.
+      { isolated: true },
     );
     return { engineer: outcome.result };
   }
@@ -476,6 +479,7 @@ export class DispatchController {
         toEngineerView(
           await this.engineers.changeEmail(context, id, dto.expectedVersion ?? null, dto.email),
         ),
+      { isolated: true },
     );
     return { engineer: outcome.result };
   }
@@ -496,6 +500,7 @@ export class DispatchController {
       },
       async (context) =>
         toEngineerView(await this.engineers.unlinkAccount(context, dto.engineerId)),
+      { isolated: true },
     );
     return { engineer: outcome.result };
   }

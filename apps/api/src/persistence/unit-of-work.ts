@@ -27,6 +27,17 @@ export class UnitOfWork {
   }
 
   /**
+   * A business write that does not publish or accept a plan.
+   *
+   * Granting or replacing an engineer login only touches the account, the role
+   * and the profile's login pointer. Reserving the routing singletons here made
+   * that save wait behind result acceptance until the browser aborted at 12 seconds.
+   */
+  runIsolated<T>(fn: (tx: Tx) => Promise<T>): Promise<T> {
+    return this.prisma.$transaction(fn, { timeout: 15_000 });
+  }
+
+  /**
    * Runs one business change and everything that must be consistent with it.
    *
    * The rule this exists to enforce: a business write, the record of who made it and the

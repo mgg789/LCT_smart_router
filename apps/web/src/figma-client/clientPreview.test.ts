@@ -2,6 +2,7 @@ import { expect, it } from 'vitest';
 import {
   CLIENT_PREVIEW_REQUESTS,
   canSubmitClientForm,
+  clientSubmitHint,
   clientPrepareBody,
   clientStatusLabel,
   EMPTY_CLIENT_DRAFT,
@@ -30,6 +31,11 @@ it('blocks send until name, address, map point and email are filled', () => {
   };
   expect(canSubmitClientForm(ready)).toBe(true);
   expect(canSubmitClientForm({ ...ready, point: null })).toBe(false);
+  expect(clientSubmitHint({ ...ready, point: null })).toBe(
+    'Отметьте точку на карте или выберите адрес из подсказок.',
+  );
+  expect(clientSubmitHint({ ...ready, email: 'не почта' })).toBe('Укажите почту.');
+  expect(clientSubmitHint(ready)).toBeNull();
   const body = clientPrepareBody(ready, Date.parse('2026-09-15T09:00:00Z'));
   expect(body?.workType).toBe('no_link');
   expect(body?.contactName).toBe('Иван Иванов');

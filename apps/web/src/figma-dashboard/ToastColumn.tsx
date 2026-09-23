@@ -391,30 +391,31 @@ function ToastFace({
         )}
       </div>
       <p
-        className={`figma-nowrap absolute left-[68px] top-[19px] overflow-hidden font-semibold text-[20px] leading-none text-ellipsis ${
-          toast.actionLabel ? 'max-w-[168px]' : 'max-w-[300px]'
+        className={`figma-nowrap pointer-events-none absolute left-[68px] top-[19px] overflow-hidden font-semibold text-[20px] leading-none text-ellipsis ${
+          toast.actionLabel ? 'right-[168px]' : 'max-w-[300px]'
         } ${danger || !alert ? 'text-white' : 'text-figma-ink'}`}
       >
         {toast.title}
       </p>
       {toast.actionLabel && !leaving ? (
-        <motion.button
+        <button
           type="button"
           data-toast-action
-          initial={motionOn ? { opacity: 0, scale: 0.86 } : false}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={motionOn ? { duration: 0.22, delay: 0.12, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
-          className={`absolute right-[52px] top-[14px] h-[28px] rounded-full px-3 text-[13px] font-semibold ${
-            danger || !alert ? 'bg-white/15 text-white' : 'bg-figma-ink/10 text-figma-ink'
-          }`}
+          className="absolute right-[44px] top-[6px] z-20 flex h-[44px] items-center px-[6px]"
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => {
             event.stopPropagation();
             onAction?.();
           }}
         >
-          {toast.actionLabel}
-        </motion.button>
+          <span
+            className={`pointer-events-none flex h-[28px] items-center rounded-full px-3 text-[13px] font-semibold ${
+              danger || !alert ? 'bg-white/15 text-white' : 'bg-figma-ink/10 text-figma-ink'
+            }`}
+          >
+            {toast.actionLabel}
+          </span>
+        </button>
       ) : null}
       {leaving ? null : (
         <button

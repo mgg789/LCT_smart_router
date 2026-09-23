@@ -26,7 +26,7 @@ import {
   type ClientRequestDraft,
   type ClientRequestView,
   type ClientScreenId,
-  canSubmitClientForm,
+  clientSubmitHint,
   EMPTY_CLIENT_DRAFT,
   prefillClientDraft,
 } from './clientPreview';
@@ -180,8 +180,9 @@ export function ClientApp() {
   };
 
   const submit = () => {
-    if (!canSubmitClientForm(draft)) {
-      setNotice('Заполните ФИО, адрес, точку на карте, окно и почту.');
+    const hint = clientSubmitHint(draft);
+    if (hint) {
+      setNotice(hint);
       return;
     }
     const email = draft.email.trim().toLowerCase();
@@ -332,6 +333,7 @@ export function ClientApp() {
           {screen === 'new' ? (
             <ClientNewRequest
               draft={draft}
+              busy={busy}
               notice={busy ? 'Отправляем…' : inlineNotice}
               onChange={setDraft}
               onSubmit={submit}
