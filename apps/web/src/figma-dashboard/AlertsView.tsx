@@ -1,13 +1,13 @@
 import { motion, useReducedMotion } from 'framer-motion';
-import { ArrowUpRight } from 'lucide-react';
-import { useLayoutEffect, useRef } from 'react';
+import { ArrowUpRight, Trash2 } from 'lucide-react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import type { AlertResolutionInput, DashboardSnapshot } from '../api/types';
 import { AlertActions } from './AlertActions';
 import { type InboxNoticeCard, inboxFromSources } from './alertsInbox';
 import { FIGMA_ASSETS } from './assets';
 import { InboxAlertCardView, InboxButton, InboxNoticeCardView } from './inboxCard';
 import { FigmaIcon, FigmaText } from './primitives';
-import { dismissToast, type ToastKind, type ToastNotification } from './toasts';
+import { dismissAllToasts, dismissToast, type ToastKind, type ToastNotification } from './toasts';
 
 const HEADER_LIFT = 16;
 const TITLE_TOP = 184 - HEADER_LIFT;
@@ -64,6 +64,7 @@ export function AlertsView({
   const reduceMotion = useReducedMotion();
   const animate = motionOn && !reduceMotion;
   const inbox = inboxFromSources(snapshot, toasts, demoMode);
+  const [clearing, setClearing] = useState(false);
   const glassArrow = inbox.alerts.length > 0;
   const listRef = useRef<HTMLDivElement>(null);
   const anchors = useRef<Array<{ id: string; offset: number }>>([]);
@@ -129,7 +130,7 @@ export function AlertsView({
       <div
         ref={listRef}
         onScroll={rememberScroll}
-        className="absolute left-[180px] w-[1710px] overflow-y-auto [overflow-anchor:none] [scrollbar-width:thin]"
+        className="absolute left-[180px] w-[1710px] overflow-y-auto [overflow-anchor:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         style={{ top: LIST_TOP, bottom: 28 }}
       >
         <div className="pt-[64px]">
@@ -184,9 +185,27 @@ export function AlertsView({
           </div>
 
           {inbox.notices.length > 0 ? (
-            <FigmaText className="mb-[16px] mt-[36px] font-bold text-[24px] text-figma-ink">
-              Уведомления
-            </FigmaText>
+            <div className="mb-[16px] mt-[36px] flex items-center gap-[12px]">
+              <FigmaText className="font-bold text-[24px] text-figma-ink">Уведомления</FigmaText>
+              <motion.button
+                type="button"
+                aria-label="Очистить уведомления"
+                disabled={clearing}
+                onClick={() => {
+                  setClearing(true);
+                  window.setTimeout(() => {
+                    dismissAllToasts();
+                    setClearing(false);
+                  }, 420);
+                }}
+                className="flex size-[36px] items-center justify-center rounded-full text-figma-ink"
+                whileHover={animate ? { scale: 1.08, backgroundColor: 'rgba(39,41,48,0.08)' } : undefined}
+                whileTap={animate ? { scale: 0.9 } : undefined}
+                transition={{ duration: 0.16 }}
+              >
+                <Trash2 size={18} strokeWidth={2} />
+              </motion.button>
+            </div>
           ) : null}
 
           <div className="flex flex-col gap-[20px] pb-[24px]">
@@ -194,7 +213,11 @@ export function AlertsView({
               <motion.div
                 key={card.id}
                 initial={animate ? { opacity: 0, y: 12 } : false}
-                animate={{ opacity: 1, y: 0 }}
+                animate={
+                  clearing
+                    ? { opacity: 0, x: index % 2 === 0 ? -900 : 900, rotate: index % 2 === 0 ? -8 : 8 }
+                    : { opacity: 1, y: 0, x: 0, rotate: 0 }
+                }
                 transition={
                   animate
                     ? { ...fadeSoft, delay: 0.04 * (inbox.alerts.length + index) }

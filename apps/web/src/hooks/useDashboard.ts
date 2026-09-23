@@ -859,6 +859,19 @@ export function useDashboard() {
     }
   }, [handleSessionFailure, rebuilding, token, scenarioId, reportFailure]);
 
+  const comparedRevision = useRef<number | null>(null);
+  useEffect(() => {
+    if (!token || source !== 'live' || rebuilding) return;
+    const revision = snapshot?.plan.plan?.revision ?? null;
+    if (revision === null || comparedRevision.current === revision) return;
+    // The plan is already on screen. Comparison can fill in behind it.
+    const handle = window.setTimeout(() => {
+      comparedRevision.current = revision;
+      void refreshPolicyComparison();
+    }, 800);
+    return () => window.clearTimeout(handle);
+  }, [rebuilding, refreshPolicyComparison, snapshot?.plan.plan?.revision, source, token]);
+
   const updateEngineerAvailability = useCallback(
     async (engineerId: string, availability: 'online' | 'offline') => {
       if (

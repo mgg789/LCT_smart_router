@@ -843,9 +843,7 @@ export function DayMap({
       ) : null}
       {soloRequestId ? null : (
         <div className="pointer-events-none absolute bottom-3 left-3 rounded-xl bg-white/90 px-3 py-2 text-[11px] text-muted shadow">
-          {selectedEngineerId
-            ? 'Показан план выбранного инженера. Сплошная серая — дорога внутри МКАД, фиолетовая — метро, зелёная — 2ГИС или Яндекс, синяя — передача. Пунктир только за МКАД или без дорожного сервиса.'
-            : 'План дня. Сплошная серая — дорога внутри МКАД, фиолетовая — метро, зелёная — 2ГИС или Яндекс, синяя — передача. Пунктир только за МКАД или без дорожного сервиса.'}
+          {localMap || mapFailed ? 'Оффлайн' : 'Онлайн'}
         </div>
       )}
       <div className="absolute right-2 bottom-1 rounded bg-white/90 px-2 text-[10px] text-muted">

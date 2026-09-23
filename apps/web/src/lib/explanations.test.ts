@@ -17,13 +17,8 @@ describe('dispatcher explanations', () => {
     expect(explanation?.facts.some((line) => line.includes('подключение'))).toBe(true);
     expect(explanation?.influence.length).toBeGreaterThan(40);
     expect(explanation?.result).toContain('Алексей Соколов');
-    expect(explanation?.baseFacts).toEqual(
-      expect.arrayContaining([
-        expect.stringMatching(/^Оборудование:/),
-        expect.stringMatching(/^Окно:/),
-        expect.stringMatching(/^Компетенция:/),
-      ]),
-    );
+    expect(explanation?.iconFacts?.some((fact) => fact.icon === 'skills')).toBe(true);
+    expect(explanation?.baseFacts?.some((line) => line.includes('Алексей Соколов'))).toBe(true);
 
     const shiftedLunchStart = moscowAt(snapshot.workDate, 12, 5);
     const shiftedSnapshot = {
@@ -48,7 +43,7 @@ describe('dispatcher explanations', () => {
     };
     const shifted = explainSelection(shiftedSnapshot, request, assignment, engineer, route);
     expect(shifted?.baseFacts).toEqual(
-      expect.arrayContaining([expect.stringContaining('(сдвинут)')]),
+      expect.arrayContaining([expect.stringContaining('Обед сдвинут')]),
     );
   });
 

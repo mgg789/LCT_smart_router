@@ -136,7 +136,7 @@ export function isToastColumnPinned(): boolean {
  */
 export function visibleToastsForColumn(): ToastNotification[] {
   const all = getToasts();
-  if (columnPinned) return all.slice(0, visibleToastLimit());
+  if (columnPinned) return all;
   return all
     .filter((item) => item.kind === 'progress' || peekIds.has(item.id))
     .slice(0, visibleToastLimit());
@@ -381,6 +381,20 @@ export function updateToast(
 }
 
 /** Removes one toast. Silent if the id is already gone. */
+/** Drops every card except a live progress toast. */
+export function dismissAllToasts(): void {
+  const kept = toasts.filter((item) => item.kind === 'progress');
+  for (const item of toasts) {
+    if (item.kind === 'progress') continue;
+    dismissed.add(item.id);
+    clearPeekTimer(item.id);
+    peekIds.delete(item.id);
+  }
+  if (kept.length === toasts.length) return;
+  toasts = kept;
+  emit();
+}
+
 export function dismissToast(id: string): void {
   if (toasts.some((item) => item.id === id && item.kind === 'progress')) return;
   dismissed.add(id);

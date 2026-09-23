@@ -1,13 +1,16 @@
 import { motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { predictSituation, type SituationPredictionView } from '../api/client';
-import type { DashboardSnapshot } from '../api/types';
+import type { DashboardSnapshot, PolicyComparisonResponse } from '../api/types';
 import {
   planQualityAdvice,
   unroutedPlanAdvice,
+  type AdviceLine,
   type PlanQualityAdvice,
 } from '../domain/planQuality';
+import { recommendPolicy, type PolicyRecommendation } from '../domain/policyRecommend';
 import { formatDurationMin, formatKm } from '../lib/time';
+import { shortRequestId } from './requestsTable';
 import { FIGMA_ASSETS } from './assets';
 import { ModalLayer, ModalScrim } from './modalLayer';
 import { FigmaIcon } from './primitives';
@@ -28,13 +31,17 @@ export function PlanMetricsModal({
   open,
   motionOn,
   snapshot,
+  comparison,
   token,
+  onOpenRequest,
   onClose,
 }: {
   open: boolean;
   motionOn: boolean;
   snapshot: DashboardSnapshot | null;
+  comparison: PolicyComparisonResponse | null;
   token: string | null;
+  onOpenRequest: (requestId: string) => void;
   onClose: () => void;
 }) {
   const [prediction, setPrediction] = useState<SituationPredictionView | null>(null);
@@ -89,20 +96,33 @@ export function PlanMetricsModal({
 
   const metrics = plan ? planTotals(plan) : null;
   const routed = plan ? Object.keys(visitOrders(plan.routes)).length > 0 : false;
+  const offline = rosterIsOffline(snapshot);
   const advice =
     prediction && snapshot
       ? planQualityAdvice({
           robustness: prediction.robustness,
           unassignedCount: metrics?.unassigned ?? 0,
+          activePolicy: snapshot.policyId,
           requests: riskyRequests(snapshot, prediction),
           engineers: overrunEngineers(snapshot, prediction),
         })
       : plan && !routed
         ? unroutedPlanAdvice({
             unassignedCount: metrics?.unassigned ?? 0,
-            rosterOffline: rosterIsOffline(snapshot),
+            rosterOffline: offline,
           })
         : null;
+  const recommendation = snapshot
+    ? recommendPolicy({
+        active: snapshot.policyId,
+        unassignedCount: metrics?.unassigned ?? 0,
+        robustness: prediction?.robustness ?? null,
+        rosterOffline: offline,
+        maxBreach: maxBreach(prediction),
+        maxOverrun: maxOverrun(prediction),
+        rows: comparison?.rows,
+      })
+    : null;
 
   return (
     <ModalLayer open={open} motionOn={motionOn}>
@@ -111,9 +131,9 @@ export function PlanMetricsModal({
         role="dialog"
         aria-labelledby="plan-metrics-title"
         className="relative z-10 w-[560px] rounded-[28px] bg-white px-[28px] py-[24px] shadow-[0_22px_48px_rgba(39,41,48,0.18)]"
-        initial={motionOn ? { opacity: 0, y: 12, scale: 0.98 } : false}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={motionOn ? { opacity: 0, y: 8, scale: 0.98 } : undefined}
+        initial={motionOn ? { opacity: 0 } : false}
+        animate={{ opacity: 1 }}
+        exit={motionOn ? { opacity: 0 } : undefined}
         transition={fade}
       >
         <div className="flex items-center justify-between">
@@ -127,14 +147,20 @@ export function PlanMetricsModal({
             type="button"
             aria-label="Закрыть"
             onClick={onClose}
-            className="flex size-[36px] items-center justify-center"
+            className="flex size-[36px] items-center justify-center rounded-full transition-colors duration-150 hover:bg-figma-canvas"
           >
             <span className="-rotate-45">
               <FigmaIcon src={FIGMA_ASSETS.toastCloseInk} alt="" width={20} height={20} />
             </span>
           </button>
         </div>
-        <QualityCard advice={advice} pending={pending} failed={failed} hasPlan={plan !== null} />
+        <QualityCard
+          advice={advice}
+          pending={pending}
+          failed={failed}
+          hasPlan={plan !== null}
+          onOpenRequest={onOpenRequest}
+        />
         {metrics ? (
           <dl className="mt-[18px] grid grid-cols-2 gap-[10px]">
             <Metric label="Без назначения" value={String(metrics.unassigned)} />
@@ -149,6 +175,7 @@ export function PlanMetricsModal({
               label="Худшая задержка"
               value={prediction ? formatDurationMin(prediction.p95MaxLateSec) : '…'}
             />
+            {recommendation ? <Recommendation recommendation={recommendation} /> : null}
           </dl>
         ) : (
           <p className="mt-[18px] text-[16px] text-figma-muted">План ещё не применён.</p>
@@ -163,11 +190,13 @@ function QualityCard({
   pending,
   failed,
   hasPlan,
+  onOpenRequest,
 }: {
   advice: PlanQualityAdvice | null;
   pending: boolean;
   failed: boolean;
   hasPlan: boolean;
+  onOpenRequest: (requestId: string) => void;
 }) {
   if (!hasPlan) return null;
   if (pending && !advice) {
@@ -191,10 +220,53 @@ function QualityCard({
       <p className="mt-[12px] font-semibold text-[15px]">Как улучшить</p>
       <ul className="mt-[6px] space-y-[6px] text-[15px] leading-[1.35]">
         {advice.lines.map((line) => (
-          <li key={line}>{line}</li>
+          <li key={`${line.before}${line.shortId ?? ''}${line.after}`}>
+            <AdviceSentence line={line} onOpenRequest={onOpenRequest} />
+          </li>
         ))}
       </ul>
     </section>
+  );
+}
+
+function AdviceSentence({
+  line,
+  onOpenRequest,
+}: {
+  line: AdviceLine;
+  onOpenRequest: (requestId: string) => void;
+}) {
+  return (
+    <>
+      {line.before}
+      {line.requestId && line.shortId ? (
+        <button
+          type="button"
+          onClick={() => onOpenRequest(line.requestId as string)}
+          className="font-semibold underline decoration-current/40 underline-offset-2 hover:decoration-current"
+        >
+          {line.shortId}
+        </button>
+      ) : null}
+      {line.after}
+    </>
+  );
+}
+
+function Recommendation({ recommendation }: { recommendation: PolicyRecommendation }) {
+  return (
+    <div className="col-span-2 rounded-[18px] bg-figma-soft px-[16px] py-[12px]">
+      <dt className="text-[13px] text-figma-muted">Рекомендуемая политика</dt>
+      <dd className="mt-[2px] font-semibold text-[20px] tracking-[-0.3px] text-figma-ink">
+        {recommendation.label}
+        {recommendation.sameAsActive ? (
+          <span className="ml-[8px] align-middle font-medium text-[13px] text-figma-muted">
+            уже включена
+          </span>
+        ) : null}
+      </dd>
+      <p className="mt-[4px] text-[14px] leading-[1.35] text-figma-muted">{recommendation.reason}</p>
+    </div>
   );
 }
 
@@ -235,15 +307,22 @@ function visitOrders(
   return orders;
 }
 
-function riskyRequests(
-  snapshot: DashboardSnapshot,
-  prediction: SituationPredictionView,
-): Array<{ requestId: string; label: string; breachProb: number | null }> {
-  return Object.entries(prediction.requests).map(([requestId, row]) => {
-    const request = snapshot.requests.find((item) => item.id === requestId);
-    const address = request?.addressText.split(',')[0] ?? requestId;
-    return { requestId, label: `Заявка ${address}`, breachProb: row.breachProb };
-  });
+function riskyRequests(snapshot: DashboardSnapshot, prediction: SituationPredictionView) {
+  return Object.entries(prediction.requests).map(([requestId, row]) => ({
+    requestId,
+    shortId: shortRequestId(snapshot.requests.find((item) => item.id === requestId)?.id ?? requestId),
+    breachProb: row.breachProb,
+  }));
+}
+
+function maxBreach(prediction: SituationPredictionView | null): number {
+  if (!prediction) return 0;
+  return Math.max(0, ...Object.values(prediction.requests).map((row) => row.breachProb ?? 0));
+}
+
+function maxOverrun(prediction: SituationPredictionView | null): number {
+  if (!prediction) return 0;
+  return Math.max(0, ...Object.values(prediction.engineers).map((row) => row.overrunProb));
 }
 
 function overrunEngineers(snapshot: DashboardSnapshot, prediction: SituationPredictionView) {

@@ -1,9 +1,9 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { updateDispatcherSettings } from '../api/client';
 import type { HandoffView, LiveRouteProgress } from '../api/live';
-import type { PolicyId, RequestView } from '../api/types';
+import type { EngineerView, PolicyId, RequestView } from '../api/types';
 import { DayMap } from '../components/DayMap';
 import {
   ALL_REGIONS,
@@ -643,7 +643,16 @@ export function MainDashboardPage() {
           open={metricsOpen}
           motionOn={motionOn}
           snapshot={dash.snapshot}
+          comparison={dash.policyComparison}
           token={dash.token}
+          onOpenRequest={(requestId) => {
+            setMetricsOpen(false);
+            setStackDir(stackSlideDir(stackNav, 'requests'));
+            setStackNav('requests');
+            setActiveNav('requests');
+            setOpenedRequestId(requestId);
+            dash.selectRequest(requestId);
+          }}
           onClose={() => setMetricsOpen(false)}
         />
         <AddEntityModal
@@ -1025,6 +1034,7 @@ export function MainDashboardPage() {
                         }
                         mode={panelMode === 'request' ? 'request' : 'plan'}
                         request={dash.selectedRequest}
+                        engineer={dash.selectedEngineer}
                         explanation={panelExplanation}
                         motionOn={motionOn}
                         onClose={() => dash.clearFocus()}
@@ -1371,14 +1381,14 @@ function PlanMetricsButton({ motionOn, onOpen }: { motionOn: boolean; onOpen: ()
     <motion.button
       type="button"
       onClick={onOpen}
-      className="absolute z-50 flex h-[51px] items-center gap-[8px] rounded-[27px] bg-figma-ink pl-[8px] pr-[18px] text-white"
+      className="absolute z-50 flex h-[51px] items-center gap-[10px] rounded-[27px] bg-figma-ink py-[4px] pl-[4px] pr-[16px] text-white"
       style={{ left: METRICS_BUTTON_LEFT, top: POLICY_TOP, width: METRICS_BUTTON_WIDTH }}
       whileHover={motionOn ? { y: -1 } : undefined}
       whileTap={motionOn ? { scale: 0.98 } : undefined}
       transition={{ duration: 0.16 }}
     >
-      <span className="flex size-[43px] items-center justify-center">
-        <TintIcon src="/figma/chart-dots-2.svg" color="#ffffff" size={22} />
+      <span className="flex size-[43px] shrink-0 items-center justify-center rounded-full bg-white">
+        <TintIcon src="/figma/chart-dots-2.svg" color="#272930" size={22} />
       </span>
       <span className="figma-nowrap font-semibold text-[18px] tracking-[-0.3px]">Метрики плана</span>
     </motion.button>
@@ -2338,20 +2348,32 @@ function handoffItemsLabel(items: HandoffView['items']): string {
   return labels.join(', ') || 'Оборудование не указано';
 }
 
+const FACT_ICON = {
+  skills: '/figma/engineer-skills.svg',
+  transport: '/figma/transport.svg',
+  equipment: '/figma/equipment.svg',
+  window: '/figma/time-window.svg',
+  lunch: '/figma/lunch.svg',
+  route: '/figma/graph-route.svg',
+} as const;
+
 function DetailPanel({
   mode,
   request,
+  engineer,
   explanation,
   motionOn,
   onClose,
 }: {
   mode: 'plan' | 'request';
   request: RequestView | null;
+  engineer: EngineerView | null;
   explanation: CaseExplanation | null;
   motionOn: boolean;
   onClose: () => void;
 }) {
-  const [explanationMode, setExplanationMode] = useState<'base' | 'long'>('base');
+  const [aiOn, setAiOn] = useState(false);
+  const [largeOn, setLargeOn] = useState(false);
   const urgency = request ? requestUrgency(request) : null;
   const equipment = request
     ? request.requiredEquipment
@@ -2416,97 +2438,201 @@ function DetailPanel({
               </p>
             </Copyable>
           </div>
+        ) : engineer ? (
+          <div className="pr-[52px]">
+            <FigmaText className="font-murs text-[32px] leading-[36px] tracking-[-0.544px] text-white">
+              {engineer.displayName}
+            </FigmaText>
+            {engineer.email ? (
+              <p className="mt-[8px] font-semibold text-[18px] tracking-[-0.3px] text-white/60">
+                {engineer.email}
+              </p>
+            ) : null}
+          </div>
         ) : (
           <div className="h-[36px]" />
         )}
-        <fieldset className="mt-[16px] flex gap-[8px]">
-          <legend className="sr-only">Режим объяснения</legend>
-          <button
-            type="button"
-            onClick={() => setExplanationMode('base')}
-            className={`rounded-full px-[14px] py-[8px] text-[15px] font-semibold ${explanationMode === 'base' ? 'bg-figma-bee text-figma-ink' : 'bg-figma-dim text-white/70'}`}
-          >
-            База
-          </button>
-          <button
-            type="button"
-            disabled
-            aria-disabled
-            title="AI-сервис пока не подключён"
-            className="cursor-not-allowed rounded-full bg-figma-dim px-[14px] py-[8px] text-[15px] font-semibold text-white/35"
-          >
-            AI
-          </button>
-          <button
-            type="button"
-            onClick={() => setExplanationMode('long')}
-            className={`rounded-full px-[14px] py-[8px] text-[15px] font-semibold ${explanationMode === 'long' ? 'bg-figma-bee text-figma-ink' : 'bg-figma-dim text-white/70'}`}
-          >
-            Подробно
-          </button>
-        </fieldset>
-        {explanationMode === 'base' ? (
-          <div className="mt-[16px] flex min-h-[216px] w-full flex-col rounded-[20px] bg-figma-dim px-[20px] py-[22px]">
-            <FigmaText className="font-medium text-[28px] tracking-[-0.84px] text-white">
-              Факты
-            </FigmaText>
-            <ul className="mt-[12px] space-y-[8px] font-medium text-[18px] leading-[24px] tracking-[-0.3px] text-white/70">
-              {(
-                explanation?.baseFacts ??
-                explanation?.facts ?? ['Нет фактов по этому выбору.']
-              ).map((fact) => (
-                <li key={fact}>{fact}</li>
-              ))}
-            </ul>
-          </div>
+        {mode === 'request' ? (
+          <RequestReasons
+            aiOn={aiOn}
+            largeOn={largeOn}
+            motionOn={motionOn}
+            explanation={explanation}
+            durationLabel={request ? formatDurationMin(request.serviceDurationSec) : '—'}
+            onToggleAi={() => setAiOn((value) => !value)}
+            onToggleLarge={() => setLargeOn((value) => !value)}
+          />
         ) : (
-          <>
-            <div className="mt-[16px] flex min-h-[216px] w-full flex-col rounded-[20px] bg-figma-dim px-[20px] py-[22px]">
-              <FigmaText className="font-medium text-[28px] tracking-[-0.84px] text-white">
-                Факты
-              </FigmaText>
-              <p className="mt-[12px] font-medium text-[18px] leading-[24px] tracking-[-0.3px] text-white/70">
-                {explanation?.facts.join(' ') || 'Нет фактов по этому выбору.'}
-              </p>
-            </div>
-            <div className="mt-[16px] flex min-h-[216px] w-full flex-col rounded-[20px] bg-figma-dim px-[20px] py-[22px]">
-              <FigmaText className="font-medium text-[28px] tracking-[-0.84px] text-white">
-                {mode === 'plan' ? 'Как они повлияли' : 'Как влияет'}
-              </FigmaText>
-              <p className="mt-[12px] font-medium text-[18px] leading-[24px] tracking-[-0.3px] text-white/70">
-                {explanation?.influence || 'Нет объяснения влияния.'}
-              </p>
-            </div>
-            {mode === 'plan' ? (
-              <div className="mt-[16px] flex min-h-[67px] w-full items-center rounded-[20px] bg-figma-dim px-[20px] py-[16px]">
-                <p className="font-medium text-[20px] leading-[24px] tracking-[-0.6px] text-white">
-                  {explanation?.result || 'Нет итога по смене.'}
-                </p>
-              </div>
-            ) : (
-              <div className="mt-[16px] flex gap-[12px]">
-                <div className="flex h-[67px] min-w-0 flex-1 items-center rounded-[20px] bg-figma-dim px-[20px]">
-                  <p className="figma-nowrap font-medium text-[20px] tracking-[-0.6px] text-white">
-                    {request ? formatDurationMin(request.serviceDurationSec) : '—'}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  disabled
-                  aria-disabled
-                  title="Скоро"
-                  className="flex h-[67px] flex-1 cursor-not-allowed items-center justify-center rounded-[20px] bg-figma-bee px-[16px] opacity-45"
-                >
-                  <span className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
-                    Написать
-                  </span>
-                </button>
-              </div>
-            )}
-          </>
+          <IconFactCard title="Параметры" facts={explanation?.iconFacts ?? []} />
         )}
       </div>
     </motion.aside>
+  );
+}
+
+function RequestReasons({
+  aiOn,
+  largeOn,
+  motionOn,
+  explanation,
+  durationLabel,
+  onToggleAi,
+  onToggleLarge,
+}: {
+  aiOn: boolean;
+  largeOn: boolean;
+  motionOn: boolean;
+  explanation: CaseExplanation | null;
+  durationLabel: string;
+  onToggleAi: () => void;
+  onToggleLarge: () => void;
+}) {
+  const title = aiOn ? 'AI' : 'Причины';
+  return (
+    <div className="mt-[16px]">
+      <div className="flex min-h-[216px] w-full flex-col rounded-[20px] bg-figma-dim px-[20px] py-[22px]">
+        <div className="flex items-center justify-between gap-[8px]">
+          <FigmaText className="font-medium text-[28px] tracking-[-0.84px] text-white">
+            {title}
+          </FigmaText>
+          <div className="flex items-center gap-[8px]">
+            <ReasonIconButton
+              label={aiOn ? 'Обычные причины' : 'Объяснить с AI'}
+              motionOn={motionOn}
+              onClick={onToggleAi}
+            >
+              {aiOn ? (
+                <TintIcon src="/figma/explain-default.svg" color="#ffffff" size={18} />
+              ) : (
+                <img src="/figma/explain-ai.png" alt="" className="size-[18px] invert" />
+              )}
+            </ReasonIconButton>
+            <AnimatePresence initial={false}>
+              {aiOn ? null : (
+                <motion.span
+                  key="size"
+                  initial={motionOn ? { opacity: 0, scale: 0.8 } : false}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={motionOn ? { opacity: 0, scale: 0.8 } : undefined}
+                  transition={{ duration: 0.16 }}
+                >
+                  <ReasonIconButton
+                    label={largeOn ? 'Коротко' : 'Подробнее'}
+                    motionOn={motionOn}
+                    onClick={onToggleLarge}
+                  >
+                    <TintIcon
+                      src={largeOn ? '/figma/short-facts.svg' : '/figma/large-facts.svg'}
+                      color="#ffffff"
+                      size={18}
+                    />
+                  </ReasonIconButton>
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={aiOn ? 'ai' : largeOn ? 'large' : 'short'}
+            initial={motionOn ? { opacity: 0, y: 6 } : false}
+            animate={{ opacity: 1, y: 0 }}
+            exit={motionOn ? { opacity: 0, y: -6 } : undefined}
+            transition={{ duration: 0.18 }}
+          >
+            {aiOn ? (
+              <p className="mt-[12px] font-medium text-[18px] leading-[24px] text-white/70">
+                Текстовый разбор пока не подключён. Причины решения остаются обычными, без
+                выдуманного текста.
+              </p>
+            ) : (
+              <IconFactList facts={explanation?.iconFacts ?? []} />
+            )}
+          </motion.div>
+        </AnimatePresence>
+      </div>
+      {largeOn && !aiOn ? (
+        <>
+          <div className="mt-[16px] flex min-h-[160px] w-full flex-col rounded-[20px] bg-figma-dim px-[20px] py-[22px]">
+            <FigmaText className="font-medium text-[28px] tracking-[-0.84px] text-white">
+              Как влияет
+            </FigmaText>
+            <p className="mt-[12px] font-medium text-[18px] leading-[24px] text-white/70">
+              {explanation?.influence || 'Нет объяснения влияния.'}
+            </p>
+          </div>
+          <div className="mt-[16px] flex min-h-[67px] w-full items-center rounded-[20px] bg-figma-dim px-[20px] py-[16px]">
+            <p className="font-medium text-[20px] leading-[24px] text-white">
+              {explanation?.result || durationLabel}
+            </p>
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function ReasonIconButton({
+  label,
+  motionOn,
+  onClick,
+  children,
+}: {
+  label: string;
+  motionOn: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <motion.button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      className="flex size-[36px] items-center justify-center rounded-full bg-white/10"
+      whileHover={motionOn ? { scale: 1.08, backgroundColor: 'rgba(255,255,255,0.18)' } : undefined}
+      whileTap={motionOn ? { scale: 0.92 } : undefined}
+      transition={{ duration: 0.16 }}
+    >
+      {children}
+    </motion.button>
+  );
+}
+
+function IconFactCard({
+  title,
+  facts,
+}: {
+  title: string;
+  facts: NonNullable<CaseExplanation['iconFacts']>;
+}) {
+  return (
+    <div className="mt-[16px] flex min-h-[216px] w-full flex-col rounded-[20px] bg-figma-dim px-[20px] py-[22px]">
+      <FigmaText className="font-medium text-[28px] tracking-[-0.84px] text-white">{title}</FigmaText>
+      <IconFactList facts={facts} />
+    </div>
+  );
+}
+
+function IconFactList({ facts }: { facts: NonNullable<CaseExplanation['iconFacts']> }) {
+  if (facts.length === 0) {
+    return (
+      <p className="mt-[12px] font-medium text-[18px] leading-[24px] text-white/70">
+        Нет причин по этому выбору.
+      </p>
+    );
+  }
+  return (
+    <ul className="mt-[12px] space-y-[10px]">
+      {facts.map((fact) => (
+        <li key={`${fact.icon}:${fact.text}`} className="flex items-start gap-[10px]">
+          <TintIcon src={FACT_ICON[fact.icon]} color="#ffffff" size={20} />
+          <span className="font-medium text-[18px] leading-[24px] tracking-[-0.3px] text-white/70">
+            {fact.text}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 

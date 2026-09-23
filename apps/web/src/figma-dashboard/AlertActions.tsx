@@ -90,7 +90,7 @@ export function AlertActions({
           icon={Sparkles}
           disabled
           spec={{
-            label: 'Включить AI',
+            label: 'Решить с AI',
             summary: 'AI-разбор этого алерта пока недоступен.',
             effect: 'Сервис AI ещё не подключён. Выберите один из ручных вариантов.',
             benefit: 'После подключения поможет сравнить допустимые решения.',

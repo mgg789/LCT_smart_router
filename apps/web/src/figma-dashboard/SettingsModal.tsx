@@ -671,29 +671,23 @@ function ApiTokensTab({ token }: { token: string | null }) {
           </select>
         </Field>
       </div>
-      <div className="mt-[16px] flex flex-wrap items-end gap-[12px]">
-        <label className="flex items-center gap-[8px] font-medium text-[15px] text-figma-ink">
-          <input
-            type="radio"
-            checked={expiryMode === 'never'}
-            onChange={() => setExpiryMode('never')}
-          />
-          Без срока
-        </label>
-        <label className="flex items-center gap-[8px] font-medium text-[15px] text-figma-ink">
-          <input
-            type="radio"
-            checked={expiryMode === 'date'}
-            onChange={() => setExpiryMode('date')}
-          />
-          До даты
-        </label>
+      <div className="mt-[16px] flex flex-wrap items-center gap-[12px]">
+        <ExpiryChoice
+          checked={expiryMode === 'never'}
+          label="Без срока"
+          onSelect={() => setExpiryMode('never')}
+        />
+        <ExpiryChoice
+          checked={expiryMode === 'date'}
+          label="До даты"
+          onSelect={() => setExpiryMode('date')}
+        />
         {expiryMode === 'date' ? (
           <input
             type="date"
             value={expiryDate}
             onChange={(event) => setExpiryDate(event.target.value)}
-            className="h-[48px] rounded-[16px] border border-figma-ink/15 px-[12px]"
+            className="h-[48px] rounded-[16px] border border-figma-ink/15 bg-white px-[12px] font-medium text-[15px] text-figma-ink"
           />
         ) : null}
         <button
@@ -883,6 +877,35 @@ function SettingSwitch({
         <span className="size-[24px] rounded-full bg-white shadow" />
       </button>
     </div>
+  );
+}
+
+function ExpiryChoice({
+  checked,
+  label,
+  onSelect,
+}: {
+  checked: boolean;
+  label: string;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={checked}
+      onClick={onSelect}
+      className="flex h-[48px] items-center gap-[10px] rounded-full px-[4px] font-medium text-[15px] text-figma-ink"
+    >
+      <span
+        className={`flex size-[20px] items-center justify-center rounded-full border-2 ${
+          checked ? 'border-figma-ink' : 'border-figma-ink/25'
+        }`}
+      >
+        {checked ? <span className="size-[10px] rounded-full bg-figma-ink" /> : null}
+      </span>
+      {label}
+    </button>
   );
 }
 
