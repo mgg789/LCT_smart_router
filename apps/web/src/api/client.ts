@@ -1270,6 +1270,97 @@ export async function allWithLimit<T>(
   return results;
 }
 
+const situationPredictionSchema = z.object({
+  plan: z.object({
+    robustness: z.number().min(0).max(1),
+    expected_late: z.number().nonnegative(),
+    p95_late_count: z.number().nonnegative(),
+    p95_max_late_sec: z.number().nonnegative(),
+  }),
+  requests: z.record(
+    z.string(),
+    z.object({
+      breach_prob: z.number().min(0).max(1).nullable(),
+      expected_late_sec: z.number().nonnegative(),
+      p90_late_sec: z.number().nonnegative(),
+      cancel_rate_sim: z.number().min(0).max(1),
+    }),
+  ),
+  engineers: z.record(z.string(), z.object({ overrun_prob: z.number().min(0).max(1) })),
+});
+
+export interface SituationPredictionView {
+  readonly robustness: number;
+  readonly expectedLate: number;
+  readonly p95LateCount: number;
+  readonly p95MaxLateSec: number;
+  readonly requests: Readonly<
+    Record<string, { readonly breachProb: number | null; readonly expectedLateSec: number }>
+  >;
+  readonly engineers: Readonly<Record<string, { readonly overrunProb: number }>>;
+}
+
+/**
+ * Dry reliability of one applied plan. The call does not change routes.
+ * `routes` is the fixed visit order already on screen.
+ */
+export function predictSituation(
+  token: string,
+  input: {
+    inputHash: string;
+    routerContextVersion: string;
+    routes: Record<string, string[]>;
+    asOf?: number;
+  },
+): Promise<SituationPredictionView> {
+  return requestJson(
+    '/api/v1/dispatch/predictions/situation',
+    situationPredictionSchema,
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        inputHash: input.inputHash,
+        routerContextVersion: input.routerContextVersion,
+        routes: input.routes,
+        simulations: 300,
+        asOf: input.asOf,
+      }),
+    },
+    25_000,
+  ).then((parsed) => ({
+    robustness: parsed.plan.robustness,
+    expectedLate: parsed.plan.expected_late,
+    p95LateCount: parsed.plan.p95_late_count,
+    p95MaxLateSec: parsed.plan.p95_max_late_sec,
+    requests: Object.fromEntries(
+      Object.entries(parsed.requests).map(([id, row]) => [
+        id,
+        { breachProb: row.breach_prob, expectedLateSec: row.expected_late_sec },
+      ]),
+    ),
+    engineers: Object.fromEntries(
+      Object.entries(parsed.engineers).map(([id, row]) => [id, { overrunProb: row.overrun_prob }]),
+    ),
+  }));
+}
+
+const weatherSchema = z.object({
+  observedAt: z.number(),
+  temperatureC: z.number().nullable(),
+  weatherCode: z.number().nullable(),
+  kind: z.enum(['clear', 'cloud', 'rain', 'snow', 'storm', 'unknown']),
+  label: z.string(),
+  trafficMultiplier: z.number().min(1),
+});
+
+export type DispatchWeather = z.infer<typeof weatherSchema>;
+
+/** Cached Moscow forecast. The multiplier is already inside car travel times. */
+export function loadDispatchWeather(token: string): Promise<DispatchWeather> {
+  return requestJson('/api/v1/dispatch/weather', weatherSchema, token);
+}
+
 export async function requestJson<T>(
   path: string,
   schema: z.ZodType<T>,

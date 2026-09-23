@@ -208,6 +208,16 @@ export abstract class RouterClient {
     throw SysError.notConfigured('Router Core policy comparison');
   }
 
+  /** Runs dry Monte-Carlo situation predictions for one fixed plan; never optimizes. */
+  predictSituation(_input: SituationPredictionInput): Promise<SituationPrediction> {
+    throw SysError.notConfigured('Router Core situation prediction');
+  }
+
+  /** Cached Moscow forecast used by the map badge. Multiplier 1 when weather is calm. */
+  getWeather(): Promise<RouterWeather> {
+    throw SysError.notConfigured('Router Core weather');
+  }
+
   abstract isConfigured(): boolean;
 }
 
@@ -216,6 +226,62 @@ export interface ManualEvaluationInput {
   readonly input_hash: string;
   readonly router_context_version: string;
   readonly routes: Record<string, string[]>;
+}
+
+/** Identity-bound dry prediction request; routes are fixed orders, never a new plan. */
+export interface SituationPredictionInput {
+  readonly input_hash: string;
+  readonly router_context_version: string;
+  readonly routes: Record<string, string[]>;
+  readonly simulations: number;
+  readonly as_of?: number | null;
+  readonly completed?: Record<string, string[]>;
+  readonly cancel_rate?: number | null;
+}
+
+/** Per-request dry outcome of the situation prediction. */
+export interface SituationRequestPrediction {
+  /** Share of simulations where the visit finished after its window ended. */
+  readonly breach_prob: number | null;
+  readonly expected_late_sec: number;
+  readonly p90_late_sec: number;
+  /** Share of simulations where an upstream cancellation removed the visit. */
+  readonly cancel_rate_sim: number;
+}
+
+/** Cached Open-Meteo reading. `trafficMultiplier` already scales car travel in Router. */
+export interface RouterWeather {
+  readonly observed_at: number;
+  readonly temperature_c: number | null;
+  readonly weather_code: number | null;
+  readonly kind: 'clear' | 'cloud' | 'rain' | 'snow' | 'storm' | 'unknown';
+  readonly label: string;
+  readonly traffic_multiplier: number;
+}
+
+/** Dry probabilities only: the prediction never contains a plan or a decision. */
+export interface SituationPrediction {
+  readonly input_hash: string;
+  readonly router_context_version: string;
+  readonly calibration_version: string;
+  readonly simulations: number;
+  readonly assumptions: {
+    readonly cancel_rate: number;
+    readonly service_cv: number;
+    readonly leg_cv: { readonly short: number; readonly long: number };
+    readonly regimes: Record<string, { readonly prob: number; readonly mult: number }>;
+    readonly note: string;
+  };
+  readonly plan: {
+    /** Share of simulations with zero late visits (0..1). */
+    readonly robustness: number;
+    readonly expected_late: number;
+    readonly p95_late_count: number;
+    readonly p95_max_late_sec: number;
+    readonly expected_cancellations: number;
+  };
+  readonly requests: Record<string, SituationRequestPrediction>;
+  readonly engineers: Record<string, { readonly overrun_prob: number }>;
 }
 
 /** Exact lexicographic policy evidence on the same snapshot and travel resources. */

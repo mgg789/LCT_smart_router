@@ -58,6 +58,10 @@ import {
   uploadDataPackageSchema,
 } from './dto/data.dto';
 import {
+  type SituationPredictDto,
+  situationPredictSchema,
+} from './dto/prediction.dto';
+import {
   type ArchiveEngineerDto,
   archiveEngineerSchema,
   type ChangeEngineerEmailDto,
@@ -689,6 +693,63 @@ export class DispatchController {
     // actual lunch contract, including when a dispatcher enables it after LIVE started.
     await this.live.synchronizeGlobalLunchSwitch(dto.lunchesEnabled);
     return outcome.result;
+  }
+
+  @Post('predictions/situation')
+  @ApiOperation({
+    summary: 'Dry Monte-Carlo probabilities for one fixed plan and execution situation',
+  })
+  async situationPredict(@Body(zodBody(situationPredictSchema)) dto: SituationPredictDto) {
+    if (!this.router.isConfigured()) {
+      throw SysError.notConfigured('Router Core');
+    }
+    // Dry numbers only: the call never returns a plan and never changes one. The caller
+    // supplies the applied plan's identity, so a prediction can never attach to another
+    // manual revision (Router rechecks the publication CAS on both ends).
+    return this.router.predictSituation({
+      input_hash: dto.inputHash,
+      router_context_version: dto.routerContextVersion,
+      routes: dto.routes,
+      simulations: dto.simulations,
+      as_of: dto.asOf ?? null,
+      completed: dto.completed,
+      cancel_rate: dto.cancelRate ?? null,
+    });
+  }
+
+  @Get('weather')
+  @ApiOperation({ summary: 'Cached Moscow forecast and the car-traffic multiplier it applies' })
+  async weather() {
+    if (!this.router.isConfigured()) {
+      return {
+        observedAt: 0,
+        temperatureC: null,
+        weatherCode: null,
+        kind: 'unknown' as const,
+        label: 'Нет прогноза',
+        trafficMultiplier: 1,
+      };
+    }
+    try {
+      const forecast = await this.router.getWeather();
+      return {
+        observedAt: forecast.observed_at,
+        temperatureC: forecast.temperature_c,
+        weatherCode: forecast.weather_code,
+        kind: forecast.kind,
+        label: forecast.label,
+        trafficMultiplier: forecast.traffic_multiplier,
+      };
+    } catch {
+      return {
+        observedAt: 0,
+        temperatureC: null,
+        weatherCode: null,
+        kind: 'unknown' as const,
+        label: 'Нет прогноза',
+        trafficMultiplier: 1,
+      };
+    }
   }
 
   @Get('policies')

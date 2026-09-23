@@ -13,10 +13,44 @@ import {
   type RouterRoadImportResult,
   type RouterTechnicalSettingsState,
   type RouterTechnicalSettingsUpdate,
+  type SituationPrediction,
+  type SituationPredictionInput,
+  type RouterWeather,
   type UpdateRouterTechnicalSettings,
   type WindowProposal,
   type WindowProposalInput,
 } from './router-client.port';
+
+const situationPredictionSchema = z.object({
+  input_hash: z.string().length(64),
+  router_context_version: z.string().min(1),
+  calibration_version: z.string().min(1),
+  simulations: z.number().int().positive(),
+  assumptions: z.object({
+    cancel_rate: z.number(),
+    service_cv: z.number(),
+    leg_cv: z.object({ short: z.number(), long: z.number() }),
+    regimes: z.record(z.string(), z.object({ prob: z.number(), mult: z.number() })),
+    note: z.string(),
+  }),
+  plan: z.object({
+    robustness: z.number().min(0).max(1),
+    expected_late: z.number().nonnegative(),
+    p95_late_count: z.number().int().nonnegative(),
+    p95_max_late_sec: z.number().nonnegative(),
+    expected_cancellations: z.number().nonnegative(),
+  }),
+  requests: z.record(
+    z.string(),
+    z.object({
+      breach_prob: z.number().min(0).max(1).nullable(),
+      expected_late_sec: z.number().nonnegative(),
+      p90_late_sec: z.number().nonnegative(),
+      cancel_rate_sim: z.number().min(0).max(1),
+    }),
+  ),
+  engineers: z.record(z.string(), z.object({ overrun_prob: z.number().min(0).max(1) })),
+});
 
 const comparisonMetricsSchema = z.object({
   requests_total: z.number().int().nonnegative(),
@@ -310,6 +344,37 @@ export class HttpRouterClient extends RouterClient {
         criterion: z.string().nullable(),
         before: z.array(z.number()),
         after: z.array(z.number()).nullable(),
+      })
+      .parse(raw);
+  }
+
+  /** Runs Router's dry Monte-Carlo situation predictions for one fixed plan. */
+  override async predictSituation(input: SituationPredictionInput): Promise<SituationPrediction> {
+    const raw = await this.fetchJson('/v1/situation-predict', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(input),
+    });
+    const parsed = situationPredictionSchema.safeParse(raw);
+    if (!parsed.success) {
+      throw new Error(
+        `Router /v1/situation-predict response is invalid: ${parsed.error.message}`,
+      );
+    }
+    return parsed.data;
+  }
+
+  /** Reads Router's cached Moscow forecast. Does not wait on a solve. */
+  override async getWeather(): Promise<RouterWeather> {
+    const raw = await this.fetchJson('/v1/weather', {}, Math.max(this.options.requestTimeoutMs, 4_000));
+    return z
+      .object({
+        observed_at: z.number(),
+        temperature_c: z.number().nullable(),
+        weather_code: z.number().nullable(),
+        kind: z.enum(['clear', 'cloud', 'rain', 'snow', 'storm', 'unknown']),
+        label: z.string(),
+        traffic_multiplier: z.number().min(1),
       })
       .parse(raw);
   }

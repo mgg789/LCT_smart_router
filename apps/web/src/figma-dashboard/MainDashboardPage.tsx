@@ -16,6 +16,9 @@ import { useDashboard } from '../hooks/useDashboard';
 import { type CaseExplanation, explainSelection } from '../lib/explanations';
 import { formatClock, formatDurationMin } from '../lib/time';
 import { AddEntityModal } from './AddEntityModal';
+import { PlanMetricsModal } from './PlanMetricsModal';
+import { TintIcon } from './TintIcon';
+import { WeatherBadge } from './WeatherBadge';
 import { AlertsView } from './AlertsView';
 import { useArtboardScale } from './artboardScale';
 import { FIGMA_ASSETS } from './assets';
@@ -114,7 +117,9 @@ const POLICY_LEFT = 1329;
 const POLICY_TOP = 26 - HEADER_LIFT;
 const ADD_BUTTON_SIZE = 43;
 const ADD_BUTTON_GAP = 16;
-const ADD_BUTTON_LEFT = POLICY_LEFT - ADD_BUTTON_GAP - ADD_BUTTON_SIZE;
+const METRICS_BUTTON_WIDTH = 232;
+const METRICS_BUTTON_LEFT = POLICY_LEFT - ADD_BUTTON_GAP - METRICS_BUTTON_WIDTH;
+const ADD_BUTTON_LEFT = METRICS_BUTTON_LEFT - ADD_BUTTON_GAP - ADD_BUTTON_SIZE;
 const ADD_BUTTON_TOP = POLICY_TOP + (51 - ADD_BUTTON_SIZE) / 2;
 const POLICY_OPEN_HEIGHT = 585;
 const NOTIF_PANEL_LEFT = 1407;
@@ -163,6 +168,7 @@ export function MainDashboardPage() {
   const [regionOpen, setRegionOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [metricsOpen, setMetricsOpen] = useState(false);
   const [welcomeOpen, setWelcomeOpen] = useState(
     () => !hasStartedWorkDay(window.localStorage, moscowWorkDate()),
   );
@@ -618,8 +624,27 @@ export function MainDashboardPage() {
             setUserMenuOpen(false);
             setNotifOpen(false);
             setUploadOpen(false);
+            setMetricsOpen(false);
             setAddOpen(true);
           }}
+        />
+        <PlanMetricsButton
+          motionOn={motionOn}
+          onOpen={() => {
+            setPolicyOpen(false);
+            setUserMenuOpen(false);
+            setNotifOpen(false);
+            setUploadOpen(false);
+            setAddOpen(false);
+            setMetricsOpen(true);
+          }}
+        />
+        <PlanMetricsModal
+          open={metricsOpen}
+          motionOn={motionOn}
+          snapshot={dash.snapshot}
+          token={dash.token}
+          onClose={() => setMetricsOpen(false)}
         />
         <AddEntityModal
           open={addOpen}
@@ -975,6 +1000,7 @@ export function MainDashboardPage() {
                       setRegionOpen(false);
                       dash.clearFocus();
                     }}
+                    token={dash.token}
                   />
                   <AnimatePresence>
                     {showRouteCard && selectedEngineer ? (
@@ -1340,6 +1366,25 @@ function NotificationBadge({ count, tone }: { count: number; tone: NotificationT
 /**
  * Dark plus in the MAIN header, left of the policy chip. Opens the add-entity dialog.
  */
+function PlanMetricsButton({ motionOn, onOpen }: { motionOn: boolean; onOpen: () => void }) {
+  return (
+    <motion.button
+      type="button"
+      onClick={onOpen}
+      className="absolute z-50 flex h-[51px] items-center gap-[8px] rounded-[27px] bg-figma-ink pl-[8px] pr-[18px] text-white"
+      style={{ left: METRICS_BUTTON_LEFT, top: POLICY_TOP, width: METRICS_BUTTON_WIDTH }}
+      whileHover={motionOn ? { y: -1 } : undefined}
+      whileTap={motionOn ? { scale: 0.98 } : undefined}
+      transition={{ duration: 0.16 }}
+    >
+      <span className="flex size-[43px] items-center justify-center">
+        <TintIcon src="/figma/chart-dots-2.svg" color="#ffffff" size={22} />
+      </span>
+      <span className="figma-nowrap font-semibold text-[18px] tracking-[-0.3px]">Метрики плана</span>
+    </motion.button>
+  );
+}
+
 function AddEntityButton({ motionOn, onOpen }: { motionOn: boolean; onOpen: () => void }) {
   return (
     <motion.button
@@ -1836,6 +1881,7 @@ function MapCard({
   onSelectRequest,
   onToggleRegion,
   onSelectRegion,
+  token,
 }: {
   snapshot: ReturnType<typeof useDashboard>['snapshot'];
   selectedEngineerId: string | null;
@@ -1852,6 +1898,7 @@ function MapCard({
   onSelectRequest: (requestId: string) => void;
   onToggleRegion: () => void;
   onSelectRegion: (id: RegionSelection) => void;
+  token: string | null;
 }) {
   return (
     <motion.section
@@ -1882,6 +1929,7 @@ function MapCard({
           />
         )}
       </div>
+      <WeatherBadge token={token} />
       <RegionSwitch
         open={regionOpen}
         label={regionLabel}

@@ -584,6 +584,60 @@ class RouterRuntime:
                 raise ValueError("PUBLICATION_CHANGED")
         return {"input_hash": input_hash, "router_context_version": context_version, **result}
 
+    def predict_situation(
+        self,
+        input_hash: str,
+        context_version: str,
+        routes: dict,
+        simulations: int = 300,
+        as_of: int | None = None,
+        completed: dict | None = None,
+        cancel_rate: float | None = None,
+    ) -> dict:
+        """Dry Monte-Carlo outlook for one fixed plan; never optimizes or applies.
+
+        Same publication and context CAS as manual evaluation, so a prediction can
+        never be attached to another manual revision or changed resource set.
+        """
+        from core.robustness import predict_situation
+
+        publication = self.reader.read()
+        raw = publication if isinstance(publication, bytes) else publication.payload
+        with self._lock:
+            active = self.result.model_copy(deep=True)
+            if (
+                content_hash(raw) != input_hash
+                or active.input_hash != input_hash
+                or self.context_version != context_version
+                or active.router_context_version != context_version
+                or active.status != "ready"
+                or active.main is None
+                or not active.main.is_usable
+            ):
+                raise ValueError("PUBLICATION_CHANGED")
+            settings = copy.deepcopy(self.settings)
+        snapshot = apply_system_policy(parse_snapshot(raw), settings)
+        provider = construction_travel(settings, snapshot.planning_as_of)
+        prediction = predict_situation(
+            snapshot,
+            provider,
+            routes,
+            simulations=simulations,
+            as_of=as_of,
+            completed=completed,
+            cancel_rate=cancel_rate,
+        )
+        latest = self.reader.read()
+        latest_raw = latest if isinstance(latest, bytes) else latest.payload
+        with self._lock:
+            if content_hash(latest_raw) != input_hash or self.context_version != context_version:
+                raise ValueError("PUBLICATION_CHANGED")
+        return {
+            "input_hash": input_hash,
+            "router_context_version": context_version,
+            **prediction,
+        }
+
     def propose_window(
         self, snapshot: RouterTaskSnapshot, request_id: str, routes: dict, day_end_at: int
     ) -> dict:

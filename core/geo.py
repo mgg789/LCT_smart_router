@@ -276,14 +276,30 @@ def configure_travel(
     planning_as_of: int | None = None,
 ) -> TechnicalTravel:
     """Return one timing and optional planning-time-traffic context for all paths."""
+    from core.weather import WeatherTravel, weather_multiplier
+
     if isinstance(travel, TechnicalTravel) and travel.settings == settings:
         configured_base = travel.travel
-        if planning_as_of is None or (
-            isinstance(configured_base, ForecastTrafficTravel)
-            and configured_base.planning_as_of == planning_as_of
+        weather_layer = configured_base if isinstance(configured_base, WeatherTravel) else None
+        if (
+            weather_layer is not None
+            and weather_layer.multiplier == weather_multiplier()
+            and (
+                planning_as_of is None
+                or (
+                    isinstance(weather_layer.travel, ForecastTrafficTravel)
+                    and weather_layer.travel.planning_as_of == planning_as_of
+                )
+                or (
+                    not settings.traffic_enabled
+                    and not isinstance(weather_layer.travel, ForecastTrafficTravel)
+                )
+            )
         ):
             return travel
     if isinstance(travel, TechnicalTravel):
+        travel = travel.travel
+    if isinstance(travel, WeatherTravel):
         travel = travel.travel
     from core.metro import MetroTravel
 
@@ -300,6 +316,9 @@ def configure_travel(
         from core.metro import configured_metro_travel
 
         travel = configured_metro_travel(travel)
+    from core.weather import WeatherTravel
+
+    travel = WeatherTravel(travel)
     return TechnicalTravel(travel, settings)
 
 
@@ -358,9 +377,11 @@ class ProfilePolicyTravel:
 def routing_context_version(travel: TravelSource, settings: RouterTechnicalSettings) -> str:
     """Return stable routing-data identity, excluding the planning-time proxy band."""
     from core.metro import MetroTravel
+    from core.weather import WeatherTravel, weather_multiplier
 
     while isinstance(
-        travel, (TechnicalTravel, ForecastTrafficTravel, MetroTravel, ProfilePolicyTravel)
+        travel,
+        (TechnicalTravel, ForecastTrafficTravel, MetroTravel, ProfilePolicyTravel, WeatherTravel),
     ):
         travel = travel.travel
     travel = ProfilePolicyTravel(travel)
@@ -371,6 +392,7 @@ def routing_context_version(travel: TravelSource, settings: RouterTechnicalSetti
     context = {
         "base_version": travel.version,
         "forecast_version": _FORECAST_TRAFFIC_VERSION,
+        "weather_multiplier": weather_multiplier(),
         "traffic_enabled": settings.traffic_enabled,
         "equipment_enabled": settings.equipment_enabled,
         "equipment_transfers_enabled": settings.equipment_transfers_enabled,

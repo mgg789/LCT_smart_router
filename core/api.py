@@ -37,6 +37,18 @@ class ManualEvaluationRequest(Record):
     routes: dict[str, list[str]] = Field(max_length=1000)
 
 
+class SituationPredictRequest(Record):
+    """Dry Monte-Carlo outlook for one fixed plan and execution situation."""
+
+    input_hash: str = Field(min_length=64, max_length=64)
+    router_context_version: str = Field(min_length=1)
+    routes: dict[str, list[str]] = Field(max_length=1000)
+    simulations: int = Field(default=300, ge=100, le=2000)
+    as_of: int | None = Field(default=None, gt=0)
+    completed: dict[str, list[str]] = Field(default_factory=dict, max_length=1000)
+    cancel_rate: float | None = Field(default=None, ge=0.0, le=1.0)
+
+
 class TechnicalSettingsRequest(RouterTechnicalSettings):
     """Complete idempotent replacement of Router-owned technical controls."""
 
@@ -163,6 +175,35 @@ def create_app(runtime: RouterRuntime, road_store: RoadGraphStore | None = None)
         try:
             return runtime.evaluate_manual(
                 request.input_hash, request.router_context_version, request.routes
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=503, detail="ACTIVE_PUBLICATION_UNAVAILABLE") from exc
+
+    @app.get("/v1/weather")
+    def weather() -> dict:
+        """Cached Moscow forecast. A failed fetch reports multiplier 1."""
+        from dataclasses import asdict
+
+        from core.weather import current_weather
+
+        return asdict(current_weather())
+
+    @app.post("/v1/situation-predict")
+    def situation_predict(request: SituationPredictRequest) -> dict:
+        """Dry Monte-Carlo probabilities for one fixed plan; never a new plan."""
+        if sum(len(order) for order in request.routes.values()) > 10000:
+            raise HTTPException(status_code=422, detail="PREDICT_PLAN_TOO_LARGE")
+        try:
+            return runtime.predict_situation(
+                request.input_hash,
+                request.router_context_version,
+                request.routes,
+                simulations=request.simulations,
+                as_of=request.as_of,
+                completed=request.completed,
+                cancel_rate=request.cancel_rate,
             )
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
