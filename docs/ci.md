@@ -175,11 +175,23 @@ PR/мерж тимлида. Код в `dev` и зелёный локальный
 должен зависеть от нашего хоста, и на время простоя хоста PR-проверки просто
 ждут в очереди, а деплои продолжают идти.
 
-Эксплуатация (`ssh` от `mgg`): `/home/mgg/scw/start-all.sh`, `start.sh|stop.sh
-<light|full>`, логи `/home/mgg/scw/<воркер>/worker.log`, PAT обновляется
-`/home/mgg/scw/install-pat.sh <токен>` (он же включает автостарт `@reboot`).
-Образы регрессии остаются в docker-кэше — при заполнении диска
+Эксплуатация (`ssh` от `mgg`): воркеры — контейнеры `scw-light` / `scw-full`
+(образ `scw-worker:latest` из `/home/mgg/scw/worker.Dockerfile`, автостарт
+`restart=always`): `docker logs -f scw-light`, `docker restart scw-full`.
+PAT обновляется `/home/mgg/scw/install-pat.sh <токен>` (пишет конфиги,
+монтируемые в контейнеры), затем `docker restart scw-light scw-full`. Образы
+регрессии остаются в docker-кэше — при заполнении диска
 `docker system prune` (сейчас reclaimable ~140 ГиБ).
+
+Воркеры работают от root внутри своих контейнеров с примонтированным
+docker-сокетом: контейнеры кубов пишут в workspace файлы от root, и
+платформенный `#tear-down-environment` обязан уметь их удалять (при запуске
+воркера обычным пользователем даже полностью зелёные задачи помечались
+failed). Workspace материализуется без `.git` — провенанс бенчмарка
+деградирует в `"unknown"` вместо падения
+(`core/policy_benchmark._git_provenance`). Дефолтного лимита куба
+(5 минут) не хватает на холодные установки пакетов, поэтому у `ci` стоит
+`max_cube_duration: 25m` (у `regression` — 30m).
 
 ## Deploy
 
