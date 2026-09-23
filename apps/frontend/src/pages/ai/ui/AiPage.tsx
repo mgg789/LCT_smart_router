@@ -2,11 +2,30 @@ import type { Variants } from 'framer-motion';
 import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
 import type { LucideIcon } from 'lucide-react';
 import { Check, Copy, Pencil, RotateCw, ThumbsDown, ThumbsUp } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
-import type { AssistantMessage, Rating, UserMessage } from '@/features/ai/ask-assistant';
-import { AskBar, useConversation } from '@/features/ai/ask-assistant';
+import { Fragment, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ROUTES } from '@/app/routes/paths';
+import type { AiActionButton } from '@/entities/conversation';
+import type {
+  AssistantMessage,
+  OperationCard,
+  Rating,
+  UserMessage,
+} from '@/features/ai/ask-assistant';
+import { AskBar, resumeConversation, useConversation } from '@/features/ai/ask-assistant';
 import { cn, EASE_OUT, fadeSoft, springQuick, useMotionOn } from '@/shared/lib';
 import { AiAvatar } from '@/shared/ui';
+
+/**
+ * Where «открыть объект» goes. The target is what the dashboard should select —
+ * a type and an id the server vetted — never a URL from the model (§9.5), so the
+ * route is chosen here and only the id travels.
+ */
+const TARGET_ROUTE: Record<'request' | 'engineer' | 'alert', (id: string) => string> = {
+  request: (id) => `${ROUTES.plan}?request=${encodeURIComponent(id)}`,
+  engineer: () => ROUTES.engineers,
+  alert: () => ROUTES.alerts,
+};
 
 /** Width of the conversation column, from the drawing (444 → 1480). */
 const COLUMN = 'w-[1036px] max-w-full';
@@ -154,27 +173,81 @@ function UserBubble({
   );
 }
 
+/**
+ * How each operation state reads to the dispatcher.
+ *
+ * `cancelled_before_apply` and `outcome_unknown` are deliberately not synonyms
+ * (docs/frontend-api.md §9.6): the first is a write that never ran, the second a
+ * write that may or may not have. Calling the second one «отменено» — or
+ * «выполнено» — would state a guess as a fact, so it says what is actually known
+ * and points at the object to check.
+ */
+const OPERATION_STATE: Record<string, string> = {
+  prepared: 'Подготовлено',
+  awaiting_confirmation: 'Ждёт подтверждения',
+  running: 'Выполняется',
+  applied: 'Выполнено',
+  rejected: 'Отклонено',
+  cancelled_before_apply: 'Отменено до применения — записи не было',
+  outcome_unknown: 'Исход неизвестен — проверьте объект напрямую',
+};
+
+/** A card the server prepared: its rows, as rendered from validated arguments. */
+function OperationCardView({ card }: { card: OperationCard }) {
+  return (
+    <section
+      aria-label={`Операция ${card.action}`}
+      className="mt-5 rounded-[20px] border border-ink/12 bg-surface px-6 py-5"
+    >
+      <p className="font-semibold text-[16px] text-ink-soft">{card.action}</p>
+      <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1 text-[16px]">
+        {card.preview.map((row) => (
+          <Fragment key={`${row.label}:${row.value}`}>
+            <dt className="text-ink-soft">{row.label}</dt>
+            <dd className="text-ink">{row.value}</dd>
+          </Fragment>
+        ))}
+      </dl>
+      <p
+        className={cn(
+          'mt-3 text-[16px]',
+          card.state === 'applied' ? 'text-success' : 'text-ink-soft',
+          card.state === 'outcome_unknown' && 'text-danger',
+        )}
+      >
+        {OPERATION_STATE[card.state] ?? card.state}
+      </p>
+      {card.error ? <p className="mt-1 text-[16px] text-danger">{card.error}</p> : null}
+    </section>
+  );
+}
+
 function AssistantAnswer({
   message,
   onRetry,
   onRate,
+  onAct,
   motionOn,
 }: {
   message: AssistantMessage;
   onRetry: () => void;
   onRate: (rating: Rating) => void;
+  onAct: (button: AiActionButton) => void;
   motionOn: boolean;
 }) {
-  const reply = message.reply;
-  // The drawing's pill says how long the model thought. With no model behind
-  // the screen there is no such number, so the pill says what is true instead.
-  const pill = reply
-    ? reply.connected && reply.thoughtSec !== null
-      ? `Думал ${reply.thoughtSec} секунд`
-      : 'Ассистент не подключён'
-    : 'Думает';
-  const words = reply ? reply.text.split(/(\s+)/) : [];
-  const wordDelay = (index: number) => Math.min(index / 2, WORD_LIMIT) * 0.018;
+  const text = message.text;
+  // The drawing's pill says how long the model thought; now there is a model, so
+  // it says the seconds the run actually took, measured from its own events.
+  const pill = message.streaming
+    ? 'Думает'
+    : message.thoughtSec !== null
+      ? `Думал ${message.thoughtSec} секунд`
+      : 'Ответ получен';
+  const words = text ? text.split(/(\s+)/) : [];
+  // While the text streams in, each word is already late; delaying it again
+  // would let the answer trail behind the tokens that produced it.
+  const wordDelay = (index: number) =>
+    message.streaming ? 0 : Math.min(index / 2, WORD_LIMIT) * 0.018;
   const textTime = wordDelay(words.length) + 0.3;
 
   return (
@@ -206,12 +279,12 @@ function AssistantAnswer({
               {pill}
             </motion.span>
           </AnimatePresence>
-          {reply ? null : <TypingDots />}
+          {message.streaming ? <TypingDots /> : null}
         </motion.span>
 
         <AnimatePresence initial={false} mode="wait">
-          {reply ? (
-            // «Спросить ещё раз» clears the reply first, so the answer plays in afresh.
+          {text !== null ? (
+            // «Спросить ещё раз» clears the text first, so the answer plays in afresh.
             <motion.div
               exit={motionOn ? { opacity: 0, transition: { duration: 0.15 } } : undefined}
               key={message.id}
@@ -237,6 +310,31 @@ function AssistantAnswer({
                   ),
                 )}
               </motion.p>
+
+              {message.cards.map((card) => (
+                <OperationCardView card={card} key={card.operationId} />
+              ))}
+
+              {message.actions.length > 0 ? (
+                <div className="mt-5 flex flex-wrap gap-2">
+                  {message.actions.map((button) => (
+                    <button
+                      className={cn(
+                        'rounded-full px-5 py-2 font-semibold text-[16px] transition-transform duration-150 active:scale-[0.97]',
+                        button.kind === 'confirm_operation'
+                          ? 'bg-ink text-white'
+                          : 'border border-ink/20 text-ink hover:bg-muted',
+                      )}
+                      key={`${button.kind}:${button.operationId ?? button.target?.id ?? button.label}`}
+                      onClick={() => onAct(button)}
+                      type="button"
+                    >
+                      {button.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+
               <motion.div
                 animate="shown"
                 className="mt-5 flex gap-1"
@@ -244,7 +342,7 @@ function AssistantAnswer({
                 initial={motionOn ? 'hidden' : false}
                 variants={ACTIONS}
               >
-                <CopyAction text={reply.text} />
+                <CopyAction text={text} />
                 <IconAction
                   active={message.rating === 'up'}
                   icon={ThumbsUp}
@@ -262,6 +360,23 @@ function AssistantAnswer({
             </motion.div>
           ) : null}
         </AnimatePresence>
+
+        {/* Shown outside the answer block: a run can fail before any text arrives. */}
+        {message.failure ? <p className="mt-4 text-[16px] text-danger">{message.failure}</p> : null}
+
+        {message.notes.length > 0 ? (
+          <details className="mt-4 text-[16px] text-ink-soft">
+            <summary className="cursor-pointer">
+              Что ассистент смотрел ({message.notes.length})
+            </summary>
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              {message.notes.map((note, index) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: the journal is append-only; a line's place in it is its identity.
+                <li key={index}>{note}</li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
       </div>
     </div>
   );
@@ -283,12 +398,19 @@ function AssistantAnswer({
  * thinking time — it only shapes how the text arrives.
  */
 export function AiPage() {
-  const { messages, ask, retry, rate } = useConversation();
+  const { messages, ask, retry, rate, act, stop, runId, mode, quota } = useConversation();
   const [draft, setDraft] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const navigate = useNavigate();
   const endRef = useRef<HTMLDivElement>(null);
   const motionOn = useMotionOn();
   const started = messages.length > 0;
+
+  // The dialogue lives on the server, so opening the screen picks up whatever it
+  // already holds — a reload mid-answer is a resume, not a lost reply (§9.2).
+  useEffect(() => {
+    void resumeConversation().catch(() => undefined);
+  }, []);
 
   // The newest message is the one to read; keep it in view as the thread grows.
   useEffect(() => {
@@ -386,6 +508,13 @@ export function AiPage() {
                         <AssistantAnswer
                           message={message}
                           motionOn={motionOn}
+                          onAct={(button) => {
+                            if (button.kind === 'open_object' && button.target) {
+                              navigate(TARGET_ROUTE[button.target.type](button.target.id));
+                              return;
+                            }
+                            void act(message.id, button);
+                          }}
                           onRate={(rating) => rate(message.id, rating)}
                           onRetry={() => void retry(message.id)}
                         />
@@ -406,7 +535,24 @@ export function AiPage() {
                     'radial-gradient(60% 100% at 50% 100%, rgba(255,255,255,0.95), rgba(255,255,255,0))',
                 }}
               />
-              <div className="absolute bottom-[40px]">{bar}</div>
+              <div className="absolute bottom-[40px] flex flex-col items-center gap-3">
+                {bar}
+                <div className="flex h-6 items-center gap-4 text-[16px] text-ink-soft">
+                  {runId ? (
+                    <button
+                      className="rounded-full border border-ink/20 px-4 py-1 text-ink transition-colors duration-150 hover:bg-muted"
+                      onClick={() => void stop()}
+                      type="button"
+                    >
+                      Остановить
+                    </button>
+                  ) : null}
+                  {mode === 'dispatcher' ? <span>Диалог ведёт диспетчер</span> : null}
+                  {quota ? (
+                    <span>Осталось сообщений сегодня: {quota.remainingMessages}</span>
+                  ) : null}
+                </div>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
