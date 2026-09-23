@@ -351,6 +351,8 @@ export interface DispatchPlanResponse {
     readonly inputHash: string;
     readonly routerContextVersion: string;
   } | null;
+  /** The published task has no applied plan with the same input hash yet. */
+  readonly calculating?: boolean;
   readonly lastResult: {
     readonly resultId: string;
     readonly inputHash: string;

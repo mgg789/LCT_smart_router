@@ -104,4 +104,28 @@ describe('Figma MAIN snapshot mapper', () => {
       true,
     );
   });
+
+  it('keeps an address out of the unassigned banner', () => {
+    const snapshot = createDevSnapshot();
+    const request = snapshot.requests.find((item) => item.assignmentState !== 'assigned');
+    expect(request).toBeTruthy();
+    if (!request || !snapshot.plan.plan) return;
+    const address = 'Город Москва, пр-кт.Волгоградский, д. 128';
+    const stripped = {
+      ...snapshot,
+      requests: snapshot.requests.map((item) =>
+        item.id === request.id ? { ...item, addressText: address, workTypeTitle: '' } : item,
+      ),
+      plan: {
+        ...snapshot.plan,
+        plan: {
+          ...snapshot.plan.plan,
+          assignments: [],
+        },
+      },
+    };
+    const view = dashboardViewFromSnapshot(stripped, { engineerId: null, requestId: null });
+    expect(view.unassignedReason).toBe('План ещё считается');
+    expect(view.unassignedReason).not.toContain('Волгоградский');
+  });
 });

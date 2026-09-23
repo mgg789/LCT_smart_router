@@ -963,6 +963,10 @@ export class LiveService {
     );
     const byRequest = new Map(day.requests.map((state) => [state.requestId, state]));
     const liveNow = this.liveNow(day, wallNow);
+    // One plan read for the whole roster. Loading it again per engineer kept the
+    // routing lock busy long enough that login, passports and the engineer app timed out.
+    const loadedPlan = await this.plans.currentRoster(tx);
+    const loadedRoutes = loadedPlan?.routes ?? [];
     return Promise.all(
       day.engineers.map(async (state) => {
         const activeRequestId = activeByEngineer.get(state.engineerId) ?? null;
@@ -974,7 +978,14 @@ export class LiveService {
             item.problemNote &&
             item.additionalDurationSec,
         );
-        const current = await this.currentFor(tx, day, state.engineerId, liveNow);
+        const current = await this.currentFor(
+          tx,
+          day,
+          state.engineerId,
+          liveNow,
+          loadedRoutes,
+          loadedPlan?.revision ?? null,
+        );
         const replanPending = 'replanPending' in current && current.replanPending === true;
         const lunch = await this.activeLunch(
           tx,
@@ -1440,11 +1451,20 @@ export class LiveService {
     day: DayWithStates | LiveWorkday,
     engineerId: string,
     liveNow: number,
+    loadedRoutes?: readonly PlanRouteView[],
+    loadedRevision?: number | null,
   ) {
-    const plan = await this.plans.current(tx);
-    let route = plan
-      ? (toPlanView(plan).routes.find((item) => item.engineerId === engineerId) ?? null)
-      : null;
+    let routes: readonly PlanRouteView[];
+    let revision: number | null;
+    if (loadedRoutes) {
+      routes = loadedRoutes;
+      revision = loadedRevision ?? null;
+    } else {
+      const plan = await this.plans.current(tx);
+      routes = plan ? toPlanView(plan).routes : [];
+      revision = plan?.revision ?? null;
+    }
+    let route = routes.find((item) => item.engineerId === engineerId) ?? null;
     const stateRows =
       'requests' in day
         ? day.requests
@@ -1532,7 +1552,7 @@ export class LiveService {
       (item) =>
         item.replanPendingEngineerId === engineerId &&
         item.replanPendingPlanRevision !== null &&
-        item.replanPendingPlanRevision === plan?.revision,
+        item.replanPendingPlanRevision === revision,
     );
     if (replanPending) {
       return { route, stop: null, phase: null, current: null, replanPending: true as const };

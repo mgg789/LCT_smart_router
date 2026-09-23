@@ -277,26 +277,39 @@ export function MainDashboardPage() {
   }, [dash.isDemo, dash.snapshot]);
 
   const toastHydrated = useRef(false);
+  const sawRebuild = useRef(false);
+  const calculating = dash.snapshot?.plan.calculating === true;
+  const showRebuild = dash.rebuilding || calculating;
   useEffect(() => {
-    if (!dash.rebuilding) {
+    if (!showRebuild) {
       updateToast('dispatcher-rebuild', { progress: 100 });
+      if (sawRebuild.current) {
+        sawRebuild.current = false;
+        pushToast({
+          id: 'plan-ready',
+          kind: 'route',
+          title: 'План перестроился',
+          body: 'Новый план уже на карте.',
+        });
+      }
       return;
     }
+    sawRebuild.current = true;
     pushToast({
       id: 'dispatcher-rebuild',
       kind: 'progress',
       title: 'Пересчитываем маршруты',
-      body: 'Дождитесь подтверждения нового плана.',
+      body: 'План появится на карте, когда расчёт закончится. Это может занять несколько минут.',
       progress: 8,
       etaLabel: 'Выполняется',
     });
     let value = 8;
     const timer = window.setInterval(() => {
-      value = Math.min(92, value + 7);
+      value = Math.min(92, value + 4);
       updateToast('dispatcher-rebuild', { progress: value });
-    }, 350);
+    }, 1200);
     return () => window.clearInterval(timer);
-  }, [dash.rebuilding]);
+  }, [showRebuild]);
   useEffect(() => {
     const openAlerts = (dash.snapshot?.alerts ?? []).filter((alert) => alert.resolvedAt === null);
     const peek = toastHydrated.current;

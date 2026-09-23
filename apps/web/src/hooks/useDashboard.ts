@@ -68,7 +68,8 @@ import {
 } from '../domain/resilience';
 
 const SESSION_KEY = 'lct.dispatcher.session';
-const DEFAULT_REBUILD_TIMEOUT_MS = 90_000;
+/** A cold MKAD solve of the demo day has taken about four minutes. */
+const DEFAULT_REBUILD_TIMEOUT_MS = 360_000;
 
 export interface DayEvent {
   readonly id: string;

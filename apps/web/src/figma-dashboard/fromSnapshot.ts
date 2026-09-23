@@ -190,11 +190,7 @@ export function dashboardViewFromSnapshot(
     requestCount: snapshot.requests.length,
     planLabel: `${unassigned.length} без назначения - план от ${formatClock(planAsOf)}`,
     unassignedTitle: unassignedCountTitle(unassigned.length),
-    unassignedReason: firstUnassignedAssignment?.reasons.assignment?.factors[0]?.code
-      ? factorLabel(firstUnassignedAssignment.reasons.assignment.factors[0].code)
-      : firstUnassigned
-        ? (firstUnassigned.workTypeTitle ?? firstUnassigned.addressText)
-        : 'Все заявки назначены',
+    unassignedReason: unassignedBannerReason(firstUnassignedAssignment, firstUnassigned),
     firstUnassignedId: firstUnassigned?.id ?? null,
     engineers,
     totalKm: engineers.reduce((sum, item) => sum + item.km, 0),
@@ -542,6 +538,21 @@ function firstAssignedRequest(snapshot: DashboardSnapshot, engineerId: string): 
     (item) => item.engineerId === engineerId && item.status !== 'unassigned',
   );
   return assignment ? requestById(snapshot, assignment.requestId) : null;
+}
+
+/**
+ * Second line of the unassigned banner. It is always a reason: an address is a
+ * place, and showing it here made a missing plan look like a located visit.
+ */
+function unassignedBannerReason(
+  assignment: ReturnType<typeof assignmentFor>,
+  request: RequestView | null,
+): string {
+  const code = assignment?.reasons.assignment?.factors[0]?.code;
+  if (code) return factorLabel(code);
+  if (!request) return 'Все заявки назначены';
+  if (!assignment) return 'План ещё считается';
+  return 'Назначение не найдено';
 }
 
 function unassignedCountTitle(count: number): string {

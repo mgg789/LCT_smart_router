@@ -253,6 +253,8 @@ const dispatchPlanSchema = z.object({
       receivedAt: z.number().int(),
     })
     .nullable(),
+  /** True while the published task is newer than the plan on screen. */
+  calculating: z.boolean().optional().default(false),
 });
 
 const alertSchema = z.object({

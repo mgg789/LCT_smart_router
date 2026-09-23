@@ -658,6 +658,7 @@ export class DispatchController {
       windowLatenessToleranceSec: dto.windowLatenessToleranceSec,
       trafficEnabled: dto.trafficEnabled,
       metroEnabled: dto.metroEnabled,
+      equipmentTransfersEnabled: dto.equipmentTransfersEnabled,
       equipmentEnabled: dto.equipmentEnabled,
       travelTimeMode: dto.travelTimeMode,
       accessBufferSec: dto.accessBufferSec,
@@ -805,9 +806,15 @@ export class DispatchController {
     const control = await this.control.current(this.prisma);
     const lastPackage = await this.acceptance.lastPackage();
 
+    const published = await this.prisma.routingCurrent.findUnique({
+      where: { id: 'singleton' },
+      select: { snapshot: { select: { inputHash: true } } },
+    });
+    const appliedHash = plan?.routerResult?.inputHash ?? null;
     return {
       mode: control.mode,
       modeVersion: control.modeVersion,
+      calculating: published !== null && published.snapshot.inputHash !== appliedHash,
       // The moment the shown plan describes. While a recalculation is under way the
       // interface keeps this plan and says it is being rebuilt, rather than clearing the
       // day (context/36 section 6).

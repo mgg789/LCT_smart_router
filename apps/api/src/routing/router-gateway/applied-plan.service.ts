@@ -9,9 +9,10 @@ import {
   readEquipmentSettings,
 } from '../../orchestrator/equipment/equipment-policy';
 import { persistHandoffs } from '../../orchestrator/equipment/handoffs';
+import type { PlanRouteView } from '../../api/plan-view';
 import type { Tx } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../mount-data-eng';
-import type { RouterPlan, RouterResult } from './result.types';
+import { type RouterPlan, type RouterResult, handoffMetadataSchema } from './result.types';
 
 /**
  * The working plan the interfaces actually run on.
@@ -134,6 +135,87 @@ export class AppliedPlanService {
       },
     });
     return pointer?.plan ?? null;
+  }
+
+  /**
+   * Working routes without road geometry or the raw Router package.
+   *
+   * The dispatcher roster and the engineer app poll this every couple of seconds while
+   * holding the routing lock. Loading every polyline there kept the lock long enough
+   * that login and the next poll timed out.
+   */
+  async currentRoster(tx: Tx): Promise<{ revision: number; routes: PlanRouteView[] } | null> {
+    const pointer = await tx.appliedPlanCurrent.findUnique({
+      where: { id: 'singleton' },
+      select: {
+        plan: {
+          select: {
+            revision: true,
+            routes: {
+              select: {
+                engineerId: true,
+                startLat: true,
+                startLon: true,
+                startAt: true,
+                finishAt: true,
+                distanceKm: true,
+                travelTimeSec: true,
+                workTimeSec: true,
+                waitingTimeSec: true,
+                lunchTimeSec: true,
+                assignedCount: true,
+                lunchStatus: true,
+                stops: {
+                  orderBy: { sequence: 'asc' },
+                  select: {
+                    sequence: true,
+                    kind: true,
+                    requestId: true,
+                    handoff: true,
+                    lat: true,
+                    lon: true,
+                    arrivalAt: true,
+                    startAt: true,
+                    endAt: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    const plan = pointer?.plan;
+    if (!plan) return null;
+    return {
+      revision: plan.revision,
+      routes: plan.routes.map((route) => ({
+        engineerId: route.engineerId,
+        startLat: route.startLat,
+        startLon: route.startLon,
+        startAt: route.startAt === null ? null : Number(route.startAt),
+        finishAt: route.finishAt === null ? null : Number(route.finishAt),
+        distanceKm: route.distanceKm,
+        travelTimeSec: route.travelTimeSec,
+        workTimeSec: route.workTimeSec,
+        waitingTimeSec: route.waitingTimeSec,
+        lunchTimeSec: route.lunchTimeSec,
+        assignedCount: route.assignedCount,
+        lunchStatus: route.lunchStatus,
+        legs: [],
+        stops: route.stops.map((stop) => ({
+          sequence: stop.sequence,
+          kind: stop.kind,
+          requestId: stop.requestId,
+          handoff: handoffMetadataSchema.safeParse(stop.handoff).data ?? null,
+          lat: stop.lat,
+          lon: stop.lon,
+          arrivalAt: Number(stop.arrivalAt),
+          startAt: Number(stop.startAt),
+          endAt: Number(stop.endAt),
+        })),
+      })),
+    };
   }
 
   /**
