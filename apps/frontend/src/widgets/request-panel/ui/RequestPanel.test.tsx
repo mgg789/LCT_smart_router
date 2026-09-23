@@ -7,7 +7,7 @@ import type { RequestView } from '@/entities/request';
 import { useSessionStore } from '@/entities/session';
 import { renderWithProviders } from '@/test/renderWithProviders';
 import { jsonResponse, stubApi } from '@/test/stubApi';
-import { RequestPanel } from './RequestPanel';
+import { RequestPanel, type RequestPanelProps } from './RequestPanel';
 
 const request: RequestView = {
   id: 'job-2',
@@ -98,7 +98,7 @@ const engineer: EngineerView = {
   day: null,
 };
 
-function showPanel() {
+function showPanel(overrides: Partial<RequestPanelProps> = {}) {
   renderWithProviders(
     <RequestPanel
       assignment={{ requestId: 'job-2', status: 'assigned', engineerId: 'engineer-1', reasons: [] }}
@@ -110,6 +110,7 @@ function showPanel() {
       planRevision={3}
       request={request}
       route={route}
+      {...overrides}
     />,
   );
 }
@@ -129,6 +130,39 @@ afterEach(() => {
 });
 
 describe('MANUAL request controls', () => {
+  it('sends assisted intentions through preview instead of legacy manual writes', async () => {
+    const user = userEvent.setup();
+    const fetchMock = stubApi({});
+    const onChange = vi.fn();
+    showPanel({
+      mode: 'assisted',
+      assistedEditable: true,
+      onAssistedChange: onChange,
+      pinnedEngineerId: 'engineer-1',
+    });
+    await user.click(await screen.findByRole('button', { name: 'Переместить раньше' }));
+    expect(onChange).toHaveBeenLastCalledWith({
+      kind: 'reorder',
+      engineerId: 'engineer-1',
+      requestIds: ['job-2', 'job-1'],
+    });
+    await user.click(screen.getByRole('button', { name: 'Сменить пользователя' }));
+    await user.click(screen.getByRole('button', { name: /Другой инженер/ }));
+    expect(onChange).toHaveBeenLastCalledWith({
+      kind: 'assign',
+      requestId: 'job-2',
+      engineerId: 'engineer-2',
+    });
+    await user.click(screen.getByRole('button', { name: 'Снять закрепление' }));
+    expect(onChange).toHaveBeenLastCalledWith({ kind: 'release', requestIds: ['job-2'] });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('shows a retained pin in AUTO but requires an editing reason before releasing it', async () => {
+    showPanel({ mode: 'auto', pinnedEngineerId: 'engineer-1' });
+    expect(await screen.findByRole('button', { name: 'Снять закрепление' })).toBeDisabled();
+  });
+
   it('sends the complete editable queue and version guards when moving a job earlier', async () => {
     const user = userEvent.setup();
     const fetchMock = stubApi({ '/dispatch/plan/reorder': () => jsonResponse({ applied: true }) });

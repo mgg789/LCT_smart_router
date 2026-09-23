@@ -1,4 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { assistedStateQueryKey } from '@/entities/dispatcher-constraints';
 import { planQueryKey } from '@/entities/plan';
 import type { ApiError } from '@/shared/api';
 import type { SetDispatchModeInput, SetDispatchModeResult } from '../api/setDispatchMode';
@@ -12,9 +13,11 @@ export function useSetDispatchMode() {
     mutationFn: setDispatchMode,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: planQueryKey });
+      void queryClient.invalidateQueries({ queryKey: assistedStateQueryKey });
     },
     onError: () => {
       void queryClient.invalidateQueries({ queryKey: planQueryKey });
+      void queryClient.invalidateQueries({ queryKey: assistedStateQueryKey });
     },
   });
 }

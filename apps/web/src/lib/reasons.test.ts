@@ -19,5 +19,6 @@ describe('dispatcher copy', () => {
     );
     expect(modeLabel('auto')).toBe('Авто');
     expect(modeLabel('manual')).toBe('Вручную');
+    expect(modeLabel('assisted')).toBe('Авто с корректировками');
   });
 });

@@ -5,6 +5,7 @@ import type { Engineer, EngineerDay, Request } from '../../generated/prisma/clie
 import { workDateOf } from '../../orchestrator/engineers/workday';
 import { DEFAULT_POLICY_ID } from '../../orchestrator/policy/policy.catalog';
 import type { Tx } from '../../persistence';
+import { readDispatcherConstraints, withDispatcherConstraints } from '../dispatcher-constraints';
 import {
   type RouterTaskSnapshot,
   SNAPSHOT_SCHEMA_VERSION,
@@ -191,18 +192,25 @@ export class SnapshotBuilder {
       });
     }
 
-    const snapshot: RouterTaskSnapshot = {
-      schema_version: SNAPSHOT_SCHEMA_VERSION,
-      planning_as_of: planningAsOf,
-      horizon_start_at: horizon.start,
-      horizon_end_at: horizon.end,
-      requests,
-      engineers,
-      policy: {
-        policy_id: policyId,
-        parameters: {},
+    const control = await tx.controlState.findUnique({
+      where: { id: 'singleton' },
+      select: { dispatcherConstraints: true },
+    });
+    const snapshot: RouterTaskSnapshot = withDispatcherConstraints(
+      {
+        schema_version: SNAPSHOT_SCHEMA_VERSION,
+        planning_as_of: planningAsOf,
+        horizon_start_at: horizon.start,
+        horizon_end_at: horizon.end,
+        requests,
+        engineers,
+        policy: {
+          policy_id: policyId,
+          parameters: {},
+        },
       },
-    };
+      readDispatcherConstraints(control?.dispatcherConstraints),
+    );
 
     const { planning_as_of: _publishedAt, ...task } = snapshot;
 

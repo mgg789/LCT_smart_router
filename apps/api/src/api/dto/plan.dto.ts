@@ -30,12 +30,12 @@ const planExpectation = {
 export const setModeSchema = z
   .object({
     operationId: z.uuid(),
-    mode: z.enum(['auto', 'manual']),
+    mode: z.enum(['auto', 'manual', 'assisted']),
     reason: z.string().trim().min(1).max(2000).optional(),
     ...planExpectation,
   })
-  .refine((value) => value.mode !== 'manual' || Boolean(value.reason), {
-    message: 'A reason is required to enter manual control',
+  .refine((value) => value.mode === 'auto' || Boolean(value.reason), {
+    message: 'A reason is required to enter dispatcher control',
     path: ['reason'],
   });
 export type SetModeDto = z.infer<typeof setModeSchema>;

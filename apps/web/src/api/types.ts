@@ -331,7 +331,7 @@ export interface DispatchShiftView {
 }
 
 export interface DispatchPlanResponse {
-  readonly mode: 'auto' | 'manual';
+  readonly mode: 'auto' | 'manual' | 'assisted';
   readonly modeVersion: number;
   readonly plan: PlanView | null;
   readonly appliedResult: {

@@ -1,11 +1,31 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { z } from 'zod';
 import { SysError } from '../../common/errors';
+import { canonicalHash } from '../../common/json';
 import { Clock } from '../../common/time';
 import { NotificationsService } from '../../notifications';
 import type { Tx } from '../../persistence';
-import { lockControlState, lockRoutingCurrent, PrismaService, UnitOfWork } from '../../persistence';
+import {
+  APP_STATE_KEYS,
+  lockControlState,
+  lockRoutingCurrent,
+  PrismaService,
+  UnitOfWork,
+} from '../../persistence';
+import {
+  dispatcherConstraintConflict,
+  dispatcherSnapshotFactsSchema,
+  readDispatcherConstraints,
+} from '../dispatcher-constraints';
 import { AppliedPlanService } from './applied-plan.service';
+import { ASSISTED_PROPOSAL_TTL_SEC } from './assisted.types';
+import {
+  type AssistedImpact,
+  assistedReviewFingerprint,
+  compareAssistedImpact,
+  criticalImpactCovered,
+} from './assisted-impact';
 import { type RouterResult, routerResultSchema } from './result.types';
 
 export interface AcceptanceOutcome {
@@ -15,6 +35,7 @@ export interface AcceptanceOutcome {
   readonly detail?: string;
   readonly resultId?: string | null;
   readonly planRevision?: number;
+  readonly proposalId?: string;
 }
 
 /**
@@ -81,121 +102,206 @@ export class ResultAcceptanceService {
       };
     }
 
-    return this.uow.run(async (tx) => {
-      // Both singletons are locked before anything is decided, so a result already in
-      // flight cannot land after the dispatcher takes manual control.
-      await lockControlState(tx);
-      await lockRoutingCurrent(tx);
+    return this.uow.run((tx) => this.acceptReady(tx, result, activeContextVersion, options));
+  }
 
-      const control = await tx.controlState.findUniqueOrThrow({ where: { id: 'singleton' } });
-      if (control.mode === 'manual') {
-        return this.reject(tx, result, 'MODE_MANUAL', 'Emergency manual mode is on');
-      }
+  /** Apply a server-prepared candidate inside the pin/publication transaction. */
+  async acceptPrepared(
+    tx: Tx,
+    raw: unknown,
+    activeContextVersion: string,
+    approvedImpact: AssistedImpact,
+  ): Promise<AcceptanceOutcome> {
+    const result = routerResultSchema.parse(raw);
+    if (result.status !== 'ready')
+      throw new SysError('RESULT_NOT_APPLICABLE', 'Proposal has no ready result');
+    return this.acceptReady(tx, result, activeContextVersion, { approvedImpact });
+  }
 
-      const current = await tx.routingCurrent.findUnique({
-        where: { id: 'singleton' },
-        include: { snapshot: true },
-      });
-      if (!current) {
-        return this.reject(tx, result, 'SNAPSHOT_STALE', 'No task has been published yet');
-      }
-      if (result.input_publication_id !== current.snapshot.id) {
-        // Not a failure: the answer belongs to an earlier task and a newer one is on its
-        // way. The interface keeps showing the last applied plan.
-        return this.reject(
-          tx,
-          result,
-          'SNAPSHOT_STALE',
-          'The result names a publication that is no longer active',
-        );
-      }
-      if (result.input_hash !== current.snapshot.inputHash) {
-        return this.reject(
-          tx,
-          result,
-          'SNAPSHOT_STALE',
-          'The result belongs to snapshot bytes that are no longer published',
-        );
-      }
-      if (result.router_context_version !== activeContextVersion) {
-        return this.reject(
-          tx,
-          result,
-          'RESULT_NOT_APPLICABLE',
-          'The result used a map or technical context that is no longer active',
-        );
-      }
-      if (!result.main?.is_usable) {
-        // A finished answer that must not become the working plan. It does not prove that
-        // the visits are impossible, and it does not cancel anything.
-        return this.reject(
-          tx,
-          result,
-          'RESULT_NOT_APPLICABLE',
-          'The main plan is not usable and cannot become the working plan',
-        );
-      }
+  private async acceptReady(
+    tx: Tx,
+    result: RouterResult,
+    activeContextVersion: string | null,
+    options: { allowRepeatOfKnownResult?: boolean; approvedImpact?: AssistedImpact },
+  ): Promise<AcceptanceOutcome> {
+    // Both singletons are locked before anything is decided, so a result already in
+    // flight cannot land after the dispatcher takes manual control.
+    await lockControlState(tx);
+    await lockRoutingCurrent(tx);
 
-      const alreadyApplied = await tx.routerResult.findUnique({
-        where: { resultId: result.result_id ?? '' },
-      });
-      if (alreadyApplied?.accepted && !options.allowRepeatOfKnownResult) {
-        // Re-reading the same result does not apply it again, does not return completed
-        // work to the pool and does not repeat a letter (context/33 section 7).
-        return { accepted: false, reason: 'ALREADY_APPLIED', resultId: result.result_id };
-      }
+    const control = await tx.controlState.findUniqueOrThrow({ where: { id: 'singleton' } });
+    if (control.mode === 'manual') {
+      return this.reject(tx, result, 'MODE_MANUAL', 'Emergency manual mode is on');
+    }
 
-      const conflict = await this.conflictWithFacts(tx, result);
-      if (conflict) {
-        return this.reject(tx, result, 'RESULT_NOT_APPLICABLE', conflict);
-      }
-
-      // A free request can be deferred without rebuilding an unrelated LIVE route.
-      // Even an unassigned outcome from the old snapshot must not overwrite it.
-      const inputWindows = z
-        .object({
-          requests: z.array(
-            z.object({
-              request_id: z.string(),
-              window_start_at: z.number(),
-              window_end_at: z.number(),
-            }),
-          ),
-        })
-        .parse(JSON.parse(current.snapshot.payload));
-      const requests = await tx.request.findMany({
-        where: { id: { in: inputWindows.requests.map((request) => request.request_id) } },
-        select: { id: true, windowStartAt: true, windowEndAt: true },
-      });
-      const windows = new Map(requests.map((request) => [request.id, request]));
-      if (
-        inputWindows.requests.some((input) => {
-          const actual = windows.get(input.request_id);
-          return (
-            !actual ||
-            Number(actual.windowStartAt) !== input.window_start_at ||
-            Number(actual.windowEndAt) !== input.window_end_at
-          );
-        })
-      )
-        return this.reject(
-          tx,
-          result,
-          'SNAPSHOT_STALE',
-          'Request windows changed after publication',
-        );
-
-      const stored = await this.storePackage(tx, result, true, null);
-      const plan = await this.plans.applyAutomatic(tx, this.clock.nowSeconds(), result, stored.id);
-      await this.recordAssignmentNotifications(tx, result);
-
-      this.logger.log(
-        `Applied result ${result.result_id} as plan revision ${plan.revision}: ` +
-          `${result.main.summary.assigned_count}/${result.main.summary.requests_total} assigned`,
-      );
-
-      return { accepted: true, resultId: result.result_id, planRevision: plan.revision };
+    const current = await tx.routingCurrent.findUnique({
+      where: { id: 'singleton' },
+      include: { snapshot: true },
     });
+    if (!current) {
+      return this.reject(tx, result, 'SNAPSHOT_STALE', 'No task has been published yet');
+    }
+    if (result.input_publication_id !== current.snapshot.id) {
+      // Not a failure: the answer belongs to an earlier task and a newer one is on its
+      // way. The interface keeps showing the last applied plan.
+      return this.reject(
+        tx,
+        result,
+        'SNAPSHOT_STALE',
+        'The result names a publication that is no longer active',
+      );
+    }
+    if (result.input_hash !== current.snapshot.inputHash) {
+      return this.reject(
+        tx,
+        result,
+        'SNAPSHOT_STALE',
+        'The result belongs to snapshot bytes that are no longer published',
+      );
+    }
+    if (result.router_context_version !== activeContextVersion) {
+      return this.reject(
+        tx,
+        result,
+        'RESULT_NOT_APPLICABLE',
+        'The result used a map or technical context that is no longer active',
+      );
+    }
+    if (!result.main?.is_usable) {
+      // A finished answer that must not become the working plan. It does not prove that
+      // the visits are impossible, and it does not cancel anything.
+      return this.reject(
+        tx,
+        result,
+        'RESULT_NOT_APPLICABLE',
+        'The main plan is not usable and cannot become the working plan',
+      );
+    }
+
+    const alreadyApplied = await tx.routerResult.findUnique({
+      where: { resultId: result.result_id ?? '' },
+    });
+    if (alreadyApplied?.accepted && !options.allowRepeatOfKnownResult) {
+      // Re-reading the same result does not apply it again, does not return completed
+      // work to the pool and does not repeat a letter (context/33 section 7).
+      return { accepted: false, reason: 'ALREADY_APPLIED', resultId: result.result_id };
+    }
+
+    const conflict = await this.conflictWithFacts(tx, result);
+    if (conflict) {
+      return this.reject(tx, result, 'RESULT_NOT_APPLICABLE', conflict);
+    }
+
+    // A free request can be deferred without rebuilding an unrelated LIVE route.
+    // Even an unassigned outcome from the old snapshot must not overwrite it.
+    const inputWindows = z
+      .object({
+        requests: z.array(
+          z.object({
+            request_id: z.string(),
+            window_start_at: z.number(),
+            window_end_at: z.number(),
+          }),
+        ),
+      })
+      .parse(JSON.parse(current.snapshot.payload));
+    const requests = await tx.request.findMany({
+      where: { id: { in: inputWindows.requests.map((request) => request.request_id) } },
+      select: { id: true, windowStartAt: true, windowEndAt: true },
+    });
+    const windows = new Map(requests.map((request) => [request.id, request]));
+    if (
+      inputWindows.requests.some((input) => {
+        const actual = windows.get(input.request_id);
+        return (
+          !actual ||
+          Number(actual.windowStartAt) !== input.window_start_at ||
+          Number(actual.windowEndAt) !== input.window_end_at
+        );
+      })
+    )
+      return this.reject(tx, result, 'SNAPSHOT_STALE', 'Request windows changed after publication');
+
+    const pinFacts = dispatcherSnapshotFactsSchema.parse(JSON.parse(current.snapshot.payload));
+    const pinConflict = dispatcherConstraintConflict(pinFacts, result.main);
+    if (pinConflict) return this.reject(tx, result, 'RESULT_NOT_APPLICABLE', pinConflict);
+    // Proposal identity follows the working-set reset boundary, just like dispatcher previews.
+    // Snapshot generation is a separate historical publication field and may still be 1.
+    const generationState = await tx.appState.findUnique({
+      where: { key: APP_STATE_KEYS.GENERATION },
+    });
+    const generation = typeof generationState?.value === 'number' ? generationState.value : 1;
+    if (pinFacts.requests.some((request) => request.pinned_engineer_id)) {
+      const working = await this.plans.current(tx);
+      const impact = compareAssistedImpact(working, result.main, pinFacts);
+      if (
+        impact.requiresConfirmation &&
+        (!options.approvedImpact || !criticalImpactCovered(options.approvedImpact, impact))
+      ) {
+        const now = this.clock.nowSeconds();
+        if (!result.result_id)
+          throw new SysError('VALIDATION_FAILED', 'Ready result has no identity');
+        const proposal = await tx.dispatchPlanProposal.upsert({
+          where: { resultKey: result.result_id },
+          update: {},
+          create: {
+            id: randomUUID(),
+            source: 'automatic',
+            actorId: null,
+            payloadFingerprint: canonicalHash({ resultId: result.result_id }),
+            reviewFingerprint: assistedReviewFingerprint(
+              current.snapshot.inputHash,
+              activeContextVersion ?? '',
+              impact,
+              control.modeVersion,
+              working?.revision ?? 0,
+              control.constraintsVersion,
+            ),
+            sourceModeVersion: control.modeVersion,
+            sourcePlanRevision: working?.revision ?? 0,
+            sourceConstraintsVersion: control.constraintsVersion,
+            sourceGeneration: generation,
+            sourceTaskFingerprint: current.snapshot.taskFingerprint,
+            contextVersion: activeContextVersion ?? '',
+            change: { kind: 'replan' },
+            constraints: readDispatcherConstraints(control.dispatcherConstraints),
+            candidate: result as object,
+            inputPayload: current.snapshot.payload,
+            impact: impact as object,
+            requiresConfirmation: true,
+            resultKey: result.result_id,
+            createdAt: BigInt(now),
+            expiresAt: BigInt(now + ASSISTED_PROPOSAL_TTL_SEC),
+          },
+        });
+        const rejected = await this.reject(
+          tx,
+          result,
+          'CONFIRMATION_REQUIRED',
+          'Pinned plan changes need dispatcher confirmation',
+        );
+        return { ...rejected, proposalId: proposal.id };
+      }
+    }
+
+    const stored = await this.storePackage(tx, result, true, null);
+    const plan = await this.plans.applyAutomatic(tx, this.clock.nowSeconds(), result, stored.id);
+    await this.recordAssignmentNotifications(tx, result);
+    await tx.dispatchPlanProposal.updateMany({
+      where: {
+        source: 'automatic',
+        state: 'prepared',
+        sourceGeneration: generation,
+      },
+      data: { state: 'superseded' },
+    });
+
+    this.logger.log(
+      `Applied result ${result.result_id} as plan revision ${plan.revision}: ` +
+        `${result.main.summary.assigned_count}/${result.main.summary.requests_total} assigned`,
+    );
+
+    return { accepted: true, resultId: result.result_id, planRevision: plan.revision };
   }
 
   /**

@@ -47,6 +47,8 @@ export interface SnapshotRequest {
   /** `null` means the request places no transport restriction. */
   readonly required_transport: TransportCode | null;
   readonly required_equipment: EquipmentCode | null;
+  /** Hard dispatcher assignment; omission leaves the request fully automatic. */
+  readonly pinned_engineer_id?: string;
 }
 
 export interface SnapshotLunch {
@@ -105,6 +107,8 @@ export interface RouterTaskSnapshot {
   readonly requests: SnapshotRequest[];
   readonly engineers: SnapshotEngineer[];
   readonly policy: SnapshotPolicy;
+  /** Relative order only: automatic jobs may still be inserted between pinned ones. */
+  readonly pinned_orders?: Array<{ readonly engineer_id: string; readonly request_ids: string[] }>;
 }
 
 export const SNAPSHOT_SCHEMA_VERSION = '1.0';

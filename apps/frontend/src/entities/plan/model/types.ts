@@ -1,5 +1,5 @@
 /** AUTO applies router results; MANUAL leaves the plan to the dispatcher. */
-export type DispatchMode = 'auto' | 'manual';
+export type DispatchMode = 'auto' | 'manual' | 'assisted';
 
 /**
  * Answer of `GET /dispatch/plan`.

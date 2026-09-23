@@ -1,6 +1,6 @@
 import { ArrowDownLeft } from 'lucide-react';
 import { useState } from 'react';
-import { useDispatchState } from '@/entities/plan';
+import { type DispatchMode, useDispatchState } from '@/entities/plan';
 import type { PolicyId } from '@/entities/policy';
 import { policyTitle, usePolicies } from '@/entities/policy';
 import { useRouterSettings } from '@/entities/router-settings';
@@ -72,11 +72,12 @@ export function PolicyPopover({ onClose }: PolicyPopoverProps) {
   const selectPolicy = useSelectPolicy();
   const toggleLunches = useToggleLunches();
   const setMode = useSetDispatchMode();
-  const [enteringManual, setEnteringManual] = useState(false);
+  const [enteringMode, setEnteringMode] = useState<'assisted' | 'manual' | null>(null);
   const [reason, setReason] = useState('');
 
   const activeId = policies.data?.active.policyId;
   const isManual = dispatchState.data?.mode === 'manual';
+  const isAssisted = dispatchState.data?.mode === 'assisted';
   const busy = selectPolicy.isPending || toggleLunches.isPending || setMode.isPending;
 
   const handleSelect = (policyId: PolicyId) => {
@@ -84,7 +85,7 @@ export function PolicyPopover({ onClose }: PolicyPopoverProps) {
     selectPolicy.mutate(policyId);
   };
 
-  const changeMode = (mode: 'auto' | 'manual') => {
+  const changeMode = (mode: DispatchMode) => {
     const current = dispatchState.data;
     if (!current) return;
     setMode.mutate(
@@ -92,11 +93,11 @@ export function PolicyPopover({ onClose }: PolicyPopoverProps) {
         mode,
         expectedModeVersion: current.modeVersion,
         expectedPlanRevision: current.plan?.revision ?? 0,
-        ...(mode === 'manual' ? { reason: reason.trim() } : {}),
+        ...(mode !== 'auto' ? { reason: reason.trim() } : {}),
       },
       {
         onSuccess: () => {
-          setEnteringManual(false);
+          setEnteringMode(null);
           setReason('');
         },
       },
@@ -144,21 +145,46 @@ export function PolicyPopover({ onClose }: PolicyPopoverProps) {
         className="mt-4 flex h-[67px] w-full items-center justify-center rounded-[20px] bg-accent text-[20px] font-semibold tracking-[-0.6px] text-ink disabled:opacity-50"
         disabled={busy || !dispatchState.data}
         onClick={() => {
-          if (isManual) changeMode('auto');
+          if (isManual || isAssisted) changeMode('auto');
           else {
             setMode.reset();
-            setEnteringManual(true);
+            setEnteringMode('assisted');
           }
         }}
         type="button"
       >
-        {isManual ? 'Вернуть автоматический режим' : 'Ручное управление'}
+        {isManual
+          ? 'Вернуть автоматический режим'
+          : isAssisted
+            ? 'Закончить корректировки'
+            : 'Ручные корректировки'}
       </button>
 
-      {enteringManual && !isManual ? (
+      <p className="mt-2 text-[13px] text-ink/65">
+        {isAssisted
+          ? 'Автоматика работает вокруг ваших закреплений. После выхода закрепления сохранятся.'
+          : isManual
+            ? 'Аварийный MANUAL: автоматическое применение приостановлено.'
+            : 'Закрепите нужные решения, а автоматика распределит остальные заявки.'}
+      </p>
+      {!isManual && !isAssisted && !enteringMode ? (
+        <button
+          className="mt-3 text-left text-[13px] text-ink/65 underline"
+          disabled={busy}
+          onClick={() => {
+            setMode.reset();
+            setEnteringMode('manual');
+          }}
+          type="button"
+        >
+          Аварийный MANUAL без автоматики
+        </button>
+      ) : null}
+
+      {enteringMode && !isManual && !isAssisted ? (
         <div className="mt-3 space-y-2">
           <label className="block text-[14px] font-medium text-ink" htmlFor="manual-reason">
-            Причина перехода в MANUAL
+            {enteringMode === 'assisted' ? 'Причина корректировок' : 'Причина аварийного MANUAL'}
           </label>
           <textarea
             className="min-h-20 w-full rounded-xl border border-ink/25 bg-surface p-3 text-[14px] text-ink focus-visible:outline-2 focus-visible:outline-ink"
@@ -171,15 +197,15 @@ export function PolicyPopover({ onClose }: PolicyPopoverProps) {
             <button
               className="flex-1 rounded-xl bg-accent px-3 py-2 text-[14px] font-semibold text-ink disabled:opacity-50"
               disabled={busy || !reason.trim()}
-              onClick={() => changeMode('manual')}
+              onClick={() => changeMode(enteringMode)}
               type="button"
             >
-              Подтвердить MANUAL
+              {enteringMode === 'assisted' ? 'Начать корректировки' : 'Подтвердить MANUAL'}
             </button>
             <button
               className="rounded-xl border border-ink/25 px-3 py-2 text-[14px] text-ink"
               onClick={() => {
-                setEnteringManual(false);
+                setEnteringMode(null);
                 setReason('');
               }}
               type="button"

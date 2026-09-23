@@ -135,6 +135,7 @@ enum WindowOrigin {
 enum ControlMode {
   auto
   manual
+  assisted
 }
 
 enum PlanOrigin {
@@ -937,8 +938,43 @@ model ControlState {
   changedBy    String? @map("changed_by")
   /// The revision frozen as the starting point when manual mode was switched on.
   frozenPlanId String? @map("frozen_plan_id")
+  /// Dispatcher pins survive leaving assisted editing; execution facts remain authoritative.
+  dispatcherConstraints Json @default("{\"assignments\":[],\"orders\":[]}") @map("dispatcher_constraints")
+  constraintsVersion Int @default(1) @map("constraints_version")
 
   @@map("control_state")
+}
+
+/// A version-bound candidate. Preparing or cancelling it never changes the working plan.
+model DispatchPlanProposal {
+  id String @id @default(uuid())
+  source String
+  actorId String? @map("actor_id")
+  state String @default("prepared")
+  payloadFingerprint String @map("payload_fingerprint")
+  reviewFingerprint String @map("review_fingerprint")
+  sourceModeVersion Int @map("source_mode_version")
+  sourcePlanRevision Int @map("source_plan_revision")
+  sourceConstraintsVersion Int @map("source_constraints_version")
+  sourceGeneration Int @map("source_generation")
+  sourceTaskFingerprint String @map("source_task_fingerprint")
+  contextVersion String @map("context_version")
+  change Json
+  constraints Json
+  candidate Json
+  inputPayload String @map("input_payload")
+  impact Json
+  requiresConfirmation Boolean @map("requires_confirmation")
+  /// Automatic packages produce at most one review card even when polled repeatedly.
+  resultKey String? @unique @map("result_key")
+  createdAt BigInt @map("created_at")
+  expiresAt BigInt @map("expires_at")
+  appliedAt BigInt? @map("applied_at")
+  appliedPlanRevision Int? @map("applied_plan_revision")
+
+  @@index([source, state, createdAt])
+  @@index([actorId, createdAt])
+  @@map("dispatch_plan_proposals")
 }
 
 // ---------------------------------------------------------------------------

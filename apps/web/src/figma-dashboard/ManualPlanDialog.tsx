@@ -71,7 +71,7 @@ export function ManualPlanDialog({
   const [history, setHistory] = useState<ManualHistory>([]);
   const dragged = useRef<string | null>(null);
   const initialShown = useRef(false);
-  const mustEnter = base.plan.mode === 'auto' && action === 'manual';
+  const mustEnter = base.plan.mode !== 'manual' && action === 'manual';
   const expected = manualExpectation(base.plan);
   const name = (id: string) => base.engineers.find((e) => e.id === id)?.displayName ?? id;
   const requestName = (id: string) =>

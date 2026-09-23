@@ -46,7 +46,7 @@ export class SnapshotPublisher {
     tx: Tx,
     planningAsOf: number,
     trigger: PublicationTrigger,
-    options: { force?: boolean; businessTime?: boolean } = {},
+    options: { force?: boolean; businessTime?: boolean; publicationId?: string } = {},
   ): Promise<PublicationOutcome> {
     await lockRoutingCurrent(tx);
 
@@ -89,6 +89,7 @@ export class SnapshotPublisher {
     const generation = current?.snapshot.generation ?? 1;
     const created = await tx.routingSnapshot.create({
       data: {
+        ...(options.publicationId ? { id: options.publicationId } : {}),
         payload,
         inputHash,
         taskFingerprint,

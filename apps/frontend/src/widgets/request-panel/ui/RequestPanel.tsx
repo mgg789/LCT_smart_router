@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import type { LucideIcon } from 'lucide-react';
 import { Check, ChevronLeft, ChevronRight, CircleHelp } from 'lucide-react';
 import { useState } from 'react';
+import type { AssistedChange } from '@/entities/dispatcher-constraints';
 import type { EngineerView } from '@/entities/engineer';
 import type { DispatchMode, PlanAssignmentView, PlanRouteView } from '@/entities/plan';
 import type { RequestView } from '@/entities/request';
@@ -22,6 +23,10 @@ export interface RequestPanelProps {
   planRevision: number | null;
   /** Editable jobs only, in the currently applied queue order. */
   editableRequestIds: string[];
+  onAssistedChange?: (change: AssistedChange) => void;
+  assistedBusy?: boolean;
+  assistedEditable?: boolean;
+  pinnedEngineerId?: string;
   /**
    * Asks the explain agent about this request. Passed in rather than called here
    * so the panel stays a view: where the answer is read is the page's business.
@@ -121,6 +126,10 @@ function RequestPanelBody({
   modeVersion,
   planRevision,
   editableRequestIds,
+  onAssistedChange,
+  assistedBusy = false,
+  assistedEditable = false,
+  pinnedEngineerId,
   onExplain,
   beside,
 }: RequestPanelProps) {
@@ -139,7 +148,8 @@ function RequestPanelBody({
   const explanation = explainRequest(request, assignment, engineer, route, engineers);
   const started = request.startedAt !== null;
   const canReassign =
-    mode === 'manual' &&
+    (mode === 'manual' || (mode === 'assisted' && assistedEditable && Boolean(onAssistedChange))) &&
+    !assistedBusy &&
     request.lifecycle === 'submitted' &&
     !started &&
     modeVersion !== null &&
@@ -156,6 +166,12 @@ function RequestPanelBody({
     if (!current || !neighbor) return;
     nextOrder[editableIndex] = neighbor;
     nextOrder[nextIndex] = current;
+    if (mode === 'assisted') {
+      reassign.reset();
+      reorder.reset();
+      onAssistedChange?.({ kind: 'reorder', engineerId: route.engineerId, requestIds: nextOrder });
+      return;
+    }
     reorder.mutate({
       engineerId: route.engineerId,
       requestIds: nextOrder,
@@ -165,7 +181,7 @@ function RequestPanelBody({
   };
   const reassignHint = started
     ? 'Работа уже начата — переназначение закрыто.'
-    : 'Переназначение доступно только в ручном режиме.';
+    : 'Для переназначения включите ручные корректировки.';
 
   return (
     <aside className="flex h-full w-full flex-col gap-4 overflow-y-auto rounded-[20px] bg-ink p-6">
@@ -242,7 +258,24 @@ function RequestPanelBody({
       </div>
 
       <div className="mt-auto flex flex-col gap-3 pt-2">
-        {mode === 'manual' && route && editableIndex !== -1 ? (
+        {pinnedEngineerId ? (
+          <div className="rounded-xl border border-accent/60 p-3 text-[14px] text-white">
+            <p>
+              Закреплено:{' '}
+              {engineers.find((row) => row.id === pinnedEngineerId)?.displayName ??
+                'инженер недоступен'}
+            </p>
+            <button
+              className="mt-2 text-accent underline disabled:opacity-45"
+              disabled={mode !== 'assisted' || assistedBusy}
+              onClick={() => onAssistedChange?.({ kind: 'release', requestIds: [request.id] })}
+              type="button"
+            >
+              Снять закрепление
+            </button>
+          </div>
+        ) : null}
+        {(mode === 'manual' || mode === 'assisted') && route && editableIndex !== -1 ? (
           <div className="flex gap-2">
             <button
               className="flex-1 rounded-xl border border-white/70 px-3 py-2 text-[15px] text-white disabled:opacity-45"
@@ -307,6 +340,17 @@ function RequestPanelBody({
                     className="w-full rounded-xl px-3 py-2 text-left text-[15px] text-white hover:bg-white/10"
                     onClick={() => {
                       if (modeVersion === null || planRevision === null) return;
+                      if (mode === 'assisted') {
+                        reassign.reset();
+                        reorder.reset();
+                        onAssistedChange?.({
+                          kind: 'assign',
+                          requestId: request.id,
+                          engineerId: candidate.id,
+                        });
+                        setPickerOpen(false);
+                        return;
+                      }
                       reassign.mutate({
                         requestId: request.id,
                         engineerId: candidate.id,

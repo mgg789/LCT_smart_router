@@ -195,7 +195,7 @@ const planSchema = z.object({
 });
 
 const dispatchPlanSchema = z.object({
-  mode: z.enum(['auto', 'manual']),
+  mode: z.enum(['auto', 'manual', 'assisted']),
   modeVersion: z.number().int(),
   plan: planSchema.nullable(),
   appliedResult: z

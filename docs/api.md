@@ -590,6 +590,10 @@ Router (геоцентры / OSRM). `GET /dispatch/geocode` — LocationIQ autoc
 | POST | `/api/v1/dispatch/plan/reorder` | диспетчер | Сохранить итоговый порядок одной очереди |
 | POST | `/api/v1/dispatch/plan/manual-preview` | диспетчер | Проверить одно ручное действие без сохранения |
 | GET | `/api/v1/dispatch/plan/manual-history` | диспетчер | Постоянный журнал переходов и ручных правок |
+| GET | `/api/v1/dispatch/assisted` | диспетчер | Закрепления, версии, доступные заявки и предложение |
+| POST | `/api/v1/dispatch/assisted/preview` | диспетчер | Проверить намерение вместе с остальным планом |
+| POST | `/api/v1/dispatch/assisted/apply` | диспетчер | Применить проверенное предложение с отдельным подтверждением последствий |
+| POST | `/api/v1/dispatch/assisted/cancel` | диспетчер | Отменить предложение, сохранив план |
 | GET | `/api/v1/dispatch/alerts?workDate=YYYY-MM-DD` | диспетчер | Очередь решений и обычные уведомления дня |
 | POST | `/api/v1/dispatch/alerts/:id/seen` | диспетчер | Отметить алерт просмотренным, не решая его |
 | POST | `/api/v1/dispatch/notices/:id/seen` | диспетчер | Отметить обычное уведомление просмотренным |
@@ -641,6 +645,12 @@ Router (геоцентры / OSRM). `GET /dispatch/geocode` — LocationIQ autoc
 `expectedModeVersion` и `expectedPlanRevision`; для входа в MANUAL нужна непустая `reason`.
 Алерты `keep_manual` и `restore_auto` используют те же версии. Полный контракт,
 аудит и ограничения оценок описаны в [manual-control.md](manual-control.md).
+
+С 24.09 режим дополнен `assisted`: обязательная причина, действующая автоматика,
+сохраняемые закрепления назначений/порядка и проверка последствий. Его DTO,
+`expectedPreviewFingerprint`, ошибки подтверждения, пороги и private Router endpoint
+описаны в [assisted-planning.md](assisted-planning.md). Режим плана `origin` остаётся
+`auto`; `assisted` — состояние управления, а не отдельный источник расписания.
 
 Первые 180 секунд не входят в `resolutionDelaySec`: решение на 181-й секунде
 записывает 1 секунду задержки. Исчезнувшие условия получают `superseded`; повторное
