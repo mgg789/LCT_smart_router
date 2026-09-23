@@ -119,13 +119,13 @@ tasks:
           - pnpm lint
           # Cube containers run as root and leave root-owned node_modules in the
           # workspace; the shell-executor worker user must stay able to clean it.
-          - chmod -R a+rwX . || true
+          - chmod -R a+rwX .
       - name: ruff
         image: docker.io/library/python:3.14-slim-bookworm
         script:
           - pip install --disable-pip-version-check ruff==0.16.7
           - ruff check core
-          - chmod -R a+rwX . || true
+          - chmod -R a+rwX .
   - name: test-js
     env:
       # Real password for the throwaway Postgres sidecar; overrides the public
@@ -144,7 +144,7 @@ tasks:
           - pip install --disable-pip-version-check -r core/requirements.txt
           - python -m pytest core/tests -q
           - python scripts/ci/evaluate_health_services.py --self-test
-          - chmod -R a+rwX . || true
+          - chmod -R a+rwX .
   - name: secrets
     cubes:
       - name: gitleaks
