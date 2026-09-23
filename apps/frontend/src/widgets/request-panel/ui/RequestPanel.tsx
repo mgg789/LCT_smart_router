@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { Check, CircleHelp } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, CircleHelp } from 'lucide-react';
 import { useState } from 'react';
 import type { EngineerView } from '@/entities/engineer';
 import type { DispatchMode, PlanAssignmentView, PlanRouteView } from '@/entities/plan';
@@ -16,6 +17,51 @@ export interface RequestPanelProps {
   route: PlanRouteView | null;
   engineers: EngineerView[];
   mode: DispatchMode | null;
+  /**
+   * Asks the explain agent about this request. Passed in rather than called here
+   * so the panel stays a view: where the answer is read is the page's business.
+   */
+  onExplain?: () => void;
+  /**
+   * The requests either side of this one, and how to reach them. Which list that
+   * is — the crew's queue or the unassigned pile — is the page's call, so the
+   * panel only says where in it this request sits.
+   */
+  beside?: {
+    index: number;
+    total: number;
+    of: 'queue' | 'unassigned';
+    onStep: (delta: -1 | 1) => void;
+  };
+}
+
+/** What the arrows are walking through, named so the labels read as Russian. */
+const BESIDE_NOUN: Record<'queue' | 'unassigned', string> = {
+  queue: 'заявка в очереди бригады',
+  unassigned: 'заявка без назначения',
+};
+
+/** One round arrow beside the heading. */
+function StepButton({
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  icon: LucideIcon;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      aria-label={label}
+      className="flex size-9 items-center justify-center rounded-full bg-white/15 text-white transition-[background-color,transform] duration-150 hover:bg-white/25 active:scale-[0.94]"
+      onClick={onClick}
+      title={label}
+      type="button"
+    >
+      <Icon aria-hidden size={20} strokeWidth={2.2} />
+    </button>
+  );
 }
 
 /** Inner tile of the dark panel. */
@@ -67,6 +113,8 @@ function RequestPanelBody({
   route,
   engineers,
   mode,
+  onExplain,
+  beside,
 }: RequestPanelProps) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const reassign = useReassignRequest();
@@ -98,6 +146,23 @@ function RequestPanelBody({
               request.lifecycle === 'in_progress' ? 'bg-success' : 'bg-white/30',
             )}
           />
+          {beside ? (
+            <span className="ml-auto flex items-center gap-2">
+              <StepButton
+                icon={ChevronLeft}
+                label={`Предыдущая ${BESIDE_NOUN[beside.of]}`}
+                onClick={() => beside.onStep(-1)}
+              />
+              <span className="text-[16px] text-white/60 tabular-nums">
+                {beside.index + 1}/{beside.total}
+              </span>
+              <StepButton
+                icon={ChevronRight}
+                label={`Следующая ${BESIDE_NOUN[beside.of]}`}
+                onClick={() => beside.onStep(1)}
+              />
+            </span>
+          ) : null}
         </h2>
         <p className="mt-1 text-[18px] text-white/70">{request.workTypeTitle}</p>
       </div>
@@ -144,16 +209,29 @@ function RequestPanelBody({
       </div>
 
       <div className="mt-auto flex flex-col gap-3 pt-2">
-        <button
-          className="h-[56px] rounded-full bg-accent font-semibold text-[18px] text-ink transition-[transform,filter] duration-150 enabled:hover:scale-[1.02] enabled:hover:brightness-105 enabled:active:scale-[0.98] disabled:opacity-45"
-          disabled={!canReassign || reassign.isPending}
-          onClick={() => setPickerOpen((open) => !open)}
-          title={canReassign ? undefined : reassignHint}
-          type="button"
-        >
-          {reassign.isPending ? 'Переназначаем…' : 'Сменить пользователя'}
-        </button>
-        {!canReassign ? <p className="text-[13px] text-white/50">{reassignHint}</p> : null}
+        {/*
+         * The reason a disabled button is disabled belongs to that button, not to
+         * a line of its own under it — and a disabled control receives no pointer
+         * events, so the wrapper is what listens for the hover.
+         */}
+        <div className="group relative">
+          <button
+            className="h-[56px] w-full rounded-full bg-accent font-semibold text-[18px] text-ink transition-[transform,filter] duration-150 enabled:hover:scale-[1.02] enabled:hover:brightness-105 enabled:active:scale-[0.98] disabled:opacity-45"
+            disabled={!canReassign || reassign.isPending}
+            onClick={() => setPickerOpen((open) => !open)}
+            type="button"
+          >
+            {reassign.isPending ? 'Переназначаем…' : 'Сменить пользователя'}
+          </button>
+          {!canReassign ? (
+            <span
+              className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 w-max max-w-[260px] -translate-x-1/2 rounded-xl bg-white px-3 py-2 text-[13px] text-ink opacity-0 shadow-lg transition-opacity duration-150 group-focus-within:opacity-100 group-hover:opacity-100"
+              role="tooltip"
+            >
+              {reassignHint}
+            </span>
+          ) : null}
+        </div>
 
         {pickerOpen && canReassign ? (
           <ul className="max-h-[220px] overflow-y-auto rounded-2xl bg-white/10 p-2">
@@ -186,16 +264,16 @@ function RequestPanelBody({
         ) : null}
 
         <button
-          className="h-[56px] rounded-full border border-white/70 font-semibold text-[18px] text-white disabled:opacity-45"
-          disabled
-          title="AI-ассистента нет: контракта на него в System Layer не существует"
+          className={cn(
+            'h-[56px] rounded-full border border-white/70 font-semibold text-[18px] text-white',
+            'transition-transform duration-150 enabled:active:scale-[0.99] disabled:opacity-45',
+          )}
+          disabled={!onExplain}
+          onClick={onExplain}
           type="button"
         >
           Разобрать с AI ассистентом
         </button>
-        <p className="text-[13px] text-white/50">
-          AI-ассистента пока нет: System Layer не отдаёт такого контракта.
-        </p>
       </div>
     </aside>
   );

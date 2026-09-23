@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { ROUTES } from '@/app/routes/paths';
 import { useEngineers } from '@/entities/engineer';
 import { useDispatchLive } from '@/entities/live';
 import { useDispatchState } from '@/entities/plan';
 import { unassignedRequests, useRequests } from '@/entities/request';
+import { useConversation } from '@/features/ai/ask-assistant';
 import { failedWithoutData } from '@/shared/api';
 import { formatDayTitle } from '@/shared/lib';
 import { DayBoard } from '@/widgets/day-board';
@@ -12,6 +14,8 @@ import { RequestPanel } from '@/widgets/request-panel';
 import { RouteTimeline } from '@/widgets/route-timeline';
 
 export function PlanPage() {
+  const navigate = useNavigate();
+  const { explain } = useConversation();
   const engineersQuery = useEngineers();
   const requestsQuery = useRequests();
   const stateQuery = useDispatchState();
@@ -52,6 +56,34 @@ export function PlanPage() {
   const failed = [engineersQuery, requestsQuery, stateQuery].some(failedWithoutData);
 
   const dayAnchor = plan?.planAsOf ?? requests[0]?.windowStartAt ?? null;
+
+  /**
+   * The requests the arrows walk through, in the order the dispatcher sees them.
+   *
+   * Which list that is follows the request itself: one a crew is carrying belongs
+   * to that crew's queue, in route order; one nobody took belongs to the
+   * unassigned pile. Mixing them would let a step jump between two different
+   * readings of the day.
+   */
+  const siblings = useMemo(() => {
+    if (!selectedRequest) return [];
+    // The plan lists a row for unassigned work too, with no engineer on it, so
+    // the crew — not the presence of a row — is what says there is a queue.
+    const carriedBy = selectedAssignment?.engineerId ?? null;
+    if (carriedBy === null) return unassignedRequests(requests).map((request) => request.id);
+    const route = plan?.routes.find((candidate) => candidate.engineerId === carriedBy);
+    return (route?.stops ?? [])
+      .filter((stop) => stop.kind === 'job' && stop.requestId !== null)
+      .map((stop) => stop.requestId as string);
+  }, [selectedRequest, selectedAssignment, plan, requests]);
+
+  /** Moves to the next or previous sibling, wrapping so the ends meet. */
+  const stepRequest = (delta: -1 | 1) => {
+    if (siblings.length === 0) return;
+    const at = siblings.indexOf(selectedRequestId ?? '');
+    const next = at < 0 ? 0 : (at + delta + siblings.length) % siblings.length;
+    setSelectedRequestId(siblings[next] ?? null);
+  };
 
   const showFirstUnassigned = () => {
     const first = unassignedRequests(requests)[0];
@@ -108,9 +140,30 @@ export function PlanPage() {
 
           <RequestPanel
             assignment={selectedAssignment}
+            beside={
+              siblings.length > 1
+                ? {
+                    index: Math.max(0, siblings.indexOf(selectedRequestId ?? '')),
+                    total: siblings.length,
+                    of: selectedAssignment?.engineerId ? 'queue' : 'unassigned',
+                    onStep: stepRequest,
+                  }
+                : undefined
+            }
             engineer={assignedEngineer}
             engineers={engineers}
             mode={stateQuery.data?.mode ?? null}
+            onExplain={
+              selectedRequest
+                ? () => {
+                    void explain(
+                      { scope: 'request', requestId: selectedRequest.id },
+                      `Разобрать заявку: ${selectedRequest.addressText ?? selectedRequest.id}`,
+                    );
+                    navigate(ROUTES.ai);
+                  }
+                : undefined
+            }
             request={selectedRequest}
             route={
               plan?.routes.find((route) => route.engineerId === selectedAssignment?.engineerId) ??

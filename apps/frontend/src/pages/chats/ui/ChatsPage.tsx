@@ -1,23 +1,33 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowRight, MessagesSquare, Plus, Search } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import type { ChatTarget, DispatchChatView } from '@/entities/chat';
+import {
+  dispatchChatsQueryKey,
+  finishChat,
+  markChatRead,
+  openDispatchChat,
+  sendChatMessage,
+  useDispatchChats,
+} from '@/entities/chat';
 import { useEngineers } from '@/entities/engineer';
 import { useDispatchLive } from '@/entities/live';
 import { useDispatchState } from '@/entities/plan';
 import { useRequests } from '@/entities/request';
-import { failedWithoutData } from '@/shared/api';
-import { cn, fadeSoft, springQuick, staggered, useMotionOn } from '@/shared/lib';
+import { failedWithoutData, isApiError } from '@/shared/api';
+import { cn, fadeSoft, formatTime, springQuick, staggered, useMotionOn } from '@/shared/lib';
 import { Monogram } from '@/shared/ui';
 import type { Contact, ContactKind } from '../model/contacts';
 import { clientContacts, engineerContacts, filterContacts } from '../model/contacts';
+import { chatForContact, chatStatus, lastSeq, threadMessages } from '../model/threads';
+import { useChatStream } from '../model/useChatStream';
 
 const TABS: Array<{ kind: ContactKind; label: string }> = [
   { kind: 'engineers', label: 'Инженеры' },
   { kind: 'clients', label: 'Клиенты' },
 ];
-
-/** Why nothing can be written or read here yet — said once, the same everywhere. */
-const NO_CONTRACT = 'Переписки нет: в System Layer нет контракта на чаты';
 
 /** The two-way switch of the drawing; the dark capsule slides to the chosen side. */
 function Tabs({ value, onChange }: { value: ContactKind; onChange: (kind: ContactKind) => void }) {
@@ -94,17 +104,38 @@ function ContactRow({
   );
 }
 
-/** The message field of the drawing (95:991), off until there is somewhere to send to. */
-function Composer() {
+/** The message field of the drawing (95:991), now with somewhere to send to. */
+function Composer({
+  disabled,
+  pending,
+  onSend,
+}: {
+  disabled: boolean;
+  pending: boolean;
+  onSend: (text: string) => void;
+}) {
+  const [draft, setDraft] = useState('');
+  const empty = draft.trim().length === 0;
+
+  const submit = () => {
+    if (empty || disabled || pending) return;
+    onSend(draft.trim());
+    setDraft('');
+  };
+
   return (
-    <div
-      className="flex h-[79px] w-[595px] max-w-full items-center rounded-full bg-ink pr-2 pl-[10px] opacity-90"
-      title={NO_CONTRACT}
+    <form
+      className="flex h-[79px] w-[595px] max-w-full items-center rounded-full bg-ink pr-2 pl-[10px]"
+      onSubmit={(event) => {
+        event.preventDefault();
+        submit();
+      }}
     >
       <button
         aria-label="Прикрепить файл"
-        className="flex size-[60px] shrink-0 cursor-not-allowed items-center justify-center rounded-full bg-accent text-ink"
+        className="flex size-[60px] shrink-0 cursor-not-allowed items-center justify-center rounded-full bg-accent text-ink opacity-60"
         disabled
+        title="Вложений в контракте чатов нет — можно отправить только текст"
         type="button"
       >
         <Plus aria-hidden size={28} strokeWidth={2.2} />
@@ -113,19 +144,44 @@ function Composer() {
         Сообщение
       </label>
       <input
-        className="ml-[15px] min-w-0 flex-1 cursor-not-allowed bg-transparent font-medium text-[20px] text-white outline-none placeholder:text-white"
-        disabled
+        className="ml-[15px] min-w-0 flex-1 bg-transparent font-medium text-[20px] text-white outline-none placeholder:text-white/70 disabled:cursor-not-allowed"
+        disabled={disabled}
         id="chat-message"
-        placeholder="Отправьте сообщение"
+        onChange={(event) => setDraft(event.target.value)}
+        placeholder={disabled ? 'Переписка завершена' : 'Отправьте сообщение'}
+        value={draft}
       />
       <button
         aria-label="Отправить"
-        className="flex size-[63px] shrink-0 cursor-not-allowed items-center justify-center rounded-full bg-gradient-to-b from-white/20 to-white/[0.05] text-white opacity-60 shadow-[inset_0_1px_0_rgba(255,255,255,0.45)] ring-1 ring-white/20"
-        disabled
-        type="button"
+        className={cn(
+          'flex size-[63px] shrink-0 items-center justify-center rounded-full text-white',
+          'bg-gradient-to-b from-white/20 to-white/[0.05] shadow-[inset_0_1px_0_rgba(255,255,255,0.45)] ring-1 ring-white/20',
+          'transition-transform duration-150 enabled:active:scale-[0.95] disabled:opacity-50',
+        )}
+        disabled={empty || disabled || pending}
+        type="submit"
       >
         <ArrowRight aria-hidden size={28} />
       </button>
+    </form>
+  );
+}
+
+/** One reply in the thread: the dispatcher on the right, the other side on the left. */
+function Bubble({ text, mine, at }: { text: string; mine: boolean; at: number }) {
+  return (
+    <div className={cn('flex', mine ? 'justify-end' : 'justify-start')}>
+      <div
+        className={cn(
+          'max-w-[70%] rounded-[24px] px-6 py-[13px] text-[18px] leading-[22px]',
+          mine ? 'bg-ink text-white' : 'bg-surface text-ink',
+        )}
+      >
+        <p className="whitespace-pre-line">{text}</p>
+        <p className={cn('mt-1 text-[14px]', mine ? 'text-white/60' : 'text-ink-soft')}>
+          {formatTime(at)}
+        </p>
+      </div>
     </div>
   );
 }
@@ -135,21 +191,38 @@ function Composer() {
  * the conversation with the chosen one on the right.
  *
  * The people are real: the day's crews with what the LIVE day says about them,
- * and the clients who left a name on a request. The conversation is not: the
- * System Layer has no chat contract, so there are no messages to show and none
- * can be sent. The thread says so, and the field stays off rather than letting a
- * message look delivered that went nowhere.
+ * and the clients who left a name on a request. So is the conversation now —
+ * `/dispatch/chats` carries the dispatcher's side of every handover, live over
+ * its own stream.
+ *
+ * Writing to someone who has no chat yet opens one: the browser names the object
+ * (a request, an engineer) and the server finds the person behind it. A finished
+ * chat stays readable and its field goes quiet rather than letting a reply look
+ * delivered into a closed handover.
  */
 export function ChatsPage() {
   const engineersQuery = useEngineers();
   const requestsQuery = useRequests();
   const stateQuery = useDispatchState();
   const liveQuery = useDispatchLive();
+  const chatsQuery = useDispatchChats();
+  const queryClient = useQueryClient();
   const motionOn = useMotionOn();
+  useChatStream(true);
 
   const [tab, setTab] = useState<ContactKind>('engineers');
   const [query, setQuery] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // «Перейти в чат» from another screen names the crew in the address, so landing
+  // here opens that conversation instead of whoever happens to be first.
+  const [searchParams] = useSearchParams();
+  const askedEngineer = searchParams.get('engineer');
+  useEffect(() => {
+    if (!askedEngineer) return;
+    setTab('engineers');
+    setSelectedId(askedEngineer);
+  }, [askedEngineer]);
 
   const contacts = useMemo(
     () =>
@@ -165,6 +238,73 @@ export function ChatsPage() {
   const visible = filterContacts(contacts, query);
   // The first person stays chosen until the dispatcher picks someone, as drawn.
   const selected = visible.find((contact) => contact.id === selectedId) ?? visible[0] ?? null;
+
+  const chats = chatsQuery.data?.chats ?? [];
+  // A failed read is not an empty inbox: saying «переписки пока нет» here would
+  // present a broken endpoint as a quiet day.
+  const chatsUnread = failedWithoutData(chatsQuery);
+  const chat = selected ? chatForContact(chats, selected) : null;
+  const messages = threadMessages(chat);
+  const closed = chat?.handoff.state === 'closed';
+  const [pending, setPending] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const endRef = useRef<HTMLDivElement>(null);
+
+  const refresh = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: dispatchChatsQueryKey }),
+    [queryClient],
+  );
+
+  // Opening a chat with unread replies is itself the acknowledgement; the cursor
+  // only ever moves forward, so a stale tab cannot bring the badge back.
+  useEffect(() => {
+    const seq = lastSeq(chat);
+    if (!chat || closed || chat.unreadCount === 0 || seq === null) return;
+    void markChatRead(chat.conversation.id, seq)
+      .then(refresh)
+      .catch(() => undefined);
+  }, [chat, closed, refresh]);
+
+  // The newest reply is the one to read.
+  useEffect(() => {
+    if (messages.length > 0) endRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'end' });
+  }, [messages.length]);
+
+  const send = async (text: string) => {
+    if (!selected) return;
+    setPending(true);
+    setProblem(null);
+    try {
+      if (chat && !closed) {
+        await sendChatMessage(chat.conversation.id, text);
+      } else {
+        await openDispatchChat(selected.target as ChatTarget, text);
+      }
+      await refresh();
+    } catch (error) {
+      setProblem(
+        isApiError(error) && error.code === 'CHAT_TARGET_UNREACHABLE'
+          ? 'Писать некуда: у этого объекта нет входа в приложение — позвоните.'
+          : isApiError(error) && error.code === 'AI_HANDOFF_NOT_ACTIVE'
+            ? 'Передача уже завершена — обновите список и откройте чат заново.'
+            : 'Не удалось отправить сообщение.',
+      );
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const finish = async (target: DispatchChatView) => {
+    setPending(true);
+    try {
+      await finishChat(target.conversation.id);
+      await refresh();
+    } catch {
+      setProblem('Не удалось завершить передачу.');
+    } finally {
+      setPending(false);
+    }
+  };
 
   const failed = [engineersQuery, requestsQuery].some(failedWithoutData);
 
@@ -239,24 +379,75 @@ export function ChatsPage() {
               >
                 <header className="flex h-[66px] shrink-0 items-center gap-[14px] rounded-full bg-surface pr-6 pl-1">
                   <Monogram name={selected.name} size={58} />
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <h2 className="truncate font-display text-[20px] text-ink leading-tight">
                       {selected.name}
                     </h2>
                     <p className="truncate text-[18px] text-ink-soft leading-tight">
-                      {selected.status}
+                      {chatStatus(chat) ?? selected.status}
                     </p>
                   </div>
+                  {chat && !closed ? (
+                    <button
+                      className="shrink-0 rounded-full border border-ink/20 px-4 py-1 text-[16px] text-ink transition-colors duration-150 hover:bg-muted disabled:opacity-50"
+                      disabled={pending}
+                      onClick={() => void finish(chat)}
+                      type="button"
+                    >
+                      Завершить передачу
+                    </button>
+                  ) : null}
                 </header>
 
-                <div className="flex min-h-0 flex-1 flex-col items-center justify-center text-center">
-                  <MessagesSquare aria-hidden className="text-ink/25" size={48} strokeWidth={1.5} />
-                  <p className="mt-4 font-semibold text-[20px] text-ink">Переписки пока нет</p>
-                  <p className="mt-2 max-w-[520px] text-[16px] text-ink-soft">
-                    В System Layer нет контракта на чаты: сообщения нельзя ни прочитать, ни
-                    отправить. Когда он появится, разговор с «{selected.name}» будет здесь.
+                {messages.length === 0 ? (
+                  <div className="flex min-h-0 flex-1 flex-col items-center justify-center text-center">
+                    <MessagesSquare
+                      aria-hidden
+                      className="text-ink/25"
+                      size={48}
+                      strokeWidth={1.5}
+                    />
+                    {chatsUnread ? (
+                      <>
+                        <p className="mt-4 font-semibold text-[20px] text-ink">
+                          Переписки не прочитаны
+                        </p>
+                        <p className="mt-2 max-w-[520px] text-[16px] text-ink-soft">
+                          System Layer не отдал список чатов, поэтому неизвестно, есть ли разговор с
+                          «{selected.name}». Отправленное сейчас сообщение откроет новый чат.
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="mt-4 font-semibold text-[20px] text-ink">
+                          Переписки пока нет
+                        </p>
+                        <p className="mt-2 max-w-[520px] text-[16px] text-ink-soft">
+                          Напишите первым — чат с «{selected.name}» откроется на этой заявке.
+                        </p>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <ol className="min-h-0 flex-1 space-y-3 overflow-y-auto py-6 [scrollbar-width:thin]">
+                    {messages.map((message) => (
+                      <li key={message.id}>
+                        <Bubble
+                          at={message.createdAt}
+                          mine={message.author === 'dispatcher'}
+                          text={message.text}
+                        />
+                      </li>
+                    ))}
+                    <div ref={endRef} />
+                  </ol>
+                )}
+
+                {closed ? (
+                  <p className="shrink-0 pb-2 text-center text-[16px] text-ink-soft">
+                    Передача завершена — диалог вернулся к ассистенту. История сохранена.
                   </p>
-                </div>
+                ) : null}
               </motion.div>
             ) : (
               <p className="m-auto text-[18px] text-ink-soft" key="none">
@@ -265,8 +456,13 @@ export function ChatsPage() {
             )}
           </AnimatePresence>
 
-          <div className="shrink-0 pt-4 pb-[68px]">
-            <Composer />
+          <div className="flex shrink-0 flex-col items-center gap-2 pt-4 pb-[68px]">
+            {problem ? <p className="text-[16px] text-danger">{problem}</p> : null}
+            <Composer
+              disabled={!selected || closed}
+              onSend={(text) => void send(text)}
+              pending={pending}
+            />
           </div>
         </section>
       </div>

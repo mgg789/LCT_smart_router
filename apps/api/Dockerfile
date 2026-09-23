@@ -48,6 +48,10 @@ COPY --from=build /app/apps/api/dist apps/api/dist
 # code and the schema it expects can never be two different versions.
 COPY apps/api/prisma apps/api/prisma
 COPY apps/api/prisma.config.ts apps/api/prisma.config.ts
+# The knowledge corpus travels with the image for the same reason the schema does:
+# `KnowledgeIndexerService` re-indexes `docs/knowledge` on every boot and is loud on
+# failure by design, so an image without it cannot start at all.
+COPY docs/knowledge docs/knowledge
 
 USER node
 EXPOSE 8000

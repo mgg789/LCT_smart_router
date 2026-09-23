@@ -1,3 +1,4 @@
+import type { ChatTarget } from '@/entities/chat';
 import type { EngineerView } from '@/entities/engineer';
 import type { DispatchLiveView, LineStatus } from '@/entities/live';
 import type { PlanView } from '@/entities/plan';
@@ -17,6 +18,19 @@ export interface Contact {
   status: string;
   /** Whether the person is reachable right now — the green «В сети». */
   online: boolean;
+  /**
+   * What a new chat with this person addresses. The browser names the object —
+   * a request or an engineer — and the server finds the account behind it; it
+   * never needs, and must not know, someone else's `accountId`.
+   */
+  target: ChatTarget;
+  /**
+   * Ids by which a handover names this person: the engineer's own id, or every
+   * request the client left. A client's chat may have been opened about a
+   * different request of theirs than the one the row shows, so matching on the
+   * representative alone would lose the conversation.
+   */
+  matchIds: string[];
 }
 
 const LINE_STATUS: Record<LineStatus, string> = {
@@ -53,6 +67,8 @@ export function engineerContacts(
       name: engineer.displayName,
       status: requestId ? `${line} · заявка ${shortNumber(requestId)}` : line,
       online: state?.lineStatus === 'online',
+      target: { kind: 'engineer', engineerId: engineer.id },
+      matchIds: [engineer.id],
     };
   });
 }
@@ -66,22 +82,29 @@ export function engineerContacts(
  * the same door is one entry.
  */
 export function clientContacts(requests: RequestView[]): Contact[] {
-  const byName = new Map<string, RequestView>();
+  const byName = new Map<string, { nearest: RequestView; all: string[] }>();
   for (const request of requests) {
     const name = (request.contactName ?? request.addressText)?.trim();
     if (!name || request.lifecycle === 'cancelled') continue;
     const known = byName.get(name);
-    if (!known || request.windowStartAt < known.windowStartAt) byName.set(name, request);
+    if (!known) {
+      byName.set(name, { nearest: request, all: [request.id] });
+      continue;
+    }
+    known.all.push(request.id);
+    if (request.windowStartAt < known.nearest.windowStartAt) known.nearest = request;
   }
 
   return [...byName.entries()]
     .sort(([left], [right]) => left.localeCompare(right, 'ru'))
-    .map(([name, request]) => ({
+    .map(([name, { nearest, all }]) => ({
       id: `client:${name}`,
       kind: 'clients' as const,
       name,
-      status: `Заявка ${shortNumber(request.id)} · ${formatRange(request.windowStartAt, request.windowEndAt)}`,
+      status: `Заявка ${shortNumber(nearest.id)} · ${formatRange(nearest.windowStartAt, nearest.windowEndAt)}`,
       online: false,
+      target: { kind: 'request' as const, requestId: nearest.id },
+      matchIds: all,
     }));
 }
 

@@ -24,3 +24,7 @@ playwright-report/
 context/
 docs/
 data/
+# Except the knowledge corpus, which the service does need to run: since the AI contour
+# landed, `KnowledgeIndexerService` re-indexes it on every boot and fails the boot when
+# it is absent, so an image built without it cannot start at all.
+!docs/knowledge

@@ -3,6 +3,8 @@ import type { LucideIcon } from 'lucide-react';
 import { ArrowUpRight, Car, Clock, MapPin, Search, Utensils } from 'lucide-react';
 import type { WheelEvent } from 'react';
 import { useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { ROUTES } from '@/app/routes/paths';
 import type { EngineerView } from '@/entities/engineer';
 import { useEngineers } from '@/entities/engineer';
 import { useDispatchLive } from '@/entities/live';
@@ -129,6 +131,7 @@ export function EngineersPage() {
   const liveQuery = useDispatchLive();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const motionOn = useMotionOn();
 
@@ -393,9 +396,12 @@ export function EngineersPage() {
 
         <div className="mt-[67px] flex shrink-0 flex-col items-center gap-2">
           <button
-            className="flex h-[47px] items-center gap-4 rounded-full bg-accent pr-[2px] pl-7 font-semibold text-[19px] text-ink disabled:cursor-not-allowed"
-            disabled
-            title="Чаты появятся вместе с контрактом на переписку"
+            className="flex h-[47px] items-center gap-4 rounded-full bg-accent pr-[2px] pl-7 font-semibold text-[19px] text-ink transition-transform duration-150 enabled:active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
+            disabled={!active}
+            onClick={() =>
+              active && navigate(`${ROUTES.chats}?engineer=${encodeURIComponent(active.id)}`)
+            }
+            title={active ? `Написать: ${active.displayName}` : 'Сначала выберите бригаду'}
             type="button"
           >
             Перейти в чат
@@ -403,9 +409,6 @@ export function EngineersPage() {
               <ArrowUpRight aria-hidden size={22} strokeWidth={2.4} />
             </span>
           </button>
-          <span className="text-[13px] text-ink-faint">
-            Чатов пока нет: System Layer не отдаёт переписку.
-          </span>
         </div>
 
         {/* The deck spans the canvas edge to edge, gutters included. */}
