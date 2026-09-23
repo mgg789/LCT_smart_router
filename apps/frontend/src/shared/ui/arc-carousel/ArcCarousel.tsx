@@ -6,13 +6,23 @@ import { useElementSize } from '../../lib/useElementSize';
 /** Width the mockup is drawn at; every measurement below is taken from it. */
 const DESIGN_WIDTH = 1920;
 /**
- * Radius of the circle the cards are laid on. Measured from the mockup: the
- * neighbour sits 349px sideways and 46px lower than the front card, which is the
- * chord of a circle this wide.
+ * Where each card sits and how far it is tilted, measured off the drawing
+ * (Figma 29:372) at its own 1920-wide canvas.
+ *
+ * Not a single circle: the drawing tilts a card far more than its place on the
+ * arc would imply — the neighbour is 20° at 427px out, the one past it 60° at
+ * 831px — so placement and tilt are two separate readings of the same fan rather
+ * than one radius shared by both. The numbers are the card centres' offsets from
+ * the front card, taken from the rotated frames' own boxes.
  */
-const RADIUS = 1350;
-/** Angle between two neighbouring cards. */
-const STEP_DEG = 15;
+const PLACE: Record<number, { x: number; y: number; tilt: number }> = {
+  0: { x: 0, y: 0, tilt: 0 },
+  1: { x: 427, y: 57, tilt: 20 },
+  2: { x: 831, y: 298, tilt: 60 },
+  // Past the drawing: a wrap buffer nobody sees, kept out of the way.
+  3: { x: 1180, y: 620, tilt: 90 },
+};
+
 /** Cards drawn either side of the front one; the outermost pair is only a wrap buffer. */
 const WINDOW = 3;
 /** Wheel distance that advances the deck by one card. */
@@ -21,8 +31,15 @@ const WHEEL_STEP = 90;
 const DRAG_STEP = 150;
 /** Movement past which a pointer gesture is a drag and not a click. */
 const DRAG_SLOP = 6;
-/** How far a card has faded once it is this many places from the front. */
-const FADE: Record<number, number> = { 0: 1, 1: 1, 2: 0.4, 3: 0 };
+/**
+ * How visible a card is once it is this many places from the front.
+ *
+ * Every card the drawing shows is the same colour — the outermost pair is not
+ * dimmed, it simply runs off the screen, and the fade belongs to the edge mask
+ * below. Dimming them here instead made them read as a different, greyer kind of
+ * card.
+ */
+const FADE: Record<number, number> = { 0: 1, 1: 1, 2: 1, 3: 0 };
 
 /** The furthest place from the front that is still drawn at all. */
 const DEEPEST_VISIBLE = Math.max(
@@ -34,16 +51,15 @@ const DEEPEST_VISIBLE = Math.max(
 /**
  * How far below the top of the box a card that many places from the front reaches.
  *
- * Not simply the ring's drop: each card is also rotated about its own centre, so
- * its upright height is the wrong measure — a tilted rectangle needs
- * `w·sin θ + h·cos θ`. Leaving the rotation out is what let the outermost pair be
- * cut off along the bottom, because the box was built for a card that was never
- * drawn upright.
+ * A tilted rectangle is `w·sin θ + h·cos θ` tall, so a box built for an upright
+ * card is too short for every card but the front one — which is what used to cut
+ * the outermost pair off along the bottom.
  */
 function reachBelow(cardWidth: number, cardHeight: number, distance: number): number {
-  const radians = (distance * STEP_DEG * Math.PI) / 180;
+  const place = PLACE[distance] ?? PLACE[0];
+  const radians = ((place?.tilt ?? 0) * Math.PI) / 180;
   return (
-    RADIUS * (1 - Math.cos(radians)) +
+    (place?.y ?? 0) +
     cardHeight / 2 +
     (cardWidth * Math.sin(radians) + cardHeight * Math.cos(radians)) / 2
   );
@@ -112,8 +128,8 @@ export function ArcCarousel<T>({
   keyOf,
   labelOf,
   renderCard,
-  cardWidth = 318,
-  cardHeight = 238,
+  cardWidth = 308,
+  cardHeight = 229,
   height: boxHeight,
   className,
   ...rest
@@ -136,7 +152,6 @@ export function ArcCarousel<T>({
   const byWidth = hostWidth > 0 ? Math.min(1, Math.max(0.55, hostWidth / DESIGN_WIDTH)) : 1;
   const byHeight = hostHeight > 0 ? hostHeight / span : Number.POSITIVE_INFINITY;
   const scale = Math.min(byWidth, byHeight);
-  const radius = RADIUS * scale;
   const width = cardWidth * scale;
   const height = cardHeight * scale;
 
@@ -233,8 +248,10 @@ export function ArcCarousel<T>({
         const distance = Math.abs(offset);
         if (distance > WINDOW) return null;
 
-        const angle = offset * STEP_DEG;
-        const radians = (angle * Math.PI) / 180;
+        // The drawing places and tilts a card by how far it is from the front; the
+        // side it is on only decides which way both go.
+        const place = PLACE[distance] ?? PLACE[0];
+        const side = Math.sign(offset);
         const opacity = FADE[distance] ?? 0;
         const active = offset === 0;
 
@@ -256,9 +273,9 @@ export function ArcCarousel<T>({
               height,
               // The face is written in `em`, so its type and padding scale with the card.
               fontSize: 16 * scale,
-              transform: `translate(-50%, 0) translate(${radius * Math.sin(radians)}px, ${
-                radius * (1 - Math.cos(radians))
-              }px) rotate(${angle}deg)`,
+              transform: `translate(-50%, 0) translate(${side * (place?.x ?? 0) * scale}px, ${
+                (place?.y ?? 0) * scale
+              }px) rotate(${side * (place?.tilt ?? 0)}deg)`,
               zIndex: WINDOW + 1 - distance,
               opacity,
               pointerEvents: opacity === 0 ? 'none' : 'auto',

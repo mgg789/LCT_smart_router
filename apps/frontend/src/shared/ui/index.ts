@@ -15,6 +15,7 @@ export type { MonogramProps } from './monogram/Monogram';
 export { initialsOf, Monogram } from './monogram/Monogram';
 export type { PopoverProps } from './popover/Popover';
 export { Popover } from './popover/Popover';
+export { DESIGN_SCREEN, ScreenFit } from './screen-fit/ScreenFit';
 export type { SectionPlaceholderProps } from './section-placeholder/SectionPlaceholder';
 export { SectionPlaceholder } from './section-placeholder/SectionPlaceholder';
 export type { StatusPillProps, StatusTone } from './status-pill/StatusPill';

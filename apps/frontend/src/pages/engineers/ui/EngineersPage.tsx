@@ -24,19 +24,6 @@ import { ArcCarousel, initialsOf, Monogram } from '@/shared/ui';
 import type { EngineerProfile, ProfileStop } from '../model/engineerProfile';
 import { buildEngineerProfile, routeElapsedShare } from '../model/engineerProfile';
 
-/**
- * The canvas the screen is drawn on: what the mockup's 1920×1080 frame leaves a
- * section once the rail and the header are taken out. The screen is laid out at
- * exactly this size and then fitted to the window, so the drawing keeps its
- * proportions instead of spilling out of a shorter one.
- *
- * The page gutters are part of the canvas rather than of the layout around it,
- * because the deck has to reach through them: it is the whole width of the
- * screen that the ring curves across.
- */
-const DESIGN = { width: 1771, height: 937 };
-/** Below this the drawing would be unreadable; the page scrolls instead. */
-const MIN_FIT = 0.62;
 /** Distance between two stops on the day's line. */
 const STOP_WIDTH = 276;
 /** Gutters of the drawing, kept by everything on the canvas except the deck. */
@@ -135,16 +122,8 @@ export function EngineersPage() {
   const [query, setQuery] = useState('');
   const motionOn = useMotionOn();
 
-  // Measured outside the fitted canvas, so what is measured is the window and
-  // not the box the fit itself produced.
-  const frameRef = useRef<HTMLDivElement>(null);
-  const frame = useElementSize(frameRef);
   const sizerRef = useRef<HTMLSpanElement>(null);
   const sizer = useElementSize(sizerRef);
-  const fit =
-    frame.width > 0 && frame.height > 0
-      ? Math.max(MIN_FIT, Math.min(1, frame.width / DESIGN.width, frame.height / DESIGN.height))
-      : 1;
 
   const engineers = engineersQuery.data?.engineers ?? [];
   const requests = requestsQuery.data?.requests ?? [];
@@ -195,16 +174,11 @@ export function EngineersPage() {
   }
 
   return (
-    <div
-      className="-mr-[34px] -ml-[31px] h-full min-h-0 overflow-y-auto overflow-x-hidden"
-      ref={frameRef}
-    >
-      {/*
-       * `zoom` fits the drawing to the window: unlike a transform it takes part
-       * in layout, so the canvas below is laid out at the mockup's size and ends
-       * up filling this frame exactly — no leftover space and no scrollbars.
-       */}
-      <div className="flex h-full min-h-0 flex-col" style={{ zoom: fit }}>
+    // No fit of its own any more: `ScreenFit` scales the whole board, so this
+    // screen is laid out at the drawing's size and inherits that one scale. A
+    // second zoom here would square it.
+    <div className="-mr-[34px] -ml-[31px] h-full min-h-0 overflow-y-auto overflow-x-hidden">
+      <div className="flex h-full min-h-0 flex-col">
         {loading ? (
           <p className={cn(GUTTER, 'pt-10 text-[16px] text-ink-soft')}>Загружаем инженеров…</p>
         ) : null}
