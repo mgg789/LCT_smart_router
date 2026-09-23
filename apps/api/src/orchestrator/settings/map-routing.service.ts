@@ -1,9 +1,11 @@
 import { createHash } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import type { PlanRouteSegmentView, PlanView } from '../../api/plan-view';
+import { readRouterPhase, writeRouterPhase } from '../../routing/router-gateway/router-phase';
 import { DispatcherSettingsService } from './dispatcher-settings.service';
 
-const FETCH_TIMEOUT_MS = 5_000;
+/** A down road API must not hold a plan read. A live local `/route2` answers well inside this. */
+const FETCH_TIMEOUT_MS = 1_500;
 const CACHE_LIMIT = 400;
 /** Paid geometry adds little information below this straight-line distance. */
 export const MAP_API_MIN_DISTANCE_M = 300;
@@ -41,14 +43,18 @@ export interface MapProviderStatus {
 @Injectable()
 export class MapRoutingService {
   private readonly cache = new Map<string, MapRoute>();
-  private readonly roadShapeInflight = new Map<
-    string,
-    Promise<Array<{ lat: number; lon: number }> | null>
-  >();
   private readonly roadShapeCache = new Map<
     string,
     { expiresAt: number; points: Array<{ lat: number; lon: number }> | null }
   >();
+  /** One in-flight road call. The plan read never waits on this chain. */
+  private shapeTail: Promise<void> = Promise.resolve();
+  private readonly shapeQueued = new Set<string>();
+  private watchedEdges: Array<{
+    key: string;
+    from: { lat: number; lon: number };
+    to: { lat: number; lon: number };
+  }> = [];
 
   constructor(
     @Inject(DispatcherSettingsService)
@@ -62,9 +68,8 @@ export class MapRoutingService {
   ): Promise<PlanView> {
     const configured = await this.settings.read();
     if (!configured.twogisApiKey && !configured.yandexApiKey) {
-      // No paid map provider: draw the MKAD road API polyline instead of a chord.
-      // A `straight` answer or an outage leaves the dashed fallback in place.
-      return this.attachMkadRoadShapes(plan);
+      // No paid map provider. Exact lines are queued, never awaited on this call.
+      return this.projectPlan(plan);
     }
     const routes = await Promise.all(
       plan.routes.map(async (route) => {
@@ -174,68 +179,162 @@ export class MapRoutingService {
   }
 
   /**
-   * Replaces a straight chord with the MKAD `/route2` polyline when that answer is
-   * an on-road shape. Durations stay the solver's. `mode=straight` (outside MKAD)
-   * and a failed call keep the dashed chord.
+   * Plan for the screen, right now.
+   *
+   * Cached polylines are applied. Missing ones are fetched after this returns,
+   * one edge at a time, and only once the router is not building. The caller
+   * must not await the road API.
    */
-  private async attachMkadRoadShapes(plan: PlanView): Promise<PlanView> {
-    if (!roadApiBase()) return plan;
-    const routes = await Promise.all(
-      plan.routes.map(async (route) => {
-        const legs = await Promise.all(
-          route.legs.map(async (leg) => {
-            if (leg.segments?.length) {
-              const segments = await Promise.all(
-                leg.segments.map((segment) => this.attachSegmentRoadShape(segment)),
-              );
-              const changed = segments.some((segment, index) => segment !== leg.segments?.[index]);
-              if (!changed) return leg;
-              return {
-                ...leg,
-                segments,
-                geometry: {
-                  points: segments.flatMap((segment, index) =>
-                    index === 0 ? segment.geometry.points : segment.geometry.points.slice(1),
-                  ),
-                },
-              };
-            }
-            if (
-              leg.travelSource === 'metro' ||
-              !needsRoadShape(leg.travelSource, leg.geometry?.points.length ?? 0)
-            ) {
-              return leg;
-            }
-            const from = leg.geometry?.points[0] ??
-              pointBefore(route, leg.departureAt) ?? {
-                lat: route.startLat,
-                lon: route.startLon,
-              };
-            const to = leg.geometry?.points.at(-1) ?? pointAt(route, leg.arrivalAt);
-            if (!to) return leg;
-            const points = await this.roadPolyline(from, to);
-            if (!points) return leg;
-            return {
-              ...leg,
-              geometry: { points: withEndpoints(points, from, to) },
-              travelSource: 'traffic_api' as const,
-            };
-          }),
-        );
-        return { ...route, legs };
-      }),
-    );
-    return { ...plan, routes };
+  projectPlan(plan: PlanView): PlanView {
+    const base = roadApiBase();
+    const building = readRouterPhase().phase === 'building';
+    const edges = base ? this.neededEdges(plan) : [];
+    this.watchedEdges = edges;
+    let done = 0;
+    for (const edge of edges) {
+      if (this.freshShape(edge.key) !== undefined) {
+        done += 1;
+        continue;
+      }
+      if (building || this.shapeQueued.has(edge.key)) continue;
+      this.shapeQueued.add(edge.key);
+      const job = edge;
+      this.shapeTail = this.shapeTail
+        .then(() => this.fetchRoadPolyline(base as string, job.key, job.from, job.to))
+        .then(() => undefined)
+        .catch(() => undefined)
+        .finally(() => {
+          this.shapeQueued.delete(job.key);
+          this.publishGeometry();
+        });
+    }
+    writeRouterPhase({
+      geometryDone: building ? 0 : done,
+      geometryTotal: building ? 0 : edges.length,
+    });
+    return this.applyCachedShapes(plan);
   }
 
-  private async attachSegmentRoadShape(
-    segment: PlanRouteSegmentView,
-  ): Promise<PlanRouteSegmentView> {
+  /** Resolves when every queued road call has settled. Tests use this. */
+  whenIdle(): Promise<void> {
+    return this.shapeTail;
+  }
+
+  private publishGeometry(): void {
+    const total = this.watchedEdges.length;
+    const done = this.watchedEdges.filter((edge) => this.freshShape(edge.key) !== undefined).length;
+    writeRouterPhase({ geometryDone: done, geometryTotal: total });
+  }
+
+  private freshShape(
+    key: string,
+  ): Array<{ lat: number; lon: number }> | null | undefined {
+    const cached = this.roadShapeCache.get(key);
+    if (!cached || cached.expiresAt <= Date.now()) return undefined;
+    return cached.points;
+  }
+
+  private neededEdges(plan: PlanView): Array<{
+    key: string;
+    from: { lat: number; lon: number };
+    to: { lat: number; lon: number };
+  }> {
+    const base = roadApiBase();
+    if (!base) return [];
+    const edges: Array<{
+      key: string;
+      from: { lat: number; lon: number };
+      to: { lat: number; lon: number };
+    }> = [];
+    const seen = new Set<string>();
+    for (const route of plan.routes) {
+      for (const leg of route.legs) {
+        const pairs = leg.segments?.length
+          ? leg.segments.flatMap((segment) => {
+              if (!needsRoadShape(segment.travelSource, segment.geometry.points.length)) return [];
+              const from = segment.geometry.points[0];
+              const to = segment.geometry.points.at(-1);
+              return from && to ? [{ from, to }] : [];
+            })
+          : [];
+        const direct =
+          pairs.length > 0 || leg.travelSource === 'metro' || !needsRoadShape(leg.travelSource, leg.geometry?.points.length ?? 0)
+            ? pairs
+            : (() => {
+                const from = leg.geometry?.points[0] ??
+                  pointBefore(route, leg.departureAt) ?? { lat: route.startLat, lon: route.startLon };
+                const to = leg.geometry?.points.at(-1) ?? pointAt(route, leg.arrivalAt);
+                return to ? [{ from, to }] : [];
+              })();
+        for (const pair of direct) {
+          const key = this.shapeKey(base, pair.from, pair.to);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          edges.push({ key, from: pair.from, to: pair.to });
+        }
+      }
+    }
+    return edges;
+  }
+
+  private shapeKey(
+    base: string,
+    from: { lat: number; lon: number },
+    to: { lat: number; lon: number },
+  ): string {
+    return createHash('sha256')
+      .update(JSON.stringify({ road: roundPoint(from), to: roundPoint(to), base }))
+      .digest('hex');
+  }
+
+  private applyCachedShapes(plan: PlanView): PlanView {
+    return {
+      ...plan,
+      routes: plan.routes.map((route) => ({
+        ...route,
+        legs: route.legs.map((leg) => {
+          if (leg.segments?.length) {
+            const segments = leg.segments.map((segment) => this.applyCachedSegment(segment));
+            const changed = segments.some((segment, index) => segment !== leg.segments?.[index]);
+            if (!changed) return leg;
+            return {
+              ...leg,
+              segments,
+              geometry: {
+                points: segments.flatMap((segment, index) =>
+                  index === 0 ? segment.geometry.points : segment.geometry.points.slice(1),
+                ),
+              },
+            };
+          }
+          if (
+            leg.travelSource === 'metro' ||
+            !needsRoadShape(leg.travelSource, leg.geometry?.points.length ?? 0)
+          ) {
+            return leg;
+          }
+          const from = leg.geometry?.points[0] ??
+            pointBefore(route, leg.departureAt) ?? { lat: route.startLat, lon: route.startLon };
+          const to = leg.geometry?.points.at(-1) ?? pointAt(route, leg.arrivalAt);
+          if (!to) return leg;
+          const points = this.freshShape(this.shapeKey(roadApiBase() ?? '', from, to));
+          if (!points) return leg;
+          return {
+            ...leg,
+            geometry: { points: withEndpoints(points, from, to) },
+            travelSource: 'traffic_api' as const,
+          };
+        }),
+      })),
+    };
+  }
+
+  private applyCachedSegment(segment: PlanRouteSegmentView): PlanRouteSegmentView {
     if (!needsRoadShape(segment.travelSource, segment.geometry.points.length)) return segment;
     const from = segment.geometry.points[0];
     const to = segment.geometry.points.at(-1);
     if (!from || !to) return segment;
-    const points = await this.roadPolyline(from, to);
+    const points = this.freshShape(this.shapeKey(roadApiBase() ?? '', from, to));
     if (!points) return segment;
     return {
       ...segment,
@@ -245,26 +344,6 @@ export class MapRoutingService {
   }
 
   /** On-road polyline, or null when the backend is down or the pair leaves MKAD. */
-  private async roadPolyline(
-    from: { lat: number; lon: number },
-    to: { lat: number; lon: number },
-  ): Promise<Array<{ lat: number; lon: number }> | null> {
-    const base = roadApiBase();
-    if (!base) return null;
-    const key = createHash('sha256')
-      .update(JSON.stringify({ road: roundPoint(from), to: roundPoint(to), base }))
-      .digest('hex');
-    const cached = this.roadShapeCache.get(key);
-    if (cached && cached.expiresAt > Date.now()) return cached.points;
-    const existing = this.roadShapeInflight.get(key);
-    if (existing) return existing;
-    const pending = this.fetchRoadPolyline(base, key, from, to).finally(() => {
-      if (this.roadShapeInflight.get(key) === pending) this.roadShapeInflight.delete(key);
-    });
-    this.roadShapeInflight.set(key, pending);
-    return pending;
-  }
-
   private async fetchRoadPolyline(
     base: string,
     key: string,
@@ -274,7 +353,7 @@ export class MapRoutingService {
     const url = new URL('/route2', `${base}/`);
     url.searchParams.set('a', `${from.lat},${from.lon}`);
     url.searchParams.set('b', `${to.lat},${to.lon}`);
-    const json = await requestJson(url, { headers: { Accept: 'application/json' } });
+    const json = await requestJson(url, { headers: { Accept: 'application/json' } }, 8_000);
     const points = decodeRoadPolyline(json);
     // A miss stays briefly so a down backend is retried. A drawn road stays for the day.
     const ttl = points ? ROAD_SHAPE_TTL_MS : 15_000;
@@ -515,9 +594,9 @@ function withEndpoints(
   );
 }
 
-async function requestJson(url: URL, init: RequestInit): Promise<unknown> {
+async function requestJson(url: URL, init: RequestInit, timeoutMs = FETCH_TIMEOUT_MS): Promise<unknown> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, { ...init, signal: controller.signal });
     if (!response.ok) {

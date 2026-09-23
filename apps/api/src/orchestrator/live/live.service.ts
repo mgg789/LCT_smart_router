@@ -23,6 +23,7 @@ import type { OperationContext } from '../../operations';
 import { APP_STATE_KEYS, PrismaService, type Tx, UnitOfWork } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import { AppliedPlanService } from '../../routing/router-gateway';
+import { visibleRouterPhase } from '../../routing/router-gateway/router-phase';
 import { DemoStandService } from '../demo-stand';
 import { EngineersService } from '../engineers';
 import { workDateOf } from '../engineers/workday';
@@ -942,6 +943,39 @@ export class LiveService {
       engineerStartDeadlineAt: Number(day.logicalStartAt) + NO_SHOW_SEC,
       requestCount,
       stats: await this.statsFor(tx, day),
+      ...(await this.planFreshness(tx)),
+    };
+  }
+
+  /** Revision and router phase without loading route geometry or calling Router. */
+  private async planFreshness(tx: Tx): Promise<{
+    planRevision: number | null;
+    calculating: boolean;
+    routerPhase: 'building' | 'ready' | 'error';
+    routerMessage: string | null;
+    geometryDone: number;
+    geometryTotal: number;
+  }> {
+    const [applied, published] = await Promise.all([
+      tx.appliedPlanCurrent.findUnique({
+        where: { id: 'singleton' },
+        select: { plan: { select: { revision: true, routerResult: { select: { inputHash: true } } } } },
+      }),
+      tx.routingCurrent.findUnique({
+        where: { id: 'singleton' },
+        select: { snapshot: { select: { inputHash: true } } },
+      }),
+    ]);
+    const appliedHash = applied?.plan.routerResult?.inputHash ?? null;
+    const publishedHash = published?.snapshot.inputHash ?? null;
+    const phase = visibleRouterPhase(publishedHash !== null && publishedHash !== appliedHash);
+    return {
+      planRevision: applied?.plan.revision ?? null,
+      calculating: phase.phase === 'building',
+      routerPhase: phase.phase,
+      routerMessage: phase.message,
+      geometryDone: phase.geometryDone,
+      geometryTotal: phase.geometryTotal,
     };
   }
 

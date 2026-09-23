@@ -17,6 +17,17 @@ export interface LiveWorkdayView {
   readonly engineerStartDeadlineAt: number;
   readonly requestCount: number;
   readonly stats: LiveStatsView;
+  /** Applied plan revision. The dashboard reloads geometry only when this changes. */
+  readonly planRevision: number | null;
+  /** True while a newer task is published and Router has not applied it yet. */
+  readonly calculating: boolean;
+  /** Local router phase. The live read does not call Router to produce it. */
+  readonly routerPhase: 'building' | 'ready' | 'error';
+  /** Set when `routerPhase` is `error`. */
+  readonly routerMessage: string | null;
+  /** Exact polylines already drawn. The plan read never waits for the next one. */
+  readonly geometryDone: number;
+  readonly geometryTotal: number;
 }
 
 export interface LiveStatsView {

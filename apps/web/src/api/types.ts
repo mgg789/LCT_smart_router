@@ -353,6 +353,10 @@ export interface DispatchPlanResponse {
   } | null;
   /** The published task has no applied plan with the same input hash yet. */
   readonly calculating?: boolean;
+  readonly routerPhase?: 'building' | 'ready' | 'error';
+  readonly routerMessage?: string | null;
+  readonly geometryDone?: number;
+  readonly geometryTotal?: number;
   readonly lastResult: {
     readonly resultId: string;
     readonly inputHash: string;

@@ -295,13 +295,56 @@ export function useDashboard() {
     if (!token || source === 'demo' || rebuilding || liveWorkday?.workday.status !== 'running') {
       return;
     }
-    const poll = () => {
+    // Clock and engineer progress only. The six-call day snapshot stays off this
+    // interval: it used every browser connection, so icons and clicks waited.
+    const interval = window.setInterval(() => {
       void refreshLive();
+    }, 2_000);
+    const snapshotInterval = window.setInterval(() => {
       void refresh();
+    }, 20_000);
+    return () => {
+      window.clearInterval(interval);
+      window.clearInterval(snapshotInterval);
     };
-    const interval = window.setInterval(poll, 2_000);
-    return () => window.clearInterval(interval);
   }, [liveWorkday?.workday.status, rebuilding, refresh, refreshLive, source, token]);
+
+  const seenPlanRevision = useRef<number | null | undefined>(undefined);
+  useEffect(() => {
+    if (source !== 'live' || liveWorkday?.workday.status !== 'running') return;
+    const revision = liveWorkday.workday.planRevision;
+    if (revision === undefined) return;
+    const next = revision ?? null;
+    if (seenPlanRevision.current === undefined) {
+      seenPlanRevision.current = next;
+      return;
+    }
+    if (seenPlanRevision.current === next) return;
+    seenPlanRevision.current = next;
+    void refresh();
+  }, [liveWorkday?.workday.planRevision, liveWorkday?.workday.status, refresh, source]);
+
+  const seenGeometry = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (source !== 'live' || liveWorkday?.workday.status !== 'running') return;
+    const done = liveWorkday.workday.geometryDone;
+    const total = liveWorkday.workday.geometryTotal;
+    if (done === undefined || total === undefined) return;
+    const key = `${done}/${total}`;
+    if (seenGeometry.current === undefined) {
+      seenGeometry.current = key;
+      return;
+    }
+    if (seenGeometry.current === key) return;
+    seenGeometry.current = key;
+    void refresh();
+  }, [
+    liveWorkday?.workday.geometryDone,
+    liveWorkday?.workday.geometryTotal,
+    liveWorkday?.workday.status,
+    refresh,
+    source,
+  ]);
 
   const engineers = useMemo(() => (snapshot ? engineerSummaries(snapshot) : []), [snapshot]);
   const unassigned = useMemo(() => (snapshot ? unassignedRequests(snapshot) : []), [snapshot]);
@@ -712,10 +755,18 @@ export function useDashboard() {
       if (generation !== liveReadGeneration.current) return false;
       setLiveWorkday(next);
       pushEvent('Рабочий день запущен. План и статусы инженеров обновляются в LIVE-режиме.');
-      await refresh();
+      void refresh();
       return true;
     } catch (cause) {
       if (generation !== liveReadGeneration.current) return false;
+      if (isStartTimeout(cause)) {
+        const started = await waitForStartedDay(token, generation, liveReadGeneration, setLiveWorkday);
+        if (started) {
+          pushEvent('Рабочий день запущен. План и статусы инженеров обновляются в LIVE-режиме.');
+          void refresh();
+          return true;
+        }
+      }
       reportFailure(cause);
       setError(errorMessage(cause));
       return false;
@@ -1403,6 +1454,35 @@ async function waitForRebuild(
 
 function delay(durationMs: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, durationMs));
+}
+
+function isStartTimeout(cause: unknown): boolean {
+  return cause instanceof DashboardApiError && /не ответил|нет связи/i.test(cause.message);
+}
+
+/** The start call can outlive the first response. Keep the button on «Запускаем». */
+async function waitForStartedDay(
+  token: string,
+  generation: number,
+  liveReadGeneration: { readonly current: number },
+  setLiveWorkday: (value: DispatchLiveView) => void,
+): Promise<boolean> {
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    await delay(1_000);
+    if (generation !== liveReadGeneration.current) return false;
+    try {
+      const next = await loadDispatchLive(token);
+      if (generation !== liveReadGeneration.current) return false;
+      if (next.workday.status === 'running' || next.workday.status === 'finished') {
+        setLiveWorkday(next);
+        return true;
+      }
+    } catch {
+      // The original start is still the request the screen is waiting on.
+    }
+  }
+  return false;
 }
 
 function errorMessage(cause: unknown): string {

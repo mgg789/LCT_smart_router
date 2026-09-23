@@ -38,6 +38,14 @@ export interface LiveWorkday {
   readonly engineerStartDeadlineAt: number;
   readonly requestCount: number;
   readonly stats: LiveStats;
+  /** Absent on an older API. A change is the signal to reload the drawn plan. */
+  readonly planRevision?: number | null;
+  readonly calculating?: boolean;
+  /** Local phase. `building` is a progress toast, `error` is the router's own failure. */
+  readonly routerPhase?: 'building' | 'ready' | 'error';
+  readonly routerMessage?: string | null;
+  readonly geometryDone?: number;
+  readonly geometryTotal?: number;
 }
 
 export interface LiveStats {
@@ -253,6 +261,12 @@ const workdaySchema: z.ZodType<LiveWorkday> = z.object({
   engineerStartDeadlineAt: z.number().int(),
   requestCount: z.number().int().nonnegative(),
   stats: liveStatsSchema,
+  planRevision: z.number().int().nullable().optional(),
+  calculating: z.boolean().optional(),
+  routerPhase: z.enum(['building', 'ready', 'error']).optional(),
+  routerMessage: z.string().nullable().optional(),
+  geometryDone: z.number().int().nonnegative().optional(),
+  geometryTotal: z.number().int().nonnegative().optional(),
 });
 const engineerSchema: z.ZodType<LiveEngineerState> = z.object({
   id: z.string(),
@@ -356,10 +370,16 @@ export function loadEngineerLive(token: string): Promise<EngineerLiveView> {
 }
 /** Starts a prepared workday and returns the authoritative live snapshot. */
 export function startLiveWorkday(token: string): Promise<DispatchLiveView> {
-  return requestJson('/api/v1/dispatch/live/start', dispatchLiveSchema, token, {
-    method: 'POST',
-    body: JSON.stringify({ operationId: crypto.randomUUID() }),
-  });
+  return requestJson(
+    '/api/v1/dispatch/live/start',
+    dispatchLiveSchema,
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({ operationId: crypto.randomUUID() }),
+    },
+    30_000,
+  );
 }
 /** Records one engineer action and returns the state after its server-side effects. */
 export function sendEngineerLiveAction(

@@ -70,7 +70,9 @@ class RoadApiTravel:
             }
             if departure_at is not None:
                 params["departure"] = str(departure_at)
-            response = httpx.get(f"{self.base_url}/route2", params=params, timeout=30.0)
+            # A missing local road API must not freeze the solve. On main this call
+            # does not exist; one hung host used to cost 30s before the graph took over.
+            response = httpx.get(f"{self.base_url}/route2", params=params, timeout=3.0)
             response.raise_for_status()
             data = response.json()
             quote = decode_road_api(data)

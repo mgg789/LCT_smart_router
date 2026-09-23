@@ -151,6 +151,29 @@ class TravelUnavailable(ValueError):
     """Provider failure with a safe diagnostic code, distinct from a proven NoRoute."""
 
 
+class StraightTravel:
+    """Construction quote: a straight line between the two points.
+
+    A solve must not call OSRM or the MKAD road API. Metro still wraps this
+    provider. Exact polylines are drawn later, one plan edge at a time.
+    """
+
+    version = "straight-v1"
+
+    def quote(
+        self, origin: GeoPoint, destination: GeoPoint, profile: Transport
+    ) -> TravelQuote | None:
+        """Duration from haversine distance and the disclosed fallback speed."""
+        distance = math.ceil(haversine_m(origin, destination) * _FALLBACK_ROAD_FACTOR)
+        if distance == 0:
+            return TravelQuote(0, 0, (origin, destination), "approximate")
+        duration = max(
+            1,
+            math.ceil(distance / (_FALLBACK_SPEED_KMH[profile] * 1000 / 3600)),
+        )
+        return TravelQuote(duration, distance, (origin, destination), "approximate")
+
+
 def quote_at(
     travel: TravelSource,
     origin: GeoPoint,

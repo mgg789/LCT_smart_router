@@ -6,6 +6,11 @@
 `liveNow` — рабочее время, `startedAtWallSec` — реальное время начала сеанса.
 Чтение live и выдача кода входа не берут блокировку `control_state`: её держат
 только записи, которые публикуют или принимают план. Опрос экрана не ждёт ход часов.
+В `workday` живого ответа есть `planRevision`, `calculating`, `routerPhase`
+(`building` / `ready` / `error`), `routerMessage`, `geometryDone` и `geometryTotal`.
+Это запись основного бэкенда: чтение live и плана не вызывает роутер и не ждёт
+дорожный API. Пока фаза `building`, экран показывает прогресс. При `error` —
+текст ошибки. Точные линии дорисовываются по одному ребру уже после готового плана.
 
 Ответы `GET /engineer/live` и `GET /dispatch/live` содержат
 `engineer.canFinishDay` / `engineers[].canFinishDay`: персональную готовность

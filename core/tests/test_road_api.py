@@ -48,7 +48,7 @@ def test_road_api_replaces_a_prepared_car_leg_and_leaves_walking(tmp_path, graph
     calls = []
 
     def get(url, **kwargs):
-        calls.append((url, kwargs.get("params")))
+        calls.append((url, kwargs.get("params"), kwargs.get("timeout")))
         return httpx.Response(
             200,
             json={
@@ -69,6 +69,7 @@ def test_road_api_replaces_a_prepared_car_leg_and_leaves_walking(tmp_path, graph
     assert car is not None and car.provenance == "traffic_api" and car.duration_sec == 500
     assert walking == GraphTravel(graph).quote(origin, destination, "walk")
     assert calls[0][1]["departure"] == "1700000000"
+    assert calls[0][2] == 3.0
     assert len(list(tmp_path.rglob("*.json"))) == 1
 
 

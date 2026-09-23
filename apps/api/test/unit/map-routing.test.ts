@@ -172,7 +172,13 @@ describe('map routing transport and composite geometry', () => {
   it('draws an MKAD road polyline for a straight chord and leaves an outside pair dashed', async () => {
     const previous = process.env.ROUTER_ROAD_API_URL;
     process.env.ROUTER_ROAD_API_URL = 'http://road.test';
+    let inFlight = 0;
+    let peak = 0;
     globalThis.fetch = async (input) => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      inFlight -= 1;
       const url = new URL(String(input));
       const start = url.searchParams.get('a') ?? '';
       if (start.startsWith('55.75')) {
@@ -203,10 +209,15 @@ describe('map routing transport and composite geometry', () => {
       },
     ];
     try {
-      const result = await new MapRoutingService({
+      const routing = new MapRoutingService({
         read: async () => DEFAULT_DISPATCHER_SETTINGS,
-      }).enrichPlan(plan(segments), false, new Map());
+      });
+      const immediate = routing.projectPlan(plan(segments));
+      assert.equal(immediate.routes[0]?.legs[0]?.segments?.[0]?.travelSource, 'approximate');
+      await routing.whenIdle();
+      const result = routing.projectPlan(plan(segments));
       const leg = result.routes[0]?.legs[0];
+      assert.equal(peak, 1);
       assert.equal(leg?.segments?.[0]?.travelSource, 'traffic_api');
       assert.equal(leg?.segments?.[0]?.travelTimeSec, 300);
       assert.ok((leg?.segments?.[0]?.geometry.points.length ?? 0) >= 3);

@@ -255,6 +255,10 @@ const dispatchPlanSchema = z.object({
     .nullable(),
   /** True while the published task is newer than the plan on screen. */
   calculating: z.boolean().optional().default(false),
+  routerPhase: z.enum(['building', 'ready', 'error']).optional(),
+  routerMessage: z.string().nullable().optional(),
+  geometryDone: z.number().int().nonnegative().optional(),
+  geometryTotal: z.number().int().nonnegative().optional(),
 });
 
 const alertSchema = z.object({
@@ -901,9 +905,14 @@ export function changeEngineerEmail(
   );
 }
 
-/** Loads and validates all resources required by the dispatcher day screen. */
+/**
+ * Loads the dispatcher day.
+ *
+ * The six reads go in two waves of three. A browser allows about six connections
+ * to one host; filling all of them left icons and clicks waiting.
+ */
 export async function loadDashboardSnapshot(token: string): Promise<DashboardSnapshot> {
-  const [requests, engineers, planResponse, alerts, policies, settings] = await Promise.all([
+  const [requests, engineers, planResponse] = await Promise.all([
     requestJson('/api/v1/dispatch/requests', z.object({ requests: z.array(requestSchema) }), token),
     requestJson(
       '/api/v1/dispatch/engineers',
@@ -911,6 +920,8 @@ export async function loadDashboardSnapshot(token: string): Promise<DashboardSna
       token,
     ),
     requestJson('/api/v1/dispatch/plan', dispatchPlanSchema, token),
+  ]);
+  const [alerts, policies, settings] = await Promise.all([
     requestJson('/api/v1/dispatch/alerts', z.object({ alerts: z.array(alertSchema) }), token),
     requestJson('/api/v1/dispatch/policies', policiesSchema, token),
     getRouterTechnicalSettings(token),
@@ -1236,6 +1247,27 @@ export function loadAlertWindowProposal(token: string, alertId: string) {
     {},
     35_000,
   );
+}
+
+/** Runs async work with a fixed number of slots so the rest of the origin stays free. */
+export async function allWithLimit<T>(
+  limit: number,
+  tasks: ReadonlyArray<() => Promise<T>>,
+): Promise<T[]> {
+  const results = new Array<T>(tasks.length);
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < tasks.length) {
+      const index = cursor;
+      cursor += 1;
+      const task = tasks[index];
+      if (!task) break;
+      results[index] = await task();
+    }
+  };
+  const slots = Math.max(1, Math.min(limit, tasks.length));
+  await Promise.all(Array.from({ length: slots }, () => worker()));
+  return results;
 }
 
 export async function requestJson<T>(

@@ -11,6 +11,7 @@ from core.geo import (
     MixedTravel,
     ProfilePolicyTravel,
     RoadGraph,
+    StraightTravel,
     TravelQuote,
     configure_forecast_traffic,
     configure_travel,
@@ -154,3 +155,15 @@ def test_common_profile_policy_covers_unknown_fallback_overlay_and_traffic(graph
     traffic = configure_forecast_traffic(_ProfileTravel(), morning)
     policy_traffic = ProfilePolicyTravel(traffic)
     assert policy_traffic.quote_at(origin, destination, "car", morning).duration_sec == 100
+
+
+def test_construction_quote_is_a_straight_line():
+    """A solve quotes the chord. Exact roads are not part of construction."""
+    quote = StraightTravel().quote(GeoPoint(lat=55.75, lon=37.62), GeoPoint(lat=55.76, lon=37.64), "car")
+    assert quote is not None
+    assert quote.provenance == "approximate"
+    assert quote.points == (
+        GeoPoint(lat=55.75, lon=37.62),
+        GeoPoint(lat=55.76, lon=37.64),
+    )
+    assert quote.duration_sec > 0

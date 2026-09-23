@@ -278,8 +278,47 @@ export function MainDashboardPage() {
 
   const toastHydrated = useRef(false);
   const sawRebuild = useRef(false);
-  const calculating = dash.snapshot?.plan.calculating === true;
+  const calculating =
+    dash.liveWorkday?.workday.calculating === true ||
+    dash.snapshot?.plan.calculating === true ||
+    dash.liveWorkday?.workday.routerPhase === 'building' ||
+    dash.snapshot?.plan.routerPhase === 'building';
+  const routerError =
+    dash.liveWorkday?.workday.routerPhase === 'error'
+      ? (dash.liveWorkday.workday.routerMessage ?? 'Маршрут не построился')
+      : null;
+  const geometryDone =
+    dash.liveWorkday?.workday.geometryDone ?? dash.snapshot?.plan.geometryDone ?? 0;
+  const geometryTotal =
+    dash.liveWorkday?.workday.geometryTotal ?? dash.snapshot?.plan.geometryTotal ?? 0;
+  const drawingLines = !calculating && geometryTotal > 0 && geometryDone < geometryTotal;
   const showRebuild = dash.rebuilding || calculating;
+  useEffect(() => {
+    if (!routerError) {
+      dismissToast('router-error');
+      return;
+    }
+    pushToast({
+      id: 'router-error',
+      kind: 'error',
+      title: 'Маршрут не построился',
+      body: routerError,
+    });
+  }, [routerError]);
+  useEffect(() => {
+    if (!drawingLines) {
+      dismissToast('router-geometry');
+      return;
+    }
+    pushToast({
+      id: 'router-geometry',
+      kind: 'progress',
+      title: 'Уточняем линии на карте',
+      body: `${geometryDone} из ${geometryTotal}. Пока линия не пришла, на карте прямая.`,
+      progress: Math.round((geometryDone / geometryTotal) * 100),
+      etaLabel: 'По одной',
+    });
+  }, [drawingLines, geometryDone, geometryTotal]);
   useEffect(() => {
     if (!showRebuild) {
       updateToast('dispatcher-rebuild', { progress: 100 });

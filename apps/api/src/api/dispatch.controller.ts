@@ -40,6 +40,7 @@ import {
   ResultAcceptanceService,
   RouterClient,
 } from '../routing/router-gateway';
+import { visibleRouterPhase } from '../routing/router-gateway/router-phase';
 import {
   type CloseShiftDto,
   closeShiftSchema,
@@ -811,14 +812,19 @@ export class DispatchController {
       select: { snapshot: { select: { inputHash: true } } },
     });
     const appliedHash = plan?.routerResult?.inputHash ?? null;
+    const phase = visibleRouterPhase(published !== null && published.snapshot.inputHash !== appliedHash);
     return {
       mode: control.mode,
       modeVersion: control.modeVersion,
-      calculating: published !== null && published.snapshot.inputHash !== appliedHash,
+      calculating: phase.phase === 'building',
+      routerPhase: phase.phase,
+      routerMessage: phase.message,
+      geometryDone: phase.geometryDone,
+      geometryTotal: phase.geometryTotal,
       // The moment the shown plan describes. While a recalculation is under way the
       // interface keeps this plan and says it is being rebuilt, rather than clearing the
       // day (context/36 section 6).
-      plan: plan ? await this.decoratePlan(toPlanView(plan)) : null,
+      plan: plan ? this.mapRouting.projectPlan(toPlanView(plan)) : null,
       // Direct relation to the package that produced the working revision. Unlike the
       // diagnostic last package, this cannot be confused by another result received in
       // the same second.
@@ -1205,26 +1211,6 @@ export class DispatchController {
     return { hits: await this.geocoding.search({ q, city, street }) };
   }
 
-  private async decoratePlan(plan: ReturnType<typeof toPlanView>) {
-    let trafficEnabled = true;
-    if (this.router.isConfigured()) {
-      try {
-        trafficEnabled = (await this.router.getTechnicalSettings()).trafficEnabled ?? true;
-      } catch {
-        // Technical settings are optional decoration. The last applied plan must remain
-        // readable while Router is unavailable; routing health is reported separately.
-      }
-    }
-    const engineers = await this.prisma.engineer.findMany({
-      where: { id: { in: plan.routes.map((route) => route.engineerId) } },
-      select: { id: true, transportType: true },
-    });
-    return this.mapRouting.enrichPlan(
-      plan,
-      trafficEnabled,
-      new Map(engineers.map((engineer) => [engineer.id, engineer.transportType])),
-    );
-  }
 }
 
 function readRosterEngineerIds(payload: string): string[] {

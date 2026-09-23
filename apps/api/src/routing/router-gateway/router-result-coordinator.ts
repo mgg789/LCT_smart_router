@@ -1,7 +1,8 @@
 import { Logger, type OnModuleDestroy, type OnModuleInit } from '@nestjs/common';
 import type { PrismaService } from '../../persistence';
 import type { ResultAcceptanceService } from './result-acceptance.service';
-import type { RouterClient } from './router-client.port';
+import type { RouterClient, RouterResultStatus } from './router-client.port';
+import { writeRouterPhase } from './router-phase';
 
 type ResultAcceptor = Pick<ResultAcceptanceService, 'accept'>;
 
@@ -29,6 +30,7 @@ export class RouterResultCoordinator implements OnModuleInit, OnModuleDestroy {
     if (!this.client.isConfigured()) {
       return;
     }
+    void this.client.getTechnicalSettings().catch(() => undefined);
     void this.pollOnce();
     this.timer = setInterval(() => void this.pollOnce(), this.pollIntervalMs);
     this.timer.unref();
@@ -64,7 +66,11 @@ export class RouterResultCoordinator implements OnModuleInit, OnModuleDestroy {
     try {
       const status = await this.client.getResultStatus();
       if (status.status === 'pending') {
+        writeRouterPhase({ phase: 'building', message: null });
         return;
+      }
+      if (status.status === 'error') {
+        writeRouterPhase({ phase: 'error', message: this.statusMessage(status) });
       }
       const identity = this.resultIdentity({
         status: status.status,
@@ -94,16 +100,30 @@ export class RouterResultCoordinator implements OnModuleInit, OnModuleDestroy {
       if (outcome.reason !== 'MODE_MANUAL') {
         this.handledIdentity = identity;
       }
+      if (result.status !== 'error') {
+        writeRouterPhase({ phase: 'ready', message: null });
+      }
       this.logger.log(
         outcome.accepted
           ? `Accepted Router result ${result.result_id ?? identity}`
           : `Handled Router result ${result.result_id ?? identity}: ${outcome.reason ?? 'rejected'}`,
       );
     } catch (error) {
+      // A status poll that does not answer means the router is busy. The last
+      // phase stays. This call is not on any client connection.
       this.logger.warn(
         `Router polling failed; will retry: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
+  }
+
+  /** Text the screen can show. Empty diagnostics become a fixed sentence. */
+  private statusMessage(status: RouterResultStatus): string {
+    const text = (status.errors ?? [])
+      .map((item) => item.message || item.code)
+      .filter((item) => item.length > 0)
+      .join('; ');
+    return text || 'Маршрут не построился';
   }
 
   private async hasPendingManualRestore(): Promise<boolean> {

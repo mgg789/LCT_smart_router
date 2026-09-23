@@ -31,10 +31,10 @@ from core.engine import (
     solve,
 )
 from core.evidence import build_plan_evidence
-from core.geo import GraphTravel, RoadGraph, configure_travel, content_hash
-from core.roadimport import ImportedRoadOverlay
-from core.osrm import OSRMTravel, attach_live_roads
+from core.geo import GraphTravel, RoadGraph, StraightTravel, configure_travel, content_hash
+from core.osrm import OSRMTravel
 from core.policy import POLICY_CATALOG_VERSION, compile_policy
+from core.roadimport import ImportedRoadOverlay
 from core.route_search import improve_routes
 from core.schedule import assemble_plan, baseline, score, validate_plan
 from core.settings import StoredTechnicalSettingsOperation, TechnicalSettingsStore
@@ -166,6 +166,33 @@ class PostgresSnapshotReader:
         )
 
 
+_worker_graph = None
+
+
+def _install_worker_graph(graph: RoadGraph | OSRMTravel) -> None:
+    """Keep the road graph in the worker. Resending it on every solve stalled the API."""
+    global _worker_graph
+    _worker_graph = graph
+
+
+def construction_travel(settings: SearchSettings, planning_as_of: int | None):
+    """Solve on straight lines. Metro still applies. OSRM and the road API do not."""
+    return configure_travel(StraightTravel(), settings.technical(), planning_as_of)
+
+
+def calculate_installed(
+    raw: bytes,
+    settings: SearchSettings,
+    context_version: str,
+    memory: EngineMemory | None = None,
+    publication_id: str | None = None,
+) -> tuple[RouterResult, EngineOutput | None]:
+    """Solve with the graph installed at worker start, so the parent stays responsive."""
+    if _worker_graph is None:
+        raise RuntimeError("WORKER_GRAPH_MISSING")
+    return calculate(raw, _worker_graph, settings, context_version, memory, publication_id)
+
+
 def calculate(
     raw: bytes,
     graph: RoadGraph | OSRMTravel,
@@ -221,9 +248,9 @@ def calculate(
             technical_settings=settings.technical(),
             errors=[Diagnostic(code="WAITING_HANDOFF", message="Confirmed equipment meeting is overdue.", entity_id=overdue.handoff_id)],
         ), None
-    provider = GraphTravel(graph) if isinstance(graph, RoadGraph) else graph
-    provider = attach_live_roads(provider)
-    provider = configure_travel(provider, settings.technical(), snapshot.planning_as_of)
+    # The carried graph is not quoted. Construction is a straight line; metro wraps it.
+    del graph
+    provider = construction_travel(settings, snapshot.planning_as_of)
     try:
         output = solve(snapshot, provider, settings, memory, context_version)
         effective_snapshot = output.memory.snapshot
@@ -279,11 +306,10 @@ def calculate_policy_comparison(
     """
     if not 1 <= search_budget_ms <= 8000:
         raise ValueError("COMPARISON_BUDGET_INVALID")
+    # Construction is always straight-line. The flag and the graph stay so callers compile.
+    del offline, graph
     snapshot = apply_system_policy(official_roster(parse_snapshot(raw)), settings)
-    provider = GraphTravel(graph) if isinstance(graph, RoadGraph) else graph
-    if not offline:
-        provider = attach_live_roads(provider)
-    provider = configure_travel(provider, settings.technical(), snapshot.planning_as_of)
+    provider = construction_travel(settings, snapshot.planning_as_of)
     comparison_settings = replace(
         settings,
         time_limit_ms=search_budget_ms,
@@ -430,7 +456,9 @@ class RouterRuntime:
             )
         self.poll_sec = poll_sec
         self._lock = threading.RLock()
-        self._executor = executor or ProcessPoolExecutor(max_workers=1)
+        self._owns_executor = executor is None
+        self._context_cache: str | None = None
+        self._executor = executor if executor is not None else self._open_executor()
         self._future: Future | None = None
         self._active_generation = -1
         self._generation = 0
@@ -450,13 +478,36 @@ class RouterRuntime:
         self.result = RouterResult(status="pending", router_context_version=self.context_version)
         self.last_path: str | None = None
 
+    def _open_executor(self) -> ProcessPoolExecutor:
+        """One worker that already holds the graph. A solve then sends only the task."""
+        return ProcessPoolExecutor(
+            max_workers=1,
+            initializer=_install_worker_graph,
+            initargs=(self._graph,),
+        )
+
+    def _rebind_worker(self) -> None:
+        """Reload the worker after the graph changes. Tests keep their injected executor."""
+        if not self._owns_executor:
+            return
+        previous = self._executor
+        self._executor = self._open_executor()
+        previous.shutdown(wait=False, cancel_futures=True)
+
     @property
     def context_version(self) -> str:
-        """Content-derived version covers graph, policy/compiler and all search settings."""
+        """Content-derived version covers graph, policy/compiler and all search settings.
+
+        A full road graph is hashed once. Repeating that dump on every status read
+        held the router lock until login and the dashboard gave up.
+        """
+        cached = self._context_cache
+        if cached is not None:
+            return cached
         resource = (
-            self._graph.model_dump(mode="json")
-            if isinstance(self._graph, RoadGraph)
-            else self._graph.version
+            self._graph.version
+            if hasattr(self._graph, "version")
+            else self._graph.model_dump(mode="json")
         )
         data = [
             "router-v2",
@@ -468,7 +519,9 @@ class RouterRuntime:
                 "technical_settings": self.settings.technical().model_dump(),
             },
         ]
-        return content_hash(json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+        digest = content_hash(json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+        self._context_cache = digest
+        return digest
 
     def result_status(self) -> dict:
         """Identity of the current result without copying the plan.
@@ -520,11 +573,9 @@ class RouterRuntime:
                 or not active.main.is_usable
             ):
                 raise ValueError("PUBLICATION_CHANGED")
-            graph, settings = copy.deepcopy(self._graph), copy.deepcopy(self.settings)
+            settings = copy.deepcopy(self.settings)
         snapshot = apply_system_policy(parse_snapshot(raw), settings)
-        provider = GraphTravel(graph) if isinstance(graph, RoadGraph) else graph
-        provider = attach_live_roads(provider)
-        provider = configure_travel(provider, settings.technical(), snapshot.planning_as_of)
+        provider = construction_travel(settings, snapshot.planning_as_of)
         result = evaluate_manual(snapshot, provider, active.main, routes)
         latest = self.reader.read()
         latest_raw = latest if isinstance(latest, bytes) else latest.payload
@@ -540,13 +591,10 @@ class RouterRuntime:
         from core.window_proposal import propose_window
 
         with self._lock:
-            graph, settings = copy.deepcopy(self._graph), copy.deepcopy(self.settings)
+            settings = copy.deepcopy(self.settings)
             version = self.context_version
         task = apply_system_policy(snapshot, settings)
-        provider = GraphTravel(graph) if isinstance(graph, RoadGraph) else graph
-        provider = configure_travel(
-            attach_live_roads(provider), settings.technical(), task.planning_as_of
-        )
+        provider = construction_travel(settings, task.planning_as_of)
         result = propose_window(task, provider, request_id, routes, day_end_at)
         with self._lock:
             if version != self.context_version:
@@ -678,11 +726,11 @@ class RouterRuntime:
             main, baseline_plan = scope(main), scope(baseline_plan)
         main_evidence = (
             completed[0][0].main_evidence if status == "partial" else
-            build_plan_evidence(snapshot, main, configure_travel(GraphTravel(self._graph) if isinstance(self._graph, RoadGraph) else self._graph, self.settings.technical(), snapshot.planning_as_of))
+            build_plan_evidence(snapshot, main, construction_travel(self.settings, snapshot.planning_as_of))
         )
         baseline_evidence = (
             completed[0][0].baseline_evidence if status == "partial" else
-            build_plan_evidence(snapshot, baseline_plan, configure_travel(GraphTravel(self._graph) if isinstance(self._graph, RoadGraph) else self._graph, self.settings.technical(), snapshot.planning_as_of))
+            build_plan_evidence(snapshot, baseline_plan, construction_travel(self.settings, snapshot.planning_as_of))
         )
         self.result = RouterResult(
             status=status, result_id=str(uuid4()), input_publication_id=publication_id,
@@ -696,6 +744,7 @@ class RouterRuntime:
         )
 
     def _invalidate(self):
+        self._context_cache = None
         self._generation += 1
         self._key = None
         self._pending = None
@@ -715,6 +764,7 @@ class RouterRuntime:
                 self._base_graph = graph.model_copy(deep=True)
                 self._graph = graph.model_copy(deep=True)
                 self._invalidate()
+                self._rebind_worker()
 
     def update_road_overlay(self, graph: RoadGraph) -> None:
         """Activate persistent imported edges without replacing the configured base provider."""
@@ -728,6 +778,7 @@ class RouterRuntime:
             if overlay.version != getattr(self._graph, "version", None):
                 self._graph = overlay
                 self._invalidate()
+                self._rebind_worker()
 
     def set_tolerance(
         self, operation_id: str, tolerance_sec: int, expected_context_version: str
@@ -778,6 +829,7 @@ class RouterRuntime:
             )
             previous_settings = self.settings
             self.settings = updated_settings
+            self._context_cache = None
             response = {
                 "operation_id": operation_id,
                 "status": "accepted",
@@ -915,15 +967,25 @@ class RouterRuntime:
                     else:
                         self._active_region = ""
                         worker_raw = self._pending
-                    self._future = self._executor.submit(
-                        calculate,
-                        worker_raw,
-                        self._graph,
-                        self.settings,
-                        key[1],
-                        self._memory,
-                        self._pending_publication_id,
-                    )
+                    if self._owns_executor:
+                        self._future = self._executor.submit(
+                            calculate_installed,
+                            worker_raw,
+                            self.settings,
+                            key[1],
+                            self._memory,
+                            self._pending_publication_id,
+                        )
+                    else:
+                        self._future = self._executor.submit(
+                            calculate,
+                            worker_raw,
+                            self._graph,
+                            self.settings,
+                            key[1],
+                            self._memory,
+                            self._pending_publication_id,
+                        )
                 except Exception:
                     self.result = RouterResult(
                         status="error",

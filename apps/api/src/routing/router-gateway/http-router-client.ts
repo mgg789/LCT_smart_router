@@ -155,6 +155,8 @@ export class HttpRouterClient extends RouterClient {
       .parse(raw);
   }
   private readonly baseUrl: string;
+  private settingsCache: { at: number; value: RouterTechnicalSettingsState } | null = null;
+  private settingsInflight: Promise<RouterTechnicalSettingsState> | null = null;
 
   constructor(private readonly options: HttpRouterClientOptions) {
     super();
@@ -200,8 +202,33 @@ export class HttpRouterClient extends RouterClient {
     return parsed.data.router_context_version;
   }
 
-  /** Reads and validates the complete active technical settings revision. */
-  override async getTechnicalSettings(): Promise<RouterTechnicalSettingsState> {
+  /**
+   * Reads technical settings without holding a client request on Router.
+   *
+   * A cached answer is returned immediately, including when it is stale.
+   * The refresh runs in the background. Only the first read, before any
+   * answer exists, waits for Router.
+   */
+  override getTechnicalSettings(): Promise<RouterTechnicalSettingsState> {
+    const cached = this.settingsCache;
+    const fresh = cached !== null && Date.now() - cached.at < 30_000;
+    if (!fresh) this.kickSettingsRefresh();
+    if (cached) return Promise.resolve(cached.value);
+    return this.settingsInflight ?? this.kickSettingsRefresh();
+  }
+
+  private kickSettingsRefresh(): Promise<RouterTechnicalSettingsState> {
+    if (this.settingsInflight) return this.settingsInflight;
+    const pending = this.readTechnicalSettings()
+      .then((value) => this.rememberSettings(value))
+      .finally(() => {
+        if (this.settingsInflight === pending) this.settingsInflight = null;
+      });
+    this.settingsInflight = pending;
+    return pending;
+  }
+
+  private async readTechnicalSettings(): Promise<RouterTechnicalSettingsState> {
     const raw = await this.fetchJson('/v1/context');
     const parsed = routerContextSchema.safeParse(raw);
     if (!parsed.success || !parsed.data.router_context_version || !parsed.data.technical_settings) {
@@ -212,6 +239,11 @@ export class HttpRouterClient extends RouterClient {
       );
     }
     return toTechnicalSettings(parsed.data.technical_settings, parsed.data.router_context_version);
+  }
+
+  private rememberSettings(value: RouterTechnicalSettingsState): RouterTechnicalSettingsState {
+    this.settingsCache = { at: Date.now(), value };
+    return value;
   }
 
   /** Sends a complete CAS replacement and validates Router's accepted revision. */
@@ -251,10 +283,13 @@ export class HttpRouterClient extends RouterClient {
         `Router /v2/config/technical-settings response is invalid: ${parsed.error.message}`,
       );
     }
+    const settings = this.rememberSettings(
+      toTechnicalSettings(parsed.data.technical_settings, parsed.data.router_context_version),
+    );
     return {
       operationId: parsed.data.operation_id,
       status: parsed.data.status,
-      ...toTechnicalSettings(parsed.data.technical_settings, parsed.data.router_context_version),
+      ...settings,
     };
   }
 
