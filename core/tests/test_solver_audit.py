@@ -330,3 +330,18 @@ def test_fast_evaluator_matches_canonical_under_seeded_constraints(snapshot, gra
         feasible += fast is not None
     assert checked == 2000
     assert feasible > 100
+
+
+def test_git_provenance_degrades_to_unknown_without_git(monkeypatch):
+    """Self-hosted CI workers materialize the workspace without .git; provenance
+    must report "unknown" instead of crashing the benchmark."""
+    import subprocess as sp
+
+    from core import policy_benchmark
+
+    def refuse(*_args, **_kwargs):
+        raise sp.CalledProcessError(128, "git")
+
+    monkeypatch.setattr(policy_benchmark.subprocess, "check_output", refuse)
+    assert policy_benchmark._git_provenance() == ("unknown", False)
+

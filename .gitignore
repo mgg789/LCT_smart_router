@@ -35,3 +35,4 @@ playwright-report/
 # Local environment files (only .env.example is committed)
 .env.*
 !.env.example
+core/uv.lock
