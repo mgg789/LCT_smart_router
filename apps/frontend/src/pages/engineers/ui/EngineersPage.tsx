@@ -177,7 +177,13 @@ export function EngineersPage() {
     // No fit of its own any more: `ScreenFit` scales the whole board, so this
     // screen is laid out at the drawing's size and inherits that one scale. A
     // second zoom here would square it.
-    <div className="-mr-[34px] -ml-[31px] h-full min-h-0 overflow-y-auto overflow-x-hidden">
+    //
+    // The frame's gutters are given back on all three sides, bottom included:
+    // the deck is drawn to run off the screen, and a 32px pad under it would cut
+    // the fan short of the edge it is supposed to dissolve into. Nothing here
+    // scrolls — at the drawing's size there is nothing to scroll to — so the
+    // only thing that ever clips this screen is the window itself.
+    <div className="-mr-[34px] -mb-8 -ml-[31px] h-[calc(100%+32px)] min-h-0 overflow-hidden">
       <div className="relative flex h-full min-h-0 flex-col">
         {loading ? (
           <p className={cn(GUTTER, 'pt-10 text-[16px] text-ink-soft')}>Загружаем инженеров…</p>
@@ -368,6 +374,15 @@ export function EngineersPage() {
           ) : null}
         </AnimatePresence>
 
+        {/*
+         * Where a taller screen's spare height goes: canvas between the profile
+         * and the deck, not white inside the card. The cluster below — chat
+         * button, deck, «Найти инженера» — keeps the drawing's spacing and its
+         * distance from the bottom edge whatever the screen is, which is the
+         * whole point of the fan running off that edge.
+         */}
+        <div aria-hidden className="min-h-0 flex-1" />
+
         <div className="mt-[67px] flex shrink-0 flex-col items-center gap-2">
           <button
             className="flex h-[47px] items-center gap-4 rounded-full bg-accent pr-[2px] pl-7 font-semibold text-[19px] text-ink transition-transform duration-150 enabled:active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45"
@@ -389,8 +404,14 @@ export function EngineersPage() {
          * The deck spans the canvas edge to edge, gutters included, and is drawn
          * over everything else: the drawing lets the fan run past the bottom and
          * both sides of the screen rather than sit in a box of its own.
+         *
+         * Its height is the drawing's, not whatever is left over: the cards run
+         * well past it anyway, and it is the gap from the chat button down to
+         * «Найти инженера» that has to hold. A taller screen gives its extra
+         * height to the profile above, which has something to do with it — the
+         * cluster stays where it was drawn, the same distance off the bottom.
          */}
-        <div className="relative z-20 mt-[22px] min-h-0 flex-1">
+        <div className="relative z-20 mt-[32px] h-[297px] shrink-0">
           <ArcCarousel
             activeIndex={activeIndex}
             aria-label="Бригады"
@@ -414,25 +435,31 @@ export function EngineersPage() {
          * The two soft glows of the drawing (29:694, 29:695): the deck does not
          * stop at a hard edge, it dissolves into the canvas at the bottom
          * corners. Drawn above the cards, so they fade beneath them.
+         *
+         * Placed where the drawing places them, 1067×880 with its centre just
+         * off the corner — the mirror image of `Ellipse 279` measured from this
+         * screen's own box, which starts at the rail. Any further in and the
+         * pair of cards next to the front one goes grey, which is not what the
+         * drawing does to them.
          */}
         <span
           aria-hidden
-          className="pointer-events-none absolute bottom-[-520px] left-[-430px] z-30 h-[880px] w-[1067px] rounded-full"
+          className="pointer-events-none absolute bottom-[-316px] left-[-333px] z-30 h-[880px] w-[1067px] rounded-full"
           style={{
             background:
-              'radial-gradient(closest-side, rgba(244,244,245,0.92), rgba(244,244,245,0.45) 62%, rgba(244,244,245,0))',
+              'radial-gradient(closest-side, rgba(244,244,245,0.98), rgba(244,244,245,0.85) 25%, rgba(244,244,245,0.3) 50%, rgba(244,244,245,0) 78%)',
           }}
         />
         <span
           aria-hidden
-          className="pointer-events-none absolute right-[-430px] bottom-[-520px] z-30 h-[880px] w-[1067px] rounded-full"
+          className="pointer-events-none absolute right-[-333px] bottom-[-316px] z-30 h-[880px] w-[1067px] rounded-full"
           style={{
             background:
-              'radial-gradient(closest-side, rgba(244,244,245,0.92), rgba(244,244,245,0.45) 62%, rgba(244,244,245,0))',
+              'radial-gradient(closest-side, rgba(244,244,245,0.98), rgba(244,244,245,0.85) 25%, rgba(244,244,245,0.3) 50%, rgba(244,244,245,0) 78%)',
           }}
         />
 
-        <label className="-mt-[38px] relative z-40 flex shrink-0 items-center justify-center gap-4 pb-1 text-ink">
+        <label className="-mt-[38px] relative z-40 mb-[84px] flex shrink-0 items-center justify-center gap-4 pb-1 text-ink">
           <Search aria-hidden size={28} strokeWidth={2.2} />
           <span className="sr-only">Найти инженера</span>
           {/*

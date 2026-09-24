@@ -1,26 +1,39 @@
 import type { KeyboardEvent, PointerEvent, ReactNode, WheelEvent } from 'react';
 import { useRef } from 'react';
 import { cn } from '../../lib/cn';
-import { useElementSize } from '../../lib/useElementSize';
 
-/** Width the mockup is drawn at; every measurement below is taken from it. */
-const DESIGN_WIDTH = 1920;
 /**
  * Where each card sits and how far it is tilted, measured off the drawing
  * (Figma 29:372) at its own 1920-wide canvas.
  *
- * Not a single circle: the drawing tilts a card far more than its place on the
- * arc would imply — the neighbour is 20° at 427px out, the one past it 60° at
- * 831px — so placement and tilt are two separate readings of the same fan rather
- * than one radius shared by both. The numbers are the card centres' offsets from
- * the front card, taken from the rotated frames' own boxes.
+ * Read off the rendered frame rather than the node boxes: the deck's layers
+ * carry hidden art and blur padding, so their reported origins are up to 75px
+ * adrift of where the card is actually drawn. Measured from the render, the
+ * neighbours' centres sit 352px out and 64px down — one circle of radius 1000
+ * through them, a step of 20° apart, which is the same arc `apps/web` draws.
+ *
+ * Tilt is read separately, and is not that angle: the drawing turns a card
+ * further than its place on the arc would imply. The rotated frames' own boxes
+ * settle it exactly — 367.7×320.5 is a 308×229 card at 20°, 352.3×381.2 the
+ * same card at 60°.
  */
+const RADIUS = 1000;
+const STEP_DEG = 20;
+
+function place(distance: number): number {
+  return RADIUS * Math.sin((distance * STEP_DEG * Math.PI) / 180);
+}
+
+function drop(distance: number): number {
+  return RADIUS * (1 - Math.cos((distance * STEP_DEG * Math.PI) / 180));
+}
+
 const PLACE: Record<number, { x: number; y: number; tilt: number }> = {
   0: { x: 0, y: 0, tilt: 0 },
-  1: { x: 427, y: 57, tilt: 20 },
-  2: { x: 831, y: 298, tilt: 60 },
+  1: { x: place(1), y: drop(1), tilt: 20 },
+  2: { x: place(2), y: drop(2), tilt: 60 },
   // Past the drawing: a wrap buffer nobody sees, kept out of the way.
-  3: { x: 1180, y: 620, tilt: 90 },
+  3: { x: place(3), y: drop(3), tilt: 90 },
 };
 
 /** Cards drawn either side of the front one; the outermost pair is only a wrap buffer. */
@@ -73,7 +86,7 @@ export interface ArcCarouselProps<T> {
   keyOf: (item: T) => string;
   labelOf: (item: T) => string;
   renderCard: (item: T, active: boolean) => ReactNode;
-  /** Card size at the design width; both shrink with the deck. */
+  /** Card size, in the drawing's own units — the board's scale is applied above. */
   cardWidth?: number;
   cardHeight?: number;
   /** Height of the deck's box; by default one step of the curve past the card. */
@@ -115,9 +128,9 @@ function releasePointer(element: Element, pointerId: number): void {
  * ends, so a card crossing from one side of the ring to the other is never seen
  * to jump.
  *
- * The arc scales with the width it is given, and its box is one step of the
- * curve deep: the outer cards are cut off below, as the drawing cuts them at the
- * edge of the screen.
+ * The deck is drawn at the size the drawing gives it and is never fitted to its
+ * box: the fan is meant to run past the bottom and both sides of the screen, and
+ * shrinking it to fit would lose the one thing the drawing is doing.
  *
  * It answers the wheel (either axis), the arrow keys and dragging with a mouse.
  */
@@ -134,7 +147,6 @@ export function ArcCarousel<T>({
   className,
   ...rest
 }: ArcCarouselProps<T>) {
-  const hostRef = useRef<HTMLElement>(null);
   const wheelAcc = useRef(0);
   const drag = useRef<{ pointerId: number; startX: number; startIndex: number; moved: boolean }>({
     pointerId: -1,
@@ -144,20 +156,8 @@ export function ArcCarousel<T>({
   });
   const suppressClick = useRef(false);
 
-  const { width: hostWidth } = useElementSize(hostRef);
-  /** Vertical room one unscaled deck needs for everything it actually shows. */
+  /** Vertical room one deck needs for everything it actually shows. */
   const span = reachBelow(cardWidth, cardHeight, DEEPEST_VISIBLE);
-  /**
-   * Only the width decides the size.
-   *
-   * The drawing lets the fan run past the bottom and both sides of the screen —
-   * that overhang is the look, not an accident — so a short box must not shrink
-   * the cards to fit inside it. It does not clip them either; the glow at the
-   * corners is what ends the deck.
-   */
-  const scale = hostWidth > 0 ? Math.min(1, Math.max(0.55, hostWidth / DESIGN_WIDTH)) : 1;
-  const width = cardWidth * scale;
-  const height = cardHeight * scale;
 
   const length = items.length;
   const step = (delta: number) => {
@@ -238,8 +238,7 @@ export function ArcCarousel<T>({
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
       onWheel={onWheel}
-      ref={hostRef}
-      style={{ height: boxHeight ?? span * scale }}
+      style={{ height: boxHeight ?? span }}
       // biome-ignore lint/a11y/noNoninteractiveTabindex: WCAG 2.1.1 — the arrow keys have to reach the deck even when no card holds focus.
       tabIndex={0}
     >
@@ -250,7 +249,7 @@ export function ArcCarousel<T>({
 
         // The drawing places and tilts a card by how far it is from the front; the
         // side it is on only decides which way both go.
-        const place = PLACE[distance] ?? PLACE[0];
+        const spot = PLACE[distance] ?? PLACE[0];
         const side = Math.sign(offset);
         const opacity = FADE[distance] ?? 0;
         const active = offset === 0;
@@ -269,13 +268,13 @@ export function ArcCarousel<T>({
               onActiveIndexChange(index);
             }}
             style={{
-              width,
-              height,
-              // The face is written in `em`, so its type and padding scale with the card.
-              fontSize: 16 * scale,
-              transform: `translate(-50%, 0) translate(${side * (place?.x ?? 0) * scale}px, ${
-                (place?.y ?? 0) * scale
-              }px) rotate(${side * (place?.tilt ?? 0)}deg)`,
+              width: cardWidth,
+              height: cardHeight,
+              // The face is written in `em`; this is what those `em` are.
+              fontSize: 16,
+              transform: `translate(-50%, 0) translate(${side * (spot?.x ?? 0)}px, ${
+                spot?.y ?? 0
+              }px) rotate(${side * (spot?.tilt ?? 0)}deg)`,
               zIndex: WINDOW + 1 - distance,
               opacity,
               pointerEvents: opacity === 0 ? 'none' : 'auto',

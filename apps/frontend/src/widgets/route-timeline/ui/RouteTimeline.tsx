@@ -44,7 +44,7 @@ export function RouteTimeline({
   );
 
   return (
-    <section className="flex h-full min-h-0 min-w-0 flex-col rounded-[20px] bg-surface p-5">
+    <section className="flex min-h-0 min-w-0 flex-col rounded-[20px] bg-surface p-5">
       <h2 className="font-display text-[24px] text-ink">
         {engineerName ? `Маршрут: ${engineerName}` : 'Маршрут'}
       </h2>

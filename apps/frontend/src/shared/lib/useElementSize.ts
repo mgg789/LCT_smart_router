@@ -12,12 +12,25 @@ export interface ElementSize {
  * Stays `{0, 0}` until it is measured, and where there is no ResizeObserver at
  * all — jsdom — so a caller that scales itself to its box must read zero as
  * "not known yet" and fall back to its design size rather than collapsing.
+ *
+ * The element is allowed to arrive later than the hook. A screen that shows
+ * «загружаем…» first mounts its real box only on a second render, and looking
+ * for it once, at mount, would have found nothing and never looked again — the
+ * box would then measure zero for as long as it was on screen.
  */
 export function useElementSize(ref: RefObject<HTMLElement | null>): ElementSize {
   const [size, setSize] = useState<ElementSize>({ width: 0, height: 0 });
+  const [element, setElement] = useState<HTMLElement | null>(null);
+
+  // Deliberately without a dependency list: a ref's contents change without
+  // telling anyone, so the only honest moment to compare is after each render.
+  // The compare is the guard — nothing re-renders unless the element itself
+  // changed.
+  useEffect(() => {
+    if (ref.current !== element) setElement(ref.current);
+  });
 
   useEffect(() => {
-    const element = ref.current;
     if (!element || typeof ResizeObserver === 'undefined') return;
 
     const observer = new ResizeObserver((entries) => {
@@ -26,7 +39,7 @@ export function useElementSize(ref: RefObject<HTMLElement | null>): ElementSize 
     });
     observer.observe(element);
     return () => observer.disconnect();
-  }, [ref]);
+  }, [element]);
 
   return size;
 }

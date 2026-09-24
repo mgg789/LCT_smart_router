@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 
-/** The canvas every screen is drawn on (Figma: 1920×1080). */
+/** The canvas every screen is drawn on (Figma: 1920×1080). Never smaller than this. */
 export const DESIGN_SCREEN = { width: 1920, height: 1080 } as const;
 
 /**
@@ -18,6 +18,33 @@ function fitFor(width: number, height: number): number {
   return Math.max(MIN_FIT, Math.min(width / DESIGN_SCREEN.width, height / DESIGN_SCREEN.height));
 }
 
+interface Canvas {
+  fit: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * The scale, and the canvas that scale leaves for the board to fill.
+ *
+ * The scale is the smaller of the two ratios, so type is the same size in both
+ * directions and nothing has to be squashed. What is left over on the other axis
+ * is not a margin: the canvas is given the whole window, measured in the
+ * drawing's own units, and the board spreads into it — a wider screen gets a
+ * wider map, a taller one a taller list. It never goes below 1920×1080, which is
+ * what the drawing assumes, so on a small screen the spare is a scrollbar.
+ */
+function canvasFor(width: number, height: number): Canvas {
+  const fit = fitFor(width, height);
+  return {
+    fit,
+    // Floored: `zoom` multiplies these back out, and a canvas half a pixel wider
+    // than the window would raise a scrollbar over nothing.
+    width: Math.max(DESIGN_SCREEN.width, Math.floor(width / fit)),
+    height: Math.max(DESIGN_SCREEN.height, Math.floor(height / fit)),
+  };
+}
+
 /**
  * Scales the whole interface to the window without moving anything inside it.
  *
@@ -28,21 +55,20 @@ function fitFor(width: number, height: number): number {
  * slightly different board at every desk.
  *
  * `zoom` rather than `transform: scale`, because `zoom` takes part in layout:
- * the canvas below really is 1920 wide, children measure themselves in the
- * drawing's units, and nothing has to be told what the scale is. A transform
+ * the canvas below really is its stated width, children measure themselves in
+ * the drawing's units, and nothing has to be told what the scale is. A transform
  * would leave the layout at full size and merely paint it smaller, which breaks
  * scrolling, hit-testing and anything that reads its own box.
- *
- * The scale is the smaller of the two ratios, so nothing is cut off; the spare
- * strip on the other axis is canvas colour, and the board stays centred in it.
  */
 export function ScreenFit({ children }: { children: ReactNode }) {
-  const [fit, setFit] = useState(() =>
-    typeof window === 'undefined' ? 1 : fitFor(window.innerWidth, window.innerHeight),
+  const [canvas, setCanvas] = useState<Canvas>(() =>
+    typeof window === 'undefined'
+      ? { fit: 1, width: DESIGN_SCREEN.width, height: DESIGN_SCREEN.height }
+      : canvasFor(window.innerWidth, window.innerHeight),
   );
 
   useEffect(() => {
-    const measure = () => setFit(fitFor(window.innerWidth, window.innerHeight));
+    const measure = () => setCanvas(canvasFor(window.innerWidth, window.innerHeight));
     measure();
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
@@ -52,9 +78,9 @@ export function ScreenFit({ children }: { children: ReactNode }) {
     <div className="flex min-h-screen justify-center overflow-auto bg-canvas">
       <div
         style={{
-          zoom: fit,
-          width: DESIGN_SCREEN.width,
-          height: DESIGN_SCREEN.height,
+          zoom: canvas.fit,
+          width: canvas.width,
+          height: canvas.height,
           flex: 'none',
         }}
       >

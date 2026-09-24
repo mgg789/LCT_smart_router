@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ROUTES } from '@/app/routes/paths';
 import { useEngineers } from '@/entities/engineer';
@@ -8,7 +8,7 @@ import { useDispatchState } from '@/entities/plan';
 import { unassignedRequests, useRequests } from '@/entities/request';
 import { useConversation } from '@/features/ai/ask-assistant';
 import { failedWithoutData } from '@/shared/api';
-import { fadeSoft, formatDayTitle, useMotionOn } from '@/shared/lib';
+import { fadeSoft, formatDayTitle, useElementSize, useMotionOn } from '@/shared/lib';
 import { DayBoard } from '@/widgets/day-board';
 import { DayMap } from '@/widgets/day-map';
 import { RequestPanel } from '@/widgets/request-panel';
@@ -35,6 +35,10 @@ export function PlanPage() {
   const engineers = engineersQuery.data?.engineers ?? [];
   const requests = requestsQuery.data?.requests ?? [];
   const plan = stateQuery.data?.plan ?? null;
+
+  // «Маршрут» animates to the height of its own contents; this is that height.
+  const routeRef = useRef<HTMLDivElement>(null);
+  const routeSize = useElementSize(routeRef);
 
   const requestsById = useMemo(
     () => new Map(requests.map((request) => [request.id, request])),
@@ -152,28 +156,30 @@ export function PlanPage() {
 
             {/*
              * «Маршрут» grows upward when a crew is chosen: the map above gives
-             * way, and the block's own bottom edge stays put. Keyed on the crew
-             * rather than on its route — a crew with nothing planned still opens
-             * the taller block, which then says so instead of staying shut.
+             * way, and the block's own bottom edge stays put.
              *
-             * With nobody chosen it hugs its own content instead of holding a
-             * fixed height: a line of text does not need a tall white box under
-             * it, and reserving one only looks like something failed to load.
+             * It is exactly as tall as what it holds, measured rather than
+             * guessed: a fixed height left a band of empty white under the
+             * timeline, and reading it off the content is the only way the
+             * animation can end on the right number whether the block is showing
+             * a full day, one line of text, or a crew with nothing planned.
              */}
             <motion.div
-              animate={{ height: activeEngineerId ? 360 : 'auto' }}
+              animate={{ height: routeSize.height || 'auto' }}
               className="flex min-h-0 shrink-0 flex-col overflow-hidden"
               initial={false}
               transition={motionOn ? fadeSoft : { duration: 0 }}
             >
-              <RouteTimeline
-                engineerName={activeEngineer?.displayName ?? null}
-                onSelectRequest={(id) => setSelectedRequestId(id)}
-                planAsOf={plan?.planAsOf ?? null}
-                requestsById={requestsById}
-                route={activeRoute}
-                selectedRequestId={selectedRequestId}
-              />
+              <div className="shrink-0" ref={routeRef}>
+                <RouteTimeline
+                  engineerName={activeEngineer?.displayName ?? null}
+                  onSelectRequest={(id) => setSelectedRequestId(id)}
+                  planAsOf={plan?.planAsOf ?? null}
+                  requestsById={requestsById}
+                  route={activeRoute}
+                  selectedRequestId={selectedRequestId}
+                />
+              </div>
             </motion.div>
           </div>
 
