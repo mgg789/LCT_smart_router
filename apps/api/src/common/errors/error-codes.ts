@@ -65,6 +65,10 @@ export const ERROR_CODES = {
   SERVICE_NOT_CONFIGURED: HttpStatus.SERVICE_UNAVAILABLE,
 
   /** Unexpected failure; details are logged, not returned. */
+  AI_QUOTA_EXHAUSTED: HttpStatus.TOO_MANY_REQUESTS,
+  AI_UNAVAILABLE: HttpStatus.SERVICE_UNAVAILABLE,
+  AI_HANDOFF_NOT_ACTIVE: HttpStatus.CONFLICT,
+  CHAT_TARGET_UNREACHABLE: HttpStatus.CONFLICT,
   INTERNAL_ERROR: HttpStatus.INTERNAL_SERVER_ERROR,
 } as const;
 

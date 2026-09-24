@@ -8,6 +8,7 @@ import { PhoneErrorNotice } from '../figma-engineer/PhoneErrorNotice';
 import { isPhoneFailureNotice } from '../figma-engineer/phoneNotice';
 import { CLIENT_ASSETS } from './assets';
 import { ClientEmailGate } from './ClientEmailGate';
+import { AssistantChat } from '../components/ai/AssistantChat';
 import { ClientMenu } from './ClientMenu';
 import { ClientNewRequest } from './ClientNewRequest';
 import { ClientRequestDetail } from './ClientRequestDetail';
@@ -375,12 +376,9 @@ export function ClientApp() {
             />
           ) : null}
           {screen === 'support' ? (
-            <ComingSoon
-              title="Поддержка"
-              body="Чат с поддержкой появится отдельным экраном. Сейчас можно вернуться к заявкам."
-              motionOn={motionOn}
-              onBack={openList}
-            />
+            <div className="min-h-0 flex-1" style={{ marginTop: eu(24) }}>
+              <AssistantChat token={session?.token ?? null} surface="client" variant="page" />
+            </div>
           ) : null}
         </div>
 
@@ -477,49 +475,4 @@ function errorText(error: unknown): string {
   if (error instanceof DashboardApiError) return error.message;
   if (error instanceof Error) return error.message;
   return 'Не удалось выполнить запрос.';
-}
-
-function ComingSoon({
-  title,
-  body,
-  motionOn,
-  onBack,
-}: {
-  title: string;
-  body: string;
-  motionOn: boolean;
-  onBack: () => void;
-}) {
-  return (
-    <motion.section
-      initial={motionOn ? { opacity: 0, y: 12 } : false}
-      animate={{ opacity: 1, y: 0 }}
-      transition={motionOn ? { duration: 0.28, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
-      style={{ marginTop: eu(40) }}
-    >
-      <h1 className="font-extrabold tracking-[0.02em] text-figma-ink" style={{ fontSize: eu(36) }}>
-        {title}
-      </h1>
-      <p
-        className="font-medium text-figma-muted"
-        style={{ marginTop: eu(16), fontSize: eu(20), lineHeight: eu(28) }}
-      >
-        {body}
-      </p>
-      <motion.button
-        type="button"
-        onClick={onBack}
-        whileTap={{ scale: 0.98 }}
-        className="bg-figma-bee font-semibold text-figma-ink"
-        style={{
-          marginTop: eu(24),
-          borderRadius: eu(20),
-          padding: `${eu(18)} ${eu(32)}`,
-          fontSize: eu(22),
-        }}
-      >
-        К списку заявок
-      </motion.button>
-    </motion.section>
-  );
 }

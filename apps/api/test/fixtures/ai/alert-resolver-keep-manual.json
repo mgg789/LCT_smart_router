@@ -1,0 +1,19 @@
+{
+  "reply": "Предлагаю оставить ручной план: используйте прикреплённое предложение.",
+  "toolCalls": [
+    {
+      "name": "propose_alert_resolution",
+      "arguments": {
+        "action": "keep_manual",
+        "reason": "The manual plan intentionally keeps a stability tradeoff the automatic result does not make.",
+        "confidence": 0.72,
+        "rejected": [
+          {
+            "action": "restore_auto",
+            "why": "No verified restore option exists yet for this snapshot."
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+{
+  "reply": "Hello! I'm the field-engineer routing assistant. I can help you check a request's status, reschedule a visit or ask a dispatcher to step in. What do you need?",
+  "usage": { "promptTokens": 12, "completionTokens": 34 },
+  "chunkSize": 40
+}

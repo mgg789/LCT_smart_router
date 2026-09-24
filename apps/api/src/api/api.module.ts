@@ -1,4 +1,6 @@
 import { Module } from '@nestjs/common';
+import { AlertResolverModule } from '../ai/alerts';
+import { ExplainModule } from '../ai/explain';
 import { MonthlyReportsModule } from '../notifications/monthly-reports.module';
 import { AiModule } from '../orchestrator/ai';
 import { AlertsModule } from '../orchestrator/alerts';
@@ -12,7 +14,9 @@ import { RequestsModule } from '../orchestrator/requests';
 import { ResetModule } from '../orchestrator/reset';
 import { RewardsModule } from '../orchestrator/rewards';
 import { RoadImportModule } from '../orchestrator/road-import';
+import { AiController } from './ai.controller';
 import { AuthController } from './auth.controller';
+import { DispatchChatsController } from './dispatch-chats.controller';
 import { ClientController } from './client.controller';
 import { DispatchController } from './dispatch.controller';
 import { EngineerController } from './engineer.controller';
@@ -46,9 +50,13 @@ import { RewardsController } from './rewards.controller';
     PerformanceModule,
     MonthlyReportsModule,
     RoadImportModule,
+    ExplainModule,
+    AlertResolverModule,
   ],
   controllers: [
     AuthController,
+    AiController,
+    DispatchChatsController,
     ClientController,
     EngineerController,
     DispatchController,

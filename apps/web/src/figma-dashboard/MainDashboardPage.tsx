@@ -2,6 +2,7 @@ import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'framer-m
 import { X } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { explainWithAi, getMcpSettings, updateDispatcherSettings } from '../api/client';
+import { DashboardAi, DashboardChats } from './DashboardAssist';
 import type { HandoffView, LiveRouteProgress } from '../api/live';
 import type { EngineerView, PlanDelta, PolicyId, RequestView } from '../api/types';
 import { DayMap } from '../components/DayMap';
@@ -965,6 +966,8 @@ export function MainDashboardPage() {
               onAnimationStart={() => setSettledPane('')}
               onAnimationComplete={() => setSettledPane(stackViewKey(stackNav))}
             >
+              {stackViewKey(stackNav) === 'chats' ? <DashboardChats token={dash.token} /> : null}
+              {stackViewKey(stackNav) === 'ai' ? <DashboardAi token={dash.token} /> : null}
               {stackViewKey(stackNav) === 'policy' ? (
                 <PolicyComparisonView
                   snapshot={dash.snapshot}

@@ -19,11 +19,11 @@ describe('dashboardSlide', () => {
     expect(stackNavIndex('ai')).toBeGreaterThan(stackNavIndex('policy'));
   });
 
-  it('gives Requests and Engineers their own panes and shares the day pane for day / chats / AI', () => {
+  it('gives requests, engineers, chats and AI their own panes', () => {
     expect(stackViewKey('day')).toBe('main');
     expect(stackViewKey('engineers')).toBe('engineers');
-    expect(stackViewKey('chats')).toBe('main');
-    expect(stackViewKey('ai')).toBe('main');
+    expect(stackViewKey('chats')).toBe('chats');
+    expect(stackViewKey('ai')).toBe('ai');
     expect(stackViewKey('requests')).toBe('requests');
     expect(stackViewKey('alerts')).toBe('alerts');
     expect(stackViewKey('policy')).toBe('policy');
@@ -42,12 +42,14 @@ describe('dashboardSlide', () => {
     expect(stackSlideEnter(0)).toEqual({ y: '0%' });
   });
 
-  it('skips locked chats / AI when the sidebar wheel steps', () => {
-    expect(isNavLocked('chats')).toBe(true);
-    expect(isNavLocked('ai')).toBe(true);
+  it('steps into chats and AI from the sidebar wheel', () => {
+    expect(isNavLocked('chats')).toBe(false);
+    expect(isNavLocked('ai')).toBe(false);
     expect(isNavLocked('engineers')).toBe(false);
-    expect(sidebarWheelNav('policy', 80)).toBe('day');
-    expect(sidebarWheelNav('day', -40)).toBe('policy');
+    expect(sidebarWheelNav('policy', 80)).toBe('chats');
+    expect(sidebarWheelNav('chats', 80)).toBe('ai');
+    expect(sidebarWheelNav('ai', 80)).toBe('day');
+    expect(sidebarWheelNav('day', -40)).toBe('ai');
     expect(sidebarWheelNav('alerts', 10)).toBe('policy');
     expect(sidebarWheelNav('policy', 0)).toBeNull();
   });

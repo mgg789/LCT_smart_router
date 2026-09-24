@@ -23,6 +23,7 @@ export const APP_STATE_KEYS = {
   DISPATCHER_SETTINGS: 'dispatcher.settings',
   /** AI contour controls: plan-assessment retraining switch and future API endpoints. */
   AI_SETTINGS: 'dispatcher.ai',
+  AI_DISPATCHER_ASSIST_MODE: 'dispatcher.ai.assist-mode',
   /** Last computed plan-assessment calibration and its fact signature. */
   AI_CALIBRATION: 'ai.predict-calibration',
   /**

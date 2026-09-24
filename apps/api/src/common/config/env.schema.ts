@@ -136,6 +136,28 @@ export const envSchema = z.object({
     .enum(['true', 'false'])
     .default('false')
     .transform((value) => value === 'true'),
+
+  /** Assistant provider. `off` keeps chats and the AI tab honest without a live model. */
+  LLM_PROVIDER: z.enum(['off', 'agents', 'openai_chat', 'replay']).default('off'),
+  LLM_TOKEN: z.string().min(1).optional(),
+  LLM_BASE_URL: z.url().default('https://api.deepseek.com'),
+  LLM_MODEL: z.string().min(1).default('deepseek-flash'),
+  LLM_FALLBACK_PROVIDER: z.enum(['none', 'openai_chat', 'replay']).default('none'),
+  LLM_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(60_000),
+  LLM_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(5).default(2),
+  LLM_MAX_TOOL_STEPS: z.coerce.number().int().min(1).max(12).default(6),
+  LLM_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(256).max(8_192).default(1_024),
+  AI_SSE_HEARTBEAT_MS: z.coerce.number().int().min(1_000).max(60_000).default(15_000),
+  AI_HISTORY_MESSAGES: z.coerce.number().int().min(4).max(100).default(24),
+  AI_DAILY_MESSAGE_LIMIT: z.coerce.number().int().positive().default(30),
+  AI_DAILY_COST_LIMIT_MICROS: z.coerce.number().int().positive().default(200_000),
+  AI_TOTAL_COST_LIMIT_MICROS: z.coerce.number().int().positive().default(4_000_000),
+  AI_UNITS_PER_1K_PROMPT_MICROS: z.coerce.number().int().nonnegative().default(2_000),
+  AI_UNITS_PER_1K_COMPLETION_MICROS: z.coerce.number().int().nonnegative().default(8_000),
+  AI_RUN_ESTIMATE_MICROS: z.coerce.number().int().positive().default(20_000),
+  AI_OPERATION_TTL_SEC: z.coerce.number().int().positive().default(900),
+  AI_REPLAY_DIR: z.string().min(1).default('apps/api/test/fixtures/ai'),
+  AI_REPLAY_SCENARIO: z.string().min(1).optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -156,6 +178,15 @@ export function validateEnv(raw: Record<string, unknown>): Env {
     throw new Error(
       'Invalid environment configuration: AUTH_DEV_EXPOSE_CODES must not be enabled in ' +
         'production. Returning login codes over the API bypasses authentication entirely.',
+    );
+  }
+  if (
+    (parsed.data.LLM_PROVIDER === 'agents' || parsed.data.LLM_PROVIDER === 'openai_chat') &&
+    !parsed.data.LLM_TOKEN
+  ) {
+    throw new Error(
+      'Invalid environment configuration: LLM_PROVIDER requires LLM_TOKEN for a live ' +
+        'provider. Set LLM_PROVIDER=replay or LLM_PROVIDER=off to run without a key.',
     );
   }
   if (parsed.data.SMTP_HOST && (!parsed.data.SMTP_USER || !parsed.data.SMTP_PASSWORD)) {

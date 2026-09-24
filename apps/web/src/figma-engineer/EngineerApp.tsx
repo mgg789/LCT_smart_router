@@ -14,6 +14,7 @@ import {
   sendEngineerLiveAction,
 } from '../api/live';
 import type { EngineerDayView, EngineerPlanResponse, EngineerView } from '../api/types';
+import { AssistantChat } from '../components/ai/AssistantChat';
 import { PassportOffer } from '../components/passports/PassportOffer';
 import { TRANSPORT_OPTIONS } from '../figma-dashboard/addEntity';
 import { FigmaIcon } from '../figma-dashboard/primitives';
@@ -585,12 +586,9 @@ export function EngineerApp({
               </div>
             </>
           ) : (
-            <ComingSoon
-              title="Помощник"
-              body="Чат с помощником появится отдельным экраном. Сейчас можно вернуться к списку заявок."
-              motionOn={motionOn}
-              onBack={() => setScreen('day')}
-            />
+            <div className="min-h-0 flex-1" style={{ marginTop: eu(24) }}>
+              <AssistantChat token={token} surface="engineer" variant="page" />
+            </div>
           )}
         </div>
 
@@ -702,47 +700,3 @@ export function EngineerApp({
   );
 }
 
-function ComingSoon({
-  title,
-  body,
-  motionOn,
-  onBack,
-}: {
-  title: string;
-  body: string;
-  motionOn: boolean;
-  onBack: () => void;
-}) {
-  return (
-    <motion.section
-      initial={motionOn ? { opacity: 0, y: 12 } : false}
-      animate={{ opacity: 1, y: 0 }}
-      transition={motionOn ? { duration: 0.28, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
-      style={{ marginTop: eu(40) }}
-    >
-      <h1 className="font-extrabold tracking-[0.02em] text-figma-ink" style={{ fontSize: eu(36) }}>
-        {title}
-      </h1>
-      <p
-        className="font-medium text-figma-muted"
-        style={{ marginTop: eu(16), fontSize: eu(20), lineHeight: eu(28) }}
-      >
-        {body}
-      </p>
-      <motion.button
-        type="button"
-        onClick={onBack}
-        whileTap={{ scale: 0.98 }}
-        className="bg-figma-bee font-semibold text-figma-ink"
-        style={{
-          marginTop: eu(24),
-          borderRadius: eu(20),
-          padding: `${eu(18)} ${eu(32)}`,
-          fontSize: eu(22),
-        }}
-      >
-        К списку заявок
-      </motion.button>
-    </motion.section>
-  );
-}
