@@ -4,6 +4,7 @@ import maplibregl from 'maplibre-gl';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { PlanRouteView } from '@/entities/plan';
 import type { RequestView } from '@/entities/request';
+import { useMotionOn } from '@/shared/lib';
 import { BRIGHT_STYLE_URL, blankStyle } from '../lib/mapStyle';
 import {
   boundsOf,
@@ -20,12 +21,23 @@ export interface DayMapProps {
   route: PlanRouteView | null;
   selectedRequestId: string | null;
   onSelectRequest: (requestId: string) => void;
+  /** Clicking the map where nothing is drawn: the dispatcher is looking away. */
+  onClearSelection?: () => void;
 }
 
 const POINTS_SOURCE = 'day-requests';
 const ROUTE_SOURCE = 'day-route';
 const STOPS_SOURCE = 'day-route-stops';
 const START_SOURCE = 'day-route-start';
+
+/**
+ * How long the camera takes to move, in milliseconds.
+ *
+ * Long enough to be followed by eye — the point of animating it at all is that
+ * the dispatcher sees where the map went, rather than finding it somewhere
+ * else — and short enough not to be in the way of the next click.
+ */
+const CAMERA_MS = 700;
 
 /** Present in this style's glyph set; the default font is not, and 404s. */
 const MAP_FONT = ['Noto Sans Bold'];
@@ -72,13 +84,22 @@ function useBasemapStyle() {
  * coordinates and no road geometry, so drawing a road would be an invention —
  * a dashed straight line states exactly what the plan knows (D-29).
  */
-export function DayMap({ requests, route, selectedRequestId, onSelectRequest }: DayMapProps) {
+export function DayMap({
+  requests,
+  route,
+  selectedRequestId,
+  onSelectRequest,
+  onClearSelection,
+}: DayMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const selectRef = useRef(onSelectRequest);
   selectRef.current = onSelectRequest;
+  const clearRef = useRef(onClearSelection);
+  clearRef.current = onClearSelection;
 
   const [layersReady, setLayersReady] = useState(false);
+  const motionOn = useMotionOn();
   const basemap = useBasemapStyle();
   const points = useMemo(() => buildRequestPoints(requests), [requests]);
   const line = useMemo(() => buildRouteLine(route), [route]);
@@ -252,6 +273,16 @@ export function DayMap({ requests, route, selectedRequestId, onSelectRequest }: 
         map.getCanvas().style.cursor = '';
       });
 
+      // A click on bare map is a click on nothing: the layer handlers above have
+      // already run for anything that was actually hit, so reaching here means
+      // the dispatcher pointed at empty ground and wants the board cleared.
+      map.on('click', (event) => {
+        const hits = map.queryRenderedFeatures(event.point, {
+          layers: ['day-stop-circles', 'day-request-circles'],
+        });
+        if (hits.length === 0) clearRef.current?.();
+      });
+
       setLayersReady(true);
     });
 
@@ -286,25 +317,68 @@ export function DayMap({ requests, route, selectedRequestId, onSelectRequest }: 
     (map.getSource(START_SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData(start);
   }, [layersReady, points, line, stops, start, selectedRequestId]);
 
-  // Frame the crew being looked at; with no route, frame the whole day. Re-framing
-  // is keyed on the route, so polling the plan does not yank the camera around.
-  const framedRef = useRef<string | null>(null);
+  /**
+   * Where the camera looks — one decision, taken in one place.
+   *
+   * There used to be two: one flew to the chosen request, the other framed the
+   * chosen crew. Picking a request does both at once, because a request brings
+   * its crew with it, so the two ran in the same commit and the crew's framing
+   * landed last — the camera pulled out over the whole route instead of going
+   * to the request the dispatcher had just asked for. A request is the more
+   * specific thing to be looking at, so it wins outright.
+   */
+  const lookingAtRef = useRef<string | null>(null);
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !layersReady) return;
 
-    const key = route?.engineerId ?? 'all';
-    if (framedRef.current === key) return;
+    const chosen = selectedRequestId
+      ? (requests.find((request) => request.id === selectedRequestId) ?? null)
+      : null;
+    const pinned =
+      chosen && chosen.lat !== null && chosen.lon !== null
+        ? ([chosen.lon, chosen.lat] as [number, number])
+        : null;
 
-    // The crew's start belongs in the frame too, or the «Старт» marker can sit
-    // just outside the view the camera picks for its stops.
+    // The key is what the camera is pointed at, not what changed: polling the
+    // plan rebuilds these arrays several times a minute and must not move it.
+    const key = pinned ? `request:${selectedRequestId}` : `route:${route?.engineerId ?? 'all'}`;
+    if (lookingAtRef.current === key) return;
+
+    // The first view of the day is not a journey: there is nowhere to travel
+    // from, only the default view of Moscow the map was built with.
+    const settling = lookingAtRef.current === null;
+    const duration = motionOn && !settling ? CAMERA_MS : 0;
+
+    if (pinned) {
+      lookingAtRef.current = key;
+      const move = {
+        center: pinned,
+        // Raised, never lowered: stepping through a queue pans across it rather
+        // than throwing away the framing the dispatcher chose.
+        zoom: Math.max(map.getZoom(), 12),
+        duration,
+      };
+      // Somewhere already on screen is reached by panning to it. Somewhere off
+      // it is reached by pulling back over the city and coming down again, so
+      // the dispatcher keeps a sense of how far apart the two places are.
+      if (duration > 0 && !map.getBounds().contains(pinned)) map.flyTo(move);
+      else map.easeTo(move);
+      return;
+    }
+
+    // Nothing in particular is chosen: frame the crew being looked at, or the
+    // whole day. The crew's start belongs in the frame too, or the «Старт»
+    // marker can sit just outside the view the camera picks for its stops.
     let bounds = route ? boundsOf(buildRequestPoints(routeRequests)) : boundsOf(points);
     if (route) bounds = extendBounds(bounds, route.startLon, route.startLat);
+    // Nothing to frame yet — leave the key unclaimed so this runs again when
+    // there is.
     if (!bounds) return;
 
-    framedRef.current = key;
-    map.fitBounds(bounds, { padding: 64, maxZoom: 14, animate: false });
-  }, [layersReady, points, route, routeRequests]);
+    lookingAtRef.current = key;
+    map.fitBounds(bounds, { padding: 64, maxZoom: 14, duration });
+  }, [layersReady, motionOn, points, requests, route, routeRequests, selectedRequestId]);
 
   return (
     <div className="relative min-h-[280px] flex-1 overflow-hidden rounded-[20px] bg-surface">

@@ -108,10 +108,12 @@ function ContactRow({
 function Composer({
   disabled,
   pending,
+  placeholder,
   onSend,
 }: {
   disabled: boolean;
   pending: boolean;
+  placeholder: string;
   onSend: (text: string) => void;
 }) {
   const [draft, setDraft] = useState('');
@@ -148,7 +150,7 @@ function Composer({
         disabled={disabled}
         id="chat-message"
         onChange={(event) => setDraft(event.target.value)}
-        placeholder={disabled ? 'Переписка завершена' : 'Отправьте сообщение'}
+        placeholder={placeholder}
         value={draft}
       />
       <button
@@ -247,8 +249,18 @@ export function ChatsPage() {
   const messages = threadMessages(chat);
   const closed = chat?.handoff.state === 'closed';
   const [pending, setPending] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
+  /**
+   * A refusal, kept together with the conversation it happened in.
+   *
+   * Stored with its owner rather than cleared by an effect: switching person then
+   * drops it by construction, and no ordering of renders can leave one person
+   * accused of another's problem.
+   */
+  const [refusal, setRefusal] = useState<{ contactId: string; text: string } | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+
+  // Shown only while the person it belongs to is the one on screen.
+  const problem = refusal && refusal.contactId === selected?.id ? refusal.text : null;
 
   const refresh = useCallback(
     () => queryClient.invalidateQueries({ queryKey: dispatchChatsQueryKey }),
@@ -273,7 +285,7 @@ export function ChatsPage() {
   const send = async (text: string) => {
     if (!selected) return;
     setPending(true);
-    setProblem(null);
+    setRefusal(null);
     try {
       if (chat && !closed) {
         await sendChatMessage(chat.conversation.id, text);
@@ -282,13 +294,15 @@ export function ChatsPage() {
       }
       await refresh();
     } catch (error) {
-      setProblem(
-        isApiError(error) && error.code === 'CHAT_TARGET_UNREACHABLE'
-          ? 'Писать некуда: у этого объекта нет входа в приложение — позвоните.'
-          : isApiError(error) && error.code === 'AI_HANDOFF_NOT_ACTIVE'
-            ? 'Передача уже завершена — обновите список и откройте чат заново.'
-            : 'Не удалось отправить сообщение.',
-      );
+      setRefusal({
+        contactId: selected.id,
+        text:
+          isApiError(error) && error.code === 'CHAT_TARGET_UNREACHABLE'
+            ? 'Писать некуда: у этого собеседника нет входа в приложение — свяжитесь иначе.'
+            : isApiError(error) && error.code === 'AI_HANDOFF_NOT_ACTIVE'
+              ? 'Передача уже завершена — обновите список и откройте чат заново.'
+              : 'Не удалось отправить сообщение.',
+      });
     } finally {
       setPending(false);
     }
@@ -300,7 +314,8 @@ export function ChatsPage() {
       await finishChat(target.conversation.id);
       await refresh();
     } catch {
-      setProblem('Не удалось завершить передачу.');
+      // Keyed by the person on screen, the same as every other refusal here.
+      if (selected) setRefusal({ contactId: selected.id, text: 'Не удалось завершить передачу.' });
     } finally {
       setPending(false);
     }
@@ -445,7 +460,8 @@ export function ChatsPage() {
 
                 {closed ? (
                   <p className="shrink-0 pb-2 text-center text-[16px] text-ink-soft">
-                    Передача завершена — диалог вернулся к ассистенту. История сохранена.
+                    Передача завершена — диалог вернулся к ассистенту. История сохранена; новое
+                    сообщение откроет следующую передачу.
                   </p>
                 ) : null}
               </motion.div>
@@ -459,9 +475,12 @@ export function ChatsPage() {
           <div className="flex shrink-0 flex-col items-center gap-2 pt-4 pb-[68px]">
             {problem ? <p className="text-[16px] text-danger">{problem}</p> : null}
             <Composer
-              disabled={!selected || closed}
+              disabled={!selected}
               onSend={(text) => void send(text)}
               pending={pending}
+              placeholder={
+                closed ? 'Написать снова — откроется новая передача' : 'Отправьте сообщение'
+              }
             />
           </div>
         </section>

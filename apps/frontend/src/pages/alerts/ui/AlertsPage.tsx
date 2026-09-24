@@ -87,12 +87,17 @@ function AlertCard({
   card,
   onOpenRequest,
   onExplain,
+  onWriteEngineer,
 }: {
   card: InboxAlertCard;
   onOpenRequest: (id: string) => void;
   onExplain: () => void;
+  onWriteEngineer: (engineerId: string) => void;
 }) {
   const secondary = card.actionLabels[0];
+  // «Написать» is the one decision that needs no form of its own: the chat is
+  // the form. The rest still wait for a drawing.
+  const writable = card.actions[0] === 'message' && card.engineerId !== null;
   return (
     <article className="flex min-h-[211px] w-full flex-col rounded-[20px] bg-surface px-[30px] pt-[19px] pb-6">
       <div className="flex flex-wrap items-center gap-4">
@@ -121,14 +126,24 @@ function AlertCard({
           </InboxButton>
         ) : null}
         {secondary ? (
-          // The server names the decisions it accepts, but each needs a form the
-          // drawing does not have yet — so the button names it and stays off.
-          <InboxButton
-            disabledReason="Форма этого решения ещё не нарисована — принять его можно, когда появится макет"
-            variant="outline"
-          >
-            {secondary}
-          </InboxButton>
+          writable ? (
+            <InboxButton
+              onClick={() => onWriteEngineer(card.engineerId as string)}
+              variant="outline"
+            >
+              {secondary}
+            </InboxButton>
+          ) : (
+            // The server names the decisions it accepts, but the rest each need a
+            // form the drawing does not have yet — so the button names it and
+            // stays off.
+            <InboxButton
+              disabledReason="Форма этого решения ещё не нарисована — принять его можно, когда появится макет"
+              variant="outline"
+            >
+              {secondary}
+            </InboxButton>
+          )
         ) : null}
         <AiLink onExplain={onExplain} tone="ink" />
       </div>
@@ -287,6 +302,9 @@ export function AlertsPage() {
                     card={card}
                     onExplain={() => explainAlert(card)}
                     onOpenRequest={openRequest}
+                    onWriteEngineer={(engineerId) =>
+                      navigate(`${ROUTES.chats}?engineer=${encodeURIComponent(engineerId)}`)
+                    }
                   />
                 </motion.li>
               ))}

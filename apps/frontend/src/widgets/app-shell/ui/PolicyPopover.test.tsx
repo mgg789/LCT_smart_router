@@ -128,7 +128,7 @@ describe('PolicyPopover', () => {
     renderWithProviders(<PolicyPopover onClose={() => {}} />);
     await settle();
 
-    await user.click(screen.getByRole('switch', { name: 'Обед включён' }));
+    await user.click(screen.getByRole('switch', { name: 'Рассчитать обеды' }));
 
     await waitFor(() => {
       const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT');

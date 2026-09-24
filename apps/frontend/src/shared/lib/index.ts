@@ -1,4 +1,6 @@
 export { cn } from './cn';
+export type { BlockNode, InlineNode } from './markdown';
+export { parseInline, parseMarkdown } from './markdown';
 export {
   EASE_OUT,
   fade,

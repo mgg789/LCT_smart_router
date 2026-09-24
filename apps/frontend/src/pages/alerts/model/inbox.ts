@@ -15,10 +15,14 @@ export interface InboxAlertCard {
   /** «Причина: …» — the drawing always opens the body this way. */
   body: string;
   engineerName: string | null;
+  /** Who the alert is about, when it is about someone — the chat needs the id. */
+  engineerId: string | null;
   badge: string;
   requestId: string | null;
-  /** The decisions the server offers, named; none of them is wired yet. */
+  /** The decisions the server offers, named. */
   actionLabels: string[];
+  /** The same decisions as the server's own codes, for the ones that are wired. */
+  actions: string[];
 }
 
 export interface InboxNoticeCard {
@@ -88,6 +92,7 @@ export function buildInbox(alerts: AlertView[], lookup: Lookup): Inbox {
           ),
           body: formatAlertReason(alertReason(alert)),
           engineerName: alert.engineerIds[0] ? lookup.engineerName(alert.engineerIds[0]) : null,
+          engineerId: alert.engineerIds[0] ?? null,
           badge:
             request?.priority === 'urgent'
               ? 'Срочная'
@@ -96,6 +101,7 @@ export function buildInbox(alerts: AlertView[], lookup: Lookup): Inbox {
           actionLabels: (alert.actions ?? []).map(
             (action) => ALERT_ACTION_LABELS[action] ?? action,
           ),
+          actions: [...(alert.actions ?? [])],
         };
       }),
     notices: alerts

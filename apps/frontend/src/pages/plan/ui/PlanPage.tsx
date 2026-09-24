@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ROUTES } from '@/app/routes/paths';
 import { useEngineers } from '@/entities/engineer';
@@ -9,7 +10,7 @@ import { useConversation } from '@/features/ai/ask-assistant';
 import { useStartWorkday } from '@/features/live/start-workday';
 import { CorrectionReview, useAssistedCorrection } from '@/features/plan/assisted-correction';
 import { failedWithoutData } from '@/shared/api';
-import { formatDayTitle } from '@/shared/lib';
+import { fadeSoft, formatDayTitle, useElementSize, useMotionOn } from '@/shared/lib';
 import { Button } from '@/shared/ui';
 import { DayBoard } from '@/widgets/day-board';
 import { DayMap } from '@/widgets/day-map';
@@ -19,6 +20,7 @@ import { RouteTimeline } from '@/widgets/route-timeline';
 export function PlanPage() {
   const navigate = useNavigate();
   const { explain } = useConversation();
+  const motionOn = useMotionOn();
   const engineersQuery = useEngineers();
   const requestsQuery = useRequests();
   const stateQuery = useDispatchState();
@@ -38,6 +40,10 @@ export function PlanPage() {
   const engineers = engineersQuery.data?.engineers ?? [];
   const requests = requestsQuery.data?.requests ?? [];
   const plan = stateQuery.data?.plan ?? null;
+
+  // «Маршрут» animates to the height of its own contents; this is that height.
+  const routeRef = useRef<HTMLDivElement>(null);
+  const routeSize = useElementSize(routeRef);
 
   const requestsById = useMemo(
     () => new Map(requests.map((request) => [request.id, request])),
@@ -77,6 +83,19 @@ export function PlanPage() {
       : [];
   });
 
+  /**
+   * A request that a crew is carrying brings that crew with it.
+   *
+   * The two selections are one thought for the dispatcher — «эта заявка, вон у
+   * той бригады» — so choosing the request and then hunting for its crew in the
+   * list would be work the screen can do itself. An unassigned request leaves
+   * the crew alone: there is none to show.
+   */
+  const carriedBy = selectedAssignment?.engineerId ?? null;
+  useEffect(() => {
+    if (carriedBy !== null) setSelectedEngineerId(carriedBy);
+  }, [carriedBy]);
+
   const loading = engineersQuery.isPending || requestsQuery.isPending || stateQuery.isPending;
   const failed = [engineersQuery, requestsQuery, stateQuery].some(failedWithoutData);
 
@@ -108,6 +127,12 @@ export function PlanPage() {
     const at = siblings.indexOf(selectedRequestId ?? '');
     const next = at < 0 ? 0 : (at + delta + siblings.length) % siblings.length;
     setSelectedRequestId(siblings[next] ?? null);
+  };
+
+  /** Clicking bare map puts the board back to nothing chosen. */
+  const clearSelection = () => {
+    setSelectedRequestId(null);
+    setSelectedEngineerId(null);
   };
 
   const showFirstUnassigned = () => {
@@ -239,64 +264,107 @@ export function PlanPage() {
 
           <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-8">
             <DayMap
+              onClearSelection={clearSelection}
               onSelectRequest={(id) => setSelectedRequestId(id)}
               requests={requests}
               route={activeRoute}
               selectedRequestId={selectedRequestId}
             />
 
-            <RouteTimeline
-              engineerName={activeEngineer?.displayName ?? null}
-              onSelectRequest={(id) => setSelectedRequestId(id)}
-              planAsOf={plan?.planAsOf ?? null}
-              requestsById={requestsById}
-              route={activeRoute}
-              selectedRequestId={selectedRequestId}
-            />
+            {/*
+             * «Маршрут» grows upward when a crew is chosen: the map above gives
+             * way, and the block's own bottom edge stays put.
+             *
+             * It is exactly as tall as what it holds, measured rather than
+             * guessed: a fixed height left a band of empty white under the
+             * timeline, and reading it off the content is the only way the
+             * animation can end on the right number whether the block is showing
+             * a full day, one line of text, or a crew with nothing planned.
+             */}
+            <motion.div
+              animate={{ height: routeSize.height || 'auto' }}
+              className="flex min-h-0 shrink-0 flex-col overflow-hidden"
+              initial={false}
+              transition={motionOn ? fadeSoft : { duration: 0 }}
+            >
+              <div className="shrink-0" ref={routeRef}>
+                <RouteTimeline
+                  engineerName={activeEngineer?.displayName ?? null}
+                  onSelectRequest={(id) => setSelectedRequestId(id)}
+                  planAsOf={plan?.planAsOf ?? null}
+                  requestsById={requestsById}
+                  route={activeRoute}
+                  selectedRequestId={selectedRequestId}
+                />
+              </div>
+            </motion.div>
           </div>
 
-          <RequestPanel
-            assignment={selectedAssignment}
-            beside={
-              siblings.length > 1
-                ? {
-                    index: Math.max(0, siblings.indexOf(selectedRequestId ?? '')),
-                    total: siblings.length,
-                    of: selectedAssignment?.engineerId ? 'queue' : 'unassigned',
-                    onStep: stepRequest,
-                  }
-                : undefined
-            }
-            engineer={assignedEngineer}
-            engineers={engineers}
-            editableRequestIds={editableRequestIds}
-            onAssistedChange={correction.change}
-            assistedBusy={correction.busy}
-            assistedEditable={Boolean(
-              selectedRequestId && correctionsState?.editableRequestIds.includes(selectedRequestId),
-            )}
-            pinnedEngineerId={
-              correctionsState?.constraints.assignments.find(
-                (row) => row.requestId === selectedRequestId,
-              )?.engineerId
-            }
-            mode={stateQuery.data?.mode ?? null}
-            modeVersion={stateQuery.data?.modeVersion ?? null}
-            planRevision={stateQuery.data ? (plan?.revision ?? 0) : null}
-            onExplain={
-              selectedRequest
-                ? () => {
-                    void explain(
-                      { scope: 'request', requestId: selectedRequest.id },
-                      `Разобрать заявку: ${selectedRequest.addressText ?? selectedRequest.id}`,
-                    );
-                    navigate(ROUTES.ai);
-                  }
-                : undefined
-            }
-            request={selectedRequest}
-            route={selectedRoute}
-          />
+          {/*
+           * The panel is not there until a request is: an empty dark column
+           * would be a promise of something to read. It opens by width, so the
+           * map and «Маршрут» are pushed aside rather than covered, and it is
+           * keyed on nothing but its own presence — switching between requests
+           * changes what it holds without replaying the slide.
+           */}
+          <AnimatePresence initial={false}>
+            {selectedRequest ? (
+              <motion.div
+                animate={{ width: 420, opacity: 1 }}
+                className="min-h-0 shrink-0 overflow-hidden"
+                exit={{ width: 0, opacity: 0 }}
+                initial={motionOn ? { width: 0, opacity: 0 } : false}
+                key="request-panel"
+                transition={motionOn ? fadeSoft : { duration: 0 }}
+              >
+                <div className="h-full w-[420px]">
+                  <RequestPanel
+                    assignment={selectedAssignment}
+                    assistedBusy={correction.busy}
+                    assistedEditable={Boolean(
+                      selectedRequestId &&
+                        correctionsState?.editableRequestIds.includes(selectedRequestId),
+                    )}
+                    beside={
+                      siblings.length > 1
+                        ? {
+                            index: Math.max(0, siblings.indexOf(selectedRequestId ?? '')),
+                            total: siblings.length,
+                            of: selectedAssignment?.engineerId ? 'queue' : 'unassigned',
+                            onStep: stepRequest,
+                          }
+                        : undefined
+                    }
+                    editableRequestIds={editableRequestIds}
+                    engineer={assignedEngineer}
+                    engineers={engineers}
+                    mode={stateQuery.data?.mode ?? null}
+                    modeVersion={stateQuery.data?.modeVersion ?? null}
+                    onAssistedChange={correction.change}
+                    onExplain={
+                      selectedRequest
+                        ? () => {
+                            void explain(
+                              { scope: 'request', requestId: selectedRequest.id },
+                              `Разобрать заявку: ${selectedRequest.addressText ?? selectedRequest.id}`,
+                            );
+                            navigate(ROUTES.ai);
+                          }
+                        : undefined
+                    }
+                    pinnedEngineerId={
+                      correctionsState?.constraints.assignments.find(
+                        (row) => row.requestId === selectedRequestId,
+                      )?.engineerId
+                    }
+                    planRevision={stateQuery.data ? (plan?.revision ?? 0) : null}
+                    request={selectedRequest}
+                    route={selectedRoute}
+                  />
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
         </div>
       )}
       {correction.proposal ? (

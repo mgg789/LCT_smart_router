@@ -62,54 +62,68 @@ export function RouteTimeline({
             : 'Выберите бригаду слева, чтобы увидеть её маршрут.'}
         </p>
       ) : (
-        <ol className="mt-7 flex overflow-x-auto pb-2">
-          {visits.map((stop, index) => {
-            const request = stop.requestId ? requestsById.get(stop.requestId) : undefined;
-            const done = request?.lifecycle === 'completed';
-            const running = request?.lifecycle === 'in_progress';
-            const selected = stop.requestId !== null && stop.requestId === selectedRequestId;
+        <div
+          className="mt-7 min-h-0 overflow-x-auto pb-2 [scrollbar-width:thin]"
+          style={{
+            // The day runs on past both ends of the strip, as on the crews screen.
+            maskImage: 'linear-gradient(to right, transparent, #000 7%, #000 93%, transparent)',
+          }}
+        >
+          <ol className="relative flex w-max">
+            {/*
+             * One rule behind every dot, stopping half a column short of each end
+             * so it starts and finishes under a dot rather than in mid-air — the
+             * same line the crews screen draws.
+             */}
+            <span
+              aria-hidden
+              className="absolute top-[7px] h-[3px] bg-ink"
+              style={{ left: COLUMN_WIDTH / 2, right: COLUMN_WIDTH / 2 }}
+            />
+            {visits.map((stop, index) => {
+              const request = stop.requestId ? requestsById.get(stop.requestId) : undefined;
+              const done = request?.lifecycle === 'completed';
+              const running = request?.lifecycle === 'in_progress';
+              const selected = stop.requestId !== null && stop.requestId === selectedRequestId;
 
-            return (
-              <li
-                className="shrink-0"
-                key={`${stop.sequence}-${stop.requestId ?? index}`}
-                style={{ width: COLUMN_WIDTH }}
-              >
-                {/* One rule runs behind every dot, so the line reads as continuous. */}
-                <div className="relative flex h-4 items-center">
-                  <span aria-hidden className="absolute inset-x-0 h-[3px] bg-ink" />
+              return (
+                <li
+                  className="shrink-0 text-center"
+                  key={`${stop.sequence}-${stop.requestId ?? index}`}
+                  style={{ width: COLUMN_WIDTH }}
+                >
                   <span
                     aria-hidden
                     className={cn(
-                      'relative size-4 rounded-full',
+                      'relative mx-auto block size-4 rounded-full',
                       running ? 'bg-success' : 'bg-ink',
                     )}
                   />
-                </div>
 
-                <button
-                  className={cn(
-                    'mt-4 block w-[248px] text-left',
-                    selected && 'underline decoration-accent decoration-2 underline-offset-4',
-                  )}
-                  disabled={!stop.requestId}
-                  onClick={() => stop.requestId && onSelectRequest(stop.requestId)}
-                  type="button"
-                >
-                  <span className="block font-semibold text-[26px] text-ink">
-                    {formatTime(stop.startAt)}
-                  </span>
-                  <span className="mt-2 block text-[16px] text-ink">
-                    {request?.addressText ?? STOP_KIND_TITLE[stop.kind] ?? stop.kind}
-                  </span>
-                  <span className="mt-1 block text-[14px] text-ink/50">
-                    {done ? 'выполнено' : running ? 'сейчас' : 'по плану'}
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ol>
+                  <button
+                    className={cn(
+                      'mt-4 block w-full px-2 text-center',
+                      selected && 'underline decoration-accent decoration-2 underline-offset-4',
+                    )}
+                    disabled={!stop.requestId}
+                    onClick={() => stop.requestId && onSelectRequest(stop.requestId)}
+                    type="button"
+                  >
+                    <span className="block font-semibold text-[26px] text-ink">
+                      {formatTime(stop.startAt)}
+                    </span>
+                    <span className="mt-2 block truncate text-[16px] text-ink">
+                      {request?.addressText ?? STOP_KIND_TITLE[stop.kind] ?? stop.kind}
+                    </span>
+                    <span className="mt-1 block text-[14px] text-ink/50">
+                      {done ? 'выполнено' : running ? 'сейчас' : 'по плану'}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
       )}
     </section>
   );
