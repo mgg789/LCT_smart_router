@@ -224,7 +224,7 @@ export function ClientNewRequest({
           </p>
         </div>
       ) : (
-        <div style={{ height: `calc(${eu(36)} + 8px)` }} />
+        <div style={{ height: `calc(${eu(36)} + 20px)` }} />
       )}
       <div className="flex flex-col">
       <ModeSwitch mode={mode} onChange={setMode} />

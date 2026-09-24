@@ -212,7 +212,7 @@ function ExplainedAction({
   return (
     <fieldset
       ref={anchor}
-      className="inline-flex"
+      className="m-0 inline-flex min-w-0 border-0 p-0"
       tabIndex={disabled ? 0 : undefined}
       aria-label={disabled ? `${spec.label}: недоступно` : undefined}
       aria-describedby={id}
@@ -234,7 +234,7 @@ function ExplainedAction({
             dismiss();
             onClick?.();
           }}
-          className="relative flex items-center justify-center overflow-clip rounded-[20px] bg-figma-ink px-[32px] py-[16px] font-semibold text-[20px] tracking-[-0.6px] disabled:cursor-not-allowed disabled:opacity-45"
+          className={`relative box-border flex h-[62px] shrink-0 items-center justify-center overflow-hidden rounded-[20px] bg-figma-ink px-[32px] font-semibold text-[20px] leading-none tracking-[-0.6px] disabled:cursor-not-allowed ${thinking ? 'brightness-90' : ''} ${disabled && !thinking ? 'opacity-45' : ''}`}
         >
           {thinking ? (
             <span aria-hidden className="ai-reason-shimmer pointer-events-none absolute inset-0" />
