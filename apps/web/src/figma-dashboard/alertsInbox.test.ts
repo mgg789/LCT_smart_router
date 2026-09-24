@@ -3,6 +3,7 @@ import { createDevSnapshot } from '../fixtures/dev-day';
 import {
   arrivalSeconds,
   formatAlertReason,
+  dispatchAlertId,
   inboxFromSources,
   isInboxAlertKind,
   sortByArrival,
@@ -10,6 +11,15 @@ import {
 import type { ToastNotification } from './toasts';
 
 describe('ALERTS inbox', () => {
+  it('sends the bare alert id, not the inbox prefix', () => {
+    expect(dispatchAlertId('alert:607b90e0-70f6-4ab9-bcb4-be85bed07cf2')).toBe(
+      '607b90e0-70f6-4ab9-bcb4-be85bed07cf2',
+    );
+    expect(dispatchAlertId('607b90e0-70f6-4ab9-bcb4-be85bed07cf2')).toBe(
+      '607b90e0-70f6-4ab9-bcb4-be85bed07cf2',
+    );
+  });
+
   it('hides a stale unassigned card once the request read already reports an assignment', () => {
     const snapshot = createDevSnapshot();
     const request = snapshot.requests[0];

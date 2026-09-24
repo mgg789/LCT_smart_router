@@ -296,6 +296,12 @@ describe('LIVE map factual projection', () => {
     expect(segments.map((segment) => segment.source)).toEqual(['route_api', 'metro', 'route_api']);
     expect(segments.every((segment) => segment.fromKey === 'job:done')).toBe(true);
     expect(segments.every((segment) => segment.toKey === 'job:next')).toBe(true);
+    const edge = graph.mapSegments.find(
+      (item) => item.from.key === 'job:done' && item.to.key === 'job:next',
+    );
+    expect(edge && plannedRoadsCoverEdge(edge, segments.filter((item) => item.source === 'metro'))).toBe(
+      true,
+    );
   });
 
   it('keeps a road polyline when OSRM snapped the ends onto the carriageway', () => {
@@ -518,5 +524,95 @@ describe('LIVE map factual projection', () => {
     );
     expect(collapsed).toBeTruthy();
     if (collapsed) expect(plannedRoadsCoverEdge(collapsed, segments)).toBe(true);
+  });
+
+  it('binds a return visit to the later job when it shares the start pin', () => {
+    const route: PlanRouteView = {
+      engineerId: 'engineer',
+      startLat: 55.71,
+      startLon: 37.77,
+      startAt: 0,
+      finishAt: 400,
+      distanceKm: 8,
+      travelTimeSec: 200,
+      workTimeSec: 80,
+      waitingTimeSec: 0,
+      lunchTimeSec: 0,
+      assignedCount: 2,
+      lunchStatus: 'none',
+      stops: [
+        {
+          sequence: 1,
+          kind: 'job',
+          requestId: 'away',
+          lat: 55.74,
+          lon: 37.69,
+          arrivalAt: 100,
+          startAt: 100,
+          endAt: 140,
+        },
+        {
+          sequence: 2,
+          kind: 'job',
+          requestId: 'back',
+          lat: 55.71,
+          lon: 37.77,
+          arrivalAt: 200,
+          startAt: 200,
+          endAt: 240,
+        },
+        {
+          sequence: 3,
+          kind: 'job',
+          requestId: 'next',
+          lat: 55.73,
+          lon: 37.8,
+          arrivalAt: 300,
+          startAt: 300,
+          endAt: 340,
+        },
+      ],
+      legs: [
+        {
+          legId: 'return-out',
+          fromStopId: 'back',
+          toStopId: 'next',
+          departureAt: 240,
+          arrivalAt: 300,
+          travelTimeSec: 60,
+          distanceKm: 3,
+          travelSource: 'metro',
+          trafficFactor: 1,
+          geometry: {
+            points: [
+              { lat: 55.71, lon: 37.77 },
+              { lat: 55.73, lon: 37.8 },
+            ],
+          },
+          segments: [
+            {
+              geometry: {
+                points: [
+                  { lat: 55.71, lon: 37.77 },
+                  { lat: 55.72, lon: 37.78 },
+                  { lat: 55.73, lon: 37.8 },
+                ],
+              },
+              travelSource: 'metro',
+              travelTimeSec: 60,
+              distanceKm: 3,
+            },
+          ],
+        },
+      ],
+    };
+    const graph = projectLiveGraph(route, null, new Set(['away', 'back', 'next']));
+    const segments = visiblePlannedSegments(route, graph);
+    expect(segments.map((segment) => segment.fromKey)).toContain('job:back');
+    expect(segments.map((segment) => segment.toKey)).toContain('job:next');
+    const edge = graph.mapSegments.find(
+      (item) => item.from.key === 'job:back' && item.to.key === 'job:next',
+    );
+    expect(edge && plannedRoadsCoverEdge(edge, segments)).toBe(true);
   });
 });

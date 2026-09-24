@@ -110,8 +110,7 @@ export function visiblePlannedSegments(
     if (!first || !last) continue;
     const routeFirst = segment.routeEndpoints?.[0] ?? first;
     const routeLast = segment.routeEndpoints?.[1] ?? last;
-    const from = resolveVisibleEndpoint(route, graph.mapNodes, routeFirst);
-    const to = resolveVisibleEndpoint(route, graph.mapNodes, routeLast);
+    const { from, to } = resolveVisiblePair(route, graph, routeFirst, routeLast);
     const drawableRoad =
       !segment.approximate && segment.coordinates.length >= 2 && segment.source !== 'metro';
     const onGraph =
@@ -155,6 +154,41 @@ export function visiblePlannedSegments(
  */
 const ROAD_ENDPOINT_SNAP_M = 80;
 
+/**
+ * A return visit sits on the same pin as the shift start. The first node at
+ * that coordinate is the start, which is not the graph edge of the return
+ * trip, so the road was dropped and a dashed chord remained.
+ */
+function resolveVisiblePair(
+  route: PlanRouteView,
+  graph: LiveGraphProjection,
+  start: readonly [number, number],
+  end: readonly [number, number],
+): { from: LiveGraphNode | null; to: LiveGraphNode | null } {
+  const fromOptions = endpointCandidates(route, graph.mapNodes, start);
+  const toOptions = endpointCandidates(route, graph.mapNodes, end);
+  for (const from of fromOptions) {
+    for (const to of toOptions) {
+      if (from.key === to.key) continue;
+      if (graph.mapSegments.some((edge) => edge.key === `${from.key}->${to.key}`)) {
+        return { from, to };
+      }
+    }
+  }
+  return { from: fromOptions[0] ?? null, to: toOptions[0] ?? null };
+}
+
+function endpointCandidates(
+  route: PlanRouteView,
+  visibleNodes: readonly LiveGraphNode[],
+  coordinate: readonly [number, number],
+): LiveGraphNode[] {
+  const exact = visibleNodes.filter((node) => hasCoordinate(node, coordinate));
+  if (exact.length > 0) return exact;
+  const single = resolveVisibleEndpoint(route, visibleNodes, coordinate);
+  return single ? [single] : [];
+}
+
 function resolveVisibleEndpoint(
   route: PlanRouteView,
   visibleNodes: readonly LiveGraphNode[],
@@ -196,12 +230,16 @@ function nearestNodeWithin(
   return best;
 }
 
-/** A collapsed lunch edge is covered when real roads meet at the lunch pin. */
+/**
+ * A graph edge is already drawn when a road, a metro ride, or two roads
+ * meeting at a collapsed lunch pin connect its stops. A leftover chord is
+ * the dashed fallback.
+ */
 export function plannedRoadsCoverEdge(
   edge: { from: Pick<LiveGraphNode, 'lat' | 'lon' | 'key'>; to: Pick<LiveGraphNode, 'lat' | 'lon' | 'key'> },
   planned: readonly VisiblePlannedSegment[],
 ): boolean {
-  const roads = planned.filter((segment) => !segment.approximate && segment.source !== 'metro');
+  const roads = planned.filter((segment) => segment.source === 'metro' || !segment.approximate);
   const pinsOf = (segment: VisiblePlannedSegment) =>
     segment.routeEndpoints ??
     ([segment.coordinates[0], segment.coordinates[segment.coordinates.length - 1]] as const);

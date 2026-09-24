@@ -420,7 +420,9 @@ export class MapRoutingService {
     const points = decodeRoadPolyline(json);
     // A drawn road and a real straight (outside the graph) stay for the day.
     // Anything else is a transient miss and is retried on the next poll.
-    const ttl = points || isStraightAnswer(json) ? ROAD_SHAPE_TTL_MS : ROAD_MISS_TTL_MS;
+    // A real road stays for the day. A straight answer is not a finished road:
+    // the next plan read asks again instead of pinning a dashed chord for hours.
+    const ttl = points ? ROAD_SHAPE_TTL_MS : ROAD_MISS_TTL_MS;
     this.roadShapeCache.set(key, { expiresAt: Date.now() + ttl, points });
     if (this.roadShapeCache.size > CACHE_LIMIT) {
       const first = this.roadShapeCache.keys().next().value;
@@ -618,10 +620,6 @@ function needsRoadShape(source: PlanRouteSegmentView['travelSource'], pointCount
   if (source === 'metro') return false;
   if ((source === 'route_api' || source === 'traffic_api') && pointCount >= 2) return false;
   return pointCount <= 2 || source === 'approximate' || source === 'road_matrix';
-}
-
-function isStraightAnswer(json: unknown): boolean {
-  return Boolean(json && typeof json === 'object' && (json as { mode?: unknown }).mode === 'straight');
 }
 
 function decodeRoadPolyline(json: unknown): Array<{ lat: number; lon: number }> | null {

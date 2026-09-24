@@ -5,7 +5,7 @@ import { proposeAlertWithAi } from '../api/client';
 import type { AlertResolutionInput, DashboardSnapshot } from '../api/types';
 import { AlertActions } from './AlertActions';
 import { isAlertActionId } from '../domain/alerts';
-import { type InboxNoticeCard, inboxFromSources } from './alertsInbox';
+import { dispatchAlertId, type InboxNoticeCard, inboxFromSources } from './alertsInbox';
 import { FIGMA_ASSETS } from './assets';
 import { InboxAlertCardView, InboxButton, InboxNoticeCardView } from './inboxCard';
 import { FigmaText } from './primitives';
@@ -102,12 +102,13 @@ export function AlertsView({
     index: number,
     cancelled: () => boolean,
   ): Promise<boolean> {
+    const alertId = card.sourceAlert ? dispatchAlertId(card.sourceAlert.id) : dispatchAlertId(card.id);
     setThinkingId(card.id);
     let action = card.sourceAlert?.actions?.find((item) => isAlertActionId(item)) ?? null;
     let proposal: Awaited<ReturnType<typeof proposeAlertWithAi>> | null = null;
     if (token) {
       try {
-        proposal = await proposeAlertWithAi(token, card.id);
+        proposal = await proposeAlertWithAi(token, alertId);
         action = isAlertActionId(proposal.choice) ? proposal.choice : action;
       } catch {
         setThinkingId(null);
@@ -123,7 +124,7 @@ export function AlertsView({
     await wait(2000);
     if (cancelled()) return false;
     try {
-      await onResolve(card.id, {
+      await onResolve(alertId, {
         operationId: crypto.randomUUID(),
         action,
         reason: 'Решено с AI автоматически',
@@ -144,7 +145,7 @@ export function AlertsView({
       return false;
     }
     if (cancelled()) return false;
-    dismissToast(`alert:${card.id}`);
+    dismissToast(card.id.startsWith('alert:') ? card.id : `alert:${alertId}`);
     setLeaving((current) => ({ ...current, [card.id]: index % 2 === 0 ? 1 : -1 }));
     await wait(520);
     setSweptIds((current) => new Set(current).add(card.id));
