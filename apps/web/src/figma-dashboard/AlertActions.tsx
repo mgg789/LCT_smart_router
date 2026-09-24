@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { DashboardApiError, loadAlertWindowProposal } from '../api/client';
+import { DashboardApiError, loadAlertWindowProposal, resolveAlertWithAi } from '../api/client';
 import type { AlertResolutionInput, AlertView, DashboardSnapshot } from '../api/types';
 import {
   ALERT_ACTION_SPECS,
@@ -94,14 +94,19 @@ export function AlertActions({
         <ExplainedAction
           icon={Sparkles}
           appearance="ai"
-          disabled
+          disabled={disabled || waiting || pending || !token || !alert}
           spec={{
             label: 'Решить с AI',
-            summary: 'AI-разбор этого алерта пока недоступен.',
-            effect: 'Сервис AI ещё не подключён. Выберите один из ручных вариантов.',
-            benefit: 'После подключения поможет сравнить допустимые решения.',
-            drawback: 'Сейчас кнопка не выполняет действий.',
+            summary: 'System one выбирает допустимое действие и применяет его.',
+            effect: 'Сервер проверяет ответ по списку и проводит обычное решение алерта.',
+            benefit: 'Не нужно выбирать вариант вручную, если список уже известен.',
+            drawback: 'Смена окна сюда не входит: время модель не назначает.',
             tone: 'ink',
+          }}
+          onClick={() => {
+            if (!token || !alert || pending) return;
+            setPending(true);
+            void resolveAlertWithAi(token, alert.id).finally(() => setPending(false));
           }}
         />
       </div>

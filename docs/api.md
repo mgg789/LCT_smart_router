@@ -723,6 +723,15 @@ UI-дизайн — [ml-predictions.md](./ml-predictions.md).
 минимума наблюдений работает заводская; полный сброс данных откатывает модель до
 заводской. Подробно — [ml-predictions.md](./ml-predictions.md) §1.1.
 
+Короткие вызовы не ходят через чат-харнес. `POST /api/v1/dispatch/ai/explain` просит
+языковую модель (`LLM_API_URL`, `LLM_MODEL`, `LLM_API_KEY`, без режима рассуждений)
+двумя-четырьмя фразами пересказать уже посчитанный контекст: причины выбора или
+слабость плана. `POST /api/v1/dispatch/ai/optimize` и `POST /api/v1/dispatch/alerts/:id/ai-resolve`
+отдают System one (`JEV_API_URL`, локально порт 12444, `POST /v1/choice`) выбор из
+готового списка и применяют его обычными операциями `policy.select` и `alert.resolve`.
+Ответ вне списка отклоняется. `POST /api/v1/client/interpret` публичный: из текста
+истории кандидаты достаёт разбор строки, тему, окно, имя и адрес выбирает System one.
+
 `GET /api/v1/engineer/weather` — тот же кэш прогноза, что у диспетчера, для экрана
 выхода на смену.
 

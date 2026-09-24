@@ -5,6 +5,7 @@ import { SysError } from '../common/errors';
 import { Clock } from '../common/time';
 import { zodBody } from '../common/validation';
 import { assertWriteApplied, OperationsService } from '../operations';
+import { MiniAiService } from '../orchestrator/ai';
 import { RequestsService, WORK_TYPES } from '../orchestrator/requests';
 import { GeocodingService } from '../orchestrator/settings/geocoding.service';
 import { PrismaService, type Tx } from '../persistence';
@@ -44,6 +45,7 @@ export class ClientController {
     private readonly prisma: PrismaService,
     private readonly clock: Clock,
     private readonly geocoding: GeocodingService,
+    private readonly miniAi: MiniAiService,
   ) {}
 
   @Get('work-types')
@@ -58,6 +60,21 @@ export class ClientController {
    * Address search for the anonymous new-request form.
    * Public so a point can be chosen before the mailbox is confirmed.
    */
+  /**
+   * Fills the new-request form from a free-text story. Public because the form
+   * opens before the mailbox is confirmed. System one only chooses among
+   * candidates the text already contains.
+   */
+  @Public()
+  @Post('interpret')
+  @ApiOperation({ summary: 'Choose form fields from a visit story' })
+  async interpret(@Body() body: { text?: unknown }) {
+    if (typeof body.text !== 'string' || body.text.trim().length < 8) {
+      throw SysError.validationFailed('Опишите визит хотя бы одной фразой.');
+    }
+    return this.miniAi.interpretStory(body.text);
+  }
+
   @Public()
   @Get('geocode')
   @ApiOperation({ summary: 'Autocomplete an address before the client is signed in' })

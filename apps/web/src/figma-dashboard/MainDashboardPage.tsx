@@ -1,7 +1,7 @@
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { updateDispatcherSettings } from '../api/client';
+import { explainWithAi, updateDispatcherSettings } from '../api/client';
 import type { HandoffView, LiveRouteProgress } from '../api/live';
 import type { EngineerView, PlanDelta, PolicyId, RequestView } from '../api/types';
 import { DayMap } from '../components/DayMap';
@@ -1070,6 +1070,7 @@ export function MainDashboardPage() {
                         request={dash.selectedRequest}
                         engineer={dash.selectedEngineer}
                         explanation={panelExplanation}
+                        token={dash.token}
                         motionOn={motionOn}
                         onClose={() => dash.clearFocus()}
                       />
@@ -2406,6 +2407,7 @@ function DetailPanel({
   request,
   engineer,
   explanation,
+  token,
   motionOn,
   onClose,
   onOpenEngineer,
@@ -2414,6 +2416,7 @@ function DetailPanel({
   request: RequestView | null;
   engineer: EngineerView | null;
   explanation: CaseExplanation | null;
+  token: string | null;
   motionOn: boolean;
   onClose: () => void;
   onOpenEngineer?: () => void;
@@ -2506,6 +2509,27 @@ function DetailPanel({
             aiOn={aiOn}
             largeOn={largeOn}
             motionOn={motionOn}
+            token={token}
+            context={{
+              explanation,
+              request: request
+                ? {
+                    id: request.id,
+                    address: request.addressText,
+                    windowStartAt: request.windowStartAt,
+                    windowEndAt: request.windowEndAt,
+                    skill: request.requiredSkill,
+                    status: request.assignmentState,
+                  }
+                : null,
+              engineer: engineer
+                ? {
+                    name: engineer.displayName,
+                    skills: engineer.skills,
+                    transport: engineer.transportType,
+                  }
+                : null,
+            }}
             explanation={explanation}
             durationLabel={request ? formatDurationMin(request.serviceDurationSec) : '—'}
             onToggleAi={() => setAiOn((value) => !value)}
@@ -2542,6 +2566,8 @@ function RequestReasons({
   aiOn,
   largeOn,
   motionOn,
+  token,
+  context,
   explanation,
   durationLabel,
   onToggleAi,
@@ -2550,20 +2576,38 @@ function RequestReasons({
   aiOn: boolean;
   largeOn: boolean;
   motionOn: boolean;
+  token: string | null;
+  context: unknown;
   explanation: CaseExplanation | null;
   durationLabel: string;
   onToggleAi: () => void;
   onToggleLarge: () => void;
 }) {
+  const [aiText, setAiText] = useState<string | null>(null);
   const [aiReady, setAiReady] = useState(false);
+  const packed = JSON.stringify(context);
   useEffect(() => {
-    if (!aiOn) {
+    if (!aiOn || !token) {
+      setAiText(null);
       setAiReady(false);
       return;
     }
-    const handle = window.setTimeout(() => setAiReady(true), motionOn ? 1500 : 0);
-    return () => window.clearTimeout(handle);
-  }, [aiOn, motionOn]);
+    let cancelled = false;
+    setAiReady(false);
+    void explainWithAi(token, 'reasons', JSON.parse(packed) as unknown)
+      .then((result) => {
+        if (!cancelled) setAiText(result.text);
+      })
+      .catch(() => {
+        if (!cancelled) setAiText(null);
+      })
+      .finally(() => {
+        if (!cancelled) setAiReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [aiOn, token, packed]);
   return (
     <div className="mt-[16px]">
       <div className="flex min-h-[216px] w-full flex-col rounded-[20px] bg-figma-dim px-[20px] py-[22px]">
@@ -2628,8 +2672,8 @@ function RequestReasons({
             {aiOn ? (
               aiReady ? (
                 <p className="mt-[12px] font-medium text-[18px] leading-[24px] text-white/70">
-                  Текстовый разбор пока не подключён. Причины решения остаются обычными, без
-                  выдуманного текста.
+                  {aiText ??
+                    'Текстовый разбор пока не подключён. Причины решения остаются обычными, без выдуманного текста.'}
                 </p>
               ) : (
                 <AiSearchLines />

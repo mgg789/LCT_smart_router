@@ -5,10 +5,16 @@ import { FigmaIcon } from '../figma-dashboard/primitives';
 import { eu } from '../figma-engineer/engineerScale';
 import { CLIENT_ASSETS } from './assets';
 import { ClientPickMap } from './ClientPickMap';
-import { type ClientGeocodeHit, reverseClientPoint, searchClientAddress } from './clientApi';
+import {
+  type ClientGeocodeHit,
+  interpretClientStory,
+  reverseClientPoint,
+  searchClientAddress,
+} from './clientApi';
 import {
   CLIENT_PROBLEMS,
   type ClientMapPoint,
+  type ClientProblem,
   type ClientRequestDraft,
   draftFromStory,
 } from './clientPreview';
@@ -173,9 +179,26 @@ export function ClientNewRequest({
   };
 
   const revealForm = () => {
-    onChange(draftFromStory(story, draftRef.current));
+    const local = draftFromStory(story, draftRef.current);
     setTracing(false);
     setMode('form');
+    onChange(local);
+    void interpretClientStory(story)
+      .then((picked) => {
+        const problem = CLIENT_PROBLEMS.includes(picked.problem as ClientProblem)
+          ? (picked.problem as ClientProblem)
+          : local.problem;
+        onChange({
+          ...local,
+          problem,
+          contactName: picked.contactName || local.contactName,
+          email: picked.email || local.email,
+          windowStart: picked.windowStart || local.windowStart,
+          windowEnd: picked.windowEnd || local.windowEnd,
+          address: picked.address || local.address,
+        });
+      })
+      .catch(() => undefined);
   };
 
   const sendStory = () => {

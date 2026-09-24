@@ -1,6 +1,6 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useState } from 'react';
-import { predictSituation, type SituationPredictionView } from '../api/client';
+import { explainWithAi, optimizePlanWithAi, predictSituation, type SituationPredictionView } from '../api/client';
 import type { DashboardSnapshot, PolicyComparisonResponse } from '../api/types';
 import {
   planQualityAdvice,
@@ -149,6 +149,8 @@ export function PlanMetricsModal({
           pending={pending}
           failed={failed}
           hasPlan={plan !== null}
+          token={token}
+          context={{ advice, metrics, prediction }}
           onOpenRequest={onOpenRequest}
         />
         {metrics ? (
@@ -165,7 +167,10 @@ export function PlanMetricsModal({
               label="Худшая задержка"
               value={prediction ? formatDurationMin(prediction.p95MaxLateSec) : '…'}
             />
-            <OptimizeButton />
+            <OptimizeButton
+              token={token}
+              summary={JSON.stringify({ advice, metrics, prediction })}
+            />
           </dl>
         ) : (
           <p className="mt-[18px] text-[16px] text-figma-muted">План ещё не применён.</p>
@@ -180,12 +185,16 @@ function QualityCard({
   pending,
   failed,
   hasPlan,
+  token,
+  context,
   onOpenRequest,
 }: {
   advice: PlanQualityAdvice | null;
   pending: boolean;
   failed: boolean;
   hasPlan: boolean;
+  token: string | null;
+  context: unknown;
   onOpenRequest: (requestId: string) => void;
 }) {
   if (!hasPlan) return null;
@@ -204,29 +213,49 @@ function QualityCard({
     );
   }
   return (
-    <QualityBody advice={advice} onOpenRequest={onOpenRequest} />
+    <QualityBody advice={advice} token={token} context={context} onOpenRequest={onOpenRequest} />
   );
 }
 
 function QualityBody({
   advice,
+  token,
+  context,
   onOpenRequest,
 }: {
   advice: PlanQualityAdvice;
+  token: string | null;
+  context: unknown;
   onOpenRequest: (requestId: string) => void;
 }) {
   const reduce = useReducedMotion();
   const explainable = advice.band === 'yellow' || advice.band === 'red';
   const [aiOn, setAiOn] = useState(false);
+  const [aiText, setAiText] = useState<string | null>(null);
   const [aiReady, setAiReady] = useState(false);
+  const packed = JSON.stringify(context);
   useEffect(() => {
-    if (!aiOn) {
+    if (!aiOn || !token) {
+      setAiText(null);
       setAiReady(false);
       return;
     }
-    const handle = window.setTimeout(() => setAiReady(true), reduce ? 0 : 1500);
-    return () => window.clearTimeout(handle);
-  }, [aiOn, reduce]);
+    let cancelled = false;
+    setAiReady(false);
+    void explainWithAi(token, 'plan', JSON.parse(packed) as unknown)
+      .then((result) => {
+        if (!cancelled) setAiText(result.text);
+      })
+      .catch(() => {
+        if (!cancelled) setAiText(null);
+      })
+      .finally(() => {
+        if (!cancelled) setAiReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [aiOn, token, packed]);
   return (
     <section className={`relative mt-[18px] rounded-[20px] px-[18px] py-[16px] ${BAND_CLASS[advice.band]}`}>
       {explainable ? (
@@ -271,7 +300,8 @@ function QualityBody({
           {aiOn ? (
             aiReady ? (
               <p className="mt-[6px] text-[16px] leading-[1.35]">
-                Текстовый разбор пока не подключён. Оценка дня остаётся прежней, без выдуманного текста.
+                  {aiText ??
+                    'Текстовый разбор пока не подключён. Оценка дня остаётся прежней, без выдуманного текста.'}
               </p>
             ) : (
               <div className="mt-[12px] space-y-[10px]" aria-hidden>
@@ -326,14 +356,24 @@ function AdviceSentence({
 }
 
 /** Reserved AI action. It does not change the plan until a model is connected. */
-function OptimizeButton() {
+function OptimizeButton({ token, summary }: { token: string | null; summary: string }) {
+  const [pending, setPending] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
   return (
     <button
       type="button"
-      disabled
-      aria-disabled
-      title="Скоро"
-      className="col-span-2 flex h-[52px] cursor-not-allowed items-center justify-center gap-[10px] rounded-[18px] bg-figma-ink"
+      disabled={!token || pending}
+      title={note ?? 'System one выбирает политику и публикует её'}
+      onClick={() => {
+        if (!token || pending) return;
+        setPending(true);
+        setNote(null);
+        void optimizePlanWithAi(token, summary)
+          .then((picked) => setNote(`Выбрано: ${picked.label}`))
+          .catch(() => setNote('Не удалось выбрать политику'))
+          .finally(() => setPending(false));
+      }}
+      className="col-span-2 flex h-[52px] items-center justify-center gap-[10px] rounded-[18px] bg-figma-ink disabled:cursor-wait"
     >
       <span
         aria-hidden
@@ -350,7 +390,7 @@ function OptimizeButton() {
         }}
       />
       <span className="panel-ai-fill client-ai-text font-semibold text-[18px] tracking-[-0.3px]">
-        Оптимизировать
+        {pending ? 'Оптимизируем…' : note ?? 'Оптимизировать'}
       </span>
     </button>
   );

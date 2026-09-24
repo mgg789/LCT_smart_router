@@ -1,6 +1,7 @@
 import { motion, useReducedMotion } from 'framer-motion';
 import { ArrowRight, ArrowUpRight, Trash2 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { resolveAlertWithAi } from '../api/client';
 import type { AlertResolutionInput, DashboardSnapshot } from '../api/types';
 import { AlertActions } from './AlertActions';
 import { isAlertActionId } from '../domain/alerts';
@@ -82,7 +83,15 @@ export function AlertsView({
     void (async () => {
       for (const [index, card] of queue.entries()) {
         if (cancelled) return;
-        const action = card.sourceAlert?.actions?.find((item) => isAlertActionId(item)) ?? null;
+        let action = card.sourceAlert?.actions?.find((item) => isAlertActionId(item)) ?? null;
+        if (token) {
+          try {
+            const picked = await resolveAlertWithAi(token, card.id);
+            action = isAlertActionId(picked.choice) ? picked.choice : action;
+          } catch {
+            continue;
+          }
+        }
         setSpotlight({ id: card.id, action });
         await wait(1700);
         if (cancelled) return;

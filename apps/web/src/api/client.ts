@@ -1407,6 +1407,45 @@ export function getAiSettings(token: string): Promise<AiView> {
   return requestJson('/api/v1/dispatch/ai', aiViewSchema, token);
 }
 
+const aiTextSchema = z.object({ text: z.string() });
+const aiPolicySchema = z.object({ id: z.string(), label: z.string() });
+const aiResolveSchema = z.object({ choice: z.string() });
+
+/** Short wording from the language model. The context is facts the screen already has. */
+export function explainWithAi(
+  token: string,
+  kind: 'reasons' | 'plan',
+  context: unknown,
+): Promise<{ text: string }> {
+  return requestJson('/api/v1/dispatch/ai/explain', aiTextSchema, token, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ kind, context }),
+  }, 30_000);
+}
+
+/** System one picks a policy and the server publishes that choice. */
+export function optimizePlanWithAi(
+  token: string,
+  summary: string,
+): Promise<{ id: string; label: string }> {
+  return requestJson('/api/v1/dispatch/ai/optimize', aiPolicySchema, token, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ summary }),
+  }, 30_000);
+}
+
+/** System one picks an allowed action; the server applies the usual alert resolve. */
+export function resolveAlertWithAi(
+  token: string,
+  alertId: string,
+): Promise<{ choice: string }> {
+  return requestJson(`/api/v1/dispatch/alerts/${alertId}/ai-resolve`, aiResolveSchema, token, {
+    method: 'POST',
+  }, 30_000);
+}
+
 export function saveAiSettings(
   token: string,
   input: {

@@ -87,6 +87,30 @@ export async function searchClientAddress(query: string): Promise<ClientGeocodeH
   return result.hits;
 }
 
+const storyDraftSchema = z.object({
+  problem: z.string(),
+  contactName: z.string(),
+  email: z.string(),
+  windowStart: z.string(),
+  windowEnd: z.string(),
+  address: z.string(),
+});
+
+/** System one chooses the form fields. Empty strings stay for the local parser. */
+export function interpretClientStory(text: string): Promise<z.infer<typeof storyDraftSchema>> {
+  return requestJson(
+    '/api/v1/client/interpret',
+    storyDraftSchema,
+    undefined,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text }),
+    },
+    30_000,
+  );
+}
+
 /**
  * Street address for a map click.
  * Null when the geocoder has no name; the form then writes the coordinates.
