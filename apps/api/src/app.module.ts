@@ -12,6 +12,7 @@ import { EngineersModule } from './orchestrator/engineers';
 import { FactsModule } from './orchestrator/facts';
 import { ImportsModule } from './orchestrator/imports';
 import { LiveModule } from './orchestrator/live';
+import { McpModule } from './orchestrator/mcp';
 import { PassportsModule } from './orchestrator/passports';
 import { PolicyModule } from './orchestrator/policy';
 import { RequestsModule } from './orchestrator/requests';
@@ -49,6 +50,7 @@ import { RouterGatewayModule } from './routing/router-gateway';
     ImportsModule,
     ResetModule,
     LiveModule,
+    McpModule,
     ApiModule,
   ],
 })

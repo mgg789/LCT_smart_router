@@ -17,6 +17,7 @@ import type {
   EngineerDayView,
   GeocodeHit,
   MapProvidersStatus,
+  McpSettingsView,
   OfficialImportSummary,
   PlanAssignmentView,
   PolicyComparisonResponse,
@@ -690,6 +691,35 @@ export async function revokeApiToken(sessionToken: string, id: string): Promise<
     sessionToken,
     { method: 'DELETE' },
   );
+}
+
+const mcpSettingsViewSchema = z.object({
+  enabled: z.boolean(),
+  pinSet: z.boolean(),
+  pinLast4: z.string().nullable(),
+  activeNow: z.boolean(),
+  lastToolName: z.string().nullable(),
+  lastToolCallAt: z.number().int().nullable(),
+  endpoint: z.string(),
+});
+
+/** Reads the dashboard MCP server state: switch, pin presence and live agent activity. */
+export function getMcpSettings(token: string): Promise<McpSettingsView> {
+  return requestJson('/api/v1/dispatch/mcp', mcpSettingsViewSchema, token);
+}
+
+/**
+ * Switches the MCP server and sets or rotates its pin. The pin travels to the server
+ * exactly once; the response mirrors the same view as [[getMcpSettings]].
+ */
+export function saveMcpSettings(
+  token: string,
+  input: { enabled: boolean; pin?: string },
+): Promise<McpSettingsView> {
+  return requestJson('/api/v1/dispatch/mcp', mcpSettingsViewSchema, token, {
+    method: 'PUT',
+    body: JSON.stringify({ operationId: crypto.randomUUID(), ...input }),
+  });
 }
 
 const engineerProfileSchema = engineerSchema.omit({ day: true });

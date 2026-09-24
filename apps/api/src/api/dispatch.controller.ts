@@ -7,7 +7,7 @@ import { SysError } from '../common/errors';
 import { Clock } from '../common/time';
 import { zodBody } from '../common/validation';
 import { OperationsService } from '../operations';
-import { alertActionsFor, AlertsService } from '../orchestrator/alerts';
+import { AlertsService } from '../orchestrator/alerts';
 import { AiService, MiniAiService } from '../orchestrator/ai';
 import { DemoStandService } from '../orchestrator/demo-stand';
 import { EngineersService, workDateOf } from '../orchestrator/engineers';
@@ -18,6 +18,11 @@ import {
 } from '../orchestrator/imports';
 import { LiveService } from '../orchestrator/live';
 import { businessNow } from '../orchestrator/live/business-clock';
+// Direct file imports: the mcp barrel pulls the tool registry, which sits on CJS
+// barrel cycles with alerts/ai — the same trap alerts.module.ts documents.
+import { McpService } from '../orchestrator/mcp/mcp.service';
+import { type UpdateMcpSettingsDto, updateMcpSettingsSchema } from '../orchestrator/mcp/mcp.dto';
+import { type McpSettingsView } from '../orchestrator/mcp/mcp-settings';
 import { PassportsService } from '../orchestrator/passports';
 import { PolicyService } from '../orchestrator/policy';
 import { RequestsService } from '../orchestrator/requests';
@@ -163,6 +168,7 @@ export class DispatchController {
     private readonly geocoding: GeocodingService,
     private readonly mapRouting: MapRoutingService,
     private readonly passports: PassportsService,
+    private readonly mcp: McpService,
   ) {}
 
   @Get('live')
@@ -965,43 +971,7 @@ export class DispatchController {
   @Post('alerts/:id/ai-resolve')
   @ApiOperation({ summary: 'System one picks an allowed alert action; the usual resolve applies it' })
   async resolveAlertWithModel(@CurrentActor() actor: Actor, @Param('id') id: string) {
-    const alert = await this.prisma.alert.findUnique({ where: { id } });
-    if (!alert || alert.kind !== 'alert' || alert.resolvedAt !== null) {
-      throw SysError.validationFailed('Этот алерт уже нельзя разобрать.');
-    }
-    const actions = alertActionsFor(alert.code);
-    const engineers = await this.prisma.engineer.findMany({
-      take: 8,
-      orderBy: { inputOrder: 'asc' },
-      select: { id: true, displayName: true },
-    });
-    const choice = await this.miniAi.chooseAlert({
-      summary: JSON.stringify({
-        code: alert.code,
-        reasons: alert.reasons,
-        requestIds: alert.requestIds,
-        engineerIds: alert.engineerIds,
-      }).slice(0, 4_000),
-      actions,
-      engineers: engineers.map((item) => ({ id: item.id, label: item.displayName })),
-    });
-    const action = actions.find((item) => item === choice.action);
-    if (!action || action === 'move_window') {
-      throw SysError.validationFailed('Смена окна требует времени, которое модель не назначает.');
-    }
-    const operationId = randomUUID();
-    const dto = {
-      operationId,
-      action,
-      reason: choice.reason,
-      ...(choice.engineerId ? { engineerId: choice.engineerId } : {}),
-      ...(choice.minutes ? { minutes: choice.minutes } : {}),
-    };
-    const outcome = await this.operations.execute(
-      { operationId, actor, action: 'alert.resolve', targetRef: id, payload: dto },
-      (context) => this.alertsService.resolve(context, id, dto),
-    );
-    return { alert: outcome.result, choice: choice.action };
+    return this.alertsService.resolveWithSystemOne(actor, id);
   }
 
   @Post('alerts/:id/resolve')
@@ -1302,6 +1272,21 @@ export class DispatchController {
       await this.ai.rollbackToFactory();
     }
     return outcome.result;
+  }
+
+  @Get('mcp')
+  @ApiOperation({ summary: 'Dashboard MCP server state: switch, pin presence, live activity' })
+  async mcpView(): Promise<McpSettingsView> {
+    return this.mcp.view();
+  }
+
+  @Put('mcp')
+  @ApiOperation({ summary: 'Switch the MCP server and set or rotate its pin' })
+  async updateMcp(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(updateMcpSettingsSchema)) dto: UpdateMcpSettingsDto,
+  ): Promise<McpSettingsView> {
+    return this.mcp.replace(actor, dto);
   }
 
   @Get('ai')

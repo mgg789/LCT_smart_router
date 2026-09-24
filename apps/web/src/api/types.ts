@@ -429,6 +429,23 @@ export type CreatedApiToken = Omit<ApiTokenSummary, 'revokedAt'> & {
   readonly token: string;
 };
 
+/**
+ * State of the dashboard MCP server for the Settings → API tab. The pin itself never
+ * travels back — only its presence and the last four characters.
+ */
+export interface McpSettingsView {
+  readonly enabled: boolean;
+  readonly pinSet: boolean;
+  readonly pinLast4: string | null;
+  /** True while an agent has called an MCP tool within the last half a minute. */
+  readonly activeNow: boolean;
+  readonly lastToolName: string | null;
+  /** Unix-epoch seconds of the most recent tool call, or null. */
+  readonly lastToolCallAt: number | null;
+  /** Transport path on this origin, e.g. `/api/v1/mcp`. */
+  readonly endpoint: string;
+}
+
 export interface EngineerAuthSession {
   readonly token: string;
   readonly role: 'engineer';

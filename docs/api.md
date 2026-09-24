@@ -1161,3 +1161,40 @@ OSRM JSON или его gzip-байты. Core также поддерживае�
 атомарно; ответ возвращает `inputSha256`, количество узлов/рёбер и новый
 `routerContextVersion`. Этот hash участвует в реальном planning travel provider и
 инвалидирует устаревший план.
+
+## MCP-сервер дашборда (24.09.2026)
+
+Диспетчер может подключить своего ИИ-агента к дашборду по MCP (Model Context Protocol):
+агент работает от его имени — читает обстановку и объяснения плана, разбирает алерты,
+меняет политики и настройки, ведёт LIVE-день.
+
+**Настройки (роль `dispatcher`)**: `GET /dispatch/mcp` возвращает
+`{enabled, pinSet, pinLast4, activeNow, lastToolName, lastToolCallAt, endpoint}`;
+`PUT /dispatch/mcp` принимает `{operationId, enabled, pin?}`. Включение без пина
+отклоняется; смена пина ротирует ключ; выключение отзывает ключ — пин перестаёт работать
+везде сразу, включая прямой REST. Пин хранится только хешем: это настоящая строка
+`ApiToken` категории `master` (имя `MCP dashboard pin`), поэтому `Authorization: Bearer <пин>`
+резолвится штатным auth-engine как обычный интеграционный ключ. Второй вариант — заголовок
+`X-MCP-Pin: <пин>` для клиентов, которые не могут подменить bearer. Журнал операций
+и аудит фиксируют все изменения агента (`api_token`, `external_api`).
+
+**Транспорт**: `POST /api/v1/mcp` — stateless JSON-RPC 2.0 по схеме streamable HTTP,
+ответы всегда JSON (SSE-потоков нет; `GET`/`DELETE` отвечают 405). Поддерживаются
+`initialize` (переговоры версий `2025-06-18`, `2025-03-26`, `2024-11-05`), `ping`,
+`notifications/*` (ответ 202), `tools/list`, `tools/call`. Ошибка инструмента — это
+результат с `isError: true`, а не протокольная ошибка. Пока сервер выключен, эндпоинт
+отвечает 404. Каждый `tools/call` обновляет маркер активности: `activeNow` в настройках
+живёт 30 секунд после последнего вызова — по нему в шапке дашборда мигает робот.
+
+**Инструменты** (18): `get_dispatcher_context`, `get_routing_principles`,
+`get_situation`, `get_plan` (опционально с геометрией), `get_plan_explanations`
+(факторы решателя и `whyNot` альтернатив — подробнее, чем видит человек),
+`list_requests`, `get_request` (с историей условий), `list_alerts`, `resolve_alert`,
+`ai_resolve_alert` (System one выбирает действие из допустимых), `list_engineers`,
+`set_engineer_availability`, `get_policies`, `select_policy`,
+`get_dispatcher_settings`, `update_dispatcher_settings`, `start_workday`, `close_shift`.
+
+Все записи идут через конверт операций с серверным `operationId` — повтор вызова
+инструмента не повторяет изменение. Сброс данных и перезапуск демо-дня через MCP
+недоступны принципиально: это подтверждаемые человеком действия (`account`-сессия).
+Ключи карт через MCP не читаются и не меняются.

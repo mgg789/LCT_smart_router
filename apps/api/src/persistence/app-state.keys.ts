@@ -25,6 +25,11 @@ export const APP_STATE_KEYS = {
   AI_SETTINGS: 'dispatcher.ai',
   /** Last computed plan-assessment calibration and its fact signature. */
   AI_CALIBRATION: 'ai.predict-calibration',
+  /**
+   * Dashboard MCP server: the switch and the id of the `ApiToken` row that carries the
+   * pin hash. The pin value itself never lands here.
+   */
+  MCP_SETTINGS: 'dispatcher.mcp',
 } as const;
 
 export type AppStateKey = (typeof APP_STATE_KEYS)[keyof typeof APP_STATE_KEYS];

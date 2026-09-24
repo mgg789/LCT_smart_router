@@ -1,14 +1,16 @@
 import { motion } from 'framer-motion';
-import { Copy, KeyRound, Plus } from 'lucide-react';
+import { Copy, KeyRound, Plus, Wand2 } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import {
   createApiToken,
   getAiSettings,
   getDispatcherSettings,
   getMapProvidersStatus,
+  getMcpSettings,
   listApiTokens,
   revokeApiToken,
   saveAiSettings,
+  saveMcpSettings,
   type AiView,
 } from '../api/client';
 import type {
@@ -17,11 +19,13 @@ import type {
   CreatedApiToken,
   DispatcherSettingsView,
   MapProvidersStatus,
+  McpSettingsView,
   RouterTechnicalSettings,
 } from '../api/types';
 import { formatMoscowDate, moscowAt } from '../lib/time';
 import { FIGMA_ASSETS } from './assets';
 import { clockFromMinutes, minutesFromClock } from './dispatcherSettings';
+import { downloadMcpSetupMd, generateMcpPin } from './mcpSetup';
 import { ModalLayer, ModalScrim } from './modalLayer';
 import { FigmaIcon } from './primitives';
 
@@ -36,7 +40,7 @@ const TABS = [
   { id: 'maps', label: 'Карты' },
   { id: 'ai', label: 'AI' },
 ] as const;
-type SettingsTab = (typeof TABS)[number]['id'];
+export type SettingsTab = (typeof TABS)[number]['id'];
 
 const CATEGORY_LABELS: Record<ApiTokenCategory, string> = {
   client: 'Клиентское приложение',
@@ -76,6 +80,7 @@ export function SettingsModal({
   token,
   routerSettings,
   submitting,
+  initialTab = 'general',
   onClose,
   onSave,
 }: {
@@ -84,6 +89,8 @@ export function SettingsModal({
   token: string | null;
   routerSettings?: RouterTechnicalSettings;
   submitting: boolean;
+  /** Tab to open on reveal; the header robot deep-links to `api`. */
+  initialTab?: SettingsTab;
   onClose: () => void;
   onSave: (input: {
     dispatcher: {
@@ -123,14 +130,14 @@ export function SettingsModal({
     }
     if (wasOpen.current) return;
     wasOpen.current = true;
-    setTab('general');
+    setTab(initialTab);
     setError(null);
     setTwogisKey('');
     setYandexKey('');
     setClearTwogis(false);
     setClearYandex(false);
     setDraft(generalFrom(undefined, routerRef.current));
-  }, [open]);
+  }, [open, initialTab]);
 
   useEffect(() => {
     if (!open) return;
@@ -609,6 +616,208 @@ function MapsForm({
 }
 
 function ApiTokensTab({ token }: { token: string | null }) {
+  return (
+    <div>
+      <McpServerSection token={token} />
+      <div className="my-[24px] h-px bg-figma-ink/10" aria-hidden />
+      <p className="font-semibold text-[16px] text-figma-ink">Интеграционные ключи</p>
+      <ApiTokenList token={token} />
+    </div>
+  );
+}
+
+/**
+ * Dashboard MCP server: the activation switch, the pin the agent connects with, and the
+ * self-connecting `setup.md` the dispatcher hands to their agent. Mirrors the flow the
+ * server enforces: enabling needs a pin, and disabling revokes it everywhere at once.
+ */
+function McpServerSection({ token }: { token: string | null }) {
+  const [view, setView] = useState<McpSettingsView | null>(null);
+  const [pin, setPin] = useState('');
+  const [pendingOn, setPendingOn] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const reload = useCallback(() => {
+    if (!token) return;
+    void getMcpSettings(token)
+      .then(setView)
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : 'Не удалось загрузить MCP-настройки');
+      });
+  }, [token]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  const apply = (input: { enabled: boolean; pin?: string }) => {
+    if (!token) return;
+    setBusy(true);
+    setError(null);
+    void saveMcpSettings(token, input)
+      .then((next) => {
+        setView(next);
+        // The typed pin stays in the field: setup.md needs it, and the server stores
+        // only the hash, so this is the one chance to download a working file.
+        setPendingOn(false);
+      })
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : 'Не удалось сохранить MCP-настройки');
+        reload();
+        setPendingOn(false);
+      })
+      .finally(() => setBusy(false));
+  };
+
+  if (!token) {
+    return null;
+  }
+
+  const enabled = view?.enabled === true || pendingOn;
+  const pinReady = pin.trim().length > 0;
+  const endpointUrl = view
+    ? `${window.location.origin.replace(/\/$/, '')}${view.endpoint}`
+    : '';
+
+  const toggle = () => {
+    if (busy) return;
+    if (enabled) {
+      // A switch-off that has not reached the server yet is just a local cancel.
+      if (pendingOn) {
+        setPendingOn(false);
+        return;
+      }
+      apply({ enabled: false });
+      return;
+    }
+    if (view?.pinSet) {
+      apply({ enabled: true });
+      return;
+    }
+    // No pin yet: reveal the field now; the server is switched on together with it.
+    setPendingOn(true);
+  };
+
+  const savePin = () => {
+    const value = pin.trim();
+    if (value.length < 6) {
+      setError('Пин — минимум 6 символов. «Сгенерировать» предложит надёжный.');
+      return;
+    }
+    apply({ enabled: true, pin: value });
+  };
+
+  return (
+    <section>
+      <p className="font-extrabold text-[18px] tracking-[-0.3px] text-figma-ink">
+        MCP-сервер дашборда
+      </p>
+      <p className="mt-[4px] font-medium text-[14px] leading-[1.4] text-figma-muted">
+        Подключите своего ИИ-агента к дашборду: он будет работать за диспетчера — следить за
+        обстановкой, разбирать алерты, вести день. Пока агент работает, в шапке мигает робот.
+      </p>
+      <div className="mt-[12px]">
+        <SettingSwitch
+          label="Активировать MCP-сервер"
+          checked={enabled}
+          onChange={toggle}
+        />
+      </div>
+      {enabled ? (
+        <div className="mt-[16px] rounded-[16px] bg-white px-[16px] py-[14px]">
+          <Field label={view?.pinSet ? `Пин задан ···${view.pinLast4 ?? ''} — введите новый, чтобы заменить` : 'MCP-пин'} htmlFor="settings-mcp-pin">
+            <div className="relative">
+              <input
+                id="settings-mcp-pin"
+                type="text"
+                autoComplete="off"
+                spellCheck={false}
+                value={pin}
+                placeholder="По этому пину агент подключается к дашборду"
+                onChange={(event) => {
+                  setError(null);
+                  setPin(event.target.value);
+                }}
+                className={FIELD}
+              />
+            </div>
+          </Field>
+          <div className="mt-[12px] flex flex-wrap items-center gap-[10px]">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setPin(generateMcpPin())}
+              className="flex h-[44px] items-center gap-[8px] rounded-full border border-figma-ink/15 px-[16px] font-semibold text-[15px] text-figma-ink disabled:opacity-50"
+            >
+              <Wand2 className="h-4 w-4" />
+              Сгенерировать
+            </button>
+            <button
+              type="button"
+              disabled={busy || !pinReady}
+              onClick={savePin}
+              className={`flex h-[44px] items-center rounded-full px-[16px] font-semibold text-[15px] transition-transform duration-150 ${
+                busy || !pinReady
+                  ? 'bg-figma-track text-figma-hint'
+                  : 'bg-figma-ink text-white hover:scale-[1.02]'
+              }`}
+            >
+              {busy ? 'Сохраняем…' : 'Сохранить пин'}
+            </button>
+            <button
+              type="button"
+              disabled={busy || !pinReady}
+              onClick={() => {
+                downloadMcpSetupMd({
+                  origin: window.location.origin,
+                  endpoint: view?.endpoint ?? '/api/v1/mcp',
+                  pin: pin.trim(),
+                });
+              }}
+              title={pinReady ? undefined : 'Введите пин ещё раз — сервер хранит только его хеш'}
+              className={`ml-auto flex h-[44px] items-center gap-[8px] rounded-full px-[16px] font-semibold text-[15px] transition-transform duration-150 ${
+                busy || !pinReady
+                  ? 'bg-figma-track text-figma-hint'
+                  : 'bg-figma-bee text-figma-ink hover:scale-[1.02]'
+              }`}
+            >
+              Скачать setup.md
+            </button>
+          </div>
+          {view && !view.pinSet ? (
+            <p className="mt-[10px] font-medium text-[13px] text-figma-hint">
+              Сервер включится вместе с пином: без него агенту нечем подключиться.
+            </p>
+          ) : null}
+          {view?.activeNow ? (
+            <p className="mt-[10px] flex items-center gap-[8px] font-medium text-[14px] text-[#2E9BEE]">
+              <motion.span
+                aria-hidden
+                className="inline-block size-[8px] rounded-full bg-[#3BA7FF]"
+                animate={{ opacity: [1, 0.3, 1] }}
+                transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
+              />
+              Сейчас с дашбордом работает агент{view.lastToolName ? ` · ${view.lastToolName}` : ''}
+            </p>
+          ) : null}
+          {endpointUrl ? (
+            <p className="mt-[10px] break-all font-medium text-[13px] text-figma-hint">
+              Endpoint: {endpointUrl}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      {error ? (
+        <p role="alert" className="mt-[10px] font-medium text-[14px] text-figma-danger">
+          {error}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+function ApiTokenList({ token }: { token: string | null }) {
   const [tokens, setTokens] = useState<ApiTokenSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

@@ -1,7 +1,7 @@
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { explainWithAi, updateDispatcherSettings } from '../api/client';
+import { explainWithAi, getMcpSettings, updateDispatcherSettings } from '../api/client';
 import type { HandoffView, LiveRouteProgress } from '../api/live';
 import type { EngineerView, PlanDelta, PolicyId, RequestView } from '../api/types';
 import { DayMap } from '../components/DayMap';
@@ -59,6 +59,7 @@ import {
   rightPanelMode,
   withLiveRouteStops,
 } from './fromSnapshot';
+import { McpAgentIndicator } from './McpAgentIndicator';
 import { PolicyComparisonView } from './PolicyComparisonView';
 import { FigmaIcon, FigmaText } from './primitives';
 import { ReplanDeltaCard } from './ReplanDeltaCard';
@@ -67,7 +68,7 @@ import { RequestsView } from './RequestsView';
 import { requestEquipmentLabel } from './requestDetail';
 import { shortRequestId } from './requestsTable';
 import { routeProgressMarker } from './routeProgress';
-import { SettingsModal } from './SettingsModal';
+import { SettingsModal, type SettingsTab } from './SettingsModal';
 import { ToastColumn } from './ToastColumn';
 import {
   dismissToast,
@@ -186,6 +187,29 @@ export function MainDashboardPage() {
       /* The panel can still reopen from the in-memory copy. */
     }
   }, [dash.pendingDelta]);
+  // The header robot mirrors the server's "an agent is working" marker; the poll is tiny
+  // and a failed poll just keeps the last state.
+  useEffect(() => {
+    const token = dash.token;
+    if (!token) {
+      setMcpActive(false);
+      return;
+    }
+    let cancelled = false;
+    const tick = () => {
+      void getMcpSettings(token)
+        .then((view) => {
+          if (!cancelled) setMcpActive(view.activeNow);
+        })
+        .catch(() => {});
+    };
+    tick();
+    const timer = window.setInterval(tick, 5_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [dash.token]);
   const toasts = useToasts();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [regionOpen, setRegionOpen] = useState(false);
@@ -196,6 +220,8 @@ export function MainDashboardPage() {
     () => !hasStartedWorkDay(window.localStorage, moscowWorkDate()),
   );
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('general');
+  const [mcpActive, setMcpActive] = useState(false);
   const [dangerAction, setDangerAction] = useState<DangerActionId | null>(null);
   const [resultsOpen, setResultsOpen] = useState(false);
   const [openedRequestId, setOpenedRequestId] = useState<string | null>(null);
@@ -784,6 +810,7 @@ export function MainDashboardPage() {
           }}
           onSettings={() => {
             setUserMenuOpen(false);
+            setSettingsTab('general');
             setSettingsOpen(true);
           }}
           onEndDay={() => {
@@ -810,6 +837,7 @@ export function MainDashboardPage() {
           token={dash.token}
           routerSettings={dash.snapshot?.routerSettings}
           submitting={dash.busy}
+          initialTab={settingsTab}
           onClose={() => setSettingsOpen(false)}
           onSave={async ({ dispatcher, router }) => {
             if (!dash.token || !dash.snapshot) {
@@ -896,13 +924,23 @@ export function MainDashboardPage() {
           }}
         />
         {activeNav === 'engineers' || (activeNav === 'requests' && openedRequestId) ? null : (
-          <FigmaText
-            className="figma-nowrap absolute left-[180px] z-[15] font-murs text-[32px] tracking-[-0.544px] text-figma-ink"
+          <div
+            className="absolute left-[180px] z-[15] flex items-center gap-[14px]"
             style={{ top: DATE_TOP }}
           >
-            {view?.dateLabel ?? 'Рабочий день'}
-            {dash.liveWorkday ? ` · ${formatClock(dash.liveWorkday.workday.liveNow)}` : ''}
-          </FigmaText>
+            <FigmaText className="figma-nowrap font-murs text-[32px] tracking-[-0.544px] text-figma-ink">
+              {view?.dateLabel ?? 'Рабочий день'}
+              {dash.liveWorkday ? ` · ${formatClock(dash.liveWorkday.workday.liveNow)}` : ''}
+            </FigmaText>
+            <McpAgentIndicator
+              active={mcpActive}
+              motionOn={motionOn}
+              onClick={() => {
+                setSettingsTab('api');
+                setSettingsOpen(true);
+              }}
+            />
+          </div>
         )}
         <div
           className={`absolute inset-0 ${

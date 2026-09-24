@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable, Optional } from '@nestjs/common';
 import { z } from 'zod';
 import { lunchCoverageWitness, policyCoverageRegressed } from './coverage-policy';
@@ -11,6 +12,7 @@ import { Clock } from '../../common/time';
 import { Prisma } from '../../generated/prisma/client';
 import { NotificationsService } from '../../notifications';
 import type { OperationContext } from '../../operations';
+import { OperationsService } from '../../operations';
 import {
   lockAlertQueue,
   lockRoutingCurrent,
@@ -24,6 +26,7 @@ import {
   SnapshotPublisher,
 } from '../../routing/mount-data-eng';
 import { RouterClient } from '../../routing/router-gateway/router-client.port';
+import { MiniAiService } from '../ai/mini-ai.service';
 import {
   DEFAULT_EXECUTION_TIMING_POLICY,
   ExecutionTimingPolicy,
@@ -97,6 +100,8 @@ export class AlertsService {
     private readonly publisher: SnapshotPublisher,
     private readonly notifications: NotificationsService,
     private readonly router: RouterClient,
+    private readonly operations: OperationsService,
+    private readonly miniAi: MiniAiService,
     @Optional() private readonly timing?: ExecutionTimingPolicy,
     @Optional() private readonly dispatcherSettings?: DispatcherSettingsService,
     @Optional() private readonly snapshotBuilder?: SnapshotBuilder,
@@ -178,6 +183,57 @@ export class AlertsService {
         'The plan changed while calculating; request a fresh window',
       );
     return { ...result, requestVersion: prepared.requestVersion };
+  }
+
+  /**
+   * System one picks an allowed action for the alert; the usual resolve applies it.
+   *
+   * Both the dashboard endpoint and the MCP tool call this one handler, so the choice of
+   * what an automated resolver may do lives in exactly one place: an already handled alert
+   * is refused, `move_window` is never picked (it needs times the model does not assign),
+   * and the applied action is a journalled `alert.resolve` operation.
+   */
+  async resolveWithSystemOne(
+    actor: Actor,
+    id: string,
+  ): Promise<{ alert: AlertView; choice: string }> {
+    const alert = await this.prisma.alert.findUnique({ where: { id } });
+    if (!alert || alert.kind !== 'alert' || alert.resolvedAt !== null) {
+      throw SysError.validationFailed('Этот алерт уже нельзя разобрать.');
+    }
+    const actions = alertActionsFor(alert.code);
+    const engineers = await this.prisma.engineer.findMany({
+      take: 8,
+      orderBy: { inputOrder: 'asc' },
+      select: { id: true, displayName: true },
+    });
+    const choice = await this.miniAi.chooseAlert({
+      summary: JSON.stringify({
+        code: alert.code,
+        reasons: alert.reasons,
+        requestIds: alert.requestIds,
+        engineerIds: alert.engineerIds,
+      }).slice(0, 4_000),
+      actions,
+      engineers: engineers.map((item) => ({ id: item.id, label: item.displayName })),
+    });
+    const action = actions.find((item) => item === choice.action);
+    if (!action || action === 'move_window') {
+      throw SysError.validationFailed('Смена окна требует времени, которое модель не назначает.');
+    }
+    const operationId = randomUUID();
+    const dto = {
+      operationId,
+      action,
+      reason: choice.reason,
+      ...(choice.engineerId ? { engineerId: choice.engineerId } : {}),
+      ...(choice.minutes ? { minutes: choice.minutes } : {}),
+    };
+    const outcome = await this.operations.execute(
+      { operationId, actor, action: 'alert.resolve', targetRef: id, payload: dto },
+      (context) => this.resolve(context, id, dto),
+    );
+    return { alert: outcome.result, choice: choice.action };
   }
 
   private async thresholds(db: PrismaService | Tx = this.prisma) {
