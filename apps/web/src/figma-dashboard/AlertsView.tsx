@@ -378,17 +378,23 @@ function AiSweepSlider({
   const [progress, setProgress] = useState(0);
   const progressRef = useRef(0);
   const [nudge, setNudge] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const drag = useRef<{ x: number; progress: number; scale: number } | null>(null);
   const lastTap = useRef(0);
+  const held = useRef(false);
   useEffect(() => {
     if (engaged) {
+      held.current = true;
       progressRef.current = 1;
       setProgress(1);
       setNudge(false);
       return;
     }
-    progressRef.current = 0;
-    setProgress(0);
+    if (held.current) {
+      held.current = false;
+      progressRef.current = 0;
+      setProgress(0);
+    }
   }, [engaged]);
   useEffect(() => {
     if (engaged || !armed) return;
@@ -422,9 +428,10 @@ function AiSweepSlider({
         className="absolute top-[8px] z-10 flex size-[63px] cursor-grab items-center justify-center active:cursor-grabbing"
         style={{ left: 10 }}
         animate={{ x: engaged ? TRAVEL : progress * TRAVEL }}
-        transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+        transition={dragging ? { duration: 0 } : { type: 'spring', stiffness: 420, damping: 32 }}
         onPointerDown={(event) => {
           if (engaged) return;
+          setDragging(true);
           setNudge(false);
           const scale = event.currentTarget.getBoundingClientRect().width / event.currentTarget.offsetWidth || 1;
           drag.current = { x: event.clientX, progress: progressRef.current, scale };
@@ -442,10 +449,11 @@ function AiSweepSlider({
         }}
         onPointerUp={() => {
           drag.current = null;
+          setDragging(false);
           const now = Date.now();
           const repeat = now - lastTap.current < 320;
           lastTap.current = now;
-          if (progressRef.current > 0.82 || repeat) commit();
+          if (progressRef.current > 0.72 || repeat) commit();
           else {
             progressRef.current = 0;
             setProgress(0);
@@ -466,7 +474,7 @@ function AiSweepSlider({
         />
         <motion.span
           aria-hidden
-          className="flex items-center justify-center text-white"
+          className="relative z-10 flex items-center justify-center text-white"
           animate={
             nudge && progress === 0 && !engaged && motionOn ? { x: [0, 7, 0] } : { x: 0 }
           }
@@ -490,7 +498,7 @@ function AiSweepSlider({
       <span className="sweep-spark pointer-events-none absolute right-[10px] top-[9px] flex size-[60px] items-center justify-center rounded-full">
         <span
           aria-hidden
-          className="block bg-white"
+          className="block bg-figma-ink"
           style={{
             width: 26,
             height: 26,

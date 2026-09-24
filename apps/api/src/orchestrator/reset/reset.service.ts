@@ -178,6 +178,9 @@ export class ResetService {
     // AI contour state goes with the facts it was fit on; the dispatcher's
     // explicit switch is kept, but the learned calibration cache is not.
     await tx.appState.deleteMany({ where: { key: APP_STATE_KEYS.AI_CALIBRATION } });
+    // The MCP pin was an integration key, and the keys are gone above: the pointer must
+    // not survive, or the dashboard keeps promising a pin that no longer opens anything.
+    await tx.appState.deleteMany({ where: { key: APP_STATE_KEYS.MCP_SETTINGS } });
 
     // Accounts last, and only the ones that are not the dispatcher: that account is
     // restored from configuration, and deleting it would lock the Dashboard out.

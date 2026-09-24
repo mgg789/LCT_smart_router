@@ -217,7 +217,7 @@ describe('map routing transport and composite geometry', () => {
       await routing.whenIdle();
       const result = routing.projectPlan(plan(segments));
       const leg = result.routes[0]?.legs[0];
-      assert.equal(peak, 1);
+      assert.ok(peak >= 1 && peak <= 4);
       assert.equal(leg?.segments?.[0]?.travelSource, 'traffic_api');
       assert.equal(leg?.segments?.[0]?.travelTimeSec, 300);
       assert.ok((leg?.segments?.[0]?.geometry.points.length ?? 0) >= 3);

@@ -157,7 +157,7 @@ function ExplainedAction({
   icon: LucideIcon;
   spec: Pick<AlertActionSpec, 'label' | 'summary' | 'effect' | 'benefit' | 'drawback' | 'tone'>;
   disabled?: boolean;
-  /** `ai` stays inert but uses the light panel gradient instead of a greyed control. */
+  /** `ai` uses the light panel gradient and runs System one when clicked. */
   appearance?: 'plain' | 'ai';
   /** Brand gradient outline. The sweep does not click the button. */
   spotlight?: boolean;
@@ -219,10 +219,13 @@ function ExplainedAction({
       {appearance === 'ai' ? (
         <button
           type="button"
-          disabled
-          title="Скоро"
+          disabled={disabled}
           aria-describedby={id}
-          className="flex cursor-not-allowed items-center justify-center overflow-clip rounded-[20px] bg-figma-ink px-[32px] py-[16px] font-semibold text-[20px] tracking-[-0.6px]"
+          onClick={() => {
+            dismiss();
+            onClick?.();
+          }}
+          className="flex items-center justify-center overflow-clip rounded-[20px] bg-figma-ink px-[32px] py-[16px] font-semibold text-[20px] tracking-[-0.6px] disabled:cursor-not-allowed disabled:opacity-45"
         >
           <span
             aria-hidden

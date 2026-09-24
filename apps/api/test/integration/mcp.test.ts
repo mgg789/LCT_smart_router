@@ -226,6 +226,30 @@ describe('dashboard mcp server', () => {
     );
   });
 
+  it('stops promising a pin whose key row disappeared, as a data reset deletes every key', async () => {
+    await prisma.apiToken.deleteMany({ where: { name: 'MCP dashboard pin' } });
+
+    const view = (await (await dispatch('/api/v1/dispatch/mcp', 'GET')).json()) as {
+      enabled: boolean;
+      pinSet: boolean;
+    };
+    assert.equal(view.enabled, false);
+    assert.equal(view.pinSet, false);
+    assert.equal(
+      (await rpc({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, pinHeader())).status,
+      401,
+    );
+
+    // Recovery needs no server-side switch: saving a pin arms the server again.
+    const saved = await dispatch('/api/v1/dispatch/mcp', 'PUT', {
+      operationId: crypto.randomUUID(),
+      enabled: true,
+      pin: PIN,
+    });
+    assert.equal(saved.status, 200);
+    assert.equal(((await saved.json()) as { pinSet: boolean }).pinSet, true);
+  });
+
   it('stops accepting the pin everywhere after the server is switched off', async () => {
     const off = await dispatch('/api/v1/dispatch/mcp', 'PUT', {
       operationId: crypto.randomUUID(),

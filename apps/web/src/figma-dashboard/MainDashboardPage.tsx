@@ -923,7 +923,7 @@ export function MainDashboardPage() {
             void dash.signOut();
           }}
         />
-        {activeNav === 'engineers' || (activeNav === 'requests' && openedRequestId) ? null : (
+        {activeNav === 'requests' && openedRequestId ? null : (
           <div
             className="absolute left-[180px] z-[15] flex items-center gap-[14px]"
             style={{ top: DATE_TOP }}
@@ -2478,8 +2478,14 @@ function DetailPanel({
   const equipment = request
     ? request.requiredEquipment
       ? requestEquipmentLabel(request.requiredEquipment)
-      : 'Нет оборудования'
+      : 'Без оборудования'
     : null;
+  const assignment =
+    request == null
+      ? null
+      : request.assignmentState === 'unassigned' || request.assignmentState === 'pending'
+        ? 'Не назначена'
+        : 'Назначена';
 
   return (
     <motion.aside
@@ -2525,6 +2531,7 @@ function DetailPanel({
               </p>
             </Copyable>
             <div className="mt-[16px] flex flex-wrap gap-[12px]">
+              {assignment ? <PanelTag label={assignment} /> : null}
               {urgency ? <PanelTag label={urgency.label} tone={urgency.tone} /> : null}
               {equipment ? <PanelTag label={equipment} /> : null}
             </div>

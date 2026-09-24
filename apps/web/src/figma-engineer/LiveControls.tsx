@@ -438,11 +438,11 @@ function OfficeGear({
   });
   return (
     <div className="w-full max-w-[360px] rounded-[20px] bg-white px-4 py-4 text-left shadow-[0_10px_28px_rgba(39,41,48,0.06)]">
-      <p className="font-semibold text-figma-ink" style={{ fontSize: eu(18) }}>
+      <p className="font-semibold text-figma-ink" style={{ fontSize: eu(36) }}>
         Взять из офиса
       </p>
       {rows.length === 0 ? (
-        <p className="mt-2 font-medium text-figma-muted" style={{ fontSize: eu(16) }}>
+        <p className="mt-2 font-medium text-figma-muted" style={{ fontSize: eu(28) }}>
           Из офиса ничего брать не нужно.
         </p>
       ) : (
@@ -452,7 +452,7 @@ function OfficeGear({
               <span className="flex size-9 items-center justify-center rounded-full bg-figma-canvas">
                 <TintIcon src={row.icon} color="#272930" size={20} />
               </span>
-              <span className="font-medium text-figma-ink" style={{ fontSize: eu(18) }}>
+              <span className="font-medium text-figma-ink" style={{ fontSize: eu(28) }}>
                 {ruGear(row.count, row.one, row.few, row.many)}
               </span>
             </li>
@@ -476,7 +476,7 @@ function WeatherHint({ kind }: { kind: DispatchWeather['kind'] | null }) {
   return (
     <p className="flex w-full max-w-[360px] items-center gap-3 rounded-[16px] bg-white px-4 py-3 text-left font-medium text-figma-ink shadow-[0_8px_20px_rgba(39,41,48,0.05)]">
       <TintIcon src={hint.icon} color="#272930" size={22} />
-      <span style={{ fontSize: eu(16) }}>{hint.text}</span>
+      <span style={{ fontSize: eu(28) }}>{hint.text}</span>
     </p>
   );
 }

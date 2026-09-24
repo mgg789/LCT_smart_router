@@ -145,7 +145,7 @@ export function ToastColumn({
               <>
                 <motion.div
                   aria-hidden
-                  className="pointer-events-none absolute right-0 z-0"
+                  className="pointer-events-auto absolute right-0 z-0"
                   style={{
                     top: -letterbox.y,
                     bottom: -letterbox.y,
@@ -164,7 +164,7 @@ export function ToastColumn({
                   type="button"
                   aria-label="Свернуть уведомления"
                   onClick={onCollapse}
-                  className="pointer-events-auto absolute flex items-center justify-center rounded-full bg-white shadow-[0_10px_24px_rgba(15,16,20,0.20)]"
+                  className="pointer-events-auto absolute z-20 flex items-center justify-center rounded-full bg-white shadow-[0_10px_24px_rgba(15,16,20,0.20)]"
                   style={{
                     top: COLLAPSE_BUBBLE_TOP,
                     right: COLLAPSE_BUBBLE_RIGHT,

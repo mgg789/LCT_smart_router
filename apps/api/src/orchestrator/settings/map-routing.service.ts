@@ -12,6 +12,10 @@ export const MAP_API_MIN_DISTANCE_M = 300;
 /** How long a road-shape miss (outage or outside MKAD) is remembered. */
 /** A carriageway between two stops does not move. A one-minute TTL made every open dashboard re-request the whole day and the API stopped answering. */
 const ROAD_SHAPE_TTL_MS = 6 * 60 * 60 * 1000;
+/** A refused socket is not a stable answer. Retry on the next dashboard poll. */
+const ROAD_MISS_TTL_MS = 8_000;
+/** Enough to hide one slow edge. Each `/route2` on this stand is a few milliseconds. */
+const ROAD_FETCH_CONCURRENCY = 4;
 const TWOGIS_URL = 'https://routing.api.2gis.com/routing/7.0.0/global';
 const YANDEX_URL = 'https://api.routing.yandex.net/v2/route';
 
@@ -47,8 +51,12 @@ export class MapRoutingService {
     string,
     { expiresAt: number; points: Array<{ lat: number; lon: number }> | null }
   >();
-  /** One in-flight road call. The plan read never waits on this chain. */
-  private shapeTail: Promise<void> = Promise.resolve();
+  /** In-flight road calls. The plan read never waits on them. */
+  private shapeActive = 0;
+  private readonly shapeSlots: Array<() => void> = [];
+  private idleWait: Promise<void> = Promise.resolve();
+  private idleRelease: (() => void) | null = null;
+  private pendingShapes = 0;
   private readonly shapeQueued = new Set<string>();
   private watchedEdges: Array<{
     key: string;
@@ -182,7 +190,7 @@ export class MapRoutingService {
    * Plan for the screen, right now.
    *
    * Cached polylines are applied. Missing ones are fetched after this returns,
-   * one edge at a time, and only once the router is not building. The caller
+   * a few edges at a time, and only once the router is not building. The caller
    * must not await the road API.
    */
   projectPlan(plan: PlanView): PlanView {
@@ -196,16 +204,9 @@ export class MapRoutingService {
         done += 1;
         continue;
       }
-      if (building || this.shapeQueued.has(edge.key)) continue;
+      if (!base || building || this.shapeQueued.has(edge.key)) continue;
       this.shapeQueued.add(edge.key);
-      const job = edge;
-      this.shapeTail = this.shapeTail
-        .then(() => this.fetchRoadPolylineBounded(base as string, job.key, job.from, job.to))
-        .catch(() => undefined)
-        .finally(() => {
-          this.shapeQueued.delete(job.key);
-          this.publishGeometry();
-        });
+      this.enqueueShape(base, edge);
     }
     writeRouterPhase({
       geometryDone: building ? 0 : done,
@@ -216,7 +217,39 @@ export class MapRoutingService {
 
   /** Resolves when every queued road call has settled. Tests use this. */
   whenIdle(): Promise<void> {
-    return this.shapeTail;
+    return this.idleWait;
+  }
+
+  /** Up to {@link ROAD_FETCH_CONCURRENCY} edges at once. One slow call must not hold the day. */
+  private enqueueShape(
+    base: string,
+    job: { key: string; from: { lat: number; lon: number }; to: { lat: number; lon: number } },
+  ): void {
+    this.pendingShapes += 1;
+    if (!this.idleRelease) {
+      this.idleWait = new Promise((resolve) => {
+        this.idleRelease = resolve;
+      });
+    }
+    const run = () => {
+      this.shapeActive += 1;
+      void this.fetchRoadPolylineBounded(base, job.key, job.from, job.to)
+        .catch(() => undefined)
+        .finally(() => {
+          this.shapeQueued.delete(job.key);
+          this.publishGeometry();
+          this.shapeActive -= 1;
+          this.pendingShapes -= 1;
+          if (this.pendingShapes === 0) {
+            this.idleRelease?.();
+            this.idleRelease = null;
+          }
+          const next = this.shapeSlots.shift();
+          if (next) next();
+        });
+    };
+    if (this.shapeActive < ROAD_FETCH_CONCURRENCY) run();
+    else this.shapeSlots.push(run);
   }
 
   private publishGeometry(): void {
@@ -363,7 +396,7 @@ export class MapRoutingService {
       if (timer) clearTimeout(timer);
     });
     if (this.freshShape(key) === undefined) {
-      this.roadShapeCache.set(key, { expiresAt: Date.now() + 120_000, points });
+      this.roadShapeCache.set(key, { expiresAt: Date.now() + ROAD_MISS_TTL_MS, points });
     }
   }
 
@@ -377,10 +410,17 @@ export class MapRoutingService {
     const url = new URL('/route2', `${base}/`);
     url.searchParams.set('a', `${from.lat},${from.lon}`);
     url.searchParams.set('b', `${to.lat},${to.lon}`);
-    const json = await requestJson(url, { headers: { Accept: 'application/json' } }, 8_000);
+    let json: unknown;
+    try {
+      json = await requestJson(url, { headers: { Accept: 'application/json' } }, 8_000);
+    } catch {
+      this.roadShapeCache.set(key, { expiresAt: Date.now() + ROAD_MISS_TTL_MS, points: null });
+      return null;
+    }
     const points = decodeRoadPolyline(json);
-    // A miss stays briefly so a down backend is retried. A drawn road stays for the day.
-    const ttl = points ? ROAD_SHAPE_TTL_MS : 120_000;
+    // A drawn road and a real straight (outside the graph) stay for the day.
+    // Anything else is a transient miss and is retried on the next poll.
+    const ttl = points || isStraightAnswer(json) ? ROAD_SHAPE_TTL_MS : ROAD_MISS_TTL_MS;
     this.roadShapeCache.set(key, { expiresAt: Date.now() + ttl, points });
     if (this.roadShapeCache.size > CACHE_LIMIT) {
       const first = this.roadShapeCache.keys().next().value;
@@ -578,6 +618,10 @@ function needsRoadShape(source: PlanRouteSegmentView['travelSource'], pointCount
   if (source === 'metro') return false;
   if ((source === 'route_api' || source === 'traffic_api') && pointCount >= 2) return false;
   return pointCount <= 2 || source === 'approximate' || source === 'road_matrix';
+}
+
+function isStraightAnswer(json: unknown): boolean {
+  return Boolean(json && typeof json === 'object' && (json as { mode?: unknown }).mode === 'straight');
 }
 
 function decodeRoadPolyline(json: unknown): Array<{ lat: number; lon: number }> | null {

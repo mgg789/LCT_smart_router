@@ -44,7 +44,22 @@ export class McpService {
     const row = await db.appState.findUnique({
       where: { key: APP_STATE_KEYS.MCP_SETTINGS },
     });
-    return parseMcpSettings(row?.value ?? null);
+    const settings = parseMcpSettings(row?.value ?? null);
+    if (settings.tokenId === null) return settings;
+    // The pin is a real key row, and key rows can disappear outside this service: a data
+    // reset deletes every integration key. A pointer to a missing or revoked key means
+    // there is no pin — the dashboard asks for a new one instead of promising a dead one.
+    const token = await db.apiToken.findUnique({
+      where: { id: settings.tokenId },
+      select: { revokedAt: true, expiresAt: true },
+    });
+    const alive =
+      token !== null &&
+      token.revokedAt === null &&
+      (token.expiresAt === null || Number(token.expiresAt) > this.clock.nowSeconds());
+    return alive
+      ? settings
+      : { version: 1, enabled: false, tokenId: null, pinLast4: null, updatedAt: settings.updatedAt };
   }
 
   /** Settings view for the dashboard: switch state, pin presence and live activity. */
@@ -128,7 +143,7 @@ export class McpService {
     context: OperationContext,
     dto: { enabled: boolean; pin?: string },
   ): Promise<McpSettingsView> {
-    const current = await this.readSettingsFrom(context.tx);
+    const current = await this.readSettings(context.tx);
     let tokenId = current.tokenId;
     let last4 = current.pinLast4;
 
@@ -204,10 +219,5 @@ export class McpService {
       lastToolCallAt: this.activity?.at ?? null,
       endpoint: MCP_ENDPOINT_PATH,
     };
-  }
-
-  private async readSettingsFrom(tx: Tx): Promise<McpSettings> {
-    const row = await tx.appState.findUnique({ where: { key: APP_STATE_KEYS.MCP_SETTINGS } });
-    return parseMcpSettings(row?.value ?? null);
   }
 }
