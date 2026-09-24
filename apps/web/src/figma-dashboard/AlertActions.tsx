@@ -55,6 +55,7 @@ export function AlertActions({
   disabled,
   onResolve,
   leadingAction,
+  spotlightAction = null,
 }: {
   token?: string;
   alert: AlertView | null;
@@ -63,6 +64,8 @@ export function AlertActions({
   onResolve: (id: string, input: AlertResolutionInput) => Promise<void>;
   /** Optional navigation action rendered before the server-authorized decisions. */
   leadingAction?: ReactNode;
+  /** Visual-only ring while the inbox sweep pretends to choose this action. */
+  spotlightAction?: string | null;
 }) {
   const [selected, setSelected] = useState<AlertActionId | null>(null);
   const [pending, setPending] = useState(false);
@@ -79,6 +82,7 @@ export function AlertActions({
               spec={ALERT_ACTION_SPECS[action]}
               icon={ACTION_ICONS[action]}
               disabled={disabled || waiting || pending}
+              spotlight={spotlightAction === action}
               onClick={() => setSelected(action)}
             />
           ) : (
@@ -139,6 +143,7 @@ function ExplainedAction({
   spec,
   disabled = false,
   appearance = 'plain',
+  spotlight = false,
   onClick,
 }: {
   icon: LucideIcon;
@@ -146,6 +151,8 @@ function ExplainedAction({
   disabled?: boolean;
   /** `ai` stays inert but uses the light panel gradient instead of a greyed control. */
   appearance?: 'plain' | 'ai';
+  /** Brand gradient outline. The sweep does not click the button. */
+  spotlight?: boolean;
   onClick?: () => void;
 }) {
   const id = useId();
@@ -226,18 +233,20 @@ function ExplainedAction({
           <span className="panel-ai-fill client-ai-text">{spec.label}</span>
         </button>
       ) : (
-        <InboxButton
-          variant={spec.tone}
-          disabled={disabled}
-          describedBy={id}
-          onClick={() => {
-            dismiss();
-            onClick?.();
-          }}
-        >
-          <Icon size={22} strokeWidth={1.8} aria-hidden="true" className="mr-[10px] shrink-0" />
-          {spec.label}
-        </InboxButton>
+        <span className={spotlight ? 'ai-choice-ring rounded-[24px]' : undefined}>
+          <InboxButton
+            variant={spec.tone}
+            disabled={disabled}
+            describedBy={id}
+            onClick={() => {
+              dismiss();
+              onClick?.();
+            }}
+          >
+            <Icon size={22} strokeWidth={1.8} aria-hidden="true" className="mr-[10px] shrink-0" />
+            {spec.label}
+          </InboxButton>
+        </span>
       )}
       <span id={id} className="sr-only">
         {spec.summary} {spec.effect} Плюсы: {spec.benefit} Минусы: {spec.drawback}

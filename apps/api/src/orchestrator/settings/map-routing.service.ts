@@ -200,8 +200,7 @@ export class MapRoutingService {
       this.shapeQueued.add(edge.key);
       const job = edge;
       this.shapeTail = this.shapeTail
-        .then(() => this.fetchRoadPolyline(base as string, job.key, job.from, job.to))
-        .then(() => undefined)
+        .then(() => this.fetchRoadPolylineBounded(base as string, job.key, job.from, job.to))
         .catch(() => undefined)
         .finally(() => {
           this.shapeQueued.delete(job.key);
@@ -341,6 +340,31 @@ export class MapRoutingService {
       geometry: { points: withEndpoints(points, from, to) },
       travelSource: 'traffic_api',
     };
+  }
+
+  /**
+   * One road call that always settles.
+   * A hung socket used to freeze the serial queue, so the map toast stayed
+   * just short of the last edge. A miss is cached and counts as finished.
+   */
+  private async fetchRoadPolylineBounded(
+    base: string,
+    key: string,
+    from: { lat: number; lon: number },
+    to: { lat: number; lon: number },
+  ): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const points = await Promise.race([
+      this.fetchRoadPolyline(base, key, from, to),
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), 10_000);
+      }),
+    ]).finally(() => {
+      if (timer) clearTimeout(timer);
+    });
+    if (this.freshShape(key) === undefined) {
+      this.roadShapeCache.set(key, { expiresAt: Date.now() + 15_000, points });
+    }
   }
 
   /** On-road polyline, or null when the backend is down or the pair leaves MKAD. */

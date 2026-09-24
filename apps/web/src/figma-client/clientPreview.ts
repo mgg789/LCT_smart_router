@@ -248,6 +248,43 @@ export function canSubmitClientForm(draft: ClientRequestDraft): boolean {
   return clientSubmitHint(draft) === null;
 }
 
+const STORY_EMAIL = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
+const STORY_CLOCK = /\b(\d{1,2})[:.](\d{2})\b/g;
+const STORY_NAME =
+  /(?:меня зовут|фио|имя)\s*[:\-]?\s*([А-ЯЁA-Z][а-яёa-z]+(?:\s+[А-ЯЁA-Z][а-яёa-z]+){0,2})/i;
+const STORY_ADDRESS = /ул\.|улиц|проспект|пр-т|переул|дом\b|д\.\s*\d|москва/i;
+
+/**
+ * Visible fields for the form that opens after the free-text send.
+ * The story stays the customer's own words: email, clocks, a name phrase and
+ * an address-like line are copied when they are present. The rest of the text
+ * becomes the address only when no street line was found, so the form is not blank.
+ */
+export function draftFromStory(text: string, current: ClientRequestDraft): ClientRequestDraft {
+  const source = text.trim();
+  const email = source.match(STORY_EMAIL)?.[0] ?? current.email;
+  const clocks = [...source.matchAll(STORY_CLOCK)].map(
+    (match) => `${match[1]?.padStart(2, '0')}:${match[2]}`,
+  );
+  const named = source.match(STORY_NAME)?.[1]?.trim();
+  const addressLine = source
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => STORY_ADDRESS.test(line) && !STORY_EMAIL.test(line));
+  const problem =
+    CLIENT_PROBLEMS.find((item) => source.toLowerCase().includes(item.toLowerCase().slice(0, 6))) ??
+    (source.length > 0 ? 'Другое...' : current.problem);
+  return {
+    ...current,
+    email,
+    contactName: named && named.length > 0 ? named : current.contactName,
+    problem,
+    address: addressLine && addressLine.length > 0 ? addressLine : current.address,
+    windowStart: clocks[0] ?? (current.windowStart || '10:00'),
+    windowEnd: clocks[1] ?? (current.windowEnd || '12:00'),
+  };
+}
+
 /**
  * Body of `POST /client/requests/submitted`, without the operation id.
  * Returns null until name, address, map point, window and email are usable.

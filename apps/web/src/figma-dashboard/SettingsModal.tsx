@@ -875,11 +875,22 @@ function SettingSwitch({
         role="switch"
         aria-checked={checked}
         onClick={onChange}
-        className={`flex h-[28px] w-[48px] items-center rounded-full p-[2px] ${
-          checked ? 'justify-end bg-figma-bee' : 'justify-start bg-figma-track'
-        }`}
+        className="relative h-[28px] w-[48px] rounded-full"
       >
-        <span className="size-[24px] rounded-full bg-white shadow" />
+        <motion.span
+          aria-hidden
+          className="absolute inset-0 rounded-full"
+          initial={false}
+          animate={{ backgroundColor: checked ? 'var(--color-figma-bee)' : 'var(--color-figma-track)' }}
+          transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+        />
+        <motion.span
+          aria-hidden
+          className="absolute top-[2px] size-[24px] rounded-full bg-white shadow-[0_2px_6px_rgba(15,16,20,0.28)]"
+          initial={false}
+          animate={{ x: checked ? 22 : 2, scale: checked ? 1 : 0.96 }}
+          transition={{ type: 'spring', stiffness: 520, damping: 28, mass: 0.7 }}
+        />
       </button>
     </div>
   );

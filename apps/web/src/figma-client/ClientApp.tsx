@@ -31,7 +31,12 @@ import {
   prefillClientDraft,
 } from './clientPreview';
 import { clientRequestIdFromPath, clientRequestPath } from './clientRequestSeo';
-import { readClientSession, type StoredClientSession, writeClientSession } from './clientSession';
+import {
+  clearClientSession,
+  readClientSession,
+  type StoredClientSession,
+  writeClientSession,
+} from './clientSession';
 
 const slideEase = [0.22, 1, 0.36, 1] as const;
 const slide = { duration: 0.34, ease: slideEase };
@@ -89,8 +94,8 @@ export function ClientApp() {
       .then((profile) => {
         if (!cancelled) setDraft((current) => prefillClientDraft(current, profile));
       })
-      .catch(() => {
-        if (!cancelled) setNotice('Не удалось прочитать профиль.');
+      .catch((error: unknown) => {
+        if (!cancelled && isDeadSession(error)) forgetSession();
       });
     const pendingId = clientRequestIdFromPath(window.location.pathname);
     if (pendingId) {
@@ -105,7 +110,9 @@ export function ClientApp() {
           setScreen('list');
         })
         .catch((error: unknown) => {
-          if (!cancelled) setNotice(errorText(error));
+          if (cancelled) return;
+          if (isDeadSession(error)) forgetSession();
+          else setNotice(errorText(error));
         });
     }
     return () => {
@@ -121,6 +128,12 @@ export function ClientApp() {
       document.body.style.overflow = previous;
     };
   }, [menuOpen]);
+
+  const forgetSession = () => {
+    clearClientSession(window.localStorage);
+    setSession(null);
+    setNotice(null);
+  };
 
   const remember = (next: StoredClientSession) => {
     writeClientSession(window.localStorage, next);
@@ -176,7 +189,10 @@ export function ClientApp() {
     }
     setScreen('list');
     setNowMs(Date.now());
-    void refreshHistory(session.token).catch((error: unknown) => setNotice(errorText(error)));
+    void refreshHistory(session.token).catch((error: unknown) => {
+      if (isDeadSession(error)) forgetSession();
+      else setNotice(errorText(error));
+    });
   };
 
   const submit = () => {
@@ -323,7 +339,7 @@ export function ClientApp() {
             {screen === 'new' || screen === 'sent' ? (
               <p
                 className="min-w-0 font-murs tracking-[0.02em] text-figma-ink"
-                style={{ fontSize: eu(40), position: 'relative', top: 2 }}
+                style={{ fontSize: eu(40), position: 'relative', top: 1 }}
               >
                 NAVIX
               </p>
@@ -337,9 +353,6 @@ export function ClientApp() {
               notice={busy ? 'Отправляем…' : inlineNotice}
               onChange={setDraft}
               onSubmit={submit}
-              onAskAi={() =>
-                setNotice('Заявка с AI появится отдельным экраном. Сейчас заполните форму.')
-              }
             />
           ) : null}
           {screen === 'sent' && sent ? (
@@ -452,7 +465,15 @@ export function ClientApp() {
   );
 }
 
+function isDeadSession(error: unknown): boolean {
+  return (
+    error instanceof DashboardApiError &&
+    (error.status === 401 || /no longer valid|authentication is required/i.test(error.message))
+  );
+}
+
 function errorText(error: unknown): string {
+  if (isDeadSession(error)) return 'Сессия закончилась. Войдите по почте ещё раз.';
   if (error instanceof DashboardApiError) return error.message;
   if (error instanceof Error) return error.message;
   return 'Не удалось выполнить запрос.';

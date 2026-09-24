@@ -1,8 +1,9 @@
 import { motion, useReducedMotion } from 'framer-motion';
-import { ArrowUpRight, Trash2 } from 'lucide-react';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { ArrowRight, ArrowUpRight, Trash2 } from 'lucide-react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { AlertResolutionInput, DashboardSnapshot } from '../api/types';
 import { AlertActions } from './AlertActions';
+import { isAlertActionId } from '../domain/alerts';
 import { type InboxNoticeCard, inboxFromSources } from './alertsInbox';
 import { FIGMA_ASSETS } from './assets';
 import { InboxAlertCardView, InboxButton, InboxNoticeCardView } from './inboxCard';
@@ -66,8 +67,39 @@ export function AlertsView({
   const inbox = inboxFromSources(snapshot, toasts, demoMode);
   const [clearing, setClearing] = useState(false);
   const [hiddenNoticeIds, setHiddenNoticeIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [sweptIds, setSweptIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [sweeping, setSweeping] = useState(false);
+  const [spotlight, setSpotlight] = useState<{ id: string; action: string | null } | null>(null);
+  const [leaving, setLeaving] = useState<Readonly<Record<string, 1 | -1>>>({});
+  const visibleAlerts = inbox.alerts.filter((card) => !sweptIds.has(card.id));
   const visibleNotices = inbox.notices.filter((card) => !hiddenNoticeIds.has(card.id));
-  const glassArrow = inbox.alerts.length > 0;
+  const glassArrow = visibleAlerts.length > 0;
+  useEffect(() => {
+    if (!sweeping) return;
+    let cancelled = false;
+    const queue = visibleAlerts;
+    const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, animate ? ms : 0));
+    void (async () => {
+      for (const [index, card] of queue.entries()) {
+        if (cancelled) return;
+        const action = card.sourceAlert?.actions?.find((item) => isAlertActionId(item)) ?? null;
+        setSpotlight({ id: card.id, action });
+        await wait(1700);
+        if (cancelled) return;
+        setLeaving((current) => ({ ...current, [card.id]: index % 2 === 0 ? 1 : -1 }));
+        await wait(520);
+        if (cancelled) return;
+        setSweptIds((current) => new Set(current).add(card.id));
+        setSpotlight(null);
+      }
+      if (!cancelled) setSweeping(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // The queue is the list at the moment the sweep starts.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sweeping]);
   const listRef = useRef<HTMLDivElement>(null);
   const anchors = useRef<Array<{ id: string; offset: number }>>([]);
   function rememberScroll() {
@@ -99,35 +131,15 @@ export function AlertsView({
       >
         Алерты
       </FigmaText>
-      <motion.button
-        type="button"
-        disabled
-        aria-disabled
-        title="Скоро"
-        className="absolute left-[430px] z-20 flex h-[79px] w-[426px] cursor-not-allowed items-center rounded-full bg-figma-ink pl-[10px] pr-[10px] opacity-45"
-        style={{ top: TITLE_TOP - 16 }}
-      >
-        <span className="flex size-[60px] items-center justify-center rounded-full bg-figma-bee">
-          <FigmaIcon src={FIGMA_ASSETS.iconSparkles} alt="" width={26} height={26} />
-        </span>
-        <span className="figma-nowrap ml-[15px] font-semibold text-[18px] text-[#ededed]">
-          Разобрать все в AI
-        </span>
-        <span
-          className={
-            glassArrow
-              ? 'ml-auto flex size-[63px] items-center justify-center rounded-full bg-gradient-to-b from-white/20 to-white/[0.05] shadow-[inset_0_1px_0_rgba(255,255,255,0.45),inset_0_-8px_16px_rgba(255,255,255,0.06)] ring-1 ring-white/20 backdrop-blur-[100px]'
-              : 'ml-auto flex size-[63px] items-center justify-center rounded-full bg-white/10'
-          }
-        >
-          <FigmaIcon
-            src={glassArrow ? FIGMA_ASSETS.arrowRightWhite : FIGMA_ASSETS.arrowRight}
-            alt=""
-            width={30}
-            height={31}
-          />
-        </span>
-      </motion.button>
+      <AiSweepSlider
+        top={TITLE_TOP - 16}
+        armed={glassArrow}
+        engaged={sweeping}
+        motionOn={animate}
+        onCommit={() => {
+          if (!sweeping && visibleAlerts.length > 0) setSweeping(true);
+        }}
+      />
 
       <div
         ref={listRef}
@@ -143,13 +155,24 @@ export function AlertsView({
           ) : null}
 
           <div className="flex flex-col gap-[20px]">
-            {inbox.alerts.map((card, index) => (
+            {visibleAlerts.map((card, index) => (
               <motion.div
                 key={card.id}
                 data-alert-id={card.id}
                 initial={animate ? { opacity: 0, y: 16 } : false}
-                animate={{ opacity: 1, y: 0 }}
-                transition={animate ? { ...fadeSoft, delay: index * 0.04 } : { duration: 0 }}
+                animate={(() => {
+                  const direction = leaving[card.id];
+                  return direction
+                    ? { x: direction * 980, opacity: 0, rotate: direction * 2 }
+                    : { opacity: 1, y: 0, x: 0 };
+                })()}
+                transition={
+                  leaving[card.id]
+                    ? { duration: animate ? 0.48 : 0, ease: fadeSoft.ease }
+                    : animate
+                      ? { ...fadeSoft, delay: index * 0.04 }
+                      : { duration: 0 }
+                }
               >
                 <InboxAlertCardView
                   title={card.title}
@@ -163,6 +186,7 @@ export function AlertsView({
                       snapshot={snapshot}
                       disabled={writesDisabled}
                       onResolve={onResolve}
+                      spotlightAction={spotlight?.id === card.id ? spotlight.action : null}
                       leadingAction={
                         card.requestId ? (
                           <InboxButton
@@ -293,5 +317,109 @@ function NoticeCard({
         })().catch(() => undefined);
       }}
     />
+  );
+}
+
+const SWEEP_WIDTH = 426;
+const THUMB = 63;
+const TRAVEL = SWEEP_WIDTH - 20 - THUMB;
+
+/**
+ * Unlock-style control. Dragging the arrow to the sparkle, or a double tap,
+ * starts a visual pass over the inbox. It does not resolve alerts.
+ */
+function AiSweepSlider({
+  top,
+  armed,
+  engaged,
+  motionOn,
+  onCommit,
+}: {
+  top: number;
+  armed: boolean;
+  engaged: boolean;
+  motionOn: boolean;
+  onCommit: () => void;
+}) {
+  const [progress, setProgress] = useState(0);
+  const [nudge, setNudge] = useState(false);
+  const drag = useRef<{ x: number; progress: number } | null>(null);
+  const lastTap = useRef(0);
+  useEffect(() => {
+    if (engaged) {
+      setProgress(1);
+      setNudge(false);
+      return;
+    }
+    setProgress(0);
+  }, [engaged]);
+  useEffect(() => {
+    if (engaged || !armed) return;
+    const timer = window.setTimeout(() => setNudge(true), 3000);
+    return () => window.clearTimeout(timer);
+  }, [armed, engaged]);
+
+  const commit = () => {
+    setProgress(1);
+    setNudge(false);
+    onCommit();
+  };
+
+  return (
+    <div
+      className="absolute left-[430px] z-20 flex h-[79px] w-[426px] items-center overflow-hidden rounded-full bg-figma-ink pl-[10px] pr-[10px]"
+      style={{ top }}
+      onDoubleClick={() => {
+        if (!engaged) commit();
+      }}
+    >
+      <motion.button
+        type="button"
+        aria-label="Разобрать все в AI"
+        className="absolute top-[8px] z-10 flex size-[63px] cursor-grab items-center justify-center rounded-full bg-white/15 active:cursor-grabbing"
+        style={{ left: 10 }}
+        animate={{
+          x: engaged ? TRAVEL : nudge && progress === 0 ? [0, 14, 0] : progress * TRAVEL,
+        }}
+        transition={
+          nudge && progress === 0 && !engaged && motionOn
+            ? { duration: 0.9, repeat: Infinity, ease: 'easeInOut' }
+            : { type: 'spring', stiffness: 420, damping: 32 }
+        }
+        onPointerDown={(event) => {
+          if (engaged) return;
+          setNudge(false);
+          drag.current = { x: event.clientX, progress };
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}
+        onPointerMove={(event) => {
+          const origin = drag.current;
+          if (!origin) return;
+          const next = Math.min(1, Math.max(0, origin.progress + (event.clientX - origin.x) / TRAVEL));
+          setProgress(next);
+        }}
+        onPointerUp={() => {
+          drag.current = null;
+          if (progress > 0.82) commit();
+          else setProgress(0);
+          const now = Date.now();
+          if (now - lastTap.current < 320) commit();
+          lastTap.current = now;
+        }}
+      >
+        <ArrowRight size={28} className="text-white" strokeWidth={2} />
+      </motion.button>
+      <span
+        className={`figma-nowrap pointer-events-none mx-auto font-semibold text-[18px] ${
+          engaged ? 'client-ai-fill client-ai-text' : 'text-[#ededed]'
+        }`}
+        style={{ opacity: engaged ? 1 : 1 - progress }}
+      >
+        {engaged ? 'AI решает' : 'Разобрать все в AI'}
+      </span>
+      <span className="pointer-events-none ml-auto flex size-[60px] items-center justify-center rounded-full client-ai-fill">
+        <FigmaIcon src={FIGMA_ASSETS.iconSparkles} alt="" width={26} height={26} />
+      </span>
+    </div>
   );
 }

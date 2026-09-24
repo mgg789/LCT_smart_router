@@ -50,11 +50,7 @@ export function ClientRequests({
             delay={0}
             onOpen={() => onOpen(featured.id)}
           />
-        ) : (
-          <p className="font-medium text-figma-muted" style={{ fontSize: eu(20) }}>
-            Активных заявок нет
-          </p>
-        )}
+        ) : null}
         {rest.map((item, index) => (
           <ArchiveCard
             key={item.id}

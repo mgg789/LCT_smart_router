@@ -1,4 +1,5 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { ArrowRight, Mic } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { eu } from '../figma-engineer/engineerScale';
@@ -9,7 +10,12 @@ import {
   CLIENT_PROBLEMS,
   type ClientMapPoint,
   type ClientRequestDraft,
+  draftFromStory,
 } from './clientPreview';
+
+const STORY_KEY = 'lct.client.story';
+const STORY_PLACEHOLDER =
+  'Расскажите, что у вас случилось, когда к вам приехать, ваше ФИО и email';
 
 const tap = { duration: 0.16 };
 const slideEase = [0.22, 1, 0.36, 1] as const;
@@ -22,18 +28,23 @@ export function ClientNewRequest({
   draft,
   busy = false,
   notice,
+  initialMode = 'story',
   onChange,
   onSubmit,
-  onAskAi,
 }: {
   draft: ClientRequestDraft;
   busy?: boolean;
   notice: string | null;
+  /** Tests open the structured form without a click. The screen itself starts on the story. */
+  initialMode?: 'story' | 'form';
   onChange: (next: ClientRequestDraft) => void;
   onSubmit: () => void;
-  onAskAi: () => void;
 }) {
   const motionOn = !useReducedMotion();
+  const [mode, setMode] = useState<'story' | 'form'>(initialMode);
+  const [story, setStory] = useState('');
+  const [listening, setListening] = useState(false);
+  const [tracing, setTracing] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
   const [hits, setHits] = useState<ClientGeocodeHit[]>([]);
   const [searching, setSearching] = useState(false);
@@ -49,6 +60,23 @@ export function ClientNewRequest({
   useEffect(() => {
     noticeRef.current?.scrollIntoView({ block: 'nearest' });
   }, [notice]);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem(STORY_KEY);
+    if (saved) setStory(saved);
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem(STORY_KEY, story);
+  }, [story]);
+
+  const speech = useRef<SpeechHandle | null>(null);
+  useEffect(
+    () => () => {
+      speech.current?.stop();
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!typing.current) return;
@@ -118,8 +146,111 @@ export function ClientNewRequest({
       });
   };
 
+  const toggleDictation = () => {
+    if (listening) {
+      speech.current?.stop();
+      setListening(false);
+      return;
+    }
+    const Ctor = speechCtor();
+    if (!Ctor) return;
+    const rec = new Ctor();
+    rec.lang = 'ru-RU';
+    rec.interimResults = true;
+    rec.continuous = false;
+    rec.onresult = (event) => {
+      const said = [...Array(event.results.length).keys()]
+        .map((index) => event.results[index]?.[0]?.transcript ?? '')
+        .join(' ')
+        .trim();
+      if (said) setStory(said);
+    };
+    rec.onend = () => setListening(false);
+    rec.onerror = () => setListening(false);
+    speech.current = rec;
+    setListening(true);
+    rec.start();
+  };
+
+  const revealForm = () => {
+    onChange(draftFromStory(story, draftRef.current));
+    setTracing(false);
+    setMode('form');
+  };
+
+  const sendStory = () => {
+    if (tracing || story.trim().length === 0) return;
+    if (!motionOn) {
+      revealForm();
+      return;
+    }
+    setTracing(true);
+  };
+
   return (
-    <section className="flex flex-col">
+    <section className={`flex flex-col ${mode === 'story' ? 'min-h-0 flex-1' : ''}`}>
+      <div className={mode === 'story' ? 'mt-auto flex flex-col' : 'flex flex-col'}>
+      <ModeSwitch mode={mode} onChange={setMode} />
+      <AnimatePresence initial={false}>
+        {mode === 'story' ? (
+          <motion.div
+            key="story"
+            className=""
+            initial={motionOn ? { opacity: 0, y: 24 } : false}
+            animate={{ opacity: 1, y: 0 }}
+            exit={motionOn ? { opacity: 0, y: 16 } : undefined}
+            transition={motionOn ? { duration: 0.36, ease: slideEase } : { duration: 0 }}
+          >
+            <div className="relative bg-white" style={{ borderRadius: eu(28), minHeight: eu(180) }}>
+              <textarea
+                value={story}
+                onChange={(event) => setStory(event.target.value)}
+                placeholder={STORY_PLACEHOLDER}
+                rows={4}
+                className="w-full resize-none bg-transparent font-medium text-figma-ink outline-none placeholder:text-figma-muted"
+                style={{
+                  minHeight: eu(180),
+                  borderRadius: eu(28),
+                  padding: `${eu(22)} ${eu(72)} ${eu(64)} ${eu(72)}`,
+                  fontSize: eu(20),
+                  lineHeight: eu(28),
+                }}
+              />
+              <button
+                type="button"
+                aria-label={listening ? 'Остановить диктовку' : 'Диктовка'}
+                aria-pressed={listening}
+                onClick={toggleDictation}
+                className="absolute flex items-center justify-center text-figma-ink"
+                style={{ left: eu(16), bottom: eu(16), width: eu(44), height: eu(44) }}
+              >
+                <Mic size={22} strokeWidth={1.8} />
+              </button>
+              <button
+                type="button"
+                aria-label="Отправить рассказ"
+                disabled={tracing || story.trim().length === 0}
+                onClick={sendStory}
+                className="absolute flex items-center justify-center rounded-full bg-figma-ink text-white disabled:opacity-40"
+                style={{ right: eu(16), bottom: eu(16), width: eu(48), height: eu(48) }}
+              >
+                <ArrowRight size={22} strokeWidth={2} />
+              </button>
+              {tracing ? <PerimeterTrace onDone={revealForm} /> : null}
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+      <AnimatePresence initial={false}>
+        {mode === 'form' ? (
+          <motion.div
+            key="form"
+            className="overflow-hidden"
+            initial={motionOn ? { height: 0, opacity: 0 } : false}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={motionOn ? { height: 0, opacity: 0 } : undefined}
+            transition={motionOn ? { duration: 0.48, ease: slideEase } : { duration: 0 }}
+          >
       <form
         className="flex flex-col bg-figma-ink"
         style={{
@@ -132,17 +263,7 @@ export function ClientNewRequest({
           onSubmit();
         }}
       >
-        <h1 className="font-murs tracking-[-0.02em] text-white" style={{ fontSize: eu(36) }}>
-          Новая заявка
-        </h1>
-        <p
-          className="font-semibold text-white/60"
-          style={{ marginTop: eu(12), fontSize: eu(20), lineHeight: eu(26) }}
-        >
-          подберём инженера и назовём точное время визита
-        </p>
-
-        <div className="flex flex-wrap" style={{ marginTop: eu(28), gap: eu(12) }}>
+        <div className="flex flex-wrap" style={{ gap: eu(12) }}>
           {CLIENT_PROBLEMS.map((problem) => {
             const selected = draft.problem === problem;
             return (
@@ -326,38 +447,11 @@ export function ClientNewRequest({
         >
           {busy ? 'Отправляем…' : 'Отправить'}
         </motion.button>
-        <motion.button
-          type="button"
-          onClick={onAskAi}
-          whileTap={{ scale: 0.98 }}
-          className="client-ai-border flex w-full items-center justify-center font-semibold tracking-[-0.03em]"
-          style={{
-            marginTop: eu(16),
-            height: eu(80),
-            gap: eu(12),
-            borderRadius: eu(20),
-            fontSize: eu(28),
-          }}
-        >
-          <span
-            aria-hidden
-            className="client-ai-fill shrink-0"
-            style={{
-              width: eu(26),
-              height: eu(26),
-              WebkitMaskImage: `url(${CLIENT_ASSETS.sparkles})`,
-              maskImage: `url(${CLIENT_ASSETS.sparkles})`,
-              WebkitMaskRepeat: 'no-repeat',
-              maskRepeat: 'no-repeat',
-              WebkitMaskPosition: 'center',
-              maskPosition: 'center',
-              WebkitMaskSize: 'contain',
-              maskSize: 'contain',
-            }}
-          />
-          <span className="client-ai-fill client-ai-text">Заявка с AI</span>
-        </motion.button>
       </form>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+      </div>
 
       <AnimatePresence>
         {mapOpen ? (
@@ -432,4 +526,133 @@ function ClockField({
       />
     </div>
   );
+}
+
+function ModeSwitch({
+  mode,
+  onChange,
+}: {
+  mode: 'story' | 'form';
+  onChange: (next: 'story' | 'form') => void;
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label="Способ заявки"
+      className="relative flex bg-white"
+      style={{
+        marginBottom: eu(14),
+        height: eu(52),
+        borderRadius: eu(100),
+        padding: eu(4),
+      }}
+    >
+      <motion.span
+        aria-hidden
+        className="absolute bg-figma-bee"
+        initial={false}
+        animate={{ left: mode === 'story' ? eu(4) : 'calc(50% + 0px)' }}
+        transition={{ type: 'spring', stiffness: 420, damping: 32 }}
+        style={{ top: eu(4), bottom: eu(4), width: `calc(50% - ${eu(4)})`, borderRadius: eu(100) }}
+      />
+      {(
+        [
+          ['story', 'Авто'],
+          ['form', 'Форма'],
+        ] as const
+      ).map(([id, label]) => (
+        <button
+          key={id}
+          type="button"
+          role="tab"
+          aria-selected={mode === id}
+          onClick={() => onChange(id)}
+          className="relative z-10 flex-1 font-semibold text-figma-ink"
+          style={{ fontSize: eu(18) }}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function PerimeterTrace({ onDone }: { onDone: () => void }) {
+  const ref = useRef<SVGRectElement>(null);
+  const done = useRef(onDone);
+  done.current = onDone;
+  useEffect(() => {
+    const node = ref.current;
+    const box = node?.closest('div');
+    if (!node || !box) return;
+    const width = box.clientWidth;
+    const height = box.clientHeight;
+    const radius = 28;
+    node.setAttribute('width', String(Math.max(0, width - 4)));
+    node.setAttribute('height', String(Math.max(0, height - 4)));
+    node.setAttribute('rx', String(radius));
+    const length = node.getTotalLength();
+    node.style.strokeDasharray = `${length}`;
+    node.style.strokeDashoffset = `${length}`;
+    const animation = node.animate([{ strokeDashoffset: length }, { strokeDashoffset: 0 }], {
+      duration: 1400,
+      easing: 'linear',
+      fill: 'forwards',
+    });
+    const timer = window.setTimeout(() => done.current(), 1400);
+    return () => {
+      animation.cancel();
+      window.clearTimeout(timer);
+    };
+  }, []);
+  return (
+    <svg className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden>
+      <defs>
+        <linearGradient id="client-story-trace" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#7794f2" />
+          <stop offset="55%" stopColor="#f93a48" />
+          <stop offset="100%" stopColor="#7794f2" />
+        </linearGradient>
+      </defs>
+      <rect
+        ref={ref}
+        x="2"
+        y="2"
+        width="100%"
+        height="100%"
+        rx="28"
+        pathLength={100}
+        fill="none"
+        stroke="url(#client-story-trace)"
+        strokeWidth="3"
+        strokeDasharray="100"
+        strokeDashoffset="100"
+        style={{ width: 'calc(100% - 4px)', height: 'calc(100% - 4px)' }}
+      />
+    </svg>
+  );
+}
+
+interface SpeechResultEvent extends Event {
+  results: ArrayLike<ArrayLike<{ transcript: string } | undefined> | undefined>;
+}
+
+interface SpeechHandle {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  start: () => void;
+  stop: () => void;
+  onresult: ((event: SpeechResultEvent) => void) | null;
+  onend: (() => void) | null;
+  onerror: (() => void) | null;
+}
+
+function speechCtor(): (new () => SpeechHandle) | null {
+  if (typeof window === 'undefined') return null;
+  const host = window as Window & {
+    SpeechRecognition?: new () => SpeechHandle;
+    webkitSpeechRecognition?: new () => SpeechHandle;
+  };
+  return host.SpeechRecognition ?? host.webkitSpeechRecognition ?? null;
 }
