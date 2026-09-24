@@ -122,10 +122,22 @@ class _Path:
     has_ride: bool
 
 
-class MetroTravel:
-    """Choose a strictly faster offline metro composite for pedestrian profiles."""
+def choose_metro(walking_sec: int | None, metro_sec: int | None, *, shelter: bool) -> bool:
+    """Prefer metro when it is faster, and during a storm when it is not much slower."""
+    if metro_sec is None:
+        return False
+    if walking_sec is None:
+        return True
+    if metro_sec < walking_sec:
+        return True
+    # A thunderstorm keeps the walker under cover unless the subway is a long detour.
+    return shelter and metro_sec <= int(walking_sec * 1.75)
 
-    def __init__(self, travel: TravelSource, network: MetroNetwork):
+
+class MetroTravel:
+    """Choose an offline metro composite for pedestrian profiles when it wins."""
+
+    def __init__(self, travel: TravelSource, network: MetroNetwork, *, shelter: bool = False):
         self.travel = travel
         self.network = network
         self.stations = {station.station_id: station for station in network.stations}
@@ -135,9 +147,14 @@ class MetroTravel:
         for edges in self.adjacency.values():
             edges.sort(key=lambda edge: (edge.target, edge.duration_sec, edge.distance_m, edge.kind))
         self._trees: dict[str, tuple[dict[str, tuple[int, int]], dict[str, MetroEdge]]] = {}
+        self.shelter = shelter
         self.version = content_hash(
             json.dumps(
-                {"base_version": travel.version, "metro_content": network.content_version},
+                {
+                    "base_version": travel.version,
+                    "metro_content": network.content_version,
+                    "shelter": shelter,
+                },
                 sort_keys=True,
                 separators=(",", ":"),
             ).encode("utf-8")
@@ -151,9 +168,11 @@ class MetroTravel:
         if not self._inside_moscow(origin) or not self._inside_moscow(destination):
             return walking
         candidate = self._metro_quote(origin, destination, None)
-        if candidate is None or walking is None or candidate.duration_sec >= walking.duration_sec:
-            return walking
-        return candidate
+        walking_sec = None if walking is None else walking.duration_sec
+        metro_sec = None if candidate is None else candidate.duration_sec
+        if choose_metro(walking_sec, metro_sec, shelter=self.shelter):
+            return candidate
+        return walking
 
     def quote_at(
         self, origin: GeoPoint, destination: GeoPoint, profile: str, departure_at: int
@@ -166,9 +185,11 @@ class MetroTravel:
         if profile not in ("walk", "transit") or not self._inside_moscow(origin) or not self._inside_moscow(destination):
             return walking
         candidate = self._metro_quote(origin, destination, departure_at)
-        if candidate is None or walking is None or candidate.duration_sec >= walking.duration_sec:
-            return walking
-        return candidate
+        walking_sec = None if walking is None else walking.duration_sec
+        metro_sec = None if candidate is None else candidate.duration_sec
+        if choose_metro(walking_sec, metro_sec, shelter=self.shelter):
+            return candidate
+        return walking
 
     def _inside_moscow(self, point: GeoPoint) -> bool:
         for polygon in self.network.boundary_geojson.coordinates:
@@ -305,11 +326,11 @@ def _join_points(*parts: tuple[GeoPoint, ...]) -> tuple[GeoPoint, ...]:
     return tuple(points)
 
 
-def configured_metro_travel(travel: TravelSource) -> TravelSource:
+def configured_metro_travel(travel: TravelSource, *, shelter: bool = False) -> TravelSource:
     """Load the bundled reviewed artifact; an environment path may override it."""
     configured = os.environ.get("ROUTER_METRO_DATA_PATH", "").strip()
     path = Path(configured) if configured else Path(__file__).parent / "resources/metro/moscow.json"
     try:
-        return MetroTravel(travel, load_metro_network(path))
+        return MetroTravel(travel, load_metro_network(path), shelter=shelter)
     except (OSError, ValueError):
         return travel

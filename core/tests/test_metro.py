@@ -2,7 +2,7 @@
 
 from core.contracts import GeoPoint, RouterTechnicalSettings
 from core.geo import GraphTravel, RoadGraph, TravelQuote, configure_travel, routing_context_version
-from core.metro import MetroNetwork, MetroTravel, configured_metro_travel
+from core.metro import MetroNetwork, MetroTravel, choose_metro, configured_metro_travel
 from core.schedule import baseline
 
 
@@ -183,3 +183,11 @@ def test_default_bundled_moscow_network_is_loaded_without_environment_override(m
     assert isinstance(travel, MetroTravel)
     assert travel.network.version == "moscow-osm-2026-09-22"
     assert len(travel.network.stations) >= 200
+
+
+def test_storm_keeps_a_modest_metro_detour_and_clear_weather_does_not():
+    assert choose_metro(100, 90, shelter=False) is True
+    assert choose_metro(100, 150, shelter=False) is False
+    assert choose_metro(100, 150, shelter=True) is True
+    assert choose_metro(100, 176, shelter=True) is False
+    assert choose_metro(100, None, shelter=True) is False

@@ -26,3 +26,20 @@ def test_rain_scales_car_duration_and_leaves_walking_alone():
     assert wet.duration_sec == max(1, int(__import__("math").ceil(plain.duration_sec * 1.08)))
     assert wet.traffic_factor == round(plain.traffic_factor * 1.08, 2)
     assert walk.duration_sec == StraightTravel().quote(origin, destination, "walk").duration_sec
+
+
+def test_storm_penalizes_open_walking_and_still_scales_cars():
+    travel = WeatherTravel(StraightTravel(), multiplier=1.18, kind="storm")
+    origin = GeoPoint(lat=55.75, lon=37.62)
+    destination = GeoPoint(lat=55.76, lon=37.64)
+    plain_walk = StraightTravel().quote(origin, destination, "walk")
+    plain_car = StraightTravel().quote(origin, destination, "car")
+    storm_walk = travel.quote(origin, destination, "walk")
+    storm_car = travel.quote(origin, destination, "car")
+    assert isinstance(plain_walk, TravelQuote)
+    assert isinstance(plain_car, TravelQuote)
+    assert isinstance(storm_walk, TravelQuote)
+    assert isinstance(storm_car, TravelQuote)
+    assert storm_walk.duration_sec == max(1, int(__import__("math").ceil(plain_walk.duration_sec * 2.4)))
+    assert storm_walk.provenance != "metro"
+    assert storm_car.duration_sec == max(1, int(__import__("math").ceil(plain_car.duration_sec * 1.18)))

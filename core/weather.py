@@ -160,13 +160,28 @@ def weather_multiplier() -> float:
     return current_weather().traffic_multiplier
 
 
+def weather_kind() -> WeatherKind:
+    """Cached Moscow kind. Tests stay clear so a live storm cannot move goldens."""
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return "clear"
+    return current_weather().kind
+
+
+# Open walking during a thunderstorm is a last resort: cars stay preferable,
+# and a metro composite is left untouched so a walker who must go uses the subway.
+_WALK_STORM_PENALTY = 2.4
+
+
 class WeatherTravel:
     """Scale car duration and the traffic factor by the cached weather multiplier."""
 
-    def __init__(self, travel: object, multiplier: float | None = None):
-        """Remember the forecast multiplier. Tests may pass one instead of fetching."""
+    def __init__(
+        self, travel: object, multiplier: float | None = None, kind: WeatherKind | None = None
+    ):
+        """Remember the forecast multiplier and kind. Tests may pass both instead of fetching."""
         self.travel = travel
         self.multiplier = weather_multiplier() if multiplier is None else multiplier
+        self.kind = weather_kind() if kind is None else kind
         from core.geo import content_hash
 
         self.version = content_hash(
@@ -174,6 +189,7 @@ class WeatherTravel:
                 {
                     "base_version": getattr(travel, "version", ""),
                     "weather_multiplier": self.multiplier,
+                    "weather_kind": self.kind,
                 },
                 sort_keys=True,
                 separators=(",", ":"),
@@ -191,16 +207,27 @@ class WeatherTravel:
         return self._scale(quote_at(self.travel, origin, destination, profile, departure_at), profile)
 
     def _scale(self, quote: object, profile: str):
-        if quote is None or profile != "car" or self.multiplier == 1.0 or quote.distance_m == 0:
+        if quote is None or quote.distance_m == 0:
+            return quote
+        factor = 1.0
+        if profile == "car" and self.multiplier != 1.0:
+            factor = self.multiplier
+        elif (
+            self.kind == "storm"
+            and profile in ("walk", "transit")
+            and getattr(quote, "provenance", None) != "metro"
+        ):
+            factor = _WALK_STORM_PENALTY
+        if factor == 1.0:
             return quote
         from core.geo import TravelQuote
 
         return TravelQuote(
-            duration_sec=max(1, math.ceil(quote.duration_sec * self.multiplier)),
+            duration_sec=max(1, math.ceil(quote.duration_sec * factor)),
             distance_m=quote.distance_m,
             points=quote.points,
             provenance=quote.provenance,
-            traffic_factor=round(quote.traffic_factor * self.multiplier, 2),
+            traffic_factor=round(quote.traffic_factor * (self.multiplier if profile == "car" else 1.0), 2),
             geometry_exact=quote.geometry_exact,
             segments=quote.segments,
         )

@@ -276,7 +276,7 @@ def configure_travel(
     planning_as_of: int | None = None,
 ) -> TechnicalTravel:
     """Return one timing and optional planning-time-traffic context for all paths."""
-    from core.weather import WeatherTravel, weather_multiplier
+    from core.weather import WeatherTravel, weather_kind, weather_multiplier
 
     if isinstance(travel, TechnicalTravel) and travel.settings == settings:
         configured_base = travel.travel
@@ -284,6 +284,7 @@ def configure_travel(
         if (
             weather_layer is not None
             and weather_layer.multiplier == weather_multiplier()
+            and weather_layer.kind == weather_kind()
             and (
                 planning_as_of is None
                 or (
@@ -312,13 +313,16 @@ def configure_travel(
     elif not settings.traffic_enabled and isinstance(travel, ForecastTrafficTravel):
         travel = travel.travel
     travel = ProfilePolicyTravel(travel)
+    from core.weather import weather_kind
+
+    kind = weather_kind()
     if settings.metro_enabled:
         from core.metro import configured_metro_travel
 
-        travel = configured_metro_travel(travel)
+        travel = configured_metro_travel(travel, shelter=kind == "storm")
     from core.weather import WeatherTravel
 
-    travel = WeatherTravel(travel)
+    travel = WeatherTravel(travel, kind=kind)
     return TechnicalTravel(travel, settings)
 
 
@@ -377,7 +381,7 @@ class ProfilePolicyTravel:
 def routing_context_version(travel: TravelSource, settings: RouterTechnicalSettings) -> str:
     """Return stable routing-data identity, excluding the planning-time proxy band."""
     from core.metro import MetroTravel
-    from core.weather import WeatherTravel, weather_multiplier
+    from core.weather import WeatherTravel, weather_kind, weather_multiplier
 
     while isinstance(
         travel,
@@ -393,6 +397,7 @@ def routing_context_version(travel: TravelSource, settings: RouterTechnicalSetti
         "base_version": travel.version,
         "forecast_version": _FORECAST_TRAFFIC_VERSION,
         "weather_multiplier": weather_multiplier(),
+        "weather_kind": weather_kind(),
         "traffic_enabled": settings.traffic_enabled,
         "equipment_enabled": settings.equipment_enabled,
         "equipment_transfers_enabled": settings.equipment_transfers_enabled,

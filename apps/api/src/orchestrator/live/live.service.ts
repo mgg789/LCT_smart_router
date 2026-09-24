@@ -34,6 +34,7 @@ import {
   type ExecutionTimingPolicyValue,
 } from '../facts/execution-timing-policy';
 import { RewardsService } from '../rewards';
+import { forfeitsLunchOnLateEntry } from './lunch-forfeit';
 
 import {
   etaNeedsReplan,
@@ -332,6 +333,7 @@ export class LiveService {
             createdAt: BigInt(liveNow),
           },
         });
+        await this.forfeitLunchIfLate(context.tx, engineerId, day.workDate, liveNow);
         break;
 
       case 'eta': {
@@ -2606,6 +2608,40 @@ export class LiveService {
         });
       }
     }
+  }
+
+  /** Entering the line during the lunch window spends that day's lunch. */
+  private async forfeitLunchIfLate(
+    tx: Tx,
+    engineerId: string,
+    workDate: string,
+    liveNow: number,
+  ): Promise<void> {
+    const engineerDay = await tx.engineerDay.findUnique({
+      where: { engineerId_workDate: { engineerId, workDate } },
+    });
+    if (
+      !engineerDay ||
+      !forfeitsLunchOnLateEntry({
+        liveNow,
+        enabled: engineerDay.lunchEnabled,
+        taken: engineerDay.lunchTaken,
+        windowStartAt: engineerDay.lunchWindowStartAt,
+        windowEndAt: engineerDay.lunchWindowEndAt,
+      })
+    ) {
+      return;
+    }
+    await tx.engineerDay.update({
+      where: { id: engineerDay.id },
+      data: { lunchTaken: true, updatedAt: BigInt(liveNow), version: { increment: 1 } },
+    });
+    await this.publisher.publishIfChanged(
+      tx,
+      liveNow,
+      PUBLICATION_TRIGGERS.ENGINEER_LUNCH_TAKEN,
+      { businessTime: true },
+    );
   }
 }
 
