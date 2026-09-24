@@ -234,7 +234,8 @@ function ExplainedAction({
             dismiss();
             onClick?.();
           }}
-          className={`relative box-border flex h-[62px] shrink-0 items-center justify-center overflow-hidden rounded-[20px] bg-figma-ink px-[32px] font-semibold text-[20px] leading-none tracking-[-0.6px] disabled:cursor-not-allowed ${thinking ? 'brightness-90' : ''} ${disabled && !thinking ? 'opacity-45' : ''}`}
+          className={`relative box-border flex h-[62px] max-h-[62px] min-h-[62px] shrink-0 items-center justify-center overflow-hidden rounded-[20px] bg-figma-ink px-[32px] font-semibold text-[20px] leading-none tracking-[-0.6px] disabled:cursor-not-allowed ${thinking ? 'brightness-90' : ''} ${disabled && !thinking ? 'opacity-45' : ''}`}
+          style={{ height: 62, minHeight: 62, maxHeight: 62 }}
         >
           {thinking ? (
             <span aria-hidden className="ai-reason-shimmer pointer-events-none absolute inset-0" />
@@ -253,7 +254,7 @@ function ExplainedAction({
               maskSize: 'contain',
             }}
           />
-          <span className="panel-ai-fill client-ai-text">{spec.label}</span>
+          <span className="panel-ai-fill client-ai-text whitespace-nowrap leading-none">{spec.label}</span>
         </button>
       ) : (
         <span className={spotlight ? 'ai-choice-ring rounded-[24px]' : undefined}>
