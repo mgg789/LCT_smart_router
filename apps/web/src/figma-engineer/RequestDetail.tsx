@@ -137,7 +137,7 @@ export function RequestDetail({
 function Chip({ children, align = 'start' }: { children: string; align?: 'start' | 'center' }) {
   return (
     <div
-      className={`flex min-w-0 flex-1 items-center overflow-hidden bg-[#555] ${
+      className={`flex min-w-0 flex-1 items-center overflow-hidden border border-figma-ink/10 bg-white shadow-[0_8px_20px_rgba(39,41,48,0.05)] ${
         align === 'center' ? 'justify-center' : ''
       }`}
       style={{
@@ -147,7 +147,7 @@ function Chip({ children, align = 'start' }: { children: string; align?: 'start'
       }}
     >
       <p
-        className="min-w-0 font-medium tracking-[-0.03em] text-white"
+        className="min-w-0 font-medium tracking-[-0.03em] text-figma-ink"
         style={{ fontSize: eu(24), overflowWrap: 'anywhere' }}
       >
         {children}

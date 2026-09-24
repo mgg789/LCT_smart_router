@@ -1367,14 +1367,21 @@ export function loadDispatchWeather(token: string): Promise<DispatchWeather> {
   return requestJson('/api/v1/dispatch/weather', weatherSchema, token);
 }
 
+/** Same forecast for the engineer shift screen. Dispatcher tokens cannot call this. */
+export function loadEngineerWeather(token: string): Promise<DispatchWeather> {
+  return requestJson('/api/v1/engineer/weather', weatherSchema, token);
+}
+
 const aiViewSchema = z.object({
   settings: z.object({
     planCalibrationEnabled: z.boolean(),
     planCalibrationEnabledRaw: z.boolean().nullable(),
     llmApiUrl: z.string().nullable(),
+    llmModel: z.string().nullable(),
     llmApiKeySet: z.boolean(),
     llmApiKeyLast4: z.string().nullable(),
     jevApiUrl: z.string().nullable(),
+    jevModel: z.string().nullable(),
     jevApiKeySet: z.boolean(),
     jevApiKeyLast4: z.string().nullable(),
   }),
@@ -1405,9 +1412,11 @@ export function saveAiSettings(
   input: {
     planCalibrationEnabled?: boolean;
     llmApiUrl?: string | null;
+    llmModel?: string | null;
     llmApiKey?: string;
     clearLlmApiKey?: boolean;
     jevApiUrl?: string | null;
+    jevModel?: string | null;
     jevApiKey?: string;
     clearJevApiKey?: boolean;
   },

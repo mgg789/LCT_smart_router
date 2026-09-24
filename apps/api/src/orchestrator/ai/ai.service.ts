@@ -33,9 +33,11 @@ export interface AiSettingsView {
   readonly planCalibrationEnabled: boolean;
   readonly planCalibrationEnabledRaw: boolean | null;
   readonly llmApiUrl: string | null;
+  readonly llmModel: string | null;
   readonly llmApiKeySet: boolean;
   readonly llmApiKeyLast4: string | null;
   readonly jevApiUrl: string | null;
+  readonly jevModel: string | null;
   readonly jevApiKeySet: boolean;
   readonly jevApiKeyLast4: string | null;
 }
@@ -57,8 +59,10 @@ export interface AiCalibrationStatus {
 type StoredAiSettings = {
   planCalibrationEnabled?: boolean | null;
   llmApiUrl?: string | null;
+  llmModel?: string | null;
   llmApiKeyLast4?: string | null;
   jevApiUrl?: string | null;
+  jevModel?: string | null;
   jevApiKeyLast4?: string | null;
   updatedAt?: number;
 };
@@ -91,6 +95,8 @@ export function factoryCalibrationDocument(): PredictCalibrationDocument {
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
+  private refreshFlight: Promise<void> | null = null;
+  private refreshQueued = false;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -98,11 +104,60 @@ export class AiService {
     private readonly config: AppConfigService,
   ) {}
 
-  /** Resolved switch: an explicit dispatcher choice wins over the environment default. */
+  /**
+   * Settings plus the last calibration reading.
+   * Recounting facts and pushing Router stay off this response: that work used
+   * to hold the request open, so the switch never flipped and the bar stayed
+   * on «Загружаем…».
+   */
   async view(): Promise<{ settings: AiSettingsView; status: AiCalibrationStatus }> {
     const stored = await this.readSettings(this.prisma);
-    const status = await this.status(stored);
-    return { settings: this.toView(stored), status };
+    this.scheduleRefresh();
+    return this.present(stored);
+  }
+
+  /** The document just written inside the caller's transaction, without a second read. */
+  async present(
+    stored: StoredAiSettings | null,
+  ): Promise<{ settings: AiSettingsView; status: AiCalibrationStatus }> {
+    const cached = await this.readCache();
+    const enabled = stored?.planCalibrationEnabled ?? this.config.isProduction;
+    return {
+      settings: this.toView(stored),
+      status: {
+        source: cached?.calibration.source ?? 'factory',
+        version: cached?.version ?? null,
+        confidence: cached?.confidence ?? 0,
+        samples: cached?.samples ?? {
+          service: 0,
+          legs: 0,
+          cancelRequests: 0,
+          executionDays: 0,
+        },
+        computedAt: cached?.computedAt ?? null,
+        syncedToRouter: Boolean(enabled && cached?.version),
+      },
+    };
+  }
+
+  /** Starts one calibration pass after the settings transaction has committed. */
+  scheduleRefresh(): void {
+    this.refreshQueued = true;
+    if (this.refreshFlight) return;
+    const run = (): void => {
+      this.refreshQueued = false;
+      this.refreshFlight = this.readSettings(this.prisma)
+        .then((stored) => this.status(stored))
+        .then(() => undefined)
+        .catch((error: unknown) => {
+          this.logger.warn(`Plan calibration refresh failed: ${String(error)}`);
+        })
+        .finally(() => {
+          this.refreshFlight = null;
+          if (this.refreshQueued) run();
+        });
+    };
+    run();
   }
 
   async replace(
@@ -111,22 +166,26 @@ export class AiService {
     patch: {
       planCalibrationEnabled?: boolean;
       llmApiUrl?: string | null;
+      llmModel?: string | null;
       llmApiKey?: string;
       clearLlmApiKey?: boolean;
       jevApiUrl?: string | null;
+      jevModel?: string | null;
       jevApiKey?: string;
       clearJevApiKey?: boolean;
     },
-  ): Promise<void> {
+  ): Promise<StoredAiSettings> {
     const stored = await this.readSettings(tx);
     const next: StoredAiSettings = { ...stored, updatedAt: now };
     if (patch.planCalibrationEnabled !== undefined) {
       next.planCalibrationEnabled = patch.planCalibrationEnabled;
     }
-    if (patch.llmApiUrl !== undefined) next.llmApiUrl = patch.llmApiUrl;
+    if (patch.llmApiUrl !== undefined) next.llmApiUrl = blankToNull(patch.llmApiUrl);
+    if (patch.llmModel !== undefined) next.llmModel = blankToNull(patch.llmModel);
     if (patch.clearLlmApiKey) next.llmApiKeyLast4 = null;
     if (patch.llmApiKey) next.llmApiKeyLast4 = patch.llmApiKey.slice(-4);
-    if (patch.jevApiUrl !== undefined) next.jevApiUrl = patch.jevApiUrl;
+    if (patch.jevApiUrl !== undefined) next.jevApiUrl = blankToNull(patch.jevApiUrl);
+    if (patch.jevModel !== undefined) next.jevModel = blankToNull(patch.jevModel);
     if (patch.clearJevApiKey) next.jevApiKeyLast4 = null;
     if (patch.jevApiKey) next.jevApiKeyLast4 = patch.jevApiKey.slice(-4);
     await tx.appState.upsert({
@@ -134,6 +193,7 @@ export class AiService {
       create: { key: APP_STATE_KEYS.AI_SETTINGS, value: next, updatedAt: BigInt(now) },
       update: { value: next, updatedAt: BigInt(now) },
     });
+    return next;
   }
 
   /** Factory calibration without deleting anything; used by the data reset. */
@@ -384,13 +444,20 @@ export class AiService {
       planCalibrationEnabled: stored?.planCalibrationEnabled ?? this.config.isProduction,
       planCalibrationEnabledRaw: stored?.planCalibrationEnabled ?? null,
       llmApiUrl: stored?.llmApiUrl ?? null,
+      llmModel: stored?.llmModel ?? null,
       llmApiKeySet: !!stored?.llmApiKeyLast4,
       llmApiKeyLast4: stored?.llmApiKeyLast4 ?? null,
       jevApiUrl: stored?.jevApiUrl ?? null,
+      jevModel: stored?.jevModel ?? null,
       jevApiKeySet: !!stored?.jevApiKeyLast4,
       jevApiKeyLast4: stored?.jevApiKeyLast4 ?? null,
     };
   }
+}
+
+function blankToNull(value: string | null): string | null {
+  const trimmed = value?.trim() ?? '';
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 function avg(samples: number[]): number {

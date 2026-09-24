@@ -9,9 +9,11 @@ export const aiSettingsSchema = z.object({
   operationId: z.string().min(8).max(128),
   planCalibrationEnabled: z.boolean().optional(),
   llmApiUrl: z.string().max(300).nullable().optional(),
+  llmModel: z.string().max(120).nullable().optional(),
   llmApiKey: z.string().min(8).max(200).optional(),
   clearLlmApiKey: z.boolean().optional(),
   jevApiUrl: z.string().max(300).nullable().optional(),
+  jevModel: z.string().max(120).nullable().optional(),
   jevApiKey: z.string().min(8).max(200).optional(),
   clearJevApiKey: z.boolean().optional(),
 });

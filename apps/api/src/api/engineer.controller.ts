@@ -13,7 +13,8 @@ import {
   passportWriteSchema,
 } from '../orchestrator/passports';
 import { PrismaService } from '../persistence';
-import { AppliedPlanService } from '../routing/router-gateway';
+import { AppliedPlanService, RouterClient } from '../routing/router-gateway';
+import { weatherView } from './weather-view';
 import { type AttendanceDto, attendanceSchema } from './dto/alert.dto';
 import {
   type ConfirmEmailChangeDto,
@@ -60,7 +61,19 @@ export class EngineerController {
     private readonly auth: AuthService,
     private readonly live: LiveService,
     private readonly passports: PassportsService,
+    private readonly router: RouterClient,
   ) {}
+
+  @Get('weather')
+  @ApiOperation({ summary: 'Cached Moscow forecast for the engineer shift screen' })
+  async weather() {
+    if (!this.router.isConfigured()) return weatherView(null);
+    try {
+      return weatherView(await this.router.getWeather());
+    } catch {
+      return weatherView(null);
+    }
+  }
 
   @Get('live')
   @ApiOperation({ summary: 'LIVE state for the signed-in engineer' })

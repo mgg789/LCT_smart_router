@@ -673,7 +673,7 @@ function EngineerDossier({
         />
         <div className="absolute inset-0 bg-figma-ink" />
         {token ? (
-          <div className="absolute bottom-[32px] inset-x-4">
+          <div className="absolute bottom-[32px] left-[32px] right-4">
             <MonthlyPoints token={token} engineerId={engineer.id} />
           </div>
         ) : null}

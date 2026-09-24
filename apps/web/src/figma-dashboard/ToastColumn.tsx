@@ -28,6 +28,8 @@ const SWIPE_DISMISS = 64;
 const STACK_EASE = [0.22, 1, 0.36, 1] as const;
 const STRIDE = TOAST_CARD_HEIGHT + TOAST_GAP;
 const VEIL_WIDTH = 680;
+/** Room so card shadows paint inside the scrollport instead of being cut by it. */
+const SHADOW_PAD = 28;
 const COLLAPSE_BUBBLE_SIZE = 43;
 /** Cards end 30px before the artboard right edge; the bubble shares that margin. */
 const COLLAPSE_BUBBLE_RIGHT = 30;
@@ -144,11 +146,11 @@ export function ToastColumn({
                     right: -letterbox.x,
                     width: VEIL_WIDTH + letterbox.x,
                     background:
-                      'linear-gradient(to left, rgba(15,16,20,0.28), rgba(15,16,20,0.10) 52%, transparent)',
-                    backdropFilter: 'blur(14px)',
-                    WebkitBackdropFilter: 'blur(14px)',
-                    maskImage: 'linear-gradient(to left, #000 55%, transparent)',
-                    WebkitMaskImage: 'linear-gradient(to left, #000 55%, transparent)',
+                      'linear-gradient(to left, rgba(15,16,20,0.62), rgba(15,16,20,0.34) 48%, transparent)',
+                    backdropFilter: 'blur(22px)',
+                    WebkitBackdropFilter: 'blur(22px)',
+                    maskImage: 'linear-gradient(to left, #000 68%, transparent)',
+                    WebkitMaskImage: 'linear-gradient(to left, #000 68%, transparent)',
                   }}
                   exit={{ opacity: 0, transition: { duration: 0.26, ease: 'easeOut' } }}
                 />
@@ -178,10 +180,12 @@ export function ToastColumn({
                 className="pointer-events-auto absolute z-10 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
                 style={{
                   top: TOAST_STACK_TOP,
-                  left: TOAST_LEFT,
-                  width: TOAST_WIDTH,
+                  left: TOAST_LEFT - SHADOW_PAD,
+                  width: TOAST_WIDTH + SHADOW_PAD * 2,
                   bottom: -letterbox.y,
-                  paddingBottom: 20,
+                  paddingLeft: SHADOW_PAD,
+                  paddingRight: SHADOW_PAD,
+                  paddingBottom: 20 + SHADOW_PAD,
                 }}
               >
                 <div className="relative" style={{ height: Math.max(visible.length, 1) * STRIDE }}>
@@ -372,7 +376,7 @@ function ToastFace({
       data-toast-card={leaving ? undefined : true}
       aria-hidden={leaving || undefined}
       aria-label={leaving ? undefined : `${toast.title}. ${toast.body || toast.etaLabel || ''}`}
-      className={`absolute h-[132px] w-[425px] overflow-hidden rounded-[20px] shadow-[0_18px_40px_rgba(15,16,20,0.32)] select-none ${
+      className={`absolute h-[132px] w-[425px] rounded-[20px] shadow-[0_10px_18px_rgba(15,16,20,0.16)] select-none ${
         leaving ? 'pointer-events-none' : 'pointer-events-auto'
       } ${danger ? 'bg-figma-danger' : alert ? 'bg-figma-bee' : 'bg-figma-ink'} ${
         dragging ? 'cursor-grabbing' : interactive ? 'cursor-grab' : ''

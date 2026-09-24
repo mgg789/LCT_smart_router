@@ -89,6 +89,7 @@ export function AlertActions({
         )}
         <ExplainedAction
           icon={Sparkles}
+          appearance="ai"
           disabled
           spec={{
             label: 'Решить с AI',
@@ -137,11 +138,14 @@ function ExplainedAction({
   icon: Icon,
   spec,
   disabled = false,
+  appearance = 'plain',
   onClick,
 }: {
   icon: LucideIcon;
   spec: Pick<AlertActionSpec, 'label' | 'summary' | 'effect' | 'benefit' | 'drawback' | 'tone'>;
   disabled?: boolean;
+  /** `ai` stays inert but uses the light panel gradient instead of a greyed control. */
+  appearance?: 'plain' | 'ai';
   onClick?: () => void;
 }) {
   const id = useId();
@@ -197,18 +201,44 @@ function ExplainedAction({
         if (event.key === 'Escape') dismiss();
       }}
     >
-      <InboxButton
-        variant={spec.tone}
-        disabled={disabled}
-        describedBy={id}
-        onClick={() => {
-          dismiss();
-          onClick?.();
-        }}
-      >
-        <Icon size={22} strokeWidth={1.8} aria-hidden="true" className="mr-[10px] shrink-0" />
-        {spec.label}
-      </InboxButton>
+      {appearance === 'ai' ? (
+        <button
+          type="button"
+          disabled
+          title="Скоро"
+          aria-describedby={id}
+          className="flex cursor-not-allowed items-center justify-center overflow-clip rounded-[20px] bg-figma-ink px-[32px] py-[16px] font-semibold text-[20px] tracking-[-0.6px]"
+        >
+          <span
+            aria-hidden
+            className="panel-ai-fill mr-[10px] block size-[22px] shrink-0"
+            style={{
+              WebkitMaskImage: 'url(/figma/explain-ai.png)',
+              maskImage: 'url(/figma/explain-ai.png)',
+              WebkitMaskRepeat: 'no-repeat',
+              maskRepeat: 'no-repeat',
+              WebkitMaskPosition: 'center',
+              maskPosition: 'center',
+              WebkitMaskSize: 'contain',
+              maskSize: 'contain',
+            }}
+          />
+          <span className="panel-ai-fill client-ai-text">{spec.label}</span>
+        </button>
+      ) : (
+        <InboxButton
+          variant={spec.tone}
+          disabled={disabled}
+          describedBy={id}
+          onClick={() => {
+            dismiss();
+            onClick?.();
+          }}
+        >
+          <Icon size={22} strokeWidth={1.8} aria-hidden="true" className="mr-[10px] shrink-0" />
+          {spec.label}
+        </InboxButton>
+      )}
       <span id={id} className="sr-only">
         {spec.summary} {spec.effect} Плюсы: {spec.benefit} Минусы: {spec.drawback}
       </span>

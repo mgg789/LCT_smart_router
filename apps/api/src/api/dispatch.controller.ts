@@ -42,6 +42,7 @@ import {
   RouterClient,
 } from '../routing/router-gateway';
 import { visibleRouterPhase } from '../routing/router-gateway/router-phase';
+import { weatherView } from './weather-view';
 import {
   type CloseShiftDto,
   closeShiftSchema,
@@ -723,35 +724,11 @@ export class DispatchController {
   @Get('weather')
   @ApiOperation({ summary: 'Cached Moscow forecast and the car-traffic multiplier it applies' })
   async weather() {
-    if (!this.router.isConfigured()) {
-      return {
-        observedAt: 0,
-        temperatureC: null,
-        weatherCode: null,
-        kind: 'unknown' as const,
-        label: 'Нет прогноза',
-        trafficMultiplier: 1,
-      };
-    }
+    if (!this.router.isConfigured()) return weatherView(null);
     try {
-      const forecast = await this.router.getWeather();
-      return {
-        observedAt: forecast.observed_at,
-        temperatureC: forecast.temperature_c,
-        weatherCode: forecast.weather_code,
-        kind: forecast.kind,
-        label: forecast.label,
-        trafficMultiplier: forecast.traffic_multiplier,
-      };
+      return weatherView(await this.router.getWeather());
     } catch {
-      return {
-        observedAt: 0,
-        temperatureC: null,
-        weatherCode: null,
-        kind: 'unknown' as const,
-        label: 'Нет прогноза',
-        trafficMultiplier: 1,
-      };
+      return weatherView(null);
     }
   }
 
@@ -1264,10 +1241,11 @@ export class DispatchController {
         payload: dto,
       },
       async (context) => {
-        await this.ai.replace(context.tx, context.now, dto);
-        return this.ai.view();
+        const stored = await this.ai.replace(context.tx, context.now, dto);
+        return this.ai.present(stored);
       },
     );
+    this.ai.scheduleRefresh();
     return outcome.result;
   }
 

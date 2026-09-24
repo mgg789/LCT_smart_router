@@ -41,7 +41,14 @@ export function RequestMap({ lat, lon }: { lat: number; lon: number }) {
         center: [lon, lat],
         zoom: 14,
       });
-      new maplibregl.Marker().setLngLat([lon, lat]).addTo(map);
+      const pin = document.createElement('div');
+      pin.style.width = '18px';
+      pin.style.height = '18px';
+      pin.style.borderRadius = '999px';
+      pin.style.background = '#ffc72c';
+      pin.style.border = '3px solid #272930';
+      pin.style.boxShadow = '0 4px 10px rgba(39,41,48,0.28)';
+      new maplibregl.Marker({ element: pin, anchor: 'center' }).setLngLat([lon, lat]).addTo(map);
       map.on('error', (event) => {
         if (local && 'sourceId' in event && event.sourceId === 'local-basemap')
           setUnavailable(true);

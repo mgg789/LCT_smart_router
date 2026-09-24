@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { type DispatchWeather, loadEngineerWeather } from '../api/client';
 import type { EngineerLiveAction, EngineerLiveView } from '../api/live';
 import { formatLiveCountdown, moscowTimeInputAt } from '../engineer/live';
 import { FIGMA_ASSETS } from '../figma-dashboard/assets';
+import { TintIcon } from '../figma-dashboard/TintIcon';
 import { formatPlanWindow } from './engineerClock';
 import { eu } from './engineerScale';
 import { shouldEnterLiveLine } from './liveSession';
@@ -51,7 +53,7 @@ export function LiveControls({
   };
   return (
     <div className="flex flex-col gap-3" style={{ marginTop: eu(20), fontSize: eu(24) }}>
-      {!working ? (
+      {!working && !detail ? (
         <span
           className="inline-flex self-start whitespace-nowrap rounded-full bg-figma-ink font-semibold text-white"
           style={{ padding: `${eu(7)} ${eu(30)}`, fontSize: eu(22) }}
@@ -297,19 +299,38 @@ export function LiveControls({
   );
 }
 
-/** Blocking automatic lunch, technical stop, pending day and completed day states. */
+/** Office stock the engineer should pick up before the line. */
 export function LiveDayOverlay({
   live,
   now,
   busy,
   send,
+  token = null,
+  equipment = null,
 }: {
   live: EngineerLiveView;
   now: number;
   busy: boolean;
   send: (action: EngineerLiveAction) => Promise<boolean>;
+  token?: string | null;
+  equipment?: { router: number; setTopBox: number; smartSpeaker: number } | null;
 }) {
   const [error, setError] = useState(false);
+  const [weather, setWeather] = useState<DispatchWeather | null>(null);
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    void loadEngineerWeather(token)
+      .then((next) => {
+        if (!cancelled) setWeather(next);
+      })
+      .catch(() => {
+        if (!cancelled) setWeather(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
   const stop = live.engineer.technicalBreak;
   const pending = live.workday.status === 'pending';
   const finished = live.workday.status === 'finished';
@@ -337,14 +358,18 @@ export function LiveDayOverlay({
                 : 'Обед'}
       </h2>
       {entry ? (
-        <button
-          type="button"
-          className={button}
-          disabled={busy}
-          onClick={() => void send({ kind: 'online' }).then((ok) => setError(!ok))}
-        >
-          Выйти на линию
-        </button>
+        <>
+          <OfficeGear stock={equipment} />
+          <WeatherHint kind={weather?.kind ?? null} />
+          <button
+            type="button"
+            className={button}
+            disabled={busy}
+            onClick={() => void send({ kind: 'online' }).then((ok) => setError(!ok))}
+          >
+            Выйти на линию
+          </button>
+        </>
       ) : pending ? (
         <p>Диспетчер запустит смену — ваш маршрут появится здесь.</p>
       ) : finished ? (
@@ -382,4 +407,84 @@ export function LiveDayOverlay({
       ) : null}
     </section>
   );
+}
+
+const OFFICE_ROWS = [
+  { key: 'router' as const, icon: '/figma/equipment.svg', one: 'роутер', few: 'роутера', many: 'роутеров' },
+  {
+    key: 'setTopBox' as const,
+    icon: '/figma/set-top-box.svg',
+    one: 'приставка',
+    few: 'приставки',
+    many: 'приставок',
+  },
+  {
+    key: 'smartSpeaker' as const,
+    icon: '/figma/smart-speaker.svg',
+    one: 'умная колонка',
+    few: 'умные колонки',
+    many: 'умных колонок',
+  },
+];
+
+function OfficeGear({
+  stock,
+}: {
+  stock: { router: number; setTopBox: number; smartSpeaker: number } | null;
+}) {
+  const rows = OFFICE_ROWS.flatMap((row) => {
+    const count = stock?.[row.key] ?? 0;
+    return count > 0 ? [{ ...row, count }] : [];
+  });
+  return (
+    <div className="w-full max-w-[360px] rounded-[20px] bg-white px-4 py-4 text-left shadow-[0_10px_28px_rgba(39,41,48,0.06)]">
+      <p className="font-semibold text-figma-ink" style={{ fontSize: eu(18) }}>
+        Взять из офиса
+      </p>
+      {rows.length === 0 ? (
+        <p className="mt-2 font-medium text-figma-muted" style={{ fontSize: eu(16) }}>
+          Из офиса ничего брать не нужно.
+        </p>
+      ) : (
+        <ul className="mt-3 flex flex-col gap-3">
+          {rows.map((row) => (
+            <li key={row.key} className="flex items-center gap-3">
+              <span className="flex size-9 items-center justify-center rounded-full bg-figma-canvas">
+                <TintIcon src={row.icon} color="#272930" size={20} />
+              </span>
+              <span className="font-medium text-figma-ink" style={{ fontSize: eu(18) }}>
+                {ruGear(row.count, row.one, row.few, row.many)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function WeatherHint({ kind }: { kind: DispatchWeather['kind'] | null }) {
+  const hint =
+    kind === 'rain'
+      ? { icon: '/figma/cloud-rain.svg', text: 'Возьмите зонт: обещают дождь или он уже идёт.' }
+      : kind === 'snow'
+        ? { icon: '/figma/snowflake.svg', text: 'Наденьте куртку: на улице снег.' }
+        : kind === 'storm'
+          ? { icon: '/figma/cloud-storm.svg', text: 'Возьмите зонт: гроза.' }
+          : null;
+  if (!hint) return null;
+  return (
+    <p className="flex w-full max-w-[360px] items-center gap-3 rounded-[16px] bg-white px-4 py-3 text-left font-medium text-figma-ink shadow-[0_8px_20px_rgba(39,41,48,0.05)]">
+      <TintIcon src={hint.icon} color="#272930" size={22} />
+      <span style={{ fontSize: eu(16) }}>{hint.text}</span>
+    </p>
+  );
+}
+
+function ruGear(count: number, one: string, few: string, many: string): string {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  const word =
+    mod10 === 1 && mod100 !== 11 ? one : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? few : many;
+  return `${count} ${word}`;
 }

@@ -622,7 +622,14 @@ export function EngineerApp({
         </AnimatePresence>
 
         {live ? (
-          <LiveDayOverlay live={live} now={logicalNow} busy={actionBusy} send={applyLiveAction} />
+          <LiveDayOverlay
+            live={live}
+            now={logicalNow}
+            busy={actionBusy}
+            send={applyLiveAction}
+            token={designPreview ? null : token}
+            equipment={day?.equipmentStock ?? null}
+          />
         ) : null}
         {live && !designPreview ? <EngineerDayResults token={token} live={live} /> : null}
         <AnimatePresence>
