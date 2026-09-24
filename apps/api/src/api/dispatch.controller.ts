@@ -6,7 +6,7 @@ import { AppConfigService } from '../common/config';
 import { SysError } from '../common/errors';
 import { Clock } from '../common/time';
 import { zodBody } from '../common/validation';
-import { OperationsService } from '../operations';
+import { AuditService, OperationsService } from '../operations';
 import { alertActionsFor, AlertsService } from '../orchestrator/alerts';
 import { AiService, MiniAiService } from '../orchestrator/ai';
 import { DemoStandService } from '../orchestrator/demo-stand';
@@ -167,6 +167,7 @@ export class DispatchController {
     private readonly demoStand: DemoStandService,
     private readonly config: AppConfigService,
     private readonly operations: OperationsService,
+    private readonly audit: AuditService,
     private readonly prisma: PrismaService,
     private readonly uow: UnitOfWork,
     private readonly clock: Clock,
@@ -365,14 +366,19 @@ export class DispatchController {
       where: { requestId: id },
       orderBy: { changedAt: 'desc' },
     });
+    const actors = await this.audit.actorsFor(
+      entries.flatMap((entry) => (entry.operationId === null ? [] : [entry.operationId])),
+    );
     return {
       // History is a journal of what the conditions used to be. It is never a second
-      // active promise to the customer (context/36 section 4).
+      // active promise to the customer (context/36 section 4). `actor` is the audit row
+      // written in the same transaction, so the journal is read rather than only stored.
       history: entries.map((entry) => ({
         changedAt: Number(entry.changedAt),
         operationId: entry.operationId,
         reason: entry.reason,
         previous: entry.previous,
+        actor: entry.operationId === null ? null : (actors.get(entry.operationId) ?? null),
       })),
       asOf: this.clock.nowSeconds(),
     };

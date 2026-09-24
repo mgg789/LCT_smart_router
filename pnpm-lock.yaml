@@ -26,6 +26,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@lct/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@nestjs/common':
         specifier: 11.2.5
         version: 11.2.5(reflect-metadata@0.2.2)(rxjs@7.8.2)
@@ -99,6 +102,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@lct/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       framer-motion:
         specifier: ^12.23.12
         version: 12.43.0(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -145,6 +151,8 @@ importers:
       vitest:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@24.13.4)(jiti@2.7.0)(jsdom@30.0.1(@noble/hashes@1.8.0))(lightningcss@1.33.0)
+
+  packages/shared: {}
 
 packages:
 

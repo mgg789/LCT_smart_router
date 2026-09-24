@@ -172,7 +172,7 @@ Authorization: Bearer <token>
 
 **POST `/dispatch/requests/:id/cancel`** — `{operationId, expectedVersion?, reason?}` → `{request}`. Неначатую; иначе `WORK_ALREADY_STARTED`.
 
-**GET `/dispatch/requests/:id/history`** → `{history: [{changedAt, operationId, reason, previous}], asOf}` — журнал прежних условий.
+**GET `/dispatch/requests/:id/history`** → `{history: [{changedAt, operationId, reason, previous, actor}], asOf}` — журнал прежних условий. `actor` — `{actorKind, actorId, source, action}` из `audit_log` или `null`.
 
 **GET `/dispatch/requests/:id/passport`** → `{passport, canFill, unavailableReason?}`. Диспетчер
 видит паспорт любой существующей заявки, включая будущую; `canFill` всегда `false`.

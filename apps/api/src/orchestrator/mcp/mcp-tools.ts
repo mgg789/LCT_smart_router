@@ -9,7 +9,7 @@ import type { Actor } from '../../auth';
 import { AppConfigService } from '../../common/config';
 import { SysError } from '../../common/errors';
 import { Clock } from '../../common/time';
-import { OperationsService } from '../../operations';
+import { AuditService, OperationsService } from '../../operations';
 import { PrismaService } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import {
@@ -89,6 +89,7 @@ export class McpToolsService {
     private readonly clock: Clock,
     private readonly config: AppConfigService,
     private readonly operations: OperationsService,
+    private readonly audit: AuditService,
     private readonly alertsService: AlertsService,
     private readonly live: LiveService,
     private readonly policyService: PolicyService,
@@ -372,6 +373,9 @@ export class McpToolsService {
             where: { requestId: args.requestId },
             orderBy: { changedAt: 'desc' },
           });
+          const actors = await this.audit.actorsFor(
+            history.flatMap((entry) => (entry.operationId === null ? [] : [entry.operationId])),
+          );
           return {
             request: toRequestView(request, live),
             history: history.map((entry) => ({
@@ -379,6 +383,7 @@ export class McpToolsService {
               operationId: entry.operationId,
               reason: entry.reason,
               previous: entry.previous,
+              actor: entry.operationId === null ? null : (actors.get(entry.operationId) ?? null),
             })),
             asOf: now(),
           };

@@ -12,6 +12,7 @@
     "typecheck": "tsc -p tsconfig.app.json --pretty false --noEmit"
   },
   "dependencies": {
+    "@lct/shared": "workspace:*",
     "framer-motion": "^12.23.12",
     "lucide-react": "^1.47.0",
     "maplibre-gl": "^5.9.0",

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { asLunchStatus, type PlanRouteView } from '../../api/plan-view';
 import { SysError } from '../../common/errors';
 import { type AppliedPlan, Prisma } from '../../generated/prisma/client';
 import { AlertsService } from '../../orchestrator/alerts';
@@ -9,10 +10,9 @@ import {
   readEquipmentSettings,
 } from '../../orchestrator/equipment/equipment-policy';
 import { persistHandoffs } from '../../orchestrator/equipment/handoffs';
-import type { PlanRouteView } from '../../api/plan-view';
 import type { Tx } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../mount-data-eng';
-import { type RouterPlan, type RouterResult, handoffMetadataSchema } from './result.types';
+import { handoffMetadataSchema, type RouterPlan, type RouterResult } from './result.types';
 
 /**
  * The working plan the interfaces actually run on.
@@ -201,7 +201,7 @@ export class AppliedPlanService {
         waitingTimeSec: route.waitingTimeSec,
         lunchTimeSec: route.lunchTimeSec,
         assignedCount: route.assignedCount,
-        lunchStatus: route.lunchStatus,
+        lunchStatus: asLunchStatus(route.lunchStatus),
         legs: [],
         stops: route.stops.map((stop) => ({
           sequence: stop.sequence,

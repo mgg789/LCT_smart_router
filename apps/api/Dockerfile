@@ -17,12 +17,14 @@ RUN corepack enable && corepack prepare pnpm@10.28.2 --activate
 WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY apps/api/package.json apps/api/package.json
+COPY packages/shared/package.json packages/shared/package.json
 # A frozen install is the point of committing the lockfile: CI must fail on drift
 # instead of quietly resolving a different tree.
 RUN pnpm install --frozen-lockfile --filter api...
 
 FROM deps AS build
 WORKDIR /app
+COPY packages/shared packages/shared
 COPY apps/api apps/api
 # Codegen before compilation: the generated client is TypeScript and is compiled into
 # dist together with the rest of the service. `generate` never connects to a database.
@@ -41,6 +43,7 @@ ENV COREPACK_ENABLE_NETWORK=0
 WORKDIR /app
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY apps/api/package.json apps/api/package.json
+COPY packages/shared/package.json packages/shared/package.json
 RUN pnpm install --frozen-lockfile --prod --filter api... && pnpm store prune
 COPY --from=build /app/apps/api/dist apps/api/dist
 # The schema, its migration history and the CLI config travel with the image: the

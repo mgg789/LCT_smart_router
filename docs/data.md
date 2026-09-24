@@ -49,6 +49,10 @@ Data Layer из `context/37` §2.
 | Каталоги диспетчера | `policies`, `active_policy`, `alerts`, `shift_closures` |
 | Служебная книга системы | `operations`, `audit_log`, `notification_intents`, `app_state`, `import_packages`, `external_id_map` |
 
+`audit_log` пишется в той же транзакции, что и изменение. Его читают история заявки
+диспетчера и MCP `get_request`: у строки истории появляется `actor`. Отдельной таблицы
+`events` нет.
+
 Области телеметрии нет: таблица `gps_observations` удалена (миграция
 `20260916150000_remove_gps_observations`), когда трекинг локации исключили из продукта
 целиком (`context/50` §2).
