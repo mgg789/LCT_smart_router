@@ -20,6 +20,8 @@ export interface DayMapProps {
   route: PlanRouteView | null;
   selectedRequestId: string | null;
   onSelectRequest: (requestId: string) => void;
+  /** Clicking the map where nothing is drawn: the dispatcher is looking away. */
+  onClearSelection?: () => void;
 }
 
 const POINTS_SOURCE = 'day-requests';
@@ -72,11 +74,19 @@ function useBasemapStyle() {
  * coordinates and no road geometry, so drawing a road would be an invention —
  * a dashed straight line states exactly what the plan knows (D-29).
  */
-export function DayMap({ requests, route, selectedRequestId, onSelectRequest }: DayMapProps) {
+export function DayMap({
+  requests,
+  route,
+  selectedRequestId,
+  onSelectRequest,
+  onClearSelection,
+}: DayMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const selectRef = useRef(onSelectRequest);
   selectRef.current = onSelectRequest;
+  const clearRef = useRef(onClearSelection);
+  clearRef.current = onClearSelection;
 
   const [layersReady, setLayersReady] = useState(false);
   const basemap = useBasemapStyle();
@@ -252,6 +262,16 @@ export function DayMap({ requests, route, selectedRequestId, onSelectRequest }: 
         map.getCanvas().style.cursor = '';
       });
 
+      // A click on bare map is a click on nothing: the layer handlers above have
+      // already run for anything that was actually hit, so reaching here means
+      // the dispatcher pointed at empty ground and wants the board cleared.
+      map.on('click', (event) => {
+        const hits = map.queryRenderedFeatures(event.point, {
+          layers: ['day-stop-circles', 'day-request-circles'],
+        });
+        if (hits.length === 0) clearRef.current?.();
+      });
+
       setLayersReady(true);
     });
 
@@ -285,6 +305,35 @@ export function DayMap({ requests, route, selectedRequestId, onSelectRequest }: 
     (map.getSource(STOPS_SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData(stops);
     (map.getSource(START_SOURCE) as maplibregl.GeoJSONSource | undefined)?.setData(start);
   }, [layersReady, points, line, stops, start, selectedRequestId]);
+
+  /**
+   * Bring the chosen request into view.
+   *
+   * Keyed on the request alone, so a poll that leaves the selection where it was
+   * does not re-fly the camera; the zoom is only raised, never lowered, so
+   * stepping through requests pans rather than throwing the dispatcher's own
+   * framing away.
+   */
+  const flownToRef = useRef<string | null>(null);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !layersReady) return;
+    if (selectedRequestId === null) {
+      flownToRef.current = null;
+      return;
+    }
+    if (flownToRef.current === selectedRequestId) return;
+
+    const chosen = requests.find((request) => request.id === selectedRequestId);
+    if (!chosen || chosen.lat === null || chosen.lon === null) return;
+
+    flownToRef.current = selectedRequestId;
+    map.easeTo({
+      center: [chosen.lon, chosen.lat],
+      zoom: Math.max(map.getZoom(), 12),
+      duration: 600,
+    });
+  }, [layersReady, requests, selectedRequestId]);
 
   // Frame the crew being looked at; with no route, frame the whole day. Re-framing
   // is keyed on the route, so polling the plan does not yank the camera around.

@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ROUTES } from '@/app/routes/paths';
 import { useEngineers } from '@/entities/engineer';
@@ -7,7 +8,7 @@ import { useDispatchState } from '@/entities/plan';
 import { unassignedRequests, useRequests } from '@/entities/request';
 import { useConversation } from '@/features/ai/ask-assistant';
 import { failedWithoutData } from '@/shared/api';
-import { formatDayTitle } from '@/shared/lib';
+import { fadeSoft, formatDayTitle, useMotionOn } from '@/shared/lib';
 import { DayBoard } from '@/widgets/day-board';
 import { DayMap } from '@/widgets/day-map';
 import { RequestPanel } from '@/widgets/request-panel';
@@ -16,6 +17,7 @@ import { RouteTimeline } from '@/widgets/route-timeline';
 export function PlanPage() {
   const navigate = useNavigate();
   const { explain } = useConversation();
+  const motionOn = useMotionOn();
   const engineersQuery = useEngineers();
   const requestsQuery = useRequests();
   const stateQuery = useDispatchState();
@@ -52,6 +54,19 @@ export function PlanPage() {
   const assignedEngineer =
     engineers.find((engineer) => engineer.id === selectedAssignment?.engineerId) ?? null;
 
+  /**
+   * A request that a crew is carrying brings that crew with it.
+   *
+   * The two selections are one thought for the dispatcher — «эта заявка, вон у
+   * той бригады» — so choosing the request and then hunting for its crew in the
+   * list would be work the screen can do itself. An unassigned request leaves
+   * the crew alone: there is none to show.
+   */
+  const carriedBy = selectedAssignment?.engineerId ?? null;
+  useEffect(() => {
+    if (carriedBy !== null) setSelectedEngineerId(carriedBy);
+  }, [carriedBy]);
+
   const loading = engineersQuery.isPending || requestsQuery.isPending || stateQuery.isPending;
   const failed = [engineersQuery, requestsQuery, stateQuery].some(failedWithoutData);
 
@@ -83,6 +98,12 @@ export function PlanPage() {
     const at = siblings.indexOf(selectedRequestId ?? '');
     const next = at < 0 ? 0 : (at + delta + siblings.length) % siblings.length;
     setSelectedRequestId(siblings[next] ?? null);
+  };
+
+  /** Clicking bare map puts the board back to nothing chosen. */
+  const clearSelection = () => {
+    setSelectedRequestId(null);
+    setSelectedEngineerId(null);
   };
 
   const showFirstUnassigned = () => {
@@ -122,54 +143,91 @@ export function PlanPage() {
 
           <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-8">
             <DayMap
+              onClearSelection={clearSelection}
               onSelectRequest={(id) => setSelectedRequestId(id)}
               requests={requests}
               route={activeRoute}
               selectedRequestId={selectedRequestId}
             />
 
-            <RouteTimeline
-              engineerName={activeEngineer?.displayName ?? null}
-              onSelectRequest={(id) => setSelectedRequestId(id)}
-              planAsOf={plan?.planAsOf ?? null}
-              requestsById={requestsById}
-              route={activeRoute}
-              selectedRequestId={selectedRequestId}
-            />
+            {/*
+             * «Маршрут» grows upward when a crew is chosen: the map above gives
+             * way, and the block's own bottom edge stays put. Keyed on the crew
+             * rather than on its route — a crew with nothing planned still opens
+             * the taller block, which then says so instead of staying shut.
+             */}
+            <motion.div
+              animate={{ height: activeEngineerId ? 360 : 190 }}
+              className="flex min-h-0 shrink-0 flex-col overflow-hidden"
+              initial={false}
+              transition={motionOn ? fadeSoft : { duration: 0 }}
+            >
+              <RouteTimeline
+                engineerName={activeEngineer?.displayName ?? null}
+                onSelectRequest={(id) => setSelectedRequestId(id)}
+                planAsOf={plan?.planAsOf ?? null}
+                requestsById={requestsById}
+                route={activeRoute}
+                selectedRequestId={selectedRequestId}
+              />
+            </motion.div>
           </div>
 
-          <RequestPanel
-            assignment={selectedAssignment}
-            beside={
-              siblings.length > 1
-                ? {
-                    index: Math.max(0, siblings.indexOf(selectedRequestId ?? '')),
-                    total: siblings.length,
-                    of: selectedAssignment?.engineerId ? 'queue' : 'unassigned',
-                    onStep: stepRequest,
-                  }
-                : undefined
-            }
-            engineer={assignedEngineer}
-            engineers={engineers}
-            mode={stateQuery.data?.mode ?? null}
-            onExplain={
-              selectedRequest
-                ? () => {
-                    void explain(
-                      { scope: 'request', requestId: selectedRequest.id },
-                      `Разобрать заявку: ${selectedRequest.addressText ?? selectedRequest.id}`,
-                    );
-                    navigate(ROUTES.ai);
-                  }
-                : undefined
-            }
-            request={selectedRequest}
-            route={
-              plan?.routes.find((route) => route.engineerId === selectedAssignment?.engineerId) ??
-              null
-            }
-          />
+          {/*
+           * The panel is not there until a request is: an empty dark column
+           * would be a promise of something to read. It opens by width, so the
+           * map and «Маршрут» are pushed aside rather than covered, and it is
+           * keyed on nothing but its own presence — switching between requests
+           * changes what it holds without replaying the slide.
+           */}
+          <AnimatePresence initial={false}>
+            {selectedRequest ? (
+              <motion.div
+                animate={{ width: 420, opacity: 1 }}
+                className="min-h-0 shrink-0 overflow-hidden"
+                exit={{ width: 0, opacity: 0 }}
+                initial={motionOn ? { width: 0, opacity: 0 } : false}
+                key="request-panel"
+                transition={motionOn ? fadeSoft : { duration: 0 }}
+              >
+                <div className="h-full w-[420px]">
+                  <RequestPanel
+                    assignment={selectedAssignment}
+                    beside={
+                      siblings.length > 1
+                        ? {
+                            index: Math.max(0, siblings.indexOf(selectedRequestId ?? '')),
+                            total: siblings.length,
+                            of: selectedAssignment?.engineerId ? 'queue' : 'unassigned',
+                            onStep: stepRequest,
+                          }
+                        : undefined
+                    }
+                    engineer={assignedEngineer}
+                    engineers={engineers}
+                    mode={stateQuery.data?.mode ?? null}
+                    onExplain={
+                      selectedRequest
+                        ? () => {
+                            void explain(
+                              { scope: 'request', requestId: selectedRequest.id },
+                              `Разобрать заявку: ${selectedRequest.addressText ?? selectedRequest.id}`,
+                            );
+                            navigate(ROUTES.ai);
+                          }
+                        : undefined
+                    }
+                    request={selectedRequest}
+                    route={
+                      plan?.routes.find(
+                        (route) => route.engineerId === selectedAssignment?.engineerId,
+                      ) ?? null
+                    }
+                  />
+                </div>
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
         </div>
       )}
     </div>
