@@ -13,6 +13,7 @@ import { shortRequestId } from './requestsTable';
 import { FIGMA_ASSETS } from './assets';
 import { ModalLayer, ModalScrim } from './modalLayer';
 import { FigmaIcon } from './primitives';
+import { TintIcon } from './TintIcon';
 
 const fade = { duration: 0.22, ease: [0.22, 1, 0.36, 1] as const };
 
@@ -150,7 +151,23 @@ export function PlanMetricsModal({
           failed={failed}
           hasPlan={plan !== null}
           token={token}
-          context={{ advice, metrics, prediction }}
+          context={{
+            advice,
+            metrics,
+            prediction,
+            policyId: snapshot?.policyId ?? null,
+            engineers: (snapshot?.engineers ?? []).slice(0, 8).map((engineer) => ({
+              name: engineer.displayName,
+              availability: engineer.day?.availability ?? null,
+              transport: engineer.transportType,
+              skills: engineer.skills,
+            })),
+            routes: (plan?.routes ?? []).map((route) => ({
+              assigned: route.assignedCount,
+              distanceKm: route.distanceKm,
+              travelMin: Math.round(route.travelTimeSec / 60),
+            })),
+          }}
           onOpenRequest={onOpenRequest}
         />
         {metrics ? (
@@ -267,7 +284,7 @@ function QualityBody({
           className="absolute right-[12px] top-[12px] flex size-[36px] items-center justify-center rounded-full bg-black/10"
         >
           {aiOn ? (
-            <span className="text-[18px] leading-none">←</span>
+            <TintIcon src="/figma/explain-default.svg" color="currentColor" size={18} />
           ) : (
             <span
               aria-hidden
@@ -369,7 +386,7 @@ function OptimizeButton({ token, summary }: { token: string | null; summary: str
         setPending(true);
         setNote(null);
         void optimizePlanWithAi(token, summary)
-          .then((picked) => setNote(`Выбрано: ${picked.label}`))
+          .then((picked) => setNote(picked.steps[0] ?? `Политика: ${picked.label}`))
           .catch(() => setNote('Не удалось выбрать политику'))
           .finally(() => setPending(false));
       }}

@@ -1438,7 +1438,11 @@ export function getAiSettings(token: string): Promise<AiView> {
 }
 
 const aiTextSchema = z.object({ text: z.string() });
-const aiPolicySchema = z.object({ id: z.string(), label: z.string() });
+const aiPolicySchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  steps: z.array(z.string()).default([]),
+});
 const aiResolveSchema = z.object({ choice: z.string() });
 
 /** Short wording from the language model. The context is facts the screen already has. */
@@ -1458,7 +1462,7 @@ export function explainWithAi(
 export function optimizePlanWithAi(
   token: string,
   summary: string,
-): Promise<{ id: string; label: string }> {
+): Promise<{ id: string; label: string; steps: string[] }> {
   return requestJson('/api/v1/dispatch/ai/optimize', aiPolicySchema, token, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

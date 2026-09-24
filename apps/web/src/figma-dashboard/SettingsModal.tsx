@@ -702,7 +702,7 @@ function McpServerSection({ token }: { token: string | null }) {
   const savePin = () => {
     const value = pin.trim();
     if (value.length < 6) {
-      setError('Пин — минимум 6 символов. «Сгенерировать» предложит надёжный.');
+      setError('Пароль — минимум 6 символов. «Сгенерировать» предложит надёжный.');
       return;
     }
     apply({ enabled: true, pin: value });
@@ -725,8 +725,8 @@ function McpServerSection({ token }: { token: string | null }) {
         />
       </div>
       {enabled ? (
-        <div className="mt-[16px] rounded-[16px] bg-white px-[16px] py-[14px]">
-          <Field label={view?.pinSet ? `Пин задан ···${view.pinLast4 ?? ''} — введите новый, чтобы заменить` : 'MCP-пин'} htmlFor="settings-mcp-pin">
+        <div className="mt-[16px] w-full">
+          <Field label={view?.pinSet ? `Пароль задан ···${view.pinLast4 ?? ''} — введите новый, чтобы заменить` : 'MCP-пароль'} htmlFor="settings-mcp-pin">
             <div className="relative">
               <input
                 id="settings-mcp-pin"
@@ -734,7 +734,7 @@ function McpServerSection({ token }: { token: string | null }) {
                 autoComplete="off"
                 spellCheck={false}
                 value={pin}
-                placeholder="По этому пину агент подключается к дашборду"
+                placeholder="По этому паролю агент подключается к дашборду"
                 onChange={(event) => {
                   setError(null);
                   setPin(event.target.value);
@@ -763,7 +763,7 @@ function McpServerSection({ token }: { token: string | null }) {
                   : 'bg-figma-ink text-white hover:scale-[1.02]'
               }`}
             >
-              {busy ? 'Сохраняем…' : 'Сохранить пин'}
+              {busy ? 'Сохраняем…' : 'Сохранить пароль'}
             </button>
             <button
               type="button"
@@ -775,7 +775,7 @@ function McpServerSection({ token }: { token: string | null }) {
                   pin: pin.trim(),
                 });
               }}
-              title={pinReady ? undefined : 'Введите пин ещё раз — сервер хранит только его хеш'}
+              title={pinReady ? undefined : 'Введите пароль ещё раз — сервер хранит только его хеш'}
               className={`ml-auto flex h-[44px] items-center gap-[8px] rounded-full px-[16px] font-semibold text-[15px] transition-transform duration-150 ${
                 busy || !pinReady
                   ? 'bg-figma-track text-figma-hint'
@@ -787,7 +787,7 @@ function McpServerSection({ token }: { token: string | null }) {
           </div>
           {view && !view.pinSet ? (
             <p className="mt-[10px] font-medium text-[13px] text-figma-hint">
-              Сервер включится вместе с пином: без него агенту нечем подключиться.
+              Сервер включится вместе с паролем: без него агенту нечем подключиться.
             </p>
           ) : null}
           {view?.activeNow ? (
@@ -1083,22 +1083,21 @@ function SettingSwitch({
         type="button"
         role="switch"
         aria-checked={checked}
+        aria-label={label}
         onClick={onChange}
-        className="relative h-[28px] w-[48px] rounded-full"
+        className="relative block h-[29px] w-[59px] shrink-0 overflow-hidden rounded-[14.5px]"
       >
-        <motion.span
-          aria-hidden
-          className="absolute inset-0 rounded-full"
-          initial={false}
-          animate={{ backgroundColor: checked ? 'var(--color-figma-bee)' : 'var(--color-figma-track)' }}
-          transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+        <span
+          className={`absolute inset-0 rounded-[14.5px] transition-colors duration-300 ${
+            checked ? 'bg-figma-ink' : 'bg-figma-muted'
+          }`}
         />
         <motion.span
           aria-hidden
-          className="absolute top-[2px] size-[24px] rounded-full bg-white shadow-[0_2px_6px_rgba(15,16,20,0.28)]"
+          className="absolute top-[3px] size-[23px] rounded-full bg-white"
           initial={false}
-          animate={{ x: checked ? 22 : 2, scale: checked ? 1 : 0.96 }}
-          transition={{ type: 'spring', stiffness: 520, damping: 28, mass: 0.7 }}
+          animate={{ left: checked ? 33 : 3 }}
+          transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
         />
       </button>
     </div>

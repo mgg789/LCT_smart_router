@@ -1109,6 +1109,12 @@ export function MainDashboardPage() {
                         engineer={dash.selectedEngineer}
                         explanation={panelExplanation}
                         token={dash.token}
+                        roster={(dash.snapshot?.engineers ?? []).slice(0, 8).map((item) => ({
+                          name: item.displayName,
+                          skills: item.skills,
+                          transport: item.transportType,
+                          availability: item.day?.availability ?? null,
+                        }))}
                         motionOn={motionOn}
                         onClose={() => dash.clearFocus()}
                       />
@@ -2446,6 +2452,7 @@ function DetailPanel({
   engineer,
   explanation,
   token,
+  roster,
   motionOn,
   onClose,
   onOpenEngineer,
@@ -2455,6 +2462,12 @@ function DetailPanel({
   engineer: EngineerView | null;
   explanation: CaseExplanation | null;
   token: string | null;
+  roster: ReadonlyArray<{
+    name: string;
+    skills: readonly string[];
+    transport: string;
+    availability: string | null;
+  }>;
   motionOn: boolean;
   onClose: () => void;
   onOpenEngineer?: () => void;
@@ -2550,6 +2563,7 @@ function DetailPanel({
             token={token}
             context={{
               explanation,
+              roster: (roster ?? []).slice(0, 8),
               request: request
                 ? {
                     id: request.id,

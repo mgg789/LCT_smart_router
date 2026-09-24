@@ -48,19 +48,22 @@ export class MiniAiService {
 
   /** Short Russian explanation. Throws when the language model is not configured. */
   async explain(kind: 'reasons' | 'plan', context: unknown): Promise<string> {
-    const packed = JSON.stringify(context).slice(0, 8_000);
+    const packed = JSON.stringify(context).slice(0, 12_000);
     const ask =
       kind === 'plan'
-        ? 'Объясни диспетчеру максимально коротко, почему план сейчас слабый и что из этого контекста важнее всего. Не выдумывай числа и имена.'
-        : 'Объясни диспетчеру максимально коротко, почему выбрано именно это. Не выдумывай числа и имена.';
-    return this.complete([
-      {
-        role: 'system',
-        content:
-          'Ты объясняешь уже посчитанный план полевых инженеров. Две-четыре коротких фразы по-русски. Только факты из контекста. Без списков, без рассуждений вслух.',
-      },
-      { role: 'user', content: `${ask}\n\nКонтекст:\n${packed}` },
-    ]);
+        ? 'Объясни, почему план получился именно таким. Назови ограничение, которое породило цифры: люди не на линии, окно, навык, пеший лимит, обед или политика. Не пересказывай заголовок оценки. Четыре-шесть коротких предложений. Не выдумывай числа и имена.'
+        : 'Объясни, почему выбрали именно этого исполнителя или почему заявка осталась без него. Сравни с другими людьми, окном и дорогой из контекста. Не пересказывай список фактов дословно. Четыре-шесть коротких предложений. Не выдумывай.';
+    return this.complete(
+      [
+        {
+          role: 'system',
+          content:
+            'Ты объясняешь причину уже посчитанного решения диспетчеру. Связный русский текст, без списков и без рассуждений вслух. Если в контексте нет причины, так и скажи.',
+        },
+        { role: 'user', content: `${ask}\n\nКонтекст:\n${packed}` },
+      ],
+      280,
+    );
   }
 
   /**
@@ -81,13 +84,16 @@ export class MiniAiService {
         : emails.length === 1
           ? emails[0]
           : await this.choice(source, 'Какой email указал клиент?', emails);
+    const spoken = explicitWindow(source) ?? (await this.modelWindow(source));
     const clocks = unique(
       [...source.matchAll(/\b(\d{1,2})[:.](\d{2})\b/g)].map(
         (match) => `${match[1]?.padStart(2, '0')}:${match[2]}`,
       ),
     ).filter((value) => isClock(value));
     const slots = visitWindows(clocks);
-    const window = await this.choice(source, 'Какое окно визита просит клиент?', slots);
+    const window = spoken
+      ? `${spoken.start}–${spoken.end}`
+      : await this.choice(source, 'Какое окно визита просит клиент?', slots);
     const [windowStart, windowEnd] = window.split('–');
     const names = unique(source.match(/[А-ЯЁ][а-яё]+(?:\s+[А-ЯЁ][а-яё]+){1,2}/g) ?? []);
     const contactName =
@@ -156,7 +162,7 @@ export class MiniAiService {
     }
     const action = await this.choice(
       input.summary,
-      'Какое действие лучше всего закрывает этот алерт? Выбери только из списка.',
+      'Какое действие лучше закрывает алерт с учётом плюсов и минусов в контексте? Выбери только из списка.',
       actions,
     );
     if (!actions.includes(action)) {
@@ -179,6 +185,59 @@ export class MiniAiService {
       ...(action === 'extend' ? { minutes: 30 } : {}),
       reason: 'Вариант выбран System one из допустимого списка.',
     };
+  }
+
+  /**
+   * Several yes/no and choice calls. Windows and lunches are named as forbidden
+   * in every question, and this method never returns those actions.
+   */
+  async planOptimization(input: {
+    summary: string;
+    currentPolicyId: string;
+    currentPolicyLabel: string;
+    manual: boolean;
+    callCandidates: ReadonlyArray<{ id: string; label: string }>;
+  }): Promise<{
+    policyId: string;
+    policyLabel: string;
+    callEngineerId: string | null;
+    restoreAuto: boolean;
+    steps: string[];
+  }> {
+    const state = `${input.summary.slice(0, 4_000)}\nСейчас политика: ${input.currentPolicyLabel}. Окна клиентов и обеды менять нельзя.`;
+    const steps: string[] = [];
+    let policy = { id: input.currentPolicyId, label: input.currentPolicyLabel };
+    if (await this.noul(state, 'Сменить политику планирования? Окна клиентов и обеды не трогать.')) {
+      const label = await this.choice(
+        state,
+        'Какая политика лучше исправляет слабость, не меняя окна и обеды?',
+        POLICIES.map((item) => item.label),
+      );
+      const found = POLICIES.find((item) => item.label === label);
+      if (found && found.id !== input.currentPolicyId) {
+        policy = found;
+        steps.push(`Политика: ${found.label}`);
+      }
+    }
+    let callEngineerId: string | null = null;
+    if (
+      input.callCandidates.length > 0 &&
+      (await this.noul(state, 'Вызвать на линию ещё одного инженера? Окна и обеды не меняются.'))
+    ) {
+      const names = input.callCandidates.map((item) => item.label);
+      const label =
+        names.length === 1
+          ? names[0]
+          : await this.choice(state, 'Кого вызвать на линию?', [...names, 'Никого']);
+      callEngineerId = input.callCandidates.find((item) => item.label === label)?.id ?? null;
+      if (callEngineerId && label) steps.push(`Вызов: ${label}`);
+    }
+    const restoreAuto =
+      input.manual &&
+      (await this.noul(state, 'Вернуть автоматический план вместо ручного? Окна и обеды не менять.'));
+    if (restoreAuto) steps.push('Возврат к автоматическому плану');
+    if (steps.length === 0) steps.push('Без смены окон и обедов маршрут уже в лучшем доступном виде');
+    return { policyId: policy.id, policyLabel: policy.label, callEngineerId, restoreAuto, steps };
   }
 
   /** Picks a prepared policy id. The caller publishes it through policy.select. */
@@ -215,7 +274,55 @@ export class MiniAiService {
     return body.choice;
   }
 
-  private async complete(messages: Array<{ role: 'system' | 'user'; content: string }>): Promise<string> {
+  /** True when System one leans to «да». A failed call means «нет», so nothing is applied. */
+  private async noul(state: string, question: string): Promise<boolean> {
+    const base = (process.env.JEV_API_URL ?? 'http://host.docker.internal:12444').replace(/\/$/, '');
+    try {
+      const response = await fetch(`${base}/v1/noul`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        body: JSON.stringify({
+          state: state.slice(0, 6_000),
+          question,
+          criteria: { false: 'нет', true: 'да' },
+        }),
+        signal: AbortSignal.timeout(20_000),
+      });
+      if (!response.ok) return false;
+      const body = (await response.json()) as { noul?: unknown };
+      return typeof body.noul === 'number' && body.noul >= 0.5;
+    } catch (error) {
+      this.logger.warn(`System one yes/no failed: ${error instanceof Error ? error.message : 'unknown'}`);
+      return false;
+    }
+  }
+
+  /** Reads an hour range the regex missed. Empty when the model is down or the text has no clock. */
+  private async modelWindow(source: string): Promise<{ start: string; end: string } | null> {
+    if (!process.env.LLM_API_KEY?.trim()) return null;
+    if (!/(до|после|утр|вечер|час|\d{1,2})/i.test(source)) return null;
+    try {
+      const text = await this.complete(
+        [
+          {
+            role: 'system',
+            content:
+              'Из текста выпиши окно визита. Ответ строго в виде ЧЧ:ММ-ЧЧ:ММ. Если времени нет, ответь нет.',
+          },
+          { role: 'user', content: source.slice(0, 2_000) },
+        ],
+        24,
+      );
+      return explicitWindow(text.replace('-', ' до ').replace('–', ' до '));
+    } catch {
+      return null;
+    }
+  }
+
+  private async complete(
+    messages: Array<{ role: 'system' | 'user'; content: string }>,
+    maxTokens = 160,
+  ): Promise<string> {
     const key = process.env.LLM_API_KEY?.trim();
     const base = (process.env.LLM_API_URL ?? 'https://api.deepseek.com').replace(/\/$/, '');
     const model = process.env.LLM_MODEL?.trim() || 'deepseek-flash';
@@ -231,7 +338,7 @@ export class MiniAiService {
         model,
         messages,
         temperature: 0.2,
-        max_tokens: 160,
+        max_tokens: maxTokens,
         thinking: { type: 'disabled' },
       }),
       signal: AbortSignal.timeout(25_000),
@@ -289,6 +396,27 @@ function isClock(value: string): boolean {
     minute >= 0 &&
     minute <= 59
   );
+}
+
+/**
+ * A range the client already wrote, including «с 13 до 16» without minutes.
+ * System one must not replace this with a nearby slot.
+ */
+export function explicitWindow(source: string): { start: string; end: string } | null {
+  const range = source.match(
+    /(?:с|c)\s*(\d{1,2})(?:[:.](\d{2}))?\s*(?:до|–|-|—)\s*(\d{1,2})(?:[:.](\d{2}))?/i,
+  );
+  if (!range) return null;
+  const start = clockOf(range[1], range[2]);
+  const end = clockOf(range[3], range[4]);
+  if (!start || !end || start >= end) return null;
+  return { start, end };
+}
+
+function clockOf(hour: string | undefined, minute: string | undefined): string | null {
+  if (!hour) return null;
+  const value = `${hour.padStart(2, '0')}:${minute ?? '00'}`;
+  return isClock(value) ? value : null;
 }
 
 /** A few concrete windows so System one picks a slot instead of inventing a clock. */

@@ -110,6 +110,9 @@ export function AlertActions({
           }}
         />
       </div>
+      {token && alert && actions.includes('move_window') ? (
+        <WindowAiNote token={token} alertId={alert.id} />
+      ) : null}
       {disabled && actions.length > 0 ? (
         <p className="mt-[12px] text-[16px] text-figma-muted">
           Решения доступны при подключении к рабочему серверу и завершении текущей операции.
@@ -299,6 +302,30 @@ function ExplainedAction({
       )}
     </fieldset>
   );
+}
+
+function WindowAiNote({ token, alertId }: { token: string; alertId: string }) {
+  const [text, setText] = useState('AI проверяет, есть ли сегодня окно для сдвига…');
+  useEffect(() => {
+    let active = true;
+    void loadAlertWindowProposal(token, alertId)
+      .then((result) => {
+        if (!active) return;
+        const offer = result.proposal;
+        setText(
+          result.status === 'available' && offer
+            ? `AI может сдвинуть окно на ${alertWindowInput(offer.windowStartAt)}–${alertWindowInput(offer.windowEndAt)}.`
+            : 'Сегодня нет окон, куда можно сдвинуть визит.',
+        );
+      })
+      .catch(() => {
+        if (active) setText('Сегодня не удалось проверить окно для сдвига.');
+      });
+    return () => {
+      active = false;
+    };
+  }, [alertId, token]);
+  return <p className="mt-[12px] text-[16px] text-figma-muted">{text}</p>;
 }
 
 function ResolutionForm({

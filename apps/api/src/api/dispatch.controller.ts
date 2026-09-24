@@ -7,7 +7,7 @@ import { SysError } from '../common/errors';
 import { Clock } from '../common/time';
 import { zodBody } from '../common/validation';
 import { OperationsService } from '../operations';
-import { AlertsService } from '../orchestrator/alerts';
+import { alertActionsFor, AlertsService } from '../orchestrator/alerts';
 import { AiService, MiniAiService } from '../orchestrator/ai';
 import { DemoStandService } from '../orchestrator/demo-stand';
 import { EngineersService, workDateOf } from '../orchestrator/engineers';
@@ -127,6 +127,15 @@ import {
 import type { DispatchLiveView } from './live-view.types';
 import { toPlanView } from './plan-view';
 import { type RequestView, toRequestView } from './request-view';
+
+const POLICY_LABEL: Record<string, string> = {
+  compact: 'Дешевле',
+  fast: 'Быстрее до клиента',
+  sla: 'Бережнее к окнам',
+  balanced: 'Ровнее загрузка',
+  eco: 'Короче пробег',
+  covering: 'Полное покрытие',
+};
 
 /**
  * Dashboard contour.
@@ -939,33 +948,92 @@ export class DispatchController {
   }
 
   @Post('ai/optimize')
-  @ApiOperation({ summary: 'Let System one pick a prepared policy and publish that choice' })
+  @ApiOperation({
+    summary: 'Improve the live plan without moving customer windows or cancelling lunches',
+  })
   async optimizeWithModel(
     @CurrentActor() actor: Actor,
     @Body() body: { summary?: unknown },
   ) {
     const summary = typeof body.summary === 'string' ? body.summary : '';
-    const picked = await this.miniAi.choosePolicy(summary);
-    const operationId = randomUUID();
-    await this.operations.execute(
-      {
-        operationId,
-        actor,
-        action: 'policy.select',
-        targetRef: picked.id,
-        payload: { operationId, policyId: picked.id },
-      },
-      async (context) => {
-        const selected = await this.policyService.select(context, picked.id);
-        await this.publisher.publishIfChanged(
-          context.tx,
-          context.now,
-          PUBLICATION_TRIGGERS.POLICY_CHANGED,
+    const active = await this.uow.run((tx) => this.policyService.active(tx));
+    const control = await this.prisma.controlState.findUnique({ where: { id: 'singleton' } });
+    const day = await this.prisma.liveWorkday.findFirst({
+      where: { status: 'running' },
+      select: { workDate: true },
+    });
+    const offline = day
+      ? await this.prisma.engineerDay.findMany({
+          where: { workDate: day.workDate, availability: 'offline' },
+          include: { engineer: { select: { displayName: true } } },
+          orderBy: { engineer: { inputOrder: 'asc' } },
+          take: 6,
+        })
+      : [];
+    const decision = await this.miniAi.planOptimization({
+      summary,
+      currentPolicyId: active.policyId,
+      currentPolicyLabel: POLICY_LABEL[active.policyId] ?? active.policyId,
+      manual: control?.mode === 'manual',
+      callCandidates: offline.map((item) => ({
+        id: item.engineerId,
+        label: item.engineer.displayName,
+      })),
+    });
+    if (decision.policyId !== active.policyId) {
+      const operationId = randomUUID();
+      await this.operations.execute(
+        {
+          operationId,
+          actor,
+          action: 'policy.select',
+          targetRef: decision.policyId,
+          payload: { operationId, policyId: decision.policyId },
+        },
+        async (context) => {
+          const selected = await this.policyService.select(context, decision.policyId);
+          await this.publisher.publishIfChanged(
+            context.tx,
+            context.now,
+            PUBLICATION_TRIGGERS.POLICY_CHANGED,
+          );
+          return selected;
+        },
+      );
+    }
+    if (decision.callEngineerId) {
+      const open = await this.prisma.alert.findMany({
+        where: { kind: 'alert', resolvedAt: null, invalidatedAt: null },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+      });
+      const target = open.find((alert) => alertActionsFor(alert.code).includes('add_engineer'));
+      if (target) {
+        const operationId = randomUUID();
+        const dto = {
+          operationId,
+          action: 'add_engineer' as const,
+          engineerId: decision.callEngineerId,
+          reason: 'Решено с AI автоматически',
+        };
+        await this.operations.execute(
+          { operationId, actor, action: 'alert.resolve', targetRef: target.id, payload: dto },
+          (context) => this.alertsService.resolve(context, target.id, dto),
         );
-        return selected;
-      },
-    );
-    return picked;
+      }
+    }
+    if (decision.restoreAuto) {
+      const operationId = randomUUID();
+      await this.operations.execute(
+        { operationId, actor, action: 'control.auto', payload: { operationId, mode: 'auto' } },
+        (context) => this.control.returnToAuto(context),
+      );
+    }
+    return {
+      id: decision.policyId,
+      label: decision.policyLabel,
+      steps: decision.steps,
+    };
   }
 
   @Post('alerts/:id/ai-resolve')

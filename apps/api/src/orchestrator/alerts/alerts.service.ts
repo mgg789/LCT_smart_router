@@ -85,6 +85,57 @@ export interface AlertView {
   readonly workDate: string | null;
 }
 
+const ACTION_EFFECT: Record<AlertAction, { benefit: string; drawback: string }> = {
+  reschedule: {
+    benefit: 'Снимает сегодняшний риск и сохраняет длительность окна.',
+    drawback: 'Клиент получит услугу только завтра.',
+  },
+  move_window: {
+    benefit: 'Оставляет визит сегодня в найденном выполнимом окне.',
+    drawback: 'Новое время нужно согласовать с клиентом, назначение пересчитается.',
+  },
+  add_engineer: {
+    benefit: 'Добавляет человека на линию и повышает шанс закрыть заявку сегодня.',
+    drawback: 'Нужен свободный инженер с подходящим навыком.',
+  },
+  keep_manual: {
+    benefit: 'Сохраняет уже выданный ручной порядок.',
+    drawback: 'План может быть хуже автоматического.',
+  },
+  keep_as_is: {
+    benefit: 'Не меняет согласованный маршрут.',
+    drawback: 'Причина риска остаётся.',
+  },
+  restore_auto: {
+    benefit: 'Возвращает актуальный автоматический план.',
+    drawback: 'Маршруты нескольких инженеров могут измениться.',
+  },
+  skip_lunch: {
+    benefit: 'Освобождает время под заявки.',
+    drawback: 'Инженер остаётся без обеда.',
+  },
+  keep_lunch: {
+    benefit: 'Сохраняет перерыв.',
+    drawback: 'Часть заявок может остаться без назначения.',
+  },
+  message: {
+    benefit: 'Инженер получает напоминание и остаётся на смене.',
+    drawback: 'Само по себе не двигает маршрут.',
+  },
+  remove_shift: {
+    benefit: 'Снимает молчащего инженера, чтобы заявки ушли другим.',
+    drawback: 'Его работы нужно переназначить.',
+  },
+  message_remove: {
+    benefit: 'Сначала предупреждает, затем снимает со смены.',
+    drawback: 'Инженер теряет оставшиеся заявки дня.',
+  },
+  extend: {
+    benefit: 'Даёт ещё немного времени выйти на связь.',
+    drawback: 'Заявки продолжают ждать.',
+  },
+};
+
 /**
  * Durable dispatcher decision queue.
  *
@@ -190,8 +241,8 @@ export class AlertsService {
    *
    * Both the dashboard endpoint and the MCP tool call this one handler, so the choice of
    * what an automated resolver may do lives in exactly one place: an already handled alert
-   * is refused, `move_window` is never picked (it needs times the model does not assign),
-   * and the applied action is a journalled `alert.resolve` operation.
+   * is refused, a window move uses only a Router proposal (or is left out when today has
+   * none), and the applied action is a journalled `alert.resolve` operation.
    */
   async resolveWithSystemOne(
     actor: Actor,
@@ -201,7 +252,23 @@ export class AlertsService {
     if (!alert || alert.kind !== 'alert' || alert.resolvedAt !== null) {
       throw SysError.validationFailed('Этот алерт уже нельзя разобрать.');
     }
-    const actions = alertActionsFor(alert.code);
+    const catalogue = alertActionsFor(alert.code);
+    let windowOffer: { start: number; end: number; version: number } | null = null;
+    if (catalogue.includes('move_window')) {
+      try {
+        const offer = await this.proposeWindow(id);
+        if (offer.status === 'available' && offer.proposal) {
+          windowOffer = {
+            start: offer.proposal.windowStartAt,
+            end: offer.proposal.windowEndAt,
+            version: offer.requestVersion,
+          };
+        }
+      } catch {
+        windowOffer = null;
+      }
+    }
+    const actions = catalogue.filter((item) => item !== 'move_window' || windowOffer !== null);
     const engineers = await this.prisma.engineer.findMany({
       take: 8,
       orderBy: { inputOrder: 'asc' },
@@ -213,21 +280,39 @@ export class AlertsService {
         reasons: alert.reasons,
         requestIds: alert.requestIds,
         engineerIds: alert.engineerIds,
+        windowToday: windowOffer
+          ? { start: windowOffer.start, end: windowOffer.end }
+          : 'сегодня выполнимого окна нет',
+        options: actions.map((item) => ({
+          action: item,
+          benefit: ACTION_EFFECT[item].benefit,
+          drawback: ACTION_EFFECT[item].drawback,
+        })),
       }).slice(0, 4_000),
       actions,
       engineers: engineers.map((item) => ({ id: item.id, label: item.displayName })),
     });
     const action = actions.find((item) => item === choice.action);
-    if (!action || action === 'move_window') {
-      throw SysError.validationFailed('Смена окна требует времени, которое модель не назначает.');
+    if (!action) {
+      throw SysError.validationFailed('Модель выбрала действие вне списка.');
+    }
+    if (action === 'move_window' && !windowOffer) {
+      throw SysError.validationFailed('Сегодня нет окна, куда можно сдвинуть визит.');
     }
     const operationId = randomUUID();
     const dto = {
       operationId,
       action,
-      reason: choice.reason,
+      reason: 'Решено с AI автоматически',
       ...(choice.engineerId ? { engineerId: choice.engineerId } : {}),
       ...(choice.minutes ? { minutes: choice.minutes } : {}),
+      ...(action === 'move_window' && windowOffer
+        ? {
+            windowStartAt: windowOffer.start,
+            windowEndAt: windowOffer.end,
+            expectedRequestVersion: windowOffer.version,
+          }
+        : {}),
     };
     const outcome = await this.operations.execute(
       { operationId, actor, action: 'alert.resolve', targetRef: id, payload: dto },

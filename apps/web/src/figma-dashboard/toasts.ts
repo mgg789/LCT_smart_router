@@ -134,8 +134,15 @@ export function isToastColumnPinned(): boolean {
 /**
  * Cards actually drawn: the full stack when pinned, otherwise only peeks.
  */
-export function visibleToastsForColumn(): ToastNotification[] {
-  const all = getToasts();
+/** A progress card that has sat on screen for a minute leaves the column. */
+export const PROGRESS_TOAST_LIFE_MS = 60_000;
+
+export function isParkedProgress(toast: ToastNotification, now = Date.now()): boolean {
+  return toast.kind === 'progress' && now - toast.createdAt >= PROGRESS_TOAST_LIFE_MS;
+}
+
+export function visibleToastsForColumn(now = Date.now()): ToastNotification[] {
+  const all = getToasts().filter((item) => !isParkedProgress(item, now));
   if (columnPinned) return all;
   return all
     .filter((item) => item.kind === 'progress' || peekIds.has(item.id))
@@ -336,6 +343,10 @@ export function useToasts(): ToastNotification[] {
 export function useVisibleColumnToasts(): ToastNotification[] {
   const [items, setItems] = useState(visibleToastsForColumn);
   useEffect(() => subscribeToasts(() => setItems(visibleToastsForColumn())), []);
+  useEffect(() => {
+    const timer = window.setInterval(() => setItems(visibleToastsForColumn()), 5_000);
+    return () => window.clearInterval(timer);
+  }, []);
   return items;
 }
 

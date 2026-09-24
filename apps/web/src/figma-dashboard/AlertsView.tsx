@@ -9,7 +9,13 @@ import { type InboxNoticeCard, inboxFromSources } from './alertsInbox';
 import { FIGMA_ASSETS } from './assets';
 import { InboxAlertCardView, InboxButton, InboxNoticeCardView } from './inboxCard';
 import { FigmaText } from './primitives';
-import { dismissAllToasts, dismissToast, type ToastKind, type ToastNotification } from './toasts';
+import {
+  dismissAllToasts,
+  dismissToast,
+  isParkedProgress,
+  type ToastKind,
+  type ToastNotification,
+} from './toasts';
 
 const HEADER_LIFT = 16;
 const TITLE_TOP = 184 - HEADER_LIFT;
@@ -65,7 +71,17 @@ export function AlertsView({
 }) {
   const reduceMotion = useReducedMotion();
   const animate = motionOn && !reduceMotion;
-  const inbox = inboxFromSources(snapshot, toasts, demoMode);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 5_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const parked = toasts.filter((toast) => isParkedProgress(toast, now));
+  const inbox = inboxFromSources(
+    snapshot,
+    toasts.filter((toast) => !isParkedProgress(toast, now)),
+    demoMode,
+  );
   const [clearing, setClearing] = useState(false);
   const [hiddenNoticeIds, setHiddenNoticeIds] = useState<ReadonlySet<string>>(() => new Set());
   const [sweptIds, setSweptIds] = useState<ReadonlySet<string>>(() => new Set());
@@ -164,6 +180,15 @@ export function AlertsView({
           ) : null}
 
           <div className="flex flex-col gap-[20px]">
+            {parked.map((toast) => (
+              <InboxNoticeCardView
+                key={toast.id}
+                title={toast.title}
+                body={toast.body || toast.etaLabel || ''}
+                icon={NOTICE_ICON[toast.kind]}
+                onHide={() => dismissToast(toast.id)}
+              />
+            ))}
             {visibleAlerts.map((card, index) => (
               <motion.div
                 key={card.id}
@@ -351,15 +376,18 @@ function AiSweepSlider({
   onCommit: () => void;
 }) {
   const [progress, setProgress] = useState(0);
+  const progressRef = useRef(0);
   const [nudge, setNudge] = useState(false);
-  const drag = useRef<{ x: number; progress: number } | null>(null);
+  const drag = useRef<{ x: number; progress: number; scale: number } | null>(null);
   const lastTap = useRef(0);
   useEffect(() => {
     if (engaged) {
+      progressRef.current = 1;
       setProgress(1);
       setNudge(false);
       return;
     }
+    progressRef.current = 0;
     setProgress(0);
   }, [engaged]);
   useEffect(() => {
@@ -374,6 +402,7 @@ function AiSweepSlider({
       setNudge(false);
       return;
     }
+    progressRef.current = 1;
     setProgress(1);
     setNudge(false);
     onCommit();
@@ -389,32 +418,52 @@ function AiSweepSlider({
     >
       <motion.button
         type="button"
-        aria-label="Разобрать все в AI"
-        className="absolute top-[8px] z-10 flex size-[63px] cursor-grab items-center justify-center rounded-full bg-figma-ink active:cursor-grabbing"
-        style={{ left: 10, opacity: 0.28 + 0.72 * (engaged ? 1 : progress) }}
+        aria-label="Решить все с AI"
+        className="absolute top-[8px] z-10 flex size-[63px] cursor-grab items-center justify-center active:cursor-grabbing"
+        style={{ left: 10 }}
         animate={{ x: engaged ? TRAVEL : progress * TRAVEL }}
         transition={{ type: 'spring', stiffness: 420, damping: 32 }}
         onPointerDown={(event) => {
           if (engaged) return;
           setNudge(false);
-          drag.current = { x: event.clientX, progress };
+          const scale = event.currentTarget.getBoundingClientRect().width / event.currentTarget.offsetWidth || 1;
+          drag.current = { x: event.clientX, progress: progressRef.current, scale };
           event.currentTarget.setPointerCapture(event.pointerId);
         }}
         onPointerMove={(event) => {
           const origin = drag.current;
           if (!origin) return;
-          const next = Math.min(1, Math.max(0, origin.progress + (event.clientX - origin.x) / TRAVEL));
+          const next = Math.min(
+            1,
+            Math.max(0, origin.progress + (event.clientX - origin.x) / (TRAVEL * origin.scale)),
+          );
+          progressRef.current = next;
           setProgress(next);
         }}
         onPointerUp={() => {
           drag.current = null;
-          if (progress > 0.82) commit();
-          else setProgress(0);
           const now = Date.now();
-          if (now - lastTap.current < 320) commit();
+          const repeat = now - lastTap.current < 320;
           lastTap.current = now;
+          if (progressRef.current > 0.82 || repeat) commit();
+          else {
+            progressRef.current = 0;
+            setProgress(0);
+          }
         }}
       >
+        <span
+          aria-hidden
+          className="absolute inset-0 rounded-full border border-white/30"
+          style={{
+            background:
+              engaged || progress > 0.9
+                ? '#272930'
+                : `rgba(255,255,255,${0.22 + progress * 0.35})`,
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
+          }}
+        />
         <motion.span
           aria-hidden
           className="flex items-center justify-center text-white"
@@ -436,9 +485,9 @@ function AiSweepSlider({
         }`}
         style={{ opacity: engaged ? 1 : 1 - progress }}
       >
-        {engaged ? 'AI решает' : 'Разобрать все в AI'}
+        {engaged ? 'AI решает' : 'Решить все с AI'}
       </span>
-      <span className="pointer-events-none absolute right-[10px] top-[9px] flex size-[60px] items-center justify-center rounded-full client-ai-fill">
+      <span className="sweep-spark pointer-events-none absolute right-[10px] top-[9px] flex size-[60px] items-center justify-center rounded-full">
         <span
           aria-hidden
           className="block bg-white"

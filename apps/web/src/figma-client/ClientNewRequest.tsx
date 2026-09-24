@@ -210,9 +210,23 @@ export function ClientNewRequest({
     setTracing(true);
   };
 
+  const storyRadius = eu(28);
+  const canSend = story.trim().length > 0;
   return (
-    <section className={`flex flex-col ${mode === 'story' ? 'min-h-0 flex-1' : ''}`}>
-      <div className={mode === 'story' ? 'mt-auto flex flex-col' : 'flex flex-col'}>
+    <section className="flex min-h-0 flex-1 flex-col">
+      {mode === 'story' ? (
+        <div className="flex flex-1 items-center justify-center px-[12px]">
+          <p
+            className="text-center font-murs tracking-[-0.03em] text-figma-ink"
+            style={{ fontSize: eu(40), lineHeight: eu(48) }}
+          >
+            Расскажите о проблеме
+          </p>
+        </div>
+      ) : (
+        <div style={{ height: `calc(${eu(36)} + 8px)` }} />
+      )}
+      <div className="flex flex-col">
       <ModeSwitch mode={mode} onChange={setMode} />
       <AnimatePresence initial={false}>
         {mode === 'story' ? (
@@ -224,7 +238,15 @@ export function ClientNewRequest({
             exit={motionOn ? { opacity: 0, y: 16 } : undefined}
             transition={motionOn ? { duration: 0.36, ease: slideEase } : { duration: 0 }}
           >
-            <div className="relative bg-white" style={{ borderRadius: eu(28), minHeight: eu(180) }}>
+            <div
+              className="relative bg-white"
+              style={{
+                borderRadius: storyRadius,
+                minHeight: eu(180),
+                border: '1.5px solid rgba(39,41,48,0.14)',
+                boxShadow: '0 10px 28px rgba(39,41,48,0.08)',
+              }}
+            >
               <textarea
                 value={story}
                 onChange={(event) => setStory(event.target.value)}
@@ -233,8 +255,8 @@ export function ClientNewRequest({
                 className="w-full resize-none bg-transparent font-medium text-figma-ink outline-none placeholder:text-figma-muted"
                 style={{
                   minHeight: eu(180),
-                  borderRadius: eu(28),
-                  padding: `${eu(22)} ${eu(72)} ${eu(64)} ${eu(72)}`,
+                  borderRadius: storyRadius,
+                  padding: `${eu(18)} ${eu(20)} ${eu(64)} ${eu(20)}`,
                   fontSize: eu(20),
                   lineHeight: eu(28),
                 }}
@@ -244,18 +266,31 @@ export function ClientNewRequest({
                 aria-label={listening ? 'Остановить диктовку' : 'Диктовка'}
                 aria-pressed={listening}
                 onClick={toggleDictation}
-                className="absolute flex items-center justify-center text-figma-ink"
-                style={{ left: eu(16), bottom: eu(16), width: eu(44), height: eu(44) }}
+                className="absolute flex items-center justify-center"
+                style={{
+                  left: eu(16),
+                  bottom: eu(16),
+                  width: eu(44),
+                  height: eu(44),
+                  color: listening ? 'var(--color-figma-bee)' : 'var(--color-figma-ink)',
+                }}
               >
                 <Mic size={22} strokeWidth={1.8} />
               </button>
               <button
                 type="button"
                 aria-label="Отправить рассказ"
-                disabled={tracing || story.trim().length === 0}
+                disabled={tracing || !canSend}
                 onClick={sendStory}
-                className="absolute flex items-center justify-center rounded-full bg-figma-ink text-white disabled:opacity-40"
-                style={{ right: eu(16), bottom: eu(16), width: eu(48), height: eu(48) }}
+                className="absolute flex items-center justify-center rounded-full text-white"
+                style={{
+                  right: eu(16),
+                  bottom: eu(16),
+                  width: eu(48),
+                  height: eu(48),
+                  background: canSend ? 'var(--color-figma-ink)' : '#d7d7d7',
+                  color: canSend ? '#fff' : '#8d8d8d',
+                }}
               >
                 <ArrowRight size={22} strokeWidth={2} />
               </button>
@@ -610,10 +645,10 @@ function PerimeterTrace({ onDone }: { onDone: () => void }) {
     if (!node || !box) return;
     const width = box.clientWidth;
     const height = box.clientHeight;
-    const radius = 28;
+    const radius = Number.parseFloat(getComputedStyle(box).borderRadius) || 0;
     node.setAttribute('width', String(Math.max(0, width - 4)));
     node.setAttribute('height', String(Math.max(0, height - 4)));
-    node.setAttribute('rx', String(radius));
+    node.setAttribute('rx', String(Math.max(0, radius - 2)));
     const length = node.getTotalLength();
     node.style.strokeDasharray = `${length}`;
     node.style.strokeDashoffset = `${length}`;
@@ -643,7 +678,7 @@ function PerimeterTrace({ onDone }: { onDone: () => void }) {
         y="2"
         width="100%"
         height="100%"
-        rx="28"
+        rx="18"
         pathLength={100}
         fill="none"
         stroke="url(#client-story-trace)"

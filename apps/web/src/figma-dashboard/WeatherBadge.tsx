@@ -15,7 +15,7 @@ const ICONS: Record<DispatchWeather['kind'], string> = {
 const ICON_COLOR: Record<DispatchWeather['kind'], string> = {
   clear: '#272930',
   cloud: '#272930',
-  rain: '#ffc72c',
+  rain: '#2563EB',
   snow: '#e23b3b',
   storm: '#e23b3b',
   unknown: '#272930',

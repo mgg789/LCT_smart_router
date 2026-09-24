@@ -256,6 +256,22 @@ body {
   }
 }
 
+.sweep-spark {
+  background-image:
+    radial-gradient(circle at 28% 32%, rgba(214, 226, 255, 0.95) 0%, rgba(214, 226, 255, 0) 46%),
+    radial-gradient(circle at 72% 68%, rgba(255, 186, 196, 0.9) 0%, rgba(255, 186, 196, 0) 50%),
+    linear-gradient(128deg, #9aafef 0%, #d7c4ee 38%, #f3b4be 68%, #a9bdf2 100%);
+  background-size: 180% 180%;
+  animation: sweep-spark 11s ease-in-out infinite;
+}
+
+@keyframes sweep-spark {
+  0% { background-position: 12% 40%; }
+  35% { background-position: 78% 28%; }
+  68% { background-position: 46% 82%; }
+  100% { background-position: 12% 40%; }
+}
+
 .client-ai-fill {
   background-image: linear-gradient(104deg, #7794f2 0%, #f93a48 50%, #7794f2 100%);
   background-size: 200% 100%;

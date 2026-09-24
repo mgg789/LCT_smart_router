@@ -363,7 +363,7 @@ export class MapRoutingService {
       if (timer) clearTimeout(timer);
     });
     if (this.freshShape(key) === undefined) {
-      this.roadShapeCache.set(key, { expiresAt: Date.now() + 15_000, points });
+      this.roadShapeCache.set(key, { expiresAt: Date.now() + 120_000, points });
     }
   }
 
@@ -380,7 +380,7 @@ export class MapRoutingService {
     const json = await requestJson(url, { headers: { Accept: 'application/json' } }, 8_000);
     const points = decodeRoadPolyline(json);
     // A miss stays briefly so a down backend is retried. A drawn road stays for the day.
-    const ttl = points ? ROAD_SHAPE_TTL_MS : 15_000;
+    const ttl = points ? ROAD_SHAPE_TTL_MS : 120_000;
     this.roadShapeCache.set(key, { expiresAt: Date.now() + ttl, points });
     if (this.roadShapeCache.size > CACHE_LIMIT) {
       const first = this.roadShapeCache.keys().next().value;
