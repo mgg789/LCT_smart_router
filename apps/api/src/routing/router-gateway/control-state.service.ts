@@ -14,16 +14,17 @@ export interface ControlStateView {
 }
 
 /**
- * AUTO and MANUAL.
+ * AUTO, assisted corrections, and emergency MANUAL.
  *
  * Emergency manual control disconnects exactly one thing: the delivery of Router's result
  * into sys. It does not stop Router, the reading of the sector, the intake of requests,
- * GPS, sign-in or actual events. Router keeps computing; its answers simply stay inside
+ * sign-in or actual events. Router keeps computing; its answers simply stay inside
  * Router (context/32 section 7.1).
  *
  * Returning to AUTO is an explicit transition, not an ordinary re-read. The current
  * result replaces the *future* manual distribution; it does not merge with it and does not
  * undo anything that already happened (context/32 section 7.3).
+ * Assisted control leaves automatic acceptance active and retains explicit pins on exit.
  */
 @Injectable()
 export class ControlStateService {
@@ -55,6 +56,19 @@ export class ControlStateService {
   ): Promise<ControlStateView> {
     await transitionControl(context, 'manual', reason, expected);
     this.logger.warn(`Emergency manual mode on; Router results are no longer applied`);
+    return this.current(context.tx);
+  }
+
+  /** Enables dispatcher edits while automatic calculation and application remain active. */
+  async enterAssisted(
+    context: OperationContext,
+    reason: string | undefined,
+    expected: PlanExpectation,
+  ): Promise<ControlStateView> {
+    const current = await this.current(context.tx);
+    if (current.mode === 'manual')
+      throw new SysError('MODE_MANUAL', 'Restore AUTO before opening assisted corrections');
+    await transitionControl(context, 'assisted', reason, expected);
     return this.current(context.tx);
   }
 

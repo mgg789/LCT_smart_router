@@ -4,6 +4,7 @@ import copy
 import json
 import threading
 import time
+from collections import OrderedDict
 from concurrent.futures import Future, ProcessPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -20,6 +21,7 @@ from core.contracts import (
     RouterResult,
     RouterTaskSnapshot,
     RouterTechnicalSettings,
+    SnapshotPublicationEnvelope,
 )
 from core.engine import (
     EngineMemory,
@@ -393,6 +395,8 @@ class RouterRuntime:
             )
         self.poll_sec = poll_sec
         self._lock = threading.RLock()
+        self._preview_lock = threading.Lock()
+        self._dispatcher_previews: OrderedDict[tuple[str, str, str], RouterResult] = OrderedDict()
         self._executor = executor or ProcessPoolExecutor(max_workers=1)
         self._future: Future | None = None
         self._active_generation = -1
@@ -433,6 +437,52 @@ class RouterRuntime:
         """Return an isolated copy so callers cannot mutate published plans."""
         with self._lock:
             return self.result.model_copy(deep=True)
+
+    def preview_dispatcher_plan(
+        self, publication: SnapshotPublicationEnvelope, expected_context_version: str
+    ) -> RouterResult:
+        """Solve an unpublished sys-owned proposal without touching the active runtime.
+
+        Exact bytes bind the candidate to its proposed publication. A bounded cache makes
+        retries stable; only one preview consumes CPU at a time. Resource changes invalidate
+        the answer rather than mixing two map/settings versions.
+        """
+        raw = publication.payload_utf8.encode("utf-8")
+        if len(raw) > MAX_SNAPSHOT_BYTES or content_hash(raw) != publication.payload_sha256:
+            raise ValueError("PREVIEW_PAYLOAD_INVALID")
+        snapshot = parse_snapshot(raw)
+        if len(snapshot.requests) > 500 or len(snapshot.engineers) > 200:
+            raise ValueError("PREVIEW_TOO_LARGE")
+        key = (publication.publication_id, publication.payload_sha256, expected_context_version)
+        with self._lock:
+            if self.context_version != expected_context_version:
+                raise ValueError("CONTEXT_CHANGED")
+            cached = self._dispatcher_previews.get(key)
+            if cached is not None:
+                self._dispatcher_previews.move_to_end(key)
+                return cached.model_copy(deep=True)
+            graph = copy.deepcopy(self._graph)
+            settings = replace(self.settings, time_limit_ms=min(3000, self.settings.time_limit_ms))
+        if not self._preview_lock.acquire(blocking=False):
+            raise RuntimeError("PREVIEW_BUSY")
+        try:
+            result, _ = calculate(
+                raw,
+                graph,
+                settings,
+                expected_context_version,
+                publication_id=publication.publication_id,
+            )
+        finally:
+            self._preview_lock.release()
+        with self._lock:
+            if self.context_version != expected_context_version:
+                raise ValueError("CONTEXT_CHANGED")
+            self._dispatcher_previews[key] = result
+            self._dispatcher_previews.move_to_end(key)
+            while len(self._dispatcher_previews) > 16:
+                self._dispatcher_previews.popitem(last=False)
+        return result.model_copy(deep=True)
 
     def evaluate_manual(self, input_hash: str, context_version: str, routes: dict) -> dict:
         """Evaluate fixed orders against the current automatic result, without solving.

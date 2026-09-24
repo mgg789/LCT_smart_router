@@ -136,6 +136,8 @@ class _Node:
 
 
 def _small_change(old: RouterTaskSnapshot, new: RouterTaskSnapshot, tolerance: int) -> bool:
+    if old.pinned_orders != new.pinned_orders:
+        return False
     if old.policy != new.policy or {r.request_id: r for r in old.requests} != {
         r.request_id: r for r in new.requests
     }:
@@ -452,8 +454,12 @@ def _search(
             - origin,
         )
         if not allowed or lower > terminal_upper or request.service_duration_sec > time_horizon:
+            if request.pinned_engineer_id is not None:
+                return None
             routing.ActiveVar(index).SetValue(0)
         else:
+            if request.pinned_engineer_id is not None:
+                routing.ActiveVar(index).SetValue(1)
             time_dimension.CumulVar(index).SetRange(lower, terminal_upper)
             # The end cumul includes service at this node.  The extended shift
             # cap applies only when this exact job is directly followed by the
@@ -481,6 +487,14 @@ def _search(
                 time_dimension.SetCumulVarSoftUpperBound(index, lower, 1)
         penalty = coverage_weight + (urgent_weight if request.priority == "urgent" else 0)
         routing.AddDisjunction([index], penalty if stage == "coverage" else 0)
+
+    for order in snapshot.pinned_orders:
+        active_order = [request_id for request_id in order.request_ids if request_id in jobs]
+        for before, after in zip(active_order, active_order[1:]):
+            solver.Add(
+                time_dimension.CumulVar(manager.NodeToIndex(jobs[before]))
+                <= time_dimension.CumulVar(manager.NodeToIndex(jobs[after]))
+            )
 
     for e, alternatives in lunches.items():
         engineer = engineers[e]
@@ -646,7 +660,12 @@ def _search(
 
 def official_roster(snapshot: RouterTaskSnapshot) -> RouterTaskSnapshot:
     """Exclude synthesized covering crews from fixed-roster strategy comparisons."""
-    engineers = [e for e in snapshot.engineers if not e.engineer_id.startswith("covering-")]
+    pinned = {row.pinned_engineer_id for row in snapshot.requests if row.pinned_engineer_id}
+    engineers = [
+        e
+        for e in snapshot.engineers
+        if not e.engineer_id.startswith("covering-") or e.engineer_id in pinned
+    ]
     return (
         snapshot.model_copy(update={"engineers": engineers})
         if len(engineers) != len(snapshot.engineers)

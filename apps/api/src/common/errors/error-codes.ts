@@ -63,6 +63,8 @@ export const ERROR_CODES = {
    * honestly instead of being faked as success.
    */
   SERVICE_NOT_CONFIGURED: HttpStatus.SERVICE_UNAVAILABLE,
+  /** A configured Router could not evaluate a proposal; the working plan was preserved. */
+  ROUTER_UNAVAILABLE: HttpStatus.SERVICE_UNAVAILABLE,
 
   /**
    * The account's daily message count, daily cost or lifetime cost cap for the AI-gateway

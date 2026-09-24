@@ -21,6 +21,7 @@ from core.contracts import (
     RouteStop,
     Transport,
 )
+from core.dispatch_constraints import pinned_ranks, respects_pinned_order
 from core.geo import TravelQuote, quote_at
 from core.policy import policy_score
 
@@ -95,7 +96,8 @@ def terminal_release_at(snapshot: RouterTaskSnapshot, engineer: Engineer) -> int
 def _matches_static_constraints(engineer: Engineer, request: Request) -> bool:
     """Check assignment compatibility independently from the time release rule."""
     return (
-        (request.region is None or engineer.region is None or request.region == engineer.region)
+        request.pinned_engineer_id in (None, engineer.engineer_id)
+        and (request.region is None or engineer.region is None or request.region == engineer.region)
         and request.required_skill in engineer.skills
         and request.required_transport in (None, engineer.transport_type)
         and (
@@ -164,6 +166,10 @@ def schedule_steps(
     if release is None and steps:
         return None
     if len([x for x in steps if x is not None]) != len(set(x for x in steps if x is not None)):
+        return None
+    if not respects_pinned_order(
+        snapshot, engineer.engineer_id, (job for job in steps if job is not None)
+    ):
         return None
     lunch_count = steps.count(None)
     active_lunch = release is not None and engineer.lunch.enabled and not engineer.lunch_taken
@@ -528,6 +534,44 @@ def assemble_plan(
         for s in route.stops
         if s.kind == "job"
     }
+    missing_pins = [
+        request
+        for request in snapshot.requests
+        if request.pinned_engineer_id
+        and assigned.get(request.request_id, (None, None))[0] != request.pinned_engineer_id
+    ]
+    if missing_pins:
+        # A pinned request must never disappear as an ordinary unassigned result.
+        # Keep the invalid alternative non-executable and explain the conflicting pins.
+        without_pins = snapshot.model_copy(
+            update={
+                "requests": [
+                    row.model_copy(update={"pinned_engineer_id": None}) for row in snapshot.requests
+                ],
+                "pinned_orders": [],
+            }
+        )
+        empty = assemble_plan(without_pins, [])
+        conflict = reason(
+            "DISPATCHER_CONSTRAINT_CONFLICT",
+            "No feasible plan honoring all dispatcher pins was found.",
+            outcome=True,
+        )
+        return empty.model_copy(
+            update={
+                "is_usable": False,
+                "alerts": [
+                    PlanningAlert(
+                        alert_id="dispatcher:constraints",
+                        code="DISPATCHER_CONSTRAINT_CONFLICT",
+                        severity="error",
+                        engineer_ids=sorted({row.pinned_engineer_id for row in missing_pins}),
+                        request_ids=[row.request_id for row in missing_pins],
+                        reasons=[conflict],
+                    )
+                ],
+            }
+        )
     assignments = []
     engineers = {engineer.engineer_id: engineer for engineer in snapshot.engineers}
     for request in snapshot.requests:
@@ -564,7 +608,8 @@ def assemble_plan(
         + route.metrics.waiting_time_sec
         + route.metrics.lunch_time_sec
         for route in routes
-        if route.start_at is not None or release_at(snapshot, engineers[route.engineer_id]) is not None
+        if route.start_at is not None
+        or release_at(snapshot, engineers[route.engineer_id]) is not None
     ]
     summary = PlanMetrics(
         late_assigned_count=sum(slack < 0 for slack in slacks),
@@ -629,7 +674,15 @@ def baseline(snapshot: RouterTaskSnapshot, travel: TravelProvider) -> Plan:
     engineers = sorted(snapshot.engineers, key=lambda e: e.input_order)
     orders: dict[str, list[str]] = {e.engineer_id: [] for e in engineers}
     deferred: list[Request] = []
-    for request in sorted(snapshot.requests, key=lambda r: r.arrival_order):
+    ranks = pinned_ranks(snapshot)
+    for request in sorted(
+        snapshot.requests,
+        key=lambda r: (
+            r.pinned_engineer_id is None,
+            ranks.get(r.request_id, 0),
+            r.arrival_order,
+        ),
+    ):
         for engineer in engineers:
             order = orders[engineer.engineer_id] + [request.request_id]
             route = (
@@ -754,7 +807,10 @@ def validate_plan(snapshot: RouterTaskSnapshot, plan: Plan, travel: TravelProvid
             require(bool(assignment.reasons), "missing explanation")
         require(plan.summary == assemble_plan(snapshot, []).summary, "unusable plan totals")
         require(
-            any(a.code == "REQUIRED_LUNCH_UNPLACED" for a in plan.alerts),
+            any(
+                a.code in ("REQUIRED_LUNCH_UNPLACED", "DISPATCHER_CONSTRAINT_CONFLICT")
+                for a in plan.alerts
+            ),
             "unusable plan needs a supported conflict reason",
         )
         return
@@ -816,6 +872,12 @@ def validate_plan(snapshot: RouterTaskSnapshot, plan: Plan, travel: TravelProvid
                 )
             else:
                 require(route.lunch.reasons[0].code == "LUNCH_NOT_PLACED", "lunch reason code")
+    for request in snapshot.requests:
+        if request.pinned_engineer_id:
+            require(
+                observed.get(request.request_id, (None, None))[0] == request.pinned_engineer_id,
+                "dispatcher assignment pin",
+            )
     for assignment in plan.assignments:
         owner = observed.get(assignment.request_id)
         require(

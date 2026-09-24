@@ -61,8 +61,8 @@ export function reasonDetail(code: string, fallback: string): string {
   return FACTOR_LABELS[code] ?? 'Подробности есть в данных расчёта.';
 }
 
-export function modeLabel(mode: 'auto' | 'manual'): string {
-  return mode === 'auto' ? 'Авто' : 'Вручную';
+export function modeLabel(mode: 'auto' | 'manual' | 'assisted'): string {
+  return mode === 'auto' ? 'Авто' : mode === 'assisted' ? 'Авто с корректировками' : 'Вручную';
 }
 
 function hasCyrillic(text: string): boolean {

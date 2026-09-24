@@ -32,8 +32,11 @@ export async function transitionControl(
   expected?: PlanExpectation,
 ) {
   const trimmed = reason?.trim();
-  if (mode === 'manual' && (!trimmed || trimmed.length > 2000)) {
-    throw new SysError('VALIDATION_FAILED', 'Entering manual control requires a nonblank reason');
+  if (mode !== 'auto' && (!trimmed || trimmed.length > 2000)) {
+    throw new SysError(
+      'VALIDATION_FAILED',
+      'Entering dispatcher control requires a nonblank reason',
+    );
   }
   await lockControlState(context.tx);
   if (expected) await assertPlanExpectation(context.tx, expected);

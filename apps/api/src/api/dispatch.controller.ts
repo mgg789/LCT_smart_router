@@ -60,6 +60,7 @@ import {
 } from '../routing/mount-data-eng';
 import {
   AppliedPlanService,
+  AssistedPlanningService,
   ControlStateService,
   ManualPlanService,
   ResultAcceptanceService,
@@ -79,6 +80,14 @@ import {
   type ResolveAlertDto,
   resolveAlertSchema,
 } from './dto/alert.dto';
+import {
+  type AssistedApplyDto,
+  type AssistedCancelDto,
+  type AssistedPreviewDto,
+  assistedApplySchema,
+  assistedCancelSchema,
+  assistedPreviewSchema,
+} from './dto/assisted.dto';
 import {
   type ImportDatasetDto,
   importDatasetSchema,
@@ -181,6 +190,7 @@ export class DispatchController {
     private readonly plans: AppliedPlanService,
     private readonly control: ControlStateService,
     private readonly manual: ManualPlanService,
+    private readonly assisted: AssistedPlanningService,
     private readonly acceptance: ResultAcceptanceService,
     private readonly router: RouterClient,
     private readonly imports: DatasetImportService,
@@ -1236,9 +1246,44 @@ export class DispatchController {
       async (context) =>
         dto.mode === 'manual'
           ? this.control.enterManual(context, dto.reason, dto)
-          : this.control.returnToAuto(context, dto),
+          : dto.mode === 'assisted'
+            ? this.control.enterAssisted(context, dto.reason, dto)
+            : this.control.returnToAuto(context, dto),
     );
     return { control: outcome.result };
+  }
+
+  @Get('assisted')
+  @ApiOperation({ summary: 'Persistent dispatcher pins and current review card' })
+  async assistedState(@CurrentActor() actor: Actor) {
+    return this.assisted.state(actor);
+  }
+
+  @Post('assisted/preview')
+  @ApiOperation({ summary: 'Calculate a dispatcher correction without applying it' })
+  async assistedPreview(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(assistedPreviewSchema)) dto: AssistedPreviewDto,
+  ) {
+    return this.assisted.prepare(actor, dto);
+  }
+
+  @Post('assisted/apply')
+  @ApiOperation({ summary: 'Confirm and atomically apply a checked dispatcher correction' })
+  async assistedApply(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(assistedApplySchema)) dto: AssistedApplyDto,
+  ) {
+    return this.assisted.apply(actor, dto);
+  }
+
+  @Post('assisted/cancel')
+  @ApiOperation({ summary: 'Cancel a review card while preserving the working plan' })
+  async assistedCancel(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(assistedCancelSchema)) dto: AssistedCancelDto,
+  ) {
+    return this.assisted.cancel(actor, dto);
   }
 
   @Post('plan/reassign')
@@ -1276,7 +1321,7 @@ export class DispatchController {
   @ApiOperation({ summary: 'Persistent manual transitions and edits, newest first' })
   async manualHistory() {
     const rows = await this.prisma.auditLog.findMany({
-      where: { action: { in: ['control.transition', 'plan.manual'] } },
+      where: { action: { in: ['control.transition', 'plan.manual', 'plan.assisted'] } },
       orderBy: [{ at: 'desc' }, { id: 'desc' }],
       take: 100,
     });

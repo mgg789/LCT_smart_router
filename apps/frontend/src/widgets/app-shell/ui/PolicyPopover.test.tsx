@@ -56,6 +56,30 @@ afterEach(() => {
 });
 
 describe('PolicyPopover', () => {
+  it('keeps emergency MANUAL as a separate explicit choice', async () => {
+    const user = userEvent.setup();
+    const fetchMock = stubAll({
+      '/dispatch/mode': () => jsonResponse({ control: { mode: 'manual', modeVersion: 5 } }),
+    });
+    renderWithProviders(<PolicyPopover onClose={() => {}} />);
+    await settle();
+    await user.click(screen.getByRole('button', { name: 'Аварийный MANUAL без автоматики' }));
+    await user.type(
+      screen.getByRole('textbox', { name: 'Причина аварийного MANUAL' }),
+      'Router недоступен',
+    );
+    await user.click(screen.getByRole('button', { name: 'Подтвердить MANUAL' }));
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/dispatch/mode'));
+      expect(JSON.parse(String(call?.[1]?.body ?? '{}'))).toMatchObject({
+        mode: 'manual',
+        reason: 'Router недоступен',
+        expectedModeVersion: 4,
+        expectedPlanRevision: 0,
+      });
+    });
+  });
+
   it('lists the presets the API offers, named in Russian', async () => {
     stubAll();
     renderWithProviders(<PolicyPopover onClose={() => {}} />);
@@ -119,29 +143,80 @@ describe('PolicyPopover', () => {
     });
   });
 
-  it('offers MANUAL while the contour is in AUTO', async () => {
+  it('requires a reason and sends the current mode and plan versions for assisted corrections', async () => {
     const user = userEvent.setup();
     const fetchMock = stubAll({
-      '/dispatch/mode': () => jsonResponse({ control: { mode: 'manual', modeVersion: 5 } }),
+      '/dispatch/mode': () => jsonResponse({ control: { mode: 'assisted', modeVersion: 5 } }),
     });
     renderWithProviders(<PolicyPopover onClose={() => {}} />);
     await settle();
 
-    await user.click(screen.getByRole('button', { name: 'Ручное управление' }));
+    await user.click(screen.getByRole('button', { name: 'Ручные корректировки' }));
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/dispatch/mode'))).toBe(
+      false,
+    );
+    const reason = await screen.findByRole('textbox', { name: 'Причина корректировок' });
+    await user.type(reason, '   ');
+    expect(screen.getByRole('button', { name: 'Начать корректировки' })).toBeDisabled();
+    await user.clear(reason);
+    await user.type(reason, '  Авария на линии  ');
+    await user.click(screen.getByRole('button', { name: 'Начать корректировки' }));
 
     await waitFor(() => {
       const call = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/dispatch/mode'));
-      expect(JSON.parse(String(call?.[1]?.body ?? '{}')).mode).toBe('manual');
+      expect(JSON.parse(String(call?.[1]?.body ?? '{}'))).toMatchObject({
+        mode: 'assisted',
+        reason: 'Авария на линии',
+        expectedModeVersion: 4,
+        expectedPlanRevision: 0,
+      });
     });
   });
 
-  it('offers the way back while the contour is in MANUAL', async () => {
-    stubAll({ '/dispatch/plan': () => jsonResponse({ ...PLAN, mode: 'manual' }) });
+  it('returns to AUTO with version guards and no reason', async () => {
+    const user = userEvent.setup();
+    const fetchMock = stubAll({
+      '/dispatch/plan': () => jsonResponse({ ...PLAN, mode: 'assisted', modeVersion: 5 }),
+      '/dispatch/mode': () => jsonResponse({ control: { mode: 'auto', modeVersion: 6 } }),
+    });
     renderWithProviders(<PolicyPopover onClose={() => {}} />);
     await settle();
 
-    expect(
-      await screen.findByRole('button', { name: 'Вернуть автоматический режим' }),
-    ).toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: 'Закончить корректировки' }));
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/dispatch/mode'));
+      expect(JSON.parse(String(call?.[1]?.body ?? '{}'))).toMatchObject({
+        mode: 'auto',
+        expectedModeVersion: 5,
+        expectedPlanRevision: 0,
+      });
+      expect(JSON.parse(String(call?.[1]?.body ?? '{}')).reason).toBeUndefined();
+    });
+  });
+
+  it('reloads a changed plan and leaves the reason available after a version conflict', async () => {
+    const user = userEvent.setup();
+    let current = PLAN;
+    const fetchMock = stubAll({
+      '/dispatch/plan': () => jsonResponse(current),
+      '/dispatch/mode': () => {
+        current = { ...PLAN, modeVersion: 6 };
+        return jsonResponse({ error: { code: 'VERSION_CONFLICT', message: 'Plan changed' } }, 409);
+      },
+    });
+    renderWithProviders(<PolicyPopover onClose={() => {}} />);
+    await settle();
+
+    await user.click(screen.getByRole('button', { name: 'Ручные корректировки' }));
+    await user.type(screen.getByRole('textbox', { name: 'Причина корректировок' }), 'Сбой');
+    await user.click(screen.getByRole('button', { name: 'Начать корректировки' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('План изменился');
+    expect(screen.getByRole('textbox', { name: 'Причина корректировок' })).toHaveValue('Сбой');
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/dispatch/plan')).length,
+      ).toBeGreaterThan(1);
+    });
   });
 });

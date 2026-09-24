@@ -574,6 +574,11 @@ export function MainDashboardPage() {
             setManualDialog({});
           }}
         />
+        {dash.snapshot?.plan.mode === 'assisted' ? (
+          <span className="absolute left-[920px] top-[10px] z-30 rounded-[20px] bg-figma-bee px-[20px] py-[14px] font-semibold text-figma-ink">
+            AUTO · корректировки диспетчера
+          </span>
+        ) : null}
         {dash.snapshot?.plan.mode === 'manual' ? (
           <button
             type="button"

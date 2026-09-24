@@ -4,6 +4,7 @@ import type { RouterResult } from './result.types';
 import { routerResultSchema } from './result.types';
 import {
   COMPARISON_STRATEGIES,
+  type DispatcherPreviewInput,
   type ManualEvaluation,
   type ManualEvaluationInput,
   type PolicyComparison,
@@ -214,6 +215,20 @@ export class HttpRouterClient extends RouterClient {
         after: z.array(z.number()).nullable(),
       })
       .parse(raw);
+  }
+
+  /** A proposal may use the solver budget; ordinary health/result reads retain their timeout. */
+  override async previewDispatcherPlan(input: DispatcherPreviewInput): Promise<RouterResult> {
+    const raw = await this.fetchJson(
+      '/v1/dispatcher-preview',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      },
+      Math.max(this.options.requestTimeoutMs, 30_000),
+    );
+    return routerResultSchema.parse(raw);
   }
 
   /** Runs or reads Router's cached same-snapshot policy comparison. */

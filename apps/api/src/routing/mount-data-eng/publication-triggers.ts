@@ -16,6 +16,7 @@
  *     logs -- none of these change the task.
  */
 export const PUBLICATION_TRIGGERS = {
+  DISPATCHER_CONSTRAINTS_CHANGED: 'dispatcher.constraints_changed',
   REQUEST_SUBMITTED: 'request.submitted',
   REQUEST_CONDITIONS_CHANGED: 'request.conditions_changed',
   REQUEST_CANCELLED: 'request.cancelled',

@@ -7,8 +7,11 @@ import { useDispatchLive } from '@/entities/live';
 import { useDispatchState } from '@/entities/plan';
 import { unassignedRequests, useRequests } from '@/entities/request';
 import { useConversation } from '@/features/ai/ask-assistant';
+import { useStartWorkday } from '@/features/live/start-workday';
+import { CorrectionReview, useAssistedCorrection } from '@/features/plan/assisted-correction';
 import { failedWithoutData } from '@/shared/api';
 import { fadeSoft, formatDayTitle, useElementSize, useMotionOn } from '@/shared/lib';
+import { Button } from '@/shared/ui';
 import { DayBoard } from '@/widgets/day-board';
 import { DayMap } from '@/widgets/day-map';
 import { RequestPanel } from '@/widgets/request-panel';
@@ -24,6 +27,8 @@ export function PlanPage() {
   // Optional: without the LIVE day the crews simply show what is ahead of them,
   // so its failure does not take the day screen down with it.
   const liveQuery = useDispatchLive();
+  const startWorkday = useStartWorkday();
+  const correction = useAssistedCorrection();
 
   // Another section can hand the day a request to open — «К заявке» on an alert.
   const [searchParams] = useSearchParams();
@@ -44,6 +49,12 @@ export function PlanPage() {
     () => new Map(requests.map((request) => [request.id, request])),
     [requests],
   );
+  const correctionsState = correction.state.data;
+  const activePins =
+    correctionsState?.constraints.assignments.filter((row) => {
+      const request = requestsById.get(row.requestId);
+      return request?.lifecycle === 'submitted' && request.startedAt === null;
+    }) ?? [];
 
   // Nothing is chosen for the dispatcher. The day opens showing every request and
   // no route; a crew becomes active only when it is picked, and picking it again
@@ -57,6 +68,20 @@ export function PlanPage() {
     plan?.assignments.find((assignment) => assignment.requestId === selectedRequestId) ?? null;
   const assignedEngineer =
     engineers.find((engineer) => engineer.id === selectedAssignment?.engineerId) ?? null;
+  const selectedRoute =
+    plan?.routes.find((route) => route.engineerId === selectedAssignment?.engineerId) ?? null;
+  const editableRequestIds = (selectedRoute?.stops ?? []).flatMap((stop) => {
+    if (stop.kind !== 'job' || !stop.requestId) return [];
+    const request = requestsById.get(stop.requestId);
+    return request?.lifecycle === 'submitted' &&
+      request.startedAt === null &&
+      request.completedAt === null &&
+      request.cancelledAt === null &&
+      (stateQuery.data?.mode !== 'assisted' ||
+        Boolean(correctionsState?.editableRequestIds.includes(stop.requestId)))
+      ? [stop.requestId]
+      : [];
+  });
 
   /**
    * A request that a crew is carrying brings that crew with it.
@@ -128,6 +153,98 @@ export function PlanPage() {
       <h1 className="font-display text-[32px] text-ink">
         {dayAnchor === null ? 'День' : formatDayTitle(dayAnchor)}
       </h1>
+
+      {correctionsState &&
+      (correctionsState.mode === 'assisted' ||
+        correctionsState.constraints.assignments.length ||
+        correctionsState.pendingProposal ||
+        correctionsState.blockers.length) ? (
+        <aside
+          className="mt-4 rounded-[20px] border border-ink/15 bg-surface p-4 text-[14px]"
+          aria-label="Корректировки диспетчера"
+        >
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="flex-1 font-medium">
+              {correctionsState.mode === 'manual'
+                ? 'Аварийный MANUAL: автоматическое применение приостановлено.'
+                : correctionsState.mode === 'assisted'
+                  ? 'Корректировки включены. Автоматика продолжает планирование.'
+                  : 'AUTO учитывает сохранённые закрепления.'}{' '}
+              Активных закреплений: {activePins.length}.
+            </p>
+            {correctionsState.constraints.assignments.length ? (
+              <Button
+                className="w-auto"
+                disabled={correction.busy || correctionsState.mode !== 'assisted'}
+                onClick={() => correction.change({ kind: 'release_all' })}
+              >
+                Снять все закрепления
+              </Button>
+            ) : null}
+          </div>
+          {correctionsState.pendingProposal ? (
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <p>
+                {correctionsState.pendingProposal.state === 'cancelled'
+                  ? 'Предложение отклонено. Текущий план сохранён.'
+                  : 'Есть предложение плана, ожидающее вашего решения.'}
+              </p>
+              <Button
+                className="w-auto"
+                disabled={correction.busy}
+                onClick={correction.reviewPending}
+              >
+                Посмотреть последствия
+              </Button>
+            </div>
+          ) : null}
+          {correctionsState.blockers.length ? (
+            <div className="mt-3 text-danger" role="alert">
+              Закрепления больше не укладываются в доступный расчёт. Текущий план сохранён;
+              проверьте доступность инженеров и условия заявок.
+              <button
+                className="ml-2 underline"
+                disabled={correction.busy}
+                onClick={() => correction.change({ kind: 'replan' })}
+                type="button"
+              >
+                Пересчитать
+              </button>
+            </div>
+          ) : null}
+        </aside>
+      ) : null}
+      {correction.busy ? (
+        <p className="mt-3 text-[14px] text-ink/65" role="status">
+          Проверяем последствия изменения…
+        </p>
+      ) : null}
+      {correction.error && !correction.proposal ? (
+        <p className="mt-3 text-[14px] text-danger" role="alert">
+          {correction.error}
+        </p>
+      ) : null}
+
+      {liveQuery.data?.workday.status === 'pending' ? (
+        <div className="mt-4 flex flex-wrap items-center gap-4 rounded-[20px] bg-surface p-4">
+          <p className="text-[16px] text-ink">
+            {liveQuery.data.workday.requestCount} заявок на сегодня. Смена ещё не запущена.
+          </p>
+          <button
+            className="rounded-xl bg-accent px-5 py-3 text-[16px] font-semibold text-ink disabled:opacity-50"
+            disabled={startWorkday.isPending}
+            onClick={() => startWorkday.mutate()}
+            type="button"
+          >
+            {startWorkday.isPending ? 'Запускаем день…' : 'Начать рабочий день'}
+          </button>
+          {startWorkday.isError ? (
+            <p className="text-[14px] text-danger" role="alert">
+              День не запустился: {startWorkday.error.code}. Проверьте состояние и повторите.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {loading ? (
         <p className="pt-10 text-[16px] text-ink/55">Загружаем день…</p>
@@ -203,6 +320,11 @@ export function PlanPage() {
                 <div className="h-full w-[420px]">
                   <RequestPanel
                     assignment={selectedAssignment}
+                    assistedBusy={correction.busy}
+                    assistedEditable={Boolean(
+                      selectedRequestId &&
+                        correctionsState?.editableRequestIds.includes(selectedRequestId),
+                    )}
                     beside={
                       siblings.length > 1
                         ? {
@@ -213,9 +335,12 @@ export function PlanPage() {
                           }
                         : undefined
                     }
+                    editableRequestIds={editableRequestIds}
                     engineer={assignedEngineer}
                     engineers={engineers}
                     mode={stateQuery.data?.mode ?? null}
+                    modeVersion={stateQuery.data?.modeVersion ?? null}
+                    onAssistedChange={correction.change}
                     onExplain={
                       selectedRequest
                         ? () => {
@@ -227,12 +352,14 @@ export function PlanPage() {
                           }
                         : undefined
                     }
-                    request={selectedRequest}
-                    route={
-                      plan?.routes.find(
-                        (route) => route.engineerId === selectedAssignment?.engineerId,
-                      ) ?? null
+                    pinnedEngineerId={
+                      correctionsState?.constraints.assignments.find(
+                        (row) => row.requestId === selectedRequestId,
+                      )?.engineerId
                     }
+                    planRevision={stateQuery.data ? (plan?.revision ?? 0) : null}
+                    request={selectedRequest}
+                    route={selectedRoute}
                   />
                 </div>
               </motion.div>
@@ -240,6 +367,18 @@ export function PlanPage() {
           </AnimatePresence>
         </div>
       )}
+      {correction.proposal ? (
+        <CorrectionReview
+          proposal={correction.proposal}
+          requests={requests}
+          engineers={engineers}
+          busy={correction.busy}
+          error={correction.error}
+          onConfirm={correction.confirm}
+          onCancel={correction.cancel}
+          onRecalculate={correction.recalculate}
+        />
+      ) : null}
     </div>
   );
 }

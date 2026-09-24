@@ -63,6 +63,7 @@ class Request(Record):
     required_transport: Transport | None
     required_equipment: EquipmentType | None = None
     region: Annotated[str, Field(min_length=1)] | None = None
+    pinned_engineer_id: ID | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def check_window(self) -> Self:
@@ -150,6 +151,20 @@ class SnapshotPublicationEnvelope(Record):
     published_at_epoch: Seconds
 
 
+class PinnedOrder(Record):
+    """Relative order of dispatcher-pinned jobs; other work may be inserted between them."""
+
+    engineer_id: ID
+    request_ids: list[ID] = Field(min_length=2, max_length=500)
+
+    @model_validator(mode="after")
+    def check_unique(self) -> Self:
+        """A request occurs once in one pinned relative order."""
+        if len(self.request_ids) != len(set(self.request_ids)):
+            raise ValueError("duplicate pinned request")
+        return self
+
+
 class RouterTaskSnapshot(Record):
     """Complete remaining-work projection, published atomically by sys."""
 
@@ -160,6 +175,9 @@ class RouterTaskSnapshot(Record):
     requests: list[Request]
     engineers: list[Engineer]
     policy: Policy
+    pinned_orders: list[PinnedOrder] = Field(
+        default_factory=list, max_length=500, exclude_if=lambda value: not value
+    )
 
     @model_validator(mode="after")
     def check_identity(self) -> Self:
@@ -174,6 +192,16 @@ class RouterTaskSnapshot(Record):
                 values = [getattr(row, name) for row in rows]
                 if len(values) != len(set(values)):
                     raise ValueError(f"duplicate {name}")
+        requests = {row.request_id: row for row in self.requests}
+        if len({row.engineer_id for row in self.pinned_orders}) != len(self.pinned_orders):
+            raise ValueError("duplicate pinned engineer order")
+        for order in self.pinned_orders:
+            if any(
+                request_id not in requests
+                or requests[request_id].pinned_engineer_id != order.engineer_id
+                for request_id in order.request_ids
+            ):
+                raise ValueError("pinned order must reference jobs pinned to that engineer")
         return self
 
 

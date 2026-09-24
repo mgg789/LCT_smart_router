@@ -1,4 +1,6 @@
 export * from './applied-plan.service';
+export * from './assisted.types';
+export * from './assisted-planning.service';
 export * from './control-state.service';
 export * from './http-router-client';
 export * from './manual-plan.service';

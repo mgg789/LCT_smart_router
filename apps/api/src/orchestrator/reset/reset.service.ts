@@ -174,9 +174,15 @@ export class ResetService {
     await tx.accountRole.deleteMany({ where: { role: { in: ['client', 'engineer'] } } });
     await tx.account.deleteMany({ where: { roles: { none: {} } } });
 
+    await tx.dispatchPlanProposal.deleteMany({});
     await tx.controlState.update({
       where: { id: 'singleton' },
-      data: { mode: 'auto', frozenPlanId: null },
+      data: {
+        mode: 'auto',
+        frozenPlanId: null,
+        dispatcherConstraints: { assignments: [], orders: [] },
+        constraintsVersion: { increment: 1 },
+      },
     });
 
     // Numbering starts again with the data it numbers.

@@ -15,5 +15,8 @@ export function useReassignRequest() {
       void queryClient.invalidateQueries({ queryKey: planQueryKey });
       void queryClient.invalidateQueries({ queryKey: requestsQueryKey });
     },
+    onError: () => {
+      void queryClient.invalidateQueries({ queryKey: planQueryKey });
+    },
   });
 }

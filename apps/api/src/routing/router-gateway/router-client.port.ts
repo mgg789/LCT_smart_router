@@ -3,6 +3,18 @@ import { SysError } from '../../common/errors';
 import type { RouterTaskSnapshot } from '../mount-data-eng/snapshot.types';
 import type { RouterResult } from './result.types';
 
+/** Exact unpublished bytes; sys may publish/apply the result only after its version checks. */
+export interface DispatcherPreviewInput {
+  publication: {
+    publication_id: string;
+    publication_seq: number;
+    payload_utf8: string;
+    payload_sha256: string;
+    published_at_epoch: number;
+  };
+  expected_context_version: string;
+}
+
 /** Read-only proposal evaluated against a fresh sys projection and existing job orders. */
 export interface WindowProposalInput {
   snapshot: RouterTaskSnapshot;
@@ -123,6 +135,10 @@ export abstract class RouterClient {
   /** Evaluates explicit manual orders without changing or optimizing the plan. */
   evaluateManual(_input: ManualEvaluationInput): Promise<ManualEvaluation> {
     throw SysError.notConfigured('Router manual evaluation');
+  }
+  /** Solves a dispatcher proposal without replacing Router's active publication. */
+  previewDispatcherPlan(_input: DispatcherPreviewInput): Promise<RouterResult> {
+    throw SysError.notConfigured('Router dispatcher preview');
   }
   /** The current result, whatever its status. */
   abstract getResult(): Promise<RouterResult>;

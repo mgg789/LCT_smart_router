@@ -4,6 +4,8 @@ import { newOperationId } from '@/shared/lib';
 export interface ReassignRequestInput {
   requestId: string;
   engineerId: string;
+  expectedModeVersion: number;
+  expectedPlanRevision: number;
 }
 
 /**
