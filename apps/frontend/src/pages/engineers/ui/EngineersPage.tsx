@@ -178,7 +178,7 @@ export function EngineersPage() {
     // screen is laid out at the drawing's size and inherits that one scale. A
     // second zoom here would square it.
     <div className="-mr-[34px] -ml-[31px] h-full min-h-0 overflow-y-auto overflow-x-hidden">
-      <div className="flex h-full min-h-0 flex-col">
+      <div className="relative flex h-full min-h-0 flex-col">
         {loading ? (
           <p className={cn(GUTTER, 'pt-10 text-[16px] text-ink-soft')}>Загружаем инженеров…</p>
         ) : null}
@@ -385,8 +385,12 @@ export function EngineersPage() {
           </button>
         </div>
 
-        {/* The deck spans the canvas edge to edge, gutters included. */}
-        <div className="mt-[22px] min-h-0 flex-1">
+        {/*
+         * The deck spans the canvas edge to edge, gutters included, and is drawn
+         * over everything else: the drawing lets the fan run past the bottom and
+         * both sides of the screen rather than sit in a box of its own.
+         */}
+        <div className="relative z-20 mt-[22px] min-h-0 flex-1">
           <ArcCarousel
             activeIndex={activeIndex}
             aria-label="Бригады"
@@ -406,7 +410,29 @@ export function EngineersPage() {
           />
         </div>
 
-        <label className="-mt-[38px] relative z-10 flex shrink-0 items-center justify-center gap-4 pb-1 text-ink">
+        {/*
+         * The two soft glows of the drawing (29:694, 29:695): the deck does not
+         * stop at a hard edge, it dissolves into the canvas at the bottom
+         * corners. Drawn above the cards, so they fade beneath them.
+         */}
+        <span
+          aria-hidden
+          className="pointer-events-none absolute bottom-[-520px] left-[-430px] z-30 h-[880px] w-[1067px] rounded-full"
+          style={{
+            background:
+              'radial-gradient(closest-side, rgba(244,244,245,0.92), rgba(244,244,245,0.45) 62%, rgba(244,244,245,0))',
+          }}
+        />
+        <span
+          aria-hidden
+          className="pointer-events-none absolute right-[-430px] bottom-[-520px] z-30 h-[880px] w-[1067px] rounded-full"
+          style={{
+            background:
+              'radial-gradient(closest-side, rgba(244,244,245,0.92), rgba(244,244,245,0.45) 62%, rgba(244,244,245,0))',
+          }}
+        />
+
+        <label className="-mt-[38px] relative z-40 flex shrink-0 items-center justify-center gap-4 pb-1 text-ink">
           <Search aria-hidden size={28} strokeWidth={2.2} />
           <span className="sr-only">Найти инженера</span>
           {/*

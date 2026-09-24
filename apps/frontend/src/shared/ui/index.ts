@@ -11,6 +11,8 @@ export { CodeInput } from './code-input/CodeInput';
 export { AiIcon } from './icons/AiIcon';
 export type { LogoProps } from './logo/Logo';
 export { Logo } from './logo/Logo';
+export type { MarkdownProps } from './markdown/Markdown';
+export { Markdown } from './markdown/Markdown';
 export type { MonogramProps } from './monogram/Monogram';
 export { initialsOf, Monogram } from './monogram/Monogram';
 export type { PopoverProps } from './popover/Popover';

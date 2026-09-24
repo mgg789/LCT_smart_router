@@ -112,10 +112,10 @@ export function PolicyPopover({ onClose }: PolicyPopoverProps) {
         <Switch
           checked={settings.data?.lunchesEnabled ?? false}
           disabled={busy || !settings.data}
-          label="Обед включён"
+          label="Рассчитать обеды"
           onChange={(next) => toggleLunches.mutate(next)}
         />
-        <span className="text-[20px] font-medium text-ink">Обед включён</span>
+        <span className="text-[20px] font-medium text-ink">Рассчитать обеды</span>
       </div>
 
       <button

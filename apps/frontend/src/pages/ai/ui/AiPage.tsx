@@ -14,7 +14,7 @@ import type {
 } from '@/features/ai/ask-assistant';
 import { AskBar, resumeConversation, useConversation } from '@/features/ai/ask-assistant';
 import { cn, EASE_OUT, fadeSoft, springQuick, useMotionOn } from '@/shared/lib';
-import { AiAvatar } from '@/shared/ui';
+import { AiAvatar, Markdown } from '@/shared/ui';
 
 /**
  * Where «открыть объект» goes. The target is what the dashboard should select —
@@ -289,27 +289,19 @@ function AssistantAnswer({
               exit={motionOn ? { opacity: 0, transition: { duration: 0.15 } } : undefined}
               key={message.id}
             >
-              <motion.p
+              {/*
+               * The answer is Markdown, so it is drawn as Markdown — bold,
+               * italics, code and lists. Still word by word: the reveal counts
+               * across the whole answer, not per block, or every paragraph
+               * would start at once.
+               */}
+              <motion.div
                 animate="shown"
-                className="mt-6 whitespace-pre-line text-[20px] text-ink leading-6"
+                className="mt-6 text-[20px] text-ink leading-6"
                 initial={motionOn ? 'hidden' : false}
               >
-                {words.map((word, index) =>
-                  /^\s+$/.test(word) ? (
-                    word
-                  ) : (
-                    <motion.span
-                      className="inline-block"
-                      // biome-ignore lint/suspicious/noArrayIndexKey: a word's place in its answer is its identity; the text never reorders.
-                      key={index}
-                      custom={motionOn ? wordDelay(index) : 0}
-                      variants={WORD}
-                    >
-                      {word}
-                    </motion.span>
-                  ),
-                )}
-              </motion.p>
+                <Markdown text={text} wordDelay={wordDelay} wordVariants={WORD} />
+              </motion.div>
 
               {message.cards.map((card) => (
                 <OperationCardView card={card} key={card.operationId} />

@@ -155,9 +155,13 @@ export function PlanPage() {
              * way, and the block's own bottom edge stays put. Keyed on the crew
              * rather than on its route — a crew with nothing planned still opens
              * the taller block, which then says so instead of staying shut.
+             *
+             * With nobody chosen it hugs its own content instead of holding a
+             * fixed height: a line of text does not need a tall white box under
+             * it, and reserving one only looks like something failed to load.
              */}
             <motion.div
-              animate={{ height: activeEngineerId ? 360 : 190 }}
+              animate={{ height: activeEngineerId ? 360 : 'auto' }}
               className="flex min-h-0 shrink-0 flex-col overflow-hidden"
               initial={false}
               transition={motionOn ? fadeSoft : { duration: 0 }}

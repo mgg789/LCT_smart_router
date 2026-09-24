@@ -144,14 +144,18 @@ export function ArcCarousel<T>({
   });
   const suppressClick = useRef(false);
 
-  const { width: hostWidth, height: hostHeight } = useElementSize(hostRef);
+  const { width: hostWidth } = useElementSize(hostRef);
   /** Vertical room one unscaled deck needs for everything it actually shows. */
   const span = reachBelow(cardWidth, cardHeight, DEEPEST_VISIBLE);
-  // Width sets the size the deck wants; a box shorter than that shrinks it the
-  // rest of the way, so the arc stays whole instead of being clipped to fit.
-  const byWidth = hostWidth > 0 ? Math.min(1, Math.max(0.55, hostWidth / DESIGN_WIDTH)) : 1;
-  const byHeight = hostHeight > 0 ? hostHeight / span : Number.POSITIVE_INFINITY;
-  const scale = Math.min(byWidth, byHeight);
+  /**
+   * Only the width decides the size.
+   *
+   * The drawing lets the fan run past the bottom and both sides of the screen —
+   * that overhang is the look, not an accident — so a short box must not shrink
+   * the cards to fit inside it. It does not clip them either; the glow at the
+   * corners is what ends the deck.
+   */
+  const scale = hostWidth > 0 ? Math.min(1, Math.max(0.55, hostWidth / DESIGN_WIDTH)) : 1;
   const width = cardWidth * scale;
   const height = cardHeight * scale;
 
@@ -223,7 +227,7 @@ export function ArcCarousel<T>({
       aria-label={rest['aria-label']}
       aria-roledescription="карусель"
       className={cn(
-        'relative touch-pan-y select-none overflow-hidden',
+        'relative touch-pan-y select-none',
         'cursor-grab active:cursor-grabbing',
         'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink',
         className,
@@ -235,11 +239,7 @@ export function ArcCarousel<T>({
       onPointerUp={endDrag}
       onWheel={onWheel}
       ref={hostRef}
-      style={{
-        height: boxHeight ?? span * scale,
-        // The deck dissolves towards both ends instead of stopping at a hard edge.
-        maskImage: 'linear-gradient(to right, transparent, #000 18%, #000 82%, transparent)',
-      }}
+      style={{ height: boxHeight ?? span * scale }}
       // biome-ignore lint/a11y/noNoninteractiveTabindex: WCAG 2.1.1 — the arrow keys have to reach the deck even when no card holds focus.
       tabIndex={0}
     >
