@@ -295,7 +295,8 @@ export function visibleToastLimit(): number {
  */
 export function sortToasts(items: readonly ToastNotification[]): ToastNotification[] {
   return [...items].sort((left, right) => {
-    const weight = (kind: ToastKind) => Number(kind === 'alert' || kind === 'error');
+    const weight = (kind: ToastKind) =>
+      kind === 'progress' ? 2 : kind === 'alert' || kind === 'error' ? 1 : 0;
     const alertDelta = weight(right.kind) - weight(left.kind);
     if (alertDelta !== 0) return alertDelta;
     return right.createdAt - left.createdAt;
@@ -353,7 +354,16 @@ export function useVisibleColumnToasts(): ToastNotification[] {
 /**
  * Inserts or replaces a toast. Progress at 100% removes the card instead.
  */
+const progressHeld = new Set<string>();
+
+/** Lets the next episode of a progress toast appear after the dispatcher closed the last one. */
+export function releaseProgressHold(id: string): void {
+  progressHeld.delete(id);
+  dismissed.delete(id);
+}
+
 export function pushToast(draft: ToastDraft): ToastNotification | null {
+  if (draft.kind === 'progress' && progressHeld.has(draft.id)) return null;
   dismissed.delete(draft.id);
   const next = normalizeToast(draft);
   const without = toasts.filter((item) => item.id !== draft.id);
@@ -407,7 +417,7 @@ export function dismissAllToasts(): void {
 }
 
 export function dismissToast(id: string): void {
-  if (toasts.some((item) => item.id === id && item.kind === 'progress')) return;
+  if (toasts.some((item) => item.id === id && item.kind === 'progress')) progressHeld.add(id);
   dismissed.add(id);
   clearPeekTimer(id);
   peekIds.delete(id);
@@ -485,6 +495,7 @@ export function toastFromEvent(event: { id: string; at: number; text: string }):
 export function resetToastsForTests(): void {
   toasts = [];
   dismissed.clear();
+  progressHeld.clear();
   columnPinned = false;
   clearAllPeeks();
   emit();

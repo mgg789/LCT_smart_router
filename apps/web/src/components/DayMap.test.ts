@@ -6,6 +6,7 @@ import {
   liveProgressPosition,
   liveProgressSegments,
   lunchMarkerCoordinates,
+  plannedRoadsCoverEdge,
   visiblePlannedSegments,
 } from './DayMap';
 
@@ -422,5 +423,100 @@ describe('LIVE map factual projection', () => {
       source: 'traffic_api',
       approximate: false,
     });
+  });
+
+  it('keeps roads around a collapsed lunch and covers the straight chord', () => {
+    const route: PlanRouteView = {
+      engineerId: 'engineer',
+      startLat: 55.74,
+      startLon: 37.6,
+      startAt: 0,
+      finishAt: 400,
+      distanceKm: 4,
+      travelTimeSec: 80,
+      workTimeSec: 40,
+      waitingTimeSec: 0,
+      lunchTimeSec: 1800,
+      assignedCount: 2,
+      lunchStatus: 'planned',
+      stops: [
+        {
+          sequence: 1,
+          kind: 'job',
+          requestId: 'done',
+          lat: 55.75,
+          lon: 37.61,
+          arrivalAt: 100,
+          startAt: 100,
+          endAt: 120,
+        },
+        {
+          sequence: 2,
+          kind: 'lunch',
+          requestId: null,
+          lat: 55.755,
+          lon: 37.615,
+          arrivalAt: 140,
+          startAt: 140,
+          endAt: 200,
+        },
+        {
+          sequence: 3,
+          kind: 'job',
+          requestId: 'next',
+          lat: 55.76,
+          lon: 37.62,
+          arrivalAt: 240,
+          startAt: 240,
+          endAt: 280,
+        },
+      ],
+      legs: [
+        {
+          legId: 'to-lunch',
+          fromStopId: 'done',
+          toStopId: 'lunch',
+          departureAt: 120,
+          arrivalAt: 140,
+          travelTimeSec: 20,
+          distanceKm: 1,
+          travelSource: 'route_api',
+          trafficFactor: 1,
+          geometry: {
+            points: [
+              { lat: 55.75, lon: 37.61 },
+              { lat: 55.752, lon: 37.612 },
+              { lat: 55.755, lon: 37.615 },
+            ],
+          },
+        },
+        {
+          legId: 'from-lunch',
+          fromStopId: 'lunch',
+          toStopId: 'next',
+          departureAt: 200,
+          arrivalAt: 240,
+          travelTimeSec: 40,
+          distanceKm: 1,
+          travelSource: 'route_api',
+          trafficFactor: 1,
+          geometry: {
+            points: [
+              { lat: 55.755, lon: 37.615 },
+              { lat: 55.758, lon: 37.618 },
+              { lat: 55.76, lon: 37.62 },
+            ],
+          },
+        },
+      ],
+    };
+    const graph = withoutMapLunch(projectLiveGraph(route, null, new Set(['done', 'next'])));
+    const segments = visiblePlannedSegments(route, graph);
+    expect(segments.map((segment) => segment.source)).toEqual(['route_api', 'route_api']);
+    const collapsed = graph.mapSegments.find(
+      (edge) => edge.from.key === 'job:done' && edge.to.key === 'job:next',
+    );
+    expect(collapsed).toBeTruthy();
+    if (collapsed) expect(plannedRoadsCoverEdge(collapsed, segments)).toBe(true);
   });
 });

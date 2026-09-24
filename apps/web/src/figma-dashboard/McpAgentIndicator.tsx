@@ -42,6 +42,7 @@ export function McpAgentIndicator({
   onClick: () => void;
 }) {
   return (
+    <span className="relative block size-[40px] shrink-0">
     <AnimatePresence>
       {active ? (
         <motion.button
@@ -49,7 +50,7 @@ export function McpAgentIndicator({
           aria-label="Сейчас с дашбордом работает агент по MCP — открыть настройки"
           title="Сейчас с дашбордом работает агент (MCP)"
           onClick={onClick}
-          className="flex size-[40px] items-center justify-center rounded-full bg-white shadow-[0_4px_14px_rgba(15,16,20,0.10)]"
+          className="absolute inset-0 flex items-center justify-center rounded-full bg-white shadow-[0_4px_14px_rgba(15,16,20,0.10)]"
           initial={motionOn ? { opacity: 0, scale: 0.6 } : false}
           animate={{ opacity: 1, scale: 1 }}
           exit={motionOn ? { opacity: 0, scale: 0.6 } : undefined}
@@ -62,10 +63,11 @@ export function McpAgentIndicator({
               motionOn ? { duration: 1.6, repeat: Infinity, ease: 'easeInOut' } : { duration: 0 }
             }
           >
-            <RobotGlyph className="h-[22px] w-[22px]" />
+            <RobotGlyph className="h-[28px] w-[28px]" />
           </motion.span>
         </motion.button>
       ) : null}
     </AnimatePresence>
+    </span>
   );
 }

@@ -112,9 +112,30 @@ export function visiblePlannedSegments(
     const routeLast = segment.routeEndpoints?.[1] ?? last;
     const from = resolveVisibleEndpoint(route, graph.mapNodes, routeFirst);
     const to = resolveVisibleEndpoint(route, graph.mapNodes, routeLast);
-    if (!from || !to || from.key === to.key) continue;
-    const key = `${from.key}->${to.key}`;
-    if (!graph.mapSegments.some((edge) => edge.key === key)) continue;
+    const drawableRoad =
+      !segment.approximate && segment.coordinates.length >= 2 && segment.source !== 'metro';
+    const onGraph =
+      from !== null &&
+      to !== null &&
+      from.key !== to.key &&
+      graph.mapSegments.some((edge) => edge.key === `${from.key}->${to.key}`);
+    const lunchPin = (coordinate: readonly [number, number]) =>
+      route.stops.some(
+        (stop) => stop.kind === 'lunch' && hasCoordinate(stop, coordinate),
+      );
+    // Lunch is collapsed off the map, so a road into that stop no longer matches
+    // a graph edge. Keep only that polyline; a finished edge behind the anchor stays hidden.
+    const intoCollapsedLunch =
+      drawableRoad &&
+      (from !== null || to !== null) &&
+      ((from === null && (lunchPin(routeFirst) || lunchPin(first))) ||
+        (to === null && (lunchPin(routeLast) || lunchPin(last))));
+    if (!onGraph && !intoCollapsedLunch) continue;
+    const shapeId = `${segment.source}:${first[0]},${first[1]}:${last[0]},${last[1]}`;
+    const fromKey = from?.key ?? `shape:${shapeId}:a`;
+    const toKey = to && to.key !== from?.key ? to.key : `shape:${shapeId}:b`;
+    if (fromKey === toKey) continue;
+    const key = `${fromKey}->${toKey}`;
     // Mixed legs intentionally keep access, metro and egress as separate lines.
     // Deduplicate only an exact repeated shape from a malformed/duplicated payload.
     const geometryKey = `${key}:${segment.source}:${segment.coordinates
@@ -122,7 +143,7 @@ export function visiblePlannedSegments(
       .join(';')}`;
     if (seenGeometry.has(geometryKey)) continue;
     seenGeometry.add(geometryKey);
-    visible.push({ ...segment, fromKey: from.key, toKey: to.key });
+    visible.push({ ...segment, fromKey, toKey });
   }
   return visible;
 }
@@ -173,6 +194,41 @@ function nearestNodeWithin(
     }
   }
   return best;
+}
+
+/** A collapsed lunch edge is covered when real roads meet at the lunch pin. */
+export function plannedRoadsCoverEdge(
+  edge: { from: Pick<LiveGraphNode, 'lat' | 'lon' | 'key'>; to: Pick<LiveGraphNode, 'lat' | 'lon' | 'key'> },
+  planned: readonly VisiblePlannedSegment[],
+): boolean {
+  const roads = planned.filter((segment) => !segment.approximate && segment.source !== 'metro');
+  const pinsOf = (segment: VisiblePlannedSegment) =>
+    segment.routeEndpoints ??
+    ([segment.coordinates[0], segment.coordinates[segment.coordinates.length - 1]] as const);
+  const near = (node: Pick<LiveGraphNode, 'lat' | 'lon'>, point: readonly [number, number] | undefined) =>
+    point !== undefined && haversineMeters([node.lon, node.lat], point) <= 40;
+  for (const road of roads) {
+    if (road.fromKey === edge.from.key && road.toKey === edge.to.key) return true;
+    const pins = pinsOf(road);
+    if ((near(edge.from, pins[0]) && near(edge.to, pins[1])) || (near(edge.from, pins[1]) && near(edge.to, pins[0]))) {
+      return true;
+    }
+  }
+  for (const left of roads) {
+    const leftPins = pinsOf(left);
+    const leftTouchesFrom = near(edge.from, leftPins[0]) || near(edge.from, leftPins[1]);
+    if (!leftTouchesFrom) continue;
+    const leftFar = near(edge.from, leftPins[0]) ? leftPins[1] : leftPins[0];
+    for (const right of roads) {
+      if (right === left || !leftFar) continue;
+      const rightPins = pinsOf(right);
+      const rightTouchesTo = near(edge.to, rightPins[0]) || near(edge.to, rightPins[1]);
+      if (!rightTouchesTo) continue;
+      const rightFar = near(edge.to, rightPins[0]) ? rightPins[1] : rightPins[0];
+      if (rightFar && haversineMeters(leftFar, rightFar) <= 40) return true;
+    }
+  }
+  return false;
 }
 
 function haversineMeters(from: readonly [number, number], to: readonly [number, number]): number {
@@ -365,7 +421,7 @@ export function DayMap({
         const region = route ? routeRegion(snapshot, route) : null;
         const planned = route ? visiblePlannedSegments(route, graph) : [];
         const covered = (from: LiveGraphNode, to: LiveGraphNode) =>
-          planned.some((segment) => segment.fromKey === from.key && segment.toKey === to.key);
+          plannedRoadsCoverEdge({ from, to }, planned);
         const segments = [
           ...planned.map((segment) => ({
             approximate: segment.approximate,

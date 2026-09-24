@@ -1037,9 +1037,13 @@ export class DispatchController {
   }
 
   @Post('alerts/:id/ai-resolve')
-  @ApiOperation({ summary: 'System one picks an allowed alert action; the usual resolve applies it' })
-  async resolveAlertWithModel(@CurrentActor() actor: Actor, @Param('id') id: string) {
-    return this.alertsService.resolveWithSystemOne(actor, id);
+  @ApiOperation({ summary: 'System one picks an allowed alert action; apply=0 returns the choice only' })
+  async resolveAlertWithModel(
+    @CurrentActor() actor: Actor,
+    @Param('id') id: string,
+    @Query('apply') apply?: string,
+  ) {
+    return this.alertsService.resolveWithSystemOne(actor, id, { apply: apply !== '0' });
   }
 
   @Post('alerts/:id/resolve')

@@ -1443,7 +1443,15 @@ const aiPolicySchema = z.object({
   label: z.string(),
   steps: z.array(z.string()).default([]),
 });
-const aiResolveSchema = z.object({ choice: z.string() });
+const aiResolveSchema = z.object({
+  choice: z.string(),
+  applied: z.boolean().optional(),
+  engineerId: z.string().nullable().optional(),
+  minutes: z.number().nullable().optional(),
+  windowStartAt: z.number().nullable().optional(),
+  windowEndAt: z.number().nullable().optional(),
+  expectedRequestVersion: z.number().nullable().optional(),
+});
 
 /** Short wording from the language model. The context is facts the screen already has. */
 export function explainWithAi(
@@ -1470,11 +1478,29 @@ export function optimizePlanWithAi(
   }, 30_000);
 }
 
+export interface AiAlertProposal {
+  readonly choice: string;
+  readonly applied?: boolean;
+  readonly engineerId?: string | null;
+  readonly minutes?: number | null;
+  readonly windowStartAt?: number | null;
+  readonly windowEndAt?: number | null;
+  readonly expectedRequestVersion?: number | null;
+}
+
+/** System one picks an allowed action and does not apply it. */
+export function proposeAlertWithAi(token: string, alertId: string): Promise<AiAlertProposal> {
+  return requestJson(
+    `/api/v1/dispatch/alerts/${alertId}/ai-resolve?apply=0`,
+    aiResolveSchema,
+    token,
+    { method: 'POST' },
+    30_000,
+  );
+}
+
 /** System one picks an allowed action; the server applies the usual alert resolve. */
-export function resolveAlertWithAi(
-  token: string,
-  alertId: string,
-): Promise<{ choice: string }> {
+export function resolveAlertWithAi(token: string, alertId: string): Promise<AiAlertProposal> {
   return requestJson(`/api/v1/dispatch/alerts/${alertId}/ai-resolve`, aiResolveSchema, token, {
     method: 'POST',
   }, 30_000);

@@ -72,11 +72,12 @@ import { SettingsModal, type SettingsTab } from './SettingsModal';
 import { ToastColumn } from './ToastColumn';
 import {
   dismissToast,
+  getToasts,
   pushToast,
+  releaseProgressHold,
   seedDemoToasts,
   setToastColumnPinned,
   toastFromAlert,
-  updateToast,
   upsertNewToasts,
   useToasts,
 } from './toasts';
@@ -362,7 +363,9 @@ export function MainDashboardPage() {
   }, [routerError]);
   useEffect(() => {
     if (!drawingLines) {
+      releaseProgressHold('router-geometry');
       dismissToast('router-geometry');
+      releaseProgressHold('router-geometry');
       return;
     }
     pushToast({
@@ -371,12 +374,14 @@ export function MainDashboardPage() {
       title: 'Уточняем линии на карте',
       body: `${geometryDone} из ${geometryTotal}. Пока линия не пришла, на карте прямая.`,
       progress: Math.round((geometryDone / geometryTotal) * 100),
-      etaLabel: 'По одной',
+      etaLabel: 'По дорогам',
     });
   }, [drawingLines, geometryDone, geometryTotal]);
   useEffect(() => {
     if (!showRebuild) {
-      updateToast('dispatcher-rebuild', { progress: 100 });
+      releaseProgressHold('dispatcher-rebuild');
+      dismissToast('dispatcher-rebuild');
+      releaseProgressHold('dispatcher-rebuild');
       if (sawRebuild.current) {
         sawRebuild.current = false;
         pushToast({
@@ -394,22 +399,21 @@ export function MainDashboardPage() {
       kind: 'progress',
       title: 'Пересчитываем маршруты',
       body: 'План появится на карте, когда расчёт закончится. Это может занять несколько минут.',
-      progress: 8,
       etaLabel: 'Выполняется',
     });
-    let value = 8;
-    const timer = window.setInterval(() => {
-      value = Math.min(92, value + 4);
-      updateToast('dispatcher-rebuild', { progress: value });
-    }, 1200);
-    return () => window.clearInterval(timer);
   }, [showRebuild]);
   useEffect(() => {
     const openAlerts = (dash.snapshot?.alerts ?? []).filter((alert) => alert.resolvedAt === null);
     const peek = toastHydrated.current;
+    const openIds = new Set(openAlerts.map((alert) => alert.id));
     for (const alert of dash.snapshot?.alerts ?? []) {
       if (alert.resolvedAt !== null || (alert.kind === 'notice' && alert.seenAt !== null))
         dismissToast(`alert:${alert.id}`);
+    }
+    for (const toast of getToasts()) {
+      if (toast.id.startsWith('alert:') && !openIds.has(toast.id.slice('alert:'.length))) {
+        dismissToast(toast.id);
+      }
     }
     upsertNewToasts(
       openAlerts
@@ -925,7 +929,7 @@ export function MainDashboardPage() {
         />
         {activeNav === 'requests' && openedRequestId ? null : (
           <div
-            className="absolute left-[180px] z-[15] flex items-center gap-[14px]"
+            className="absolute left-[180px] z-[15] flex h-[40px] items-center gap-[14px]"
             style={{ top: DATE_TOP }}
           >
             <FigmaText className="figma-nowrap font-murs text-[32px] tracking-[-0.544px] text-figma-ink">

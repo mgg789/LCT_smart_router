@@ -1,7 +1,7 @@
 import { motion, useReducedMotion } from 'framer-motion';
 import { ArrowRight, ArrowUpRight, Trash2 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { resolveAlertWithAi } from '../api/client';
+import { proposeAlertWithAi } from '../api/client';
 import type { AlertResolutionInput, DashboardSnapshot } from '../api/types';
 import { AlertActions } from './AlertActions';
 import { isAlertActionId } from '../domain/alerts';
@@ -32,9 +32,12 @@ const STITCH_HEIGHT = 20;
 const FADE_HEIGHT = 76;
 const fadeSoft = { duration: 0.28, ease: [0.22, 1, 0.36, 1] as const };
 
-const NOTICE_ICON: Record<ToastKind, { src: string; width: number; height: number }> = {
+const NOTICE_ICON: Record<
+  ToastKind,
+  { src: string; width: number; height: number; crop?: 'progress' }
+> = {
   system: { src: FIGMA_ASSETS.toastSystem, width: 24, height: 24 },
-  progress: { src: FIGMA_ASSETS.toastProgress, width: 24, height: 24 },
+  progress: { src: FIGMA_ASSETS.toastProgress, width: 24, height: 24, crop: 'progress' as const },
   ai: { src: FIGMA_ASSETS.toastAi, width: 28, height: 28 },
   chat: { src: FIGMA_ASSETS.toastChat, width: 25, height: 25 },
   route: { src: FIGMA_ASSETS.toastRoute, width: 24, height: 24 },
@@ -87,35 +90,75 @@ export function AlertsView({
   const [sweptIds, setSweptIds] = useState<ReadonlySet<string>>(() => new Set());
   const [sweeping, setSweeping] = useState(false);
   const [spotlight, setSpotlight] = useState<{ id: string; action: string | null } | null>(null);
+  const [thinkingId, setThinkingId] = useState<string | null>(null);
   const [leaving, setLeaving] = useState<Readonly<Record<string, 1 | -1>>>({});
   const visibleAlerts = inbox.alerts.filter((card) => !sweptIds.has(card.id));
   const visibleNotices = inbox.notices.filter((card) => !hiddenNoticeIds.has(card.id));
   const glassArrow = visibleAlerts.length > 0;
+  const wait = (ms: number) =>
+    new Promise((resolve) => window.setTimeout(resolve, animate ? ms : 0));
+  async function playAiDecision(
+    card: (typeof visibleAlerts)[number],
+    index: number,
+    cancelled: () => boolean,
+  ): Promise<boolean> {
+    setThinkingId(card.id);
+    let action = card.sourceAlert?.actions?.find((item) => isAlertActionId(item)) ?? null;
+    let proposal: Awaited<ReturnType<typeof proposeAlertWithAi>> | null = null;
+    if (token) {
+      try {
+        proposal = await proposeAlertWithAi(token, card.id);
+        action = isAlertActionId(proposal.choice) ? proposal.choice : action;
+      } catch {
+        setThinkingId(null);
+        return false;
+      }
+    }
+    if (cancelled() || !action) {
+      setThinkingId(null);
+      return false;
+    }
+    setThinkingId(null);
+    setSpotlight({ id: card.id, action });
+    await wait(2000);
+    if (cancelled()) return false;
+    try {
+      await onResolve(card.id, {
+        operationId: crypto.randomUUID(),
+        action,
+        reason: 'Решено с AI автоматически',
+        ...(proposal?.engineerId ? { engineerId: proposal.engineerId } : {}),
+        ...(proposal?.minutes != null ? { minutes: proposal.minutes } : {}),
+        ...(proposal?.windowStartAt != null && proposal.windowEndAt != null
+          ? {
+              windowStartAt: proposal.windowStartAt,
+              windowEndAt: proposal.windowEndAt,
+              ...(proposal.expectedRequestVersion != null
+                ? { expectedRequestVersion: proposal.expectedRequestVersion }
+                : {}),
+            }
+          : {}),
+      });
+    } catch {
+      setSpotlight(null);
+      return false;
+    }
+    if (cancelled()) return false;
+    dismissToast(`alert:${card.id}`);
+    setLeaving((current) => ({ ...current, [card.id]: index % 2 === 0 ? 1 : -1 }));
+    await wait(520);
+    setSweptIds((current) => new Set(current).add(card.id));
+    setSpotlight(null);
+    return true;
+  }
   useEffect(() => {
     if (!sweeping) return;
     let cancelled = false;
     const queue = visibleAlerts;
-    const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, animate ? ms : 0));
     void (async () => {
       for (const [index, card] of queue.entries()) {
         if (cancelled) return;
-        let action = card.sourceAlert?.actions?.find((item) => isAlertActionId(item)) ?? null;
-        if (token) {
-          try {
-            const picked = await resolveAlertWithAi(token, card.id);
-            action = isAlertActionId(picked.choice) ? picked.choice : action;
-          } catch {
-            continue;
-          }
-        }
-        setSpotlight({ id: card.id, action });
-        await wait(1700);
-        if (cancelled) return;
-        setLeaving((current) => ({ ...current, [card.id]: index % 2 === 0 ? 1 : -1 }));
-        await wait(520);
-        if (cancelled) return;
-        setSweptIds((current) => new Set(current).add(card.id));
-        setSpotlight(null);
+        await playAiDecision(card, index, () => cancelled);
       }
       if (!cancelled) setSweeping(false);
     })();
@@ -173,22 +216,13 @@ export function AlertsView({
         style={{ top: LIST_TOP, bottom: 28 }}
       >
         <div className="pt-[64px]">
-          {inbox.alerts.length === 0 && visibleNotices.length === 0 ? (
+          {inbox.alerts.length === 0 && visibleNotices.length === 0 && parked.length === 0 ? (
             <p className="pt-[40px] text-center font-medium text-[18px] text-figma-muted">
               Открытых алертов и уведомлений нет
             </p>
           ) : null}
 
           <div className="flex flex-col gap-[20px]">
-            {parked.map((toast) => (
-              <InboxNoticeCardView
-                key={toast.id}
-                title={toast.title}
-                body={toast.body || toast.etaLabel || ''}
-                icon={NOTICE_ICON[toast.kind]}
-                onHide={() => dismissToast(toast.id)}
-              />
-            ))}
             {visibleAlerts.map((card, index) => (
               <motion.div
                 key={card.id}
@@ -221,6 +255,11 @@ export function AlertsView({
                       disabled={writesDisabled}
                       onResolve={onResolve}
                       spotlightAction={spotlight?.id === card.id ? spotlight.action : null}
+                      thinking={thinkingId === card.id}
+                      onAskAi={() => {
+                        if (sweeping || thinkingId) return;
+                        void playAiDecision(card, index, () => false);
+                      }}
                       leadingAction={
                         card.requestId ? (
                           <InboxButton
@@ -244,7 +283,7 @@ export function AlertsView({
             ))}
           </div>
 
-          {visibleNotices.length > 0 ? (
+          {visibleNotices.length > 0 || parked.length > 0 ? (
             <div className="mb-[16px] mt-[36px] flex items-center gap-[12px]">
               <FigmaText className="font-bold text-[24px] text-figma-ink">Уведомления</FigmaText>
               <motion.button
@@ -282,6 +321,15 @@ export function AlertsView({
           ) : null}
 
           <div className="flex flex-col gap-[20px] pb-[24px]">
+            {parked.map((toast) => (
+              <InboxNoticeCardView
+                key={toast.id}
+                title={toast.title}
+                body={toast.body || toast.etaLabel || ''}
+                icon={NOTICE_ICON[toast.kind]}
+                onHide={() => dismissToast(toast.id)}
+              />
+            ))}
             {visibleNotices.map((card, index) => (
               <motion.div
                 key={card.id}
@@ -421,6 +469,40 @@ function AiSweepSlider({
       onDoubleClick={() => {
         if (!engaged) commit();
       }}
+      onPointerDown={(event) => {
+        if (engaged) return;
+        if ((event.target as HTMLElement).closest('button')) return;
+        setDragging(true);
+        setNudge(false);
+        const rect = event.currentTarget.getBoundingClientRect();
+        const scale = rect.width / SWEEP_WIDTH || 1;
+        const local = (event.clientX - rect.left) / scale;
+        const next = Math.min(1, Math.max(0, (local - 10 - THUMB / 2) / TRAVEL));
+        progressRef.current = next;
+        setProgress(next);
+        drag.current = { x: event.clientX, progress: next, scale };
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }}
+      onPointerMove={(event) => {
+        const origin = drag.current;
+        if (!origin || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+        const next = Math.min(
+          1,
+          Math.max(0, origin.progress + (event.clientX - origin.x) / (TRAVEL * origin.scale)),
+        );
+        progressRef.current = next;
+        setProgress(next);
+      }}
+      onPointerUp={(event) => {
+        if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+        drag.current = null;
+        setDragging(false);
+        if (progressRef.current > 0.55) commit();
+        else {
+          progressRef.current = 0;
+          setProgress(0);
+        }
+      }}
     >
       <motion.button
         type="button"
@@ -453,7 +535,7 @@ function AiSweepSlider({
           const now = Date.now();
           const repeat = now - lastTap.current < 320;
           lastTap.current = now;
-          if (progressRef.current > 0.72 || repeat) commit();
+          if (progressRef.current > 0.55 || repeat) commit();
           else {
             progressRef.current = 0;
             setProgress(0);

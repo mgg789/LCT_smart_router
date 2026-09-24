@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { DashboardApiError, loadAlertWindowProposal, resolveAlertWithAi } from '../api/client';
+import { DashboardApiError, loadAlertWindowProposal } from '../api/client';
 import type { AlertResolutionInput, AlertView, DashboardSnapshot } from '../api/types';
 import {
   ALERT_ACTION_SPECS,
@@ -56,6 +56,8 @@ export function AlertActions({
   onResolve,
   leadingAction,
   spotlightAction = null,
+  thinking = false,
+  onAskAi,
 }: {
   token?: string;
   alert: AlertView | null;
@@ -64,8 +66,12 @@ export function AlertActions({
   onResolve: (id: string, input: AlertResolutionInput) => Promise<void>;
   /** Optional navigation action rendered before the server-authorized decisions. */
   leadingAction?: ReactNode;
-  /** Visual-only ring while the inbox sweep pretends to choose this action. */
+  /** Gradient ring on the action System one just chose. */
   spotlightAction?: string | null;
+  /** Shimmer while System one has not answered yet. */
+  thinking?: boolean;
+  /** Starts the choose-then-apply sequence owned by the inbox. */
+  onAskAi?: () => void;
 }) {
   const [selected, setSelected] = useState<AlertActionId | null>(null);
   const [pending, setPending] = useState(false);
@@ -94,7 +100,8 @@ export function AlertActions({
         <ExplainedAction
           icon={Sparkles}
           appearance="ai"
-          disabled={disabled || waiting || pending || !token || !alert}
+          disabled={disabled || waiting || pending || thinking || !token || !alert}
+          thinking={thinking}
           spec={{
             label: 'Решить с AI',
             summary: 'System one выбирает допустимое действие и применяет его.',
@@ -104,9 +111,8 @@ export function AlertActions({
             tone: 'ink',
           }}
           onClick={() => {
-            if (!token || !alert || pending) return;
-            setPending(true);
-            void resolveAlertWithAi(token, alert.id).finally(() => setPending(false));
+            if (!token || !alert || pending || thinking) return;
+            onAskAi?.();
           }}
         />
       </div>
@@ -152,6 +158,7 @@ function ExplainedAction({
   disabled = false,
   appearance = 'plain',
   spotlight = false,
+  thinking = false,
   onClick,
 }: {
   icon: LucideIcon;
@@ -161,6 +168,8 @@ function ExplainedAction({
   appearance?: 'plain' | 'ai';
   /** Brand gradient outline. The sweep does not click the button. */
   spotlight?: boolean;
+  /** Moving highlight while the model has not answered. */
+  thinking?: boolean;
   onClick?: () => void;
 }) {
   const id = useId();
@@ -225,8 +234,11 @@ function ExplainedAction({
             dismiss();
             onClick?.();
           }}
-          className="flex items-center justify-center overflow-clip rounded-[20px] bg-figma-ink px-[32px] py-[16px] font-semibold text-[20px] tracking-[-0.6px] disabled:cursor-not-allowed disabled:opacity-45"
+          className="relative flex items-center justify-center overflow-clip rounded-[20px] bg-figma-ink px-[32px] py-[16px] font-semibold text-[20px] tracking-[-0.6px] disabled:cursor-not-allowed disabled:opacity-45"
         >
+          {thinking ? (
+            <span aria-hidden className="ai-reason-shimmer pointer-events-none absolute inset-0" />
+          ) : null}
           <span
             aria-hidden
             className="panel-ai-fill mr-[10px] block size-[22px] shrink-0"

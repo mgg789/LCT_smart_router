@@ -247,7 +247,17 @@ export class AlertsService {
   async resolveWithSystemOne(
     actor: Actor,
     id: string,
-  ): Promise<{ alert: AlertView; choice: string }> {
+    options?: { apply?: boolean },
+  ): Promise<{
+    alert: AlertView;
+    choice: string;
+    applied: boolean;
+    engineerId: string | null;
+    minutes: number | null;
+    windowStartAt: number | null;
+    windowEndAt: number | null;
+    expectedRequestVersion: number | null;
+  }> {
     const alert = await this.prisma.alert.findUnique({ where: { id } });
     if (!alert || alert.kind !== 'alert' || alert.resolvedAt !== null) {
       throw SysError.validationFailed('Этот алерт уже нельзя разобрать.');
@@ -299,18 +309,29 @@ export class AlertsService {
     if (action === 'move_window' && !windowOffer) {
       throw SysError.validationFailed('Сегодня нет окна, куда можно сдвинуть визит.');
     }
+    const picked = {
+      choice: choice.action,
+      engineerId: choice.engineerId ?? null,
+      minutes: choice.minutes ?? null,
+      windowStartAt: action === 'move_window' && windowOffer ? windowOffer.start : null,
+      windowEndAt: action === 'move_window' && windowOffer ? windowOffer.end : null,
+      expectedRequestVersion: action === 'move_window' && windowOffer ? windowOffer.version : null,
+    };
+    if (options?.apply === false) {
+      return { alert: this.view(alert), ...picked, applied: false };
+    }
     const operationId = randomUUID();
     const dto = {
       operationId,
       action,
       reason: 'Решено с AI автоматически',
-      ...(choice.engineerId ? { engineerId: choice.engineerId } : {}),
-      ...(choice.minutes ? { minutes: choice.minutes } : {}),
-      ...(action === 'move_window' && windowOffer
+      ...(picked.engineerId ? { engineerId: picked.engineerId } : {}),
+      ...(picked.minutes ? { minutes: picked.minutes } : {}),
+      ...(picked.windowStartAt !== null && picked.windowEndAt !== null
         ? {
-            windowStartAt: windowOffer.start,
-            windowEndAt: windowOffer.end,
-            expectedRequestVersion: windowOffer.version,
+            windowStartAt: picked.windowStartAt,
+            windowEndAt: picked.windowEndAt,
+            expectedRequestVersion: picked.expectedRequestVersion ?? undefined,
           }
         : {}),
     };
@@ -318,7 +339,7 @@ export class AlertsService {
       { operationId, actor, action: 'alert.resolve', targetRef: id, payload: dto },
       (context) => this.resolve(context, id, dto),
     );
-    return { alert: outcome.result, choice: choice.action };
+    return { alert: outcome.result, ...picked, applied: true };
   }
 
   private async thresholds(db: PrismaService | Tx = this.prisma) {

@@ -5,6 +5,7 @@ import {
   DEMO_TOASTS,
   dismissToast,
   getToasts,
+  releaseProgressHold,
   invertToastSwipe,
   pushToast,
   resetToastsForTests,
@@ -38,6 +39,22 @@ describe('toast stack', () => {
       { id: 'a1', kind: 'alert', title: 'alert 1', body: '', createdAt: 10 },
     ]);
     expect(sorted.map((item) => item.id)).toEqual(['a2', 'a1', 's', 'r']);
+  });
+
+  it('puts a live progress card above alerts and keeps a manual close until release', () => {
+    const sorted = sortToasts([
+      { id: 'a', kind: 'alert', title: 'alert', body: '', createdAt: 5 },
+      { id: 'p', kind: 'progress', title: 'progress', body: '', createdAt: 1, progress: 10 },
+    ]);
+    expect(sorted.map((item) => item.id)).toEqual(['p', 'a']);
+    pushToast({ id: 'p', kind: 'progress', title: 'progress', progress: 10 });
+    dismissToast('p');
+    expect(getToasts()).toEqual([]);
+    pushToast({ id: 'p', kind: 'progress', title: 'progress', progress: 20 });
+    expect(getToasts()).toEqual([]);
+    releaseProgressHold('p');
+    pushToast({ id: 'p', kind: 'progress', title: 'progress', progress: 20 });
+    expect(getToasts().map((item) => item.id)).toEqual(['p']);
   });
 
   it('peeks only a new card after the column was collapsed', () => {
@@ -105,7 +122,7 @@ describe('toast stack', () => {
 
   it('does not revive a dismissed id on upsert, and seeds the six Figma kinds', () => {
     seedDemoToasts();
-    expect(getToasts()[0]?.kind).toBe('alert');
+    expect(getToasts().some((item) => item.kind === 'alert')).toBe(true);
     expect(getToasts().length).toBeGreaterThan(visibleToastLimit());
     expect(new Set(DEMO_TOASTS.map((item) => item.kind)).size).toBe(6);
     dismissToast('demo-alert');

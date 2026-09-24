@@ -86,7 +86,7 @@ export function InboxNoticeCardView({
 }: {
   title: string;
   body: string;
-  icon: { src: string; width: number; height: number };
+  icon: { src: string; width: number; height: number; crop?: 'progress' };
   onHide: () => void;
 }) {
   return (
@@ -96,13 +96,24 @@ export function InboxNoticeCardView({
         engineerName={null}
         afterTitle={
           <span className="flex size-[36px] items-center justify-center">
-            <FigmaIcon
-              src={icon.src}
-              alt=""
-              width={icon.width}
-              height={icon.height}
-              className={icon.src.endsWith('.png') ? undefined : 'brightness-0 invert'}
-            />
+            {icon.crop === 'progress' ? (
+              <span className="relative block size-[28px] overflow-hidden" aria-hidden="true">
+                <img
+                  src={icon.src}
+                  alt=""
+                  className="absolute max-w-none"
+                  style={{ width: '128.4%', height: '191.86%', left: '-13.23%', top: '-48.06%' }}
+                />
+              </span>
+            ) : (
+              <FigmaIcon
+                src={icon.src}
+                alt=""
+                width={icon.width}
+                height={icon.height}
+                className={icon.src.endsWith('.png') ? undefined : 'brightness-0 invert'}
+              />
+            )}
           </span>
         }
         titleClass="text-white"
