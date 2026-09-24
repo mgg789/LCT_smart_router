@@ -1,4 +1,5 @@
-import { animate, motion, useMotionValue, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from 'framer-motion';
+import { ArrowLeft, ArrowRight } from 'lucide-react';
 import {
   type FormEvent,
   type PointerEvent as ReactPointerEvent,
@@ -94,6 +95,7 @@ export function EngineersView({
   const [focusedIndex, setFocusedIndex] = useState(0);
   const [query, setQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
+  const [scrollHint, setScrollHint] = useState(false);
   const [searchHeld, setSearchHeld] = useState<number | null>(null);
   const [emailOpen, setEmailOpen] = useState(false);
   const [emailDraft, setEmailDraft] = useState('');
@@ -311,6 +313,25 @@ export function EngineersView({
     };
     ring.addEventListener('wheel', onNativeWheel, { passive: false });
     return () => ring.removeEventListener('wheel', onNativeWheel);
+  }, []);
+
+  useEffect(() => {
+    let timer = window.setTimeout(() => setScrollHint(true), 6500);
+    const bump = () => {
+      setScrollHint(false);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setScrollHint(true), 6500);
+    };
+    const stage = stageRef.current;
+    stage?.addEventListener('wheel', bump, { capture: true });
+    stage?.addEventListener('pointerdown', bump);
+    window.addEventListener('keydown', bump);
+    return () => {
+      window.clearTimeout(timer);
+      stage?.removeEventListener('wheel', bump, { capture: true });
+      stage?.removeEventListener('pointerdown', bump);
+      window.removeEventListener('keydown', bump);
+    };
   }, []);
 
   useEffect(() => {
@@ -618,6 +639,33 @@ export function EngineersView({
           <FigmaIcon src={FIGMA_ASSETS.engSearch} alt="" width={43} height={43} />
         </motion.button>
       </motion.label>
+      <AnimatePresence>
+        {scrollHint ? (
+          <motion.div
+            className="pointer-events-none absolute z-20 flex items-center justify-center gap-[14px] text-figma-ink"
+            style={{ left: 895, top: RING_SEARCH_TOP + 64, width: 284 }}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 6 }}
+            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <motion.span
+              className="flex size-[36px] items-center justify-center rounded-[10px] bg-white shadow-[0_8px_18px_rgba(39,41,48,0.12)]"
+              animate={reduceMotion ? undefined : { x: [0, -4, 0] }}
+              transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+            >
+              <ArrowLeft size={18} strokeWidth={2.2} />
+            </motion.span>
+            <motion.span
+              className="flex size-[36px] items-center justify-center rounded-[10px] bg-white shadow-[0_8px_18px_rgba(39,41,48,0.12)]"
+              animate={reduceMotion ? undefined : { x: [0, 4, 0] }}
+              transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+            >
+              <ArrowRight size={18} strokeWidth={2.2} />
+            </motion.span>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </section>
   );
 }

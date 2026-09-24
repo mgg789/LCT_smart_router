@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useState } from 'react';
 import { predictSituation, type SituationPredictionView } from '../api/client';
 import type { DashboardSnapshot, PolicyComparisonResponse } from '../api/types';
@@ -204,8 +204,86 @@ function QualityCard({
     );
   }
   return (
-    <section className={`mt-[18px] rounded-[20px] px-[18px] py-[16px] ${BAND_CLASS[advice.band]}`}>
-      <p className="font-extrabold text-[22px] tracking-[-0.3px]">{advice.title}</p>
+    <QualityBody advice={advice} onOpenRequest={onOpenRequest} />
+  );
+}
+
+function QualityBody({
+  advice,
+  onOpenRequest,
+}: {
+  advice: PlanQualityAdvice;
+  onOpenRequest: (requestId: string) => void;
+}) {
+  const reduce = useReducedMotion();
+  const explainable = advice.band === 'yellow' || advice.band === 'red';
+  const [aiOn, setAiOn] = useState(false);
+  const [aiReady, setAiReady] = useState(false);
+  useEffect(() => {
+    if (!aiOn) {
+      setAiReady(false);
+      return;
+    }
+    const handle = window.setTimeout(() => setAiReady(true), reduce ? 0 : 1500);
+    return () => window.clearTimeout(handle);
+  }, [aiOn, reduce]);
+  return (
+    <section className={`relative mt-[18px] rounded-[20px] px-[18px] py-[16px] ${BAND_CLASS[advice.band]}`}>
+      {explainable ? (
+        <button
+          type="button"
+          aria-label={aiOn ? 'Обычная оценка' : 'Объяснить с AI'}
+          title={aiOn ? 'Обычная оценка' : 'Объяснить с AI'}
+          onClick={() => setAiOn((value) => !value)}
+          className="absolute right-[12px] top-[12px] flex size-[36px] items-center justify-center rounded-full bg-black/10"
+        >
+          {aiOn ? (
+            <span className="text-[18px] leading-none">←</span>
+          ) : (
+            <span
+              aria-hidden
+              className="block size-[18px] bg-current"
+              style={{
+                WebkitMaskImage: 'url(/figma/explain-ai.png)',
+                maskImage: 'url(/figma/explain-ai.png)',
+                WebkitMaskRepeat: 'no-repeat',
+                maskRepeat: 'no-repeat',
+                WebkitMaskPosition: 'center',
+                maskPosition: 'center',
+                WebkitMaskSize: 'contain',
+                maskSize: 'contain',
+              }}
+            />
+          )}
+        </button>
+      ) : null}
+      <p className={`font-extrabold text-[22px] tracking-[-0.3px] ${explainable ? 'pr-[40px]' : ''}`}>
+        {aiOn ? 'Оценка AI' : advice.title}
+      </p>
+      <AnimatePresence mode="wait" initial={false}>
+        <motion.div
+          key={aiOn ? (aiReady ? 'ai' : 'wait') : 'plain'}
+          initial={reduce ? false : { opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={reduce ? undefined : { opacity: 0, y: -6 }}
+          transition={{ duration: 0.22 }}
+        >
+          {aiOn ? (
+            aiReady ? (
+              <p className="mt-[6px] text-[16px] leading-[1.35]">
+                Текстовый разбор пока не подключён. Оценка дня остаётся прежней, без выдуманного текста.
+              </p>
+            ) : (
+              <div className="mt-[12px] space-y-[10px]" aria-hidden>
+                {['92%', '74%', '58%'].map((width) => (
+                  <div key={width} className="h-[12px] overflow-hidden rounded-full bg-current/10" style={{ width }}>
+                    <div className="ai-reason-shimmer h-full w-full" />
+                  </div>
+                ))}
+              </div>
+            )
+          ) : (
+            <>
       <p className="mt-[6px] text-[16px] leading-[1.35]">{advice.summary}</p>
       <p className="mt-[12px] font-semibold text-[15px]">Как улучшить</p>
       <ul className="mt-[6px] space-y-[6px] text-[15px] leading-[1.35]">
@@ -215,6 +293,10 @@ function QualityCard({
           </li>
         ))}
       </ul>
+            </>
+          )}
+        </motion.div>
+      </AnimatePresence>
     </section>
   );
 }

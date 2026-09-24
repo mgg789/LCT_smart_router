@@ -170,6 +170,7 @@ export function MainDashboardPage() {
   const [policyOpen, setPolicyOpen] = useState(false);
   const [activeNav, setActiveNav] = useState<NavItemId>('day');
   const [stackNav, setStackNav] = useState<NavItemId>('day');
+  const [settledPane, setSettledPane] = useState('main');
   const [stackDir, setStackDir] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -912,11 +913,15 @@ export function MainDashboardPage() {
             <motion.div
               key={stackViewKey(stackNav)}
               custom={stackDir}
-              className="absolute inset-0 isolate bg-figma-canvas"
+              className={`absolute inset-0 isolate bg-figma-canvas ${
+                settledPane === stackViewKey(stackNav) ? 'stack-pane-settled' : ''
+              }`}
               initial={motionOn && stackDir !== 0 ? stackSlideEnter(stackDir) : false}
               animate={{ x: 0, y: 0 }}
               exit={motionOn && stackDir !== 0 ? stackSlideExit(stackDir) : undefined}
               transition={motionOn && stackDir !== 0 ? slide : { duration: 0 }}
+              onAnimationStart={() => setSettledPane('')}
+              onAnimationComplete={() => setSettledPane(stackViewKey(stackNav))}
             >
               {stackViewKey(stackNav) === 'policy' ? (
                 <PolicyComparisonView
@@ -1057,6 +1062,11 @@ export function MainDashboardPage() {
                             : (dash.selectedEngineerId ?? 'plan')
                         }
                         mode={panelMode === 'request' ? 'request' : 'plan'}
+                        onOpenEngineer={() => {
+                          setStackDir(stackSlideDir(stackNav, 'engineers'));
+                          setStackNav('engineers');
+                          setActiveNav('engineers');
+                        }}
                         request={dash.selectedRequest}
                         engineer={dash.selectedEngineer}
                         explanation={panelExplanation}
@@ -2132,11 +2142,21 @@ function RouteCard({
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
-    updateThumb();
+    const refresh = () => {
+      el.style.overflowX = 'hidden';
+      void el.offsetWidth;
+      el.style.overflowX = 'auto';
+      updateThumb();
+    };
+    refresh();
+    const frame = window.requestAnimationFrame(refresh);
+    const later = window.setTimeout(refresh, 420);
     el.addEventListener('scroll', updateThumb, { passive: true });
     const observer = new ResizeObserver(updateThumb);
     observer.observe(el);
     return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(later);
       el.removeEventListener('scroll', updateThumb);
       observer.disconnect();
     };
@@ -2388,6 +2408,7 @@ function DetailPanel({
   explanation,
   motionOn,
   onClose,
+  onOpenEngineer,
 }: {
   mode: 'plan' | 'request';
   request: RequestView | null;
@@ -2395,6 +2416,7 @@ function DetailPanel({
   explanation: CaseExplanation | null;
   motionOn: boolean;
   onClose: () => void;
+  onOpenEngineer?: () => void;
 }) {
   const [aiOn, setAiOn] = useState(false);
   const [largeOn, setLargeOn] = useState(false);
@@ -2493,6 +2515,25 @@ function DetailPanel({
           <IconFactCard title="Факты" facts={explanation?.iconFacts ?? []} />
         )}
       </div>
+      {mode === 'plan' && engineer ? (
+        <div className="absolute inset-x-[27px] bottom-[24px] flex gap-[12px]">
+          <button
+            type="button"
+            onClick={onOpenEngineer}
+            className="h-[52px] flex-1 rounded-[16px] bg-white font-semibold text-[16px] text-figma-ink"
+          >
+            К инженеру
+          </button>
+          <button
+            type="button"
+            disabled
+            title="Скоро"
+            className="h-[52px] flex-1 cursor-not-allowed rounded-[16px] bg-white/15 font-semibold text-[16px] text-white/45"
+          >
+            Написать
+          </button>
+        </div>
+      ) : null}
     </motion.aside>
   );
 }

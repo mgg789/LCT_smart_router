@@ -124,6 +124,12 @@ body {
 
 .route-scroll {
   scrollbar-width: none;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.stack-pane-settled {
+  transform: none !important;
 }
 
 .route-scroll::-webkit-scrollbar {

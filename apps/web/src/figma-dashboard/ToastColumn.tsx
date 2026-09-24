@@ -72,6 +72,12 @@ export function ToastColumn({
   onToastAction?: (toast: ToastNotification) => void;
 }) {
   const visible = useVisibleColumnToasts();
+  const latestDetailId = visible.reduce<string | null>((best, toast) => {
+    if (toast.actionLabel !== 'Подробнее') return best;
+    if (!best) return toast.id;
+    const current = visible.find((item) => item.id === best);
+    return (toast.createdAt ?? 0) >= (current?.createdAt ?? 0) ? toast.id : best;
+  }, null);
   const shown = open || visible.length > 0;
   const [ghosts, setGhosts] = useState<ToastGhost[]>([]);
   const letterbox = useLetterboxInsets(scale);
@@ -175,6 +181,20 @@ export function ToastColumn({
               </>
             ) : null}
             {open ? (
+              <button
+                type="button"
+                aria-label="Свернуть уведомления"
+                className="absolute z-[5] cursor-default bg-transparent"
+                style={{
+                  top: -letterbox.y,
+                  bottom: -letterbox.y,
+                  width: TOAST_WIDTH + 72,
+                  left: TOAST_LEFT - TOAST_WIDTH - 72,
+                }}
+                onClick={onCollapse}
+              />
+            ) : null}
+            {open ? (
               <div
                 data-toast-scroll
                 className="pointer-events-auto absolute z-10 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
@@ -199,7 +219,12 @@ export function ToastColumn({
                       scale={scale}
                       interactive={shown}
                       onLeave={(startX) => beginLeave(toast, index * STRIDE, startX)}
-                      onAction={onToastAction ? () => onToastAction(toast) : undefined}
+                      onAction={
+                        onToastAction && toast.id === latestDetailId
+                          ? () => onToastAction(toast)
+                          : undefined
+                      }
+                      showAction={toast.id === latestDetailId}
                     />
                   ))}
                 </div>
@@ -216,7 +241,12 @@ export function ToastColumn({
                     scale={scale}
                     interactive={shown}
                     onLeave={(startX) => beginLeave(toast, top, startX)}
-                    onAction={onToastAction ? () => onToastAction(toast) : undefined}
+                    onAction={
+                      onToastAction && toast.id === latestDetailId
+                        ? () => onToastAction(toast)
+                        : undefined
+                    }
+                    showAction={toast.id === latestDetailId}
                   />
                 );
               })
@@ -248,6 +278,7 @@ function ToastCard({
   interactive,
   onLeave,
   onAction,
+  showAction = true,
 }: {
   toast: ToastNotification;
   top: number;
@@ -257,6 +288,8 @@ function ToastCard({
   interactive: boolean;
   onLeave: (startX: number) => void;
   onAction?: () => void;
+  /** Older plan notices keep the card, without a «Подробнее» that has no delta. */
+  showAction?: boolean;
 }) {
   const [offsetX, setOffsetX] = useState(0);
   const [dragging, setDragging] = useState(false);
@@ -325,6 +358,7 @@ function ToastCard({
       interactive={interactive}
       onClose={() => leave(offsetX)}
       onAction={onAction}
+      showAction={showAction}
       onPointerDown={(event) => {
         if ((event.target as HTMLElement).closest('[data-toast-close], [data-toast-action]')) return;
         if (event.button !== 0) return;
@@ -351,6 +385,7 @@ function ToastFace({
   onClose,
   onLeft,
   onAction,
+  showAction = true,
   onPointerDown,
 }: {
   toast: ToastNotification;
@@ -364,6 +399,7 @@ function ToastFace({
   onClose?: () => void;
   onLeft?: () => void;
   onAction?: () => void;
+  showAction?: boolean;
   onPointerDown?: (event: ReactPointerEvent<HTMLElement>) => void;
 }) {
   const alert = toast.kind === 'alert';
@@ -432,12 +468,12 @@ function ToastFace({
       </div>
       <p
         className={`figma-nowrap pointer-events-none absolute left-[68px] top-[19px] overflow-hidden font-semibold text-[20px] leading-none text-ellipsis ${
-          toast.actionLabel ? 'right-[168px]' : 'max-w-[300px]'
+          toast.actionLabel && showAction ? 'right-[168px]' : 'max-w-[300px]'
         } ${danger || !alert ? 'text-white' : 'text-figma-ink'}`}
       >
         {toast.title}
       </p>
-      {toast.actionLabel && !leaving ? (
+      {toast.actionLabel && showAction && !leaving ? (
         <button
           type="button"
           data-toast-action

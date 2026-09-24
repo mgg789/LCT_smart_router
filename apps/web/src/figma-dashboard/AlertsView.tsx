@@ -7,7 +7,7 @@ import { isAlertActionId } from '../domain/alerts';
 import { type InboxNoticeCard, inboxFromSources } from './alertsInbox';
 import { FIGMA_ASSETS } from './assets';
 import { InboxAlertCardView, InboxButton, InboxNoticeCardView } from './inboxCard';
-import { FigmaIcon, FigmaText } from './primitives';
+import { FigmaText } from './primitives';
 import { dismissAllToasts, dismissToast, type ToastKind, type ToastNotification } from './toasts';
 
 const HEADER_LIFT = 16;
@@ -360,6 +360,11 @@ function AiSweepSlider({
   }, [armed, engaged]);
 
   const commit = () => {
+    if (!armed) {
+      setProgress(0);
+      setNudge(false);
+      return;
+    }
     setProgress(1);
     setNudge(false);
     onCommit();
@@ -376,16 +381,10 @@ function AiSweepSlider({
       <motion.button
         type="button"
         aria-label="Разобрать все в AI"
-        className="absolute top-[8px] z-10 flex size-[63px] cursor-grab items-center justify-center rounded-full bg-white/15 active:cursor-grabbing"
-        style={{ left: 10 }}
-        animate={{
-          x: engaged ? TRAVEL : nudge && progress === 0 ? [0, 14, 0] : progress * TRAVEL,
-        }}
-        transition={
-          nudge && progress === 0 && !engaged && motionOn
-            ? { duration: 0.9, repeat: Infinity, ease: 'easeInOut' }
-            : { type: 'spring', stiffness: 420, damping: 32 }
-        }
+        className="absolute top-[8px] z-10 flex size-[63px] cursor-grab items-center justify-center rounded-full bg-figma-ink active:cursor-grabbing"
+        style={{ left: 10, opacity: 0.28 + 0.72 * (engaged ? 1 : progress) }}
+        animate={{ x: engaged ? TRAVEL : progress * TRAVEL }}
+        transition={{ type: 'spring', stiffness: 420, damping: 32 }}
         onPointerDown={(event) => {
           if (engaged) return;
           setNudge(false);
@@ -407,18 +406,46 @@ function AiSweepSlider({
           lastTap.current = now;
         }}
       >
-        <ArrowRight size={28} className="text-white" strokeWidth={2} />
+        <motion.span
+          aria-hidden
+          className="flex items-center justify-center text-white"
+          animate={
+            nudge && progress === 0 && !engaged && motionOn ? { x: [0, 7, 0] } : { x: 0 }
+          }
+          transition={
+            nudge && progress === 0 && !engaged && motionOn
+              ? { duration: 0.9, repeat: Infinity, ease: 'easeInOut' }
+              : { duration: 0.2 }
+          }
+        >
+          <ArrowRight size={28} strokeWidth={2} />
+        </motion.span>
       </motion.button>
       <span
-        className={`figma-nowrap pointer-events-none mx-auto font-semibold text-[18px] ${
+        className={`figma-nowrap pointer-events-none absolute inset-0 flex items-center justify-center font-semibold text-[18px] ${
           engaged ? 'client-ai-fill client-ai-text' : 'text-[#ededed]'
         }`}
         style={{ opacity: engaged ? 1 : 1 - progress }}
       >
         {engaged ? 'AI решает' : 'Разобрать все в AI'}
       </span>
-      <span className="pointer-events-none ml-auto flex size-[60px] items-center justify-center rounded-full client-ai-fill">
-        <FigmaIcon src={FIGMA_ASSETS.iconSparkles} alt="" width={26} height={26} />
+      <span className="pointer-events-none absolute right-[10px] top-[9px] flex size-[60px] items-center justify-center rounded-full client-ai-fill">
+        <span
+          aria-hidden
+          className="block bg-white"
+          style={{
+            width: 26,
+            height: 26,
+            WebkitMaskImage: 'url(/figma/icon-sparkles.svg)',
+            maskImage: 'url(/figma/icon-sparkles.svg)',
+            WebkitMaskRepeat: 'no-repeat',
+            maskRepeat: 'no-repeat',
+            WebkitMaskPosition: 'center',
+            maskPosition: 'center',
+            WebkitMaskSize: 'contain',
+            maskSize: 'contain',
+          }}
+        />
       </span>
     </div>
   );
