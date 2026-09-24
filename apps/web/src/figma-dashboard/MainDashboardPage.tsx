@@ -2358,22 +2358,6 @@ function RouteCard({
           <p className="mt-1 text-figma-muted">{handoffItemsLabel(selectedHandoff.items)}</p>
         </div>
       ) : null}
-      {thumb.visible ? (
-        <button
-          type="button"
-          data-route-thumb
-          aria-label="Прокрутить маршрут"
-          className="absolute top-[258px] flex h-[21px] items-start justify-center"
-          style={{ left: thumb.left, width: thumb.width, cursor: grabbing ? 'grabbing' : 'grab' }}
-          onPointerDown={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            beginDrag('thumb', event.clientX);
-          }}
-        >
-          <span className="mt-[9px] h-[6px] w-full rounded-[13px] bg-figma-hint" />
-        </button>
-      ) : null}
     </motion.section>
   );
 }

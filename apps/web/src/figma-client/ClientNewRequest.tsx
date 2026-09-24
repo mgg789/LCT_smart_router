@@ -213,7 +213,7 @@ export function ClientNewRequest({
   const storyRadius = eu(28);
   const canSend = story.trim().length > 0;
   return (
-    <section className="flex min-h-0 flex-1 flex-col">
+    <section className={mode === 'form' ? 'flex shrink-0 flex-col' : 'flex min-h-0 flex-1 flex-col'}>
       {mode === 'story' ? (
         <div className="flex flex-1 items-center justify-center px-[12px]">
           <p
@@ -304,6 +304,7 @@ export function ClientNewRequest({
           <motion.div
             key="form"
             className="overflow-hidden"
+            style={{ paddingBottom: eu(48) }}
             initial={motionOn ? { height: 0, opacity: 0 } : false}
             animate={{ height: 'auto', opacity: 1 }}
             exit={motionOn ? { height: 0, opacity: 0 } : undefined}
