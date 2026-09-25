@@ -30,6 +30,9 @@ process.env.NODE_ENV = 'test';
 // This build has no SMTP-gateway, so the login code has to come back in the response for
 // any contour test to be able to sign anyone in.
 process.env.AUTH_DEV_EXPOSE_CODES = 'true';
+// The assistant runs against recorded fixtures in tests: a developer's live provider
+// in this file would make the runs non-deterministic and cost real money.
+process.env.LLM_PROVIDER = 'replay';
 // Tests run from apps/api; the dataset lives at the repository root.
 process.env.DATASET_ROOT = resolve(process.cwd(), '../../data/dataset/anonymized');
 // AppModule tests use the deterministic in-process Router client. The real Docker Router is
