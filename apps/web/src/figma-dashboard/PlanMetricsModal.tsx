@@ -406,10 +406,10 @@ function OptimizeButton({ token, summary }: { token: string | null; summary: str
     >
       <span
         aria-hidden
-        className="panel-ai-fill block size-[20px]"
+        className="panel-ai-fill block size-[32px]"
         style={{
-          WebkitMaskImage: 'url(/figma/explain-ai.png)',
-          maskImage: 'url(/figma/explain-ai.png)',
+          WebkitMaskImage: 'url(/figma/load-balancer.svg)',
+          maskImage: 'url(/figma/load-balancer.svg)',
           WebkitMaskRepeat: 'no-repeat',
           maskRepeat: 'no-repeat',
           WebkitMaskPosition: 'center',

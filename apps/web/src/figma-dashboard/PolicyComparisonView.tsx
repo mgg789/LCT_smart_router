@@ -1,39 +1,30 @@
-import { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
+import { useEffect, useMemo, useState } from 'react';
 import { simulateChange, type SimulationResponse } from '../api/client';
 import type {
   DashboardSnapshot,
   PolicyComparisonResponse,
   PolicyComparisonRow,
 } from '../api/types';
-import { recommendPolicy } from '../domain/policyRecommend';
+import type { RegionSelection } from '../domain/regions';
 import { PolicyStrategyMap } from './PolicyStrategyMap';
-import {
-  perAssignmentDuration,
-  perAssignmentKm,
-  percentVsFifo,
-  strategyDescription,
-  strategyLabel,
-} from '../lib/policyComparison';
+import { strategyDescription } from '../lib/policyComparison';
 import { formatClock, formatDurationMin, formatKm } from '../lib/time';
 import { FigmaText } from './primitives';
 
 export const POLICY_PAGE_CAPTION = 'Одинаковые заявки и дорожные условия';
 
-const COLUMNS = [
-  'Стратегия',
-  'Назначено',
-  'Без назначения',
-  'Срочные',
-  'Инженеры',
-  'Пробег',
-  'Дорога',
-  'Работы',
-  'Ожидание',
-  'Опоздания',
-  'Мин. запас окна',
-  'Разброс загрузки',
-  'Расчёт',
-] as const;
+const COLUMN_ORDER = ['baseline', 'fast', 'compact', 'sla', 'balanced', 'eco', 'covering'] as const;
+
+const SHORT_NAME: Record<string, string> = {
+  baseline: 'FIFO (базовое)',
+  fast: 'Быстрее',
+  compact: 'Дешевле',
+  sla: 'По окнам',
+  balanced: 'Ровнее загрузка',
+  eco: 'Короче пробег',
+  covering: 'Полное покрытие',
+};
 
 /**
  * Figma-styled policy comparison for the MAIN artboard.
@@ -48,6 +39,8 @@ export function PolicyComparisonView({
   readOnly,
   token,
   onRefresh,
+  regions,
+  selectedRegion,
 }: {
   snapshot: DashboardSnapshot | null;
   comparison: PolicyComparisonResponse | null;
@@ -57,11 +50,22 @@ export function PolicyComparisonView({
   readOnly: boolean;
   token: string | null;
   onRefresh: () => void;
+  regions: { id: RegionSelection; label: string }[];
+  selectedRegion: RegionSelection;
 }) {
   const [mode, setMode] = useState<'table' | 'map'>('table');
   const [mapRoutes, setMapRoutes] = useState<SimulationResponse | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
   const [mapLoading, setMapLoading] = useState(false);
+  const engineerRegions = useMemo(
+    () =>
+      Object.fromEntries(
+        (snapshot?.engineers ?? []).flatMap((engineer) =>
+          engineer.region ? [[engineer.id, engineer.region] as const] : [],
+        ),
+      ),
+    [snapshot],
+  );
 
   useEffect(() => {
     if (mode !== 'map' || !token) return;
@@ -88,12 +92,12 @@ export function PolicyComparisonView({
     snapshot !== null &&
     (comparison.routerContextVersion !== snapshot.routerContextVersion ||
       (appliedInputHash !== null && comparison.inputHash !== appliedInputHash));
-  const baselineMetrics = comparison?.rows.find((item) => item.kind === 'baseline')?.metrics;
-  const rows = comparison
+  const columns = comparison
     ? [...comparison.rows].sort(
-        (left, right) => Number(right.kind === 'baseline') - Number(left.kind === 'baseline'),
+        (left, right) => orderOf(left.strategyId) - orderOf(right.strategyId),
       )
     : [];
+  const metricRows = comparisonMetrics(recorded);
 
   return (
     <section
@@ -110,18 +114,25 @@ export function PolicyComparisonView({
           </p>
         </div>
         <div className="flex items-center gap-[12px]">
-          <div className="flex h-[67px] items-center rounded-[20px] bg-figma-soft p-[6px]">
+          <div className="relative flex h-[67px] items-center rounded-[20px] bg-figma-soft p-[6px]">
+            <motion.span
+              aria-hidden
+              className="absolute top-[6px] bottom-[6px] w-[calc(50%-6px)] rounded-[16px] bg-white"
+              initial={false}
+              animate={{ left: mode === 'table' ? 6 : 'calc(50%)' }}
+              transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
+            />
             <button
               type="button"
               onClick={() => setMode('table')}
-              className={`h-[55px] rounded-[16px] px-[18px] font-semibold text-[16px] ${mode === 'table' ? 'bg-white text-figma-ink' : 'text-figma-muted'}`}
+              className={`relative z-[1] h-[55px] w-[120px] rounded-[16px] font-semibold text-[16px] ${mode === 'table' ? 'text-figma-ink' : 'text-figma-muted'}`}
             >
               Таблица
             </button>
             <button
               type="button"
               onClick={() => setMode('map')}
-              className={`h-[55px] rounded-[16px] px-[18px] font-semibold text-[16px] ${mode === 'map' ? 'bg-white text-figma-ink' : 'text-figma-muted'}`}
+              className={`relative z-[1] h-[55px] w-[120px] rounded-[16px] font-semibold text-[16px] ${mode === 'map' ? 'text-figma-ink' : 'text-figma-muted'}`}
             >
               Карта
             </button>
@@ -160,7 +171,12 @@ export function PolicyComparisonView({
               <p className="mt-[8px] font-medium text-[16px] text-figma-muted">{mapError}</p>
             </div>
           ) : mapRoutes && mapRoutes.strategies.length > 0 ? (
-            <PolicyStrategyMap strategies={mapRoutes.strategies} />
+            <PolicyStrategyMap
+              strategies={mapRoutes.strategies}
+              regions={regions}
+              selectedRegion={selectedRegion}
+              engineerRegions={engineerRegions}
+            />
           ) : (
             <div className="flex h-[220px] items-center justify-center rounded-[20px] bg-figma-soft px-[30px] text-center">
               <p className="font-medium text-[18px] text-figma-muted">
@@ -197,44 +213,68 @@ export function PolicyComparisonView({
         ) : null}
 
         {comparison ? (
-          <table className="w-full min-w-[1480px] border-separate border-spacing-x-0 border-spacing-y-[16px] text-left">
+          <table className="w-full min-w-[1280px] border-separate border-spacing-0 text-left">
             <thead>
               <tr>
-                {COLUMNS.map((column) => (
+                <th className="sticky left-0 z-[1] w-[160px] bg-white" />
+                {columns.map((row) => (
                   <th
-                    key={column}
-                    className="px-[12px] pb-[2px] font-semibold text-[14px] tracking-[-0.2px] text-figma-muted"
+                    key={row.strategyId}
+                    className="min-w-[168px] px-[12px] pb-[18px] align-top"
                   >
-                    {column}
+                    <div className="font-semibold text-[16px] tracking-[-0.2px] text-figma-ink">
+                      {SHORT_NAME[row.strategyId] ?? row.strategyId}
+                    </div>
+                    <p className="mt-[8px] font-medium text-[12px] leading-[16px] text-figma-muted">
+                      {strategyDescription(row.strategyId)}
+                    </p>
+                    {!row.isUsable ? (
+                      <p className="mt-[6px] font-medium text-[12px] text-figma-danger">План непригоден</p>
+                    ) : null}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
-                <ComparisonRow
-                  key={row.strategyId}
-                  row={row}
-                  active={Boolean(
-                    snapshot && row.kind === 'policy' && row.strategyId === snapshot.policyId,
-                  )}
-                  recommended={Boolean(
-                    snapshot &&
-                      row.kind === 'policy' &&
-                      recommendPolicy({
-                        active: snapshot.policyId,
-                        unassignedCount: row.metrics.unassignedCount,
-                        robustness: null,
-                        rosterOffline: false,
-                        maxBreach: 0,
-                        maxOverrun: 0,
-                        rows,
-                      }).policyId === row.strategyId,
-                  )}
-                  recorded={recorded}
-                  baselineMetrics={baselineMetrics}
-                />
-              ))}
+              {metricRows.map((metric) => {
+                const best = winners(columns, metric);
+                return (
+                  <tr key={metric.label}>
+                    <th className="sticky left-0 z-[1] bg-white py-[12px] pr-[12px] text-left font-semibold text-[14px] text-figma-muted">
+                      {metric.label}
+                    </th>
+                    {columns.map((row) => {
+                      const green = best.has(row.strategyId);
+                      return (
+                        <td
+                          key={row.strategyId}
+                          className={`border-t border-[#ececec] px-[12px] py-[12px] text-[15px] ${
+                            green ? 'font-semibold text-[#15803d]' : 'font-medium text-figma-ink'
+                          }`}
+                        >
+                          {metric.text(row)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+              <tr>
+                <th className="sticky left-0 z-[1] bg-white py-[14px] pr-[12px] text-left font-semibold text-[14px] text-figma-ink">
+                  Лучший
+                </th>
+                {columns.map((row) => {
+                  const count = metricRows.filter((metric) => winners(columns, metric).has(row.strategyId)).length;
+                  return (
+                    <td
+                      key={row.strategyId}
+                      className="border-t border-[#ececec] px-[12px] py-[14px] font-semibold text-[16px] text-figma-ink"
+                    >
+                      {count}
+                    </td>
+                  );
+                })}
+              </tr>
             </tbody>
           </table>
         ) : null}
@@ -245,114 +285,122 @@ export function PolicyComparisonView({
   );
 }
 
-function ComparisonRow({
-  row,
-  active,
-  recommended,
-  recorded,
-  baselineMetrics,
-}: {
-  row: PolicyComparisonRow;
-  active: boolean;
-  recommended: boolean;
-  recorded: boolean;
-  baselineMetrics: PolicyComparisonRow['metrics'] | undefined;
-}) {
-  const baseline = row.kind === 'baseline';
-  return (
-    <tr className={baseline ? 'bg-figma-soft' : active ? 'bg-[#fff6d8]' : ''}>
-      <td className="rounded-l-[16px] px-[12px] py-[16px] align-top">
-        <div className="flex flex-wrap items-center gap-[8px]">
-          <span className="font-semibold text-[16px] text-figma-ink">
-            {strategyLabel(row.strategyId)}
-          </span>
-          {baseline ? <RowBadge label="сравнение с ТЗ" /> : null}
-          {active ? <RowBadge label="активная" /> : null}
-          {recommended ? <RecommendBadge /> : null}
-        </div>
-        <p className="mt-[6px] max-w-[280px] font-medium text-[13px] leading-[18px] text-figma-muted">
-          {strategyDescription(row.strategyId)}
-        </p>
-        {!row.isUsable ? (
-          <p className="mt-[6px] font-medium text-[13px] text-figma-danger">План непригоден</p>
-        ) : null}
-      </td>
-      <td className="px-[12px] py-[16px] align-top font-medium text-[15px] text-figma-ink">
-        {row.metrics.assignedCount}/{row.metrics.requestsTotal}
-      </td>
-      <td className="px-[12px] py-[16px] align-top font-medium text-[15px] text-figma-ink">
-        {row.metrics.unassignedCount}
-      </td>
-      <td className="px-[12px] py-[16px] align-top font-medium text-[15px] text-figma-ink">
-        {row.metrics.urgentAssignedCount}/{row.metrics.urgentTotal}
-      </td>
-      <td className="px-[12px] py-[16px] align-top font-medium text-[15px] text-figma-ink">
-        {row.metrics.engineersUsed}
-        {row.strategyId === 'covering' ? (
-          <span className="mt-[4px] block text-[12px] text-figma-muted">
-            из них +{row.additionalEngineers ?? 0} дополнительных
-          </span>
-        ) : null}
-      </td>
-      <td className="px-[12px] py-[16px] align-top font-medium text-[15px] text-figma-ink">
-        <MetricBlock
-          value={formatKm(row.metrics.distanceKm)}
-          hint={perAssignmentKm(row.metrics.distanceKm, row.metrics.assignedCount)}
-        />
-      </td>
-      <td className="px-[12px] py-[16px] align-top font-medium text-[15px] text-figma-ink">
-        <MetricBlock
-          value={formatDurationMin(row.metrics.travelTimeSec)}
-          hint={perAssignmentDuration(row.metrics.travelTimeSec, row.metrics.assignedCount)}
-        />
-      </td>
-      <td className="px-[12px] py-[16px] align-top font-medium text-[15px] text-figma-ink">
-        {formatDurationMin(row.metrics.workTimeSec)}
-      </td>
-      <td className="px-[12px] py-[16px] align-top font-medium text-[15px] text-figma-ink">
-        {formatDurationMin(row.metrics.waitingTimeSec)}
-      </td>
-      <td className="px-[12px] py-[16px] align-top font-medium text-[15px] text-figma-ink">
-        <MetricBlock
-          value={`${row.metrics.lateAssignedCount} · ${formatDurationMin(row.metrics.totalLatenessSec)}`}
-          hint={fifoHint(row.metrics.totalLatenessSec, baselineMetrics?.totalLatenessSec)}
-        />
-      </td>
-      <td className="px-[12px] py-[16px] align-top font-medium text-[15px] text-figma-ink">
-        <MetricBlock
-          value={
-            row.metrics.minWindowSlackSec === null
-              ? '—'
-              : formatDurationMin(row.metrics.minWindowSlackSec)
-          }
-          hint={fifoHint(row.metrics.minWindowSlackSec, baselineMetrics?.minWindowSlackSec)}
-        />
-      </td>
-      <td className="px-[12px] py-[16px] align-top font-medium text-[15px] text-figma-ink">
-        <MetricBlock
-          value={`${formatDurationMin(row.metrics.workloadSpreadSec)} · max ${formatDurationMin(row.metrics.maxWorkloadSec)}`}
-          hint={fifoHint(row.metrics.workloadSpreadSec, baselineMetrics?.workloadSpreadSec)}
-        />
-      </td>
-      <td className="rounded-r-[16px] px-[12px] py-[16px] align-top font-medium text-[15px] text-figma-ink">
-        {recorded ? 'Запись · не замерено' : `${Math.round(row.calculationMs)} мс`}
-      </td>
-    </tr>
-  );
+interface MetricSpec {
+  readonly label: string;
+  readonly better: 'min' | 'max';
+  readonly score: (row: PolicyComparisonRow) => number | null;
+  readonly text: (row: PolicyComparisonRow) => string;
 }
 
-function fifoHint(value: number | null, baseline: number | null | undefined): string | null {
-  const delta = percentVsFifo(value, baseline);
-  return delta ? `${delta} к FIFO` : null;
+function orderOf(strategyId: string): number {
+  const index = COLUMN_ORDER.indexOf(strategyId as (typeof COLUMN_ORDER)[number]);
+  return index < 0 ? COLUMN_ORDER.length : index;
 }
 
-function MetricBlock({ value, hint }: { value: string; hint: string | null }) {
-  return (
-    <div>
-      <div>{value}</div>
-      {hint ? <div className="mt-[4px] text-[12px] text-figma-muted">{hint}</div> : null}
-    </div>
-  );
+/** Shown rows. Green marks the best displayed value; ties stay green together. */
+function comparisonMetrics(recorded: boolean): MetricSpec[] {
+  return [
+    {
+      label: 'Назначено',
+      better: 'max',
+      score: (row) => row.metrics.assignedCount,
+      text: (row) => `${row.metrics.assignedCount}/${row.metrics.requestsTotal}`,
+    },
+    {
+      label: 'Без назначения',
+      better: 'min',
+      score: (row) => row.metrics.unassignedCount,
+      text: (row) => String(row.metrics.unassignedCount),
+    },
+    {
+      label: 'Срочные',
+      better: 'max',
+      score: (row) => row.metrics.urgentAssignedCount,
+      text: (row) => `${row.metrics.urgentAssignedCount}/${row.metrics.urgentTotal}`,
+    },
+    {
+      label: 'Инженеры',
+      better: 'min',
+      score: (row) => row.metrics.engineersUsed,
+      text: (row) =>
+        row.strategyId === 'covering'
+          ? `${row.metrics.engineersUsed} (+${row.additionalEngineers ?? 0})`
+          : String(row.metrics.engineersUsed),
+    },
+    {
+      label: 'Пробег',
+      better: 'min',
+      score: (row) => displayKm(row.metrics.distanceKm),
+      text: (row) => formatKm(row.metrics.distanceKm),
+    },
+    {
+      label: 'Дорога',
+      better: 'min',
+      score: (row) => Math.round(row.metrics.travelTimeSec / 60),
+      text: (row) => formatDurationMin(row.metrics.travelTimeSec),
+    },
+    {
+      label: 'Работы',
+      better: 'min',
+      score: (row) => Math.round(row.metrics.workTimeSec / 60),
+      text: (row) => formatDurationMin(row.metrics.workTimeSec),
+    },
+    {
+      label: 'Ожидание',
+      better: 'min',
+      score: (row) => Math.round(row.metrics.waitingTimeSec / 60),
+      text: (row) => formatDurationMin(row.metrics.waitingTimeSec),
+    },
+    {
+      label: 'Опоздания',
+      better: 'min',
+      score: (row) => row.metrics.lateAssignedCount,
+      text: (row) => String(row.metrics.lateAssignedCount),
+    },
+    {
+      label: 'Сумма опозданий',
+      better: 'min',
+      score: (row) => Math.round(row.metrics.totalLatenessSec / 60),
+      text: (row) => formatDurationMin(row.metrics.totalLatenessSec),
+    },
+    {
+      label: 'Запас окна',
+      better: 'max',
+      score: (row) =>
+        row.metrics.minWindowSlackSec === null ? null : Math.round(row.metrics.minWindowSlackSec / 60),
+      text: (row) =>
+        row.metrics.minWindowSlackSec === null ? '—' : formatDurationMin(row.metrics.minWindowSlackSec),
+    },
+    {
+      label: 'Разброс загрузки',
+      better: 'min',
+      score: (row) => Math.round(row.metrics.workloadSpreadSec / 60),
+      text: (row) => formatDurationMin(row.metrics.workloadSpreadSec),
+    },
+    {
+      label: 'Расчёт',
+      better: 'min',
+      score: (row) => (recorded ? null : Math.round(row.calculationMs)),
+      text: (row) => (recorded ? 'не замерено' : `${Math.round(row.calculationMs)} мс`),
+    },
+  ];
+}
+
+function displayKm(km: number): number {
+  return km >= 10 ? Math.round(km) : Math.round(km * 10) / 10;
+}
+
+function winners(columns: PolicyComparisonRow[], metric: MetricSpec): Set<string> {
+  const scored = columns
+    .filter((row) => row.isUsable)
+    .map((row) => ({ id: row.strategyId, value: metric.score(row) }))
+    .filter((item): item is { id: PolicyComparisonRow['strategyId']; value: number } => item.value !== null);
+  if (scored.length === 0) return new Set();
+  const target =
+    metric.better === 'min'
+      ? Math.min(...scored.map((item) => item.value))
+      : Math.max(...scored.map((item) => item.value));
+  return new Set(scored.filter((item) => item.value === target).map((item) => item.id));
 }
 
 function MetaChip({ label, bee = false }: { label: string; bee?: boolean }) {
@@ -367,18 +415,3 @@ function MetaChip({ label, bee = false }: { label: string; bee?: boolean }) {
   );
 }
 
-function RowBadge({ label }: { label: string }) {
-  return (
-    <span className="rounded-[20px] bg-figma-bee px-[10px] py-[3px] font-semibold text-[12px] text-figma-ink">
-      {label}
-    </span>
-  );
-}
-
-function RecommendBadge() {
-  return (
-    <span className="rounded-[20px] bg-figma-work-bg px-[10px] py-[3px] font-semibold text-[12px] text-figma-work">
-      Топ
-    </span>
-  );
-}

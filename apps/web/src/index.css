@@ -109,6 +109,12 @@ body {
   text-box-trim: trim-start;
 }
 
+.figma-text-uncropped {
+  text-box-trim: none;
+  line-height: 1.35;
+  padding-top: 0.12em;
+}
+
 .figma-nowrap {
   white-space: nowrap;
   word-break: normal;

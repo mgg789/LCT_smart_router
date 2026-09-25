@@ -810,6 +810,7 @@ export function MainDashboardPage() {
         />
         <UserMenu
           open={userMenuOpen}
+          covered={notifOpen}
           motionOn={motionOn}
           onToggle={() => {
             setPolicyOpen(false);
@@ -1010,6 +1011,11 @@ export function MainDashboardPage() {
                   readOnly={dash.source === 'cached'}
                   token={dash.token}
                   onRefresh={() => void dash.refreshPolicyComparison()}
+                  regions={[
+                    { id: ALL_REGIONS, label: 'Все регионы' },
+                    ...regions.map((item) => ({ id: item.id, label: item.label })),
+                  ]}
+                  selectedRegion={selectedRegion}
                 />
               ) : null}
               {stackViewKey(stackNav) === 'alerts' ? (
@@ -1351,6 +1357,7 @@ function NotificationControl({
  */
 function UserMenu({
   open,
+  covered,
   motionOn,
   demoStand,
   onToggle,
@@ -1361,6 +1368,7 @@ function UserMenu({
   onSignOut,
 }: {
   open: boolean;
+  covered: boolean;
   motionOn: boolean;
   demoStand: boolean;
   onToggle: () => void;
@@ -1373,7 +1381,7 @@ function UserMenu({
   return (
     <div
       data-user-menu
-      className="absolute z-[85]"
+      className={`absolute ${covered ? 'z-[40]' : 'z-[85]'}`}
       style={{ left: HEADER_AVATAR_LEFT, top: HEADER_AVATAR_TOP }}
     >
       <motion.button
@@ -2701,7 +2709,7 @@ function RequestReasons({
         <div className="flex items-center justify-between gap-[8px]">
           <FigmaText
             className={`font-medium text-[28px] tracking-[-0.84px] ${
-              aiOn ? 'panel-ai-fill client-ai-text figma-text-keep-descenders' : 'text-white'
+              aiOn ? 'panel-ai-fill client-ai-text figma-text-uncropped' : 'text-white'
             }`}
           >
             {aiOn ? 'Причины AI' : 'Причины'}
