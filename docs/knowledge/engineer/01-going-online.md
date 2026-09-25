@@ -4,7 +4,7 @@ segment: engineer
 title: Выход на линию
 summary: После старта дня у вас есть 30 рабочих минут, чтобы нажать «Выйти на линию» — иначе вас исключат из маршрута, но выйти позже всё равно можно.
 tags: [линия, старт дня, no-show]
-actions: [go_online]
+actions: [change_status_to]
 related: [eng-00-how-the-day-works, eng-02-attendance-checkins, eng-11-technical-break]
 updated: 2026-09-20
 ---

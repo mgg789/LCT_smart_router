@@ -4,7 +4,7 @@ segment: engineer
 title: Клиента нет дома или он отказывается от работы
 summary: Клиент не открыл дверь или отказался от визита — оформляется как «Невозможно выполнить»/«Другая проблема», заявка отменяется и уходит с вашего маршрута.
 tags: [клиент, отказ, отсутствие]
-actions: [report_cannot_complete, call_dispatch_helper]
+actions: [report_cannot_complete]
 related: [eng-04-no-access-to-building, eng-10-cannot-complete, eng-14-safety-and-aggression]
 updated: 2026-09-20
 ---

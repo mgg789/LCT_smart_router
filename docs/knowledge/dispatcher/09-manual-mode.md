@@ -4,7 +4,7 @@ segment: dispatcher
 title: Аварийный ручной режим
 summary: MANUAL отключает ровно одну вещь — доставку результата Router в систему; ядро продолжает считать и хранить результаты, а диспетчер получает только два жеста — сменить исполнителя и переставить порядок очереди — без обязательного ввода времени и без группового черновика.
 tags: [manual, auto, reassign, reorder]
-actions: [get_plan, set_control_mode, reassign_request, reorder_queue]
+actions: [get_day_plan]
 related: [disp-02-reading-the-plan, disp-05-alert-plan-degraded]
 updated: 2026-09-20
 ---

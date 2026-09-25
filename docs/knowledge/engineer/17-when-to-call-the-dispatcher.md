@@ -4,7 +4,7 @@ segment: engineer
 title: Когда звать диспетчера
 summary: Если ситуация не описана в этом разделе, не подходит ни под одну кнопку или требует решения человека — обращение к диспетчеру это правильное поведение, а не крайняя мера.
 tags: [диспетчер, эскалация, помощь]
-actions: [call_dispatch_helper]
+actions: []
 related: [eng-02-attendance-checkins, eng-14-safety-and-aggression, eng-16-profile-and-transport]
 updated: 2026-09-20
 ---

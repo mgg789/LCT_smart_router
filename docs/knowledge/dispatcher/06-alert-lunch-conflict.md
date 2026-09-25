@@ -4,7 +4,7 @@ segment: dispatcher
 title: Конфликты обеда
 summary: lunch_conflict — единственный дашборд-код для всех проблем с обедом инженера (и системных, и пришедших от Router), и решение всегда сводится к выбору между skip_lunch и keep_lunch с видимыми последствиями до подтверждения.
 tags: [lunch, alerts, technical-settings]
-actions: [get_alerts, resolve_alert, get_technical_settings, update_technical_settings]
+actions: [list_alerts, prepare_resolve_alert, get_router_settings]
 related: [disp-04-alert-time-risk-unassigned, disp-11-live-problems-from-engineers]
 updated: 2026-09-20
 ---

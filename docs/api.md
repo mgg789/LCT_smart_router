@@ -42,7 +42,8 @@
 
 Тело действия: `operationId` (UUID), `kind`; для интеграционного ключа также
 `engineerId`, для сессии субъект определяется авторизацией. Значения `kind`:
-`online`, `on_time`, `eta`, `start`, `finish`, `problem`, `break_start`, `break_finish`.
+`handoff_confirm` (принимает `handoffId`), `online`, `eta`, `start`, `finish`,
+`problem`, `break_start`, `break_finish`.
 Действия с заявкой принимают `requestId`; `eta` — `etaAt`.
 `problem` принимает `problemKind` (`delay`, `missing_equipment`, `other`, `impossible`),
 обязательный `note`; задержка — `additionalDurationSec`, оборудование —

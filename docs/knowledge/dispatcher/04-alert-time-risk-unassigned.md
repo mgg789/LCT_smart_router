@@ -4,7 +4,7 @@ segment: dispatcher
 title: Алерты time_risk и unassigned
 summary: Оба алерта дают один и тот же набор из трёх решений — перенести на завтра, подвинуть окно или вызвать инженера, — и сервер сам проверяет пригодность выбранного инженера прежде, чем принять действие.
 tags: [alerts, time_risk, unassigned, add_engineer]
-actions: [get_alerts, resolve_alert, get_engineers]
+actions: [list_alerts, prepare_resolve_alert, list_engineers]
 related: [disp-03-unassigned-triage, disp-07-alert-engineer-overdue-and-no-show]
 updated: 2026-09-20
 ---
