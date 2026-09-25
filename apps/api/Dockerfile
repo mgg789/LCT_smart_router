@@ -51,6 +51,9 @@ COPY --from=build /app/apps/api/dist apps/api/dist
 # code and the schema it expects can never be two different versions.
 COPY apps/api/prisma apps/api/prisma
 COPY apps/api/prisma.config.ts apps/api/prisma.config.ts
+# The knowledge indexer reads docs/knowledge from the workspace root at boot.
+# Without this copy the process exits before it listens.
+COPY docs/knowledge docs/knowledge
 
 USER node
 EXPOSE 8000
