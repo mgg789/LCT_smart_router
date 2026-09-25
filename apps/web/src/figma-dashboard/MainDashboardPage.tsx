@@ -967,7 +967,31 @@ export function MainDashboardPage() {
               onAnimationComplete={() => setSettledPane(stackViewKey(stackNav))}
             >
               {stackViewKey(stackNav) === 'chats' ? <DashboardChats token={dash.token} /> : null}
-              {stackViewKey(stackNav) === 'ai' ? <DashboardAi token={dash.token} /> : null}
+              {stackViewKey(stackNav) === 'ai' ? (
+                <DashboardAi
+                  token={dash.token}
+                  onOpenObject={(target) => {
+                    if (target.type === 'request') {
+                      setStackDir(stackSlideDir(stackNav, 'requests'));
+                      setStackNav('requests');
+                      setActiveNav('requests');
+                      setOpenedRequestId(target.id);
+                      dash.selectRequest(target.id);
+                      return;
+                    }
+                    if (target.type === 'engineer') {
+                      setStackDir(stackSlideDir(stackNav, 'engineers'));
+                      setStackNav('engineers');
+                      setActiveNav('engineers');
+                      dash.selectEngineer(target.id);
+                      return;
+                    }
+                    setStackDir(stackSlideDir(stackNav, 'alerts'));
+                    setStackNav('alerts');
+                    setActiveNav('alerts');
+                  }}
+                />
+              ) : null}
               {stackViewKey(stackNav) === 'policy' ? (
                 <PolicyComparisonView
                   snapshot={dash.snapshot}

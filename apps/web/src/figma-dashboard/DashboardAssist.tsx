@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
+  type DispatchChatView,
   finishDispatchChat,
   loadDispatchChats,
   readDispatchChat,
   sendDispatchChatMessage,
-  type DispatchChatView,
 } from '../api/ai';
 import { DashboardApiError } from '../api/client';
-import { AssistantChat } from '../components/ai/AssistantChat';
 import { ChatsPage } from '../components/ChatsPage';
+import { DashboardAi } from './DispatcherAiPane';
+
+export { DashboardAi };
 
 /** Dispatcher chat list for the sidebar tab. Reads the handover contour and writes replies. */
 export function DashboardChats({ token }: { token: string | null }) {
@@ -62,15 +64,6 @@ export function DashboardChats({ token }: { token: string | null }) {
           void readDispatchChat(token, conversationId, crypto.randomUUID(), seq);
         }}
       />
-    </div>
-  );
-}
-
-/** Dispatcher assistant for the AI tab. Does not plan the day by itself. */
-export function DashboardAi({ token }: { token: string | null }) {
-  return (
-    <div className="absolute inset-0 overflow-hidden bg-figma-canvas p-[32px]">
-      <AssistantChat token={token} surface="dispatcher" variant="page" />
     </div>
   );
 }
