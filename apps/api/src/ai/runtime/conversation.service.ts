@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
+import { SysError } from '../../common/errors';
 import { bigIntToSeconds, Clock } from '../../common/time';
 import type {
+  AiAssistMode,
   AiConversation,
   AiMessage,
   AiMessageAuthor,
@@ -92,6 +94,13 @@ export class ConversationService {
         createdAt: now,
         updatedAt: now,
         lastMessageAt: now,
+        // The row's lane is what the chat switch reads. The schema default is `help`,
+        // so a fix-mode open has to say so or the switch flips back after a clear.
+        ...(input.roleProfile === 'dispatcher_fix'
+          ? { assistMode: 'fix' as const }
+          : input.roleProfile === 'dispatcher_readonly'
+            ? { assistMode: 'help' as const }
+            : {}),
       },
     });
   }
@@ -170,6 +179,68 @@ export class ConversationService {
             ? { role: 'user', content: message.text }
             : { role: 'assistant', content: message.text },
       );
+  }
+
+  /**
+   * Moves the open dispatcher dialogue into the other lane without opening a second chat.
+   * The global flag and this row stay the same value, so the next turn's tool list matches
+   * the switch the dispatcher just set.
+   */
+  async setDispatcherAssistMode(
+    accountId: string,
+    conversationId: string,
+    mode: AiAssistMode,
+    now: number,
+  ): Promise<AiConversation> {
+    const row = await this.ownedOpen(accountId, conversationId);
+    return this.prisma.aiConversation.update({
+      where: { id: row.id },
+      data: {
+        assistMode: mode,
+        roleProfile: mode === 'fix' ? 'dispatcher_fix' : 'dispatcher_readonly',
+        updatedAt: BigInt(now),
+      },
+    });
+  }
+
+  /**
+   * Closes every still-open dialogue in one lane.
+   *
+   * Clear archives the dialogue the dispatcher is looking at, then asks for a new one.
+   * `getOrCreate` would otherwise hand back a sibling that was already open in the same
+   * lane, and the chat would not look empty.
+   */
+  async closeOpenLane(accountId: string, roleProfile: AiRoleProfile, now: number): Promise<void> {
+    await this.prisma.aiConversation.updateMany({
+      where: { accountId, roleProfile, closedAt: null },
+      data: { closedAt: BigInt(now), updatedAt: BigInt(now) },
+    });
+  }
+
+  /** Archives the dialogue. The next open starts empty; the old messages stay in the row. */
+  async closeForAccount(
+    accountId: string,
+    conversationId: string,
+    now: number,
+  ): Promise<AiConversation> {
+    const row = await this.ownedOpen(accountId, conversationId);
+    return this.prisma.aiConversation.update({
+      where: { id: row.id },
+      data: { closedAt: BigInt(now), updatedAt: BigInt(now) },
+    });
+  }
+
+  private async ownedOpen(accountId: string, conversationId: string): Promise<AiConversation> {
+    const row = await this.prisma.aiConversation.findUnique({ where: { id: conversationId } });
+    if (!row || row.accountId !== accountId) {
+      throw SysError.notFound('Conversation', { conversationId });
+    }
+    if (row.closedAt !== null) {
+      throw new SysError('VALIDATION_FAILED', 'This conversation is already closed', {
+        details: { conversationId },
+      });
+    }
+    return row;
   }
 
   /** Unix-seconds `lastMessageAt` for callers outside this module that only have the

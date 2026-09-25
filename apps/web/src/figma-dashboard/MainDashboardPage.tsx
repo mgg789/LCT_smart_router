@@ -13,6 +13,7 @@ import {
   regionOptions,
   regionStyle,
 } from '../domain/regions';
+import { clearAssistantSessions } from '../hooks/useAssistantChat';
 import { useDashboard } from '../hooks/useDashboard';
 import { type CaseExplanation, explainSelection } from '../lib/explanations';
 import { formatClock, formatDurationMin } from '../lib/time';
@@ -907,6 +908,7 @@ export function MainDashboardPage() {
                 .restartDemoDay()
                 .then(() => {
                   clearWorkDayStarted(window.localStorage);
+                  clearAssistantSessions(window.localStorage);
                   setWelcomeOpen(true);
                   pushToast({
                     id: 'demo-day-restarted',

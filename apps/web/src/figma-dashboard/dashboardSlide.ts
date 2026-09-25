@@ -18,11 +18,11 @@ export type StackNavId = (typeof STACK_NAV)[number];
 
 export type StackViewKey = 'main' | 'requests' | 'engineers' | 'alerts' | 'policy' | 'chats' | 'ai';
 
-/** Sidebar tabs that stay out of the wheel until they have a screen. */
-export const LOCKED_NAV = new Set<NavItemId>([]);
+/** Sidebar tabs that stay out of the wheel. Chats are locked for this release. */
+export const LOCKED_NAV = new Set<NavItemId>(['chats']);
 
 /**
- * True while chats / AI stay out of the demo.
+ * True for a sidebar tab the wheel and the click both skip.
  */
 export function isNavLocked(id: NavItemId): boolean {
   return LOCKED_NAV.has(id);

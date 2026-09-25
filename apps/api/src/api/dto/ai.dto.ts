@@ -38,6 +38,11 @@ export const createAiConversationSchema = z.object({
 });
 export type CreateAiConversationDto = z.infer<typeof createAiConversationSchema>;
 
+export const setAiAssistModeSchema = z.object({
+  assistMode: z.enum(['help', 'fix']),
+});
+export type SetAiAssistModeDto = z.infer<typeof setAiAssistModeSchema>;
+
 export const postAiMessageSchema = operationEnvelopeSchema.extend({
   text: z.string().trim().min(1).max(4000),
 });

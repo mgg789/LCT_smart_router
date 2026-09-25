@@ -245,6 +245,7 @@ export class AgentRuntimeService implements OnModuleInit {
 
         const messageId = randomUUID();
         let text = '';
+        let truncated = false;
         const toolCalls: LlmToolCall[] = [];
         const retryResult: { current: RetryRunResult } = {
           current: { providerKind: this.provider.kind, usedFallback: false, attempts: 0 },
@@ -273,6 +274,7 @@ export class AgentRuntimeService implements OnModuleInit {
             totalPromptTokens += event.usage.promptTokens;
             totalCompletionTokens += event.usage.completionTokens;
             aborted = event.finishReason === 'aborted';
+            truncated = event.finishReason === 'length';
           }
         }
 
@@ -284,11 +286,26 @@ export class AgentRuntimeService implements OnModuleInit {
         }
 
         if (toolCalls.length === 0) {
+          // `reasoning_content` is the scratchpad. Publishing it is what painted the
+          // English monologue as the dispatcher's answer when `content` stayed empty
+          // because thinking had already spent `max_tokens`.
+          const answer = text.trim();
+          if (answer.length === 0) {
+            finalState = 'failed';
+            terminalEvent = await this.bus.emit(handle, {
+              type: 'error',
+              code: 'AI_UNAVAILABLE',
+              message: truncated
+                ? 'Ответ оборвался на лимите вывода, текста для диспетчера не осталось'
+                : 'Ассистент не прислал текст ответа',
+            });
+            break;
+          }
           const messageRow = await this.uow.run((tx) =>
             this.conversations.appendMessage(tx, conversation.id, this.clock.nowSeconds(), {
               author: 'assistant',
               kind: 'text',
-              text,
+              text: answer,
               runId,
             }),
           );
@@ -297,7 +314,7 @@ export class AgentRuntimeService implements OnModuleInit {
             messageId,
             messageSeq: messageRow.seq,
             kind: 'text',
-            text,
+            text: answer,
             actions: [],
           });
           // Also announced on the conversation channel, so a second tab of the same chat

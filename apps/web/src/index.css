@@ -320,6 +320,50 @@ body {
   mask-composite: exclude;
 }
 
+.ai-icon-btn {
+  transition:
+    transform 160ms ease,
+    background-color 160ms ease;
+}
+
+.ai-icon-btn:hover {
+  transform: scale(1.12);
+  background-color: #ededed;
+}
+
+.ai-rate-btn:hover,
+.ai-rate-btn[aria-pressed='true'] {
+  background-color: #d0d1d4;
+}
+
+.ai-icon-btn:active {
+  transform: scale(0.88);
+}
+
+.ai-icon-btn[data-pop='true'] {
+  animation: ai-icon-pop 280ms ease;
+}
+
+@keyframes ai-icon-pop {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.22);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-icon-btn,
+  .ai-icon-btn[data-pop='true'] {
+    transition: none;
+    animation: none;
+  }
+}
+
 .ai-think-dot {
   display: inline-block;
   width: 6px;

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type OpenAI from 'openai';
 import type {
   ChatCompletionChunk,
+  ChatCompletionCreateParamsStreaming,
   ChatCompletionMessageParam,
   ChatCompletionTool,
 } from 'openai/resources/chat/completions';
@@ -17,6 +18,7 @@ import {
 } from './llm.types';
 import { LlmProvider } from './llm-provider.port';
 import { toLlmCallError } from './openai-error.util';
+import { createVisibleAnswerFilter } from './visible-answer';
 
 /**
  * Plain `chat.completions` streaming loop, the fallback path that needs neither the
@@ -30,7 +32,11 @@ import { toLlmCallError } from './openai-error.util';
  * complete call.
  *
  * `reasoning_content` is a DeepSeek extension the official SDK types do not model; it is
- * read defensively off the delta rather than assumed present.
+ * read defensively off the delta rather than assumed present. It is never the reply.
+ * DeepSeek thinks by default, and `max_tokens` covers the scratchpad and the answer
+ * together, so a long monologue finishes with `length` and an empty `content`. Thinking
+ * stays off on this path so the token budget is the answer the dispatcher sees.
+ * A `<think>` span inside `content` is stripped before it is yielded.
  */
 @Injectable()
 export class OpenAiChatProvider extends LlmProvider {
@@ -66,7 +72,8 @@ export class OpenAiChatProvider extends LlmProvider {
           ...(input.temperature === undefined ? {} : { temperature: input.temperature }),
           stream: true,
           stream_options: { include_usage: true },
-        },
+          thinking: { type: 'disabled' },
+        } as ChatCompletionCreateParamsStreaming,
         { signal: input.signal },
       );
     } catch (error) {
@@ -75,6 +82,7 @@ export class OpenAiChatProvider extends LlmProvider {
     }
 
     const toolCallBuffers = new Map<number, { id: string; name: string; args: string }>();
+    const visible = createVisibleAnswerFilter();
     let finishReason: LlmFinishReason = 'stop';
     let usage = { promptTokens: 0, completionTokens: 0 };
 
@@ -95,7 +103,10 @@ export class OpenAiChatProvider extends LlmProvider {
           yield { type: 'reasoning', content: reasoning };
         }
         if (choice.delta.content) {
-          yield { type: 'text_delta', text: choice.delta.content };
+          const text = visible.push(choice.delta.content);
+          if (text.length > 0) {
+            yield { type: 'text_delta', text };
+          }
         }
         for (const fragment of choice.delta.tool_calls ?? []) {
           const existing = toolCallBuffers.get(fragment.index) ?? { id: '', name: '', args: '' };
@@ -113,6 +124,10 @@ export class OpenAiChatProvider extends LlmProvider {
         if (choice.finish_reason) {
           finishReason = mapFinishReason(choice.finish_reason);
         }
+      }
+      const tail = visible.finish();
+      if (tail.length > 0) {
+        yield { type: 'text_delta', text: tail };
       }
     } catch (error) {
       if (input.signal.aborted) {

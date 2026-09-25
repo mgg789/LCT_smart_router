@@ -8,7 +8,6 @@ import { PhoneErrorNotice } from '../figma-engineer/PhoneErrorNotice';
 import { isPhoneFailureNotice } from '../figma-engineer/phoneNotice';
 import { CLIENT_ASSETS } from './assets';
 import { ClientEmailGate } from './ClientEmailGate';
-import { AssistantChat } from '../components/ai/AssistantChat';
 import { ClientMenu } from './ClientMenu';
 import { ClientNewRequest } from './ClientNewRequest';
 import { ClientRequestDetail } from './ClientRequestDetail';
@@ -376,9 +375,12 @@ export function ClientApp() {
             />
           ) : null}
           {screen === 'support' ? (
-            <div className="min-h-0 flex-1" style={{ marginTop: eu(24) }}>
-              <AssistantChat token={session?.token ?? null} surface="client" variant="page" />
-            </div>
+            <p
+              className="font-medium text-figma-muted"
+              style={{ marginTop: eu(48), fontSize: eu(20) }}
+            >
+              Поддержка пока недоступна.
+            </p>
           ) : null}
         </div>
 

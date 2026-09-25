@@ -14,7 +14,7 @@ import {
   sendEngineerLiveAction,
 } from '../api/live';
 import type { EngineerDayView, EngineerPlanResponse, EngineerView } from '../api/types';
-import { AssistantChat } from '../components/ai/AssistantChat';
+import { EngineerAiPane } from './EngineerAiPane';
 import { PassportOffer } from '../components/passports/PassportOffer';
 import { TRANSPORT_OPTIONS } from '../figma-dashboard/addEntity';
 import { FigmaIcon } from '../figma-dashboard/primitives';
@@ -586,8 +586,8 @@ export function EngineerApp({
               </div>
             </>
           ) : (
-            <div className="min-h-0 flex-1" style={{ marginTop: eu(24) }}>
-              <AssistantChat token={token} surface="engineer" variant="page" />
+            <div className="relative min-h-0 flex-1" style={{ marginTop: eu(24) }}>
+              <EngineerAiPane token={token} displayName={profile?.displayName ?? null} />
             </div>
           )}
         </div>
@@ -689,8 +689,10 @@ export function EngineerApp({
             }}
             onBreak={() => void startBreak()}
             onSupport={() => {
-              setNotice('Поддержка и помощник — следующие экраны.');
+              setOpenedJob(null);
+              setScreen('assistant');
               setMenuOpen(false);
+              setNotice(null);
             }}
             onSignOut={onSignOut}
           />

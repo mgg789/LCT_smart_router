@@ -18,6 +18,7 @@ import type { AiPreviewRow } from '../runtime/ai-event.types';
 import { type AiRunEventInput, RunEventBus } from '../runtime/run-event.bus';
 import { RunRegistry } from '../runtime/run-registry';
 import { RoleProfileService } from '../tools/role-profile';
+import { ActionGuardService } from './action-guard';
 import { type AiActionSpec, buildAiActionCatalog } from './ai-action.catalog';
 
 export interface PrepareOperationInput {
@@ -33,9 +34,11 @@ export interface PrepareOperationInput {
 
 export interface PreparedOperation {
   readonly operationId: string;
-  readonly state: 'awaiting_confirmation';
+  readonly state: 'awaiting_confirmation' | 'applied' | 'rejected' | 'outcome_unknown';
   readonly preview: readonly AiPreviewRow[];
   readonly expiresAt: number;
+  /** Set only for a dispatcher fix-mode card. `risky` is what the chat modal is for. */
+  readonly guard?: 'clear' | 'risky';
 }
 
 export interface ConfirmOperationInput {
@@ -84,6 +87,7 @@ export class AiOperationService {
     private readonly roleProfiles: RoleProfileService,
     private readonly bus: RunEventBus,
     private readonly registry: RunRegistry,
+    private readonly guard: ActionGuardService,
     requests: RequestsService,
     live: LiveService,
     engineers: EngineersService,
@@ -192,17 +196,42 @@ export class AiOperationService {
       });
     });
 
+    // Fix mode no longer stops on every card. System one (the same noul shape as a
+    // Laya input guard) applies an ordinary write immediately. A low score, or a guard
+    // that did not answer, leaves the card for the dispatcher and marks it risky.
+    let state: PreparedOperation['state'] = 'awaiting_confirmation';
+    let guard: PreparedOperation['guard'];
+    if (profile === 'dispatcher_fix') {
+      const allowed = await this.guard.allows(input.action, preview);
+      guard = allowed ? 'clear' : 'risky';
+      if (allowed) {
+        const outcome = await this.confirm({
+          actor: input.actor,
+          aiOperationId: id,
+          operationId: randomUUID(),
+        });
+        if (
+          outcome.state === 'applied' ||
+          outcome.state === 'rejected' ||
+          outcome.state === 'outcome_unknown'
+        ) {
+          state = outcome.state;
+        }
+      }
+    }
+
     await this.emit(input.runId, {
       type: 'operation_prepared',
       operationId: id,
       action: input.action,
       targetRef: input.targetRef ?? null,
-      state: 'awaiting_confirmation',
+      state,
       preview,
       expiresAt,
+      ...(guard ? { guard } : {}),
     });
 
-    return { operationId: id, state: 'awaiting_confirmation', preview, expiresAt };
+    return { operationId: id, state, preview, expiresAt, ...(guard ? { guard } : {}) };
   }
 
   /**

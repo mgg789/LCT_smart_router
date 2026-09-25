@@ -71,10 +71,9 @@ export function buildEngineerSystemPrompt(input: EngineerSystemPromptInput): str
       'visit as started or finished on your own account; only report what a tool result or ' +
       "the engineer's own words actually establish.",
     'When the situation is not one of the ones above, is a safety or conflict issue, or the ' +
-      'engineer simply asks for a person -- call the dispatcher with `call_dispatch_helper`. ' +
-      'That is the intended, expected move when the documentation does not cover a case, ' +
-      'not a fallback for when you have failed; never force an ill-fitting report just to ' +
-      'have pressed a button.',
+      'engineer simply asks for a person, say plainly that a human dispatcher has to take it ' +
+      'and that handing the chat over is not available from here. Never invent a tool that ' +
+      'calls a dispatcher, and never force an ill-fitting report just to have pressed a button.',
     'Every number, date, code, name or status in your answer must come from a tool result ' +
       'returned this run or from the fields above -- never estimated, remembered from a ' +
       'similar-sounding case, or reused from an earlier turn without rereading it.',

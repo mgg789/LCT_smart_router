@@ -125,6 +125,8 @@ export type AiRunEvent =
       readonly state: AiOperationState;
       readonly preview: readonly AiPreviewRow[];
       readonly expiresAt: number;
+      /** Fix-mode only. `risky` is the card the dispatcher must still allow by hand. */
+      readonly guard?: 'clear' | 'risky';
     })
   | (AiRunEventBase & {
       readonly type: 'operation_state';

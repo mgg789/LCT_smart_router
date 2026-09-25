@@ -15,9 +15,11 @@ import {
   applyAiOperation,
   type ChatStreamOutcome,
   cancelAiOperation,
+  clearAiConversation,
   createAiConversation,
   loadAiMessages,
   sendAiMessage,
+  setAiAssistMode,
   stopAiRun,
   streamAssistantRun,
   streamConversationEvents,
@@ -49,6 +51,8 @@ export interface AiOperationView {
   readonly preview: readonly AiPreviewRow[];
   readonly expiresAt: number;
   readonly error?: { readonly code: string; readonly message: string };
+  /** The fix-mode guard refused this card, so the dispatcher still has to allow it. */
+  readonly guardRisk?: boolean;
 }
 
 /**
@@ -88,6 +92,8 @@ export interface UseAssistantChatResult {
   readonly stop: () => Promise<void>;
   readonly applyOperation: (operationId: string) => Promise<void>;
   readonly cancelOperation: (operationId: string) => Promise<void>;
+  readonly setAssistMode: (mode: AiAssistMode) => Promise<void>;
+  readonly clearConversation: () => Promise<void>;
 }
 
 interface StoredAssistantSession {
@@ -120,6 +126,18 @@ function readStoredSession(key: string): StoredAssistantSession | null {
   } catch {
     return null;
   }
+}
+
+/** Drops every resumed assistant dialogue. A restarted work day must not reopen yesterday's chat. */
+export function clearAssistantSessions(
+  storage: Pick<Storage, 'length' | 'key' | 'removeItem'>,
+): void {
+  const keys: string[] = [];
+  for (let index = 0; index < storage.length; index += 1) {
+    const key = storage.key(index);
+    if (key?.startsWith('lct.ai.chat.')) keys.push(key);
+  }
+  for (const key of keys) storage.removeItem(key);
 }
 
 function writeStoredSession(key: string, session: StoredAssistantSession): void {
@@ -316,6 +334,7 @@ export function useAssistantChat({
                   state: event.state,
                   preview: event.preview,
                   expiresAt: event.expiresAt,
+                  ...(event.guard === 'risky' ? { guardRisk: true } : {}),
                 });
                 return next;
               });
@@ -332,6 +351,7 @@ export function useAssistantChat({
                   expiresAt: existing?.expiresAt ?? 0,
                   state: event.state,
                   error: event.error,
+                  ...(existing?.guardRisk ? { guardRisk: true } : {}),
                 });
                 return next;
               });
@@ -374,6 +394,8 @@ export function useAssistantChat({
               setRunState(event.state);
               setStreaming(null);
               setActivity(null);
+              runIdRef.current = null;
+              persist({ runId: null });
               break;
           }
         },
@@ -392,8 +414,16 @@ export function useAssistantChat({
           setError(errorMessage(cause));
         })
         .finally(() => {
-          if (generation === generationRef.current && streamAbortRef.current === controller) {
-            streamAbortRef.current = null;
+          if (generation !== generationRef.current) return;
+          if (streamAbortRef.current === controller) streamAbortRef.current = null;
+          // A finished run often ends the socket without another event. Leaving `running`
+          // set is what sticks the stop control on an empty dialogue.
+          setRunState((current) =>
+            current === 'running' || current === 'stopping' ? null : current,
+          );
+          if (runIdRef.current === runId) {
+            runIdRef.current = null;
+            persist({ runId: null });
           }
         });
     },
@@ -447,20 +477,23 @@ export function useAssistantChat({
     async function bootstrap() {
       try {
         const stored = readStoredSession(key);
-        let conv: AiConversation;
+        let conv: AiConversation | undefined;
         if (stored) {
-          const result = await loadAiMessages(
-            token as string,
-            stored.conversationId,
-            stored.lastMessageSeq,
-          );
+          const result = await loadAiMessages(token as string, stored.conversationId, 0);
           if (generation !== generationRef.current) return;
-          conv = result.conversation;
-          lastMessageSeqRef.current = stored.lastMessageSeq;
-          for (const item of result.messages) appendAuthoritative(messageFromApi(item));
-          runIdRef.current = stored.runId;
-          lastEventSeqRef.current = stored.lastEventSeq;
-        } else {
+          if (result.conversation.closedAt == null) {
+            conv = result.conversation;
+            for (const item of result.messages) appendAuthoritative(messageFromApi(item));
+            lastMessageSeqRef.current = result.messages.at(-1)?.seq ?? 0;
+            // An empty transcript has nothing to resume. A leftover run id is what paints
+            // the thinking row and a stop control that the server no longer drives.
+            if (result.messages.length > 0) {
+              runIdRef.current = stored.runId;
+              lastEventSeqRef.current = stored.lastEventSeq;
+            }
+          }
+        }
+        if (!conv) {
           conv = await createAiConversation(token as string, {
             roleProfile: roleProfileFor(surface, assistMode),
             ...(assistMode ? { assistMode } : {}),
@@ -634,13 +667,23 @@ export function useAssistantChat({
   );
 
   const stop = useCallback(async () => {
-    if (!token || !runIdRef.current) return;
+    const runId = runIdRef.current;
+    streamAbortRef.current?.abort();
+    streamAbortRef.current = null;
+    runIdRef.current = null;
+    setRunState('stopped');
+    setStreaming(null);
+    setActivity(null);
+    persist({ runId: null });
+    if (!token || !runId) return;
     try {
-      await stopAiRun(token, runIdRef.current, crypto.randomUUID());
+      await stopAiRun(token, runId, crypto.randomUUID());
     } catch (cause) {
-      setError(errorMessage(cause));
+      // A run that already finished has nothing to stop. The composer must still leave
+      // the running state, which happened above before this request.
+      if (cause instanceof DashboardApiError && cause.status >= 500) setError(errorMessage(cause));
     }
-  }, [token]);
+  }, [token, persist]);
 
   const applyOperation = useCallback(
     async (operationId: string) => {
@@ -700,6 +743,59 @@ export function useAssistantChat({
     [token],
   );
 
+  const setAssistMode = useCallback(
+    async (mode: AiAssistMode) => {
+      if (!token || !conversationRef.current) return;
+      try {
+        const next = await setAiAssistMode(token, conversationRef.current.id, mode);
+        conversationRef.current = next;
+        setConversation(next);
+      } catch (cause) {
+        setError(errorMessage(cause));
+      }
+    },
+    [token],
+  );
+
+  const clearConversation = useCallback(async () => {
+    if (!token) return;
+    const current = conversationRef.current;
+    streamAbortRef.current?.abort();
+    streamAbortRef.current = null;
+    runIdRef.current = null;
+    try {
+      if (current) await clearAiConversation(token, current.id);
+    } catch (cause) {
+      setError(errorMessage(cause));
+      return;
+    }
+    window.localStorage.removeItem(key);
+    lastMessageSeqRef.current = 0;
+    lastEventSeqRef.current = 0;
+    setMessages([]);
+    setStreaming(null);
+    setOperations(new Map());
+    setRunState(null);
+    setActivity(null);
+    setHandoffStatus(null);
+    setError(null);
+    const mode: AiAssistMode | undefined =
+      surface === 'dispatcher' ? (current?.assistMode === 'fix' ? 'fix' : 'help') : assistMode;
+    const created = await createAiConversation(token, {
+      roleProfile: roleProfileFor(surface, mode),
+      ...(mode ? { assistMode: mode } : {}),
+      ...(contextRefLatest.current ? { contextRef: contextRefLatest.current } : {}),
+    });
+    conversationRef.current = created;
+    setConversation(created);
+    writeStoredSession(key, {
+      conversationId: created.id,
+      lastMessageSeq: 0,
+      runId: null,
+      lastEventSeq: 0,
+    });
+  }, [assistMode, key, surface, token]);
+
   const renderedMessages = useMemo(() => {
     if (!streaming) return messages;
     return [
@@ -733,5 +829,7 @@ export function useAssistantChat({
     stop,
     applyOperation,
     cancelOperation,
+    setAssistMode,
+    clearConversation,
   };
 }

@@ -27,7 +27,8 @@ export interface DispatcherSystemPromptInput {
  * file (`docs/knowledge/dispatcher-situations.md`) records naive answers going wrong:
  *
  *   1. The role and its boundary -- `help` reads only, `fix` may additionally prepare a
- *      write that a human still has to confirm; the assistant itself never applies one.
+ *      write. A safety check applies an ordinary one at once and leaves a risky one
+ *      for the dispatcher; the assistant itself never applies one.
  *   2. Today's date and the business clock, so a relative phrase ("tomorrow", "in twenty
  *      minutes") is always anchored to the run's actual moment, not the model's guess.
  *   3. The tool catalogue actually available this turn.
@@ -44,9 +45,11 @@ export function buildDispatcherSystemPrompt(input: DispatcherSystemPromptInput):
   const boundary =
     input.assistMode === 'fix'
       ? 'You are in fix mode: you may read anything the read tools expose, and you may ' +
-        'prepare a write with a dispatcher-write tool. Preparing only stores a card for a ' +
-        'human dispatcher to confirm or cancel -- you never apply, confirm or complete an ' +
-        'operation yourself, and a prepared card can still be rejected or expire unconfirmed.'
+        'prepare a write with a dispatcher-write tool. A safety check then either applies ' +
+        'that write immediately or leaves it for the dispatcher. You never apply, confirm ' +
+        'or complete an operation yourself. Read the tool result: state "applied" means the ' +
+        'write already happened; "awaiting_confirmation" means the dispatcher still has to ' +
+        'allow it. A card can still be rejected or expire unconfirmed.'
       : 'You are in help mode: you may only read. No dispatcher-write tool is offered this ' +
         'turn; if the dispatcher needs a change made, say so plainly and name what fix ' +
         'mode would let you prepare, rather than describing an action as already decided.';
@@ -54,7 +57,8 @@ export function buildDispatcherSystemPrompt(input: DispatcherSystemPromptInput):
   return [
     'You are the dispatcher assistant for a field-engineer routing product. You help the ' +
       'single on-duty dispatcher understand the current workday and, in fix mode, prepare ' +
-      'changes for them to confirm.',
+      'changes. A safety check applies an ordinary one at once and leaves a risky one for ' +
+      'the dispatcher to allow.',
     boundary,
     `Current business-clock time: ${nowText} (${input.timeZone}). Treat this, not any date ` +
       'in your own training, as "now" for every relative time phrase you use or interpret.',

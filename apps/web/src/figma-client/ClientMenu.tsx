@@ -98,8 +98,9 @@ export function ClientMenu({
                   icon={CLIENT_ASSETS.support}
                   iconWidth={30}
                   iconHeight={33}
-                  active={active === 'support'}
-                  onClick={() => onNavigate('support')}
+                  active={false}
+                  disabled
+                  onClick={() => undefined}
                 />
               </nav>
               <div
@@ -136,6 +137,7 @@ function MenuItem({
   iconWidth,
   iconHeight,
   active,
+  disabled = false,
   onClick,
 }: {
   label: string;
@@ -143,14 +145,18 @@ function MenuItem({
   iconWidth: number;
   iconHeight: number;
   active: boolean;
+  disabled?: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
       aria-current={active ? 'page' : undefined}
+      aria-disabled={disabled}
+      disabled={disabled}
+      title={disabled ? 'Скоро' : undefined}
       onClick={onClick}
-      className={`flex w-full items-center ${active ? 'bg-figma-track' : ''}`}
+      className={`flex w-full items-center ${active ? 'bg-figma-track' : ''} ${disabled ? 'cursor-not-allowed opacity-40' : ''}`}
       style={{
         gap: eu(20),
         borderRadius: eu(14),

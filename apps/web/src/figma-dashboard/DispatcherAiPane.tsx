@@ -1,4 +1,5 @@
-import { motion, useReducedMotion } from 'framer-motion';
+import { LayoutGroup, motion, useReducedMotion } from 'framer-motion';
+import { Trash2 } from 'lucide-react';
 import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from 'react';
 import type { AiActionButton } from '../api/ai';
 import { AiOperationCard } from '../components/ai/AiOperationCard';
@@ -8,8 +9,13 @@ import {
   type AssistantChatMessage,
   useAssistantChat,
 } from '../hooks/useAssistantChat';
+import { AiMarkdown } from './AiMarkdown';
 import { FIGMA_ASSETS } from './assets';
 import { FigmaIcon } from './primitives';
+
+/** Date row sits at 84px and is 40px tall. The transcript starts just under it. */
+const CONTENT_TOP = 148;
+const RATINGS_KEY = 'lct.ai.ratings';
 
 /** Where an assistant button may send the dispatcher. The id is one the server already vetted. */
 export interface AiOpenTarget {
@@ -30,7 +36,7 @@ export function DashboardAi({ token, onOpenObject }: PaneProps) {
   const chat = useAssistantChat({ token, surface: 'dispatcher' });
   const [draft, setDraft] = useState('');
   const [thoughtFor, setThoughtFor] = useState<Readonly<Record<string, number>>>({});
-  const [rating, setRating] = useState<Readonly<Record<string, 'up' | 'down'>>>({});
+  const [rating, setRating] = useState<Readonly<Record<string, 'up' | 'down'>>>(readRatings);
   const startedAt = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -73,16 +79,18 @@ export function DashboardAi({ token, onOpenObject }: PaneProps) {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [chat.messages.length, liveAssistant?.text.length]);
 
-  const spoken = chat.messages.filter(
-    (message) => message.author === 'user' || message.author === 'assistant',
-  );
-  const empty = !chat.loading && spoken.length === 0 && !thinking;
+  const spoken = chat.messages.filter((message) => {
+    if (message.author === 'user') return true;
+    if (message.author !== 'assistant') return false;
+    return message.text.trim().length > 0 || message.actions.length > 0;
+  });
+  const empty = !chat.loading && spoken.length === 0;
   const canSend =
     token !== null &&
     chat.conversation !== null &&
     !chat.loading &&
     !chat.sending &&
-    chat.runState !== 'running' &&
+    (chat.runState !== 'running' || spoken.length === 0) &&
     chat.unavailable !== 'auth';
 
   function submit() {
@@ -99,83 +107,234 @@ export function DashboardAi({ token, onOpenObject }: PaneProps) {
     }
   }
 
+  const mode = chat.conversation?.assistMode === 'fix' ? 'fix' : 'help';
+  const risky = [...chat.operations.values()].find(
+    (operation) =>
+      operation.guardRisk === true &&
+      (operation.state === 'awaiting_confirmation' || operation.state === 'prepared'),
+  );
+
+  const composer = (
+    <Composer
+      draft={draft}
+      canSend={canSend}
+      running={running && !empty}
+      notice={noticeOf(chat.error, chat.unavailable)}
+      onDraft={setDraft}
+      onKeyDown={onKeyDown}
+      onSubmit={(event) => {
+        event.preventDefault();
+        submit();
+      }}
+      onStop={() => void chat.stop()}
+    />
+  );
+
   return (
-    <section className="absolute inset-0 flex flex-col bg-figma-canvas">
-      {empty ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-[28px] px-[48px]">
-          <img
-            alt=""
-            src={FIGMA_ASSETS.aiKolobok}
-            width={120}
-            height={120}
-            className="size-[120px] rounded-full bg-[#f8f8f8] object-cover"
+    <LayoutGroup>
+      <section
+        className="absolute inset-0 flex flex-col bg-figma-canvas"
+        style={{ paddingTop: CONTENT_TOP }}
+      >
+        <LaneBar
+          mode={mode}
+          disabled={chat.conversation === null || chat.loading}
+          onMode={(next) => void chat.setAssistMode(next)}
+          onClear={() => void chat.clearConversation()}
+        />
+        {risky ? (
+          <GuardModal
+            operation={risky}
+            onAllow={() => void chat.applyOperation(risky.operationId)}
+            onReject={() => void chat.cancelOperation(risky.operationId)}
           />
-          <h1 className="font-murs text-center text-[32px] leading-none tracking-[-0.544px] text-figma-ink">
-            С чего начнем сегодня?
-          </h1>
-          <Composer
-            draft={draft}
-            canSend={canSend}
-            running={false}
-            notice={noticeOf(chat.error, chat.unavailable)}
-            onDraft={setDraft}
-            onKeyDown={onKeyDown}
-            onSubmit={(event) => {
-              event.preventDefault();
-              submit();
-            }}
-            onStop={() => void chat.stop()}
-          />
-        </div>
-      ) : (
-        <>
-          <div
-            ref={scrollRef}
-            className="min-h-0 flex-1 overflow-y-auto px-[48px] pb-[160px] pt-[88px]"
-          >
-            <div className="mx-auto flex w-full max-w-[1036px] flex-col gap-[28px]">
-              {chat.loading && spoken.length === 0 ? (
-                <p className="text-center text-[16px] text-figma-muted">Загружаем диалог…</p>
-              ) : null}
-              {spoken.map((message) =>
-                message.author === 'user' ? (
-                  <UserBubble key={message.id} text={message.text} />
-                ) : (
-                  <AssistantBubble
-                    key={message.id}
-                    message={message}
-                    thoughtSeconds={thoughtFor[message.id] ?? null}
-                    rating={rating[message.id] ?? null}
-                    operations={chat.operations}
-                    disabled={chat.sending}
-                    onRate={(next) => setRating((current) => ({ ...current, [message.id]: next }))}
-                    onApply={(operationId) => void chat.applyOperation(operationId)}
-                    onCancel={(operationId) => void chat.cancelOperation(operationId)}
-                    onOpenObject={onOpenObject}
-                  />
-                ),
-              )}
-              {thinking ? <ThinkingRow /> : null}
-            </div>
-          </div>
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-figma-canvas from-55% to-transparent px-[48px] pb-[36px] pt-[72px]">
-            <Composer
-              draft={draft}
-              canSend={canSend}
-              running={chat.runState === 'running'}
-              notice={noticeOf(chat.error, chat.unavailable)}
-              onDraft={setDraft}
-              onKeyDown={onKeyDown}
-              onSubmit={(event) => {
-                event.preventDefault();
-                submit();
-              }}
-              onStop={() => void chat.stop()}
+        ) : null}
+        {empty ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-[28px] px-[48px] pb-[48px]">
+            <img
+              alt=""
+              src={FIGMA_ASSETS.aiKolobok}
+              width={120}
+              height={120}
+              className="size-[120px] rounded-full bg-[#f8f8f8] object-cover"
             />
+            <h1 className="font-murs text-center text-[32px] leading-none tracking-[-0.544px] text-figma-ink">
+              С чего начнем сегодня?
+            </h1>
+            <motion.div layoutId="dispatcher-ai-composer" className="w-full max-w-[813px]">
+              {composer}
+            </motion.div>
           </div>
-        </>
-      )}
-    </section>
+        ) : (
+          <>
+            <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-[48px] pb-[160px]">
+              <div className="mx-auto flex w-full max-w-[1036px] flex-col gap-[28px]">
+                {chat.loading && spoken.length === 0 ? (
+                  <p className="text-center text-[16px] text-figma-muted">Загружаем диалог…</p>
+                ) : null}
+                {spoken.map((message) =>
+                  message.author === 'user' ? (
+                    <UserBubble key={message.id} text={message.text} />
+                  ) : (
+                    <AssistantBubble
+                      key={message.id}
+                      message={message}
+                      thoughtSeconds={thoughtFor[message.id] ?? null}
+                      rating={rating[message.id] ?? null}
+                      operations={chat.operations}
+                      disabled={chat.sending}
+                      onRate={(next) =>
+                        setRating((current) => {
+                          const saved = { ...current, [message.id]: next };
+                          writeRatings(saved);
+                          return saved;
+                        })
+                      }
+                      onApply={(operationId) => void chat.applyOperation(operationId)}
+                      onCancel={(operationId) => void chat.cancelOperation(operationId)}
+                      onOpenObject={onOpenObject}
+                    />
+                  ),
+                )}
+                {thinking ? <ThinkingRow /> : null}
+              </div>
+            </div>
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-figma-canvas from-55% to-transparent px-[48px] pb-[36px] pt-[72px]">
+              <motion.div
+                layoutId="dispatcher-ai-composer"
+                className="pointer-events-auto w-full max-w-[813px]"
+                transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+              >
+                {composer}
+              </motion.div>
+            </div>
+          </>
+        )}
+      </section>
+    </LayoutGroup>
+  );
+}
+
+function waitingOnGuard(operation: AiOperationView | undefined): boolean {
+  return (
+    operation?.guardRisk === true &&
+    (operation.state === 'awaiting_confirmation' || operation.state === 'prepared')
+  );
+}
+
+/** Consultant / agent switch and the trash that archives the dialogue. Centered on the artboard, beside the clock's MCP slot. */
+function LaneBar({
+  mode,
+  disabled,
+  onMode,
+  onClear,
+}: {
+  mode: 'help' | 'fix';
+  disabled: boolean;
+  onMode: (mode: 'help' | 'fix') => void;
+  onClear: () => void;
+}) {
+  return (
+    <div className="absolute left-1/2 top-[84px] z-30 flex -translate-x-1/2 items-center gap-[12px]">
+      <div className="flex h-[40px] items-center rounded-full bg-white p-[3px] shadow-[0_4px_14px_rgba(15,16,20,0.08)]">
+        <LaneButton
+          label="Консультант"
+          pressed={mode === 'help'}
+          disabled={disabled}
+          onClick={() => onMode('help')}
+        />
+        <LaneButton
+          label="Агент"
+          pressed={mode === 'fix'}
+          disabled={disabled}
+          onClick={() => onMode('fix')}
+        />
+      </div>
+      <button
+        type="button"
+        aria-label="Очистить чат"
+        disabled={disabled}
+        onClick={onClear}
+        className="flex size-[40px] items-center justify-center rounded-full bg-white text-figma-ink shadow-[0_4px_14px_rgba(15,16,20,0.08)] disabled:opacity-40"
+      >
+        <Trash2 className="size-[18px]" aria-hidden />
+      </button>
+    </div>
+  );
+}
+
+function LaneButton({
+  label,
+  pressed,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  pressed: boolean;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={pressed}
+      disabled={disabled}
+      onClick={onClick}
+      className={`h-[34px] rounded-full px-[16px] text-[14px] font-semibold disabled:opacity-40 ${
+        pressed ? 'bg-figma-ink text-white' : 'text-figma-muted'
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+function GuardModal({
+  operation,
+  onAllow,
+  onReject,
+}: {
+  operation: AiOperationView;
+  onAllow: () => void;
+  onReject: () => void;
+}) {
+  return (
+    <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/40 px-[48px]">
+      <div className="w-full max-w-[560px] rounded-[24px] bg-white p-[28px] shadow-[0_16px_40px_rgba(15,16,20,0.18)]">
+        <p className="font-murs text-[28px] leading-none tracking-[-0.4px] text-figma-ink">
+          {operation.action}
+        </p>
+        {operation.preview.length > 0 ? (
+          <dl className="mt-[16px] space-y-[8px]">
+            {operation.preview.map((row) => (
+              <div key={row.label} className="flex justify-between gap-[16px] text-[16px]">
+                <dt className="text-figma-muted">{row.label}</dt>
+                <dd className="text-right font-medium text-figma-ink">{row.value}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : null}
+        <p className="mt-[18px] text-[16px] font-medium text-[#d92d20]">
+          Гуард пометил это действие как рисковое!
+        </p>
+        <div className="mt-[22px] flex gap-[12px]">
+          <button
+            type="button"
+            onClick={onReject}
+            className="h-[52px] flex-1 rounded-full bg-figma-ink text-[16px] font-semibold text-white"
+          >
+            Отклонить
+          </button>
+          <button
+            type="button"
+            onClick={onAllow}
+            className="h-[52px] flex-1 rounded-full bg-[#d92d20] text-[16px] font-semibold text-white"
+          >
+            Разрешить
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -294,11 +453,7 @@ function AssistantBubble({
         ) : null}
       </div>
       <div className="mt-[16px] max-w-[956px] pl-[80px] text-[20px] font-medium tracking-[-0.272px] text-figma-ink">
-        {message.pending ? (
-          <StreamingWords text={message.text} />
-        ) : (
-          <AnswerBody text={message.text} />
-        )}
+        <AiMarkdown text={message.text} />
         {message.kind === 'text_confirmation' ? null : (
           <ActionRow
             actions={message.actions}
@@ -308,7 +463,7 @@ function AssistantBubble({
             onOpenObject={onOpenObject}
           />
         )}
-        {message.kind === 'text_confirmation' && operationId ? (
+        {message.kind === 'text_confirmation' && operationId && !waitingOnGuard(operations.get(operationId)) ? (
           <AiOperationCard
             operationId={operationId}
             operation={operations.get(operationId)}
@@ -363,58 +518,6 @@ function ThinkingRow() {
   );
 }
 
-function StreamingWords({ text }: { text: string }) {
-  const reduceMotion = useReducedMotion();
-  const parts = text.split(/(\s+)/);
-  let cursor = 0;
-  return (
-    <p className="leading-[normal]" aria-live="polite">
-      {parts.map((part) => {
-        const start = cursor;
-        cursor += part.length;
-        return (
-          <motion.span
-            key={start}
-            initial={reduceMotion ? false : { opacity: 0, y: 6, filter: 'blur(4px)' }}
-            animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
-            transition={{ duration: reduceMotion ? 0 : 0.28, ease: [0.22, 1, 0.36, 1] }}
-          >
-            {part}
-          </motion.span>
-        );
-      })}
-    </p>
-  );
-}
-
-function AnswerBody({ text }: { text: string }) {
-  const blocks = text.split(/\n{2,}/);
-  let cursor = 0;
-  return (
-    <div className="flex flex-col gap-[16px] leading-[normal]">
-      {blocks.map((block) => {
-        const blockStart = cursor;
-        cursor += block.length + 2;
-        let lineCursor = blockStart;
-        return (
-          <p key={blockStart}>
-            {block.split('\n').map((line) => {
-              const lineStart = lineCursor;
-              lineCursor += line.length + 1;
-              const bullet = /^\s*[•\-–]\s+/.test(line);
-              return (
-                <span key={lineStart} className={bullet ? 'block text-figma-muted' : 'block'}>
-                  {line.length === 0 ? '\u00a0' : line}
-                </span>
-              );
-            })}
-          </p>
-        );
-      })}
-    </div>
-  );
-}
-
 function ActionRow({
   actions,
   disabled,
@@ -453,12 +556,19 @@ function ActionRow({
 }
 
 function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
   return (
     <button
       type="button"
-      aria-label="Копировать"
-      onClick={() => void navigator.clipboard.writeText(text)}
-      className="flex size-[24px] items-center justify-center"
+      aria-label={copied ? 'Скопировано' : 'Копировать'}
+      data-pop={copied ? 'true' : 'false'}
+      onClick={() => {
+        void navigator.clipboard.writeText(text).then(() => {
+          setCopied(true);
+          window.setTimeout(() => setCopied(false), 900);
+        });
+      }}
+      className="ai-icon-btn flex size-[40px] items-center justify-center rounded-[10px]"
     >
       <FigmaIcon src={FIGMA_ASSETS.aiCopy} alt="" width={24} height={24} />
     </button>
@@ -482,7 +592,7 @@ function RateButton({
       aria-label={label}
       aria-pressed={pressed}
       onClick={onClick}
-      className={`flex size-[40px] items-center justify-center rounded-[10px] ${pressed ? 'bg-figma-track' : ''}`}
+      className="ai-icon-btn ai-rate-btn flex size-[40px] items-center justify-center rounded-[10px]"
     >
       <FigmaIcon src={src} alt="" width={24} height={24} />
     </button>
@@ -495,6 +605,29 @@ function noticeOf(error: string | null, unavailable: AiUnavailableReason | null)
   if (unavailable === 'provider') return error ?? 'Ассистент сейчас недоступен.';
   if (unavailable === 'stopped') return 'Ответ остановлен.';
   return error;
+}
+
+function readRatings(): Readonly<Record<string, 'up' | 'down'>> {
+  try {
+    const raw = window.localStorage.getItem(RATINGS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const ratings: Record<string, 'up' | 'down'> = {};
+    for (const [id, value] of Object.entries(parsed)) {
+      if (value === 'up' || value === 'down') ratings[id] = value;
+    }
+    return ratings;
+  } catch {
+    return {};
+  }
+}
+
+function writeRatings(ratings: Readonly<Record<string, 'up' | 'down'>>): void {
+  try {
+    window.localStorage.setItem(RATINGS_KEY, JSON.stringify(ratings));
+  } catch {
+    // A blocked store must not stop the thumb from painting.
+  }
 }
 
 /** «Думал 1 секунду / 2 секунды / 5 секунд». */

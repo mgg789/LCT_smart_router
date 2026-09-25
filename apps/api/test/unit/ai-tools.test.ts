@@ -8,7 +8,6 @@ import { buildDispatcherReadTools } from '../../src/ai/tools/dispatcher-read.too
 import type { DispatcherWriteToolDeps } from '../../src/ai/tools/dispatcher-write.tools';
 import { buildDispatcherWriteTools } from '../../src/ai/tools/dispatcher-write.tools';
 import { buildEngineerTools } from '../../src/ai/tools/engineer.tools';
-import { buildCallDispatchHelperTool, type HandoffToolDeps } from '../../src/ai/tools/handoff.tool';
 import { buildSearchDocumentationTool } from '../../src/ai/tools/knowledge.tool';
 import type { KnowledgeSearchPort } from '../../src/ai/tools/knowledge-search.port';
 import type { AnyToolSpec, ToolContext } from '../../src/ai/tools/tool.types';
@@ -52,9 +51,8 @@ function realCatalogueUnderTest(): readonly AnyToolSpec[] {
     config,
   });
   const search = buildSearchDocumentationTool(inert as unknown as KnowledgeSearchPort);
-  const handoff = buildCallDispatchHelperTool(inert as unknown as HandoffToolDeps);
 
-  return [...client, ...engineer, search, handoff];
+  return [...client, ...engineer, search];
 }
 
 /**
@@ -122,7 +120,6 @@ describe('AI tool schemas never let the model choose the subject', () => {
   it('finds at least the tools this change adds', () => {
     const names = tools.map((tool) => tool.name).sort();
     assert.deepEqual(names, [
-      'call_dispatch_helper',
       'change_status_to',
       'create_request',
       'finish_technical_break',

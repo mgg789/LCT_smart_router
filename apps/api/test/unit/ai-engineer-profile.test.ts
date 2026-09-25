@@ -54,10 +54,10 @@ describe('buildEngineerSystemPrompt', () => {
     assert.match(prompt, /never record|do not (record|describe a visit as started)/i);
   });
 
-  it('frames calling the dispatcher as the intended move, not a failure', () => {
+  it('does not offer a handoff to the dispatcher', () => {
     const prompt = buildEngineerSystemPrompt({ now: NOW, timeZone: TIME_ZONE, toolNames: [] });
-    assert.match(prompt, /call_dispatch_helper/);
-    assert.match(prompt, /not a (fallback|failure)/i);
+    assert.equal(prompt.includes('call_dispatch_helper'), false);
+    assert.match(prompt, /handing the chat over is not available/i);
   });
 
   it('states a mutating tool only ever prepares a card a human confirms', () => {

@@ -136,6 +136,12 @@ export class DemoStandService implements OnModuleInit {
       this.config.get('DATASET_TIME_ZONE_OFFSET_SEC'),
     );
     await this.seedObjectPassportFixture(context);
+    if (context.actor.accountId) {
+      await context.tx.aiConversation.updateMany({
+        where: { accountId: context.actor.accountId, closedAt: null },
+        data: { closedAt: BigInt(context.now), updatedAt: BigInt(context.now) },
+      });
+    }
     this.logger.warn(
       `Demo stand restored ${summary.requestsCreated} requests / ${summary.engineersCreated} engineers for ${workDate}`,
     );

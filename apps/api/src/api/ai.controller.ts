@@ -66,6 +66,8 @@ import {
   explainRequestSchema,
   type PostAiMessageDto,
   postAiMessageSchema,
+  type SetAiAssistModeDto,
+  setAiAssistModeSchema,
   type SuggestAlertResolutionDto,
   suggestAlertResolutionSchema,
 } from './dto/ai.dto';
@@ -181,6 +183,40 @@ export class AiController {
       contextRef: dto.contextRef ?? null,
     });
     return { conversation: toConversationView(conversation) };
+  }
+
+  @Post('conversations/:id/assist-mode')
+  @ApiOperation({ summary: 'Switch the dispatcher lane between help and fix' })
+  async setAssistMode(
+    @CurrentActor() actor: Actor,
+    @Param('id') conversationId: string,
+    @Body(zodBody(setAiAssistModeSchema)) dto: SetAiAssistModeDto,
+  ): Promise<{ conversation: AiConversationView }> {
+    const accountId = this.requireAccount(actor);
+    if (effectiveRole(actor) !== 'dispatcher') {
+      throw SysError.forbidden('Only a dispatcher switches the assistant lane');
+    }
+    await this.roleProfiles.setDispatcherAssistMode(dto.assistMode);
+    const conversation = await this.conversations.setDispatcherAssistMode(
+      accountId,
+      conversationId,
+      dto.assistMode,
+      this.clock.nowSeconds(),
+    );
+    return { conversation: toConversationView(conversation) };
+  }
+
+  @Post('conversations/:id/clear')
+  @ApiOperation({ summary: 'Close this dialogue so the next open starts empty' })
+  async clearConversation(
+    @CurrentActor() actor: Actor,
+    @Param('id') conversationId: string,
+  ): Promise<{ closed: true }> {
+    const accountId = this.requireAccount(actor);
+    const now = this.clock.nowSeconds();
+    const closed = await this.conversations.closeForAccount(accountId, conversationId, now);
+    await this.conversations.closeOpenLane(accountId, closed.roleProfile, now);
+    return { closed: true };
   }
 
   @Get('conversations/:id/messages')
