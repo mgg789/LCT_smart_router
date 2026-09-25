@@ -212,6 +212,43 @@ docker compose -f docker-compose.yml up -d --build --remove-orphans
    Если раннер SourceCraft не достучится до `:22` SMTP-хоста, деплой идёт
    прыжком `SourceCraft → MGG:2222 → SMTP:22`.
 
+### OpenRouter mirror (Jev) — https://mail.droidje.com:8443
+
+На почтовом хосте поднят независимый vhost host-nginx — прозрачное зеркало
+`https://openrouter.ai` с EU-egress для прод-вызовов Jev
+(`POST /api/alpha/decisions`). С почтовым стеком он не связан: в `apply.sh`
+это отдельный guarded-блок до postfix-секций, который не рестартует
+postfix/opendkim/watchdog/hysteria; дерево без
+`nginx/openrouter-mirror.conf` блок просто пропускает, поэтому CI остаётся
+зелёным и до, и после включения зеркала.
+
+- Путь 1:1 повторяет OpenRouter (`/api/v1/...`, `/api/alpha/...`); `GET
+  /health` отвечает без токена — для мониторинга.
+- Доступ: заголовок `X-Proxy-Token` (map генерируется в
+  `/etc/navix-smtp/openrouter-mirror.map.nginx`). Ключ OpenRouter callers не
+  передают — он инжектится на прокси
+  (`/etc/navix-smtp/openrouter-mirror.upstream.nginx`, 0640 `root:www-data`).
+  Секреты живут только на хосте; дерево может нести `secrets/openrouter.key`
+  (пересеять ключ) и `secrets/proxy.token` (явно задать токен) — в git их нет.
+- TLS — существующий LE-сертификат `mail.droidje.com`; UDP/443 занят
+  Hysteria, TCP/443 и 80 — другими vhost, поэтому отдельный порт 8443.
+- Ручной деплой зеркала без рестарта почты: собрать дерево только из
+  `apply.sh` и `nginx/openrouter-mirror.conf` (+ опциональные секреты), залить
+  во временный каталог и дважды вызвать `sudo /usr/local/sbin/navix-smtp-apply
+  <dir>`. Первый прогон самоустанавливает свежий apply, второй применяет
+  vhost; на отсутствующем `postfix/main.cf` скрипт падает до почтовых секций,
+  так что postfix/opendkim/watchdog не рестартуют вовсе (код выхода 1 —
+  ожидаемый; CI с полным деревом работает как прежде).
+- Ключ OpenRouter — из личного хранилища тимлида («LCT (expires in December
+  15, $10)»): кредит $10 истекает 2026-12-15, к финалам (23.10) запас есть.
+
+Прод подключает зеркало переменными окружения API
+(`OPENROUTER_BASE_URL=https://mail.droidje.com:8443`,
+`OPENROUTER_PROXY_TOKEN`); при интеграции Jev в приложения сервер обязан
+валидировать хост запроса и не ходить в localhost/private-диапазоны (правило
+SSRF). Токен лежит в `/etc/navix-smtp/openrouter-mirror.env` на почтовом
+хосте (root-only).
+
 Корневой [docker-compose.yml](../docker-compose.yml) включает
 `infra/docker-compose.yml`, чтобы скилл находил контур, не зная про `infra/`.
 
