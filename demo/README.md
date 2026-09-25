@@ -1,16 +1,19 @@
-# V0.1 demo recordings
+# V1.0 demo recordings
 
 Recorded walkthrough of the public stand <https://navix.droidje.com> for jury
 review. Login is in the root [README](../README.md).
 
 | File | What it shows |
 |---|---|
-| [main-walkthrough-v0.1.mp4](./main-walkthrough-v0.1.mp4) | Full video (4:16): TZ dataset → map → explanations → engineer off-line → policy comparison. Repo copy is 1728p so it fits the SourceCraft 100 MB object limit; the original 4K recording stays on the author's machine. |
-| [01-upload-dataset.jpg](./01-upload-dataset.jpg) | Sidebar **+** and «Использовать датасет из ТЗ» |
-| [02-map-view.jpg](./02-map-view.jpg) | Plan of the day: map, routes, request card |
-| [03-engineers-list.jpg](./03-engineers-list.jpg) | Engineers tab |
-| [04-engineer-shift.jpg](./04-engineer-shift.jpg) | One crew: timeline and shift |
-| [05-policies.jpg](./05-policies.jpg) | Policy catalogue |
-| [06-policy-comparison.jpg](./06-policy-comparison.jpg) | FIFO baseline vs working presets |
+| [main-walkthrough-v1.0.mp4](./main-walkthrough-v1.0.mp4) | Full video (6:17): engineers and shifts, plan of the day, request explanation, engineer mobile app («Опаздываю», «Невозможно выполнить») and live re-plan. Repo copy is 1728p@30 so it fits the SourceCraft 100 MB object limit; the original 4K/120 recording stays on the author's machine. |
+| [01-upload-dataset.png](./01-upload-dataset.png) | «Загрузить данные»: drag-and-drop JSON, сет из ТЗ |
+| [02-map-view.png](./02-map-view.png) | План дня: карта, маршруты, живые статусы смены |
+| [03-request-explanation.png](./03-request-explanation.png) | Карточка заявки: факты назначения и «Как влияет» |
+| [04-alerts.png](./04-alerts.png) | Алёрты: заявки без назначения, действия и «Разобрать все в AI» |
+| [05-policy-comparison.png](./05-policy-comparison.png) | Сравнение политик: базовая из ТЗ против рабочих стратегий |
+| [06-mobile-policy-picker.png](./06-mobile-policy-picker.png) | Мобильный пикер политики: стратегии, обеды, прогноз пробок, ручное управление |
+
+The previous V0.1 recordings live in [v0.1/](./v0.1/README.md) — same stand,
+earlier release.
 
 These files are recordings, not a substitute for the live contour.
