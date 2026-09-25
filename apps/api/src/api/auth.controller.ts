@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Headers, Param, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, Param, Post, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import {
   type Actor,
@@ -11,6 +11,7 @@ import {
   Roles,
 } from '../auth';
 import { SysError } from '../common/errors';
+import { RateLimit, RateLimitGuard } from '../common/rate-limit';
 import { zodBody } from '../common/validation';
 import {
   type CreateApiTokenDto,
@@ -40,6 +41,8 @@ export class AuthController {
 
   @Public()
   @Post('login-code')
+  @UseGuards(RateLimitGuard)
+  @RateLimit({ scope: 'auth:login-code', max: 5, windowSec: 60 })
   @ApiOperation({ summary: 'Request a one-time login code for an email address' })
   async requestLoginCode(@Body(zodBody(requestLoginCodeSchema)) dto: RequestLoginCodeDto) {
     const issued = await this.auth.requestLoginCode(dto.email);
@@ -54,6 +57,8 @@ export class AuthController {
 
   @Public()
   @Post('login-code/verify')
+  @UseGuards(RateLimitGuard)
+  @RateLimit({ scope: 'auth:verify', max: 10, windowSec: 60 })
   @ApiOperation({ summary: 'Exchange a login code for a session' })
   async verifyLoginCode(@Body(zodBody(verifyLoginCodeSchema)) dto: VerifyLoginCodeDto) {
     const session = await this.auth.verifyLoginCode(dto.email, dto.code, dto.role);
@@ -66,6 +71,8 @@ export class AuthController {
 
   @Public()
   @Post('dispatcher/password')
+  @UseGuards(RateLimitGuard)
+  @RateLimit({ scope: 'auth:password', max: 10, windowSec: 60 })
   @ApiOperation({
     summary: 'Sign the dispatcher in with the configured password, without SMTP',
   })
