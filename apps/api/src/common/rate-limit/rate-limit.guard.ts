@@ -1,5 +1,6 @@
 import { CanActivate, ExecutionContext, Injectable, SetMetadata } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
+import { AppConfigService } from '../config';
 import { SysError } from '../errors';
 
 export const RATE_LIMIT_METADATA = 'rate_limit_rule';
@@ -37,7 +38,10 @@ interface Bucket {
 export class RateLimitGuard implements CanActivate {
   private readonly buckets = new Map<string, Bucket>();
 
-  constructor(private readonly reflector: Reflector) {}
+  constructor(
+    private readonly reflector: Reflector,
+    private readonly config: AppConfigService,
+  ) {}
 
   canActivate(context: ExecutionContext): boolean {
     const rule = this.reflector.getAllAndOverride<RateLimitRule | undefined>(RATE_LIMIT_METADATA, [
@@ -47,6 +51,10 @@ export class RateLimitGuard implements CanActivate {
     if (!rule) {
       return true;
     }
+    // An operator whose edge already rate-limits (nginx, an API gateway) can raise
+    // every budget at once; the integration suites raise it so a whole test file
+    // signing in from one loopback address does not trip the auth budgets.
+    const max = rule.max * this.config.get('RATE_LIMIT_MULTIPLIER');
     const request = context.switchToHttp().getRequest<{
       headers: Record<string, string | string[] | undefined>;
       ip?: string;
@@ -60,7 +68,7 @@ export class RateLimitGuard implements CanActivate {
       return true;
     }
     bucket.count += 1;
-    if (bucket.count > rule.max) {
+    if (bucket.count > max) {
       throw new SysError('RATE_LIMITED', 'Слишком много запросов; повторите через минуту.');
     }
     return true;

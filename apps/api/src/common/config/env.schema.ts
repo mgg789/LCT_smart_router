@@ -166,6 +166,14 @@ export const envSchema = z.object({
    * degrades honestly (guard refuses, short calls report `not_configured`).
    */
   JEV_API_URL: z.url().optional(),
+
+  /**
+   * Multiplier applied to every per-IP request budget (auth endpoints, paid client
+   * proxies). Default 1 keeps the documented budgets; a deployment whose edge already
+   * rate-limits, and the integration suites that sign in many times from one loopback
+   * address, raise it.
+   */
+  RATE_LIMIT_MULTIPLIER: z.coerce.number().int().min(1).default(1),
   AI_SSE_HEARTBEAT_MS: z.coerce.number().int().min(1_000).max(60_000).default(15_000),
   AI_HISTORY_MESSAGES: z.coerce.number().int().min(4).max(100).default(24),
   AI_DAILY_MESSAGE_LIMIT: z.coerce.number().int().positive().default(30),

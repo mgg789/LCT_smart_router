@@ -226,9 +226,15 @@ export class AiOperationService {
     }
 
     await this.emitPrepared(input, id, 'awaiting_confirmation', preview, expiresAt, 'risky');
+    // Only a live assistant run holds its tool call open until the human decides (the
+    // docs' "рисковое держит вызов открытым"). A caller without a run -- a direct HTTP
+    // prepare, an integration test -- gets the card view at once: holding here would
+    // stall the request for the whole TTL with nobody positioned to confirm it.
     const handle = input.runId ? this.registry.get(input.runId) : undefined;
-    const signal = handle?.abort.signal ?? new AbortController().signal;
-    const decision = await this.decisions.wait(id, signal, (expiresAt - now) * 1000);
+    if (!handle) {
+      return { operationId: id, state: 'awaiting_confirmation', preview, expiresAt, guard: 'risky' };
+    }
+    const decision = await this.decisions.wait(id, handle.abort.signal, (expiresAt - now) * 1000);
     if (decision === 'stopped') {
       throw new RunStoppedSignal(handle?.stopReason ?? 'user');
     }
