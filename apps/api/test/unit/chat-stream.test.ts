@@ -43,6 +43,7 @@ function replayMessage(conversationId: string, seq: number): ChatStreamEvent {
     conversationId,
     message: {
       id: `m-${conversationId}-${seq}`,
+      conversationId,
       seq,
       author: 'user',
       kind: 'text',

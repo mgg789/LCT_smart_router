@@ -116,6 +116,10 @@ tasks:
           - pip install --disable-pip-version-check ruff==0.16.7
           - ruff check core
   - name: test-js
+    env:
+      # Real password for the throwaway Postgres sidecar; overrides the public
+      # disposable default committed in scripts/ci/js-tests.env.
+      LCT_CI_PG_PASSWORD: ${{ secrets.LCT_CI_PG_PASSWORD }}
     cubes:
       - name: web-and-api
         script:

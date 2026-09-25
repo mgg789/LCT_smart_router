@@ -81,11 +81,6 @@ export const envSchema = z.object({
   LOGIN_CODE_TTL_SEC: z.coerce.number().int().positive().default(600),
   LOGIN_CODE_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
 
-  /**
-   * Development escape hatch: returns the login code in the API response because there is
-   * no SMTP-gateway in this build to deliver it. Refused in production by
-   * `validateEnv` -- an exposed code is a full authentication bypass.
-   */
   // --- dataset -------------------------------------------------------------
   /** Directory holding the organisers' CSV files. */
   DATASET_ROOT: z.string().min(1).default('data/dataset/anonymized'),
@@ -102,6 +97,11 @@ export const envSchema = z.object({
     .int()
     .default(3 * 3600),
 
+  /**
+   * Development escape hatch: returns the login code in the API response because there is
+   * no SMTP-gateway in this build to deliver it. Refused in production by
+   * `validateEnv` -- an exposed code is a full authentication bypass.
+   */
   AUTH_DEV_EXPOSE_CODES: z
     .enum(['true', 'false'])
     .default('false')
@@ -193,6 +193,19 @@ export function validateEnv(raw: Record<string, unknown>): Env {
     throw new Error(
       'Invalid environment configuration: SMTP_HOST is set but SMTP_USER or SMTP_PASSWORD ' +
         'is missing. Leave SMTP_HOST unset to keep mail unconfigured.',
+    );
+  }
+  if (parsed.data.LLM_FALLBACK_PROVIDER === 'openai_chat' && !parsed.data.LLM_TOKEN) {
+    throw new Error(
+      'Invalid environment configuration: LLM_FALLBACK_PROVIDER=openai_chat requires ' +
+        'LLM_TOKEN, the same credential the fallback client reuses.',
+    );
+  }
+  if (parsed.data.LLM_FALLBACK_PROVIDER !== 'none' && parsed.data.LLM_MAX_ATTEMPTS < 2) {
+    throw new Error(
+      'Invalid environment configuration: a configured LLM_FALLBACK_PROVIDER needs ' +
+        'LLM_MAX_ATTEMPTS >= 2 -- the fallback hop is spent out of that same budget ' +
+        '(src/ai/provider/retry.policy.ts) and needs at least one attempt of its own.',
     );
   }
   return parsed.data;
