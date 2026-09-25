@@ -18,9 +18,11 @@ Integration API ─┘          │
                             ◄── ROUTER-gateway ──┘  результат, принимается только в AUTO
 ```
 
-Дашборд диспетчера живёт в `apps/web` (`docs/web.md`). Он читает представления sys;
-ни с Router, ни с базой он напрямую не общается. В compose это сервис `web` на
-`http://127.0.0.1:5173`, проксирующий `/api` к `api`.
+Дашборд диспетчера: новый UI в `apps/frontend` (`docs/frontend-api.md`, локально
+`:5174`) и прежний контур в `apps/web` (`docs/web.md`). Оба читают представления sys;
+ни с Router, ни с базой напрямую не общаются. В compose сервис `web` —
+`http://127.0.0.1:5173`, проксирующий `/api` к `api`; `apps/frontend` поднимают
+отдельно.
 
 System Layer владеет бизнес-состоянием, авторизацией, пользовательскими операциями,
 применённым рабочим планом и его исполнением. Он готовит вход для Router Core,
@@ -39,7 +41,7 @@ System Layer владеет бизнес-состоянием, авториза�
 | `orchestrator backend` | `src/orchestrator`, `src/operations` | Конверт операций (включая внешние операции с резервированием строк журнала), жизненный цикл заявок с профилями норм и execution-таймингом, инженеры, рабочие дни, обед, политика, факты исполнения и координатор превышений. GPS удалён полностью (`context/50`) |
 | `dataengine` | `src/persistence` | Реализовано: схема, миграции, соединение, граница транзакций, блокировки строк, health-проба |
 | `mount-data-eng` | `src/routing/mount-data-eng` | Реализовано: проекция (с execution-якорями — активная работа закрепляет точку старта инженера и `available_from`), каноническая сериализация, hash, неизменяемые снимки и переключение указателя |
-| `ROUTER-gateway` | `src/routing/router-gateway` | Реализовано от конца до конца: HTTP-клиент к Router Core (`/v1/result`, `/v1/context`, `PUT /v2/config/technical-settings`), проверки приёмки (id публикации + hash + версия контекста + пригодность + факты), ревизии применённого плана, AUTO/MANUAL, ручные правки, технастройки, управляемые из sys |
+| `ROUTER-gateway` | `src/routing/router-gateway` | Реализовано от конца до конца: HTTP-клиент к Router Core (`/v1/result`, `/v1/context`, `PUT /v2/config/technical-settings`), проверки приёмки (id публикации + hash + версия контекста + пригодность + факты), ревизии применённого плана, AUTO / `assisted` / MANUAL, закрепления и preview/apply совместного планирования (`docs/assisted-planning.md`), аварийные ручные правки, технастройки, управляемые из sys |
 | `AI-gateway` | `src/ai` | Реализовано: три роли (`client`, `engineer`, `dispatcher_readonly`/`dispatcher_fix`) и два одношаговых микро-агента (`explain`, `alert-resolver`); provider-порт с тремя реализациями (`agents`, `openai_chat`, `replay`) и честным `off`-заглушением; runtime сам исполняет tools, а не Agents SDK; каждая запись идёт через `prepare → confirm/cancel`, тул её не совершает; куррированная база знаний с полнотекстовым поиском (`ai_documents_fts`) и трёхсегментной изоляцией (client/engineer/dispatcher); суточные квоты и офлайн-контур `LLM_PROVIDER=replay`. Подробно — [ai.md](./ai.md) |
 | `SMTP-gateway` | `src/notifications` | интенты с дедупликацией по переходам, каталог писем всех видимых переходов заявки плюс итоги дня инженеру (2026-09-20; `docs/api.md` §5), флаг тишины адреса — коды входа не отключаемы, HTML-шаблоны каталога и Nodemailer-submit на внешний Postfix; без `SMTP_HOST` остаётся `not_configured` |
 
