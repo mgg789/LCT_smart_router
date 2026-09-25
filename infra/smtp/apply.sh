@@ -70,6 +70,18 @@ if [ -f "$SRC/nginx/openrouter-mirror.conf" ]; then
       printf 'proxy_set_header X-Title "Navix Smart Router";\n'
     } > "$MIRROR_UPSTREAM"
     unset PROXY_TOKEN OPENROUTER_API_KEY mirror_token
+  elif [ -f "$SRC/secrets/proxy.token" ] && [ -f "$MIRROR_ENV" ] && [ -f "$MIRROR_MAP" ] && [ -f "$MIRROR_UPSTREAM" ]; then
+    # Rotate the proxy token without touching the key include; the env keeps
+    # the OpenRouter key it already holds.
+    mirror_token="$(tr -d "\r\n\t " < "$SRC/secrets/proxy.token")"
+    mirror_key="$(sed -n 's/^OPENROUTER_API_KEY=//p' "$MIRROR_ENV" | head -1)"
+    printf 'PROXY_TOKEN=%s\nOPENROUTER_API_KEY=%s\n' "$mirror_token" "$mirror_key" > "$MIRROR_ENV"
+    {
+      # The 64-hex token exceeds the default 64-byte map hash bucket.
+      printf 'map_hash_bucket_size 128;\n'
+      printf 'map $http_x_proxy_token $openrouter_authorized { default 0; "%s" 1; }\n' "$mirror_token"
+    } > "$MIRROR_MAP"
+    unset mirror_token mirror_key
   elif [ ! -f "$MIRROR_MAP" ] || [ ! -f "$MIRROR_UPSTREAM" ]; then
     echo "openrouter-mirror: no seed key in tree and no host includes yet; leaving the vhost uninstalled"
     MIRROR_SKIP=1
@@ -78,11 +90,33 @@ if [ -f "$SRC/nginx/openrouter-mirror.conf" ]; then
     chown root:www-data "$MIRROR_MAP" "$MIRROR_UPSTREAM"
     chmod 640 "$MIRROR_MAP" "$MIRROR_UPSTREAM"
     chmod 600 "$MIRROR_ENV"
-    install -m 0644 "$SRC/nginx/openrouter-mirror.conf" /etc/nginx/sites-available/openrouter-mirror.conf
-    ln -sfn /etc/nginx/sites-available/openrouter-mirror.conf /etc/nginx/sites-enabled/openrouter-mirror.conf
-    nginx -t
-    systemctl reload nginx
-    echo "OPENROUTER_MIRROR_OK endpoint=https://mail.droidje.com:8443"
+    # The ACME vhost must serve the HTTP-01 challenge before the certificate
+    # can be issued; the 443 vhost joins the config only once the certificate
+    # exists (a stale 443 symlink without a cert would fail nginx -t and block
+    # the challenge reload).
+    if [ ! -f /etc/letsencrypt/live/openrouter.droidje.com/fullchain.pem ]; then
+      rm -f /etc/nginx/sites-enabled/openrouter-mirror.conf
+    fi
+    install -m 0644 "$SRC/nginx/openrouter-mirror-acme.conf" /etc/nginx/sites-available/openrouter-mirror-acme.conf
+    ln -sfn /etc/nginx/sites-available/openrouter-mirror-acme.conf /etc/nginx/sites-enabled/openrouter-mirror-acme.conf
+    if [ ! -f /etc/letsencrypt/live/openrouter.droidje.com/fullchain.pem ]; then
+      nginx -t
+      systemctl reload nginx
+      if ! certbot certonly --webroot -w /var/www/html \
+        -d openrouter.droidje.com \
+        --agree-tos --register-unsafely-without-email --non-interactive; then
+        echo "openrouter-mirror: certificate issuance failed; 443 vhost left unconfigured" >&2
+      fi
+    fi
+    if [ -f /etc/letsencrypt/live/openrouter.droidje.com/fullchain.pem ]; then
+      install -m 0644 "$SRC/nginx/openrouter-mirror.conf" /etc/nginx/sites-available/openrouter-mirror.conf
+      ln -sfn /etc/nginx/sites-available/openrouter-mirror.conf /etc/nginx/sites-enabled/openrouter-mirror.conf
+      nginx -t
+      systemctl reload nginx
+      echo "OPENROUTER_MIRROR_OK endpoint=https://openrouter.droidje.com"
+    else
+      echo "openrouter-mirror: no certificate; mirror not activated" >&2
+    fi
   fi
 fi
 # --- end OpenRouter mirror ---------------------------------------------------

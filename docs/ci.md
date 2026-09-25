@@ -212,7 +212,7 @@ docker compose -f docker-compose.yml up -d --build --remove-orphans
    Если раннер SourceCraft не достучится до `:22` SMTP-хоста, деплой идёт
    прыжком `SourceCraft → MGG:2222 → SMTP:22`.
 
-### OpenRouter mirror (Jev) — https://mail.droidje.com:8443
+### OpenRouter mirror (Jev) — https://openrouter.droidje.com
 
 На почтовом хосте поднят независимый vhost host-nginx — прозрачное зеркало
 `https://openrouter.ai` с EU-egress для прод-вызовов Jev
@@ -230,10 +230,13 @@ postfix/opendkim/watchdog/hysteria; дерево без
   (`/etc/navix-smtp/openrouter-mirror.upstream.nginx`, 0640 `root:www-data`).
   Секреты живут только на хосте; дерево может нести `secrets/openrouter.key`
   (пересеять ключ) и `secrets/proxy.token` (явно задать токен) — в git их нет.
-- TLS — существующий LE-сертификат `mail.droidje.com`; UDP/443 занят
-  Hysteria, TCP/443 и 80 — другими vhost, поэтому отдельный порт 8443.
+- TLS — свой LE-сертификат `openrouter.droidje.com` (HTTP-01 через webroot
+  `/var/www/html`; challenge-vhost — `nginx/openrouter-mirror-acme.conf`).
+  Прокси слушает TCP/443 отдельным SNI-vhost рядом с другими сайтами хоста,
+  UDP/443 по-прежнему занят Hysteria.
 - Ручной деплой зеркала без рестарта почты: собрать дерево только из
-  `apply.sh` и `nginx/openrouter-mirror.conf` (+ опциональные секреты), залить
+  `apply.sh`, `nginx/openrouter-mirror.conf` и
+  `nginx/openrouter-mirror-acme.conf` (+ опциональные секреты), залить
   во временный каталог и дважды вызвать `sudo /usr/local/sbin/navix-smtp-apply
   <dir>`. Первый прогон самоустанавливает свежий apply, второй применяет
   vhost; на отсутствующем `postfix/main.cf` скрипт падает до почтовых секций,
@@ -243,7 +246,7 @@ postfix/opendkim/watchdog/hysteria; дерево без
   15, $10)»): кредит $10 истекает 2026-12-15, к финалам (23.10) запас есть.
 
 Прод подключает зеркало переменными окружения API
-(`OPENROUTER_BASE_URL=https://mail.droidje.com:8443`,
+(`OPENROUTER_BASE_URL=https://openrouter.droidje.com`,
 `OPENROUTER_PROXY_TOKEN`); при интеграции Jev в приложения сервер обязан
 валидировать хост запроса и не ходить в localhost/private-диапазоны (правило
 SSRF). Токен лежит в `/etc/navix-smtp/openrouter-mirror.env` на почтовом
