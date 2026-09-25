@@ -10,7 +10,7 @@ import { LiveModule } from '../orchestrator/live';
 import { RequestsModule } from '../orchestrator/requests';
 import { AiHealthProbe } from './ai-health.probe';
 import { KnowledgeModule, KnowledgeService } from './knowledge';
-import { ActionGuardService, AiOperationService } from './operations';
+import { ActionDecisionGate, ActionGuardService, AiOperationService } from './operations';
 import {
   AgentsSdkProvider,
   createDeepseekClient,
@@ -176,6 +176,7 @@ function buildFallbackProvider(
     DispatchChatsService,
     RoleProfileService,
     ActionGuardService,
+    ActionDecisionGate,
     AiOperationService,
     ToolRegistry,
     AgentRuntimeService,
@@ -194,6 +195,7 @@ function buildFallbackProvider(
     DispatchChatsService,
     RoleProfileService,
     ActionGuardService,
+    ActionDecisionGate,
     AiOperationService,
     ToolRegistry,
     AgentRuntimeService,

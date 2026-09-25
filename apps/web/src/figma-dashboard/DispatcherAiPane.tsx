@@ -3,6 +3,7 @@ import { Trash2 } from 'lucide-react';
 import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from 'react';
 import type { AiActionButton } from '../api/ai';
 import { AiOperationCard } from '../components/ai/AiOperationCard';
+import { fitComposerField } from '../components/ai/composerField';
 import {
   type AiOperationView,
   type AiUnavailableReason,
@@ -100,8 +101,8 @@ export function DashboardAi({ token, onOpenObject }: PaneProps) {
     void chat.sendMessage(text);
   }
 
-  function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === 'Enter') {
+  function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       submit();
     }
@@ -120,6 +121,7 @@ export function DashboardAi({ token, onOpenObject }: PaneProps) {
       canSend={canSend}
       running={running && !empty}
       notice={noticeOf(chat.error, chat.unavailable)}
+      status={activityLine(chat.activity, running && !empty)}
       onDraft={setDraft}
       onKeyDown={onKeyDown}
       onSubmit={(event) => {
@@ -280,11 +282,18 @@ function LaneButton({
       aria-pressed={pressed}
       disabled={disabled}
       onClick={onClick}
-      className={`h-[34px] rounded-full px-[16px] text-[14px] font-semibold disabled:opacity-40 ${
-        pressed ? 'bg-figma-ink text-white' : 'text-figma-muted'
+      className={`relative h-[34px] rounded-full px-[16px] text-[14px] font-semibold disabled:opacity-40 ${
+        pressed ? 'text-white' : 'text-figma-muted'
       }`}
     >
-      {label}
+      {pressed ? (
+        <motion.span
+          layoutId="dispatcher-lane-pill"
+          className="absolute inset-0 rounded-full bg-figma-ink"
+          transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+        />
+      ) : null}
+      <span className="relative z-10">{label}</span>
     </button>
   );
 }
@@ -343,6 +352,7 @@ function Composer({
   canSend,
   running,
   notice,
+  status,
   onDraft,
   onKeyDown,
   onSubmit,
@@ -352,30 +362,40 @@ function Composer({
   canSend: boolean;
   running: boolean;
   notice: string | null;
+  status: string | null;
   onDraft: (value: string) => void;
-  onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
+  onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onStop: () => void;
 }) {
+  const fieldRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (fieldRef.current) fitComposerField(fieldRef.current);
+  }, [draft]);
   return (
     <form onSubmit={onSubmit} className="pointer-events-auto w-full max-w-[813px]">
-      {notice ? (
-        <p role="alert" className="mb-[10px] text-center text-[14px] text-figma-muted">
-          {notice}
+      {notice || status ? (
+        <p
+          role={notice ? 'alert' : 'status'}
+          className="mb-[10px] text-center text-[14px] text-figma-muted"
+        >
+          {notice ?? status}
         </p>
       ) : null}
-      <div className="flex h-[79px] items-center gap-[12px] rounded-[200px] bg-figma-ink pl-[10px] pr-[10px]">
+      <div className="flex min-h-[79px] items-center gap-[12px] rounded-[40px] bg-figma-ink px-[10px] py-[8px]">
         <span className="flex size-[60px] shrink-0 items-center justify-center rounded-full bg-figma-bee">
           <FigmaIcon src={FIGMA_ASSETS.iconSparkles} alt="" width={26} height={26} />
         </span>
-        <input
+        <textarea
+          ref={fieldRef}
           value={draft}
+          rows={1}
           onChange={(event) => onDraft(event.target.value)}
           onKeyDown={onKeyDown}
           disabled={!canSend && !running}
           placeholder="Спроси меня о чем нибудь..."
           aria-label="Сообщение ассистенту"
-          className="h-full min-w-0 flex-1 bg-transparent font-semibold text-[18px] text-white outline-none placeholder:text-[#ededed] disabled:opacity-60"
+          className="min-w-0 flex-1 resize-none bg-transparent font-semibold text-[18px] leading-[1.35] text-white outline-none placeholder:text-[#ededed] disabled:opacity-60"
         />
         {running ? (
           <button
@@ -405,7 +425,7 @@ function UserBubble({ text }: { text: string }) {
   return (
     <div className="flex flex-col items-end gap-[8px]">
       <div className="max-w-[720px] rounded-full bg-white px-[24px] py-[18px]">
-        <p className="text-[18px] font-medium leading-[1.25] text-figma-ink">{text}</p>
+        <p className="whitespace-pre-wrap text-[18px] font-medium leading-[1.25] text-figma-ink">{text}</p>
       </div>
       <CopyButton text={text} />
     </div>
@@ -597,6 +617,43 @@ function RateButton({
       <FigmaIcon src={src} alt="" width={24} height={24} />
     </button>
   );
+}
+
+const TOOL_LINES: Readonly<Record<string, string>> = {
+  get_situation: 'AI смотрит смену',
+  get_day_plan: 'AI смотрит план',
+  list_engineers: 'AI смотрит инженеров',
+  list_requests: 'AI смотрит заявки',
+  get_request: 'AI смотрит заявку',
+  get_request_history: 'AI читает историю заявки',
+  list_alerts: 'AI читает алерты',
+  get_shift_status: 'AI смотрит смену',
+  get_policies: 'AI смотрит политики',
+  compare_policies: 'AI сравнивает политики',
+  get_router_settings: 'AI смотрит настройки',
+  get_snapshot_diagnostics: 'AI проверяет снимок',
+  evaluate_manual_order: 'AI выбирает стратегию',
+  search_documentation: 'AI читает документацию',
+  prepare_move_window: 'AI переносит окно',
+  prepare_reschedule_request: 'AI переносит заявку',
+  prepare_update_request: 'AI меняет заявку',
+  prepare_cancel_request: 'AI отменяет заявку',
+  prepare_create_request: 'AI создаёт заявку',
+  prepare_select_policy: 'AI выбирает стратегию',
+  prepare_set_engineer_availability: 'AI меняет доступность',
+  prepare_set_engineer_workday: 'AI меняет смену',
+  prepare_engineer_technical_break: 'AI ставит перерыв',
+  prepare_resolve_alert: 'AI закрывает алерт',
+  prepare_mark_alert_seen: 'AI отмечает алерт',
+  prepare_close_shift: 'AI закрывает смену',
+};
+
+/** What to print above the composer while a turn is in flight. */
+function activityLine(activity: string | null, running: boolean): string | null {
+  if (!running) return null;
+  if (activity === 'Проверка безопасности') return activity;
+  if (activity && TOOL_LINES[activity]) return TOOL_LINES[activity];
+  return 'AI думает';
 }
 
 function noticeOf(error: string | null, unavailable: AiUnavailableReason | null): string | null {

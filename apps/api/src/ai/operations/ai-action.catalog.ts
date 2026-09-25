@@ -698,7 +698,7 @@ export function buildAiActionCatalog(deps: AiActionCatalogDeps): ReadonlyMap<str
     async precheck(args) {
       const engineerId = requireEngineerId(args.targetRef);
       const view = await deps.live.engineerView(engineerId);
-      if (view.current !== null) {
+      if (view.current?.phase === 'in_progress') {
         throw new SysError(
           'VALIDATION_FAILED',
           'Finish or report the active visit before a technical break',

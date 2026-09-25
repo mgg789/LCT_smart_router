@@ -385,7 +385,8 @@ describe('change_status_to(0) during a running LIVE workday', () => {
         calls.push(input);
         return {
           operationId: 'op-1',
-          state: 'awaiting_confirmation' as const,
+          state: 'applied' as const,
+          guard: 'clear' as const,
           preview: [],
           expiresAt: 0,
         };
@@ -438,7 +439,8 @@ describe('change_status_to(0) during a running LIVE workday', () => {
         calls.push(input);
         return {
           operationId: 'op-2',
-          state: 'awaiting_confirmation' as const,
+          state: 'applied' as const,
+          guard: 'clear' as const,
           preview: [],
           expiresAt: 0,
         };

@@ -86,7 +86,7 @@ export class AgentsSdkProvider extends LlmProvider {
 
     const agent = new Agent({
       name: 'field-engineer-routing-assistant',
-      instructions: input.system,
+      instructions: input.closing ? `${input.system}\n\n${input.closing}` : input.system,
       model: input.model,
       tools: input.tools.map(toApprovalTool),
     });

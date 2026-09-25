@@ -66,7 +66,7 @@ export class OpenAiChatProvider extends LlmProvider {
       stream = await this.client.chat.completions.create(
         {
           model: input.model,
-          messages: toChatMessages(input.system, input.messages),
+          messages: toChatMessages(input.system, input.messages, input.closing),
           ...(input.tools.length > 0 ? { tools: input.tools.map(toChatTool) } : {}),
           max_tokens: input.maxOutputTokens,
           ...(input.temperature === undefined ? {} : { temperature: input.temperature }),
@@ -185,6 +185,7 @@ export class OpenAiChatProvider extends LlmProvider {
 function toChatMessages(
   system: string,
   messages: readonly LlmMessage[],
+  closing?: string,
 ): ChatCompletionMessageParam[] {
   const out: ChatCompletionMessageParam[] = [{ role: 'system', content: system }];
   for (const message of messages) {
@@ -209,6 +210,9 @@ function toChatMessages(
       continue;
     }
     out.push({ role: 'tool', tool_call_id: message.toolCallId, content: message.content });
+  }
+  if (closing) {
+    out.push({ role: 'system', content: closing });
   }
   return out;
 }

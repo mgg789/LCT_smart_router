@@ -1,7 +1,7 @@
 import { LayoutGroup, motion, useReducedMotion } from 'framer-motion';
 import { RefreshCw } from 'lucide-react';
 import { type FormEvent, type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from 'react';
-import { AiOperationCard } from '../components/ai/AiOperationCard';
+import { fitComposerField } from '../components/ai/composerField';
 import { FIGMA_ASSETS } from '../figma-dashboard/assets';
 import { AiMarkdown } from '../figma-dashboard/AiMarkdown';
 import { thoughtLabel } from '../figma-dashboard/DispatcherAiPane';
@@ -40,6 +40,7 @@ export function EngineerAiPane({
   const [copied, setCopied] = useState<string | null>(null);
   const startedAt = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fieldRef = useRef<HTMLTextAreaElement>(null);
 
   const running = chat.runState === 'running' || chat.sending;
   const spoken = chat.messages.filter((message) => {
@@ -59,6 +60,11 @@ export function EngineerAiPane({
     !chat.sending &&
     (chat.runState !== 'running' || spoken.length === 0) &&
     chat.unavailable !== 'auth';
+  const risky = [...chat.operations.values()].find(
+    (operation) =>
+      operation.guardRisk === true &&
+      (operation.state === 'awaiting_confirmation' || operation.state === 'prepared'),
+  );
 
   useEffect(() => {
     if (running && startedAt.current === null) startedAt.current = Date.now();
@@ -90,12 +96,16 @@ export function EngineerAiPane({
     void chat.sendMessage(text);
   }
 
-  function onKeyDown(event: KeyboardEvent<HTMLInputElement>) {
-    if (event.key === 'Enter') {
+  function onKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       submit();
     }
   }
+
+  useEffect(() => {
+    if (fieldRef.current) fitComposerField(fieldRef.current);
+  }, [draft]);
 
   async function copy(id: string, text: string) {
     try {
@@ -114,39 +124,43 @@ export function EngineerAiPane({
         submit();
       }}
       className="w-full"
-      style={{ maxWidth: eu(516) }}
+      style={{ maxWidth: '100%' }}
     >
       <div
         className="flex items-center bg-figma-ink"
         style={{
-          height: eu(94),
-          borderRadius: eu(200),
-          paddingLeft: eu(12),
-          paddingRight: eu(12),
-          gap: eu(12),
+          minHeight: eu(112),
+          borderRadius: eu(56),
+          paddingLeft: eu(10),
+          paddingRight: eu(10),
+          paddingTop: eu(12),
+          paddingBottom: eu(12),
+          gap: eu(10),
         }}
       >
         <span
           className="flex shrink-0 items-center justify-center rounded-full bg-figma-bee"
-          style={{ width: eu(70), height: eu(70) }}
+          style={{ width: eu(78), height: eu(78) }}
         >
           <FigmaIcon
             src={FIGMA_ASSETS.iconSparkles}
             alt=""
-            width={26}
-            height={26}
-            style={{ width: eu(26), height: eu(26) }}
+            width={32}
+            height={32}
+            style={{ width: eu(28), height: eu(28) }}
           />
         </span>
-        <input
+        <textarea
+          ref={fieldRef}
           value={draft}
+          rows={1}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={onKeyDown}
           disabled={!canSend && !running}
           placeholder="Спроси меня о чем нибудь..."
           aria-label="Сообщение ассистенту"
-          className="h-full min-w-0 flex-1 bg-transparent font-semibold text-[#d9d9d9] outline-none placeholder:text-[#d9d9d9] disabled:opacity-60"
-          style={{ fontSize: eu(22) }}
+          className="min-w-0 flex-1 resize-none bg-transparent font-semibold text-[#d9d9d9] outline-none placeholder:text-[#d9d9d9] disabled:opacity-60"
+          style={{ fontSize: eu(26), lineHeight: 1.35 }}
         />
         {running && !empty ? (
           <button
@@ -154,9 +168,9 @@ export function EngineerAiPane({
             onClick={() => void chat.stop()}
             aria-label="Остановить"
             className="flex shrink-0 items-center justify-center rounded-full bg-white/10"
-            style={{ width: eu(70), height: eu(70) }}
+            style={{ width: eu(78), height: eu(78) }}
           >
-            <span className="bg-white" style={{ width: eu(14), height: eu(14), borderRadius: 3 }} />
+            <span className="bg-white" style={{ width: eu(16), height: eu(16), borderRadius: 3 }} />
           </button>
         ) : (
           <button
@@ -164,7 +178,7 @@ export function EngineerAiPane({
             disabled={!canSend || draft.trim().length === 0}
             aria-label="Отправить"
             className="flex shrink-0 items-center justify-center rounded-full bg-white/10 disabled:opacity-40"
-            style={{ width: eu(70), height: eu(70) }}
+            style={{ width: eu(78), height: eu(78) }}
           >
             <FigmaIcon
               src={FIGMA_ASSETS.arrowRightWhite}
@@ -198,7 +212,7 @@ export function EngineerAiPane({
             >
               {engineerGreeting(displayName)}
             </h1>
-            <motion.div layoutId="engineer-ai-composer" className="w-full" style={{ maxWidth: eu(516) }}>
+            <motion.div layoutId="engineer-ai-composer" className="w-full" style={{ maxWidth: '100%' }}>
               {composer}
             </motion.div>
           </div>
@@ -227,10 +241,6 @@ export function EngineerAiPane({
                           .find((item) => item.author === 'user');
                         if (previous && canSend) void chat.sendMessage(previous.text);
                       }}
-                      operations={chat.operations}
-                      disabled={chat.sending}
-                      onApply={(operationId) => void chat.applyOperation(operationId)}
-                      onCancel={(operationId) => void chat.cancelOperation(operationId)}
                     />
                   ),
                 )}
@@ -244,7 +254,7 @@ export function EngineerAiPane({
               <motion.div
                 layoutId="engineer-ai-composer"
                 className="pointer-events-auto w-full"
-                style={{ maxWidth: eu(516) }}
+                style={{ maxWidth: '100%' }}
                 transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
               >
                 {composer}
@@ -252,6 +262,13 @@ export function EngineerAiPane({
             </div>
           </>
         )}
+        {risky ? (
+          <GuardModal
+            operation={risky}
+            onAllow={() => void chat.applyOperation(risky.operationId)}
+            onReject={() => void chat.cancelOperation(risky.operationId)}
+          />
+        ) : null}
       </div>
     </LayoutGroup>
   );
@@ -272,7 +289,7 @@ function UserBubble({
         className="bg-white"
         style={{ maxWidth: eu(557), borderRadius: eu(20), padding: eu(24) }}
       >
-        <p className="font-medium leading-normal text-figma-ink" style={{ fontSize: eu(24) }}>
+        <p className="whitespace-pre-wrap font-medium leading-normal text-figma-ink" style={{ fontSize: eu(24) }}>
           {text}
         </p>
       </div>
@@ -283,28 +300,70 @@ function UserBubble({
   );
 }
 
+function GuardModal({
+  operation,
+  onAllow,
+  onReject,
+}: {
+  operation: AiOperationView;
+  onAllow: () => void;
+  onReject: () => void;
+}) {
+  return (
+    <div
+      className="absolute inset-0 z-40 flex items-center justify-center bg-black/40"
+      style={{ padding: eu(32) }}
+    >
+      <div className="w-full bg-white" style={{ borderRadius: eu(24), padding: eu(28), maxWidth: eu(560) }}>
+        {operation.preview.length > 0 ? (
+          <dl style={{ display: 'flex', flexDirection: 'column', gap: eu(8) }}>
+            {operation.preview.map((row) => (
+              <div key={row.label} className="flex justify-between" style={{ gap: eu(16), fontSize: eu(22) }}>
+                <dt className="text-figma-muted">{row.label}</dt>
+                <dd className="text-right font-medium text-figma-ink">{row.value}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : null}
+        <p className="font-medium text-[#d92d20]" style={{ marginTop: eu(18), fontSize: eu(24) }}>
+          Гуард пометил это действие как рисковое!
+        </p>
+        <div className="flex" style={{ marginTop: eu(22), gap: eu(12) }}>
+          <button
+            type="button"
+            onClick={onReject}
+            className="flex-1 rounded-full bg-figma-ink font-semibold text-white"
+            style={{ height: eu(72), fontSize: eu(22) }}
+          >
+            Отклонить
+          </button>
+          <button
+            type="button"
+            onClick={onAllow}
+            className="flex-1 rounded-full bg-[#d92d20] font-semibold text-white"
+            style={{ height: eu(72), fontSize: eu(22) }}
+          >
+            Разрешить
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AssistantBubble({
   message,
   thoughtSeconds,
   copied,
   onCopy,
   onAgain,
-  operations,
-  disabled,
-  onApply,
-  onCancel,
 }: {
   message: AssistantChatMessage;
   thoughtSeconds: number | null;
   copied: boolean;
   onCopy: () => void;
   onAgain: () => void;
-  operations: ReadonlyMap<string, AiOperationView>;
-  disabled: boolean;
-  onApply: (operationId: string) => void;
-  onCancel: (operationId: string) => void;
 }) {
-  const operationId = message.actions.find((action) => action.operationId)?.operationId;
   return (
     <div className="flex flex-col items-start">
       <div className="flex items-center" style={{ gap: eu(16) }}>
@@ -327,17 +386,6 @@ function AssistantBubble({
       <div className="font-medium text-figma-ink" style={{ marginTop: eu(16), fontSize: eu(24), maxWidth: eu(590) }}>
         <AiMarkdown text={message.text} />
       </div>
-      {operationId ? (
-        <div style={{ marginTop: eu(12), maxWidth: eu(590) }}>
-          <AiOperationCard
-            operationId={operationId}
-            operation={operations.get(operationId)}
-            disabled={disabled}
-            onApply={() => onApply(operationId)}
-            onCancel={() => onCancel(operationId)}
-          />
-        </div>
-      ) : null}
       {!message.pending ? (
         <div className="flex items-center" style={{ marginTop: eu(12), gap: eu(18) }}>
           <IconButton label={copied ? 'Скопировано' : 'Копировать'} onClick={onCopy}>
