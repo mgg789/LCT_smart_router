@@ -217,9 +217,6 @@ export const liveProblemPayloadSchema = z.object({
 });
 export type LiveProblemPayload = z.infer<typeof liveProblemPayloadSchema>;
 
-export const liveOfflinePayloadSchema = z.object({ note: noteSchema });
-export type LiveOfflinePayload = z.infer<typeof liveOfflinePayloadSchema>;
-
 export const setAvailabilityPayloadSchema = z.object({
   availability: z.enum(['online', 'offline']),
 });
@@ -822,45 +819,6 @@ export function buildAiActionCatalog(deps: AiActionCatalogDeps): ReadonlyMap<str
           ? {}
           : { missingEquipment: input.missingEquipment }),
       });
-    },
-  });
-
-  // The engineer's own mid-day stand-down. Deliberately not the same key as
-  // `engineer.set_availability`/`dispatcher.engineer.set_availability`: neither of those
-  // can run while a LIVE workday is running (the former is legacy-gated, the latter is
-  // dispatcher-only), and this one carries a required reason `LiveService.goOffline`
-  // needs nothing else to act on but a check card should still show.
-  catalog.set('live.engineer.offline', {
-    zodSchema: liveOfflinePayloadSchema,
-    allowedProfiles: ['engineer'],
-    async precheck(args) {
-      const engineerId = requireEngineerId(args.targetRef);
-      const view = await deps.live.engineerView(engineerId);
-      if (view.engineer.lineStatus === 'technical_break') {
-        throw new SysError(
-          'VALIDATION_FAILED',
-          'The engineer must finish the technical break explicitly',
-        );
-      }
-      if (view.current?.phase === 'in_progress') {
-        throw new SysError(
-          'WORK_ALREADY_STARTED',
-          'Finish or report the active visit before going offline',
-        );
-      }
-    },
-    async preview(args) {
-      const payload = args.payload as LiveOfflinePayload;
-      return [
-        { label: 'Действие', value: 'Снятие с линии' },
-        { label: 'Причина', value: payload.note },
-      ];
-    },
-    async apply() {
-      throw new SysError(
-        'VALIDATION_FAILED',
-        'Going offline from the assistant is not part of this contour',
-      );
     },
   });
 

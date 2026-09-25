@@ -378,7 +378,7 @@ function liveWithWorkdayRunning(running: boolean): LiveService {
 }
 
 describe('change_status_to(0) during a running LIVE workday', () => {
-  it('prepares live.engineer.offline carrying the given reason, not the legacy switch', async () => {
+  it('explains in plain Russian instead of preparing a write the catalogue would refuse', async () => {
     const calls: PrepareOperationInput[] = [];
     const aiOperations = {
       prepare: async (input: PrepareOperationInput) => {
@@ -400,36 +400,11 @@ describe('change_status_to(0) during a running LIVE workday', () => {
     const changeStatusTo = tools.find((tool) => tool.name === 'change_status_to');
     assert.ok(changeStatusTo);
 
-    const result = await changeStatusTo.run(engineerToolContext(), {
-      status: 0,
-      note: 'Плохое самочувствие, продолжить не смогу',
-    });
+    const result = await changeStatusTo.run(engineerToolContext(), { status: 0 });
 
     assert.ok(result.ok);
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0]?.action, 'live.engineer.offline');
-    assert.equal(calls[0]?.targetRef, 'eng-1');
-    assert.deepEqual(calls[0]?.payload, { note: 'Плохое самочувствие, продолжить не смогу' });
-  });
-
-  it('refuses to prepare anything without a reason', async () => {
-    const aiOperations = {
-      prepare: async () => {
-        throw new Error('must not be called without a reason');
-      },
-    } as unknown as AiOperationService;
-    const tools = buildEngineerTools({
-      aiOperations,
-      live: liveWithWorkdayRunning(true),
-      config: { get: () => 'Europe/Moscow' } as unknown as AppConfigService,
-    });
-    const changeStatusTo = tools.find((tool) => tool.name === 'change_status_to');
-    assert.ok(changeStatusTo);
-
-    await assert.rejects(
-      () => changeStatusTo.run(engineerToolContext(), { status: 0 }),
-      (error: unknown) => error instanceof SysError && error.code === 'VALIDATION_FAILED',
-    );
+    assert.equal(calls.length, 0, 'no write may be prepared for a mid-day stand-down');
+    assert.match(result.resultContent, /только диспетчер/);
   });
 
   it('status: 1 still prepares live.engineer.online, unaffected by the offline change', async () => {
