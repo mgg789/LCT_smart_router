@@ -23,10 +23,19 @@ export class ActionGuardService {
   private readonly logger = new Logger(ActionGuardService.name);
 
   async allows(action: string, preview: readonly AiPreviewRow[]): Promise<boolean> {
-    const base = (process.env.JEV_API_URL ?? 'http://host.docker.internal:12444').replace(
+    const raw = (process.env.JEV_API_URL ?? 'http://host.docker.internal:12444').replace(
       /\/$/,
       '',
     );
+    // Operator-configured local service; the only check that makes sense is the
+    // scheme one -- a private-network address is exactly what this endpoint is.
+    try {
+      const scheme = new URL(raw).protocol;
+      if (scheme !== 'http:' && scheme !== 'https:') return false;
+    } catch {
+      return false;
+    }
+    const base = raw;
     const lines = preview.map((row) => `${row.label}: ${row.value}`).join('\n');
     const state = `action: ${action}\n${lines}`.slice(0, 6_000);
     try {

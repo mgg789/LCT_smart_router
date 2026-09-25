@@ -250,10 +250,25 @@ export class MiniAiService {
     return POLICIES.find((item) => item.label === label) ?? { id: 'balanced', label: 'Ровнее загрузка' };
   }
 
+  /**
+   * System one base URL, scheme-checked. The endpoint is operator-configured
+   * (JEV_API_URL, the validated env schema), and must stay an HTTP service:
+   * a misconfigured URL must fail into the honest `not_configured` path instead
+   * of reaching whatever other scheme the value carried.
+   */
+  private jevBase(): string {
+    const raw = (process.env.JEV_API_URL ?? 'http://host.docker.internal:12444').replace(/\/$/, '');
+    const scheme = new URL(raw).protocol;
+    if (scheme !== 'http:' && scheme !== 'https:') {
+      throw new SysError('SERVICE_NOT_CONFIGURED', 'System one доступен только по HTTP(S).');
+    }
+    return raw;
+  }
+
   private async choice(state: string, question: string, options: readonly string[]): Promise<string> {
     const uniqueOptions = [...new Set(options.map((item) => item.trim()).filter(Boolean))];
     if (uniqueOptions.length < 2) return uniqueOptions[0] ?? '';
-    const base = (process.env.JEV_API_URL ?? 'http://host.docker.internal:12444').replace(/\/$/, '');
+    const base = this.jevBase();
     const response = await fetch(`${base}/v1/choice`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', accept: 'application/json' },
@@ -276,7 +291,12 @@ export class MiniAiService {
 
   /** True when System one leans to «да». A failed call means «нет», so nothing is applied. */
   private async noul(state: string, question: string): Promise<boolean> {
-    const base = (process.env.JEV_API_URL ?? 'http://host.docker.internal:12444').replace(/\/$/, '');
+    let base: string;
+    try {
+      base = this.jevBase();
+    } catch {
+      return false;
+    }
     try {
       const response = await fetch(`${base}/v1/noul`, {
         method: 'POST',
@@ -299,7 +319,7 @@ export class MiniAiService {
 
   /** Reads an hour range the regex missed. Empty when the model is down or the text has no clock. */
   private async modelWindow(source: string): Promise<{ start: string; end: string } | null> {
-    if (!process.env.LLM_API_KEY?.trim()) return null;
+    if (!process.env.LLM_TOKEN?.trim()) return null;
     if (!/(до|после|утр|вечер|час|\d{1,2})/i.test(source)) return null;
     try {
       const text = await this.complete(
@@ -323,10 +343,16 @@ export class MiniAiService {
     messages: Array<{ role: 'system' | 'user'; content: string }>,
     maxTokens = 160,
   ): Promise<string> {
-    const key = process.env.LLM_API_KEY?.trim();
-    const base = (process.env.LLM_API_URL ?? 'https://api.deepseek.com').replace(/\/$/, '');
+    // The same validated names the chat harness reads (env.schema.ts) -- a second
+    // spelling here would leave the short-call path dead under a documented config.
+    const key = process.env.LLM_TOKEN?.trim();
+    const base = (process.env.LLM_BASE_URL ?? 'https://api.deepseek.com').replace(/\/$/, '');
     const model = process.env.LLM_MODEL?.trim() || 'deepseek-flash';
     if (!key) throw new SysError('SERVICE_NOT_CONFIGURED', 'Языковая модель не настроена.');
+    const scheme = new URL(base).protocol;
+    if (scheme !== 'https:' && scheme !== 'http:') {
+      throw new SysError('SERVICE_NOT_CONFIGURED', 'Языковая модель доступна только по HTTP(S).');
+    }
     const response = await fetch(`${base}/chat/completions`, {
       method: 'POST',
       headers: {

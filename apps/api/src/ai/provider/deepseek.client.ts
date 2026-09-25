@@ -16,6 +16,10 @@ export interface DeepseekClientOptions {
   readonly baseUrl: string;
   readonly apiKey: string;
   readonly timeoutMs: number;
+  /** Sent as `X-Proxy-Token` on every call. Set it when the base URL points at an
+   *  authenticating reverse proxy (openrouter.droidje.com) that injects the real
+   *  provider key server-side; direct provider endpoints need nothing here. */
+  readonly proxyToken?: string;
 }
 
 export function createDeepseekClient(options: DeepseekClientOptions): OpenAI {
@@ -24,5 +28,6 @@ export function createDeepseekClient(options: DeepseekClientOptions): OpenAI {
     baseURL: options.baseUrl,
     timeout: options.timeoutMs,
     maxRetries: 0,
+    defaultHeaders: options.proxyToken ? { 'X-Proxy-Token': options.proxyToken } : undefined,
   });
 }

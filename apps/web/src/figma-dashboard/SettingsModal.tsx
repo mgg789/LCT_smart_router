@@ -1260,7 +1260,7 @@ function AiForm({ token }: { token: string | null }) {
         </div>
       </AiSection>
 
-      <AiSection title="LLM (OpenAI SDK)" note="Адрес, модель и токен. Подключение само план не меняет.">
+      <AiSection title="LLM (OpenAI SDK)" note="Адрес, модель и токен. Пока контур только хранит значения: живые вызовы читают LLM_PROVIDER/LLM_TOKEN/LLM_BASE_URL из окружения сервера.">
         <Field label="URL" htmlFor="ai-llm-url">
           <input
             id="ai-llm-url"
