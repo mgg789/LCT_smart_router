@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { engineerAvailabilityControl, expect, readPlan, signIn, test } from './fixtures';
+import { expect, readPlan, signIn, test } from './fixtures';
 
 test('live plan renders the local map and replans when an engineer goes offline', async ({
   page,
@@ -17,9 +17,9 @@ test('live plan renders the local map and replans when an engineer goes offline'
     .click();
   await expect(page.getByText('Как они повлияли', { exact: true })).toBeVisible();
   await expect(page.getByText(/транспорт авто/)).toBeVisible();
-  const availability = await engineerAvailabilityControl(page);
+  await page.getByRole('button', { name: 'Инженеры', exact: true }).click();
   // The dossier action reflects accepted server state, not an optimistic toggle.
-  await availability.click({ force: true });
+  await page.getByRole('button', { name: 'Снять со смены', exact: true }).click();
   await expect
     .poll(
       async () =>
@@ -28,9 +28,8 @@ test('live plan renders the local map and replans when an engineer goes offline'
       { timeout: 60_000 },
     )
     .toBe(5);
-  await expect(availability).toHaveAttribute('aria-label', 'Вернуть на смену');
-  await expect(availability).toBeEnabled();
-  await availability.click({ force: true });
+  await expect(page.getByRole('button', { name: 'Вернуть на смену', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: 'Вернуть на смену', exact: true }).click();
   await expect
     .poll(
       async () =>
@@ -38,8 +37,7 @@ test('live plan renders the local map and replans when an engineer goes offline'
       { timeout: 60_000 },
     )
     .toBe(5);
-  await expect(availability).toHaveAttribute('aria-label', 'Снять со смены');
-  await expect(availability).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Снять со смены', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'План дня', exact: true }).click();
   await expect(page.getByText('0 без назначения', { exact: false })).toBeVisible();
   expect((await readPlan(live.api)).revision).toBeGreaterThan(live.plan.revision);
@@ -50,24 +48,19 @@ test('live plan renders the local map and replans when an engineer goes offline'
   });
 });
 
-// Skipped: this is a Chromium a11y-tree click against a CSS-3D Figma artboard,
-// not a product regression. Cache identity and write-lock are covered by
-// `domain/resilience.test.ts` and AlertActions cached/demo disablement.
-// Re-enable when the Engineers dossier is not a sibling of `preserve-3d`.
-test.skip('connection loss preserves the real day, disables writes and recovers', async ({
+test('connection loss preserves the real day, disables writes and recovers', async ({
   page,
   context,
   live,
 }) => {
   await signIn(page);
   await expect(page.getByRole('button', { name: 'Загрузить данные', exact: true })).toBeVisible();
-  await expect(page.getByText('0 без назначения', { exact: false })).toBeVisible();
   const ids = live.plan.assignments.map((item) => item.requestId).sort();
-  const availability = await engineerAvailabilityControl(page);
+  await page.getByRole('button', { name: 'Инженеры', exact: true }).click();
   const availabilityRequest = '**/api/v1/dispatch/engineers/*/availability';
   await context.route(availabilityRequest, (route) => route.abort('internetdisconnected'));
-  await availability.click({ force: true });
-  await expect(availability).toBeDisabled({
+  await page.getByRole('button', { name: 'Снять со смены', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Снять со смены', exact: true })).toBeDisabled({
     timeout: 20_000,
   });
   // Read only persisted request identities; the UI cannot quietly substitute recorded demo data.
@@ -80,7 +73,7 @@ test.skip('connection loss preserves the real day, disables writes and recovers'
     );
   expect(stored.snapshot.requests.map((item) => item.id).sort()).toEqual(ids);
   await context.unroute(availabilityRequest);
-  await expect(availability).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Снять со смены', exact: true })).toBeEnabled();
   expect((await readPlan(live.api)).assignments.map((item) => item.requestId).sort()).toEqual(ids);
 });
 

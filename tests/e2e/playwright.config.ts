@@ -41,10 +41,7 @@ export default defineConfig({
     launchOptions: {
       args: ['--use-gl=angle', '--use-angle=swiftshader'],
     },
-    // Match the 1920×1080 artboard. A 1440-wide clip + CSS scale left the
-    // avatar (left: 1800) out of Chromium's accessibility tree, so
-    // getByRole('Меню пользователя') was not found after a successful sign-in.
-    viewport: { width: 1920, height: 1080 },
+    viewport: { width: 1440, height: 1000 },
     serviceWorkers: 'block',
     actionTimeout: 15_000,
     navigationTimeout: 30_000,
