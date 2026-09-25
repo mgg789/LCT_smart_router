@@ -67,14 +67,23 @@ test('monthly month validation rejects impossible and future months', () => {
 });
 
 test('catchup initializes cursor on first install and catches one closed month after restart', async () => {
-  const db = new FakeDb();
-  db.state.set('reports.monthly.cursor', { version: 1, month: '2026-07' });
-  const report = await service(db).catchUp();
-  assert.deepEqual(report.months, ['2026-07', '2026-08']);
-  assert.ok(db.state.has('reports.monthly.2026-08'));
-  assert.equal(db.intents.size, 2);
-  assert.deepEqual((await service(db).catchUp()).months, []);
-  assert.equal(db.intents.size, 2);
+  // The operator's shell may run with DEMO_STAND=true for the demo contour; this
+  // test's mail expectations are for an ordinary machine, so pin the flag here.
+  const previous = process.env.DEMO_STAND;
+  delete process.env.DEMO_STAND;
+  try {
+    const db = new FakeDb();
+    db.state.set('reports.monthly.cursor', { version: 1, month: '2026-07' });
+    const report = await service(db).catchUp();
+    assert.deepEqual(report.months, ['2026-07', '2026-08']);
+    assert.ok(db.state.has('reports.monthly.2026-08'));
+    assert.equal(db.intents.size, 2);
+    assert.deepEqual((await service(db).catchUp()).months, []);
+    assert.equal(db.intents.size, 2);
+  } finally {
+    if (previous === undefined) delete process.env.DEMO_STAND;
+    else process.env.DEMO_STAND = previous;
+  }
 });
 
 test('first install only initializes the current-month cursor', async () => {
