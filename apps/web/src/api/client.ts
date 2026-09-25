@@ -1459,11 +1459,17 @@ export function explainWithAi(
   kind: 'reasons' | 'plan',
   context: unknown,
 ): Promise<{ text: string }> {
-  return requestJson('/api/v1/dispatch/ai/explain', aiTextSchema, token, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ kind, context }),
-  }, 30_000);
+  return requestJson(
+    '/api/v1/dispatch/ai/explain',
+    aiTextSchema,
+    token,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind, context }),
+    },
+    30_000,
+  );
 }
 
 /** System one picks a policy and the server publishes that choice. */
@@ -1471,11 +1477,17 @@ export function optimizePlanWithAi(
   token: string,
   summary: string,
 ): Promise<{ id: string; label: string; steps: string[] }> {
-  return requestJson('/api/v1/dispatch/ai/optimize', aiPolicySchema, token, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ summary }),
-  }, 30_000);
+  return requestJson(
+    '/api/v1/dispatch/ai/optimize',
+    aiPolicySchema,
+    token,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ summary }),
+    },
+    30_000,
+  );
 }
 
 export interface AiAlertProposal {
@@ -1501,9 +1513,15 @@ export function proposeAlertWithAi(token: string, alertId: string): Promise<AiAl
 
 /** System one picks an allowed action; the server applies the usual alert resolve. */
 export function resolveAlertWithAi(token: string, alertId: string): Promise<AiAlertProposal> {
-  return requestJson(`/api/v1/dispatch/alerts/${alertId}/ai-resolve`, aiResolveSchema, token, {
-    method: 'POST',
-  }, 30_000);
+  return requestJson(
+    `/api/v1/dispatch/alerts/${alertId}/ai-resolve`,
+    aiResolveSchema,
+    token,
+    {
+      method: 'POST',
+    },
+    30_000,
+  );
 }
 
 export function saveAiSettings(

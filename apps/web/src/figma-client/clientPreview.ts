@@ -251,7 +251,7 @@ export function canSubmitClientForm(draft: ClientRequestDraft): boolean {
 const STORY_EMAIL = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i;
 const STORY_CLOCK = /\b(\d{1,2})[:.](\d{2})\b/g;
 const STORY_NAME =
-  /(?:меня зовут|фио|имя)\s*[:\-]?\s*([А-ЯЁA-Z][а-яёa-z]+(?:\s+[А-ЯЁA-Z][а-яёa-z]+){0,2})/i;
+  /(?:меня зовут|фио|имя)\s*[:-]?\s*([А-ЯЁA-Z][а-яёa-z]+(?:\s+[А-ЯЁA-Z][а-яёa-z]+){0,2})/i;
 const STORY_ADDRESS = /ул\.|улиц|проспект|пр-т|переул|дом\b|д\.\s*\d|москва/i;
 
 /**

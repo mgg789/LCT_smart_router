@@ -1,5 +1,5 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { DashboardApiError } from '../api/client';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { engineerHeaderStamp } from '../figma-engineer/engineerClock';
@@ -70,6 +70,14 @@ export function ClientApp() {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const opened = requests.find((item) => item.id === openedId) ?? null;
 
+  // Declared before the effects that reference it, and memoised: it sits in their
+  // dependency arrays and must not change identity on every render.
+  const forgetSession = useCallback(() => {
+    clearClientSession(window.localStorage);
+    setSession(null);
+    setNotice(null);
+  }, []);
+
   useEffect(() => {
     const stored = readClientSession(window.localStorage);
     setSession(stored);
@@ -118,7 +126,7 @@ export function ClientApp() {
     return () => {
       cancelled = true;
     };
-  }, [session]);
+  }, [session, forgetSession]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -128,12 +136,6 @@ export function ClientApp() {
       document.body.style.overflow = previous;
     };
   }, [menuOpen]);
-
-  const forgetSession = () => {
-    clearClientSession(window.localStorage);
-    setSession(null);
-    setNotice(null);
-  };
 
   const remember = (next: StoredClientSession) => {
     writeClientSession(window.localStorage, next);

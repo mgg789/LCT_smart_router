@@ -132,7 +132,9 @@ export function planQualityAdvice(input: {
     );
   }
   if (lines.length === 0) {
-    lines.push(textLine('Менять политику не нужно: в большинстве проверок день проходит без опозданий.'));
+    lines.push(
+      textLine('Менять политику не нужно: в большинстве проверок день проходит без опозданий.'),
+    );
   }
   const summary = `В типичный день опаздывает ${latePhrase} из ${total}. Проверка прожила день много раз с разным трафиком и длительностью работ.`;
   return {
@@ -147,7 +149,12 @@ export function planQualityAdvice(input: {
 function lateCountPhrase(expectedLate: number): string {
   if (expectedLate < 0.95) return 'меньше одной заявки';
   const count = Math.round(expectedLate);
-  const form = count % 10 === 1 && count % 100 !== 11 ? 'заявка' : count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 10 || count % 100 >= 20) ? 'заявки' : 'заявок';
+  const form =
+    count % 10 === 1 && count % 100 !== 11
+      ? 'заявка'
+      : count % 10 >= 2 && count % 10 <= 4 && (count % 100 < 10 || count % 100 >= 20)
+        ? 'заявки'
+        : 'заявок';
   return `~${count} ${form}`;
 }
 

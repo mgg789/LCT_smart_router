@@ -119,9 +119,7 @@ export function visiblePlannedSegments(
       from.key !== to.key &&
       graph.mapSegments.some((edge) => edge.key === `${from.key}->${to.key}`);
     const lunchPin = (coordinate: readonly [number, number]) =>
-      route.stops.some(
-        (stop) => stop.kind === 'lunch' && hasCoordinate(stop, coordinate),
-      );
+      route.stops.some((stop) => stop.kind === 'lunch' && hasCoordinate(stop, coordinate));
     // Lunch is collapsed off the map, so a road into that stop no longer matches
     // a graph edge. Keep only that polyline; a finished edge behind the anchor stays hidden.
     const intoCollapsedLunch =
@@ -236,19 +234,27 @@ function nearestNodeWithin(
  * the dashed fallback.
  */
 export function plannedRoadsCoverEdge(
-  edge: { from: Pick<LiveGraphNode, 'lat' | 'lon' | 'key'>; to: Pick<LiveGraphNode, 'lat' | 'lon' | 'key'> },
+  edge: {
+    from: Pick<LiveGraphNode, 'lat' | 'lon' | 'key'>;
+    to: Pick<LiveGraphNode, 'lat' | 'lon' | 'key'>;
+  },
   planned: readonly VisiblePlannedSegment[],
 ): boolean {
   const roads = planned.filter((segment) => segment.source === 'metro' || !segment.approximate);
   const pinsOf = (segment: VisiblePlannedSegment) =>
     segment.routeEndpoints ??
     ([segment.coordinates[0], segment.coordinates[segment.coordinates.length - 1]] as const);
-  const near = (node: Pick<LiveGraphNode, 'lat' | 'lon'>, point: readonly [number, number] | undefined) =>
-    point !== undefined && haversineMeters([node.lon, node.lat], point) <= 40;
+  const near = (
+    node: Pick<LiveGraphNode, 'lat' | 'lon'>,
+    point: readonly [number, number] | undefined,
+  ) => point !== undefined && haversineMeters([node.lon, node.lat], point) <= 40;
   for (const road of roads) {
     if (road.fromKey === edge.from.key && road.toKey === edge.to.key) return true;
     const pins = pinsOf(road);
-    if ((near(edge.from, pins[0]) && near(edge.to, pins[1])) || (near(edge.from, pins[1]) && near(edge.to, pins[0]))) {
+    if (
+      (near(edge.from, pins[0]) && near(edge.to, pins[1])) ||
+      (near(edge.from, pins[1]) && near(edge.to, pins[0]))
+    ) {
       return true;
     }
   }
@@ -276,8 +282,7 @@ function haversineMeters(from: readonly [number, number], to: readonly [number, 
   const dLon = toRad(to[0] - from[0]);
   const lat1 = toRad(from[1]);
   const lat2 = toRad(to[1]);
-  const half =
-    Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  const half = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
   return 2 * radius * Math.asin(Math.min(1, Math.sqrt(half)));
 }
 

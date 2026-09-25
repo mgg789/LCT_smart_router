@@ -4,9 +4,15 @@ import { recommendPolicy } from './policyRecommend';
 
 describe('plan quality advice', () => {
   it('bands on the expected late count and share, never on zero-late days', () => {
-    expect(qualityBand({ expectedLate: 0.4, expectedLateShare: 0.01, visitsTotal: 50 })).toBe('green');
-    expect(qualityBand({ expectedLate: 2, expectedLateShare: 0.04, visitsTotal: 50 })).toBe('yellow');
-    expect(qualityBand({ expectedLate: 3, expectedLateShare: 0.11, visitsTotal: 50 })).toBe('yellow');
+    expect(qualityBand({ expectedLate: 0.4, expectedLateShare: 0.01, visitsTotal: 50 })).toBe(
+      'green',
+    );
+    expect(qualityBand({ expectedLate: 2, expectedLateShare: 0.04, visitsTotal: 50 })).toBe(
+      'yellow',
+    );
+    expect(qualityBand({ expectedLate: 3, expectedLateShare: 0.11, visitsTotal: 50 })).toBe(
+      'yellow',
+    );
     expect(qualityBand({ expectedLate: 4, expectedLateShare: 0.2, visitsTotal: 50 })).toBe('red');
     // A plan can be structurally late even when some days pass cleanly.
     expect(qualityBand({ expectedLate: 8, expectedLateShare: 0.16, visitsTotal: 50 })).toBe('red');
@@ -111,11 +117,7 @@ describe('policy recommendation', () => {
   });
 
   it('picks the comparison row that covers more requests', () => {
-    const row = (
-      id: 'balanced' | 'covering',
-      assigned: number,
-      unassigned: number,
-    ) => ({
+    const row = (id: 'balanced' | 'covering', assigned: number, unassigned: number) => ({
       strategyId: id,
       kind: 'policy' as const,
       isUsable: true,

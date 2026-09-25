@@ -760,7 +760,12 @@ export function useDashboard() {
     } catch (cause) {
       if (generation !== liveReadGeneration.current) return false;
       if (isStartTimeout(cause)) {
-        const started = await waitForStartedDay(token, generation, liveReadGeneration, setLiveWorkday);
+        const started = await waitForStartedDay(
+          token,
+          generation,
+          liveReadGeneration,
+          setLiveWorkday,
+        );
         if (started) {
           pushEvent('Рабочий день запущен. План и статусы инженеров обновляются в LIVE-режиме.');
           void refresh();

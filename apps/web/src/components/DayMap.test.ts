@@ -299,9 +299,13 @@ describe('LIVE map factual projection', () => {
     const edge = graph.mapSegments.find(
       (item) => item.from.key === 'job:done' && item.to.key === 'job:next',
     );
-    expect(edge && plannedRoadsCoverEdge(edge, segments.filter((item) => item.source === 'metro'))).toBe(
-      true,
-    );
+    expect(
+      edge &&
+        plannedRoadsCoverEdge(
+          edge,
+          segments.filter((item) => item.source === 'metro'),
+        ),
+    ).toBe(true);
   });
 
   it('keeps a road polyline when OSRM snapped the ends onto the carriageway', () => {
