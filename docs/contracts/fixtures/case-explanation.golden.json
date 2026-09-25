@@ -1,0 +1,295 @@
+{
+  "schemaVersion": "1.0",
+  "snapshot": {
+    "workDate": "2026-09-20",
+    "timeZone": "Europe/Moscow",
+    "nowAt": 1789884000,
+    "policyId": "compact",
+    "lunchesEnabled": false,
+    "routerContextVersion": "ctx-1",
+    "policies": [],
+    "engineers": [
+      {
+        "id": "eng-1",
+        "version": 1,
+        "displayName": "Иван Кузнецов",
+        "inputOrder": 1,
+        "skills": [
+          "connection"
+        ],
+        "transportType": "car",
+        "region": "Центр",
+        "homeLat": null,
+        "homeLon": null,
+        "hasAccount": true,
+        "email": "ivan@example.com",
+        "day": {
+          "engineerId": "eng-1",
+          "workDate": "2026-09-20",
+          "version": 1,
+          "shiftStartAt": 1789880400,
+          "shiftEndAt": 1789923600,
+          "availability": "online",
+          "expectedOnlineAt": null,
+          "equipmentStock": {
+            "router": 0,
+            "setTopBox": 0,
+            "smartSpeaker": 0
+          },
+          "equipmentIssuedAt": null,
+          "lunch": {
+            "enabled": false,
+            "durationSec": null,
+            "windowStartAt": null,
+            "windowEndAt": null,
+            "required": false,
+            "taken": false,
+            "startedAt": null
+          }
+        }
+      },
+      {
+        "id": "eng-2",
+        "version": 1,
+        "displayName": "Мария Орлова",
+        "inputOrder": 2,
+        "skills": [
+          "local"
+        ],
+        "transportType": "walk",
+        "region": "Центр",
+        "homeLat": null,
+        "homeLon": null,
+        "hasAccount": true,
+        "email": "maria@example.com",
+        "day": {
+          "engineerId": "eng-2",
+          "workDate": "2026-09-20",
+          "version": 1,
+          "shiftStartAt": 1789880400,
+          "shiftEndAt": 1789923600,
+          "availability": "online",
+          "expectedOnlineAt": null,
+          "equipmentStock": {
+            "router": 0,
+            "setTopBox": 0,
+            "smartSpeaker": 0
+          },
+          "equipmentIssuedAt": null,
+          "lunch": {
+            "enabled": false,
+            "durationSec": null,
+            "windowStartAt": null,
+            "windowEndAt": null,
+            "required": false,
+            "taken": false,
+            "startedAt": null
+          }
+        }
+      }
+    ],
+    "requests": [
+      {
+        "id": "req-1",
+        "version": 1,
+        "lifecycle": "submitted",
+        "assignmentState": "assigned",
+        "addressText": "ул. Тверская, 1",
+        "region": "Центр",
+        "lat": 55.76,
+        "lon": 37.6,
+        "needsGeocoding": false,
+        "geocodeQuality": null,
+        "requiredEquipment": null,
+        "workType": "connect_internet",
+        "workTypeTitle": "Подключение интернета",
+        "requiredSkill": "connection",
+        "serviceDurationSec": 1800,
+        "windowStartAt": 1789887600,
+        "windowEndAt": 1789898400,
+        "priority": "normal",
+        "contactName": "Пётр Петров",
+        "problemText": null,
+        "createdAt": 1789880400,
+        "submittedAt": 1789880400,
+        "startedAt": null,
+        "completedAt": null,
+        "cancelledAt": null
+      },
+      {
+        "id": "req-2",
+        "version": 1,
+        "lifecycle": "submitted",
+        "assignmentState": "unassigned",
+        "addressText": "ул. Арбат, 10",
+        "region": "Центр",
+        "lat": 55.75,
+        "lon": 37.59,
+        "needsGeocoding": false,
+        "geocodeQuality": null,
+        "requiredEquipment": null,
+        "workType": "emergency_repair",
+        "workTypeTitle": "Аварийный ремонт",
+        "requiredSkill": "emergency",
+        "serviceDurationSec": 1800,
+        "windowStartAt": 1789902000,
+        "windowEndAt": 1789905600,
+        "priority": "urgent",
+        "contactName": "Анна Смирнова",
+        "problemText": null,
+        "createdAt": 1789880400,
+        "submittedAt": 1789880400,
+        "startedAt": null,
+        "completedAt": null,
+        "cancelledAt": null
+      }
+    ],
+    "plan": {
+      "mode": "auto",
+      "modeVersion": 1,
+      "plan": {
+        "revision": 1,
+        "origin": "auto",
+        "planAsOf": 1789884000,
+        "appliedAt": 1789884000,
+        "routes": [
+          {
+            "engineerId": "eng-1",
+            "startLat": 55.75,
+            "startLon": 37.6,
+            "startAt": 1789880400,
+            "finishAt": 1789923600,
+            "distanceKm": 5.4,
+            "travelTimeSec": 900,
+            "workTimeSec": 1800,
+            "waitingTimeSec": 0,
+            "lunchTimeSec": 0,
+            "assignedCount": 1,
+            "lunchStatus": "disabled",
+            "stops": [
+              {
+                "sequence": 1,
+                "kind": "job",
+                "requestId": "req-1",
+                "lat": 55.76,
+                "lon": 37.6,
+                "arrivalAt": 1789890600,
+                "startAt": 1789890600,
+                "endAt": 1789892400
+              }
+            ],
+            "legs": [
+              {
+                "legId": "leg-1",
+                "fromStopId": null,
+                "toStopId": "stop-req-1",
+                "departureAt": 1789889700,
+                "arrivalAt": 1789890600,
+                "travelTimeSec": 900,
+                "distanceKm": 5.4,
+                "travelSource": "road_matrix",
+                "trafficFactor": 1,
+                "geometry": null
+              }
+            ]
+          },
+          {
+            "engineerId": "eng-2",
+            "startLat": 55.75,
+            "startLon": 37.6,
+            "startAt": 1789880400,
+            "finishAt": 1789923600,
+            "distanceKm": 0,
+            "travelTimeSec": 0,
+            "workTimeSec": 0,
+            "waitingTimeSec": 0,
+            "lunchTimeSec": 0,
+            "assignedCount": 0,
+            "lunchStatus": "disabled",
+            "stops": [],
+            "legs": []
+          }
+        ],
+        "assignments": [
+          {
+            "requestId": "req-1",
+            "status": "assigned",
+            "engineerId": "eng-1",
+            "reasons": {
+              "assignment": {
+                "chosen": "eng-1",
+                "factors": [
+                  {
+                    "code": "skill_match",
+                    "ok": true,
+                    "facts": {
+                      "travel_time_sec": 900,
+                      "distance_km": 5.4,
+                      "window_end_margin_sec": 6000
+                    }
+                  }
+                ],
+                "alternatives": []
+              }
+            }
+          },
+          {
+            "requestId": "req-2",
+            "status": "unassigned",
+            "engineerId": null,
+            "reasons": {
+              "assignment": {
+                "chosen": null,
+                "factors": [
+                  {
+                    "code": "NO_SKILL_MATCH",
+                    "ok": false,
+                    "facts": {}
+                  }
+                ],
+                "alternatives": []
+              }
+            }
+          }
+        ]
+      },
+      "appliedResult": null,
+      "lastResult": null
+    },
+    "alerts": []
+  },
+  "cases": [
+    {
+      "name": "assigned",
+      "requestId": "req-1",
+      "engineerId": null,
+      "expected": {
+        "title": "Почему Иван Кузнецов?",
+        "facts": [
+          "Заявка требует навык «подключение», окно 10:00–13:00, работа 30 мин.",
+          "Иван Кузнецов: навыки подключение; транспорт авто; в смене уже 1 заявок.",
+          "Это первая работа после старта смены, доезд 15 мин / 5,4 км.",
+          "Начало в 10:50, запас до конца окна 100 мин."
+        ],
+        "influence": "Навык «подключение» есть у Иван Кузнецов, поэтому назначение допустимо. Приезд укладывается в окно — это удерживает заявку у этого исполнителя. Свободные в зоне (Мария Орлова) не имеют навыка «подключение».",
+        "result": "Заявка №req-1 назначена: Иван Кузнецов."
+      }
+    },
+    {
+      "name": "unassigned",
+      "requestId": "req-2",
+      "engineerId": null,
+      "expected": {
+        "title": "Почему без назначения",
+        "facts": [
+          "Заявка №req-2 требует навык «авария», окно 14:00–15:00, работа 30 мин.",
+          "Регион заявки — Центр: в смене 2 инженеров, с нужным навыком 0.",
+          "Без заявок в этой зоне: Мария Орлова (локальные работы).",
+          "Политика «Дешевле»."
+        ],
+        "influence": "Ни один инженер зоны не умеет «авария». Свободные смены это не чинят — им тоже не хватает навыка.",
+        "result": "Заявка №req-2 осталась без назначения: в зоне нет навыка «авария»."
+      }
+    }
+  ]
+}
