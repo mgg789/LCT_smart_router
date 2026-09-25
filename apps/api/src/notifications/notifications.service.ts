@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '../generated/prisma/client';
 import type { NotificationCategory } from '../generated/prisma/client';
 import type { Tx } from '../persistence';
+import { redactPayload } from './smtp.helpers';
 
 export interface NotificationIntentInput {
   readonly category: NotificationCategory;
@@ -91,5 +93,40 @@ export class NotificationsService {
         createdAt: BigInt(now),
       },
     });
+  }
+
+  /**
+   * Redacts the login code out of every stale `pending_submission` intent.
+   *
+   * A code mail waiting for a transport is the only place a login code ever rests in
+   * the clear (the stored verifier is a hash). Once the code's TTL is over no transport
+   * will ever send it, so the payload loses the code right there -- a database dump
+   * must not replay even an expired way in, and an SMTP-less contour must not keep
+   * codes forever.
+   */
+  async redactStaleLoginCodePayloads(tx: Tx, now: number, ttlSec: number): Promise<number> {
+    const stale = await tx.notificationIntent.findMany({
+      where: {
+        category: 'account_login_code',
+        state: 'pending_submission',
+        createdAt: { lt: BigInt(now - ttlSec) },
+      },
+      select: { id: true, payload: true },
+    });
+    let redacted = 0;
+    for (const row of stale) {
+      const payload = row.payload as Record<string, unknown> | null;
+      if (!payload || !('code' in payload) || payload.code === '[redacted]') continue;
+      const redactedPayload = redactPayload(payload) as Prisma.InputJsonValue;
+      await tx.notificationIntent.update({
+        where: { id: row.id },
+        data: { payload: redactedPayload },
+      });
+      redacted += 1;
+    }
+    if (redacted > 0) {
+      this.logger.log(`Redacted ${redacted} expired login-code payload(s)`);
+    }
+    return redacted;
   }
 }
