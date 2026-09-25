@@ -1056,6 +1056,96 @@ export async function setDispatchMode(token: string, mode: 'auto' | 'manual'): P
   });
 }
 
+const simulationPointSchema = z.object({ lat: z.number(), lon: z.number() });
+const simulationRouteSchema = z.object({
+  engineerId: z.string(),
+  segments: z.array(
+    z.object({
+      travelSource: z.string(),
+      points: z.array(simulationPointSchema),
+    }),
+  ),
+});
+const simulationDeltaSchema = z.object({
+  assigned: z.number(),
+  unassigned: z.number(),
+  lateAssigned: z.number(),
+  totalLatenessSec: z.number(),
+  distanceKm: z.number(),
+  transfers: z.number(),
+  beforeLate: z.number(),
+  afterLate: z.number(),
+  beforeUnassigned: z.number(),
+  afterUnassigned: z.number(),
+});
+export const simulationResponseSchema = z.object({
+  method: z.enum(['insertion', 'bounded', 'catalog']),
+  cached: z.boolean(),
+  patchHash: z.string(),
+  inputHash: z.string(),
+  routerContextVersion: z.string(),
+  text: z.string(),
+  delta: simulationDeltaSchema.nullable(),
+  routes: z.array(simulationRouteSchema),
+  strategies: z.array(
+    z.object({
+      strategyId: z.string(),
+      metrics: z.object({
+        assignedCount: z.number(),
+        unassignedCount: z.number(),
+        lateAssignedCount: z.number(),
+        distanceKm: z.number(),
+      }),
+      routes: z.array(simulationRouteSchema),
+    }),
+  ),
+});
+export type SimulationResponse = z.infer<typeof simulationResponseSchema>;
+
+export interface SimulationPatch {
+  readonly catalog?: boolean;
+  readonly policyId?: 'fast' | 'compact' | 'sla' | 'balanced' | 'eco' | 'covering';
+  readonly lunchesEnabled?: boolean;
+  readonly metroEnabled?: boolean;
+  readonly trafficEnabled?: boolean;
+  readonly equipmentEnabled?: boolean;
+  readonly equipmentTransfersEnabled?: boolean;
+  readonly window?: {
+    readonly requestId: string;
+    readonly windowStartAt: number;
+    readonly windowEndAt: number;
+  };
+  readonly pin?: { readonly requestId: string; readonly engineerId: string };
+  readonly unassignRequestId?: string;
+}
+
+/** Read-only what-if. The working plan is not replaced. */
+export function simulateChange(token: string, patch: SimulationPatch): Promise<SimulationResponse> {
+  return requestJson(
+    '/api/v1/dispatch/simulate',
+    simulationResponseSchema,
+    token,
+    { method: 'POST', body: JSON.stringify(patch) },
+    90_000,
+  );
+}
+
+/**
+ * Same what-if call the manual editor will use later.
+ * This pass does not rebuild the manual editor; callers still have to confirm a worse delta.
+ */
+export function previewManualChange(
+  token: string,
+  patch: SimulationPatch,
+): Promise<SimulationResponse> {
+  return simulateChange(token, patch);
+}
+
+/** Lateness or unassigned count grew. A shorter route by itself is not a warning. */
+export function simulationWorsens(delta: SimulationResponse['delta']): boolean {
+  return delta !== null && (delta.lateAssigned > 0 || delta.unassigned > 0);
+}
+
 /** Loads all Router strategies and the official FIFO baseline for one immutable input. */
 export function loadPolicyComparison(token: string): Promise<PolicyComparisonResponse> {
   // Allow the API's bounded cold comparison to finish before the UI gives up.

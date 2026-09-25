@@ -12,6 +12,8 @@ import {
   linkEngineerAccount,
   loadDashboardSnapshot,
   loadPolicyComparison,
+  simulateChange,
+  simulationWorsens,
   loginDispatcher,
   markDispatchNoticeSeen,
   reassignDispatchRequest,
@@ -141,6 +143,8 @@ export function useDashboard() {
   const [pendingDelta, setPendingDelta] = useState<PlanDelta | null>(null);
   const [baseline, setBaseline] = useState<RoutingBaseline | null>(null);
   const [policyComparison, setPolicyComparison] = useState<PolicyComparisonResponse | null>(null);
+  const [worseningText, setWorseningText] = useState<string | null>(null);
+  const worseningResolve = useRef<((accepted: boolean) => void) | null>(null);
   const [policyComparisonLoading, setPolicyComparisonLoading] = useState(false);
   const [policyComparisonError, setPolicyComparisonError] = useState<string | null>(null);
   const [events, setEvents] = useState<DayEvent[]>([]);
@@ -636,6 +640,20 @@ export function useDashboard() {
         }
         if (generation !== readGeneration.current) return false;
         if (nextPolicy !== previous.policyId) {
+          try {
+            const preview = await simulateChange(token, { policyId: nextPolicy });
+            if (simulationWorsens(preview.delta)) {
+              const accepted = await new Promise<boolean>((resolve) => {
+                worseningResolve.current = resolve;
+                setWorseningText(preview.text);
+              });
+              setWorseningText(null);
+              worseningResolve.current = null;
+              if (!accepted) return false;
+            }
+          } catch {
+            // No stored answer: the dispatcher can still apply the policy.
+          }
           expectedInputHash = await selectRoutingPolicy(token, nextPolicy);
         }
         if (generation !== readGeneration.current) return false;
@@ -1337,6 +1355,12 @@ export function useDashboard() {
     /** Live session credential; null in the demo and cached contours. Screens that call
      * the live API directly (token management) read it rather than guessing the source. */
     token,
+    worseningText,
+    answerWorsening: (accepted: boolean) => {
+      setWorseningText(null);
+      worseningResolve.current?.(accepted);
+      worseningResolve.current = null;
+    },
     dismissOperationWarning: () => setOperationWarning(null),
     selectDemoScenario,
     leaveDemo,

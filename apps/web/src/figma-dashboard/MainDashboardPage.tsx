@@ -21,6 +21,7 @@ import { AlertsView } from './AlertsView';
 import { useArtboardScale } from './artboardScale';
 import { FIGMA_ASSETS } from './assets';
 import { ConfirmDangerModal } from './ConfirmDangerModal';
+import { WorsenModal } from './WorsenModal';
 import { Copyable } from './Copyable';
 import type { DangerActionId } from './confirmPhrase';
 import { DashboardAi, DashboardChats } from './DashboardAssist';
@@ -865,6 +866,11 @@ export function MainDashboardPage() {
             closeShift={dash.closeShift}
           />
         ) : null}
+        <WorsenModal
+          text={dash.worseningText}
+          onCancel={() => dash.answerWorsening(false)}
+          onConfirm={() => dash.answerWorsening(true)}
+        />
         <ConfirmDangerModal
           actionId={dangerAction}
           motionOn={motionOn}
@@ -1002,6 +1008,7 @@ export function MainDashboardPage() {
                   error={dash.policyComparisonError}
                   recorded={dash.isDemo}
                   readOnly={dash.source === 'cached'}
+                  token={dash.token}
                   onRefresh={() => void dash.refreshPolicyComparison()}
                 />
               ) : null}

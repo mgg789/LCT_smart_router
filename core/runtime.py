@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from core.contracts import (
     Diagnostic,
+    Plan,
     Policy,
     PolicyComparison,
     PolicyComparisonRow,
@@ -289,7 +290,7 @@ def calculate(
     return result, output
 
 
-def calculate_policy_comparison(
+def calculate_policy_catalog(
     raw: bytes,
     publication_id: str,
     graph: RoadGraph | OSRMTravel,
@@ -298,14 +299,16 @@ def calculate_policy_comparison(
     search_budget_ms: int = 8000,
     *,
     offline: bool = False,
-) -> PolicyComparison:
+) -> tuple[PolicyComparison, dict[str, Plan]]:
     """Calculate all catalog policies and FIFO on one immutable snapshot.
 
     The function is intentionally independent from Runtime memory: every policy
     gets the same cold-start snapshot and bounded budget, and no candidate can
     affect the active plan or the next replanning anchor. Rows share the travel
     space the installed graph serves, so their summaries are directly comparable
-    with the published plan's metrics.
+    with the published plan's metrics. One shared candidate portfolio is scored
+    once per policy. The selected plan for each strategy is returned with the
+    summary. Nothing here is published.
     """
     if not 1 <= search_budget_ms <= 8000:
         raise ValueError("COMPARISON_BUDGET_INVALID")
@@ -377,11 +380,13 @@ def calculate_policy_comparison(
         )
     # Each strategy selects from the same immutable, validated candidate portfolio.
     # FIFO is never optimized, replaced, or supplied with additional engineers.
+    selected: dict[str, Plan] = {"baseline": fifo}
     for index, row in enumerate(rows):
         candidate_snapshot = snapshot.model_copy(
             update={"policy": Policy(policy_id=row.strategy_id, parameters={})}
         )
         best = min(candidates, key=lambda plan: score(candidate_snapshot, plan))
+        selected[row.strategy_id] = best
         rows[index] = row.model_copy(update={"is_usable": best.is_usable, "summary": best.summary})
     # Expanded-workforce plans must never enter the fixed-roster candidate pool.
     started = time.monotonic()
@@ -406,7 +411,8 @@ def calculate_policy_comparison(
         )
     )
     rows.append(baseline_row)
-    return PolicyComparison(
+    selected["covering"] = covering.main
+    comparison = PolicyComparison(
         input_publication_id=publication_id,
         input_hash=content_hash(raw),
         router_context_version=context_version,
@@ -414,6 +420,30 @@ def calculate_policy_comparison(
         search_budget_ms=search_budget_ms,
         rows=rows,
     )
+    return comparison, selected
+
+
+def calculate_policy_comparison(
+    raw: bytes,
+    publication_id: str,
+    graph: RoadGraph | OSRMTravel,
+    settings: SearchSettings,
+    context_version: str,
+    search_budget_ms: int = 8000,
+    *,
+    offline: bool = False,
+) -> PolicyComparison:
+    """Summary rows only. Routes stay in calculate_policy_catalog for the map store."""
+    comparison, _plans = calculate_policy_catalog(
+        raw,
+        publication_id,
+        graph,
+        settings,
+        context_version,
+        search_budget_ms,
+        offline=offline,
+    )
+    return comparison
 
 
 class RouterRuntime:
@@ -484,6 +514,8 @@ class RouterRuntime:
         self._thread: threading.Thread | None = None
         self._operations = settings_store.load_operations() if settings_store is not None else {}
         self._comparison_cache: dict[tuple[str, str], PolicyComparison] = {}
+        self._sim_lock = threading.Lock()
+        self._simulation_cache: dict[tuple[str, str, str], dict] = {}
         self.result = RouterResult(status="pending", router_context_version=self.context_version)
         self.last_path: str | None = None
 
@@ -755,6 +787,72 @@ class RouterRuntime:
             self._comparison_cache[key] = comparison
             return comparison.model_copy(deep=True)
 
+    def simulate(self, patch: dict) -> dict:
+        """What-if on a byte copy of the ready publication. Does not write the active plan.
+
+        Simulations share one lock so they queue behind each other. The live worker
+        uses a different lock and does not wait on this queue.
+        """
+        from core.simulator import SimulationPatch, patch_hash, simulate_patch
+
+        try:
+            parsed = SimulationPatch.model_validate(patch)
+        except Exception as exc:
+            raise ValueError("PATCH_INVALID") from exc
+        try:
+            publication = self.reader.read()
+        except Exception as exc:
+            raise RuntimeError("ACTIVE_PUBLICATION_UNAVAILABLE") from exc
+        if isinstance(publication, bytes):
+            digest = content_hash(publication)
+            publication = SnapshotPublication(
+                publication_id=f"legacy:{digest}",
+                publication_seq=0,
+                payload=publication,
+                declared_sha256=digest,
+                published_at=int(time.time()),
+            )
+        digest = content_hash(publication.payload)
+        with self._lock:
+            active = self.result.model_copy(deep=True)
+            context_version = self.context_version
+            settings = copy.deepcopy(self.settings)
+            if (
+                active.status != "ready"
+                or active.input_publication_id != publication.publication_id
+                or active.input_hash != digest
+                or active.router_context_version != context_version
+                or active.main is None
+            ):
+                raise ValueError("PUBLICATION_CHANGED")
+            base = active.main.model_copy(deep=True)
+        key = (digest, context_version, patch_hash(parsed))
+        with self._sim_lock:
+            cached = self._simulation_cache.get(key)
+            if cached is not None:
+                return {**cached, "cached": True}
+            result = simulate_patch(
+                publication.payload,
+                settings,
+                context_version,
+                parsed,
+                base,
+                publication_id=publication.publication_id,
+            )
+            try:
+                latest = self.reader.read()
+            except Exception as exc:
+                raise RuntimeError("ACTIVE_PUBLICATION_UNAVAILABLE") from exc
+            latest_raw = latest if isinstance(latest, bytes) else latest.payload
+            with self._lock:
+                if content_hash(latest_raw) != digest or self.context_version != context_version:
+                    raise ValueError("PUBLICATION_CHANGED")
+            if len(self._simulation_cache) > 32:
+                self._simulation_cache.clear()
+            stored = {**result, "cached": False}
+            self._simulation_cache[key] = stored
+            return stored
+
     def state(self) -> dict:
         """Expose service state separately from an older result's context version."""
         with self._lock:
@@ -836,6 +934,7 @@ class RouterRuntime:
         self._active_region = ""
         self.last_path = None
         self._comparison_cache.clear()
+        self._simulation_cache.clear()
         self.result = RouterResult(status="pending", router_context_version=self.context_version)
 
     def update_graph(self, graph: RoadGraph) -> None:

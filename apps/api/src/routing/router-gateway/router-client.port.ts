@@ -123,6 +123,66 @@ export interface PolicyComparisonMetrics {
   readonly maxWorkloadSec: number;
 }
 
+export interface RouterSimulationPatch {
+  readonly catalog?: boolean;
+  readonly policy_id?: string;
+  readonly lunches_enabled?: boolean;
+  readonly metro_enabled?: boolean;
+  readonly traffic_enabled?: boolean;
+  readonly equipment_enabled?: boolean;
+  readonly equipment_transfers_enabled?: boolean;
+  readonly window?: {
+    readonly request_id: string;
+    readonly window_start_at: number;
+    readonly window_end_at: number;
+  };
+  readonly pin?: { readonly request_id: string; readonly engineer_id: string };
+  readonly unassign_request_id?: string;
+}
+
+export interface SimulationCounts {
+  readonly assigned_count: number;
+  readonly unassigned_count: number;
+  readonly late_assigned_count: number;
+  readonly total_lateness_sec: number;
+  readonly distance_km: number;
+}
+
+export interface SimulationRouteSegment {
+  readonly travel_source: string;
+  readonly points: readonly { readonly lat: number; readonly lon: number }[];
+}
+
+export interface SimulationRoute {
+  readonly engineer_id: string;
+  readonly segments: readonly SimulationRouteSegment[];
+}
+
+export interface RouterSimulation {
+  readonly input_hash: string;
+  readonly input_publication_id: string;
+  readonly router_context_version: string;
+  readonly patch_hash: string;
+  readonly method: 'insertion' | 'bounded' | 'catalog';
+  readonly cached: boolean;
+  readonly delta?: {
+    readonly assigned: number;
+    readonly unassigned: number;
+    readonly late_assigned: number;
+    readonly total_lateness_sec: number;
+    readonly distance_km: number;
+    readonly transfers: number;
+    readonly before: SimulationCounts;
+    readonly after: SimulationCounts;
+  };
+  readonly routes?: readonly SimulationRoute[];
+  readonly strategies?: readonly {
+    readonly strategy_id: string;
+    readonly metrics: SimulationCounts;
+    readonly routes: readonly SimulationRoute[];
+  }[];
+}
+
 export interface PolicyComparison {
   readonly inputPublicationId: string;
   readonly inputHash: string;
@@ -206,6 +266,11 @@ export abstract class RouterClient {
   /** Compares every prepared policy and FIFO on one immutable current publication. */
   getPolicyComparison(): Promise<PolicyComparison> {
     throw SysError.notConfigured('Router Core policy comparison');
+  }
+
+  /** What-if on the ready publication. Does not accept the result into the working plan. */
+  simulate(_patch: RouterSimulationPatch): Promise<RouterSimulation> {
+    throw SysError.notConfigured('Router Core simulation');
   }
 
   /** Runs dry Monte-Carlo situation predictions for one fixed plan; never optimizes. */

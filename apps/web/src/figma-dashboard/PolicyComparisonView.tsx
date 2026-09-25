@@ -1,9 +1,12 @@
+import { useEffect, useState } from 'react';
+import { simulateChange, type SimulationResponse } from '../api/client';
 import type {
   DashboardSnapshot,
   PolicyComparisonResponse,
   PolicyComparisonRow,
 } from '../api/types';
 import { recommendPolicy } from '../domain/policyRecommend';
+import { PolicyStrategyMap } from './PolicyStrategyMap';
 import {
   perAssignmentDuration,
   perAssignmentKm,
@@ -43,6 +46,7 @@ export function PolicyComparisonView({
   error,
   recorded,
   readOnly,
+  token,
   onRefresh,
 }: {
   snapshot: DashboardSnapshot | null;
@@ -51,8 +55,33 @@ export function PolicyComparisonView({
   error: string | null;
   recorded: boolean;
   readOnly: boolean;
+  token: string | null;
   onRefresh: () => void;
 }) {
+  const [mode, setMode] = useState<'table' | 'map'>('table');
+  const [mapRoutes, setMapRoutes] = useState<SimulationResponse | null>(null);
+  const [mapError, setMapError] = useState<string | null>(null);
+  const [mapLoading, setMapLoading] = useState(false);
+
+  useEffect(() => {
+    if (mode !== 'map' || !token) return;
+    let active = true;
+    setMapLoading(true);
+    setMapError(null);
+    void simulateChange(token, { catalog: true })
+      .then((result) => {
+        if (active) setMapRoutes(result);
+      })
+      .catch((cause: unknown) => {
+        if (active) setMapError(cause instanceof Error ? cause.message : 'Не удалось построить карту');
+      })
+      .finally(() => {
+        if (active) setMapLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [mode, token, comparison?.inputHash, comparison?.routerContextVersion]);
   const appliedInputHash = snapshot?.plan.appliedResult?.inputHash ?? null;
   const isStale =
     comparison !== null &&
@@ -80,6 +109,23 @@ export function PolicyComparisonView({
             {POLICY_PAGE_CAPTION}
           </p>
         </div>
+        <div className="flex items-center gap-[12px]">
+          <div className="flex h-[67px] items-center rounded-[20px] bg-figma-soft p-[6px]">
+            <button
+              type="button"
+              onClick={() => setMode('table')}
+              className={`h-[55px] rounded-[16px] px-[18px] font-semibold text-[16px] ${mode === 'table' ? 'bg-white text-figma-ink' : 'text-figma-muted'}`}
+            >
+              Таблица
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('map')}
+              className={`h-[55px] rounded-[16px] px-[18px] font-semibold text-[16px] ${mode === 'map' ? 'bg-white text-figma-ink' : 'text-figma-muted'}`}
+            >
+              Карта
+            </button>
+          </div>
         <button
           type="button"
           onClick={onRefresh}
@@ -90,6 +136,7 @@ export function PolicyComparisonView({
             {loading ? 'Считаем…' : comparison ? 'Пересчитать' : 'Сравнить'}
           </span>
         </button>
+        </div>
       </div>
 
       {comparison ? (
@@ -102,6 +149,28 @@ export function PolicyComparisonView({
       ) : null}
 
       <div className="absolute inset-x-[30px] top-[168px] bottom-[24px] overflow-auto [scrollbar-width:thin]">
+        {mode === 'map' ? (
+          mapLoading ? (
+            <div className="flex h-[220px] items-center justify-center rounded-[20px] bg-figma-soft">
+              <p className="font-semibold text-[20px] text-figma-ink">Считаем</p>
+            </div>
+          ) : mapError ? (
+            <div className="rounded-[20px] bg-figma-soft px-[24px] py-[20px]">
+              <p className="font-semibold text-[20px] text-figma-danger">Карта не загрузилась</p>
+              <p className="mt-[8px] font-medium text-[16px] text-figma-muted">{mapError}</p>
+            </div>
+          ) : mapRoutes && mapRoutes.strategies.length > 0 ? (
+            <PolicyStrategyMap strategies={mapRoutes.strategies} />
+          ) : (
+            <div className="flex h-[220px] items-center justify-center rounded-[20px] bg-figma-soft px-[30px] text-center">
+              <p className="font-medium text-[18px] text-figma-muted">
+                На карте появятся все стратегии сразу. Рабочий план при этом не меняется.
+              </p>
+            </div>
+          )
+        ) : null}
+        {mode === 'table' ? (
+        <>
         {error ? (
           <div className="rounded-[20px] bg-figma-soft px-[24px] py-[20px]">
             <p className="font-semibold text-[20px] text-figma-danger">Сравнение не загрузилось</p>
@@ -168,6 +237,8 @@ export function PolicyComparisonView({
               ))}
             </tbody>
           </table>
+        ) : null}
+        </>
         ) : null}
       </div>
     </section>

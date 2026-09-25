@@ -7,6 +7,8 @@ import {
   type ManualEvaluation,
   type ManualEvaluationInput,
   type PolicyComparison,
+  type RouterSimulation,
+  type RouterSimulationPatch,
   RouterClient,
   type RouterPredictCalibration,
   type RouterResultStatus,
@@ -118,6 +120,55 @@ const policyComparisonSchema = z.object({
       summary: comparisonMetricsSchema,
     }),
   ),
+});
+
+const simulationCountsSchema = z.object({
+  assigned_count: z.number().int().nonnegative(),
+  unassigned_count: z.number().int().nonnegative(),
+  late_assigned_count: z.number().int().nonnegative(),
+  total_lateness_sec: z.number().int().nonnegative(),
+  distance_km: z.number().nonnegative(),
+});
+
+const simulationRouteSchema = z.object({
+  engineer_id: z.string().min(1),
+  segments: z.array(
+    z.object({
+      travel_source: z.string().min(1),
+      points: z.array(z.object({ lat: z.number(), lon: z.number() })),
+    }),
+  ),
+});
+
+const simulationSchema = z.object({
+  input_hash: z.string().length(64),
+  input_publication_id: z.string().min(1),
+  router_context_version: z.string().min(1),
+  patch_hash: z.string().length(64),
+  method: z.enum(['insertion', 'bounded', 'catalog']),
+  cached: z.boolean(),
+  delta: z
+    .object({
+      assigned: z.number().int(),
+      unassigned: z.number().int(),
+      late_assigned: z.number().int(),
+      total_lateness_sec: z.number().int(),
+      distance_km: z.number(),
+      transfers: z.number().int().nonnegative(),
+      before: simulationCountsSchema,
+      after: simulationCountsSchema,
+    })
+    .optional(),
+  routes: z.array(simulationRouteSchema).optional(),
+  strategies: z
+    .array(
+      z.object({
+        strategy_id: z.string().min(1),
+        metrics: simulationCountsSchema,
+        routes: z.array(simulationRouteSchema),
+      }),
+    )
+    .optional(),
 });
 
 const technicalSettingsSchema = z.object({
@@ -444,6 +495,24 @@ export class HttpRouterClient extends RouterClient {
         traffic_multiplier: z.number().min(1),
       })
       .parse(raw);
+  }
+
+  /** What-if. The Router call does not publish; the caller stores the answer. */
+  override async simulate(patch: RouterSimulationPatch): Promise<RouterSimulation> {
+    const raw = await this.fetchJson(
+      '/v1/simulate',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(patch),
+      },
+      Math.max(this.options.requestTimeoutMs, 90_000),
+    );
+    const parsed = simulationSchema.safeParse(raw);
+    if (!parsed.success) {
+      throw new Error(`Router /v1/simulate response is invalid: ${parsed.error.message}`);
+    }
+    return parsed.data;
   }
 
   /** Runs or reads Router's cached same-snapshot policy comparison. */

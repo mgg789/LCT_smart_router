@@ -14,6 +14,13 @@ import {
   ControlStateService,
   RouterClient,
 } from '../../routing/router-gateway';
+import {
+  readSimulation,
+  rememberSimulation,
+  russianDelta,
+  simulationPatchHash,
+  toRouterPatch,
+} from '../../orchestrator/simulator';
 import type { ToolContext, ToolResult, ToolSpec } from './tool.types';
 
 export interface DispatcherReadToolDeps {
@@ -384,6 +391,68 @@ export function buildDispatcherReadTools(deps: DispatcherReadToolDeps): readonly
     },
   };
 
+  const simulateChangeSchema = z
+    .object({
+      policyId: z.enum(['fast', 'compact', 'sla', 'balanced', 'eco', 'covering']).optional(),
+      lunchesEnabled: z.boolean().optional(),
+      metroEnabled: z.boolean().optional(),
+      trafficEnabled: z.boolean().optional(),
+      equipmentEnabled: z.boolean().optional(),
+      equipmentTransfersEnabled: z.boolean().optional(),
+      window: z
+        .object({
+          requestId: z.string().min(1),
+          windowStartAt: z.number().int().nonnegative(),
+          windowEndAt: z.number().int().nonnegative(),
+        })
+        .optional(),
+      pin: z
+        .object({
+          requestId: z.string().min(1),
+          engineerId: z.string().min(1),
+        })
+        .optional(),
+      unassignRequestId: z.string().min(1).optional(),
+    })
+    .strict();
+  type SimulateChangeArgs = z.infer<typeof simulateChangeSchema>;
+
+  const simulateChange: ToolSpec<SimulateChangeArgs> = {
+    name: 'simulate_change',
+    description:
+      'Read-only what-if. Returns a Russian delta against the current plan. Does not apply the change.',
+    schema: simulateChangeSchema,
+    async run(_ctx, args): Promise<ToolResult> {
+      const patch = toRouterPatch(args);
+      const current = await deps.prisma.routingCurrent.findUnique({
+        where: { id: 'singleton' },
+        include: { snapshot: true },
+      });
+      const contextVersion = await deps.router.getActiveContextVersion();
+      const stored =
+        current && contextVersion
+          ? await readSimulation(
+              deps.prisma,
+              current.snapshot.inputHash,
+              contextVersion,
+              simulationPatchHash(patch),
+            )
+          : null;
+      const result = stored ?? (await deps.router.simulate(patch));
+      if (
+        !stored &&
+        current &&
+        contextVersion &&
+        result.input_hash === current.snapshot.inputHash &&
+        result.router_context_version === contextVersion
+      ) {
+        await rememberSimulation(deps.prisma, patch, result);
+      }
+      const text = russianDelta(patch, result);
+      return ok(text, { text });
+    },
+  };
+
   const getRouterSettings: ToolSpec<GetRouterSettingsArgs> = {
     name: 'get_router_settings',
     description:
@@ -471,6 +540,7 @@ export function buildDispatcherReadTools(deps: DispatcherReadToolDeps): readonly
     getShiftStatus,
     getPolicies,
     comparePolicies,
+    simulateChange,
     getRouterSettings,
     getSnapshotDiagnostics,
     evaluateManualOrder,

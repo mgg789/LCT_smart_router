@@ -1508,3 +1508,21 @@ model AiDocument {
   @@index([segment])
   @@map("ai_documents")
 }
+
+/// What-if answer for one publication, context and patch. Never the applied plan.
+model PlanSimulation {
+  id             String @id
+  baseHash       String @map("base_hash")
+  contextVersion String @map("context_version")
+  patchHash      String @map("patch_hash")
+  patch          Json
+  method         String
+  summary        Json
+  routes         Json
+  delta          Json
+  createdAt      BigInt @map("created_at")
+
+  @@unique([baseHash, contextVersion, patchHash])
+  @@index([baseHash, createdAt])
+  @@map("plan_simulations")
+}

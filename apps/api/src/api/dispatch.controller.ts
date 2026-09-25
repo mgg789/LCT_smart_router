@@ -34,6 +34,15 @@ import {
   MapRoutingService,
   moscowMinutesToUnix,
 } from '../orchestrator/settings';
+import {
+  readSimulation,
+  rememberSimulation,
+  russianDelta,
+  simulationPatchHash,
+  toDeltaView,
+  toRouteView,
+  toRouterPatch,
+} from '../orchestrator/simulator';
 import { APP_STATE_KEYS, PrismaService, UnitOfWork } from '../persistence';
 import {
   PUBLICATION_TRIGGERS,
@@ -114,6 +123,7 @@ import {
   type UpdateDispatcherSettingsDto,
   updateDispatcherSettingsSchema,
 } from './dto/settings.dto';
+import { type SimulationPatchDto, simulationPatchSchema } from './dto/simulation.dto';
 import {
   type EngineerDayView,
   type EngineerView,
@@ -798,6 +808,66 @@ export class DispatchController {
       );
     });
     return comparison;
+  }
+
+  @Post('simulate')
+  @ApiOperation({ summary: 'What-if on the current publication; does not change the working plan' })
+  async simulate(@Body(zodBody(simulationPatchSchema)) dto: SimulationPatchDto) {
+    if (!this.router.isConfigured()) {
+      throw SysError.notConfigured('Router Core');
+    }
+    const patch = toRouterPatch(dto);
+    const current = await this.prisma.routingCurrent.findUnique({
+      where: { id: 'singleton' },
+      include: { snapshot: true },
+    });
+    if (!current) {
+      throw new SysError('VERSION_CONFLICT', 'There is no published planning task to simulate');
+    }
+    const contextVersion = await this.router.getActiveContextVersion();
+    if (!contextVersion) {
+      throw new SysError('VERSION_CONFLICT', 'Router has no context version for this publication');
+    }
+    const hash = simulationPatchHash(patch);
+    const stored = await readSimulation(
+      this.prisma,
+      current.snapshot.inputHash,
+      contextVersion,
+      hash,
+    );
+    const result = stored ?? (await this.router.simulate(patch));
+    if (!stored) {
+      if (
+        result.input_hash !== current.snapshot.inputHash ||
+        result.router_context_version !== contextVersion
+      ) {
+        throw new SysError(
+          'VERSION_CONFLICT',
+          'Planning data changed while the simulation was calculated; retry the read',
+        );
+      }
+      await rememberSimulation(this.prisma, patch, result);
+    }
+    return {
+      method: result.method,
+      cached: result.cached,
+      patchHash: result.patch_hash,
+      inputHash: result.input_hash,
+      routerContextVersion: result.router_context_version,
+      text: russianDelta(patch, result),
+      delta: toDeltaView(result),
+      routes: (result.routes ?? []).map(toRouteView),
+      strategies: (result.strategies ?? []).map((row) => ({
+        strategyId: row.strategy_id,
+        metrics: {
+          assignedCount: row.metrics.assigned_count,
+          unassignedCount: row.metrics.unassigned_count,
+          lateAssignedCount: row.metrics.late_assigned_count,
+          distanceKm: row.metrics.distance_km,
+        },
+        routes: row.routes.map(toRouteView),
+      })),
+    };
   }
 
   @Post('policy')

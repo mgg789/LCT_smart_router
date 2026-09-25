@@ -1,5 +1,6 @@
 """Private Router result/context API; business actions and authentication belong to sys."""
 
+import asyncio
 import base64
 import json
 import os
@@ -217,6 +218,34 @@ def create_app(runtime: RouterRuntime, road_store: RoadGraphStore | None = None)
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except OSError as exc:
             raise HTTPException(status_code=503, detail="ACTIVE_PUBLICATION_UNAVAILABLE") from exc
+
+    @app.post("/v1/simulate")
+    async def simulate(request: Request) -> dict:
+        """What-if on the ready publication. The body is a patch, never a free snapshot.
+
+        The handler waits on the simulator queue only. The live worker is a different
+        thread and does not take that queue's lock.
+        """
+        try:
+            payload = await request.json()
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail="PATCH_INVALID") from exc
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=422, detail="PATCH_INVALID")
+        try:
+            return await asyncio.to_thread(runtime.simulate, payload)
+        except ValueError as exc:
+            code = str(exc)
+            status = 422 if code in {
+                "PATCH_INVALID",
+                "PATCH_MIXED",
+                "PATCH_EMPTY",
+                "UNKNOWN_REQUEST",
+                "UNKNOWN_ENGINEER",
+            } else 409
+            raise HTTPException(status_code=status, detail=code) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     @app.post("/v1/window-proposal")
     def window_proposal(request: WindowProposalRequest) -> dict:

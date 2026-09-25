@@ -17,7 +17,8 @@ import {
 } from 'lucide-react';
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { DashboardApiError, loadAlertWindowProposal } from '../api/client';
+import { DashboardApiError, loadAlertWindowProposal, simulateChange, simulationWorsens } from '../api/client';
+import { WorsenModal } from './WorsenModal';
 import type { AlertResolutionInput, AlertView, DashboardSnapshot } from '../api/types';
 import {
   ALERT_ACTION_SPECS,
@@ -412,6 +413,8 @@ function ResolutionForm({
   const [minutes, setMinutes] = useState(15);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [windowWarning, setWindowWarning] = useState<string | null>(null);
+  const windowResolve = useRef<((accepted: boolean) => void) | null>(null);
   const lock = useRef(false);
   const retry = useRef<{ fingerprint: string; operationId: string } | null>(null);
   const candidates = snapshot.engineers.filter(
@@ -457,6 +460,28 @@ function ResolutionForm({
         input.windowEndAt <= input.windowStartAt
       )
         throw new Error('Конец окна должен быть позже начала.');
+      if (action === 'move_window' && token && request && input.windowStartAt && input.windowEndAt) {
+        try {
+          const preview = await simulateChange(token, {
+            window: {
+              requestId: request.id,
+              windowStartAt: input.windowStartAt,
+              windowEndAt: input.windowEndAt,
+            },
+          });
+          if (simulationWorsens(preview.delta)) {
+            const accepted = await new Promise<boolean>((resolve) => {
+              windowResolve.current = resolve;
+              setWindowWarning(preview.text);
+            });
+            setWindowWarning(null);
+            windowResolve.current = null;
+            if (!accepted) return;
+          }
+        } catch {
+          // No stored answer: the window change can still be sent.
+        }
+      }
       if (
         input.minutes !== undefined &&
         (!Number.isInteger(input.minutes) || input.minutes < 1 || input.minutes > 240)
@@ -597,6 +622,19 @@ function ResolutionForm({
           </InboxButton>
         </div>
       </fieldset>
+      <WorsenModal
+        text={windowWarning}
+        onCancel={() => {
+          setWindowWarning(null);
+          windowResolve.current?.(false);
+          windowResolve.current = null;
+        }}
+        onConfirm={() => {
+          setWindowWarning(null);
+          windowResolve.current?.(true);
+          windowResolve.current = null;
+        }}
+      />
     </form>
   );
 }
