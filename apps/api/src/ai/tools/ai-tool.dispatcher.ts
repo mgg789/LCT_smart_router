@@ -4,6 +4,7 @@ import { Clock } from '../../common/time';
 import { EngineersService } from '../../orchestrator/engineers/engineers.service';
 import { PrismaService } from '../../persistence';
 import type { LlmToolCall } from '../provider';
+import { RunStoppedSignal } from '../runtime/stop.service';
 import {
   type ToolDispatchContext,
   ToolDispatcher,
@@ -11,7 +12,6 @@ import {
 } from '../runtime/tool-dispatcher';
 import { segmentsFor } from './role-profile';
 import { ToolRegistry } from './tool.registry';
-import { RunStoppedSignal } from '../runtime/stop.service';
 import type { ToolContext } from './tool.types';
 
 /**

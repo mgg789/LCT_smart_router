@@ -51,18 +51,21 @@ export class UnitOfWork {
     // in the same atomic unit. Prisma's five-second interactive-transaction default is
     // shorter than that valid operation on Docker Desktop, so the boundary carries an
     // explicit ceiling while preserving one all-or-nothing commit.
-    return this.prisma.$transaction(async (tx) => {
-      // Every business transaction reserves the two routing singletons in this order
-      // before touching domain rows. A submission can write a request and publish while
-      // acceptance reads control mode and writes that same request; taking the locks only
-      // at those later call sites would make that interleaving an AB/BA deadlock.
-      //
-      // Bootstrap creates control_state before the application accepts work. routing_current
-      // may be absent until the first publication, but control_state still serialises that
-      // first publication with every other UnitOfWork transaction.
-      await lockControlState(tx);
-      await lockRoutingCurrent(tx);
-      return fn(tx);
-    }, { timeout: 60_000 });
+    return this.prisma.$transaction(
+      async (tx) => {
+        // Every business transaction reserves the two routing singletons in this order
+        // before touching domain rows. A submission can write a request and publish while
+        // acceptance reads control mode and writes that same request; taking the locks only
+        // at those later call sites would make that interleaving an AB/BA deadlock.
+        //
+        // Bootstrap creates control_state before the application accepts work. routing_current
+        // may be absent until the first publication, but control_state still serialises that
+        // first publication with every other UnitOfWork transaction.
+        await lockControlState(tx);
+        await lockRoutingCurrent(tx);
+        return fn(tx);
+      },
+      { timeout: 60_000 },
+    );
   }
 }

@@ -51,7 +51,13 @@ describe('mcp settings', () => {
   });
 
   it('counts activity only while the server is enabled and fresh', () => {
-    const settings = { version: 1 as const, enabled: true, tokenId: 't', pinLast4: 'ab12', updatedAt: 1 };
+    const settings = {
+      version: 1 as const,
+      enabled: true,
+      tokenId: 't',
+      pinLast4: 'ab12',
+      updatedAt: 1,
+    };
     assert.equal(isMcpActive(settings, { tool: 'get_situation', at: 100 }, 129), true);
     assert.equal(isMcpActive(settings, { tool: 'get_situation', at: 100 }, 131), false);
     assert.equal(isMcpActive({ ...settings, enabled: false }, { tool: 'x', at: 100 }, 105), false);

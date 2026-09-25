@@ -3,7 +3,6 @@
 import pytest
 from core.geo import GraphTravel
 from core.robustness import predict_situation
-from core.route_search import RouteEvaluator
 
 ROUTES = {"eng-1": ["job-1", "job-2", "job-3"]}
 

@@ -110,9 +110,9 @@ export class MiniAiService {
       /(?:ул\.?|улиц\p{L}*|проспект\p{L}*|пр-т|переул\p{L}*|шоссе|набережн\p{L}*|бульвар\p{L}*)[^,.\n]{0,48}/iu,
     );
     const place = source.match(/на\s+[А-ЯЁ][^,.\n]{2,48}/u);
-    const numbered = [...source.matchAll(/(?:^|[^\p{L}\p{N}])([А-ЯЁ][а-яё]{2,}\s+\d+[а-яА-Я]?)/gu)].map(
-      (match) => match[1] ?? '',
-    );
+    const numbered = [
+      ...source.matchAll(/(?:^|[^\p{L}\p{N}])([А-ЯЁ][а-яё]{2,}\s+\d+[а-яА-Я]?)/gu),
+    ].map((match) => match[1] ?? '');
     const stated = source.match(/адрес\s+([^,.\n]{3,48})/iu);
     const lines = unique([
       ...(stated?.[1] ? [stated[1].trim()] : []),
@@ -207,7 +207,9 @@ export class MiniAiService {
     const state = `${input.summary.slice(0, 4_000)}\nСейчас политика: ${input.currentPolicyLabel}. Окна клиентов и обеды менять нельзя.`;
     const steps: string[] = [];
     let policy = { id: input.currentPolicyId, label: input.currentPolicyLabel };
-    if (await this.noul(state, 'Сменить политику планирования? Окна клиентов и обеды не трогать.')) {
+    if (
+      await this.noul(state, 'Сменить политику планирования? Окна клиентов и обеды не трогать.')
+    ) {
       const label = await this.choice(
         state,
         'Какая политика лучше исправляет слабость, не меняя окна и обеды?',
@@ -234,9 +236,13 @@ export class MiniAiService {
     }
     const restoreAuto =
       input.manual &&
-      (await this.noul(state, 'Вернуть автоматический план вместо ручного? Окна и обеды не менять.'));
+      (await this.noul(
+        state,
+        'Вернуть автоматический план вместо ручного? Окна и обеды не менять.',
+      ));
     if (restoreAuto) steps.push('Возврат к автоматическому плану');
-    if (steps.length === 0) steps.push('Без смены окон и обедов маршрут уже в лучшем доступном виде');
+    if (steps.length === 0)
+      steps.push('Без смены окон и обедов маршрут уже в лучшем доступном виде');
     return { policyId: policy.id, policyLabel: policy.label, callEngineerId, restoreAuto, steps };
   }
 
@@ -247,7 +253,9 @@ export class MiniAiService {
       'Какая политика планирования лучше исправляет описанную слабость плана?',
       POLICIES.map((item) => item.label),
     );
-    return POLICIES.find((item) => item.label === label) ?? { id: 'balanced', label: 'Ровнее загрузка' };
+    return (
+      POLICIES.find((item) => item.label === label) ?? { id: 'balanced', label: 'Ровнее загрузка' }
+    );
   }
 
   /**
@@ -265,7 +273,11 @@ export class MiniAiService {
     return raw;
   }
 
-  private async choice(state: string, question: string, options: readonly string[]): Promise<string> {
+  private async choice(
+    state: string,
+    question: string,
+    options: readonly string[],
+  ): Promise<string> {
     const uniqueOptions = [...new Set(options.map((item) => item.trim()).filter(Boolean))];
     if (uniqueOptions.length < 2) return uniqueOptions[0] ?? '';
     const base = this.jevBase();
@@ -312,7 +324,9 @@ export class MiniAiService {
       const body = (await response.json()) as { noul?: unknown };
       return typeof body.noul === 'number' && body.noul >= 0.5;
     } catch (error) {
-      this.logger.warn(`System one yes/no failed: ${error instanceof Error ? error.message : 'unknown'}`);
+      this.logger.warn(
+        `System one yes/no failed: ${error instanceof Error ? error.message : 'unknown'}`,
+      );
       return false;
     }
   }
@@ -377,7 +391,8 @@ export class MiniAiService {
       choices?: Array<{ message?: { content?: string } }>;
     };
     const text = body.choices?.[0]?.message?.content?.trim();
-    if (!text) throw new SysError('SERVICE_NOT_CONFIGURED', 'Языковая модель вернула пустой текст.');
+    if (!text)
+      throw new SysError('SERVICE_NOT_CONFIGURED', 'Языковая модель вернула пустой текст.');
     return text;
   }
 }
@@ -403,7 +418,8 @@ function problemOptions(source: string): string[] {
 export function snapAddress(picked: string, places: readonly string[]): string {
   const known = places.find((place) => picked.includes(place));
   if (known) return known;
-  const timeish = !picked || picked === 'не указан' || picked.includes('@') || /приезжайте|после/i.test(picked);
+  const timeish =
+    !picked || picked === 'не указан' || picked.includes('@') || /приезжайте|после/i.test(picked);
   if (timeish) return places[0] ?? '';
   return picked;
 }

@@ -30,21 +30,14 @@ describe('dashboard mcp server', () => {
 
   const target = (path: string): string => new URL(path, BASE).toString();
 
-  const rpc = async (
-    body: unknown,
-    headers: Record<string, string> = {},
-  ): Promise<Response> =>
+  const rpc = async (body: unknown, headers: Record<string, string> = {}): Promise<Response> =>
     fetch(target(MCP_PATH), {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...headers },
       body: JSON.stringify(body),
     });
 
-  const dispatch = async (
-    path: string,
-    method: string,
-    body?: unknown,
-  ): Promise<Response> =>
+  const dispatch = async (path: string, method: string, body?: unknown): Promise<Response> =>
     fetch(target(path), {
       method,
       headers: {
@@ -58,9 +51,11 @@ describe('dashboard mcp server', () => {
     name: string,
     args: Record<string, unknown> = {},
     headers: Record<string, string>,
-  ): Promise<{
-    result?: { content?: Array<{ text?: string; type?: string }>; structuredContent?: unknown };
-  } & RpcError> => {
+  ): Promise<
+    {
+      result?: { content?: Array<{ text?: string; type?: string }>; structuredContent?: unknown };
+    } & RpcError
+  > => {
     const response = await rpc(
       { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } },
       headers,
@@ -266,10 +261,7 @@ describe('dashboard mcp server', () => {
       401,
     );
     // The pin was a real master key: revoking it closes the bearer path too.
-    const bearerResponse = await rpc(
-      { jsonrpc: '2.0', id: 1, method: 'tools/list' },
-      bearer(),
-    );
+    const bearerResponse = await rpc({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, bearer());
     assert.equal(bearerResponse.status, 401);
   });
 });

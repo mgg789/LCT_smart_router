@@ -19,9 +19,6 @@ describe('late line entry during lunch', () => {
     assert.equal(forfeitsLunchOnLateEntry({ ...base, liveNow: end }), false);
     assert.equal(forfeitsLunchOnLateEntry({ ...base, liveNow: start, taken: true }), false);
     assert.equal(forfeitsLunchOnLateEntry({ ...base, liveNow: start, enabled: false }), false);
-    assert.equal(
-      forfeitsLunchOnLateEntry({ ...base, liveNow: start, windowStartAt: null }),
-      false,
-    );
+    assert.equal(forfeitsLunchOnLateEntry({ ...base, liveNow: start, windowStartAt: null }), false);
   });
 });

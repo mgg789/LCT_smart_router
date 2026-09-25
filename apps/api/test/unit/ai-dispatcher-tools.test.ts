@@ -10,7 +10,6 @@ import type { AppliedPlanCurrentShape } from '../../src/api/plan-view.types';
 import type { Actor } from '../../src/auth';
 import type { AppConfigService } from '../../src/common/config';
 import { SysError } from '../../src/common/errors';
-import type { OperationContext } from '../../src/operations';
 import type { AlertsService } from '../../src/orchestrator/alerts';
 import type { EngineersService } from '../../src/orchestrator/engineers/engineers.service';
 import type { LiveService } from '../../src/orchestrator/live/live.service';

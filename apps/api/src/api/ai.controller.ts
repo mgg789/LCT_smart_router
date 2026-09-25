@@ -67,8 +67,8 @@ import {
   type PostAiMessageDto,
   postAiMessageSchema,
   type SetAiAssistModeDto,
-  setAiAssistModeSchema,
   type SuggestAlertResolutionDto,
+  setAiAssistModeSchema,
   suggestAlertResolutionSchema,
 } from './dto/ai.dto';
 import { fromAsync } from './sse';

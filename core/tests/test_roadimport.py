@@ -4,12 +4,11 @@ import gzip
 import json
 
 import pytest
-from fastapi.testclient import TestClient
-
 from core.api import create_app
 from core.geo import content_hash
-from core.runtime import RouterRuntime, SnapshotPublication
 from core.roadimport import RoadGraphStore, RoadImportError, import_into_runtime
+from core.runtime import RouterRuntime, SnapshotPublication
+from fastapi.testclient import TestClient
 
 
 class Reader:

@@ -259,7 +259,7 @@ export class AlertsService {
     expectedRequestVersion: number | null;
   }> {
     const alert = await this.prisma.alert.findUnique({ where: { id } });
-    if (!alert || alert.kind !== 'alert' || alert.resolvedAt !== null) {
+    if (alert?.kind !== 'alert' || alert.resolvedAt !== null) {
       throw SysError.validationFailed('Этот алерт уже нельзя разобрать.');
     }
     const catalogue = alertActionsFor(alert.code);
@@ -390,7 +390,7 @@ export class AlertsService {
         plan: { include: { routes: { include: { stops: { orderBy: { sequence: 'asc' } } } } } },
       },
     });
-    if (!pointer || pointer.plan.origin !== 'manual') return;
+    if (pointer?.plan.origin !== 'manual') return;
     const input = await this.prisma.routingCurrent.findUnique({
       where: { id: 'singleton' },
       include: { snapshot: true },
@@ -814,7 +814,7 @@ export class AlertsService {
       if (!requestId) throw new SysError('VALIDATION_FAILED', 'This alert names no request');
       await lockRoutingCurrent(context.tx);
       const request = await context.tx.request.findUnique({ where: { id: requestId } });
-      if (!request || request.lifecycle !== 'submitted') {
+      if (request?.lifecycle !== 'submitted') {
         throw new SysError('WORK_ALREADY_STARTED', 'Only a submitted request can be rescheduled');
       }
       if (input.action === 'move_window' && input.expectedRequestVersion !== request.version)
@@ -909,8 +909,7 @@ export class AlertsService {
           workDate: alert.workDate,
         });
       if (
-        !request ||
-        request.lifecycle !== 'submitted' ||
+        request?.lifecycle !== 'submitted' ||
         day.availability !== 'offline' ||
         day.engineer.archivedAt !== null ||
         (request.region !== null && day.engineer.region !== request.region) ||
@@ -1449,7 +1448,7 @@ export class AlertsService {
         )
           continue;
         const route = pointer.plan.routes.find((x) => x.engineerId === day.engineerId);
-        if (!liveRunning && (!route || route.lunchStatus !== 'scheduled')) {
+        if (!liveRunning && route?.lunchStatus !== 'scheduled') {
           const key = `system:lunch_conflict:${day.id}`;
           active.add(key);
           await this.ensure(tx, now, {
@@ -1779,30 +1778,10 @@ function canonicalRouterCode(code: string): string {
     return 'lunch_conflict';
   return normalized;
 }
-function hasLunchCoverageWitness(reasons: object): boolean {
-  return lunchCoverageWitness(reasons) !== null;
-}
 
 function workDateForMoment(
   moment: number,
   _days: Array<{ workDate: string; shiftStartAt: bigint; shiftEndAt: bigint }>,
 ): string | null {
   return new Date((moment + 3 * 3600) * 1000).toISOString().slice(0, 10);
-}
-function criterionLabel(criterion: string | null): string {
-  const labels: Record<string, string> = {
-    constraints: 'ограничения',
-    urgent_unassigned: 'срочные неназначенные заявки',
-    unassigned: 'неназначенные заявки',
-    missed_optional_lunches: 'пропущенные обеды',
-    travel_time: 'время в пути',
-    distance: 'пробег',
-    engineers_used: 'число инженеров',
-    additional_engineers: 'дополнительные инженеры',
-    window_end_risk: 'риск окна',
-    total_lateness: 'опоздание',
-    max_workload_ratio: 'загрузка',
-    workload_spread: 'разброс загрузки',
-  };
-  return labels[criterion ?? ''] ?? criterion ?? 'целевая функция';
 }

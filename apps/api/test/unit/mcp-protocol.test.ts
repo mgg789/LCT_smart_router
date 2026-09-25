@@ -60,10 +60,7 @@ describe('mcp protocol', () => {
   });
 
   it('lists tools with JSON-Schema declarations', async () => {
-    const reply = await handleMcpMessage(
-      { jsonrpc: '2.0', id: 7, method: 'tools/list' },
-      host(),
-    );
+    const reply = await handleMcpMessage({ jsonrpc: '2.0', id: 7, method: 'tools/list' }, host());
     if (reply.kind !== 'reply' || !('result' in reply.body)) throw new Error('expected success');
     const result = reply.body.result as { tools: McpToolDefinition[] };
     assert.deepEqual(
@@ -76,7 +73,12 @@ describe('mcp protocol', () => {
   it('wraps a tool result into text content plus structured content', async () => {
     const echo = host();
     const reply = await handleMcpMessage(
-      { jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'echo', arguments: { value: 'x' } } },
+      {
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'tools/call',
+        params: { name: 'echo', arguments: { value: 'x' } },
+      },
       echo,
     );
     if (reply.kind !== 'reply' || !('result' in reply.body)) throw new Error('expected success');

@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
-import { weatherView } from '../../api/weather-view';
 import { toDayView, toEngineerView } from '../../api/engineer-view';
 import { toPlanView } from '../../api/plan-view';
 import { type RequestView, toRequestView } from '../../api/request-view';
+import { weatherView } from '../../api/weather-view';
 import type { Actor } from '../../auth';
 import { AppConfigService } from '../../common/config';
 import { SysError } from '../../common/errors';
@@ -21,9 +21,9 @@ import { AlertsService, type ResolveAlertInput } from '../alerts';
 import { LiveService } from '../live';
 import { PolicyService } from '../policy';
 import { DispatcherSettingsService } from '../settings';
+import { McpService } from './mcp.service';
 import { ROUTING_PRINCIPLES } from './mcp-principles';
 import { type McpToolDefinition } from './mcp-protocol';
-import { McpService } from './mcp.service';
 
 /**
  * The MCP tool registry: every capability the dispatcher's agent gets, one entry each.
@@ -424,7 +424,10 @@ export class McpToolsService {
                   'message_remove | extend',
               },
               reason: { type: 'string', description: 'Why this resolution was chosen' },
-              minutes: { type: 'number', description: 'Minutes for reschedule/extend-like actions' },
+              minutes: {
+                type: 'number',
+                description: 'Minutes for reschedule/extend-like actions',
+              },
               windowStartAt: { type: 'number', description: 'Unix seconds, for move_window' },
               windowEndAt: { type: 'number', description: 'Unix seconds, for move_window' },
               expectedRequestVersion: { type: 'number' },

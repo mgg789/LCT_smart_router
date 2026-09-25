@@ -258,9 +258,7 @@ export class MapRoutingService {
     writeRouterPhase({ geometryDone: done, geometryTotal: total });
   }
 
-  private freshShape(
-    key: string,
-  ): Array<{ lat: number; lon: number }> | null | undefined {
+  private freshShape(key: string): Array<{ lat: number; lon: number }> | null | undefined {
     const cached = this.roadShapeCache.get(key);
     if (!cached || cached.expiresAt <= Date.now()) return undefined;
     return cached.points;
@@ -290,11 +288,16 @@ export class MapRoutingService {
             })
           : [];
         const direct =
-          pairs.length > 0 || leg.travelSource === 'metro' || !needsRoadShape(leg.travelSource, leg.geometry?.points.length ?? 0)
+          pairs.length > 0 ||
+          leg.travelSource === 'metro' ||
+          !needsRoadShape(leg.travelSource, leg.geometry?.points.length ?? 0)
             ? pairs
             : (() => {
                 const from = leg.geometry?.points[0] ??
-                  pointBefore(route, leg.departureAt) ?? { lat: route.startLat, lon: route.startLon };
+                  pointBefore(route, leg.departureAt) ?? {
+                    lat: route.startLat,
+                    lon: route.startLon,
+                  };
                 const to = leg.geometry?.points.at(-1) ?? pointAt(route, leg.arrivalAt);
                 return to ? [{ from, to }] : [];
               })();
@@ -625,7 +628,8 @@ function needsRoadShape(source: PlanRouteSegmentView['travelSource'], pointCount
 function decodeRoadPolyline(json: unknown): Array<{ lat: number; lon: number }> | null {
   if (!json || typeof json !== 'object') return null;
   const body = json as { mode?: unknown; geometry?: unknown };
-  if (body.mode !== 'road' || !Array.isArray(body.geometry) || body.geometry.length < 3) return null;
+  if (body.mode !== 'road' || !Array.isArray(body.geometry) || body.geometry.length < 3)
+    return null;
   const points = body.geometry.flatMap((pair) => {
     if (!Array.isArray(pair) || pair.length < 2) return [];
     const lat = Number(pair[0]);
@@ -660,7 +664,11 @@ function withEndpoints(
   );
 }
 
-async function requestJson(url: URL, init: RequestInit, timeoutMs = FETCH_TIMEOUT_MS): Promise<unknown> {
+async function requestJson(
+  url: URL,
+  init: RequestInit,
+  timeoutMs = FETCH_TIMEOUT_MS,
+): Promise<unknown> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {

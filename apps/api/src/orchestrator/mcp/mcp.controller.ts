@@ -5,8 +5,8 @@ import type { Actor } from '../../auth';
 import { effectiveRoles } from '../../auth';
 import { Public } from '../../common/access';
 import { SysError } from '../../common/errors';
-import { handleMcpPayload, type McpProtocolHost } from './mcp-protocol';
 import { McpService } from './mcp.service';
+import { handleMcpPayload, type McpProtocolHost } from './mcp-protocol';
 import { McpToolsService } from './mcp-tools';
 
 /**

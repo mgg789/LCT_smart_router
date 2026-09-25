@@ -1,13 +1,9 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
-import { Prisma } from '../../generated/prisma/client';
-import { randomUUID } from 'crypto';
 import { AppConfigService } from '../../common/config';
-import { APP_STATE_KEYS, type Tx } from '../../persistence';
-import { PrismaService } from '../../persistence';
-import {
-  RouterClient,
-  type PredictCalibrationDocument,
-} from '../../routing/router-gateway';
+import { Prisma } from '../../generated/prisma/client';
+import { APP_STATE_KEYS, PrismaService, type Tx } from '../../persistence';
+import { type PredictCalibrationDocument, RouterClient } from '../../routing/router-gateway';
 
 /**
  * AI contour controls: plan-assessment self-calibration plus reserved connection
@@ -327,9 +323,7 @@ export class AiService {
     const considered = requests.filter((row) => row.lifecycle !== 'draft');
     const cancelled = considered.filter((row) => row.lifecycle === 'cancelled').length;
     const learnedCancel =
-      considered.length >= MIN_CANCEL_REQUESTS
-        ? (cancelled + 1) / (considered.length + 2)
-        : null;
+      considered.length >= MIN_CANCEL_REQUESTS ? (cancelled + 1) / (considered.length + 2) : null;
 
     const factory = factoryCalibrationDocument();
     const calibration: PredictCalibrationDocument = {

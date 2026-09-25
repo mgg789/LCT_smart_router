@@ -1,10 +1,9 @@
 """Private Router result/context API; business actions and authentication belong to sys."""
 
-from contextlib import asynccontextmanager
-
 import base64
 import json
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -18,8 +17,8 @@ from core.contracts import (
     RouterTechnicalSettings,
 )
 from core.predict_calibration import PredictCalibration
-from core.runtime import RouterRuntime
 from core.roadimport import RoadGraphStore, RoadImportError, import_into_runtime
+from core.runtime import RouterRuntime
 
 
 class ToleranceRequest(Record):

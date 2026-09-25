@@ -7,16 +7,16 @@ import {
   type ManualEvaluation,
   type ManualEvaluationInput,
   type PolicyComparison,
-  type RouterPredictCalibration,
   RouterClient,
+  type RouterPredictCalibration,
   type RouterResultStatus,
   type RouterRoadImportInput,
   type RouterRoadImportResult,
   type RouterTechnicalSettingsState,
   type RouterTechnicalSettingsUpdate,
+  type RouterWeather,
   type SituationPrediction,
   type SituationPredictionInput,
-  type RouterWeather,
   type UpdatePredictCalibrationInput,
   type UpdateRouterTechnicalSettings,
   type WindowProposal,
@@ -388,9 +388,7 @@ export class HttpRouterClient extends RouterClient {
     });
     const parsed = situationPredictionSchema.safeParse(raw);
     if (!parsed.success) {
-      throw new Error(
-        `Router /v1/situation-predict response is invalid: ${parsed.error.message}`,
-      );
+      throw new Error(`Router /v1/situation-predict response is invalid: ${parsed.error.message}`);
     }
     return parsed.data;
   }
@@ -431,7 +429,11 @@ export class HttpRouterClient extends RouterClient {
 
   /** Reads Router's cached Moscow forecast. Does not wait on a solve. */
   override async getWeather(): Promise<RouterWeather> {
-    const raw = await this.fetchJson('/v1/weather', {}, Math.max(this.options.requestTimeoutMs, 4_000));
+    const raw = await this.fetchJson(
+      '/v1/weather',
+      {},
+      Math.max(this.options.requestTimeoutMs, 4_000),
+    );
     return z
       .object({
         observed_at: z.number(),

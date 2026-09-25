@@ -182,7 +182,13 @@ describe('map routing transport and composite geometry', () => {
       const url = new URL(String(input));
       const start = url.searchParams.get('a') ?? '';
       if (start.startsWith('55.75')) {
-        return Response.json({ mode: 'straight', geometry: [[c.lat, c.lon], [d.lat, d.lon]] });
+        return Response.json({
+          mode: 'straight',
+          geometry: [
+            [c.lat, c.lon],
+            [d.lat, d.lon],
+          ],
+        });
       }
       return Response.json({
         mode: 'road',

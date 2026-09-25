@@ -49,7 +49,9 @@ test('LIVE fixture supplies 14 valid requests and three crews over an eleven-hou
   assert.equal(firstEngineer.equipmentStock?.setTopBox, 1);
   assert.equal(input.engineers?.[1]?.equipmentStock?.router, 0);
   assert.deepEqual(
-    input.requests.filter((request) => request.requiredEquipment === 'router').map((request) => request.externalId),
+    input.requests
+      .filter((request) => request.requiredEquipment === 'router')
+      .map((request) => request.externalId),
     ['live-request-04', 'live-request-05'],
   );
   assert.equal(

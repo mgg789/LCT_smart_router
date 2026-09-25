@@ -96,13 +96,7 @@ export async function renderMonthlyReport(report: MonthlyReportData): Promise<Bu
     if (partWidth > 0) doc.rect(mixX, 480, partWidth, 14).fill(part.color);
     mixX += partWidth;
   }
-  text(
-    mix.map((part) => `${part.label} ${fmt(part.value)}`).join('   ·   '),
-    42,
-    500,
-    9,
-    MUTED,
-  );
+  text(mix.map((part) => `${part.label} ${fmt(part.value)}`).join('   ·   '), 42, 500, 9, MUTED);
   text('За цифрами стоят действия', 42, 528, 18, INK, true);
   text(
     `Подтверждено работы: ${fmt(report.totals.workMinutes / 60)} ч.\nОтменено заявок: ${fmt(report.totals.cancelled)}.\nПрошло по расписанию без подтверждения: ${fmt(report.totals.assumedCompleted)}.\nРучные корректировки за нарушения: ${fmt(report.totals.penaltyPoints)} баллов.`,

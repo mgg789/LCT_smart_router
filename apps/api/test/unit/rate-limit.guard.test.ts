@@ -1,21 +1,26 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import type { ExecutionContext } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { SysError } from '../../src/common/errors';
 import { RateLimitGuard, type RateLimitRule } from '../../src/common/rate-limit';
 
 const RULE: RateLimitRule = { scope: 'test:scope', max: 2, windowSec: 60 };
 
+interface GuardRequest {
+  readonly headers: Record<string, string | string[] | undefined>;
+  readonly ip?: string;
+}
+
 /** A minimal execution context: only what the guard reads, with the address the
  *  proxy chain would have left in the headers. */
-function context(headers: Record<string, string>, ip = '10.0.0.1'): any {
+function context(headers: Record<string, string>, ip = '10.0.0.1'): ExecutionContext {
+  const request: GuardRequest = { headers, ip };
   return {
     getHandler: () => function handler() {},
     getClass: () => function klass() {},
-    switchToHttp: () => ({
-      getRequest: () => ({ headers, ip }),
-    }),
-  };
+    switchToHttp: () => ({ getRequest: () => request }),
+  } as unknown as ExecutionContext;
 }
 
 describe('RateLimitGuard', () => {

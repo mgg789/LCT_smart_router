@@ -14,7 +14,6 @@ import {
 } from '../orchestrator/passports';
 import { PrismaService } from '../persistence';
 import { AppliedPlanService, RouterClient } from '../routing/router-gateway';
-import { weatherView } from './weather-view';
 import { type AttendanceDto, attendanceSchema } from './dto/alert.dto';
 import {
   type ConfirmEmailChangeDto,
@@ -39,6 +38,7 @@ import {
 import { type EngineerLiveView } from './live-view.types';
 import { type PlanRouteView, toPlanView } from './plan-view';
 import { toRequestView } from './request-view';
+import { weatherView } from './weather-view';
 
 /**
  * Engineer App contour.

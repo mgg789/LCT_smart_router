@@ -9,12 +9,12 @@ import { APP_STATE_KEYS, PrismaService, type Tx } from '../../persistence';
 import {
   isMcpActive,
   MCP_ENDPOINT_PATH,
-  normalizeMcpPin,
-  parseMcpSettings,
-  pinLast4,
   type McpActivity,
   type McpSettings,
   type McpSettingsView,
+  normalizeMcpPin,
+  parseMcpSettings,
+  pinLast4,
 } from './mcp-settings';
 
 /** Name of the `ApiToken` row that carries the MCP pin hash. */
@@ -59,7 +59,13 @@ export class McpService {
       (token.expiresAt === null || Number(token.expiresAt) > this.clock.nowSeconds());
     return alive
       ? settings
-      : { version: 1, enabled: false, tokenId: null, pinLast4: null, updatedAt: settings.updatedAt };
+      : {
+          version: 1,
+          enabled: false,
+          tokenId: null,
+          pinLast4: null,
+          updatedAt: settings.updatedAt,
+        };
   }
 
   /** Settings view for the dashboard: switch state, pin presence and live activity. */

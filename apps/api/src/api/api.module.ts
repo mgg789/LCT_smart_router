@@ -16,9 +16,9 @@ import { RewardsModule } from '../orchestrator/rewards';
 import { RoadImportModule } from '../orchestrator/road-import';
 import { AiController } from './ai.controller';
 import { AuthController } from './auth.controller';
-import { DispatchChatsController } from './dispatch-chats.controller';
 import { ClientController } from './client.controller';
 import { DispatchController } from './dispatch.controller';
+import { DispatchChatsController } from './dispatch-chats.controller';
 import { EngineerController } from './engineer.controller';
 import { MonthlyReportsController } from './monthly-reports.controller';
 import {

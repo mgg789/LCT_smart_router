@@ -43,6 +43,7 @@ import {
   NEXT_VISIT_GAP_SEC,
   NO_SHOW_SEC,
 } from './replan-policy';
+
 const TECHNICAL_BREAK_SEC = 15 * 60;
 const TECHNICAL_BREAK_OVERDUE_SEC = 20 * 60;
 const WINDOW_COMPLETION_GRACE_SEC = MATERIAL_DELAY_SEC;
@@ -975,7 +976,9 @@ export class LiveService {
     const [applied, published] = await Promise.all([
       tx.appliedPlanCurrent.findUnique({
         where: { id: 'singleton' },
-        select: { plan: { select: { revision: true, routerResult: { select: { inputHash: true } } } } },
+        select: {
+          plan: { select: { revision: true, routerResult: { select: { inputHash: true } } } },
+        },
       }),
       tx.routingCurrent.findUnique({
         where: { id: 'singleton' },
@@ -2652,12 +2655,9 @@ export class LiveService {
       where: { id: engineerDay.id },
       data: { lunchTaken: true, updatedAt: BigInt(liveNow), version: { increment: 1 } },
     });
-    await this.publisher.publishIfChanged(
-      tx,
-      liveNow,
-      PUBLICATION_TRIGGERS.ENGINEER_LUNCH_TAKEN,
-      { businessTime: true },
-    );
+    await this.publisher.publishIfChanged(tx, liveNow, PUBLICATION_TRIGGERS.ENGINEER_LUNCH_TAKEN, {
+      businessTime: true,
+    });
   }
 }
 

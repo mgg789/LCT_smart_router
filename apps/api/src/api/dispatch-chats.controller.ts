@@ -1,16 +1,33 @@
-import { Body, Controller, Get, Logger, type MessageEvent, Param, Post, Query, Sse } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { catchError, EMPTY, endWith, ignoreElements, interval, map, merge, type Observable, share, takeUntil } from 'rxjs';
 import {
-  ChatEventBus,
-  type DispatchChatRow,
-  DispatchChatsService,
-} from '../ai';
-import type { AiMessage } from '../generated/prisma/client';
+  Body,
+  Controller,
+  Get,
+  Logger,
+  type MessageEvent,
+  Param,
+  Post,
+  Query,
+  Sse,
+} from '@nestjs/common';
+import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  catchError,
+  EMPTY,
+  endWith,
+  ignoreElements,
+  interval,
+  map,
+  merge,
+  type Observable,
+  share,
+  takeUntil,
+} from 'rxjs';
+import { ChatEventBus, type DispatchChatRow, DispatchChatsService } from '../ai';
 import { type Actor, CurrentActor, Roles } from '../auth';
 import { AppConfigService } from '../common/config';
 import { SysError } from '../common/errors';
 import { zodBody } from '../common/validation';
+import type { AiMessage } from '../generated/prisma/client';
 import { OperationsService } from '../operations';
 import { toConversationView, toMessageView } from './ai-view';
 import { chatEventStream, toChatMessageEvent } from './chat-stream';

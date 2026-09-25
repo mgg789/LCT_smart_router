@@ -11,10 +11,7 @@ import {
   buildDispatcherSystemPrompt,
   dispatcherTurnReminder,
 } from '../profiles/dispatcher.profile';
-import {
-  buildEngineerSystemPrompt,
-  engineerTurnReminder,
-} from '../profiles/engineer.profile';
+import { buildEngineerSystemPrompt, engineerTurnReminder } from '../profiles/engineer.profile';
 import {
   type LlmMessage,
   LlmProvider,

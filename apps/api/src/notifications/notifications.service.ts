@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Prisma } from '../generated/prisma/client';
 import type { NotificationCategory } from '../generated/prisma/client';
+import { Prisma } from '../generated/prisma/client';
 import type { Tx } from '../persistence';
 import { redactPayload } from './smtp.helpers';
 

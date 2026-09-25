@@ -7,8 +7,8 @@ import { SysError } from '../common/errors';
 import { Clock } from '../common/time';
 import { zodBody } from '../common/validation';
 import { AuditService, OperationsService } from '../operations';
-import { alertActionsFor, AlertsService } from '../orchestrator/alerts';
 import { AiService, MiniAiService } from '../orchestrator/ai';
+import { AlertsService, alertActionsFor } from '../orchestrator/alerts';
 import { DemoStandService } from '../orchestrator/demo-stand';
 import { EngineersService, workDateOf } from '../orchestrator/engineers';
 import {
@@ -18,10 +18,10 @@ import {
 } from '../orchestrator/imports';
 import { LiveService } from '../orchestrator/live';
 import { businessNow } from '../orchestrator/live/business-clock';
+import { type UpdateMcpSettingsDto, updateMcpSettingsSchema } from '../orchestrator/mcp/mcp.dto';
 // Direct file imports: the mcp barrel pulls the tool registry, which sits on CJS
 // barrel cycles with alerts/ai — the same trap alerts.module.ts documents.
 import { McpService } from '../orchestrator/mcp/mcp.service';
-import { type UpdateMcpSettingsDto, updateMcpSettingsSchema } from '../orchestrator/mcp/mcp.dto';
 import { type McpSettingsView } from '../orchestrator/mcp/mcp-settings';
 import { PassportsService } from '../orchestrator/passports';
 import { PolicyService } from '../orchestrator/policy';
@@ -48,7 +48,7 @@ import {
   RouterClient,
 } from '../routing/router-gateway';
 import { visibleRouterPhase } from '../routing/router-gateway/router-phase';
-import { weatherView } from './weather-view';
+import { type AiSettingsDto, aiSettingsSchema } from './dto/ai.dto';
 import {
   type CloseShiftDto,
   closeShiftSchema,
@@ -65,11 +65,6 @@ import {
   type UploadDataPackageDto,
   uploadDataPackageSchema,
 } from './dto/data.dto';
-import { type AiSettingsDto, aiSettingsSchema } from './dto/ai.dto';
-import {
-  type SituationPredictDto,
-  situationPredictSchema,
-} from './dto/prediction.dto';
 import {
   type ArchiveEngineerDto,
   archiveEngineerSchema,
@@ -101,6 +96,7 @@ import {
   submitResultSchema,
 } from './dto/plan.dto';
 import { type SelectPolicyDto, selectPolicySchema } from './dto/policy.dto';
+import { type SituationPredictDto, situationPredictSchema } from './dto/prediction.dto';
 import {
   type CancelRequestDto,
   cancelRequestSchema,
@@ -127,6 +123,7 @@ import {
 import type { DispatchLiveView } from './live-view.types';
 import { toPlanView } from './plan-view';
 import { type RequestView, toRequestView } from './request-view';
+import { weatherView } from './weather-view';
 
 const POLICY_LABEL: Record<string, string> = {
   compact: 'Дешевле',
@@ -881,7 +878,9 @@ export class DispatchController {
       select: { snapshot: { select: { inputHash: true } } },
     });
     const appliedHash = plan?.routerResult?.inputHash ?? null;
-    const phase = visibleRouterPhase(published !== null && published.snapshot.inputHash !== appliedHash);
+    const phase = visibleRouterPhase(
+      published !== null && published.snapshot.inputHash !== appliedHash,
+    );
     return {
       mode: control.mode,
       modeVersion: control.modeVersion,
@@ -957,10 +956,7 @@ export class DispatchController {
   @ApiOperation({
     summary: 'Improve the live plan without moving customer windows or cancelling lunches',
   })
-  async optimizeWithModel(
-    @CurrentActor() actor: Actor,
-    @Body() body: { summary?: unknown },
-  ) {
+  async optimizeWithModel(@CurrentActor() actor: Actor, @Body() body: { summary?: unknown }) {
     const summary = typeof body.summary === 'string' ? body.summary : '';
     const active = await this.uow.run((tx) => this.policyService.active(tx));
     const control = await this.prisma.controlState.findUnique({ where: { id: 'singleton' } });
@@ -1043,7 +1039,9 @@ export class DispatchController {
   }
 
   @Post('alerts/:id/ai-resolve')
-  @ApiOperation({ summary: 'System one picks an allowed alert action; apply=0 returns the choice only' })
+  @ApiOperation({
+    summary: 'System one picks an allowed alert action; apply=0 returns the choice only',
+  })
   async resolveAlertWithModel(
     @CurrentActor() actor: Actor,
     @Param('id') id: string,
@@ -1435,7 +1433,6 @@ export class DispatchController {
   ) {
     return { hits: await this.geocoding.search({ q, city, street }) };
   }
-
 }
 
 function readRosterEngineerIds(payload: string): string[] {

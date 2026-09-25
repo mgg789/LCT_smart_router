@@ -28,7 +28,12 @@ it('does not move the original line start when restoring someone who already che
 
 it('records a dispatcher removal as no-show offline without erasing the line start', () => {
   assert.deepEqual(
-    lineStatusAfterDispatcherAvailability('offline', BigInt(start + 5 * 60), start + 40 * 60, start),
+    lineStatusAfterDispatcherAvailability(
+      'offline',
+      BigInt(start + 5 * 60),
+      start + 40 * 60,
+      start,
+    ),
     { lineStatus: 'no_show_offline', lineStartedAt: BigInt(start + 5 * 60) },
   );
 });
