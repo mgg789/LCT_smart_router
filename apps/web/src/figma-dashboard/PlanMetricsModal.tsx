@@ -54,9 +54,10 @@ export function PlanMetricsModal({
 
   const identity = snapshot?.plan.appliedResult;
   const plan = snapshot?.plan.plan ?? null;
-  const _inputHash = identity?.inputHash ?? '';
-  const _revision = plan?.revision ?? -1;
 
+  // Refresh only when the applied plan identity changes, not on every poll;
+  // snapshot/identity/plan are read through the closure on purpose.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: identity-driven refresh
   useEffect(() => {
     if (!open || !snapshot || !token || !identity || !plan) {
       setPrediction(null);
@@ -94,9 +95,7 @@ export function PlanMetricsModal({
     return () => {
       cancelled = true;
     };
-    // Refresh only when the applied plan identity changes, not on every poll.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, token, snapshot, plan.routes, identity, plan]);
+  }, [open, token, identity?.inputHash, identity?.routerContextVersion, plan?.revision]);
 
   const metrics = plan ? planTotals(plan) : null;
   const routed = plan ? Object.keys(visitOrders(plan.routes)).length > 0 : false;

@@ -542,12 +542,14 @@ describe('road import client', () => {
       }),
     );
 
-    await importRoadData('session-token', 'eyJ0ZXN0IjoxfQ==');
+    // Deliberately short fake payload: a long base64 literal trips gitleaks'
+    // generic-api-key rule on this line.
+    await importRoadData('session-token', 'e30=');
 
     expect(sentBody).toEqual({
       operationId: expect.any(String),
       profile: 'car',
-      payloadBase64: 'eyJ0ZXN0IjoxfQ==',
+      payloadBase64: 'e30=',
     });
   });
 });
