@@ -28,7 +28,7 @@ describe('RateLimitGuard', () => {
     const reflector = {
       getAllAndOverride: () => RULE,
     } as unknown as Reflector;
-    const guarded = new RateLimitGuard(reflector);
+    const guarded = new RateLimitGuard(reflector, { get: () => 1 } as never);
 
     assert.equal(guarded.canActivate(context({ 'x-forwarded-for': '1.2.3.4' })), true);
     assert.equal(guarded.canActivate(context({ 'x-forwarded-for': '1.2.3.4' })), true);
@@ -42,7 +42,7 @@ describe('RateLimitGuard', () => {
     const reflector = {
       getAllAndOverride: () => RULE,
     } as unknown as Reflector;
-    const guarded = new RateLimitGuard(reflector);
+    const guarded = new RateLimitGuard(reflector, { get: () => 1 } as never);
 
     assert.equal(guarded.canActivate(context({ 'x-forwarded-for': '1.2.3.4' })), true);
     assert.equal(guarded.canActivate(context({ 'x-forwarded-for': '1.2.3.4' })), true);
@@ -58,19 +58,19 @@ describe('RateLimitGuard', () => {
     const reflector = {
       getAllAndOverride: () => RULE,
     } as unknown as Reflector;
-    const guarded = new RateLimitGuard(reflector);
+    const guarded = new RateLimitGuard(reflector, { get: () => 1 } as never);
 
     assert.equal(guarded.canActivate(context({}, '1.2.3.4')), true);
     assert.equal(guarded.canActivate(context({}, '1.2.3.4')), true);
     assert.throws(() => guarded.canActivate(context({}, '1.2.3.4')));
 
     // Fresh instance = fresh window; the guard keeps no state beyond the process.
-    const reopened = new RateLimitGuard(reflector);
+    const reopened = new RateLimitGuard(reflector, { get: () => 1 } as never);
     assert.equal(reopened.canActivate(context({}, '1.2.3.4')), true);
   });
 
   it('passes routes without a rule through', () => {
-    const guarded = new RateLimitGuard(new Reflector());
+    const guarded = new RateLimitGuard(new Reflector(), { get: () => 1 } as never);
     assert.equal(guarded.canActivate(context({})), true);
   });
 });
