@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { AppConfigService } from './common/config';
@@ -10,10 +11,14 @@ import { BigIntGuardInterceptor } from './common/serialization';
 
 async function bootstrap(): Promise<void> {
   const level = (process.env.LOG_LEVEL ?? 'info') as 'debug' | 'info' | 'warn' | 'error';
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: new JsonLogger(level),
     bufferLogs: false,
+    // Road imports are base64-encoded OSRM resources. Keep this exceptional
+    // boundary bounded while allowing the documented 8 MiB decoded upload.
+    bodyParser: false,
   });
+  app.useBodyParser('json', { limit: '12mb' });
 
   const config = app.get(AppConfigService);
   const isProduction = config.isProduction;

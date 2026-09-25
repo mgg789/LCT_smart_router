@@ -3,7 +3,7 @@ import { AppConfigService } from '../../common/config';
 import { WORK_TYPE_CODES } from '../../orchestrator/requests/work-type.catalog';
 import type { AiOperationService } from '../operations';
 import { localDateSchema, localTimeSchema, localToUnixSeconds } from './local-time';
-import type { ToolContext, ToolResult, ToolSpec } from './tool.types';
+import type { AnyToolSpec, ToolContext, ToolResult, ToolSpec } from './tool.types';
 
 export interface DispatcherWriteToolDeps {
   readonly aiOperations: AiOperationService;
@@ -28,16 +28,29 @@ const genericAlertActionSchema = z.enum([
   'extend',
 ]);
 
-function prepared(
-  operationId: string,
-  state: string,
-  preview: unknown,
-  summary: string,
-): ToolResult {
+function prepared(op: {
+  operationId: string;
+  state: string;
+  preview: unknown;
+  guard?: string;
+}): ToolResult {
+  const note =
+    op.guard === 'user_allowed'
+      ? 'Гуард отклонил действие, диспетчер разрешил. Действие выполнено.'
+      : op.guard === 'user_rejected'
+        ? 'Действие отклонено совместным решением гуарда и диспетчера.'
+        : op.state === 'applied'
+          ? 'Действие выполнено.'
+          : 'Действие не выполнено.';
   return {
-    ok: true,
-    summary,
-    resultContent: JSON.stringify({ operation_id: operationId, state, preview }),
+    ok: op.state === 'applied',
+    summary: note,
+    resultContent: JSON.stringify({
+      operation_id: op.operationId,
+      state: op.state,
+      preview: op.preview,
+      note,
+    }),
   };
 }
 
@@ -239,7 +252,7 @@ export function buildDispatcherWriteTools(deps: DispatcherWriteToolDeps): readon
           ...(args.reason === undefined ? {} : { reason: args.reason }),
         },
       });
-      return prepared(op.operationId, op.state, op.preview, 'Prepared moving the request window');
+      return prepared(op);
     },
   };
 
@@ -262,7 +275,7 @@ export function buildDispatcherWriteTools(deps: DispatcherWriteToolDeps): readon
           ...(args.reason === undefined ? {} : { reason: args.reason }),
         },
       });
-      return prepared(op.operationId, op.state, op.preview, 'Prepared rescheduling the request');
+      return prepared(op);
     },
   };
 
@@ -308,7 +321,7 @@ export function buildDispatcherWriteTools(deps: DispatcherWriteToolDeps): readon
           ...(args.expectedVersion === undefined ? {} : { expectedVersion: args.expectedVersion }),
         },
       });
-      return prepared(op.operationId, op.state, op.preview, 'Prepared changing the request');
+      return prepared(op);
     },
   };
 
@@ -329,7 +342,7 @@ export function buildDispatcherWriteTools(deps: DispatcherWriteToolDeps): readon
           ...(args.expectedVersion === undefined ? {} : { expectedVersion: args.expectedVersion }),
         },
       });
-      return prepared(op.operationId, op.state, op.preview, 'Prepared cancelling the request');
+      return prepared(op);
     },
   };
 
@@ -365,7 +378,7 @@ export function buildDispatcherWriteTools(deps: DispatcherWriteToolDeps): readon
           ...(args.problemText === undefined ? {} : { problemText: args.problemText }),
         },
       });
-      return prepared(op.operationId, op.state, op.preview, 'Prepared a new request');
+      return prepared(op);
     },
   };
 
@@ -385,7 +398,7 @@ export function buildDispatcherWriteTools(deps: DispatcherWriteToolDeps): readon
         targetRef: args.policyId,
         payload: { policyId: args.policyId },
       });
-      return prepared(op.operationId, op.state, op.preview, 'Prepared selecting a policy');
+      return prepared(op);
     },
   };
 
@@ -405,12 +418,7 @@ export function buildDispatcherWriteTools(deps: DispatcherWriteToolDeps): readon
         targetRef: args.engineerId,
         payload: { availability: args.availability },
       });
-      return prepared(
-        op.operationId,
-        op.state,
-        op.preview,
-        "Prepared an engineer's availability change",
-      );
+      return prepared(op);
     },
   };
 
@@ -458,7 +466,7 @@ export function buildDispatcherWriteTools(deps: DispatcherWriteToolDeps): readon
             : { attendanceOptOut: args.attendanceOptOut }),
         },
       });
-      return prepared(op.operationId, op.state, op.preview, "Prepared an engineer's workday");
+      return prepared(op);
     },
   };
 
@@ -478,12 +486,7 @@ export function buildDispatcherWriteTools(deps: DispatcherWriteToolDeps): readon
         targetRef: args.engineerId,
         payload: {},
       });
-      return prepared(
-        op.operationId,
-        op.state,
-        op.preview,
-        "Prepared an engineer's technical break",
-      );
+      return prepared(op);
     },
   };
 
@@ -511,7 +514,7 @@ export function buildDispatcherWriteTools(deps: DispatcherWriteToolDeps): readon
           ...(args.engineerId === undefined ? {} : { engineerId: args.engineerId }),
         },
       });
-      return prepared(op.operationId, op.state, op.preview, 'Prepared resolving the alert');
+      return prepared(op);
     },
   };
 
@@ -529,7 +532,7 @@ export function buildDispatcherWriteTools(deps: DispatcherWriteToolDeps): readon
         targetRef: args.alertId,
         payload: {},
       });
-      return prepared(op.operationId, op.state, op.preview, 'Prepared marking the alert as seen');
+      return prepared(op);
     },
   };
 
@@ -549,22 +552,35 @@ export function buildDispatcherWriteTools(deps: DispatcherWriteToolDeps): readon
         targetRef: args.workDate,
         payload: { workDate: args.workDate },
       });
-      return prepared(op.operationId, op.state, op.preview, 'Prepared closing the shift');
+      return prepared(op);
     },
   };
 
-  return [
-    prepareMoveWindow,
-    prepareRescheduleRequest,
-    prepareUpdateRequest,
-    prepareCancelRequest,
-    prepareCreateRequest,
-    prepareSelectPolicy,
-    prepareSetEngineerAvailability,
-    prepareSetEngineerWorkday,
-    prepareEngineerTechnicalBreak,
-    prepareResolveAlert,
-    prepareMarkAlertSeen,
-    prepareCloseShift,
-  ];
+  return (
+    [
+      prepareMoveWindow,
+      prepareRescheduleRequest,
+      prepareUpdateRequest,
+      prepareCancelRequest,
+      prepareCreateRequest,
+      prepareSelectPolicy,
+      prepareSetEngineerAvailability,
+      prepareSetEngineerWorkday,
+      prepareEngineerTechnicalBreak,
+      prepareResolveAlert,
+      prepareMarkAlertSeen,
+      prepareCloseShift,
+    ] as AnyToolSpec[]
+  ).map(performsNow);
+}
+
+/** The catalogue names still start with `prepare_`. The model was reading that as
+ *  "this only drafts a card", then telling the dispatcher it had no write tool. */
+function performsNow(tool: AnyToolSpec): AnyToolSpec {
+  return {
+    name: tool.name,
+    description: `Performs the change on this call. ${tool.description}`,
+    schema: tool.schema,
+    run: (ctx, args) => tool.run(ctx, args),
+  };
 }

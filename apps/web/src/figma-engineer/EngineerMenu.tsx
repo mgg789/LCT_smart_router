@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
+import { MonthlyPoints } from '../components/passports/MonthlyPoints';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { ENGINEER_ASSETS } from './assets';
 import { formatPlanWindow } from './engineerClock';
@@ -14,6 +15,7 @@ export type EngineerMenuId = 'day' | 'assistant' | 'settings';
  * lunch row, technical break and support.
  */
 export function EngineerMenu({
+  token,
   open,
   motionOn,
   name,
@@ -28,6 +30,7 @@ export function EngineerMenu({
   onSupport,
   onSignOut,
 }: {
+  token?: string;
   open: boolean;
   motionOn: boolean;
   name: string;
@@ -86,7 +89,7 @@ export function EngineerMenu({
             />
             <div className="relative z-10 shrink-0 bg-figma-ink" style={{ height: eu(445) }} />
             <div
-              className="relative z-10 flex min-h-0 flex-1 flex-col"
+              className="relative z-10 flex min-h-0 flex-1 flex-col overflow-y-auto"
               style={{ padding: `${eu(24)} ${eu(20)} ${eu(28)}` }}
             >
               <p
@@ -101,6 +104,11 @@ export function EngineerMenu({
               >
                 {email}
               </p>
+              {token ? (
+                <div className="mt-4">
+                  <MonthlyPoints token={token} />
+                </div>
+              ) : null}
               <nav className="relative flex flex-col" style={{ marginTop: eu(28), gap: eu(20) }}>
                 <MenuItem
                   label="Мой день"

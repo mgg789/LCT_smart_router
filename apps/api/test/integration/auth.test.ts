@@ -426,17 +426,14 @@ describe('auth-engine', () => {
     });
 
     it('stops accepting an expired key like a revoked one', async () => {
-      // Read the clock once: asking it again below would compare the stored expiry
-      // against a second that may already have ticked over mid-test.
-      const expiresAt = nowSeconds() + 3_600;
       const created = await post(
         '/api/v1/auth/tokens',
-        { name: unique('dying'), category: 'client', expiresAt },
+        { name: unique('dying'), category: 'client', expiresAt: nowSeconds() + 3_600 },
         dispatcherToken,
       );
       assert.equal(created.status, 201);
       const key = (await created.json()) as { id: string; token: string; expiresAt: number };
-      assert.equal(key.expiresAt, expiresAt);
+      assert.equal(key.expiresAt, nowSeconds() + 3_600);
 
       const listed = await get('/api/v1/auth/tokens', dispatcherToken);
       const entry = (

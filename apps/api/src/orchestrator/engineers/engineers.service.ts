@@ -13,6 +13,12 @@ import { NotificationsService } from '../../notifications';
 import { assertWriteApplied, type OperationContext } from '../../operations';
 import type { Tx } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
+import {
+  capProvisionalEquipment,
+  equipmentCapacity,
+  equipmentTotal,
+  readEquipmentSettings,
+} from '../equipment/equipment-policy';
 import { assertLunchConditions, type LunchConditions, workDateOf } from './workday';
 
 export interface CreateEngineerInput {
@@ -418,6 +424,31 @@ export class EngineersService {
     const current = await this.load(context.tx, engineerId);
     if (input.skills) {
       assertSkills(input.skills);
+    }
+    if (input.transportType && input.transportType !== current.transportType) {
+      const capacity = equipmentCapacity(
+        input.transportType,
+        await readEquipmentSettings(context.tx),
+      );
+      const days = await context.tx.engineerDay.findMany({
+        where: { engineerId, shiftEndAt: { gt: BigInt(context.now) } },
+      });
+      for (const day of days) {
+        if (equipmentTotal(day) <= capacity) continue;
+        if (day.equipmentIssuedAt !== null)
+          throw new SysError(
+            'VALIDATION_FAILED',
+            'Issued equipment exceeds the new transport capacity',
+          );
+        await context.tx.engineerDay.update({
+          where: { id: day.id },
+          data: {
+            ...capProvisionalEquipment(day, capacity),
+            version: { increment: 1 },
+            updatedAt: BigInt(context.now),
+          },
+        });
+      }
     }
 
     const updated = await context.tx.engineer.updateMany({

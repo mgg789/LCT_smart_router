@@ -18,22 +18,11 @@ on:
 
 workflows:
   regression:
-    # Full-app regression needs the whole compose stack (~3-4 GiB RAM) and is
-    # pinned to the dedicated worker on the MGG host (tag mgg-full).
-    runs_on: [self-hosted, mgg-full]
     settings:
       max_cube_duration: 30m
     tasks:
       - test-regression
   ci:
-    # Routed to the light self-hosted worker (max_slots=1, so the five tasks
-    # run sequentially). The cd workflow keeps cloud workers on purpose:
-    # deploy must not depend on the MGG box being up. Cubes get a generous
-    # budget: serial execution on one slot plus cold package downloads on the
-    # worker host are slower than the parallel cloud runs.
-    runs_on: [self-hosted, mgg-light]
-    settings:
-      max_cube_duration: 25m
     tasks:
       - lint
       - test-js
@@ -127,10 +116,6 @@ tasks:
           - pip install --disable-pip-version-check ruff==0.16.7
           - ruff check core
   - name: test-js
-    env:
-      # Real password for the throwaway Postgres sidecar; overrides the public
-      # disposable default committed in scripts/ci/js-tests.env.
-      LCT_CI_PG_PASSWORD: ${{ secrets.LCT_CI_PG_PASSWORD }}
     cubes:
       - name: web-and-api
         script:

@@ -1,7 +1,4 @@
 const FACTOR_LABELS: Record<string, string> = {
-  MANUAL_PLAN: 'Ручной план диспетчера',
-  MANUAL_ASSIGNMENT: 'Назначено диспетчером',
-  MANUAL_SCHEDULE_UNVERIFIED: 'Время и дороги не пересчитаны',
   skill_match: 'Подходит навык',
   skill_missing: 'Нет нужного навыка',
   equipment_ok: 'Есть требуемое оборудование',
@@ -24,9 +21,6 @@ const FACTOR_LABELS: Record<string, string> = {
 };
 
 const REASON_DETAILS: Record<string, string> = {
-  MANUAL_PLAN: 'Ручной порядок; прежние автоматические проверки остались в истории.',
-  MANUAL_ASSIGNMENT: 'Исполнитель выбран диспетчером. Время и дорога не пересчитаны.',
-  MANUAL_SCHEDULE_UNVERIFIED: 'Расписание и дорожные показатели требуют отдельной проверки.',
   CONSTRAINTS_SATISFIED: 'Навык, транспорт и расписание соблюдены.',
   NO_SKILL_MATCH: 'Нет инженера с нужным навыком.',
   NO_TRANSPORT_MATCH: 'Нет инженера с подходящим транспортом.',
@@ -61,8 +55,8 @@ export function reasonDetail(code: string, fallback: string): string {
   return FACTOR_LABELS[code] ?? 'Подробности есть в данных расчёта.';
 }
 
-export function modeLabel(mode: 'auto' | 'manual' | 'assisted'): string {
-  return mode === 'auto' ? 'Авто' : mode === 'assisted' ? 'Авто с корректировками' : 'Вручную';
+export function modeLabel(mode: 'auto' | 'manual'): string {
+  return mode === 'auto' ? 'Авто' : 'Вручную';
 }
 
 function hasCyrillic(text: string): boolean {
@@ -103,7 +97,8 @@ export const TRANSPORT_LABELS: Record<string, string> = {
   car: 'авто',
   walk: 'пешком',
   bike: 'велосипед',
-  transit: 'общественный транспорт',
+  // Legacy API snapshots used `transit`; the dispatcher UI now groups it with walking.
+  transit: 'пешком',
 };
 
 /** Dispatcher label for a stored skill code. Unknown codes stay as-is. */

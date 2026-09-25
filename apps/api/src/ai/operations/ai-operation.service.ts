@@ -17,7 +17,10 @@ import { SnapshotPublisher } from '../../routing/mount-data-eng';
 import type { AiPreviewRow } from '../runtime/ai-event.types';
 import { type AiRunEventInput, RunEventBus } from '../runtime/run-event.bus';
 import { RunRegistry } from '../runtime/run-registry';
+import { RunStoppedSignal } from '../runtime/stop.service';
 import { RoleProfileService } from '../tools/role-profile';
+import { ActionDecisionGate } from './action-decision';
+import { ActionGuardService } from './action-guard';
 import { type AiActionSpec, buildAiActionCatalog } from './ai-action.catalog';
 
 export interface PrepareOperationInput {
@@ -33,9 +36,12 @@ export interface PrepareOperationInput {
 
 export interface PreparedOperation {
   readonly operationId: string;
-  readonly state: 'awaiting_confirmation';
+  readonly state: 'awaiting_confirmation' | 'applied' | 'rejected' | 'outcome_unknown';
   readonly preview: readonly AiPreviewRow[];
   readonly expiresAt: number;
+  /** `clear` applied at once. `user_allowed` / `user_rejected` are what the model is told
+   *  after the dispatcher answers a card the guard refused. */
+  readonly guard?: 'clear' | 'risky' | 'user_allowed' | 'user_rejected';
 }
 
 export interface ConfirmOperationInput {
@@ -84,6 +90,8 @@ export class AiOperationService {
     private readonly roleProfiles: RoleProfileService,
     private readonly bus: RunEventBus,
     private readonly registry: RunRegistry,
+    private readonly guard: ActionGuardService,
+    private readonly decisions: ActionDecisionGate,
     requests: RequestsService,
     live: LiveService,
     engineers: EngineersService,
@@ -192,17 +200,58 @@ export class AiOperationService {
       });
     });
 
+    // Dispatcher fix mode and the engineer assistant perform the write inside this
+    // call. The model does not get a result until System one has checked it, and,
+    // when that check refuses, until the person has answered the modal.
+    if (profile !== 'dispatcher_fix' && profile !== 'engineer') {
+      await this.emitPrepared(input, id, 'awaiting_confirmation', preview, expiresAt);
+      return { operationId: id, state: 'awaiting_confirmation', preview, expiresAt };
+    }
+
     await this.emit(input.runId, {
-      type: 'operation_prepared',
+      type: 'tool_started',
+      toolName: input.action,
+      intent: 'Проверка безопасности',
+    });
+    const allowed = await this.guard.allows(input.action, preview);
+    if (allowed) {
+      const outcome = await this.confirm({
+        actor: input.actor,
+        aiOperationId: id,
+        operationId: randomUUID(),
+      });
+      const state = terminalState(outcome.state);
+      await this.emitPrepared(input, id, state, preview, expiresAt, 'clear');
+      return { operationId: id, state, preview, expiresAt, guard: 'clear' };
+    }
+
+    await this.emitPrepared(input, id, 'awaiting_confirmation', preview, expiresAt, 'risky');
+    const handle = input.runId ? this.registry.get(input.runId) : undefined;
+    const signal = handle?.abort.signal ?? new AbortController().signal;
+    const decision = await this.decisions.wait(id, signal, (expiresAt - now) * 1000);
+    if (decision === 'stopped') {
+      throw new RunStoppedSignal(handle?.stopReason ?? 'user');
+    }
+    if (decision === 'allow') {
+      const row = await this.prisma.aiOperation.findUniqueOrThrow({ where: { id } });
+      return {
+        operationId: id,
+        state: terminalState(row.state),
+        preview,
+        expiresAt,
+        guard: 'user_allowed',
+      };
+    }
+    if (decision === 'expired') {
+      await this.cancel({ actor: input.actor, aiOperationId: id }).catch(() => undefined);
+    }
+    return {
       operationId: id,
-      action: input.action,
-      targetRef: input.targetRef ?? null,
-      state: 'awaiting_confirmation',
+      state: 'rejected',
       preview,
       expiresAt,
-    });
-
-    return { operationId: id, state: 'awaiting_confirmation', preview, expiresAt };
+      guard: 'user_rejected',
+    };
   }
 
   /**
@@ -265,6 +314,7 @@ export class AiOperationService {
         current.state === 'rejected' ||
         current.state === 'outcome_unknown'
       ) {
+        this.decisions.resolve(op.id, 'allow');
         return this.toOutcomeView(current);
       }
       throw new SysError('VALIDATION_FAILED', 'This confirmation is already in progress', {
@@ -303,6 +353,7 @@ export class AiOperationService {
         outcome.result,
         input.operationId,
       );
+      this.decisions.resolve(op.id, 'allow');
       return { aiOperationId: op.id, state: 'applied', result: outcome.result };
     } catch (error) {
       if (error instanceof SysError) {
@@ -310,6 +361,7 @@ export class AiOperationService {
           code: error.code,
           message: error.message,
         });
+        this.decisions.resolve(op.id, 'allow');
         return {
           aiOperationId: op.id,
           state: 'rejected',
@@ -319,6 +371,7 @@ export class AiOperationService {
       // The write may or may not have landed; not knowing is the honest answer, not a
       // guess in either direction (ai-event.types.ts's own note on `outcome_unknown`).
       await this.finish(op, 'outcome_unknown', this.clock.nowSeconds());
+      this.decisions.resolve(op.id, 'allow');
       return { aiOperationId: op.id, state: 'outcome_unknown' };
     }
   }
@@ -343,6 +396,7 @@ export class AiOperationService {
     if (cas.count === 0) {
       const current = await this.prisma.aiOperation.findUniqueOrThrow({ where: { id: op.id } });
       if (current.state === 'cancelled_before_apply') {
+        this.decisions.resolve(op.id, 'reject');
         return { aiOperationId: op.id, state: 'cancelled_before_apply' };
       }
       throw new SysError('VALIDATION_FAILED', 'This operation can no longer be cancelled', {
@@ -354,6 +408,7 @@ export class AiOperationService {
       operationId: op.id,
       state: 'cancelled_before_apply',
     });
+    this.decisions.resolve(op.id, 'reject');
     return { aiOperationId: op.id, state: 'cancelled_before_apply' };
   }
 
@@ -448,6 +503,26 @@ export class AiOperationService {
 
   /** Emits a durable `operation_state`/`operation_prepared` event for `runId`, live if
    *  the run is still being driven by this process and persisted either way. */
+  private async emitPrepared(
+    input: PrepareOperationInput,
+    operationId: string,
+    state: PreparedOperation['state'],
+    preview: readonly AiPreviewRow[],
+    expiresAt: number,
+    guard?: 'clear' | 'risky',
+  ): Promise<void> {
+    await this.emit(input.runId, {
+      type: 'operation_prepared',
+      operationId,
+      action: input.action,
+      targetRef: input.targetRef ?? null,
+      state,
+      preview,
+      expiresAt,
+      ...(guard ? { guard } : {}),
+    });
+  }
+
   private async emit(runId: string | null, event: AiRunEventInput): Promise<void> {
     if (!runId) {
       return;
@@ -459,4 +534,10 @@ export class AiOperationService {
     }
     await this.bus.emitForRun(runId, event);
   }
+}
+
+function terminalState(state: string): PreparedOperation['state'] {
+  if (state === 'applied' || state === 'rejected' || state === 'outcome_unknown') return state;
+  if (state === 'cancelled_before_apply') return 'rejected';
+  return 'awaiting_confirmation';
 }

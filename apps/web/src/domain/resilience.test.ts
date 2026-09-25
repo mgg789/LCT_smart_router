@@ -99,6 +99,14 @@ describe('session-bound last-good view', () => {
 
 describe('recorded demo bundle', () => {
   it('validates every scenario/policy, references and metric totals', () => {
+    const completeMetricFields = [
+      'lateAssignedCount',
+      'totalLatenessSec',
+      'minWindowSlackSec',
+      'workloadSpreadSec',
+      'maxWorkloadSec',
+    ] as const;
+
     for (const scenario of demoScenarios) {
       for (const policy of ['compact', 'fast', 'sla', 'balanced', 'eco'] as const) {
         const data = recordedScenario(scenario.id, policy);
@@ -111,6 +119,9 @@ describe('recorded demo bundle', () => {
         expect(row?.metrics.requestsTotal).toBe(data.snapshot.requests.length);
         expect(data.comparison.inputHash).toBe(data.snapshot.plan.appliedResult?.inputHash);
         expect(data.comparison.rows).toHaveLength(6);
+        for (const field of completeMetricFields) {
+          expect(row?.metrics).toHaveProperty(field);
+        }
       }
     }
   });

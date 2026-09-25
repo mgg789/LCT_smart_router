@@ -1,6 +1,6 @@
 import maplibregl from 'maplibre-gl';
 import { useEffect, useRef, useState } from 'react';
-import type { LiveRouteProgress } from '../api/live';
+import type { HandoffView, LiveRouteProgress } from '../api/live';
 import type { DashboardSnapshot, PlanRouteView } from '../api/types';
 import { routeVertices, unassignedRequests } from '../domain/dashboard';
 import {
@@ -29,12 +29,15 @@ import { engineerColor, skillMark } from '../lib/reasons';
 
 const OSRM_LINE = '#8A8F98';
 const MAP_API_LINE = '#16A34A';
+const METRO_LINE = '#8B5CF6';
 
 function routeStroke(
-  segment: Pick<MapRouteSegment, 'approximate' | 'source' | 'geometryProvider'>,
+  segment: Pick<MapRouteSegment, 'approximate' | 'source' | 'geometryProvider' | 'handoffId'>,
   engineerId: string,
 ) {
+  if (segment.handoffId) return mapPaintColor('#2563EB');
   const kind = routeLineKind(segment);
+  if (kind === 'metro') return mapPaintColor(METRO_LINE);
   if (kind === 'map') return mapPaintColor(MAP_API_LINE);
   if (kind === 'osrm') return mapPaintColor(OSRM_LINE);
   return mapPaintColor(engineerColor(engineerId));
@@ -49,6 +52,7 @@ interface DayMapProps {
   /** Server-owned positions survive a remaining-day route rebuild. */
   readonly progressByEngineer?: ReadonlyMap<string, LiveRouteProgress | null>;
   readonly completedByEngineer?: ReadonlyMap<string, number>;
+  readonly handoffs?: readonly HandoffView[];
   readonly onSelectRequest: (requestId: string) => void;
 }
 
@@ -98,29 +102,91 @@ export function visiblePlannedSegments(
   route: PlanRouteView,
   graph: LiveGraphProjection,
 ): readonly VisiblePlannedSegment[] {
-  const preferred = new Map<string, VisiblePlannedSegment>();
+  const visible: VisiblePlannedSegment[] = [];
+  const seenGeometry = new Set<string>();
   for (const segment of mapRouteSegments(route)) {
     const first = segment.coordinates[0];
     const last = segment.coordinates[segment.coordinates.length - 1];
     if (!first || !last) continue;
-    const from = resolveVisibleEndpoint(route, graph.mapNodes, first);
-    const to = resolveVisibleEndpoint(route, graph.mapNodes, last);
-    if (!from || !to || from.key === to.key) continue;
-    const key = `${from.key}->${to.key}`;
-    if (!graph.mapSegments.some((edge) => edge.key === key)) continue;
-    const rank = (value: MapRouteSegment) =>
-      value.approximate
-        ? 0
-        : value.source === 'traffic_api'
-          ? 3
-          : value.source === 'route_api'
-            ? 2
-            : 1;
-    const existing = preferred.get(key);
-    if (!existing || rank(segment) > rank(existing))
-      preferred.set(key, { ...segment, fromKey: from.key, toKey: to.key });
+    const routeFirst = segment.routeEndpoints?.[0] ?? first;
+    const routeLast = segment.routeEndpoints?.[1] ?? last;
+    const { from, to } = resolveVisiblePair(route, graph, routeFirst, routeLast);
+    const drawableRoad =
+      !segment.approximate && segment.coordinates.length >= 2 && segment.source !== 'metro';
+    const onGraph =
+      from !== null &&
+      to !== null &&
+      from.key !== to.key &&
+      graph.mapSegments.some((edge) => edge.key === `${from.key}->${to.key}`);
+    const lunchPin = (coordinate: readonly [number, number]) =>
+      route.stops.some(
+        (stop) => stop.kind === 'lunch' && hasCoordinate(stop, coordinate),
+      );
+    // Lunch is collapsed off the map, so a road into that stop no longer matches
+    // a graph edge. Keep only that polyline; a finished edge behind the anchor stays hidden.
+    const intoCollapsedLunch =
+      drawableRoad &&
+      (from !== null || to !== null) &&
+      ((from === null && (lunchPin(routeFirst) || lunchPin(first))) ||
+        (to === null && (lunchPin(routeLast) || lunchPin(last))));
+    if (!onGraph && !intoCollapsedLunch) continue;
+    const shapeId = `${segment.source}:${first[0]},${first[1]}:${last[0]},${last[1]}`;
+    const fromKey = from?.key ?? `shape:${shapeId}:a`;
+    const toKey = to && to.key !== from?.key ? to.key : `shape:${shapeId}:b`;
+    if (fromKey === toKey) continue;
+    const key = `${fromKey}->${toKey}`;
+    // Mixed legs intentionally keep access, metro and egress as separate lines.
+    // Deduplicate only an exact repeated shape from a malformed/duplicated payload.
+    const geometryKey = `${key}:${segment.source}:${segment.coordinates
+      .map((point) => `${point[0]},${point[1]}`)
+      .join(';')}`;
+    if (seenGeometry.has(geometryKey)) continue;
+    seenGeometry.add(geometryKey);
+    visible.push({ ...segment, fromKey, toKey });
   }
-  return [...preferred.values()];
+  return visible;
+}
+
+/**
+ * The MKAD road API snaps a quote onto the carriageway. Observed offsets from a
+ * building pin are about 15–40 m, so an exact coordinate match drops the polyline
+ * and the map falls back to a straight dashed chord.
+ */
+const ROAD_ENDPOINT_SNAP_M = 80;
+
+/**
+ * A return visit sits on the same pin as the shift start. The first node at
+ * that coordinate is the start, which is not the graph edge of the return
+ * trip, so the road was dropped and a dashed chord remained.
+ */
+function resolveVisiblePair(
+  route: PlanRouteView,
+  graph: LiveGraphProjection,
+  start: readonly [number, number],
+  end: readonly [number, number],
+): { from: LiveGraphNode | null; to: LiveGraphNode | null } {
+  const fromOptions = endpointCandidates(route, graph.mapNodes, start);
+  const toOptions = endpointCandidates(route, graph.mapNodes, end);
+  for (const from of fromOptions) {
+    for (const to of toOptions) {
+      if (from.key === to.key) continue;
+      if (graph.mapSegments.some((edge) => edge.key === `${from.key}->${to.key}`)) {
+        return { from, to };
+      }
+    }
+  }
+  return { from: fromOptions[0] ?? null, to: toOptions[0] ?? null };
+}
+
+function endpointCandidates(
+  route: PlanRouteView,
+  visibleNodes: readonly LiveGraphNode[],
+  coordinate: readonly [number, number],
+): LiveGraphNode[] {
+  const exact = visibleNodes.filter((node) => hasCoordinate(node, coordinate));
+  if (exact.length > 0) return exact;
+  const single = resolveVisibleEndpoint(route, visibleNodes, coordinate);
+  return single ? [single] : [];
 }
 
 function resolveVisibleEndpoint(
@@ -128,7 +194,9 @@ function resolveVisibleEndpoint(
   visibleNodes: readonly LiveGraphNode[],
   coordinate: readonly [number, number],
 ): LiveGraphNode | null {
-  const direct = visibleNodes.find((node) => hasCoordinate(node, coordinate));
+  const exact = visibleNodes.find((node) => hasCoordinate(node, coordinate));
+  if (exact) return exact;
+  const direct = nearestNodeWithin(visibleNodes, coordinate, ROAD_ENDPOINT_SNAP_M);
   if (direct) return direct;
   const vertices = routeVertices(route);
   const waitIndex = vertices.findIndex(
@@ -143,6 +211,74 @@ function resolveVisibleEndpoint(
         (node) => node.kind === following.kind && hasCoordinate(node, coordinate),
       ) ?? null)
     : null;
+}
+
+function nearestNodeWithin(
+  nodes: readonly LiveGraphNode[],
+  coordinate: readonly [number, number],
+  maxMeters: number,
+): LiveGraphNode | null {
+  let best: LiveGraphNode | null = null;
+  let bestMeters = maxMeters;
+  for (const node of nodes) {
+    const meters = haversineMeters([node.lon, node.lat], coordinate);
+    if (best === null ? meters <= maxMeters : meters < bestMeters) {
+      best = node;
+      bestMeters = meters;
+    }
+  }
+  return best;
+}
+
+/**
+ * A graph edge is already drawn when a road, a metro ride, or two roads
+ * meeting at a collapsed lunch pin connect its stops. A leftover chord is
+ * the dashed fallback.
+ */
+export function plannedRoadsCoverEdge(
+  edge: { from: Pick<LiveGraphNode, 'lat' | 'lon' | 'key'>; to: Pick<LiveGraphNode, 'lat' | 'lon' | 'key'> },
+  planned: readonly VisiblePlannedSegment[],
+): boolean {
+  const roads = planned.filter((segment) => segment.source === 'metro' || !segment.approximate);
+  const pinsOf = (segment: VisiblePlannedSegment) =>
+    segment.routeEndpoints ??
+    ([segment.coordinates[0], segment.coordinates[segment.coordinates.length - 1]] as const);
+  const near = (node: Pick<LiveGraphNode, 'lat' | 'lon'>, point: readonly [number, number] | undefined) =>
+    point !== undefined && haversineMeters([node.lon, node.lat], point) <= 40;
+  for (const road of roads) {
+    if (road.fromKey === edge.from.key && road.toKey === edge.to.key) return true;
+    const pins = pinsOf(road);
+    if ((near(edge.from, pins[0]) && near(edge.to, pins[1])) || (near(edge.from, pins[1]) && near(edge.to, pins[0]))) {
+      return true;
+    }
+  }
+  for (const left of roads) {
+    const leftPins = pinsOf(left);
+    const leftTouchesFrom = near(edge.from, leftPins[0]) || near(edge.from, leftPins[1]);
+    if (!leftTouchesFrom) continue;
+    const leftFar = near(edge.from, leftPins[0]) ? leftPins[1] : leftPins[0];
+    for (const right of roads) {
+      if (right === left || !leftFar) continue;
+      const rightPins = pinsOf(right);
+      const rightTouchesTo = near(edge.to, rightPins[0]) || near(edge.to, rightPins[1]);
+      if (!rightTouchesTo) continue;
+      const rightFar = near(edge.to, rightPins[0]) ? rightPins[1] : rightPins[0];
+      if (rightFar && haversineMeters(leftFar, rightFar) <= 40) return true;
+    }
+  }
+  return false;
+}
+
+function haversineMeters(from: readonly [number, number], to: readonly [number, number]): number {
+  const radius = 6_371_000;
+  const toRad = (degrees: number) => (degrees * Math.PI) / 180;
+  const dLat = toRad(to[1] - from[1]);
+  const dLon = toRad(to[0] - from[0]);
+  const lat1 = toRad(from[1]);
+  const lat2 = toRad(to[1]);
+  const half =
+    Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) ** 2;
+  return 2 * radius * Math.asin(Math.min(1, Math.sqrt(half)));
 }
 
 function hasCoordinate(
@@ -194,6 +330,7 @@ export function DayMap({
   soloRequestId = null,
   progressByEngineer,
   completedByEngineer,
+  handoffs = [],
   onSelectRequest,
 }: DayMapProps) {
   const [forceLocal, setForceLocal] = useState(!navigator.onLine);
@@ -322,16 +459,15 @@ export function DayMap({
         const region = route ? routeRegion(snapshot, route) : null;
         const planned = route ? visiblePlannedSegments(route, graph) : [];
         const covered = (from: LiveGraphNode, to: LiveGraphNode) =>
-          planned.some((segment) => {
-            const first = segment.coordinates[0];
-            const last = segment.coordinates.at(-1);
-            return first && last && hasCoordinate(from, first) && hasCoordinate(to, last);
-          });
+          plannedRoadsCoverEdge({ from, to }, planned);
         const segments = [
           ...planned.map((segment) => ({
             approximate: segment.approximate,
             source: segment.source,
             geometryProvider: segment.geometryProvider,
+            handoffId: segment.handoffId,
+            travelTimeSec: segment.travelTimeSec,
+            distanceKm: segment.distanceKm,
             coordinates: segment.coordinates,
           })),
           ...graph.mapSegments
@@ -371,19 +507,19 @@ export function DayMap({
         graph.activeSegments.map((segment) => {
           const road = route
             ? visiblePlannedSegments(route, graph).find((candidate) => {
-                const first = candidate.coordinates[0];
-                const last = candidate.coordinates.at(-1);
-                return (
-                  first &&
-                  last &&
-                  hasCoordinate(segment.from, first) &&
-                  hasCoordinate(segment.to, last)
-                );
+                return candidate.fromKey === segment.from.key && candidate.toKey === segment.to.key;
               })
             : null;
           return {
             type: 'Feature' as const,
-            properties: { engineerId, color: mapPaintColor(engineerColor(engineerId)) },
+            properties: {
+              engineerId,
+              color: road?.handoffId
+                ? mapPaintColor('#2563EB')
+                : road && routeLineKind(road) === 'metro'
+                  ? routeStroke(road, engineerId)
+                  : mapPaintColor(engineerColor(engineerId)),
+            },
             geometry: {
               type: 'LineString' as const,
               coordinates: road?.coordinates ?? [
@@ -418,9 +554,27 @@ export function DayMap({
         ];
       });
 
+      const handoffFeatures = projections.flatMap(({ engineerId, graph }) =>
+        graph.mapNodes.flatMap((node) => {
+          if (node.kind !== 'handoff' || !node.handoffId) return [];
+          const handoff = handoffs.find((item) => item.id === node.handoffId);
+          return [
+            {
+              type: 'Feature' as const,
+              properties: {
+                handoffId: node.handoffId,
+                engineerId,
+                completed: handoff?.completedAt ? 1 : 0,
+              },
+              geometry: { type: 'Point' as const, coordinates: [node.lon, node.lat] as const },
+            },
+          ];
+        }),
+      );
       const stopFeatures = projections.flatMap(({ engineerId, graph, progress }) =>
         graph.mapNodes.flatMap((node, index) => {
           if (node.kind === 'start') return [];
+          if (node.kind === 'handoff') return [];
           if (node.kind === 'lunch') {
             const coordinates = lunchMarkerCoordinates(graph.mapNodes, index);
             return [
@@ -663,6 +817,20 @@ export function DayMap({
         });
       });
 
+      upsert(map, 'handoffs', { type: 'FeatureCollection', features: handoffFeatures }, () => {
+        map.addLayer({
+          id: 'handoff-point',
+          type: 'circle',
+          source: 'handoffs',
+          paint: {
+            'circle-radius': 8,
+            'circle-color': '#2563EB',
+            'circle-stroke-width': 3,
+            'circle-stroke-color': MAP_CANVAS,
+          },
+        });
+      });
+
       const fitKey = `${retry}:${forceLocal}:${selectedEngineerId ?? 'all'}:${selectedRequestId ?? ''}:${soloRequestId ?? ''}`;
       if (fittedKeyRef.current !== fitKey) {
         fittedKeyRef.current = fitKey;
@@ -709,6 +877,7 @@ export function DayMap({
     snapshot,
     progressByEngineer,
     completedByEngineer,
+    handoffs,
     forceLocal,
     retry,
   ]);
@@ -768,13 +937,7 @@ export function DayMap({
       ) : null}
       {soloRequestId ? null : (
         <div className="pointer-events-none absolute bottom-3 left-3 rounded-xl bg-white/90 px-3 py-2 text-[11px] text-muted shadow">
-          {snapshot.plan.plan?.origin === 'manual'
-            ? snapshot.plan.plan.routes.some((route) => route.timingStatus === 'forecast')
-              ? 'Ручной порядок сохранён. Зелёные дороги — API карт; прогноз и свежесть данных указаны у маршрута.'
-              : 'Ручной порядок. Линии соединяют точки; дороги и время после правки не пересчитаны.'
-            : selectedEngineerId
-              ? 'Показан план выбранного инженера. Пунктир — геоцентры, серая линия — OSRM, зелёная — маршрут 2ГИС или Яндекс.'
-              : 'План дня без live-позиции инженеров. Пунктир — геоцентры, серая линия — OSRM, зелёная — маршрут 2ГИС или Яндекс.'}
+          {localMap || mapFailed ? 'Оффлайн' : 'Онлайн'}
         </div>
       )}
       <div className="absolute right-2 bottom-1 rounded bg-white/90 px-2 text-[10px] text-muted">

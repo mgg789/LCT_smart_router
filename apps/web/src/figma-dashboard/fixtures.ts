@@ -1,3 +1,5 @@
+import type { HandoffView } from '../api/live';
+
 /**
  * Demo snapshot for the static Figma MAIN page.
  * Shaped like future dispatch API payloads so the UI can be exercised without a backend.
@@ -35,7 +37,9 @@ export type RouteStop = {
   place: string;
   status: string;
   requestId?: string | null;
-  kind?: 'start' | 'job' | 'lunch' | 'technical';
+  kind?: 'start' | 'job' | 'lunch' | 'technical' | 'handoff';
+  handoffId?: string;
+  handoff?: HandoffView;
   at?: number;
   active?: boolean;
   failed?: boolean;
@@ -59,7 +63,7 @@ export type EngineerCard = {
   lineFailed?: boolean;
   id: string;
   name: string;
-  km: number | null;
+  km: number;
   status: string;
   shift: string;
   requestCount: number;

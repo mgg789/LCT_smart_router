@@ -7,9 +7,14 @@ import { OperationsService } from '../operations';
 import { EngineersService, type EngineerWithAccount } from '../orchestrator/engineers';
 import { FactsService } from '../orchestrator/facts';
 import { LiveService } from '../orchestrator/live';
-import { MapRoutingService } from '../orchestrator/settings/map-routing.service';
+import {
+  PassportsService,
+  type PassportWriteDto,
+  passportWriteSchema,
+} from '../orchestrator/passports';
 import { PrismaService } from '../persistence';
-import { AppliedPlanService } from '../routing/router-gateway';
+import { AppliedPlanService, RouterClient } from '../routing/router-gateway';
+import { weatherView } from './weather-view';
 import { type AttendanceDto, attendanceSchema } from './dto/alert.dto';
 import {
   type ConfirmEmailChangeDto,
@@ -48,7 +53,6 @@ import { toRequestView } from './request-view';
 @Controller('engineer')
 export class EngineerController {
   constructor(
-    private readonly maps: MapRoutingService,
     private readonly engineers: EngineersService,
     private readonly facts: FactsService,
     private readonly plans: AppliedPlanService,
@@ -56,7 +60,20 @@ export class EngineerController {
     private readonly prisma: PrismaService,
     private readonly auth: AuthService,
     private readonly live: LiveService,
+    private readonly passports: PassportsService,
+    private readonly router: RouterClient,
   ) {}
+
+  @Get('weather')
+  @ApiOperation({ summary: 'Cached Moscow forecast for the engineer shift screen' })
+  async weather() {
+    if (!this.router.isConfigured()) return weatherView(null);
+    try {
+      return weatherView(await this.router.getWeather());
+    } catch {
+      return weatherView(null);
+    }
+  }
 
   @Get('live')
   @ApiOperation({ summary: 'LIVE state for the signed-in engineer' })
@@ -378,7 +395,7 @@ export class EngineerController {
         requests: [],
       };
     }
-    const view = await this.maps.enrichPlan(toPlanView(plan));
+    const view = toPlanView(plan);
     const route = view.routes.find((item) => item.engineerId === engineer.id) ?? null;
     return {
       // The engineer works from the plan sys applied, never from a background result of
@@ -415,7 +432,7 @@ export class EngineerController {
     if (!plan) {
       throw SysError.notFound('Request');
     }
-    const view = await this.maps.enrichPlan(toPlanView(plan));
+    const view = toPlanView(plan);
     const route = view.routes.find((item) => item.engineerId === engineer.id) ?? null;
     const stop = route?.stops.find((item) => item.requestId === requestId) ?? null;
     if (stop === null) {
@@ -426,6 +443,74 @@ export class EngineerController {
       throw SysError.notFound('Request');
     }
     return { request: toRequestView(row), stop };
+  }
+
+  @Get('requests/:id/passport')
+  @ApiOperation({ summary: 'Object passport for an assigned request' })
+  async passport(
+    @CurrentActor() actor: Actor,
+    @Param('id') requestId: string,
+    @Query('engineerId') engineerId?: string,
+  ) {
+    const engineer = await this.subjectOf(actor, engineerId);
+    return this.passports.engineerRead(engineer.id, requestId);
+  }
+
+  @Post('requests/:id/passport')
+  @ApiOperation({ summary: 'Fill an absent or stale passport for the current LIVE request' })
+  async savePassport(
+    @CurrentActor() actor: Actor,
+    @Param('id') requestId: string,
+    @Body(zodBody(passportWriteSchema)) dto: PassportWriteDto,
+  ) {
+    const engineer = await this.subjectOf(actor, undefined);
+    const operation = {
+      operationId: dto.operationId,
+      actor,
+      action: 'engineer.passport.save',
+      targetRef: requestId,
+      // The operation fingerprint must bind the reward to its authenticated owner.
+      payload: { ...dto, engineerId: engineer.id },
+    } as const;
+    // A completed transport retry must replay before checking today's mutable LIVE state.
+    // OperationsService still validates the fingerprint, so a reused id is not accepted.
+    if (
+      await this.prisma.operation.findUnique({
+        where: { operationId: dto.operationId },
+        select: { operationId: true },
+      })
+    ) {
+      return (
+        await this.operations.execute(operation, async () => {
+          throw SysError.validationFailed('Operation replay unexpectedly reached its handler');
+        })
+      ).result;
+    }
+    const prepared = await this.passports.prepareSave(engineer.id, requestId);
+    const apply = () =>
+      this.operations.execute(operation, (context) =>
+        this.passports.save(context, engineer.id, requestId, dto, prepared),
+      );
+    try {
+      return (await apply()).result;
+    } catch (error) {
+      // A concurrent identical save may observe the winner's fresh passport before
+      // reaching OperationsService's unique-insert replay path. Replay its committed
+      // result, still verifying the original payload and engineer fingerprint.
+      const completed = await this.prisma.operation.findUnique({
+        where: { operationId: dto.operationId },
+        select: { state: true },
+      });
+      if (completed?.state === 'applied') return (await apply()).result;
+      throw error;
+    }
+  }
+
+  @Get('points')
+  @ApiOperation({ summary: 'Current Moscow-month passport points of the signed-in engineer' })
+  async points(@CurrentActor() actor: Actor, @Query('engineerId') engineerId?: string) {
+    const engineer = await this.subjectOf(actor, engineerId);
+    return this.passports.monthlyPoints(engineer.id);
   }
 
   @Post('requests/:id/facts')

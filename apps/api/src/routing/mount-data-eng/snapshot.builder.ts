@@ -3,9 +3,13 @@ import { AppConfigService } from '../../common/config';
 import { canonicalHash } from '../../common/json';
 import type { Engineer, EngineerDay, Request } from '../../generated/prisma/client';
 import { workDateOf } from '../../orchestrator/engineers/workday';
+import {
+  equipmentCapacity,
+  readEquipmentSettings,
+} from '../../orchestrator/equipment/equipment-policy';
+import { handoffView } from '../../orchestrator/equipment/handoffs';
 import { DEFAULT_POLICY_ID } from '../../orchestrator/policy/policy.catalog';
 import type { Tx } from '../../persistence';
-import { readDispatcherConstraints, withDispatcherConstraints } from '../dispatcher-constraints';
 import {
   type RouterTaskSnapshot,
   SNAPSHOT_SCHEMA_VERSION,
@@ -48,6 +52,7 @@ export class SnapshotBuilder {
     const previousDate = previousCalendarDate(workDate);
     const active = await tx.activePolicy.findUnique({ where: { id: 'singleton' } });
     const policyId = active?.policyId ?? DEFAULT_POLICY_ID;
+    const equipmentSettings = await readEquipmentSettings(tx);
 
     const rawDays = await tx.engineerDay.findMany({
       where: {
@@ -86,6 +91,10 @@ export class SnapshotBuilder {
     const liveLunches = await this.activeLiveLunches(tx, days);
     const equipmentByEngineer = await this.remainingEquipment(tx, days, horizon);
 
+    const completedMeetings = await tx.equipmentHandoff.findMany({
+      where: { workDate, completedAt: { not: null } },
+      orderBy: { completedAt: 'desc' },
+    });
     const engineers: SnapshotEngineer[] = [];
     let engineersWithoutStartLocation = 0;
     let engineersWithoutShift = 0;
@@ -127,7 +136,29 @@ export class SnapshotBuilder {
         engineersWithoutStartLocation += 1;
         continue;
       }
-      engineers.push(projected);
+      const latestMeeting = completedMeetings.find(
+        (meeting) =>
+          meeting.donorEngineerId === day.engineerId ||
+          meeting.receiverEngineerId === day.engineerId,
+      );
+      const meetingRelease =
+        latestMeeting?.completedAt === null || latestMeeting === undefined
+          ? null
+          : Math.max(Number(latestMeeting.completedAt), Number(latestMeeting.meetingAt) + 300);
+      const afterMeeting =
+        latestMeeting?.completedAt !== null &&
+        latestMeeting?.completedAt !== undefined &&
+        (projected.available_from ?? 0) <= (meetingRelease ?? 0)
+          ? {
+              ...projected,
+              start_location: { lat: latestMeeting.lat, lon: latestMeeting.lon },
+              available_from: meetingRelease,
+            }
+          : projected;
+      engineers.push({
+        ...afterMeeting,
+        equipment_capacity: equipmentCapacity(day.engineer.transportType, equipmentSettings),
+      });
     }
 
     const activeEngineers = await tx.engineer.count({ where: { archivedAt: null } });
@@ -187,30 +218,41 @@ export class SnapshotBuilder {
         window_end_at: windowEnd,
         priority: request.priority,
         required_skill: request.requiredSkill,
-        required_transport: request.requiredTransport,
+        required_transport:
+          request.requiredTransport === 'transit' ? 'walk' : request.requiredTransport,
         required_equipment: request.requiredEquipment,
       });
     }
 
-    const control = await tx.controlState.findUnique({
-      where: { id: 'singleton' },
-      select: { dispatcherConstraints: true },
-    });
-    const snapshot: RouterTaskSnapshot = withDispatcherConstraints(
-      {
-        schema_version: SNAPSHOT_SCHEMA_VERSION,
-        planning_as_of: planningAsOf,
-        horizon_start_at: horizon.start,
-        horizon_end_at: horizon.end,
-        requests,
-        engineers,
-        policy: {
-          policy_id: policyId,
-          parameters: {},
-        },
+    const snapshot: RouterTaskSnapshot = {
+      pending_equipment_handoffs: (
+        await tx.equipmentHandoff.findMany({
+          where: { workDate, completedAt: null },
+          orderBy: { id: 'asc' },
+        })
+      ).map((row) => {
+        const h = handoffView(row);
+        return {
+          handoff_id: h.id,
+          donor_engineer_id: h.donorEngineerId,
+          receiver_engineer_id: h.receiverEngineerId,
+          request_id: h.requestId,
+          items: h.items,
+          location: { lat: h.lat, lon: h.lon },
+          meeting_at: h.meetingAt,
+        };
+      }),
+      schema_version: SNAPSHOT_SCHEMA_VERSION,
+      planning_as_of: planningAsOf,
+      horizon_start_at: horizon.start,
+      horizon_end_at: horizon.end,
+      requests,
+      engineers,
+      policy: {
+        policy_id: policyId,
+        parameters: {},
       },
-      readDispatcherConstraints(control?.dispatcherConstraints),
-    );
+    };
 
     const { planning_as_of: _publishedAt, ...task } = snapshot;
 
@@ -302,7 +344,7 @@ export class SnapshotBuilder {
       region: engineer.region,
       input_order: engineer.inputOrder,
       skills: engineer.skills,
-      transport_type: engineer.transportType,
+      transport_type: engineer.transportType === 'transit' ? 'walk' : engineer.transportType,
       shift_start_at: shiftStart,
       shift_end_at: Number(day.shiftEndAt),
       start_location: { lat, lon },
@@ -524,6 +566,31 @@ export class SnapshotBuilder {
       if (fact.request.requiredEquipment === 'smart_speaker') {
         stock.smart_speaker = Math.max(0, stock.smart_speaker - 1);
       }
+    }
+    // The product's silent-schedule assumption also reserves consumed devices; it is
+    // kept separate from RequestFact so no engineer action is fabricated.
+    const assumed = await tx.liveRequestState.findMany({
+      where: {
+        reservedEngineerId: { in: engineerIds },
+        assumedStartedAt: { not: null },
+        workday: { workDate: days[0]?.workDate },
+      },
+      include: { request: true },
+    });
+    for (const state of assumed) {
+      if (
+        !state.reservedEngineerId ||
+        !state.request.requiredEquipment ||
+        counted.has(state.requestId)
+      )
+        continue;
+      counted.add(state.requestId);
+      const stock = remaining.get(state.reservedEngineerId);
+      if (stock)
+        stock[state.request.requiredEquipment] = Math.max(
+          0,
+          stock[state.request.requiredEquipment] - 1,
+        );
     }
     return remaining;
   }

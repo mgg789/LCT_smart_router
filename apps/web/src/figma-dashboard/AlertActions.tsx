@@ -1,3 +1,4 @@
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   CalendarClock,
   CalendarDays,
@@ -17,7 +18,6 @@ import {
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { DashboardApiError, loadAlertWindowProposal } from '../api/client';
-import { manualExpectation } from '../api/manual';
 import type { AlertResolutionInput, AlertView, DashboardSnapshot } from '../api/types';
 import {
   ALERT_ACTION_SPECS,
@@ -55,6 +55,9 @@ export function AlertActions({
   disabled,
   onResolve,
   leadingAction,
+  spotlightAction = null,
+  thinking = false,
+  onAskAi,
 }: {
   token?: string;
   alert: AlertView | null;
@@ -63,6 +66,12 @@ export function AlertActions({
   onResolve: (id: string, input: AlertResolutionInput) => Promise<void>;
   /** Optional navigation action rendered before the server-authorized decisions. */
   leadingAction?: ReactNode;
+  /** Gradient ring on the action System one just chose. */
+  spotlightAction?: string | null;
+  /** Shimmer while System one has not answered yet. */
+  thinking?: boolean;
+  /** Starts the choose-then-apply sequence owned by the inbox. */
+  onAskAi?: () => void;
 }) {
   const [selected, setSelected] = useState<AlertActionId | null>(null);
   const [pending, setPending] = useState(false);
@@ -79,6 +88,7 @@ export function AlertActions({
               spec={ALERT_ACTION_SPECS[action]}
               icon={ACTION_ICONS[action]}
               disabled={disabled || waiting || pending}
+              spotlight={spotlightAction === action}
               onClick={() => setSelected(action)}
             />
           ) : (
@@ -89,17 +99,26 @@ export function AlertActions({
         )}
         <ExplainedAction
           icon={Sparkles}
-          disabled
+          appearance="ai"
+          disabled={disabled || waiting || pending || thinking || !token || !alert}
+          thinking={thinking}
           spec={{
-            label: 'Включить AI',
-            summary: 'AI-разбор этого алерта пока недоступен.',
-            effect: 'Сервис AI ещё не подключён. Выберите один из ручных вариантов.',
-            benefit: 'После подключения поможет сравнить допустимые решения.',
-            drawback: 'Сейчас кнопка не выполняет действий.',
+            label: 'Решить с AI',
+            summary: 'System one выбирает допустимое действие и применяет его.',
+            effect: 'Сервер проверяет ответ по списку и проводит обычное решение алерта.',
+            benefit: 'Не нужно выбирать вариант вручную, если список уже известен.',
+            drawback: 'Смена окна сюда не входит: время модель не назначает.',
             tone: 'ink',
+          }}
+          onClick={() => {
+            if (!token || !alert || pending || thinking) return;
+            onAskAi?.();
           }}
         />
       </div>
+      {token && alert && actions.includes('move_window') ? (
+        <WindowAiNote token={token} alertId={alert.id} />
+      ) : null}
       {disabled && actions.length > 0 ? (
         <p className="mt-[12px] text-[16px] text-figma-muted">
           Решения доступны при подключении к рабочему серверу и завершении текущей операции.
@@ -137,14 +156,24 @@ function ExplainedAction({
   icon: Icon,
   spec,
   disabled = false,
+  appearance = 'plain',
+  spotlight = false,
+  thinking = false,
   onClick,
 }: {
   icon: LucideIcon;
   spec: Pick<AlertActionSpec, 'label' | 'summary' | 'effect' | 'benefit' | 'drawback' | 'tone'>;
   disabled?: boolean;
+  /** `ai` uses the light panel gradient and runs System one when clicked. */
+  appearance?: 'plain' | 'ai';
+  /** Brand gradient outline. The sweep does not click the button. */
+  spotlight?: boolean;
+  /** Moving highlight while the model has not answered. */
+  thinking?: boolean;
   onClick?: () => void;
 }) {
   const id = useId();
+  const reduceMotion = useReducedMotion();
   const anchor = useRef<HTMLFieldSetElement>(null);
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -160,7 +189,7 @@ function ExplainedAction({
     if (showTimer.current) clearTimeout(showTimer.current);
     showTimer.current = null;
     if (hideTimer.current) clearTimeout(hideTimer.current);
-    hideTimer.current = setTimeout(() => setPosition(null), 150);
+    hideTimer.current = setTimeout(() => setPosition(null), 220);
   }
   function show() {
     if (hideTimer.current) clearTimeout(hideTimer.current);
@@ -183,7 +212,7 @@ function ExplainedAction({
   return (
     <fieldset
       ref={anchor}
-      className="inline-flex"
+      className="m-0 inline-flex min-w-0 border-0 p-0"
       tabIndex={disabled ? 0 : undefined}
       aria-label={disabled ? `${spec.label}: недоступно` : undefined}
       aria-describedby={id}
@@ -196,27 +225,75 @@ function ExplainedAction({
         if (event.key === 'Escape') dismiss();
       }}
     >
-      <InboxButton
-        variant={spec.tone}
-        disabled={disabled}
-        describedBy={id}
-        onClick={() => {
-          dismiss();
-          onClick?.();
-        }}
-      >
-        <Icon size={22} strokeWidth={1.8} aria-hidden="true" className="mr-[10px] shrink-0" />
-        {spec.label}
-      </InboxButton>
+      {appearance === 'ai' ? (
+        <button
+          type="button"
+          disabled={disabled}
+          aria-describedby={id}
+          onClick={() => {
+            dismiss();
+            onClick?.();
+          }}
+          className={`relative box-border flex h-[62px] max-h-[62px] min-h-[62px] shrink-0 items-center justify-center overflow-hidden rounded-[20px] bg-figma-ink px-[32px] font-semibold text-[20px] leading-none tracking-[-0.6px] disabled:cursor-not-allowed ${thinking ? 'brightness-90' : ''} ${disabled && !thinking ? 'opacity-45' : ''}`}
+          style={{ height: 62, minHeight: 62, maxHeight: 62 }}
+        >
+          {thinking ? (
+            <span aria-hidden className="ai-reason-shimmer pointer-events-none absolute inset-0" />
+          ) : null}
+          <span
+            aria-hidden
+            className="panel-ai-fill mr-[10px] block size-[22px] shrink-0"
+            style={{
+              WebkitMaskImage: 'url(/figma/explain-ai.png)',
+              maskImage: 'url(/figma/explain-ai.png)',
+              WebkitMaskRepeat: 'no-repeat',
+              maskRepeat: 'no-repeat',
+              WebkitMaskPosition: 'center',
+              maskPosition: 'center',
+              WebkitMaskSize: 'contain',
+              maskSize: 'contain',
+            }}
+          />
+          <span className="panel-ai-fill client-ai-text whitespace-nowrap leading-none">{spec.label}</span>
+        </button>
+      ) : (
+        <span className={spotlight ? 'ai-choice-ring rounded-[24px]' : undefined}>
+          <InboxButton
+            variant={spec.tone}
+            disabled={disabled}
+            describedBy={id}
+            onClick={() => {
+              dismiss();
+              onClick?.();
+            }}
+          >
+            <Icon size={22} strokeWidth={1.8} aria-hidden="true" className="mr-[10px] shrink-0" />
+            {spec.label}
+          </InboxButton>
+        </span>
+      )}
       <span id={id} className="sr-only">
         {spec.summary} {spec.effect} Плюсы: {spec.benefit} Минусы: {spec.drawback}
       </span>
-      {position
-        ? createPortal(
-            <div
+      {typeof document === 'undefined'
+        ? null
+        : createPortal(
+        <AnimatePresence>
+          {position ? (
+            <motion.div
+              key="alert-action-hint"
               role="tooltip"
               className="fixed z-[999] max-h-[280px] w-[360px] max-w-[calc(100vw-16px)] overflow-auto rounded-[16px] border border-figma-ink/20 bg-white p-[16px] text-[14px] leading-relaxed text-figma-ink shadow-xl"
-              style={position}
+              style={{
+                left: position.left,
+                top: position.top,
+                transformOrigin: 'top center',
+                transformPerspective: 800,
+              }}
+              initial={reduceMotion ? false : { opacity: 0, rotateX: -18, scale: 0.94, y: -8 }}
+              animate={{ opacity: 1, rotateX: 0, scale: 1, y: 0 }}
+              exit={reduceMotion ? undefined : { opacity: 0, rotateX: -8, scale: 0.97, y: -4 }}
+              transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
               onMouseEnter={show}
               onMouseLeave={hide}
             >
@@ -234,12 +311,37 @@ function ExplainedAction({
                 <strong>Минусы: </strong>
                 {spec.drawback}
               </p>
-            </div>,
-            document.body,
-          )
-        : null}
+            </motion.div>
+          ) : null}
+        </AnimatePresence>,
+        document.body,
+      )}
     </fieldset>
   );
+}
+
+function WindowAiNote({ token, alertId }: { token: string; alertId: string }) {
+  const [text, setText] = useState('AI проверяет, есть ли сегодня окно для сдвига…');
+  useEffect(() => {
+    let active = true;
+    void loadAlertWindowProposal(token, alertId)
+      .then((result) => {
+        if (!active) return;
+        const offer = result.proposal;
+        setText(
+          result.status === 'available' && offer
+            ? `AI может сдвинуть окно на ${alertWindowInput(offer.windowStartAt)}–${alertWindowInput(offer.windowEndAt)}.`
+            : 'Сегодня нет окон, куда можно сдвинуть визит.',
+        );
+      })
+      .catch(() => {
+        if (active) setText('Сегодня не удалось проверить окно для сдвига.');
+      });
+    return () => {
+      active = false;
+    };
+  }, [alertId, token]);
+  return <p className="mt-[12px] text-[16px] text-figma-muted">{text}</p>;
 }
 
 function ResolutionForm({
@@ -266,7 +368,6 @@ function ResolutionForm({
   const [start, setStart] = useState('');
   const [end, setEnd] = useState('');
   const [expectedRequestVersion, setExpectedRequestVersion] = useState(request?.version);
-  const [expectedPlan] = useState(() => manualExpectation(snapshot.plan));
   const [proposalStatus, setProposalStatus] = useState('loading');
   const [proposalText, setProposalText] = useState('Подбираем выполнимое окно через Router…');
   useEffect(() => {
@@ -332,7 +433,6 @@ function ResolutionForm({
       if (!(alert.actions ?? []).includes(action) || alert.resolvedAt !== null)
         throw new Error('Этот вариант больше недоступен. Обновите список алертов.');
       const input: Omit<AlertResolutionInput, 'operationId'> = {
-        ...(action === 'keep_manual' || action === 'restore_auto' ? expectedPlan : {}),
         action,
         ...(reason.trim() ? { reason: reason.trim() } : {}),
         ...(action === 'move_window'

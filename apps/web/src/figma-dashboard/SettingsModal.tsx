@@ -1,12 +1,17 @@
 import { motion } from 'framer-motion';
-import { Copy, KeyRound, Plus } from 'lucide-react';
+import { Copy, KeyRound, Plus, Wand2 } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import {
   createApiToken,
+  getAiSettings,
   getDispatcherSettings,
   getMapProvidersStatus,
+  getMcpSettings,
   listApiTokens,
   revokeApiToken,
+  saveAiSettings,
+  saveMcpSettings,
+  type AiView,
 } from '../api/client';
 import type {
   ApiTokenCategory,
@@ -14,11 +19,13 @@ import type {
   CreatedApiToken,
   DispatcherSettingsView,
   MapProvidersStatus,
+  McpSettingsView,
   RouterTechnicalSettings,
 } from '../api/types';
 import { formatMoscowDate, moscowAt } from '../lib/time';
 import { FIGMA_ASSETS } from './assets';
 import { clockFromMinutes, minutesFromClock } from './dispatcherSettings';
+import { downloadMcpSetupMd, generateMcpPin } from './mcpSetup';
 import { ModalLayer, ModalScrim } from './modalLayer';
 import { FigmaIcon } from './primitives';
 
@@ -31,8 +38,9 @@ const TABS = [
   { id: 'general', label: 'Общее' },
   { id: 'api', label: 'API' },
   { id: 'maps', label: 'Карты' },
+  { id: 'ai', label: 'AI' },
 ] as const;
-type SettingsTab = (typeof TABS)[number]['id'];
+export type SettingsTab = (typeof TABS)[number]['id'];
 
 const CATEGORY_LABELS: Record<ApiTokenCategory, string> = {
   client: 'Клиентское приложение',
@@ -53,8 +61,13 @@ type GeneralDraft = {
   timeRiskMin: number;
   repeatAfterMin: number;
   lunchesEnabled: boolean;
+  metroEnabled: boolean;
   equipmentEnabled: boolean;
+  equipmentTransfersEnabled: boolean;
   trafficEnabled: boolean;
+  equipmentCapacityWalk: number;
+  equipmentCapacityBike: number;
+  equipmentCapacityCar: number;
 };
 
 /**
@@ -67,6 +80,7 @@ export function SettingsModal({
   token,
   routerSettings,
   submitting,
+  initialTab = 'general',
   onClose,
   onSave,
 }: {
@@ -75,19 +89,24 @@ export function SettingsModal({
   token: string | null;
   routerSettings?: RouterTechnicalSettings;
   submitting: boolean;
+  /** Tab to open on reveal; the header robot deep-links to `api`. */
+  initialTab?: SettingsTab;
   onClose: () => void;
   onSave: (input: {
-    dispatcher: Partial<{
+    dispatcher: {
       dayStartMin: number;
       dayEndMin: number;
       noShowSec: number;
       overdueSec: number;
       timeRiskSec: number;
       repeatAfterSec: number;
+      equipmentCapacityWalk: number;
+      equipmentCapacityBike: number;
+      equipmentCapacityCar: number;
       twogisApiKey?: string | null;
       yandexApiKey?: string | null;
-    }>;
-    router?: RouterTechnicalSettings;
+    };
+    router: RouterTechnicalSettings;
   }) => Promise<void>;
 }) {
   const [tab, setTab] = useState<SettingsTab>('general');
@@ -111,14 +130,14 @@ export function SettingsModal({
     }
     if (wasOpen.current) return;
     wasOpen.current = true;
-    setTab('general');
+    setTab(initialTab);
     setError(null);
     setTwogisKey('');
     setYandexKey('');
     setClearTwogis(false);
     setClearYandex(false);
     setDraft(generalFrom(undefined, routerRef.current));
-  }, [open]);
+  }, [open, initialTab]);
 
   useEffect(() => {
     if (!open) return;
@@ -194,6 +213,7 @@ export function SettingsModal({
           ) : null}
           {tab === 'general' ? <GeneralForm draft={draft} setField={setField} /> : null}
           {tab === 'api' ? <ApiTokensTab token={token} /> : null}
+          {tab === 'ai' ? <AiForm token={token} /> : null}
           {tab === 'maps' ? (
             <MapsForm
               server={server}
@@ -216,33 +236,11 @@ export function SettingsModal({
           </p>
         ) : null}
 
-        {tab !== 'api' ? (
+        {tab !== 'api' && tab !== 'ai' ? (
           <button
             type="button"
-            disabled={submitting || loading || !token || (tab === 'general' && !routerSettings)}
+            disabled={submitting || loading || !token || !routerSettings}
             onClick={() => {
-              if (tab === 'maps') {
-                setError(null);
-                void onSave({
-                  dispatcher: {
-                    ...(clearTwogis
-                      ? { twogisApiKey: null }
-                      : twogisKey
-                        ? { twogisApiKey: twogisKey }
-                        : {}),
-                    ...(clearYandex
-                      ? { yandexApiKey: null }
-                      : yandexKey
-                        ? { yandexApiKey: yandexKey }
-                        : {}),
-                  },
-                }).catch((cause: unknown) => {
-                  setError(
-                    cause instanceof Error ? cause.message : 'Не удалось сохранить ключи карт',
-                  );
-                });
-                return;
-              }
               if (!routerSettings) return;
               if (minutesFromClock(draft.shiftEnd) <= minutesFromClock(draft.shiftStart)) {
                 setError('Конец дня должен быть позже начала.');
@@ -257,6 +255,9 @@ export function SettingsModal({
                   overdueSec: draft.overdueMin * 60,
                   timeRiskSec: draft.timeRiskMin * 60,
                   repeatAfterSec: draft.repeatAfterMin * 60,
+                  equipmentCapacityWalk: draft.equipmentCapacityWalk,
+                  equipmentCapacityBike: draft.equipmentCapacityBike,
+                  equipmentCapacityCar: draft.equipmentCapacityCar,
                   ...(clearTwogis
                     ? { twogisApiKey: null }
                     : twogisKey
@@ -271,6 +272,7 @@ export function SettingsModal({
                 router: {
                   ...routerSettings,
                   lunchesEnabled: draft.lunchesEnabled,
+                  metroEnabled: draft.metroEnabled,
                   windowLatenessToleranceSec: draft.latenessMin * 60,
                   departureLatenessToleranceSec: draft.latenessMin * 60,
                   taskStartLatenessToleranceSec: draft.latenessMin * 60,
@@ -278,6 +280,7 @@ export function SettingsModal({
                   earlyFinishReplanThresholdSec: draft.earlyFinishReplanMin * 60,
                   taskOverrunToleranceSec: draft.taskOverrunMin * 60,
                   equipmentEnabled: draft.equipmentEnabled,
+                  equipmentTransfersEnabled: draft.equipmentTransfersEnabled,
                   trafficEnabled: draft.trafficEnabled,
                 },
               }).catch((cause: unknown) => {
@@ -314,8 +317,13 @@ function generalFrom(
     timeRiskMin: Math.round((settings?.timeRiskSec ?? 300) / 60),
     repeatAfterMin: Math.round((settings?.repeatAfterSec ?? 900) / 60),
     lunchesEnabled: router?.lunchesEnabled ?? false,
+    metroEnabled: router?.metroEnabled ?? false,
     equipmentEnabled: router?.equipmentEnabled ?? true,
+    equipmentTransfersEnabled: router?.equipmentTransfersEnabled ?? false,
     trafficEnabled: router?.trafficEnabled ?? true,
+    equipmentCapacityWalk: settings?.equipmentCapacityWalk ?? 5,
+    equipmentCapacityBike: settings?.equipmentCapacityBike ?? 12,
+    equipmentCapacityCar: settings?.equipmentCapacityCar ?? 30,
   };
 }
 
@@ -331,10 +339,10 @@ function TabSwitch({
   const index = TABS.findIndex((item) => item.id === tab);
   return (
     <div className="mt-[18px] h-[56px] rounded-full bg-figma-canvas p-[4px]">
-      <div className="relative grid h-full grid-cols-3">
+      <div className="relative grid h-full grid-cols-4">
         <motion.span
           aria-hidden
-          className="pointer-events-none absolute inset-y-0 left-0 w-1/3 rounded-full bg-figma-ink"
+          className="pointer-events-none absolute inset-y-0 left-0 w-1/4 rounded-full bg-figma-ink"
           initial={false}
           animate={{ x: `${index * 100}%` }}
           transition={motionOn ? CAPSULE_SPRING : { duration: 0 }}
@@ -459,6 +467,27 @@ function GeneralForm({
         />
       </div>
       <div className="mt-[20px] space-y-[12px]">
+        <p className="font-semibold text-[16px] text-figma-ink">Максимум оборудования с собой</p>
+        <div className="grid grid-cols-3 gap-[12px]">
+          <CapacityField
+            id="settings-capacity-walk"
+            label="Пешком"
+            value={draft.equipmentCapacityWalk}
+            onChange={(value) => setField('equipmentCapacityWalk', value)}
+          />
+          <CapacityField
+            id="settings-capacity-bike"
+            label="Велосипед"
+            value={draft.equipmentCapacityBike}
+            onChange={(value) => setField('equipmentCapacityBike', value)}
+          />
+          <CapacityField
+            id="settings-capacity-car"
+            label="Авто"
+            value={draft.equipmentCapacityCar}
+            onChange={(value) => setField('equipmentCapacityCar', value)}
+          />
+        </div>
         <SettingSwitch
           label="Обеды в плане"
           checked={draft.lunchesEnabled}
@@ -473,6 +502,16 @@ function GeneralForm({
           label="Пробки от карт"
           checked={draft.trafficEnabled}
           onChange={() => setField('trafficEnabled', !draft.trafficEnabled)}
+        />
+        <SettingSwitch
+          label="Маршруты с метро"
+          checked={draft.metroEnabled}
+          onChange={() => setField('metroEnabled', !draft.metroEnabled)}
+        />
+        <SettingSwitch
+          label="Передача оборудования"
+          checked={draft.equipmentTransfersEnabled}
+          onChange={() => setField('equipmentTransfersEnabled', !draft.equipmentTransfersEnabled)}
         />
       </div>
     </div>
@@ -569,11 +608,6 @@ function MapsForm({
             {status.active === 'none' ? 'нет' : status.active === 'twogis' ? '2ГИС' : 'Яндекс'}
           </p>
           <p className="mt-[6px] text-figma-muted">2ГИС — {status.twogis.message}</p>
-          <p className="mt-[4px] text-figma-muted">
-            Запросов 2ГИС из этого процесса: {status.twogis.requests ?? 0} · из кэша:{' '}
-            {status.twogis.cacheHits ?? 0}. Ограничение: 5 маршрутов в минуту. Общий расход и
-            остаток квоты — в кабинете 2ГИС.
-          </p>
           <p className="mt-[4px] text-figma-muted">Яндекс — {status.yandex.message}</p>
         </div>
       ) : null}
@@ -582,6 +616,208 @@ function MapsForm({
 }
 
 function ApiTokensTab({ token }: { token: string | null }) {
+  return (
+    <div>
+      <McpServerSection token={token} />
+      <div className="my-[24px] h-px bg-figma-ink/10" aria-hidden />
+      <p className="font-semibold text-[16px] text-figma-ink">Интеграционные ключи</p>
+      <ApiTokenList token={token} />
+    </div>
+  );
+}
+
+/**
+ * Dashboard MCP server: the activation switch, the pin the agent connects with, and the
+ * self-connecting `setup.md` the dispatcher hands to their agent. Mirrors the flow the
+ * server enforces: enabling needs a pin, and disabling revokes it everywhere at once.
+ */
+function McpServerSection({ token }: { token: string | null }) {
+  const [view, setView] = useState<McpSettingsView | null>(null);
+  const [pin, setPin] = useState('');
+  const [pendingOn, setPendingOn] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const reload = useCallback(() => {
+    if (!token) return;
+    void getMcpSettings(token)
+      .then(setView)
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : 'Не удалось загрузить MCP-настройки');
+      });
+  }, [token]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  const apply = (input: { enabled: boolean; pin?: string }) => {
+    if (!token) return;
+    setBusy(true);
+    setError(null);
+    void saveMcpSettings(token, input)
+      .then((next) => {
+        setView(next);
+        // The typed pin stays in the field: setup.md needs it, and the server stores
+        // only the hash, so this is the one chance to download a working file.
+        setPendingOn(false);
+      })
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : 'Не удалось сохранить MCP-настройки');
+        reload();
+        setPendingOn(false);
+      })
+      .finally(() => setBusy(false));
+  };
+
+  if (!token) {
+    return null;
+  }
+
+  const enabled = view?.enabled === true || pendingOn;
+  const pinReady = pin.trim().length > 0;
+  const endpointUrl = view
+    ? `${window.location.origin.replace(/\/$/, '')}${view.endpoint}`
+    : '';
+
+  const toggle = () => {
+    if (busy) return;
+    if (enabled) {
+      // A switch-off that has not reached the server yet is just a local cancel.
+      if (pendingOn) {
+        setPendingOn(false);
+        return;
+      }
+      apply({ enabled: false });
+      return;
+    }
+    if (view?.pinSet) {
+      apply({ enabled: true });
+      return;
+    }
+    // No pin yet: reveal the field now; the server is switched on together with it.
+    setPendingOn(true);
+  };
+
+  const savePin = () => {
+    const value = pin.trim();
+    if (value.length < 6) {
+      setError('Пароль — минимум 6 символов. «Сгенерировать» предложит надёжный.');
+      return;
+    }
+    apply({ enabled: true, pin: value });
+  };
+
+  return (
+    <section>
+      <p className="font-extrabold text-[18px] tracking-[-0.3px] text-figma-ink">
+        MCP-сервер дашборда
+      </p>
+      <p className="mt-[4px] font-medium text-[14px] leading-[1.4] text-figma-muted">
+        Подключите своего ИИ-агента к дашборду: он будет работать за диспетчера — следить за
+        обстановкой, разбирать алерты, вести день. Пока агент работает, в шапке мигает робот.
+      </p>
+      <div className="mt-[12px]">
+        <SettingSwitch
+          label="Активировать MCP-сервер"
+          checked={enabled}
+          onChange={toggle}
+        />
+      </div>
+      {enabled ? (
+        <div className="mt-[16px] w-full">
+          <Field label={view?.pinSet ? `Пароль задан ···${view.pinLast4 ?? ''} — введите новый, чтобы заменить` : 'MCP-пароль'} htmlFor="settings-mcp-pin">
+            <div className="relative">
+              <input
+                id="settings-mcp-pin"
+                type="text"
+                autoComplete="off"
+                spellCheck={false}
+                value={pin}
+                placeholder="По этому паролю агент подключается к дашборду"
+                onChange={(event) => {
+                  setError(null);
+                  setPin(event.target.value);
+                }}
+                className={FIELD}
+              />
+            </div>
+          </Field>
+          <div className="mt-[12px] flex flex-wrap items-center gap-[10px]">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => setPin(generateMcpPin())}
+              className="flex h-[44px] items-center gap-[8px] rounded-full border border-figma-ink/15 px-[16px] font-semibold text-[15px] text-figma-ink disabled:opacity-50"
+            >
+              <Wand2 className="h-4 w-4" />
+              Сгенерировать
+            </button>
+            <button
+              type="button"
+              disabled={busy || !pinReady}
+              onClick={savePin}
+              className={`flex h-[44px] items-center rounded-full px-[16px] font-semibold text-[15px] transition-transform duration-150 ${
+                busy || !pinReady
+                  ? 'bg-figma-track text-figma-hint'
+                  : 'bg-figma-ink text-white hover:scale-[1.02]'
+              }`}
+            >
+              {busy ? 'Сохраняем…' : 'Сохранить пароль'}
+            </button>
+            <button
+              type="button"
+              disabled={busy || !pinReady}
+              onClick={() => {
+                downloadMcpSetupMd({
+                  origin: window.location.origin,
+                  endpoint: view?.endpoint ?? '/api/v1/mcp',
+                  pin: pin.trim(),
+                });
+              }}
+              title={pinReady ? undefined : 'Введите пароль ещё раз — сервер хранит только его хеш'}
+              className={`ml-auto flex h-[44px] items-center gap-[8px] rounded-full px-[16px] font-semibold text-[15px] transition-transform duration-150 ${
+                busy || !pinReady
+                  ? 'bg-figma-track text-figma-hint'
+                  : 'bg-figma-bee text-figma-ink hover:scale-[1.02]'
+              }`}
+            >
+              Скачать setup.md
+            </button>
+          </div>
+          {view && !view.pinSet ? (
+            <p className="mt-[10px] font-medium text-[13px] text-figma-hint">
+              Сервер включится вместе с паролем: без него агенту нечем подключиться.
+            </p>
+          ) : null}
+          {view?.activeNow ? (
+            <p className="mt-[10px] flex items-center gap-[8px] font-medium text-[14px] text-[#2E9BEE]">
+              <motion.span
+                aria-hidden
+                className="inline-block size-[8px] rounded-full bg-[#3BA7FF]"
+                animate={{ opacity: [1, 0.3, 1] }}
+                transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
+              />
+              Сейчас с дашбордом работает агент{view.lastToolName ? ` · ${view.lastToolName}` : ''}
+            </p>
+          ) : null}
+          {endpointUrl ? (
+            <p className="mt-[10px] break-all font-medium text-[13px] text-figma-hint">
+              Endpoint: {endpointUrl}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      {error ? (
+        <p role="alert" className="mt-[10px] font-medium text-[14px] text-figma-danger">
+          {error}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+function ApiTokenList({ token }: { token: string | null }) {
   const [tokens, setTokens] = useState<ApiTokenSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -649,29 +885,23 @@ function ApiTokensTab({ token }: { token: string | null }) {
           </select>
         </Field>
       </div>
-      <div className="mt-[16px] flex flex-wrap items-end gap-[12px]">
-        <label className="flex items-center gap-[8px] font-medium text-[15px] text-figma-ink">
-          <input
-            type="radio"
-            checked={expiryMode === 'never'}
-            onChange={() => setExpiryMode('never')}
-          />
-          Без срока
-        </label>
-        <label className="flex items-center gap-[8px] font-medium text-[15px] text-figma-ink">
-          <input
-            type="radio"
-            checked={expiryMode === 'date'}
-            onChange={() => setExpiryMode('date')}
-          />
-          До даты
-        </label>
+      <div className="mt-[16px] flex flex-wrap items-center gap-[12px]">
+        <ExpiryChoice
+          checked={expiryMode === 'never'}
+          label="Без срока"
+          onSelect={() => setExpiryMode('never')}
+        />
+        <ExpiryChoice
+          checked={expiryMode === 'date'}
+          label="До даты"
+          onSelect={() => setExpiryMode('date')}
+        />
         {expiryMode === 'date' ? (
           <input
             type="date"
             value={expiryDate}
             onChange={(event) => setExpiryDate(event.target.value)}
-            className="h-[48px] rounded-[16px] border border-figma-ink/15 px-[12px]"
+            className="h-[48px] rounded-[16px] border border-figma-ink/15 bg-white px-[12px] font-medium text-[15px] text-figma-ink"
           />
         ) : null}
         <button
@@ -809,6 +1039,34 @@ function MinuteField({
   );
 }
 
+function CapacityField({
+  id,
+  label,
+  value,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <label className="block font-medium text-[14px] text-figma-muted" htmlFor={id}>
+      {label}
+      <input
+        id={id}
+        type="number"
+        min={0}
+        max={1000}
+        step={1}
+        value={value}
+        onChange={(event) => onChange(Math.max(0, Number(event.target.value) || 0))}
+        className={FIELD}
+      />
+    </label>
+  );
+}
+
 function SettingSwitch({
   label,
   checked,
@@ -825,14 +1083,53 @@ function SettingSwitch({
         type="button"
         role="switch"
         aria-checked={checked}
+        aria-label={label}
         onClick={onChange}
-        className={`flex h-[28px] w-[48px] items-center rounded-full p-[2px] ${
-          checked ? 'justify-end bg-figma-bee' : 'justify-start bg-figma-track'
-        }`}
+        className="relative block h-[29px] w-[59px] shrink-0 overflow-hidden rounded-[14.5px]"
       >
-        <span className="size-[24px] rounded-full bg-white shadow" />
+        <span
+          className={`absolute inset-0 rounded-[14.5px] transition-colors duration-300 ${
+            checked ? 'bg-figma-ink' : 'bg-figma-muted'
+          }`}
+        />
+        <motion.span
+          aria-hidden
+          className="absolute top-[3px] size-[23px] rounded-full bg-white"
+          initial={false}
+          animate={{ left: checked ? 33 : 3 }}
+          transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+        />
       </button>
     </div>
+  );
+}
+
+function ExpiryChoice({
+  checked,
+  label,
+  onSelect,
+}: {
+  checked: boolean;
+  label: string;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={checked}
+      onClick={onSelect}
+      className="flex h-[48px] items-center gap-[10px] rounded-full px-[4px] font-medium text-[15px] text-figma-ink"
+    >
+      <span
+        className={`flex size-[20px] items-center justify-center rounded-full border-2 ${
+          checked ? 'border-figma-ink' : 'border-figma-ink/25'
+        }`}
+      >
+        {checked ? <span className="size-[10px] rounded-full bg-figma-ink" /> : null}
+      </span>
+      {label}
+    </button>
   );
 }
 
@@ -851,4 +1148,248 @@ function Field({
       {children}
     </label>
   );
+}
+
+/**
+ * AI contour settings. The calibration switch turns plan-assessment
+ * self-training on execution facts on or off; the LLM and Jev endpoints are
+ * reserved for a future contour and change nothing yet.
+ */
+function AiForm({ token }: { token: string | null }) {
+  const [view, setView] = useState<AiView | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [enabled, setEnabled] = useState(false);
+  const [llmUrl, setLlmUrl] = useState('');
+  const [llmModel, setLlmModel] = useState('');
+  const [llmKey, setLlmKey] = useState('');
+  const [jevUrl, setJevUrl] = useState('');
+  const [jevModel, setJevModel] = useState('');
+  const [jevKey, setJevKey] = useState('');
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    setLoading(true);
+    void getAiSettings(token)
+      .then((next) => {
+        if (cancelled) return;
+        setView(next);
+        setEnabled(next.settings.planCalibrationEnabled);
+        setLlmUrl(next.settings.llmApiUrl ?? '');
+        setLlmModel(next.settings.llmModel ?? '');
+        setJevUrl(next.settings.jevApiUrl ?? '');
+        setJevModel(next.settings.jevModel ?? '');
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : 'Не удалось загрузить AI-настройки');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  const save = (patch: Parameters<typeof saveAiSettings>[1]) => {
+    if (!token) return;
+    setSaving(true);
+    setError(null);
+    void saveAiSettings(token, patch)
+      .then((next) => {
+        setView(next);
+        setEnabled(next.settings.planCalibrationEnabled);
+      })
+      .catch((cause: unknown) => {
+        setEnabled(view?.settings.planCalibrationEnabled ?? false);
+        setError(cause instanceof Error ? cause.message : 'Не удалось сохранить AI-настройки');
+      })
+      .finally(() => setSaving(false));
+  };
+
+  const status = view?.status;
+  const percent = Math.round((status?.confidence ?? 0) * 100);
+  const dirty =
+    enabled !== (view?.settings.planCalibrationEnabled ?? false) ||
+    llmUrl !== (view?.settings.llmApiUrl ?? '') ||
+    llmModel !== (view?.settings.llmModel ?? '') ||
+    llmKey.length > 0 ||
+    jevUrl !== (view?.settings.jevApiUrl ?? '') ||
+    jevModel !== (view?.settings.jevModel ?? '') ||
+    jevKey.length > 0;
+
+  return (
+    <div className="flex flex-col gap-[16px] pb-[8px]">
+      <AiSection
+        title="ML"
+        note="Проверка плана учится на фактах исполнения. Выключено — остаётся заводская калибровка."
+      >
+        <SettingSwitch
+          label="Дообучение оценки плана"
+          checked={enabled}
+          onChange={() => {
+            const next = !enabled;
+            setEnabled(next);
+            save({ planCalibrationEnabled: next });
+          }}
+        />
+        <div className="mt-[14px] rounded-[16px] bg-white px-[16px] py-[14px]">
+          <div className="flex items-baseline justify-between">
+            <span className="font-semibold text-[16px] text-figma-ink">Точность самонастройки</span>
+            <span className="font-extrabold text-[20px] text-figma-ink">
+              {loading && !status ? '…' : `${percent}%`}
+            </span>
+          </div>
+          <div className="mt-[10px] h-[12px] w-full overflow-hidden rounded-full bg-figma-track">
+            <div
+              className="h-full rounded-full bg-figma-bee transition-[width] duration-300"
+              style={{ width: `${loading && !status ? 0 : percent}%` }}
+            />
+          </div>
+          <p className="mt-[10px] font-medium text-[14px] leading-[1.4] text-figma-muted">
+            {loading && !status ? 'Считаем покрытие фактами.' : calibrationCaption(status)}
+          </p>
+          {status ? (
+            <p className="mt-[6px] font-medium text-[13px] text-figma-hint">
+              Источник: {status.source === 'learned' ? 'факты исполнения' : 'заводские допущения'}
+              {status.computedAt ? ` · обновлено ${formatMoscowDate(status.computedAt)}` : ''}
+            </p>
+          ) : null}
+        </div>
+      </AiSection>
+
+      <AiSection title="LLM (OpenAI SDK)" note="Адрес, модель и токен. Подключение само план не меняет.">
+        <Field label="URL" htmlFor="ai-llm-url">
+          <input
+            id="ai-llm-url"
+            type="text"
+            placeholder="https://api.openai.com/v1"
+            value={llmUrl}
+            onChange={(event) => setLlmUrl(event.target.value)}
+            className={FIELD}
+          />
+        </Field>
+        <Field label="Model" htmlFor="ai-llm-model">
+          <input
+            id="ai-llm-model"
+            type="text"
+            placeholder="gpt-4.1-mini"
+            value={llmModel}
+            onChange={(event) => setLlmModel(event.target.value)}
+            className={FIELD}
+          />
+        </Field>
+        <Field
+          label={view?.settings.llmApiKeySet ? `Token ···${view.settings.llmApiKeyLast4 ?? ''}` : 'Token'}
+          htmlFor="ai-llm-key"
+        >
+          <input
+            id="ai-llm-key"
+            type="password"
+            placeholder={view?.settings.llmApiKeySet ? 'Задан — введите новый, чтобы заменить' : 'Токен пока не задан'}
+            value={llmKey}
+            onChange={(event) => setLlmKey(event.target.value)}
+            className={FIELD}
+          />
+        </Field>
+      </AiSection>
+
+      <AiSection title="System one (Jev API)" note="Адрес, модель и токен. Контур пока только хранит значения.">
+        <Field label="URL" htmlFor="ai-jev-url">
+          <input
+            id="ai-jev-url"
+            type="text"
+            placeholder="https://jev.example/v1"
+            value={jevUrl}
+            onChange={(event) => setJevUrl(event.target.value)}
+            className={FIELD}
+          />
+        </Field>
+        <Field label="Model" htmlFor="ai-jev-model">
+          <input
+            id="ai-jev-model"
+            type="text"
+            placeholder="jev"
+            value={jevModel}
+            onChange={(event) => setJevModel(event.target.value)}
+            className={FIELD}
+          />
+        </Field>
+        <Field
+          label={view?.settings.jevApiKeySet ? `Token ···${view.settings.jevApiKeyLast4 ?? ''}` : 'Token'}
+          htmlFor="ai-jev-key"
+        >
+          <input
+            id="ai-jev-key"
+            type="password"
+            placeholder={view?.settings.jevApiKeySet ? 'Задан — введите новый, чтобы заменить' : 'Токен пока не задан'}
+            value={jevKey}
+            onChange={(event) => setJevKey(event.target.value)}
+            className={FIELD}
+          />
+        </Field>
+      </AiSection>
+
+      <button
+        type="button"
+        disabled={saving || loading || !token || !dirty}
+        onClick={() =>
+          save({
+            planCalibrationEnabled: enabled,
+            ...(llmUrl !== (view?.settings.llmApiUrl ?? '') ? { llmApiUrl: llmUrl || null } : {}),
+            ...(llmModel !== (view?.settings.llmModel ?? '') ? { llmModel: llmModel || null } : {}),
+            ...(llmKey ? { llmApiKey: llmKey } : {}),
+            ...(jevUrl !== (view?.settings.jevApiUrl ?? '') ? { jevApiUrl: jevUrl || null } : {}),
+            ...(jevModel !== (view?.settings.jevModel ?? '') ? { jevModel: jevModel || null } : {}),
+            ...(jevKey ? { jevApiKey: jevKey } : {}),
+          })
+        }
+        className={`mt-[20px] flex h-[52px] w-full items-center justify-center rounded-[20px] font-medium text-[17px] transition-transform duration-150 ${
+          saving || loading || !token || !dirty
+            ? 'bg-figma-track text-figma-hint'
+            : 'bg-figma-bee text-figma-ink hover:scale-[1.01]'
+        }`}
+      >
+        {saving ? 'Сохраняем…' : 'Сохранить AI-настройки'}
+      </button>
+      {error ? (
+        <p role="alert" className="mt-[10px] font-medium text-[15px] text-figma-danger">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function AiSection({
+  title,
+  note,
+  children,
+}: {
+  title: string;
+  note: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="rounded-[24px] bg-figma-canvas px-[18px] py-[16px]">
+      <h3 className="font-extrabold text-[18px] tracking-[-0.3px] text-figma-ink">{title}</h3>
+      <p className="mt-[4px] font-medium text-[14px] leading-[1.4] text-figma-muted">{note}</p>
+      <div className="mt-[12px]">{children}</div>
+    </section>
+  );
+}
+
+function calibrationCaption(status: AiView['status'] | undefined): string {
+  if (!status) return 'Индикатор появится, когда контур ответит.';
+  if (!status.syncedToRouter && status.samples.service === 0) {
+    return 'Фактов исполнения пока нет — работаем на заводских допущениях.';
+  }
+  if (status.confidence >= 1) {
+    return 'Калибровка полностью построена на фактах исполнения.';
+  }
+  const parts = [`${status.samples.service} работ`, `${status.samples.legs} переездов`];
+  if (status.samples.executionDays > 0) parts.push(`${status.samples.executionDays} дн. исполнения`);
+  return `Дообучается на фактах: ${parts.join(', ')}.`;
 }

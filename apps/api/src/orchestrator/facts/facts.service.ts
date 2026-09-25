@@ -4,9 +4,9 @@ import type { FactKind, Request } from '../../generated/prisma/client';
 import { NotificationsService } from '../../notifications';
 import type { OperationContext } from '../../operations';
 import type { Tx } from '../../persistence';
-import { lockControlState, lockRoutingCurrent } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import { AppliedPlanService } from '../../routing/router-gateway/applied-plan.service';
+import { assertNoPendingHandoff } from '../equipment/handoffs';
 import { finishNeedsReplan } from '../live/replan-policy';
 import { ExecutionTimingPolicy, type ExecutionTimingPolicyValue } from './execution-timing-policy';
 
@@ -47,10 +47,6 @@ export class FactsService {
     note: string | null,
     timing: ExecutionTimingPolicyValue,
   ): Promise<Request> {
-    // Admission and execution must observe one assignment: a start may not race a
-    // manual move and leave the confirmed engineer different from the plan's owner.
-    await lockControlState(context.tx);
-    await lockRoutingCurrent(context.tx);
     const request = await this.assertAssigned(context.tx, engineerId, requestId);
 
     switch (kind) {
@@ -110,6 +106,7 @@ export class FactsService {
       });
     }
 
+    await assertNoPendingHandoff(context.tx, engineerId, request.id, occurredAt);
     await this.write(context, engineerId, request.id, 'started', occurredAt, note);
     await context.tx.request.update({
       where: { id: request.id },

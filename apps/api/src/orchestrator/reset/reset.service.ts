@@ -2,7 +2,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import { SysError } from '../../common/errors';
 import type { OperationContext } from '../../operations';
 import type { Tx } from '../../persistence';
-import { APP_STATE_KEYS } from '../../persistence';
+import {
+  APP_STATE_KEYS,
+  lockControlState,
+  lockLiveWorkdays,
+  lockRoutingCurrent,
+} from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 
 export type ResetKind = 'demo' | 'empty';
@@ -88,6 +93,11 @@ export class ResetService {
     context: OperationContext,
     options: ClearWorkingSetOptions = {},
   ): Promise<{ generation: number }> {
+    // Hold LIVE days, then the plan singletons, before deleting. Inverting that
+    // order deadlocks with `LiveService.advanceOnce` (workday → routing).
+    await lockLiveWorkdays(context.tx);
+    await lockControlState(context.tx);
+    await lockRoutingCurrent(context.tx);
     const previousPublicationSeq = await this.clearApplicationData(context.tx, {
       preserveDispatcherSessions: options.preserveDispatcherSessions === true,
     });
@@ -128,6 +138,7 @@ export class ResetService {
       where: { id: 'singleton' },
       select: { pointerVersion: true },
     });
+    await tx.equipmentHandoff.deleteMany({});
     await tx.appliedPlanCurrent.deleteMany({});
     await tx.appliedPlanStop.deleteMany({});
     await tx.appliedPlanRoute.deleteMany({});
@@ -145,6 +156,11 @@ export class ResetService {
     // newly imported crew to an old running day.
     await tx.liveWorkday.deleteMany({});
 
+    await tx.engineerPassportPoint.deleteMany({});
+    await tx.engineerReward.deleteMany({});
+    await tx.objectPassport.deleteMany({});
+    await tx.building.deleteMany({});
+    await tx.reverseGeocodeCache.deleteMany({});
     await tx.requestFact.deleteMany({});
     await tx.requestConditionHistory.deleteMany({});
     await tx.request.deleteMany({});
@@ -169,20 +185,21 @@ export class ResetService {
     await tx.operation.deleteMany({});
     await tx.auditLog.deleteMany({});
 
+    // AI contour state goes with the facts it was fit on; the dispatcher's
+    // explicit switch is kept, but the learned calibration cache is not.
+    await tx.appState.deleteMany({ where: { key: APP_STATE_KEYS.AI_CALIBRATION } });
+    // The MCP pin was an integration key, and the keys are gone above: the pointer must
+    // not survive, or the dashboard keeps promising a pin that no longer opens anything.
+    await tx.appState.deleteMany({ where: { key: APP_STATE_KEYS.MCP_SETTINGS } });
+
     // Accounts last, and only the ones that are not the dispatcher: that account is
     // restored from configuration, and deleting it would lock the Dashboard out.
     await tx.accountRole.deleteMany({ where: { role: { in: ['client', 'engineer'] } } });
     await tx.account.deleteMany({ where: { roles: { none: {} } } });
 
-    await tx.dispatchPlanProposal.deleteMany({});
     await tx.controlState.update({
       where: { id: 'singleton' },
-      data: {
-        mode: 'auto',
-        frozenPlanId: null,
-        dispatcherConstraints: { assignments: [], orders: [] },
-        constraintsVersion: { increment: 1 },
-      },
+      data: { mode: 'auto', frozenPlanId: null },
     });
 
     // Numbering starts again with the data it numbers.

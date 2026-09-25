@@ -11,6 +11,7 @@ import {
 } from '../runtime/tool-dispatcher';
 import { segmentsFor } from './role-profile';
 import { ToolRegistry } from './tool.registry';
+import { RunStoppedSignal } from '../runtime/stop.service';
 import type { ToolContext } from './tool.types';
 
 /**
@@ -85,6 +86,7 @@ export class AiToolDispatcher extends ToolDispatcher {
     try {
       return await tool.run(toolContext, parsed.data);
     } catch (error) {
+      if (error instanceof RunStoppedSignal) throw error;
       if (error instanceof SysError) {
         return {
           ok: false,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,7 +13,7 @@ import httpx
 from pydantic import Field, model_validator
 
 from core.contracts import GeoPoint, Record, RouterTaskSnapshot, Transport
-from core.geo import GraphEdge, GraphNode, RoadGraph, content_hash
+from core.geo import GraphEdge, GraphNode, RoadGraph, content_hash, haversine_m
 
 _PROFILE_ORDER: tuple[Transport, ...] = ("car", "walk", "bike", "transit")
 _API_TRANSPORT: dict[Transport, str] = {
@@ -185,13 +186,37 @@ class TwoGISMatrixProvider:
     def _profile_matrix(
         self, nodes: list[GraphNode], profile: Transport, departure_at: int
     ) -> dict[tuple[int, int], tuple[int, int] | None]:
+        """Reuse walking for legacy transit; skip a paid chunk only when all its cells are micro-legs."""
         result: dict[tuple[int, int], tuple[int, int] | None] = {}
         size = self.config.chunk_size
+        provider_profile: Transport = "walk" if profile == "transit" else profile
         for source_start in range(0, len(nodes), size):
             sources = list(range(source_start, min(len(nodes), source_start + size)))
             for target_start in range(0, len(nodes), size):
                 targets = list(range(target_start, min(len(nodes), target_start + size)))
-                result.update(self._chunk(nodes, sources, targets, profile, departure_at))
+                if all(
+                    haversine_m(nodes[source].location, nodes[target].location) <= 300
+                    for source in sources
+                    for target in targets
+                ):
+                    for source in sources:
+                        for target in targets:
+                            distance = math.ceil(
+                                haversine_m(nodes[source].location, nodes[target].location)
+                            )
+                            walk_seconds = (
+                                0 if distance == 0 else max(1, math.ceil(distance / (6_000 / 3_600)))
+                            )
+                            seconds = (
+                                max(1, walk_seconds - 1)
+                                if profile == "bike" and distance
+                                else walk_seconds
+                            )
+                            result[(source, target)] = (distance, seconds)
+                else:
+                    # 2GIS matrices charge the complete rectangular batch; mixed chunks
+                    # cannot omit individual micro cells without forfeiting bounded batching.
+                    result.update(self._chunk(nodes, sources, targets, provider_profile, departure_at))
         return result
 
     def _chunk(

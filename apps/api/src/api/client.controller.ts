@@ -1,11 +1,13 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { type Actor, CurrentActor, Roles } from '../auth';
+import { type Actor, CurrentActor, Public, Roles } from '../auth';
 import { SysError } from '../common/errors';
 import { Clock } from '../common/time';
 import { zodBody } from '../common/validation';
 import { assertWriteApplied, OperationsService } from '../operations';
+import { MiniAiService } from '../orchestrator/ai';
 import { RequestsService, WORK_TYPES } from '../orchestrator/requests';
+import { GeocodingService } from '../orchestrator/settings/geocoding.service';
 import { PrismaService, type Tx } from '../persistence';
 import {
   type CancelRequestDto,
@@ -42,6 +44,8 @@ export class ClientController {
     private readonly operations: OperationsService,
     private readonly prisma: PrismaService,
     private readonly clock: Clock,
+    private readonly geocoding: GeocodingService,
+    private readonly miniAi: MiniAiService,
   ) {}
 
   @Get('work-types')
@@ -50,6 +54,43 @@ export class ClientController {
     return {
       workTypes: WORK_TYPES.map((type) => ({ code: type.code, title: type.title })),
     };
+  }
+
+  /**
+   * Address search for the anonymous new-request form.
+   * Public so a point can be chosen before the mailbox is confirmed.
+   */
+  /**
+   * Fills the new-request form from a free-text story. Public because the form
+   * opens before the mailbox is confirmed. System one only chooses among
+   * candidates the text already contains.
+   */
+  @Public()
+  @Post('interpret')
+  @ApiOperation({ summary: 'Choose form fields from a visit story' })
+  async interpret(@Body() body: { text?: unknown }) {
+    if (typeof body.text !== 'string' || body.text.trim().length < 8) {
+      throw SysError.validationFailed('Опишите визит хотя бы одной фразой.');
+    }
+    return this.miniAi.interpretStory(body.text);
+  }
+
+  @Public()
+  @Get('geocode')
+  @ApiOperation({ summary: 'Autocomplete an address before the client is signed in' })
+  async geocode(@Query('q') q?: string) {
+    return { hits: await this.geocoding.search({ q }) };
+  }
+
+  /**
+   * Street name for a map click. Null when the provider has no name;
+   * the form then keeps the coordinates as the address text.
+   */
+  @Public()
+  @Get('geocode/reverse')
+  @ApiOperation({ summary: 'Address for a point chosen on the client map' })
+  async reverseGeocode(@Query('lat') lat?: string, @Query('lon') lon?: string) {
+    return { hit: await this.geocoding.reverse(Number(lat), Number(lon)) };
   }
 
   @Post('requests')
@@ -203,22 +244,108 @@ export class ClientController {
     return outcome.result;
   }
 
+  @Get('profile')
+  @ApiOperation({
+    summary: 'Signed-in customer: email, and the address and name from the last sent request',
+  })
+  async profile(@CurrentActor() actor: Actor): Promise<{
+    email: string;
+    contactName: string | null;
+    addressText: string | null;
+    lat: number | null;
+    lon: number | null;
+  }> {
+    if (!actor.accountId) {
+      throw SysError.forbidden('An integration key has no customer profile');
+    }
+    const account = await this.prisma.account.findUniqueOrThrow({
+      where: { id: actor.accountId },
+    });
+    const latest = await this.prisma.request.findFirst({
+      where: {
+        clientAccountId: actor.accountId,
+        lifecycle: { in: ['submitted', 'in_progress', 'completed', 'cancelled'] },
+      },
+      // Business timestamps have second precision; arrival order breaks same-second ties.
+      orderBy: [{ submittedAt: 'desc' }, { createdAt: 'desc' }, { arrivalOrder: 'desc' }],
+    });
+    return {
+      email: account.email,
+      contactName: latest?.contactName ?? null,
+      addressText: latest?.addressText ?? null,
+      lat: latest?.lat ?? null,
+      lon: latest?.lon ?? null,
+    };
+  }
+
+  @Post('requests/submitted')
+  @ApiOperation({
+    summary: 'Create a request that is already submitted, the same way the dispatcher does',
+  })
+  async createSubmitted(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(prepareRequestSchema)) dto: PrepareRequestDto,
+  ): Promise<{ request: RequestView }> {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'request.create',
+        payload: dto,
+      },
+      async (context) => {
+        const clientAccountId = await this.clientAccountOf(context.tx, actor, dto.clientEmail);
+        const prepared = await this.requests.prepare(context, clientAccountId, {
+          contactName: dto.contactName,
+          addressText: dto.addressText,
+          lat: dto.lat ?? null,
+          lon: dto.lon ?? null,
+          workType: dto.workType,
+          ...(dto.requiredEquipment === undefined
+            ? {}
+            : { requiredEquipment: dto.requiredEquipment }),
+          windowStartAt: dto.windowStartAt,
+          windowEndAt: dto.windowEndAt,
+          urgent: dto.urgent,
+          problemText: dto.problemText ?? null,
+        });
+        // The customer already confirmed the address with a login code before this call.
+        // Nothing is stored as a draft they could see: the request enters distribution
+        // in the same transaction, as a dispatcher-created request does.
+        return toRequestView(await this.requests.submit(context, prepared.id, prepared.version));
+      },
+    );
+    return { request: outcome.result };
+  }
+
   @Get('requests')
   @ApiOperation({
-    summary: 'Active requests of the signed-in customer, or of the clientEmail a key names',
+    summary: 'Requests of the signed-in customer, or of the clientEmail a key names',
   })
   async list(
     @CurrentActor() actor: Actor,
     @Query('clientEmail') clientEmail?: string,
+    @Query('scope') scope?: string,
   ): Promise<{ requests: RequestView[] }> {
     const clientAccountId = await this.existingClientAccountOf(actor, clientEmail);
     if (clientAccountId === null) {
       // A never-seen address owns no requests; a read does not create the account.
       return { requests: [] };
     }
-    // A completed request leaves the active list but stays in the database and in the
-    // history (context/32 section 4.4).
-    const requests = await this.requests.listActive(clientAccountId);
+    const requests = await this.prisma.request.findMany({
+      // The default list is the open work. `scope=all` is the history of everything
+      // that was actually sent: completed and cancelled stay, drafts do not.
+      where: {
+        clientAccountId,
+        lifecycle: {
+          in:
+            scope === 'all'
+              ? ['submitted', 'in_progress', 'completed', 'cancelled']
+              : ['draft', 'submitted', 'in_progress'],
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
     return { requests: requests.map((request) => toRequestView(request)) };
   }
 
@@ -299,19 +426,16 @@ export class ClientController {
     return account?.id ?? null;
   }
 
-  /**
-   * Which request this call acts on.
-   *
-   * A session acts on its own requests only; an integration key has full access inside
-   * its category and is not bound to one customer account (context/41 section 3.2), the
-   * same two-way split `EngineerController.subjectOf` applies to the engineer contour.
-   * The ownership check itself lives in `RequestsService.ownedByAccount`, shared with the
-   * AI client catalogue's `list_my_requests` tool so the rule exists exactly once.
-   */
   private async assertOwned(actor: Actor, requestId: string) {
-    if (actor.accountId) {
-      return this.requests.ownedByAccount(actor.accountId, requestId);
+    const request = await this.prisma.request.findUnique({ where: { id: requestId } });
+    if (!request) {
+      throw SysError.notFound('Request', { requestId });
     }
-    return this.requests.byId(requestId);
+    if (actor.accountId && request.clientAccountId !== actor.accountId) {
+      // Reported as absent rather than forbidden: confirming that someone else's request
+      // exists is itself a disclosure.
+      throw SysError.notFound('Request', { requestId });
+    }
+    return request;
   }
 }

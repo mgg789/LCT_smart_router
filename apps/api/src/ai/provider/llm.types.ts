@@ -50,6 +50,11 @@ export interface LlmToolCall {
 export interface LlmTurnInput {
   readonly model: string;
   readonly system: string;
+  /**
+   * Placed after the dialogue, not before it. A lane switch has to beat earlier
+   * assistant lines that still describe the old lane.
+   */
+  readonly closing?: string;
   readonly messages: readonly LlmMessage[];
   readonly tools: readonly LlmToolSpec[];
   readonly maxOutputTokens: number;

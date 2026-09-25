@@ -7,8 +7,14 @@ import { Clock } from '../../common/time';
 import type { AiConversation, AiRoleProfile } from '../../generated/prisma/client';
 import { PrismaService, UnitOfWork } from '../../persistence';
 import { buildClientSystemPrompt } from '../profiles/client.profile';
-import { buildDispatcherSystemPrompt } from '../profiles/dispatcher.profile';
-import { buildEngineerSystemPrompt } from '../profiles/engineer.profile';
+import {
+  buildDispatcherSystemPrompt,
+  dispatcherTurnReminder,
+} from '../profiles/dispatcher.profile';
+import {
+  buildEngineerSystemPrompt,
+  engineerTurnReminder,
+} from '../profiles/engineer.profile';
 import {
   type LlmMessage,
   LlmProvider,
@@ -205,7 +211,9 @@ export class AgentRuntimeService implements OnModuleInit {
     handle: RunHandle,
   ): Promise<void> {
     const model = this.config.get('LLM_MODEL');
-    const maxOutputTokens = this.config.get('LLM_MAX_OUTPUT_TOKENS');
+    // The env default (1024) cuts a Russian answer mid-word and, in fix mode, spends
+    // the whole budget on the preamble so the write tool is never emitted.
+    const maxOutputTokens = Math.max(this.config.get('LLM_MAX_OUTPUT_TOKENS'), 4_096);
     const maxAttempts = this.config.get('LLM_MAX_ATTEMPTS');
     const maxToolSteps = this.config.get('LLM_MAX_TOOL_STEPS');
     // This conversation's lane decides which tools the model is even offered --
@@ -237,6 +245,12 @@ export class AgentRuntimeService implements OnModuleInit {
             this.config.get('APP_TIME_ZONE'),
             tools.map((tool) => tool.name),
           ),
+          closing: closingFor(
+            conversation.roleProfile,
+            this.clock.nowSeconds(),
+            this.config.get('APP_TIME_ZONE'),
+            tools.map((tool) => tool.name),
+          ),
           messages,
           tools,
           maxOutputTokens,
@@ -245,6 +259,7 @@ export class AgentRuntimeService implements OnModuleInit {
 
         const messageId = randomUUID();
         let text = '';
+        let truncated = false;
         const toolCalls: LlmToolCall[] = [];
         const retryResult: { current: RetryRunResult } = {
           current: { providerKind: this.provider.kind, usedFallback: false, attempts: 0 },
@@ -267,12 +282,13 @@ export class AgentRuntimeService implements OnModuleInit {
             await this.bus.emit(handle, {
               type: 'tool_started',
               toolName: event.call.name,
-              intent: `Calling ${event.call.name}`,
+              intent: event.call.name,
             });
           } else if (event.type === 'done') {
             totalPromptTokens += event.usage.promptTokens;
             totalCompletionTokens += event.usage.completionTokens;
             aborted = event.finishReason === 'aborted';
+            truncated = event.finishReason === 'length';
           }
         }
 
@@ -284,11 +300,26 @@ export class AgentRuntimeService implements OnModuleInit {
         }
 
         if (toolCalls.length === 0) {
+          // `reasoning_content` is the scratchpad. Publishing it is what painted the
+          // English monologue as the dispatcher's answer when `content` stayed empty
+          // because thinking had already spent `max_tokens`.
+          const answer = text.trim();
+          if (answer.length === 0) {
+            finalState = 'failed';
+            terminalEvent = await this.bus.emit(handle, {
+              type: 'error',
+              code: 'AI_UNAVAILABLE',
+              message: truncated
+                ? 'Ответ оборвался на лимите вывода, текста для диспетчера не осталось'
+                : 'Ассистент не прислал текст ответа',
+            });
+            break;
+          }
           const messageRow = await this.uow.run((tx) =>
             this.conversations.appendMessage(tx, conversation.id, this.clock.nowSeconds(), {
               author: 'assistant',
               kind: 'text',
-              text,
+              text: answer,
               runId,
             }),
           );
@@ -297,7 +328,7 @@ export class AgentRuntimeService implements OnModuleInit {
             messageId,
             messageSeq: messageRow.seq,
             kind: 'text',
-            text,
+            text: answer,
             actions: [],
           });
           // Also announced on the conversation channel, so a second tab of the same chat
@@ -407,6 +438,24 @@ export class AgentRuntimeService implements OnModuleInit {
  *  from the business clock and this turn's actual tool names so a prompt can never drift
  *  from the catalogue that backs it or claim a "today" that is not the moment the run
  *  actually started. */
+function closingFor(
+  roleProfile: AiRoleProfile,
+  now: number,
+  timeZone: string,
+  toolNames: readonly string[],
+): string | undefined {
+  if (roleProfile === 'engineer') return engineerTurnReminder();
+  if (roleProfile === 'dispatcher_readonly' || roleProfile === 'dispatcher_fix') {
+    return dispatcherTurnReminder({
+      assistMode: roleProfile === 'dispatcher_fix' ? 'fix' : 'help',
+      now,
+      timeZone,
+      toolNames,
+    });
+  }
+  return undefined;
+}
+
 function systemPromptFor(
   roleProfile: AiRoleProfile,
   now: number,

@@ -1,6 +1,22 @@
 import { z } from 'zod';
 import { operationEnvelopeSchema } from './request.dto';
 
+/** Plan-assessment and reserved model connection fields. Secrets are write-only. */
+export const aiSettingsSchema = z.object({
+  operationId: z.string().min(8).max(128),
+  planCalibrationEnabled: z.boolean().optional(),
+  llmApiUrl: z.string().max(300).nullable().optional(),
+  llmModel: z.string().max(120).nullable().optional(),
+  llmApiKey: z.string().min(8).max(200).optional(),
+  clearLlmApiKey: z.boolean().optional(),
+  jevApiUrl: z.string().max(300).nullable().optional(),
+  jevModel: z.string().max(120).nullable().optional(),
+  jevApiKey: z.string().min(8).max(200).optional(),
+  clearJevApiKey: z.boolean().optional(),
+});
+
+export type AiSettingsDto = z.infer<typeof aiSettingsSchema>;
+
 /**
  * Request shapes for the AI-gateway contour.
  *
@@ -21,6 +37,11 @@ export const createAiConversationSchema = z.object({
   assistMode: z.enum(['help', 'fix']).optional(),
 });
 export type CreateAiConversationDto = z.infer<typeof createAiConversationSchema>;
+
+export const setAiAssistModeSchema = z.object({
+  assistMode: z.enum(['help', 'fix']),
+});
+export type SetAiAssistModeDto = z.infer<typeof setAiAssistModeSchema>;
 
 export const postAiMessageSchema = operationEnvelopeSchema.extend({
   text: z.string().trim().min(1).max(4000),

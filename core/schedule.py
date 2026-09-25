@@ -1,11 +1,14 @@
 """Pure fixed-order scheduling, baseline and independent result validation."""
 
+from dataclasses import dataclass
+from itertools import combinations
 from typing import Protocol
 
 from core.contracts import (
     Assignment,
     Engineer,
     EngineerRoute,
+    EquipmentHandoff,
     EquipmentType,
     Geometry,
     GeoPoint,
@@ -18,10 +21,10 @@ from core.contracts import (
     RouteLeg,
     RouteMetrics,
     RouterTaskSnapshot,
+    RouteSegment,
     RouteStop,
     Transport,
 )
-from core.dispatch_constraints import pinned_ranks, respects_pinned_order
 from core.geo import TravelQuote, quote_at
 from core.policy import policy_score
 
@@ -43,6 +46,64 @@ class TravelProvider(Protocol):
     ) -> TravelQuote | None:
         """Return costs and path geometry from the same resource version."""
         ...
+
+
+@dataclass(frozen=True)
+class HandoffStep:
+    """A fixed 300-second physical exchange replayed by both participant routes."""
+
+    handoff: EquipmentHandoff
+    location: GeoPoint
+    meeting_at: int
+
+
+ScheduleStep = str | None | HandoffStep
+
+
+def _pending_steps(snapshot: RouterTaskSnapshot, engineer_id: str) -> list[HandoffStep]:
+    """Return the immutable future exchanges owned by one route in time order."""
+    return [
+        HandoffStep(handoff, handoff.location, handoff.meeting_at)
+        for handoff in sorted(snapshot.pending_equipment_handoffs, key=lambda item: item.meeting_at)
+        if engineer_id in (handoff.donor_engineer_id, handoff.receiver_engineer_id)
+    ]
+
+
+def _with_pending(snapshot: RouterTaskSnapshot, engineer_id: str, steps: list[ScheduleStep]) -> list[list[ScheduleStep]]:
+    """Interleave frozen meetings without changing job order; cap combinatorics deterministically."""
+    pending = _pending_steps(snapshot, engineer_id)
+    if not pending:
+        return [steps]
+    # A pending meeting is a system fact.  Four meetings already provide more
+    # alternatives than the bounded rescue is allowed to inspect.
+    if len(pending) > 4:
+        return []
+    choices: list[list[ScheduleStep]] = []
+    for positions in combinations(range(len(steps) + len(pending)), len(pending)):
+        output: list[ScheduleStep] = []
+        jobs = iter(steps)
+        meetings = iter(pending)
+        selected = set(positions)
+        for index in range(len(steps) + len(pending)):
+            output.append(next(meetings) if index in selected else next(jobs))
+        choices.append(output)
+    return choices
+
+
+def _baseline_eligible(snapshot: RouterTaskSnapshot, engineer: Engineer, request: Request) -> bool:
+    """Keep FIFO's historical eligibility, extending only for a frozen incoming item."""
+    if eligible(snapshot, engineer, request):
+        return True
+    return (
+        request.required_equipment is not None
+        and release_at(snapshot, engineer) is not None
+        and _matches_non_equipment_constraints(engineer, request)
+        and any(
+            handoff.receiver_engineer_id == engineer.engineer_id
+            and handoff.items.quantity(request.required_equipment) > 0
+            for handoff in snapshot.pending_equipment_handoffs
+        )
+    )
 
 
 def _candidate_release(snapshot: RouterTaskSnapshot, engineer: Engineer, limit: int) -> int | None:
@@ -96,15 +157,28 @@ def terminal_release_at(snapshot: RouterTaskSnapshot, engineer: Engineer) -> int
 def _matches_static_constraints(engineer: Engineer, request: Request) -> bool:
     """Check assignment compatibility independently from the time release rule."""
     return (
-        request.pinned_engineer_id in (None, engineer.engineer_id)
-        and (request.region is None or engineer.region is None or request.region == engineer.region)
+        (request.region is None or engineer.region is None or request.region == engineer.region)
         and request.required_skill in engineer.skills
-        and request.required_transport in (None, engineer.transport_type)
+        and _transport_matches(request.required_transport, engineer.transport_type)
         and (
             request.required_equipment is None
             or engineer.equipment_stock.quantity(request.required_equipment) > 0
         )
     )
+
+
+def _matches_non_equipment_constraints(engineer: Engineer, request: Request) -> bool:
+    """Keep job compatibility distinct from inventory, which is time-dependent."""
+    return (
+        (request.region is None or engineer.region is None or request.region == engineer.region)
+        and request.required_skill in engineer.skills
+        and _transport_matches(request.required_transport, engineer.transport_type)
+    )
+
+
+def _transport_matches(required: Transport | None, actual: Transport) -> bool:
+    """Accept the two persisted pedestrian aliases while preserving other hard modes."""
+    return required is None or required == actual or {required, actual} <= {"walk", "transit"}
 
 
 def eligible(snapshot: RouterTaskSnapshot, engineer: Engineer, request: Request) -> bool:
@@ -148,7 +222,7 @@ def route_metrics(stops: list[RouteStop], legs: list[RouteLeg]) -> RouteMetrics:
 def schedule_steps(
     snapshot: RouterTaskSnapshot,
     engineer: Engineer,
-    steps: list[str | None],
+    steps: list[ScheduleStep],
     travel: TravelProvider,
 ) -> EngineerRoute | None:
     """Schedule a fixed order as early as possible; None is an explicit lunch step.
@@ -159,17 +233,14 @@ def schedule_steps(
     # A plain dict lookup. The name deliberately avoids colliding with the famous HTTP
     # client package: static SSRF rules flag that shape even though no network call exists.
     request_map = {r.request_id: r for r in snapshot.requests}
-    terminal_candidate = len(steps) == 1 and steps[0] is not None
+    job_steps = [item for item in steps if isinstance(item, str)]
+    terminal_candidate = len(job_steps) == 1 and len(steps) == 1
     release = release_at(snapshot, engineer)
     if release is None and terminal_candidate:
         release = terminal_release_at(snapshot, engineer)
     if release is None and steps:
         return None
-    if len([x for x in steps if x is not None]) != len(set(x for x in steps if x is not None)):
-        return None
-    if not respects_pinned_order(
-        snapshot, engineer.engineer_id, (job for job in steps if job is not None)
-    ):
+    if len(job_steps) != len(set(job_steps)):
         return None
     lunch_count = steps.count(None)
     active_lunch = release is not None and engineer.lunch.enabled and not engineer.lunch_taken
@@ -182,13 +253,20 @@ def schedule_steps(
         "set_top_box": 0,
         "smart_speaker": 0,
     }
-    for request_id in (item for item in steps if item is not None):
+    inventory = {
+        "router": engineer.equipment_stock.router,
+        "set_top_box": engineer.equipment_stock.set_top_box,
+        "smart_speaker": engineer.equipment_stock.smart_speaker,
+    }
+    for request_id in job_steps:
         request = request_map.get(request_id)
         if request is None:
             return None
         if request.required_equipment is not None:
             equipment_used[request.required_equipment] += 1
-    if any(
+    # Static precheck remains useful for ordinary routes.  A receiver can start
+    # with zero stock only when a preceding typed handoff credits inventory.
+    if not any(isinstance(item, HandoffStep) for item in steps) and any(
         quantity > engineer.equipment_stock.quantity(equipment_type)
         for equipment_type, quantity in equipment_used.items()
     ):
@@ -201,7 +279,8 @@ def schedule_steps(
     end_limit = min(engineer.shift_end_at, snapshot.horizon_end_at)
 
     def add_stop(
-        kind: str, request_id: str | None, arrival: int, start: int, end: int, point: GeoPoint
+        kind: str, request_id: str | None, arrival: int, start: int, end: int, point: GeoPoint,
+        handoff: EquipmentHandoff | None = None,
     ) -> RouteStop:
         stop = RouteStop(
             stop_id=f"{engineer.engineer_id}:{len(stops)}",
@@ -212,11 +291,54 @@ def schedule_steps(
             arrival_at=arrival,
             start_at=start,
             end_at=end,
+            handoff=handoff,
         )
         stops.append(stop)
         return stop
 
-    for step_index, request_id in enumerate(steps):
+    for step_index, step in enumerate(steps):
+        if isinstance(step, HandoffStep):
+            quote = quote_at(travel, location, step.location, engineer.transport_type, clock)
+            if quote is None:
+                return None
+            arrival = clock + quote.duration_sec
+            if arrival > step.meeting_at:
+                return None
+            previous_stop = stops[-1].stop_id if stops else None
+            target = None
+            if step.meeting_at > arrival:
+                target = add_stop("wait", None, arrival, arrival, step.meeting_at, step.location)
+            handoff_stop = add_stop(
+                "handoff", None, arrival, step.meeting_at, step.meeting_at + 300,
+                step.location, step.handoff,
+            )
+            legs.append(
+                RouteLeg(
+                    leg_id=f"{engineer.engineer_id}:leg:{len(legs)}",
+                    from_stop_id=previous_stop,
+                    to_stop_id=(target or handoff_stop).stop_id,
+                    departure_at=clock, arrival_at=arrival, travel_time_sec=quote.duration_sec,
+                    distance_km=quote.distance_m / 1000,
+                    geometry=None if quote.provenance == "traffic_api" and not quote.geometry_exact else Geometry(points=list(quote.points)),
+                    travel_source=quote.provenance, traffic_factor=quote.traffic_factor,
+                    segments=[RouteSegment(geometry=Geometry(points=list(segment.points)), travel_source=segment.provenance, duration_sec=segment.duration_sec, distance_m=segment.distance_m) for segment in quote.segments],
+                )
+            )
+            for equipment_type in ("router", "set_top_box", "smart_speaker"):
+                quantity = step.handoff.items.quantity(equipment_type)
+                if engineer.engineer_id == step.handoff.donor_engineer_id:
+                    inventory[equipment_type] -= quantity
+                elif engineer.engineer_id == step.handoff.receiver_engineer_id:
+                    inventory[equipment_type] += quantity
+                else:
+                    return None
+                if inventory[equipment_type] < 0:
+                    return None
+            if sum(inventory.values()) > engineer.equipment_capacity:
+                return None
+            clock, location = step.meeting_at + 300, step.location
+            continue
+        request_id = step
         if request_id is None:
             lunch = engineer.lunch
             start = max(clock, lunch.window_start_at)
@@ -229,11 +351,15 @@ def schedule_steps(
             clock = end
             continue
         request = request_map.get(request_id)
-        if request is None or not (
-            eligible(snapshot, engineer, request)
-            or (terminal_candidate and terminal_eligible(snapshot, engineer, request))
+        if request is None or not _matches_non_equipment_constraints(engineer, request) or not (
+            release_at(snapshot, engineer) is not None
+            or (terminal_candidate and terminal_release_at(snapshot, engineer) is not None)
         ):
             return None
+        if request.required_equipment is not None:
+            if inventory[request.required_equipment] < 1:
+                return None
+            inventory[request.required_equipment] -= 1
         quote = quote_at(
             travel,
             location,
@@ -281,6 +407,15 @@ def schedule_steps(
                 ),
                 travel_source=quote.provenance,
                 traffic_factor=quote.traffic_factor,
+                segments=[
+                    RouteSegment(
+                        geometry=Geometry(points=list(segment.points)),
+                        travel_source=segment.provenance,
+                        duration_sec=segment.duration_sec,
+                        distance_m=segment.distance_m,
+                    )
+                    for segment in quote.segments
+                ],
             )
         )
         clock, location = end, request.location
@@ -318,27 +453,33 @@ def fixed_order(
     snapshot: RouterTaskSnapshot, engineer: Engineer, jobs: list[str], travel: TravelProvider
 ) -> EngineerRoute | None:
     """Try permitted lunch anchors without reordering jobs; prefer a feasible lunch."""
+    base_variants = _with_pending(snapshot, engineer.engineer_id, list(jobs))
+    if not base_variants:
+        return None
     if release_at(snapshot, engineer) is None and not jobs:
-        return schedule_steps(snapshot, engineer, [], travel)
+        candidates = [schedule_steps(snapshot, engineer, variant, travel) for variant in base_variants]
+        return next((candidate for candidate in candidates if candidate is not None), None)
     if engineer.lunch.enabled and not engineer.lunch_taken:
         # Prefer an actual field stop once work has begun. Position zero remains a
         # feasibility fallback (and the only choice for a lunch-only route), but trying it
         # first placed every engineer's lunch at the shared regional depot.
         positions = [*range(1, len(jobs) + 1), 0] if jobs else [0]
         candidates = []
-        for position in positions:
-            route = schedule_steps(
-                snapshot, engineer, jobs[:position] + [None] + jobs[position:], travel
-            )
-            if route is not None:
-                candidates.append(route)
+        for variant in base_variants:
+            for position in positions:
+                route = schedule_steps(
+                    snapshot, engineer, variant[:position] + [None] + variant[position:], travel
+                )
+                if route is not None:
+                    candidates.append(route)
         if candidates:
             # Keep coverage/order fixed; place lunch where it consumes the least
             # productive time. Stable ties retain the field-stop preference.
             return min(candidates, key=lambda r: (r.finish_at or 0, r.metrics.waiting_time_sec))
         if engineer.lunch.required:
             return None
-    route = schedule_steps(snapshot, engineer, jobs, travel)
+    routes = [schedule_steps(snapshot, engineer, variant, travel) for variant in base_variants]
+    route = next((candidate for candidate in routes if candidate is not None), None)
     if route and route.lunch.status == "not_scheduled" and jobs:
         # Only claim work displaced lunch when removing work really restores it.
         if schedule_steps(snapshot, engineer, [None], travel) is not None:
@@ -405,7 +546,7 @@ def _candidate_pool(snapshot: RouterTaskSnapshot, request: Request, routes: list
     transport = [
         engineer
         for engineer in skilled
-        if request.required_transport in (None, engineer.transport_type)
+        if _transport_matches(request.required_transport, engineer.transport_type)
     ]
     idle_regional = [engineer for engineer in regional if engineer.engineer_id not in busy]
     idle_skilled = [engineer for engineer in skilled if engineer.engineer_id not in busy]
@@ -534,44 +675,6 @@ def assemble_plan(
         for s in route.stops
         if s.kind == "job"
     }
-    missing_pins = [
-        request
-        for request in snapshot.requests
-        if request.pinned_engineer_id
-        and assigned.get(request.request_id, (None, None))[0] != request.pinned_engineer_id
-    ]
-    if missing_pins:
-        # A pinned request must never disappear as an ordinary unassigned result.
-        # Keep the invalid alternative non-executable and explain the conflicting pins.
-        without_pins = snapshot.model_copy(
-            update={
-                "requests": [
-                    row.model_copy(update={"pinned_engineer_id": None}) for row in snapshot.requests
-                ],
-                "pinned_orders": [],
-            }
-        )
-        empty = assemble_plan(without_pins, [])
-        conflict = reason(
-            "DISPATCHER_CONSTRAINT_CONFLICT",
-            "No feasible plan honoring all dispatcher pins was found.",
-            outcome=True,
-        )
-        return empty.model_copy(
-            update={
-                "is_usable": False,
-                "alerts": [
-                    PlanningAlert(
-                        alert_id="dispatcher:constraints",
-                        code="DISPATCHER_CONSTRAINT_CONFLICT",
-                        severity="error",
-                        engineer_ids=sorted({row.pinned_engineer_id for row in missing_pins}),
-                        request_ids=[row.request_id for row in missing_pins],
-                        reasons=[conflict],
-                    )
-                ],
-            }
-        )
     assignments = []
     engineers = {engineer.engineer_id: engineer for engineer in snapshot.engineers}
     for request in snapshot.requests:
@@ -608,8 +711,7 @@ def assemble_plan(
         + route.metrics.waiting_time_sec
         + route.metrics.lunch_time_sec
         for route in routes
-        if route.start_at is not None
-        or release_at(snapshot, engineers[route.engineer_id]) is not None
+        if release_at(snapshot, engineers[route.engineer_id]) is not None
     ]
     summary = PlanMetrics(
         late_assigned_count=sum(slack < 0 for slack in slacks),
@@ -674,20 +776,12 @@ def baseline(snapshot: RouterTaskSnapshot, travel: TravelProvider) -> Plan:
     engineers = sorted(snapshot.engineers, key=lambda e: e.input_order)
     orders: dict[str, list[str]] = {e.engineer_id: [] for e in engineers}
     deferred: list[Request] = []
-    ranks = pinned_ranks(snapshot)
-    for request in sorted(
-        snapshot.requests,
-        key=lambda r: (
-            r.pinned_engineer_id is None,
-            ranks.get(r.request_id, 0),
-            r.arrival_order,
-        ),
-    ):
+    for request in sorted(snapshot.requests, key=lambda r: r.arrival_order):
         for engineer in engineers:
             order = orders[engineer.engineer_id] + [request.request_id]
             route = (
                 fixed_order(snapshot, engineer, order, travel)
-                if eligible(snapshot, engineer, request)
+                if _baseline_eligible(snapshot, engineer, request)
                 else None
             )
             uses_terminal_overtime = bool(
@@ -703,7 +797,7 @@ def baseline(snapshot: RouterTaskSnapshot, travel: TravelProvider) -> Plan:
     for request in deferred:
         for engineer in engineers:
             order = orders[engineer.engineer_id] + [request.request_id]
-            if eligible(snapshot, engineer, request) and fixed_order(
+            if _baseline_eligible(snapshot, engineer, request) and fixed_order(
                 snapshot, engineer, order, travel
             ):
                 orders[engineer.engineer_id] = order
@@ -807,10 +901,7 @@ def validate_plan(snapshot: RouterTaskSnapshot, plan: Plan, travel: TravelProvid
             require(bool(assignment.reasons), "missing explanation")
         require(plan.summary == assemble_plan(snapshot, []).summary, "unusable plan totals")
         require(
-            any(
-                a.code in ("REQUIRED_LUNCH_UNPLACED", "DISPATCHER_CONSTRAINT_CONFLICT")
-                for a in plan.alerts
-            ),
+            any(a.code == "REQUIRED_LUNCH_UNPLACED" for a in plan.alerts),
             "unusable plan needs a supported conflict reason",
         )
         return
@@ -821,9 +912,16 @@ def validate_plan(snapshot: RouterTaskSnapshot, plan: Plan, travel: TravelProvid
     )
     engineers = {e.engineer_id: e for e in snapshot.engineers}
     observed: dict[str, tuple[str, str]] = {}
+    handoffs: dict[str, list[tuple[str, RouteStop]]] = {}
     for route in plan.routes:
         engineer = engineers[route.engineer_id]
-        steps = [s.request_id if s.kind == "job" else None for s in route.stops if s.kind != "wait"]
+        steps: list[ScheduleStep] = [
+            s.request_id if s.kind == "job" else (
+                HandoffStep(s.handoff, s.location, s.start_at) if s.kind == "handoff" else None
+            )
+            for s in route.stops
+            if s.kind != "wait"
+        ]
         expected = schedule_steps(snapshot, engineer, steps, travel)
         require(expected is not None, "hard schedule constraints")
         require(
@@ -841,6 +939,9 @@ def validate_plan(snapshot: RouterTaskSnapshot, plan: Plan, travel: TravelProvid
             if stop.kind == "job":
                 require(stop.request_id not in observed, "duplicate assigned job")
                 observed[stop.request_id] = (route.engineer_id, stop.stop_id)
+            if stop.kind == "handoff":
+                require(stop.handoff is not None, "handoff metadata")
+                handoffs.setdefault(stop.handoff.handoff_id, []).append((route.engineer_id, stop))
         if expected.lunch.status in ("scheduled", "disabled", "already_taken"):
             require(
                 route.lunch.status == expected.lunch.status
@@ -872,12 +973,22 @@ def validate_plan(snapshot: RouterTaskSnapshot, plan: Plan, travel: TravelProvid
                 )
             else:
                 require(route.lunch.reasons[0].code == "LUNCH_NOT_PLACED", "lunch reason code")
-    for request in snapshot.requests:
-        if request.pinned_engineer_id:
-            require(
-                observed.get(request.request_id, (None, None))[0] == request.pinned_engineer_id,
-                "dispatcher assignment pin",
-            )
+    pending_ids = {handoff.handoff_id for handoff in snapshot.pending_equipment_handoffs}
+    for handoff_id, participants in handoffs.items():
+        require(len(participants) == 2, "handoff paired routes")
+        (_, first), (_, second) = participants
+        require(first.handoff == second.handoff, "handoff metadata differs")
+        require(first.location == second.location and first.start_at == second.start_at, "handoff meeting differs")
+        require(first.end_at - first.start_at == 300 and second.end_at - second.start_at == 300, "handoff duration")
+        handoff = first.handoff
+        require(handoff is not None, "handoff missing")
+        require({participants[0][0], participants[1][0]} == {handoff.donor_engineer_id, handoff.receiver_engineer_id}, "handoff participants")
+        donor, receiver = engineers[handoff.donor_engineer_id], engineers[handoff.receiver_engineer_id]
+        require(donor.region is None or receiver.region is None or donor.region == receiver.region, "handoff region")
+        if handoff_id in pending_ids:
+            frozen = next(item for item in snapshot.pending_equipment_handoffs if item.handoff_id == handoff_id)
+            require(first.location == frozen.location and first.start_at == frozen.meeting_at, "pending handoff changed")
+    require(set(handoffs) >= pending_ids, "pending handoff missing")
     for assignment in plan.assignments:
         owner = observed.get(assignment.request_id)
         require(

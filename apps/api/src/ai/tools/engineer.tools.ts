@@ -85,16 +85,94 @@ function requireEngineerId(ctx: ToolContext): string {
   return ctx.engineerId;
 }
 
-function prepared(
-  operationId: string,
-  state: string,
-  preview: unknown,
-  summary: string,
-): ToolResult {
+function clock(seconds: number, timeZone: string): string {
+  return new Intl.DateTimeFormat('ru-RU', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(new Date(seconds * 1000));
+}
+
+function equipmentLabel(value: string | null): string {
+  if (value === 'router') return 'нужен роутер';
+  if (value === 'set_top_box') return 'нужна приставка';
+  if (value === 'smart_speaker') return 'нужна колонка';
+  return 'отдельное устройство не нужно';
+}
+
+/** What the model is allowed to retell. Raw ids and epoch seconds stay out of this text. */
+function routeBrief(view: EngineerLiveView, timeZone: string): string {
+  const line =
+    view.engineer.lineStatus === 'online'
+      ? 'на линии'
+      : view.engineer.lineStatus === 'technical_break'
+        ? 'на техническом перерыве'
+        : view.engineer.lineStatus === 'pending'
+          ? 'ещё не вышел на линию'
+          : 'не на линии';
+  const day =
+    view.workday.status === 'running'
+      ? 'идёт'
+      : view.workday.status === 'pending'
+        ? 'ещё не начат'
+        : 'закончен';
+  const lines = [
+    `Инженер: ${view.engineer.name}, ${line}.`,
+    `День ${view.workday.workDate}, ${day}. Сейчас ${clock(view.workday.liveNow, timeZone)}.`,
+  ];
+  if (view.current) {
+    const phase =
+      view.current.phase === 'in_progress'
+        ? 'уже в работе'
+        : view.current.phase === 'ready_to_start'
+          ? 'можно приступать, ещё не начат'
+          : 'ещё не начат, ждёт своё окно';
+    lines.push(
+      `Ближайший визит: ${view.current.request.addressText}. ${phase}, окно ${clock(view.current.request.windowStartAt, timeZone)}–${clock(view.current.request.windowEndAt, timeZone)}. ${equipmentLabel(view.current.request.requiredEquipment)}.`,
+    );
+  } else {
+    lines.push('Ближайшего визита нет.');
+  }
+  const jobs = view.route?.stops.filter((stop) => stop.kind === 'job').length ?? 0;
+  if (jobs > 1) lines.push(`Дальше по маршруту ещё ${jobs - 1}.`);
+  if (view.lunch) lines.push(`Обед идёт до ${clock(view.lunch.endAt, timeZone)}.`);
+  else if (view.engineer.lunchInterval) {
+    lines.push(
+      `Обед запланирован с ${clock(view.engineer.lunchInterval.startAt, timeZone)} до ${clock(view.engineer.lunchInterval.endAt, timeZone)}.`,
+    );
+  }
+  lines.push(
+    view.current?.phase === 'in_progress'
+      ? 'Технический перерыв сейчас нельзя: визит уже начат.'
+      : 'Технический перерыв сейчас можно: визит ещё не начат.',
+  );
+  return lines.join('\n');
+}
+
+function prepared(op: {
+  operationId: string;
+  state: string;
+  preview: unknown;
+  guard?: string;
+}): ToolResult {
+  const note =
+    op.guard === 'user_allowed'
+      ? 'Гуард отклонил действие, инженер разрешил. Действие выполнено.'
+      : op.guard === 'user_rejected'
+        ? 'Действие отклонено совместным решением гуарда и инженера.'
+        : op.state === 'applied'
+          ? 'Действие выполнено.'
+          : 'Действие не выполнено.';
   return {
-    ok: true,
-    summary,
-    resultContent: JSON.stringify({ operation_id: operationId, state, preview }),
+    ok: op.state === 'applied',
+    summary: note,
+    resultContent: JSON.stringify({
+      operation_id: op.operationId,
+      state: op.state,
+      preview: op.preview,
+      note,
+    }),
   };
 }
 
@@ -138,7 +216,7 @@ export function buildEngineerTools(deps: EngineerToolDeps): readonly ToolSpec[] 
           additionalDurationSec: args.minutes * 60,
         },
       });
-      return prepared(op.operationId, op.state, op.preview, 'Prepared a delay report');
+      return prepared(op);
     },
   };
 
@@ -163,7 +241,7 @@ export function buildEngineerTools(deps: EngineerToolDeps): readonly ToolSpec[] 
           missingEquipment: args.equipment,
         },
       });
-      return prepared(op.operationId, op.state, op.preview, 'Prepared a missing-equipment report');
+      return prepared(op);
     },
   };
 
@@ -185,7 +263,7 @@ export function buildEngineerTools(deps: EngineerToolDeps): readonly ToolSpec[] 
         targetRef: engineerId,
         payload: { requestId, problemKind: args.reason, note: args.note },
       });
-      return prepared(op.operationId, op.state, op.preview, 'Prepared a cannot-complete report');
+      return prepared(op);
     },
   };
 
@@ -214,7 +292,7 @@ export function buildEngineerTools(deps: EngineerToolDeps): readonly ToolSpec[] 
         targetRef: engineerId,
         payload: { requestId, etaAt },
       });
-      return prepared(op.operationId, op.state, op.preview, 'Prepared an arrival forecast');
+      return prepared(op);
     },
   };
 
@@ -224,7 +302,9 @@ export function buildEngineerTools(deps: EngineerToolDeps): readonly ToolSpec[] 
 
   const startTechnicalBreak: ToolSpec = {
     name: 'start_technical_break',
-    description: 'Start a technical break for the signed-in engineer.',
+    description:
+      'Start a 15-minute technical break. Allowed while the next visit is only waiting. ' +
+      'Refused only when that visit is already in progress.',
     schema: emptySchema,
     async run(ctx) {
       const op = await deps.aiOperations.prepare({
@@ -236,7 +316,7 @@ export function buildEngineerTools(deps: EngineerToolDeps): readonly ToolSpec[] 
         targetRef: requireEngineerId(ctx),
         payload: {},
       });
-      return prepared(op.operationId, op.state, op.preview, 'Prepared a technical break');
+      return prepared(op);
     },
   };
 
@@ -254,12 +334,7 @@ export function buildEngineerTools(deps: EngineerToolDeps): readonly ToolSpec[] 
         targetRef: requireEngineerId(ctx),
         payload: {},
       });
-      return prepared(
-        op.operationId,
-        op.state,
-        op.preview,
-        'Prepared finishing the technical break',
-      );
+      return prepared(op);
     },
   };
 
@@ -291,7 +366,7 @@ export function buildEngineerTools(deps: EngineerToolDeps): readonly ToolSpec[] 
             targetRef: requireEngineerId(ctx),
             payload: { note: args.note },
           });
-          return prepared(op.operationId, op.state, op.preview, 'Prepared going offline');
+          return prepared(op);
         }
         const op = await deps.aiOperations.prepare({
           actor: ctx.actor,
@@ -302,7 +377,7 @@ export function buildEngineerTools(deps: EngineerToolDeps): readonly ToolSpec[] 
           targetRef: requireEngineerId(ctx),
           payload: {},
         });
-        return prepared(op.operationId, op.state, op.preview, 'Prepared going online');
+        return prepared(op);
       }
       const op = await deps.aiOperations.prepare({
         actor: ctx.actor,
@@ -313,13 +388,15 @@ export function buildEngineerTools(deps: EngineerToolDeps): readonly ToolSpec[] 
         targetRef: requireEngineerId(ctx),
         payload: { availability: args.status === 1 ? 'online' : 'offline' },
       });
-      return prepared(op.operationId, op.state, op.preview, 'Prepared an availability change');
+      return prepared(op);
     },
   };
 
   const getMyRoute: ToolSpec = {
     name: 'get_my_route',
-    description: "Read the signed-in engineer's current LIVE route and current visit.",
+    description:
+      "Read the signed-in engineer's day. The result is already plain Russian: retell it, " +
+      'do not add codes, ids or raw timestamps.',
     schema: emptySchema,
     async run(ctx) {
       const view: EngineerLiveView = await deps.live.engineerView(requireEngineerId(ctx));
@@ -328,13 +405,7 @@ export function buildEngineerTools(deps: EngineerToolDeps): readonly ToolSpec[] 
         summary: view.current
           ? `Current visit: request ${view.current.request.id} (${view.current.phase})`
           : 'No current visit',
-        resultContent: JSON.stringify({
-          workday: view.workday,
-          engineer: view.engineer,
-          route: view.route,
-          current: view.current,
-          lunch: view.lunch,
-        }),
+        resultContent: routeBrief(view, deps.config.get('APP_TIME_ZONE')),
       };
     },
   };

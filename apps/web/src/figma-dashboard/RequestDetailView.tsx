@@ -3,6 +3,7 @@ import { X } from 'lucide-react';
 import { useState } from 'react';
 import type { DashboardSnapshot, EngineerView } from '../api/types';
 import { DayMap } from '../components/DayMap';
+import { RequestPassport } from '../components/passports/PassportDetails';
 import { FIGMA_ASSETS } from './assets';
 import { Copyable } from './Copyable';
 import { FigmaIcon, FigmaText } from './primitives';
@@ -30,6 +31,7 @@ const fadeSoft = { duration: 0.28, ease: [0.22, 1, 0.36, 1] as const };
  * ink panel with facts and the three dispatcher actions.
  */
 export function RequestDetailView({
+  token,
   snapshot,
   requestId,
   motionOn,
@@ -37,6 +39,7 @@ export function RequestDetailView({
   onCancelVisit,
   onAssignEngineer,
 }: {
+  token?: string;
   snapshot: DashboardSnapshot | null;
   requestId: string;
   motionOn: boolean;
@@ -119,6 +122,7 @@ export function RequestDetailView({
           <X size={22} strokeWidth={2.25} className="text-figma-ink" />
         </motion.button>
         <RequestDetailPanel
+          token={token}
           model={model}
           motionOn={animate}
           candidates={snapshot ? assignableEngineers(snapshot, requestId) : []}
@@ -131,12 +135,14 @@ export function RequestDetailView({
 }
 
 function RequestDetailPanel({
+  token,
   model,
   motionOn,
   candidates,
   onCancelVisit,
   onAssignEngineer,
 }: {
+  token?: string;
   model: RequestDetailModel;
   motionOn: boolean;
   candidates: EngineerView[];
@@ -152,7 +158,7 @@ function RequestDetailPanel({
   ];
 
   return (
-    <div className="flex h-full flex-col px-[27px] pt-[24px] pb-[24px]">
+    <div className="flex h-full flex-col gap-4 overflow-y-auto px-[27px] pt-[24px] pb-[24px]">
       <Copyable
         value={shortRequestId(model.id)}
         label="Скопировать номер заявки"
@@ -177,7 +183,7 @@ function RequestDetailPanel({
           ))}
         </div>
       ) : null}
-      <div className="mt-[30px] flex flex-col gap-[16px]">
+      <div className="mt-[30px] flex shrink-0 flex-col gap-[16px]">
         {facts.map(({ id, value }) => (
           <Copyable
             key={id}
@@ -190,6 +196,7 @@ function RequestDetailPanel({
           </Copyable>
         ))}
       </div>
+      {token ? <RequestPassport token={token} audience="dispatch" requestId={model.id} /> : null}
       <RequestDetailActions
         model={model}
         motionOn={motionOn}
@@ -232,7 +239,7 @@ function RequestDetailActions({
     }
   };
   return (
-    <div className="mt-auto flex flex-col gap-[16px]">
+    <div className="mt-auto flex shrink-0 flex-col gap-[16px]">
       <motion.button
         type="button"
         disabled

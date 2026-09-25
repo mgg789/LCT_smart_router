@@ -54,14 +54,21 @@ describe('buildEngineerSystemPrompt', () => {
     assert.match(prompt, /never record|do not (record|describe a visit as started)/i);
   });
 
-  it('frames calling the dispatcher as the intended move, not a failure', () => {
+  it('does not offer a handoff to the dispatcher', () => {
     const prompt = buildEngineerSystemPrompt({ now: NOW, timeZone: TIME_ZONE, toolNames: [] });
-    assert.match(prompt, /call_dispatch_helper/);
-    assert.match(prompt, /not a (fallback|failure)/i);
+    assert.equal(prompt.includes('call_dispatch_helper'), false);
+    assert.match(prompt, /handing the chat over is not available/i);
   });
 
-  it('states a mutating tool only ever prepares a card a human confirms', () => {
+  it('allows a technical break while the next visit is only waiting', () => {
     const prompt = buildEngineerSystemPrompt({ now: NOW, timeZone: TIME_ZONE, toolNames: [] });
-    assert.match(prompt, /confirm/i);
+    assert.match(prompt, /only waiting/);
+    assert.match(prompt, /already in progress/);
+  });
+
+  it('says a write tool performs the change and only claims it after the tool result', () => {
+    const prompt = buildEngineerSystemPrompt({ now: NOW, timeZone: TIME_ZONE, toolNames: [] });
+    assert.match(prompt, /performs the change/i);
+    assert.match(prompt, /before that tool result/i);
   });
 });

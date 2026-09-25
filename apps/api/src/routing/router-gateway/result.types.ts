@@ -33,10 +33,27 @@ const reason = z.object({
   facts: z.record(z.string(), z.unknown()).default({}),
 });
 
+/** Transfer metadata shared by exactly two synchronized stops. */
+export const handoffMetadataSchema = z.object({
+  handoff_id: z.string().min(1),
+  donor_engineer_id: z.string().min(1),
+  receiver_engineer_id: z.string().min(1),
+  request_id: z.string().min(1),
+  items: z
+    .object({
+      router: z.number().int().nonnegative(),
+      set_top_box: z.number().int().nonnegative(),
+      smart_speaker: z.number().int().nonnegative(),
+    })
+    .refine((items) => items.router + items.set_top_box + items.smart_speaker === 1),
+});
+export type HandoffMetadata = z.infer<typeof handoffMetadataSchema>;
+
 const routeStop = z.object({
   stop_id: z.string().min(1),
   sequence: z.number().int().nonnegative(),
-  kind: z.enum(['job', 'lunch', 'wait']),
+  kind: z.enum(['job', 'lunch', 'wait', 'handoff']),
+  handoff: handoffMetadataSchema.nullable().optional(),
   /** The request for a `job`; `null` for lunch and waiting. */
   request_id: z.string().min(1).nullable(),
   location: geoPoint,
@@ -46,25 +63,61 @@ const routeStop = z.object({
   end_at: unixSeconds,
 });
 
-const routeLeg = z.object({
-  leg_id: z.string().min(1),
-  from_stop_id: z.string().min(1).nullable(),
-  to_stop_id: z.string().min(1),
-  departure_at: unixSeconds,
-  arrival_at: unixSeconds,
-  travel_time_sec: z.number().int().nonnegative(),
-  distance_km: z.number().nonnegative(),
-  geometry: z
-    .object({ points: z.array(geoPoint) })
-    .nullable()
-    .optional(),
-  /** Fidelity selected by Router; a matrix does not imply drawable road geometry. */
-  travel_source: z
-    .enum(['approximate', 'road_matrix', 'route_api', 'traffic_api'])
-    .default('approximate'),
-  /** Deterministic forecast or provider multiplier already included in travel_time_sec. */
-  traffic_factor: z.number().min(1).default(1),
+const travelSource = z.enum(['approximate', 'road_matrix', 'route_api', 'traffic_api', 'metro']);
+const routeSegment = z.object({
+  geometry: z.object({ points: z.array(geoPoint).min(2) }),
+  travel_source: travelSource,
+  duration_sec: z.number().int().nonnegative(),
+  distance_m: z.number().int().nonnegative(),
 });
+
+const routeLeg = z
+  .object({
+    leg_id: z.string().min(1),
+    from_stop_id: z.string().min(1).nullable(),
+    to_stop_id: z.string().min(1),
+    departure_at: unixSeconds,
+    arrival_at: unixSeconds,
+    travel_time_sec: z.number().int().nonnegative(),
+    distance_km: z.number().nonnegative(),
+    geometry: z
+      .object({ points: z.array(geoPoint) })
+      .nullable()
+      .optional(),
+    /** Fidelity selected by Router; a matrix does not imply drawable road geometry. */
+    travel_source: travelSource.default('approximate'),
+    segments: z.array(routeSegment).optional(),
+    /** Deterministic forecast or provider multiplier already included in travel_time_sec. */
+    traffic_factor: z.number().min(1).default(1),
+  })
+  .superRefine((leg, context) => {
+    const segments = leg.segments ?? [];
+    if (segments.length === 0) {
+      if (leg.travel_source === 'metro')
+        context.addIssue({ code: 'custom', message: 'Metro requires segments' });
+      return;
+    }
+    if (
+      segments.reduce((sum, segment) => sum + segment.duration_sec, 0) !== leg.travel_time_sec ||
+      Math.abs(
+        segments.reduce((sum, segment) => sum + segment.distance_m, 0) / 1000 - leg.distance_km,
+      ) > 0.001
+    ) {
+      context.addIssue({ code: 'custom', message: 'Segment costs must equal the parent leg' });
+    }
+    for (let index = 1; index < segments.length; index += 1) {
+      const before = segments[index - 1]?.geometry.points.at(-1);
+      const after = segments[index]?.geometry.points[0];
+      if (
+        !before ||
+        !after ||
+        Math.abs(before.lat - after.lat) > 0.000001 ||
+        Math.abs(before.lon - after.lon) > 0.000001
+      ) {
+        context.addIssue({ code: 'custom', message: 'Segments must join at their endpoints' });
+      }
+    }
+  });
 
 /** Distinguishable lunch outcomes; a lunch that did not fit is never shown as scheduled. */
 const lunchResult = z.object({
@@ -174,7 +227,7 @@ const diagnostic = z.object({
 export const routerResultSchema = z.looseObject({
   schema_version: z.string().min(1),
   /** State of getting a new result, not the status of any request. */
-  status: z.enum(['pending', 'ready', 'error']),
+  status: z.enum(['pending', 'partial', 'ready', 'error']),
   result_id: z.string().min(1).nullable(),
   /** Immutable publication row Router read, checked in addition to the byte hash. */
   input_publication_id: z.string().min(1).nullable(),
@@ -187,6 +240,15 @@ export const routerResultSchema = z.looseObject({
   router_context_version: z.string().min(1).nullable(),
   main: planSchema.nullable(),
   baseline: planSchema.nullable(),
+  regional_progress: z
+    .array(
+      z.object({
+        region: z.string().min(1),
+        status: z.enum(['pending', 'ready', 'error']),
+        request_count: z.number().int().nonnegative(),
+      }),
+    )
+    .optional(),
   /** Errors of preparation or computation -- not a list of unassigned requests. */
   errors: z.array(diagnostic).default([]),
 });

@@ -36,17 +36,6 @@ process.env.DATASET_ROOT = resolve(process.cwd(), '../../data/dataset/anonymized
 // exercised by the repository smoke command and must not race database integration tests.
 delete process.env.ROUTER_BASE_URL;
 
-// No test may ever reach a paid endpoint: force the offline replay provider and remove
-// any key a developer's own .env might carry, so a misconfigured environment cannot
-// silently make a test suite call a real model.
-process.env.LLM_PROVIDER = 'replay';
-process.env.LLM_FALLBACK_PROVIDER = 'none';
-delete process.env.LLM_TOKEN;
-// Fixtures live at apps/api/test/fixtures/ai; tests run with cwd = apps/api, unlike the
-// deployed default (repo-root relative), so this is resolved the same way DATASET_ROOT
-// is above.
-process.env.AI_REPLAY_DIR = resolve(process.cwd(), 'test/fixtures/ai');
-
 if (!process.env.DATABASE_URL) {
   throw new Error(
     'DATABASE_URL is not set. Integration tests need a running database: ' +

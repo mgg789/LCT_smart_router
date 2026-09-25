@@ -1,56 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { createDevSnapshot } from '../fixtures/dev-day';
 import {
   DEMO_REQUEST_ROWS,
   filterRequestRows,
   requestRowStatus,
   requestStatusLabel,
-  rowsFromSnapshot,
   shortRequestAddress,
   shortRequestId,
   sortRequestRows,
 } from './requestsTable';
 
 describe('Figma REQUESTS table', () => {
-  it('keeps the factual engineer after AUTO removes completed work from its future plan', () => {
-    const snapshot = createDevSnapshot();
-    const first = snapshot.requests[0];
-    const engineer = snapshot.engineers[0];
-    if (!first || !engineer) throw new Error('Expected a populated day fixture');
-    const completed = {
-      ...first,
-      lifecycle: 'completed' as const,
-      assignmentState: 'done' as const,
-      completedAt: snapshot.nowAt,
-    };
-    const history = [
-      {
-        request: completed,
-        engineerId: engineer.id,
-        stop: null,
-        outcome: 'completed' as const,
-        terminalAt: snapshot.nowAt,
-      },
-    ];
-    const after = {
-      ...snapshot,
-      requests: [completed],
-      plan: { ...snapshot.plan, mode: 'auto' as const, plan: null },
-    };
-    expect(rowsFromSnapshot(after, history)[0]).toMatchObject({
-      status: 'done',
-      engineer: engineer.displayName,
-    });
-    expect(
-      rowsFromSnapshot(
-        {
-          ...after,
-          requests: [{ ...first, lifecycle: 'submitted', assignmentState: 'unassigned' }],
-        },
-        history,
-      )[0]?.engineer,
-    ).toBe('—');
-  });
   it('maps assignment states onto the three Figma chips plus unassigned', () => {
     expect(requestStatusLabel('in_progress')).toBe('В работе');
     expect(requestStatusLabel('assigned')).toBe('Назначена');

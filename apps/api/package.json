@@ -5,16 +5,17 @@
   "description": "LCT Smart Router — System Layer (sys): business state, operations, snapshot publication, plan application",
   "main": "dist/src/main.js",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node scripts/copy-report-assets.cjs dist",
     "dev": "tsc -p tsconfig.build.json --watch --preserveWatchOutput & node --watch dist/src/main.js",
     "start": "node dist/src/main.js",
-    "test:build": "node -e \"require('node:fs').rmSync('dist-test', { recursive: true, force: true })\" && tsc -p tsconfig.json",
+    "test:build": "node -e \"require('node:fs').rmSync('dist-test', { recursive: true, force: true })\" && tsc -p tsconfig.json && node scripts/copy-report-assets.cjs dist-test",
     "test": "pnpm test:build && node --test --test-concurrency=1 \"dist-test/test/**/*.test.js\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "smoke": "pnpm test:build && node dist-test/scripts/smoke.js",
     "knowledge:index": "pnpm test:build && node dist-test/scripts/index-knowledge.js"
   },
   "dependencies": {
+    "@lct/shared": "workspace:*",
     "@nestjs/common": "11.2.5",
     "@openai/agents": "0.18.0",
     "@nestjs/config": "4.0.4",
@@ -28,6 +29,7 @@
     "iconv-lite": "0.7.3",
     "nodemailer": "10.0.10",
     "openai": "7.20.0",
+    "pdfkit": "^0.20.2",
     "pg": "^8.23.0",
     "prisma": "7.10.0",
     "reflect-metadata": "0.2.2",
@@ -38,6 +40,7 @@
     "@types/express": "5.0.6",
     "@types/node": "24.13.4",
     "@types/nodemailer": "7.0.3",
+    "@types/pdfkit": "^0.17.6",
     "@types/pg": "^8.23.1",
     "typescript": "5.9.3"
   }

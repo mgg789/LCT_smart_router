@@ -1,6 +1,11 @@
 import { motion } from 'framer-motion';
 import { type ChangeEvent, type DragEvent, useEffect, useId, useRef, useState } from 'react';
-import type { DataUploadFile, DataUploadSummary, OfficialImportSummary } from '../api/types';
+import type {
+  DataUploadFile,
+  DataUploadSummary,
+  OfficialImportSummary,
+  RoadImportSummary,
+} from '../api/types';
 import { parseDataUpload } from '../domain/dataUpload';
 import { regionStyle } from '../domain/regions';
 import { FIGMA_ASSETS } from './assets';
@@ -24,6 +29,7 @@ export function DataUploadModal({
   onClose,
   onUpload,
   onImportOfficial,
+  onRoadImport,
 }: {
   open: boolean;
   submitting: boolean;
@@ -33,15 +39,21 @@ export function DataUploadModal({
   onClose: () => void;
   onUpload: (file: DataUploadFile) => Promise<DataUploadSummary>;
   onImportOfficial: () => Promise<OfficialImportSummary>;
+  onRoadImport: (payloadBase64: string) => Promise<RoadImportSummary>;
 }) {
   const inputId = useId();
+  const roadInputId = useId();
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const roadInputRef = useRef<HTMLInputElement | null>(null);
   const [fileNames, setFileNames] = useState<string[]>([]);
   const [candidates, setCandidates] = useState<DataUploadFile[]>([]);
   const [issues, setIssues] = useState<string[]>([]);
   const [result, setResult] = useState<UploadResult | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [roadFileName, setRoadFileName] = useState<string | null>(null);
+  const [roadResult, setRoadResult] = useState<RoadImportSummary | null>(null);
+  const [roadError, setRoadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -51,6 +63,9 @@ export function DataUploadModal({
     setResult(null);
     setSubmitError(null);
     setDragging(false);
+    setRoadFileName(null);
+    setRoadResult(null);
+    setRoadError(null);
   }, [open]);
 
   const readFiles = async (files: FileList | File[]) => {
@@ -94,6 +109,22 @@ export function DataUploadModal({
   const onFileInput = (event: ChangeEvent<HTMLInputElement>) => {
     if (event.target.files?.length) void readFiles(event.target.files);
     event.target.value = '';
+  };
+
+  const onRoadFileInput = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    setRoadFileName(file.name);
+    setRoadResult(null);
+    setRoadError(null);
+    void file
+      .arrayBuffer()
+      .then((bytes) => onRoadImport(bytesToBase64(new Uint8Array(bytes))))
+      .then(setRoadResult)
+      .catch((error: unknown) =>
+        setRoadError(error instanceof Error ? error.message : 'Не удалось импортировать дорогу'),
+      );
   };
 
   const onDrop = (event: DragEvent<HTMLDivElement>) => {
@@ -147,6 +178,14 @@ export function DataUploadModal({
           className="sr-only"
           onChange={onFileInput}
         />
+        <input
+          id={roadInputId}
+          ref={roadInputRef}
+          type="file"
+          accept="application/json,.json,application/gzip,.gz,.gzip"
+          className="sr-only"
+          onChange={onRoadFileInput}
+        />
 
         {/* biome-ignore lint/a11y/noStaticElementInteractions: Drag-and-drop supplements the native file picker button immediately below. */}
         <div
@@ -183,6 +222,39 @@ export function DataUploadModal({
             Выбрать из файлов
           </span>
         </button>
+
+        <div className="mt-[16px] flex items-center justify-between gap-[16px] rounded-[20px] bg-figma-soft px-[20px] py-[14px]">
+          <div className="min-w-0">
+            <p className="font-semibold text-[16px] text-figma-ink">Дорожные данные OSRM</p>
+            <p className="mt-[3px] truncate font-medium text-[14px] text-figma-muted">
+              {roadFileName ?? 'JSON или gzip · профиль car'}
+            </p>
+          </div>
+          <button
+            type="button"
+            disabled={submitting}
+            onClick={() => roadInputRef.current?.click()}
+            className="flex h-[44px] shrink-0 items-center justify-center rounded-[14px] border border-figma-ink/15 bg-white px-[16px] font-semibold text-[15px] text-figma-ink transition-transform duration-150 hover:scale-[1.01] disabled:opacity-50"
+          >
+            Импортировать
+          </button>
+        </div>
+
+        {roadError ? (
+          <div role="alert" className="mt-[10px] rounded-[16px] bg-[#fdecec] px-[16px] py-[10px]">
+            <p className="font-medium text-[14px] text-figma-danger">{roadError}</p>
+          </div>
+        ) : null}
+        {roadResult ? (
+          <div role="status" className="mt-[10px] rounded-[16px] bg-figma-soft px-[16px] py-[10px]">
+            <p className="font-semibold text-[14px] text-figma-ink">
+              {roadResult.status === 'replayed' ? 'Ресурс уже импортирован' : 'Ресурс импортирован'}
+            </p>
+            <p className="mt-[3px] font-medium text-[13px] text-figma-muted">
+              {roadResult.nodes} узлов · {roadResult.edges} рёбер
+            </p>
+          </div>
+        ) : null}
 
         <div className="mt-[16px] min-h-0 flex-1 overflow-auto [scrollbar-width:thin]">
           {issues.length > 0 ? (
@@ -334,4 +406,14 @@ function UploadPreview({ file }: { file: DataUploadFile }) {
       </p>
     </div>
   );
+}
+
+/** Encodes raw JSON or gzip bytes without UTF-8 decoding or adding envelope fields. */
+function bytesToBase64(bytes: Uint8Array): string {
+  let encoded = '';
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    encoded += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(encoded);
 }

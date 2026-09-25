@@ -204,11 +204,15 @@ function disclaimerLine(theme: MailTheme): string {
 </tr>`;
 }
 
-function buttonPill(href: string, label: string): string {
-  return `<table role="presentation" width="430" cellspacing="0" cellpadding="0" border="0" style="width:430px;margin:0 auto;">
+/**
+ * Compact yellow action from the notice mail (Figma 189:208 / 189:229).
+ * The label stays the letter's own verb; only the shape matches the mock.
+ */
+function noticeButton(href: string, label: string): string {
+  return `<table role="presentation" cellspacing="0" cellpadding="0" border="0" align="center" style="margin:0 auto;">
   <tr>
-    <td align="center" valign="middle" height="67" style="background:${ACCENT};border-radius:${CARD_RADIUS}px;height:67px;">
-      <a href="${escapeHtml(href)}" style="display:block;padding:20px 0;font-family:Inter,Arial,Helvetica,sans-serif;font-size:20px;font-weight:600;letter-spacing:-0.34px;color:${INK};text-decoration:none;">
+    <td align="center" valign="middle" style="background:${ACCENT};border-radius:${CARD_RADIUS}px;">
+      <a href="${escapeHtml(href)}" style="display:inline-block;padding:12px 28px;font-family:Inter,Arial,Helvetica,sans-serif;font-size:20px;font-weight:500;letter-spacing:-0.34px;color:${INK};text-decoration:none;">
         ${escapeHtml(label)}
       </a>
     </td>
@@ -216,9 +220,10 @@ function buttonPill(href: string, label: string): string {
 </table>`;
 }
 
-/** One or two action pills, stacked with a fixed gap between them. */
-function buttonsRow(buttons: readonly { readonly href: string; readonly label: string }[]): string {
-  return buttons.map((button) => `${buttonPill(button.href, button.label)}`).join(spacer(16));
+function noticeButtons(
+  buttons: readonly { readonly href: string; readonly label: string }[],
+): string {
+  return buttons.map((button) => noticeButton(button.href, button.label)).join(spacer(12));
 }
 
 /** A day-summary block: one quiet line per stat, no table borders. */
@@ -235,6 +240,61 @@ ${codePill(code)}
 ${spacer(43)}
 ${expiryLine(theme)}
 ${spacer(3)}
+${disclaimerLine(theme)}
+${spacer(26)}`;
+}
+
+/**
+ * Informational letter (Figma 189:208 light, 189:198 dark): logo, centered sentence,
+ * one or two compact buttons, disclaimer. Login-code letters do not use this.
+ */
+function noticeInner(
+  theme: MailTheme,
+  bodyHtml: string,
+  buttonsHtml: string,
+  base: string,
+): string {
+  return `${headerRow(theme, base)}
+${spacer(18)}
+<tr>
+  <td align="center" style="padding:0 40px;font-family:Inter,Arial,Helvetica,sans-serif;font-size:24px;font-weight:600;line-height:32px;letter-spacing:-0.72px;color:${theme.className === 'theme-dark' ? '#FFFFFF' : '#181818'};text-align:center;">
+    ${bodyHtml}
+  </td>
+</tr>
+${spacer(28)}
+<tr>
+  <td align="center">${buttonsHtml}</td>
+</tr>
+${spacer(22)}
+${disclaimerLine(theme)}
+${spacer(26)}`;
+}
+
+/**
+ * Warning letter (Figma 189:229 light, 189:219 dark): the event is a title pill,
+ * the new fact sits under it, then the same compact actions.
+ */
+function warningInner(
+  theme: MailTheme,
+  title: string,
+  detailHtml: string,
+  buttonsHtml: string,
+  base: string,
+): string {
+  return `${headerRow(theme, base)}
+${spacer(theme.afterHeader)}
+${titlePill(theme, title, false)}
+${spacer(18)}
+<tr>
+  <td align="center" style="padding:0 48px;font-family:Inter,Arial,Helvetica,sans-serif;font-size:18px;font-weight:600;line-height:26px;letter-spacing:-0.4px;color:${theme.bodyColor};text-align:center;">
+    ${detailHtml}
+  </td>
+</tr>
+${spacer(24)}
+<tr>
+  <td align="center">${buttonsHtml}</td>
+</tr>
+${spacer(22)}
 ${disclaimerLine(theme)}
 ${spacer(26)}`;
 }
@@ -319,6 +379,44 @@ function loginMail(code: string, base: string): RenderedMail {
   );
 }
 
+function noticeMail(
+  bodyHtml: string,
+  buttons: readonly { readonly href: string; readonly label: string }[],
+  subject: string,
+  bodyText: string,
+  base: string,
+): RenderedMail {
+  const actions = noticeButtons(buttons);
+  return rendered(
+    subject,
+    bodyText,
+    document(
+      subject,
+      card(LIGHT, noticeInner(LIGHT, bodyHtml, actions, base), false),
+      card(DARK, noticeInner(DARK, bodyHtml, actions, base), false),
+    ),
+  );
+}
+
+function warningMail(
+  title: string,
+  detailHtml: string,
+  buttons: readonly { readonly href: string; readonly label: string }[],
+  bodyText: string,
+  base: string,
+): RenderedMail {
+  const actions = noticeButtons(buttons);
+  return rendered(
+    title,
+    bodyText,
+    document(
+      title,
+      card(LIGHT, warningInner(LIGHT, title, detailHtml, actions, base), false),
+      card(DARK, warningInner(DARK, title, detailHtml, actions, base), false),
+    ),
+  );
+}
+
 function genericMail(
   title: string,
   bodyHtml: string,
@@ -357,9 +455,10 @@ export function renderMail(
     case 'request_received': {
       const requestId = asString(payload.requestId);
       const href = appLink(base, requestId ? `/client/requests/${requestId}` : '/');
-      return genericMail(
+      return noticeMail(
+        'Мы получили заявку и передали её в обработку. Мастер ещё не назначен — отдельное письмо придёт, когда появится назначение.',
+        [{ href, label: 'К заявке' }],
         'Заявка принята',
-        `<p style="margin:0 0 20px;">Мы получили заявку и передали её в обработку. Мастер ещё не назначен — отдельное письмо придёт, когда появится назначение.</p>${buttonPill(href, 'Открыть заявку')}`,
         `Заявка принята и передана в обработку. Мастер ещё не назначен.\n${href}`,
         base,
       );
@@ -367,9 +466,10 @@ export function renderMail(
     case 'engineer_assigned': {
       const requestId = asString(payload.requestId);
       const href = appLink(base, requestId ? `/client/requests/${requestId}` : '/');
-      return genericMail(
+      return noticeMail(
+        'Инженер назначен на вашу заявку. Точное расчётное время смотрите в карточке заявки.',
+        [{ href, label: 'К заявке' }],
         'Мастер назначен',
-        `<p style="margin:0 0 20px;">Инженер назначен на вашу заявку. Точное расчётное время смотрите в карточке заявки.</p>${buttonPill(href, 'Смотреть назначение')}`,
         `Мастер назначен на заявку.\n${href}`,
         base,
       );
@@ -377,9 +477,10 @@ export function renderMail(
     case 'engineer_confirmed': {
       const requestId = asString(payload.requestId);
       const href = appLink(base, requestId ? `/client/requests/${requestId}` : '/');
-      return genericMail(
+      return noticeMail(
+        'Мастер подтвердил отметкой, что на месте и начал работу по вашей заявке.',
+        [{ href, label: 'К заявке' }],
         'Мастер приступил к работе',
-        `<p style="margin:0 0 20px;">Мастер подтвердил отметкой, что на месте и начал работу по вашей заявке.</p>${buttonPill(href, 'Открыть заявку')}`,
         `Мастер на месте и приступил к работе по заявке.\n${href}`,
         base,
       );
@@ -390,14 +491,13 @@ export function renderMail(
       // product decision, card #65); the card performs them under the customer's session.
       const requestId = asString(payload.requestId);
       const card = `/client/requests/${requestId}`;
-      return genericMail(
+      return warningMail(
         'Нужно согласовать новое время',
-        `<p style="margin:0 0 20px;">Приезд в ранее согласованное время обеспечить нельзя. Выберите другое время или отмените заявку.</p>${buttonsRow(
-          [
-            { href: appLink(base, card), label: 'Выбрать новое время' },
-            { href: appLink(base, `${card}?action=cancel`), label: 'Отменить заявку' },
-          ],
-        )}`,
+        'Приезд в ранее согласованное время обеспечить нельзя. Выберите другое время или отмените заявку.',
+        [
+          { href: appLink(base, card), label: 'Выбрать новое время' },
+          { href: appLink(base, `${card}?action=cancel`), label: 'Отменить заявку' },
+        ],
         `Приезд в согласованное время обеспечить нельзя. Выберите новое время или отмените заявку:\n${appLink(base, card)}`,
         base,
       );
@@ -407,11 +507,12 @@ export function renderMail(
       const window = formatWindow(payload.windowStartAt, payload.windowEndAt, zone);
       const href = appLink(base, requestId ? `/client/requests/${requestId}` : '/');
       const when = window
-        ? `<p style="margin:0 0 20px;">Время заявки изменено. Новое время: <strong>${escapeHtml(window)}</strong>.</p>`
-        : `<p style="margin:0 0 20px;">Время заявки изменено. Точное время смотрите в карточке заявки.</p>`;
-      return genericMail(
+        ? `Новое время ${escapeHtml(window)}`
+        : 'Точное время смотрите в карточке заявки.';
+      return warningMail(
         'Время заявки изменено',
-        `${when}${buttonPill(href, 'Открыть заявку')}`,
+        when,
+        [{ href, label: 'Перейти в заявку' }],
         `Время заявки изменено.${window ? ` Новое время: ${window}.` : ''}\n${href}`,
         base,
       );
@@ -419,9 +520,10 @@ export function renderMail(
     case 'request_cancelled': {
       const requestId = asString(payload.requestId);
       const href = appLink(base, requestId ? `/client/requests/${requestId}` : '/');
-      return genericMail(
+      return warningMail(
         'Заявка отменена',
-        `<p style="margin:0 0 20px;">Заявка отменена. История заявки останется доступной в карточке.</p>${buttonPill(href, 'Открыть заявку')}`,
+        'История заявки останется доступной в карточке.',
+        [{ href, label: 'Перейти в заявку' }],
         `Заявка отменена. История доступна в карточке заявки.\n${href}`,
         base,
       );
@@ -429,9 +531,10 @@ export function renderMail(
     case 'request_completed': {
       const requestId = asString(payload.requestId);
       const href = appLink(base, requestId ? `/client/requests/${requestId}` : '/');
-      return genericMail(
+      return noticeMail(
+        'Работа по вашей заявке завершена. Если что-то не так, сообщите нам через приложение.',
+        [{ href, label: 'К заявке' }],
         'Заявка выполнена',
-        `<p style="margin:0 0 20px;">Работа по вашей заявке завершена. Если что-то не так, сообщите нам через приложение.</p>${buttonPill(href, 'Открыть заявку')}`,
         `Работа по заявке завершена.\n${href}`,
         base,
       );
@@ -453,6 +556,7 @@ export function renderMail(
         base,
       );
     }
+    // Catalogue completeness only — SMTP is disabled for this category.
     case 'engineer_attention_required': {
       const href = appLink(base, '/engineer');
       const calledIn = payload.alertCode === 'called_in';
@@ -464,13 +568,24 @@ export function renderMail(
           ? 'Диспетчер снял вас со смены из-за отсутствия отметки о выходе. Свяжитесь с диспетчером.'
           : 'Диспетчер ожидает подтверждение вашего статуса. Откройте приложение и отметьтесь.';
       const note = asString(payload.message);
-      return genericMail(
+      return noticeMail(
+        `${escapeHtml(message)}${note ? ` ${escapeHtml(note)}` : ''}`,
+        [{ href, label: 'Открыть приложение' }],
         title,
-        `<p style="margin:0 0 20px;">${escapeHtml(message)}</p>${note ? `<p>${escapeHtml(note)}</p>` : ''}${buttonPill(href, 'Открыть приложение')}`,
         `${message}${note ? `\n${note}` : ''}\n${href}`,
         base,
       );
     }
+    case 'dispatcher_monthly_report': {
+      const month = asString(payload.month);
+      return genericMail(
+        `NAVIX · Итоги месяца ${month}`,
+        `<p style="margin:0 0 20px;">Во вложении — результаты команды за ${escapeHtml(month)}: баллы инженеров, выполненные заявки и качество управления рабочими днями.</p><p style="margin:0;">Спасибо, что помогаете команде работать точнее.</p>`,
+        `Результаты команды за ${month} — в приложенном PDF: баллы инженеров, выполненные заявки и качество управления рабочими днями.`,
+        base,
+      );
+    }
+    // Catalogue completeness only — SMTP is disabled for this category.
     case 'plan_rebuilt': {
       return genericMail(
         'План обновлён',

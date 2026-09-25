@@ -1,4 +1,4 @@
-import type { DispatchLiveView, LiveBreak } from '../api/live';
+import type { DispatchLiveView, HandoffView, LiveBreak } from '../api/live';
 import type {
   AlertView,
   DashboardSnapshot,
@@ -18,7 +18,6 @@ import {
   unassignedRequests,
 } from '../domain/dashboard';
 import { projectLiveGraph } from '../domain/liveGraph';
-import { mapForecastLabel, routeTimingUnverified } from '../domain/mapForecast';
 import { explainSelection } from '../lib/explanations';
 import { factorLabel, POLICY_LABELS, skillLabel, transportLabel } from '../lib/reasons';
 import { formatClock, formatDayTitle, formatDurationMin } from '../lib/time';
@@ -82,11 +81,13 @@ export function nextRouterSettings(
   const current = snapshot.routerSettings;
   return {
     lunchesEnabled: snapshot.lunchesEnabled,
+    metroEnabled: current?.metroEnabled ?? false,
     departureLatenessToleranceSec: current?.departureLatenessToleranceSec ?? 0,
     taskStartLatenessToleranceSec: current?.taskStartLatenessToleranceSec ?? 0,
     windowLatenessToleranceSec: current?.windowLatenessToleranceSec ?? 0,
     trafficEnabled: current?.trafficEnabled ?? false,
     equipmentEnabled: current?.equipmentEnabled ?? true,
+    equipmentTransfersEnabled: current?.equipmentTransfersEnabled ?? false,
     travelTimeMode: current?.travelTimeMode ?? 'graph_with_access_buffer',
     accessBufferSec: current?.accessBufferSec ?? 600,
     fixedTravelTimeSec: current?.fixedTravelTimeSec ?? 900,
@@ -152,7 +153,7 @@ export function dashboardViewFromSnapshot(
   unassignedReason: string;
   firstUnassignedId: string | null;
   engineers: EngineerCard[];
-  totalKm: number | null;
+  totalKm: number;
   displayedEngineerId: string | null;
   displayedRequest: EngineerRequest;
 } {
@@ -187,24 +188,12 @@ export function dashboardViewFromSnapshot(
   return {
     dateLabel: figmaDateLabel(snapshot.workDate),
     requestCount: snapshot.requests.length,
-    planLabel:
-      snapshot.plan.plan?.routes.map(mapForecastLabel).find(Boolean) ??
-      (snapshot.plan.plan?.origin === 'manual'
-        ? 'MANUAL · время не пересчитано'
-        : `${unassigned.length} без назначения - план от ${formatClock(planAsOf)}`),
+    planLabel: `${unassigned.length} без назначения - план от ${formatClock(planAsOf)}`,
     unassignedTitle: unassignedCountTitle(unassigned.length),
-    unassignedReason: firstUnassignedAssignment?.reasons.assignment?.factors[0]?.code
-      ? factorLabel(firstUnassignedAssignment.reasons.assignment.factors[0].code)
-      : firstUnassigned
-        ? (firstUnassigned.workTypeTitle ?? firstUnassigned.addressText)
-        : 'Все заявки назначены',
+    unassignedReason: unassignedBannerReason(firstUnassignedAssignment, firstUnassigned),
     firstUnassignedId: firstUnassigned?.id ?? null,
     engineers,
-    totalKm: snapshot.plan.plan?.routes.some((item) =>
-      routeTimingUnverified(item, snapshot.plan.plan?.origin),
-    )
-      ? null
-      : engineers.reduce((sum, item) => sum + (item.km ?? 0), 0),
+    totalKm: engineers.reduce((sum, item) => sum + item.km, 0),
     displayedEngineerId,
     displayedRequest: request
       ? requestPanelFromSnapshot(request, assignment, explanation?.title ?? null)
@@ -249,8 +238,6 @@ export function withLiveRouteStops(
     const graph = projectLiveGraph(
       routeForEngineer(snapshot, engineer.id),
       state?.progress ?? null,
-      undefined,
-      snapshot.plan.plan?.origin === 'manual',
     );
     const history = live?.history.filter((item) => item.engineerId === engineer.id) ?? [];
     const stops: RouteStop[] = graph.timelineNodes.map((node) => {
@@ -265,31 +252,21 @@ export function withLiveRouteStops(
           node.kind === 'start'
             ? (state?.lineStartedAt ?? state?.noShowAt ?? live?.workday.logicalStartAt ?? node.at)
             : node.at,
-        time:
-          routeTimingUnverified(
-            routeForEngineer(snapshot, engineer.id),
-            snapshot.plan.plan?.origin,
-          ) &&
-          node.kind !== 'start' &&
-          !request?.startedAt &&
-          !terminal
-            ? '—'
-            : formatClock(
-                node.kind === 'start'
-                  ? (state?.lineStartedAt ??
-                      state?.noShowAt ??
-                      live?.workday.logicalStartAt ??
-                      node.at)
-                  : node.at,
-              ),
+        time: formatClock(
+          node.kind === 'start'
+            ? (state?.lineStartedAt ?? state?.noShowAt ?? live?.workday.logicalStartAt ?? node.at)
+            : node.at,
+        ),
         place:
           node.kind === 'start'
             ? 'Выход на смену'
             : node.kind === 'lunch'
               ? 'Обед'
-              : request
-                ? routeStopAddress(request.addressText)
-                : 'Заявка',
+              : node.kind === 'handoff'
+                ? 'Передача оборудования'
+                : request
+                  ? routeStopAddress(request.addressText)
+                  : 'Заявка',
         status:
           node.kind === 'start'
             ? state?.lineStartedAt
@@ -299,13 +276,21 @@ export function withLiveRouteStops(
                 : 'ожидаем выхода'
             : node.kind === 'lunch'
               ? 'обед'
-              : stopStatus(request),
+              : node.kind === 'handoff'
+                ? handoffStatus(live?.handoffs ?? [], node.handoffId, state?.id)
+                : stopStatus(request),
         active: node.kind !== 'start' && graph.activeNodeKeys.has(node.key),
         failed: node.kind === 'start' && Boolean(state?.noShowAt),
         completed:
           node.kind === 'start'
             ? entered
-            : request?.lifecycle === 'completed' || Boolean(request?.assumedCompletedAt),
+            : node.kind === 'handoff'
+              ? Boolean(live?.handoffs.find((item) => item.id === node.handoffId)?.completedAt)
+              : request?.lifecycle === 'completed' || Boolean(request?.assumedCompletedAt),
+        handoffId: node.handoffId ?? undefined,
+        handoff: node.handoffId
+          ? live?.handoffs.find((item) => item.id === node.handoffId)
+          : undefined,
       };
     });
     for (const item of history) {
@@ -345,10 +330,9 @@ export function withLiveRouteStops(
       if (planned) Object.assign(planned, lunch);
       else stops.push(lunch);
     }
-    if (snapshot.plan.plan?.origin !== 'manual')
-      stops.sort((a, b) =>
-        a.kind === 'start' ? -1 : b.kind === 'start' ? 1 : (a.at ?? 0) - (b.at ?? 0),
-      );
+    stops.sort((a, b) =>
+      a.kind === 'start' ? -1 : b.kind === 'start' ? 1 : (a.at ?? 0) - (b.at ?? 0),
+    );
     const doneCount = state
       ? state.stats.completedCount + state.stats.assumedCompletedCount
       : engineer.doneCount;
@@ -385,9 +369,7 @@ function engineerCardFromSummary(
   return {
     id: summary.engineerId,
     name: summary.displayName,
-    km: routeTimingUnverified(route, snapshot.plan.plan?.origin)
-      ? null
-      : Math.round(summary.distanceKm),
+    km: Math.round(summary.distanceKm),
     status: transportLabel(summary.transportType),
     shift:
       summary.shiftStartAt && summary.shiftEndAt
@@ -395,11 +377,7 @@ function engineerCardFromSummary(
         : 'смена не задана',
     requestCount: summary.assignedCount,
     doneCount: summary.doneCount,
-    routeUpdated:
-      mapForecastLabel(route) ??
-      (snapshot.plan.plan?.origin === 'manual'
-        ? 'MANUAL · время не пересчитано'
-        : `план обновлён в ${formatClock(planAsOf)}`),
+    routeUpdated: `план обновлён в ${formatClock(planAsOf)}`,
     stops: routeStopsFromRoute(snapshot, route),
     request: request
       ? requestPanelFromSnapshot(request, assignment, explanation?.title ?? null)
@@ -409,6 +387,23 @@ function engineerCardFromSummary(
         },
     primaryRequestId: request?.id,
   };
+}
+
+function handoffStatus(
+  handoffs: readonly HandoffView[],
+  handoffId: string | null | undefined,
+  engineerId: string | undefined,
+): string {
+  const handoff = handoffs.find((item) => item.id === handoffId);
+  if (!handoff) return 'передача';
+  if (handoff.completedAt !== null) return 'выполнено';
+  if (
+    (engineerId === handoff.donorEngineerId && handoff.donorConfirmedAt !== null) ||
+    (engineerId === handoff.receiverEngineerId && handoff.receiverConfirmedAt !== null)
+  ) {
+    return 'ждём партнёра';
+  }
+  return engineerId === handoff.donorEngineerId ? 'Передать' : 'Принять';
 }
 
 function requestPanelFromSnapshot(
@@ -455,14 +450,10 @@ function routeStopsFromRoute(
   if (!route) return [];
   return route.stops
     .filter((stop) => stop.kind !== 'wait')
-    .map((stop) => stopToCard(snapshot, stop, route));
+    .map((stop) => stopToCard(snapshot, stop));
 }
 
-function stopToCard(
-  snapshot: DashboardSnapshot,
-  stop: PlanStopView,
-  route: PlanRouteView,
-): RouteStop {
+function stopToCard(snapshot: DashboardSnapshot, stop: PlanStopView): RouteStop {
   if (stop.kind === 'lunch') {
     return {
       time: formatClock(stop.startAt),
@@ -483,12 +474,20 @@ function stopToCard(
       at: stop.startAt,
     };
   }
+  if (stop.kind === 'handoff') {
+    return {
+      time: formatClock(stop.startAt),
+      place: 'Передача оборудования',
+      status: 'передача',
+      requestId: null,
+      kind: 'handoff',
+      handoffId: stop.handoff?.handoff_id,
+      at: stop.startAt,
+    };
+  }
   const request = stop.requestId ? requestById(snapshot, stop.requestId) : null;
   return {
-    time:
-      routeTimingUnverified(route, snapshot.plan.plan?.origin) && !request?.startedAt
-        ? '—'
-        : formatClock(request?.startedAt ?? stop.startAt),
+    time: formatClock(stop.startAt),
     place: request ? routeStopAddress(request.addressText) : 'Заявка',
     status: stopStatus(request),
     requestId: stop.requestId,
@@ -539,6 +538,21 @@ function firstAssignedRequest(snapshot: DashboardSnapshot, engineerId: string): 
     (item) => item.engineerId === engineerId && item.status !== 'unassigned',
   );
   return assignment ? requestById(snapshot, assignment.requestId) : null;
+}
+
+/**
+ * Second line of the unassigned banner. It is always a reason: an address is a
+ * place, and showing it here made a missing plan look like a located visit.
+ */
+function unassignedBannerReason(
+  assignment: ReturnType<typeof assignmentFor>,
+  request: RequestView | null,
+): string {
+  const code = assignment?.reasons.assignment?.factors[0]?.code;
+  if (code) return factorLabel(code);
+  if (!request) return 'Все заявки назначены';
+  if (!assignment) return 'План ещё считается';
+  return 'Назначение не найдено';
 }
 
 function unassignedCountTitle(count: number): string {

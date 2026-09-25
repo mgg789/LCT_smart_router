@@ -4,7 +4,6 @@ import copy
 import json
 import threading
 import time
-from collections import OrderedDict
 from concurrent.futures import Future, ProcessPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -18,10 +17,10 @@ from core.contracts import (
     Policy,
     PolicyComparison,
     PolicyComparisonRow,
+    RegionalProgress,
     RouterResult,
     RouterTaskSnapshot,
     RouterTechnicalSettings,
-    SnapshotPublicationEnvelope,
 )
 from core.engine import (
     EngineMemory,
@@ -32,15 +31,37 @@ from core.engine import (
     solve,
 )
 from core.evidence import build_plan_evidence
-from core.geo import GraphTravel, RoadGraph, configure_travel, content_hash
-from core.osrm import OSRMTravel, attach_live_roads
+from core.geo import GraphTravel, RoadGraph, StraightTravel, configure_travel, content_hash
+from core.osrm import OSRMTravel
 from core.policy import POLICY_CATALOG_VERSION, compile_policy
+from core.predict_calibration import PredictCalibration, PredictCalibrationStore
+from core.roadimport import ImportedRoadOverlay
 from core.route_search import improve_routes
-from core.schedule import baseline, score, validate_plan
+from core.schedule import assemble_plan, baseline, score, validate_plan
 from core.settings import StoredTechnicalSettingsOperation, TechnicalSettingsStore
 
 MAX_SNAPSHOT_BYTES = 16 * 1024 * 1024
 COMPARISON_POLICY_IDS = ("fast", "compact", "sla", "balanced", "eco")
+
+
+def _regional_snapshots(snapshot: RouterTaskSnapshot) -> dict[str, RouterTaskSnapshot]:
+    """Partition disconnected regional work; legacy rows remain in one default pool."""
+    labels = sorted({item.region or "__default__" for item in [*snapshot.requests, *snapshot.engineers]})
+    return {
+        label: snapshot.model_copy(update={
+            "requests": [request for request in snapshot.requests if (request.region or "__default__") == label],
+            "engineers": [engineer for engineer in snapshot.engineers if (engineer.region or "__default__") == label],
+            "pending_equipment_handoffs": [handoff for handoff in snapshot.pending_equipment_handoffs if any(
+                engineer.engineer_id == handoff.donor_engineer_id and (engineer.region or "__default__") == label for engineer in snapshot.engineers
+            )],
+        })
+        for label in labels
+    }
+
+
+def _regional_payload(snapshot: RouterTaskSnapshot) -> bytes:
+    """Produce canonical worker bytes; the publication hash remains the outer contract."""
+    return json.dumps(snapshot.model_dump(mode="json"), sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
 @dataclass(frozen=True)
@@ -126,7 +147,7 @@ class PostgresSnapshotReader:
         with psycopg.connect(
             self._dsn,
             connect_timeout=3,
-            options="-c default_transaction_read_only=on -c statement_timeout=3000",
+            options="-c default_transaction_read_only=on -c statement_timeout=10000",
         ) as connection:
             rows = connection.execute(
                 "SELECT publication_id, publication_seq, payload_utf8, payload_sha256, "
@@ -144,6 +165,33 @@ class PostgresSnapshotReader:
             declared_sha256=str(digest),
             published_at=int(published_at),
         )
+
+
+_worker_graph = None
+
+
+def _install_worker_graph(graph: RoadGraph | OSRMTravel) -> None:
+    """Keep the road graph in the worker. Resending it on every solve stalled the API."""
+    global _worker_graph
+    _worker_graph = graph
+
+
+def construction_travel(settings: SearchSettings, planning_as_of: int | None):
+    """Solve on straight lines. Metro still applies. OSRM and the road API do not."""
+    return configure_travel(StraightTravel(), settings.technical(), planning_as_of)
+
+
+def calculate_installed(
+    raw: bytes,
+    settings: SearchSettings,
+    context_version: str,
+    memory: EngineMemory | None = None,
+    publication_id: str | None = None,
+) -> tuple[RouterResult, EngineOutput | None]:
+    """Solve with the graph installed at worker start, so the parent stays responsive."""
+    if _worker_graph is None:
+        raise RuntimeError("WORKER_GRAPH_MISSING")
+    return calculate(raw, _worker_graph, settings, context_version, memory, publication_id)
 
 
 def calculate(
@@ -189,9 +237,21 @@ def calculate(
             router_context_version=context_version,
             errors=[Diagnostic(code="INPUT_INVALID", message=str(exc))],
         ), None
-    provider = GraphTravel(graph) if isinstance(graph, RoadGraph) else graph
-    provider = attach_live_roads(provider)
-    provider = configure_travel(provider, settings.technical(), snapshot.planning_as_of)
+    overdue = next(
+        (handoff for handoff in snapshot.pending_equipment_handoffs if handoff.meeting_at < snapshot.planning_as_of),
+        None,
+    )
+    if overdue is not None:
+        return RouterResult(
+            status="error", input_publication_id=publication_id, input_hash=content_hash(raw),
+            planning_as_of=snapshot.planning_as_of, computed_at=int(time.time()),
+            router_context_version=context_version, policy_id=snapshot.policy.policy_id,
+            technical_settings=settings.technical(),
+            errors=[Diagnostic(code="WAITING_HANDOFF", message="Confirmed equipment meeting is overdue.", entity_id=overdue.handoff_id)],
+        ), None
+    # The carried graph is not quoted. Construction is a straight line; metro wraps it.
+    del graph
+    provider = construction_travel(settings, snapshot.planning_as_of)
     try:
         output = solve(snapshot, provider, settings, memory, context_version)
         effective_snapshot = output.memory.snapshot
@@ -247,11 +307,10 @@ def calculate_policy_comparison(
     """
     if not 1 <= search_budget_ms <= 8000:
         raise ValueError("COMPARISON_BUDGET_INVALID")
+    # Construction is always straight-line. The flag and the graph stay so callers compile.
+    del offline, graph
     snapshot = apply_system_policy(official_roster(parse_snapshot(raw)), settings)
-    provider = GraphTravel(graph) if isinstance(graph, RoadGraph) else graph
-    if not offline:
-        provider = attach_live_roads(provider)
-    provider = configure_travel(provider, settings.technical(), snapshot.planning_as_of)
+    provider = construction_travel(settings, snapshot.planning_as_of)
     comparison_settings = replace(
         settings,
         time_limit_ms=search_budget_ms,
@@ -369,13 +428,19 @@ class RouterRuntime:
         poll_sec: float = 0.2,
         executor=None,
         settings_store: TechnicalSettingsStore | None = None,
+        predict_calibration_store: "PredictCalibrationStore | None" = None,
     ):
         """Own immutable resource copies; injectable executor supports race tests."""
         if poll_sec <= 0:
             raise ValueError("poll interval must be positive")
         self.reader = reader
         self._graph = copy.deepcopy(graph)
+        self._base_graph = copy.deepcopy(graph)
         self._settings_store = settings_store
+        self._predict_calibration_store = predict_calibration_store or PredictCalibrationStore(
+            Path(".router/predict-calibration.json")
+        )
+        self._predict_calibration = self._predict_calibration_store.load()
         self.settings = settings or SearchSettings()
         saved = settings_store.load() if settings_store is not None else None
         if saved is not None:
@@ -383,6 +448,8 @@ class RouterRuntime:
                 self.settings,
                 lunches_enabled=saved.lunches_enabled,
                 traffic_enabled=saved.traffic_enabled,
+                metro_enabled=saved.metro_enabled,
+                equipment_transfers_enabled=saved.equipment_transfers_enabled,
                 equipment_enabled=saved.equipment_enabled,
                 window_lateness_tolerance_sec=saved.window_lateness_tolerance_sec,
                 departure_lateness_tolerance_sec=saved.departure_lateness_tolerance_sec,
@@ -395,15 +462,19 @@ class RouterRuntime:
             )
         self.poll_sec = poll_sec
         self._lock = threading.RLock()
-        self._preview_lock = threading.Lock()
-        self._dispatcher_previews: OrderedDict[tuple[str, str, str], RouterResult] = OrderedDict()
-        self._executor = executor or ProcessPoolExecutor(max_workers=1)
+        self._owns_executor = executor is None
+        self._context_cache: str | None = None
+        self._executor = executor if executor is not None else self._open_executor()
         self._future: Future | None = None
         self._active_generation = -1
         self._generation = 0
         self._key = None
         self._pending: bytes | None = None
         self._pending_publication_id: str | None = None
+        self._regional_queue: list[tuple[str, bytes]] = []
+        self._regional_outputs: dict[str, tuple[RouterResult, EngineOutput | None]] = {}
+        self._regional_snapshot: RouterTaskSnapshot | None = None
+        self._active_region = ""
         self._last_publication_seq = -1
         self._memory: EngineMemory | None = None
         self._stop = threading.Event()
@@ -413,13 +484,36 @@ class RouterRuntime:
         self.result = RouterResult(status="pending", router_context_version=self.context_version)
         self.last_path: str | None = None
 
+    def _open_executor(self) -> ProcessPoolExecutor:
+        """One worker that already holds the graph. A solve then sends only the task."""
+        return ProcessPoolExecutor(
+            max_workers=1,
+            initializer=_install_worker_graph,
+            initargs=(self._graph,),
+        )
+
+    def _rebind_worker(self) -> None:
+        """Reload the worker after the graph changes. Tests keep their injected executor."""
+        if not self._owns_executor:
+            return
+        previous = self._executor
+        self._executor = self._open_executor()
+        previous.shutdown(wait=False, cancel_futures=True)
+
     @property
     def context_version(self) -> str:
-        """Content-derived version covers graph, policy/compiler and all search settings."""
+        """Content-derived version covers graph, policy/compiler and all search settings.
+
+        A full road graph is hashed once. Repeating that dump on every status read
+        held the router lock until login and the dashboard gave up.
+        """
+        cached = self._context_cache
+        if cached is not None:
+            return cached
         resource = (
-            self._graph.model_dump(mode="json")
-            if isinstance(self._graph, RoadGraph)
-            else self._graph.version
+            self._graph.version
+            if hasattr(self._graph, "version")
+            else self._graph.model_dump(mode="json")
         )
         data = [
             "router-v2",
@@ -431,58 +525,37 @@ class RouterRuntime:
                 "technical_settings": self.settings.technical().model_dump(),
             },
         ]
-        return content_hash(json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+        digest = content_hash(json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+        self._context_cache = digest
+        return digest
+
+    def result_status(self) -> dict:
+        """Identity of the current result without copying the plan.
+
+        The poll that decides whether anything new arrived runs several times a
+        second. Copying road geometry on each of those reads stalled the API.
+        """
+        with self._lock:
+            result = self.result
+            return {
+                "status": result.status,
+                "result_id": result.result_id,
+                "input_publication_id": result.input_publication_id,
+                "input_hash": result.input_hash,
+                "computed_at": result.computed_at,
+                "errors": [{"code": item.code, "message": item.message} for item in result.errors],
+            }
 
     def read_result(self) -> RouterResult:
-        """Return an isolated copy so callers cannot mutate published plans."""
-        with self._lock:
-            return self.result.model_copy(deep=True)
+        """Return an isolated copy so callers cannot mutate published plans.
 
-    def preview_dispatcher_plan(
-        self, publication: SnapshotPublicationEnvelope, expected_context_version: str
-    ) -> RouterResult:
-        """Solve an unpublished sys-owned proposal without touching the active runtime.
-
-        Exact bytes bind the candidate to its proposed publication. A bounded cache makes
-        retries stable; only one preview consumes CPU at a time. Resource changes invalidate
-        the answer rather than mixing two map/settings versions.
+        The copy happens outside the runtime lock. Copying a plan with road
+        geometry takes long enough to stall every other request, including the
+        poll that publishes the next result.
         """
-        raw = publication.payload_utf8.encode("utf-8")
-        if len(raw) > MAX_SNAPSHOT_BYTES or content_hash(raw) != publication.payload_sha256:
-            raise ValueError("PREVIEW_PAYLOAD_INVALID")
-        snapshot = parse_snapshot(raw)
-        if len(snapshot.requests) > 500 or len(snapshot.engineers) > 200:
-            raise ValueError("PREVIEW_TOO_LARGE")
-        key = (publication.publication_id, publication.payload_sha256, expected_context_version)
         with self._lock:
-            if self.context_version != expected_context_version:
-                raise ValueError("CONTEXT_CHANGED")
-            cached = self._dispatcher_previews.get(key)
-            if cached is not None:
-                self._dispatcher_previews.move_to_end(key)
-                return cached.model_copy(deep=True)
-            graph = copy.deepcopy(self._graph)
-            settings = replace(self.settings, time_limit_ms=min(3000, self.settings.time_limit_ms))
-        if not self._preview_lock.acquire(blocking=False):
-            raise RuntimeError("PREVIEW_BUSY")
-        try:
-            result, _ = calculate(
-                raw,
-                graph,
-                settings,
-                expected_context_version,
-                publication_id=publication.publication_id,
-            )
-        finally:
-            self._preview_lock.release()
-        with self._lock:
-            if self.context_version != expected_context_version:
-                raise ValueError("CONTEXT_CHANGED")
-            self._dispatcher_previews[key] = result
-            self._dispatcher_previews.move_to_end(key)
-            while len(self._dispatcher_previews) > 16:
-                self._dispatcher_previews.popitem(last=False)
-        return result.model_copy(deep=True)
+            current = self.result
+        return current.model_copy(deep=True)
 
     def evaluate_manual(self, input_hash: str, context_version: str, routes: dict) -> dict:
         """Evaluate fixed orders against the current automatic result, without solving.
@@ -506,11 +579,9 @@ class RouterRuntime:
                 or not active.main.is_usable
             ):
                 raise ValueError("PUBLICATION_CHANGED")
-            graph, settings = copy.deepcopy(self._graph), copy.deepcopy(self.settings)
+            settings = copy.deepcopy(self.settings)
         snapshot = apply_system_policy(parse_snapshot(raw), settings)
-        provider = GraphTravel(graph) if isinstance(graph, RoadGraph) else graph
-        provider = attach_live_roads(provider)
-        provider = configure_travel(provider, settings.technical(), snapshot.planning_as_of)
+        provider = construction_travel(settings, snapshot.planning_as_of)
         result = evaluate_manual(snapshot, provider, active.main, routes)
         latest = self.reader.read()
         latest_raw = latest if isinstance(latest, bytes) else latest.payload
@@ -519,6 +590,78 @@ class RouterRuntime:
                 raise ValueError("PUBLICATION_CHANGED")
         return {"input_hash": input_hash, "router_context_version": context_version, **result}
 
+    def predict_calibration_state(self) -> dict:
+        """Identity and parameters of the active plan-assessment calibration."""
+        return {
+            "version": self._predict_calibration.content_version(),
+            "calibration": self._predict_calibration.model_dump(),
+        }
+
+    def set_predict_calibration(self, calibration: PredictCalibration, operation_id: str) -> dict:
+        """Replace the simulator calibration atomically; the store survives restarts."""
+        self._predict_calibration_store.save(calibration)
+        self._predict_calibration = calibration
+        return {
+            "operation_id": operation_id,
+            "version": calibration.content_version(),
+            "calibration": calibration.model_dump(),
+        }
+
+    def predict_situation(
+        self,
+        input_hash: str,
+        context_version: str,
+        routes: dict,
+        simulations: int = 300,
+        as_of: int | None = None,
+        completed: dict | None = None,
+        cancel_rate: float | None = None,
+    ) -> dict:
+        """Dry Monte-Carlo outlook for one fixed plan; never optimizes or applies.
+
+        Same publication and context CAS as manual evaluation, so a prediction can
+        never be attached to another manual revision or changed resource set.
+        """
+        from core.robustness import predict_situation
+
+        publication = self.reader.read()
+        raw = publication if isinstance(publication, bytes) else publication.payload
+        with self._lock:
+            active = self.result.model_copy(deep=True)
+            if (
+                content_hash(raw) != input_hash
+                or active.input_hash != input_hash
+                or self.context_version != context_version
+                or active.router_context_version != context_version
+                or active.status != "ready"
+                or active.main is None
+                or not active.main.is_usable
+            ):
+                raise ValueError("PUBLICATION_CHANGED")
+            settings = copy.deepcopy(self.settings)
+        snapshot = apply_system_policy(parse_snapshot(raw), settings)
+        provider = construction_travel(settings, snapshot.planning_as_of)
+        prediction = predict_situation(
+            snapshot,
+            provider,
+            routes,
+            simulations=simulations,
+            as_of=as_of,
+            completed=completed,
+            cancel_rate=cancel_rate,
+            calibration=self._predict_calibration,
+        )
+        latest = self.reader.read()
+        latest_raw = latest if isinstance(latest, bytes) else latest.payload
+        with self._lock:
+            if content_hash(latest_raw) != input_hash or self.context_version != context_version:
+                raise ValueError("PUBLICATION_CHANGED")
+        return {
+            "input_hash": input_hash,
+            "router_context_version": context_version,
+            **prediction,
+        }
+
     def propose_window(
         self, snapshot: RouterTaskSnapshot, request_id: str, routes: dict, day_end_at: int
     ) -> dict:
@@ -526,13 +669,10 @@ class RouterRuntime:
         from core.window_proposal import propose_window
 
         with self._lock:
-            graph, settings = copy.deepcopy(self._graph), copy.deepcopy(self.settings)
+            settings = copy.deepcopy(self.settings)
             version = self.context_version
         task = apply_system_policy(snapshot, settings)
-        provider = GraphTravel(graph) if isinstance(graph, RoadGraph) else graph
-        provider = configure_travel(
-            attach_live_roads(provider), settings.technical(), task.planning_as_of
-        )
+        provider = construction_travel(settings, task.planning_as_of)
         result = propose_window(task, provider, request_id, routes, day_end_at)
         with self._lock:
             if version != self.context_version:
@@ -621,14 +761,76 @@ class RouterRuntime:
                 "status": self.result.status,
                 "active": self._future is not None,
                 "engine_path": self.last_path,
+                "regional_progress": self.result.regional_progress,
                 "technical_settings": self.settings.technical().model_dump(),
             }
 
+    def _publish_regional_cumulative(self, raw: bytes, publication_id: str, context_version: str) -> None:
+        """Publish only completed region routes; incomplete regions stay explicitly pending."""
+        snapshot = self._regional_snapshot
+        if snapshot is None:
+            return
+        completed = [item for item in self._regional_outputs.values() if item[0].status == "ready"]
+        if not completed:
+            return
+        routes = [route for result, _ in completed for route in (result.main.routes if result.main else [])]
+        baseline_routes = [route for result, _ in completed for route in (result.baseline.routes if result.baseline else [])]
+        main = assemble_plan(snapshot, routes)
+        baseline_plan = assemble_plan(snapshot, baseline_routes)
+        progress = []
+        for region, part in _regional_snapshots(snapshot).items():
+            completed_result = self._regional_outputs.get(region)
+            progress.append(RegionalProgress(
+                region=region,
+                status="pending" if completed_result is None else completed_result[0].status,
+                request_count=len(part.requests),
+            ))
+        # The comprehension above intentionally keeps a result entry and a pending
+        # entry mutually exclusive; sort makes API progress stable.
+        status = "ready" if all(item.status == "ready" for item in progress) else "partial"
+        if status == "partial":
+            ready_regions = {item.region for item in progress if item.status == "ready"}
+            def scope(plan):
+                assignments = [assignment for assignment in plan.assignments if (next(
+                    request for request in snapshot.requests if request.request_id == assignment.request_id
+                ).region or "__default__") in ready_regions]
+                summary = plan.summary.model_copy(update={
+                    "requests_total": len(assignments),
+                    "unassigned_count": sum(item.status == "unassigned" for item in assignments),
+                    "urgent_total": sum(next(request for request in snapshot.requests if request.request_id == item.request_id).priority == "urgent" for item in assignments),
+                    "urgent_assigned_count": sum(item.status == "assigned" and next(request for request in snapshot.requests if request.request_id == item.request_id).priority == "urgent" for item in assignments),
+                })
+                return plan.model_copy(update={"assignments": assignments, "summary": summary})
+            main, baseline_plan = scope(main), scope(baseline_plan)
+        main_evidence = (
+            completed[0][0].main_evidence if status == "partial" else
+            build_plan_evidence(snapshot, main, construction_travel(self.settings, snapshot.planning_as_of))
+        )
+        baseline_evidence = (
+            completed[0][0].baseline_evidence if status == "partial" else
+            build_plan_evidence(snapshot, baseline_plan, construction_travel(self.settings, snapshot.planning_as_of))
+        )
+        self.result = RouterResult(
+            status=status, result_id=str(uuid4()), input_publication_id=publication_id,
+            input_hash=content_hash(raw), planning_as_of=snapshot.planning_as_of,
+            computed_at=int(time.time()), router_context_version=context_version,
+            policy_id=snapshot.policy.policy_id, technical_settings=self.settings.technical(),
+            search_path="REGIONAL_SEQUENTIAL", policy_criteria=list(compile_policy(snapshot.policy).ordered_criteria),
+            main=main, baseline=baseline_plan,
+            main_evidence=main_evidence, baseline_evidence=baseline_evidence,
+            regional_progress=progress,
+        )
+
     def _invalidate(self):
+        self._context_cache = None
         self._generation += 1
         self._key = None
         self._pending = None
         self._pending_publication_id = None
+        self._regional_queue = []
+        self._regional_outputs = {}
+        self._regional_snapshot = None
+        self._active_region = ""
         self.last_path = None
         self._comparison_cache.clear()
         self.result = RouterResult(status="pending", router_context_version=self.context_version)
@@ -636,9 +838,25 @@ class RouterRuntime:
     def update_graph(self, graph: RoadGraph) -> None:
         """Activate a validated resource atomically; old workers keep their own graph."""
         with self._lock:
-            if graph != self._graph:
+            if graph != self._base_graph:
+                self._base_graph = graph.model_copy(deep=True)
                 self._graph = graph.model_copy(deep=True)
                 self._invalidate()
+                self._rebind_worker()
+
+    def update_road_overlay(self, graph: RoadGraph) -> None:
+        """Activate persistent imported edges without replacing the configured base provider."""
+        base = (
+            GraphTravel(self._base_graph)
+            if isinstance(self._base_graph, RoadGraph)
+            else self._base_graph
+        )
+        overlay = ImportedRoadOverlay(base, graph)
+        with self._lock:
+            if overlay.version != getattr(self._graph, "version", None):
+                self._graph = overlay
+                self._invalidate()
+                self._rebind_worker()
 
     def set_tolerance(
         self, operation_id: str, tolerance_sec: int, expected_context_version: str
@@ -676,6 +894,8 @@ class RouterRuntime:
                 lunches_enabled=requested.lunches_enabled,
                 traffic_enabled=requested.traffic_enabled,
                 equipment_enabled=requested.equipment_enabled,
+                equipment_transfers_enabled=requested.equipment_transfers_enabled,
+                metro_enabled=requested.metro_enabled,
                 window_lateness_tolerance_sec=requested.window_lateness_tolerance_sec,
                 departure_lateness_tolerance_sec=requested.departure_lateness_tolerance_sec,
                 task_start_lateness_tolerance_sec=requested.task_start_lateness_tolerance_sec,
@@ -687,6 +907,7 @@ class RouterRuntime:
             )
             previous_settings = self.settings
             self.settings = updated_settings
+            self._context_cache = None
             response = {
                 "operation_id": operation_id,
                 "status": "accepted",
@@ -726,7 +947,18 @@ class RouterRuntime:
             if not reported_code.startswith("SNAPSHOT_"):
                 reported_code = "SNAPSHOT_READ_FAILED"
             with self._lock:
-                self._invalidate()
+                # A locked database must not abandon a solve still running or a
+                # plan already on screen, and it must not bump the generation:
+                # that made the next successful read look new and start a second
+                # calculation. A solve that finished during the outage is dropped
+                # unconfirmed so it cannot be published as the current plan.
+                if self._future is not None and self._future.done():
+                    self._future = None
+                    self._key = None
+                    self._pending = None
+                    self._pending_publication_id = None
+                if self._future is not None or self.result.status == "ready":
+                    return
                 self.result = RouterResult(
                     status="error",
                     router_context_version=self.context_version,
@@ -737,8 +969,6 @@ class RouterRuntime:
                         )
                     ],
                 )
-                if self._future is not None and self._future.done():
-                    self._future = None
             return
         with self._lock:
             if publication.publication_seq < self._last_publication_seq:
@@ -762,6 +992,17 @@ class RouterRuntime:
                 self._key = key
                 self._pending = raw
                 self._pending_publication_id = publication.publication_id
+                try:
+                    self._regional_snapshot = parse_snapshot(raw)
+                    regional = [
+                        (region, _regional_payload(part))
+                        for region, part in _regional_snapshots(self._regional_snapshot).items()
+                    ]
+                    self._regional_queue = regional if len(regional) > 1 else []
+                    self._regional_outputs = {}
+                except Exception:
+                    self._regional_snapshot = None
+                    self._regional_queue = []
                 self.result = RouterResult(
                     status="pending",
                     input_publication_id=publication.publication_id,
@@ -772,7 +1013,14 @@ class RouterRuntime:
                 try:
                     result, output = self._future.result()
                     if self._active_generation == self._generation:
-                        self.result = result
+                        if self._active_region:
+                            # Queue head is removed only on submission, so the completed
+                            # region is carried by the active worker marker.
+                            self._regional_outputs[self._active_region] = (result, output)
+                            self._publish_regional_cumulative(raw, publication.publication_id, key[1])
+                            self._active_region = ""
+                        else:
+                            self.result = result
                         if output is not None:
                             self._memory, self.last_path = output.memory, output.path
                 except Exception as exc:
@@ -791,15 +1039,31 @@ class RouterRuntime:
             if self._future is None and self._pending is not None:
                 self._active_generation = self._generation
                 try:
-                    self._future = self._executor.submit(
-                        calculate,
-                        self._pending,
-                        self._graph,
-                        self.settings,
-                        key[1],
-                        self._memory,
-                        self._pending_publication_id,
-                    )
+                    if self._regional_queue:
+                        self._active_region, regional_raw = self._regional_queue.pop(0)
+                        worker_raw = regional_raw
+                    else:
+                        self._active_region = ""
+                        worker_raw = self._pending
+                    if self._owns_executor:
+                        self._future = self._executor.submit(
+                            calculate_installed,
+                            worker_raw,
+                            self.settings,
+                            key[1],
+                            self._memory,
+                            self._pending_publication_id,
+                        )
+                    else:
+                        self._future = self._executor.submit(
+                            calculate,
+                            worker_raw,
+                            self._graph,
+                            self.settings,
+                            key[1],
+                            self._memory,
+                            self._pending_publication_id,
+                        )
                 except Exception:
                     self.result = RouterResult(
                         status="error",
@@ -812,8 +1076,9 @@ class RouterRuntime:
                             )
                         ],
                     )
-                self._pending = None
-                self._pending_publication_id = None
+                if not self._regional_queue:
+                    self._pending = None
+                    self._pending_publication_id = None
 
     def start(self) -> None:
         """Start exactly one polling thread; repeated calls do not spawn coordinators."""

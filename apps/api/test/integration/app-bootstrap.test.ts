@@ -63,7 +63,7 @@ describe('application bootstrap', () => {
     assert.deepEqual(Object.keys(body.checks), ['database']);
   });
 
-  it('names the integrations that are and are not wired in this build', async () => {
+  it('names the integrations that are not wired in this build', async () => {
     const response = await fetch(`${baseUrl}/health/services`);
     const body = (await response.json()) as {
       services: Record<string, { status: string }>;
@@ -74,9 +74,7 @@ describe('application bootstrap', () => {
       ),
       {
         router: 'not_configured',
-        // test/support/env.ts forces LLM_PROVIDER=replay, so the AI-gateway is genuinely
-        // configured (and honestly healthy) in this build, unlike Router and SMTP.
-        ai: 'ok',
+        ai: 'not_configured',
         smtp: 'not_configured',
         database: 'ok',
       },

@@ -138,6 +138,7 @@ const operationPreparedEventSchema = z.object({
   state: aiOperationStateSchema,
   preview: z.array(aiPreviewRowSchema),
   expiresAt: z.number().int(),
+  guard: z.enum(['clear', 'risky']).optional(),
 });
 
 const operationStateEventSchema = z.object({
@@ -276,6 +277,31 @@ export async function createAiConversation(
     { method: 'POST', body: JSON.stringify(input) },
   );
   return created.conversation;
+}
+
+/** Moves the open dispatcher dialogue between consultant (`help`) and agent (`fix`). */
+export async function setAiAssistMode(
+  token: string,
+  conversationId: string,
+  assistMode: AiAssistMode,
+): Promise<AiConversation> {
+  const updated = await requestJson(
+    `/api/v1/ai/conversations/${encodeURIComponent(conversationId)}/assist-mode`,
+    z.object({ conversation: aiConversationSchema }),
+    token,
+    { method: 'POST', body: JSON.stringify({ assistMode }) },
+  );
+  return updated.conversation;
+}
+
+/** Closes the dialogue. The caller opens a fresh one afterwards. */
+export async function clearAiConversation(token: string, conversationId: string): Promise<void> {
+  await requestJson(
+    `/api/v1/ai/conversations/${encodeURIComponent(conversationId)}/clear`,
+    z.object({ closed: z.literal(true) }),
+    token,
+    { method: 'POST', body: JSON.stringify({}) },
+  );
 }
 
 export interface LoadAiMessagesResult {

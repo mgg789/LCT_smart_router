@@ -8,7 +8,6 @@ Operation limits bound effort independently of machine speed; no optimality clai
 from dataclasses import dataclass
 
 from core.contracts import EngineerRoute, Plan, RouterTaskSnapshot
-from core.dispatch_constraints import pinned_ranks, respects_pinned_order
 from core.geo import quote_at
 from core.policy import compile_policy
 from core.schedule import (
@@ -39,7 +38,6 @@ class RouteState:
     slack: int | None = None
     delay: int = 0
     lunch_missed: int = 0
-    pinned: int = 0
 
 
 class RouteEvaluator:
@@ -67,8 +65,6 @@ class RouteEvaluator:
         self.ends = [min(e.shift_end_at, snapshot.horizon_end_at) for e in self.engineers]
         self.cache: dict[tuple[int, tuple[str, ...]], RouteState | None] = {}
         self.evaluations = 0
-        self._criteria: dict[str, tuple[str, ...]] = {}
-        self.pinned_ids = {row.request_id for row in snapshot.requests if row.pinned_engineer_id}
         self.tolerance = getattr(
             getattr(travel, "settings", None), "window_lateness_tolerance_sec", 0
         )
@@ -85,24 +81,11 @@ class RouteEvaluator:
 
     def _evaluate(self, index: int, jobs: tuple[str, ...]) -> RouteState | None:
         engineer = self.engineers[index]
-        if not respects_pinned_order(self.snapshot, engineer.engineer_id, jobs):
-            return None
         release = self.releases[index]
         if release is None and len(jobs) == 1:
             release = self.terminal_releases[index]
         if release is None:
-            if jobs:
-                return None
-            # Public policy_score/from_route retain this constant penalty even when
-            # the route is disabled. A freshly constructed candidate must match a seed.
-            return RouteState(
-                jobs,
-                lunch_missed=int(
-                    engineer.lunch.enabled
-                    and not engineer.lunch_taken
-                    and not engineer.lunch.required
-                ),
-            )
+            return None if jobs else RouteState(jobs)
         if any(index not in self.allowed[job] for job in jobs):
             return None
         if engineer.lunch.enabled and not engineer.lunch_taken:
@@ -141,16 +124,7 @@ class RouteEvaluator:
             delay += start - request.window_start_at
             point = request.location
         return RouteState(
-            jobs,
-            travel,
-            distance,
-            clock - release,
-            urgent,
-            late,
-            lateness,
-            slack,
-            delay,
-            pinned=sum(job in self.pinned_ids for job in jobs),
+            jobs, travel, distance, clock - release, urgent, late, lateness, slack, delay
         )
 
     def from_route(self, route: EngineerRoute) -> RouteState:
@@ -176,33 +150,17 @@ class RouteEvaluator:
             min(slacks, default=None),
             sum(s.start_at - self.requests[s.request_id].window_start_at for s in stops),
             missed,
-            pinned=sum(stop.request_id in self.pinned_ids for stop in stops),
         )
 
     def score(self, states: list[RouteState], policy_id: str) -> tuple[int, ...]:
         """Match public policy_score; counts are negated up to constant totals."""
-        if policy_id not in self._criteria:
-            policy = self.snapshot.policy.model_copy(update={"policy_id": policy_id})
-            self._criteria[policy_id] = compile_policy(policy).ordered_criteria
-        criteria = self._criteria[policy_id]
-        needs_loads = "max_workload_ratio" in criteria or "workload_spread" in criteria
-        slacks = (
-            [s.slack for s in states if s.slack is not None]
-            if "window_end_risk" in criteria
-            else []
-        )
-        # A terminal recovery visit can start after ordinary release became unavailable.
-        # Its work still counts, with the same capacity denominator as public policy_score.
-        releases = [
-            release if release is not None else self.terminal_releases[i] if state.jobs else None
-            for i, (state, release) in enumerate(zip(states, self.releases))
-            if needs_loads
-        ]
-        loads = [s.busy for s, release in zip(states, releases) if release is not None]
+        slacks = [s.slack for s in states if s.slack is not None]
+        loads = [s.busy for i, s in enumerate(states) if self.releases[i] is not None]
         utilization = [
-            (s.busy * 10000 + max(1, self.ends[i] - release) - 1) // max(1, self.ends[i] - release)
-            for i, (s, release) in enumerate(zip(states, releases))
-            if release is not None
+            (s.busy * 10000 + max(1, self.ends[i] - self.releases[i]) - 1)
+            // max(1, self.ends[i] - self.releases[i])
+            for i, s in enumerate(states)
+            if self.releases[i] is not None
         ]
         values = {
             "urgent_unassigned": -sum(s.urgent for s in states),
@@ -214,26 +172,21 @@ class RouteEvaluator:
             "additional_engineers": sum(
                 bool(state.jobs) and engineer.engineer_id.startswith("covering-")
                 for engineer, state in zip(self.engineers, states)
-            )
-            if "additional_engineers" in criteria
-            else 0,
-            "window_start_delay": sum(s.delay for s in states)
-            if "window_start_delay" in criteria
-            else 0,
-            "max_jobs_per_engineer": max((len(s.jobs) for s in states), default=0)
-            if "max_jobs_per_engineer" in criteria
-            else 0,
+            ),
+            "extra_assignments": sum(
+                len(state.jobs)
+                for engineer, state in zip(self.engineers, states)
+                if engineer.engineer_id.startswith("covering-")
+            ),
+            "window_start_delay": sum(s.delay for s in states),
+            "max_jobs_per_engineer": max((len(s.jobs) for s in states), default=0),
             "total_lateness": sum(s.lateness for s in states),
             "window_end_risk": -min(slacks) if slacks else 0,
             "max_workload_ratio": max(utilization, default=0),
             "workload_spread": max(loads, default=0) - min(loads, default=0),
         }
-        return tuple(values[c] for c in criteria)
-
-    def search_score(self, states: list[RouteState], policy_id: str) -> tuple[int, ...]:
-        """Hard pin coverage precedes the selected business objective during construction."""
-        value = self.score(states, policy_id)
-        return (-sum(state.pinned for state in states), *value) if self.pinned_ids else value
+        policy = self.snapshot.policy.model_copy(update={"policy_id": policy_id})
+        return tuple(values[c] for c in compile_policy(policy).ordered_criteria)
 
     def materialize(self, states: list[RouteState]) -> Plan | None:
         """Build and independently validate routes using the canonical scheduler."""
@@ -244,8 +197,6 @@ class RouteEvaluator:
         if any(route is None for route in routes):
             return None
         plan = assemble_plan(self.snapshot, routes)
-        if not plan.is_usable:
-            return None
         validate_plan(self.snapshot, plan, self.travel)
         return plan
 
@@ -279,18 +230,6 @@ def improve_routes(
                     [evaluator.from_route(by_id[e.engineer_id]) for e in evaluator.engineers]
                 )
     requests = sorted(snapshot.requests, key=lambda r: r.request_id)
-    ranks = pinned_ranks(snapshot)
-
-    def ordered(key):
-        return sorted(
-            requests,
-            key=lambda request: (
-                request.pinned_engineer_id is None,
-                ranks.get(request.request_id, 0),
-                key(request),
-            ),
-        )
-
     # All policies see the same constructive candidates, including both travel
     # units. Scarce qualifications are allocated before broadly compatible jobs.
     variants = (
@@ -333,7 +272,7 @@ def improve_routes(
                     continue
                 if candidate is not None:
                     states[i] = candidate
-                    key = evaluator.search_score(states, objective)
+                    key = evaluator.score(states, objective)
                     if best is None or key < best[0]:
                         best = (key, i, candidate)
             states[i] = old
@@ -343,17 +282,17 @@ def improve_routes(
 
     for objective, order in variants if construct else ():
         states = list(empty)
-        for request in ordered(order):
+        for request in sorted(requests, key=order):
             insert(states, request, objective)
         portfolio.append(states)
         # Preserve the original candidate, but also construct the ordinary day
         # first. Terminal grace is an end-of-route recovery, not a reason to stop
         # searching at an early window while later jobs remain feasible.
         states = list(empty)
-        for request in ordered(order):
+        for request in sorted(requests, key=order):
             insert(states, request, objective, regular_only=True)
         assigned = {job for state in states for job in state.jobs}
-        for request in ordered(order):
+        for request in sorted(requests, key=order):
             if request.request_id not in assigned:
                 insert(states, request, objective)
         portfolio.append(states)
@@ -370,23 +309,23 @@ def improve_routes(
                 for i in indices:
                     partial[i] = candidate[i]
                 choices.append(partial)
-            best = min(choices, key=lambda s: evaluator.search_score(s, policy_id))
+            best = min(choices, key=lambda s: evaluator.score(s, policy_id))
             for i in indices:
                 combined[i] = best[i]
         portfolio.append(combined)
     if not portfolio:
         return seeds
-    states = list(min(portfolio, key=lambda s: evaluator.search_score(s, policy_id)))
+    states = list(min(portfolio, key=lambda s: evaluator.score(s, policy_id)))
     quota = evaluator.evaluations + max(1000, effort * 8)
     # Relocation permits consolidation, route reordering and workload balancing.
     # After each improving pass, try every previously uncovered job again.
     for _ in range(4):
         changed = False
         assigned = {job for state in states for job in state.jobs}
-        for request in ordered(variants[0][1]):
+        for request in sorted(requests, key=variants[0][1]):
             if request.request_id not in assigned:
                 changed |= insert(states, request, policy_id)
-        current_score = evaluator.search_score(states, policy_id)
+        current_score = evaluator.score(states, policy_id)
         for source in range(len(states)):
             for job in tuple(states[source].jobs):
                 if evaluator.evaluations >= quota:
@@ -403,13 +342,13 @@ def improve_routes(
                 # and can block every later window, even when replacing it would
                 # increase coverage. Accept or roll back the whole neighbourhood.
                 previously_assigned = {j for state in original for j in state.jobs}
-                for request in ordered(variants[0][1]):
+                for request in sorted(requests, key=variants[0][1]):
                     if evaluator.evaluations >= quota:
                         break
                     if request.request_id not in previously_assigned:
                         insert(states, request, policy_id)
                 insert(states, evaluator.requests[job], policy_id)
-                candidate_score = evaluator.search_score(states, policy_id)
+                candidate_score = evaluator.score(states, policy_id)
                 if candidate_score < current_score:
                     current_score = candidate_score
                     changed = True
@@ -432,9 +371,7 @@ def improve_routes(
             insert(candidate, evaluator.requests[job], policy_id, excluded=source)
             for job in sorted(jobs, key=lambda j: evaluator.requests[j].window_end_at)
         ):
-            if evaluator.search_score(candidate, policy_id) < evaluator.search_score(
-                states, policy_id
-            ):
+            if evaluator.score(candidate, policy_id) < evaluator.score(states, policy_id):
                 states = candidate
                 portfolio.append(states)
     # Deterministic destroy/reinsert escapes insertion-only local minima. Rebuild
@@ -451,10 +388,10 @@ def improve_routes(
                 candidate[i] = reduced
         assigned = {job for state in candidate for job in state.jobs}
         objective, order = variants[round_index % len(variants)]
-        for request in ordered(order):
+        for request in sorted(requests, key=order):
             if request.request_id not in assigned:
                 insert(candidate, request, objective)
-        if evaluator.search_score(candidate, policy_id) < evaluator.search_score(states, policy_id):
+        if evaluator.score(candidate, policy_id) < evaluator.score(states, policy_id):
             states = candidate
             portfolio.append(states)
     plans = list(seeds)

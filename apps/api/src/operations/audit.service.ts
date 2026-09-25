@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { Actor } from '../auth';
-import type { Tx } from '../persistence';
+import { PrismaService, type Tx } from '../persistence';
 
 export interface AuditEntry {
   readonly actor: Actor;
@@ -26,8 +26,45 @@ export interface AuditEntry {
  * Writes go through the caller's transaction on purpose: the business change and the
  * record of who made it are saved together or not at all.
  */
+/** Who made a recorded change, as the request history shows it. Never a secret. */
+export interface AuditActorView {
+  readonly actorKind: string;
+  readonly actorId: string | null;
+  readonly source: string;
+  readonly action: string;
+}
+
 @Injectable()
 export class AuditService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Actors for the given operation ids.
+   *
+   * The journal is written in the same transaction as the change and is the place that
+   * answers who did it. Callers that already list operations or condition history use
+   * this instead of leaving the rows unread.
+   */
+  async actorsFor(operationIds: readonly string[]): Promise<Map<string, AuditActorView>> {
+    const ids = [...new Set(operationIds.filter((id) => id.length > 0))];
+    const found = new Map<string, AuditActorView>();
+    if (ids.length === 0) return found;
+    const rows = await this.prisma.auditLog.findMany({
+      where: { operationId: { in: ids } },
+      orderBy: { at: 'asc' },
+    });
+    for (const row of rows) {
+      if (!row.operationId || found.has(row.operationId)) continue;
+      found.set(row.operationId, {
+        actorKind: row.actorKind,
+        actorId: row.actorId,
+        source: row.source,
+        action: row.action,
+      });
+    }
+    return found;
+  }
+
   async record(tx: Tx, at: number, entry: AuditEntry): Promise<void> {
     await tx.auditLog.create({
       data: {

@@ -2,6 +2,8 @@ import maplibregl from 'maplibre-gl';
 import { useEffect, useRef, useState } from 'react';
 import { geocodeAddress } from '../api/client';
 import type { GeocodeHit } from '../api/types';
+import { localMapStyle } from '../domain/localBasemap';
+import { ONLINE_MAP_STYLE, watchMapStartup } from '../domain/mapAvailability';
 
 const FIELD =
   'mt-[8px] h-[56px] w-full rounded-[20px] border border-figma-ink/15 bg-white px-[18px] font-medium text-[18px] tracking-[-0.3px] text-figma-ink outline-none placeholder:text-figma-hint focus:border-figma-ink';
@@ -113,28 +115,21 @@ function OsmPointMap({
 
   useEffect(() => {
     if (!host.current || mapRef.current) return;
+    const local = !navigator.onLine;
     const map = new maplibregl.Map({
       container: host.current,
-      style: {
-        version: 8,
-        sources: {
-          osm: {
-            type: 'raster',
-            tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-            tileSize: 256,
-            attribution: '© OpenStreetMap',
-          },
-        },
-        layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
-      },
+      style: local ? localMapStyle() : ONLINE_MAP_STYLE,
       center: initialCenter.current,
       zoom: 11,
+      attributionControl: false,
     });
+    const stopWatching = local ? null : watchMapStartup(map, () => map.setStyle(localMapStyle()));
     map.on('click', (event) => {
       pickRef.current(event.lngLat.lat, event.lngLat.lng);
     });
     mapRef.current = map;
     return () => {
+      stopWatching?.();
       markerRef.current?.remove();
       markerRef.current = null;
       map.remove();
@@ -147,7 +142,7 @@ function OsmPointMap({
     const map = mapRef.current;
     if (!map || lat === null || lon === null) return;
     if (!markerRef.current) {
-      markerRef.current = new maplibregl.Marker({ color: '#FED305' })
+      markerRef.current = new maplibregl.Marker({ color: '#ffc72c' })
         .setLngLat([lon, lat])
         .addTo(map);
     } else {

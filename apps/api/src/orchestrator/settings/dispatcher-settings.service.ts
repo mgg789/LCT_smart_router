@@ -6,6 +6,11 @@ import { APP_STATE_KEYS, PrismaService, type Tx } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import { workDateOf } from '../engineers/workday';
 import {
+  capProvisionalEquipment,
+  equipmentCapacity,
+  equipmentTotal,
+} from '../equipment/equipment-policy';
+import {
   type DispatcherSettings,
   type DispatcherSettingsPatch,
   type DispatcherSettingsView,
@@ -59,6 +64,36 @@ export class DispatcherSettingsService {
       );
     }
 
+    const capacityChanged =
+      current.equipmentCapacityWalk !== next.equipmentCapacityWalk ||
+      current.equipmentCapacityBike !== next.equipmentCapacityBike ||
+      current.equipmentCapacityCar !== next.equipmentCapacityCar;
+    if (capacityChanged) {
+      const days = await context.tx.engineerDay.findMany({
+        where: { shiftEndAt: { gt: BigInt(context.now) } },
+        include: { engineer: true },
+      });
+      for (const day of days) {
+        const capacity = equipmentCapacity(day.engineer.transportType, next);
+        if (equipmentTotal(day) <= capacity) continue;
+        if (day.equipmentIssuedAt !== null) {
+          throw new SysError(
+            'VALIDATION_FAILED',
+            'The new limit is below equipment already issued for an active shift',
+            { details: { engineerId: day.engineerId } },
+          );
+        }
+        await context.tx.engineerDay.update({
+          where: { id: day.id },
+          data: {
+            ...capProvisionalEquipment(day, capacity),
+            updatedAt: BigInt(context.now),
+            version: { increment: 1 },
+          },
+        });
+      }
+    }
+
     await context.tx.appState.upsert({
       where: { key: APP_STATE_KEYS.DISPATCHER_SETTINGS },
       create: {
@@ -76,6 +111,12 @@ export class DispatcherSettingsService {
       current.dayStartMin !== next.dayStartMin || current.dayEndMin !== next.dayEndMin;
     if (dayChanged) {
       await this.applyDayBounds(context, next);
+    } else if (capacityChanged) {
+      await this.publisher.publishIfChanged(
+        context.tx,
+        context.now,
+        PUBLICATION_TRIGGERS.ENGINEER_WORKDAY_CHANGED,
+      );
     }
     return toDispatcherSettingsView(next);
   }

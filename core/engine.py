@@ -12,6 +12,7 @@ from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 from core.contracts import (
     Engineer,
     EngineerRoute,
+    EquipmentHandoff,
     EquipmentType,
     GeoPoint,
     Plan,
@@ -27,6 +28,7 @@ from core.route_search import improve_routes
 from core.schedule import (
     TERMINAL_SHIFT_OVERTIME_SEC,
     TERMINAL_WINDOW_LATENESS_TOLERANCE_SEC,
+    HandoffStep,
     TravelProvider,
     assemble_plan,
     baseline,
@@ -42,6 +44,9 @@ from core.schedule import (
     validate_plan,
 )
 
+# The rescue is deliberately a fallback, never an unbounded second optimizer.
+EQUIPMENT_HANDOFF_EVALUATION_LIMIT = 256
+
 
 @dataclass(frozen=True)
 class SearchSettings:
@@ -52,6 +57,8 @@ class SearchSettings:
     lunches_enabled: bool = False
     traffic_enabled: bool = True
     equipment_enabled: bool = True
+    equipment_transfers_enabled: bool = False
+    metro_enabled: bool = False
     # A customer visit is feasible when its *completion* is within this grace after
     # the promised window.  LIVE uses ten minutes by default; callers may still make
     # the Router stricter or relax it explicitly within the bounded product limit.
@@ -95,6 +102,8 @@ class SearchSettings:
             lunches_enabled=self.lunches_enabled,
             traffic_enabled=self.traffic_enabled,
             equipment_enabled=self.equipment_enabled,
+            equipment_transfers_enabled=self.equipment_transfers_enabled,
+            metro_enabled=self.metro_enabled,
             window_lateness_tolerance_sec=self.window_lateness_tolerance_sec,
             departure_lateness_tolerance_sec=self.departure_lateness_tolerance_sec,
             task_start_lateness_tolerance_sec=self.task_start_lateness_tolerance_sec,
@@ -136,8 +145,6 @@ class _Node:
 
 
 def _small_change(old: RouterTaskSnapshot, new: RouterTaskSnapshot, tolerance: int) -> bool:
-    if old.pinned_orders != new.pinned_orders:
-        return False
     if old.policy != new.policy or {r.request_id: r for r in old.requests} != {
         r.request_id: r for r in new.requests
     }:
@@ -326,12 +333,7 @@ def _search(
 
     # Resolve every external lookup before entering a C++ callback. Exceptions must
     # never cross SWIG and become an accidental zero-cost arc.
-    # Several work orders can share an address/centroid. The cache key is spatial,
-    # so warm each coordinate pair once rather than repeating it for every job ID.
-    physical_by_point = {}
-    for node in sorted(set(jobs.values()) | set(starts)):
-        physical_by_point.setdefault((nodes[node].point.lat, nodes[node].point.lon), node)
-    physical = list(physical_by_point.values())
+    physical = sorted(set(jobs.values()) | set(starts))
     profile_representatives = {}
     for e, engineer in enumerate(engineers):
         profile_representatives.setdefault(engineer.transport_type, e)
@@ -356,6 +358,17 @@ def _search(
             return int(nodes[b].kind == "job" and first_anchor)
         if metric == "job_count":
             return int(nodes[b].kind == "job")
+        if metric == "additional_engineers":
+            if not engineers[e].engineer_id.startswith("covering-"):
+                return 0
+            first_anchor = nodes[a].kind == "start" or (
+                nodes[a].kind == "lunch" and nodes[a].anchor == starts[e]
+            )
+            return int(nodes[b].kind == "job" and first_anchor)
+        if metric == "extra_assignments":
+            return int(
+                nodes[b].kind == "job" and engineers[e].engineer_id.startswith("covering-")
+            )
         if nodes[b].kind == "end":
             return nodes[a].service if metric == "clock" else 0
         road = quote(a, b, e)
@@ -368,7 +381,15 @@ def _search(
         return road.duration_sec + (nodes[a].service if metric == "clock" else 0)
 
     callbacks: dict[str, list[int]] = {}
-    for metric in ("clock", "travel", "distance", "engineers_used", "job_count"):
+    for metric in (
+        "clock",
+        "travel",
+        "distance",
+        "engineers_used",
+        "job_count",
+        "additional_engineers",
+        "extra_assignments",
+    ):
         callbacks[metric] = [
             routing.RegisterTransitCallback(
                 lambda a, b, e=e, metric=metric: transit(a, b, e, metric)
@@ -454,12 +475,8 @@ def _search(
             - origin,
         )
         if not allowed or lower > terminal_upper or request.service_duration_sec > time_horizon:
-            if request.pinned_engineer_id is not None:
-                return None
             routing.ActiveVar(index).SetValue(0)
         else:
-            if request.pinned_engineer_id is not None:
-                routing.ActiveVar(index).SetValue(1)
             time_dimension.CumulVar(index).SetRange(lower, terminal_upper)
             # The end cumul includes service at this node.  The extended shift
             # cap applies only when this exact job is directly followed by the
@@ -487,14 +504,6 @@ def _search(
                 time_dimension.SetCumulVarSoftUpperBound(index, lower, 1)
         penalty = coverage_weight + (urgent_weight if request.priority == "urgent" else 0)
         routing.AddDisjunction([index], penalty if stage == "coverage" else 0)
-
-    for order in snapshot.pinned_orders:
-        active_order = [request_id for request_id in order.request_ids if request_id in jobs]
-        for before, after in zip(active_order, active_order[1:]):
-            solver.Add(
-                time_dimension.CumulVar(manager.NodeToIndex(jobs[before]))
-                <= time_dimension.CumulVar(manager.NodeToIndex(jobs[after]))
-            )
 
     for e, alternatives in lunches.items():
         engineer = engineers[e]
@@ -557,6 +566,27 @@ def _search(
         ]
         used_expressions.append(solver.Max(assigned) if assigned else solver.IntConst(0))
     engineers_used = solver.Sum(used_expressions)
+    reserve_indexes = [
+        e
+        for e, engineer in enumerate(engineers)
+        if engineer.engineer_id.startswith("covering-")
+    ]
+    additional_engineers = (
+        solver.Sum([used_expressions[e] for e in reserve_indexes])
+        if reserve_indexes
+        else solver.IntConst(0)
+    )
+    extra_assignments = (
+        solver.Sum(
+            [
+                solver.IsEqualCstVar(routing.VehicleVar(manager.NodeToIndex(node)), e)
+                for e in reserve_indexes
+                for node in jobs.values()
+            ]
+        )
+        if reserve_indexes
+        else solver.IntConst(0)
+    )
     window_start_delay = solver.Sum(
         [
             solver.Max(
@@ -580,6 +610,8 @@ def _search(
             "travel_time": travel_sum,
             "distance": distance_sum,
             "engineers_used": engineers_used,
+            "additional_engineers": additional_engineers,
+            "extra_assignments": extra_assignments,
             "window_start_delay": window_start_delay,
             "max_jobs_per_engineer": max_jobs_per_engineer,
         }
@@ -595,6 +627,8 @@ def _search(
         "travel_time": callbacks["travel"],
         "distance": callbacks["distance"],
         "engineers_used": callbacks["engineers_used"],
+        "additional_engineers": callbacks["additional_engineers"],
+        "extra_assignments": callbacks["extra_assignments"],
     }
     if stage == "max_jobs_per_engineer":
         job_count_dimension.SetGlobalSpanCostCoefficient(1)
@@ -660,12 +694,7 @@ def _search(
 
 def official_roster(snapshot: RouterTaskSnapshot) -> RouterTaskSnapshot:
     """Exclude synthesized covering crews from fixed-roster strategy comparisons."""
-    pinned = {row.pinned_engineer_id for row in snapshot.requests if row.pinned_engineer_id}
-    engineers = [
-        e
-        for e in snapshot.engineers
-        if not e.engineer_id.startswith("covering-") or e.engineer_id in pinned
-    ]
+    engineers = [e for e in snapshot.engineers if not e.engineer_id.startswith("covering-")]
     return (
         snapshot.model_copy(update={"engineers": engineers})
         if len(engineers) != len(snapshot.engineers)
@@ -712,7 +741,11 @@ def _covering_template_can_serve(
     """Check static demand compatibility before cloning a covering template."""
     if request.region is not None and engineer.region not in (None, request.region):
         return False
-    if request.required_transport not in (None, engineer.transport_type):
+    if not (
+        request.required_transport is None
+        or request.required_transport == engineer.transport_type
+        or {request.required_transport, engineer.transport_type} <= {"walk", "transit"}
+    ):
         return False
     if (
         request.required_equipment is not None
@@ -1066,6 +1099,116 @@ def solve(
     return _solve_prepared(official_roster(snapshot), travel, settings, memory, context_version)
 
 
+def _route_steps(route: EngineerRoute) -> list[str | None | HandoffStep]:
+    """Recover the canonical replay steps from a validated route."""
+    return [
+        stop.request_id if stop.kind == "job" else (
+            HandoffStep(stop.handoff, stop.location, stop.start_at) if stop.kind == "handoff" else None
+        )
+        for stop in route.stops
+        if stop.kind != "wait"
+    ]
+
+
+def _insert_steps(steps: list[str | None | HandoffStep], item: str | HandoffStep):
+    """Yield deterministic insertion positions while retaining all existing order."""
+    for index in range(len(steps) + 1):
+        yield steps[:index] + [item] + steps[index:]
+
+
+def _rescue_equipment_handoffs(
+    snapshot: RouterTaskSnapshot, plan: Plan, travel: TravelProvider, settings: SearchSettings
+) -> Plan:
+    """Try a small deterministic post-solve exchange only for equipment-blocked work.
+
+    The normal optimizer remains responsible for all ordinary routing.  This pass
+    only adds one paired meeting and one formerly unassigned equipment job, then
+    reconstructs both complete routes through the same schedule/validator path.
+    """
+    if not settings.equipment_transfers_enabled or not plan.is_usable:
+        return plan
+    engineers = {engineer.engineer_id: engineer for engineer in snapshot.engineers}
+    requests = {request.request_id: request for request in snapshot.requests}
+    current = plan
+    evaluations = 0
+    for assignment in current.assignments:
+        request = requests[assignment.request_id]
+        if assignment.status != "unassigned" or request.required_equipment is None:
+            continue
+        receivers = [
+            engineer for engineer in snapshot.engineers
+            if engineer.engineer_id in engineers
+            and (request.region is None or engineer.region is None or engineer.region == request.region)
+            and request.required_skill in engineer.skills
+            and (request.required_transport is None or request.required_transport == engineer.transport_type
+                 or {request.required_transport, engineer.transport_type} <= {"walk", "transit"})
+            and release_at(snapshot, engineer) is not None
+        ]
+        routes = {route.engineer_id: route for route in current.routes}
+        for receiver in receivers:
+            receiver_route = routes[receiver.engineer_id]
+            for donor in snapshot.engineers:
+                if donor.engineer_id == receiver.engineer_id:
+                    continue
+                if donor.region != receiver.region or (request.region and donor.region not in (None, request.region)):
+                    continue
+                donor_route = routes[donor.engineer_id]
+                consumed = sum(
+                    requests[stop.request_id].required_equipment == request.required_equipment
+                    for stop in donor_route.stops if stop.kind == "job"
+                )
+                if donor.equipment_stock.quantity(request.required_equipment) <= consumed:
+                    continue
+                locations = [donor.start_location, receiver.start_location] + [
+                    stop.location for route in (donor_route, receiver_route) for stop in route.stops
+                    if stop.kind == "job"
+                ]
+                # Same graph vertices are intentional candidates; de-duplicate
+                # coordinates without relying on object identity.
+                unique_locations = list(dict.fromkeys((point.lat, point.lon) for point in locations))[:8]
+                for lat, lon in unique_locations:
+                    location = GeoPoint(lat=lat, lon=lon)
+                    for offset in range(0, 32):
+                        meeting_at = snapshot.planning_as_of + offset * 300
+                        handoff = EquipmentHandoff(
+                            handoff_id=f"handoff:{request.request_id}:{donor.engineer_id}:{receiver.engineer_id}",
+                            donor_engineer_id=donor.engineer_id,
+                            receiver_engineer_id=receiver.engineer_id,
+                            request_id=request.request_id,
+                            items={request.required_equipment: 1},
+                        )
+                        donor_event = HandoffStep(handoff, location, meeting_at)
+                        receiver_event = HandoffStep(handoff, location, meeting_at)
+                        for donor_steps in _insert_steps(_route_steps(donor_route), donor_event):
+                            if evaluations >= EQUIPMENT_HANDOFF_EVALUATION_LIMIT:
+                                return current
+                            evaluations += 1
+                            donor_candidate = schedule_steps(snapshot, donor, donor_steps, travel)
+                            if donor_candidate is None:
+                                continue
+                            for receiver_with_event in _insert_steps(_route_steps(receiver_route), receiver_event):
+                                for receiver_steps in _insert_steps(receiver_with_event, request.request_id):
+                                    if evaluations >= EQUIPMENT_HANDOFF_EVALUATION_LIMIT:
+                                        return current
+                                    evaluations += 1
+                                    receiver_candidate = schedule_steps(snapshot, receiver, receiver_steps, travel)
+                                    if receiver_candidate is None:
+                                        continue
+                                    next_routes = [
+                                        donor_candidate if route.engineer_id == donor.engineer_id else
+                                        receiver_candidate if route.engineer_id == receiver.engineer_id else route
+                                        for route in current.routes
+                                    ]
+                                    candidate = assemble_plan(snapshot, next_routes)
+                                    try:
+                                        validate_plan(snapshot, candidate, travel)
+                                    except ValueError:
+                                        continue
+                                    if candidate.summary.assigned_count > current.summary.assigned_count:
+                                        return candidate
+    return current
+
+
 def _solve_prepared(
     snapshot: RouterTaskSnapshot,
     travel: TravelProvider,
@@ -1081,7 +1224,7 @@ def _solve_prepared(
     search_snapshot = _without_optional_lunches(snapshot)
     policy: PolicySpec = compile_policy(search_snapshot.policy)
     context_version = context_version or default_context_version
-    base = baseline(snapshot, travel)
+    base = _rescue_equipment_handoffs(snapshot, baseline(snapshot, travel), travel, settings)
     validate_plan(snapshot, base, travel)
     compatible = (
         memory is not None
@@ -1167,6 +1310,7 @@ def _solve_prepared(
         main = _project(snapshot, search_main, travel)
         if main is None:
             raise ValueError("OPTIONAL_LUNCH_ENRICHMENT_FAILED")
+    main = _rescue_equipment_handoffs(snapshot, main, travel, settings)
     validate_plan(snapshot, main, travel)
     main = main.model_copy(
         update={"alerts": main.alerts + lunch_coverage_alerts(snapshot, main, travel)}

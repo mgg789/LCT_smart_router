@@ -1,6 +1,7 @@
 import type {
   AssignmentReasons,
   DashboardSnapshot,
+  EngineerDayView,
   EngineerView,
   PlanAssignmentView,
   PlanRouteView,
@@ -11,9 +12,18 @@ import { engineerSummaries, requestById, unassignedRequests } from '../domain/da
 import { POLICY_LABELS, skillLabel, transportLabel } from './reasons';
 import { formatClock, formatDurationMin, formatKm } from './time';
 
+export type FactIcon = 'skills' | 'transport' | 'equipment' | 'window' | 'lunch' | 'route';
+
+export interface IconFact {
+  readonly icon: FactIcon;
+  readonly text: string;
+}
+
 export interface CaseExplanation {
   readonly title: string;
   readonly facts: string[];
+  readonly baseFacts?: string[];
+  readonly iconFacts?: IconFact[];
   readonly influence: string;
   readonly result: string;
 }
@@ -29,32 +39,188 @@ export function explainSelection(
   engineer: EngineerView | null,
   route: PlanRouteView | null,
 ): CaseExplanation | null {
-  if (snapshot.plan.plan?.origin === 'manual')
-    return {
-      title: 'Ручной план диспетчера',
-      facts: request
-        ? [
-            `Заявка №${request.id}: ${request.addressText}.`,
-            `Окно клиента ${formatClock(request.windowStartAt)}–${formatClock(request.windowEndAt)}.`,
-          ]
-        : [],
-      influence:
-        'Назначения и порядок сохранены диспетчером. Причина перехода и изменения доступны в журнале ручного управления.',
-      result:
-        'Время прибытия, дорожные показатели и допустимость расписания не пересчитаны. Факты выполнения сохраняются отдельно.',
-    };
+  let explanation: CaseExplanation | null;
   if (request) {
     if (assignment?.status === 'unassigned') {
-      return explainUnassigned(snapshot, request, assignment);
+      explanation = explainUnassigned(snapshot, request, assignment);
+    } else {
+      explanation = explainAssigned(snapshot, request, assignment, engineer, route);
     }
-    return explainAssigned(snapshot, request, assignment, engineer, route);
+  } else if (engineer) {
+    explanation =
+      route && route.assignedCount > 0
+        ? explainRoute(snapshot, engineer, route)
+        : explainIdleEngineer(snapshot, engineer);
+  } else {
+    explanation = null;
   }
-  if (engineer) {
-    return route && route.assignedCount > 0
-      ? explainRoute(snapshot, engineer, route)
-      : explainIdleEngineer(snapshot, engineer);
+  const iconFacts = decisionIconFacts(snapshot, request, engineer, route);
+  return explanation
+    ? {
+        ...explanation,
+        iconFacts,
+        baseFacts: iconFacts.map((fact) => fact.text),
+      }
+    : null;
+}
+
+/** Short decision or engineer lines, one icon each. */
+function decisionIconFacts(
+  snapshot: DashboardSnapshot,
+  request: RequestView | null,
+  engineer: EngineerView | null,
+  route: PlanRouteView | null,
+): IconFact[] {
+  if (request) return requestDecisionFacts(snapshot, request, engineer, route);
+  if (engineer) return engineerParameterFacts(snapshot, engineer, route);
+  return [];
+}
+
+function requestDecisionFacts(
+  snapshot: DashboardSnapshot,
+  request: RequestView,
+  engineer: EngineerView | null,
+  route: PlanRouteView | null,
+): IconFact[] {
+  const chosen =
+    engineer ??
+    snapshot.engineers.find((item) => item.id === assignmentEngineerId(snapshot, request.id));
+  const name = chosen?.displayName ?? 'инженер';
+  const selected = chosen ? snapshot.engineers.find((item) => item.id === chosen.id) : null;
+  const lines: IconFact[] = [];
+  if (chosen) {
+    lines.push({
+      icon: 'skills',
+      text: chosen.skills.includes(request.requiredSkill)
+        ? `Навык «${skillLabel(request.requiredSkill)}» есть у ${name}.`
+        : `Заявке нужен навык «${skillLabel(request.requiredSkill)}», у ${name} его нет.`,
+    });
+    lines.push({
+      icon: 'transport',
+      text:
+        chosen.transportType === 'car'
+          ? `${name} на автомобиле и добирается быстрее, чем пешком.`
+          : `${name} добирается так: ${transportLabel(chosen.transportType)}.`,
+    });
+  } else {
+    lines.push({
+      icon: 'skills',
+      text: `Заявке нужен навык «${skillLabel(request.requiredSkill)}», подходящей смены нет.`,
+    });
+  }
+  if (request.requiredEquipment) {
+    const stock = selected?.day?.equipmentStock;
+    const count = stock ? stockCount(stock, request.requiredEquipment) : 0;
+    lines.push({
+      icon: 'equipment',
+      text:
+        count > 0
+          ? `На утро есть ${equipmentLabel(request.requiredEquipment)} ×${count}.`
+          : `Нужен ${equipmentLabel(request.requiredEquipment)}, на утро запаса нет.`,
+    });
+  }
+  lines.push({
+    icon: 'window',
+    text: chosen
+      ? `Окно ${formatClock(request.windowStartAt)}–${formatClock(request.windowEndAt)} совпадает со сменой ${name}.`
+      : `Окно ${formatClock(request.windowStartAt)}–${formatClock(request.windowEndAt)} не с кем совместить.`,
+  });
+  const lunchLine = lunchFact(selected, route);
+  if (lunchLine) lines.push(lunchLine);
+  if (route && chosen) {
+    lines.push({
+      icon: 'route',
+      text: `В этом маршруте ${route.assignedCount} заявок, пробег ${formatKm(route.distanceKm)}.`,
+    });
+  }
+  return lines;
+}
+
+function engineerParameterFacts(
+  snapshot: DashboardSnapshot,
+  engineer: EngineerView,
+  route: PlanRouteView | null,
+): IconFact[] {
+  const selected = snapshot.engineers.find((item) => item.id === engineer.id);
+  const day = selected?.day ?? null;
+  const lines: IconFact[] = [
+    {
+      icon: 'skills',
+      text: `Компетенции: ${engineer.skills.map(skillLabel).join(', ') || 'не указаны'}.`,
+    },
+    {
+      icon: 'transport',
+      text: `Транспорт: ${transportLabel(engineer.transportType)}.`,
+    },
+  ];
+  if (day?.equipmentStock) {
+    const stock = day.equipmentStock;
+    lines.push({
+      icon: 'equipment',
+      text: `Оборудование утром: роутеры ${stock.router}, приставки ${stock.setTopBox}, колонки ${stock.smartSpeaker}.`,
+    });
+  }
+  if (day) {
+    lines.push({
+      icon: 'window',
+      text: `Смена ${formatClock(day.shiftStartAt)}–${formatClock(day.shiftEndAt)}.`,
+    });
+  }
+  const lunchLine = lunchFact(selected, route);
+  lines.push(lunchLine ?? { icon: 'lunch', text: 'Обед не задан.' });
+  lines.push({
+    icon: 'route',
+    text: route
+      ? `В маршруте ${route.assignedCount} заявок, пробег ${formatKm(route.distanceKm)}.`
+      : 'В маршруте пока нет заявок.',
+  });
+  return lines;
+}
+
+function lunchFact(
+  engineer: (EngineerView & { day?: EngineerDayView | null }) | null | undefined,
+  route: PlanRouteView | null,
+): IconFact | null {
+  const lunch = route?.stops.find((stop) => stop.kind === 'lunch');
+  const actualStart = engineer?.day?.lunch.startedAt ?? lunch?.startAt ?? null;
+  if (actualStart !== null) {
+    const actualEnd = lunch?.endAt ?? engineer?.day?.lunch.windowEndAt ?? null;
+    const planned = engineer?.day?.lunch.windowStartAt ?? null;
+    const shifted = planned !== null && Math.abs(actualStart - planned) >= 60;
+    return {
+      icon: 'lunch',
+      text: shifted
+        ? `Обед сдвинут на ${formatClock(actualStart)}${actualEnd ? `–${formatClock(actualEnd)}` : ''}.`
+        : `Обед ${formatClock(actualStart)}${actualEnd ? `–${formatClock(actualEnd)}` : ''}.`,
+    };
+  }
+  if (engineer?.day?.lunch.enabled === false || route?.lunchStatus === 'disabled') {
+    return { icon: 'lunch', text: 'Обед выключен.' };
   }
   return null;
+}
+
+function assignmentEngineerId(snapshot: DashboardSnapshot, requestId: string): string | null {
+  return (
+    snapshot.plan.plan?.assignments.find((item) => item.requestId === requestId)?.engineerId ?? null
+  );
+}
+
+function stockCount(
+  stock: { router: number; setTopBox: number; smartSpeaker: number },
+  type: NonNullable<RequestView['requiredEquipment']>,
+): number {
+  if (type === 'router') return stock.router;
+  if (type === 'set_top_box') return stock.setTopBox;
+  return stock.smartSpeaker;
+}
+
+function equipmentLabel(type: NonNullable<RequestView['requiredEquipment']>): string {
+  return {
+    router: 'роутер',
+    set_top_box: 'ТВ-приставка',
+    smart_speaker: 'умная колонка',
+  }[type];
 }
 
 function explainAssigned(

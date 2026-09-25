@@ -4,6 +4,16 @@ import { canonicalHash } from '../../common/json';
 import type { EquipmentType, Skill, TransportType } from '../../generated/prisma/client';
 import type { OperationContext } from '../../operations';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
+import {
+  equipmentCapacity,
+  equipmentTotal,
+  equipmentWithSpares,
+  readEquipmentSettings,
+} from '../equipment/equipment-policy';
+import {
+  DEFAULT_DISPATCHER_SETTINGS,
+  type DispatcherSettings,
+} from '../settings/dispatcher-settings';
 
 export interface UploadRequestInput {
   readonly externalId: string;
@@ -28,6 +38,15 @@ export interface UploadEngineerInput {
   readonly start: { readonly lat: number; readonly lon: number };
   readonly shiftStartAt: number;
   readonly shiftEndAt: number;
+  /**
+   * Start-of-day stock. When any engineer in the package sets it, that stock is
+   * used as-is and the round-robin issue is skipped.
+   */
+  readonly equipmentStock?: {
+    readonly router: number;
+    readonly setTopBox: number;
+    readonly smartSpeaker: number;
+  };
 }
 
 export interface UploadDataPackageInput {
@@ -146,7 +165,11 @@ export class UploadImportService {
     let engineersCreated = 0;
     if (input.mode === 'new_region') {
       const engineers = input.engineers ?? [];
-      const equipment = allocateUploadedEquipment(input.requests, engineers);
+      const equipment = allocateUploadedEquipment(
+        input.requests,
+        engineers,
+        await readEquipmentSettings(context.tx),
+      );
       for (const engineerInput of engineers) {
         const rows = await context.tx.$queryRaw<Array<{ value: bigint }>>`
           SELECT nextval('engineer_input_order_seq') AS value
@@ -394,7 +417,20 @@ function emptyEquipment(): EquipmentColumns {
 function allocateUploadedEquipment(
   requests: readonly UploadRequestInput[],
   engineers: readonly UploadEngineerInput[],
+  settings: DispatcherSettings = DEFAULT_DISPATCHER_SETTINGS,
 ): Map<string, EquipmentColumns> {
+  if (engineers.some((engineer) => engineer.equipmentStock !== undefined)) {
+    return new Map(
+      engineers.map((engineer) => [
+        engineer.externalId,
+        {
+          equipmentRouter: engineer.equipmentStock?.router ?? 0,
+          equipmentSetTopBox: engineer.equipmentStock?.setTopBox ?? 0,
+          equipmentSmartSpeaker: engineer.equipmentStock?.smartSpeaker ?? 0,
+        },
+      ]),
+    );
+  }
   const result = new Map(engineers.map((engineer) => [engineer.externalId, emptyEquipment()]));
   const cursors = new Map<EquipmentType, number>();
   for (const request of requests) {
@@ -402,6 +438,8 @@ function allocateUploadedEquipment(
     if (!equipment) continue;
     const compatible = engineers.filter(
       (engineer) =>
+        equipmentTotal(result.get(engineer.externalId) ?? emptyEquipment()) <
+          equipmentCapacity(engineer.transportType, settings) &&
         engineer.skills.includes(request.requiredSkill) &&
         (request.requiredTransport === undefined ||
           engineer.transportType === request.requiredTransport),
@@ -417,10 +455,13 @@ function allocateUploadedEquipment(
     if (equipment === 'set_top_box') stock.equipmentSetTopBox += 1;
     if (equipment === 'smart_speaker') stock.equipmentSmartSpeaker += 1;
   }
-  for (const stock of result.values()) {
-    if (stock.equipmentRouter > 0) stock.equipmentRouter += 1;
-    if (stock.equipmentSetTopBox > 0) stock.equipmentSetTopBox += 1;
-    if (stock.equipmentSmartSpeaker > 0) stock.equipmentSmartSpeaker += 1;
+  for (const engineer of engineers) {
+    const stock = result.get(engineer.externalId);
+    if (stock)
+      result.set(
+        engineer.externalId,
+        equipmentWithSpares(stock, equipmentCapacity(engineer.transportType, settings)),
+      );
   }
   return result;
 }

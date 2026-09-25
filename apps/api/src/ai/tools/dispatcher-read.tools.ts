@@ -265,7 +265,8 @@ export function buildDispatcherReadTools(deps: DispatcherReadToolDeps): readonly
       '(basis, facts) when it has one.',
     schema: getRequestSchema,
     async run(_ctx: ToolContext, args: GetRequestArgs): Promise<ToolResult> {
-      const request = await deps.requests.byId(args.requestId);
+      const request = await deps.prisma.request.findUnique({ where: { id: args.requestId } });
+      if (!request) throw new SysError('NOT_FOUND', 'Request was not found');
       const planRow = await deps.plans.current(deps.prisma);
       const assignment = planRow?.assignments.find((item) => item.requestId === args.requestId);
       return ok(`Request ${args.requestId}: ${request.lifecycle}/${request.assignmentState}`, {
@@ -288,7 +289,8 @@ export function buildDispatcherReadTools(deps: DispatcherReadToolDeps): readonly
       'second active promise. The current conditions are always in get_request, not here.',
     schema: getRequestHistorySchema,
     async run(_ctx: ToolContext, args: GetRequestHistoryArgs): Promise<ToolResult> {
-      await deps.requests.byId(args.requestId);
+      const existing = await deps.prisma.request.findUnique({ where: { id: args.requestId } });
+      if (!existing) throw new SysError('NOT_FOUND', 'Request was not found');
       const entries = await deps.prisma.requestConditionHistory.findMany({
         where: { requestId: args.requestId },
         orderBy: { changedAt: 'desc' },

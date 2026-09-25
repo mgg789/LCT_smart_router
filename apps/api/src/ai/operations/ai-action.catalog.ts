@@ -365,7 +365,8 @@ export function buildAiActionCatalog(deps: AiActionCatalogDeps): ReadonlyMap<str
       ) {
         throw new SysError('VALIDATION_FAILED', 'The window ends before it starts');
       }
-      const request = await deps.requests.byId(requestId);
+      const request = await deps.prisma.request.findUnique({ where: { id: requestId } });
+      if (!request) throw SysError.notFound('Request', { requestId });
       assertRequestChangeable(request);
     },
     async preview(args) {
@@ -416,7 +417,8 @@ export function buildAiActionCatalog(deps: AiActionCatalogDeps): ReadonlyMap<str
     allowedProfiles: ['dispatcher_fix'],
     async precheck(args) {
       const requestId = requireTargetRef(args.targetRef, 'a request');
-      const request = await deps.requests.byId(requestId);
+      const request = await deps.prisma.request.findUnique({ where: { id: requestId } });
+      if (!request) throw SysError.notFound('Request', { requestId });
       if (request.lifecycle !== 'cancelled') {
         assertRequestChangeable(request);
       }
@@ -696,7 +698,7 @@ export function buildAiActionCatalog(deps: AiActionCatalogDeps): ReadonlyMap<str
     async precheck(args) {
       const engineerId = requireEngineerId(args.targetRef);
       const view = await deps.live.engineerView(engineerId);
-      if (view.current !== null) {
+      if (view.current?.phase === 'in_progress') {
         throw new SysError(
           'VALIDATION_FAILED',
           'Finish or report the active visit before a technical break',
@@ -854,13 +856,11 @@ export function buildAiActionCatalog(deps: AiActionCatalogDeps): ReadonlyMap<str
         { label: 'Причина', value: payload.note },
       ];
     },
-    async apply({ context, targetRef, payload }) {
-      const input = payload as LiveOfflinePayload;
-      return deps.live.act(context, requireEngineerId(targetRef), {
-        operationId: context.operationId,
-        kind: 'offline',
-        note: input.note,
-      });
+    async apply() {
+      throw new SysError(
+        'VALIDATION_FAILED',
+        'Going offline from the assistant is not part of this contour',
+      );
     },
   });
 

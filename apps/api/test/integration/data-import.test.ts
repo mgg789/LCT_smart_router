@@ -360,6 +360,68 @@ describe('official dataset import', () => {
     assert.ok(bumped.length > 0, 'repeat import must bump request versions');
   });
 
+  it('preserves issued stock while refreshing unissued stock within capacity', async () => {
+    const days = await prisma.engineerDay.findMany({
+      where: { engineer: { region: 'east' } },
+      include: { engineer: true },
+      orderBy: { engineer: { inputOrder: 'asc' } },
+    });
+    assert.ok(days.length >= 2, 'the official east region has multiple crews');
+    const issued = days[0];
+    if (!issued) {
+      throw new Error('the repeat import has an issued crew to preserve');
+    }
+    const unissued = days.find((day) => day.id !== issued.id);
+    if (!unissued) {
+      throw new Error('the repeat import has an unissued crew to refresh');
+    }
+
+    const issuedAt = BigInt(Math.floor(Date.now() / 1000));
+    await prisma.engineerDay.update({
+      where: { id: issued.id },
+      data: {
+        equipmentRouter: 1,
+        equipmentSetTopBox: 2,
+        equipmentSmartSpeaker: 0,
+        equipmentIssuedAt: issuedAt,
+      },
+    });
+    await prisma.engineerDay.update({
+      where: { id: unissued.id },
+      data: {
+        equipmentRouter: 99,
+        equipmentSetTopBox: 99,
+        equipmentSmartSpeaker: 99,
+        equipmentIssuedAt: null,
+      },
+    });
+
+    await importRegion('east');
+
+    const issuedAfter = await prisma.engineerDay.findUniqueOrThrow({ where: { id: issued.id } });
+    assert.equal(issuedAfter.equipmentRouter, 1);
+    assert.equal(issuedAfter.equipmentSetTopBox, 2);
+    assert.equal(issuedAfter.equipmentSmartSpeaker, 0);
+    assert.equal(issuedAfter.equipmentIssuedAt, issuedAt);
+
+    const unissuedAfter = await prisma.engineerDay.findUniqueOrThrow({
+      where: { id: unissued.id },
+      include: { engineer: true },
+    });
+    const capacity =
+      unissuedAfter.engineer.transportType === 'car'
+        ? 30
+        : unissuedAfter.engineer.transportType === 'bike'
+          ? 12
+          : 5;
+    const refreshedTotal =
+      unissuedAfter.equipmentRouter +
+      unissuedAfter.equipmentSetTopBox +
+      unissuedAfter.equipmentSmartSpeaker;
+    assert.ok(refreshedTotal <= capacity, 'unissued refresh must respect transport capacity');
+    assert.ok(refreshedTotal < 99, 'unissued refresh must replace stale provisional stock');
+  });
+
   it('refuses to reinterpret an imported region with another crew-count profile', async () => {
     const before = await prisma.engineer.count({ where: { region: 'east' } });
     const response = await call('POST', '/api/v1/dispatch/data/import', dispatcherToken, {

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { assignmentFor, routeForEngineer } from '../domain/dashboard';
 import { createDevSnapshot, FOCUS_REQUEST_ID } from '../fixtures/dev-day';
 import { explainSelection } from './explanations';
+import { moscowAt } from './time';
 
 describe('dispatcher explanations', () => {
   it('names the full brigade and explains why this engineer received the job', () => {
@@ -16,6 +17,34 @@ describe('dispatcher explanations', () => {
     expect(explanation?.facts.some((line) => line.includes('подключение'))).toBe(true);
     expect(explanation?.influence.length).toBeGreaterThan(40);
     expect(explanation?.result).toContain('Алексей Соколов');
+    expect(explanation?.iconFacts?.some((fact) => fact.icon === 'skills')).toBe(true);
+    expect(explanation?.baseFacts?.some((line) => line.includes('Алексей Соколов'))).toBe(true);
+
+    const shiftedLunchStart = moscowAt(snapshot.workDate, 12, 5);
+    const shiftedSnapshot = {
+      ...snapshot,
+      engineers: snapshot.engineers.map((item) =>
+        item.id === engineer?.id && item.day
+          ? {
+              ...item,
+              day: {
+                ...item.day,
+                lunch: {
+                  ...item.day.lunch,
+                  enabled: true,
+                  windowStartAt: moscowAt(snapshot.workDate, 11, 20),
+                  windowEndAt: moscowAt(snapshot.workDate, 13),
+                  startedAt: shiftedLunchStart,
+                },
+              },
+            }
+          : item,
+      ),
+    };
+    const shifted = explainSelection(shiftedSnapshot, request, assignment, engineer, route);
+    expect(shifted?.baseFacts).toEqual(
+      expect.arrayContaining([expect.stringContaining('Обед сдвинут')]),
+    );
   });
 
   it('explains an unassigned video job from missing skill, not a stock phrase', () => {

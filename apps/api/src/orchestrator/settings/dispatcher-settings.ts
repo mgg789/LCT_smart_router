@@ -8,6 +8,9 @@ const secret = z.string().max(200).nullable().optional();
 
 /** Defaults match the previous hardcoded alert timers and a typical field shift. */
 export const DEFAULT_DISPATCHER_SETTINGS = {
+  equipmentCapacityWalk: 5,
+  equipmentCapacityBike: 12,
+  equipmentCapacityCar: 30,
   dayStartMin: 9 * 60,
   dayEndMin: 21 * 60,
   noShowSec: 30 * 60,
@@ -19,6 +22,9 @@ export const DEFAULT_DISPATCHER_SETTINGS = {
 } as const;
 
 export type DispatcherSettings = {
+  readonly equipmentCapacityWalk: number;
+  readonly equipmentCapacityBike: number;
+  readonly equipmentCapacityCar: number;
   readonly dayStartMin: number;
   readonly dayEndMin: number;
   readonly noShowSec: number;
@@ -31,6 +37,9 @@ export type DispatcherSettings = {
 
 export const dispatcherSettingsPatchSchema = z
   .object({
+    equipmentCapacityWalk: z.number().int().min(0).max(1000).optional(),
+    equipmentCapacityBike: z.number().int().min(0).max(1000).optional(),
+    equipmentCapacityCar: z.number().int().min(0).max(1000).optional(),
     dayStartMin: minuteOfDay.optional(),
     dayEndMin: minuteOfDay.optional(),
     noShowSec: seconds.optional(),
@@ -51,6 +60,9 @@ export const dispatcherSettingsPatchSchema = z
 export type DispatcherSettingsPatch = z.infer<typeof dispatcherSettingsPatchSchema>;
 
 export interface DispatcherSettingsView {
+  readonly equipmentCapacityWalk: number;
+  readonly equipmentCapacityBike: number;
+  readonly equipmentCapacityCar: number;
   readonly dayStartMin: number;
   readonly dayEndMin: number;
   readonly noShowSec: number;
@@ -64,6 +76,9 @@ export interface DispatcherSettingsView {
 }
 
 const storedSchema = z.object({
+  equipmentCapacityWalk: z.number().int().min(0).max(1000).default(5),
+  equipmentCapacityBike: z.number().int().min(0).max(1000).default(12),
+  equipmentCapacityCar: z.number().int().min(0).max(1000).default(30),
   dayStartMin: minuteOfDay.default(DEFAULT_DISPATCHER_SETTINGS.dayStartMin),
   dayEndMin: minuteOfDay.default(DEFAULT_DISPATCHER_SETTINGS.dayEndMin),
   noShowSec: seconds.default(DEFAULT_DISPATCHER_SETTINGS.noShowSec),
@@ -97,6 +112,9 @@ export function mergeDispatcherSettings(
   patch: DispatcherSettingsPatch,
 ): DispatcherSettings {
   const next: DispatcherSettings = {
+    equipmentCapacityWalk: patch.equipmentCapacityWalk ?? current.equipmentCapacityWalk,
+    equipmentCapacityBike: patch.equipmentCapacityBike ?? current.equipmentCapacityBike,
+    equipmentCapacityCar: patch.equipmentCapacityCar ?? current.equipmentCapacityCar,
     dayStartMin: patch.dayStartMin ?? current.dayStartMin,
     dayEndMin: patch.dayEndMin ?? current.dayEndMin,
     noShowSec: patch.noShowSec ?? current.noShowSec,
@@ -117,6 +135,9 @@ export function mergeDispatcherSettings(
 /** Public view: presence and last four characters only, never the secret. */
 export function toDispatcherSettingsView(settings: DispatcherSettings): DispatcherSettingsView {
   return {
+    equipmentCapacityWalk: settings.equipmentCapacityWalk,
+    equipmentCapacityBike: settings.equipmentCapacityBike,
+    equipmentCapacityCar: settings.equipmentCapacityCar,
     dayStartMin: settings.dayStartMin,
     dayEndMin: settings.dayEndMin,
     noShowSec: settings.noShowSec,

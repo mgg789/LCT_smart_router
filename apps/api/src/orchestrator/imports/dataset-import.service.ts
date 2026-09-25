@@ -8,6 +8,16 @@ import type { EquipmentType, Prisma, Skill, TransportType } from '../../generate
 import type { OperationContext } from '../../operations';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import {
+  equipmentCapacity,
+  equipmentTotal,
+  equipmentWithSpares,
+  readEquipmentSettings,
+} from '../equipment/equipment-policy';
+import {
+  DEFAULT_DISPATCHER_SETTINGS,
+  type DispatcherSettings,
+} from '../settings/dispatcher-settings';
+import {
   normalizeAddress,
   type ParsedBrigade,
   type ParsedRegion,
@@ -242,6 +252,7 @@ export class DatasetImportService {
     const equipmentByBrigade = allocateMorningEquipment(
       prepared.parsed.requests,
       prepared.brigades,
+      await readEquipmentSettings(context.tx),
     );
     let upserted = 0;
     for (const brigade of prepared.brigades) {
@@ -257,7 +268,17 @@ export class DatasetImportService {
       if (!mapped) {
         continue;
       }
-      await context.tx.engineerDay.upsert({
+      // Serialize repeat imports with other mutations that deliberately lock the day
+      // first (handoffs and other physical-stock operations). The conditional update
+      // below remains necessary because the first issue path currently updates the row
+      // directly; it is the atomic guard against resurrecting issued stock.
+      await context.tx.$queryRaw`
+        SELECT id
+        FROM engineer_days
+        WHERE engineer_id = ${mapped.internalId} AND work_date = ${workDate}
+        FOR UPDATE
+      `;
+      const day = await context.tx.engineerDay.upsert({
         where: { engineerId_workDate: { engineerId: mapped.internalId, workDate } },
         update: {
           shiftStartAt: BigInt(horizonStart),
@@ -267,7 +288,6 @@ export class DatasetImportService {
           lunchWindowStartAt: BigInt(lunchWindow.start),
           lunchWindowEndAt: BigInt(lunchWindow.end),
           updatedAt: now,
-          ...equipmentByBrigade.get(brigade.name),
         },
         create: {
           engineerId: mapped.internalId,
@@ -284,6 +304,13 @@ export class DatasetImportService {
           updatedAt: now,
         },
       });
+      const equipment = equipmentByBrigade.get(brigade.name);
+      if (equipment) {
+        await context.tx.engineerDay.updateMany({
+          where: { id: day.id, equipmentIssuedAt: null },
+          data: equipment,
+        });
+      }
       upserted += 1;
     }
     return upserted;
@@ -382,7 +409,11 @@ export class DatasetImportService {
     let depotsCreated = 0;
     let depotId: string | null = null;
     let depotPoint: { lat: number; lon: number } | null = null;
-    const equipmentByBrigade = allocateMorningEquipment(parsed.requests, brigades);
+    const equipmentByBrigade = allocateMorningEquipment(
+      parsed.requests,
+      brigades,
+      await readEquipmentSettings(context.tx),
+    );
 
     if (parsed.depot) {
       depotPoint = geocoded.get(normalizeAddress(parsed.depot.addressText)) ?? null;
@@ -781,6 +812,7 @@ interface EquipmentColumns {
 function allocateMorningEquipment(
   requests: readonly ParsedRequest[],
   brigades: readonly ParsedBrigade[],
+  settings: DispatcherSettings = DEFAULT_DISPATCHER_SETTINGS,
 ): Map<string, EquipmentColumns> {
   const demand = new Map(
     brigades.map((brigade) => [
@@ -794,8 +826,16 @@ function allocateMorningEquipment(
     if (!equipment) {
       continue;
     }
-    const compatible = brigades.filter((brigade) =>
-      synthesizeCrew(brigade.inputOrder).skills.includes(request.skill),
+    const compatible = brigades.filter(
+      (brigade) =>
+        synthesizeCrew(brigade.inputOrder).skills.includes(request.skill) &&
+        equipmentTotal(
+          demand.get(brigade.name) ?? {
+            equipmentRouter: 0,
+            equipmentSetTopBox: 0,
+            equipmentSmartSpeaker: 0,
+          },
+        ) < equipmentCapacity(synthesizeCrew(brigade.inputOrder).transportType, settings),
     );
     if (compatible.length === 0) {
       continue;
@@ -817,11 +857,14 @@ function allocateMorningEquipment(
   return new Map(
     [...demand].map(([name, row]) => [
       name,
-      {
-        equipmentRouter: row.equipmentRouter > 0 ? row.equipmentRouter + 1 : 0,
-        equipmentSetTopBox: row.equipmentSetTopBox > 0 ? row.equipmentSetTopBox + 1 : 0,
-        equipmentSmartSpeaker: row.equipmentSmartSpeaker > 0 ? row.equipmentSmartSpeaker + 1 : 0,
-      },
+      equipmentWithSpares(
+        row,
+        equipmentCapacity(
+          synthesizeCrew(brigades.find((item) => item.name === name)?.inputOrder ?? 0)
+            .transportType,
+          settings,
+        ),
+      ),
     ]),
   );
 }

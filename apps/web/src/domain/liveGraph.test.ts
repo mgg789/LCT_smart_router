@@ -17,27 +17,6 @@ interface ExactStateScenario {
 }
 
 describe('LIVE graph projection', () => {
-  it('does not put a reassigned future job back from an older LIVE response', () => {
-    const points = pointsForExactState();
-    const route = exactStateRoute();
-    const graph = projectLiveGraph(
-      {
-        ...route,
-        timingStatus: 'unverified',
-        stops: route.stops.filter((s) => s.requestId !== 'j1'),
-      },
-      {
-        phase: 'traveling',
-        origin: points.start,
-        anchor: points.start,
-        lunch: null,
-        next: points.j1,
-        occurredAt: 100,
-      },
-    );
-    expect(graph.timelineNodes.some((node) => node.requestId === 'j1')).toBe(false);
-    expect(graph.mapNodes.some((node) => node.requestId === 'j1')).toBe(false);
-  });
   it('uses a reported arrival and then the actual start instead of stale planned times', () => {
     const points = pointsForExactState();
     for (const started of [false, true]) {

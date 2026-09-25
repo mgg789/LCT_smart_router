@@ -1,10 +1,10 @@
 import nodemailer, { type Transporter } from 'nodemailer';
 import type SMTPTransport from 'nodemailer/lib/smtp-transport';
 
-/** Inline CID image attached to a catalogue letter. */
+/** Embedded catalogue image or a downloadable report attachment. */
 export interface OutboundMailAttachment {
   readonly filename: string;
-  readonly cid: string;
+  readonly cid?: string;
   readonly content: Buffer;
   readonly contentType: string;
 }
@@ -47,7 +47,7 @@ export class NodemailerTransport implements MailTransport {
           cid: attachment.cid,
           content: attachment.content,
           contentType: attachment.contentType,
-          contentDisposition: 'inline',
+          contentDisposition: attachment.cid ? 'inline' : 'attachment',
         })),
       });
       const response = info.response ?? '250 accepted';

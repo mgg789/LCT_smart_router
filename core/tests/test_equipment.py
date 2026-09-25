@@ -1,9 +1,24 @@
 """Equipment is a per-engineer hard capacity with no in-day exchange."""
 
-from core.contracts import Engineer, EquipmentStock
+import pytest
+from core.contracts import Engineer, EquipmentStock, PendingEquipmentHandoff
 from core.engine import SearchSettings, solve
 from core.evidence import build_plan_evidence
 from core.geo import GraphTravel
+
+
+def test_transport_capacity_defaults_and_rejects_overloaded_inventory(snapshot):
+    """Legacy snapshots receive physical carrying limits before any solver work."""
+    def engineer(transport, routers):
+        payload = snapshot.engineers[0].model_dump()
+        payload.update({"transport_type": transport, "equipment_stock": {"router": routers, "set_top_box": 0, "smart_speaker": 0}})
+        payload.pop("equipment_capacity")
+        return Engineer.model_validate(payload)
+
+    walker, cyclist, driver = engineer("walk", 5), engineer("bike", 12), engineer("car", 30)
+    assert (walker.equipment_capacity, cyclist.equipment_capacity, driver.equipment_capacity) == (5, 12, 30)
+    with pytest.raises(ValueError, match="carrying capacity"):
+        engineer("walk", 6)
 
 
 def _equipment_snapshot(snapshot, *, second_engineer: bool = False):
@@ -79,3 +94,88 @@ def test_missing_stock_has_structured_reason_and_candidate_blocker(snapshot, gra
     assert evidence.candidates[0].equipment_stock == 0
     assert evidence.candidates[0].equipment_match is False
     assert "equipment_missing" in evidence.candidates[0].blockers
+
+
+def _handoff_snapshot(snapshot, *, donor_region="east", window=7200, receiver_capacity=30):
+    """Make a request that only a stockless, otherwise qualified receiver can do."""
+    request = snapshot.requests[0].model_copy(
+        update={
+            "required_skill": "connection",
+            "required_equipment": "router",
+            "region": "east",
+            "window_end_at": snapshot.planning_as_of + window,
+        }
+    )
+    donor = snapshot.engineers[0].model_copy(
+        update={"engineer_id": "donor", "skills": ["local"], "region": donor_region,
+                "equipment_stock": EquipmentStock(router=1)}
+    )
+    receiver = donor.model_copy(
+        update={"engineer_id": "receiver", "input_order": 1, "skills": ["connection"],
+                "region": "east", "equipment_stock": EquipmentStock(),
+                "equipment_capacity": receiver_capacity}
+    )
+    return snapshot.model_copy(update={"requests": [request], "engineers": [donor, receiver]})
+
+
+def test_enabled_transfer_schedules_paired_meeting_and_moves_stock_after_it(snapshot, graph):
+    """A rescue inserts two matching 300-second stops before the receiver's job."""
+    task = _handoff_snapshot(snapshot)
+    output = solve(task, GraphTravel(graph), SearchSettings(
+        time_limit_ms=100, solution_limit=4, equipment_transfers_enabled=True, access_buffer_sec=0,
+    ))
+    assert output.main.assignments[0].engineer_id == "receiver"
+    donor, receiver = output.main.routes
+    handoffs = [stop for route in (donor, receiver) for stop in route.stops if stop.kind == "handoff"]
+    assert len(handoffs) == 2
+    assert handoffs[0].location == handoffs[1].location
+    assert handoffs[0].start_at == handoffs[1].start_at
+    assert all(stop.end_at - stop.start_at == 300 for stop in handoffs)
+    assert next(stop for stop in receiver.stops if stop.kind == "handoff").sequence < next(
+        stop for stop in receiver.stops if stop.kind == "job"
+    ).sequence
+
+
+def test_transfer_is_disabled_or_rejected_across_regions(snapshot, graph):
+    """The optional rescue never weakens the disabled or same-region constraints."""
+    travel = GraphTravel(graph)
+    disabled = solve(_handoff_snapshot(snapshot), travel, SearchSettings(
+        time_limit_ms=100, solution_limit=4, access_buffer_sec=0,
+    )).main
+    foreign = solve(_handoff_snapshot(snapshot, donor_region="west"), travel, SearchSettings(
+        time_limit_ms=100, solution_limit=4, equipment_transfers_enabled=True, access_buffer_sec=0,
+    )).main
+    assert disabled.assignments[0].status == foreign.assignments[0].status == "unassigned"
+
+
+def test_transfer_respects_window_and_receiver_capacity(snapshot, graph):
+    """A meeting cannot make a late job feasible or overfill the receiver."""
+    travel = GraphTravel(graph)
+    impossible = _handoff_snapshot(snapshot, window=200)
+    impossible = impossible.model_copy(
+        update={"requests": [impossible.requests[0].model_copy(update={"service_duration_sec": 3000})]}
+    )
+    late = solve(impossible, travel, SearchSettings(
+        time_limit_ms=100, solution_limit=4, equipment_transfers_enabled=True, access_buffer_sec=0,
+    )).main
+    full = solve(_handoff_snapshot(snapshot, receiver_capacity=0), travel, SearchSettings(
+        time_limit_ms=100, solution_limit=4, equipment_transfers_enabled=True, access_buffer_sec=0,
+    )).main
+    assert late.assignments[0].status == full.assignments[0].status == "unassigned"
+
+
+def test_pending_handoff_is_replayed_at_its_frozen_place_and_time(snapshot, graph):
+    """Confirmed exchanges survive replanning and credit stock only after the meeting."""
+    task = _handoff_snapshot(snapshot)
+    meeting = PendingEquipmentHandoff(
+        handoff_id="confirmed-1", donor_engineer_id="donor", receiver_engineer_id="receiver",
+        request_id="job-1", items=EquipmentStock(router=1),
+        location=graph.nodes[0].location, meeting_at=task.planning_as_of,
+    )
+    task = task.model_copy(update={"pending_equipment_handoffs": [meeting]})
+    plan = solve(task, GraphTravel(graph), SearchSettings(time_limit_ms=100, solution_limit=4, access_buffer_sec=0)).main
+    assert plan.assignments[0].engineer_id == "receiver"
+    frozen = [stop for route in plan.routes for stop in route.stops if stop.kind == "handoff"]
+    assert len(frozen) == 2
+    assert {stop.handoff.handoff_id for stop in frozen} == {"confirmed-1"}
+    assert {stop.start_at for stop in frozen} == {task.planning_as_of}
