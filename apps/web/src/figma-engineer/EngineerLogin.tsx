@@ -17,8 +17,8 @@ import {
 } from '../figma-dashboard/otp';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { eu } from './engineerScale';
-import { PhoneErrorNotice } from './PhoneErrorNotice';
 import { engineerCodeHint } from './loginHint';
+import { PhoneErrorNotice } from './PhoneErrorNotice';
 
 const ease = [0.22, 1, 0.36, 1] as const;
 const slide = { duration: 0.34, ease };

@@ -3,9 +3,7 @@ import { isPhoneFailureNotice } from './phoneNotice';
 
 describe('phone failure notice', () => {
   it('keeps a form hint off the banner', () => {
-    expect(isPhoneFailureNotice('Заполните ФИО, адрес, точку на карте, окно и почту.')).toBe(
-      false,
-    );
+    expect(isPhoneFailureNotice('Заполните ФИО, адрес, точку на карте, окно и почту.')).toBe(false);
     expect(isPhoneFailureNotice(null)).toBe(false);
   });
 

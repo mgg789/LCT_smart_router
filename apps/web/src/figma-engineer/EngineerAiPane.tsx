@@ -1,9 +1,16 @@
 import { LayoutGroup, motion, useReducedMotion } from 'framer-motion';
 import { RefreshCw } from 'lucide-react';
-import { type FormEvent, type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from 'react';
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { fitComposerField } from '../components/ai/composerField';
-import { FIGMA_ASSETS } from '../figma-dashboard/assets';
 import { AiMarkdown } from '../figma-dashboard/AiMarkdown';
+import { FIGMA_ASSETS } from '../figma-dashboard/assets';
 import { thoughtLabel } from '../figma-dashboard/DispatcherAiPane';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import {
@@ -105,7 +112,7 @@ export function EngineerAiPane({
 
   useEffect(() => {
     if (fieldRef.current) fitComposerField(fieldRef.current);
-  }, [draft]);
+  }, []);
 
   async function copy(id: string, text: string) {
     try {
@@ -212,13 +219,21 @@ export function EngineerAiPane({
             >
               {engineerGreeting(displayName)}
             </h1>
-            <motion.div layoutId="engineer-ai-composer" className="w-full" style={{ maxWidth: '100%' }}>
+            <motion.div
+              layoutId="engineer-ai-composer"
+              className="w-full"
+              style={{ maxWidth: '100%' }}
+            >
               {composer}
             </motion.div>
           </div>
         ) : (
           <>
-            <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto" style={{ paddingBottom: eu(140) }}>
+            <div
+              ref={scrollRef}
+              className="min-h-0 flex-1 overflow-y-auto"
+              style={{ paddingBottom: eu(140) }}
+            >
               <div className="flex flex-col" style={{ gap: eu(28) }}>
                 {spoken.map((message, index) =>
                   message.author === 'user' ? (
@@ -289,12 +304,21 @@ function UserBubble({
         className="bg-white"
         style={{ maxWidth: eu(557), borderRadius: eu(20), padding: eu(24) }}
       >
-        <p className="whitespace-pre-wrap font-medium leading-normal text-figma-ink" style={{ fontSize: eu(24) }}>
+        <p
+          className="whitespace-pre-wrap font-medium leading-normal text-figma-ink"
+          style={{ fontSize: eu(24) }}
+        >
           {text}
         </p>
       </div>
       <IconButton label={copied ? 'Скопировано' : 'Копировать'} onClick={onCopy}>
-        <FigmaIcon src={FIGMA_ASSETS.aiCopy} alt="" width={28} height={28} style={{ width: eu(28), height: eu(28) }} />
+        <FigmaIcon
+          src={FIGMA_ASSETS.aiCopy}
+          alt=""
+          width={28}
+          height={28}
+          style={{ width: eu(28), height: eu(28) }}
+        />
       </IconButton>
     </div>
   );
@@ -314,11 +338,18 @@ function GuardModal({
       className="absolute inset-0 z-40 flex items-center justify-center bg-black/40"
       style={{ padding: eu(32) }}
     >
-      <div className="w-full bg-white" style={{ borderRadius: eu(24), padding: eu(28), maxWidth: eu(560) }}>
+      <div
+        className="w-full bg-white"
+        style={{ borderRadius: eu(24), padding: eu(28), maxWidth: eu(560) }}
+      >
         {operation.preview.length > 0 ? (
           <dl style={{ display: 'flex', flexDirection: 'column', gap: eu(8) }}>
             {operation.preview.map((row) => (
-              <div key={row.label} className="flex justify-between" style={{ gap: eu(16), fontSize: eu(22) }}>
+              <div
+                key={row.label}
+                className="flex justify-between"
+                style={{ gap: eu(16), fontSize: eu(22) }}
+              >
                 <dt className="text-figma-muted">{row.label}</dt>
                 <dd className="text-right font-medium text-figma-ink">{row.value}</dd>
               </div>
@@ -376,20 +407,32 @@ function AssistantBubble({
           style={{ width: eu(74), height: eu(74) }}
         />
         {thoughtSeconds !== null ? (
-          <div className="bg-white" style={{ borderRadius: eu(20), padding: `${eu(16)} ${eu(24)}` }}>
+          <div
+            className="bg-white"
+            style={{ borderRadius: eu(20), padding: `${eu(16)} ${eu(24)}` }}
+          >
             <p className="font-medium leading-none text-figma-ink" style={{ fontSize: eu(20) }}>
               {thoughtLabel(thoughtSeconds)}
             </p>
           </div>
         ) : null}
       </div>
-      <div className="font-medium text-figma-ink" style={{ marginTop: eu(16), fontSize: eu(24), maxWidth: eu(590) }}>
+      <div
+        className="font-medium text-figma-ink"
+        style={{ marginTop: eu(16), fontSize: eu(24), maxWidth: eu(590) }}
+      >
         <AiMarkdown text={message.text} />
       </div>
       {!message.pending ? (
         <div className="flex items-center" style={{ marginTop: eu(12), gap: eu(18) }}>
           <IconButton label={copied ? 'Скопировано' : 'Копировать'} onClick={onCopy}>
-            <FigmaIcon src={FIGMA_ASSETS.aiCopy} alt="" width={28} height={28} style={{ width: eu(28), height: eu(28) }} />
+            <FigmaIcon
+              src={FIGMA_ASSETS.aiCopy}
+              alt=""
+              width={28}
+              height={28}
+              style={{ width: eu(28), height: eu(28) }}
+            />
           </IconButton>
           <IconButton label="Спросить ещё раз" onClick={onAgain}>
             <RefreshCw style={{ width: eu(22), height: eu(22) }} aria-hidden />
@@ -438,7 +481,12 @@ function IconButton({
   children: ReactNode;
 }) {
   return (
-    <button type="button" aria-label={label} onClick={onClick} className="ai-icon-btn text-figma-ink">
+    <button
+      type="button"
+      aria-label={label}
+      onClick={onClick}
+      className="ai-icon-btn text-figma-ink"
+    >
       {children}
     </button>
   );

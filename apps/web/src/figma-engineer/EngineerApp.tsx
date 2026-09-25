@@ -14,7 +14,6 @@ import {
   sendEngineerLiveAction,
 } from '../api/live';
 import type { EngineerDayView, EngineerPlanResponse, EngineerView } from '../api/types';
-import { EngineerAiPane } from './EngineerAiPane';
 import { PassportOffer } from '../components/passports/PassportOffer';
 import { TRANSPORT_OPTIONS } from '../figma-dashboard/addEntity';
 import { FigmaIcon } from '../figma-dashboard/primitives';
@@ -25,6 +24,7 @@ import {
   DESIGN_PREVIEW_PLAN,
   DESIGN_PREVIEW_PROFILE,
 } from './designPreview';
+import { EngineerAiPane } from './EngineerAiPane';
 import { EngineerDayResults } from './EngineerDayResults';
 import { EngineerMenu, type EngineerMenuId } from './EngineerMenu';
 import { EngineerSettings } from './EngineerSettings';
@@ -701,4 +701,3 @@ export function EngineerApp({
     </main>
   );
 }
-
