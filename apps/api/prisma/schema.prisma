@@ -1365,6 +1365,7 @@ model AiRunEvent {
   seq       Int
   type      String
   payload   Json
+  createdAt BigInt @map("created_at")
 
   run AiRun @relation(fields: [runId], references: [id], onDelete: Cascade)
 

@@ -189,10 +189,13 @@ export class AiController {
     @CurrentActor() actor: Actor,
     @Param('id') conversationId: string,
     @Query(zodBody(afterSeqQuerySchema)) query: AfterSeqQueryDto,
-  ): Promise<{ messages: AiMessageView[] }> {
-    await this.assertOwned(actor, conversationId);
+  ): Promise<{ messages: AiMessageView[]; conversation: AiConversationView }> {
+    const conversation = await this.assertOwned(actor, conversationId);
     const messages = await this.conversations.listMessages(conversationId, query.afterSeq);
-    return { messages: messages.map(toMessageView) };
+    return {
+      messages: messages.map(toMessageView),
+      conversation: toConversationView(conversation),
+    };
   }
 
   @Post('conversations/:id/messages')

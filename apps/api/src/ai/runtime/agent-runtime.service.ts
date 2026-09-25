@@ -130,6 +130,7 @@ export class AgentRuntimeService implements OnModuleInit {
             seq,
             type: event.type,
             payload: event as object,
+            createdAt: BigInt(now),
           },
         }),
       ]);

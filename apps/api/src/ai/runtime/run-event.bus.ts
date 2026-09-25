@@ -47,6 +47,7 @@ export class RunEventBus {
             seq,
             type: full.type,
             payload: full as object,
+            createdAt: BigInt(full.at),
           },
         }),
         this.prisma.aiRun.update({ where: { id: handle.runId }, data: { lastEventSeq: seq } }),
@@ -89,7 +90,7 @@ export class RunEventBus {
     const full = { ...event, seq, at: now } as AiRunEvent;
     if (PERSISTED_AI_EVENT_TYPES.has(full.type)) {
       await this.prisma.aiRunEvent.create({
-        data: { runId, seq, type: full.type, payload: full as object },
+        data: { runId, seq, type: full.type, payload: full as object, createdAt: BigInt(now) },
       });
     }
     return full;

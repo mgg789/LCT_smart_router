@@ -42,6 +42,7 @@ export function toConversationView(conversation: AiConversation): AiConversation
 
 export interface AiMessageView {
   readonly id: string;
+  readonly conversationId: string;
   readonly seq: number;
   readonly author: string;
   readonly kind: string;
@@ -58,6 +59,7 @@ export interface AiMessageView {
 export function toMessageView(message: AiMessage): AiMessageView {
   return {
     id: message.id,
+    conversationId: message.conversationId,
     seq: message.seq,
     author: message.author,
     kind: message.kind,
