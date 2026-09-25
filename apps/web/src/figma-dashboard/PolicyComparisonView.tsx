@@ -3,6 +3,7 @@ import type {
   PolicyComparisonResponse,
   PolicyComparisonRow,
 } from '../api/types';
+import { recommendPolicy } from '../domain/policyRecommend';
 import {
   perAssignmentDuration,
   perAssignmentKm,
@@ -11,7 +12,6 @@ import {
   strategyLabel,
 } from '../lib/policyComparison';
 import { formatClock, formatDurationMin, formatKm } from '../lib/time';
-import { recommendPolicy } from '../domain/policyRecommend';
 import { FigmaText } from './primitives';
 
 export const POLICY_PAGE_CAPTION = 'Одинаковые заявки и дорожные условия';

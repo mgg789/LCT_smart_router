@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
-import { loadDispatchWeather, type DispatchWeather } from '../api/client';
+import { type DispatchWeather, loadDispatchWeather } from '../api/client';
 import { TintIcon } from './TintIcon';
 
 const ICONS: Record<DispatchWeather['kind'], string> = {
@@ -61,14 +61,16 @@ export function WeatherBadge({ token }: { token: string | null }) {
 
   if (!weather) return null;
   const kind = weather.kind;
-  const degrees =
-    weather.temperatureC === null ? null : `${Math.round(weather.temperatureC)}°`;
+  const degrees = weather.temperatureC === null ? null : `${Math.round(weather.temperatureC)}°`;
   const factor =
     weather.trafficMultiplier > 1
       ? ` Сейчас он ×${String(weather.trafficMultiplier).replace('.', ',')}.`
       : ' Сейчас погода его не поднимает.';
 
   return (
+    // Hover/focus tooltip container: focus handlers already cover the keyboard path,
+    // and the text itself is plain content of the element.
+    // biome-ignore lint/a11y/noStaticElementInteractions: tooltip reveal on hover and focus
     <div
       className="absolute right-[16px] top-[16px] z-30"
       onMouseEnter={() => setHovering(true)}

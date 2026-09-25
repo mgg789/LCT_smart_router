@@ -24,7 +24,9 @@ export function ReplanDeltaCard({
     <motion.aside
       aria-label="Изменения после перепланирования"
       className="absolute left-1/2 top-1/2 z-[85] w-[520px] rounded-[24px] bg-figma-ink p-[22px] text-white shadow-[0_16px_40px_rgba(15,16,20,0.28)]"
-      initial={motionOn ? { opacity: 0, x: '-50%', y: '-46%', scale: 0.98 } : { x: '-50%', y: '-50%' }}
+      initial={
+        motionOn ? { opacity: 0, x: '-50%', y: '-46%', scale: 0.98 } : { x: '-50%', y: '-50%' }
+      }
       animate={{ opacity: 1, x: '-50%', y: '-50%', scale: 1 }}
       exit={motionOn ? { opacity: 0, x: '-50%', y: '-46%', scale: 0.98 } : { x: '-50%', y: '-50%' }}
       transition={motionOn ? { duration: 0.32, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
@@ -46,7 +48,12 @@ export function ReplanDeltaCard({
       {delta.lines.length > 0 ? (
         <ul className="mt-4 max-h-[280px] space-y-1.5 overflow-y-auto text-[15px]">
           {delta.lines.map((line, index) => (
-            <DeltaLine key={`${line.requestId ?? line.engineerName}-${line.text}-${index}`} line={line} onOpenRequest={onOpenRequest} />
+            <DeltaLine
+              // biome-ignore lint/suspicious/noArrayIndexKey: identical delta lines can repeat; the index only breaks those ties
+              key={`${line.requestId ?? line.engineerName}-${line.text}-${index}`}
+              line={line}
+              onOpenRequest={onOpenRequest}
+            />
           ))}
         </ul>
       ) : null}

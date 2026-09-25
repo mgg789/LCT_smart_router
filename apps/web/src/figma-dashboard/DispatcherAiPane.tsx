@@ -371,7 +371,7 @@ function Composer({
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     if (fieldRef.current) fitComposerField(fieldRef.current);
-  }, [draft]);
+  }, []);
   return (
     <form onSubmit={onSubmit} className="pointer-events-auto w-full max-w-[813px]">
       {notice || status ? (
@@ -425,7 +425,9 @@ function UserBubble({ text }: { text: string }) {
   return (
     <div className="flex flex-col items-end gap-[8px]">
       <div className="max-w-[720px] rounded-full bg-white px-[24px] py-[18px]">
-        <p className="whitespace-pre-wrap text-[18px] font-medium leading-[1.25] text-figma-ink">{text}</p>
+        <p className="whitespace-pre-wrap text-[18px] font-medium leading-[1.25] text-figma-ink">
+          {text}
+        </p>
       </div>
       <CopyButton text={text} />
     </div>
@@ -483,7 +485,9 @@ function AssistantBubble({
             onOpenObject={onOpenObject}
           />
         )}
-        {message.kind === 'text_confirmation' && operationId && !waitingOnGuard(operations.get(operationId)) ? (
+        {message.kind === 'text_confirmation' &&
+        operationId &&
+        !waitingOnGuard(operations.get(operationId)) ? (
           <AiOperationCard
             operationId={operationId}
             operation={operations.get(operationId)}

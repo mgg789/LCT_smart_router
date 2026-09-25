@@ -360,7 +360,8 @@ function ToastCard({
       onAction={onAction}
       showAction={showAction}
       onPointerDown={(event) => {
-        if ((event.target as HTMLElement).closest('[data-toast-close], [data-toast-action]')) return;
+        if ((event.target as HTMLElement).closest('[data-toast-close], [data-toast-action]'))
+          return;
         if (event.button !== 0) return;
         try {
           event.currentTarget.setPointerCapture(event.pointerId);
@@ -425,9 +426,7 @@ function ToastFace({
             : { top, left, x: 0 }
       }
       animate={
-        leaving
-          ? { x: TOAST_EXIT_X, top, left, opacity: 1 }
-          : { opacity: 1, x, y: 0, top, left }
+        leaving ? { x: TOAST_EXIT_X, top, left, opacity: 1 } : { opacity: 1, x, y: 0, top, left }
       }
       transition={
         leaving

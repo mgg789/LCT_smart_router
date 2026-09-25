@@ -2,7 +2,6 @@ import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'framer-m
 import { X } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { explainWithAi, getMcpSettings, updateDispatcherSettings } from '../api/client';
-import { DashboardAi, DashboardChats } from './DashboardAssist';
 import type { HandoffView, LiveRouteProgress } from '../api/live';
 import type { EngineerView, PlanDelta, PolicyId, RequestView } from '../api/types';
 import { DayMap } from '../components/DayMap';
@@ -18,15 +17,13 @@ import { useDashboard } from '../hooks/useDashboard';
 import { type CaseExplanation, explainSelection } from '../lib/explanations';
 import { formatClock, formatDurationMin } from '../lib/time';
 import { AddEntityModal } from './AddEntityModal';
-import { PlanMetricsModal } from './PlanMetricsModal';
-import { TintIcon } from './TintIcon';
-import { WeatherBadge } from './WeatherBadge';
 import { AlertsView } from './AlertsView';
 import { useArtboardScale } from './artboardScale';
 import { FIGMA_ASSETS } from './assets';
 import { ConfirmDangerModal } from './ConfirmDangerModal';
 import { Copyable } from './Copyable';
 import type { DangerActionId } from './confirmPhrase';
+import { DashboardAi, DashboardChats } from './DashboardAssist';
 import { DataUploadModal } from './DataUploadModal';
 import { DispatcherAuthPage } from './DispatcherAuthPage';
 import { DispatcherDayResults } from './DispatcherDayResults';
@@ -62,6 +59,7 @@ import {
   withLiveRouteStops,
 } from './fromSnapshot';
 import { McpAgentIndicator } from './McpAgentIndicator';
+import { PlanMetricsModal } from './PlanMetricsModal';
 import { PolicyComparisonView } from './PolicyComparisonView';
 import { FigmaIcon, FigmaText } from './primitives';
 import { ReplanDeltaCard } from './ReplanDeltaCard';
@@ -71,6 +69,7 @@ import { requestEquipmentLabel } from './requestDetail';
 import { shortRequestId } from './requestsTable';
 import { routeProgressMarker } from './routeProgress';
 import { SettingsModal, type SettingsTab } from './SettingsModal';
+import { TintIcon } from './TintIcon';
 import { ToastColumn } from './ToastColumn';
 import {
   dismissToast,
@@ -83,6 +82,7 @@ import {
   upsertNewToasts,
   useToasts,
 } from './toasts';
+import { WeatherBadge } from './WeatherBadge';
 import { WelcomeScreen } from './WelcomeScreen';
 import {
   clearWorkDayStarted,
@@ -1504,7 +1504,9 @@ function PlanMetricsButton({ motionOn, onOpen }: { motionOn: boolean; onOpen: ()
       <span className="flex size-[43px] shrink-0 items-center justify-center rounded-full bg-white">
         <TintIcon src="/figma/chart-dots-2.svg" color="#272930" size={22} />
       </span>
-      <span className="figma-nowrap font-semibold text-[18px] tracking-[-0.3px]">Метрики плана</span>
+      <span className="figma-nowrap font-semibold text-[18px] tracking-[-0.3px]">
+        Метрики плана
+      </span>
     </motion.button>
   );
 }
@@ -2819,7 +2821,9 @@ function IconFactCard({
 }) {
   return (
     <div className="mt-[16px] flex min-h-[216px] w-full flex-col rounded-[20px] bg-figma-dim px-[20px] py-[22px]">
-      <FigmaText className="font-medium text-[28px] tracking-[-0.84px] text-white">{title}</FigmaText>
+      <FigmaText className="font-medium text-[28px] tracking-[-0.84px] text-white">
+        {title}
+      </FigmaText>
       <IconFactList facts={facts} className="mt-[22px]" />
     </div>
   );

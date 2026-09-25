@@ -254,7 +254,9 @@ function ExplainedAction({
               maskSize: 'contain',
             }}
           />
-          <span className="panel-ai-fill client-ai-text whitespace-nowrap leading-none">{spec.label}</span>
+          <span className="panel-ai-fill client-ai-text whitespace-nowrap leading-none">
+            {spec.label}
+          </span>
         </button>
       ) : (
         <span className={spotlight ? 'ai-choice-ring rounded-[24px]' : undefined}>
@@ -278,44 +280,44 @@ function ExplainedAction({
       {typeof document === 'undefined'
         ? null
         : createPortal(
-        <AnimatePresence>
-          {position ? (
-            <motion.div
-              key="alert-action-hint"
-              role="tooltip"
-              className="fixed z-[999] max-h-[280px] w-[360px] max-w-[calc(100vw-16px)] overflow-auto rounded-[16px] border border-figma-ink/20 bg-white p-[16px] text-[14px] leading-relaxed text-figma-ink shadow-xl"
-              style={{
-                left: position.left,
-                top: position.top,
-                transformOrigin: 'top center',
-                transformPerspective: 800,
-              }}
-              initial={reduceMotion ? false : { opacity: 0, rotateX: -18, scale: 0.94, y: -8 }}
-              animate={{ opacity: 1, rotateX: 0, scale: 1, y: 0 }}
-              exit={reduceMotion ? undefined : { opacity: 0, rotateX: -8, scale: 0.97, y: -4 }}
-              transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-              onMouseEnter={show}
-              onMouseLeave={hide}
-            >
-              <p className="font-bold">{spec.label}</p>
-              <p>{spec.summary}</p>
-              <p className="mt-[8px]">
-                <strong>Что произойдёт: </strong>
-                {spec.effect}
-              </p>
-              <p className="mt-[8px]">
-                <strong>Плюсы: </strong>
-                {spec.benefit}
-              </p>
-              <p className="mt-[8px]">
-                <strong>Минусы: </strong>
-                {spec.drawback}
-              </p>
-            </motion.div>
-          ) : null}
-        </AnimatePresence>,
-        document.body,
-      )}
+            <AnimatePresence>
+              {position ? (
+                <motion.div
+                  key="alert-action-hint"
+                  role="tooltip"
+                  className="fixed z-[999] max-h-[280px] w-[360px] max-w-[calc(100vw-16px)] overflow-auto rounded-[16px] border border-figma-ink/20 bg-white p-[16px] text-[14px] leading-relaxed text-figma-ink shadow-xl"
+                  style={{
+                    left: position.left,
+                    top: position.top,
+                    transformOrigin: 'top center',
+                    transformPerspective: 800,
+                  }}
+                  initial={reduceMotion ? false : { opacity: 0, rotateX: -18, scale: 0.94, y: -8 }}
+                  animate={{ opacity: 1, rotateX: 0, scale: 1, y: 0 }}
+                  exit={reduceMotion ? undefined : { opacity: 0, rotateX: -8, scale: 0.97, y: -4 }}
+                  transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+                  onMouseEnter={show}
+                  onMouseLeave={hide}
+                >
+                  <p className="font-bold">{spec.label}</p>
+                  <p>{spec.summary}</p>
+                  <p className="mt-[8px]">
+                    <strong>Что произойдёт: </strong>
+                    {spec.effect}
+                  </p>
+                  <p className="mt-[8px]">
+                    <strong>Плюсы: </strong>
+                    {spec.benefit}
+                  </p>
+                  <p className="mt-[8px]">
+                    <strong>Минусы: </strong>
+                    {spec.drawback}
+                  </p>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>,
+            document.body,
+          )}
     </fieldset>
   );
 }

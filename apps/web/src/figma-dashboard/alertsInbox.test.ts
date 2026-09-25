@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { createDevSnapshot } from '../fixtures/dev-day';
 import {
   arrivalSeconds,
-  formatAlertReason,
   dispatchAlertId,
+  formatAlertReason,
   inboxFromSources,
   isInboxAlertKind,
   sortByArrival,

@@ -26,21 +26,42 @@ export interface McpSetupInput {
 
 /** Human-facing tool names, short enough for the agent to read before acting. */
 const TOOL_CATALOGUE: ReadonlyArray<{ name: string; description: string }> = [
-  { name: 'get_dispatcher_context', description: 'кто ты в этой системе, состояние рабочего дня, правила автономной работы' },
-  { name: 'get_routing_principles', description: 'цели и жёсткие ограничения планирования, каталог политик' },
-  { name: 'get_situation', description: 'текущая обстановка: статусы инженеров, открытые алерты, погода' },
+  {
+    name: 'get_dispatcher_context',
+    description: 'кто ты в этой системе, состояние рабочего дня, правила автономной работы',
+  },
+  {
+    name: 'get_routing_principles',
+    description: 'цели и жёсткие ограничения планирования, каталог политик',
+  },
+  {
+    name: 'get_situation',
+    description: 'текущая обстановка: статусы инженеров, открытые алерты, погода',
+  },
   { name: 'get_plan', description: 'текущий план: маршруты, остановки, назначения' },
-  { name: 'get_plan_explanations', description: 'подробные факторы решателя: почему так, почему не иначе' },
+  {
+    name: 'get_plan_explanations',
+    description: 'подробные факторы решателя: почему так, почему не иначе',
+  },
   { name: 'list_requests', description: 'все заявки дня с деталями каждой' },
   { name: 'get_request', description: 'одна заявка: детали и история изменений условий' },
   { name: 'list_alerts', description: 'очередь решений диспетчера: алерты и уведомления' },
   { name: 'resolve_alert', description: 'применить выбранное решение по алерту' },
-  { name: 'ai_resolve_alert', description: 'поручить разбор алерта платформенному AI (System one)' },
+  {
+    name: 'ai_resolve_alert',
+    description: 'поручить разбор алерта платформенному AI (System one)',
+  },
   { name: 'list_engineers', description: 'инженеры: навыки, транспорт, смена, доступность' },
-  { name: 'set_engineer_availability', description: 'уволить инженера с линии или вернуть на линию' },
+  {
+    name: 'set_engineer_availability',
+    description: 'уволить инженера с линии или вернуть на линию',
+  },
   { name: 'get_policies', description: 'каталог политик и действующая' },
   { name: 'select_policy', description: 'выбрать политику планирования' },
-  { name: 'get_dispatcher_settings', description: 'оперативные настройки: часы дня, пороги алертов' },
+  {
+    name: 'get_dispatcher_settings',
+    description: 'оперативные настройки: часы дня, пороги алертов',
+  },
   { name: 'update_dispatcher_settings', description: 'сменить оперативные настройки' },
   { name: 'start_workday', description: 'начать рабочий день (LIVE)' },
   { name: 'close_shift', description: 'закрыть смену (пока есть неразобранные алерты — откажет)' },

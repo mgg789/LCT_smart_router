@@ -3,8 +3,8 @@ import { ArrowRight, ArrowUpRight, Trash2 } from 'lucide-react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { proposeAlertWithAi } from '../api/client';
 import type { AlertResolutionInput, DashboardSnapshot } from '../api/types';
-import { AlertActions } from './AlertActions';
 import { isAlertActionId } from '../domain/alerts';
+import { AlertActions } from './AlertActions';
 import { dispatchAlertId, type InboxNoticeCard, inboxFromSources } from './alertsInbox';
 import { FIGMA_ASSETS } from './assets';
 import { InboxAlertCardView, InboxButton, InboxNoticeCardView } from './inboxCard';
@@ -102,7 +102,9 @@ export function AlertsView({
     index: number,
     cancelled: () => boolean,
   ): Promise<boolean> {
-    const alertId = card.sourceAlert ? dispatchAlertId(card.sourceAlert.id) : dispatchAlertId(card.id);
+    const alertId = card.sourceAlert
+      ? dispatchAlertId(card.sourceAlert.id)
+      : dispatchAlertId(card.id);
     setThinkingId(card.id);
     let action = card.sourceAlert?.actions?.find((item) => isAlertActionId(item)) ?? null;
     let proposal: Awaited<ReturnType<typeof proposeAlertWithAi>> | null = null;
@@ -166,9 +168,10 @@ export function AlertsView({
     return () => {
       cancelled = true;
     };
-    // The queue is the list at the moment the sweep starts.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sweeping]);
+    // The queue is the list at the moment the sweep starts; playAiDecision is read
+    // fresh through the closure on every sweep tick.
+    // biome-ignore lint/correctness/useExhaustiveDependencies: the sweep intentionally runs on the queue identity, not on the player's identity
+  }, [sweeping, visibleAlerts, playAiDecision]);
   const listRef = useRef<HTMLDivElement>(null);
   const anchors = useRef<Array<{ id: string; offset: number }>>([]);
   function rememberScroll() {
@@ -337,7 +340,11 @@ export function AlertsView({
                 initial={animate ? { opacity: 0, y: 12 } : false}
                 animate={
                   clearing
-                    ? { opacity: 0, x: index % 2 === 0 ? -900 : 900, rotate: index % 2 === 0 ? -8 : 8 }
+                    ? {
+                        opacity: 0,
+                        x: index % 2 === 0 ? -900 : 900,
+                        rotate: index % 2 === 0 ? -8 : 8,
+                      }
                     : { opacity: 1, y: 0, x: 0, rotate: 0 }
                 }
                 transition={
@@ -464,6 +471,9 @@ function AiSweepSlider({
   };
 
   return (
+    // Pointer-only affordance on a decorative panel; the same action stays on the
+    // keyboard-reachable alert cards themselves.
+    // biome-ignore lint/a11y/noStaticElementInteractions: decorative double-click surface, keyboard path is the alert cards
     <div
       className="absolute left-[430px] z-20 flex h-[79px] w-[426px] items-center overflow-hidden rounded-full bg-figma-ink pl-[10px] pr-[10px]"
       style={{ top }}
@@ -516,7 +526,9 @@ function AiSweepSlider({
           if (engaged) return;
           setDragging(true);
           setNudge(false);
-          const scale = event.currentTarget.getBoundingClientRect().width / event.currentTarget.offsetWidth || 1;
+          const scale =
+            event.currentTarget.getBoundingClientRect().width / event.currentTarget.offsetWidth ||
+            1;
           drag.current = { x: event.clientX, progress: progressRef.current, scale };
           event.currentTarget.setPointerCapture(event.pointerId);
         }}
@@ -548,9 +560,7 @@ function AiSweepSlider({
           className="absolute inset-0 rounded-full border border-white/30"
           style={{
             background:
-              engaged || progress > 0.9
-                ? '#272930'
-                : `rgba(255,255,255,${0.22 + progress * 0.35})`,
+              engaged || progress > 0.9 ? '#272930' : `rgba(255,255,255,${0.22 + progress * 0.35})`,
             backdropFilter: 'blur(12px)',
             WebkitBackdropFilter: 'blur(12px)',
           }}
@@ -558,9 +568,7 @@ function AiSweepSlider({
         <motion.span
           aria-hidden
           className="relative z-10 flex items-center justify-center text-white"
-          animate={
-            nudge && progress === 0 && !engaged && motionOn ? { x: [0, 7, 0] } : { x: 0 }
-          }
+          animate={nudge && progress === 0 && !engaged && motionOn ? { x: [0, 7, 0] } : { x: 0 }}
           transition={
             nudge && progress === 0 && !engaged && motionOn
               ? { duration: 0.9, repeat: Infinity, ease: 'easeInOut' }

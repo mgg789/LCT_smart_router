@@ -1,18 +1,23 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useState } from 'react';
-import { explainWithAi, optimizePlanWithAi, predictSituation, type SituationPredictionView } from '../api/client';
+import {
+  explainWithAi,
+  optimizePlanWithAi,
+  predictSituation,
+  type SituationPredictionView,
+} from '../api/client';
 import type { DashboardSnapshot, PolicyComparisonResponse } from '../api/types';
 import {
-  planQualityAdvice,
-  unroutedPlanAdvice,
   type AdviceLine,
   type PlanQualityAdvice,
+  planQualityAdvice,
+  unroutedPlanAdvice,
 } from '../domain/planQuality';
 import { formatDurationMin, formatKm } from '../lib/time';
-import { shortRequestId } from './requestsTable';
 import { FIGMA_ASSETS } from './assets';
 import { ModalLayer, ModalScrim } from './modalLayer';
 import { FigmaIcon } from './primitives';
+import { shortRequestId } from './requestsTable';
 import { TintIcon } from './TintIcon';
 
 const fade = { duration: 0.22, ease: [0.22, 1, 0.36, 1] as const };
@@ -49,8 +54,8 @@ export function PlanMetricsModal({
 
   const identity = snapshot?.plan.appliedResult;
   const plan = snapshot?.plan.plan ?? null;
-  const inputHash = identity?.inputHash ?? '';
-  const revision = plan?.revision ?? -1;
+  const _inputHash = identity?.inputHash ?? '';
+  const _revision = plan?.revision ?? -1;
 
   useEffect(() => {
     if (!open || !snapshot || !token || !identity || !plan) {
@@ -91,7 +96,7 @@ export function PlanMetricsModal({
     };
     // Refresh only when the applied plan identity changes, not on every poll.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, token, inputHash, revision]);
+  }, [open, token, snapshot, plan.routes, identity, plan]);
 
   const metrics = plan ? planTotals(plan) : null;
   const routed = plan ? Object.keys(visitOrders(plan.routes)).length > 0 : false;
@@ -274,7 +279,9 @@ function QualityBody({
     };
   }, [aiOn, token, packed]);
   return (
-    <section className={`relative mt-[18px] rounded-[20px] px-[18px] py-[16px] ${BAND_CLASS[advice.band]}`}>
+    <section
+      className={`relative mt-[18px] rounded-[20px] px-[18px] py-[16px] ${BAND_CLASS[advice.band]}`}
+    >
       {explainable ? (
         <button
           type="button"
@@ -303,7 +310,9 @@ function QualityBody({
           )}
         </button>
       ) : null}
-      <p className={`font-extrabold text-[22px] tracking-[-0.3px] ${explainable ? 'pr-[40px]' : ''}`}>
+      <p
+        className={`font-extrabold text-[22px] tracking-[-0.3px] ${explainable ? 'pr-[40px]' : ''}`}
+      >
         {aiOn ? 'Оценка AI' : advice.title}
       </p>
       <AnimatePresence mode="wait" initial={false}>
@@ -317,13 +326,17 @@ function QualityBody({
           {aiOn ? (
             aiReady ? (
               <p className="mt-[6px] text-[16px] leading-[1.35]">
-                  {aiText ??
-                    'Текстовый разбор пока не подключён. Оценка дня остаётся прежней, без выдуманного текста.'}
+                {aiText ??
+                  'Текстовый разбор пока не подключён. Оценка дня остаётся прежней, без выдуманного текста.'}
               </p>
             ) : (
               <div className="mt-[12px] space-y-[10px]" aria-hidden>
                 {['92%', '74%', '58%'].map((width) => (
-                  <div key={width} className="h-[12px] overflow-hidden rounded-full bg-current/10" style={{ width }}>
+                  <div
+                    key={width}
+                    className="h-[12px] overflow-hidden rounded-full bg-current/10"
+                    style={{ width }}
+                  >
                     <div className="ai-reason-shimmer h-full w-full" />
                   </div>
                 ))}
@@ -331,15 +344,15 @@ function QualityBody({
             )
           ) : (
             <>
-      <p className="mt-[6px] text-[16px] leading-[1.35]">{advice.summary}</p>
-      <p className="mt-[12px] font-semibold text-[15px]">Как улучшить</p>
-      <ul className="mt-[6px] space-y-[6px] text-[15px] leading-[1.35]">
-        {advice.lines.map((line) => (
-          <li key={`${line.before}${line.shortId ?? ''}${line.after}`}>
-            <AdviceSentence line={line} onOpenRequest={onOpenRequest} />
-          </li>
-        ))}
-      </ul>
+              <p className="mt-[6px] text-[16px] leading-[1.35]">{advice.summary}</p>
+              <p className="mt-[12px] font-semibold text-[15px]">Как улучшить</p>
+              <ul className="mt-[6px] space-y-[6px] text-[15px] leading-[1.35]">
+                {advice.lines.map((line) => (
+                  <li key={`${line.before}${line.shortId ?? ''}${line.after}`}>
+                    <AdviceSentence line={line} onOpenRequest={onOpenRequest} />
+                  </li>
+                ))}
+              </ul>
             </>
           )}
         </motion.div>
@@ -407,7 +420,7 @@ function OptimizeButton({ token, summary }: { token: string | null; summary: str
         }}
       />
       <span className="panel-ai-fill client-ai-text font-semibold text-[18px] tracking-[-0.3px]">
-        {pending ? 'Оптимизируем…' : note ?? 'Оптимизировать'}
+        {pending ? 'Оптимизируем…' : (note ?? 'Оптимизировать')}
       </span>
     </button>
   );
@@ -417,13 +430,16 @@ function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-[18px] bg-figma-soft px-[16px] py-[12px]">
       <dt className="text-[13px] text-figma-muted">{label}</dt>
-      <dd className="mt-[2px] font-semibold text-[20px] tracking-[-0.3px] text-figma-ink">{value}</dd>
+      <dd className="mt-[2px] font-semibold text-[20px] tracking-[-0.3px] text-figma-ink">
+        {value}
+      </dd>
     </div>
   );
 }
 
 function rosterIsOffline(snapshot: DashboardSnapshot | null): boolean {
-  const days = snapshot?.engineers.map((engineer) => engineer.day).filter((day) => day != null) ?? [];
+  const days =
+    snapshot?.engineers.map((engineer) => engineer.day).filter((day) => day != null) ?? [];
   return days.length > 0 && days.every((day) => day.availability === 'offline');
 }
 
@@ -453,7 +469,9 @@ function visitOrders(
 function riskyRequests(snapshot: DashboardSnapshot, prediction: SituationPredictionView) {
   return Object.entries(prediction.requests).map(([requestId, row]) => ({
     requestId,
-    shortId: shortRequestId(snapshot.requests.find((item) => item.id === requestId)?.id ?? requestId),
+    shortId: shortRequestId(
+      snapshot.requests.find((item) => item.id === requestId)?.id ?? requestId,
+    ),
     breachProb: row.breachProb,
   }));
 }

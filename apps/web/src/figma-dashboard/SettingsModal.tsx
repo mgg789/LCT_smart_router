@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import { Copy, KeyRound, Plus, Wand2 } from 'lucide-react';
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import {
+  type AiView,
   createApiToken,
   getAiSettings,
   getDispatcherSettings,
@@ -11,7 +12,6 @@ import {
   revokeApiToken,
   saveAiSettings,
   saveMcpSettings,
-  type AiView,
 } from '../api/client';
 import type {
   ApiTokenCategory,
@@ -676,9 +676,7 @@ function McpServerSection({ token }: { token: string | null }) {
 
   const enabled = view?.enabled === true || pendingOn;
   const pinReady = pin.trim().length > 0;
-  const endpointUrl = view
-    ? `${window.location.origin.replace(/\/$/, '')}${view.endpoint}`
-    : '';
+  const endpointUrl = view ? `${window.location.origin.replace(/\/$/, '')}${view.endpoint}` : '';
 
   const toggle = () => {
     if (busy) return;
@@ -718,15 +716,18 @@ function McpServerSection({ token }: { token: string | null }) {
         обстановкой, разбирать алерты, вести день. Пока агент работает, в шапке мигает робот.
       </p>
       <div className="mt-[12px]">
-        <SettingSwitch
-          label="Активировать MCP-сервер"
-          checked={enabled}
-          onChange={toggle}
-        />
+        <SettingSwitch label="Активировать MCP-сервер" checked={enabled} onChange={toggle} />
       </div>
       {enabled ? (
         <div className="mt-[16px] w-full">
-          <Field label={view?.pinSet ? `Пароль задан ···${view.pinLast4 ?? ''} — введите новый, чтобы заменить` : 'MCP-пароль'} htmlFor="settings-mcp-pin">
+          <Field
+            label={
+              view?.pinSet
+                ? `Пароль задан ···${view.pinLast4 ?? ''} — введите новый, чтобы заменить`
+                : 'MCP-пароль'
+            }
+            htmlFor="settings-mcp-pin"
+          >
             <div className="relative">
               <input
                 id="settings-mcp-pin"
@@ -1114,6 +1115,9 @@ function ExpiryChoice({
   onSelect: () => void;
 }) {
   return (
+    // A visual segment inside the modal's own radiogroup; the button keeps native
+    // keyboard focus, aria-checked carries the selection state.
+    // biome-ignore lint/a11y/useSemanticElements: styled segmented toggle, not a form radio
     <button
       type="button"
       role="radio"
@@ -1183,7 +1187,8 @@ function AiForm({ token }: { token: string | null }) {
         setJevModel(next.settings.jevModel ?? '');
       })
       .catch((cause: unknown) => {
-        if (!cancelled) setError(cause instanceof Error ? cause.message : 'Не удалось загрузить AI-настройки');
+        if (!cancelled)
+          setError(cause instanceof Error ? cause.message : 'Не удалось загрузить AI-настройки');
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -1260,7 +1265,10 @@ function AiForm({ token }: { token: string | null }) {
         </div>
       </AiSection>
 
-      <AiSection title="LLM (OpenAI SDK)" note="Адрес, модель и токен. Пока контур только хранит значения: живые вызовы читают LLM_PROVIDER/LLM_TOKEN/LLM_BASE_URL из окружения сервера.">
+      <AiSection
+        title="LLM (OpenAI SDK)"
+        note="Адрес, модель и токен. Пока контур только хранит значения: живые вызовы читают LLM_PROVIDER/LLM_TOKEN/LLM_BASE_URL из окружения сервера."
+      >
         <Field label="URL" htmlFor="ai-llm-url">
           <input
             id="ai-llm-url"
@@ -1282,13 +1290,19 @@ function AiForm({ token }: { token: string | null }) {
           />
         </Field>
         <Field
-          label={view?.settings.llmApiKeySet ? `Token ···${view.settings.llmApiKeyLast4 ?? ''}` : 'Token'}
+          label={
+            view?.settings.llmApiKeySet ? `Token ···${view.settings.llmApiKeyLast4 ?? ''}` : 'Token'
+          }
           htmlFor="ai-llm-key"
         >
           <input
             id="ai-llm-key"
             type="password"
-            placeholder={view?.settings.llmApiKeySet ? 'Задан — введите новый, чтобы заменить' : 'Токен пока не задан'}
+            placeholder={
+              view?.settings.llmApiKeySet
+                ? 'Задан — введите новый, чтобы заменить'
+                : 'Токен пока не задан'
+            }
             value={llmKey}
             onChange={(event) => setLlmKey(event.target.value)}
             className={FIELD}
@@ -1296,7 +1310,10 @@ function AiForm({ token }: { token: string | null }) {
         </Field>
       </AiSection>
 
-      <AiSection title="System one (Jev API)" note="Адрес, модель и токен. Контур пока только хранит значения.">
+      <AiSection
+        title="System one (Jev API)"
+        note="Адрес, модель и токен. Контур пока только хранит значения."
+      >
         <Field label="URL" htmlFor="ai-jev-url">
           <input
             id="ai-jev-url"
@@ -1318,13 +1335,19 @@ function AiForm({ token }: { token: string | null }) {
           />
         </Field>
         <Field
-          label={view?.settings.jevApiKeySet ? `Token ···${view.settings.jevApiKeyLast4 ?? ''}` : 'Token'}
+          label={
+            view?.settings.jevApiKeySet ? `Token ···${view.settings.jevApiKeyLast4 ?? ''}` : 'Token'
+          }
           htmlFor="ai-jev-key"
         >
           <input
             id="ai-jev-key"
             type="password"
-            placeholder={view?.settings.jevApiKeySet ? 'Задан — введите новый, чтобы заменить' : 'Токен пока не задан'}
+            placeholder={
+              view?.settings.jevApiKeySet
+                ? 'Задан — введите новый, чтобы заменить'
+                : 'Токен пока не задан'
+            }
             value={jevKey}
             onChange={(event) => setJevKey(event.target.value)}
             className={FIELD}
@@ -1390,6 +1413,7 @@ function calibrationCaption(status: AiView['status'] | undefined): string {
     return 'Калибровка полностью построена на фактах исполнения.';
   }
   const parts = [`${status.samples.service} работ`, `${status.samples.legs} переездов`];
-  if (status.samples.executionDays > 0) parts.push(`${status.samples.executionDays} дн. исполнения`);
+  if (status.samples.executionDays > 0)
+    parts.push(`${status.samples.executionDays} дн. исполнения`);
   return `Дообучается на фактах: ${parts.join(', ')}.`;
 }

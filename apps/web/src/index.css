@@ -129,6 +129,7 @@ body {
 }
 
 .stack-pane-settled {
+  /* biome-ignore lint/complexity/noImportantStyles: must beat the framer-motion inline transform on the same element */
   transform: none !important;
 }
 
@@ -266,10 +267,18 @@ body {
 }
 
 @keyframes sweep-spark {
-  0% { background-position: 12% 40%; }
-  35% { background-position: 78% 28%; }
-  68% { background-position: 46% 82%; }
-  100% { background-position: 12% 40%; }
+  0% {
+    background-position: 12% 40%;
+  }
+  35% {
+    background-position: 78% 28%;
+  }
+  68% {
+    background-position: 46% 82%;
+  }
+  100% {
+    background-position: 12% 40%;
+  }
 }
 
 .client-ai-fill {
@@ -332,7 +341,7 @@ body {
 }
 
 .ai-rate-btn:hover,
-.ai-rate-btn[aria-pressed='true'] {
+.ai-rate-btn[aria-pressed="true"] {
   background-color: #d0d1d4;
 }
 
@@ -340,7 +349,7 @@ body {
   transform: scale(0.88);
 }
 
-.ai-icon-btn[data-pop='true'] {
+.ai-icon-btn[data-pop="true"] {
   animation: ai-icon-pop 280ms ease;
 }
 
@@ -358,7 +367,7 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .ai-icon-btn,
-  .ai-icon-btn[data-pop='true'] {
+  .ai-icon-btn[data-pop="true"] {
     transition: none;
     animation: none;
   }
