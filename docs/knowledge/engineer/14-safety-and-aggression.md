@@ -4,7 +4,7 @@ segment: engineer
 title: Безопасность и агрессия со стороны клиента
 summary: Если ситуация небезопасна — сначала уходите и связывайтесь с диспетчером напрямую, а форму «Проблема» заполняйте после, если визит действительно нужно закрыть отменой.
 tags: [безопасность, конфликт, агрессия]
-actions: [call_dispatch_helper, report_cannot_complete]
+actions: [report_cannot_complete]
 related: [eng-05-client-absent-or-refuses, eng-17-when-to-call-the-dispatcher]
 updated: 2026-09-20
 ---

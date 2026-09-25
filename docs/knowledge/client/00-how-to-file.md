@@ -4,7 +4,7 @@ segment: client
 title: Как оформить заявку
 summary: Войдите по коду с почты, заполните форму (или продиктуйте проблему помощнику), проверьте итоговое содержание и подтвердите — заявка отправляется только после явного подтверждения.
 tags: [заявка, оформление, вход]
-actions: [prepare_request, submit_request]
+actions: [create_request]
 related: [cli-01-work-types-in-plain-words, cli-02-windows-and-urgency, cli-03-what-happens-after]
 updated: 2026-09-20
 ---

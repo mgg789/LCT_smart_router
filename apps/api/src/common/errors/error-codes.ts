@@ -69,6 +69,14 @@ export const ERROR_CODES = {
   AI_UNAVAILABLE: HttpStatus.SERVICE_UNAVAILABLE,
   AI_HANDOFF_NOT_ACTIVE: HttpStatus.CONFLICT,
   CHAT_TARGET_UNREACHABLE: HttpStatus.CONFLICT,
+
+  /**
+   * The caller hit a public endpoint's per-IP request budget (auth brute force, paid
+   * geocoding/LLM proxying). Retry after the window rolls over; nothing about the
+   * request itself was wrong.
+   */
+  RATE_LIMITED: HttpStatus.TOO_MANY_REQUESTS,
+
   INTERNAL_ERROR: HttpStatus.INTERNAL_SERVER_ERROR,
 } as const;
 

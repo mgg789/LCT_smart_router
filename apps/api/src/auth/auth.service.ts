@@ -61,6 +61,13 @@ export class AuthService implements OnModuleInit {
         recipientEmail: created.email,
         payload: { code: created.code, expiresAt: created.expiresAt },
       });
+      // Every new issue sweeps payloads of codes no transport will ever send again:
+      // the plain code may rest only inside the TTL, never in a database dump.
+      await this.notifications.redactStaleLoginCodePayloads(
+        tx,
+        created.issuedAt,
+        this.config.get('LOGIN_CODE_TTL_SEC'),
+      );
       return created;
     });
     // Transport stays outside the transaction: a mail failure must not undo the code.

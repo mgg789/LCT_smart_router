@@ -4,7 +4,7 @@ segment: client
 title: Какие письма вы получите
 summary: Восемь возможных писем — код входа и семь событий по заявке; коды входа приходят всегда, остальные уведомления можно отключить в настройках.
 tags: [письма, уведомления, почта]
-actions: [toggle_notifications]
+actions: []
 related: [cli-03-what-happens-after, cli-04-changing-or-cancelling]
 updated: 2026-09-20
 ---

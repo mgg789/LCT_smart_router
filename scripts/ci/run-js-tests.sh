@@ -6,8 +6,15 @@
 set -euo pipefail
 
 pg_name="lct-ci-pg-$$"
-pg_password="lct_ci_password"
-database_url="postgresql://lct:${pg_password}@127.0.0.1:5432/lct?schema=public"
+# Comes from the LCT_CI_PG_PASSWORD repository secret injected by ci.yaml
+# (the default branch has carried the env mapping since !44).
+pg_password="${LCT_CI_PG_PASSWORD:?LCT_CI_PG_PASSWORD missing (CI secret not injected?)}"
+# A per-run loopback port: a shared worker host may already bind 5432 (the MGG
+# box runs the demo stand's Postgres there) and the sidecar must not be
+# reachable from outside. $$ keeps concurrent runs apart; the rare collision
+# surfaces as an immediate docker bind error, not a flaky test.
+pg_port=$((21000 + $$ % 20000))
+database_url="postgresql://lct:${pg_password}@127.0.0.1:${pg_port}/lct?schema=public"
 
 cleanup() {
   docker rm -f "$pg_name" >/dev/null 2>&1 || true
@@ -18,7 +25,7 @@ docker run -d --name "$pg_name" \
   -e POSTGRES_USER=lct \
   -e POSTGRES_PASSWORD="$pg_password" \
   -e POSTGRES_DB=lct \
-  -p 5432:5432 \
+  -p 127.0.0.1:"${pg_port}":5432 \
   pgvector/pgvector:pg17
 
 for _ in $(seq 1 40); do
@@ -48,6 +55,11 @@ docker run --rm --network host \
     pnpm --filter web test
     pnpm --filter web typecheck
     test -f .env || cp .env.example .env
+    # NODE_ENV=test makes ConfigModule ignore the file copied above, while a unit test
+    # that boots no app still validates the whole environment as soon as its import
+    # graph reaches ConfigModule.forRoot. Integration tests read .env by hand (see
+    # test/support/env.ts); exporting the dispatcher pair covers the rest of the suite.
+    eval "$(grep -E "^DISPATCHER_(EMAIL|PASSWORD)=" .env | sed "s/^/export /")"
     pnpm --filter api exec prisma generate
     pnpm --filter api exec prisma migrate deploy
     pnpm --filter api test

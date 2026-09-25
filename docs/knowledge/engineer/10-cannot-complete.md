@@ -4,7 +4,7 @@ segment: engineer
 title: Невозможно выполнить работу
 summary: «Невозможно выполнить» и «Другая проблема» обе отменяют заявку и убирают её с маршрута — разница только в формулировке причины, которую вы указываете диспетчеру.
 tags: [отмена, невозможно, проблема]
-actions: [report_cannot_complete, call_dispatch_helper]
+actions: [report_cannot_complete]
 related: [eng-08-work-takes-longer, eng-09-missing-equipment, eng-03-address-not-found, eng-04-no-access-to-building]
 updated: 2026-09-20
 ---

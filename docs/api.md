@@ -42,7 +42,8 @@
 
 Тело действия: `operationId` (UUID), `kind`; для интеграционного ключа также
 `engineerId`, для сессии субъект определяется авторизацией. Значения `kind`:
-`online`, `on_time`, `eta`, `start`, `finish`, `problem`, `break_start`, `break_finish`.
+`handoff_confirm` (принимает `handoffId`), `online`, `eta`, `start`, `finish`,
+`problem`, `break_start`, `break_finish`.
 Действия с заявкой принимают `requestId`; `eta` — `etaAt`.
 `problem` принимает `problemKind` (`delay`, `missing_equipment`, `other`, `impossible`),
 обязательный `note`; задержка — `additionalDurationSec`, оборудование —
@@ -736,7 +737,8 @@ UI-дизайн — [ml-predictions.md](./ml-predictions.md).
 заводской. Подробно — [ml-predictions.md](./ml-predictions.md) §1.1.
 
 Короткие вызовы не ходят через чат-харнес. `POST /api/v1/dispatch/ai/explain` просит
-языковую модель (`LLM_API_URL`, `LLM_MODEL`, `LLM_API_KEY`, без режима рассуждений)
+языковую модель (`LLM_BASE_URL`, `LLM_MODEL`, `LLM_TOKEN`; при зеркале с токеном
+прокси — ещё `LLM_PROXY_TOKEN`; без режима рассуждений)
 двумя-четырьмя фразами пересказать уже посчитанный контекст: причины выбора или
 слабость плана. `POST /api/v1/dispatch/ai/optimize` несколькими вопросами System one решает, сменить ли
 политику, вызвать ли инженера вне линии и вернуть ли автоплан. Окна клиентов и обеды

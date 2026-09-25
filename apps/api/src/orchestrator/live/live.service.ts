@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { z } from 'zod';
 import type { LiveActionDto } from '../../api/dto/live.dto';
 import type {
@@ -61,6 +61,7 @@ type DayWithStates = LiveWorkday & {
  */
 @Injectable()
 export class LiveService {
+  private readonly logger = new Logger(LiveService.name);
   private advanceInFlight: Promise<void> | null = null;
 
   constructor(
@@ -78,6 +79,19 @@ export class LiveService {
   ) {}
 
   /**
+   * Fire-and-forget advance for request entry points. The rejection is contained here:
+   * on Node an unhandled rejection aborts the whole process, and this call runs on
+   * every dashboard and engineer poll.
+   */
+  private advanceInBackground(): void {
+    this.advanceOnce().catch((error: unknown) => {
+      this.logger.warn(
+        `Background advance failed: ${error instanceof Error ? error.message : 'unknown'}`,
+      );
+    });
+  }
+
+  /**
    * Dispatcher entry.
    *
    * The clock and the demo reconcile keep running in the background. Waiting for
@@ -85,7 +99,7 @@ export class LiveService {
    * then had no free connection left for login or icons.
    */
   async dispatchView(): Promise<DispatchLiveView> {
-    void this.advanceOnce();
+    this.advanceInBackground();
     void this.demoStand.reconcile();
     return this.uow.observe(async (tx) => this.dispatchViewIn(tx, this.clock.nowSeconds()));
   }
@@ -126,7 +140,7 @@ export class LiveService {
 
   /** Engineer entry. A session resolves its own subject in the controller. */
   async engineerView(engineerId: string): Promise<EngineerLiveView> {
-    void this.advanceOnce();
+    this.advanceInBackground();
     return this.uow.observe(async (tx) =>
       this.engineerViewIn(tx, engineerId, this.clock.nowSeconds()),
     );

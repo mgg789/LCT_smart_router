@@ -47,6 +47,10 @@ Data Layer из `context/37` §2.
 | Опубликованный сектор | `routing_snapshots` (payload, `input_hash`, `task_fingerprint`), `routing_current` |
 | План | `router_results`, `applied_plans`, `applied_plan_routes`, `applied_plan_stops`, `applied_plan_assignments`, `applied_plan_current`, `control_state` |
 | Каталоги диспетчера | `policies`, `active_policy`, `alerts`, `shift_closures` |
+| LIVE и паспорта | `live_workdays`, `live_engineer_states`, `live_request_states`, `object_passports`, `engineer_passport_points` |
+| Адреса и геокодинг | `buildings`, `reverse_geocode_cache` |
+| Оборудование и награды | `equipment_handoffs`, `engineer_rewards` |
+| AI-контур | `ai_conversations`, `ai_messages`, `ai_runs`, `ai_run_events`, `ai_operations`, `ai_budgets`, `ai_handoffs`, `ai_documents` |
 | Служебная книга системы | `operations`, `audit_log`, `notification_intents`, `app_state`, `import_packages`, `external_id_map` |
 
 `audit_log` пишется в той же транзакции, что и изменение. Его читают история заявки
@@ -235,7 +239,7 @@ pnpm --filter api exec prisma generate
 | Инженеры, рабочие дни, факты | Готово, `feat/api-engineers`; execution-тайминг поверх фактов — на `feat/router-mvp-contour` |
 | Три действия с данными (догрузка, сброс к демо, полный сброс) | Готово, `feat/api-data-import` |
 | Координаты импортированных заявок | Закрыто обязательными геокод-пакетами в `data/dataset/geocoded/<region>.json`; это задекларированные проекции по центроидам, не продакшен-геокодинг |
-| Сегменты знаний и pgvector | Вне скоупа этой сборки; образ поддерживает расширение |
+| Сегменты знаний | Готово: `ai_documents` с FTS-индексом (миграция `20260920140000_ai_gateway`), поиск через `KnowledgeService.search`, индексация при старте API и `pnpm --filter api knowledge:index`; интеграционный тест `knowledge.test.ts`. pgvector-расширение образом поддерживается, сам векторный поиск не используется — хватает полнотекстового |
 | Сроки хранения по классам данных | Требуются `context/37` §6.3; колонки существуют (`audit_log.retain_until`), значения — решение развёртывания и здесь не выдумываются |
 
 ## 8. Граница данных Router (сторона Router Core)

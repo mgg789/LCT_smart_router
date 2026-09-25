@@ -41,6 +41,12 @@ export const envSchema = z.object({
   ROUTER_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(100).max(30_000).default(3_000),
 
   /**
+   * Optional point-to-point road API for car legs inside the MKAD (the moscow-road-graph
+   * contour). Unset keeps local travel costs; the Router process owns the road variables.
+   */
+  ROUTER_ROAD_API_URL: z.url().optional(),
+
+  /**
    * Optional duration of an entire logical workday in wall-clock seconds. Empty means
    * ordinary 1:1 time. LIVE persists the chosen value when the dispatcher starts a day,
    * so changing the environment cannot warp a day already in progress.
@@ -81,11 +87,6 @@ export const envSchema = z.object({
   LOGIN_CODE_TTL_SEC: z.coerce.number().int().positive().default(600),
   LOGIN_CODE_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
 
-  /**
-   * Development escape hatch: returns the login code in the API response because there is
-   * no SMTP-gateway in this build to deliver it. Refused in production by
-   * `validateEnv` -- an exposed code is a full authentication bypass.
-   */
   // --- dataset -------------------------------------------------------------
   /** Directory holding the organisers' CSV files. */
   DATASET_ROOT: z.string().min(1).default('data/dataset/anonymized'),
@@ -102,6 +103,11 @@ export const envSchema = z.object({
     .int()
     .default(3 * 3600),
 
+  /**
+   * Development escape hatch: returns the login code in the API response because there is
+   * no SMTP-gateway in this build to deliver it. Refused in production by
+   * `validateEnv` -- an exposed code is a full authentication bypass.
+   */
   AUTH_DEV_EXPOSE_CODES: z
     .enum(['true', 'false'])
     .default('false')
@@ -141,12 +147,25 @@ export const envSchema = z.object({
   LLM_PROVIDER: z.enum(['off', 'agents', 'openai_chat', 'replay']).default('off'),
   LLM_TOKEN: z.string().min(1).optional(),
   LLM_BASE_URL: z.url().default('https://api.deepseek.com'),
+  /**
+   * Value of the `X-Proxy-Token` header sent with every LLM call. Set it when the
+   * base URL points at an authenticating reverse proxy (openrouter.droidje.com):
+   * the proxy injects the real provider key server-side and only checks this token.
+   */
+  LLM_PROXY_TOKEN: z.string().min(1).optional(),
   LLM_MODEL: z.string().min(1).default('deepseek-flash'),
   LLM_FALLBACK_PROVIDER: z.enum(['none', 'openai_chat', 'replay']).default('none'),
   LLM_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(60_000),
   LLM_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(5).default(2),
   LLM_MAX_TOOL_STEPS: z.coerce.number().int().min(1).max(12).default(6),
   LLM_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(256).max(8_192).default(1_024),
+  /**
+   * System one (fast typed decisions for the assistant and the action guard) base URL.
+   * Unset means the code default `http://host.docker.internal:12444` -- the service runs
+   * on the host, not in compose. Where it is not running, every dependent contour
+   * degrades honestly (guard refuses, short calls report `not_configured`).
+   */
+  JEV_API_URL: z.url().optional(),
   AI_SSE_HEARTBEAT_MS: z.coerce.number().int().min(1_000).max(60_000).default(15_000),
   AI_HISTORY_MESSAGES: z.coerce.number().int().min(4).max(100).default(24),
   AI_DAILY_MESSAGE_LIMIT: z.coerce.number().int().positive().default(30),
@@ -193,6 +212,19 @@ export function validateEnv(raw: Record<string, unknown>): Env {
     throw new Error(
       'Invalid environment configuration: SMTP_HOST is set but SMTP_USER or SMTP_PASSWORD ' +
         'is missing. Leave SMTP_HOST unset to keep mail unconfigured.',
+    );
+  }
+  if (parsed.data.LLM_FALLBACK_PROVIDER === 'openai_chat' && !parsed.data.LLM_TOKEN) {
+    throw new Error(
+      'Invalid environment configuration: LLM_FALLBACK_PROVIDER=openai_chat requires ' +
+        'LLM_TOKEN, the same credential the fallback client reuses.',
+    );
+  }
+  if (parsed.data.LLM_FALLBACK_PROVIDER !== 'none' && parsed.data.LLM_MAX_ATTEMPTS < 2) {
+    throw new Error(
+      'Invalid environment configuration: a configured LLM_FALLBACK_PROVIDER needs ' +
+        'LLM_MAX_ATTEMPTS >= 2 -- the fallback hop is spent out of that same budget ' +
+        '(src/ai/provider/retry.policy.ts) and needs at least one attempt of its own.',
     );
   }
   return parsed.data;

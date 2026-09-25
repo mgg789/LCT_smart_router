@@ -4,7 +4,7 @@ segment: dispatcher
 title: Разбор неназначенных заявок по коду причины
 summary: У неназначения ровно шесть кодов с фиксированным порядком проверки — регион, навык, транспорт, оборудование, доступность, исход поиска, — и только последний из них является исходом расчёта, а не доказанным ограничением.
 tags: [неназначенные, reasons, blockers]
-actions: [get_plan, get_alerts, resolve_alert, get_engineers]
+actions: [get_day_plan, list_alerts, prepare_resolve_alert, list_engineers]
 related: [disp-02-reading-the-plan, disp-04-alert-time-risk-unassigned, disp-08-policies]
 updated: 2026-09-20
 ---

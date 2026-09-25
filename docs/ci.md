@@ -30,6 +30,10 @@ pull request не запускаются.
 | `regression` | pull request в `main` | Полное приложение, smoke, Chromium, остановка/возврат Router; отчёты при падении |
 | `cd` | push в `main` (после мержа) | те же проверки, затем compose + SMTP deploy, затем health сервисов |
 
+`ci` и `regression` выполняются на self-hosted воркерах MGG (раздел
+«Self-hosted воркеры» ниже), `cd` — на облачных воркерах SourceCraft, чтобы
+деплой не зависел от доступности нашего хоста.
+
 Красный прогон `ci` на pull request в `main` — условие мержа. Защита веток в
 [`.sourcecraft/branches.yaml`](../.sourcecraft/branches.yaml) блокирует прямой push
 и force-push в `main`, а также force-push/удаление `dev`.
@@ -38,7 +42,11 @@ pull request не запускаются.
 
 - **lint** — `pnpm lint` (Biome) и `ruff check core`.
 - **test-js** — Vitest веба + typecheck; `node:test` API против одноразового
-  контейнера `pgvector/pgvector:pg17` (`scripts/ci/run-js-tests.sh`). Одноразовый
+  контейнера `pgvector/pgvector:pg17` (`scripts/ci/run-js-tests.sh`). Сайдкар
+  публикуется на loopback-порту, выведенном из PID скрипта: на общем воркер-хосте
+  `5432` занят демо-стендом, а `$$` разводит параллельные прогоны. Пароль сайдкара
+  приходит из секрета `LCT_CI_PG_PASSWORD`; публичный одноразовый дефолт —
+  `scripts/ci/js-tests.env` (паттерн `contour.env`). Одноразовый
   DSN передаётся и как `TEST_DATABASE_URL`, чтобы тесты, защищённые от случайного
   запуска на локальной рабочей БД, выполнялись внутри этого изолированного контура.
 - **test-core** — `pytest core/tests`, включая golden-проверки официальных регионов:
@@ -85,9 +93,9 @@ TLS-сертификат этим тестом не проверяется. По
 | Штатный `pnpm smoke` | Настоящие HTTP-операции, БД, публикация снимка, расчёт Router, приёмка и срочное событие |
 | API инженеров | Существующий integration-набор и регрессия почты на отдельной БД `lct_api_checks`; не вмешивается в данные браузерных сценариев |
 | Карта и смена инженера | Вход через форму; локальная карта без внешних запросов; 5 назначений; отключение/возврат инженера меняет принятый план и UI |
-| Потеря связи | Обрыв запросов браузера к API сохраняет исходные ID, блокирует изменения; день переживает reload и восстанавливается после возврата связи |
+| Потеря связи | Браузерный клик по «Снять со смены» **снят** (`test.skip`): это не поломка смены/кеша, а Playwright против 3D-артборда Figma (кнопка есть в DOM, её нет в a11y-дереве). Сохранность дня и запрет записи при `cached` проверяют `domain/resilience.test.ts` и AlertActions. Вернуть e2e, когда досье инженера не сосед `preserve-3d` |
 | Отзыв сессии | Отзыв на бэкенде возвращает UI к форме входа и очищает сохранённые рабочие данные |
-| Интеграционный ключ | Создание/отзыв через Dashboard, однократный показ секрета, границы клиентской категории, отклонение отозванного ключа |
+| Интеграционный ключ | Создание/отзыв через Dashboard, однократный показ секрета, границы клиентской категории, отклонение отозванного ключа. Desktop-viewport 1920×1080 совпадает с артбордом: на 1440 аватар (`left: 1800`) выпадал из a11y-дерева и `openDispatcherSettings` не находил «Меню пользователя» |
 | Мобильный инженер | 390×844, настоящий одноразовый код тестового auth-контура, назначенный день, reload и выход |
 | Недоступность Router | Реальная остановка контейнера: `/health/services` сообщает `router: down`, API и его readiness остаются доступны, последний принятый план сохранён; после старта Router снова `ok`, день открывается |
 
@@ -146,6 +154,45 @@ PR/мерж тимлида. Код в `dev` и зелёный локальный
 требование успешных проверок для допуска к merge — отдельная настройка SourceCraft,
 наличие workflow её не заменяет.
 
+## Self-hosted воркеры (MGG)
+
+`ci` и `regression` выполняются на двух self-hosted воркерах SourceCraft на
+хосте MGG (`mgg@178.140.207.217:2222`, каталог `/home/mgg/scw`). Воркер — это
+бинарник `self-hosted-processor` (shell executor), авторизующийся PAT-токеном
+с ролью «Repository admin»; официальный гайд: SourceCraft →
+«Setting up a self-hosted worker».
+
+| Воркер | Теги | max_slots | Что берёт | Пик RAM |
+|---|---|---|---|---|
+| `light` | `mgg`, `mgg-light` | 1 | все задачи `ci` (последовательно) | ~3,5 ГиБ (test-js) |
+| `full` | `mgg`, `mgg-full` | 1 | `test-regression` (полный compose-стек) | ~4 ГиБ |
+
+Маршрутизация — полем `runs_on` в `.sourcecraft/ci.yaml`: `ci` →
+`[self-hosted, mgg-light]`, `regression` → `[self-hosted, mgg-full]`. Худший
+одновременный пик — регрессия + test-js ≈ 7,5 ГиБ при ~9 ГиБ свободных после
+урезания GitLab (puma 5 → 1 воркер, `gitlab.rb`, бакап рядом); запас ≥ 1 ГиБ
+и swap 4 ГиБ — амортизатор. `cd` остаётся на облачных воркерах: деплой не
+должен зависеть от нашего хоста, и на время простоя хоста PR-проверки просто
+ждут в очереди, а деплои продолжают идти.
+
+Эксплуатация (`ssh` от `mgg`): воркеры — контейнеры `scw-light` / `scw-full`
+(образ `scw-worker:latest` из `/home/mgg/scw/worker.Dockerfile`, автостарт
+`restart=always`): `docker logs -f scw-light`, `docker restart scw-full`.
+PAT обновляется `/home/mgg/scw/install-pat.sh <токен>` (пишет конфиги,
+монтируемые в контейнеры), затем `docker restart scw-light scw-full`. Образы
+регрессии остаются в docker-кэше — при заполнении диска
+`docker system prune` (сейчас reclaimable ~140 ГиБ).
+
+Воркеры работают от root внутри своих контейнеров с примонтированным
+docker-сокетом: контейнеры кубов пишут в workspace файлы от root, и
+платформенный `#tear-down-environment` обязан уметь их удалять (при запуске
+воркера обычным пользователем даже полностью зелёные задачи помечались
+failed). Workspace материализуется без `.git` — провенанс бенчмарка
+деградирует в `"unknown"` вместо падения
+(`core/policy_benchmark._git_provenance`). Дефолтного лимита куба
+(5 минут) не хватает на холодные установки пакетов, поэтому у `ci` стоит
+`max_cube_duration: 25m` (у `regression` — 30m).
+
 ## Deploy
 
 `cd` по SSH заходит на два хоста одним push в `main`:
@@ -164,6 +211,46 @@ docker compose -f docker-compose.yml up -d --build --remove-orphans
    падает с `File exists`. Полный clone монорепы на почтовом хосте не нужен.
    Если раннер SourceCraft не достучится до `:22` SMTP-хоста, деплой идёт
    прыжком `SourceCraft → MGG:2222 → SMTP:22`.
+
+### OpenRouter mirror (Jev) — https://openrouter.droidje.com
+
+На почтовом хосте поднят независимый vhost host-nginx — прозрачное зеркало
+`https://openrouter.ai` с EU-egress для прод-вызовов Jev
+(`POST /api/alpha/decisions`). С почтовым стеком он не связан: в `apply.sh`
+это отдельный guarded-блок до postfix-секций, который не рестартует
+postfix/opendkim/watchdog/hysteria; дерево без
+`nginx/openrouter-mirror.conf` блок просто пропускает, поэтому CI остаётся
+зелёным и до, и после включения зеркала.
+
+- Путь 1:1 повторяет OpenRouter (`/api/v1/...`, `/api/alpha/...`); `GET
+  /health` отвечает без токена — для мониторинга.
+- Доступ: заголовок `X-Proxy-Token` (map генерируется в
+  `/etc/navix-smtp/openrouter-mirror.map.nginx`). Ключ OpenRouter callers не
+  передают — он инжектится на прокси
+  (`/etc/navix-smtp/openrouter-mirror.upstream.nginx`, 0640 `root:www-data`).
+  Секреты живут только на хосте; дерево может нести `secrets/openrouter.key`
+  (пересеять ключ) и `secrets/proxy.token` (явно задать токен) — в git их нет.
+- TLS — свой LE-сертификат `openrouter.droidje.com` (HTTP-01 через webroot
+  `/var/www/html`; challenge-vhost — `nginx/openrouter-mirror-acme.conf`).
+  Прокси слушает TCP/443 отдельным SNI-vhost рядом с другими сайтами хоста,
+  UDP/443 по-прежнему занят Hysteria.
+- Ручной деплой зеркала без рестарта почты: собрать дерево только из
+  `apply.sh`, `nginx/openrouter-mirror.conf` и
+  `nginx/openrouter-mirror-acme.conf` (+ опциональные секреты), залить
+  во временный каталог и дважды вызвать `sudo /usr/local/sbin/navix-smtp-apply
+  <dir>`. Первый прогон самоустанавливает свежий apply, второй применяет
+  vhost; на отсутствующем `postfix/main.cf` скрипт падает до почтовых секций,
+  так что postfix/opendkim/watchdog не рестартуют вовсе (код выхода 1 —
+  ожидаемый; CI с полным деревом работает как прежде).
+- Ключ OpenRouter — из личного хранилища тимлида («LCT (expires in December
+  15, $10)»): кредит $10 истекает 2026-12-15, к финалам (23.10) запас есть.
+
+Прод подключает зеркало переменными окружения API
+(`OPENROUTER_BASE_URL=https://openrouter.droidje.com`,
+`OPENROUTER_PROXY_TOKEN`); при интеграции Jev в приложения сервер обязан
+валидировать хост запроса и не ходить в localhost/private-диапазоны (правило
+SSRF). Токен лежит в `/etc/navix-smtp/openrouter-mirror.env` на почтовом
+хосте (root-only).
 
 Корневой [docker-compose.yml](../docker-compose.yml) включает
 `infra/docker-compose.yml`, чтобы скилл находил контур, не зная про `infra/`.
@@ -257,3 +344,14 @@ sudo bash /home/mgg/navix/scripts/ci/install-navix-nginx.sh
 2. Разложить deploy-ключ на сервер и приватную половину в SourceCraft **до** первого
    мержа в `main`.
 3. Мерж тимлида `dev` → `main`. Этот коммит активирует триггеры и должен запустить `cd`.
+
+Для self-hosted воркеров (ветка `feat/ci-self-hosted-workers`):
+
+1. Урезать GitLab на MGG (puma 1 воркер) и запустить воркеры
+   (`install-pat.sh` + `start-all.sh`) — до переключения маршрутизации.
+2. Создать секрет репозитория `LCT_CI_PG_PASSWORD` **до** мержа в `main`:
+   старый конфиг с `main` прогоняет PR без env-инъекции, скрипт берёт дефолт
+   из `scripts/ci/js-tests.env`.
+3. Мерж в `dev`, затем тимлид `dev` → `main` — с этого момента `ci`/`regression`
+   идут на воркеры MGG. После этого дефолт из `js-tests.env` можно убрать
+   отдельным коммитом (скрипт продолжит требовать переменную).

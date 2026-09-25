@@ -1,7 +1,8 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { type Actor, CurrentActor, Public, Roles } from '../auth';
 import { SysError } from '../common/errors';
+import { RateLimit, RateLimitGuard } from '../common/rate-limit';
 import { Clock } from '../common/time';
 import { zodBody } from '../common/validation';
 import { assertWriteApplied, OperationsService } from '../operations';
@@ -67,6 +68,11 @@ export class ClientController {
    */
   @Public()
   @Post('interpret')
+  @UseGuards(RateLimitGuard)
+  // These three surfaces proxy paid third parties (LocationIQ with a metered key, the
+  // LLM) to anonymous callers: one shared budget per address, cheap enough for the
+  // honest form, useless for burning the quota.
+  @RateLimit({ scope: 'client:paid-proxy', max: 30, windowSec: 60 })
   @ApiOperation({ summary: 'Choose form fields from a visit story' })
   async interpret(@Body() body: { text?: unknown }) {
     if (typeof body.text !== 'string' || body.text.trim().length < 8) {
@@ -77,6 +83,8 @@ export class ClientController {
 
   @Public()
   @Get('geocode')
+  @UseGuards(RateLimitGuard)
+  @RateLimit({ scope: 'client:paid-proxy', max: 30, windowSec: 60 })
   @ApiOperation({ summary: 'Autocomplete an address before the client is signed in' })
   async geocode(@Query('q') q?: string) {
     return { hits: await this.geocoding.search({ q }) };
@@ -88,6 +96,8 @@ export class ClientController {
    */
   @Public()
   @Get('geocode/reverse')
+  @UseGuards(RateLimitGuard)
+  @RateLimit({ scope: 'client:paid-proxy', max: 30, windowSec: 60 })
   @ApiOperation({ summary: 'Address for a point chosen on the client map' })
   async reverseGeocode(@Query('lat') lat?: string, @Query('lon') lon?: string) {
     return { hit: await this.geocoding.reverse(Number(lat), Number(lon)) };

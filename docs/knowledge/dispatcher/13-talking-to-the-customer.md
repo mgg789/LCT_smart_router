@@ -4,7 +4,7 @@ segment: dispatcher
 title: Что можно и нельзя обещать клиенту
 summary: Диспетчер меняет условия заявки, а не пишет клиенту напрямую из ассистента — уведомление идёт единственным письменным каналом с фиксированным каталогом переходов, и ни точного времени приезда, ни живой позиции инженера продукт не обещает.
 tags: [клиент, письма, ETA, окно]
-actions: [get_requests, update_request, cancel_request, get_request_history]
+actions: [list_requests, prepare_update_request, prepare_cancel_request, get_request_history]
 related: [disp-02-reading-the-plan, disp-11-live-problems-from-engineers]
 updated: 2026-09-20
 ---

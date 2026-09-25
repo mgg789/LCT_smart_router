@@ -95,6 +95,7 @@ function buildProvider(
           baseUrl: config.get('LLM_BASE_URL'),
           apiKey: config.get('LLM_TOKEN') ?? '',
           timeoutMs: config.get('LLM_REQUEST_TIMEOUT_MS'),
+          proxyToken: config.get('LLM_PROXY_TOKEN'),
         }),
         clock,
       );
@@ -104,6 +105,7 @@ function buildProvider(
           baseUrl: config.get('LLM_BASE_URL'),
           apiKey: config.get('LLM_TOKEN') ?? '',
           timeoutMs: config.get('LLM_REQUEST_TIMEOUT_MS'),
+          proxyToken: config.get('LLM_PROXY_TOKEN'),
         }),
         clock,
       );

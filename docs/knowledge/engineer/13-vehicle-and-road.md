@@ -4,7 +4,7 @@ segment: engineer
 title: Проблемы с транспортом и дорогой
 summary: Пока вы ещё в пути к заявке, задержку в дороге сообщайте через «Буду в…»; если добраться не получится вообще, это уже отмена через «Невозможно выполнить».
 tags: [транспорт, дорога, пробки]
-actions: [report_eta, report_cannot_complete, call_dispatch_helper]
+actions: [report_eta, report_cannot_complete]
 related: [eng-07-eta-and-on-time, eng-10-cannot-complete, eng-16-profile-and-transport]
 updated: 2026-09-20
 ---

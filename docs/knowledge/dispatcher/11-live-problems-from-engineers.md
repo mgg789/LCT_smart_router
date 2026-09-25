@@ -4,7 +4,7 @@ segment: dispatcher
 title: События от инженеров в LIVE
 summary: Ничто не создаёт факт из расписания или молчания — только явные отметки инженера (старт, финиш, проблема) считаются подтверждёнными фактами, а нормативное завершение допускает опоздание не позже окна клиента плюс 10 минут, иначе резервация снимается автоматически.
 tags: [live, facts, problems, eta]
-actions: [get_live_view, get_plan]
+actions: [get_shift_status, get_day_plan]
 related: [disp-06-alert-lunch-conflict, disp-01-day-shape]
 updated: 2026-09-20
 ---

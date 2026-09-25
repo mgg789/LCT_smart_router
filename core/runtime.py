@@ -32,7 +32,7 @@ from core.engine import (
 )
 from core.evidence import build_plan_evidence
 from core.geo import GraphTravel, RoadGraph, StraightTravel, configure_travel, content_hash
-from core.osrm import OSRMTravel
+from core.osrm import OSRMTravel, attach_live_roads
 from core.policy import POLICY_CATALOG_VERSION, compile_policy
 from core.predict_calibration import PredictCalibration, PredictCalibrationStore
 from core.roadimport import ImportedRoadOverlay
@@ -303,14 +303,17 @@ def calculate_policy_comparison(
 
     The function is intentionally independent from Runtime memory: every policy
     gets the same cold-start snapshot and bounded budget, and no candidate can
-    affect the active plan or the next replanning anchor.
+    affect the active plan or the next replanning anchor. Rows share the travel
+    space the installed graph serves, so their summaries are directly comparable
+    with the published plan's metrics.
     """
     if not 1 <= search_budget_ms <= 8000:
         raise ValueError("COMPARISON_BUDGET_INVALID")
-    # Construction is always straight-line. The flag and the graph stay so callers compile.
-    del offline, graph
     snapshot = apply_system_policy(official_roster(parse_snapshot(raw)), settings)
-    provider = construction_travel(settings, snapshot.planning_as_of)
+    provider = GraphTravel(graph) if isinstance(graph, RoadGraph) else graph
+    if not offline:
+        provider = attach_live_roads(provider)
+    provider = configure_travel(provider, settings.technical(), snapshot.planning_as_of)
     comparison_settings = replace(
         settings,
         time_limit_ms=search_budget_ms,

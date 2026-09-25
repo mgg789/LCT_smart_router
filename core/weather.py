@@ -10,6 +10,7 @@ import json
 import math
 import os
 import time
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from typing import Literal
@@ -18,8 +19,15 @@ WeatherKind = Literal["clear", "cloud", "rain", "snow", "storm", "unknown"]
 
 _MOSCOW_LAT = 55.7558
 _MOSCOW_LON = 37.6173
+# The single allowed forecast origin; never built from request data.
+_OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 _TTL_SEC = 30 * 60
 _FETCH_TIMEOUT_SEC = 2.0
+
+
+class _NoRedirects(urllib.request.HTTPRedirectHandler):
+    """Refuse every redirect: the forecast origin must not be walked off."""
+
 
 # Rain lifts the car traffic factor a little. Snow and thunderstorms lift it more.
 _RAIN_MULTIPLIER = 1.08
@@ -102,12 +110,26 @@ def _write_disk(snapshot: WeatherSnapshot) -> None:
 
 
 def _fetch() -> WeatherSnapshot:
-    url = (
-        "https://api.open-meteo.com/v1/forecast"
-        f"?latitude={_MOSCOW_LAT}&longitude={_MOSCOW_LON}"
-        "&current=temperature_2m,weather_code&timezone=Europe%2FMoscow&forecast_days=1"
+    # Constant origin and constant query: the only endpoint this contour talks to
+    # is the public Open-Meteo forecast for Moscow. The allowlist below keeps the
+    # request pinned to that origin even if the constants above are edited, and
+    # redirects stay off so the origin cannot be walked off to another host.
+    query = urllib.parse.urlencode(
+        {
+            "latitude": _MOSCOW_LAT,
+            "longitude": _MOSCOW_LON,
+            "current": "temperature_2m,weather_code",
+            "timezone": "Europe/Moscow",
+            "forecast_days": 1,
+        }
     )
-    with urllib.request.urlopen(url, timeout=_FETCH_TIMEOUT_SEC) as response:
+    url = f"{_OPEN_METEO_URL}?{query}"
+    origin = urllib.parse.urlsplit(url)
+    if origin.scheme != "https" or origin.hostname != "api.open-meteo.com":
+        raise ValueError("WEATHER_ORIGIN_UNEXPECTED")
+    request = urllib.request.Request(url, method="GET")
+    opener = urllib.request.build_opener(_NoRedirects())
+    with opener.open(request, timeout=_FETCH_TIMEOUT_SEC) as response:
         payload = json.loads(response.read().decode("utf-8"))
     current = payload["current"]
     code = int(current["weather_code"])

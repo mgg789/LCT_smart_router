@@ -46,10 +46,6 @@ const changeStatusSchema = z.object({
   /** `1` to go online, `0` to go offline. Not a boolean: this mirrors the two states the
    *  underlying `Availability` enum actually has, with no third value to invent. */
   status: z.union([z.literal(0), z.literal(1)]),
-  /** Why the engineer is standing down. Required only for `status: 0`; asking for it
-   *  when going online would just invite an invented reason for something that needs
-   *  none. */
-  note: z.string().trim().min(1).max(2_000).optional(),
 });
 type ChangeStatusArgs = z.infer<typeof changeStatusSchema>;
 
@@ -342,31 +338,26 @@ export function buildEngineerTools(deps: EngineerToolDeps): readonly ToolSpec[] 
     name: 'change_status_to',
     description:
       '`status: 1` to go online, `status: 0` to go offline (stand down for the rest of ' +
-      'the day; needs a reason). While a LIVE workday is running, both go through the ' +
-      "LIVE action spine instead of the legacy availability switch -- offline doesn't " +
-      'cancel any remaining work, it just returns it to the pool for replanning.',
+      'the day). While a LIVE workday is running, going online goes through the LIVE ' +
+      "action spine; going offline mid-day is the dispatcher's decision, so the " +
+      'assistant explains that instead of preparing a write.',
     schema: changeStatusSchema,
     async run(ctx, args) {
       const running = await liveWorkdayRunning(deps.live);
       if (running) {
         if (args.status === 0) {
-          // `liveActionSchema`'s `offline` member (`LiveService.goOffline`) is the
-          // engineer-facing counterpart to the dispatcher's own
-          // `setDispatcherAvailability`: it sets `stood_down`, never `no_show_offline`,
-          // because this engineer did show up.
-          if (!args.note) {
-            throw new SysError('VALIDATION_FAILED', 'Ask why the engineer is going offline');
-          }
-          const op = await deps.aiOperations.prepare({
-            actor: ctx.actor,
-            accountId: ctx.accountId,
-            conversationId: ctx.conversationId,
-            runId: ctx.runId,
-            action: 'live.engineer.offline',
-            targetRef: requireEngineerId(ctx),
-            payload: { note: args.note },
-          });
-          return prepared(op);
+          // A mid-day stand-down is deliberately not an assistant write in this
+          // contour: the dispatcher takes an engineer off the line, and a device
+          // goes back through the equipment handoff. Say so plainly instead of
+          // preparing a write the action catalogue would always refuse.
+          return {
+            ok: true,
+            summary: 'Offline during a live day is a dispatcher decision',
+            resultContent:
+              'Уйти с линии посреди рабочего дня через ассистента нельзя: снимает ' +
+              'инженера с линии только диспетчер. Если дело в устройстве — сдайте ' +
+              'его через сдачу оборудования и предупредите диспетчера.',
+          };
         }
         const op = await deps.aiOperations.prepare({
           actor: ctx.actor,
