@@ -118,23 +118,33 @@ Router Core имеет собственный CLI (`solve`, `serve`, `benchmark`
 контуре запускается как `serve --official-regions east southeast south_central`
 с durable-технастройками в томе `router-state`.
 
-Автомобильные плечи внутри МКАД идут в низкоуровневый API графа
-`moscow-road-graph` (`ROUTER_ROAD_API_URL`, по умолчанию
-`http://host.docker.internal:8123`). Это OSRM по дорогам плюс прогноз пробок
-самого API; метро в этот вызов не входит. Сервер API:
+Автомобильные плечи внутри МКАД идут в дорожный API графа МКАД
+(`ROUTER_ROAD_API_URL`, по умолчанию `http://road-api:8123`). Это OSRM по дорогам
+плюс прогноз пробок самого API; метро в этот вызов не входит. Граф вендорен в
+`services/road-api` и поднимается вместе с контуром двумя сервисами compose:
+`osrm` (граф MLD в tmpfs) и `road-api` (HTTP `/route2`). Отдельно:
 
 ```bash
-# osrm-routed уже слушает 127.0.0.1:5111
-python3 /path/to/moscow-road-graph/demo/server.py
+docker compose -f infra/docker-compose.yml up -d osrm road-api
 ```
+
+Подробнее — [services/road-api/README.md](../services/road-api/README.md).
 
 Построение дня не вызывает этот API и не вызывает OSRM: плечо считается прямой,
 метро остаётся. Точная линия запрашивается основным бэкендом уже после готового
-плана, до четырёх рёбер сразу. Пока процесс `demo/server.py` не слушает 8123,
+плана, до четырёх рёбер сразу. Пока `road-api` не отвечает (граф ещё прогревается),
 на карте остаётся пунктир; отказ сокета повторяется через несколько секунд, а
 настоящая дорога и честная прямая за МКАД держатся часами. Пока фаза роутера
 `building` или `error`, это видно в уведомлении. Вход, запись почты инженера и
 статусы не ждут ни дорожный запрос, ни блокировку приёмки плана.
+
+System one (`/v1/choice`, `/v1/noul`) ищется по `JEV_API_URL`. На машине
+разработчика это `jev-local` на хосте (`http://host.docker.internal:12444`). На
+демо-стенде — сервис compose `sys1` (`services/sys1`, в сети compose
+`http://sys1:12444`, наружу не публикуется): он отвечает тем же контрактом через
+зеркало OpenRouter; задаются `SYS1_LLM_BASE_URL`, `SYS1_MODEL` (по умолчанию
+`typesafe/jev-1.13`), токен — `LLM_PROXY_TOKEN`. Без `SYS1_LLM_BASE_URL` `sys1`
+отвечает 503, и короткие AI-вызовы сообщают `not_configured`.
 
 ## 4. Загрузка датасета
 
