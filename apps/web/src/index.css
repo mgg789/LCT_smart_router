@@ -86,6 +86,17 @@ body {
   font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
 }
 
+.tabular-control-input {
+  width: 100%;
+  border: 1px solid color-mix(in srgb, var(--color-figma-ink) 15%, transparent);
+  border-radius: 8px;
+  background: var(--color-figma-canvas);
+  padding: 8px;
+  color: var(--color-figma-ink);
+  font: inherit;
+  font-size: 14px;
+}
+
 /* Windows renders native scrollbar arrow buttons over compact Figma cards. */
 *::-webkit-scrollbar-button {
   display: none;

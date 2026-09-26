@@ -8,6 +8,7 @@ import type {
   OfficialImportSummary,
   ReviewImportQuality,
   RoadImportSummary,
+  TabularFileInput,
 } from '../api/types';
 import { parseDataUpload } from '../domain/dataUpload';
 import { regionStyle } from '../domain/regions';
@@ -15,10 +16,12 @@ import { FIGMA_ASSETS } from './assets';
 import { ImportQualityDialog } from './ImportQualityDialog';
 import { ModalLayer, ModalScrim } from './modalLayer';
 import { FigmaIcon } from './primitives';
+import { TabularImportDialog } from './TabularImportDialog';
 
 export const DATA_UPLOAD_TITLE = 'Загрузить данные';
 
 type UploadResult = DataUploadSummary | OfficialImportSummary;
+const TABULAR_MAX_BYTES = 6 * 1024 * 1024;
 
 /**
  * Figma MAIN upload dialog. Same parse/upload contracts as the day-page modal,
@@ -27,6 +30,7 @@ type UploadResult = DataUploadSummary | OfficialImportSummary;
 export function DataUploadModal({
   open,
   submitting,
+  token,
   readOnly,
   existingRegions,
   motionOn,
@@ -37,6 +41,7 @@ export function DataUploadModal({
 }: {
   open: boolean;
   submitting: boolean;
+  token?: string | null;
   readOnly: boolean;
   existingRegions: readonly string[];
   motionOn: boolean;
@@ -52,6 +57,7 @@ export function DataUploadModal({
   const [fileNames, setFileNames] = useState<string[]>([]);
   const [candidates, setCandidates] = useState<DataUploadFile[]>([]);
   const [issues, setIssues] = useState<string[]>([]);
+  const [tabularNotices, setTabularNotices] = useState<string[]>([]);
   const [result, setResult] = useState<UploadResult | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -59,6 +65,9 @@ export function DataUploadModal({
   const [roadResult, setRoadResult] = useState<RoadImportSummary | null>(null);
   const [roadError, setRoadError] = useState<string | null>(null);
   const [qualityReport, setQualityReport] = useState<ImportPreparationView | null>(null);
+  const [tabularSource, setTabularSource] = useState<TabularFileInput | null>(null);
+  const [tabularQueue, setTabularQueue] = useState<TabularFileInput[]>([]);
+  const fileReadGeneration = useRef(0);
   const qualityDecision = useRef<((accepted: boolean) => void) | null>(null);
   const reviewQuality: ReviewImportQuality = (report) =>
     new Promise((resolve) => {
@@ -74,11 +83,13 @@ export function DataUploadModal({
   useEffect(
     () => () => {
       qualityDecision.current?.(false);
+      fileReadGeneration.current += 1;
     },
     [],
   );
 
   useEffect(() => {
+    fileReadGeneration.current += 1;
     if (!open) return;
     qualityDecision.current?.(false);
     qualityDecision.current = null;
@@ -86,15 +97,20 @@ export function DataUploadModal({
     setFileNames([]);
     setCandidates([]);
     setIssues([]);
+    setTabularNotices([]);
     setResult(null);
     setSubmitError(null);
     setDragging(false);
     setRoadFileName(null);
     setRoadResult(null);
     setRoadError(null);
+    setTabularSource(null);
+    setTabularQueue([]);
   }, [open]);
 
   const readFiles = async (files: FileList | File[]) => {
+    const generation = ++fileReadGeneration.current;
+    setTabularNotices([]);
     const list = [...files];
     setFileNames(list.map((file) => file.name));
     setCandidates([]);
@@ -103,33 +119,62 @@ export function DataUploadModal({
     setSubmitError(null);
     const next: DataUploadFile[] = [];
     const nextIssues: string[] = [];
+    const tabular: TabularFileInput[] = [];
     for (const file of list) {
-      if (!file.name.toLowerCase().endsWith('.json')) {
-        nextIssues.push(`${file.name}: выберите файл с расширением .json.`);
-        continue;
+      if (generation !== fileReadGeneration.current) return;
+      const lowerName = file.name.toLowerCase();
+      try {
+        if (
+          lowerName.endsWith('.csv') ||
+          lowerName.endsWith('.tsv') ||
+          lowerName.endsWith('.xlsx')
+        ) {
+          if (!token) {
+            nextIssues.push(`${file.name}: табличный импорт доступен после входа в живой контур.`);
+            continue;
+          }
+          if (file.size > TABULAR_MAX_BYTES) {
+            nextIssues.push(`${file.name}: размер таблицы не должен превышать 6 МБ.`);
+            continue;
+          }
+          tabular.push({
+            fileName: file.name,
+            payloadBase64: bytesToBase64(new Uint8Array(await file.arrayBuffer())),
+          });
+          continue;
+        }
+        if (!lowerName.endsWith('.json')) {
+          nextIssues.push(`${file.name}: выберите JSON, CSV, TSV или XLSX.`);
+          continue;
+        }
+        const parsed = parseDataUpload(await file.text());
+        if (!parsed.ok) {
+          nextIssues.push(...parsed.issues.map((issue) => `${file.name}: ${issue}`));
+          continue;
+        }
+        const exists = existingRegions.includes(parsed.file.region);
+        if (parsed.file.mode === 'new_region' && exists) {
+          nextIssues.push(
+            `${file.name}: регион ${parsed.file.region} уже существует. Используйте mode: "append_requests".`,
+          );
+          continue;
+        }
+        if (parsed.file.mode === 'append_requests' && !exists) {
+          nextIssues.push(
+            `${file.name}: регион ${parsed.file.region} ещё не загружен. Используйте mode: "new_region".`,
+          );
+          continue;
+        }
+        next.push(parsed.file);
+      } catch {
+        nextIssues.push(`${file.name}: не удалось прочитать файл.`);
       }
-      const parsed = parseDataUpload(await file.text());
-      if (!parsed.ok) {
-        nextIssues.push(...parsed.issues.map((issue) => `${file.name}: ${issue}`));
-        continue;
-      }
-      const exists = existingRegions.includes(parsed.file.region);
-      if (parsed.file.mode === 'new_region' && exists) {
-        nextIssues.push(
-          `${file.name}: регион ${parsed.file.region} уже существует. Используйте mode: "append_requests".`,
-        );
-        continue;
-      }
-      if (parsed.file.mode === 'append_requests' && !exists) {
-        nextIssues.push(
-          `${file.name}: регион ${parsed.file.region} ещё не загружен. Используйте mode: "new_region".`,
-        );
-        continue;
-      }
-      next.push(parsed.file);
     }
+    if (generation !== fileReadGeneration.current) return;
     setIssues(nextIssues);
     setCandidates(next);
+    setTabularQueue(tabular.slice(1));
+    setTabularSource(tabular[0] ?? null);
   };
 
   const onFileInput = (event: ChangeEvent<HTMLInputElement>) => {
@@ -161,6 +206,25 @@ export function DataUploadModal({
 
   const hasFiles = candidates.length > 0 && !result;
   const applyLit = hasFiles && !submitting;
+  const finishTabular = (file: DataUploadFile, notices: readonly string[]) => {
+    setTabularNotices((current) => [...new Set([...current, ...notices])]);
+    const exists = existingRegions.includes(file.region);
+    if ((file.mode === 'new_region' && exists) || (file.mode === 'append_requests' && !exists)) {
+      setIssues((current) => [
+        ...current,
+        `${file.region}: проверьте режим и существование региона перед импортом.`,
+      ]);
+    } else {
+      setCandidates((current) => [...current, file]);
+    }
+    const [next, ...rest] = tabularQueue;
+    setTabularQueue(rest);
+    setTabularSource(next ?? null);
+  };
+  const cancelTabular = () => {
+    setTabularSource(null);
+    setTabularQueue([]);
+  };
 
   return (
     <ModalLayer open={open} motionOn={motionOn}>
@@ -199,7 +263,7 @@ export function DataUploadModal({
           id={inputId}
           ref={inputRef}
           type="file"
-          accept="application/json,.json"
+          accept="application/json,.json,text/csv,.csv,.tsv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx"
           multiple
           className="sr-only"
           onChange={onFileInput}
@@ -226,7 +290,7 @@ export function DataUploadModal({
           }`}
         >
           <p className="font-semibold text-[20px] tracking-[-0.4px] text-figma-ink">
-            Перетащите JSON сюда
+            Перетащите JSON, CSV, TSV или XLSX сюда
           </p>
           {fileNames.length > 0 ? (
             <p className="mt-[10px] max-w-full truncate font-medium text-[16px] text-figma-muted">
@@ -283,6 +347,16 @@ export function DataUploadModal({
         ) : null}
 
         <div className="mt-[16px] min-h-0 flex-1 overflow-auto [scrollbar-width:thin]">
+          {tabularNotices.length > 0 ? (
+            <details className="rounded-[16px] bg-figma-soft p-[16px] text-[14px]">
+              <summary>Замечания преобразования: {tabularNotices.length}</summary>
+              <ul className="mt-[8px] list-disc pl-[18px]">
+                {tabularNotices.map((notice) => (
+                  <li key={notice}>{notice}</li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
           {issues.length > 0 ? (
             <div role="alert" className="rounded-[20px] bg-[#fdecec] px-[20px] py-[16px]">
               <p className="font-semibold text-[18px] text-figma-danger">Файл не прошёл проверку</p>
@@ -407,6 +481,17 @@ export function DataUploadModal({
           report={qualityReport}
           motionOn={motionOn}
           onDecision={decideQuality}
+        />
+      ) : null}
+      {tabularSource && token ? (
+        <TabularImportDialog
+          key={`${tabularSource.fileName}:${tabularQueue.length}`}
+          token={token}
+          source={tabularSource}
+          existingRegions={existingRegions}
+          motionOn={motionOn}
+          onBack={cancelTabular}
+          onComplete={finishTabular}
         />
       ) : null}
     </ModalLayer>

@@ -683,6 +683,7 @@ export function MainDashboardPage() {
         <DataUploadModal
           open={uploadOpen}
           submitting={dash.uploadingData}
+          token={dash.token}
           readOnly={dash.writesDisabled}
           existingRegions={regions.map((region) => region.id)}
           motionOn={motionOn}
