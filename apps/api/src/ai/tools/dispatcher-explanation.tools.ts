@@ -468,7 +468,22 @@ export async function runDispatcherCompareAssignments(
       (row.result.input_publication_id === publicationId ||
         row.result.input_publication_id === 'stored'),
   );
-  const baselineKeys = simulations.map((row) => JSON.stringify(row.result.delta?.before ?? null));
+  // JSONB may reorder object keys. Compare the contract's metric values, so a cached
+  // baseline and the identical fresh Router baseline remain comparable.
+  const baselineKeys = simulations.map((row) => {
+    const before = row.result.delta?.before;
+    return before
+      ? JSON.stringify([
+          before.assigned_count,
+          before.unassigned_count,
+          before.late_assigned_count,
+          before.total_lateness_sec,
+          before.distance_km,
+          before.engineers_used ?? null,
+          before.additional_engineers ?? null,
+        ])
+      : 'null';
+  });
   const methods = new Set(simulations.map((row) => row.result.method));
   const baselineMatch = baselineKeys.every((key) => key === baselineKeys[0] && key !== 'null');
   const available = Boolean(stable && echoesMatch && baselineMatch);

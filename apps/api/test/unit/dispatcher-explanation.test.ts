@@ -253,6 +253,39 @@ describe('dispatcher evidence explanation tools', () => {
     assert.equal(body.rows[0].delta, undefined);
   });
 
+  it('compares metric values independently of JSONB key order', async () => {
+    const { deps } = setup();
+    const simulate = deps.router.simulate.bind(deps.router);
+    deps.router.simulate = async (patch) => {
+      const result = await simulate(patch);
+      if (patch.pin?.engineer_id !== 'eng-2' || !result.delta) return result;
+      const before = result.delta.before;
+      return {
+        ...result,
+        delta: {
+          ...result.delta,
+          before: {
+            distance_km: before.distance_km,
+            total_lateness_sec: before.total_lateness_sec,
+            late_assigned_count: before.late_assigned_count,
+            unassigned_count: before.unassigned_count,
+            assigned_count: before.assigned_count,
+          },
+        },
+      };
+    };
+    const body = JSON.parse(
+      (
+        await runDispatcherCompareAssignments(deps, new EvidenceReader(), {
+          requestId: 'req-1',
+          engineerIds: ['eng-1', 'eng-2'],
+        })
+      ).resultContent,
+    );
+    assert.equal(body.status, 'compared');
+    assert.equal(body.rows.length, 2);
+  });
+
   it('returns source/version-linked request factors and deterministic follow-up', async () => {
     const { deps } = setup();
     const result = await runDispatcherExplainEntity(deps, new EvidenceReader(), {
