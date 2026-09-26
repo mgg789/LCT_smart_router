@@ -1,4 +1,4 @@
-"""Convert one cached Overpass `out geom` response into the attributed offline demo map.
+"""Convert one cached Overpass `out geom` response into the attributed offline official-region map.
 
 Usage: python apps/web/scripts/prepare-basemap.py INPUT_JSON
 The output is ODbL map data, not a route or a routing matrix. No network calls are made.
@@ -9,8 +9,35 @@ import hashlib
 import json
 from pathlib import Path
 
-BOUNDS = [37.63, 55.68, 37.82, 55.76]
-QUERY = '[out:json][timeout:40];(way["highway"~"^(motorway|trunk|primary|secondary|tertiary|residential|unclassified|living_street)(_link)?$"](55.68,37.63,55.76,37.82);way["waterway"~"^(river|canal)$"](55.68,37.63,55.76,37.82);way["natural"="water"](55.68,37.63,55.76,37.82);way["landuse"~"^(forest|grass)$"](55.68,37.63,55.76,37.82);way["leisure"="park"](55.68,37.63,55.76,37.82););out geom;'
+BOUNDS = [37.50, 54.80, 38.20, 55.81]
+QUERY = '[out:json][timeout:50][maxsize:134217728];(way["highway"~"^(motorway|trunk|primary|secondary|tertiary|residential|unclassified|living_street)(_link)?$"](54.80,37.50,55.81,38.20);way["waterway"~"^(river|canal)$"](54.80,37.50,55.81,38.20);way["natural"="water"](54.80,37.50,55.81,38.20);way["leisure"="park"](54.80,37.50,55.81,38.20););out geom;'
+
+
+def simplify(points: list[list[float]], epsilon: float = 0.00004) -> list[list[float]]:
+    """Ramer-Douglas-Peucker display simplification, at most 4.5 m in latitude."""
+    if len(points) <= 2:
+        return points
+    keep = {0, len(points) - 1}
+    stack = [(0, len(points) - 1)]
+    while stack:
+        first, last = stack.pop()
+        ax, ay = points[first]
+        bx, by = points[last]
+        dx, dy = bx - ax, by - ay
+        length = dx * dx + dy * dy
+        distance, selected = epsilon * epsilon, None
+        for index in range(first + 1, last):
+            x, y = points[index]
+            t = max(0.0, min(1.0, ((x - ax) * dx + (y - ay) * dy) / length)) if length else 0.0
+            error = (x - ax - t * dx) ** 2 + (y - ay - t * dy) ** 2
+            if error > distance:
+                distance, selected = error, index
+        if selected is not None:
+            keep.add(selected)
+            stack.extend([(first, selected), (selected, last)])
+    result = [points[index] for index in sorted(keep)]
+    # Retain valid small closed rings, even if below the display tolerance.
+    return points if points[0] == points[-1] and len(result) < 4 else result
 
 
 def convert(source: dict) -> dict:
@@ -25,6 +52,7 @@ def convert(source: dict) -> dict:
         ]
         if len(points) < 2:
             continue
+        points = simplify(points)
         road = tags.get("highway")
         kind = (
             "road"
@@ -67,7 +95,7 @@ def main() -> None:
     payload = (
         json.dumps(data, ensure_ascii=False, separators=(",", ":")) + "\n"
     ).encode()
-    (output / "east-demo.geojson").write_bytes(payload)
+    (output / "official-regions.geojson").write_bytes(payload)
     manifest = {
         "source": "OpenStreetMap contributors",
         "license": "ODbL-1.0",
@@ -76,11 +104,12 @@ def main() -> None:
         "endpoint": "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
         "sourceTimestamp": source["osm3s"]["timestamp_osm_base"],
         "bounds": BOUNDS,
+        "regions": ["east", "south_central", "southeast"],
         "query": QUERY,
         "sourceSha256": hashlib.sha256(raw).hexdigest(),
         "fileSha256": hashlib.sha256(payload).hexdigest(),
         "featureCount": len(data["features"]),
-        "transform": "OSM ways only; selected road/water/park tags; coordinates rounded to 6 decimals. Ways intersect the query bbox; full way geometry may extend outside it. No buildings or address guarantee.",
+        "transform": "OSM ways only; selected road/water/park tags; coordinates rounded to 6 decimals then simplified at 0.00004 degrees (<=4.5 m latitude). Ways intersect the query bbox; full way geometry may extend outside it. No buildings or address guarantee.",
     }
     (output / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"

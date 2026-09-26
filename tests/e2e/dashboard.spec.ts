@@ -9,7 +9,7 @@ test('live plan renders the local map and replans when an engineer goes offline'
   await expect(page.getByText('0 без назначения', { exact: false })).toBeVisible();
   await expect(page.locator('[data-map-ready="true"]')).toBeVisible();
   await expect(
-    page.getByText('Сохранённая карта района демо · улицы, парки и водоёмы'),
+    page.getByText('Сохранённая карта трёх регионов · улицы, парки и водоёмы'),
   ).toBeVisible();
   await page
     .getByRole('button')
