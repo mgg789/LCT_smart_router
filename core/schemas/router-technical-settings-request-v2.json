@@ -28,6 +28,11 @@
       "title": "Equipment Enabled",
       "type": "boolean"
     },
+    "equipment_transfers_enabled": {
+      "default": false,
+      "title": "Equipment Transfers Enabled",
+      "type": "boolean"
+    },
     "expected_context_version": {
       "minLength": 1,
       "title": "Expected Context Version",
@@ -43,6 +48,11 @@
     "lunches_enabled": {
       "default": false,
       "title": "Lunches Enabled",
+      "type": "boolean"
+    },
+    "metro_enabled": {
+      "default": false,
+      "title": "Metro Enabled",
       "type": "boolean"
     },
     "operation_id": {

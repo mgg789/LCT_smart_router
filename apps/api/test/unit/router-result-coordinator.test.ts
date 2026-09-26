@@ -5,6 +5,7 @@ import {
   routerResultSchema,
 } from '../../src/routing/router-gateway/result.types';
 import type { AcceptanceOutcome } from '../../src/routing/router-gateway/result-acceptance.service';
+import type { RouterResultStatus } from '../../src/routing/router-gateway/router-client.port';
 import { RouterClient } from '../../src/routing/router-gateway/router-client.port';
 import { RouterResultCoordinator } from '../../src/routing/router-gateway/router-result-coordinator';
 
@@ -30,9 +31,24 @@ function result(status: 'pending' | 'ready' | 'error', id: string | null): Route
 class SequenceClient extends RouterClient {
   resultReads = 0;
   contextReads = 0;
+  private readonly status: (() => Promise<RouterResultStatus>) | null;
 
-  constructor(private readonly next: () => Promise<RouterResult>) {
+  constructor(
+    private readonly next: () => Promise<RouterResult>,
+    status?: () => Promise<RouterResultStatus>,
+  ) {
     super();
+    this.status = status ?? null;
+  }
+
+  /** The real transport polls a cheap status endpoint without taking the result
+   *  package; when the test supplies no status channel, the port's own default
+   *  (one full read) stands in. */
+  override async getResultStatus(): Promise<RouterResultStatus> {
+    if (this.status) {
+      return this.status();
+    }
+    return super.getResultStatus();
   }
 
   async getResult(): Promise<RouterResult> {
@@ -52,12 +68,12 @@ class SequenceClient extends RouterClient {
 
 describe('RouterResultCoordinator', () => {
   it('ignores pending and sends each completed result to acceptance once', async () => {
-    const queue = [
-      result('pending', null),
-      result('ready', 'result-1'),
-      result('error', 'result-2'),
-    ];
-    const client = new SequenceClient(async () => queue.shift() ?? result('error', 'result-2'));
+    const queue = [result('ready', 'result-1'), result('error', 'result-2')];
+    const statusQueue = [result('pending', null), result('ready', 'result-1')];
+    const client = new SequenceClient(
+      async () => queue.shift() ?? result('error', 'result-2'),
+      async () => statusQueue.shift() ?? result('error', 'result-2'),
+    );
     const accepted: string[] = [];
     const coordinator = new RouterResultCoordinator(
       client,
@@ -104,7 +120,10 @@ describe('RouterResultCoordinator', () => {
   });
 
   it('retries the same result after a transient acceptance failure', async () => {
-    const client = new SequenceClient(async () => result('ready', 'retry-result'));
+    const client = new SequenceClient(
+      async () => result('ready', 'retry-result'),
+      async () => result('ready', 'retry-result'),
+    );
     let attempts = 0;
     const coordinator = new RouterResultCoordinator(
       client,
@@ -147,14 +166,17 @@ describe('RouterResultCoordinator', () => {
   });
 
   it('survives a transient Router read failure and retries', async () => {
-    let attempts = 0;
-    const client = new SequenceClient(async () => {
-      attempts += 1;
-      if (attempts === 1) {
-        throw new Error('connection refused');
-      }
-      return result('ready', 'after-network-retry');
-    });
+    let statusAttempts = 0;
+    const client = new SequenceClient(
+      async () => result('ready', 'after-network-retry'),
+      async () => {
+        statusAttempts += 1;
+        if (statusAttempts === 1) {
+          throw new Error('connection refused');
+        }
+        return result('ready', 'after-network-retry');
+      },
+    );
     let accepted = 0;
     const coordinator = new RouterResultCoordinator(
       client,
@@ -170,7 +192,7 @@ describe('RouterResultCoordinator', () => {
     await coordinator.pollOnce();
     await coordinator.pollOnce();
 
-    assert.equal(attempts, 2);
+    assert.equal(statusAttempts, 2);
     assert.equal(accepted, 1);
   });
 });

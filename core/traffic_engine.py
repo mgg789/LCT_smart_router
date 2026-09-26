@@ -131,6 +131,7 @@ class ForecastTrafficTravel:
             provenance=quote.provenance,
             traffic_factor=round(quote.traffic_factor * factor, 2),
             geometry_exact=quote.geometry_exact,
+            segments=quote.segments,
         )
 
 

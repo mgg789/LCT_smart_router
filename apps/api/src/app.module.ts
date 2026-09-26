@@ -1,4 +1,5 @@
 import { type MiddlewareConsumer, Module, type NestModule } from '@nestjs/common';
+import { AiModule as AiGatewayModule } from './ai';
 import { ApiModule } from './api/api.module';
 import { AuthModule } from './auth';
 import { AppConfigModule } from './common/config';
@@ -12,6 +13,8 @@ import { EngineersModule } from './orchestrator/engineers';
 import { FactsModule } from './orchestrator/facts';
 import { ImportsModule } from './orchestrator/imports';
 import { LiveModule } from './orchestrator/live';
+import { McpModule } from './orchestrator/mcp';
+import { PassportsModule } from './orchestrator/passports';
 import { PolicyModule } from './orchestrator/policy';
 import { RequestsModule } from './orchestrator/requests';
 import { ResetModule } from './orchestrator/reset';
@@ -39,6 +42,7 @@ import { RouterGatewayModule } from './routing/router-gateway';
     MountDataEngModule,
     RouterGatewayModule,
     PolicyModule,
+    PassportsModule,
     DispatcherSettingsModule,
     RequestsModule,
     EngineersModule,
@@ -47,6 +51,8 @@ import { RouterGatewayModule } from './routing/router-gateway';
     ImportsModule,
     ResetModule,
     LiveModule,
+    McpModule,
+    AiGatewayModule,
     ApiModule,
   ],
 })

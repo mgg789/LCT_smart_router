@@ -50,6 +50,50 @@ describe('map travel geometry', () => {
     expect(segment?.coordinates).toHaveLength(2);
   });
 
+  it('marks handoff-adjacent edges while preserving their source style', () => {
+    const route = createDevSnapshot().plan.plan?.routes[0];
+    expect(route).toBeTruthy();
+    if (!route) return;
+    const first = route.stops[0];
+    expect(first).toBeTruthy();
+    if (!first) return;
+    const segment = mapRouteSegments({
+      ...route,
+      stops: [
+        {
+          ...first,
+          kind: 'handoff',
+          handoff: {
+            handoff_id: 'handoff-1',
+            donor_engineer_id: 'engineer-1',
+            receiver_engineer_id: 'engineer-2',
+            request_id: 'request-1',
+            items: { router: 1, set_top_box: 0, smart_speaker: 0 },
+          },
+        },
+      ],
+      legs: [
+        {
+          legId: 'handoff-leg',
+          fromStopId: null,
+          toStopId: 'handoff-1',
+          departureAt: route.startAt ?? 0,
+          arrivalAt: first.arrivalAt,
+          travelTimeSec: 500,
+          distanceKm: 2,
+          travelSource: 'road_matrix',
+          trafficFactor: 1,
+          geometry: null,
+        },
+      ],
+    })[0];
+    expect(segment).toMatchObject({
+      handoffId: 'handoff-1',
+      source: 'road_matrix',
+      approximate: true,
+    });
+  });
+
   it('keeps a road-matrix leg schematic when no road geometry was supplied', () => {
     const route = createDevSnapshot().plan.plan?.routes[0];
     expect(route).toBeTruthy();
@@ -168,6 +212,86 @@ describe('map travel geometry', () => {
     expect(segment?.coordinates).toHaveLength(2);
   });
 
+  it('keeps access, metro and egress as separate drawable pieces of one leg', () => {
+    const route = createDevSnapshot().plan.plan?.routes[0];
+    expect(route).toBeTruthy();
+    if (!route) return;
+    const segments = mapRouteSegments({
+      ...route,
+      legs: [
+        {
+          legId: 'mixed-leg',
+          fromStopId: null,
+          toStopId: 'first',
+          departureAt: route.startAt ?? 0,
+          arrivalAt: route.stops[0]?.arrivalAt ?? 0,
+          travelTimeSec: 1_200,
+          distanceKm: 8,
+          travelSource: 'road_matrix',
+          trafficFactor: 1,
+          geometry: {
+            points: [
+              { lat: 55.7, lon: 37.5 },
+              { lat: 55.75, lon: 37.61 },
+            ],
+          },
+          segments: [
+            {
+              geometry: {
+                points: [
+                  { lat: 55.7, lon: 37.5 },
+                  { lat: 55.71, lon: 37.53 },
+                ],
+              },
+              travelSource: 'route_api',
+              travelTimeSec: 420,
+              distanceKm: 2,
+              geometryProvider: 'twogis',
+            },
+            {
+              geometry: {
+                points: [
+                  { lat: 55.71, lon: 37.53 },
+                  { lat: 55.74, lon: 37.58 },
+                ],
+              },
+              travelSource: 'metro',
+              travelTimeSec: 480,
+              distanceKm: 4,
+            },
+            {
+              geometry: {
+                points: [
+                  { lat: 55.74, lon: 37.58 },
+                  { lat: 55.75, lon: 37.61 },
+                ],
+              },
+              travelSource: 'route_api',
+              travelTimeSec: 300,
+              distanceKm: 2,
+              geometryProvider: 'twogis',
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(segments).toHaveLength(3);
+    expect(segments.map((segment) => segment.source)).toEqual(['route_api', 'metro', 'route_api']);
+    expect(segments[1]?.coordinates).toEqual([
+      [37.53, 55.71],
+      [37.58, 55.74],
+    ]);
+    const firstStop = route.stops[0];
+    expect(firstStop).toBeTruthy();
+    expect(segments[0]?.routeEndpoints).toEqual(segments[1]?.routeEndpoints);
+    expect(segments[2]?.routeEndpoints).toEqual(segments[1]?.routeEndpoints);
+    expect(segments[1]?.routeEndpoints).toEqual([
+      [route.startLon, route.startLat],
+      [firstStop?.lon, firstStop?.lat],
+    ]);
+  });
+
   it('matches persisted legs by schedule when lunch and wait stops sit between jobs', () => {
     const route = createDevSnapshot().plan.plan?.routes[0];
     expect(route).toBeTruthy();
@@ -258,5 +382,9 @@ describe('map travel geometry', () => {
     expect(
       routeLineKind({ approximate: false, source: 'traffic_api', geometryProvider: 'twogis' }),
     ).toBe('map');
+    expect(
+      routeLineKind({ approximate: true, source: 'route_api', geometryProvider: 'yandex' }),
+    ).toBe('map');
+    expect(routeLineKind({ approximate: false, source: 'metro' })).toBe('metro');
   });
 });

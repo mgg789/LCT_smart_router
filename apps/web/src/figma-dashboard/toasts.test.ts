@@ -7,6 +7,7 @@ import {
   getToasts,
   invertToastSwipe,
   pushToast,
+  releaseProgressHold,
   resetToastsForTests,
   seedDemoToasts,
   setToastColumnPinned,
@@ -14,6 +15,7 @@ import {
   TOAST_CARD_HEIGHT,
   TOAST_GAP,
   TOAST_PEEK_MS,
+  TOAST_PLAN_PEEK_MS,
   TOAST_STACK_BOTTOM,
   TOAST_STACK_TOP,
   toastFromAlert,
@@ -37,6 +39,22 @@ describe('toast stack', () => {
       { id: 'a1', kind: 'alert', title: 'alert 1', body: '', createdAt: 10 },
     ]);
     expect(sorted.map((item) => item.id)).toEqual(['a2', 'a1', 's', 'r']);
+  });
+
+  it('puts a live progress card above alerts and keeps a manual close until release', () => {
+    const sorted = sortToasts([
+      { id: 'a', kind: 'alert', title: 'alert', body: '', createdAt: 5 },
+      { id: 'p', kind: 'progress', title: 'progress', body: '', createdAt: 1, progress: 10 },
+    ]);
+    expect(sorted.map((item) => item.id)).toEqual(['p', 'a']);
+    pushToast({ id: 'p', kind: 'progress', title: 'progress', progress: 10 });
+    dismissToast('p');
+    expect(getToasts()).toEqual([]);
+    pushToast({ id: 'p', kind: 'progress', title: 'progress', progress: 20 });
+    expect(getToasts()).toEqual([]);
+    releaseProgressHold('p');
+    pushToast({ id: 'p', kind: 'progress', title: 'progress', progress: 20 });
+    expect(getToasts().map((item) => item.id)).toEqual(['p']);
   });
 
   it('peeks only a new card after the column was collapsed', () => {
@@ -104,7 +122,7 @@ describe('toast stack', () => {
 
   it('does not revive a dismissed id on upsert, and seeds the six Figma kinds', () => {
     seedDemoToasts();
-    expect(getToasts()[0]?.kind).toBe('alert');
+    expect(getToasts().some((item) => item.kind === 'alert')).toBe(true);
     expect(getToasts().length).toBeGreaterThan(visibleToastLimit());
     expect(new Set(DEMO_TOASTS.map((item) => item.kind)).size).toBe(6);
     dismissToast('demo-alert');
@@ -153,6 +171,24 @@ describe('toast stack', () => {
     });
     expect(notice.kind).toBe('route');
     expect(notice.title).toBe('План перестроился');
+    expect(notice.actionLabel).toBe('Подробнее');
+    expect(notice.peekMs).toBe(TOAST_PLAN_PEEK_MS);
+  });
+
+  it('keeps the plan-rebuilt card visible longer than a normal notice', () => {
+    vi.useFakeTimers();
+    setToastColumnPinned(false);
+    pushToast({
+      id: 'plan',
+      kind: 'route',
+      title: 'План перестроился',
+      peekMs: TOAST_PLAN_PEEK_MS,
+      actionLabel: 'Подробнее',
+    });
+    vi.advanceTimersByTime(TOAST_PEEK_MS);
+    expect(visibleToastsForColumn().map((item) => item.id)).toEqual(['plan']);
+    vi.advanceTimersByTime(TOAST_PLAN_PEEK_MS - TOAST_PEEK_MS);
+    expect(visibleToastsForColumn()).toEqual([]);
   });
 
   it('collapses the column on a rightward two-finger wheel swipe', () => {

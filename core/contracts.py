@@ -11,7 +11,7 @@ Transport = Literal["car", "walk", "bike", "transit"]
 Skill = Literal["local", "connection", "emergency"]
 EquipmentType = Literal["router", "set_top_box", "smart_speaker"]
 TravelTimeMode = Literal["graph_with_access_buffer", "fixed_normative"]
-TravelProvenance = Literal["approximate", "road_matrix", "route_api", "traffic_api"]
+TravelProvenance = Literal["approximate", "road_matrix", "route_api", "traffic_api", "metro"]
 
 
 class Record(BaseModel):
@@ -38,7 +38,7 @@ class LunchInput(Record):
 
 
 class EquipmentStock(Record):
-    """Immutable start-of-day stock carried by one engineer; units never transfer."""
+    """Immutable start-of-day stock carried by one engineer."""
 
     router: int = Field(default=0, ge=0)
     set_top_box: int = Field(default=0, ge=0)
@@ -47,6 +47,15 @@ class EquipmentStock(Record):
     def quantity(self, equipment_type: EquipmentType) -> int:
         """Return carried units for one closed-catalog equipment type."""
         return getattr(self, equipment_type)
+
+    def total_units(self) -> int:
+        """Return the physical total that must fit the engineer's transport profile."""
+        return self.router + self.set_top_box + self.smart_speaker
+
+
+def _default_equipment_capacity(data: dict[str, object]) -> int:
+    """Derive the legacy total carrying limit from the already validated transport."""
+    return {"walk": 5, "transit": 5, "bike": 12, "car": 30}[str(data["transport_type"])]
 
 
 class Request(Record):
@@ -88,6 +97,7 @@ class Engineer(Record):
     lunch_taken: bool
     lunch: LunchInput
     equipment_stock: EquipmentStock
+    equipment_capacity: int = Field(default_factory=_default_equipment_capacity, ge=0, le=1000)
     region: Annotated[str, Field(min_length=1)] | None = None
 
     @model_validator(mode="after")
@@ -107,6 +117,8 @@ class Engineer(Record):
                     raise ValueError("enabled lunch requires duration and both window boundaries")
                 if lunch.window_end_at < lunch.window_start_at:
                     raise ValueError("lunch window is reversed")
+        if self.equipment_stock.total_units() > self.equipment_capacity:
+            raise ValueError("equipment stock exceeds engineer carrying capacity")
         return self
 
 
@@ -130,6 +142,8 @@ class RouterTechnicalSettings(Record):
     lunches_enabled: bool = False
     traffic_enabled: bool = True
     equipment_enabled: bool = True
+    equipment_transfers_enabled: bool = False
+    metro_enabled: bool = False
     window_lateness_tolerance_sec: int = Field(default=600, ge=0, le=1200)
     departure_lateness_tolerance_sec: int = Field(default=0, ge=0, le=86400)
     task_start_lateness_tolerance_sec: int = Field(default=0, ge=0, le=86400)
@@ -160,6 +174,7 @@ class RouterTaskSnapshot(Record):
     requests: list[Request]
     engineers: list[Engineer]
     policy: Policy
+    pending_equipment_handoffs: list["PendingEquipmentHandoff"] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def check_identity(self) -> Self:
@@ -174,6 +189,17 @@ class RouterTaskSnapshot(Record):
                 values = [getattr(row, name) for row in rows]
                 if len(values) != len(set(values)):
                     raise ValueError(f"duplicate {name}")
+        engineer_ids = {engineer.engineer_id for engineer in self.engineers}
+        handoff_ids = [handoff.handoff_id for handoff in self.pending_equipment_handoffs]
+        if len(handoff_ids) != len(set(handoff_ids)):
+            raise ValueError("duplicate pending handoff")
+        if any(
+            handoff.donor_engineer_id not in engineer_ids
+            or handoff.receiver_engineer_id not in engineer_ids
+            or handoff.meeting_at > self.horizon_end_at
+            for handoff in self.pending_equipment_handoffs
+        ):
+            raise ValueError("invalid pending handoff")
         return self
 
 
@@ -201,17 +227,51 @@ class Geometry(Record):
     points: list[GeoPoint]
 
 
+class EquipmentHandoff(Record):
+    """One physical same-region equipment meeting, represented on both routes."""
+
+    handoff_id: str = Field(min_length=1)
+    donor_engineer_id: str = Field(min_length=1)
+    receiver_engineer_id: str = Field(min_length=1)
+    request_id: str = Field(min_length=1)
+    items: EquipmentStock
+
+    @model_validator(mode="after")
+    def check_participants(self) -> Self:
+        """Require a real non-empty transfer between distinct engineers."""
+        if self.donor_engineer_id == self.receiver_engineer_id or self.items.total_units() != 1:
+            raise ValueError("handoff requires one item and distinct participants")
+        return self
+
+
+class PendingEquipmentHandoff(EquipmentHandoff):
+    """Sys-confirmed meeting retained as a frozen future execution fact."""
+
+    location: GeoPoint
+    meeting_at: Seconds
+
+
+class RouteSegment(Record):
+    """One ordered portion of a composite leg with its own route provenance."""
+
+    geometry: Geometry
+    travel_source: TravelProvenance
+    duration_sec: Seconds
+    distance_m: int = Field(ge=0)
+
+
 class RouteStop(Record):
     """Non-overlapping work, waiting or lunch interval."""
 
     stop_id: str
     sequence: int
-    kind: Literal["job", "lunch", "wait"]
+    kind: Literal["job", "lunch", "wait", "handoff"]
     request_id: str | None
     location: GeoPoint
     arrival_at: Seconds
     start_at: Seconds
     end_at: Seconds
+    handoff: EquipmentHandoff | None = None
 
     @model_validator(mode="after")
     def check_interval(self) -> Self:
@@ -220,6 +280,8 @@ class RouteStop(Record):
             raise ValueError("invalid stop interval")
         if (self.kind == "job") != (self.request_id is not None):
             raise ValueError("only job stops must reference a request")
+        if (self.kind == "handoff") != (self.handoff is not None):
+            raise ValueError("only handoff stops must carry handoff metadata")
         return self
 
 
@@ -236,12 +298,18 @@ class RouteLeg(Record):
     geometry: Geometry | None
     travel_source: TravelProvenance
     traffic_factor: Annotated[float, Field(ge=1.0)] = 1.0
+    segments: list[RouteSegment] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def check_interval(self) -> Self:
         """Travel duration equals elapsed time on the selected leg."""
         if self.arrival_at - self.departure_at != self.travel_time_sec:
             raise ValueError("leg timestamps disagree with travel duration")
+        if self.segments and (
+            sum(segment.duration_sec for segment in self.segments) != self.travel_time_sec
+            or sum(segment.distance_m for segment in self.segments) != round(self.distance_km * 1000)
+        ):
+            raise ValueError("leg segments disagree with aggregate travel")
         return self
 
 
@@ -430,7 +498,7 @@ class RouterResult(Record):
     """Atomic pair of main/baseline belonging to one input and resource context."""
 
     schema_version: Literal["1.0"] = "1.0"
-    status: Literal["pending", "ready", "error"]
+    status: Literal["pending", "partial", "ready", "error"]
     result_id: str | None = None
     input_publication_id: str | None = None
     input_hash: str | None = None
@@ -445,6 +513,7 @@ class RouterResult(Record):
     baseline: Plan | None = None
     main_evidence: PlanEvidence | None = None
     baseline_evidence: PlanEvidence | None = None
+    regional_progress: list["RegionalProgress"] = Field(default_factory=list)
     errors: list[Diagnostic] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -456,7 +525,7 @@ class RouterResult(Record):
         ):
             raise ValueError("input_hash must be lowercase SHA-256")
         payload = (self.main, self.baseline, self.main_evidence, self.baseline_evidence)
-        if self.status == "ready":
+        if self.status in ("partial", "ready"):
             required = (
                 self.result_id,
                 self.input_hash,
@@ -468,12 +537,22 @@ class RouterResult(Record):
                 self.search_path,
             )
             if any(value is None for value in required) or any(value is None for value in payload):
-                raise ValueError("ready result is incomplete")
+                raise ValueError(f"{self.status} result is incomplete")
             if self.errors or not self.policy_criteria:
-                raise ValueError("ready result has errors or no policy criteria")
+                raise ValueError(f"{self.status} result has errors or no policy criteria")
+            if self.status == "partial" and not self.regional_progress:
+                raise ValueError("partial result needs regional progress")
         elif self.status == "error":
             if any(value is not None for value in payload) or not self.errors:
                 raise ValueError("error result must contain diagnostics and no plans")
-        elif any(value is not None for value in payload) or self.errors:
+        elif any(value is not None for value in payload) or self.errors or self.regional_progress:
             raise ValueError("pending result cannot contain plans or errors")
         return self
+
+
+class RegionalProgress(Record):
+    """One independently solved region in a cumulatively published result."""
+
+    region: str = Field(min_length=1)
+    status: Literal["pending", "ready", "error"]
+    request_count: int = Field(ge=0)

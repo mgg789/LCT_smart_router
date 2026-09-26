@@ -74,7 +74,8 @@ describe('application bootstrap', () => {
       ),
       {
         router: 'not_configured',
-        ai: 'not_configured',
+        // The test harness pins LLM_PROVIDER=replay, which reports as a wired provider.
+        ai: 'ok',
         smtp: 'not_configured',
         database: 'ok',
       },

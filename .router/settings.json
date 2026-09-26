@@ -1,0 +1,53 @@
+{
+  "schema_version": "1.0",
+  "settings": {
+    "lunches_enabled": false,
+    "traffic_enabled": false,
+    "equipment_enabled": true,
+    "window_lateness_tolerance_sec": 0,
+    "departure_lateness_tolerance_sec": 0,
+    "task_start_lateness_tolerance_sec": 0,
+    "travel_time_mode": "graph_with_access_buffer",
+    "access_buffer_sec": 600,
+    "fixed_travel_time_sec": 1200,
+    "early_finish_replan_threshold_sec": 900,
+    "task_overrun_tolerance_sec": 600
+  },
+  "operations": [
+    {
+      "operation_id": "88c5b3a3-2b1c-41aa-af1f-38c81d9664ce",
+      "requested": {
+        "lunches_enabled": false,
+        "traffic_enabled": false,
+        "equipment_enabled": true,
+        "window_lateness_tolerance_sec": 0,
+        "departure_lateness_tolerance_sec": 0,
+        "task_start_lateness_tolerance_sec": 0,
+        "travel_time_mode": "graph_with_access_buffer",
+        "access_buffer_sec": 600,
+        "fixed_travel_time_sec": 1200,
+        "early_finish_replan_threshold_sec": 900,
+        "task_overrun_tolerance_sec": 600
+      },
+      "expected_context_version": "e7190e9b9cb5e497fa01abb807cdffb2d1097a870611744ffe718676d0b8ab30",
+      "response": {
+        "operation_id": "88c5b3a3-2b1c-41aa-af1f-38c81d9664ce",
+        "status": "accepted",
+        "technical_settings": {
+          "lunches_enabled": false,
+          "traffic_enabled": false,
+          "equipment_enabled": true,
+          "window_lateness_tolerance_sec": 0,
+          "departure_lateness_tolerance_sec": 0,
+          "task_start_lateness_tolerance_sec": 0,
+          "travel_time_mode": "graph_with_access_buffer",
+          "access_buffer_sec": 600,
+          "fixed_travel_time_sec": 1200,
+          "early_finish_replan_threshold_sec": 900,
+          "task_overrun_tolerance_sec": 600
+        },
+        "router_context_version": "4b1166e9d242ef6c3df8bf9102ca5a464d4d234cde92b88d0ea51748d28507bc"
+      }
+    }
+  ]
+}

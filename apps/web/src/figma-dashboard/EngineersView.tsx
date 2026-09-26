@@ -1,4 +1,5 @@
-import { animate, motion, useMotionValue, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, animate, motion, useMotionValue, useReducedMotion } from 'framer-motion';
+import { ArrowLeft, ArrowRight } from 'lucide-react';
 import {
   type FormEvent,
   type PointerEvent as ReactPointerEvent,
@@ -10,7 +11,9 @@ import {
   useRef,
   useState,
 } from 'react';
+import type { HandoffView } from '../api/live';
 import type { DashboardSnapshot } from '../api/types';
+import { MonthlyPoints } from '../components/passports/MonthlyPoints';
 import { useArtboardScale, useLetterboxInsets } from './artboardScale';
 import { ENGINEER_PORTRAITS, FIGMA_ASSETS } from './assets';
 import {
@@ -59,7 +62,9 @@ const RING_POOL_SIZE = RING_RENDER_SPAN * 2 + 1;
  * Figma ENGINEERS (49:5129): selected-engineer dossier plus the five-card ring.
  */
 export function EngineersView({
+  token,
   snapshot,
+  handoffs = [],
   selectedEngineerId,
   motionOn,
   busy,
@@ -68,7 +73,9 @@ export function EngineersView({
   onDeleteEngineer,
   onSetAvailability,
 }: {
+  token?: string;
   snapshot: DashboardSnapshot | null;
+  handoffs?: readonly HandoffView[];
   selectedEngineerId: string | null;
   motionOn: boolean;
   busy: boolean;
@@ -80,11 +87,15 @@ export function EngineersView({
   const reduceMotion = useReducedMotion();
   const scale = useArtboardScale();
   const letterbox = useLetterboxInsets(scale);
-  const roster = useMemo(() => engineerProfilesFromSnapshot(snapshot), [snapshot]);
+  const roster = useMemo(
+    () => engineerProfilesFromSnapshot(snapshot, handoffs),
+    [handoffs, snapshot],
+  );
   const centerMv = useMotionValue(0);
   const [focusedIndex, setFocusedIndex] = useState(0);
   const [query, setQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
+  const [scrollHint, setScrollHint] = useState(false);
   const [searchHeld, setSearchHeld] = useState<number | null>(null);
   const [emailOpen, setEmailOpen] = useState(false);
   const [emailDraft, setEmailDraft] = useState('');
@@ -305,6 +316,25 @@ export function EngineersView({
   }, []);
 
   useEffect(() => {
+    let timer = window.setTimeout(() => setScrollHint(true), 6500);
+    const bump = () => {
+      setScrollHint(false);
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setScrollHint(true), 6500);
+    };
+    const stage = stageRef.current;
+    stage?.addEventListener('wheel', bump, { capture: true });
+    stage?.addEventListener('pointerdown', bump);
+    window.addEventListener('keydown', bump);
+    return () => {
+      window.clearTimeout(timer);
+      stage?.removeEventListener('wheel', bump, { capture: true });
+      stage?.removeEventListener('pointerdown', bump);
+      window.removeEventListener('keydown', bump);
+    };
+  }, []);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         if (emailOpenRef.current) {
@@ -479,6 +509,7 @@ export function EngineersView({
     <section ref={stageRef} className="engineer-ring-page absolute inset-0" data-name="ENGINEERS">
       {focused ? (
         <EngineerDossier
+          token={token}
           engineer={focused}
           motionOn={motionOn}
           busy={busy || emailBusy}
@@ -524,8 +555,7 @@ export function EngineersView({
 
       <div
         ref={ringRef}
-        className="engineer-ring-stage absolute inset-0 z-0"
-        aria-hidden
+        className="engineer-ring-stage absolute inset-0"
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
@@ -609,11 +639,39 @@ export function EngineersView({
           <FigmaIcon src={FIGMA_ASSETS.engSearch} alt="" width={43} height={43} />
         </motion.button>
       </motion.label>
+      <AnimatePresence>
+        {scrollHint ? (
+          <motion.div
+            className="pointer-events-none absolute z-20 flex items-center justify-center gap-[14px] text-figma-ink"
+            style={{ left: 895, top: RING_SEARCH_TOP + 64, width: 284 }}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 6 }}
+            transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <motion.span
+              className="flex size-[36px] items-center justify-center rounded-[10px] bg-white shadow-[0_8px_18px_rgba(39,41,48,0.12)]"
+              animate={reduceMotion ? undefined : { x: [0, -4, 0] }}
+              transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+            >
+              <ArrowLeft size={18} strokeWidth={2.2} />
+            </motion.span>
+            <motion.span
+              className="flex size-[36px] items-center justify-center rounded-[10px] bg-white shadow-[0_8px_18px_rgba(39,41,48,0.12)]"
+              animate={reduceMotion ? undefined : { x: [0, 4, 0] }}
+              transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+            >
+              <ArrowRight size={18} strokeWidth={2.2} />
+            </motion.span>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </section>
   );
 }
 
 function EngineerDossier({
+  token,
   engineer,
   motionOn,
   busy,
@@ -630,6 +688,7 @@ function EngineerDossier({
   onCancelDelete,
   onConfirmDelete,
 }: {
+  token?: string;
   engineer: EngineerProfile;
   motionOn: boolean;
   busy: boolean;
@@ -651,7 +710,6 @@ function EngineerDossier({
 
   return (
     <div
-      data-engineer-dossier
       className="absolute z-10 overflow-hidden rounded-[20px] bg-white"
       style={{ left: 180, top: 132, width: 1710, height: 418 }}
     >
@@ -662,6 +720,11 @@ function EngineerDossier({
           className="absolute left-[-132px] top-0 size-[418px] object-cover blur-[15px]"
         />
         <div className="absolute inset-0 bg-figma-ink" />
+        {token ? (
+          <div className="absolute bottom-[32px] left-[32px] right-4">
+            <MonthlyPoints token={token} engineerId={engineer.id} />
+          </div>
+        ) : null}
       </div>
 
       <div className="absolute bottom-[32px] left-[306px] right-[48px] top-[35px] flex flex-col">
@@ -671,7 +734,11 @@ function EngineerDossier({
 
         <div className="mt-[16px] flex min-h-[32px] items-center gap-[10px]">
           {emailOpen ? (
-            <form className="flex min-w-0 items-center gap-[10px]" onSubmit={onSubmitEmail}>
+            <form
+              id="engineer-email"
+              className="flex min-w-0 items-center gap-[10px]"
+              onSubmit={onSubmitEmail}
+            >
               <input
                 value={emailDraft}
                 onChange={(event) => onEmailDraft(event.target.value)}
@@ -732,17 +799,16 @@ function EngineerDossier({
             <FactRow icon={FIGMA_ASSETS.engOffice} label="Офис" value={engineer.officeLabel} />
             <div className="mt-auto flex gap-[38px]">
               <motion.button
-                type="button"
-                data-availability-action
-                aria-label={offline ? 'Вернуть на смену' : 'Снять со смены'}
+                type={emailOpen ? 'submit' : 'button'}
+                form={emailOpen ? 'engineer-email' : undefined}
                 disabled={busy}
                 className="flex h-[67px] w-[241px] items-center justify-center rounded-[20px] bg-figma-bee font-semibold text-[20px] tracking-[-0.6px] text-figma-ink disabled:opacity-50"
                 whileHover={motionOn ? { scale: 1.03, filter: 'brightness(1.08)' } : undefined}
                 whileTap={motionOn ? { scale: 0.98 } : undefined}
                 transition={tap}
-                onClick={onAvailability}
+                onClick={emailOpen ? undefined : onAvailability}
               >
-                {offline ? 'Вернуть на смену' : 'Снять со смены'}
+                {emailOpen ? 'Сохранить' : offline ? 'Вернуть на смену' : 'Снять со смены'}
               </motion.button>
               {deleteAsk ? (
                 <div className="flex flex-col gap-[8px]">
@@ -822,14 +888,34 @@ function EngineerActivityPane({ engineer }: { engineer: EngineerProfile }) {
         <FigmaText className="font-murs text-[32px] tracking-[0.64px] text-black">
           {activity.title}
         </FigmaText>
+        {activity.subtitle ? (
+          <FigmaText className="mt-[8px] font-semibold text-[18px] leading-[24px] tracking-[-0.306px] text-figma-muted">
+            {activity.subtitle}
+          </FigmaText>
+        ) : null}
+        {activity.startClock ? (
+          <FigmaText className="mt-[8px] font-semibold text-[18px] tracking-[-0.306px] text-figma-muted">
+            Начало {activity.startClock}
+          </FigmaText>
+        ) : null}
         {activity.untilClock ? (
           <FigmaText className="mt-auto font-murs text-[64px] tracking-[1.28px] text-black">
             {activity.untilClock}
           </FigmaText>
         ) : null}
         <FigmaText className="mt-[8px] font-semibold text-[18px] tracking-[-0.306px] text-figma-muted">
-          {activity.kind === 'lunch' ? 'Ожидаемое завершение' : 'Ожидаемое возвращение'}
+          {activity.kind === 'lunch'
+            ? 'Ожидаемое завершение'
+            : activity.kind === 'handoff'
+              ? 'Окно встречи'
+              : 'Ожидаемое возвращение'}
         </FigmaText>
+        {activity.nextTitle ? (
+          <FigmaText className="mt-[12px] font-semibold text-[18px] tracking-[-0.306px] text-figma-muted">
+            Следующая: {activity.nextTitle}
+            {activity.nextClock ? ` · ${activity.nextClock}` : ''}
+          </FigmaText>
+        ) : null}
       </div>
     );
   }
@@ -853,6 +939,8 @@ function EngineerActivityPane({ engineer }: { engineer: EngineerProfile }) {
             <span>{activity.arrived}</span>
           </>
         ) : null}
+        <FigmaIcon src={FIGMA_ASSETS.engDot} alt="" width={5} height={5} />
+        <span>начало {activity.startClock}</span>
       </div>
       <FigmaText className="mt-auto font-murs text-[64px] tracking-[1.28px] text-black">
         {activity.finishClock}
@@ -862,7 +950,9 @@ function EngineerActivityPane({ engineer }: { engineer: EngineerProfile }) {
         {activity.nextClock ? (
           <>
             <FigmaIcon src={FIGMA_ASSETS.engDot} alt="" width={5} height={5} />
-            <span>Следующая заявка в {activity.nextClock}</span>
+            <span>
+              {activity.nextTitle ?? 'Следующая заявка'} в {activity.nextClock}
+            </span>
           </>
         ) : null}
       </div>

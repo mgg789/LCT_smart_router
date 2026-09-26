@@ -1,9 +1,9 @@
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from 'framer-motion';
 import { X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { updateDispatcherSettings } from '../api/client';
-import type { LiveRouteProgress } from '../api/live';
-import type { PolicyId, RequestView } from '../api/types';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { explainWithAi, getMcpSettings, updateDispatcherSettings } from '../api/client';
+import type { HandoffView, LiveRouteProgress } from '../api/live';
+import type { EngineerView, PlanDelta, PolicyId, RequestView } from '../api/types';
 import { DayMap } from '../components/DayMap';
 import {
   ALL_REGIONS,
@@ -12,6 +12,7 @@ import {
   regionOptions,
   regionStyle,
 } from '../domain/regions';
+import { clearAssistantSessions } from '../hooks/useAssistantChat';
 import { useDashboard } from '../hooks/useDashboard';
 import { type CaseExplanation, explainSelection } from '../lib/explanations';
 import { formatClock, formatDurationMin } from '../lib/time';
@@ -22,8 +23,10 @@ import { FIGMA_ASSETS } from './assets';
 import { ConfirmDangerModal } from './ConfirmDangerModal';
 import { Copyable } from './Copyable';
 import type { DangerActionId } from './confirmPhrase';
+import { DashboardAi, DashboardChats } from './DashboardAssist';
 import { DataUploadModal } from './DataUploadModal';
 import { DispatcherAuthPage } from './DispatcherAuthPage';
+import { DispatcherDayResults } from './DispatcherDayResults';
 import {
   isNavLocked,
   sidebarWheelNav,
@@ -55,24 +58,31 @@ import {
   rightPanelMode,
   withLiveRouteStops,
 } from './fromSnapshot';
+import { McpAgentIndicator } from './McpAgentIndicator';
+import { PlanMetricsModal } from './PlanMetricsModal';
 import { PolicyComparisonView } from './PolicyComparisonView';
 import { FigmaIcon, FigmaText } from './primitives';
+import { ReplanDeltaCard } from './ReplanDeltaCard';
 import { RequestDetailView } from './RequestDetailView';
 import { RequestsView } from './RequestsView';
+import { requestEquipmentLabel } from './requestDetail';
 import { shortRequestId } from './requestsTable';
 import { routeProgressMarker } from './routeProgress';
-import { SettingsModal } from './SettingsModal';
+import { SettingsModal, type SettingsTab } from './SettingsModal';
+import { TintIcon } from './TintIcon';
 import { ToastColumn } from './ToastColumn';
 import {
   dismissToast,
+  getToasts,
   pushToast,
+  releaseProgressHold,
   seedDemoToasts,
   setToastColumnPinned,
   toastFromAlert,
-  updateToast,
   upsertNewToasts,
   useToasts,
 } from './toasts';
+import { WeatherBadge } from './WeatherBadge';
 import { WelcomeScreen } from './WelcomeScreen';
 import {
   clearWorkDayStarted,
@@ -109,11 +119,13 @@ const SEARCH_OPEN_WIDTH = 351;
 const HEADER_LIFT = 16;
 const POLICY_LEFT = 1329;
 const POLICY_TOP = 26 - HEADER_LIFT;
-const ADD_BUTTON_SIZE = 43;
+const ADD_BUTTON_SIZE = 51;
 const ADD_BUTTON_GAP = 16;
-const ADD_BUTTON_LEFT = POLICY_LEFT - ADD_BUTTON_GAP - ADD_BUTTON_SIZE;
-const ADD_BUTTON_TOP = POLICY_TOP + (51 - ADD_BUTTON_SIZE) / 2;
-const POLICY_OPEN_HEIGHT = 497;
+const METRICS_BUTTON_WIDTH = 232;
+const METRICS_BUTTON_LEFT = POLICY_LEFT - ADD_BUTTON_GAP - METRICS_BUTTON_WIDTH;
+const ADD_BUTTON_LEFT = METRICS_BUTTON_LEFT - ADD_BUTTON_GAP - ADD_BUTTON_SIZE;
+const ADD_BUTTON_TOP = POLICY_TOP;
+const POLICY_OPEN_HEIGHT = 585;
 const NOTIF_PANEL_LEFT = 1407;
 const NOTIF_PANEL_TOP = 26 - HEADER_LIFT;
 const HEADER_AVATAR_LEFT = 1800;
@@ -129,6 +141,21 @@ const MAP_EXPANDED = { left: 623, top: PANEL_TOP, width: 1267, height: PANEL_HEI
 const ROUTE_STOP_WIDTH = 260;
 const ROUTE_TOPIC_WIDTH = 240;
 const ROUTE_DOT_SIZE = 20;
+const LAST_PLAN_DELTA_KEY = 'lct.lastPlanDelta';
+
+/** Last rebuild comparison, so «Подробнее» still opens after the live delta was dismissed. */
+function readStoredPlanDelta(): PlanDelta | null {
+  try {
+    const raw = sessionStorage.getItem(LAST_PLAN_DELTA_KEY);
+    if (!raw) return null;
+    const value = JSON.parse(raw) as Partial<PlanDelta>;
+    if (!value || !Array.isArray(value.lines) || typeof value.solveMs !== 'number') return null;
+    return value as PlanDelta;
+  } catch {
+    return null;
+  }
+}
+
 const ROUTE_DOT_LEFT = (ROUTE_TOPIC_WIDTH - ROUTE_DOT_SIZE) / 2;
 const ROUTE_LINE_LEFT = 30 + ROUTE_DOT_LEFT + ROUTE_DOT_SIZE / 2;
 const PROGRESS_TRACK = 321;
@@ -147,20 +174,59 @@ export function MainDashboardPage() {
   const [policyOpen, setPolicyOpen] = useState(false);
   const [activeNav, setActiveNav] = useState<NavItemId>('day');
   const [stackNav, setStackNav] = useState<NavItemId>('day');
+  const [settledPane, setSettledPane] = useState('main');
   const [stackDir, setStackDir] = useState(0);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [notifOpen, setNotifOpen] = useState(false);
+  const [reviewDelta, setReviewDelta] = useState<PlanDelta | null>(null);
+  const rememberedDelta = useRef<PlanDelta | null>(readStoredPlanDelta());
+  useEffect(() => {
+    if (!dash.pendingDelta) return;
+    rememberedDelta.current = dash.pendingDelta;
+    try {
+      sessionStorage.setItem(LAST_PLAN_DELTA_KEY, JSON.stringify(dash.pendingDelta));
+    } catch {
+      /* The panel can still reopen from the in-memory copy. */
+    }
+  }, [dash.pendingDelta]);
+  // The header robot mirrors the server's "an agent is working" marker; the poll is tiny
+  // and a failed poll just keeps the last state.
+  useEffect(() => {
+    const token = dash.token;
+    if (!token) {
+      setMcpActive(false);
+      return;
+    }
+    let cancelled = false;
+    const tick = () => {
+      void getMcpSettings(token)
+        .then((view) => {
+          if (!cancelled) setMcpActive(view.activeNow);
+        })
+        .catch(() => {});
+    };
+    tick();
+    const timer = window.setInterval(tick, 5_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [dash.token]);
   const toasts = useToasts();
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [regionOpen, setRegionOpen] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  const [metricsOpen, setMetricsOpen] = useState(false);
   const [welcomeOpen, setWelcomeOpen] = useState(
     () => !hasStartedWorkDay(window.localStorage, moscowWorkDate()),
   );
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('general');
+  const [mcpActive, setMcpActive] = useState(false);
   const [dangerAction, setDangerAction] = useState<DangerActionId | null>(null);
+  const [resultsOpen, setResultsOpen] = useState(false);
   const [openedRequestId, setOpenedRequestId] = useState<string | null>(null);
   const [selectedRegion, setSelectedRegion] = useState<RegionSelection>(ALL_REGIONS);
 
@@ -227,6 +293,10 @@ export function MainDashboardPage() {
       ),
     [dash.liveWorkday],
   );
+  const engineerNames = useMemo(
+    () => new Map((dash.snapshot?.engineers ?? []).map((item) => [item.id, item.displayName])),
+    [dash.snapshot],
+  );
   const selectedEngineer = dash.selectedEngineerId
     ? (visibleEngineers.find((item) => item.id === dash.selectedEngineerId) ?? null)
     : null;
@@ -265,32 +335,87 @@ export function MainDashboardPage() {
   }, [dash.isDemo, dash.snapshot]);
 
   const toastHydrated = useRef(false);
+  const sawRebuild = useRef(false);
+  const calculating =
+    dash.liveWorkday?.workday.calculating === true ||
+    dash.snapshot?.plan.calculating === true ||
+    dash.liveWorkday?.workday.routerPhase === 'building' ||
+    dash.snapshot?.plan.routerPhase === 'building';
+  const routerError =
+    dash.liveWorkday?.workday.routerPhase === 'error'
+      ? (dash.liveWorkday.workday.routerMessage ?? 'Маршрут не построился')
+      : null;
+  const geometryDone =
+    dash.liveWorkday?.workday.geometryDone ?? dash.snapshot?.plan.geometryDone ?? 0;
+  const geometryTotal =
+    dash.liveWorkday?.workday.geometryTotal ?? dash.snapshot?.plan.geometryTotal ?? 0;
+  const drawingLines = !calculating && geometryTotal > 0 && geometryDone < geometryTotal;
+  const showRebuild = dash.rebuilding || calculating;
   useEffect(() => {
-    if (!dash.rebuilding) {
-      updateToast('dispatcher-rebuild', { progress: 100 });
+    if (!routerError) {
+      dismissToast('router-error');
       return;
     }
+    pushToast({
+      id: 'router-error',
+      kind: 'error',
+      title: 'Маршрут не построился',
+      body: routerError,
+    });
+  }, [routerError]);
+  useEffect(() => {
+    if (!drawingLines) {
+      releaseProgressHold('router-geometry');
+      dismissToast('router-geometry');
+      releaseProgressHold('router-geometry');
+      return;
+    }
+    pushToast({
+      id: 'router-geometry',
+      kind: 'progress',
+      title: 'Уточняем линии на карте',
+      body: `${geometryDone} из ${geometryTotal}. Пока линия не пришла, на карте прямая.`,
+      progress: Math.round((geometryDone / geometryTotal) * 100),
+      etaLabel: 'По дорогам',
+    });
+  }, [drawingLines, geometryDone, geometryTotal]);
+  useEffect(() => {
+    if (!showRebuild) {
+      releaseProgressHold('dispatcher-rebuild');
+      dismissToast('dispatcher-rebuild');
+      releaseProgressHold('dispatcher-rebuild');
+      if (sawRebuild.current) {
+        sawRebuild.current = false;
+        pushToast({
+          id: 'plan-ready',
+          kind: 'route',
+          title: 'План перестроился',
+          body: 'Новый план уже на карте.',
+        });
+      }
+      return;
+    }
+    sawRebuild.current = true;
     pushToast({
       id: 'dispatcher-rebuild',
       kind: 'progress',
       title: 'Пересчитываем маршруты',
-      body: 'Дождитесь подтверждения нового плана.',
-      progress: 8,
+      body: 'План появится на карте, когда расчёт закончится. Это может занять несколько минут.',
       etaLabel: 'Выполняется',
     });
-    let value = 8;
-    const timer = window.setInterval(() => {
-      value = Math.min(92, value + 7);
-      updateToast('dispatcher-rebuild', { progress: value });
-    }, 350);
-    return () => window.clearInterval(timer);
-  }, [dash.rebuilding]);
+  }, [showRebuild]);
   useEffect(() => {
     const openAlerts = (dash.snapshot?.alerts ?? []).filter((alert) => alert.resolvedAt === null);
     const peek = toastHydrated.current;
+    const openIds = new Set(openAlerts.map((alert) => alert.id));
     for (const alert of dash.snapshot?.alerts ?? []) {
       if (alert.resolvedAt !== null || (alert.kind === 'notice' && alert.seenAt !== null))
         dismissToast(`alert:${alert.id}`);
+    }
+    for (const toast of getToasts()) {
+      if (toast.id.startsWith('alert:') && !openIds.has(toast.id.slice('alert:'.length))) {
+        dismissToast(toast.id);
+      }
     }
     upsertNewToasts(
       openAlerts
@@ -302,8 +427,8 @@ export function MainDashboardPage() {
   }, [dash.snapshot]);
 
   useEffect(() => {
-    setToastColumnPinned(notifOpen && activeNav !== 'alerts');
-  }, [activeNav, notifOpen]);
+    setToastColumnPinned(notifOpen);
+  }, [notifOpen]);
 
   const hadToasts = useRef(false);
   useEffect(() => {
@@ -329,6 +454,8 @@ export function MainDashboardPage() {
   );
   const lunchOn = dash.snapshot?.lunchesEnabled ?? false;
   const trafficOn = dash.snapshot?.routerSettings?.trafficEnabled ?? false;
+  const metroOn = dash.snapshot?.routerSettings?.metroEnabled ?? false;
+  const equipmentTransfersOn = dash.snapshot?.routerSettings?.equipmentTransfersEnabled ?? false;
   const requestCount = view?.requestCount ?? 0;
   const totalKm = view?.totalKm ?? 0;
   const planLabel = view?.planLabel ?? 'Данные рабочего дня загружаются';
@@ -350,6 +477,26 @@ export function MainDashboardPage() {
       dash.snapshot.policyId,
       nextRouterSettings(dash.snapshot, {
         trafficEnabled: !(dash.snapshot.routerSettings?.trafficEnabled ?? false),
+      }),
+    );
+  };
+  const applyMetro = () => {
+    if (!dash.snapshot) return;
+    dash.applyRoutingSettings(
+      dash.snapshot.policyId,
+      nextRouterSettings(dash.snapshot, {
+        metroEnabled: !(dash.snapshot.routerSettings?.metroEnabled ?? false),
+      }),
+    );
+  };
+  const applyEquipmentTransfers = () => {
+    if (!dash.snapshot) return;
+    dash.applyRoutingSettings(
+      dash.snapshot.policyId,
+      nextRouterSettings(dash.snapshot, {
+        equipmentTransfersEnabled: !(
+          dash.snapshot.routerSettings?.equipmentTransfersEnabled ?? false
+        ),
       }),
     );
   };
@@ -514,10 +661,7 @@ export function MainDashboardPage() {
             setStackNav(id);
             setActiveNav(id);
             setPolicyOpen(false);
-            if (id === 'alerts') {
-              setUserMenuOpen(false);
-              setNotifOpen(false);
-            }
+            if (id === 'alerts') setUserMenuOpen(false);
           }}
           onUpload={() => {
             setPolicyOpen(false);
@@ -532,8 +676,36 @@ export function MainDashboardPage() {
             setUserMenuOpen(false);
             setNotifOpen(false);
             setUploadOpen(false);
+            setMetricsOpen(false);
             setAddOpen(true);
           }}
+        />
+        <PlanMetricsButton
+          motionOn={motionOn}
+          onOpen={() => {
+            setPolicyOpen(false);
+            setUserMenuOpen(false);
+            setNotifOpen(false);
+            setUploadOpen(false);
+            setAddOpen(false);
+            setMetricsOpen(true);
+          }}
+        />
+        <PlanMetricsModal
+          open={metricsOpen}
+          motionOn={motionOn}
+          snapshot={dash.snapshot}
+          comparison={dash.policyComparison}
+          token={dash.token}
+          onOpenRequest={(requestId) => {
+            setMetricsOpen(false);
+            setStackDir(stackSlideDir(stackNav, 'requests'));
+            setStackNav('requests');
+            setActiveNav('requests');
+            setOpenedRequestId(requestId);
+            dash.selectRequest(requestId);
+          }}
+          onClose={() => setMetricsOpen(false)}
         />
         <AddEntityModal
           open={addOpen}
@@ -553,6 +725,8 @@ export function MainDashboardPage() {
           selectedId={policyId}
           lunchOn={lunchOn}
           trafficOn={trafficOn}
+          metroOn={metroOn}
+          equipmentTransfersOn={equipmentTransfersOn}
           motionOn={motionOn}
           onToggle={() => {
             setUserMenuOpen(false);
@@ -562,6 +736,8 @@ export function MainDashboardPage() {
           onSelect={applyPolicy}
           onLunchToggle={applyLunch}
           onTrafficToggle={applyTraffic}
+          onMetroToggle={applyMetro}
+          onEquipmentTransfersToggle={applyEquipmentTransfers}
           onManualMode={() => {
             if (!dash.snapshot) return;
             void dash.setMode(dash.snapshot.plan.mode === 'auto' ? 'manual' : 'auto');
@@ -579,14 +755,45 @@ export function MainDashboardPage() {
           }}
         />
         <ToastColumn
-          open={notifOpen && activeNav !== 'alerts'}
+          open={notifOpen}
           motionOn={motionOn}
           scale={scale}
           onCollapse={() => {
             setNotifOpen(false);
             setToastColumnPinned(false);
           }}
+          onToastAction={(toast) => {
+            if (!toast.actionLabel) return;
+            const next = dash.pendingDelta ?? rememberedDelta.current;
+            if (next) setReviewDelta(next);
+          }}
         />
+        <AnimatePresence>
+          {reviewDelta ? (
+            <ReplanDeltaCard
+              key="replan-delta"
+              delta={reviewDelta}
+              canReject={dash.canRejectDelta && reviewDelta === dash.pendingDelta}
+              busy={dash.rebuilding}
+              motionOn={motionOn}
+              onAccept={() => {
+                setReviewDelta(null);
+                if (dash.pendingDelta) dash.acceptDelta();
+              }}
+              onReject={() => {
+                setReviewDelta(null);
+                dash.rejectDelta();
+              }}
+              onOpenRequest={(requestId) => {
+                setReviewDelta(null);
+                setStackDir(stackSlideDir(stackNav, 'day'));
+                setStackNav('day');
+                setActiveNav('day');
+                dash.selectRequest(requestId);
+              }}
+            />
+          ) : null}
+        </AnimatePresence>
         <DataUploadModal
           open={uploadOpen}
           submitting={dash.uploadingData}
@@ -598,6 +805,7 @@ export function MainDashboardPage() {
           }}
           onUpload={dash.uploadDataset}
           onImportOfficial={dash.importOfficialTzDataset}
+          onRoadImport={dash.importRoadResource}
         />
         <UserMenu
           open={userMenuOpen}
@@ -607,15 +815,13 @@ export function MainDashboardPage() {
             setUserMenuOpen((value) => !value);
           }}
           onSettings={() => {
+            setUserMenuOpen(false);
+            setSettingsTab('general');
             setSettingsOpen(true);
-            // Close after the click action finishes. Closing in the same tick
-            // unmounts «Настройки» under AnimatePresence and Playwright retries
-            // a click that already opened the dialog.
-            window.setTimeout(() => setUserMenuOpen(false), 0);
           }}
           onEndDay={() => {
             setUserMenuOpen(false);
-            setDangerAction('endDay');
+            setResultsOpen(true);
           }}
           demoStand={dash.liveWorkday?.demoStand === true}
           onRestartDay={() => {
@@ -637,6 +843,7 @@ export function MainDashboardPage() {
           token={dash.token}
           routerSettings={dash.snapshot?.routerSettings}
           submitting={dash.busy}
+          initialTab={settingsTab}
           onClose={() => setSettingsOpen(false)}
           onSave={async ({ dispatcher, router }) => {
             if (!dash.token || !dash.snapshot) {
@@ -647,6 +854,17 @@ export function MainDashboardPage() {
             setSettingsOpen(false);
           }}
         />
+        {dash.token ? (
+          <DispatcherDayResults
+            token={dash.token}
+            live={dash.liveWorkday}
+            shift={dash.snapshot?.shift}
+            open={resultsOpen}
+            onOpen={() => setResultsOpen(true)}
+            onClose={() => setResultsOpen(false)}
+            closeShift={dash.closeShift}
+          />
+        ) : null}
         <ConfirmDangerModal
           actionId={dangerAction}
           motionOn={motionOn}
@@ -690,6 +908,7 @@ export function MainDashboardPage() {
                 .restartDemoDay()
                 .then(() => {
                   clearWorkDayStarted(window.localStorage);
+                  clearAssistantSessions(window.localStorage);
                   setWelcomeOpen(true);
                   pushToast({
                     id: 'demo-day-restarted',
@@ -711,14 +930,24 @@ export function MainDashboardPage() {
             void dash.signOut();
           }}
         />
-        {activeNav === 'engineers' || (activeNav === 'requests' && openedRequestId) ? null : (
-          <FigmaText
-            className="figma-nowrap absolute left-[180px] z-[15] font-murs text-[32px] tracking-[-0.544px] text-figma-ink"
+        {activeNav === 'requests' && openedRequestId ? null : (
+          <div
+            className="absolute left-[180px] z-[15] flex h-[40px] items-center gap-[14px]"
             style={{ top: DATE_TOP }}
           >
-            {view?.dateLabel ?? 'Рабочий день'}
-            {dash.liveWorkday ? ` · ${formatClock(dash.liveWorkday.workday.liveNow)}` : ''}
-          </FigmaText>
+            <FigmaText className="figma-nowrap font-murs text-[32px] tracking-[-0.544px] text-figma-ink">
+              {view?.dateLabel ?? 'Рабочий день'}
+              {dash.liveWorkday ? ` · ${formatClock(dash.liveWorkday.workday.liveNow)}` : ''}
+            </FigmaText>
+            <McpAgentIndicator
+              active={mcpActive}
+              motionOn={motionOn}
+              onClick={() => {
+                setSettingsTab('api');
+                setSettingsOpen(true);
+              }}
+            />
+          </div>
         )}
         <div
           className={`absolute inset-0 ${
@@ -729,12 +958,42 @@ export function MainDashboardPage() {
             <motion.div
               key={stackViewKey(stackNav)}
               custom={stackDir}
-              className="absolute inset-0 isolate bg-figma-canvas"
+              className={`absolute inset-0 isolate bg-figma-canvas ${
+                settledPane === stackViewKey(stackNav) ? 'stack-pane-settled' : ''
+              }`}
               initial={motionOn && stackDir !== 0 ? stackSlideEnter(stackDir) : false}
               animate={{ x: 0, y: 0 }}
               exit={motionOn && stackDir !== 0 ? stackSlideExit(stackDir) : undefined}
               transition={motionOn && stackDir !== 0 ? slide : { duration: 0 }}
+              onAnimationStart={() => setSettledPane('')}
+              onAnimationComplete={() => setSettledPane(stackViewKey(stackNav))}
             >
+              {stackViewKey(stackNav) === 'chats' ? <DashboardChats token={dash.token} /> : null}
+              {stackViewKey(stackNav) === 'ai' ? (
+                <DashboardAi
+                  token={dash.token}
+                  onOpenObject={(target) => {
+                    if (target.type === 'request') {
+                      setStackDir(stackSlideDir(stackNav, 'requests'));
+                      setStackNav('requests');
+                      setActiveNav('requests');
+                      setOpenedRequestId(target.id);
+                      dash.selectRequest(target.id);
+                      return;
+                    }
+                    if (target.type === 'engineer') {
+                      setStackDir(stackSlideDir(stackNav, 'engineers'));
+                      setStackNav('engineers');
+                      setActiveNav('engineers');
+                      dash.selectEngineer(target.id);
+                      return;
+                    }
+                    setStackDir(stackSlideDir(stackNav, 'alerts'));
+                    setStackNav('alerts');
+                    setActiveNav('alerts');
+                  }}
+                />
+              ) : null}
               {stackViewKey(stackNav) === 'policy' ? (
                 <PolicyComparisonView
                   snapshot={dash.snapshot}
@@ -777,7 +1036,9 @@ export function MainDashboardPage() {
               ) : null}
               {stackViewKey(stackNav) === 'engineers' ? (
                 <EngineersView
+                  token={dash.source === 'live' ? (dash.token ?? undefined) : undefined}
                   snapshot={visibleSnapshot}
+                  handoffs={dash.liveWorkday?.handoffs ?? []}
                   selectedEngineerId={dash.selectedEngineerId}
                   motionOn={motionOn}
                   busy={dash.busy || dash.writesDisabled}
@@ -827,6 +1088,7 @@ export function MainDashboardPage() {
                     selectedRequestId={dash.selectedRequest?.id ?? null}
                     progressByEngineer={liveProgress}
                     completedByEngineer={liveCompleted}
+                    handoffs={dash.liveWorkday?.handoffs ?? []}
                     frame={mapFrame}
                     regionLabel={regionLabel}
                     regions={[
@@ -847,6 +1109,7 @@ export function MainDashboardPage() {
                       setRegionOpen(false);
                       dash.clearFocus();
                     }}
+                    token={dash.token}
                   />
                   <AnimatePresence>
                     {showRouteCard && selectedEngineer ? (
@@ -854,6 +1117,8 @@ export function MainDashboardPage() {
                         key="route-card"
                         engineer={selectedEngineer}
                         progress={liveProgress.get(selectedEngineer.id) ?? null}
+                        handoffs={dash.liveWorkday?.handoffs ?? []}
+                        engineerNames={engineerNames}
                         motionOn={motionOn}
                         onSelectRequest={dash.selectRequest}
                       />
@@ -868,8 +1133,21 @@ export function MainDashboardPage() {
                             : (dash.selectedEngineerId ?? 'plan')
                         }
                         mode={panelMode === 'request' ? 'request' : 'plan'}
+                        onOpenEngineer={() => {
+                          setStackDir(stackSlideDir(stackNav, 'engineers'));
+                          setStackNav('engineers');
+                          setActiveNav('engineers');
+                        }}
                         request={dash.selectedRequest}
+                        engineer={dash.selectedEngineer}
                         explanation={panelExplanation}
+                        token={dash.token}
+                        roster={(dash.snapshot?.engineers ?? []).slice(0, 8).map((item) => ({
+                          name: item.displayName,
+                          skills: item.skills,
+                          transport: item.transportType,
+                          availability: item.day?.availability ?? null,
+                        }))}
                         motionOn={motionOn}
                         onClose={() => dash.clearFocus()}
                       />
@@ -890,6 +1168,7 @@ export function MainDashboardPage() {
                 transition={motionOn ? slide : { duration: 0 }}
               >
                 <RequestDetailView
+                  token={dash.source === 'live' ? (dash.token ?? undefined) : undefined}
                   snapshot={dash.snapshot}
                   requestId={openedRequestId}
                   motionOn={motionOn}
@@ -1095,8 +1374,6 @@ function UserMenu({
         onClick={onToggle}
         className="relative z-50 flex items-center gap-[20px]"
         aria-label="Меню пользователя"
-        aria-expanded={open}
-        aria-haspopup="menu"
         whileHover={motionOn ? { scale: 1.04 } : undefined}
         whileTap={motionOn ? { scale: 0.98 } : undefined}
         transition={{ duration: 0.16 }}
@@ -1213,6 +1490,27 @@ function NotificationBadge({ count, tone }: { count: number; tone: NotificationT
 /**
  * Dark plus in the MAIN header, left of the policy chip. Opens the add-entity dialog.
  */
+function PlanMetricsButton({ motionOn, onOpen }: { motionOn: boolean; onOpen: () => void }) {
+  return (
+    <motion.button
+      type="button"
+      onClick={onOpen}
+      className="absolute z-50 flex h-[51px] items-center gap-[10px] rounded-[27px] bg-figma-ink py-[4px] pl-[4px] pr-[16px] text-white"
+      style={{ left: METRICS_BUTTON_LEFT, top: POLICY_TOP, width: METRICS_BUTTON_WIDTH }}
+      whileHover={motionOn ? { y: -1 } : undefined}
+      whileTap={motionOn ? { scale: 0.98 } : undefined}
+      transition={{ duration: 0.16 }}
+    >
+      <span className="flex size-[43px] shrink-0 items-center justify-center rounded-full bg-white">
+        <TintIcon src="/figma/chart-dots-2.svg" color="#272930" size={22} />
+      </span>
+      <span className="figma-nowrap font-semibold text-[18px] tracking-[-0.3px]">
+        Метрики плана
+      </span>
+    </motion.button>
+  );
+}
+
 function AddEntityButton({ motionOn, onOpen }: { motionOn: boolean; onOpen: () => void }) {
   return (
     <motion.button
@@ -1242,11 +1540,15 @@ function PolicyControl({
   selectedId,
   lunchOn,
   trafficOn,
+  metroOn,
+  equipmentTransfersOn,
   motionOn,
   onToggle,
   onSelect,
   onLunchToggle,
   onTrafficToggle,
+  onMetroToggle,
+  onEquipmentTransfersToggle,
   onManualMode,
 }: {
   open: boolean;
@@ -1255,11 +1557,15 @@ function PolicyControl({
   selectedId: PolicyId;
   lunchOn: boolean;
   trafficOn: boolean;
+  metroOn: boolean;
+  equipmentTransfersOn: boolean;
   motionOn: boolean;
   onToggle: () => void;
   onSelect: (policy: PolicyId) => void;
   onLunchToggle: () => void;
   onTrafficToggle: () => void;
+  onMetroToggle: () => void;
+  onEquipmentTransfersToggle: () => void;
   onManualMode: () => void;
 }) {
   const options =
@@ -1326,7 +1632,7 @@ function PolicyControl({
       </div>
       <div
         className={`relative w-[363px] ${open ? '' : 'pointer-events-none'}`}
-        style={{ height: 460 + extra }}
+        style={{ height: 548 + extra }}
       >
         {options.map((option, index) => (
           <motion.button
@@ -1364,11 +1670,25 @@ function PolicyControl({
           motionOn={motionOn}
           onToggle={onTrafficToggle}
         />
+        <PolicySwitch
+          on={metroOn}
+          label="Маршруты с метро"
+          top={362 + extra}
+          motionOn={motionOn}
+          onToggle={onMetroToggle}
+        />
+        <PolicySwitch
+          on={equipmentTransfersOn}
+          label="Передача оборудования"
+          top={406 + extra}
+          motionOn={motionOn}
+          onToggle={onEquipmentTransfersToggle}
+        />
         <button
           type="button"
           onClick={onManualMode}
           className="absolute left-[16px] flex h-[67px] w-[331px] items-center justify-center rounded-[20px] bg-figma-bee p-[20px] transition-transform duration-150 hover:scale-[1.01]"
-          style={{ top: 363 + extra }}
+          style={{ top: 451 + extra }}
         >
           <span className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
             Ручное управление
@@ -1677,6 +1997,7 @@ function MapCard({
   selectedRequestId,
   progressByEngineer,
   completedByEngineer,
+  handoffs,
   frame,
   regionLabel,
   regions,
@@ -1686,12 +2007,14 @@ function MapCard({
   onSelectRequest,
   onToggleRegion,
   onSelectRegion,
+  token,
 }: {
   snapshot: ReturnType<typeof useDashboard>['snapshot'];
   selectedEngineerId: string | null;
   selectedRequestId: string | null;
   progressByEngineer: NonNullable<Parameters<typeof DayMap>[0]['progressByEngineer']>;
   completedByEngineer: ReadonlyMap<string, number>;
+  handoffs: NonNullable<Parameters<typeof DayMap>[0]['handoffs']>;
   frame: { left: number; top: number; width: number; height: number };
   regionLabel: string;
   regions: { id: RegionSelection; label: string }[];
@@ -1701,6 +2024,7 @@ function MapCard({
   onSelectRequest: (requestId: string) => void;
   onToggleRegion: () => void;
   onSelectRegion: (id: RegionSelection) => void;
+  token: string | null;
 }) {
   return (
     <motion.section
@@ -1717,6 +2041,7 @@ function MapCard({
             selectedRequestId={selectedRequestId}
             progressByEngineer={progressByEngineer}
             completedByEngineer={completedByEngineer}
+            handoffs={handoffs}
             onSelectRequest={onSelectRequest}
           />
         ) : (
@@ -1730,6 +2055,7 @@ function MapCard({
           />
         )}
       </div>
+      <WeatherBadge token={token} />
       <RegionSwitch
         open={regionOpen}
         label={regionLabel}
@@ -1855,11 +2181,15 @@ function RouteCard({
   progress,
   motionOn,
   onSelectRequest,
+  handoffs,
+  engineerNames,
 }: {
   engineer: EngineerCard;
   progress: LiveRouteProgress | null;
   motionOn: boolean;
   onSelectRequest: (requestId: string) => void;
+  handoffs: readonly HandoffView[];
+  engineerNames: ReadonlyMap<string, string>;
 }) {
   const scrollerRef = useRef<HTMLDivElement>(null);
   const skipClick = useRef(false);
@@ -1875,6 +2205,7 @@ function RouteCard({
   } | null>(null);
   const [thumb, setThumb] = useState({ left: 174, width: 321, visible: false });
   const [grabbing, setGrabbing] = useState(false);
+  const [selectedHandoff, setSelectedHandoff] = useState<HandoffView | null>(null);
 
   const updateThumb = useCallback(() => {
     const el = scrollerRef.current;
@@ -1893,11 +2224,21 @@ function RouteCard({
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el) return;
-    updateThumb();
+    const refresh = () => {
+      el.style.overflowX = 'hidden';
+      void el.offsetWidth;
+      el.style.overflowX = 'auto';
+      updateThumb();
+    };
+    refresh();
+    const frame = window.requestAnimationFrame(refresh);
+    const later = window.setTimeout(refresh, 420);
     el.addEventListener('scroll', updateThumb, { passive: true });
     const observer = new ResizeObserver(updateThumb);
     observer.observe(el);
     return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(later);
       el.removeEventListener('scroll', updateThumb);
       observer.disconnect();
     };
@@ -2018,6 +2359,10 @@ function RouteCard({
                       if (skipClick.current) return;
                       onSelectRequest(requestId);
                     }}
+                    onSelectHandoff={(handoffId) => {
+                      if (skipClick.current) return;
+                      setSelectedHandoff(handoffs.find((item) => item.id === handoffId) ?? null);
+                    }}
                   />
                 ))}
               </div>
@@ -2025,21 +2370,26 @@ function RouteCard({
           </div>
         </motion.div>
       </AnimatePresence>
-      {thumb.visible ? (
-        <button
-          type="button"
-          data-route-thumb
-          aria-label="Прокрутить маршрут"
-          className="absolute top-[258px] flex h-[21px] items-start justify-center"
-          style={{ left: thumb.left, width: thumb.width, cursor: grabbing ? 'grabbing' : 'grab' }}
-          onPointerDown={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            beginDrag('thumb', event.clientX);
-          }}
-        >
-          <span className="mt-[9px] h-[6px] w-full rounded-[13px] bg-figma-hint" />
-        </button>
+      {selectedHandoff ? (
+        <div className="absolute left-[30px] right-[30px] top-[158px] z-20 rounded-[16px] border-2 border-[#2563EB] bg-white px-[16px] py-[10px] text-[14px] text-figma-ink shadow-lg">
+          <div className="flex items-center justify-between gap-3">
+            <strong>Передача оборудования</strong>
+            <button
+              type="button"
+              onClick={() => setSelectedHandoff(null)}
+              aria-label="Закрыть детали передачи"
+            >
+              ×
+            </button>
+          </div>
+          <p className="mt-1 text-figma-muted">
+            {engineerNames.get(selectedHandoff.donorEngineerId) ?? selectedHandoff.donorEngineerId}
+            {' → '}
+            {engineerNames.get(selectedHandoff.receiverEngineerId) ??
+              selectedHandoff.receiverEngineerId}
+          </p>
+          <p className="mt-1 text-figma-muted">{handoffItemsLabel(selectedHandoff.items)}</p>
+        </div>
       ) : null}
     </motion.section>
   );
@@ -2050,19 +2400,23 @@ function RouteStopTopic({
   index,
   motionOn,
   onSelectRequest,
+  onSelectHandoff,
 }: {
   stop: RouteStop;
   index: number;
   motionOn: boolean;
   onSelectRequest: (requestId: string) => void;
+  onSelectHandoff: (handoffId: string) => void;
 }) {
-  const clickable = Boolean(stop.requestId);
+  const clickable = Boolean(stop.requestId || stop.handoffId);
+  const handoff = stop.kind === 'handoff';
   return (
     <motion.button
       type="button"
       disabled={!clickable}
       onClick={() => {
-        if (stop.requestId) onSelectRequest(stop.requestId);
+        if (stop.handoffId) onSelectHandoff(stop.handoffId);
+        else if (stop.requestId) onSelectRequest(stop.requestId);
       }}
       className={`relative shrink-0 text-left ${clickable ? 'cursor-pointer' : 'cursor-default'}`}
       style={{ width: ROUTE_STOP_WIDTH }}
@@ -2071,7 +2425,7 @@ function RouteStopTopic({
       transition={{ ...fadeSoft, delay: index * 0.04 }}
     >
       <span
-        className={`absolute top-[10px] rounded-full ${stop.failed || stop.status === 'отменено' ? 'bg-figma-cancel' : stop.active ? 'bg-figma-bee ring-4 ring-figma-ink' : stop.completed ? 'bg-figma-done' : 'bg-figma-ink'}`}
+        className={`absolute top-[10px] rounded-full ${handoff ? 'bg-[#2563EB]' : stop.failed || stop.status === 'отменено' ? 'bg-figma-cancel' : stop.active ? 'bg-figma-bee ring-4 ring-figma-ink' : stop.completed ? 'bg-figma-done' : 'bg-figma-ink'}`}
         style={{ left: ROUTE_DOT_LEFT, width: ROUTE_DOT_SIZE, height: ROUTE_DOT_SIZE }}
       />
       <FigmaText className="figma-nowrap absolute left-0 top-[46px] w-[240px] text-center font-semibold text-[24px] tracking-[-0.408px] text-black">
@@ -2089,31 +2443,70 @@ function RouteStopTopic({
               : 'text-figma-hint'
         }`}
       >
-        {routeStopStatusLabel(stop.status)}
+        {handoff ? 'ПЕРЕДАЧА' : routeStopStatusLabel(stop.status)}
       </FigmaText>
     </motion.button>
   );
 }
 
+function handoffItemsLabel(items: HandoffView['items']): string {
+  const labels = [
+    items.router ? `роутер ×${items.router}` : null,
+    items.set_top_box ? `ТВ-приставка ×${items.set_top_box}` : null,
+    items.smart_speaker ? `умная колонка ×${items.smart_speaker}` : null,
+  ].filter((item): item is string => item !== null);
+  return labels.join(', ') || 'Оборудование не указано';
+}
+
+const FACT_ICON = {
+  skills: '/figma/engineer-skills.svg',
+  transport: '/figma/transport.svg',
+  equipment: '/figma/equipment.svg',
+  window: '/figma/time-window.svg',
+  lunch: '/figma/lunch.svg',
+  route: '/figma/graph-route.svg',
+} as const;
+
 function DetailPanel({
   mode,
   request,
+  engineer,
   explanation,
+  token,
+  roster,
   motionOn,
   onClose,
+  onOpenEngineer,
 }: {
   mode: 'plan' | 'request';
   request: RequestView | null;
+  engineer: EngineerView | null;
   explanation: CaseExplanation | null;
+  token: string | null;
+  roster: ReadonlyArray<{
+    name: string;
+    skills: readonly string[];
+    transport: string;
+    availability: string | null;
+  }>;
   motionOn: boolean;
   onClose: () => void;
+  onOpenEngineer?: () => void;
 }) {
+  const [aiOn, setAiOn] = useState(false);
+  const [largeOn, setLargeOn] = useState(false);
   const urgency = request ? requestUrgency(request) : null;
   const equipment = request
     ? request.requiredEquipment
-      ? 'С оборудованием'
-      : 'Нет оборудования'
+      ? requestEquipmentLabel(request.requiredEquipment)
+      : 'Без оборудования'
     : null;
+  const assignment =
+    request == null
+      ? null
+      : request.assignmentState === 'unassigned' || request.assignmentState === 'pending'
+        ? 'Не назначена'
+        : 'Назначена';
 
   return (
     <motion.aside
@@ -2159,6 +2552,7 @@ function DetailPanel({
               </p>
             </Copyable>
             <div className="mt-[16px] flex flex-wrap gap-[12px]">
+              {assignment ? <PanelTag label={assignment} /> : null}
               {urgency ? <PanelTag label={urgency.label} tone={urgency.tone} /> : null}
               {equipment ? <PanelTag label={equipment} /> : null}
             </div>
@@ -2172,64 +2566,332 @@ function DetailPanel({
               </p>
             </Copyable>
           </div>
-        ) : (
-          <div className="h-[36px]" />
-        )}
-        <div className="mt-[16px] flex min-h-[216px] w-full flex-col rounded-[20px] bg-figma-dim px-[20px] py-[22px]">
-          <FigmaText className="font-medium text-[28px] tracking-[-0.84px] text-white">
-            Факты
-          </FigmaText>
-          <p className="mt-[12px] font-medium text-[18px] leading-[24px] tracking-[-0.3px] text-white/70">
-            {explanation?.facts.join(' ') || 'Нет фактов по этому выбору.'}
-          </p>
-        </div>
-        <div className="mt-[16px] flex min-h-[216px] w-full flex-col rounded-[20px] bg-figma-dim px-[20px] py-[22px]">
-          <FigmaText className="font-medium text-[28px] tracking-[-0.84px] text-white">
-            {mode === 'plan' ? 'Как они повлияли' : 'Как влияет'}
-          </FigmaText>
-          <p className="mt-[12px] font-medium text-[18px] leading-[24px] tracking-[-0.3px] text-white/70">
-            {explanation?.influence || 'Нет объяснения влияния.'}
-          </p>
-        </div>
-        {mode === 'plan' ? (
-          <div className="mt-[16px] flex min-h-[67px] w-full items-center rounded-[20px] bg-figma-dim px-[20px] py-[16px]">
-            <p className="font-medium text-[20px] leading-[24px] tracking-[-0.6px] text-white">
-              {explanation?.result || 'Нет итога по смене.'}
+        ) : engineer ? (
+          <div className="pr-[52px]">
+            <FigmaText className="font-murs text-[32px] leading-[36px] tracking-[-0.544px] text-white">
+              {engineer.displayName}
+            </FigmaText>
+            <p
+              className={`mt-[8px] font-semibold text-[18px] tracking-[-0.3px] ${
+                engineer.email ? 'text-white/60' : 'invisible'
+              }`}
+              aria-hidden={engineer.email ? undefined : true}
+            >
+              {engineer.email || '\u00a0'}
             </p>
           </div>
         ) : (
-          <div className="mt-[16px] flex gap-[12px]">
-            <div className="flex h-[67px] min-w-0 flex-1 items-center rounded-[20px] bg-figma-dim px-[20px]">
-              <p className="figma-nowrap font-medium text-[20px] tracking-[-0.6px] text-white">
-                {request ? formatDurationMin(request.serviceDurationSec) : '—'}
-              </p>
-            </div>
-            <button
-              type="button"
-              disabled
-              aria-disabled
-              title="Скоро"
-              className="flex h-[67px] flex-1 cursor-not-allowed items-center justify-center rounded-[20px] bg-figma-bee px-[16px] opacity-45"
-            >
-              <span className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
-                Написать
-              </span>
-            </button>
-          </div>
+          <div className="h-[36px]" />
+        )}
+        {mode === 'request' ? (
+          <RequestReasons
+            aiOn={aiOn}
+            largeOn={largeOn}
+            motionOn={motionOn}
+            token={token}
+            context={{
+              explanation,
+              roster: (roster ?? []).slice(0, 8),
+              request: request
+                ? {
+                    id: request.id,
+                    address: request.addressText,
+                    windowStartAt: request.windowStartAt,
+                    windowEndAt: request.windowEndAt,
+                    skill: request.requiredSkill,
+                    status: request.assignmentState,
+                  }
+                : null,
+              engineer: engineer
+                ? {
+                    name: engineer.displayName,
+                    skills: engineer.skills,
+                    transport: engineer.transportType,
+                  }
+                : null,
+            }}
+            explanation={explanation}
+            durationLabel={request ? formatDurationMin(request.serviceDurationSec) : '—'}
+            onToggleAi={() => setAiOn((value) => !value)}
+            onToggleLarge={() => setLargeOn((value) => !value)}
+          />
+        ) : (
+          <IconFactCard title="Факты" facts={explanation?.iconFacts ?? []} />
         )}
       </div>
-      {mode === 'plan' ? (
-        <button
-          type="button"
-          disabled
-          className="absolute left-[27px] bottom-[24px] flex h-[67px] w-[430px] items-center justify-center rounded-[20px] border border-solid border-white bg-figma-ink px-[8px] opacity-60"
-        >
-          <span className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-white">
-            Разобрать с AI
-          </span>
-        </button>
+      {mode === 'plan' && engineer ? (
+        <div className="absolute inset-x-[27px] bottom-[24px] flex gap-[12px]">
+          <button
+            type="button"
+            onClick={onOpenEngineer}
+            className="h-[52px] flex-1 rounded-[16px] bg-white font-semibold text-[16px] text-figma-ink"
+          >
+            К инженеру
+          </button>
+          <button
+            type="button"
+            disabled
+            title="Скоро"
+            className="h-[52px] flex-1 cursor-not-allowed rounded-[16px] bg-white/15 font-semibold text-[16px] text-white/45"
+          >
+            Написать
+          </button>
+        </div>
       ) : null}
     </motion.aside>
+  );
+}
+
+function RequestReasons({
+  aiOn,
+  largeOn,
+  motionOn,
+  token,
+  context,
+  explanation,
+  durationLabel,
+  onToggleAi,
+  onToggleLarge,
+}: {
+  aiOn: boolean;
+  largeOn: boolean;
+  motionOn: boolean;
+  token: string | null;
+  context: unknown;
+  explanation: CaseExplanation | null;
+  durationLabel: string;
+  onToggleAi: () => void;
+  onToggleLarge: () => void;
+}) {
+  const [aiText, setAiText] = useState<string | null>(null);
+  const [aiReady, setAiReady] = useState(false);
+  const packed = JSON.stringify(context);
+  useEffect(() => {
+    if (!aiOn || !token) {
+      setAiText(null);
+      setAiReady(false);
+      return;
+    }
+    let cancelled = false;
+    setAiReady(false);
+    void explainWithAi(token, 'reasons', JSON.parse(packed) as unknown)
+      .then((result) => {
+        if (!cancelled) setAiText(result.text);
+      })
+      .catch(() => {
+        if (!cancelled) setAiText(null);
+      })
+      .finally(() => {
+        if (!cancelled) setAiReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [aiOn, token, packed]);
+  return (
+    <div className="mt-[16px]">
+      <div className="flex min-h-[216px] w-full flex-col rounded-[20px] bg-figma-dim px-[20px] py-[22px]">
+        <div className="flex items-center justify-between gap-[8px]">
+          <FigmaText
+            className={`font-medium text-[28px] tracking-[-0.84px] ${
+              aiOn ? 'panel-ai-fill client-ai-text figma-text-keep-descenders' : 'text-white'
+            }`}
+          >
+            {aiOn ? 'Причины AI' : 'Причины'}
+          </FigmaText>
+          <LayoutGroup>
+            <div className="flex items-center">
+              <motion.div layout={motionOn} transition={{ duration: 0.32, ease: slideEase }}>
+                <ReasonIconButton
+                  label={aiOn ? 'Обычные причины' : 'Объяснить с AI'}
+                  motionOn={motionOn}
+                  onClick={onToggleAi}
+                >
+                  {aiOn ? (
+                    <TintIcon src="/figma/explain-default.svg" color="#ffffff" size={18} />
+                  ) : (
+                    <AiGlyph />
+                  )}
+                </ReasonIconButton>
+              </motion.div>
+              <AnimatePresence initial={false}>
+                {aiOn ? null : (
+                  <motion.span
+                    key="size"
+                    className="inline-flex overflow-hidden"
+                    initial={motionOn ? { width: 0, opacity: 0, marginLeft: 0 } : false}
+                    animate={{ width: 36, opacity: 1, marginLeft: 8 }}
+                    exit={motionOn ? { width: 0, opacity: 0, marginLeft: 0 } : undefined}
+                    transition={{ duration: 0.32, ease: slideEase }}
+                  >
+                    <ReasonIconButton
+                      label={largeOn ? 'Коротко' : 'Подробнее'}
+                      motionOn={motionOn}
+                      onClick={onToggleLarge}
+                    >
+                      <TintIcon
+                        src={largeOn ? '/figma/short-facts.svg' : '/figma/large-facts.svg'}
+                        color="#ffffff"
+                        size={18}
+                      />
+                    </ReasonIconButton>
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </div>
+          </LayoutGroup>
+        </div>
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={aiOn ? (aiReady ? 'ai-text' : 'ai-search') : largeOn ? 'large' : 'short'}
+            initial={motionOn ? { opacity: 0, y: 6 } : false}
+            animate={{ opacity: 1, y: 0 }}
+            exit={motionOn ? { opacity: 0, y: -6 } : undefined}
+            transition={{ duration: 0.22 }}
+          >
+            {aiOn ? (
+              aiReady ? (
+                <p className="mt-[12px] font-medium text-[18px] leading-[24px] text-white/70">
+                  {aiText ??
+                    'Текстовый разбор пока не подключён. Причины решения остаются обычными, без выдуманного текста.'}
+                </p>
+              ) : (
+                <AiSearchLines />
+              )
+            ) : (
+              <IconFactList facts={explanation?.iconFacts ?? []} />
+            )}
+          </motion.div>
+        </AnimatePresence>
+      </div>
+      {largeOn && !aiOn ? (
+        <>
+          <div className="mt-[16px] flex min-h-[160px] w-full flex-col rounded-[20px] bg-figma-dim px-[20px] py-[22px]">
+            <FigmaText className="font-medium text-[28px] tracking-[-0.84px] text-white">
+              Как влияет
+            </FigmaText>
+            <p className="mt-[12px] font-medium text-[18px] leading-[24px] text-white/70">
+              {explanation?.influence || 'Нет объяснения влияния.'}
+            </p>
+          </div>
+          <div className="mt-[16px] flex min-h-[67px] w-full items-center rounded-[20px] bg-figma-dim px-[20px] py-[16px]">
+            <p className="font-medium text-[20px] leading-[24px] text-white">
+              {explanation?.result || durationLabel}
+            </p>
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function ReasonIconButton({
+  label,
+  motionOn,
+  onClick,
+  children,
+}: {
+  label: string;
+  motionOn: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <motion.button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      className="flex size-[36px] items-center justify-center rounded-full bg-white/10"
+      whileHover={motionOn ? { scale: 1.08, backgroundColor: 'rgba(255,255,255,0.18)' } : undefined}
+      whileTap={motionOn ? { scale: 0.92 } : undefined}
+      transition={{ duration: 0.16 }}
+    >
+      {children}
+    </motion.button>
+  );
+}
+
+function IconFactCard({
+  title,
+  facts,
+}: {
+  title: string;
+  facts: NonNullable<CaseExplanation['iconFacts']>;
+}) {
+  return (
+    <div className="mt-[16px] flex min-h-[216px] w-full flex-col rounded-[20px] bg-figma-dim px-[20px] py-[22px]">
+      <FigmaText className="font-medium text-[28px] tracking-[-0.84px] text-white">
+        {title}
+      </FigmaText>
+      <IconFactList facts={facts} className="mt-[22px]" />
+    </div>
+  );
+}
+
+/** Black sparkle painted with the same moving gradient as the client AI mark. */
+function AiGlyph() {
+  return (
+    <span
+      aria-hidden
+      className="panel-ai-fill block size-[18px]"
+      style={{
+        WebkitMaskImage: 'url(/figma/explain-ai.png)',
+        maskImage: 'url(/figma/explain-ai.png)',
+        WebkitMaskRepeat: 'no-repeat',
+        maskRepeat: 'no-repeat',
+        WebkitMaskPosition: 'center',
+        maskPosition: 'center',
+        WebkitMaskSize: 'contain',
+        maskSize: 'contain',
+      }}
+    />
+  );
+}
+
+/** Placeholder bars while a write-up would still be generating. */
+function AiSearchLines() {
+  const widths = ['92%', '74%', '86%', '58%'];
+  return (
+    <div className="mt-[16px] space-y-[12px]" aria-hidden>
+      {widths.map((width) => (
+        <div
+          key={width}
+          className="h-[14px] overflow-hidden rounded-full bg-white/10"
+          style={{ width }}
+        >
+          <div className="ai-reason-shimmer h-full w-full" />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function IconFactList({
+  facts,
+  className = 'mt-[12px]',
+}: {
+  facts: NonNullable<CaseExplanation['iconFacts']>;
+  className?: string;
+}) {
+  if (facts.length === 0) {
+    return (
+      <p className={`${className} font-medium text-[18px] leading-[24px] text-white/70`}>
+        Нет причин по этому выбору.
+      </p>
+    );
+  }
+  return (
+    <ul className={`${className} space-y-[10px]`}>
+      {facts.map((fact) => (
+        <li key={`${fact.icon}:${fact.text}`} className="flex items-center gap-[10px]">
+          <TintIcon src={FACT_ICON[fact.icon]} color="#ffffff" size={20} />
+          <span className="font-medium text-[18px] leading-[24px] tracking-[-0.3px] text-white/70">
+            {fact.text.replace(/\.+$/u, '')}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 

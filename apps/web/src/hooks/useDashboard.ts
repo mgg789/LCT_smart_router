@@ -8,6 +8,7 @@ import {
   DashboardApiError,
   deleteDispatchEngineer,
   importOfficialDataset,
+  importRoadData,
   linkEngineerAccount,
   loadDashboardSnapshot,
   loadPolicyComparison,
@@ -40,6 +41,7 @@ import type {
   PlanDelta,
   PolicyComparisonResponse,
   PolicyId,
+  RoadImportSummary,
   RouterTechnicalSettings,
 } from '../api/types';
 import { demoScenarios, recordedScenario } from '../demo/scenarios';
@@ -66,7 +68,8 @@ import {
 } from '../domain/resilience';
 
 const SESSION_KEY = 'lct.dispatcher.session';
-const DEFAULT_REBUILD_TIMEOUT_MS = 90_000;
+/** A cold MKAD solve of the demo day has taken about four minutes. */
+const DEFAULT_REBUILD_TIMEOUT_MS = 360_000;
 
 export interface DayEvent {
   readonly id: string;
@@ -82,6 +85,16 @@ interface RoutingBaseline {
 }
 
 /** Owns authentication and the live Dashboard-to-backend state flow. */
+function engineerNameMap(
+  ...groups: Array<ReadonlyArray<{ id: string; displayName: string }> | undefined>
+): ReadonlyMap<string, string> {
+  const names = new Map<string, string>();
+  for (const group of groups) {
+    for (const engineer of group ?? []) names.set(engineer.id, engineer.displayName);
+  }
+  return names;
+}
+
 export function useDashboard() {
   const [token, setToken] = useState<string | null>(() => sessionStorage.getItem(SESSION_KEY));
   const [recovered] = useState(() => restoreDay(sessionStorage, token !== null));
@@ -270,21 +283,68 @@ export function useDashboard() {
     if (!token || source === 'demo' || rebuilding || liveWorkday?.workday.status === 'running') {
       return;
     }
-    const interval = window.setInterval(() => void refresh(), 10_000);
+    const interval = window.setInterval(() => {
+      void refresh();
+      // A failed first LIVE read must not leave the clock dark for the whole session.
+      void refreshLive();
+    }, 10_000);
     return () => window.clearInterval(interval);
-  }, [rebuilding, refresh, token, source, liveWorkday?.workday.status]);
+  }, [rebuilding, refresh, refreshLive, token, source, liveWorkday?.workday.status]);
 
   useEffect(() => {
     if (!token || source === 'demo' || rebuilding || liveWorkday?.workday.status !== 'running') {
       return;
     }
-    const poll = () => {
+    // Clock and engineer progress only. The six-call day snapshot stays off this
+    // interval: it used every browser connection, so icons and clicks waited.
+    const interval = window.setInterval(() => {
       void refreshLive();
+    }, 2_000);
+    const snapshotInterval = window.setInterval(() => {
       void refresh();
+    }, 20_000);
+    return () => {
+      window.clearInterval(interval);
+      window.clearInterval(snapshotInterval);
     };
-    const interval = window.setInterval(poll, 2_000);
-    return () => window.clearInterval(interval);
   }, [liveWorkday?.workday.status, rebuilding, refresh, refreshLive, source, token]);
+
+  const seenPlanRevision = useRef<number | null | undefined>(undefined);
+  useEffect(() => {
+    if (source !== 'live' || liveWorkday?.workday.status !== 'running') return;
+    const revision = liveWorkday.workday.planRevision;
+    if (revision === undefined) return;
+    const next = revision ?? null;
+    if (seenPlanRevision.current === undefined) {
+      seenPlanRevision.current = next;
+      return;
+    }
+    if (seenPlanRevision.current === next) return;
+    seenPlanRevision.current = next;
+    void refresh();
+  }, [liveWorkday?.workday.planRevision, liveWorkday?.workday.status, refresh, source]);
+
+  const seenGeometry = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (source !== 'live' || liveWorkday?.workday.status !== 'running') return;
+    const done = liveWorkday.workday.geometryDone;
+    const total = liveWorkday.workday.geometryTotal;
+    if (done === undefined || total === undefined) return;
+    const key = `${done}/${total}`;
+    if (seenGeometry.current === undefined) {
+      seenGeometry.current = key;
+      return;
+    }
+    if (seenGeometry.current === key) return;
+    seenGeometry.current = key;
+    void refresh();
+  }, [
+    liveWorkday?.workday.geometryDone,
+    liveWorkday?.workday.geometryTotal,
+    liveWorkday?.workday.status,
+    refresh,
+    source,
+  ]);
 
   const engineers = useMemo(() => (snapshot ? engineerSummaries(snapshot) : []), [snapshot]);
   const unassigned = useMemo(() => (snapshot ? unassignedRequests(snapshot) : []), [snapshot]);
@@ -334,13 +394,17 @@ export function useDashboard() {
       try {
         acceptSession(await loginDispatcher(email, password), generation);
       } catch (cause) {
-        if (generation !== readGeneration.current) return;
-        reportFailure(cause);
-        setError(errorMessage(cause));
-        setLoading(false);
+        // A wrong mailbox or password is a failed attempt, not an expired session.
+        // The login card only paints an error when this promise rejects; swallowing
+        // it left the form unchanged.
+        if (generation === readGeneration.current) {
+          setLoading(false);
+          setError(errorMessage(cause));
+        }
+        throw cause;
       }
     },
-    [acceptSession, reportFailure],
+    [acceptSession],
   );
 
   /** Adopts the dispatcher session returned by the Figma login card without
@@ -435,7 +499,12 @@ export function useDashboard() {
       setError(null);
       setPendingDelta(
         previous && recorded.snapshot.plan.plan && id !== 'initial'
-          ? computePlanDelta(previous, recorded.snapshot.plan.plan, 0)
+          ? computePlanDelta(
+              previous,
+              recorded.snapshot.plan.plan,
+              0,
+              engineerNameMap(snapshotRef.current?.engineers, recorded.snapshot.engineers),
+            )
           : null,
       );
       setBaseline(null);
@@ -592,6 +661,7 @@ export function useDashboard() {
               previous.plan.plan,
               next.plan.plan,
               Math.round(performance.now() - solveStartedAtMs),
+              engineerNameMap(previous.engineers, next.engineers),
             ),
           );
         }
@@ -650,6 +720,7 @@ export function useDashboard() {
           ? 'допуск переработки обновлён'
           : null,
         nextSettings.trafficEnabled !== current.trafficEnabled ? 'режим пробок обновлён' : null,
+        nextSettings.metroEnabled !== current.metroEnabled ? 'режим метро обновлён' : null,
         nextSettings.equipmentEnabled !== current.equipmentEnabled
           ? 'режим оборудования обновлён'
           : null,
@@ -684,10 +755,23 @@ export function useDashboard() {
       if (generation !== liveReadGeneration.current) return false;
       setLiveWorkday(next);
       pushEvent('Рабочий день запущен. План и статусы инженеров обновляются в LIVE-режиме.');
-      await refresh();
+      void refresh();
       return true;
     } catch (cause) {
       if (generation !== liveReadGeneration.current) return false;
+      if (isStartTimeout(cause)) {
+        const started = await waitForStartedDay(
+          token,
+          generation,
+          liveReadGeneration,
+          setLiveWorkday,
+        );
+        if (started) {
+          pushEvent('Рабочий день запущен. План и статусы инженеров обновляются в LIVE-режиме.');
+          void refresh();
+          return true;
+        }
+      }
       reportFailure(cause);
       setError(errorMessage(cause));
       return false;
@@ -780,6 +864,19 @@ export function useDashboard() {
     }
   }, [handleSessionFailure, rebuilding, token, scenarioId, reportFailure]);
 
+  const comparedRevision = useRef<number | null>(null);
+  useEffect(() => {
+    if (!token || source !== 'live' || rebuilding) return;
+    const revision = snapshot?.plan.plan?.revision ?? null;
+    if (revision === null || comparedRevision.current === revision) return;
+    // The plan is already on screen. Comparison can fill in behind it.
+    const handle = window.setTimeout(() => {
+      comparedRevision.current = revision;
+      void refreshPolicyComparison();
+    }, 800);
+    return () => window.clearTimeout(handle);
+  }, [rebuilding, refreshPolicyComparison, snapshot?.plan.plan?.revision, source, token]);
+
   const updateEngineerAvailability = useCallback(
     async (engineerId: string, availability: 'online' | 'offline') => {
       if (
@@ -832,6 +929,7 @@ export function useDashboard() {
               previous.plan.plan,
               next.plan.plan,
               Math.round(performance.now() - solveStartedAtMs),
+              engineerNameMap(previous.engineers, next.engineers),
             ),
           );
         }
@@ -1133,6 +1231,41 @@ export function useDashboard() {
     ],
   );
 
+  const importRoadResource = useCallback(
+    async (payloadBase64: string): Promise<RoadImportSummary> => {
+      if (!token || sourceRef.current !== 'live' || uploadingData) {
+        throw new Error('Загрузка данных уже выполняется');
+      }
+      invalidateAsyncReads();
+      const generation = readGeneration.current;
+      setUploadingData(true);
+      setError(null);
+      try {
+        const summary = await importRoadData(token, payloadBase64);
+        if (generation !== readGeneration.current) return summary;
+        await refreshLive();
+        pushEvent(
+          summary.status === 'replayed'
+            ? 'Дорожный ресурс уже был импортирован.'
+            : `Дорожный ресурс принят: ${summary.edges} рёбер, ${summary.nodes} узлов.`,
+        );
+        return summary;
+      } catch (cause) {
+        if (generation === readGeneration.current) {
+          reportFailure(cause);
+          setOperationWarning(
+            'Импорт дорожного ресурса не подтверждён. Проверьте журнал операций.',
+          );
+          setError(errorMessage(cause));
+        }
+        throw cause;
+      } finally {
+        setUploadingData(false);
+      }
+    },
+    [invalidateAsyncReads, pushEvent, refreshLive, reportFailure, token, uploadingData],
+  );
+
   const importOfficialTzDataset = useCallback(async (): Promise<OfficialImportSummary> => {
     if (!token || sourceRef.current !== 'live' || uploadingData) {
       throw new Error('Загрузка данных уже выполняется');
@@ -1262,6 +1395,7 @@ export function useDashboard() {
     createEngineer,
     deleteEngineer,
     uploadDataset,
+    importRoadResource,
     importOfficialTzDataset,
     resolveAlert,
     setAttendanceOptOut,
@@ -1287,7 +1421,9 @@ function sameRouterSettings(
     left.taskStartLatenessToleranceSec === right.taskStartLatenessToleranceSec &&
     left.windowLatenessToleranceSec === right.windowLatenessToleranceSec &&
     left.trafficEnabled === right.trafficEnabled &&
+    left.metroEnabled === right.metroEnabled &&
     left.equipmentEnabled === right.equipmentEnabled &&
+    left.equipmentTransfersEnabled === right.equipmentTransfersEnabled &&
     left.travelTimeMode === right.travelTimeMode &&
     left.accessBufferSec === right.accessBufferSec &&
     left.fixedTravelTimeSec === right.fixedTravelTimeSec &&
@@ -1300,11 +1436,13 @@ function sameRouterSettings(
 function defaultRouterSettings(snapshot: DashboardSnapshot): RouterTechnicalSettings {
   return {
     lunchesEnabled: snapshot.lunchesEnabled,
+    metroEnabled: false,
     departureLatenessToleranceSec: 0,
     taskStartLatenessToleranceSec: 0,
     windowLatenessToleranceSec: 0,
     trafficEnabled: true,
     equipmentEnabled: true,
+    equipmentTransfersEnabled: false,
     travelTimeMode: 'graph_with_access_buffer',
     accessBufferSec: 600,
     fixedTravelTimeSec: 1_200,
@@ -1334,6 +1472,35 @@ async function waitForRebuild(
 
 function delay(durationMs: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, durationMs));
+}
+
+function isStartTimeout(cause: unknown): boolean {
+  return cause instanceof DashboardApiError && /не ответил|нет связи/i.test(cause.message);
+}
+
+/** The start call can outlive the first response. Keep the button on «Запускаем». */
+async function waitForStartedDay(
+  token: string,
+  generation: number,
+  liveReadGeneration: { readonly current: number },
+  setLiveWorkday: (value: DispatchLiveView) => void,
+): Promise<boolean> {
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    await delay(1_000);
+    if (generation !== liveReadGeneration.current) return false;
+    try {
+      const next = await loadDispatchLive(token);
+      if (generation !== liveReadGeneration.current) return false;
+      if (next.workday.status === 'running' || next.workday.status === 'finished') {
+        setLiveWorkday(next);
+        return true;
+      }
+    } catch {
+      // The original start is still the request the screen is waiting on.
+    }
+  }
+  return false;
 }
 
 function errorMessage(cause: unknown): string {

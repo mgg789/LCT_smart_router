@@ -4,10 +4,13 @@ import { Clock } from '../common/time';
 import type { NotificationIntent, NotificationState, Prisma } from '../generated/prisma/client';
 import { PrismaService } from '../persistence';
 import { renderMail } from './mail-templates';
+import { renderMonthlyReport } from './monthly-report.pdf';
+import { monthlyReportSchema } from './monthly-report.types';
 import { asRecord, redactPayload } from './smtp.helpers';
 import {
   createNodemailerTransport,
   type MailTransport,
+  type OutboundMailAttachment,
   type TransportOutcome,
 } from './smtp.transport';
 
@@ -45,10 +48,10 @@ export class SmtpGatewayService implements OnModuleInit, OnModuleDestroy {
     }
     const interval = this.config.get('SMTP_POLL_INTERVAL_MS');
     this.timer = setInterval(() => {
-      void this.submitPending();
+      void this.submitPending().catch(() => this.logger.error('Mail queue processing failed'));
     }, interval);
     this.timer.unref();
-    void this.submitPending();
+    void this.submitPending().catch(() => this.logger.error('Mail queue processing failed'));
   }
 
   onModuleDestroy(): void {
@@ -70,7 +73,12 @@ export class SmtpGatewayService implements OnModuleInit, OnModuleDestroy {
         take: 20,
       });
       for (const intent of pending) {
-        await this.submitIntent(intent, now);
+        try {
+          await this.submitIntent(intent, now);
+        } catch {
+          // Rendering/storage failures remain pending; do not expose report contents in logs.
+          this.logger.error(`Mail ${intent.id} preparation failed`);
+        }
       }
     } finally {
       this.submitting = false;
@@ -136,6 +144,22 @@ export class SmtpGatewayService implements OnModuleInit, OnModuleDestroy {
       appBaseUrl: this.config.get('SMTP_APP_BASE_URL'),
       timeZone: this.config.get('APP_TIME_ZONE'),
     });
+    const attachments: OutboundMailAttachment[] = [...(rendered.attachments ?? [])];
+    if (intent.category === 'dispatcher_monthly_report') {
+      const key = payload.reportKey;
+      if (typeof key !== 'string' || key !== `reports.monthly.${payload.month}`) {
+        throw new Error('Invalid monthly report reference');
+      }
+      const stored = await this.prisma.appState.findUnique({ where: { key } });
+      const report = monthlyReportSchema.parse(stored?.value);
+      if (report.provisional || report.month !== payload.month)
+        throw new Error('Monthly report is not frozen');
+      attachments.push({
+        filename: `navix-${report.month}.pdf`,
+        content: await renderMonthlyReport(report),
+        contentType: 'application/pdf',
+      });
+    }
     const transport = await this.chooseTransport();
     const outcome = await transport.send({
       from: this.config.get('SMTP_FROM'),
@@ -143,7 +167,7 @@ export class SmtpGatewayService implements OnModuleInit, OnModuleDestroy {
       subject: rendered.subject,
       text: rendered.text,
       html: rendered.html,
-      attachments: rendered.attachments,
+      attachments,
     });
     await this.recordOutcome(intent, now, outcome, redactPayload(payload));
   }

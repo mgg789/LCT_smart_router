@@ -16,9 +16,9 @@ import {
   otpValue,
 } from '../figma-dashboard/otp';
 import { FigmaIcon } from '../figma-dashboard/primitives';
-import { dismissToast, pushAuthErrorToast } from '../figma-dashboard/toasts';
 import { eu } from './engineerScale';
 import { engineerCodeHint } from './loginHint';
+import { PhoneErrorNotice } from './PhoneErrorNotice';
 
 const ease = [0.22, 1, 0.36, 1] as const;
 const slide = { duration: 0.34, ease };
@@ -43,13 +43,14 @@ export function EngineerLogin({
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [codeStep, setCodeStep] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
   const inFlight = useRef(false);
   const code = otpValue(cells);
   const remaining = expiresAt === null ? 0 : remainingCodeSeconds(expiresAt, nowMs);
   const hint = engineerCodeHint({
     devCode,
     remainingSec: remaining,
-    showDevCode: import.meta.env.DEV,
+    showDevCode: Boolean(devCode),
   });
 
   useEffect(() => {
@@ -61,7 +62,7 @@ export function EngineerLogin({
   const requestCode = async () => {
     const nextEmail = email.trim();
     if (!isLoginEmail(nextEmail)) {
-      pushAuthErrorToast('Проверьте адрес почты.');
+      setFailure('Проверьте адрес почты.');
       return;
     }
     setBusy(true);
@@ -73,9 +74,9 @@ export function EngineerLogin({
       setNowMs(Date.now());
       setCells(emptyOtpCells());
       setCodeStep(true);
-      dismissToast('auth-error');
+      setFailure(null);
     } catch (cause) {
-      pushAuthErrorToast(loginErrorMessage(cause));
+      setFailure(loginErrorMessage(cause));
     } finally {
       setBusy(false);
     }
@@ -87,10 +88,10 @@ export function EngineerLogin({
     setBusy(true);
     try {
       const session = await verifyEngineerLoginCode(email.trim(), nextCode);
-      dismissToast('auth-error');
+      setFailure(null);
       await onSession(session, email.trim());
     } catch (cause) {
-      pushAuthErrorToast(loginErrorMessage(cause));
+      setFailure(loginErrorMessage(cause));
     } finally {
       inFlight.current = false;
       setBusy(false);
@@ -99,6 +100,9 @@ export function EngineerLogin({
 
   return (
     <div className="engineer-phone relative flex h-dvh flex-col overflow-y-auto bg-figma-canvas">
+      {failure ? (
+        <PhoneErrorNotice title="Ошибка входа" body={failure} onClose={() => setFailure(null)} />
+      ) : null}
       <div
         className="flex flex-1 flex-col justify-center"
         style={{ padding: `${eu(40)} ${eu(52)}` }}

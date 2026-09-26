@@ -40,7 +40,7 @@ Authorization: Bearer <token>
 | Метод | Путь | Тело | Ответ | Заметки |
 |---|---|---|---|---|
 | POST | `/api/v1/auth/dispatcher/password` | `{email, password}` | `{token, role: "dispatcher", expiresAt}` | Публичный запасной вход. Пароль диспетчера задаётся в `.env` (`DISPATCHER_EMAIL`/`DISPATCHER_PASSWORD`); SMTP не нужен. Основной путь дашборда — `login-code` + `verify` с `role: "dispatcher"` |
-| POST | `/api/v1/auth/login-code` | `{email}` | `{email, expiresAt, devCode?}` | Публичный. Ответ одинаковый для известного и неизвестного адреса. `devCode` только в local development (`AUTH_DEV_EXPOSE_CODES=true` и не `DEMO_STAND`). На публичном стенде код уходит письмом, диспетчер входит паролем |
+| POST | `/api/v1/auth/login-code` | `{email}` | `{email, expiresAt, devCode?}` | Публичный. Ответ одинаковый для известного и неизвестного адреса. `devCode` при `AUTH_DEV_EXPOSE_CODES=true` и `NODE_ENV` не `production`, в том числе на ноутбучном `DEMO_STAND`. На публичном стенде код уходит письмом, диспетчер входит паролем |
 | POST | `/api/v1/auth/login-code/verify` | `{email, code: "123456", role}` | `{token, role, expiresAt}` | `role` ∈ `client/engineer/dispatcher`; роль `engineer` выдаётся только существующему инженеру |
 | GET | `/api/v1/auth/session` | — | `{kind, source, role, accountId, tokenCategory}` | Кто за предъявленным токеном |
 | DELETE | `/api/v1/auth/session` | — | `{signedOut: true}` | Идемпотентный выход |
@@ -172,11 +172,21 @@ Authorization: Bearer <token>
 
 **POST `/dispatch/requests/:id/cancel`** — `{operationId, expectedVersion?, reason?}` → `{request}`. Неначатую; иначе `WORK_ALREADY_STARTED`.
 
-**GET `/dispatch/requests/:id/history`** → `{history: [{changedAt, operationId, reason, previous}], asOf}` — журнал прежних условий.
+**GET `/dispatch/requests/:id/history`** → `{history: [{changedAt, operationId, reason, previous, actor}], asOf}` — журнал прежних условий. `actor` — `{actorKind, actorId, source, action}` из `audit_log` или `null`.
+
+**GET `/dispatch/requests/:id/passport`** → `{passport, canFill, unavailableReason?}`. Диспетчер
+видит паспорт любой существующей заявки, включая будущую; `canFill` всегда `false`.
+`passport` равен `null` либо `{id,address,connectionType,difficulty,equipment,accessNotes,comment,
+updatedAt,stale}`. `stale` становится `true` только когда после `updatedAt` прошло **более** 45
+суток. Если адрес пока нельзя достоверно получить из reverse-geocoding, возвращается
+`passport:null` и `unavailableReason:"ADDRESS_NOT_RESOLVED"`, без объединения точек по близости.
 
 ### 6.2 Инженеры
 
 **GET `/dispatch/engineers`** → `{engineers: [EngineerView & {day: EngineerDayView|null}]}`
+
+**GET `/dispatch/engineers/:id/points`** → `{monthlyPoints, month}`. Сумма берётся из
+неизменяемого ledger за московский календарный месяц; `month` имеет формат `YYYY-MM`.
 
 ```json
 {
@@ -351,7 +361,7 @@ twogis: {provider, configured, ok, message}, yandex: {…}}`. Проба идё�
 **GET `/dispatch/geocode?q=`** или `?city=&street=` → `{hits: [{displayName, lat, lon}]}`.
 Сервер зовёт LocationIQ **autocomplete** (`/v1/autocomplete`) с одним `q` — так
 находятся криво набранные адреса. `city`+`street` склеиваются в `q`, если его нет.
-Без `LOCATION_IQ_TOKEN` — `NOT_CONFIGURED`; точку тогда задают кликом по карте.
+Без `LOCATION_IQ_TOKEN` тот же поиск идёт в Nominatim (не чаще одного запроса в секунду).
 
 Новая заявка с `lat`/`lon` получает `region` ближайшего геоцентра уже существующих
 заявок этого региона. Если у региона ещё нет точек — геоцентр считают по домам
@@ -400,11 +410,13 @@ twogis: {provider, configured, ok, message}, yandex: {…}}`. Проба идё�
 значения, не факты.
 
 Нога маршрута (`routes[].legs[]`) несёт `travelSource`
-(`approximate` | `road_matrix` | `route_api` | `traffic_api`) и, если sys подменил
+(`approximate` | `road_matrix` | `route_api` | `traffic_api` | `metro`) и, если sys подменил
 геометрию ответом карт, `geometryProvider: "twogis"|"yandex"`. Карта рисует геоцентры
 пунктиром цвета инженера, OSRM — серой сплошной, 2ГИС/Яндекс — зелёной сплошной
-(`#16A34A`). Без ключей карт план остаётся с геометрией Router; золотой план не
-меняется.
+(`#16A34A`), метро — фиолетовой сплошной. Без ключей карт прямой хорде подставляется
+полилиния MKAD `/route2`, если бэкенд ответил `mode=road`; `mode=straight` и обрыв
+бэкенда оставляют пунктир. Время и расстояние solver при этой подмене не меняются.
+Золотой план не меняется.
 
 **POST `/dispatch/mode`** — `{operationId, mode: "auto"|"manual"}` → `{control}`. В MANUAL автоматические результаты не применяются.
 
@@ -503,7 +515,20 @@ running-день не трогает. `GET /dispatch/live` и `GET /dispatch/dat
 | POST | `/engineer/lunch/start` · `/finish` | `{operationId}` → `{day}` |
 | GET | `/engineer/plan` | → `{planAsOf, origin, revision, route: PlanRouteView|null, requests: RequestView[]}` — свой маршрут применённого плана и карточки заявок этого маршрута |
 | GET | `/engineer/requests/:id` | → `{request: RequestView, stop: PlanStopView}` — только если заявка стоит в применённом маршруте этого инженера; иначе `NOT_FOUND` |
+| GET | `/engineer/requests/:id/passport` | → `{passport,canFill,unavailableReason?}` — паспорт доступен для назначенной заявки, включая будущую; `canFill` только после старта текущего LIVE-визита и лишь когда паспорта нет или он устарел (`WORK_NOT_STARTED` до старта) |
+| POST | `/engineer/requests/:id/passport` | `{operationId,connectionType,difficulty,equipment?,accessNotes?,comment?}` → `{passport,pointsAwarded:35,monthlyPoints}`; только собственный начатый текущий LIVE-визит, одна награда за цикл обновления |
+| GET | `/engineer/points` | → `{monthlyPoints,month}` — очки паспорта за текущий московский месяц |
 | POST | `/engineer/requests/:id/facts` | `{operationId, kind: "arrived"\|"arrived_blocked"\|"started"\|"finished"\|"problem", occurredAt?, note?}` → факт исполнения; отмечать можно только то, что назначено применённым планом; финиш без старта — 422 |
+
+`connectionType` — один из `fiber`, `ethernet`, `dsl`, `radio`, `other`; `difficulty` —
+целое 1…3. Текстовые поля необязательны. Явный адрес нормализуется до города, улицы и дома: квартира и офис не создают новый паспорт,
+корпус и строение сохраняются. Для координатных точек используется LocationIQ reverse geocoding
+с постоянным кешем; ответ без номера дома не принимается. Неоднозначный текстовый адрес
+остаётся недоступным вместо привязки к соседнему зданию. Запрос не держит транзакцию БД
+во время сетевого вызова.
+Повтор одинакового `operationId` возвращает исходный результат OperationsService, а
+параллельная попытка с другим id после первого сохранения получает конфликт свежего паспорта.
+Идентичные одновременные повторы возвращают один результат и одну награду.
 
 SPA `/engineer/` (вход по коду, список заявок и обеда, карточка/карта точки, маршрут на день, настройки имени/транспорта/почты) живёт в том же `apps/web`, что и дашборд. Почту бригаде без логина задаёт диспетчер через `POST /dispatch/engineers/link-account` на вкладке «Инженеры»; снять её можно через `unlink-account`. Вход только живой сессией по коду, без локального обхода.
 
@@ -512,10 +537,27 @@ SPA `/engineer/` (вход по коду, список заявок и обед�
 `GET /client/work-types` → `{workTypes: [{code, title}]}` — каталог типов работ (выбор
 в форме; код = ключ для `POST .../requests {workType}`). `POST /client/requests`
 (черновик) → `POST /client/requests/:id/submit` (подтверждение) → заявка становится
-задачей; `POST /client/requests/:id/reschedule`; `POST /client/requests/:id/cancel`
+задачей. Приложение `/client/` этот двухшаговый путь не использует: код на почту — это
+подтверждение, и следом один вызов `POST /client/requests/submitted` (то же тело, что у
+черновика) создаёт заявку уже отправленной, в одной транзакции, как
+`POST /dispatch/requests`. До кода на сервере ничего не пишется.
+
+`GET /client/geocode?q=` и `GET /client/geocode/reverse?lat=&lon=` — публичные, без сессии.
+Поиск → `{hits: [{displayName, lat, lon}]}`, клик по карте → `{hit: {displayName, lat, lon}|null}`.
+Провайдер тот же, что у `GET /dispatch/geocode`: LocationIQ, а без токена — Nominatim.
+Клиент не шлёт `Authorization`: просроченный bearer отклоняется и на публичном маршруте.
+
+`GET /client/profile` → `{email, contactName, addressText, lat, lon}`. Почта — всегда
+логин сессии. Имя, адрес и точка — из последней отправленной заявки; если такой не
+было, три поля `null`. Черновик профиль не заполняет. Интеграционный ключ профиля не
+имеет.
+
+`POST /client/requests/:id/reschedule`; `POST /client/requests/:id/cancel`
 (`{operationId, expectedVersion?, reason?}` → `{request}`) — отмена своей неначатой
-заявки; `GET /client/requests`, `GET /client/requests/:id` — только свои заявки.
-Тела — как §6.1 минус `clientEmail`.
+заявки. `GET /client/requests` — открытые свои заявки (`draft` / `submitted` /
+`in_progress`). `GET /client/requests?scope=all` — история всего отправленного, включая
+`completed` и `cancelled`; черновики в неё не входят. `GET /client/requests/:id` — одна
+своя заявка. Тела записей — как §6.1 минус `clientEmail` для сессии.
 
 `PATCH /client/notifications` — `{operationId, enabled}` → `{enabled}`: выключает
 событийные письма адреса (каталог писем — `docs/api.md` §5); коды входа приходят
@@ -576,14 +618,61 @@ SPA `/engineer/` (вход по коду, список заявок и обед�
 
 Техническая ревизия Router содержит `windowLatenessToleranceSec` (0…1200 секунд, продуктовый default 600), `trafficEnabled` и `equipmentEnabled` (default true); Python использует snake_case. Передача — через существующие endpoint технических настроек и CAS contextVersion. Предыдущие поля обязательны и сохраняются. Окно клиента остаётся исходным; допуск ограничивает нормативное завершение после закрытия окна и отличается от допусков revalidation.
 
-Метрики сравнения дополнены `lateAssignedCount`, `totalLatenessSec`, `minWindowSlackSec` (null без назначений), `workloadSpreadSec`, `maxWorkloadSec`. Отсутствующие поля старых записей читаются с defaults 0/null; такие записи не доказывают измерение новых показателей. Полный смысл и формулы — `docs/solver.md`, сверочные значения — `docs/policy-efficiency.md`.
+Метрики сравнения дополнены `lateAssignedCount`, `totalLatenessSec`, `minWindowSlackSec` (null без назначений), `workloadSpreadSec`, `maxWorkloadSec`. Веб-клиент требует эти поля: отсутствие измерения больше не подменяется нулём. Записанные демосравнения пересобраны штатным генератором. Полный смысл и формулы — `docs/solver.md`, сверочные значения — `docs/policy-efficiency.md`.
 
 
 ## Дополнение 18.09.2026: сравнение с расширяемым составом
 
-«Полное покрытие» (`covering-2`) включено отдельной седьмой строкой.
+«Полное покрытие» (`covering-3`) включено отдельной седьмой строкой.
 Количество дополнительных исполнителей передаётся в `additional_engineers`
 (`additionalEngineers` в веб/API). Её маршруты не доступны остальным политикам
 и FIFO. Клиент читает старые шестистрочные записи без миграции. Полное покрытие
 не отменяет окна, смены, доступность дорог и оборудование; невозможные назначения
 сохраняются как unassigned. Замеры и ограничения: `docs/policy-efficiency.md`.
+
+
+## Баллы и итоги (22.09.2026)
+
+Компактная плашка баллов открывает журнал месяца и сравнение со средним команды.
+В профиле инженера у диспетчера там же доступна форма −50: выбор сохранённой отметки,
+обоснование 30–2000 символов и явное подтверждение. Операционный UUID сохраняется
+при повторе неуспешной отправки; сервер дополнительно дедуплицирует сам факт.
+Баланс может быть отрицательным. Отношение к среднему `null` не подменяется нулём.
+
+Экраны итогов используют `GET /engineer/rewards/day?workdayId=...`,
+`GET /engineer/rewards` и `GET /dispatch/performance/day?workdayId=...`.
+Диспетчерская модалка открывается при `workday.status=finished`, `unresolvedCount=0`,
+`closedAt=null`; после закрытия её можно вновь открыть из меню пользователя.
+Закрытие рабочего дня сохраняет снимок через существующий `/dispatch/shift/close`.
+Загрузка месячного PDF доступна в той же модалке через
+`GET /dispatch/reports/monthly/YYYY-MM`; токен передаётся заголовком, не в URL.
+Все финансово-подобные итоги здесь являются игровыми баллами, не денежным балансом.
+
+## Составные маршруты метро
+
+`metroEnabled` передаётся полностью через настройки Router. Переключатель
+«Маршруты с метро» расположен рядом с обедами и пробками. `PlanRouteLeg.segments`
+разворачиваются в отдельные линии: приблизительная серая пунктирная, дорожная
+серая сплошная, геометрия 2GIS/Яндекс зелёная сплошная, метро фиолетовая сплошная.
+`geometryProvider` определяет зелёный цвет даже при сохранённом приблизительном
+источнике расчётной стоимости. Станции — вершины линии, а не заявки/маркеры.
+Legacy `transit` отображается как «Пешком» и отсутствует в новых списках выбора.
+
+## MCP-сервер дашборда (24.09.2026)
+
+Вкладка «API» настроек: сверху секция «MCP-сервер дашборда» (ниже разделитель,
+затем интеграционные ключи). Состояние — `GET /dispatch/mcp`:
+`{enabled, pinSet, pinLast4, activeNow, lastToolName, lastToolCallAt, endpoint}`.
+
+Свитч «Активировать MCP-сервер» включает сервер; если пароля ещё нет, сначала появляется
+поле «MCP-пароль» (кнопка «Сгенерировать» предлагает надёжный вида `XXXX-XXXX-XXXX-XXXX`),
+и сервер включается вместе с паролем одним `PUT /dispatch/mcp`
+`{operationId, enabled, pin?}`. Сервер хранит только хеш пароля, поэтому `setup.md`
+скачивается локально из браузера (`downloadMcpSetupMd` в `mcpSetup.ts`) и доступен,
+пока пароль есть в поле: в файле — endpoint, оба варианта заголовка (`X-MCP-Pin` и
+`Bearer`), готовые конфиги MCP-клиентов, каталог инструментов и правила автономной
+работы. Выключение свитча отправляет `{enabled:false}` и отзывает пароль на сервере.
+
+Шапка дашборда раз в 5 секунд опрашивает `GET /dispatch/mcp`; пока `activeNow`,
+справа от часов виден плавно мигающий голубой робот (`McpAgentIndicator`), клик
+открывает настройки сразу на вкладке API (`initialTab` у `SettingsModal`).

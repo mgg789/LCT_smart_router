@@ -75,12 +75,57 @@ describe('Figma MAIN snapshot mapper', () => {
     expect(notificationFromAlert(firstAlert).icon).toBe('delay');
   });
 
-  it('keeps other router settings when only lunch or traffic changes', () => {
-    const snapshot = createDevSnapshot();
+  it('keeps other router settings when only lunch, traffic or metro changes', () => {
+    const snapshot = {
+      ...createDevSnapshot(),
+      routerSettings: {
+        ...nextRouterSettings(createDevSnapshot(), {}),
+        metroEnabled: true,
+      },
+    };
     const next = nextRouterSettings(snapshot, { lunchesEnabled: true, trafficEnabled: true });
     expect(next.lunchesEnabled).toBe(true);
     expect(next.trafficEnabled).toBe(true);
     expect(next.routerContextVersion).toBe(snapshot.routerContextVersion);
     expect(next.accessBufferSec).toBe(600);
+    expect(next.metroEnabled).toBe(true);
+  });
+
+  it('preserves the future equipment transfer flag during unrelated setting edits', () => {
+    const base = createDevSnapshot();
+    const snapshot = {
+      ...base,
+      routerSettings: {
+        ...nextRouterSettings(base, {}),
+        equipmentTransfersEnabled: true,
+      },
+    };
+    expect(nextRouterSettings(snapshot, { lunchesEnabled: true }).equipmentTransfersEnabled).toBe(
+      true,
+    );
+  });
+
+  it('keeps an address out of the unassigned banner', () => {
+    const snapshot = createDevSnapshot();
+    const request = snapshot.requests.find((item) => item.assignmentState !== 'assigned');
+    expect(request).toBeTruthy();
+    if (!request || !snapshot.plan.plan) return;
+    const address = 'Город Москва, пр-кт.Волгоградский, д. 128';
+    const stripped = {
+      ...snapshot,
+      requests: snapshot.requests.map((item) =>
+        item.id === request.id ? { ...item, addressText: address, workTypeTitle: '' } : item,
+      ),
+      plan: {
+        ...snapshot.plan,
+        plan: {
+          ...snapshot.plan.plan,
+          assignments: [],
+        },
+      },
+    };
+    const view = dashboardViewFromSnapshot(stripped, { engineerId: null, requestId: null });
+    expect(view.unassignedReason).toBe('План ещё считается');
+    expect(view.unassignedReason).not.toContain('Волгоградский');
   });
 });

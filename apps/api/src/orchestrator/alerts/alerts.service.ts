@@ -1,15 +1,18 @@
+import { randomUUID } from 'node:crypto';
 import { Injectable, Optional } from '@nestjs/common';
 import { z } from 'zod';
 import { lunchCoverageWitness, policyCoverageRegressed } from './coverage-policy';
 
 export { lunchCoverageWitness, policyCoverageRegressed } from './coverage-policy';
 
+import type { Actor } from '../../auth';
 import { SysError } from '../../common/errors';
 import { canonicalHash } from '../../common/json';
 import { Clock } from '../../common/time';
 import { Prisma } from '../../generated/prisma/client';
 import { NotificationsService } from '../../notifications';
 import type { OperationContext } from '../../operations';
+import { OperationsService } from '../../operations';
 import {
   lockAlertQueue,
   lockRoutingCurrent,
@@ -23,11 +26,13 @@ import {
   SnapshotPublisher,
 } from '../../routing/mount-data-eng';
 import { RouterClient } from '../../routing/router-gateway/router-client.port';
+import { MiniAiService } from '../ai/mini-ai.service';
 import {
   DEFAULT_EXECUTION_TIMING_POLICY,
   ExecutionTimingPolicy,
 } from '../facts/execution-timing-policy';
 import { businessNow } from '../live/business-clock';
+import { PERFORMANCE_ALERT_PREFIX, PerformanceService } from '../performance';
 import { DispatcherSettingsService } from '../settings/dispatcher-settings.service';
 import { type AlertAction, alertActionsFor, resolutionDelay } from './alert-policy';
 
@@ -80,6 +85,57 @@ export interface AlertView {
   readonly workDate: string | null;
 }
 
+const ACTION_EFFECT: Record<AlertAction, { benefit: string; drawback: string }> = {
+  reschedule: {
+    benefit: 'Снимает сегодняшний риск и сохраняет длительность окна.',
+    drawback: 'Клиент получит услугу только завтра.',
+  },
+  move_window: {
+    benefit: 'Оставляет визит сегодня в найденном выполнимом окне.',
+    drawback: 'Новое время нужно согласовать с клиентом, назначение пересчитается.',
+  },
+  add_engineer: {
+    benefit: 'Добавляет человека на линию и повышает шанс закрыть заявку сегодня.',
+    drawback: 'Нужен свободный инженер с подходящим навыком.',
+  },
+  keep_manual: {
+    benefit: 'Сохраняет уже выданный ручной порядок.',
+    drawback: 'План может быть хуже автоматического.',
+  },
+  keep_as_is: {
+    benefit: 'Не меняет согласованный маршрут.',
+    drawback: 'Причина риска остаётся.',
+  },
+  restore_auto: {
+    benefit: 'Возвращает актуальный автоматический план.',
+    drawback: 'Маршруты нескольких инженеров могут измениться.',
+  },
+  skip_lunch: {
+    benefit: 'Освобождает время под заявки.',
+    drawback: 'Инженер остаётся без обеда.',
+  },
+  keep_lunch: {
+    benefit: 'Сохраняет перерыв.',
+    drawback: 'Часть заявок может остаться без назначения.',
+  },
+  message: {
+    benefit: 'Инженер получает напоминание и остаётся на смене.',
+    drawback: 'Само по себе не двигает маршрут.',
+  },
+  remove_shift: {
+    benefit: 'Снимает молчащего инженера, чтобы заявки ушли другим.',
+    drawback: 'Его работы нужно переназначить.',
+  },
+  message_remove: {
+    benefit: 'Сначала предупреждает, затем снимает со смены.',
+    drawback: 'Инженер теряет оставшиеся заявки дня.',
+  },
+  extend: {
+    benefit: 'Даёт ещё немного времени выйти на связь.',
+    drawback: 'Заявки продолжают ждать.',
+  },
+};
+
 /**
  * Durable dispatcher decision queue.
  *
@@ -95,9 +151,12 @@ export class AlertsService {
     private readonly publisher: SnapshotPublisher,
     private readonly notifications: NotificationsService,
     private readonly router: RouterClient,
+    private readonly operations: OperationsService,
+    private readonly miniAi: MiniAiService,
     @Optional() private readonly timing?: ExecutionTimingPolicy,
     @Optional() private readonly dispatcherSettings?: DispatcherSettingsService,
     @Optional() private readonly snapshotBuilder?: SnapshotBuilder,
+    @Optional() private readonly performance?: PerformanceService,
   ) {}
 
   private readonly windowCache = new Map<
@@ -177,6 +236,112 @@ export class AlertsService {
     return { ...result, requestVersion: prepared.requestVersion };
   }
 
+  /**
+   * System one picks an allowed action for the alert; the usual resolve applies it.
+   *
+   * Both the dashboard endpoint and the MCP tool call this one handler, so the choice of
+   * what an automated resolver may do lives in exactly one place: an already handled alert
+   * is refused, a window move uses only a Router proposal (or is left out when today has
+   * none), and the applied action is a journalled `alert.resolve` operation.
+   */
+  async resolveWithSystemOne(
+    actor: Actor,
+    id: string,
+    options?: { apply?: boolean },
+  ): Promise<{
+    alert: AlertView;
+    choice: string;
+    applied: boolean;
+    engineerId: string | null;
+    minutes: number | null;
+    windowStartAt: number | null;
+    windowEndAt: number | null;
+    expectedRequestVersion: number | null;
+  }> {
+    const alert = await this.prisma.alert.findUnique({ where: { id } });
+    if (alert?.kind !== 'alert' || alert.resolvedAt !== null) {
+      throw SysError.validationFailed('Этот алерт уже нельзя разобрать.');
+    }
+    const catalogue = alertActionsFor(alert.code);
+    let windowOffer: { start: number; end: number; version: number } | null = null;
+    if (catalogue.includes('move_window')) {
+      try {
+        const offer = await this.proposeWindow(id);
+        if (offer.status === 'available' && offer.proposal) {
+          windowOffer = {
+            start: offer.proposal.windowStartAt,
+            end: offer.proposal.windowEndAt,
+            version: offer.requestVersion,
+          };
+        }
+      } catch {
+        windowOffer = null;
+      }
+    }
+    const actions = catalogue.filter((item) => item !== 'move_window' || windowOffer !== null);
+    const engineers = await this.prisma.engineer.findMany({
+      take: 8,
+      orderBy: { inputOrder: 'asc' },
+      select: { id: true, displayName: true },
+    });
+    const choice = await this.miniAi.chooseAlert({
+      summary: JSON.stringify({
+        code: alert.code,
+        reasons: alert.reasons,
+        requestIds: alert.requestIds,
+        engineerIds: alert.engineerIds,
+        windowToday: windowOffer
+          ? { start: windowOffer.start, end: windowOffer.end }
+          : 'сегодня выполнимого окна нет',
+        options: actions.map((item) => ({
+          action: item,
+          benefit: ACTION_EFFECT[item].benefit,
+          drawback: ACTION_EFFECT[item].drawback,
+        })),
+      }).slice(0, 4_000),
+      actions,
+      engineers: engineers.map((item) => ({ id: item.id, label: item.displayName })),
+    });
+    const action = actions.find((item) => item === choice.action);
+    if (!action) {
+      throw SysError.validationFailed('Модель выбрала действие вне списка.');
+    }
+    if (action === 'move_window' && !windowOffer) {
+      throw SysError.validationFailed('Сегодня нет окна, куда можно сдвинуть визит.');
+    }
+    const picked = {
+      choice: choice.action,
+      engineerId: choice.engineerId ?? null,
+      minutes: choice.minutes ?? null,
+      windowStartAt: action === 'move_window' && windowOffer ? windowOffer.start : null,
+      windowEndAt: action === 'move_window' && windowOffer ? windowOffer.end : null,
+      expectedRequestVersion: action === 'move_window' && windowOffer ? windowOffer.version : null,
+    };
+    if (options?.apply === false) {
+      return { alert: this.view(alert), ...picked, applied: false };
+    }
+    const operationId = randomUUID();
+    const dto = {
+      operationId,
+      action,
+      reason: 'Решено с AI автоматически',
+      ...(picked.engineerId ? { engineerId: picked.engineerId } : {}),
+      ...(picked.minutes ? { minutes: picked.minutes } : {}),
+      ...(picked.windowStartAt !== null && picked.windowEndAt !== null
+        ? {
+            windowStartAt: picked.windowStartAt,
+            windowEndAt: picked.windowEndAt,
+            expectedRequestVersion: picked.expectedRequestVersion ?? undefined,
+          }
+        : {}),
+    };
+    const outcome = await this.operations.execute(
+      { operationId, actor, action: 'alert.resolve', targetRef: id, payload: dto },
+      (context) => this.resolve(context, id, dto),
+    );
+    return { alert: outcome.result, ...picked, applied: true };
+  }
+
   private async thresholds(db: PrismaService | Tx = this.prisma) {
     if (!this.dispatcherSettings) {
       return {
@@ -225,7 +390,7 @@ export class AlertsService {
         plan: { include: { routes: { include: { stops: { orderBy: { sequence: 'asc' } } } } } },
       },
     });
-    if (!pointer || pointer.plan.origin !== 'manual') return;
+    if (pointer?.plan.origin !== 'manual') return;
     const input = await this.prisma.routingCurrent.findUnique({
       where: { id: 'singleton' },
       include: { snapshot: true },
@@ -547,15 +712,15 @@ export class AlertsService {
     if (input.action === 'restore_auto' || input.action === 'move_window') {
       // Saving a window or requesting AUTO is not proof of a feasible assignment.
       // Keep the blocker until a subsequent accepted plan confirms the outcome.
-      return this.view(
-        await context.tx.alert.update({
-          where: { id },
-          data: {
-            resolutionAction: input.action,
-            resolutionReason: input.reason ?? null,
-          },
-        }),
-      );
+      const pending = await context.tx.alert.update({
+        where: { id },
+        data: {
+          resolutionAction: input.action,
+          resolutionReason: input.reason ?? null,
+        },
+      });
+      await recordAlertAttribution(context.tx, context.now, alert, context.actor, input, false);
+      return this.view(pending);
     }
     const elapsed = context.now - Number(alert.createdAt);
     const resolved = await context.tx.alert.update({
@@ -568,6 +733,7 @@ export class AlertsService {
         resolutionDelaySec: resolutionDelay(elapsed),
       },
     });
+    await recordAlertAttribution(context.tx, context.now, alert, context.actor, input, true);
     return this.view(resolved);
   }
 
@@ -591,6 +757,20 @@ export class AlertsService {
     context: OperationContext,
     workDate: string,
   ): Promise<{ workDate: string; closedAt: number; unresolvedCount: number }> {
+    const workday = await context.tx.liveWorkday.findFirst({
+      where: { workDate, status: { in: ['pending', 'running', 'finished'] } },
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, status: true },
+    });
+    if (workday && workday.status !== 'finished') {
+      throw new SysError(
+        'SHIFT_CLOSE_BLOCKED',
+        'Finish the LIVE workday before closing this shift',
+        {
+          details: { workDate, status: workday.status },
+        },
+      );
+    }
     await this.refresh(context.tx, context.now, workDate);
     const unresolvedCount = await context.tx.alert.count({
       where: { kind: 'alert', isBlocking: true, resolvedAt: null, invalidatedAt: null },
@@ -610,6 +790,10 @@ export class AlertsService {
         operationId: context.operationId,
       },
     });
+    if (workday && this.performance) {
+      const capturedAt = await businessNow(context.tx, context.now, workDate);
+      await this.performance.snapshotIn(context.tx, workday.id, capturedAt);
+    }
     return { workDate, closedAt: Number(closure.closedAt), unresolvedCount: 0 };
   }
 
@@ -630,7 +814,7 @@ export class AlertsService {
       if (!requestId) throw new SysError('VALIDATION_FAILED', 'This alert names no request');
       await lockRoutingCurrent(context.tx);
       const request = await context.tx.request.findUnique({ where: { id: requestId } });
-      if (!request || request.lifecycle !== 'submitted') {
+      if (request?.lifecycle !== 'submitted') {
         throw new SysError('WORK_ALREADY_STARTED', 'Only a submitted request can be rescheduled');
       }
       if (input.action === 'move_window' && input.expectedRequestVersion !== request.version)
@@ -725,8 +909,7 @@ export class AlertsService {
           workDate: alert.workDate,
         });
       if (
-        !request ||
-        request.lifecycle !== 'submitted' ||
+        request?.lifecycle !== 'submitted' ||
         day.availability !== 'offline' ||
         day.engineer.archivedAt !== null ||
         (request.region !== null && day.engineer.region !== request.region) ||
@@ -936,6 +1119,7 @@ export class AlertsService {
             resolutionDelaySec: resolutionDelay(now - Number(alert.createdAt)),
           },
         });
+        await finalizeAlertAttribution(tx, alert.id, now);
       }
     }
     // Router and system episodes both become obsolete once the request is no
@@ -1264,7 +1448,7 @@ export class AlertsService {
         )
           continue;
         const route = pointer.plan.routes.find((x) => x.engineerId === day.engineerId);
-        if (!liveRunning && (!route || route.lunchStatus !== 'scheduled')) {
+        if (!liveRunning && route?.lunchStatus !== 'scheduled') {
           const key = `system:lunch_conflict:${day.id}`;
           active.add(key);
           await this.ensure(tx, now, {
@@ -1505,6 +1689,84 @@ export class AlertsService {
   }
 }
 
+/** Stores the first authenticated alert intervention and later closes pending windows. */
+async function recordAlertAttribution(
+  tx: Tx,
+  now: number,
+  alert: { id: string; code: string; workDate: string | null; createdAt: bigint },
+  actor: Actor,
+  input: ResolveAlertInput,
+  resolved: boolean,
+): Promise<void> {
+  const key = `${PERFORMANCE_ALERT_PREFIX}${alert.id}`;
+  const current = await tx.appState.findUnique({ where: { key } });
+  if (!current) {
+    await tx.appState.create({
+      data: {
+        key,
+        value: {
+          version: 1,
+          alertId: alert.id,
+          code: alert.code,
+          workDate: alert.workDate,
+          createdAt: Number(alert.createdAt),
+          firstAction: {
+            action: input.action,
+            at: now,
+            actorKind: actor.kind,
+            actorSource: actor.source,
+          },
+          outcome: resolved ? 'resolved' : 'pending',
+          resolvedAt: resolved ? now : null,
+          resolutionReason: input.reason ?? null,
+        },
+        updatedAt: BigInt(now),
+      },
+    });
+    return;
+  }
+  const existing = current.value;
+  if (
+    resolved &&
+    existing &&
+    typeof existing === 'object' &&
+    !Array.isArray(existing) &&
+    'outcome' in existing &&
+    existing.outcome === 'pending'
+  ) {
+    await tx.appState.update({
+      where: { key },
+      data: {
+        value: { ...(existing as Record<string, unknown>), outcome: 'resolved', resolvedAt: now },
+        updatedAt: BigInt(now),
+      },
+    });
+  }
+}
+
+/** Marks a previously recorded window action resolved only after the plan state confirms it. */
+async function finalizeAlertAttribution(tx: Tx, alertId: string, now: number): Promise<void> {
+  const key = `${PERFORMANCE_ALERT_PREFIX}${alertId}`;
+  const current = await tx.appState.findUnique({ where: { key } });
+  const value = current?.value;
+  if (
+    !current ||
+    value === null ||
+    typeof value !== 'object' ||
+    Array.isArray(value) ||
+    !('outcome' in value) ||
+    value.outcome !== 'pending'
+  )
+    return;
+  await tx.appState.update({
+    where: { key },
+    data: {
+      value: { ...(value as Record<string, unknown>), outcome: 'resolved', resolvedAt: now },
+      updatedAt: BigInt(now),
+    },
+  });
+}
+
 function canonicalRouterCode(code: string): string {
   const normalized = code.toLowerCase();
   if (normalized === 'live_window_completion_risk') return 'time_risk';
@@ -1516,30 +1778,10 @@ function canonicalRouterCode(code: string): string {
     return 'lunch_conflict';
   return normalized;
 }
-function hasLunchCoverageWitness(reasons: object): boolean {
-  return lunchCoverageWitness(reasons) !== null;
-}
 
 function workDateForMoment(
   moment: number,
   _days: Array<{ workDate: string; shiftStartAt: bigint; shiftEndAt: bigint }>,
 ): string | null {
   return new Date((moment + 3 * 3600) * 1000).toISOString().slice(0, 10);
-}
-function criterionLabel(criterion: string | null): string {
-  const labels: Record<string, string> = {
-    constraints: 'ограничения',
-    urgent_unassigned: 'срочные неназначенные заявки',
-    unassigned: 'неназначенные заявки',
-    missed_optional_lunches: 'пропущенные обеды',
-    travel_time: 'время в пути',
-    distance: 'пробег',
-    engineers_used: 'число инженеров',
-    additional_engineers: 'дополнительные инженеры',
-    window_end_risk: 'риск окна',
-    total_lateness: 'опоздание',
-    max_workload_ratio: 'загрузка',
-    workload_spread: 'разброс загрузки',
-  };
-  return labels[criterion ?? ''] ?? criterion ?? 'целевая функция';
 }

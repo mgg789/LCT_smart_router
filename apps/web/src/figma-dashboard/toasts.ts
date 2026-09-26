@@ -15,6 +15,8 @@ export const TOAST_EXIT_X = 520;
 export const TOAST_SWIPE_COLLAPSE = 80;
 /** How long one transient card stays over the interface before returning to the panel. */
 export const TOAST_PEEK_MS = 4000;
+/** Plan-rebuilt stays up long enough to hit the details button. */
+export const TOAST_PLAN_PEEK_MS = 9000;
 
 /**
  * macOS natural scrolling flips wheel delta versus Windows/Linux trackpads.
@@ -59,6 +61,10 @@ export type ToastNotification = {
   etaLabel?: string;
   /** Request the toast is anchored to, when the event names one («К заявке» navigation). */
   requestId?: string | null;
+  /** How long a collapsed column keeps this card visible. Defaults to {@link TOAST_PEEK_MS}. */
+  peekMs?: number;
+  /** Oval action drawn on the card, for example «Подробнее». */
+  actionLabel?: string;
 };
 
 export type ToastDraft = {
@@ -70,6 +76,8 @@ export type ToastDraft = {
   progress?: number;
   etaLabel?: string;
   requestId?: string | null;
+  peekMs?: number;
+  actionLabel?: string;
 };
 
 type ToastListener = () => void;
@@ -104,7 +112,7 @@ function beginPeek(toast: ToastNotification): void {
       peekTimers.delete(toast.id);
       peekIds.delete(toast.id);
       emit();
-    }, TOAST_PEEK_MS),
+    }, toast.peekMs ?? TOAST_PEEK_MS),
   );
 }
 
@@ -126,9 +134,16 @@ export function isToastColumnPinned(): boolean {
 /**
  * Cards actually drawn: the full stack when pinned, otherwise only peeks.
  */
-export function visibleToastsForColumn(): ToastNotification[] {
-  const all = getToasts();
-  if (columnPinned) return all.slice(0, visibleToastLimit());
+/** A progress card that has sat on screen for a minute leaves the column. */
+export const PROGRESS_TOAST_LIFE_MS = 60_000;
+
+export function isParkedProgress(toast: ToastNotification, now = Date.now()): boolean {
+  return toast.kind === 'progress' && now - toast.createdAt >= PROGRESS_TOAST_LIFE_MS;
+}
+
+export function visibleToastsForColumn(now = Date.now()): ToastNotification[] {
+  const all = getToasts().filter((item) => !isParkedProgress(item, now));
+  if (columnPinned) return all;
   return all
     .filter((item) => item.kind === 'progress' || peekIds.has(item.id))
     .slice(0, visibleToastLimit());
@@ -280,7 +295,8 @@ export function visibleToastLimit(): number {
  */
 export function sortToasts(items: readonly ToastNotification[]): ToastNotification[] {
   return [...items].sort((left, right) => {
-    const weight = (kind: ToastKind) => Number(kind === 'alert' || kind === 'error');
+    const weight = (kind: ToastKind) =>
+      kind === 'progress' ? 2 : kind === 'alert' || kind === 'error' ? 1 : 0;
     const alertDelta = weight(right.kind) - weight(left.kind);
     if (alertDelta !== 0) return alertDelta;
     return right.createdAt - left.createdAt;
@@ -299,6 +315,8 @@ function normalizeToast(draft: ToastDraft): ToastNotification | null {
     progress,
     etaLabel: draft.kind === 'progress' ? draft.etaLabel : undefined,
     requestId: draft.requestId ?? null,
+    peekMs: draft.peekMs,
+    actionLabel: draft.actionLabel,
   };
 }
 
@@ -326,13 +344,26 @@ export function useToasts(): ToastNotification[] {
 export function useVisibleColumnToasts(): ToastNotification[] {
   const [items, setItems] = useState(visibleToastsForColumn);
   useEffect(() => subscribeToasts(() => setItems(visibleToastsForColumn())), []);
+  useEffect(() => {
+    const timer = window.setInterval(() => setItems(visibleToastsForColumn()), 5_000);
+    return () => window.clearInterval(timer);
+  }, []);
   return items;
 }
 
 /**
  * Inserts or replaces a toast. Progress at 100% removes the card instead.
  */
+const progressHeld = new Set<string>();
+
+/** Lets the next episode of a progress toast appear after the dispatcher closed the last one. */
+export function releaseProgressHold(id: string): void {
+  progressHeld.delete(id);
+  dismissed.delete(id);
+}
+
 export function pushToast(draft: ToastDraft): ToastNotification | null {
+  if (draft.kind === 'progress' && progressHeld.has(draft.id)) return null;
   dismissed.delete(draft.id);
   const next = normalizeToast(draft);
   const without = toasts.filter((item) => item.id !== draft.id);
@@ -371,8 +402,22 @@ export function updateToast(
 }
 
 /** Removes one toast. Silent if the id is already gone. */
+/** Drops every card except a live progress toast. */
+export function dismissAllToasts(): void {
+  const kept = toasts.filter((item) => item.kind === 'progress');
+  for (const item of toasts) {
+    if (item.kind === 'progress') continue;
+    dismissed.add(item.id);
+    clearPeekTimer(item.id);
+    peekIds.delete(item.id);
+  }
+  if (kept.length === toasts.length) return;
+  toasts = kept;
+  emit();
+}
+
 export function dismissToast(id: string): void {
-  if (toasts.some((item) => item.id === id && item.kind === 'progress')) return;
+  if (toasts.some((item) => item.id === id && item.kind === 'progress')) progressHeld.add(id);
   dismissed.add(id);
   clearPeekTimer(id);
   peekIds.delete(id);
@@ -416,6 +461,9 @@ export function toastFromAlert(alert: AlertView): ToastDraft {
         : (alert.reasons[0] ?? title),
     createdAt: alert.createdAt,
     requestId: alert.requestIds[0] ?? null,
+    ...(alert.code === 'plan_rebuilt'
+      ? { peekMs: TOAST_PLAN_PEEK_MS, actionLabel: 'Подробнее' }
+      : {}),
   };
 }
 
@@ -447,6 +495,7 @@ export function toastFromEvent(event: { id: string; at: number; text: string }):
 export function resetToastsForTests(): void {
   toasts = [];
   dismissed.clear();
+  progressHeld.clear();
   columnPinned = false;
   clearAllPeeks();
   emit();

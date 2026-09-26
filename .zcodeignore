@@ -1,0 +1,64 @@
+# Ignore OS noise
+.DS_Store
+Thumbs.db
+.ruff_cache/
+
+# Future code artifacts
+node_modules/
+__pycache__/
+.venv/
+dist/
+.env
+
+# Agents local workspace state
+.zcode/
+.mimosa/
+.cursor/
+.claude/
+.codex/
+# Local tool state (Mimosa security plugin, ruff)
+.mimosa/
+.ruff_cache/
+
+# Node / TypeScript build artifacts
+*.tsbuildinfo
+.pnpm-store/
+apps/*/dist/
+apps/*/dist-test/
+apps/*/generated/
+apps/api/src/generated/
+coverage/
+artifacts/
+test-results/
+playwright-report/
+
+# Local environment files (only .env.example is committed)
+.env.*
+!.env.example
+
+# ===== ↑ 以上同步自 .gitignore（「从 .gitignore 同步」只重写以上部分）=====
+.git/
+.hg/
+.svn/
+bower_components/
+jspm_packages/
+site-packages/
+venv/
+htmlcov/
+lcov-report/
+cmakefiles/
+cmake-build-*/
+bazel-*/
+pods/
+deriveddata/
+storybook-static/
+allure-results/
+allure-report/
+cdk.out/
+*.egg-info/
+*.dist-info/
+eggs/
+pip-wheel-metadata/
+wheels/
+# ----- ↑ 以上为 ZCode 默认排除规则（自定义规则请写在本行下方，不会被同步/恢复改动）-----
+# 自定义规则写在下方（本行提示可删除）

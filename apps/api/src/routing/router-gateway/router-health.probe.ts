@@ -20,7 +20,7 @@ export class RouterHealthProbe implements HealthProbe {
       return { status: 'not_configured', detail: 'Router Core URL is not configured' };
     }
     try {
-      const result = await this.client.getResult();
+      const result = await this.client.getResultStatus();
       return { status: 'ok', detail: `last status: ${result.status}` };
     } catch (error) {
       return {

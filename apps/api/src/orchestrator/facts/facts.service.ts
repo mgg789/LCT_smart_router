@@ -6,6 +6,7 @@ import type { OperationContext } from '../../operations';
 import type { Tx } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import { AppliedPlanService } from '../../routing/router-gateway/applied-plan.service';
+import { assertNoPendingHandoff } from '../equipment/handoffs';
 import { finishNeedsReplan } from '../live/replan-policy';
 import { ExecutionTimingPolicy, type ExecutionTimingPolicyValue } from './execution-timing-policy';
 
@@ -105,6 +106,7 @@ export class FactsService {
       });
     }
 
+    await assertNoPendingHandoff(context.tx, engineerId, request.id, occurredAt);
     await this.write(context, engineerId, request.id, 'started', occurredAt, note);
     await context.tx.request.update({
       where: { id: request.id },

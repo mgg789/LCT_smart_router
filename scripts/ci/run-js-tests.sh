@@ -6,15 +6,9 @@
 set -euo pipefail
 
 pg_name="lct-ci-pg-$$"
-# The repository secret injected by ci.yaml wins; the committed public
-# disposable default from js-tests.env fills in only while the default branch
-# still carries a ci.yaml without the env injection.
-if [[ -z "${LCT_CI_PG_PASSWORD:-}" ]]; then
-  set -a
-  . "$(dirname "$0")/js-tests.env"
-  set +a
-fi
-pg_password="${LCT_CI_PG_PASSWORD:?LCT_CI_PG_PASSWORD missing (js-tests.env or CI secret)}"
+# Comes from the LCT_CI_PG_PASSWORD repository secret injected by ci.yaml
+# (the default branch has carried the env mapping since !44).
+pg_password="${LCT_CI_PG_PASSWORD:?LCT_CI_PG_PASSWORD missing (CI secret not injected?)}"
 # A per-run loopback port: a shared worker host may already bind 5432 (the MGG
 # box runs the demo stand's Postgres there) and the sidecar must not be
 # reachable from outside. $$ keeps concurrent runs apart; the rare collision
@@ -61,6 +55,11 @@ docker run --rm --network host \
     pnpm --filter web test
     pnpm --filter web typecheck
     test -f .env || cp .env.example .env
+    # NODE_ENV=test makes ConfigModule ignore the file copied above, while a unit test
+    # that boots no app still validates the whole environment as soon as its import
+    # graph reaches ConfigModule.forRoot. Integration tests read .env by hand (see
+    # test/support/env.ts); exporting the dispatcher pair covers the rest of the suite.
+    eval "$(grep -E "^DISPATCHER_(EMAIL|PASSWORD)=" .env | sed "s/^/export /")"
     pnpm --filter api exec prisma generate
     pnpm --filter api exec prisma migrate deploy
     pnpm --filter api test

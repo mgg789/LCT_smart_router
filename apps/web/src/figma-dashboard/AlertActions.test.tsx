@@ -48,7 +48,7 @@ describe('alert resolution choices', () => {
       'Сменить окно',
       'Добавить инженера',
       'Оставить как есть',
-      'Включить AI',
+      'Решить с AI',
     ])
       expect(html).toContain(label);
     expect(html.match(/disabled=""/g)).toHaveLength(1);

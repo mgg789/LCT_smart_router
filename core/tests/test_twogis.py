@@ -94,21 +94,16 @@ def test_prepares_all_profiles_and_replays_from_secret_free_cache(tmp_path, monk
         "driving",
         "walking",
         "bicycle",
-        "public_transport",
     ]
     assert calls[0]["type"] == "statistics"
     assert calls[0]["start_time"] == "2026-08-17T06:00:00Z"
-    assert calls[3]["public_transport_params"] == {
-        "transport": config.transit_types,
-        "enable_schedule": True,
-    }
     travel = GraphTravel(graph)
     origin = snapshot.engineers[0].start_location
     destination = snapshot.requests[0].location
     assert travel.quote(origin, destination, "car").duration_sec == 100
     assert travel.quote(origin, destination, "walk").duration_sec == 200
     assert travel.quote(origin, destination, "bike").duration_sec == 300
-    assert travel.quote(origin, destination, "transit").duration_sec == 400
+    assert travel.quote(origin, destination, "transit").duration_sec == 200
 
     cache_bytes = b"".join(path.read_bytes() for path in (tmp_path / "cache").rglob("*.json"))
     assert b"super-secret-test-key" not in cache_bytes
@@ -195,7 +190,8 @@ def test_sync_matrix_is_chunked_at_configured_source_and_target_limits(tmp_path,
     monkeypatch.setattr(httpx, "post", fake_post)
     graph = TwoGISMatrixProvider(_config(tmp_path)).build_graph(snapshot, profiles=("car",))
     assert len(graph.nodes) == 26
-    assert len(calls) == 4
+    # The self-only 1×1 chunk is a free local micro-edge and never reaches 2GIS.
+    assert len(calls) == 3
     assert all(len(call["sources"]) <= 25 and len(call["targets"]) <= 25 for call in calls)
 
 

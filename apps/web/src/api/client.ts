@@ -17,15 +17,28 @@ import type {
   EngineerDayView,
   GeocodeHit,
   MapProvidersStatus,
+  McpSettingsView,
   OfficialImportSummary,
   PlanAssignmentView,
   PolicyComparisonResponse,
   PolicyId,
+  RoadImportSummary,
   RouterTechnicalSettings,
 } from './types';
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
 const policyIdSchema = z.enum(['compact', 'fast', 'sla', 'balanced', 'eco', 'covering']);
+
+const roadImportSummarySchema = z.object({
+  operationId: z.string().min(1),
+  status: z.enum(['accepted', 'replayed']),
+  graphVersion: z.string().min(1),
+  routerContextVersion: z.string().min(1),
+  inputSha256: z.string().length(64),
+  profiles: z.array(z.enum(['car', 'walk', 'bike', 'transit'])),
+  nodes: z.number().int().nonnegative(),
+  edges: z.number().int().nonnegative(),
+});
 
 const requestSchema = z.object({
   id: z.string(),
@@ -114,7 +127,21 @@ const engineerSchema = z.object({
 
 const planStopSchema = z.object({
   sequence: z.number().int(),
-  kind: z.enum(['job', 'lunch', 'wait', 'start']),
+  kind: z.enum(['job', 'lunch', 'wait', 'start', 'handoff']),
+  handoff: z
+    .object({
+      handoff_id: z.string(),
+      donor_engineer_id: z.string(),
+      receiver_engineer_id: z.string(),
+      request_id: z.string(),
+      items: z.object({
+        router: z.number().int().nonnegative(),
+        set_top_box: z.number().int().nonnegative(),
+        smart_speaker: z.number().int().nonnegative(),
+      }),
+    })
+    .nullable()
+    .optional(),
   requestId: z.string().nullable(),
   lat: z.number(),
   lon: z.number(),
@@ -131,7 +158,7 @@ const planLegSchema = z.object({
   arrivalAt: z.number().int(),
   travelTimeSec: z.number().int().nonnegative(),
   distanceKm: z.number().nonnegative(),
-  travelSource: z.enum(['approximate', 'road_matrix', 'route_api', 'traffic_api']),
+  travelSource: z.enum(['approximate', 'road_matrix', 'route_api', 'traffic_api', 'metro']),
   geometryProvider: z.enum(['twogis', 'yandex']).optional(),
   trafficFactor: z.number().min(1),
   geometry: z
@@ -141,6 +168,23 @@ const planLegSchema = z.object({
         .min(2),
     })
     .nullable(),
+  segments: z
+    .array(
+      z.object({
+        geometry: z.object({
+          points: z
+            .array(
+              z.object({ lat: z.number().min(-90).max(90), lon: z.number().min(-180).max(180) }),
+            )
+            .min(2),
+        }),
+        travelSource: z.enum(['approximate', 'road_matrix', 'route_api', 'traffic_api', 'metro']),
+        travelTimeSec: z.number().int().nonnegative(),
+        distanceKm: z.number().nonnegative(),
+        geometryProvider: z.enum(['twogis', 'yandex']).optional(),
+      }),
+    )
+    .optional(),
 });
 
 const lunchStatusSchema = z.enum([
@@ -210,6 +254,12 @@ const dispatchPlanSchema = z.object({
       receivedAt: z.number().int(),
     })
     .nullable(),
+  /** True while the published task is newer than the plan on screen. */
+  calculating: z.boolean().optional().default(false),
+  routerPhase: z.enum(['building', 'ready', 'error']).optional(),
+  routerMessage: z.string().nullable().optional(),
+  geometryDone: z.number().int().nonnegative().optional(),
+  geometryTotal: z.number().int().nonnegative().optional(),
 });
 
 const alertSchema = z.object({
@@ -344,11 +394,13 @@ const policiesSchema = z.object({
 
 const technicalSettingsSchema = z.object({
   lunchesEnabled: z.boolean(),
+  metroEnabled: z.boolean().default(false),
   departureLatenessToleranceSec: z.number().int().nonnegative(),
   taskStartLatenessToleranceSec: z.number().int().nonnegative(),
   windowLatenessToleranceSec: z.number().int().nonnegative().max(1_200).default(0),
   trafficEnabled: z.boolean().default(true),
   equipmentEnabled: z.boolean().default(true),
+  equipmentTransfersEnabled: z.boolean().default(false),
   travelTimeMode: z.enum(['graph_with_access_buffer', 'fixed_normative']),
   accessBufferSec: z.number().int().nonnegative(),
   fixedTravelTimeSec: z.number().int().positive(),
@@ -404,11 +456,11 @@ const policyComparisonSchema = z.object({
           workTimeSec: z.number().int().nonnegative(),
           waitingTimeSec: z.number().int().nonnegative(),
           lunchTimeSec: z.number().int().nonnegative(),
-          lateAssignedCount: z.number().int().nonnegative().default(0),
-          totalLatenessSec: z.number().int().nonnegative().default(0),
-          minWindowSlackSec: z.number().int().nullable().default(null),
-          workloadSpreadSec: z.number().int().nonnegative().default(0),
-          maxWorkloadSec: z.number().int().nonnegative().default(0),
+          lateAssignedCount: z.number().int().nonnegative(),
+          totalLatenessSec: z.number().int().nonnegative(),
+          minWindowSlackSec: z.number().int().nullable(),
+          workloadSpreadSec: z.number().int().nonnegative(),
+          maxWorkloadSec: z.number().int().nonnegative(),
         }),
       }),
     )
@@ -641,6 +693,35 @@ export async function revokeApiToken(sessionToken: string, id: string): Promise<
   );
 }
 
+const mcpSettingsViewSchema = z.object({
+  enabled: z.boolean(),
+  pinSet: z.boolean(),
+  pinLast4: z.string().nullable(),
+  activeNow: z.boolean(),
+  lastToolName: z.string().nullable(),
+  lastToolCallAt: z.number().int().nullable(),
+  endpoint: z.string(),
+});
+
+/** Reads the dashboard MCP server state: switch, pin presence and live agent activity. */
+export function getMcpSettings(token: string): Promise<McpSettingsView> {
+  return requestJson('/api/v1/dispatch/mcp', mcpSettingsViewSchema, token);
+}
+
+/**
+ * Switches the MCP server and sets or rotates its pin. The pin travels to the server
+ * exactly once; the response mirrors the same view as [[getMcpSettings]].
+ */
+export function saveMcpSettings(
+  token: string,
+  input: { enabled: boolean; pin?: string },
+): Promise<McpSettingsView> {
+  return requestJson('/api/v1/dispatch/mcp', mcpSettingsViewSchema, token, {
+    method: 'PUT',
+    body: JSON.stringify({ operationId: crypto.randomUUID(), ...input }),
+  });
+}
+
 const engineerProfileSchema = engineerSchema.omit({ day: true });
 
 const dispatcherSettingsSchema = z.object({
@@ -654,6 +735,9 @@ const dispatcherSettingsSchema = z.object({
   twogisApiKeyLast4: z.string().nullable(),
   yandexApiKeySet: z.boolean(),
   yandexApiKeyLast4: z.string().nullable(),
+  equipmentCapacityWalk: z.number().int().nonnegative().default(5),
+  equipmentCapacityBike: z.number().int().nonnegative().default(12),
+  equipmentCapacityCar: z.number().int().nonnegative().default(30),
 });
 
 const geocodeHitSchema = z.object({
@@ -851,9 +935,14 @@ export function changeEngineerEmail(
   );
 }
 
-/** Loads and validates all resources required by the dispatcher day screen. */
+/**
+ * Loads the dispatcher day.
+ *
+ * The six reads go in two waves of three. A browser allows about six connections
+ * to one host; filling all of them left icons and clicks waiting.
+ */
 export async function loadDashboardSnapshot(token: string): Promise<DashboardSnapshot> {
-  const [requests, engineers, planResponse, alerts, policies, settings] = await Promise.all([
+  const [requests, engineers, planResponse] = await Promise.all([
     requestJson('/api/v1/dispatch/requests', z.object({ requests: z.array(requestSchema) }), token),
     requestJson(
       '/api/v1/dispatch/engineers',
@@ -861,6 +950,8 @@ export async function loadDashboardSnapshot(token: string): Promise<DashboardSna
       token,
     ),
     requestJson('/api/v1/dispatch/plan', dispatchPlanSchema, token),
+  ]);
+  const [alerts, policies, settings] = await Promise.all([
     requestJson('/api/v1/dispatch/alerts', z.object({ alerts: z.array(alertSchema) }), token),
     requestJson('/api/v1/dispatch/policies', policiesSchema, token),
     getRouterTechnicalSettings(token),
@@ -929,11 +1020,13 @@ export async function updateRouterTechnicalSettings(
         operationId: crypto.randomUUID(),
         expectedContextVersion: settings.routerContextVersion,
         lunchesEnabled: settings.lunchesEnabled,
+        metroEnabled: settings.metroEnabled,
         departureLatenessToleranceSec: settings.departureLatenessToleranceSec,
         taskStartLatenessToleranceSec: settings.taskStartLatenessToleranceSec,
         windowLatenessToleranceSec: settings.windowLatenessToleranceSec,
         trafficEnabled: settings.trafficEnabled,
         equipmentEnabled: settings.equipmentEnabled,
+        equipmentTransfersEnabled: settings.equipmentTransfersEnabled,
         travelTimeMode: settings.travelTimeMode,
         accessBufferSec: settings.accessBufferSec,
         fixedTravelTimeSec: settings.fixedTravelTimeSec,
@@ -1005,6 +1098,18 @@ export function uploadDataPackage(token: string, file: DataUploadFile): Promise<
   return requestJson('/api/v1/dispatch/data/upload', dataUploadSummarySchema, token, {
     method: 'POST',
     body: JSON.stringify({ operationId: crypto.randomUUID(), ...file }),
+  });
+}
+
+/** Imports one native OSRM JSON or gzip payload without adding user-defined envelope fields. */
+export function importRoadData(token: string, payloadBase64: string): Promise<RoadImportSummary> {
+  return requestJson('/api/v1/dispatch/data/road-import', roadImportSummarySchema, token, {
+    method: 'POST',
+    body: JSON.stringify({
+      operationId: crypto.randomUUID(),
+      profile: 'car',
+      payloadBase64,
+    }),
   });
 }
 
@@ -1172,6 +1277,272 @@ export function loadAlertWindowProposal(token: string, alertId: string) {
     {},
     35_000,
   );
+}
+
+/** Runs async work with a fixed number of slots so the rest of the origin stays free. */
+export async function allWithLimit<T>(
+  limit: number,
+  tasks: ReadonlyArray<() => Promise<T>>,
+): Promise<T[]> {
+  const results = new Array<T>(tasks.length);
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < tasks.length) {
+      const index = cursor;
+      cursor += 1;
+      const task = tasks[index];
+      if (!task) break;
+      results[index] = await task();
+    }
+  };
+  const slots = Math.max(1, Math.min(limit, tasks.length));
+  await Promise.all(Array.from({ length: slots }, () => worker()));
+  return results;
+}
+
+const situationPredictionSchema = z.object({
+  plan: z.object({
+    robustness: z.number().min(0).max(1),
+    visits_total: z.number().int().nonnegative(),
+    expected_late: z.number().nonnegative(),
+    expected_late_share: z.number().min(0).max(1),
+    p95_late_count: z.number().nonnegative(),
+    p95_max_late_sec: z.number().nonnegative(),
+  }),
+  requests: z.record(
+    z.string(),
+    z.object({
+      breach_prob: z.number().min(0).max(1).nullable(),
+      expected_late_sec: z.number().nonnegative(),
+      p90_late_sec: z.number().nonnegative(),
+      cancel_rate_sim: z.number().min(0).max(1),
+    }),
+  ),
+  engineers: z.record(z.string(), z.object({ overrun_prob: z.number().min(0).max(1) })),
+});
+
+export interface SituationPredictionView {
+  readonly robustness: number;
+  readonly visitsTotal: number;
+  readonly expectedLate: number;
+  readonly expectedLateShare: number;
+  readonly p95LateCount: number;
+  readonly p95MaxLateSec: number;
+  readonly requests: Readonly<
+    Record<string, { readonly breachProb: number | null; readonly expectedLateSec: number }>
+  >;
+  readonly engineers: Readonly<Record<string, { readonly overrunProb: number }>>;
+}
+
+/**
+ * Dry reliability of one applied plan. The call does not change routes.
+ * `routes` is the fixed visit order already on screen.
+ */
+export function predictSituation(
+  token: string,
+  input: {
+    inputHash: string;
+    routerContextVersion: string;
+    routes: Record<string, string[]>;
+    asOf?: number;
+  },
+): Promise<SituationPredictionView> {
+  return requestJson(
+    '/api/v1/dispatch/predictions/situation',
+    situationPredictionSchema,
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        inputHash: input.inputHash,
+        routerContextVersion: input.routerContextVersion,
+        routes: input.routes,
+        simulations: 300,
+        asOf: input.asOf,
+      }),
+    },
+    25_000,
+  ).then((parsed) => ({
+    robustness: parsed.plan.robustness,
+    visitsTotal: parsed.plan.visits_total,
+    expectedLate: parsed.plan.expected_late,
+    expectedLateShare: parsed.plan.expected_late_share,
+    p95LateCount: parsed.plan.p95_late_count,
+    p95MaxLateSec: parsed.plan.p95_max_late_sec,
+    requests: Object.fromEntries(
+      Object.entries(parsed.requests).map(([id, row]) => [
+        id,
+        { breachProb: row.breach_prob, expectedLateSec: row.expected_late_sec },
+      ]),
+    ),
+    engineers: Object.fromEntries(
+      Object.entries(parsed.engineers).map(([id, row]) => [id, { overrunProb: row.overrun_prob }]),
+    ),
+  }));
+}
+
+const weatherSchema = z.object({
+  observedAt: z.number(),
+  temperatureC: z.number().nullable(),
+  weatherCode: z.number().nullable(),
+  kind: z.enum(['clear', 'cloud', 'rain', 'snow', 'storm', 'unknown']),
+  label: z.string(),
+  trafficMultiplier: z.number().min(1),
+});
+
+export type DispatchWeather = z.infer<typeof weatherSchema>;
+
+/** Cached Moscow forecast. The multiplier is already inside car travel times. */
+export function loadDispatchWeather(token: string): Promise<DispatchWeather> {
+  return requestJson('/api/v1/dispatch/weather', weatherSchema, token);
+}
+
+/** Same forecast for the engineer shift screen. Dispatcher tokens cannot call this. */
+export function loadEngineerWeather(token: string): Promise<DispatchWeather> {
+  return requestJson('/api/v1/engineer/weather', weatherSchema, token);
+}
+
+const aiViewSchema = z.object({
+  settings: z.object({
+    planCalibrationEnabled: z.boolean(),
+    planCalibrationEnabledRaw: z.boolean().nullable(),
+    llmApiUrl: z.string().nullable(),
+    llmModel: z.string().nullable(),
+    llmApiKeySet: z.boolean(),
+    llmApiKeyLast4: z.string().nullable(),
+    jevApiUrl: z.string().nullable(),
+    jevModel: z.string().nullable(),
+    jevApiKeySet: z.boolean(),
+    jevApiKeyLast4: z.string().nullable(),
+  }),
+  status: z.object({
+    source: z.enum(['factory', 'learned']),
+    version: z.string().nullable(),
+    confidence: z.number().min(0).max(1),
+    samples: z.object({
+      service: z.number().int().nonnegative(),
+      legs: z.number().int().nonnegative(),
+      cancelRequests: z.number().int().nonnegative(),
+      executionDays: z.number().int().nonnegative(),
+    }),
+    computedAt: z.number().nullable(),
+    syncedToRouter: z.boolean(),
+  }),
+});
+
+export type AiView = z.infer<typeof aiViewSchema>;
+
+/** AI contour controls plus the live calibration reading. */
+export function getAiSettings(token: string): Promise<AiView> {
+  return requestJson('/api/v1/dispatch/ai', aiViewSchema, token);
+}
+
+const aiTextSchema = z.object({ text: z.string() });
+const aiPolicySchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  steps: z.array(z.string()).default([]),
+});
+const aiResolveSchema = z.object({
+  choice: z.string(),
+  applied: z.boolean().optional(),
+  engineerId: z.string().nullable().optional(),
+  minutes: z.number().nullable().optional(),
+  windowStartAt: z.number().nullable().optional(),
+  windowEndAt: z.number().nullable().optional(),
+  expectedRequestVersion: z.number().nullable().optional(),
+});
+
+/** Short wording from the language model. The context is facts the screen already has. */
+export function explainWithAi(
+  token: string,
+  kind: 'reasons' | 'plan',
+  context: unknown,
+): Promise<{ text: string }> {
+  return requestJson(
+    '/api/v1/dispatch/ai/explain',
+    aiTextSchema,
+    token,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind, context }),
+    },
+    30_000,
+  );
+}
+
+/** System one picks a policy and the server publishes that choice. */
+export function optimizePlanWithAi(
+  token: string,
+  summary: string,
+): Promise<{ id: string; label: string; steps: string[] }> {
+  return requestJson(
+    '/api/v1/dispatch/ai/optimize',
+    aiPolicySchema,
+    token,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ summary }),
+    },
+    30_000,
+  );
+}
+
+export interface AiAlertProposal {
+  readonly choice: string;
+  readonly applied?: boolean;
+  readonly engineerId?: string | null;
+  readonly minutes?: number | null;
+  readonly windowStartAt?: number | null;
+  readonly windowEndAt?: number | null;
+  readonly expectedRequestVersion?: number | null;
+}
+
+/** System one picks an allowed action and does not apply it. */
+export function proposeAlertWithAi(token: string, alertId: string): Promise<AiAlertProposal> {
+  return requestJson(
+    `/api/v1/dispatch/alerts/${alertId}/ai-resolve?apply=0`,
+    aiResolveSchema,
+    token,
+    { method: 'POST' },
+    30_000,
+  );
+}
+
+/** System one picks an allowed action; the server applies the usual alert resolve. */
+export function resolveAlertWithAi(token: string, alertId: string): Promise<AiAlertProposal> {
+  return requestJson(
+    `/api/v1/dispatch/alerts/${alertId}/ai-resolve`,
+    aiResolveSchema,
+    token,
+    {
+      method: 'POST',
+    },
+    30_000,
+  );
+}
+
+export function saveAiSettings(
+  token: string,
+  input: {
+    planCalibrationEnabled?: boolean;
+    llmApiUrl?: string | null;
+    llmModel?: string | null;
+    llmApiKey?: string;
+    clearLlmApiKey?: boolean;
+    jevApiUrl?: string | null;
+    jevModel?: string | null;
+    jevApiKey?: string;
+    clearJevApiKey?: boolean;
+  },
+): Promise<AiView> {
+  return requestJson('/api/v1/dispatch/ai', aiViewSchema, token, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ operationId: `ai-${Date.now()}`, ...input }),
+  });
 }
 
 export async function requestJson<T>(

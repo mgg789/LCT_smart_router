@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import type { ReactNode } from 'react';
+import { RequestPassport } from '../components/passports/PassportDetails';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { skillLabel } from '../lib/reasons';
 import { ENGINEER_ASSETS } from './assets';
@@ -14,12 +15,14 @@ import { RequestMap } from './RequestMap';
  * contact / window / address / type / equipment chips, on-time and late.
  */
 export function RequestDetail({
+  token,
   item,
   nowMs,
   onBack,
   onRoute,
   actions,
 }: {
+  token?: string;
   item: EngineerJobItem;
   nowMs: number;
   onBack: () => void;
@@ -106,6 +109,12 @@ export function RequestDetail({
         {equipment ? <Chip>{equipment}</Chip> : null}
       </div>
 
+      {token ? (
+        <div className="mt-4">
+          <RequestPassport token={token} audience="engineer" requestId={item.request.id} />
+        </div>
+      ) : null}
+
       {actions ? (
         <div className="mt-auto" style={{ paddingTop: eu(24) }}>
           {actions}
@@ -128,7 +137,7 @@ export function RequestDetail({
 function Chip({ children, align = 'start' }: { children: string; align?: 'start' | 'center' }) {
   return (
     <div
-      className={`flex min-w-0 flex-1 items-center overflow-hidden bg-[#555] ${
+      className={`flex min-w-0 flex-1 items-center overflow-hidden border border-figma-ink/10 bg-white shadow-[0_8px_20px_rgba(39,41,48,0.05)] ${
         align === 'center' ? 'justify-center' : ''
       }`}
       style={{
@@ -138,7 +147,7 @@ function Chip({ children, align = 'start' }: { children: string; align?: 'start'
       }}
     >
       <p
-        className="min-w-0 font-medium tracking-[-0.03em] text-white"
+        className="min-w-0 font-medium tracking-[-0.03em] text-figma-ink"
         style={{ fontSize: eu(24), overflowWrap: 'anywhere' }}
       >
         {children}

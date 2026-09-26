@@ -76,12 +76,11 @@ export class LoginCodeService {
   }
 
   toPublic(issued: IssuedLoginCodeInternal): IssuedLoginCode {
-    // Public demo stand keeps code login, but never prints the code: the dispatcher
-    // mailbox is synthetic and engineers receive a real SMTP message.
+    // Laptop stands run DEMO_STAND and still need the code on screen: there is no
+    // mailbox. Production cannot set AUTH_DEV_EXPOSE_CODES (the schema refuses to boot),
+    // so the public host keeps sending the code by mail.
     const exposeCodes =
-      this.config.get('AUTH_DEV_EXPOSE_CODES') &&
-      this.config.get('NODE_ENV') !== 'production' &&
-      !this.config.get('DEMO_STAND');
+      this.config.get('AUTH_DEV_EXPOSE_CODES') && this.config.get('NODE_ENV') !== 'production';
     return exposeCodes
       ? { email: issued.email, expiresAt: issued.expiresAt, devCode: issued.code }
       : { email: issued.email, expiresAt: issued.expiresAt };

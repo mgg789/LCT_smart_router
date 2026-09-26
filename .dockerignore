@@ -22,5 +22,7 @@ playwright-report/
 # Not needed to build or run the service. The dataset is added back explicitly by the
 # branch that imports it.
 context/
-docs/
+docs/*
+!docs/knowledge/
+!docs/knowledge/**
 data/

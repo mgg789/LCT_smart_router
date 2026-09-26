@@ -1,11 +1,18 @@
 import { Injectable } from '@nestjs/common';
+import { asLunchStatus, type PlanRouteView } from '../../api/plan-view';
 import { SysError } from '../../common/errors';
 import { type AppliedPlan, Prisma } from '../../generated/prisma/client';
 import { AlertsService } from '../../orchestrator/alerts';
 import { workDateOf } from '../../orchestrator/engineers/workday';
+import {
+  equipmentCapacity,
+  morningIssueBasket,
+  readEquipmentSettings,
+} from '../../orchestrator/equipment/equipment-policy';
+import { persistHandoffs } from '../../orchestrator/equipment/handoffs';
 import type { Tx } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../mount-data-eng';
-import type { RouterPlan, RouterResult } from './result.types';
+import { handoffMetadataSchema, type RouterPlan, type RouterResult } from './result.types';
 
 /**
  * The working plan the interfaces actually run on.
@@ -57,8 +64,9 @@ export class AppliedPlanService {
     } else {
       await this.archiveCoveringEngineers(tx, now);
     }
+    await persistHandoffs(tx, main, workDateOf(result.planning_as_of ?? now, 'Europe/Moscow'), now);
     await this.materialise(tx, plan.id, main);
-    await this.issueMorningEquipment(tx, now, main);
+    await this.issueMorningEquipment(tx, now, main, result.status === 'partial');
     await this.syncAssignmentStates(tx, now, main);
     await this.movePointer(tx, now, plan.id);
     await this.storeAlerts(
@@ -89,6 +97,125 @@ export class AppliedPlanService {
       },
     });
     return pointer?.plan ?? null;
+  }
+
+  /**
+   * Stops and engineer ids of the working plan, without road geometry.
+   *
+   * The LIVE clock reads this every second. `current()` also loads every polyline
+   * and the raw Router package, which held the database long enough that passports,
+   * engineer actions and the clock itself stopped answering.
+   */
+  async currentSchedule(tx: Tx) {
+    const pointer = await tx.appliedPlanCurrent.findUnique({
+      where: { id: 'singleton' },
+      select: {
+        plan: {
+          select: {
+            routes: {
+              select: {
+                engineerId: true,
+                stops: {
+                  orderBy: { sequence: 'asc' },
+                  select: {
+                    sequence: true,
+                    kind: true,
+                    requestId: true,
+                    lat: true,
+                    lon: true,
+                    arrivalAt: true,
+                    startAt: true,
+                    endAt: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    return pointer?.plan ?? null;
+  }
+
+  /**
+   * Working routes without road geometry or the raw Router package.
+   *
+   * The dispatcher roster and the engineer app poll this every couple of seconds while
+   * holding the routing lock. Loading every polyline there kept the lock long enough
+   * that login and the next poll timed out.
+   */
+  async currentRoster(tx: Tx): Promise<{ revision: number; routes: PlanRouteView[] } | null> {
+    const pointer = await tx.appliedPlanCurrent.findUnique({
+      where: { id: 'singleton' },
+      select: {
+        plan: {
+          select: {
+            revision: true,
+            routes: {
+              select: {
+                engineerId: true,
+                startLat: true,
+                startLon: true,
+                startAt: true,
+                finishAt: true,
+                distanceKm: true,
+                travelTimeSec: true,
+                workTimeSec: true,
+                waitingTimeSec: true,
+                lunchTimeSec: true,
+                assignedCount: true,
+                lunchStatus: true,
+                stops: {
+                  orderBy: { sequence: 'asc' },
+                  select: {
+                    sequence: true,
+                    kind: true,
+                    requestId: true,
+                    handoff: true,
+                    lat: true,
+                    lon: true,
+                    arrivalAt: true,
+                    startAt: true,
+                    endAt: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    const plan = pointer?.plan;
+    if (!plan) return null;
+    return {
+      revision: plan.revision,
+      routes: plan.routes.map((route) => ({
+        engineerId: route.engineerId,
+        startLat: route.startLat,
+        startLon: route.startLon,
+        startAt: route.startAt === null ? null : Number(route.startAt),
+        finishAt: route.finishAt === null ? null : Number(route.finishAt),
+        distanceKm: route.distanceKm,
+        travelTimeSec: route.travelTimeSec,
+        workTimeSec: route.workTimeSec,
+        waitingTimeSec: route.waitingTimeSec,
+        lunchTimeSec: route.lunchTimeSec,
+        assignedCount: route.assignedCount,
+        lunchStatus: asLunchStatus(route.lunchStatus),
+        legs: [],
+        stops: route.stops.map((stop) => ({
+          sequence: stop.sequence,
+          kind: stop.kind,
+          requestId: stop.requestId,
+          handoff: handoffMetadataSchema.safeParse(stop.handoff).data ?? null,
+          lat: stop.lat,
+          lon: stop.lon,
+          arrivalAt: Number(stop.arrivalAt),
+          startAt: Number(stop.startAt),
+          endAt: Number(stop.endAt),
+        })),
+      })),
+    };
   }
 
   /**
@@ -161,6 +288,7 @@ export class AppliedPlanService {
             sequence: stop.sequence,
             kind: stop.kind,
             requestId: stop.requestId,
+            handoff: stop.handoff === null ? Prisma.DbNull : stop.handoff,
             lat: stop.lat,
             lon: stop.lon,
             arrivalAt: stop.arrivalAt,
@@ -178,6 +306,7 @@ export class AppliedPlanService {
           requestId: item.requestId,
           status: item.status,
           engineerId: item.engineerId,
+          stopId: item.stopId,
           reasons: item.reasons as object,
         },
       });
@@ -218,6 +347,16 @@ export class AppliedPlanService {
             geometry: leg.geometry ?? null,
             travelSource: leg.travel_source,
             trafficFactor: leg.traffic_factor,
+            ...(leg.segments?.length
+              ? {
+                  segments: leg.segments.map((segment) => ({
+                    geometry: segment.geometry,
+                    travelSource: segment.travel_source,
+                    travelTimeSec: segment.duration_sec,
+                    distanceKm: segment.distance_m / 1000,
+                  })),
+                }
+              : {}),
           })),
           reasons: route.reasons as object,
         },
@@ -230,6 +369,7 @@ export class AppliedPlanService {
             sequence: stop.sequence,
             kind: stop.kind,
             requestId: stop.request_id,
+            handoff: stop.handoff ?? Prisma.DbNull,
             lat: stop.location.lat,
             lon: stop.location.lon,
             arrivalAt: BigInt(stop.arrival_at),
@@ -247,6 +387,7 @@ export class AppliedPlanService {
           requestId: item.request_id,
           status: item.status,
           engineerId: item.engineer_id,
+          stopId: item.stop_id,
           // Checkable grounds from the solver, stored as they arrived.
           reasons: item.reasons as object,
         },
@@ -255,10 +396,17 @@ export class AppliedPlanService {
   }
 
   /**
-   * Freezes the first plan's demand plus one spare as physical engineer-owned stock.
-   * Later replans may consume the spare but cannot move stock or issue new units.
+   * Freezes the first assigning plan's demand plus one spare as physical stock.
+   * An engineer with no assignments is left unissued, so an empty import plan cannot
+   * erase the roster basket. Later replans may consume the spare but cannot move stock
+   * or issue new units.
    */
-  private async issueMorningEquipment(tx: Tx, now: number, plan: RouterPlan): Promise<void> {
+  private async issueMorningEquipment(
+    tx: Tx,
+    now: number,
+    plan: RouterPlan,
+    regionalIncrement = false,
+  ): Promise<void> {
     const engineerIds = plan.routes.map((route) => route.engineer_id);
     if (engineerIds.length === 0) {
       return;
@@ -266,6 +414,7 @@ export class AppliedPlanService {
     const days = await tx.engineerDay.findMany({
       where: { engineerId: { in: engineerIds }, equipmentIssuedAt: null },
       orderBy: { workDate: 'desc' },
+      include: { engineer: true },
     });
     if (days.length === 0) {
       return;
@@ -300,7 +449,9 @@ export class AppliedPlanService {
       demand.set(assignment.engineer_id, row);
     }
 
+    const equipmentSettings = await readEquipmentSettings(tx);
     const seen = new Set<string>();
+    let issued = false;
     for (const day of days) {
       if (seen.has(day.engineerId)) {
         continue;
@@ -311,19 +462,43 @@ export class AppliedPlanService {
         equipmentSetTopBox: 0,
         equipmentSmartSpeaker: 0,
       };
+      const assignedToEngineer = plan.assignments.filter(
+        (assignment) =>
+          assignment.status === 'assigned' && assignment.engineer_id === day.engineerId,
+      ).length;
+      const keepsLoadedStock =
+        regionalIncrement ||
+        plan.routes
+          .find((route) => route.engineer_id === day.engineerId)
+          ?.stops.some((stop) => stop.kind === 'handoff');
+      const basket = keepsLoadedStock
+        ? {
+            equipmentRouter: day.equipmentRouter,
+            equipmentSetTopBox: day.equipmentSetTopBox,
+            equipmentSmartSpeaker: day.equipmentSmartSpeaker,
+          }
+        : morningIssueBasket(
+            row,
+            assignedToEngineer,
+            equipmentCapacity(day.engineer.transportType, equipmentSettings),
+          );
+      // No assignments yet: leave the imported basket unissued so the workday plan can use it.
+      if (basket === null) continue;
+      issued = true;
       await tx.engineerDay.update({
         where: { id: day.id },
         data: {
-          equipmentRouter: row.equipmentRouter > 0 ? row.equipmentRouter + 1 : 0,
-          equipmentSetTopBox: row.equipmentSetTopBox > 0 ? row.equipmentSetTopBox + 1 : 0,
-          equipmentSmartSpeaker: row.equipmentSmartSpeaker > 0 ? row.equipmentSmartSpeaker + 1 : 0,
+          ...basket,
           equipmentIssuedAt: BigInt(now),
           updatedAt: BigInt(now),
           version: { increment: 1 },
         },
       });
     }
-    await this.publisher.publishIfChanged(tx, now, PUBLICATION_TRIGGERS.EQUIPMENT_ISSUED);
+    // A partial issue freezes the existing physical basket; it does not change the
+    // snapshot or invalidate the other regional calculations still in flight.
+    if (issued && !regionalIncrement)
+      await this.publisher.publishIfChanged(tx, now, PUBLICATION_TRIGGERS.EQUIPMENT_ISSUED);
   }
 
   /**

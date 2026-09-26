@@ -65,49 +65,6 @@ export async function signIn(page: Page) {
     await expect(start).toBeHidden();
   }
   await expect(plan).toBeVisible({ timeout: 45_000 });
-  await expect(page.locator('[data-name="MAIN"] [data-user-menu]')).toBeVisible({
-    timeout: 45_000,
-  });
-}
-
-/**
- * Open dispatcher Settings from the avatar menu.
- * Selecting a menu item unmounts the dropdown; Playwright then reports
- * "element was detached" even when the dialog already opened. Retry until
- * the dialog is visible instead of treating that detach as a failed click.
- */
-export async function openDispatcherSettings(page: Page) {
-  const dialog = page.getByRole('dialog', { name: 'Настройки' });
-  // DOM locator: the right-edge avatar can be missing from the a11y tree when
-  // the 1920 artboard is CSS-scaled inside a narrower overflow-hidden frame.
-  const avatar = page.locator('[data-user-menu] button').first();
-  const item = page.getByRole('button', { name: 'Настройки', exact: true });
-
-  await expect(async () => {
-    if (await dialog.isVisible()) return;
-    await expect(avatar).toBeVisible({ timeout: 5_000 });
-    if ((await avatar.getAttribute('aria-expanded')) !== 'true') {
-      await avatar.click({ timeout: 5_000, force: true });
-    }
-    await expect(item).toBeVisible({ timeout: 3_000 });
-    await item.click({ timeout: 5_000 });
-    await expect(dialog).toBeVisible({ timeout: 5_000 });
-  }).toPass({ timeout: 30_000 });
-}
-
-/**
- * Open the Engineers tab and return the dossier availability control.
- * Prefer the DOM node: the 3D ring (`perspective` + `preserve-3d`) plus the
- * dossier's `overflow-hidden` often drop the button from Chromium's a11y tree,
- * so `getByRole('Снять со смены')` times out even when the control is painted.
- */
-export async function engineerAvailabilityControl(page: Page) {
-  await page.getByRole('button', { name: 'Инженеры', exact: true }).click();
-  const dossier = page.locator('[data-name="ENGINEERS"] [data-engineer-dossier]');
-  await expect(dossier).toBeVisible({ timeout: 20_000 });
-  const control = dossier.locator('[data-availability-action]');
-  await expect(control).toBeVisible({ timeout: 20_000 });
-  return control;
 }
 
 /** Isolated serial fixtures: real seed per test, external network blocked, error evidence. */

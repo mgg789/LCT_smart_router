@@ -1,6 +1,21 @@
+import type {
+  AssignmentReasons,
+  PlanLegView,
+  PlanRouteView,
+  PlanStopView,
+  PlanView,
+  TravelSource,
+} from '@lct/shared';
+import { handoffMetadataSchema } from '../routing/router-gateway/result.types';
 import type { AppliedPlanCurrentShape } from './plan-view.types';
 
-export type TravelSource = 'approximate' | 'road_matrix' | 'route_api' | 'traffic_api';
+export type { PlanLegView, PlanRouteView, PlanStopView, PlanView, TravelSource };
+
+/** A contiguous part of one journey; metro vertices are geometry, not visit stops. */
+export type PlanRouteSegmentView = NonNullable<PlanLegView['segments']>[number];
+
+/** One planned movement between stops, with geometry only when Router had a road route. */
+export type PlanRouteLegView = PlanLegView;
 
 /**
  * What an interface is given about the working plan.
@@ -8,70 +23,8 @@ export type TravelSource = 'approximate' | 'road_matrix' | 'route_api' | 'traffi
  * `planAsOf` travels with it on purpose: while a recalculation is under way the interface
  * keeps showing the last applied plan together with the moment it describes, rather than
  * clearing the day or borrowing the timestamp of a snapshot that has not been computed yet
- * (context/36 section 6).
+ * (context/36 section 6). The shape is `@lct/shared`.
  */
-export interface PlanStopView {
-  readonly sequence: number;
-  readonly kind: string;
-  readonly requestId: string | null;
-  readonly lat: number;
-  readonly lon: number;
-  /** Computed schedule, never a confirmed fact. */
-  readonly arrivalAt: number;
-  readonly startAt: number;
-  readonly endAt: number;
-}
-
-export interface PlanRouteView {
-  readonly engineerId: string;
-  readonly startLat: number;
-  readonly startLon: number;
-  readonly startAt: number | null;
-  readonly finishAt: number | null;
-  readonly distanceKm: number;
-  readonly travelTimeSec: number;
-  readonly workTimeSec: number;
-  readonly waitingTimeSec: number;
-  readonly lunchTimeSec: number;
-  readonly assignedCount: number;
-  readonly lunchStatus: string;
-  readonly legs: PlanRouteLegView[];
-  readonly stops: PlanStopView[];
-}
-
-/** One planned movement between stops, with geometry only when Router had a road route. */
-export interface PlanRouteLegView {
-  readonly legId: string;
-  readonly fromStopId: string | null;
-  readonly toStopId: string;
-  readonly departureAt: number;
-  readonly arrivalAt: number;
-  readonly travelTimeSec: number;
-  readonly distanceKm: number;
-  readonly geometry: {
-    readonly points: Array<{ readonly lat: number; readonly lon: number }>;
-  } | null;
-  readonly travelSource: TravelSource;
-  readonly trafficFactor: number;
-  /** Present when sys replaced Router geometry with a map-provider polyline. */
-  readonly geometryProvider?: 'twogis' | 'yandex';
-}
-
-export interface PlanView {
-  readonly revision: number;
-  /** `auto` or `manual`; a manual plan must never look like a fresh calculation. */
-  readonly origin: string;
-  readonly planAsOf: number;
-  readonly appliedAt: number;
-  readonly routes: PlanRouteView[];
-  readonly assignments: Array<{
-    readonly requestId: string;
-    readonly status: string;
-    readonly engineerId: string | null;
-    /** Checkable grounds from the solver, passed through unchanged. */
-    readonly reasons: unknown;
-  }>;
-}
 
 export function toPlanView(plan: AppliedPlanCurrentShape): PlanView {
   return {
@@ -91,10 +44,11 @@ export function toPlanView(plan: AppliedPlanCurrentShape): PlanView {
       waitingTimeSec: route.waitingTimeSec,
       lunchTimeSec: route.lunchTimeSec,
       assignedCount: route.assignedCount,
-      lunchStatus: route.lunchStatus,
+      lunchStatus: asLunchStatus(route.lunchStatus),
       legs: planLegs(route.legs),
       stops: route.stops.map((stop) => ({
         sequence: stop.sequence,
+        handoff: handoffMetadataSchema.safeParse(stop.handoff).data ?? null,
         kind: stop.kind,
         requestId: stop.requestId,
         lat: stop.lat,
@@ -108,7 +62,7 @@ export function toPlanView(plan: AppliedPlanCurrentShape): PlanView {
       requestId: item.requestId,
       status: item.status,
       engineerId: item.engineerId,
-      reasons: item.reasons,
+      reasons: assignmentReasons(item.reasons),
     })),
   };
 }
@@ -150,6 +104,9 @@ function planLegs(value: unknown): PlanRouteLegView[] {
         geometry: points ? { points } : null,
         travelSource: leg.travelSource,
         trafficFactor: leg.trafficFactor,
+        ...(Array.isArray(leg.segments) && leg.segments.length
+          ? { segments: planSegments(leg.segments) }
+          : {}),
         ...(leg.geometryProvider === 'twogis' || leg.geometryProvider === 'yandex'
           ? { geometryProvider: leg.geometryProvider }
           : {}),
@@ -158,11 +115,95 @@ function planLegs(value: unknown): PlanRouteLegView[] {
   });
 }
 
+const LUNCH_STATUSES = [
+  'none',
+  'planned',
+  'taken',
+  'skipped',
+  'disabled',
+  'already_taken',
+  'scheduled',
+  'skipped_for_work',
+  'not_scheduled',
+  'required_conflict',
+] as const satisfies ReadonlyArray<PlanRouteView['lunchStatus']>;
+
+/** Stored lunch status is a free string; only the contract vocabulary is shown. */
+export function asLunchStatus(value: string): PlanRouteView['lunchStatus'] {
+  for (const status of LUNCH_STATUSES) {
+    if (status === value) return status;
+  }
+  return 'none';
+}
+
+/**
+ * Solver reasons cross the process boundary as JSON. The object is kept when it is an
+ * object; a missing or scalar payload becomes an empty explanation rather than a cast
+ * of an unrelated value.
+ */
+function assignmentReasons(value: unknown): AssignmentReasons {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return value as AssignmentReasons;
+  }
+  return {};
+}
+
 function isTravelSource(value: unknown): value is TravelSource {
   return (
     value === 'approximate' ||
     value === 'road_matrix' ||
     value === 'route_api' ||
-    value === 'traffic_api'
+    value === 'traffic_api' ||
+    value === 'metro'
   );
+}
+
+function planSegments(value: unknown[]): PlanRouteSegmentView[] {
+  return value.flatMap((item) => {
+    if (!item || typeof item !== 'object') return [];
+    const segment = item as Record<string, unknown>;
+    if (
+      !isTravelSource(segment.travelSource) ||
+      typeof segment.travelTimeSec !== 'number' ||
+      !Number.isFinite(segment.travelTimeSec) ||
+      segment.travelTimeSec < 0 ||
+      typeof segment.distanceKm !== 'number' ||
+      !Number.isFinite(segment.distanceKm) ||
+      segment.distanceKm < 0 ||
+      !segment.geometry ||
+      typeof segment.geometry !== 'object'
+    )
+      return [];
+    const points = (segment.geometry as { points?: unknown }).points;
+    if (
+      !Array.isArray(points) ||
+      points.length < 2 ||
+      !points.every(
+        (point) =>
+          point &&
+          typeof point === 'object' &&
+          Number.isFinite(point.lat) &&
+          Number.isFinite(point.lon) &&
+          Math.abs(point.lat) <= 90 &&
+          Math.abs(point.lon) <= 180,
+      )
+    )
+      return [];
+    return [
+      {
+        geometry: {
+          points: points.map((point: { lat: number; lon: number }) => ({
+            lat: point.lat,
+            lon: point.lon,
+          })),
+        },
+        travelSource: segment.travelSource,
+        travelTimeSec: segment.travelTimeSec,
+        distanceKm: segment.distanceKm,
+        ...(segment.geometryProvider === 'twogis' || segment.geometryProvider === 'yandex'
+          ? { geometryProvider: segment.geometryProvider }
+          : {}),
+      },
+    ];
+  });
 }

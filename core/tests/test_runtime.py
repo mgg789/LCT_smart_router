@@ -107,6 +107,32 @@ def test_latest_publication_is_the_only_result_exposed(snapshot, graph):
     runtime.close()
 
 
+def test_regions_publish_cumulative_partial_before_final_ready(snapshot, graph):
+    """One finished disconnected region is usable without pretending the other is solved."""
+    first, second = snapshot.requests[:2]
+    east = snapshot.engineers[0].model_copy(update={"engineer_id": "east", "region": "east"})
+    west = east.model_copy(update={"engineer_id": "west", "input_order": 1, "region": "west"})
+    task = snapshot.model_copy(update={
+        "requests": [first.model_copy(update={"region": "east"}), second.model_copy(update={"region": "west"})],
+        "engineers": [east, west],
+    })
+    reader, executor = Reader(task.model_dump_json().encode()), ControlledExecutor()
+    runtime = RouterRuntime(reader, graph, SearchSettings(time_limit_ms=100, solution_limit=4), executor=executor)
+    runtime.tick()
+    assert len(executor.tasks) == 1
+    executor.complete(0)
+    runtime.tick()
+    partial = runtime.read_result()
+    assert partial.status == "partial"
+    assert partial.main and partial.main.summary.assigned_count >= 1
+    assert [item.status for item in partial.regional_progress] == ["ready", "pending"]
+    assert len(executor.tasks) == 2
+    executor.complete(1)
+    runtime.tick()
+    assert runtime.read_result().status == "ready"
+    runtime.close()
+
+
 def test_context_change_rejects_inflight_result(tmp_path, snapshot, graph):
     executor = ControlledExecutor()
     runtime = RouterRuntime(
@@ -216,6 +242,8 @@ def test_technical_settings_persist_and_reload(tmp_path, snapshot, graph):
     old = runtime.context_version
     requested = RouterTechnicalSettings(
         lunches_enabled=True,
+        metro_enabled=True,
+        equipment_transfers_enabled=True,
         departure_lateness_tolerance_sec=90,
         task_start_lateness_tolerance_sec=45,
         travel_time_mode="fixed_normative",
@@ -394,3 +422,24 @@ def test_covering_comparison_does_not_leak_extra_crews_into_other_policies(snaps
         for name, row in rows.items()
         if name != "covering"
     )
+
+
+def test_snapshot_read_failure_is_visible_before_any_solve(graph):
+    runtime = RouterRuntime(Reader(None), graph, executor=ControlledExecutor())
+    runtime.tick()
+    result = runtime.read_result()
+    assert result.status == "error"
+    assert result.errors[0].code == "SNAPSHOT_READ_FAILED"
+    runtime.close()
+
+
+def test_snapshot_read_failure_keeps_an_inflight_solve(graph):
+    runtime = RouterRuntime(Reader(None), graph, executor=ControlledExecutor())
+    runtime._future = Future()
+    runtime._active_generation = runtime._generation
+    generation = runtime._generation
+    runtime.tick()
+    assert runtime._future is not None and not runtime._future.done()
+    assert runtime._generation == generation
+    assert runtime.read_result().status == "pending"
+    runtime.close()

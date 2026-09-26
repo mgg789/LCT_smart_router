@@ -6,7 +6,7 @@ from core.engine import SearchSettings, solve
 from core.evidence import build_plan_evidence
 from core.geo import GraphTravel, configure_travel
 from core.route_search import RouteEvaluator
-from core.schedule import baseline, schedule_steps, score, validate_plan
+from core.schedule import baseline, eligible, schedule_steps, score, validate_plan
 
 SETTINGS = SearchSettings(
     time_limit_ms=1200,
@@ -18,6 +18,16 @@ SETTINGS = SearchSettings(
 
 def test_default_completion_window_grace_is_ten_minutes():
     assert SearchSettings().window_lateness_tolerance_sec == 600
+
+
+def test_legacy_transit_and_walk_are_assignment_compatible(snapshot, graph):
+    """Raw core snapshots accept either persisted pedestrian alias without API rewriting."""
+    engineer = snapshot.engineers[0].model_copy(update={"transport_type": "transit"})
+    request = snapshot.requests[0].model_copy(update={"required_transport": "walk"})
+    task = snapshot.model_copy(update={"engineers": [engineer], "requests": [request]})
+    assert eligible(task, engineer, request)
+    output = solve(task, GraphTravel(graph), SearchSettings(time_limit_ms=200, solution_limit=4))
+    assert output.main.assignments[0].status == "assigned"
 
 
 def changed(snapshot, edit):

@@ -9,6 +9,7 @@ import {
 } from '../../src/orchestrator/settings/dispatcher-settings';
 import {
   autocompleteQuery,
+  hitFromReverse,
   hitsFromAutocomplete,
 } from '../../src/orchestrator/settings/geocoding-policy';
 
@@ -69,5 +70,16 @@ describe('LocationIQ autocomplete query', () => {
     assert.equal(hits.length, 1);
     assert.equal(hits[0]?.displayName, 'проспект Маршала Жукова, 78 к4, Москва');
     assert.equal(hits[0]?.lat, 55.777);
+  });
+
+  it('reads one reverse object the same way as an autocomplete row', () => {
+    const hit = hitFromReverse({
+      lat: '55.716',
+      lon: '37.761',
+      display_name: 'Рязанский проспект, 10, Москва',
+    });
+    assert.equal(hit?.displayName, 'Рязанский проспект, 10, Москва');
+    assert.equal(hit?.lon, 37.761);
+    assert.equal(hitFromReverse({ display_name: 'без точки' }), null);
   });
 });

@@ -35,11 +35,12 @@ from core.traffic_engine import (
 _FALLBACK_ROAD_FACTOR = 1.25
 _FALLBACK_SPEED_KMH: dict[Transport, float] = {
     "car": 28.0,
-    "walk": 5.0,
+    "walk": 6.0,
     "bike": 15.0,
-    "transit": 22.0,
+    # Legacy transit has no timetable/graph semantics.  It is a pedestrian
+    # profile until an enabled offline metro network wins the comparison.
+    "transit": 6.0,
 }
-_FALLBACK_TRANSIT_ACCESS_SEC = 480
 
 
 def content_hash(payload: bytes) -> str:
@@ -121,6 +122,17 @@ class TravelQuote:
     provenance: TravelProvenance
     traffic_factor: float = 1.0
     geometry_exact: bool = False
+    segments: tuple["TravelSegment", ...] = ()
+
+
+@dataclass(frozen=True)
+class TravelSegment:
+    """Immutable provenance-preserving portion of a composite travel quote."""
+
+    points: tuple[GeoPoint, ...]
+    provenance: TravelProvenance
+    duration_sec: int
+    distance_m: int
 
 
 class TravelSource(Protocol):
@@ -137,6 +149,29 @@ class TravelSource(Protocol):
 
 class TravelUnavailable(ValueError):
     """Provider failure with a safe diagnostic code, distinct from a proven NoRoute."""
+
+
+class StraightTravel:
+    """Construction quote: a straight line between the two points.
+
+    A solve must not call OSRM or the MKAD road API. Metro still wraps this
+    provider. Exact polylines are drawn later, one plan edge at a time.
+    """
+
+    version = "straight-v1"
+
+    def quote(
+        self, origin: GeoPoint, destination: GeoPoint, profile: Transport
+    ) -> TravelQuote | None:
+        """Duration from haversine distance and the disclosed fallback speed."""
+        distance = math.ceil(haversine_m(origin, destination) * _FALLBACK_ROAD_FACTOR)
+        if distance == 0:
+            return TravelQuote(0, 0, (origin, destination), "approximate")
+        duration = max(
+            1,
+            math.ceil(distance / (_FALLBACK_SPEED_KMH[profile] * 1000 / 3600)),
+        )
+        return TravelQuote(duration, distance, (origin, destination), "approximate")
 
 
 def quote_at(
@@ -165,6 +200,7 @@ class TechnicalTravel:
             "travel_time_mode": settings.travel_time_mode,
             "access_buffer_sec": settings.access_buffer_sec,
             "fixed_travel_time_sec": settings.fixed_travel_time_sec,
+            "metro_enabled": settings.metro_enabled,
         }
         self.version = content_hash(
             json.dumps(timing, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -205,6 +241,24 @@ class TechnicalTravel:
             if self.settings.travel_time_mode == "graph_with_access_buffer"
             else 1.0
         )
+        segments = quote.segments
+        if self.settings.travel_time_mode == "fixed_normative":
+            segments = (
+                TravelSegment(
+                    quote.points, "approximate", duration_sec, quote.distance_m
+                ),
+            )
+        elif segments and self.settings.access_buffer_sec:
+            first = segments[0]
+            segments = (
+                TravelSegment(
+                    first.points,
+                    first.provenance,
+                    first.duration_sec + self.settings.access_buffer_sec,
+                    first.distance_m,
+                ),
+                *segments[1:],
+            )
         return TravelQuote(
             duration_sec,
             quote.distance_m,
@@ -212,6 +266,7 @@ class TechnicalTravel:
             provenance,
             traffic_factor,
             quote.geometry_exact if provenance != "approximate" else False,
+            segments,
         )
 
 
@@ -221,33 +276,132 @@ def configure_travel(
     planning_as_of: int | None = None,
 ) -> TechnicalTravel:
     """Return one timing and optional planning-time-traffic context for all paths."""
+    from core.weather import WeatherTravel, weather_kind, weather_multiplier
+
     if isinstance(travel, TechnicalTravel) and travel.settings == settings:
         configured_base = travel.travel
-        if planning_as_of is None or (
-            isinstance(configured_base, ForecastTrafficTravel)
-            and configured_base.planning_as_of == planning_as_of
+        weather_layer = configured_base if isinstance(configured_base, WeatherTravel) else None
+        if (
+            weather_layer is not None
+            and weather_layer.multiplier == weather_multiplier()
+            and weather_layer.kind == weather_kind()
+            and (
+                planning_as_of is None
+                or (
+                    isinstance(weather_layer.travel, ForecastTrafficTravel)
+                    and weather_layer.travel.planning_as_of == planning_as_of
+                )
+                or (
+                    not settings.traffic_enabled
+                    and not isinstance(weather_layer.travel, ForecastTrafficTravel)
+                )
+            )
         ):
             return travel
     if isinstance(travel, TechnicalTravel):
+        travel = travel.travel
+    if isinstance(travel, WeatherTravel):
+        travel = travel.travel
+    from core.metro import MetroTravel
+
+    if isinstance(travel, MetroTravel):
+        travel = travel.travel
+    if isinstance(travel, ProfilePolicyTravel):
         travel = travel.travel
     if planning_as_of is not None and settings.traffic_enabled:
         travel = configure_forecast_traffic(travel, planning_as_of)
     elif not settings.traffic_enabled and isinstance(travel, ForecastTrafficTravel):
         travel = travel.travel
+    travel = ProfilePolicyTravel(travel)
+    from core.weather import weather_kind
+
+    kind = weather_kind()
+    if settings.metro_enabled:
+        from core.metro import configured_metro_travel
+
+        travel = configured_metro_travel(travel, shelter=kind == "storm")
+    from core.weather import WeatherTravel
+
+    travel = WeatherTravel(travel, kind=kind)
     return TechnicalTravel(travel, settings)
+
+
+class ProfilePolicyTravel:
+    """Apply mode invariants at one common boundary for graph, overlay and traffic quotes."""
+
+    def __init__(self, travel: TravelSource):
+        self.travel = travel
+        self.version = content_hash(
+            json.dumps({"base_version": travel.version, "profile_policy": "micro-v1"}, sort_keys=True).encode()
+        )
+
+    def quote(self, origin: GeoPoint, destination: GeoPoint, profile: Transport) -> TravelQuote | None:
+        """Use static quotes while enforcing cross-provider mode ordering."""
+        return self._apply(origin, destination, profile, None)
+
+    def quote_at(
+        self, origin: GeoPoint, destination: GeoPoint, profile: Transport, departure_at: int
+    ) -> TravelQuote | None:
+        """Apply the same profile ordering to departure-aware traffic quotes."""
+        return self._apply(origin, destination, profile, departure_at)
+
+    def _apply(
+        self, origin: GeoPoint, destination: GeoPoint, profile: Transport, departure_at: int | None
+    ) -> TravelQuote | None:
+        effective_profile = "walk" if profile == "transit" else profile
+        if profile == "car" and haversine_m(origin, destination) <= 300:
+            # Do not ask a paid car provider for a micro-leg: the walking quote is
+            # the authoritative product cost for both profiles at this distance.
+            return self.travel.quote(origin, destination, "walk") if departure_at is None else quote_at(
+                self.travel, origin, destination, "walk", departure_at
+            )
+        quote = self.travel.quote(origin, destination, effective_profile) if departure_at is None else quote_at(
+            self.travel, origin, destination, effective_profile, departure_at
+        )
+        if profile != "bike":
+            return quote
+        walking = self.travel.quote(origin, destination, "walk") if departure_at is None else quote_at(
+            self.travel, origin, destination, "walk", departure_at
+        )
+        if walking is None or walking.distance_m == 0:
+            return quote
+        if profile == "bike" and quote is not None and quote.distance_m > 0:
+            return TravelQuote(
+                duration_sec=min(quote.duration_sec, max(1, walking.duration_sec - 1)),
+                distance_m=quote.distance_m,
+                points=quote.points,
+                provenance=quote.provenance,
+                traffic_factor=quote.traffic_factor,
+                geometry_exact=quote.geometry_exact,
+                segments=quote.segments,
+            )
+        return quote
 
 
 def routing_context_version(travel: TravelSource, settings: RouterTechnicalSettings) -> str:
     """Return stable routing-data identity, excluding the planning-time proxy band."""
-    while isinstance(travel, TechnicalTravel):
+    from core.metro import MetroTravel
+    from core.weather import WeatherTravel, weather_kind, weather_multiplier
+
+    while isinstance(
+        travel,
+        (TechnicalTravel, ForecastTrafficTravel, MetroTravel, ProfilePolicyTravel, WeatherTravel),
+    ):
         travel = travel.travel
-    while isinstance(travel, ForecastTrafficTravel):
-        travel = travel.travel
+    travel = ProfilePolicyTravel(travel)
+    if settings.metro_enabled:
+        from core.metro import configured_metro_travel
+
+        travel = configured_metro_travel(travel)
     context = {
         "base_version": travel.version,
         "forecast_version": _FORECAST_TRAFFIC_VERSION,
+        "weather_multiplier": weather_multiplier(),
+        "weather_kind": weather_kind(),
         "traffic_enabled": settings.traffic_enabled,
         "equipment_enabled": settings.equipment_enabled,
+        "equipment_transfers_enabled": settings.equipment_transfers_enabled,
+        "metro_enabled": settings.metro_enabled,
         "window_lateness_tolerance_sec": settings.window_lateness_tolerance_sec,
         "travel_time_mode": settings.travel_time_mode,
         "access_buffer_sec": settings.access_buffer_sec,
@@ -294,6 +448,22 @@ class GraphTravel:
         candidate = self.nearest(point, 0.001)
         return candidate[0] if candidate else None
 
+    @staticmethod
+    def _edge_duration(edge: GraphEdge, profile: Transport) -> int | None:
+        """Apply product micro-edge policy before every Dijkstra consumer sees costs."""
+        effective = "walk" if profile == "transit" else profile
+        duration = edge.duration_sec.get(effective)
+        if duration is None:
+            return None
+        walking = edge.duration_sec.get("walk")
+        if edge.distance_m and edge.distance_m <= 300 and walking is not None:
+            if profile == "car":
+                return walking
+            if profile == "bike":
+                # A non-zero bicycle edge must remain observably quicker than walking.
+                return min(duration, max(1, walking - 1))
+        return duration
+
     def quote(
         self, origin: GeoPoint, destination: GeoPoint, profile: Transport
     ) -> TravelQuote | None:
@@ -307,8 +477,6 @@ class GraphTravel:
                 1,
                 math.ceil(distance / (_FALLBACK_SPEED_KMH[profile] * 1000 / 3600)),
             )
-            if profile == "transit":
-                duration += _FALLBACK_TRANSIT_ACCESS_SEC
             return TravelQuote(
                 duration,
                 distance,
@@ -317,6 +485,9 @@ class GraphTravel:
             )
         if source == target:
             return TravelQuote(0, 0, (origin, destination), self.provenance)
+        # The historical ``transit`` value remains a pedestrian profile unless
+        # MetroTravel is explicitly installed by a technical setting.
+        profile = "walk" if profile == "transit" else profile
         key = (source, profile)
         if key not in self._trees:
             distances = {source: (0, 0)}
@@ -327,9 +498,10 @@ class GraphTravel:
                 if distances[node] != (seconds, metres):
                     continue
                 for edge in self.adjacency[node]:
-                    if profile not in edge.duration_sec:
+                    duration = self._edge_duration(edge, profile)
+                    if duration is None:
                         continue
-                    cost = (seconds + edge.duration_sec[profile], metres + edge.distance_m)
+                    cost = (seconds + duration, metres + edge.distance_m)
                     if edge.target not in distances or cost < distances[edge.target]:
                         distances[edge.target] = cost
                         previous[edge.target] = edge
@@ -397,10 +569,26 @@ class MixedTravel:
         self.provenance: TravelProvenance = getattr(overlay, "provenance", "route_api")
         self._warned_profiles: set[Transport] = set()
 
+    def quote_at(
+        self,
+        origin: GeoPoint,
+        destination: GeoPoint,
+        profile: Transport,
+        departure_at: int,
+    ) -> TravelQuote | None:
+        """Pass the departure clock through to a live road API when it replaces the graph."""
+        return self._quote(origin, destination, profile, departure_at)
+
     def _needs_overlay(
-        self, origin: GeoPoint, destination: GeoPoint, quote: TravelQuote | None
+        self, origin: GeoPoint, destination: GeoPoint, quote: TravelQuote | None, profile: Transport
     ) -> bool:
         """Upgrade centroid, approximate and missing graph legs when a better source exists."""
+        if (
+            profile == "car"
+            and getattr(self.overlay, "replaces_car_graph", False)
+            and (quote is None or quote.distance_m > 0)
+        ):
+            return True
         if quote is None or quote.provenance == "approximate":
             return True
         graph = getattr(self.travel, "graph", None)
@@ -416,13 +604,31 @@ class MixedTravel:
         self, origin: GeoPoint, destination: GeoPoint, profile: Transport
     ) -> TravelQuote | None:
         """Prefer exact road-graph costs; overlay only the legs that are not road-quality."""
-        base = self.travel.quote(origin, destination, profile)
+        return self._quote(origin, destination, profile, None)
+
+    def _quote(
+        self,
+        origin: GeoPoint,
+        destination: GeoPoint,
+        profile: Transport,
+        departure_at: int | None,
+    ) -> TravelQuote | None:
+        """Quote the base graph, then a live overlay when this leg is not already road-quality."""
+        base = (
+            self.travel.quote(origin, destination, profile)
+            if departure_at is None
+            else quote_at(self.travel, origin, destination, profile, departure_at)
+        )
         if (base is not None and base.distance_m == 0) or not self._needs_overlay(
-            origin, destination, base
+            origin, destination, base, profile
         ):
             return base
         try:
-            return self.overlay.quote(origin, destination, profile)
+            return (
+                self.overlay.quote(origin, destination, profile)
+                if departure_at is None
+                else quote_at(self.overlay, origin, destination, profile, departure_at)
+            )
         except TravelUnavailable as exc:
             if profile not in self._warned_profiles:
                 logging.getLogger(__name__).warning(

@@ -123,6 +123,11 @@ pnpm --filter web build
 `apps/web/src/demo/generated/recorded.json`. Golden-файлы Router не меняются. Метрики и причины
 не редактируются вручную ради более эффектного демо.
 
+В каждой строке записанного сравнения обязательны `lateAssignedCount`, `totalLatenessSec`,
+`minWindowSlackSec`, `workloadSpreadSec` и `maxWorkloadSec`. Клиент не подставляет нули для
+устаревшей строки без этих полей: такой ответ не проходит контракт и не показывается как
+достоверное сравнение.
+
 ## Приёмка и оставшиеся границы
 
 `resilience.test.ts` проверяет срок сессии, повреждённый кеш, запрет записи,
