@@ -49,6 +49,13 @@ export function PolicyComparisonOverview({ rows }: { rows: readonly PolicyCompar
     return value === null ? [] : [value];
   });
   const bestCost = costValues.length ? Math.min(...costValues) : null;
+  const lateValues = policies.flatMap((row) => {
+    const value = comparisonValue(row, 'lateShare');
+    return value === null ? [] : [value];
+  });
+  const bestLateShare = lateValues.length ? Math.min(...lateValues) : null;
+  const engineerValues = policies.map((row) => row.metrics.engineersUsed);
+  const bestEngineerCount = engineerValues.length ? Math.min(...engineerValues) : null;
   const fingerprints = new Set(policies.map((row) => JSON.stringify(row.metrics)));
   return (
     <div className="space-y-[24px]">
@@ -79,6 +86,20 @@ export function PolicyComparisonOverview({ rows }: { rows: readonly PolicyCompar
           title="Минимум дороги на заявку"
           value={bestCost === null ? '—' : `${number.format(bestCost)} км`}
           note={`${percentVsFifo(bestCost, fifo ? comparisonValue(fifo, 'kmPerJob') : null) ?? '—'} к FIFO · на назначение`}
+        />
+        <Insight
+          title="Меньше опозданий"
+          value={bestLateShare === null ? '—' : `${number.format(bestLateShare)}%`}
+          note={`${percentVsFifo(bestLateShare, fifo ? comparisonValue(fifo, 'lateShare') : null) ?? '—'} к FIFO · доля назначений`}
+        />
+        <Insight
+          title="Меньше инженеров"
+          value={bestEngineerCount === null ? '—' : String(bestEngineerCount)}
+          note={
+            bestEngineerCount !== null && fifo
+              ? `${signed(bestEngineerCount - fifo.metrics.engineersUsed)} к FIFO · основной состав`
+              : 'Нужен пригодный расчёт'
+          }
         />
       </div>
       <p className="text-[15px] leading-[22px] text-figma-muted">

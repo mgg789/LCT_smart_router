@@ -27,8 +27,8 @@ const NOTIF_PANEL_LEFT = 1407,
   HEADER_AVATAR_LEFT = 1800,
   HEADER_AVATAR_TOP = 12;
 const METRICS_BUTTON_WIDTH = 232,
-  METRICS_BUTTON_LEFT = 1030,
-  ADD_BUTTON_LEFT = 963,
+  METRICS_BUTTON_LEFT = 1081,
+  ADD_BUTTON_LEFT = 1014,
   ADD_BUTTON_TOP = 10,
   ADD_BUTTON_SIZE = 51;
 
@@ -191,10 +191,12 @@ export function NotificationControl({
 export function UserMenu({
   open,
   covered,
+  hasPreviousPlan,
   motionOn,
   demoStand,
   onToggle,
   onSettings,
+  onOpenPreviousPlan,
   onEndDay,
   onRestartDay,
   onReset,
@@ -202,10 +204,12 @@ export function UserMenu({
 }: {
   open: boolean;
   covered: boolean;
+  hasPreviousPlan: boolean;
   motionOn: boolean;
   demoStand: boolean;
   onToggle: () => void;
   onSettings: () => void;
+  onOpenPreviousPlan: () => void;
   onEndDay: () => void;
   onRestartDay: () => void;
   onReset: () => void;
@@ -256,6 +260,11 @@ export function UserMenu({
               <MenuAction motionOn={motionOn} tone="ink" onClick={onSettings}>
                 Настройки
               </MenuAction>
+              {hasPreviousPlan ? (
+                <MenuAction motionOn={motionOn} tone="bee" onClick={onOpenPreviousPlan}>
+                  Прошлый план
+                </MenuAction>
+              ) : null}
             </div>
             <div className="mx-auto my-[8px] h-px w-[40px] bg-figma-ink/20" />
             <div className="flex flex-col gap-[8px]">

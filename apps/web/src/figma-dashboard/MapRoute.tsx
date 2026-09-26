@@ -13,6 +13,7 @@ import {
   truncateEnd,
 } from './fixtures';
 import { PlanHistoryMap } from './PlanHistoryMap';
+import type { PlanHistorySelection } from './PlanHistorySelector';
 import { FigmaText } from './primitives';
 import { RegionSwitch } from './RegionSwitch';
 import { routeProgressMarker } from './routeProgress';
@@ -29,9 +30,8 @@ const fadeSoft = { duration: 0.28, ease: [0.22, 1, 0.36, 1] as const };
 export function MapCard({
   snapshot,
   previousPlan,
-  canRestore,
-  restoreBusy,
-  onRestore,
+  historyOpen,
+  historySelection,
   selectedEngineerId,
   selectedRequestId,
   progressByEngineer,
@@ -50,9 +50,8 @@ export function MapCard({
 }: {
   snapshot: ReturnType<typeof useDashboard>['snapshot'];
   previousPlan: ReturnType<typeof useDashboard>['previousPlan'];
-  canRestore: boolean;
-  restoreBusy: boolean;
-  onRestore: () => void;
+  historyOpen: boolean;
+  historySelection: PlanHistorySelection;
   selectedEngineerId: string | null;
   selectedRequestId: string | null;
   progressByEngineer: NonNullable<Parameters<typeof DayMap>[0]['progressByEngineer']>;
@@ -80,9 +79,8 @@ export function MapCard({
         {snapshot ? (
           <PlanHistoryMap
             previous={previousPlan}
-            canRestore={canRestore}
-            busy={restoreBusy}
-            onRestore={onRestore}
+            historyOpen={historyOpen}
+            historySelection={historySelection}
             snapshot={snapshot}
             selectedEngineerId={selectedEngineerId}
             selectedRequestId={selectedRequestId}
