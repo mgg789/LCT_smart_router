@@ -3,7 +3,9 @@ import { z } from 'zod';
 import { SysError } from '../common/errors';
 import { Clock } from '../common/time';
 import type { NotificationCategory, Prisma } from '../generated/prisma/client';
+import { businessNow } from '../orchestrator/live/business-clock';
 import { moscowMonth, moscowMonthBounds } from '../orchestrator/passports/passport-policy';
+import { buildPerformanceAnalytics } from '../orchestrator/performance/analytics';
 import { PrismaService, type Tx, UnitOfWork } from '../persistence';
 import { type MonthlyReportData, monthlyReportSchema } from './monthly-report.types';
 import { NotificationsService } from './notifications.service';
@@ -125,6 +127,11 @@ export class MonthlyReportsService {
     provisional: boolean,
   ): Promise<MonthlyReportData> {
     const [start, end] = moscowMonthBounds(Date.parse(`${month}-15T12:00:00+03:00`) / 1000);
+    // A running accelerated LIVE day must not make tomorrow's logical facts visible in a
+    // provisional month. A frozen month always covers its complete civil interval.
+    const factualEnd = provisional
+      ? Math.min(end, (await businessNow(db as Tx, generatedAt)) + 1)
+      : end;
     const rewards = await db.engineerReward.findMany({
       where: { awardedAt: { gte: BigInt(start), lt: BigInt(end) } },
       include: { engineer: { select: { id: true, displayName: true } } },
@@ -132,7 +139,7 @@ export class MonthlyReportsService {
     });
     const facts = await db.requestFact.findMany({
       where: {
-        recordedAt: { gte: BigInt(start), lt: BigInt(end) },
+        occurredAt: { gte: BigInt(start), lt: BigInt(factualEnd) },
         kind: { in: ['started', 'finished'] },
       },
       select: {
@@ -143,7 +150,7 @@ export class MonthlyReportsService {
         occurredAt: true,
         recordedAt: true,
       },
-      orderBy: [{ recordedAt: 'asc' }, { occurredAt: 'asc' }],
+      orderBy: [{ occurredAt: 'asc' }, { recordedAt: 'asc' }],
     });
     const cancelledRows = await db.request.findMany({
       where: { cancelledAt: { gte: BigInt(start), lt: BigInt(end) } },
@@ -155,7 +162,7 @@ export class MonthlyReportsService {
     });
     const workdayEngineers = await db.engineerDay.findMany({
       where: { workDate: { startsWith: `${month}-` } },
-      select: { engineerId: true },
+      select: { engineerId: true, workDate: true, shiftStartAt: true, shiftEndAt: true },
     });
     const allEngineers = await db.engineer.findMany({
       where: { createdAt: { lt: BigInt(end) } },
@@ -200,6 +207,7 @@ export class MonthlyReportsService {
     const completionByRequest = new Set<string>();
     const started = new Map<string, { engineerId: string; at: number }>();
     const completedEngineer = new Map<string, string>();
+    const finishedAt = new Map<string, number>();
     for (const fact of facts) {
       if (!fact.engineerId) continue;
       if (fact.kind === 'started')
@@ -207,12 +215,20 @@ export class MonthlyReportsService {
       if (fact.kind === 'finished' && !completionByRequest.has(fact.requestId)) {
         completionByRequest.add(fact.requestId);
         completedEngineer.set(fact.requestId, fact.engineerId);
+        finishedAt.set(fact.requestId, Number(fact.occurredAt));
         const current = ensure(fact.engineerId);
         current.completed += 1;
         byEngineer.set(fact.engineerId, current);
       }
     }
     const completedRequestIds = [...completionByRequest];
+    const analyticsCompletions: Array<{
+      requestId: string;
+      engineerId: string;
+      finishedAt: number;
+      durationMinutes: number | null;
+      acceptedFinishAt: number | null;
+    }> = [];
     if (completedRequestIds.length > 0) {
       const earlierStarts = await db.requestFact.findMany({
         where: { requestId: { in: completedRequestIds }, kind: 'started' },
@@ -223,16 +239,61 @@ export class MonthlyReportsService {
         if (fact.engineerId && !started.has(fact.requestId))
           started.set(fact.requestId, { engineerId: fact.engineerId, at: Number(fact.occurredAt) });
       }
+      const promiseRows = await db.liveRequestState.findMany({
+        where: { requestId: { in: completedRequestIds }, promisedFinishBaselineAt: { not: null } },
+        select: {
+          requestId: true,
+          promisedFinishBaselineAt: true,
+          workday: { select: { workDate: true } },
+        },
+      });
+      const acceptedFinish = new Map(
+        promiseRows.map((row) => [
+          `${row.requestId}:${row.workday.workDate}`,
+          Number(row.promisedFinishBaselineAt),
+        ]),
+      );
+      const planStops = await db.appliedPlanStop.findMany({
+        where: { requestId: { in: completedRequestIds }, kind: 'job' },
+        select: {
+          requestId: true,
+          endAt: true,
+          route: { select: { engineerId: true, plan: { select: { appliedAt: true } } } },
+        },
+      });
       for (const requestId of completedRequestIds) {
         const engineerId = completedEngineer.get(requestId);
         const begin = started.get(requestId);
-        if (!engineerId || !begin || begin.engineerId !== engineerId) continue;
-        const completionFact = facts.find(
-          (fact) => fact.requestId === requestId && fact.kind === 'finished',
-        );
-        if (!completionFact || Number(completionFact.occurredAt) <= begin.at) continue;
+        if (!engineerId) continue;
+        const finish = finishedAt.get(requestId);
+        const durationMinutes =
+          begin && begin.engineerId === engineerId && finish !== undefined && finish > begin.at
+            ? Math.round((finish - begin.at) / 60)
+            : null;
+        const fallback = planStops
+          .filter(
+            (stop) =>
+              stop.requestId === requestId &&
+              stop.route.engineerId === engineerId &&
+              Number(stop.route.plan.appliedAt) <= (begin?.at ?? finish ?? 0),
+          )
+          .sort(
+            (left, right) => Number(right.route.plan.appliedAt) - Number(left.route.plan.appliedAt),
+          )[0];
+        analyticsCompletions.push({
+          requestId,
+          engineerId,
+          finishedAt: finish ?? 0,
+          durationMinutes,
+          acceptedFinishAt:
+            finish === undefined
+              ? null
+              : (acceptedFinish.get(`${requestId}:${moscowDate(finish)}`) ??
+                (fallback ? Number(fallback.endAt) : null)),
+        });
+        if (durationMinutes === null) continue;
         const current = ensure(engineerId);
-        current.workMinutes += Math.round((Number(completionFact.occurredAt) - begin.at) / 60);
+        current.workMinutes += durationMinutes;
         byEngineer.set(engineerId, current);
       }
     }
@@ -286,6 +347,32 @@ export class MonthlyReportsService {
         ...facts.map((row) => Number(row.recordedAt)),
         ...days.map((row) => row.capturedAt),
       ].sort((a, b) => a - b)[0] ?? null;
+    const elapsedWorkdays = workdayEngineers.filter(
+      (day) => day.workDate <= moscowDate(factualEnd - 1),
+    );
+    const analytics = buildPerformanceAnalytics(
+      elapsedWorkdays.map((day) => ({
+        engineerId: day.engineerId,
+        name: names.get(day.engineerId) ?? null,
+        shiftMinutes: Math.max(
+          0,
+          Math.round((Number(day.shiftEndAt) - Number(day.shiftStartAt)) / 60),
+        ),
+      })),
+      analyticsCompletions,
+    );
+    const completedByDate = new Map<string, number>(
+      elapsedWorkdays.map((day) => [day.workDate, 0]),
+    );
+    for (const requestId of completedRequestIds) {
+      const finish = finishedAt.get(requestId);
+      if (finish === undefined) continue;
+      const workDate = moscowDate(finish);
+      completedByDate.set(workDate, (completedByDate.get(workDate) ?? 0) + 1);
+    }
+    const dailySeries = [...completedByDate.entries()]
+      .map(([workDate, completed]) => ({ workDate, completed }))
+      .sort((left, right) => left.workDate.localeCompare(right.workDate));
     return {
       version: 1,
       month,
@@ -311,9 +398,21 @@ export class MonthlyReportsService {
         alertsResolved: day.alerts.resolved,
         alertsTotal: day.alerts.significantTotal,
       })),
+      analytics: { ...analytics, dailySeries },
       notes,
     };
   }
+}
+
+function moscowDate(timestamp: number): string {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Moscow',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date(timestamp * 1000));
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
 }
 
 /** Validates a civil Moscow month and rejects future months. */

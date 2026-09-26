@@ -1,4 +1,30 @@
 import { z } from 'zod';
+import type { PerformanceAnalytics } from '../orchestrator/performance/types';
+
+const engineerAnalyticsSchema = z.object({
+  engineerId: z.string().nullable(),
+  name: z.string().nullable(),
+  recordedWorkdays: z.number().int(),
+  completed: z.number().int(),
+  completedPerRecordedWorkday: z.number().nullable(),
+  measuredDuration: z.object({
+    averageMinutes: z.number().nullable(),
+    sampleCount: z.number().int(),
+  }),
+  punctualCompletion: z.object({
+    count: z.number().int(),
+    sampleCount: z.number().int(),
+    rate: z.number().nullable(),
+    averageLatenessMinutes: z.number().nullable(),
+    baseline: z.literal('accepted_finish_at'),
+  }),
+  utilization: z.object({
+    recordedWorkMinutes: z.number().int(),
+    scheduledMinutes: z.number().int(),
+    rate: z.number().nullable(),
+    coverage: z.literal('partial_confirmed_execution'),
+  }),
+});
 
 /** Validates durable snapshots before rendering or attaching them to mail. */
 export const monthlyReportSchema = z.object({
@@ -45,6 +71,13 @@ export const monthlyReportSchema = z.object({
       alertsTotal: z.number(),
     }),
   ),
+  analytics: z
+    .object({
+      team: engineerAnalyticsSchema,
+      engineers: z.array(engineerAnalyticsSchema),
+      dailySeries: z.array(z.object({ workDate: z.string(), completed: z.number().int() })),
+    })
+    .optional(),
   notes: z.array(z.string()),
 });
 
@@ -89,5 +122,9 @@ export interface MonthlyReportData {
     readonly alertsResolved: number;
     readonly alertsTotal: number;
   }[];
+  /** Absent on version-1 snapshots frozen before factual engineer analytics existed. */
+  readonly analytics?: PerformanceAnalytics & {
+    readonly dailySeries: readonly { readonly workDate: string; readonly completed: number }[];
+  };
   readonly notes: readonly string[];
 }

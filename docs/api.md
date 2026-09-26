@@ -1275,7 +1275,10 @@ dispatch-маршруты. Read-only: свежая проекция фактов
 создаёт ровно одну запись `-50`; автоматических отрицательных начислений нет.
 
 Контракты оценки дня (`/dispatch/performance/day`, `/engineer/performance/day`) и
-месячного PDF (`/dispatch/reports/monthly/YYYY-MM`) описаны в [performance.md](./performance.md).
+месячного PDF (`/dispatch/reports/monthly/YYYY-MM`, JSON: `/data`) описаны в
+[performance.md](./performance.md). Их аддитивный `analytics` использует только подтверждённые
+факты исполнения и записанные смены: поле отсутствует у старых frozen v1 snapshots; измерения
+без фактической базы возвращаются как `null` с отдельным `sampleCount`.
 
 ### Метро и транспортные профили
 

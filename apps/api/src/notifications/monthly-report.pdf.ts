@@ -170,6 +170,68 @@ export async function renderMonthlyReport(report: MonthlyReportData): Promise<Bu
   if (report.engineers.length === 0)
     text('За этот период нет инженеров для сравнения.', 42, y, 12, MUTED);
 
+  if (report.analytics) {
+    next('Подтверждённая выработка', 'Факты исполнения / покрытие смен');
+    const team = report.analytics.team;
+    text(
+      `Смен с записью: ${fmt(team.recordedWorkdays)}   ·   Завершений на смену: ${team.completedPerRecordedWorkday === null ? '—' : fmt(team.completedPerRecordedWorkday)}   ·   Подтверждённые минуты: ${fmt(team.utilization.recordedWorkMinutes)}`,
+      42,
+      155,
+      11,
+      MUTED,
+    );
+    text(
+      `Средняя длительность: ${team.measuredDuration.averageMinutes === null ? '—' : `${fmt(team.measuredDuration.averageMinutes)} мин`} (${fmt(team.measuredDuration.sampleCount)} измерений)\nПунктуально: ${team.punctualCompletion.rate === null ? '—' : `${fmt(team.punctualCompletion.rate * 100)}%`} (${fmt(team.punctualCompletion.sampleCount)} измерений)\nСредняя задержка: ${team.punctualCompletion.averageLatenessMinutes === null ? '—' : `${fmt(team.punctualCompletion.averageLatenessMinutes)} мин`}. База — сохранённый срок завершения.`,
+      42,
+      202,
+      12,
+    );
+    text('Зелёный — завершено вовремя, красный — позже сохранённого срока.', 42, 290, 9, MUTED);
+    y = 335;
+    for (const row of report.analytics.engineers) {
+      if (y > 650) {
+        next('Подтверждённая выработка', 'Продолжение');
+        y = 175;
+      }
+      doc.roundedRect(42, y, width, 100, 10).fill('#FFFFFF');
+      text(row.name ?? 'Инженер', 56, y + 12, 11, INK, true, 190);
+      text(
+        `${fmt(row.completed)} заверш. · ${row.measuredDuration.averageMinutes === null ? '—' : `${fmt(row.measuredDuration.averageMinutes)} мин`} · ${row.punctualCompletion.rate === null ? '—' : `${fmt(row.punctualCompletion.rate * 100)}% вовремя`}`,
+        252,
+        y + 13,
+        10,
+        INK,
+        false,
+        300,
+      );
+      text(
+        `Подтверждено ${fmt(row.utilization.recordedWorkMinutes)} из ${fmt(row.utilization.scheduledMinutes)} мин смены; покрытие частичное.`,
+        56,
+        y + 36,
+        9,
+        MUTED,
+        false,
+        width - 28,
+      );
+      text(
+        `За смену: ${row.completedPerRecordedWorkday === null ? '—' : fmt(row.completedPerRecordedWorkday)} · Средняя задержка: ${row.punctualCompletion.averageLatenessMinutes === null ? '—' : `${fmt(row.punctualCompletion.averageLatenessMinutes)} мин`} · Измерений срока: ${row.punctualCompletion.sampleCount}`,
+        56,
+        y + 54,
+        9,
+        MUTED,
+        false,
+        width - 28,
+      );
+      const measured = row.punctualCompletion.sampleCount;
+      if (measured > 0) {
+        const onTimeWidth = ((width - 28) * row.punctualCompletion.count) / measured;
+        doc.roundedRect(56, y + 80, width - 28, 6, 3).fill('#E23B3B');
+        if (onTimeWidth > 0) doc.roundedRect(56, y + 80, onTimeWidth, 6, 3).fill('#0A7347');
+      }
+      y += 110;
+    }
+  }
+
   next('Качество управления', 'Диспетчер / итоги дней');
   text(
     '70% — обработка значимых алертов. 30% — выбор политики по сопоставимым измеренным результатам. Отсутствующие измерения отмечены явно.',

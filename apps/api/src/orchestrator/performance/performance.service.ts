@@ -6,12 +6,14 @@ import { Clock } from '../../common/time';
 import { Prisma } from '../../generated/prisma/client';
 import { PrismaService, type Tx } from '../../persistence';
 import { businessNow } from '../live/business-clock';
+import { buildPerformanceAnalytics } from './analytics';
 import { combineScore, scoreAlertProcessing, scorePolicyChoice } from './scoring';
 import type {
   AlertAttribution,
   AlertGroupMetric,
   EngineerPerformanceMetric,
   EngineerPerformanceResponse,
+  PerformanceAnalytics,
   PerformanceDaySnapshot,
   PolicyComparisonEvidence,
 } from './types';
@@ -87,6 +89,50 @@ const policyEvidenceSchema = z.object({
   savedAt: z.number().int(),
 });
 
+const engineerAnalyticsSchema = z.object({
+  engineerId: z.string().nullable(),
+  name: z.string().nullable(),
+  recordedWorkdays: z.number().int(),
+  completed: z.number().int(),
+  completedPerRecordedWorkday: z.number().nullable(),
+  measuredDuration: z.object({
+    averageMinutes: z.number().nullable(),
+    sampleCount: z.number().int(),
+  }),
+  punctualCompletion: z.object({
+    count: z.number().int(),
+    sampleCount: z.number().int(),
+    rate: z.number().nullable(),
+    averageLatenessMinutes: z.number().nullable(),
+    baseline: z.literal('accepted_finish_at'),
+  }),
+  utilization: z.object({
+    recordedWorkMinutes: z.number().int(),
+    scheduledMinutes: z.number().int(),
+    rate: z.number().nullable(),
+    coverage: z.literal('partial_confirmed_execution'),
+  }),
+});
+const analyticsSchema = z.object({
+  team: engineerAnalyticsSchema,
+  engineers: z.array(engineerAnalyticsSchema),
+});
+const nextDaySchema = z.object({
+  workDate: z.string(),
+  openRequestCount: z.number().int(),
+  overdueOpenCount: z.number().int(),
+  requests: z.array(
+    z.object({
+      requestId: z.string(),
+      arrivalOrder: z.number().int(),
+      addressText: z.string(),
+      windowStartAt: z.number().int(),
+      windowEndAt: z.number().int(),
+      priority: z.string(),
+    }),
+  ),
+});
+
 const snapshotSchema = z.object({
   version: z.literal(1),
   workdayId: z.string(),
@@ -109,6 +155,8 @@ const snapshotSchema = z.object({
       workMinutes: z.number().int(),
     }),
   ),
+  analytics: analyticsSchema.optional(),
+  nextDay: nextDaySchema.nullable().optional(),
   alerts: z.object({
     significantTotal: z.number().int(),
     resolved: z.number().int(),
@@ -194,11 +242,14 @@ export class PerformanceService {
   /** Exposes only the authenticated engineer's metrics; team evidence stays dispatcher-only. */
   async engineerDay(workdayId: string, engineerId: string): Promise<EngineerPerformanceResponse> {
     const performance = await this.day(workdayId);
+    const analytics =
+      performance.analytics?.engineers.find((item) => item.engineerId === engineerId) ?? null;
     return {
       workdayId: performance.workdayId,
       workDate: performance.workDate,
       closedAt: performance.closedAt,
       engineer: performance.engineers.find((item) => item.engineerId === engineerId) ?? null,
+      ...(performance.analytics ? { analytics } : {}),
     };
   }
 
@@ -232,7 +283,12 @@ export class PerformanceService {
     const end = Number(workday.logicalEndAt);
     const states = await db.liveRequestState.findMany({
       where: { workdayId },
-      select: { requestId: true, assumedCompletedAt: true, reservedEngineerId: true },
+      select: {
+        requestId: true,
+        assumedCompletedAt: true,
+        reservedEngineerId: true,
+        promisedFinishBaselineAt: true,
+      },
     });
     const stateByRequest = new Map(states.map((state) => [state.requestId, state]));
     const requestIds = [...stateByRequest.keys()];
@@ -256,7 +312,7 @@ export class PerformanceService {
     });
     const days = await db.engineerDay.findMany({
       where: { workDate: workday.workDate },
-      select: { engineerId: true },
+      select: { engineerId: true, shiftStartAt: true, shiftEndAt: true },
     });
     const engineerIds = new Set(days.map((day) => day.engineerId));
     for (const fact of facts) if (fact.engineerId) engineerIds.add(fact.engineerId);
@@ -275,6 +331,10 @@ export class PerformanceService {
     }
     const engineerForRequest = new Map<string, string>();
     const started = new Map<string, { engineerId: string; at: number }>();
+    const completedFacts = new Map<
+      string,
+      { engineerId: string; at: number; durationMinutes: number | null }
+    >();
     for (const fact of facts) {
       if (!fact.engineerId) continue;
       engineerForRequest.set(fact.requestId, fact.engineerId);
@@ -282,13 +342,23 @@ export class PerformanceService {
         started.set(fact.requestId, { engineerId: fact.engineerId, at: Number(fact.occurredAt) });
       if (fact.kind === 'finished') {
         const begin = started.get(fact.requestId);
-        if (begin && Number(fact.occurredAt) > begin.at) {
+        const durationMinutes =
+          begin && begin.engineerId === fact.engineerId && Number(fact.occurredAt) > begin.at
+            ? Math.round((Number(fact.occurredAt) - begin.at) / 60)
+            : null;
+        const firstFinish = !completedFacts.has(fact.requestId);
+        if (firstFinish)
+          completedFacts.set(fact.requestId, {
+            engineerId: fact.engineerId,
+            at: Number(fact.occurredAt),
+            durationMinutes,
+          });
+        if (firstFinish && durationMinutes !== null && begin) {
           const metric = metricByEngineer.get(begin.engineerId);
           if (metric)
             metricByEngineer.set(begin.engineerId, {
               ...metric,
-              workMinutes:
-                metric.workMinutes + Math.round((Number(fact.occurredAt) - begin.at) / 60),
+              workMinutes: metric.workMinutes + durationMinutes,
             });
         }
       }
@@ -426,6 +496,91 @@ export class PerformanceService {
     const policyChoice = scorePolicyChoice(evidence, selection?.policyId ?? null);
     const alertProcessing = scoreAlertProcessing(attributionValues, significantIds);
     const score = combineScore(alertProcessing, policyChoice);
+    const names = new Map(
+      (
+        await db.engineer.findMany({
+          where: { id: { in: [...engineerIds] } },
+          select: { id: true, displayName: true },
+        })
+      ).map((engineer) => [engineer.id, engineer.displayName]),
+    );
+    const completedRequestIds = [...completedFacts.keys()];
+    const planStops =
+      completedRequestIds.length === 0
+        ? []
+        : await db.appliedPlanStop.findMany({
+            where: { requestId: { in: completedRequestIds }, kind: 'job' },
+            select: {
+              requestId: true,
+              endAt: true,
+              route: { select: { engineerId: true, plan: { select: { appliedAt: true } } } },
+            },
+          });
+    const analytics: PerformanceAnalytics = buildPerformanceAnalytics(
+      days.map((day) => ({
+        engineerId: day.engineerId,
+        name: names.get(day.engineerId) ?? null,
+        shiftMinutes: Math.max(
+          0,
+          Math.round((Number(day.shiftEndAt) - Number(day.shiftStartAt)) / 60),
+        ),
+      })),
+      [...completedFacts.entries()].map(([requestId, fact]) => ({
+        requestId,
+        engineerId: fact.engineerId,
+        finishedAt: fact.at,
+        durationMinutes: fact.durationMinutes,
+        acceptedFinishAt:
+          Number(stateByRequest.get(requestId)?.promisedFinishBaselineAt ?? 0) ||
+          latestAcceptedPlanFinish(
+            planStops,
+            requestId,
+            fact.engineerId,
+            started.get(requestId)?.at ?? fact.at,
+          ),
+      })),
+    );
+    const nextDate = nextWorkDate(workday.workDate);
+    const nextStart = Date.parse(`${nextDate}T00:00:00+03:00`) / 1000;
+    const openWhere: Prisma.RequestWhereInput = {
+      lifecycle: { in: ['submitted', 'in_progress'] },
+      windowStartAt: { gte: BigInt(nextStart), lt: BigInt(nextStart + 86_400) },
+    };
+    const [openRequestCount, overdueOpenCount, nextRequests] = await Promise.all([
+      db.request.count({ where: openWhere }),
+      db.request.count({
+        where: {
+          lifecycle: { in: ['submitted', 'in_progress'] },
+          windowEndAt: { lt: BigInt(capturedAt) },
+        },
+      }),
+      db.request.findMany({
+        where: openWhere,
+        select: {
+          id: true,
+          arrivalOrder: true,
+          addressText: true,
+          windowStartAt: true,
+          windowEndAt: true,
+          priority: true,
+        },
+        orderBy: [{ windowStartAt: 'asc' }, { arrivalOrder: 'asc' }],
+        take: 12,
+      }),
+    ]);
+    const nextDay = {
+      workDate: nextDate,
+      openRequestCount,
+      overdueOpenCount,
+      requests: nextRequests.map((request) => ({
+        requestId: request.id,
+        arrivalOrder: request.arrivalOrder,
+        addressText: request.addressText,
+        windowStartAt: Number(request.windowStartAt),
+        windowEndAt: Number(request.windowEndAt),
+        priority: request.priority,
+      })),
+    };
     return {
       version: 1,
       workdayId,
@@ -438,6 +593,8 @@ export class PerformanceService {
       engineers: [...metricByEngineer.values()].sort((left, right) =>
         left.engineerId.localeCompare(right.engineerId),
       ),
+      analytics,
+      nextDay,
       alerts: {
         significantTotal: significant.length,
         resolved: resolvedIds.size,
@@ -459,4 +616,34 @@ export class PerformanceService {
   static rosterHash(engineerIds: readonly string[]): string {
     return canonicalHash([...engineerIds].sort());
   }
+}
+
+function nextWorkDate(workDate: string): string {
+  const next = new Date(`${workDate}T12:00:00+03:00`);
+  next.setUTCDate(next.getUTCDate() + 1);
+  return next.toISOString().slice(0, 10);
+}
+
+/** Uses only a revision accepted before execution; later replans cannot rewrite history. */
+function latestAcceptedPlanFinish(
+  stops: readonly {
+    requestId: string | null;
+    endAt: bigint;
+    route: { engineerId: string; plan: { appliedAt: bigint } };
+  }[],
+  requestId: string,
+  engineerId: string,
+  beforeAt: number,
+): number | null {
+  const row = stops
+    .filter(
+      (stop) =>
+        stop.requestId === requestId &&
+        stop.route.engineerId === engineerId &&
+        Number(stop.route.plan.appliedAt) <= beforeAt,
+    )
+    .sort(
+      (left, right) => Number(right.route.plan.appliedAt) - Number(left.route.plan.appliedAt),
+    )[0];
+  return row ? Number(row.endAt) : null;
 }
