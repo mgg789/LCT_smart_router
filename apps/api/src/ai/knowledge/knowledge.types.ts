@@ -51,6 +51,10 @@ export interface KnowledgeSearchHit {
   readonly body: string;
   readonly segment: AiKnowledgeSegment;
   readonly actions: string[];
+  /** Curated source identity and content version, absent only for legacy search ports. */
+  readonly sourcePath?: string;
+  readonly updatedAt?: number;
+  readonly checksum?: string;
 }
 
 /** Result of one `indexKnowledge` pass, logged by the caller. */
