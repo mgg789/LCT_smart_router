@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { engineerGreeting, ENGINEER_QUICK_QUESTIONS } from './EngineerAiPane';
+import { ENGINEER_QUICK_QUESTIONS, engineerGreeting } from './EngineerAiPane';
 
 it('greets the engineer by their first name and stays unnamed otherwise', () => {
   expect(engineerGreeting('Анна Петрова')).toBe('Анна, с чего начнем сегодня?');

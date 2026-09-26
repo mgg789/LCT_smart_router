@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
+import type { AiOperationService } from '../../src/ai/operations';
 import { buildEngineerTools } from '../../src/ai/tools/engineer.tools';
 import type { ToolContext } from '../../src/ai/tools/tool.types';
+import type { Actor } from '../../src/auth';
 import type { AppConfigService } from '../../src/common/config';
-import type { AiOperationService } from '../../src/ai/operations';
 import type { LiveService } from '../../src/orchestrator/live/live.service';
 import type { PassportsService } from '../../src/orchestrator/passports/passports.service';
-import type { Actor } from '../../src/auth';
 
 const engineerActor = { id: 'account-1', roles: ['engineer'] } as unknown as Actor;
 
@@ -122,7 +122,10 @@ describe('get_my_visit_context', () => {
 
     await tool.run(context('engineer-session'), { requestId: 'assigned-request' });
     assert.deepEqual(reads, [['engineer-session', 'assigned-request']]);
-    assert.equal(tool.schema.safeParse({ requestId: 'assigned-request', engineerId: 'other' }).success, false);
+    assert.equal(
+      tool.schema.safeParse({ requestId: 'assigned-request', engineerId: 'other' }).success,
+      false,
+    );
   });
 
   it('does not query the passport service if no visit is available', async () => {
@@ -145,10 +148,15 @@ describe('get_my_visit_context', () => {
   });
 
   it('rejects access if no engineer is bound to the signed-in session', async () => {
-    const passports = { engineerRead: async () => ({ passport: null, canFill: false }) } as unknown as PassportsService;
+    const passports = {
+      engineerRead: async () => ({ passport: null, canFill: false }),
+    } as unknown as PassportsService;
     const live = { engineerView: async () => liveView(null) } as unknown as LiveService;
     const tool = visitContextTool(live, passports);
     assert.ok(tool);
-    await assert.rejects(() => tool.run(context(null), { requestId: 'assigned-request' }), /signed-in engineer/);
+    await assert.rejects(
+      () => tool.run(context(null), { requestId: 'assigned-request' }),
+      /signed-in engineer/,
+    );
   });
 });

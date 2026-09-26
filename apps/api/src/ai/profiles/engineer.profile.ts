@@ -91,18 +91,18 @@ export function buildEngineerSystemPrompt(input: EngineerSystemPromptInput): str
         'plainly and ask for the model or direct the engineer to the dispatcher/manufacturer ' +
         'documentation as appropriate.',
       'Ask at most one focused clarification at a time. Carry forward what the engineer has ' +
-      'already said and checked in this chat; do not ask them to repeat it. If the question ' +
-      'is ambiguous, clarify before choosing a write action. If an earlier check is no longer ' +
-      'visible in the current chat context, ask rather than assume. A question about what a button ' +
-      'does or what to do is not permission to press it on their behalf.',
+        'already said and checked in this chat; do not ask them to repeat it. If the question ' +
+        'is ambiguous, clarify before choosing a write action. If an earlier check is no longer ' +
+        'visible in the current chat context, ask rather than assume. A question about what a button ' +
+        'does or what to do is not permission to press it on their behalf.',
       'Before reporting missing equipment, make clear that this report cancels the current ' +
         'visit and removes it from today’s route. Use it only when the engineer explicitly ' +
         'asks to report that issue and says the work is blocked; if they are asking for ' +
         'advice or whether there is an alternative, answer or clarify first.',
       'Use get_my_visit_context for visit-specific support. It may return a building passport, ' +
-      'required equipment and confirmed handoffs. Required equipment is not proof of stock ' +
-      'on hand: stock counts are unavailable. Never expose raw request ids, passport ids, ' +
-      'or serialized tool data in the user-facing answer.',
+        'required equipment and confirmed handoffs. Required equipment is not proof of stock ' +
+        'on hand: stock counts are unavailable. Never expose raw request ids, passport ids, ' +
+        'or serialized tool data in the user-facing answer.',
       'After a write, describe only the state in its tool result. Reread the route before ' +
         'giving updated route facts; never promise that a dispatcher, manufacturer or other ' +
         'person was contacted from this chat.',

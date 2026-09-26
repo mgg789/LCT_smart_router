@@ -406,7 +406,7 @@ function Composer({
 }) {
   useEffect(() => {
     if (fieldRef.current) fitComposerField(fieldRef.current);
-  }, []);
+  }, [fieldRef]);
   return (
     <form onSubmit={onSubmit} className="pointer-events-auto w-full max-w-[813px]">
       {notice || status ? (

@@ -4,7 +4,6 @@ import remarkGfm from 'remark-gfm';
 
 const ASSISTANT_QUESTION_PREFIX = '#assistant-question=';
 const MAX_FOLLOW_UP_LENGTH = 500;
-const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/;
 const DANGEROUS_SCHEME = /^\s*(?:javascript|data|vbscript|file):/i;
 
 /** Decodes only the assistant-question hash produced by the API, rejecting unsafe or malformed values. */
@@ -18,7 +17,10 @@ export function parseAssistantFollowUp(href: string | undefined): string | null 
     if (
       question.length === 0 ||
       question.length > MAX_FOLLOW_UP_LENGTH ||
-      CONTROL_CHARACTERS.test(question) ||
+      Array.from(question).some((character) => {
+        const code = character.charCodeAt(0);
+        return code < 32 || (code >= 127 && code <= 159);
+      }) ||
       DANGEROUS_SCHEME.test(question) ||
       encodeURIComponent(question) !== encoded
     ) {

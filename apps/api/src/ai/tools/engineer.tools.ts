@@ -51,10 +51,12 @@ const changeStatusSchema = z.object({
 });
 type ChangeStatusArgs = z.infer<typeof changeStatusSchema>;
 
-const visitContextSchema = z.object({
-  /** Optional request the service must authorize as currently assigned to this engineer. */
-  requestId: z.string().trim().min(1).optional(),
-}).strict();
+const visitContextSchema = z
+  .object({
+    /** Optional request the service must authorize as currently assigned to this engineer. */
+    requestId: z.string().trim().min(1).optional(),
+  })
+  .strict();
 type VisitContextArgs = z.infer<typeof visitContextSchema>;
 
 /** The engineer's nearest current visit, resolved from the trusted session -- never a
@@ -456,16 +458,15 @@ export function buildEngineerTools(deps: EngineerToolDeps): readonly ToolSpec[] 
       const engineerId = requireEngineerId(ctx);
       const view = await deps.live.engineerView(engineerId);
       const requestId = args.requestId ?? view.current?.request.id;
-      const passport = requestId
-        ? await deps.passports.engineerRead(engineerId, requestId)
-        : null;
+      const passport = requestId ? await deps.passports.engineerRead(engineerId, requestId) : null;
       return {
         ok: true,
         summary: requestId ? 'Authorized visit context read' : 'No current visit',
         resultContent: JSON.stringify({
           ...visitContext(view, passport),
           selectedRequestId: requestId ?? null,
-          selectedRequestIsCurrent: requestId !== undefined && requestId === view.current?.request.id,
+          selectedRequestIsCurrent:
+            requestId !== undefined && requestId === view.current?.request.id,
         }),
       };
     },
