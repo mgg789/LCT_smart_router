@@ -80,9 +80,8 @@ export class LiveService {
   ) {}
 
   /**
-   * Fire-and-forget advance for request entry points. The rejection is contained here:
-   * on Node an unhandled rejection aborts the whole process, and this call runs on
-   * every dashboard and engineer poll.
+   * Fire-and-forget advance for paths that must not pay the latency. The rejection is
+   * contained here: on Node an unhandled rejection aborts the whole process.
    */
   private advanceInBackground(): void {
     this.advanceOnce().catch((error: unknown) => {
@@ -95,12 +94,13 @@ export class LiveService {
   /**
    * Dispatcher entry.
    *
-   * The clock and the demo reconcile keep running in the background. Waiting for
-   * them here put every dashboard poll behind the routing lock, and the browser
-   * then had no free connection left for login or icons.
+   * The advance is awaited so a read never observes the day before its automatic
+   * transitions (no-show sweep, overrun detection, end-of-shift finish) have applied:
+   * a fire-and-forget advance here made the dashboard show a pre-transition status
+   * for one poll. The demo reconcile stays fire-and-forget.
    */
   async dispatchView(): Promise<DispatchLiveView> {
-    this.advanceInBackground();
+    await this.advanceOnce();
     void this.demoStand.reconcile();
     return this.uow.observe(async (tx) => this.dispatchViewIn(tx, this.clock.nowSeconds()));
   }
@@ -139,9 +139,10 @@ export class LiveService {
     return this.dispatchViewIn(context.tx, context.now);
   }
 
-  /** Engineer entry. A session resolves its own subject in the controller. */
+  /** Engineer entry. A session resolves its own subject in the controller. The advance
+   *  is awaited for the same read-your-transitions guarantee as the dispatcher view. */
   async engineerView(engineerId: string): Promise<EngineerLiveView> {
-    this.advanceInBackground();
+    await this.advanceOnce();
     return this.uow.observe(async (tx) =>
       this.engineerViewIn(tx, engineerId, this.clock.nowSeconds()),
     );
