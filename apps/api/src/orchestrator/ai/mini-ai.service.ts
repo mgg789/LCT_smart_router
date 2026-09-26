@@ -281,16 +281,24 @@ export class MiniAiService {
     const uniqueOptions = [...new Set(options.map((item) => item.trim()).filter(Boolean))];
     if (uniqueOptions.length < 2) return uniqueOptions[0] ?? '';
     const base = this.jevBase();
-    const response = await fetch(`${base}/v1/choice`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/json' },
-      body: JSON.stringify({
-        state: state.slice(0, 6_000),
-        question,
-        options: uniqueOptions.slice(0, 12),
-      }),
-      signal: AbortSignal.timeout(20_000),
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${base}/v1/choice`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        body: JSON.stringify({
+          state: state.slice(0, 6_000),
+          question,
+          options: uniqueOptions.slice(0, 12),
+        }),
+        signal: AbortSignal.timeout(20_000),
+      });
+    } catch {
+      // No System one in this deployment (it runs on the operator's machine, not in
+      // compose): a 503 lets the client keep the locally parsed fields, per the
+      // documented degradation, instead of surfacing an internal error.
+      throw new SysError('SERVICE_NOT_CONFIGURED', 'System one недоступен.');
+    }
     if (!response.ok) {
       throw new SysError('SERVICE_NOT_CONFIGURED', 'System one не ответил.');
     }
