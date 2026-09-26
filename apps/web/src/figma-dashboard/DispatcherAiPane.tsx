@@ -3,7 +3,7 @@ import { Trash2 } from 'lucide-react';
 import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from 'react';
 import type { AiActionButton } from '../api/ai';
 import { AiOperationCard } from '../components/ai/AiOperationCard';
-import { fitComposerField } from '../components/ai/composerField';
+import { fitComposerField, focusComposer } from '../components/ai/composerField';
 import {
   type AiOperationView,
   type AiUnavailableReason,
@@ -382,7 +382,10 @@ function Composer({
           {notice ?? status}
         </p>
       ) : null}
-      <div className="flex min-h-[79px] items-center gap-[12px] rounded-[40px] bg-figma-ink px-[10px] py-[8px]">
+      <div
+        className="flex min-h-[79px] items-center gap-[12px] rounded-[40px] bg-figma-ink px-[10px] py-[8px]"
+        onMouseDown={(event) => focusComposer(event, fieldRef.current)}
+      >
         <span className="flex size-[60px] shrink-0 items-center justify-center rounded-full bg-figma-bee">
           <FigmaIcon src={FIGMA_ASSETS.iconSparkles} alt="" width={26} height={26} />
         </span>

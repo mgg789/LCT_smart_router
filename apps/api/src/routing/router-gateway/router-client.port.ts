@@ -155,6 +155,10 @@ export interface SimulationCounts {
   readonly late_assigned_count: number;
   readonly total_lateness_sec: number;
   readonly distance_km: number;
+  /** Crews that carry a job. Older stored rows omit this. */
+  readonly engineers_used?: number;
+  /** Reserve crews whose ids start with `covering-`. Not the named shift roster. */
+  readonly additional_engineers?: number;
 }
 
 export interface SimulationRouteSegment {

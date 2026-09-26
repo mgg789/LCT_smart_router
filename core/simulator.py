@@ -227,13 +227,34 @@ def _insert(
 def _metrics(plan: Plan) -> dict:
     """Numbers the store and the guard compare. Routes are separate."""
     summary = plan.summary
+    engineers_used, additional_engineers = _crew_counts(plan)
     return {
         "assigned_count": summary.requests_total - summary.unassigned_count,
         "unassigned_count": summary.unassigned_count,
         "late_assigned_count": summary.late_assigned_count,
         "total_lateness_sec": summary.total_lateness_sec,
         "distance_km": summary.distance_km,
+        "engineers_used": engineers_used,
+        "additional_engineers": additional_engineers,
     }
+
+
+def _crew_counts(plan: Plan) -> tuple[int, int]:
+    """Busy crews, and how many of them are reserve `covering-*` clones.
+
+    A lunch-only route is not a crew in work. Reserve clones are not the named
+    people on the shift: the tool text has to say so, or a model invents a headcount.
+    """
+    used = 0
+    extra = 0
+    for route in plan.routes:
+        busy = any(stop.kind == "job" and stop.request_id for stop in route.stops)
+        if not busy:
+            continue
+        used += 1
+        if route.engineer_id.startswith("covering-"):
+            extra += 1
+    return used, extra
 
 
 def _delta(base: Plan, candidate: Plan) -> dict:

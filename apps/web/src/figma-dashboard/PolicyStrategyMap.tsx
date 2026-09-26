@@ -25,22 +25,27 @@ export const STRATEGY_COLORS: Record<string, string> = {
   baseline: '#272930',
 };
 
-interface GraphFeature {
-  readonly properties: { readonly nodeId: string; readonly region: string };
-  readonly geometry: { readonly type: 'Point'; readonly coordinates: [number, number] };
+/** One request from today's set. The policy map draws these, not the road graph. */
+export interface DayRequestPoint {
+  readonly id: string;
+  readonly lat: number;
+  readonly lon: number;
+  readonly region: string;
 }
 
 /**
  * All simulated strategies on one full basemap inside the policy tab.
- * Graph dots follow the region chosen in the map corner. Each strategy can be hidden.
+ * Dots are today's requests. Each strategy can be hidden.
  */
 export function PolicyStrategyMap({
+  requests,
   strategies,
   regions,
   selectedRegion,
   engineerRegions,
   motionOn,
 }: {
+  requests: readonly DayRequestPoint[];
   strategies: SimulationResponse['strategies'];
   regions: { id: RegionSelection; label: string }[];
   selectedRegion: RegionSelection;
@@ -50,7 +55,8 @@ export function PolicyStrategyMap({
 }) {
   const host = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
-  const nodesRef = useRef<GraphFeature[]>([]);
+  const pointsRef = useRef<readonly DayRequestPoint[]>(requests);
+  pointsRef.current = requests;
   const strategiesRef = useRef(strategies);
   const engineerRegionsRef = useRef(engineerRegions);
   const fittedRegionRef = useRef<RegionSelection | null>(null);
@@ -81,47 +87,46 @@ export function PolicyStrategyMap({
     mapRef.current = map;
     const stopWatch = watchMapStartup(map, () => map.setStyle(localMapStyle()));
     const draw = () => {
-      if (map.getSource('graph-nodes')) return;
-      void fetch('/maps/graph-nodes.geojson')
-        .then((response) => response.json())
-        .then((payload: { features: GraphFeature[] }) => {
-          nodesRef.current = payload.features.filter((feature) => feature.geometry.type === 'Point');
-          map.addSource('graph-nodes', { type: 'geojson', data: payload });
-          map.addLayer({
-            id: 'graph-nodes',
-            type: 'circle',
-            source: 'graph-nodes',
-            filter: nodeFilter(regionRef.current),
-            paint: {
-              'circle-radius': ['interpolate', ['linear'], ['zoom'], 9, 1.5, 13, 3, 16, 4],
-              'circle-color': '#272930',
-            },
-          });
-          strategiesRef.current.forEach((strategy, index) => {
-            const sourceId = `strategy-${index}`;
-            map.addSource(sourceId, {
-              type: 'geojson',
-              data: lineCollection(strategy, regionRef.current, engineerRegionsRef.current),
-            });
-            map.addLayer({
-              id: sourceId,
-              type: 'line',
-              source: sourceId,
-              layout: {
-                'line-cap': 'round',
-                'line-join': 'round',
-                visibility: hiddenRef.current.has(strategy.strategyId) ? 'none' : 'visible',
-              },
-              paint: {
-                'line-color': STRATEGY_COLORS[strategy.strategyId] ?? '#272930',
-                'line-width': 3,
-                'line-opacity': 0.9,
-              },
-            });
-          });
-          fitRegionOnce(map, nodesRef.current, regionRef.current, fittedRegionRef);
-        })
-        .catch(() => undefined);
+      if (map.getSource('day-requests')) return;
+      map.addSource('day-requests', {
+        type: 'geojson',
+        data: requestCollection(pointsRef.current),
+      });
+      map.addLayer({
+        id: 'day-requests',
+        type: 'circle',
+        source: 'day-requests',
+        filter: nodeFilter(regionRef.current),
+        paint: {
+          'circle-radius': ['interpolate', ['linear'], ['zoom'], 9, 4, 13, 7, 16, 9],
+          'circle-color': '#272930',
+          'circle-stroke-width': 1.5,
+          'circle-stroke-color': '#ffffff',
+        },
+      });
+      strategiesRef.current.forEach((strategy, index) => {
+        const sourceId = `strategy-${index}`;
+        map.addSource(sourceId, {
+          type: 'geojson',
+          data: lineCollection(strategy, regionRef.current, engineerRegionsRef.current),
+        });
+        map.addLayer({
+          id: sourceId,
+          type: 'line',
+          source: sourceId,
+          layout: {
+            'line-cap': 'round',
+            'line-join': 'round',
+            visibility: hiddenRef.current.has(strategy.strategyId) ? 'none' : 'visible',
+          },
+          paint: {
+            'line-color': STRATEGY_COLORS[strategy.strategyId] ?? '#272930',
+            'line-width': 3,
+            'line-opacity': 0.9,
+          },
+        });
+      });
+      fitRegionOnce(map, pointsRef.current, regionRef.current, fittedRegionRef);
     };
     map.on('style.load', draw);
     if (map.isStyleLoaded()) draw();
@@ -137,16 +142,20 @@ export function PolicyStrategyMap({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map?.getLayer('graph-nodes')) return;
-    map.setFilter('graph-nodes', nodeFilter(region));
+    if (!map?.getLayer('day-requests')) return;
+    const points = map.getSource('day-requests');
+    if (points instanceof maplibregl.GeoJSONSource) {
+      points.setData(requestCollection(requests));
+    }
+    map.setFilter('day-requests', nodeFilter(region));
     strategies.forEach((strategy, index) => {
       const source = map.getSource(`strategy-${index}`);
       if (source instanceof maplibregl.GeoJSONSource) {
         source.setData(lineCollection(strategy, region, engineerRegions));
       }
     });
-    fitRegionOnce(map, nodesRef.current, region, fittedRegionRef);
-  }, [region, strategies, engineerRegions]);
+    fitRegionOnce(map, requests, region, fittedRegionRef);
+  }, [region, strategies, engineerRegions, requests]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -220,6 +229,20 @@ export function PolicyStrategyMap({
   );
 }
 
+function requestCollection(points: readonly DayRequestPoint[]) {
+  return {
+    type: 'FeatureCollection' as const,
+    features: points.map((point) => ({
+      type: 'Feature' as const,
+      properties: { nodeId: point.id, region: point.region },
+      geometry: {
+        type: 'Point' as const,
+        coordinates: [point.lon, point.lat] as [number, number],
+      },
+    })),
+  };
+}
+
 function nodeFilter(region: RegionSelection): maplibregl.FilterSpecification {
   if (region === ALL_REGIONS) return ['has', 'region'];
   return ['==', ['get', 'region'], region];
@@ -266,17 +289,16 @@ function lineCollection(
  */
 function fitRegionOnce(
   map: maplibregl.Map,
-  nodes: GraphFeature[],
+  points: readonly DayRequestPoint[],
   region: RegionSelection,
   fittedRegion: { current: RegionSelection | null },
 ): void {
   if (fittedRegion.current === region) return;
-  const points = nodes.filter((feature) => region === ALL_REGIONS || feature.properties.region === region);
-  if (points.length === 0) return;
+  const visible = points.filter((point) => region === ALL_REGIONS || point.region === region);
+  if (visible.length === 0) return;
   const bounds = new maplibregl.LngLatBounds();
-  for (const feature of points) {
-    const [lon, lat] = feature.geometry.coordinates;
-    bounds.extend([lon, lat]);
+  for (const point of visible) {
+    bounds.extend([point.lon, point.lat]);
   }
   if (bounds.isEmpty()) return;
   fittedRegion.current = region;

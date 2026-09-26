@@ -20,6 +20,9 @@ describe('mcp setup', () => {
     expect(markdown).toContain('"X-MCP-Pin": "AB2C-DE3F-GH4J-KM5N"');
     expect(markdown).toContain('Bearer AB2C-DE3F-GH4J-KM5N');
     expect(markdown).toContain('`get_plan_explanations`');
+    expect(markdown).toContain('`review_action`');
+    expect(markdown).toContain('`simulate_plan_change`');
+    expect(markdown).toContain('Риск');
     expect(markdown).toContain('claude mcp add');
     expect(markdown).not.toContain('undefined');
   });

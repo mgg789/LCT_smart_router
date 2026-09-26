@@ -27,6 +27,8 @@ def test_window_shift_keeps_the_snapshot_and_uses_insertion(snapshot):
     assert result["method"] == "insertion"
     assert result["patch_hash"] == patch_hash(patch)
     assert "delta" in result
+    assert "engineers_used" in result["delta"]["before"]
+    assert "additional_engineers" in result["delta"]["after"]
     assert snapshot.model_dump() == before
 
 

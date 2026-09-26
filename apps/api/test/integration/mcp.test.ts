@@ -176,6 +176,10 @@ describe('dashboard mcp server', () => {
       'ai_resolve_alert',
       'list_engineers',
       'select_policy',
+      'simulate_plan_change',
+      'review_action',
+      'get_router_controls',
+      'set_control_mode',
       'update_dispatcher_settings',
     ]) {
       assert.ok(names.includes(expected), `missing tool ${expected}`);

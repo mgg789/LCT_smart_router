@@ -447,7 +447,11 @@ export function computePlanDelta(
         Math.abs(previousStart - stop.startAt) >= WINDOW_SHIFT_SEC
       ) {
         shifted += 1;
-        lines.push({ requestId: stop.requestId, engineerName: null, text: 'Окно сдвинуто' });
+        lines.push({
+          requestId: stop.requestId,
+          engineerName: null,
+          text: `Окно ${moscowClock(previousStart)} → ${moscowClock(stop.startAt)}`,
+        });
       }
     }
   }
@@ -472,7 +476,44 @@ export function computePlanDelta(
 
   const slaBefore = countSlaRisks(before);
   const slaAfter = countSlaRisks(after);
-  return { transferred, shifted, slaBefore, slaAfter, solveMs, lines };
+  const beforeFacts = planFacts(before);
+  const afterFacts = planFacts(after);
+  return {
+    transferred,
+    shifted,
+    slaBefore,
+    slaAfter,
+    solveMs,
+    lines,
+    assignedBefore: beforeFacts.assigned,
+    assignedAfter: afterFacts.assigned,
+    distanceBeforeKm: roundKm(beforeFacts.distance),
+    distanceAfterKm: roundKm(afterFacts.distance),
+    engineersBefore: beforeFacts.engineers,
+    engineersAfter: afterFacts.engineers,
+  };
+}
+
+/** Jobs with an engineer, route distance and crews that actually carry work. */
+function planFacts(plan: PlanView): { assigned: number; distance: number; engineers: number } {
+  const assigned = plan.assignments.filter(
+    (item) => item.engineerId !== null && item.status !== 'unassigned',
+  ).length;
+  const distance = plan.routes.reduce((sum, route) => sum + route.distanceKm, 0);
+  const engineers = plan.routes.filter((route) => route.assignedCount > 0).length;
+  return { assigned, distance, engineers };
+}
+
+function roundKm(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+/** Moscow wall clock. Plan times are Unix seconds. */
+function moscowClock(unixSeconds: number): string {
+  const shifted = new Date((unixSeconds + 3 * 60 * 60) * 1000);
+  const hours = String(shifted.getUTCHours()).padStart(2, '0');
+  const minutes = String(shifted.getUTCMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
 }
 
 function crewName(id: string | null, names: ReadonlyMap<string, string>): string {

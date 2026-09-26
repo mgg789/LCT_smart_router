@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { fitComposerField } from '../components/ai/composerField';
+import { fitComposerField, focusComposer } from '../components/ai/composerField';
 import { AiMarkdown } from '../figma-dashboard/AiMarkdown';
 import { FIGMA_ASSETS } from '../figma-dashboard/assets';
 import { thoughtLabel } from '../figma-dashboard/DispatcherAiPane';
@@ -135,6 +135,7 @@ export function EngineerAiPane({
     >
       <div
         className="flex items-center bg-figma-ink"
+        onMouseDown={(event) => focusComposer(event, fieldRef.current)}
         style={{
           minHeight: eu(112),
           borderRadius: eu(56),

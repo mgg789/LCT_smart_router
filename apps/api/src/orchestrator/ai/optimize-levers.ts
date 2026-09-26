@@ -49,7 +49,18 @@ export function countsImprove(before: SimulationCounts, after: SimulationCounts)
 
 /** One Russian line of assigned, open, late and distance. */
 export function describeCounts(before: SimulationCounts, after: SimulationCounts): string {
-  return `назначено ${before.assigned_count}→${after.assigned_count}, без назначения ${before.unassigned_count}→${after.unassigned_count}, опоздания ${before.late_assigned_count}→${after.late_assigned_count}, пробег ${before.distance_km}→${after.distance_km} км`;
+  const base =
+    `назначено ${before.assigned_count}→${after.assigned_count}, ` +
+    `без назначения ${before.unassigned_count}→${after.unassigned_count}, ` +
+    `опоздания ${before.late_assigned_count}→${after.late_assigned_count}, ` +
+    `пробег ${before.distance_km}→${after.distance_km} км`;
+  if (before.engineers_used === undefined || after.engineers_used === undefined) return base;
+  const extraBefore = before.additional_engineers ?? 0;
+  const extraAfter = after.additional_engineers ?? 0;
+  return (
+    `${base}, инженеров в работе ${before.engineers_used}→${after.engineers_used}, ` +
+    `дополнительных экипажей ${extraBefore}→${extraAfter} (резерв covering, не люди со смены)`
+  );
 }
 
 /**

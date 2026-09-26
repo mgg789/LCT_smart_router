@@ -17,10 +17,17 @@ import {
   ControlStateService,
   RouterClient,
 } from '../../routing/router-gateway';
+import { ActionGuardService } from '../../ai/operations';
 import { AlertsService, type ResolveAlertInput } from '../alerts';
 import { LiveService } from '../live';
 import { PolicyService } from '../policy';
 import { DispatcherSettingsService } from '../settings';
+import {
+  rememberSimulation,
+  russianDelta,
+  toRouterPatch,
+  type SimulationPatchInput,
+} from '../simulator/simulation-store';
 import { McpService } from './mcp.service';
 import { ROUTING_PRINCIPLES } from './mcp-principles';
 import { type McpToolDefinition } from './mcp-protocol';
@@ -66,6 +73,105 @@ function defineTool<S extends z.ZodType>(
   };
 }
 
+const routerControlArgs = z
+  .object({
+    lunchesEnabled: z.boolean().optional(),
+    metroEnabled: z.boolean().optional(),
+    trafficEnabled: z.boolean().optional(),
+    equipmentEnabled: z.boolean().optional(),
+    equipmentTransfersEnabled: z.boolean().optional(),
+  })
+  .refine((value) => Object.values(value).some((item) => item !== undefined), {
+    message: 'Name at least one toggle',
+  });
+
+const whatIfArgs = z
+  .object({
+    catalog: z.boolean().optional(),
+    policyId: z.enum(['fast', 'compact', 'sla', 'balanced', 'eco', 'covering']).optional(),
+    lunchesEnabled: z.boolean().optional(),
+    metroEnabled: z.boolean().optional(),
+    trafficEnabled: z.boolean().optional(),
+    equipmentEnabled: z.boolean().optional(),
+    equipmentTransfersEnabled: z.boolean().optional(),
+    bringOnlineEngineerId: z.string().min(1).max(80).optional(),
+    window: z
+      .object({
+        requestId: z.string().min(1),
+        windowStartAt: unixSeconds,
+        windowEndAt: unixSeconds,
+      })
+      .optional(),
+    pin: z
+      .object({
+        requestId: z.string().min(1),
+        engineerId: z.string().min(1),
+      })
+      .optional(),
+    unassignRequestId: z.string().min(1).optional(),
+  })
+  .strict();
+
+const reviewArgs = whatIfArgs
+  .extend({
+    action: z.string().min(1).max(80),
+    context: z.string().min(1).max(2_000),
+  })
+  .strict();
+
+/** JSON Schema twin of {@link whatIfArgs}, without the review fields. */
+const whatIfInputSchema = {
+  type: 'object',
+  properties: {
+    catalog: { type: 'boolean', description: 'Compare every policy. Do not combine with other fields.' },
+    policyId: { type: 'string', enum: ['fast', 'compact', 'sla', 'balanced', 'eco', 'covering'] },
+    lunchesEnabled: { type: 'boolean' },
+    metroEnabled: { type: 'boolean' },
+    trafficEnabled: { type: 'boolean' },
+    equipmentEnabled: { type: 'boolean' },
+    equipmentTransfersEnabled: { type: 'boolean' },
+    bringOnlineEngineerId: {
+      type: 'string',
+      description: 'Offline engineer id. Available on the simulation copy only.',
+    },
+    window: {
+      type: 'object',
+      properties: {
+        requestId: { type: 'string' },
+        windowStartAt: { type: 'number' },
+        windowEndAt: { type: 'number' },
+      },
+      required: ['requestId', 'windowStartAt', 'windowEndAt'],
+    },
+    pin: {
+      type: 'object',
+      properties: {
+        requestId: { type: 'string' },
+        engineerId: { type: 'string' },
+      },
+      required: ['requestId', 'engineerId'],
+    },
+    unassignRequestId: { type: 'string' },
+  },
+  additionalProperties: false,
+} as const;
+
+function hasWhatIf(input: SimulationPatchInput): boolean {
+  return (
+    input.catalog === true ||
+    input.policyId !== undefined ||
+    input.lunchesEnabled !== undefined ||
+    input.metroEnabled !== undefined ||
+    input.trafficEnabled !== undefined ||
+    input.equipmentEnabled !== undefined ||
+    input.equipmentTransfersEnabled !== undefined ||
+    input.bringOnlineEngineerId !== undefined ||
+    input.window !== undefined ||
+    input.pin !== undefined ||
+    input.unassignRequestId !== undefined
+  );
+}
+
 const dispatcherSettingsPatchArgs = z
   .object({
     dayStartMin: z.number().int().min(0).max(1440).optional(),
@@ -99,6 +205,7 @@ export class McpToolsService {
     private readonly router: RouterClient,
     private readonly publisher: SnapshotPublisher,
     private readonly mcp: McpService,
+    private readonly guard: ActionGuardService,
   ) {}
 
   /** Tool catalogue for `tools/list`, in registration order. */
@@ -151,6 +258,9 @@ export class McpToolsService {
                 'доступность и смены инженеров',
                 'разбор алертов (вручную или через System one)',
                 'выбор политики и смена оперативных настроек',
+                'переключатели решателя: обеды, метро, пробки, оборудование',
+                'ручной и автоматический режим плана',
+                'проверка изменений в симуляторе без записи в план',
                 'старт рабочего дня и закрытие смены',
               ],
             },
@@ -725,7 +835,189 @@ export class McpToolsService {
           return outcome.result;
         },
       ),
+      defineTool(
+        {
+          name: 'get_router_controls',
+          title: 'Переключатели решателя',
+          description:
+            'Router toggles the day screen uses: lunches, metro, traffic, equipment and equipment ' +
+            'transfers, plus lateness tolerances. Read this before set_router_controls. ' +
+            'Map keys are never included.',
+          inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+        },
+        z.object({}),
+        async () => {
+          if (!this.router.isConfigured()) throw SysError.notConfigured('Router Core');
+          return this.router.getTechnicalSettings();
+        },
+      ),
+      defineTool(
+        {
+          name: 'set_router_controls',
+          title: 'Сменить переключатели решателя',
+          description:
+            'Flip one or more Router toggles and republish the plan. Omitted keys stay as they are. ' +
+            'Serious change: call simulate_plan_change with the same flags, then review_action. ' +
+            'If the verdict is risk, do not call this until the dispatcher accepts the likely risks. ' +
+            'Fields: lunchesEnabled, metroEnabled, trafficEnabled, equipmentEnabled, equipmentTransfersEnabled.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              lunchesEnabled: { type: 'boolean' },
+              metroEnabled: { type: 'boolean' },
+              trafficEnabled: { type: 'boolean' },
+              equipmentEnabled: { type: 'boolean' },
+              equipmentTransfersEnabled: { type: 'boolean' },
+            },
+            additionalProperties: false,
+          },
+        },
+        routerControlArgs,
+        async (args, actor) => {
+          if (!this.router.isConfigured()) throw SysError.notConfigured('Router Core');
+          const current = await this.router.getTechnicalSettings();
+          const operationId = randomUUID();
+          const requested = {
+            operationId,
+            expectedContextVersion: current.routerContextVersion,
+            lunchesEnabled: args.lunchesEnabled ?? current.lunchesEnabled,
+            departureLatenessToleranceSec: current.departureLatenessToleranceSec,
+            taskStartLatenessToleranceSec: current.taskStartLatenessToleranceSec,
+            windowLatenessToleranceSec: current.windowLatenessToleranceSec,
+            trafficEnabled: args.trafficEnabled ?? current.trafficEnabled,
+            metroEnabled: args.metroEnabled ?? current.metroEnabled,
+            equipmentTransfersEnabled:
+              args.equipmentTransfersEnabled ?? current.equipmentTransfersEnabled,
+            equipmentEnabled: args.equipmentEnabled ?? current.equipmentEnabled,
+            travelTimeMode: current.travelTimeMode,
+            accessBufferSec: current.accessBufferSec,
+            fixedTravelTimeSec: current.fixedTravelTimeSec,
+            earlyFinishReplanThresholdSec: current.earlyFinishReplanThresholdSec,
+            taskOverrunToleranceSec: current.taskOverrunToleranceSec,
+          };
+          const outcome = await this.operations.executeExternal(
+            {
+              operationId,
+              actor,
+              action: 'router.technical-settings.replace',
+              targetRef: 'router-core',
+              expectedVersion: null,
+              payload: requested,
+            },
+            () => this.router.updateTechnicalSettings(requested),
+          );
+          return outcome.result;
+        },
+      ),
+      defineTool(
+        {
+          name: 'set_control_mode',
+          title: 'Ручной или автоматический план',
+          description:
+            'manual freezes automatic replanning (emergency). auto returns the plan to the solver. ' +
+            'Call review_action first. If the verdict is risk, wait for the dispatcher.',
+          inputSchema: {
+            type: 'object',
+            properties: { mode: { type: 'string', enum: ['auto', 'manual'] } },
+            required: ['mode'],
+            additionalProperties: false,
+          },
+        },
+        z.object({ mode: z.enum(['auto', 'manual']) }),
+        async (args, actor) => {
+          const operationId = randomUUID();
+          const outcome = await this.operations.execute(
+            {
+              operationId,
+              actor,
+              action: `control.${args.mode}`,
+              payload: { operationId, mode: args.mode },
+            },
+            async (context) =>
+              args.mode === 'manual'
+                ? this.control.enterManual(context)
+                : this.control.returnToAuto(context),
+          );
+          return { control: outcome.result };
+        },
+      ),
+      defineTool(
+        {
+          name: 'simulate_plan_change',
+          title: 'Проверить изменение в симуляторе',
+          description:
+            'Read-only what-if. Same levers as the dashboard simulator and the optimize button: ' +
+            'catalog (all policies at once), one policyId (fast, compact, sla, balanced, eco, covering), ' +
+            'settings toggles, bringOnlineEngineerId (one offline engineer becomes available on the copy only), ' +
+            'one window, one pin, or one unassignRequestId. Do not mix a window or pin with a policy. ' +
+            'The Russian text includes assigned, unassigned, lateness, distance, transfers, engineers in work, ' +
+            'and additional covering crews. A covering crew is a reserve clone, not a named person on the shift. ' +
+            'Policy covering raises coverage first and may add those crews; it does not promise every request ' +
+            'is assigned. Quote the numbers. Do not invent a headcount. Does not change the live plan.',
+          inputSchema: whatIfInputSchema,
+        },
+        whatIfArgs,
+        async (args) => this.previewChange(args),
+      ),
+      defineTool(
+        {
+          name: 'review_action',
+          title: 'Вердикт по действию',
+          description:
+            'Self-check before a serious write. Send the action name, a short context, and the same ' +
+            'what-if fields you would pass to simulate_plan_change. The tool compares before and after ' +
+            'in the simulator, then asks the same guard the platform agent uses. ' +
+            'Returns verdict allowed (Разрешено) or risk (Риск). It does not apply the action. ' +
+            'Use it for policy changes, router toggles, bringing an engineer online, manual mode, ' +
+            'closing a shift, and alert resolutions that move work. ' +
+            'If the verdict is risk, do not apply the action until the dispatcher accepts the likely risks.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              ...whatIfInputSchema.properties,
+              action: { type: 'string', description: 'Intended write, for example policy.select' },
+              context: {
+                type: 'string',
+                description: 'Why this change, in one or two sentences',
+              },
+            },
+            required: ['action', 'context'],
+            additionalProperties: false,
+          },
+        },
+        reviewArgs,
+        async (args) => {
+          const delta = hasWhatIf(args) ? (await this.previewChange(args)).text : 'Симуляция не запускалась: в аргументах нет рычага.';
+          const verdict = await this.guard.review(args.action, args.context, delta);
+          return {
+            verdict,
+            label: verdict === 'allowed' ? 'Разрешено' : 'Риск',
+            delta,
+            guidance:
+              verdict === 'risk'
+                ? 'Не применяй действие, пока диспетчер не примет вероятные риски.'
+                : 'Обычное изменение. Можно применять.',
+          };
+        },
+      ),
     ];
+  }
+
+  /**
+   * Runs one simulator patch and stores the delta for the platform guard.
+   * The live plan is not touched.
+   */
+  private async previewChange(input: SimulationPatchInput) {
+    if (!this.router.isConfigured()) throw SysError.notConfigured('Router Core');
+    const patch = toRouterPatch(input);
+    const result = await this.router.simulate(patch);
+    if (result.delta) await rememberSimulation(this.prisma, patch, result);
+    return {
+      text: russianDelta(patch, result),
+      transfers: result.delta?.transfers ?? 0,
+      before: result.delta?.before ?? null,
+      after: result.delta?.after ?? null,
+    };
   }
 
   /** Cached forecast with the traffic multiplier; degrades to "no forecast" offline. */

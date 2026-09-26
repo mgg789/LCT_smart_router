@@ -475,6 +475,15 @@ export interface PlanDelta {
   readonly slaAfter: number;
   readonly solveMs: number;
   readonly lines: PlanDeltaLine[];
+  /** Assigned jobs before and after. Absent on deltas recorded before this field existed. */
+  readonly assignedBefore?: number;
+  readonly assignedAfter?: number;
+  /** Sum of route distance, kilometres, one decimal. */
+  readonly distanceBeforeKm?: number;
+  readonly distanceAfterKm?: number;
+  /** Routes that actually carry a job. */
+  readonly engineersBefore?: number;
+  readonly engineersAfter?: number;
 }
 
 export interface PolicyComparisonMetrics {

@@ -514,6 +514,10 @@ export function MainDashboardPage() {
         setSettingsOpen(false);
         return;
       }
+      if (metricsOpen) {
+        setMetricsOpen(false);
+        return;
+      }
       if (uploadOpen) {
         if (!dash.uploadingData) setUploadOpen(false);
         return;
@@ -551,6 +555,7 @@ export function MainDashboardPage() {
     addOpen,
     dangerAction,
     dash,
+    metricsOpen,
     notifOpen,
     policyOpen,
     regionOpen,

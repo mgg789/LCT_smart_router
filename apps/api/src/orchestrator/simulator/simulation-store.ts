@@ -121,7 +121,26 @@ export function russianDelta(patch: RouterSimulationPatch, result: RouterSimulat
   const open = `без назначения было ${delta.before.unassigned_count}, станет ${delta.after.unassigned_count}`;
   const distance = `пробег ${delta.before.distance_km} → ${delta.after.distance_km} км`;
   const moves = `переносов ${delta.transfers}`;
-  return `${patchLead(patch)}. ${late}; ${open}; ${distance}; ${moves}. Рабочий план не изменён.`;
+  const crews = crewLine(delta.before, delta.after);
+  return `${patchLead(patch)}. ${late}; ${open}; ${distance}; ${moves}${crews}. Рабочий план не изменён.`;
+}
+
+/**
+ * Headcount the model must quote. Reserve crews are clones, not the named shift.
+ * A missing pair means an older stored row: say nothing rather than invent a number.
+ */
+function crewLine(
+  before: { engineers_used?: number; additional_engineers?: number },
+  after: { engineers_used?: number; additional_engineers?: number },
+): string {
+  if (before.engineers_used === undefined || after.engineers_used === undefined) return '';
+  const extraBefore = before.additional_engineers ?? 0;
+  const extraAfter = after.additional_engineers ?? 0;
+  return (
+    `; инженеров в работе ${before.engineers_used}→${after.engineers_used}` +
+    `; дополнительных экипажей ${extraBefore}→${extraAfter}` +
+    ' (резерв covering, это не люди со смены)'
+  );
 }
 
 function patchLead(patch: RouterSimulationPatch): string {

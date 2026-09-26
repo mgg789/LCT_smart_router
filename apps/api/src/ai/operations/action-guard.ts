@@ -31,6 +31,23 @@ export class ActionGuardService {
   ) {}
 
   async allows(action: string, preview: readonly AiPreviewRow[]): Promise<boolean> {
+    const lines = preview.map((row) => `${row.label}: ${row.value}`).join('\n');
+    const facts = await this.storedFacts(action);
+    const state = `action: ${action}\n${lines}${facts ? `\n${facts}` : ''}`.slice(0, 6_000);
+    return this.noul(state);
+  }
+
+  /**
+   * Same check as {@link allows}, for an agent that has not applied the write yet.
+   * The caller supplies the before/after text. A failed call is `risk`.
+   */
+  async review(action: string, context: string, delta: string): Promise<'allowed' | 'risk'> {
+    const state = `action: ${action}\nконтекст: ${context}\n${delta}`.slice(0, 6_000);
+    return (await this.noul(state)) ? 'allowed' : 'risk';
+  }
+
+  /** True only when System one scores the write as an ordinary change. */
+  private async noul(state: string): Promise<boolean> {
     const raw = (process.env.JEV_API_URL ?? 'http://host.docker.internal:12444').replace(/\/$/, '');
     // Operator-configured local service; the only check that makes sense is the
     // scheme one -- a private-network address is exactly what this endpoint is.
@@ -41,9 +58,6 @@ export class ActionGuardService {
       return false;
     }
     const base = raw;
-    const lines = preview.map((row) => `${row.label}: ${row.value}`).join('\n');
-    const facts = await this.storedFacts(action);
-    const state = `action: ${action}\n${lines}${facts ? `\n${facts}` : ''}`.slice(0, 6_000);
     try {
       const response = await fetch(`${base}/v1/noul`, {
         method: 'POST',

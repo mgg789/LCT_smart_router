@@ -1,6 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { simulationPatchHash, worsensPlan } from '../../src/orchestrator/simulator/simulation-store';
+import {
+  russianDelta,
+  simulationPatchHash,
+  worsensPlan,
+} from '../../src/orchestrator/simulator/simulation-store';
+import type { RouterSimulation } from '../../src/routing/router-gateway';
 
 describe('simulation store', () => {
   it('hashes a policy patch the same way twice and treats a worse lateness as a warning', () => {
@@ -39,4 +44,29 @@ describe('simulation store', () => {
       false,
     );
   });
+
+  it('states engineer and reserve-crew counts so a model cannot invent a headcount', () => {
+    const text = russianDelta({ policy_id: 'covering' }, {
+      delta: {
+        before: counts(3, 0, 4),
+        after: counts(4, 1, 3),
+        transfers: 7,
+      },
+    } as RouterSimulation);
+    assert.match(text, /инженеров в работе 3→4/);
+    assert.match(text, /дополнительных экипажей 0→1/);
+    assert.match(text, /не люди со смены/);
+  });
 });
+
+function counts(engineers: number, extra: number, unassigned: number) {
+  return {
+    assigned_count: 14 - unassigned,
+    unassigned_count: unassigned,
+    late_assigned_count: 0,
+    total_lateness_sec: 0,
+    distance_km: 37,
+    engineers_used: engineers,
+    additional_engineers: extra,
+  };
+}

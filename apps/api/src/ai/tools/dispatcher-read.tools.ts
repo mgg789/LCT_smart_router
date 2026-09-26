@@ -413,6 +413,7 @@ export function buildDispatcherReadTools(deps: DispatcherReadToolDeps): readonly
         })
         .optional(),
       unassignRequestId: z.string().min(1).optional(),
+      bringOnlineEngineerId: z.string().min(1).max(80).optional(),
     })
     .strict();
   type SimulateChangeArgs = z.infer<typeof simulateChangeSchema>;
@@ -420,7 +421,17 @@ export function buildDispatcherReadTools(deps: DispatcherReadToolDeps): readonly
   const simulateChange: ToolSpec<SimulateChangeArgs> = {
     name: 'simulate_change',
     description:
-      'Read-only what-if. Returns a Russian delta against the current plan. Does not apply the change.',
+      'Read-only what-if against the current plan. Does not apply the change. ' +
+      'One of: policyId (fast, compact, sla, balanced, eco, covering), a settings toggle ' +
+      '(lunchesEnabled, metroEnabled, trafficEnabled, equipmentEnabled, equipmentTransfersEnabled), ' +
+      'bringOnlineEngineerId (mark one offline engineer available on the copy only), ' +
+      'one window, one pin, or one unassignRequestId. Do not mix a window with a policy. ' +
+      'The Russian text states assigned, unassigned, lateness, distance, transfers, ' +
+      'engineers in work, and additional covering crews. Quote those numbers. ' +
+      'A covering crew is a reserve clone, not a named person on the shift. ' +
+      'Policy «полное покрытие» raises coverage first and may add reserve crews; ' +
+      'it does not promise every request is assigned, because skill, region, window, ' +
+      'shift and equipment still apply. Do not invent a headcount the text does not state.',
     schema: simulateChangeSchema,
     async run(_ctx, args): Promise<ToolResult> {
       const patch = toRouterPatch(args);

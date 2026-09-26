@@ -398,7 +398,11 @@ function OptimizeButton({ token, summary }: { token: string | null; summary: str
         setPending(true);
         setNote(null);
         void optimizePlanWithAi(token, summary)
-          .then((picked) => setNote(picked.steps[0] ?? `Политика: ${picked.label}`))
+          .then((picked) => {
+            const already =
+              picked.id === 'current' || picked.label === 'План уже оптимален';
+            setNote(already ? 'План уже оптимален' : 'Оптимизировано');
+          })
           .catch(() => setNote('Не удалось выбрать политику'))
           .finally(() => setPending(false));
       }}

@@ -128,6 +128,8 @@ const simulationCountsSchema = z.object({
   late_assigned_count: z.number().int().nonnegative(),
   total_lateness_sec: z.number().int().nonnegative(),
   distance_km: z.number().nonnegative(),
+  engineers_used: z.number().int().nonnegative().optional(),
+  additional_engineers: z.number().int().nonnegative().optional(),
 });
 
 const simulationRouteSchema = z.object({

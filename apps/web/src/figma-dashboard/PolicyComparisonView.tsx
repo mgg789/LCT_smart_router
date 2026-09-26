@@ -7,7 +7,8 @@ import type {
   PolicyComparisonRow,
 } from '../api/types';
 import type { RegionSelection } from '../domain/regions';
-import { PolicyStrategyMap } from './PolicyStrategyMap';
+import { unassignedRequests } from '../domain/dashboard';
+import { PolicyStrategyMap, type DayRequestPoint } from './PolicyStrategyMap';
 import { strategyDescription } from '../lib/policyComparison';
 import { formatClock, formatDurationMin, formatKm } from '../lib/time';
 import { FigmaText } from './primitives';
@@ -67,6 +68,7 @@ export function PolicyComparisonView({
     const pairs = JSON.parse(engineerRegionKey) as readonly (readonly [string, string])[];
     return Object.fromEntries(pairs.filter((pair) => pair[1] !== ''));
   }, [engineerRegionKey]);
+  const dayRequests = useMemo(() => dayRequestPoints(snapshot), [snapshot]);
 
   useEffect(() => {
     if (mode !== 'map' || !token) return;
@@ -175,6 +177,7 @@ export function PolicyComparisonView({
             </div>
           ) : mapRoutes && mapRoutes.strategies.length > 0 ? (
             <PolicyStrategyMap
+              requests={dayRequests}
               strategies={mapRoutes.strategies}
               regions={regions}
               selectedRegion={selectedRegion}
@@ -389,6 +392,35 @@ function winners(columns: PolicyComparisonRow[], metric: MetricSpec): Set<string
       ? Math.min(...scored.map((item) => item.value))
       : Math.max(...scored.map((item) => item.value));
   return new Set(scored.filter((item) => item.value === target).map((item) => item.id));
+}
+
+/**
+ * The same dots the day-plan map draws: jobs already on a route, plus today's
+ * unassigned requests. Road-graph vertices stay off this map.
+ */
+function dayRequestPoints(snapshot: DashboardSnapshot | null): DayRequestPoint[] {
+  if (!snapshot) return [];
+  const byId = new Map(snapshot.requests.map((request) => [request.id, request]));
+  const ids = new Set<string>();
+  for (const route of snapshot.plan.plan?.routes ?? []) {
+    for (const stop of route.stops) {
+      if (stop.requestId) ids.add(stop.requestId);
+    }
+  }
+  for (const request of unassignedRequests(snapshot)) ids.add(request.id);
+  const points: DayRequestPoint[] = [];
+  for (const id of ids) {
+    const request = byId.get(id);
+    if (!request || request.lat == null || request.lon == null) continue;
+    if (request.lifecycle === 'cancelled') continue;
+    points.push({
+      id: request.id,
+      lat: request.lat,
+      lon: request.lon,
+      region: request.region ?? '',
+    });
+  }
+  return points;
 }
 
 function MetaChip({ label, bee = false }: { label: string; bee?: boolean }) {
