@@ -4,7 +4,7 @@ segment: dispatcher
 title: Деградация ручного плана
 summary: plan_degraded и plan_review_required сравнивают ручной план с тем же расчётом стоимости, что использует оптимизатор, и оба разрешают только keep_manual (с обязательной причиной) или restore_auto, который остаётся открытым до фактического применения нового автоматического плана.
 tags: [manual, plan_degraded, evaluation]
-actions: [get_alerts, resolve_alert, get_plan]
+actions: [list_alerts, prepare_resolve_alert, get_day_plan]
 related: [disp-09-manual-mode, disp-02-reading-the-plan]
 updated: 2026-09-20
 ---

@@ -28,6 +28,8 @@ const SWIPE_DISMISS = 64;
 const STACK_EASE = [0.22, 1, 0.36, 1] as const;
 const STRIDE = TOAST_CARD_HEIGHT + TOAST_GAP;
 const VEIL_WIDTH = 680;
+/** Room so card shadows paint inside the scrollport instead of being cut by it. */
+const SHADOW_PAD = 28;
 const COLLAPSE_BUBBLE_SIZE = 43;
 /** Cards end 30px before the artboard right edge; the bubble shares that margin. */
 const COLLAPSE_BUBBLE_RIGHT = 30;
@@ -61,13 +63,21 @@ export function ToastColumn({
   motionOn,
   scale,
   onCollapse,
+  onToastAction,
 }: {
   open: boolean;
   motionOn: boolean;
   scale: number;
   onCollapse: () => void;
+  onToastAction?: (toast: ToastNotification) => void;
 }) {
   const visible = useVisibleColumnToasts();
+  const latestDetailId = visible.reduce<string | null>((best, toast) => {
+    if (toast.actionLabel !== 'Подробнее') return best;
+    if (!best) return toast.id;
+    const current = visible.find((item) => item.id === best);
+    return (toast.createdAt ?? 0) >= (current?.createdAt ?? 0) ? toast.id : best;
+  }, null);
   const shown = open || visible.length > 0;
   const [ghosts, setGhosts] = useState<ToastGhost[]>([]);
   const letterbox = useLetterboxInsets(scale);
@@ -135,18 +145,18 @@ export function ToastColumn({
               <>
                 <motion.div
                   aria-hidden
-                  className="absolute right-0"
+                  className="pointer-events-auto absolute right-0 z-0"
                   style={{
                     top: -letterbox.y,
                     bottom: -letterbox.y,
                     right: -letterbox.x,
                     width: VEIL_WIDTH + letterbox.x,
                     background:
-                      'linear-gradient(to left, rgba(15,16,20,0.28), rgba(15,16,20,0.10) 52%, transparent)',
-                    backdropFilter: 'blur(14px)',
-                    WebkitBackdropFilter: 'blur(14px)',
-                    maskImage: 'linear-gradient(to left, #000 55%, transparent)',
-                    WebkitMaskImage: 'linear-gradient(to left, #000 55%, transparent)',
+                      'linear-gradient(to left, rgba(15,16,20,0.62), rgba(15,16,20,0.34) 48%, transparent)',
+                    backdropFilter: 'blur(22px)',
+                    WebkitBackdropFilter: 'blur(22px)',
+                    maskImage: 'linear-gradient(to left, #000 68%, transparent)',
+                    WebkitMaskImage: 'linear-gradient(to left, #000 68%, transparent)',
                   }}
                   exit={{ opacity: 0, transition: { duration: 0.26, ease: 'easeOut' } }}
                 />
@@ -154,7 +164,7 @@ export function ToastColumn({
                   type="button"
                   aria-label="Свернуть уведомления"
                   onClick={onCollapse}
-                  className="pointer-events-auto absolute flex items-center justify-center rounded-full bg-white shadow-[0_10px_24px_rgba(15,16,20,0.20)]"
+                  className="pointer-events-auto absolute z-20 flex items-center justify-center rounded-full bg-white shadow-[0_10px_24px_rgba(15,16,20,0.20)]"
                   style={{
                     top: COLLAPSE_BUBBLE_TOP,
                     right: COLLAPSE_BUBBLE_RIGHT,
@@ -170,20 +180,77 @@ export function ToastColumn({
                 </motion.button>
               </>
             ) : null}
-            {visible.map((toast, index) => {
-              const top = TOAST_STACK_TOP + index * STRIDE;
-              return (
-                <ToastCard
-                  key={toast.id}
-                  toast={toast}
-                  top={top}
-                  motionOn={motionOn}
-                  scale={scale}
-                  interactive={shown}
-                  onLeave={(startX) => beginLeave(toast, top, startX)}
-                />
-              );
-            })}
+            {open ? (
+              <button
+                type="button"
+                aria-label="Свернуть уведомления"
+                className="absolute z-[5] cursor-default bg-transparent"
+                style={{
+                  top: -letterbox.y,
+                  bottom: -letterbox.y,
+                  width: TOAST_WIDTH + 72,
+                  left: TOAST_LEFT - TOAST_WIDTH - 72,
+                }}
+                onClick={onCollapse}
+              />
+            ) : null}
+            {open ? (
+              <div
+                data-toast-scroll
+                className="pointer-events-auto absolute z-10 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                style={{
+                  top: TOAST_STACK_TOP,
+                  left: TOAST_LEFT - SHADOW_PAD,
+                  width: TOAST_WIDTH + SHADOW_PAD * 2,
+                  bottom: -letterbox.y,
+                  paddingLeft: SHADOW_PAD,
+                  paddingRight: SHADOW_PAD,
+                  paddingBottom: 20 + SHADOW_PAD,
+                }}
+              >
+                <div className="relative" style={{ height: Math.max(visible.length, 1) * STRIDE }}>
+                  {visible.map((toast, index) => (
+                    <ToastCard
+                      key={toast.id}
+                      toast={toast}
+                      top={index * STRIDE}
+                      docked
+                      motionOn={motionOn}
+                      scale={scale}
+                      interactive={shown}
+                      onLeave={(startX) => beginLeave(toast, index * STRIDE, startX)}
+                      onAction={
+                        onToastAction && toast.id === latestDetailId
+                          ? () => onToastAction(toast)
+                          : undefined
+                      }
+                      showAction={toast.id === latestDetailId}
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : (
+              visible.map((toast, index) => {
+                const top = TOAST_STACK_TOP + index * STRIDE;
+                return (
+                  <ToastCard
+                    key={toast.id}
+                    toast={toast}
+                    top={top}
+                    motionOn={motionOn}
+                    scale={scale}
+                    interactive={shown}
+                    onLeave={(startX) => beginLeave(toast, top, startX)}
+                    onAction={
+                      onToastAction && toast.id === latestDetailId
+                        ? () => onToastAction(toast)
+                        : undefined
+                    }
+                    showAction={toast.id === latestDetailId}
+                  />
+                );
+              })
+            )}
           </motion.div>
         ) : null}
       </AnimatePresence>
@@ -205,17 +272,24 @@ export function ToastColumn({
 function ToastCard({
   toast,
   top,
+  docked = false,
   motionOn,
   scale,
   interactive,
   onLeave,
+  onAction,
+  showAction = true,
 }: {
   toast: ToastNotification;
   top: number;
+  docked?: boolean;
   motionOn: boolean;
   scale: number;
   interactive: boolean;
   onLeave: (startX: number) => void;
+  onAction?: () => void;
+  /** Older plan notices keep the card, without a «Подробнее» that has no delta. */
+  showAction?: boolean;
 }) {
   const [offsetX, setOffsetX] = useState(0);
   const [dragging, setDragging] = useState(false);
@@ -277,13 +351,17 @@ function ToastCard({
     <ToastFace
       toast={toast}
       top={top}
+      docked={docked}
       x={offsetX}
       dragging={dragging}
       motionOn={motionOn}
       interactive={interactive}
       onClose={() => leave(offsetX)}
+      onAction={onAction}
+      showAction={showAction}
       onPointerDown={(event) => {
-        if ((event.target as HTMLElement).closest('[data-toast-close]')) return;
+        if ((event.target as HTMLElement).closest('[data-toast-close], [data-toast-action]'))
+          return;
         if (event.button !== 0) return;
         try {
           event.currentTarget.setPointerCapture(event.pointerId);
@@ -299,6 +377,7 @@ function ToastCard({
 function ToastFace({
   toast,
   top,
+  docked = false,
   x,
   dragging = false,
   leaving = false,
@@ -306,10 +385,13 @@ function ToastFace({
   interactive = false,
   onClose,
   onLeft,
+  onAction,
+  showAction = true,
   onPointerDown,
 }: {
   toast: ToastNotification;
   top: number;
+  docked?: boolean;
   x: number;
   dragging?: boolean;
   leaving?: boolean;
@@ -317,33 +399,34 @@ function ToastFace({
   interactive?: boolean;
   onClose?: () => void;
   onLeft?: () => void;
+  onAction?: () => void;
+  showAction?: boolean;
   onPointerDown?: (event: ReactPointerEvent<HTMLElement>) => void;
 }) {
   const alert = toast.kind === 'alert';
   const danger = toast.kind === 'error';
   const icon = TOAST_ICON[toast.kind];
+  const left = docked ? 0 : TOAST_LEFT;
 
   return (
     <motion.article
       data-toast-card={leaving ? undefined : true}
       aria-hidden={leaving || undefined}
       aria-label={leaving ? undefined : `${toast.title}. ${toast.body || toast.etaLabel || ''}`}
-      className={`absolute h-[132px] w-[425px] overflow-hidden rounded-[20px] shadow-[0_18px_40px_rgba(15,16,20,0.32)] select-none ${
+      className={`absolute h-[132px] w-[425px] rounded-[20px] shadow-[0_10px_18px_rgba(15,16,20,0.16)] select-none ${
         leaving ? 'pointer-events-none' : 'pointer-events-auto'
       } ${danger ? 'bg-figma-danger' : alert ? 'bg-figma-bee' : 'bg-figma-ink'} ${
         dragging ? 'cursor-grabbing' : interactive ? 'cursor-grab' : ''
       }`}
       initial={
         leaving
-          ? { x, top, left: TOAST_LEFT, opacity: 1 }
+          ? { x, top, left, opacity: 1 }
           : motionOn
-            ? { opacity: 0, y: 28, top, left: TOAST_LEFT, x: 0 }
-            : { top, left: TOAST_LEFT, x: 0 }
+            ? { opacity: 0, y: 28, top, left, x: 0 }
+            : { top, left, x: 0 }
       }
       animate={
-        leaving
-          ? { x: TOAST_EXIT_X, top, left: TOAST_LEFT, opacity: 1 }
-          : { opacity: 1, x, y: 0, top, left: TOAST_LEFT }
+        leaving ? { x: TOAST_EXIT_X, top, left, opacity: 1 } : { opacity: 1, x, y: 0, top, left }
       }
       transition={
         leaving
@@ -383,12 +466,37 @@ function ToastFace({
         )}
       </div>
       <p
-        className={`figma-nowrap absolute left-[68px] top-[19px] max-w-[300px] overflow-hidden font-semibold text-[20px] leading-none text-ellipsis ${
-          danger || !alert ? 'text-white' : 'text-figma-ink'
-        }`}
+        className={`figma-nowrap pointer-events-none absolute left-[68px] top-[19px] overflow-hidden font-semibold text-[20px] leading-none text-ellipsis ${
+          toast.actionLabel && showAction ? 'right-[168px]' : 'max-w-[300px]'
+        } ${danger || !alert ? 'text-white' : 'text-figma-ink'}`}
       >
         {toast.title}
       </p>
+      {toast.actionLabel && showAction && !leaving ? (
+        <button
+          type="button"
+          data-toast-action
+          className="group absolute right-[44px] top-[6px] z-20 flex h-[44px] items-center px-[6px]"
+          style={{ touchAction: 'manipulation' }}
+          onPointerDown={(event) => {
+            event.stopPropagation();
+          }}
+          onClick={(event) => {
+            event.stopPropagation();
+            onAction?.();
+          }}
+        >
+          <span
+            className={`pointer-events-none flex h-[28px] items-center rounded-full px-3 text-[13px] font-semibold transition duration-150 group-hover:scale-105 ${
+              danger || !alert
+                ? 'bg-white/15 text-white group-hover:bg-white/30'
+                : 'bg-figma-ink/10 text-figma-ink group-hover:bg-figma-ink/20'
+            }`}
+          >
+            {toast.actionLabel}
+          </span>
+        </button>
+      ) : null}
       {leaving ? null : (
         <button
           type="button"

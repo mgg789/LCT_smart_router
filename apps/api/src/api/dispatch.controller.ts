@@ -1,40 +1,14 @@
-import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  Logger,
-  type MessageEvent,
-  Param,
-  Patch,
-  Post,
-  Put,
-  Query,
-  Sse,
-} from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import {
-  catchError,
-  EMPTY,
-  endWith,
-  ignoreElements,
-  interval,
-  map,
-  merge,
-  Observable,
-  share,
-  takeUntil,
-} from 'rxjs';
-import { EvidenceReader } from '../ai/explain';
-import { ChatEventBus, type DispatchChatRow, DispatchChatsService } from '../ai/runtime';
 import { type Actor, CurrentActor, Roles } from '../auth';
 import { AppConfigService } from '../common/config';
 import { SysError } from '../common/errors';
 import { Clock } from '../common/time';
 import { zodBody } from '../common/validation';
-import type { AiMessage } from '../generated/prisma/client';
-import { OperationsService } from '../operations';
-import { AlertsService } from '../orchestrator/alerts';
+import { AuditService, OperationsService } from '../operations';
+import { AiService, MiniAiService } from '../orchestrator/ai';
+import { AlertsService, alertActionsFor } from '../orchestrator/alerts';
 import { DemoStandService } from '../orchestrator/demo-stand';
 import { EngineersService, workDateOf } from '../orchestrator/engineers';
 import {
@@ -43,16 +17,24 @@ import {
   UploadImportService,
 } from '../orchestrator/imports';
 import { LiveService } from '../orchestrator/live';
+import { businessNow } from '../orchestrator/live/business-clock';
+import { type UpdateMcpSettingsDto, updateMcpSettingsSchema } from '../orchestrator/mcp/mcp.dto';
+// Direct file imports: the mcp barrel pulls the tool registry, which sits on CJS
+// barrel cycles with alerts/ai — the same trap alerts.module.ts documents.
+import { McpService } from '../orchestrator/mcp/mcp.service';
+import { type McpSettingsView } from '../orchestrator/mcp/mcp-settings';
+import { PassportsService } from '../orchestrator/passports';
 import { PolicyService } from '../orchestrator/policy';
 import { RequestsService } from '../orchestrator/requests';
 import { ResetService } from '../orchestrator/reset';
+import { RoadImportService } from '../orchestrator/road-import';
 import {
   DispatcherSettingsService,
   GeocodingService,
   MapRoutingService,
   moscowMinutesToUnix,
 } from '../orchestrator/settings';
-import { APP_STATE_KEYS, PrismaService } from '../persistence';
+import { APP_STATE_KEYS, PrismaService, UnitOfWork } from '../persistence';
 import {
   PUBLICATION_TRIGGERS,
   SnapshotBuilder,
@@ -60,34 +42,19 @@ import {
 } from '../routing/mount-data-eng';
 import {
   AppliedPlanService,
-  AssistedPlanningService,
   ControlStateService,
   ManualPlanService,
   ResultAcceptanceService,
   RouterClient,
 } from '../routing/router-gateway';
-import {
-  type AiConversationView,
-  type AiMessageView,
-  toConversationView,
-  toMessageView,
-} from './ai-view';
-import { chatEventStream, toChatMessageEvent } from './chat-stream';
-import { type DispatchChatView, toDispatchChatView } from './dispatch-chat-view';
+import { visibleRouterPhase } from '../routing/router-gateway/router-phase';
+import { type AiSettingsDto, aiSettingsSchema } from './dto/ai.dto';
 import {
   type CloseShiftDto,
   closeShiftSchema,
   type ResolveAlertDto,
   resolveAlertSchema,
 } from './dto/alert.dto';
-import {
-  type AssistedApplyDto,
-  type AssistedCancelDto,
-  type AssistedPreviewDto,
-  assistedApplySchema,
-  assistedCancelSchema,
-  assistedPreviewSchema,
-} from './dto/assisted.dto';
 import {
   type ImportDatasetDto,
   importDatasetSchema,
@@ -98,18 +65,6 @@ import {
   type UploadDataPackageDto,
   uploadDataPackageSchema,
 } from './dto/data.dto';
-import {
-  type FinishDispatchChatDto,
-  finishDispatchChatSchema,
-  type ListDispatchChatsQueryDto,
-  listDispatchChatsQuerySchema,
-  type OpenDispatchChatDto,
-  openDispatchChatSchema,
-  type ReadDispatchChatDto,
-  readDispatchChatSchema,
-  type SendDispatchChatMessageDto,
-  sendDispatchChatMessageSchema,
-} from './dto/dispatch-chat.dto';
 import {
   type ArchiveEngineerDto,
   archiveEngineerSchema,
@@ -131,8 +86,6 @@ import {
 } from './dto/engineer.dto';
 import { type StartLiveWorkdayDto, startLiveWorkdaySchema } from './dto/live.dto';
 import {
-  type ManualPreviewDto,
-  manualPreviewSchema,
   type ReassignDto,
   type ReorderDto,
   reassignSchema,
@@ -143,6 +96,7 @@ import {
   submitResultSchema,
 } from './dto/plan.dto';
 import { type SelectPolicyDto, selectPolicySchema } from './dto/policy.dto';
+import { type SituationPredictDto, situationPredictSchema } from './dto/prediction.dto';
 import {
   type CancelRequestDto,
   cancelRequestSchema,
@@ -151,6 +105,7 @@ import {
   dispatcherCreateRequestSchema,
   dispatcherUpdateRequestSchema,
 } from './dto/request.dto';
+import { type RoadImportDto, roadImportSchema } from './dto/road-import.dto';
 import {
   type UpdateRouterTechnicalSettingsDto,
   updateRouterTechnicalSettingsSchema,
@@ -168,6 +123,16 @@ import {
 import type { DispatchLiveView } from './live-view.types';
 import { toPlanView } from './plan-view';
 import { type RequestView, toRequestView } from './request-view';
+import { weatherView } from './weather-view';
+
+const POLICY_LABEL: Record<string, string> = {
+  compact: 'Дешевле',
+  fast: 'Быстрее до клиента',
+  sla: 'Бережнее к окнам',
+  balanced: 'Ровнее загрузка',
+  eco: 'Короче пробег',
+  covering: 'Полное покрытие',
+};
 
 /**
  * Dashboard contour.
@@ -190,27 +155,28 @@ export class DispatchController {
     private readonly plans: AppliedPlanService,
     private readonly control: ControlStateService,
     private readonly manual: ManualPlanService,
-    private readonly assisted: AssistedPlanningService,
     private readonly acceptance: ResultAcceptanceService,
     private readonly router: RouterClient,
     private readonly imports: DatasetImportService,
     private readonly uploadImports: UploadImportService,
+    private readonly roadImports: RoadImportService,
     private readonly resetService: ResetService,
     private readonly demoStand: DemoStandService,
     private readonly config: AppConfigService,
     private readonly operations: OperationsService,
+    private readonly audit: AuditService,
     private readonly prisma: PrismaService,
+    private readonly uow: UnitOfWork,
     private readonly clock: Clock,
     private readonly live: LiveService,
-    private readonly evidence: EvidenceReader,
-    private readonly dispatchChats: DispatchChatsService,
-    private readonly chatBus: ChatEventBus,
+    private readonly ai: AiService,
+    private readonly miniAi: MiniAiService,
     private readonly dispatcherSettings: DispatcherSettingsService,
     private readonly geocoding: GeocodingService,
     private readonly mapRouting: MapRoutingService,
+    private readonly passports: PassportsService,
+    private readonly mcp: McpService,
   ) {}
-
-  private readonly logger = new Logger(DispatchController.name);
 
   @Get('live')
   @ApiOperation({ summary: 'Durable LIVE workday state for the dispatcher dashboard' })
@@ -229,279 +195,6 @@ export class DispatchController {
       async (context) => this.live.start(context),
     );
     return outcome.result;
-  }
-
-  /**
-   * The dispatcher's chat list: dialogues a human is carrying right now, plus the ones
-   * they have already finished.
-   *
-   * Finished chats stay because ending one is not deleting it (context/36 section 9.3) --
-   * the dispatcher has to be able to re-read what was agreed with a customer at eleven
-   * o'clock. A closed row shows the dialogue as it stood when it was closed, never the
-   * messages the assistant has exchanged since.
-   *
-   * Opening this page is a read and changes nothing: it is explicitly not what switches
-   * the agent off (context/36 section 9.1, «Открытие вкладки диспетчером не является
-   * условием выключения агента»).
-   */
-  @Get('chats')
-  @ApiOperation({ summary: 'Chats with clients and engineers: live ones, then finished ones' })
-  async listChats(
-    @Query(zodBody(listDispatchChatsQuerySchema)) query: ListDispatchChatsQueryDto,
-  ): Promise<{ chats: DispatchChatView[] }> {
-    const rows = await this.dispatchChats.list({ closedLimit: query.closedLimit });
-    return { chats: rows.map(toDispatchChatView) };
-  }
-
-  /**
-   * Server-sent events for every chat a human is carrying: each message as it is written,
-   * and each change of hands.
-   *
-   * Carries no catch-up read of its own. A dispatcher's list is a page of many dialogues,
-   * and the honest way to resume it after a gap is `GET /dispatch/chats`, which returns
-   * every episode with its unread count already computed -- replaying a per-conversation
-   * cursor here would mean the browser holding one cursor per chat and still having to
-   * refetch for any chat it had not yet seen.
-   */
-  @Sse('chats/events')
-  @ApiOperation({ summary: 'Live messages across every chat handed to the dispatcher' })
-  chatEvents(): Observable<MessageEvent> {
-    const heartbeatMs = this.config.get('AI_SSE_HEARTBEAT_MS');
-    const heartbeat$: Observable<MessageEvent> = interval(heartbeatMs).pipe(
-      map(() => ({ type: 'heartbeat', data: {} }) satisfies MessageEvent),
-    );
-
-    const main$: Observable<MessageEvent> = chatEventStream({
-      live: this.chatBus.inbox(),
-      replay: async () => [],
-    }).pipe(
-      map(toChatMessageEvent),
-      catchError((error: unknown) => {
-        // After SSE headers are sent the global exception filter can only produce
-        // `ERR_HTTP_HEADERS_SENT` and a dead socket, so this stream never errors: it ends,
-        // which is what an ordinary network drop looks like, and the browser reconnects and
-        // refetches the list.
-        this.logger.error(
-          `Dispatcher chat stream failed: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-        return EMPTY;
-      }),
-      share(),
-    );
-    const stop$ = main$.pipe(ignoreElements(), endWith(true));
-
-    return merge(main$, heartbeat$).pipe(takeUntil(stop$));
-  }
-
-  /**
-   * Opens a chat with the client of a request, or with an engineer, from the dashboard.
-   *
-   * This is the second way a chat begins -- the first is the assistant deciding it needs a
-   * human and calling `call_dispatch_helper`. Both end in the same place: one `AiHandoff`
-   * over the person's own dialogue, so their history is in front of the dispatcher from the
-   * first moment and the answer lands where they are already looking.
-   *
-   * Pressing the button again while the chat is already open returns it rather than
-   * failing: that is what the dispatcher meant by pressing it.
-   */
-  @Post('chats')
-  @ApiOperation({ summary: 'Open a chat with a request customer or an engineer' })
-  async openChat(
-    @CurrentActor() actor: Actor,
-    @Body(zodBody(openDispatchChatSchema)) dto: OpenDispatchChatDto,
-  ): Promise<{ chat: DispatchChatView }> {
-    const dispatcherAccountId = this.requireDispatcherAccount(actor);
-    const outcome = await this.operations.execute(
-      {
-        operationId: dto.operationId,
-        actor,
-        action: 'dispatch_chat.open',
-        payload: dto,
-      },
-      async (context) => {
-        const opened = await this.dispatchChats.openWithTarget(
-          context.tx,
-          context.now,
-          dispatcherAccountId,
-          dto.target,
-          dto.text,
-        );
-        return {
-          handoffId: opened.handoff.id,
-          messageIds: opened.messages.map((message) => message.id),
-          created: opened.created,
-        };
-      },
-    );
-
-    const chat = await this.requireChat(outcome.result.handoffId);
-    if (!outcome.replayed) {
-      if (outcome.result.created) {
-        this.publishChatState(chat);
-      }
-      this.publishChatMessages(chat, outcome.result.messageIds);
-    }
-    return { chat: toDispatchChatView(chat) };
-  }
-
-  @Post('chats/:id/messages')
-  @ApiOperation({ summary: "Send the dispatcher's own reply into a chat" })
-  async sendChatMessage(
-    @CurrentActor() actor: Actor,
-    @Param('id') id: string,
-    @Body(zodBody(sendDispatchChatMessageSchema)) dto: SendDispatchChatMessageDto,
-  ): Promise<{ message: AiMessageView; chat: DispatchChatView }> {
-    const dispatcherAccountId = this.requireDispatcherAccount(actor);
-    const outcome = await this.operations.execute(
-      {
-        operationId: dto.operationId,
-        actor,
-        action: 'dispatch_chat.message.send',
-        targetRef: id,
-        payload: dto,
-      },
-      async (context) => {
-        const written = await this.dispatchChats.reply(
-          context.tx,
-          context.now,
-          id,
-          dispatcherAccountId,
-          dto.text,
-        );
-        return { handoffId: written.handoff.id, messageId: written.message.id };
-      },
-    );
-
-    const chat = await this.requireChat(outcome.result.handoffId);
-    if (!outcome.replayed) {
-      this.publishChatMessages(chat, [outcome.result.messageId]);
-    }
-    return {
-      message: toMessageView(this.requireChatMessage(chat, outcome.result.messageId)),
-      chat: toDispatchChatView(chat),
-    };
-  }
-
-  /**
-   * Ends a chat: the assistant takes the dialogue back and the row stays in the list.
-   *
-   * Nothing the dispatcher applied while they were carrying it is reverted -- a chat is a
-   * conversation, not a transaction (context/36 section 9.3).
-   */
-  @Post('chats/:id/finish')
-  @ApiOperation({ summary: 'End a chat: the AI resumes, history and applied actions stay' })
-  async finishChat(
-    @CurrentActor() actor: Actor,
-    @Param('id') id: string,
-    @Body(zodBody(finishDispatchChatSchema)) dto: FinishDispatchChatDto,
-  ): Promise<{ conversation: AiConversationView; chat: DispatchChatView }> {
-    const dispatcherAccountId = this.requireDispatcherAccount(actor);
-    const outcome = await this.operations.execute(
-      {
-        operationId: dto.operationId,
-        actor,
-        action: 'dispatch_chat.finish',
-        targetRef: id,
-        payload: dto,
-      },
-      async (context) => {
-        const written = await this.dispatchChats.finish(
-          context.tx,
-          context.now,
-          id,
-          dispatcherAccountId,
-        );
-        return { handoffId: written.handoff.id, messageId: written.message.id };
-      },
-    );
-
-    const chat = await this.requireChat(outcome.result.handoffId);
-    if (!outcome.replayed) {
-      this.publishChatMessages(chat, [outcome.result.messageId]);
-      this.publishChatState(chat);
-    }
-    return { conversation: toConversationView(chat.conversation), chat: toDispatchChatView(chat) };
-  }
-
-  /**
-   * Marks a chat read up to a message sequence, which is what clears its unread badge.
-   *
-   * The cursor only moves forward, so a second tab replaying an older value cannot bring
-   * back a badge the first one cleared, and a chat that has already been finished is a
-   * no-op -- there is nothing left to acknowledge.
-   */
-  @Post('chats/:id/read')
-  @ApiOperation({ summary: 'Acknowledge a chat up to a message sequence' })
-  async readChat(
-    @CurrentActor() actor: Actor,
-    @Param('id') id: string,
-    @Body(zodBody(readDispatchChatSchema)) dto: ReadDispatchChatDto,
-  ): Promise<{ chat: DispatchChatView | null }> {
-    this.requireDispatcherAccount(actor);
-    const outcome = await this.operations.execute(
-      {
-        operationId: dto.operationId,
-        actor,
-        action: 'dispatch_chat.read',
-        targetRef: id,
-        payload: dto,
-      },
-      async (context) => {
-        const handoff = await this.dispatchChats.markRead(context.tx, id, dto.seq);
-        return { handoffId: handoff?.id ?? null };
-      },
-    );
-    const handoffId = outcome.result.handoffId;
-    if (!handoffId) {
-      return { chat: null };
-    }
-    const chat = await this.dispatchChats.byHandoffId(handoffId);
-    return { chat: chat ? toDispatchChatView(chat) : null };
-  }
-
-  /** The episode a write just changed, re-read so the response and the broadcast carry the
-   *  committed state rather than the rows the handler started from. */
-  private async requireChat(handoffId: string): Promise<DispatchChatRow> {
-    const chat = await this.dispatchChats.byHandoffId(handoffId);
-    if (!chat) {
-      throw SysError.notFound('Chat', { handoffId });
-    }
-    return chat;
-  }
-
-  private requireChatMessage(chat: DispatchChatRow, messageId: string): AiMessage {
-    const message = chat.messages.find((candidate) => candidate.id === messageId);
-    if (!message) {
-      throw SysError.notFound('Message', { messageId });
-    }
-    return message;
-  }
-
-  /**
-   * Announces the messages this request wrote, after the transaction that wrote them has
-   * committed (`ChatEventBus`'s own note on why never inside it).
-   *
-   * Skipped entirely on a replayed retry: the first attempt already announced them, and a
-   * customer seeing the dispatcher's sentence arrive twice would read it as the dispatcher
-   * repeating themselves.
-   */
-  private publishChatMessages(chat: DispatchChatRow, messageIds: readonly string[]): void {
-    for (const messageId of messageIds) {
-      const message = chat.messages.find((candidate) => candidate.id === messageId);
-      if (message) {
-        this.chatBus.publishMessage({
-          conversationId: chat.conversation.id,
-          handoffId: chat.handoff.id,
-          message,
-        });
-      }
-    }
-  }
-
-  private publishChatState(chat: DispatchChatRow): void {
-    this.chatBus.publishState({ conversation: chat.conversation, handoff: chat.handoff });
   }
 
   @Get('requests')
@@ -527,6 +220,19 @@ export class DispatchController {
     return {
       requests: requests.map((request) => toRequestView(request, states.get(request.id) ?? null)),
     };
+  }
+
+  @Get('requests/:id/passport')
+  @ApiOperation({ summary: 'Object passport for any dispatcher-visible request' })
+  async passport(@Param('id') requestId: string) {
+    return this.passports.dispatcherRead(requestId);
+  }
+
+  @Get('engineers/:id/points')
+  @ApiOperation({ summary: 'Current Moscow-month passport points of an engineer' })
+  async engineerPoints(@Param('id') engineerId: string) {
+    await this.engineers.byId(this.prisma, engineerId);
+    return this.passports.monthlyPoints(engineerId);
   }
 
   @Post('requests')
@@ -657,35 +363,22 @@ export class DispatchController {
       where: { requestId: id },
       orderBy: { changedAt: 'desc' },
     });
+    const actors = await this.audit.actorsFor(
+      entries.flatMap((entry) => (entry.operationId === null ? [] : [entry.operationId])),
+    );
     return {
       // History is a journal of what the conditions used to be. It is never a second
-      // active promise to the customer (context/36 section 4).
+      // active promise to the customer (context/36 section 4). `actor` is the audit row
+      // written in the same transaction, so the journal is read rather than only stored.
       history: entries.map((entry) => ({
         changedAt: Number(entry.changedAt),
         operationId: entry.operationId,
         reason: entry.reason,
         previous: entry.previous,
+        actor: entry.operationId === null ? null : (actors.get(entry.operationId) ?? null),
       })),
       asOf: this.clock.nowSeconds(),
     };
-  }
-
-  @Get('requests/:id/evidence')
-  @ApiOperation({
-    summary: 'Router evidence for one request: per-request facts and candidate[]/blockers[]',
-  })
-  async requestEvidence(@Param('id') id: string) {
-    // The evidence package travels inside the applied plan's own stored Router result
-    // (`RouterResult.payload.main_evidence`/`baseline_evidence`, `result.types.ts`'s own
-    // note on why the loose object keeps them whole). A plan applied before evidence
-    // existed -- or with no Router result at all -- has none: that is an honest empty
-    // shape, never an invented one (docs/api.md section 10's "next contract").
-    const plan = await this.plans.current(this.prisma);
-    if (!plan?.routerResult) {
-      return { requestId: id, main: null, baseline: null };
-    }
-    const pair = this.evidence.forRequest(plan.routerResult.payload, id);
-    return { requestId: id, main: pair.main, baseline: pair.baseline };
   }
 
   @Get('engineers')
@@ -787,6 +480,9 @@ export class DispatchController {
       },
       async (context) =>
         toEngineerView(await this.engineers.linkAccount(context, dto.engineerId, dto.email)),
+      // A login address is not a planning input. Acceptance of a route must not
+      // hold this save until the browser gives up.
+      { isolated: true },
     );
     return { engineer: outcome.result };
   }
@@ -811,6 +507,7 @@ export class DispatchController {
         toEngineerView(
           await this.engineers.changeEmail(context, id, dto.expectedVersion ?? null, dto.email),
         ),
+      { isolated: true },
     );
     return { engineer: outcome.result };
   }
@@ -831,6 +528,7 @@ export class DispatchController {
       },
       async (context) =>
         toEngineerView(await this.engineers.unlinkAccount(context, dto.engineerId)),
+      { isolated: true },
     );
     return { engineer: outcome.result };
   }
@@ -993,6 +691,8 @@ export class DispatchController {
       taskStartLatenessToleranceSec: dto.taskStartLatenessToleranceSec,
       windowLatenessToleranceSec: dto.windowLatenessToleranceSec,
       trafficEnabled: dto.trafficEnabled,
+      metroEnabled: dto.metroEnabled,
+      equipmentTransfersEnabled: dto.equipmentTransfersEnabled,
       equipmentEnabled: dto.equipmentEnabled,
       travelTimeMode: dto.travelTimeMode,
       accessBufferSec: dto.accessBufferSec,
@@ -1017,6 +717,39 @@ export class DispatchController {
     // actual lunch contract, including when a dispatcher enables it after LIVE started.
     await this.live.synchronizeGlobalLunchSwitch(dto.lunchesEnabled);
     return outcome.result;
+  }
+
+  @Post('predictions/situation')
+  @ApiOperation({
+    summary: 'Dry Monte-Carlo probabilities for one fixed plan and execution situation',
+  })
+  async situationPredict(@Body(zodBody(situationPredictSchema)) dto: SituationPredictDto) {
+    if (!this.router.isConfigured()) {
+      throw SysError.notConfigured('Router Core');
+    }
+    // Dry numbers only: the call never returns a plan and never changes one. The caller
+    // supplies the applied plan's identity, so a prediction can never attach to another
+    // manual revision (Router rechecks the publication CAS on both ends).
+    return this.router.predictSituation({
+      input_hash: dto.inputHash,
+      router_context_version: dto.routerContextVersion,
+      routes: dto.routes,
+      simulations: dto.simulations,
+      as_of: dto.asOf ?? null,
+      completed: dto.completed,
+      cancel_rate: dto.cancelRate ?? null,
+    });
+  }
+
+  @Get('weather')
+  @ApiOperation({ summary: 'Cached Moscow forecast and the car-traffic multiplier it applies' })
+  async weather() {
+    if (!this.router.isConfigured()) return weatherView(null);
+    try {
+      return weatherView(await this.router.getWeather());
+    } catch {
+      return weatherView(null);
+    }
   }
 
   @Get('policies')
@@ -1052,6 +785,18 @@ export class DispatchController {
         'Planning data changed while the policy comparison was calculated; retry the read',
       );
     }
+    // Persist the exact measured rows only after the publication identity has been
+    // rechecked. Extra-engineer covering rows remain in the evidence, while the roster
+    // hash is derived from the published base input and is used during policy selection.
+    const rosterEngineerIds = readRosterEngineerIds(current.snapshot.payload);
+    await this.uow.run(async (tx) => {
+      await this.policyService.recordComparison(
+        tx,
+        comparison,
+        rosterEngineerIds,
+        await businessNow(this.prisma, this.clock.nowSeconds()),
+      );
+    });
     return comparison;
   }
 
@@ -1128,13 +873,26 @@ export class DispatchController {
     const control = await this.control.current(this.prisma);
     const lastPackage = await this.acceptance.lastPackage();
 
+    const published = await this.prisma.routingCurrent.findUnique({
+      where: { id: 'singleton' },
+      select: { snapshot: { select: { inputHash: true } } },
+    });
+    const appliedHash = plan?.routerResult?.inputHash ?? null;
+    const phase = visibleRouterPhase(
+      published !== null && published.snapshot.inputHash !== appliedHash,
+    );
     return {
       mode: control.mode,
       modeVersion: control.modeVersion,
+      calculating: phase.phase === 'building',
+      routerPhase: phase.phase,
+      routerMessage: phase.message,
+      geometryDone: phase.geometryDone,
+      geometryTotal: phase.geometryTotal,
       // The moment the shown plan describes. While a recalculation is under way the
       // interface keeps this plan and says it is being rebuilt, rather than clearing the
       // day (context/36 section 6).
-      plan: plan ? await this.decoratePlan(toPlanView(plan)) : null,
+      plan: plan ? this.mapRouting.projectPlan(toPlanView(plan)) : null,
       // Direct relation to the package that produced the working revision. Unlike the
       // diagnostic last package, this cannot be confused by another result received in
       // the same second.
@@ -1183,6 +941,113 @@ export class DispatchController {
   async markNoticeSeen(@Param('id') id: string) {
     await this.alertsService.markSeen(id, this.clock.nowSeconds());
     return { seen: true };
+  }
+
+  @Post('ai/explain')
+  @ApiOperation({ summary: 'Short language-model wording for a context the screen already has' })
+  async explainWithModel(@Body() body: { kind?: unknown; context?: unknown }) {
+    if (body.kind !== 'reasons' && body.kind !== 'plan') {
+      throw SysError.validationFailed('kind must be reasons or plan');
+    }
+    return { text: await this.miniAi.explain(body.kind, body.context ?? {}) };
+  }
+
+  @Post('ai/optimize')
+  @ApiOperation({
+    summary: 'Improve the live plan without moving customer windows or cancelling lunches',
+  })
+  async optimizeWithModel(@CurrentActor() actor: Actor, @Body() body: { summary?: unknown }) {
+    const summary = typeof body.summary === 'string' ? body.summary : '';
+    const active = await this.uow.run((tx) => this.policyService.active(tx));
+    const control = await this.prisma.controlState.findUnique({ where: { id: 'singleton' } });
+    const day = await this.prisma.liveWorkday.findFirst({
+      where: { status: 'running' },
+      select: { workDate: true },
+    });
+    const offline = day
+      ? await this.prisma.engineerDay.findMany({
+          where: { workDate: day.workDate, availability: 'offline' },
+          include: { engineer: { select: { displayName: true } } },
+          orderBy: { engineer: { inputOrder: 'asc' } },
+          take: 6,
+        })
+      : [];
+    const decision = await this.miniAi.planOptimization({
+      summary,
+      currentPolicyId: active.policyId,
+      currentPolicyLabel: POLICY_LABEL[active.policyId] ?? active.policyId,
+      manual: control?.mode === 'manual',
+      callCandidates: offline.map((item) => ({
+        id: item.engineerId,
+        label: item.engineer.displayName,
+      })),
+    });
+    if (decision.policyId !== active.policyId) {
+      const operationId = randomUUID();
+      await this.operations.execute(
+        {
+          operationId,
+          actor,
+          action: 'policy.select',
+          targetRef: decision.policyId,
+          payload: { operationId, policyId: decision.policyId },
+        },
+        async (context) => {
+          const selected = await this.policyService.select(context, decision.policyId);
+          await this.publisher.publishIfChanged(
+            context.tx,
+            context.now,
+            PUBLICATION_TRIGGERS.POLICY_CHANGED,
+          );
+          return selected;
+        },
+      );
+    }
+    if (decision.callEngineerId) {
+      const open = await this.prisma.alert.findMany({
+        where: { kind: 'alert', resolvedAt: null, invalidatedAt: null },
+        orderBy: { createdAt: 'desc' },
+        take: 20,
+      });
+      const target = open.find((alert) => alertActionsFor(alert.code).includes('add_engineer'));
+      if (target) {
+        const operationId = randomUUID();
+        const dto = {
+          operationId,
+          action: 'add_engineer' as const,
+          engineerId: decision.callEngineerId,
+          reason: 'Решено с AI автоматически',
+        };
+        await this.operations.execute(
+          { operationId, actor, action: 'alert.resolve', targetRef: target.id, payload: dto },
+          (context) => this.alertsService.resolve(context, target.id, dto),
+        );
+      }
+    }
+    if (decision.restoreAuto) {
+      const operationId = randomUUID();
+      await this.operations.execute(
+        { operationId, actor, action: 'control.auto', payload: { operationId, mode: 'auto' } },
+        (context) => this.control.returnToAuto(context),
+      );
+    }
+    return {
+      id: decision.policyId,
+      label: decision.policyLabel,
+      steps: decision.steps,
+    };
+  }
+
+  @Post('alerts/:id/ai-resolve')
+  @ApiOperation({
+    summary: 'System one picks an allowed alert action; apply=0 returns the choice only',
+  })
+  async resolveAlertWithModel(
+    @CurrentActor() actor: Actor,
+    @Param('id') id: string,
+    @Query('apply') apply?: string,
+  ) {
+    return this.alertsService.resolveWithSystemOne(actor, id, { apply: apply !== '0' });
   }
 
   @Post('alerts/:id/resolve')
@@ -1245,45 +1110,10 @@ export class DispatchController {
       },
       async (context) =>
         dto.mode === 'manual'
-          ? this.control.enterManual(context, dto.reason, dto)
-          : dto.mode === 'assisted'
-            ? this.control.enterAssisted(context, dto.reason, dto)
-            : this.control.returnToAuto(context, dto),
+          ? this.control.enterManual(context)
+          : this.control.returnToAuto(context),
     );
     return { control: outcome.result };
-  }
-
-  @Get('assisted')
-  @ApiOperation({ summary: 'Persistent dispatcher pins and current review card' })
-  async assistedState(@CurrentActor() actor: Actor) {
-    return this.assisted.state(actor);
-  }
-
-  @Post('assisted/preview')
-  @ApiOperation({ summary: 'Calculate a dispatcher correction without applying it' })
-  async assistedPreview(
-    @CurrentActor() actor: Actor,
-    @Body(zodBody(assistedPreviewSchema)) dto: AssistedPreviewDto,
-  ) {
-    return this.assisted.prepare(actor, dto);
-  }
-
-  @Post('assisted/apply')
-  @ApiOperation({ summary: 'Confirm and atomically apply a checked dispatcher correction' })
-  async assistedApply(
-    @CurrentActor() actor: Actor,
-    @Body(zodBody(assistedApplySchema)) dto: AssistedApplyDto,
-  ) {
-    return this.assisted.apply(actor, dto);
-  }
-
-  @Post('assisted/cancel')
-  @ApiOperation({ summary: 'Cancel a review card while preserving the working plan' })
-  async assistedCancel(
-    @CurrentActor() actor: Actor,
-    @Body(zodBody(assistedCancelSchema)) dto: AssistedCancelDto,
-  ) {
-    return this.assisted.cancel(actor, dto);
   }
 
   @Post('plan/reassign')
@@ -1297,44 +1127,9 @@ export class DispatchController {
         targetRef: dto.requestId,
         payload: dto,
       },
-      async (context) => this.manual.reassign(context, dto.requestId, dto.engineerId, dto),
+      async (context) => this.manual.reassign(context, dto.requestId, dto.engineerId),
     );
     return outcome.result;
-  }
-
-  @Post('plan/manual-preview')
-  @ApiOperation({ summary: 'Preview a manual gesture without changing the working plan' })
-  async manualPreview(
-    @CurrentActor() actor: Actor,
-    @Body(zodBody(manualPreviewSchema)) dto: ManualPreviewDto,
-  ) {
-    return this.prisma.$transaction((tx) =>
-      this.manual.preview(
-        { tx, now: this.clock.nowSeconds(), actor, operationId: dto.operationId },
-        dto,
-        dto,
-      ),
-    );
-  }
-
-  @Get('plan/manual-history')
-  @ApiOperation({ summary: 'Persistent manual transitions and edits, newest first' })
-  async manualHistory() {
-    const rows = await this.prisma.auditLog.findMany({
-      where: { action: { in: ['control.transition', 'plan.manual', 'plan.assisted'] } },
-      orderBy: [{ at: 'desc' }, { id: 'desc' }],
-      take: 100,
-    });
-    return {
-      entries: rows.map((row) => ({
-        id: row.id,
-        at: Number(row.at),
-        actorId: row.actorId,
-        action: row.action,
-        operationId: row.operationId,
-        details: row.details,
-      })),
-    };
   }
 
   @Post('plan/reorder')
@@ -1348,7 +1143,7 @@ export class DispatchController {
         targetRef: dto.engineerId,
         payload: dto,
       },
-      async (context) => this.manual.reorder(context, dto.engineerId, dto.requestIds, dto),
+      async (context) => this.manual.reorder(context, dto.engineerId, dto.requestIds),
     );
     return outcome.result;
   }
@@ -1476,6 +1271,29 @@ export class DispatchController {
     return outcome.result;
   }
 
+  @Post('data/road-import')
+  @Post('road-import')
+  @ApiOperation({ summary: 'Import a native OSRM JSON or gzip road resource' })
+  async importRoadData(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(roadImportSchema)) dto: RoadImportDto,
+  ) {
+    if (!this.router.isConfigured()) {
+      throw SysError.notConfigured('Router Core');
+    }
+    const outcome = await this.operations.executeExternal(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'router.road_import',
+        targetRef: dto.profile,
+        payload: dto,
+      },
+      () => this.roadImports.importRoadData(dto),
+    );
+    return outcome.result;
+  }
+
   @Post('data/restart-demo')
   @ApiOperation({
     summary: 'Rewind the public 14/2 demo day (DEMO_STAND only); keeps the dispatcher session',
@@ -1524,17 +1342,55 @@ export class DispatchController {
         return this.resetService.run(context, dto.kind, dto.confirmation);
       },
     );
+    // A fresh working set has no execution facts, so the plan-assessment model
+    // goes back to the factory assumptions together with the data it fit.
+    if (this.router.isConfigured()) {
+      await this.ai.rollbackToFactory();
+    }
     return outcome.result;
   }
 
-  /** A dispatcher chat reply or "Завершить передачу" needs a real human behind it, the
-   *  same confirmation `reset` above requires: an integration key carries the dispatcher's
-   *  authority but not a person who could actually be answering a customer. */
-  private requireDispatcherAccount(actor: Actor): string {
-    if (actor.kind !== 'account' || !actor.accountId) {
-      throw SysError.forbidden('A dispatcher chat reply is confirmed from the Dashboard');
-    }
-    return actor.accountId;
+  @Get('mcp')
+  @ApiOperation({ summary: 'Dashboard MCP server state: switch, pin presence, live activity' })
+  async mcpView(): Promise<McpSettingsView> {
+    return this.mcp.view();
+  }
+
+  @Put('mcp')
+  @ApiOperation({ summary: 'Switch the MCP server and set or rotate its pin' })
+  async updateMcp(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(updateMcpSettingsSchema)) dto: UpdateMcpSettingsDto,
+  ): Promise<McpSettingsView> {
+    return this.mcp.replace(actor, dto);
+  }
+
+  @Get('ai')
+  @ApiOperation({ summary: 'AI contour controls and the plan-calibration reading' })
+  async aiView() {
+    return this.ai.view();
+  }
+
+  @Put('ai')
+  @ApiOperation({ summary: 'Replace AI contour controls (plan calibration, future endpoints)' })
+  async updateAi(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(aiSettingsSchema)) dto: AiSettingsDto,
+  ) {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'dispatch.ai.replace',
+        payload: dto,
+      },
+      async (context) => {
+        const stored = await this.ai.replace(context.tx, context.now, dto);
+        return this.ai.present(stored);
+      },
+    );
+    this.ai.scheduleRefresh();
+    return outcome.result;
   }
 
   @Get('settings')
@@ -1563,7 +1419,7 @@ export class DispatchController {
   }
 
   @Get('settings/maps/status')
-  @ApiOperation({ summary: 'Observed map-provider health and request counts; no billable probe' })
+  @ApiOperation({ summary: 'Probe configured map providers with a short Moscow sample route' })
   async mapStatus() {
     return this.mapRouting.probe();
   }
@@ -1577,17 +1433,17 @@ export class DispatchController {
   ) {
     return { hits: await this.geocoding.search({ q, city, street }) };
   }
+}
 
-  private async decoratePlan(plan: ReturnType<typeof toPlanView>) {
-    let trafficEnabled = true;
-    if (this.router.isConfigured()) {
-      try {
-        trafficEnabled = (await this.router.getTechnicalSettings()).trafficEnabled ?? true;
-      } catch {
-        // Technical settings are optional decoration. The last applied plan must remain
-        // readable while Router is unavailable; routing health is reported separately.
-      }
-    }
-    return this.mapRouting.enrichPlan(plan, trafficEnabled);
+function readRosterEngineerIds(payload: string): string[] {
+  try {
+    const parsed = JSON.parse(payload) as { engineers?: Array<{ engineer_id?: unknown }> };
+    return (parsed.engineers ?? [])
+      .flatMap((engineer) =>
+        typeof engineer.engineer_id === 'string' ? [engineer.engineer_id] : [],
+      )
+      .sort();
+  } catch {
+    return [];
   }
 }

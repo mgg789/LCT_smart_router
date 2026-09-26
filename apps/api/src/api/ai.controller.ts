@@ -66,7 +66,9 @@ import {
   explainRequestSchema,
   type PostAiMessageDto,
   postAiMessageSchema,
+  type SetAiAssistModeDto,
   type SuggestAlertResolutionDto,
+  setAiAssistModeSchema,
   suggestAlertResolutionSchema,
 } from './dto/ai.dto';
 import { fromAsync } from './sse';
@@ -183,16 +185,53 @@ export class AiController {
     return { conversation: toConversationView(conversation) };
   }
 
+  @Post('conversations/:id/assist-mode')
+  @ApiOperation({ summary: 'Switch the dispatcher lane between help and fix' })
+  async setAssistMode(
+    @CurrentActor() actor: Actor,
+    @Param('id') conversationId: string,
+    @Body(zodBody(setAiAssistModeSchema)) dto: SetAiAssistModeDto,
+  ): Promise<{ conversation: AiConversationView }> {
+    const accountId = this.requireAccount(actor);
+    if (effectiveRole(actor) !== 'dispatcher') {
+      throw SysError.forbidden('Only a dispatcher switches the assistant lane');
+    }
+    await this.roleProfiles.setDispatcherAssistMode(dto.assistMode);
+    const conversation = await this.conversations.setDispatcherAssistMode(
+      accountId,
+      conversationId,
+      dto.assistMode,
+      this.clock.nowSeconds(),
+    );
+    return { conversation: toConversationView(conversation) };
+  }
+
+  @Post('conversations/:id/clear')
+  @ApiOperation({ summary: 'Close this dialogue so the next open starts empty' })
+  async clearConversation(
+    @CurrentActor() actor: Actor,
+    @Param('id') conversationId: string,
+  ): Promise<{ closed: true }> {
+    const accountId = this.requireAccount(actor);
+    const now = this.clock.nowSeconds();
+    const closed = await this.conversations.closeForAccount(accountId, conversationId, now);
+    await this.conversations.closeOpenLane(accountId, closed.roleProfile, now);
+    return { closed: true };
+  }
+
   @Get('conversations/:id/messages')
   @ApiOperation({ summary: 'The tail of a conversation after a given message sequence' })
   async listMessages(
     @CurrentActor() actor: Actor,
     @Param('id') conversationId: string,
     @Query(zodBody(afterSeqQuerySchema)) query: AfterSeqQueryDto,
-  ): Promise<{ messages: AiMessageView[] }> {
-    await this.assertOwned(actor, conversationId);
+  ): Promise<{ messages: AiMessageView[]; conversation: AiConversationView }> {
+    const conversation = await this.assertOwned(actor, conversationId);
     const messages = await this.conversations.listMessages(conversationId, query.afterSeq);
-    return { messages: messages.map(toMessageView) };
+    return {
+      messages: messages.map(toMessageView),
+      conversation: toConversationView(conversation),
+    };
   }
 
   @Post('conversations/:id/messages')

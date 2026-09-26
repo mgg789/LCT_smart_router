@@ -4,7 +4,7 @@ segment: dispatcher
 title: Невыход на смену и молчание инженера на линии
 summary: shift_no_show срабатывает через 30 минут после начала смены, engineer_overdue — через 5 минут отклонения от ожидаемой точки (включая технический перерыв, затянувшийся дольше 20 минут), и у каждого кода свой ограниченный набор действий.
 tags: [alerts, no-show, overdue, technical-break]
-actions: [get_alerts, resolve_alert]
+actions: [list_alerts, prepare_resolve_alert]
 related: [disp-01-day-shape, disp-11-live-problems-from-engineers]
 updated: 2026-09-20
 ---

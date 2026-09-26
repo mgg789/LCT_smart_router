@@ -85,6 +85,13 @@ def test_catalog_is_strict_and_versioned(snapshot):
         data["policy"] = {"policy_id": policy_id, "parameters": {}}
         spec = compile_policy(RouterTaskSnapshot.model_validate(data).policy)
         assert spec.search_stages[1] == first_resource
+    covering = compile_policy(
+        RouterTaskSnapshot.model_validate(
+            {**snapshot.model_dump(), "policy": {"policy_id": "covering", "parameters": {}}}
+        ).policy
+    )
+    assert covering.definition_version == "covering-3"
+    assert covering.search_stages[2] == "extra_assignments"
 
 
 def test_switching_policy_does_not_keep_previous_routes(snapshot, graph):

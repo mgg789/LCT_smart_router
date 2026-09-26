@@ -3,6 +3,7 @@ import { toRequestView } from '../../api/request-view';
 import { AppConfigService } from '../../common/config';
 import { RequestsService } from '../../orchestrator/requests/requests.service';
 import { WORK_TYPE_CODES } from '../../orchestrator/requests/work-type.catalog';
+import type { PrismaService } from '../../persistence';
 import type { AiOperationService } from '../operations';
 import { localDateSchema, localTimeSchema, localToUnixSeconds } from './local-time';
 import type { ToolContext, ToolResult, ToolSpec } from './tool.types';
@@ -10,6 +11,7 @@ import type { ToolContext, ToolResult, ToolSpec } from './tool.types';
 export interface ClientToolDeps {
   readonly aiOperations: AiOperationService;
   readonly requests: RequestsService;
+  readonly prisma: PrismaService;
   readonly config: AppConfigService;
 }
 
@@ -92,7 +94,13 @@ export function buildClientTools(deps: ClientToolDeps): readonly ToolSpec[] {
     async run(ctx: ToolContext): Promise<ToolResult> {
       // Shared with `ClientController.list`'s own ownership rule: an account only ever
       // sees its own requests (`RequestsService.listActive`'s own doc comment).
-      const requests = await deps.requests.listActive(ctx.accountId);
+      const requests = await deps.prisma.request.findMany({
+        where: {
+          clientAccountId: ctx.accountId,
+          lifecycle: { notIn: ['completed', 'cancelled'] },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
       const views = requests.map((request) => toRequestView(request));
       return {
         ok: true,

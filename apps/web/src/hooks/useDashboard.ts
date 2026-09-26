@@ -1,16 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  type ChatStreamOutcome,
-  type DispatchChatTarget,
-  type DispatchChatView,
-  finishDispatchChat as finishDispatchChatApi,
-  loadDispatchChats,
-  openDispatchChat as openDispatchChatApi,
-  readDispatchChat as readDispatchChatApi,
-  sendDispatchChatMessage as sendDispatchChatMessageApi,
-  streamDispatcherChatEvents,
-} from '../api/ai';
-import {
   cancelDispatchRequest,
   changeEngineerEmail,
   closeDispatchShift,
@@ -19,11 +8,13 @@ import {
   DashboardApiError,
   deleteDispatchEngineer,
   importOfficialDataset,
+  importRoadData,
   linkEngineerAccount,
   loadDashboardSnapshot,
   loadPolicyComparison,
   loginDispatcher,
   markDispatchNoticeSeen,
+  reassignDispatchRequest,
   requestDispatcherLoginCode,
   resolveDispatchAlert,
   restartDemoStand,
@@ -37,13 +28,7 @@ import {
   uploadDataPackage,
   verifyDispatcherLoginCode,
 } from '../api/client';
-import {
-  type DispatchLiveView,
-  type LiveEngineerState,
-  loadDispatchLive,
-  startLiveWorkday,
-} from '../api/live';
-import { applyManualChange, type ManualChange, type PlanExpectation } from '../api/manual';
+import { type DispatchLiveView, loadDispatchLive, startLiveWorkday } from '../api/live';
 import type {
   AlertResolutionInput,
   CreateDispatchEngineerInput,
@@ -56,6 +41,7 @@ import type {
   PlanDelta,
   PolicyComparisonResponse,
   PolicyId,
+  RoadImportSummary,
   RouterTechnicalSettings,
 } from '../api/types';
 import { demoScenarios, recordedScenario } from '../demo/scenarios';
@@ -80,10 +66,10 @@ import {
   saveDay,
   startRecoverySession,
 } from '../domain/resilience';
-import { useChatStream } from './useChatStream';
 
 const SESSION_KEY = 'lct.dispatcher.session';
-const DEFAULT_REBUILD_TIMEOUT_MS = 90_000;
+/** A cold MKAD solve of the demo day has taken about four minutes. */
+const DEFAULT_REBUILD_TIMEOUT_MS = 360_000;
 
 export interface DayEvent {
   readonly id: string;
@@ -99,6 +85,16 @@ interface RoutingBaseline {
 }
 
 /** Owns authentication and the live Dashboard-to-backend state flow. */
+function engineerNameMap(
+  ...groups: Array<ReadonlyArray<{ id: string; displayName: string }> | undefined>
+): ReadonlyMap<string, string> {
+  const names = new Map<string, string>();
+  for (const group of groups) {
+    for (const engineer of group ?? []) names.set(engineer.id, engineer.displayName);
+  }
+  return names;
+}
+
 export function useDashboard() {
   const [token, setToken] = useState<string | null>(() => sessionStorage.getItem(SESSION_KEY));
   const [recovered] = useState(() => restoreDay(sessionStorage, token !== null));
@@ -151,33 +147,23 @@ export function useDashboard() {
   const [liveWorkday, setLiveWorkday] = useState<DispatchLiveView | null>(null);
   const [liveLoading, setLiveLoading] = useState(token !== null);
   const [startingWorkday, setStartingWorkday] = useState(false);
-  const [dispatchChats, setDispatchChats] = useState<DispatchChatView[] | null>(null);
-  const [dispatchChatsLoading, setDispatchChatsLoading] = useState(false);
-  const [dispatchChatsError, setDispatchChatsError] = useState<string | null>(null);
-  const refreshInFlight = useRef<Promise<DashboardSnapshot | null> | null>(null);
+  const refreshInFlight = useRef(false);
   const liveRefreshInFlight = useRef(false);
   const comparisonInFlight = useRef(false);
-  const dispatchChatsInFlight = useRef(false);
   const readGeneration = useRef(0);
   const liveReadGeneration = useRef(0);
   const comparisonRequestId = useRef(0);
-  const dispatchChatsGeneration = useRef(0);
 
   const invalidateAsyncReads = useCallback(() => {
     readGeneration.current += 1;
     liveReadGeneration.current += 1;
     comparisonRequestId.current += 1;
-    dispatchChatsGeneration.current += 1;
-    refreshInFlight.current = null;
+    refreshInFlight.current = false;
     liveRefreshInFlight.current = false;
     comparisonInFlight.current = false;
-    dispatchChatsInFlight.current = false;
     setPolicyComparison(null);
     setPolicyComparisonLoading(false);
     setPolicyComparisonError(null);
-    setDispatchChats(null);
-    setDispatchChatsLoading(false);
-    setDispatchChatsError(null);
   }, []);
 
   const handleSessionFailure = useCallback(
@@ -217,48 +203,43 @@ export function useDashboard() {
   );
 
   const refresh = useCallback(async () => {
-    if (!token || sourceRef.current === 'demo') {
+    if (!token || sourceRef.current === 'demo' || refreshInFlight.current) {
       return null;
     }
-    // Explicit editor refreshes join polling instead of reporting a false failure.
-    if (refreshInFlight.current) return refreshInFlight.current;
     if (recoverySessionExpired(sessionStorage)) {
       handleSessionFailure('Сессия закончилась. Войдите снова.');
       return null;
     }
     const generation = readGeneration.current;
-    const work = (async () => {
-      try {
-        const next = await loadDashboardSnapshot(token);
-        if (generation !== readGeneration.current) {
-          return null;
-        }
-        setSnapshot(next);
-        setFocus((current) => reconcileDashboardFocus(next, current));
-        setOperationWarning(null);
-        setDiagnostic(null);
-        setError(null);
-        return next;
-      } catch (cause) {
-        if (generation !== readGeneration.current) {
-          return null;
-        }
-        reportFailure(cause);
-        if (cause instanceof DashboardApiError && (cause.status === 401 || cause.status === 403)) {
-          handleSessionFailure('Сессия закончилась. Войдите снова.');
-          return null;
-        }
-        setError(errorMessage(cause));
+    refreshInFlight.current = true;
+    try {
+      const next = await loadDashboardSnapshot(token);
+      if (generation !== readGeneration.current) {
         return null;
-      } finally {
-        if (generation === readGeneration.current) {
-          refreshInFlight.current = null;
-          setLoading(false);
-        }
       }
-    })();
-    refreshInFlight.current = work;
-    return work;
+      setSnapshot(next);
+      setFocus((current) => reconcileDashboardFocus(next, current));
+      setOperationWarning(null);
+      setDiagnostic(null);
+      setError(null);
+      return next;
+    } catch (cause) {
+      if (generation !== readGeneration.current) {
+        return null;
+      }
+      reportFailure(cause);
+      if (cause instanceof DashboardApiError && (cause.status === 401 || cause.status === 403)) {
+        handleSessionFailure('Сессия закончилась. Войдите снова.');
+        return null;
+      }
+      setError(errorMessage(cause));
+      return null;
+    } finally {
+      if (generation === readGeneration.current) {
+        refreshInFlight.current = false;
+        setLoading(false);
+      }
+    }
   }, [handleSessionFailure, token, reportFailure, setSnapshot]);
 
   /** Reads the authoritative workday clock and engineer event projection. */
@@ -290,163 +271,6 @@ export function useDashboard() {
     }
   }, [handleSessionFailure, reportFailure, token]);
 
-  /** Reads conversations currently handed to a human dispatcher, for the «Чаты» tab and its
-   * nav badge. Follows the same in-flight/generation guard as `refresh`/`refreshLive`.
-   * `closedLimit` forwards straight to the endpoint; omitted, the server's own default (30
-   * finished chats) applies. */
-  const refreshDispatchChats = useCallback(
-    async (closedLimit?: number) => {
-      if (!token || sourceRef.current !== 'live' || dispatchChatsInFlight.current) {
-        return null;
-      }
-      const generation = dispatchChatsGeneration.current;
-      dispatchChatsInFlight.current = true;
-      setDispatchChatsLoading(true);
-      try {
-        const next = await loadDispatchChats(token, closedLimit);
-        if (generation !== dispatchChatsGeneration.current) return null;
-        setDispatchChats(next.chats);
-        setDispatchChatsError(null);
-        return next.chats;
-      } catch (cause) {
-        if (generation !== dispatchChatsGeneration.current) return null;
-        reportFailure(cause);
-        if (cause instanceof DashboardApiError && (cause.status === 401 || cause.status === 403)) {
-          handleSessionFailure('Сессия закончилась. Войдите снова.');
-          return null;
-        }
-        setDispatchChatsError(errorMessage(cause));
-        return null;
-      } finally {
-        if (generation === dispatchChatsGeneration.current) {
-          dispatchChatsInFlight.current = false;
-          setDispatchChatsLoading(false);
-        }
-      }
-    },
-    [handleSessionFailure, reportFailure, token],
-  );
-
-  /** Replaces one row wholesale with the server's own copy -- every write endpoint below
-   * (`open`/`send`/`finish`/`read`) now returns its committed `chat`, so there is no more
-   * hand-patching individual fields that can drift from what the server actually stored. */
-  const replaceDispatchChat = useCallback((chat: DispatchChatView) => {
-    setDispatchChats((current) => {
-      const list = current ?? [];
-      const index = list.findIndex((item) => item.handoff.id === chat.handoff.id);
-      if (index === -1) return [chat, ...list];
-      const next = list.slice();
-      next[index] = chat;
-      return next;
-    });
-  }, []);
-
-  /** Opens (or re-enters) a chat with a request's customer or an engineer from the
-   * dashboard's own «Написать» buttons, rather than the assistant escalating. Returns the
-   * opened row so the caller can jump the «Чаты» tab straight to it. */
-  const openDispatchChat = useCallback(
-    async (target: DispatchChatTarget, text?: string): Promise<DispatchChatView> => {
-      if (!token) throw new Error('Открытие чата доступно только в живом контуре');
-      const result = await openDispatchChatApi(token, crypto.randomUUID(), target, text);
-      replaceDispatchChat(result.chat);
-      return result.chat;
-    },
-    [replaceDispatchChat, token],
-  );
-
-  /** Sends the dispatcher's own reply into a handed-over conversation. */
-  const sendDispatchChatMessage = useCallback(
-    async (conversationId: string, text: string) => {
-      if (!token) return;
-      const result = await sendDispatchChatMessageApi(
-        token,
-        conversationId,
-        crypto.randomUUID(),
-        text,
-      );
-      replaceDispatchChat(result.chat);
-    },
-    [replaceDispatchChat, token],
-  );
-
-  /** Returns one conversation to the AI. History stays in place -- nothing here deletes it.
-   * The row stays in the list (now `closed`), it does not disappear. */
-  const finishDispatchChat = useCallback(
-    async (conversationId: string) => {
-      if (!token) return;
-      const result = await finishDispatchChatApi(token, conversationId, crypto.randomUUID());
-      replaceDispatchChat(result.chat);
-    },
-    [replaceDispatchChat, token],
-  );
-
-  /** Clears a chat's unread badge up to `seq`. A `null` response (chat not found, e.g. an
-   * already-finished cursor that moved on) is a legitimate no-op, not a failure. */
-  const markDispatchChatRead = useCallback(
-    async (conversationId: string, seq: number) => {
-      if (!token) return;
-      const result = await readDispatchChatApi(token, conversationId, crypto.randomUUID(), seq);
-      if (result.chat) replaceDispatchChat(result.chat);
-    },
-    [replaceDispatchChat, token],
-  );
-
-  const dispatchChatsUnreadCount = useMemo(
-    () => (dispatchChats ?? []).reduce((sum, chat) => sum + chat.unreadCount, 0),
-    [dispatchChats],
-  );
-
-  /** Folds one live chat-stream frame into local state without a round trip: a `message`
-   * lands directly in its still-open row (deduplicated by `seq`, since a message already
-   * fetched by the initial `refreshDispatchChats` may also arrive over the stream), while a
-   * `state` event (a handover opening, answered, or closed) changes which rows exist at all,
-   * so it falls back to a full list refresh rather than trying to patch one row in place. A
-   * malformed frame is dropped here -- the next `state` event or poll reconciles either way. */
-  const handleChatStreamEvent = useCallback(
-    (outcome: ChatStreamOutcome) => {
-      if (!outcome.ok) return;
-      const event = outcome.event;
-      if (event.type === 'state') {
-        void refreshDispatchChats();
-        return;
-      }
-      setDispatchChats((current) => {
-        if (!current) return current;
-        let changed = false;
-        const next = current.map((chat) => {
-          if (chat.conversation.id !== event.conversationId || chat.handoff.state === 'closed') {
-            return chat;
-          }
-          if (chat.messages.some((item) => item.seq === event.message.seq)) return chat;
-          changed = true;
-          return {
-            ...chat,
-            messages: [...chat.messages, event.message].sort((a, b) => a.seq - b.seq),
-            unreadCount: event.message.author === 'user' ? chat.unreadCount + 1 : chat.unreadCount,
-          };
-        });
-        return changed ? next : current;
-      });
-    },
-    [refreshDispatchChats],
-  );
-
-  /** Pre-binds the token the hook's own `connect` contract expects -- `useChatStream` only
-   * ever invokes this while `enabled` (which requires a token) is true, so the fallback is
-   * never actually exercised. */
-  const connectDispatchChatStream = useCallback(
-    (onEvent: (outcome: ChatStreamOutcome) => void, signal: AbortSignal) =>
-      streamDispatcherChatEvents(token ?? '', onEvent, signal),
-    [token],
-  );
-
-  const { connected: dispatchChatStreamConnected } = useChatStream({
-    token,
-    enabled: token !== null && source === 'live',
-    connect: connectDispatchChatStream,
-    onEvent: handleChatStreamEvent,
-  });
-
   useEffect(() => {
     void refresh();
   }, [refresh]);
@@ -456,34 +280,71 @@ export function useDashboard() {
   }, [refreshLive]);
 
   useEffect(() => {
-    if (!token || source === 'demo') return;
-    void refreshDispatchChats();
-    // The live chat stream already pushes messages and state changes as they happen; this
-    // poll is only the fallback for while it is not connected (startup, a dropped socket).
-    if (dispatchChatStreamConnected) return;
-    const interval = window.setInterval(() => void refreshDispatchChats(), 8_000);
-    return () => window.clearInterval(interval);
-  }, [token, source, refreshDispatchChats, dispatchChatStreamConnected]);
-
-  useEffect(() => {
     if (!token || source === 'demo' || rebuilding || liveWorkday?.workday.status === 'running') {
       return;
     }
-    const interval = window.setInterval(() => void refresh(), 10_000);
+    const interval = window.setInterval(() => {
+      void refresh();
+      // A failed first LIVE read must not leave the clock dark for the whole session.
+      void refreshLive();
+    }, 10_000);
     return () => window.clearInterval(interval);
-  }, [rebuilding, refresh, token, source, liveWorkday?.workday.status]);
+  }, [rebuilding, refresh, refreshLive, token, source, liveWorkday?.workday.status]);
 
   useEffect(() => {
     if (!token || source === 'demo' || rebuilding || liveWorkday?.workday.status !== 'running') {
       return;
     }
-    const poll = () => {
+    // Clock and engineer progress only. The six-call day snapshot stays off this
+    // interval: it used every browser connection, so icons and clicks waited.
+    const interval = window.setInterval(() => {
       void refreshLive();
+    }, 2_000);
+    const snapshotInterval = window.setInterval(() => {
       void refresh();
+    }, 20_000);
+    return () => {
+      window.clearInterval(interval);
+      window.clearInterval(snapshotInterval);
     };
-    const interval = window.setInterval(poll, 2_000);
-    return () => window.clearInterval(interval);
   }, [liveWorkday?.workday.status, rebuilding, refresh, refreshLive, source, token]);
+
+  const seenPlanRevision = useRef<number | null | undefined>(undefined);
+  useEffect(() => {
+    if (source !== 'live' || liveWorkday?.workday.status !== 'running') return;
+    const revision = liveWorkday.workday.planRevision;
+    if (revision === undefined) return;
+    const next = revision ?? null;
+    if (seenPlanRevision.current === undefined) {
+      seenPlanRevision.current = next;
+      return;
+    }
+    if (seenPlanRevision.current === next) return;
+    seenPlanRevision.current = next;
+    void refresh();
+  }, [liveWorkday?.workday.planRevision, liveWorkday?.workday.status, refresh, source]);
+
+  const seenGeometry = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (source !== 'live' || liveWorkday?.workday.status !== 'running') return;
+    const done = liveWorkday.workday.geometryDone;
+    const total = liveWorkday.workday.geometryTotal;
+    if (done === undefined || total === undefined) return;
+    const key = `${done}/${total}`;
+    if (seenGeometry.current === undefined) {
+      seenGeometry.current = key;
+      return;
+    }
+    if (seenGeometry.current === key) return;
+    seenGeometry.current = key;
+    void refresh();
+  }, [
+    liveWorkday?.workday.geometryDone,
+    liveWorkday?.workday.geometryTotal,
+    liveWorkday?.workday.status,
+    refresh,
+    source,
+  ]);
 
   const engineers = useMemo(() => (snapshot ? engineerSummaries(snapshot) : []), [snapshot]);
   const unassigned = useMemo(() => (snapshot ? unassignedRequests(snapshot) : []), [snapshot]);
@@ -510,32 +371,6 @@ export function useDashboard() {
     ]);
   }, []);
 
-  /** Puts every change of a crew's LIVE state into the dispatcher's event feed. */
-  const previousLiveEngineers = useRef<Map<string, string>>(new Map());
-  useEffect(() => {
-    if (liveWorkday?.workday.status !== 'running') {
-      previousLiveEngineers.current = new Map();
-      return;
-    }
-    const next = new Map(
-      liveWorkday.engineers.map((engineer) => [
-        engineer.id,
-        `${engineer.lineStatus}:${engineer.activeRequestId ?? ''}:${engineer.pendingDelayProblem?.requestId ?? ''}`,
-      ]),
-    );
-    const previous = previousLiveEngineers.current;
-    if (previous.size > 0) {
-      for (const engineer of liveWorkday.engineers) {
-        const before = previous.get(engineer.id);
-        const after = next.get(engineer.id);
-        if (before !== undefined && before !== after) {
-          pushEvent(`LIVE: ${engineer.name} — ${liveEngineerEvent(engineer)}.`);
-        }
-      }
-    }
-    previousLiveEngineers.current = next;
-  }, [liveWorkday, pushEvent]);
-
   const acceptSession = useCallback(
     (session: Awaited<ReturnType<typeof loginDispatcher>>, generation: number) => {
       if (generation !== readGeneration.current) return;
@@ -559,13 +394,17 @@ export function useDashboard() {
       try {
         acceptSession(await loginDispatcher(email, password), generation);
       } catch (cause) {
-        if (generation !== readGeneration.current) return;
-        reportFailure(cause);
-        setError(errorMessage(cause));
-        setLoading(false);
+        // A wrong mailbox or password is a failed attempt, not an expired session.
+        // The login card only paints an error when this promise rejects; swallowing
+        // it left the form unchanged.
+        if (generation === readGeneration.current) {
+          setLoading(false);
+          setError(errorMessage(cause));
+        }
+        throw cause;
       }
     },
-    [acceptSession, reportFailure],
+    [acceptSession],
   );
 
   /** Adopts the dispatcher session returned by the Figma login card without
@@ -660,7 +499,12 @@ export function useDashboard() {
       setError(null);
       setPendingDelta(
         previous && recorded.snapshot.plan.plan && id !== 'initial'
-          ? computePlanDelta(previous, recorded.snapshot.plan.plan, 0)
+          ? computePlanDelta(
+              previous,
+              recorded.snapshot.plan.plan,
+              0,
+              engineerNameMap(snapshotRef.current?.engineers, recorded.snapshot.engineers),
+            )
           : null,
       );
       setBaseline(null);
@@ -759,10 +603,6 @@ export function useDashboard() {
         return false;
       }
       const previous = snapshot;
-      if (previous.plan.mode === 'manual') {
-        setError('Сначала явно верните AUTO через переключатель режима. Ручной план сохранён.');
-        return false;
-      }
       const solveStartedAtMs = performance.now();
       const previousResultId = previous.plan.appliedResult?.resultId ?? null;
       const previousRevision = previous.plan.plan?.revision ?? null;
@@ -783,6 +623,10 @@ export function useDashboard() {
         });
       }
       try {
+        if (previous.plan.mode === 'manual') {
+          await setDispatchMode(token, 'auto');
+          pushEvent('Для перестроения включён авторежим — иначе Router не применит новый план.');
+        }
         if (previous.routerSettings && !sameRouterSettings(previous.routerSettings, nextSettings)) {
           const updated = await updateRouterTechnicalSettings(token, {
             ...nextSettings,
@@ -817,6 +661,7 @@ export function useDashboard() {
               previous.plan.plan,
               next.plan.plan,
               Math.round(performance.now() - solveStartedAtMs),
+              engineerNameMap(previous.engineers, next.engineers),
             ),
           );
         }
@@ -875,6 +720,7 @@ export function useDashboard() {
           ? 'допуск переработки обновлён'
           : null,
         nextSettings.trafficEnabled !== current.trafficEnabled ? 'режим пробок обновлён' : null,
+        nextSettings.metroEnabled !== current.metroEnabled ? 'режим метро обновлён' : null,
         nextSettings.equipmentEnabled !== current.equipmentEnabled
           ? 'режим оборудования обновлён'
           : null,
@@ -909,10 +755,23 @@ export function useDashboard() {
       if (generation !== liveReadGeneration.current) return false;
       setLiveWorkday(next);
       pushEvent('Рабочий день запущен. План и статусы инженеров обновляются в LIVE-режиме.');
-      await refresh();
+      void refresh();
       return true;
     } catch (cause) {
       if (generation !== liveReadGeneration.current) return false;
+      if (isStartTimeout(cause)) {
+        const started = await waitForStartedDay(
+          token,
+          generation,
+          liveReadGeneration,
+          setLiveWorkday,
+        );
+        if (started) {
+          pushEvent('Рабочий день запущен. План и статусы инженеров обновляются в LIVE-режиме.');
+          void refresh();
+          return true;
+        }
+      }
       reportFailure(cause);
       setError(errorMessage(cause));
       return false;
@@ -942,15 +801,15 @@ export function useDashboard() {
   }, [baseline, pendingDelta, rebuild]);
 
   const setMode = useCallback(
-    async (mode: 'auto' | 'manual', expected: PlanExpectation, reason?: string) => {
+    async (mode: 'auto' | 'manual') => {
       if (!token || sourceRef.current !== 'live') {
-        throw new Error('Изменение режима доступно только на рабочем сервере');
+        return;
       }
       invalidateAsyncReads();
       const generation = readGeneration.current;
       setError(null);
       try {
-        await setDispatchMode(token, mode, expected, reason);
+        await setDispatchMode(token, mode);
         if (generation !== readGeneration.current) return;
         await refresh();
         pushEvent(
@@ -958,14 +817,11 @@ export function useDashboard() {
         );
       } catch (cause) {
         if (generation !== readGeneration.current) return;
-        if (!(cause instanceof DashboardApiError) || cause.status === 0) {
-          reportFailure(cause);
-          setOperationWarning(
-            'Результат изменения режима не подтверждён. Проверьте состояние на сервере.',
-          );
-        } else if (cause.status === 409) await refresh();
+        reportFailure(cause);
+        setOperationWarning(
+          'Результат изменения режима не подтверждён. Проверьте состояние на сервере.',
+        );
         setError(errorMessage(cause));
-        throw cause;
       }
     },
     [invalidateAsyncReads, pushEvent, refresh, token, reportFailure],
@@ -1007,6 +863,19 @@ export function useDashboard() {
       }
     }
   }, [handleSessionFailure, rebuilding, token, scenarioId, reportFailure]);
+
+  const comparedRevision = useRef<number | null>(null);
+  useEffect(() => {
+    if (!token || source !== 'live' || rebuilding) return;
+    const revision = snapshot?.plan.plan?.revision ?? null;
+    if (revision === null || comparedRevision.current === revision) return;
+    // The plan is already on screen. Comparison can fill in behind it.
+    const handle = window.setTimeout(() => {
+      comparedRevision.current = revision;
+      void refreshPolicyComparison();
+    }, 800);
+    return () => window.clearTimeout(handle);
+  }, [rebuilding, refreshPolicyComparison, snapshot?.plan.plan?.revision, source, token]);
 
   const updateEngineerAvailability = useCallback(
     async (engineerId: string, availability: 'online' | 'offline') => {
@@ -1060,6 +929,7 @@ export function useDashboard() {
               previous.plan.plan,
               next.plan.plan,
               Math.round(performance.now() - solveStartedAtMs),
+              engineerNameMap(previous.engineers, next.engineers),
             ),
           );
         }
@@ -1201,11 +1071,16 @@ export function useDashboard() {
     [performEntityMutation],
   );
 
-  const editManualPlan = useCallback(
-    (change: ManualChange, expected: PlanExpectation, operationId: string) => {
-      return performEntityMutation(async (session) => {
-        await applyManualChange(session, change, expected, operationId);
-      }, 'Ручной план сохранён. Время и дорожные показатели требуют проверки.');
+  const assignRequest = useCallback(
+    (requestId: string, engineerId: string) => {
+      const engineer = snapshotRef.current?.engineers.find((item) => item.id === engineerId);
+      return performEntityMutation(
+        async (session) => {
+          await setDispatchMode(session, 'manual');
+          await reassignDispatchRequest(session, requestId, engineerId);
+        },
+        `Заявка назначена инженеру ${engineer?.displayName ?? engineerId}.`,
+      );
     },
     [performEntityMutation],
   );
@@ -1356,6 +1231,41 @@ export function useDashboard() {
     ],
   );
 
+  const importRoadResource = useCallback(
+    async (payloadBase64: string): Promise<RoadImportSummary> => {
+      if (!token || sourceRef.current !== 'live' || uploadingData) {
+        throw new Error('Загрузка данных уже выполняется');
+      }
+      invalidateAsyncReads();
+      const generation = readGeneration.current;
+      setUploadingData(true);
+      setError(null);
+      try {
+        const summary = await importRoadData(token, payloadBase64);
+        if (generation !== readGeneration.current) return summary;
+        await refreshLive();
+        pushEvent(
+          summary.status === 'replayed'
+            ? 'Дорожный ресурс уже был импортирован.'
+            : `Дорожный ресурс принят: ${summary.edges} рёбер, ${summary.nodes} узлов.`,
+        );
+        return summary;
+      } catch (cause) {
+        if (generation === readGeneration.current) {
+          reportFailure(cause);
+          setOperationWarning(
+            'Импорт дорожного ресурса не подтверждён. Проверьте журнал операций.',
+          );
+          setError(errorMessage(cause));
+        }
+        throw cause;
+      } finally {
+        setUploadingData(false);
+      }
+    },
+    [invalidateAsyncReads, pushEvent, refreshLive, reportFailure, token, uploadingData],
+  );
+
   const importOfficialTzDataset = useCallback(async (): Promise<OfficialImportSummary> => {
     if (!token || sourceRef.current !== 'live' || uploadingData) {
       throw new Error('Загрузка данных уже выполняется');
@@ -1441,15 +1351,6 @@ export function useDashboard() {
     liveWorkday,
     liveLoading,
     startingWorkday,
-    dispatchChats,
-    dispatchChatsLoading,
-    dispatchChatsError,
-    dispatchChatsUnreadCount,
-    refreshDispatchChats,
-    openDispatchChat,
-    sendDispatchChatMessage,
-    finishDispatchChat,
-    markDispatchChatRead,
     engineers,
     unassigned,
     selectedEngineerId,
@@ -1490,10 +1391,11 @@ export function useDashboard() {
     unlinkEngineerLogin,
     createRequest,
     cancelRequest,
-    editManualPlan,
+    assignRequest,
     createEngineer,
     deleteEngineer,
     uploadDataset,
+    importRoadResource,
     importOfficialTzDataset,
     resolveAlert,
     setAttendanceOptOut,
@@ -1519,7 +1421,9 @@ function sameRouterSettings(
     left.taskStartLatenessToleranceSec === right.taskStartLatenessToleranceSec &&
     left.windowLatenessToleranceSec === right.windowLatenessToleranceSec &&
     left.trafficEnabled === right.trafficEnabled &&
+    left.metroEnabled === right.metroEnabled &&
     left.equipmentEnabled === right.equipmentEnabled &&
+    left.equipmentTransfersEnabled === right.equipmentTransfersEnabled &&
     left.travelTimeMode === right.travelTimeMode &&
     left.accessBufferSec === right.accessBufferSec &&
     left.fixedTravelTimeSec === right.fixedTravelTimeSec &&
@@ -1532,11 +1436,13 @@ function sameRouterSettings(
 function defaultRouterSettings(snapshot: DashboardSnapshot): RouterTechnicalSettings {
   return {
     lunchesEnabled: snapshot.lunchesEnabled,
+    metroEnabled: false,
     departureLatenessToleranceSec: 0,
     taskStartLatenessToleranceSec: 0,
     windowLatenessToleranceSec: 0,
     trafficEnabled: true,
     equipmentEnabled: true,
+    equipmentTransfersEnabled: false,
     travelTimeMode: 'graph_with_access_buffer',
     accessBufferSec: 600,
     fixedTravelTimeSec: 1_200,
@@ -1568,20 +1474,39 @@ function delay(durationMs: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, durationMs));
 }
 
+function isStartTimeout(cause: unknown): boolean {
+  return cause instanceof DashboardApiError && /не ответил|нет связи/i.test(cause.message);
+}
+
+/** The start call can outlive the first response. Keep the button on «Запускаем». */
+async function waitForStartedDay(
+  token: string,
+  generation: number,
+  liveReadGeneration: { readonly current: number },
+  setLiveWorkday: (value: DispatchLiveView) => void,
+): Promise<boolean> {
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    await delay(1_000);
+    if (generation !== liveReadGeneration.current) return false;
+    try {
+      const next = await loadDispatchLive(token);
+      if (generation !== liveReadGeneration.current) return false;
+      if (next.workday.status === 'running' || next.workday.status === 'finished') {
+        setLiveWorkday(next);
+        return true;
+      }
+    } catch {
+      // The original start is still the request the screen is waiting on.
+    }
+  }
+  return false;
+}
+
 function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : 'Не удалось выполнить запрос';
 }
 
 function engineerName(snapshot: DashboardSnapshot, engineerId: string): string {
   return snapshot.engineers.find((item) => item.id === engineerId)?.displayName ?? engineerId;
-}
-
-function liveEngineerEvent(engineer: LiveEngineerState): string {
-  if (engineer.pendingDelayProblem) return 'сообщил о задержке';
-  if (engineer.lineStatus === 'technical_break') return 'на техническом перерыве';
-  if (engineer.lineStatus === 'no_show_offline') return 'не вышел на линию';
-  if (engineer.lineStatus === 'stood_down') return 'снялся с линии';
-  if (engineer.activeRequestId) return `работает с заявкой №${engineer.activeRequestId}`;
-  if (engineer.lineStatus === 'online') return 'вышел на линию';
-  return 'ожидает выхода на линию';
 }

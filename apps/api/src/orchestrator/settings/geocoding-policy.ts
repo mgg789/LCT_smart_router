@@ -24,6 +24,12 @@ export function autocompleteQuery(input: GeocodeQuery): string {
   return [input.street?.trim(), input.city?.trim()].filter((part) => part).join(', ');
 }
 
+/** One reverse-geocode object, or null when the payload has no point. */
+export function hitFromReverse(body: unknown): GeocodeHit | null {
+  const [hit] = hitsFromAutocomplete([body]);
+  return hit ?? null;
+}
+
 /** Maps a LocationIQ autocomplete payload into dispatcher hits. */
 export function hitsFromAutocomplete(body: unknown): GeocodeHit[] {
   if (!Array.isArray(body)) {

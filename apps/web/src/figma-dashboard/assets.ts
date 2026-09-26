@@ -68,6 +68,10 @@ export const FIGMA_ASSETS = {
   engChat: '/figma/icon-eng-chat.svg',
   engSearch: '/figma/icon-eng-search.svg',
   engDot: '/figma/icon-eng-dot.svg',
+  aiKolobok: '/figma/ai-kolobok.png',
+  aiCopy: '/figma/ai-copy.svg',
+  aiThumbUp: '/figma/ai-thumb-up.svg',
+  aiThumbDown: '/figma/ai-thumb-down.svg',
 } as const;
 
 /** Three Figma portraits cycled on the Engineers ring when the API has no photo. */

@@ -4,7 +4,7 @@ segment: engineer
 title: Приехал раньше и жду
 summary: Приезд раньше расчётного времени не создаёт никакого факта сам по себе; «Приступить» становится доступной, как только открылось окно клиента или наступило расчётное время маршрута — раньше этого само приложение ничего не позволит.
 tags: [ожидание, окно, старт]
-actions: [report_on_time, report_eta, start_visit]
+actions: [report_eta]
 related: [eng-07-eta-and-on-time, eng-00-how-the-day-works]
 updated: 2026-09-20
 ---

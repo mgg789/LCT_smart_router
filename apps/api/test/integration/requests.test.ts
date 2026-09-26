@@ -681,4 +681,70 @@ describe('request lifecycle', () => {
     assert.equal(response.status, 422);
     assert.equal(((await response.json()) as ErrorBody).error.code, 'VALIDATION_FAILED');
   });
+
+  it('remembers the last sent visit and keeps cancelled requests in history', async () => {
+    const created = await call('POST', '/api/v1/client/requests/submitted', clientToken, {
+      operationId: randomUUID(),
+      contactName: 'Анна Смирнова',
+      addressText: 'Москва, ул. История, д. 9',
+      lat: 55.77,
+      lon: 37.6,
+      workType: 'no_link',
+      windowStartAt: DAY + 10 * HOUR,
+      windowEndAt: DAY + 12 * HOUR,
+      urgent: false,
+      problemText: 'Интернет не работает',
+    });
+    assert.equal(created.status, 201, await created.clone().text());
+    const sent = ((await created.json()) as RequestBody).request;
+    assert.equal(sent.lifecycle, 'submitted');
+    requestIds.push(sent.id);
+
+    // Second-precision timestamps can tie after several submissions from one customer.
+    // The newest arrival must win independently of database row order.
+    const storedSent = await prisma.request.findUniqueOrThrow({ where: { id: sent.id } });
+    await prisma.request.updateMany({
+      where: { id: { in: requestIds }, submittedAt: { not: null } },
+      data: { submittedAt: storedSent.submittedAt, createdAt: storedSent.createdAt },
+    });
+    const profile = await call('GET', '/api/v1/client/profile', clientToken);
+    assert.equal(profile.status, 200, await profile.clone().text());
+    const remembered = (await profile.json()) as {
+      email: string;
+      contactName: string | null;
+      addressText: string | null;
+      lat: number | null;
+      lon: number | null;
+    };
+    assert.equal(remembered.email, clientEmail);
+    assert.equal(remembered.contactName, 'Анна Смирнова');
+    assert.equal(remembered.addressText, 'Москва, ул. История, д. 9');
+    assert.equal(remembered.lat, 55.77);
+    assert.equal(remembered.lon, 37.6);
+
+    const draft = await prepare();
+    const historyWithDraft = await call('GET', '/api/v1/client/requests?scope=all', clientToken);
+    const historyIds = (
+      (await historyWithDraft.json()) as { requests: { id: string }[] }
+    ).requests.map((item) => item.id);
+    assert.equal(historyIds.includes(sent.id), true);
+    assert.equal(historyIds.includes(draft.id), false);
+
+    const cancelled = await call('POST', `/api/v1/client/requests/${sent.id}/cancel`, clientToken, {
+      operationId: randomUUID(),
+      expectedVersion: sent.version,
+    });
+    assert.equal(cancelled.status, 201, await cancelled.clone().text());
+
+    const active = await call('GET', '/api/v1/client/requests', clientToken);
+    const activeIds = ((await active.json()) as { requests: { id: string }[] }).requests.map(
+      (item) => item.id,
+    );
+    const history = await call('GET', '/api/v1/client/requests?scope=all', clientToken);
+    const afterIds = ((await history.json()) as { requests: { id: string }[] }).requests.map(
+      (item) => item.id,
+    );
+    assert.equal(activeIds.includes(sent.id), false);
+    assert.equal(afterIds.includes(sent.id), true);
+  });
 });

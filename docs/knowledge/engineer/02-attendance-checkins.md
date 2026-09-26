@@ -4,7 +4,7 @@ segment: engineer
 title: Отметка о присутствии
 summary: Кнопка «Я на связи» — отдельная от выхода на линию отметка, доступная только в часы смены; диспетчер может написать вам или снять со смены, если отметок долго нет.
 tags: [отметка, смена, диспетчер]
-actions: [record_attendance, call_dispatch_helper]
+actions: []
 related: [eng-01-going-online, eng-17-when-to-call-the-dispatcher]
 updated: 2026-09-20
 ---

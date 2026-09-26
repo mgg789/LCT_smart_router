@@ -17,18 +17,20 @@ export const APP_STATE_KEYS = {
    */
   GENERATION: 'generation',
   /**
-   * The single dispatcher's current AI assist lane (`help` or `fix`, schema.prisma's own
-   * comment on `AiAssistMode`), read fresh by `RoleProfileService.forActor` at every
-   * confirm so a lane flip made after an operation was prepared is never missed
-   * (context/35 section 8). Global, not per-account, because this deployment has exactly
-   * one dispatcher (auth/actor.ts's comment on `ApiTokenCategory`).
-   */
-  AI_DISPATCHER_ASSIST_MODE: 'ai_dispatcher_assist_mode',
-  /**
    * Dispatcher-owned operational controls: day bounds, alert timers and map keys.
    * Secrets in the value are never written to logs or returned in full.
    */
   DISPATCHER_SETTINGS: 'dispatcher.settings',
+  /** AI contour controls: plan-assessment retraining switch and future API endpoints. */
+  AI_SETTINGS: 'dispatcher.ai',
+  AI_DISPATCHER_ASSIST_MODE: 'dispatcher.ai.assist-mode',
+  /** Last computed plan-assessment calibration and its fact signature. */
+  AI_CALIBRATION: 'ai.predict-calibration',
+  /**
+   * Dashboard MCP server: the switch and the id of the `ApiToken` row that carries the
+   * pin hash. The pin value itself never lands here.
+   */
+  MCP_SETTINGS: 'dispatcher.mcp',
 } as const;
 
 export type AppStateKey = (typeof APP_STATE_KEYS)[keyof typeof APP_STATE_KEYS];

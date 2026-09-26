@@ -5,6 +5,8 @@ import {
   createDispatchRequest,
   DashboardApiError,
   deleteDispatchEngineer,
+  getDispatcherSettings,
+  importRoadData,
   loadDashboardSnapshot,
   loadPolicyComparison,
   selectRoutingPolicy,
@@ -169,104 +171,99 @@ const settings = {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('live dashboard client', () => {
-  it.each([false, true])(
-    'aggregates business data even with Router unavailable=%s',
-    async (routerDown) => {
-      vi.stubGlobal(
-        'fetch',
-        vi.fn(async (input: string | URL | Request) => {
-          const path = new URL(String(input), 'http://local').pathname;
-          if (path.endsWith('/requests')) return json({ requests: [request] });
-          if (path.endsWith('/engineers')) return json({ engineers: [engineer] });
-          if (path.endsWith('/plan')) {
-            return json({
-              mode: 'auto',
-              modeVersion: 1,
-              plan: {
-                revision: 7,
-                origin: 'auto',
-                planAsOf: 1_800_000_000,
-                appliedAt: 1_800_000_100,
-                routes: [],
-                assignments: [
-                  {
-                    requestId: 'request-1',
-                    status: 'assigned',
-                    engineerId: 'engineer-1',
-                    reasons: [
-                      {
-                        code: 'CONSTRAINTS_SATISFIED',
-                        text: 'Constraints verified.',
-                        basis: 'constraint_check',
-                        facts: { skill: 'office' },
-                      },
-                    ],
-                  },
-                ],
+  it('aggregates backend resources and normalizes structured reasons', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request) => {
+        const path = new URL(String(input), 'http://local').pathname;
+        if (path.endsWith('/requests')) return json({ requests: [request] });
+        if (path.endsWith('/engineers')) return json({ engineers: [engineer] });
+        if (path.endsWith('/plan')) {
+          return json({
+            mode: 'auto',
+            modeVersion: 1,
+            plan: {
+              revision: 7,
+              origin: 'auto',
+              planAsOf: 1_800_000_000,
+              appliedAt: 1_800_000_100,
+              routes: [],
+              assignments: [
+                {
+                  requestId: 'request-1',
+                  status: 'assigned',
+                  engineerId: 'engineer-1',
+                  reasons: [
+                    {
+                      code: 'CONSTRAINTS_SATISFIED',
+                      text: 'Constraints verified.',
+                      basis: 'constraint_check',
+                      facts: { skill: 'office' },
+                    },
+                  ],
+                },
+              ],
+            },
+            appliedResult: null,
+            lastResult: null,
+          });
+        }
+        if (path.endsWith('/alerts'))
+          return json({
+            alerts: [
+              {
+                id: 'risk',
+                code: 'time_risk',
+                kind: 'alert',
+                severity: 'warning',
+                engineerIds: ['engineer-1'],
+                requestIds: ['request-1'],
+                reasons: [{ plannedStartAt: 1_800_000_600, windowEndAt: 1_800_000_000 }],
+                restoreOption: { engineer_id: 'engineer-1', reject_request_ids: ['request-1'] },
+                actions: ['move_window'],
+                createdAt: 1_800_000_000,
+                seenAt: null,
+                resolvedAt: null,
               },
-              appliedResult: null,
-              lastResult: null,
-            });
-          }
-          if (path.endsWith('/alerts'))
-            return json({
-              alerts: [
-                {
-                  id: 'risk',
-                  code: 'time_risk',
-                  kind: 'alert',
-                  severity: 'warning',
-                  engineerIds: ['engineer-1'],
-                  requestIds: ['request-1'],
-                  reasons: [{ plannedStartAt: 1_800_000_600, windowEndAt: 1_800_000_000 }],
-                  restoreOption: { engineer_id: 'engineer-1', reject_request_ids: ['request-1'] },
-                  actions: ['move_window'],
-                  createdAt: 1_800_000_000,
-                  seenAt: null,
-                  resolvedAt: null,
-                },
-              ],
-            });
-          if (path.endsWith('/shift'))
-            return json({ workDate: '2026-09-17', closedAt: null, unresolvedCount: 0 });
-          if (path.endsWith('/policies')) {
-            return json({
-              policies: [
-                {
-                  policyId: 'compact',
-                  title: 'Compact',
-                  description: 'Use fewer engineers',
-                  isDefault: true,
-                },
-              ],
-              active: { policyId: 'compact', version: 1, changedAt: 1_800_000_000 },
-            });
-          }
-          if (path.endsWith('/router/technical-settings'))
-            return routerDown ? new Response('{}', { status: 503 }) : json(settings);
-          throw new Error(`Unexpected request: ${path}`);
-        }),
-      );
+            ],
+          });
+        if (path.endsWith('/shift'))
+          return json({ workDate: '2026-09-17', closedAt: null, unresolvedCount: 0 });
+        if (path.endsWith('/policies')) {
+          return json({
+            policies: [
+              {
+                policyId: 'compact',
+                title: 'Compact',
+                description: 'Use fewer engineers',
+                isDefault: true,
+              },
+            ],
+            active: { policyId: 'compact', version: 1, changedAt: 1_800_000_000 },
+          });
+        }
+        if (path.endsWith('/router/technical-settings')) return json(settings);
+        throw new Error(`Unexpected request: ${path}`);
+      }),
+    );
 
-      const snapshot = await loadDashboardSnapshot('session-token');
+    const snapshot = await loadDashboardSnapshot('session-token');
 
-      expect(snapshot.workDate).toBe('2026-09-17');
-      expect(snapshot.policyId).toBe('compact');
-      if (routerDown) expect(snapshot.routerSettings).toBeNull();
-      expect(snapshot.requests).toHaveLength(1);
-      expect(snapshot.alerts[0]?.reasons[0]).toContain('Опоздание: 10 мин.');
-      expect(snapshot.alerts[0]?.restoreOption).toEqual({
-        engineer_id: 'engineer-1',
-        reject_request_ids: ['request-1'],
-      });
-      expect(snapshot.plan.plan?.assignments[0]?.reasons.assignment?.factors[0]).toMatchObject({
-        code: 'CONSTRAINTS_SATISFIED',
-        detail: 'Constraints verified.',
-        basis: 'constraint_check',
-        facts: { skill: 'office' },
-      });
-    },
-  );
+    expect(snapshot.workDate).toBe('2026-09-17');
+    expect(snapshot.policyId).toBe('compact');
+    expect(snapshot.requests).toHaveLength(1);
+    expect(snapshot.alerts[0]?.reasons[0]).toContain('Опоздание: 10 мин.');
+    expect(snapshot.alerts[0]?.restoreOption).toEqual({
+      engineer_id: 'engineer-1',
+      reject_request_ids: ['request-1'],
+    });
+    expect(snapshot.plan.plan?.assignments[0]?.reasons.assignment?.factors[0]).toMatchObject({
+      code: 'CONSTRAINTS_SATISFIED',
+      detail: 'Constraints verified.',
+      basis: 'constraint_check',
+      facts: { skill: 'office' },
+    });
+  });
 
   it('preserves all technical settings when toggling lunches', async () => {
     let sentBody: unknown = null;
@@ -296,8 +293,35 @@ describe('live dashboard client', () => {
       windowLatenessToleranceSec: 0,
       trafficEnabled: true,
       equipmentEnabled: true,
+      equipmentTransfersEnabled: false,
     });
     expect(contextVersion).toBe('context-2');
+  });
+
+  it('fills the documented morning equipment capacities for legacy settings responses', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        json({
+          dayStartMin: 540,
+          dayEndMin: 1080,
+          noShowSec: 900,
+          overdueSec: 900,
+          timeRiskSec: 1800,
+          repeatAfterSec: 120,
+          twogisApiKeySet: false,
+          twogisApiKeyLast4: null,
+          yandexApiKeySet: false,
+          yandexApiKeyLast4: null,
+        }),
+      ),
+    );
+
+    await expect(getDispatcherSettings('session-token')).resolves.toMatchObject({
+      equipmentCapacityWalk: 5,
+      equipmentCapacityBike: 12,
+      equipmentCapacityCar: 30,
+    });
   });
 
   it('returns the exact publication hash created by a policy selection', async () => {
@@ -354,7 +378,11 @@ describe('live dashboard client', () => {
                 workTimeSec: 10_800,
                 waitingTimeSec: 600,
                 lunchTimeSec: 0,
+                lateAssignedCount: 0,
+                totalLatenessSec: 0,
                 minWindowSlackSec: -600,
+                workloadSpreadSec: 1_800,
+                maxWorkloadSec: 7_200,
               },
             })),
           }),
@@ -490,6 +518,38 @@ describe('live dashboard client', () => {
       operationId: expect.any(String),
       schemaVersion: '1.0',
       mode: 'append_requests',
+    });
+  });
+});
+
+describe('road import client', () => {
+  it('sends only the road-import envelope accepted by the API', async () => {
+    let sentBody: Record<string, unknown> | null = null;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+        sentBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return json({
+          operationId: 'operation-1',
+          status: 'accepted',
+          graphVersion: 'graph-1',
+          routerContextVersion: 'context-2',
+          inputSha256: 'a'.repeat(64),
+          profiles: ['car'],
+          nodes: 2,
+          edges: 1,
+        });
+      }),
+    );
+
+    // Deliberately short fake payload: a long base64 literal trips gitleaks'
+    // generic-api-key rule on this line.
+    await importRoadData('session-token', 'e30=');
+
+    expect(sentBody).toEqual({
+      operationId: expect.any(String),
+      profile: 'car',
+      payloadBase64: 'e30=',
     });
   });
 });

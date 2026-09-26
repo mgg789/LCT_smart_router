@@ -4,7 +4,7 @@ segment: dispatcher
 title: Форма рабочего дня и LIVE
 summary: Рабочий день — это отдельный durable-объект с собственными часами (LIVE), который диспетчер запускает явно; до старта часы дня неподвижны, и ни импорт данных, ни открытие дашборда сами по себе день не начинают.
 tags: [live, день, старт, регионы]
-actions: [get_day_state, get_live_view, start_live_day]
+actions: [get_shift_status]
 related: [disp-02-reading-the-plan, disp-10-closing-the-shift, disp-12-data-and-regions]
 updated: 2026-09-20
 ---

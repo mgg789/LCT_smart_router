@@ -1,3 +1,4 @@
+import type { HandoffView } from '../orchestrator/equipment/handoffs';
 import type { PlanRouteView, PlanStopView } from './plan-view';
 import type { RequestView } from './request-view';
 
@@ -16,6 +17,17 @@ export interface LiveWorkdayView {
   readonly engineerStartDeadlineAt: number;
   readonly requestCount: number;
   readonly stats: LiveStatsView;
+  /** Applied plan revision. The dashboard reloads geometry only when this changes. */
+  readonly planRevision: number | null;
+  /** True while a newer task is published and Router has not applied it yet. */
+  readonly calculating: boolean;
+  /** Local router phase. The live read does not call Router to produce it. */
+  readonly routerPhase: 'building' | 'ready' | 'error';
+  /** Set when `routerPhase` is `error`. */
+  readonly routerMessage: string | null;
+  /** Exact polylines already drawn. The plan read never waits for the next one. */
+  readonly geometryDone: number;
+  readonly geometryTotal: number;
 }
 
 export interface LiveStatsView {
@@ -48,7 +60,7 @@ export interface LiveRouteProgressView {
 export interface LiveEngineerStateView {
   readonly id: string;
   readonly name: string;
-  readonly lineStatus: 'pending' | 'online' | 'no_show_offline' | 'stood_down' | 'technical_break';
+  readonly lineStatus: 'pending' | 'online' | 'no_show_offline' | 'technical_break';
   readonly lineStartedAt: number | null;
   readonly noShowAt: number | null;
   readonly lunchInterval: { readonly startAt: number; readonly endAt: number } | null;
@@ -72,6 +84,7 @@ export interface LiveEngineerStateView {
 }
 
 export interface DispatchLiveView {
+  readonly handoffs: HandoffView[];
   readonly workday: LiveWorkdayView;
   readonly engineers: LiveEngineerStateView[];
   /** Technical-stop markers reconstructed from the durable operation journal. */
@@ -95,6 +108,7 @@ export interface DispatchLiveView {
 }
 
 export interface EngineerLiveView {
+  readonly handoffs: HandoffView[];
   readonly workday: LiveWorkdayView;
   readonly engineer: LiveEngineerStateView;
   readonly route: PlanRouteView | null;

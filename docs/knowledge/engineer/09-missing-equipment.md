@@ -4,7 +4,7 @@ segment: engineer
 title: Нет оборудования
 summary: «Нет оборудования» — это отмена заявки, а не пауза; используйте её только если работу правда нельзя выполнить без недостающего устройства, а не чтобы выиграть время.
 tags: [оборудование, отмена, роутер]
-actions: [report_missing_equipment, call_dispatch_helper]
+actions: [report_missing_equipment]
 related: [eng-08-work-takes-longer, eng-10-cannot-complete]
 updated: 2026-09-20
 ---

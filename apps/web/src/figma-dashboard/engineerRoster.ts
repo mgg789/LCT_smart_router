@@ -1,3 +1,4 @@
+import type { HandoffView } from '../api/live';
 import type { DashboardSnapshot, EngineerDayView, PlanStopView, RequestView } from '../api/types';
 import { requestById, routeForEngineer } from '../domain/dashboard';
 import { regionStyle } from '../domain/regions';
@@ -24,14 +25,20 @@ export type EngineerJobActivity = {
   readonly address: string;
   readonly client: string | null;
   readonly arrived: string | null;
+  readonly startClock: string;
   readonly finishClock: string;
+  readonly nextTitle: string | null;
   readonly nextClock: string | null;
 };
 
 export type EngineerPauseActivity = {
-  readonly kind: 'lunch' | 'break';
+  readonly kind: 'lunch' | 'break' | 'handoff';
   readonly title: string;
+  readonly subtitle?: string;
+  readonly startClock: string | null;
   readonly untilClock: string | null;
+  readonly nextTitle: string | null;
+  readonly nextClock: string | null;
 };
 
 export type EngineerActivity =
@@ -168,6 +175,7 @@ export function engineerActivity(
   snapshot: DashboardSnapshot,
   engineerId: string,
   nowAt: number,
+  handoffs: readonly HandoffView[] = [],
 ): EngineerActivity {
   const engineer = snapshot.engineers.find((item) => item.id === engineerId);
   const day = engineer?.day ?? null;
@@ -175,23 +183,43 @@ export function engineerActivity(
     return {
       kind: 'break',
       title: 'Технический перерыв',
+      startClock: null,
       untilClock: day.expectedOnlineAt ? formatClock(day.expectedOnlineAt) : null,
+      nextTitle: null,
+      nextClock: null,
     };
   }
 
   const route = routeForEngineer(snapshot, engineerId);
   const current = currentStop(route?.stops ?? [], nowAt);
+  const currentHandoff = current?.kind === 'handoff' ? handoffForStop(current, handoffs) : null;
+  if (current && currentHandoff) {
+    return handoffActivity(snapshot, engineerId, currentHandoff, current.startAt);
+  }
+  const nextJob = inProgressJobStop(snapshot, engineerId, route?.stops ?? []);
+  const nextHandoff = handoffs
+    .filter(
+      (item) =>
+        item.completedAt === null &&
+        (item.donorEngineerId === engineerId || item.receiverEngineerId === engineerId),
+    )
+    .find((item) => item.meetingAt >= nowAt && (!nextJob || item.meetingAt <= nextJob.startAt));
+  if (nextHandoff) return handoffActivity(snapshot, engineerId, nextHandoff, nextHandoff.meetingAt);
   if (current?.kind === 'lunch' || isOpenLunch(day, nowAt)) {
     const until = current?.kind === 'lunch' ? current.endAt : day?.lunch.windowEndAt;
+    const lunchStart = day?.lunch.startedAt ?? (current?.kind === 'lunch' ? current.startAt : null);
+    const next = nextJobAfter(route?.stops ?? [], current?.endAt ?? lunchStart ?? nowAt);
     return {
       kind: 'lunch',
       title: 'Обед',
+      startClock: lunchStart ? formatClock(lunchStart) : null,
       untilClock: until ? formatClock(until) : null,
+      nextTitle: next ? `Заявка № ${shortRequestId(next.requestId ?? '')}` : null,
+      nextClock: next ? formatClock(next.startAt) : null,
     };
   }
 
-  const jobStop =
-    current?.kind === 'job' ? current : inProgressJobStop(snapshot, engineerId, route?.stops ?? []);
+  const jobStop = current?.kind === 'job' ? current : nextJob;
   if (jobStop?.requestId) {
     const request = requestById(snapshot, jobStop.requestId);
     if (request) {
@@ -207,6 +235,7 @@ export function engineerActivity(
  */
 export function engineerProfilesFromSnapshot(
   snapshot: DashboardSnapshot | null,
+  handoffs: readonly HandoffView[] = [],
 ): EngineerProfile[] {
   if (!snapshot) return [];
   const nowAt = snapshot.nowAt;
@@ -223,7 +252,7 @@ export function engineerProfilesFromSnapshot(
             assignment.engineerId === engineer.id && assignment.status !== 'unassigned',
         ) ?? [];
       const assignedCount = assignments.length;
-      const activity = engineerActivity(snapshot, engineer.id, nowAt);
+      const activity = engineerActivity(snapshot, engineer.id, nowAt, handoffs);
       return {
         id: engineer.id,
         version: engineer.version,
@@ -250,9 +279,49 @@ function cardStatus(
   assignedCount: number,
 ): string {
   if (activity.kind === 'break' || availability === 'technical_break') return 'техперерыв';
+  if (activity.kind === 'handoff') return 'передача';
   if (activity.kind === 'lunch') return 'обед';
   if (availability === 'offline') return 'не на смене';
   return `в работе - ${requestCountLabel(assignedCount)}`;
+}
+
+function handoffForStop(stop: PlanStopView, handoffs: readonly HandoffView[]): HandoffView | null {
+  const id = stop.handoff?.handoff_id;
+  return handoffs.find((item) => item.id === id) ?? null;
+}
+
+function handoffActivity(
+  snapshot: DashboardSnapshot,
+  engineerId: string,
+  handoff: HandoffView,
+  meetingAt: number,
+): EngineerPauseActivity {
+  const donor =
+    snapshot.engineers.find((item) => item.id === handoff.donorEngineerId)?.displayName ??
+    handoff.donorEngineerId;
+  const receiver =
+    snapshot.engineers.find((item) => item.id === handoff.receiverEngineerId)?.displayName ??
+    handoff.receiverEngineerId;
+  const action = engineerId === handoff.donorEngineerId ? 'Передать' : 'Принять';
+  return {
+    kind: 'handoff',
+    title: 'Передача оборудования',
+    subtitle: `${action} · ${donor} → ${receiver} · ${handoffItemsLabel(handoff)}`,
+    startClock: formatClock(meetingAt),
+    untilClock: formatClock(meetingAt + 300),
+    nextTitle: null,
+    nextClock: null,
+  };
+}
+
+function handoffItemsLabel(handoff: HandoffView): string {
+  return [
+    handoff.items.router ? `роутер ×${handoff.items.router}` : null,
+    handoff.items.set_top_box ? `ТВ-приставка ×${handoff.items.set_top_box}` : null,
+    handoff.items.smart_speaker ? `умная колонка ×${handoff.items.smart_speaker}` : null,
+  ]
+    .filter((item): item is string => item !== null)
+    .join(', ');
 }
 
 function currentStop(stops: readonly PlanStopView[], nowAt: number): PlanStopView | null {
@@ -286,13 +355,8 @@ function jobActivity(
   stops: readonly PlanStopView[],
 ): EngineerJobActivity {
   const finishAt = request.expectedCompletionAt ?? stop.endAt;
-  const next = stops.find(
-    (item) =>
-      item.kind === 'job' &&
-      item.requestId &&
-      item.startAt >= stop.endAt &&
-      item.requestId !== request.id,
-  );
+  const next = nextJobAfter(stops, stop.endAt, request.id);
+  const startAt = request.startedAt ?? stop.startAt;
   return {
     kind: 'job',
     requestId: request.id,
@@ -300,9 +364,29 @@ function jobActivity(
     address: shortAddress(request.addressText),
     client: request.contactName,
     arrived: request.startedAt ? `Прибыл в ${formatClock(request.startedAt)}` : null,
+    startClock: formatClock(startAt),
     finishClock: formatClock(finishAt),
+    nextTitle: next ? `Заявка № ${shortRequestId(next.requestId ?? '')}` : null,
     nextClock: next ? formatClock(next.startAt) : null,
   };
+}
+
+function nextJobAfter(
+  stops: readonly PlanStopView[],
+  afterAt: number,
+  excludeRequestId?: string,
+): PlanStopView | null {
+  return (
+    stops
+      .filter(
+        (item) =>
+          item.kind === 'job' &&
+          item.requestId !== null &&
+          item.startAt >= afterAt &&
+          item.requestId !== excludeRequestId,
+      )
+      .sort((left, right) => left.startAt - right.startAt)[0] ?? null
+  );
 }
 
 function shortAddress(address: string): string {

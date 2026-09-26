@@ -194,6 +194,32 @@ describe('dev dashboard fixture', () => {
     expect(delta.solveMs).toBe(1180);
   });
 
+  it('counts a request becoming unassigned as an executor change', () => {
+    const first = CURRENT_PLAN.assignments[0];
+    expect(first).toBeDefined();
+    if (!first) return;
+    const after = {
+      ...CURRENT_PLAN,
+      assignments: CURRENT_PLAN.assignments.map((assignment) =>
+        assignment.requestId === first.requestId
+          ? { ...assignment, engineerId: null, status: 'unassigned' as const }
+          : assignment,
+      ),
+    };
+    const delta = computePlanDelta(
+      CURRENT_PLAN,
+      after,
+      100,
+      new Map([[first.engineerId ?? '', 'Алексей Волков']]),
+    );
+    expect(delta.transferred).toBe(1);
+    expect(delta.lines).toContainEqual({
+      requestId: first.requestId,
+      engineerName: null,
+      text: 'Не назначена',
+    });
+  });
+
   it('accepts a rebuild only after a newer plan and accepted Router result', () => {
     const base = createDevSnapshot();
     const revision = base.plan.plan?.revision ?? 0;

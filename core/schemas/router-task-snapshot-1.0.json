@@ -29,6 +29,12 @@
           "title": "Engineer Id",
           "type": "string"
         },
+        "equipment_capacity": {
+          "maximum": 1000,
+          "minimum": 0,
+          "title": "Equipment Capacity",
+          "type": "integer"
+        },
         "equipment_stock": {
           "$ref": "#/$defs/EquipmentStock"
         },
@@ -127,7 +133,7 @@
     },
     "EquipmentStock": {
       "additionalProperties": false,
-      "description": "Immutable start-of-day stock carried by one engineer; units never transfer.",
+      "description": "Immutable start-of-day stock carried by one engineer.",
       "properties": {
         "router": {
           "default": 0,
@@ -234,31 +240,52 @@
       "title": "LunchInput",
       "type": "object"
     },
-    "PinnedOrder": {
+    "PendingEquipmentHandoff": {
       "additionalProperties": false,
-      "description": "Relative order of dispatcher-pinned jobs; other work may be inserted between them.",
+      "description": "Sys-confirmed meeting retained as a frozen future execution fact.",
       "properties": {
-        "engineer_id": {
+        "donor_engineer_id": {
           "minLength": 1,
-          "title": "Engineer Id",
+          "title": "Donor Engineer Id",
           "type": "string"
         },
-        "request_ids": {
-          "items": {
-            "minLength": 1,
-            "type": "string"
-          },
-          "maxItems": 500,
-          "minItems": 2,
-          "title": "Request Ids",
-          "type": "array"
+        "handoff_id": {
+          "minLength": 1,
+          "title": "Handoff Id",
+          "type": "string"
+        },
+        "items": {
+          "$ref": "#/$defs/EquipmentStock"
+        },
+        "location": {
+          "$ref": "#/$defs/GeoPoint"
+        },
+        "meeting_at": {
+          "minimum": 0,
+          "title": "Meeting At",
+          "type": "integer"
+        },
+        "receiver_engineer_id": {
+          "minLength": 1,
+          "title": "Receiver Engineer Id",
+          "type": "string"
+        },
+        "request_id": {
+          "minLength": 1,
+          "title": "Request Id",
+          "type": "string"
         }
       },
       "required": [
-        "engineer_id",
-        "request_ids"
+        "handoff_id",
+        "donor_engineer_id",
+        "receiver_engineer_id",
+        "request_id",
+        "items",
+        "location",
+        "meeting_at"
       ],
-      "title": "PinnedOrder",
+      "title": "PendingEquipmentHandoff",
       "type": "object"
     },
     "Policy": {
@@ -310,7 +337,7 @@
     },
     "Request": {
       "additionalProperties": false,
-      "description": "An unstarted job; service must finish within its customer window plus applicable grace.",
+      "description": "An unstarted job; its customer window constrains service start only.",
       "properties": {
         "arrival_order": {
           "minimum": 0,
@@ -319,19 +346,6 @@
         },
         "location": {
           "$ref": "#/$defs/GeoPoint"
-        },
-        "pinned_engineer_id": {
-          "anyOf": [
-            {
-              "minLength": 1,
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Pinned Engineer Id"
         },
         "priority": {
           "enum": [
@@ -453,12 +467,11 @@
       "title": "Horizon Start At",
       "type": "integer"
     },
-    "pinned_orders": {
+    "pending_equipment_handoffs": {
       "items": {
-        "$ref": "#/$defs/PinnedOrder"
+        "$ref": "#/$defs/PendingEquipmentHandoff"
       },
-      "maxItems": 500,
-      "title": "Pinned Orders",
+      "title": "Pending Equipment Handoffs",
       "type": "array"
     },
     "planning_as_of": {

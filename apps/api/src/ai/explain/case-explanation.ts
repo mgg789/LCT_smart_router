@@ -61,7 +61,7 @@ export interface ExplainEngineerView {
 
 export interface ExplainPlanStopView {
   readonly sequence: number;
-  readonly kind: 'job' | 'lunch' | 'wait' | 'start';
+  readonly kind: 'job' | 'lunch' | 'wait' | 'start' | 'handoff';
   readonly requestId: string | null;
   readonly arrivalAt: number;
   readonly startAt: number;

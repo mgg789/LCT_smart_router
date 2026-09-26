@@ -9,8 +9,10 @@ WORKDIR /app
 
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY apps/web/package.json apps/web/package.json
+COPY packages/shared/package.json packages/shared/package.json
 RUN pnpm install --frozen-lockfile --filter web...
 
+COPY packages/shared packages/shared
 COPY apps/web apps/web
 RUN pnpm --filter web build
 

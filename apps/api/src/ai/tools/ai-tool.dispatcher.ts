@@ -4,6 +4,7 @@ import { Clock } from '../../common/time';
 import { EngineersService } from '../../orchestrator/engineers/engineers.service';
 import { PrismaService } from '../../persistence';
 import type { LlmToolCall } from '../provider';
+import { RunStoppedSignal } from '../runtime/stop.service';
 import {
   type ToolDispatchContext,
   ToolDispatcher,
@@ -85,6 +86,7 @@ export class AiToolDispatcher extends ToolDispatcher {
     try {
       return await tool.run(toolContext, parsed.data);
     } catch (error) {
+      if (error instanceof RunStoppedSignal) throw error;
       if (error instanceof SysError) {
         return {
           ok: false,

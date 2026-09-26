@@ -4,7 +4,7 @@ segment: client
 title: Временное окно и срочность
 summary: Вы указываете удобный диапазон даты и времени, а не точный момент; отметка «срочно» может поднять приоритет обработки, но никогда его не понижает.
 tags: [окно, срочность, приоритет]
-actions: [prepare_request]
+actions: [create_request]
 related: [cli-00-how-to-file, cli-03-what-happens-after]
 updated: 2026-09-20
 ---

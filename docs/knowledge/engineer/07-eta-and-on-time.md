@@ -4,7 +4,7 @@ segment: engineer
 title: «Буду вовремя» и оценка времени приезда
 summary: До начала визита можно подтвердить, что приедете по плану, или назвать своё время — оба варианта работают только до расчётного момента начала и не позже конца рабочего дня.
 tags: [eta, прогноз, приезд]
-actions: [report_on_time, report_eta]
+actions: [report_eta]
 related: [eng-06-early-arrival-and-waiting, eng-08-work-takes-longer, eng-13-vehicle-and-road]
 updated: 2026-09-20
 ---

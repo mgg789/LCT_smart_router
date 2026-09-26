@@ -1,6 +1,5 @@
 import { z } from 'zod';
 import { requestJson } from './client';
-import { mapForecastSchema, mapObservationSchema } from './mapForecast';
 import type {
   EngineerAuthSession,
   EngineerDayView,
@@ -79,7 +78,21 @@ const requestSchema = z.object({
 
 const planStopSchema = z.object({
   sequence: z.number().int(),
-  kind: z.enum(['job', 'lunch', 'wait', 'start']),
+  kind: z.enum(['job', 'lunch', 'wait', 'start', 'handoff']),
+  handoff: z
+    .object({
+      handoff_id: z.string(),
+      donor_engineer_id: z.string(),
+      receiver_engineer_id: z.string(),
+      request_id: z.string(),
+      items: z.object({
+        router: z.number().int().nonnegative(),
+        set_top_box: z.number().int().nonnegative(),
+        smart_speaker: z.number().int().nonnegative(),
+      }),
+    })
+    .nullable()
+    .optional(),
   requestId: z.string().nullable(),
   lat: z.number(),
   lon: z.number(),
@@ -96,8 +109,7 @@ const planLegSchema = z.object({
   arrivalAt: z.number().int(),
   travelTimeSec: z.number().int().nonnegative(),
   distanceKm: z.number().nonnegative(),
-  travelSource: z.enum(['approximate', 'road_matrix', 'route_api', 'traffic_api']),
-  mapObservation: mapObservationSchema.optional(),
+  travelSource: z.enum(['approximate', 'road_matrix', 'route_api', 'traffic_api', 'metro']),
   geometryProvider: z.enum(['twogis', 'yandex']).optional(),
   trafficFactor: z.number().min(1),
   geometry: z
@@ -105,6 +117,19 @@ const planLegSchema = z.object({
       points: z.array(z.object({ lat: z.number(), lon: z.number() })).min(2),
     })
     .nullable(),
+  segments: z
+    .array(
+      z.object({
+        geometry: z.object({
+          points: z.array(z.object({ lat: z.number(), lon: z.number() })).min(2),
+        }),
+        travelSource: z.enum(['approximate', 'road_matrix', 'route_api', 'traffic_api', 'metro']),
+        travelTimeSec: z.number().int().nonnegative(),
+        distanceKm: z.number().nonnegative(),
+        geometryProvider: z.enum(['twogis', 'yandex']).optional(),
+      }),
+    )
+    .optional(),
 });
 
 const routeSchema = z.object({
@@ -119,8 +144,6 @@ const routeSchema = z.object({
   waitingTimeSec: z.number().int(),
   lunchTimeSec: z.number().int(),
   assignedCount: z.number().int(),
-  timingStatus: z.enum(['calculated', 'unverified', 'forecast']).optional(),
-  mapForecast: mapForecastSchema.optional(),
   lunchStatus: z.enum([
     'none',
     'planned',

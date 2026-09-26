@@ -3,6 +3,7 @@ import type {
   PolicyComparisonResponse,
   PolicyComparisonRow,
 } from '../api/types';
+import { recommendPolicy } from '../domain/policyRecommend';
 import {
   perAssignmentDuration,
   perAssignmentKm,
@@ -148,6 +149,19 @@ export function PolicyComparisonView({
                   active={Boolean(
                     snapshot && row.kind === 'policy' && row.strategyId === snapshot.policyId,
                   )}
+                  recommended={Boolean(
+                    snapshot &&
+                      row.kind === 'policy' &&
+                      recommendPolicy({
+                        active: snapshot.policyId,
+                        unassignedCount: row.metrics.unassignedCount,
+                        robustness: null,
+                        rosterOffline: false,
+                        maxBreach: 0,
+                        maxOverrun: 0,
+                        rows,
+                      }).policyId === row.strategyId,
+                  )}
                   recorded={recorded}
                   baselineMetrics={baselineMetrics}
                 />
@@ -163,11 +177,13 @@ export function PolicyComparisonView({
 function ComparisonRow({
   row,
   active,
+  recommended,
   recorded,
   baselineMetrics,
 }: {
   row: PolicyComparisonRow;
   active: boolean;
+  recommended: boolean;
   recorded: boolean;
   baselineMetrics: PolicyComparisonRow['metrics'] | undefined;
 }) {
@@ -181,6 +197,7 @@ function ComparisonRow({
           </span>
           {baseline ? <RowBadge label="сравнение с ТЗ" /> : null}
           {active ? <RowBadge label="активная" /> : null}
+          {recommended ? <RecommendBadge /> : null}
         </div>
         <p className="mt-[6px] max-w-[280px] font-medium text-[13px] leading-[18px] text-figma-muted">
           {strategyDescription(row.strategyId)}
@@ -283,6 +300,14 @@ function RowBadge({ label }: { label: string }) {
   return (
     <span className="rounded-[20px] bg-figma-bee px-[10px] py-[3px] font-semibold text-[12px] text-figma-ink">
       {label}
+    </span>
+  );
+}
+
+function RecommendBadge() {
+  return (
+    <span className="rounded-[20px] bg-figma-work-bg px-[10px] py-[3px] font-semibold text-[12px] text-figma-work">
+      Топ
     </span>
   );
 }

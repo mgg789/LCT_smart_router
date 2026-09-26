@@ -20,18 +20,37 @@ export const DEFAULT_EXECUTION_TIMING_POLICY: ExecutionTimingPolicyValue = {
  * uptime. The last validated value is retained; defaults are used only before the first
  * successful read or when Router is intentionally disabled.
  */
+const SETTINGS_TTL_MS = 30_000;
+
 @Injectable()
 export class ExecutionTimingPolicy {
   private readonly logger = new Logger(ExecutionTimingPolicy.name);
   private cached: ExecutionTimingPolicyValue = DEFAULT_EXECUTION_TIMING_POLICY;
+  private refreshedAt = 0;
+  private inFlight: Promise<ExecutionTimingPolicyValue> | null = null;
 
   constructor(private readonly router: RouterClient) {}
 
-  /** Returns the current Router-owned thresholds, or the last safe local copy. */
-  async read(): Promise<ExecutionTimingPolicyValue> {
-    if (!this.router.isConfigured()) {
-      return this.cached;
+  /**
+   * Returns the last safe thresholds immediately.
+   *
+   * LIVE calls this on every clock tick. Waiting here for Router put the tick,
+   * and every screen waiting on that tick, behind a solve. A refresh runs beside
+   * the tick and replaces the cache when it returns.
+   */
+  read(): Promise<ExecutionTimingPolicyValue> {
+    if (this.router.isConfigured() && Date.now() - this.refreshedAt >= SETTINGS_TTL_MS) {
+      if (!this.inFlight) {
+        const pending = this.refresh().finally(() => {
+          if (this.inFlight === pending) this.inFlight = null;
+        });
+        this.inFlight = pending;
+      }
     }
+    return Promise.resolve(this.cached);
+  }
+
+  private async refresh(): Promise<ExecutionTimingPolicyValue> {
     try {
       const settings = await this.router.getTechnicalSettings();
       this.cached = fromRouterSettings(settings);
@@ -42,6 +61,7 @@ export class ExecutionTimingPolicy {
         }`,
       );
     }
+    this.refreshedAt = Date.now();
     return this.cached;
   }
 

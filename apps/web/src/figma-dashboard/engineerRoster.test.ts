@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createDevSnapshot, FOCUS_ENGINEER_ID } from '../fixtures/dev-day';
-import { moscowAt } from '../lib/time';
+import { formatClock, moscowAt } from '../lib/time';
 import { resetAddedEntities } from './addEntity';
 import {
   bindEngineerEmailInSnapshot,
@@ -91,11 +91,30 @@ describe('engineerRoster', () => {
       FOCUS_ENGINEER_ID,
       snapshot.nowAt,
     );
-    expect(paused).toEqual({
+    expect(paused).toMatchObject({
       kind: 'break',
       title: 'Технический перерыв',
       untilClock: '13:10',
     });
+    expect(paused).toMatchObject({ startClock: null, nextTitle: null, nextClock: null });
+
+    const route = snapshot.plan.plan?.routes.find((item) => item.engineerId === FOCUS_ENGINEER_ID);
+    const firstJob = route?.stops.find((stop) => stop.kind === 'job' && stop.requestId);
+    if (route && firstJob) {
+      const firstRequest = firstJob.requestId
+        ? snapshot.requests.find((item) => item.id === firstJob.requestId)
+        : null;
+      const active = engineerActivity(
+        { ...snapshot, nowAt: firstJob.startAt },
+        FOCUS_ENGINEER_ID,
+        firstJob.startAt,
+      );
+      expect(active.kind).toBe('job');
+      if (active.kind === 'job') {
+        expect(active.startClock).toBe(formatClock(firstRequest?.startedAt ?? firstJob.startAt));
+        expect(active.finishClock).toBeTruthy();
+      }
+    }
   });
 
   it('routes a first bind to link-account and a linked address to change', () => {

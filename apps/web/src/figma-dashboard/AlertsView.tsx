@@ -1,13 +1,21 @@
 import { motion, useReducedMotion } from 'framer-motion';
-import { ArrowUpRight } from 'lucide-react';
-import { useLayoutEffect, useRef } from 'react';
+import { ArrowRight, ArrowUpRight, Trash2 } from 'lucide-react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { proposeAlertWithAi } from '../api/client';
 import type { AlertResolutionInput, DashboardSnapshot } from '../api/types';
+import { isAlertActionId } from '../domain/alerts';
 import { AlertActions } from './AlertActions';
-import { type InboxNoticeCard, inboxFromSources } from './alertsInbox';
+import { dispatchAlertId, type InboxNoticeCard, inboxFromSources } from './alertsInbox';
 import { FIGMA_ASSETS } from './assets';
 import { InboxAlertCardView, InboxButton, InboxNoticeCardView } from './inboxCard';
-import { FigmaIcon, FigmaText } from './primitives';
-import { dismissToast, type ToastKind, type ToastNotification } from './toasts';
+import { FigmaText } from './primitives';
+import {
+  dismissAllToasts,
+  dismissToast,
+  isParkedProgress,
+  type ToastKind,
+  type ToastNotification,
+} from './toasts';
 
 const HEADER_LIFT = 16;
 const TITLE_TOP = 184 - HEADER_LIFT;
@@ -24,9 +32,12 @@ const STITCH_HEIGHT = 20;
 const FADE_HEIGHT = 76;
 const fadeSoft = { duration: 0.28, ease: [0.22, 1, 0.36, 1] as const };
 
-const NOTICE_ICON: Record<ToastKind, { src: string; width: number; height: number }> = {
+const NOTICE_ICON: Record<
+  ToastKind,
+  { src: string; width: number; height: number; crop?: 'progress' }
+> = {
   system: { src: FIGMA_ASSETS.toastSystem, width: 24, height: 24 },
-  progress: { src: FIGMA_ASSETS.toastProgress, width: 24, height: 24 },
+  progress: { src: FIGMA_ASSETS.toastProgress, width: 24, height: 24, crop: 'progress' as const },
   ai: { src: FIGMA_ASSETS.toastAi, width: 28, height: 28 },
   chat: { src: FIGMA_ASSETS.toastChat, width: 25, height: 25 },
   route: { src: FIGMA_ASSETS.toastRoute, width: 24, height: 24 },
@@ -63,8 +74,104 @@ export function AlertsView({
 }) {
   const reduceMotion = useReducedMotion();
   const animate = motionOn && !reduceMotion;
-  const inbox = inboxFromSources(snapshot, toasts, demoMode);
-  const glassArrow = inbox.alerts.length > 0;
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 5_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const parked = toasts.filter((toast) => isParkedProgress(toast, now));
+  const inbox = inboxFromSources(
+    snapshot,
+    toasts.filter((toast) => !isParkedProgress(toast, now)),
+    demoMode,
+  );
+  const [clearing, setClearing] = useState(false);
+  const [hiddenNoticeIds, setHiddenNoticeIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [sweptIds, setSweptIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [sweeping, setSweeping] = useState(false);
+  const [spotlight, setSpotlight] = useState<{ id: string; action: string | null } | null>(null);
+  const [thinkingId, setThinkingId] = useState<string | null>(null);
+  const [leaving, setLeaving] = useState<Readonly<Record<string, 1 | -1>>>({});
+  const visibleAlerts = inbox.alerts.filter((card) => !sweptIds.has(card.id));
+  const visibleNotices = inbox.notices.filter((card) => !hiddenNoticeIds.has(card.id));
+  const glassArrow = visibleAlerts.length > 0;
+  const wait = (ms: number) =>
+    new Promise((resolve) => window.setTimeout(resolve, animate ? ms : 0));
+  async function playAiDecision(
+    card: (typeof visibleAlerts)[number],
+    index: number,
+    cancelled: () => boolean,
+  ): Promise<boolean> {
+    const alertId = card.sourceAlert
+      ? dispatchAlertId(card.sourceAlert.id)
+      : dispatchAlertId(card.id);
+    setThinkingId(card.id);
+    let action = card.sourceAlert?.actions?.find((item) => isAlertActionId(item)) ?? null;
+    let proposal: Awaited<ReturnType<typeof proposeAlertWithAi>> | null = null;
+    if (token) {
+      try {
+        proposal = await proposeAlertWithAi(token, alertId);
+        action = isAlertActionId(proposal.choice) ? proposal.choice : action;
+      } catch {
+        setThinkingId(null);
+        return false;
+      }
+    }
+    if (cancelled() || !action) {
+      setThinkingId(null);
+      return false;
+    }
+    setThinkingId(null);
+    setSpotlight({ id: card.id, action });
+    await wait(2000);
+    if (cancelled()) return false;
+    try {
+      await onResolve(alertId, {
+        operationId: crypto.randomUUID(),
+        action,
+        reason: 'Решено с AI автоматически',
+        ...(proposal?.engineerId ? { engineerId: proposal.engineerId } : {}),
+        ...(proposal?.minutes != null ? { minutes: proposal.minutes } : {}),
+        ...(proposal?.windowStartAt != null && proposal.windowEndAt != null
+          ? {
+              windowStartAt: proposal.windowStartAt,
+              windowEndAt: proposal.windowEndAt,
+              ...(proposal.expectedRequestVersion != null
+                ? { expectedRequestVersion: proposal.expectedRequestVersion }
+                : {}),
+            }
+          : {}),
+      });
+    } catch {
+      setSpotlight(null);
+      return false;
+    }
+    if (cancelled()) return false;
+    dismissToast(card.id.startsWith('alert:') ? card.id : `alert:${alertId}`);
+    setLeaving((current) => ({ ...current, [card.id]: index % 2 === 0 ? 1 : -1 }));
+    await wait(520);
+    setSweptIds((current) => new Set(current).add(card.id));
+    setSpotlight(null);
+    return true;
+  }
+  useEffect(() => {
+    if (!sweeping) return;
+    let cancelled = false;
+    const queue = visibleAlerts;
+    void (async () => {
+      for (const [index, card] of queue.entries()) {
+        if (cancelled) return;
+        await playAiDecision(card, index, () => cancelled);
+      }
+      if (!cancelled) setSweeping(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // The queue is the list at the moment the sweep starts; playAiDecision is read
+    // fresh through the closure on every sweep tick.
+    // biome-ignore lint/correctness/useExhaustiveDependencies: the sweep intentionally runs on the queue identity, not on the player's identity
+  }, [sweeping, visibleAlerts, playAiDecision]);
   const listRef = useRef<HTMLDivElement>(null);
   const anchors = useRef<Array<{ id: string; offset: number }>>([]);
   function rememberScroll() {
@@ -96,57 +203,48 @@ export function AlertsView({
       >
         Алерты
       </FigmaText>
-      <motion.button
-        type="button"
-        disabled
-        aria-disabled
-        title="Скоро"
-        className="absolute left-[430px] z-20 flex h-[79px] w-[426px] cursor-not-allowed items-center rounded-full bg-figma-ink pl-[10px] pr-[10px] opacity-45"
-        style={{ top: TITLE_TOP - 16 }}
-      >
-        <span className="flex size-[60px] items-center justify-center rounded-full bg-figma-bee">
-          <FigmaIcon src={FIGMA_ASSETS.iconSparkles} alt="" width={26} height={26} />
-        </span>
-        <span className="figma-nowrap ml-[15px] font-semibold text-[18px] text-[#ededed]">
-          Разобрать все в AI
-        </span>
-        <span
-          className={
-            glassArrow
-              ? 'ml-auto flex size-[63px] items-center justify-center rounded-full bg-gradient-to-b from-white/20 to-white/[0.05] shadow-[inset_0_1px_0_rgba(255,255,255,0.45),inset_0_-8px_16px_rgba(255,255,255,0.06)] ring-1 ring-white/20 backdrop-blur-[100px]'
-              : 'ml-auto flex size-[63px] items-center justify-center rounded-full bg-white/10'
-          }
-        >
-          <FigmaIcon
-            src={glassArrow ? FIGMA_ASSETS.arrowRightWhite : FIGMA_ASSETS.arrowRight}
-            alt=""
-            width={30}
-            height={31}
-          />
-        </span>
-      </motion.button>
+      <AiSweepSlider
+        top={TITLE_TOP - 16}
+        armed={glassArrow}
+        engaged={sweeping}
+        motionOn={animate}
+        onCommit={() => {
+          if (!sweeping && visibleAlerts.length > 0) setSweeping(true);
+        }}
+      />
 
       <div
         ref={listRef}
         onScroll={rememberScroll}
-        className="absolute left-[180px] w-[1710px] overflow-y-auto [overflow-anchor:none] [scrollbar-width:thin]"
+        className="absolute left-[180px] w-[1710px] overflow-y-auto [overflow-anchor:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         style={{ top: LIST_TOP, bottom: 28 }}
       >
         <div className="pt-[64px]">
-          {inbox.alerts.length === 0 && inbox.notices.length === 0 ? (
+          {inbox.alerts.length === 0 && visibleNotices.length === 0 && parked.length === 0 ? (
             <p className="pt-[40px] text-center font-medium text-[18px] text-figma-muted">
               Открытых алертов и уведомлений нет
             </p>
           ) : null}
 
           <div className="flex flex-col gap-[20px]">
-            {inbox.alerts.map((card, index) => (
+            {visibleAlerts.map((card, index) => (
               <motion.div
                 key={card.id}
                 data-alert-id={card.id}
                 initial={animate ? { opacity: 0, y: 16 } : false}
-                animate={{ opacity: 1, y: 0 }}
-                transition={animate ? { ...fadeSoft, delay: index * 0.04 } : { duration: 0 }}
+                animate={(() => {
+                  const direction = leaving[card.id];
+                  return direction
+                    ? { x: direction * 980, opacity: 0, rotate: direction * 2 }
+                    : { opacity: 1, y: 0, x: 0 };
+                })()}
+                transition={
+                  leaving[card.id]
+                    ? { duration: animate ? 0.48 : 0, ease: fadeSoft.ease }
+                    : animate
+                      ? { ...fadeSoft, delay: index * 0.04 }
+                      : { duration: 0 }
+                }
               >
                 <InboxAlertCardView
                   title={card.title}
@@ -160,6 +258,12 @@ export function AlertsView({
                       snapshot={snapshot}
                       disabled={writesDisabled}
                       onResolve={onResolve}
+                      spotlightAction={spotlight?.id === card.id ? spotlight.action : null}
+                      thinking={thinkingId === card.id}
+                      onAskAi={() => {
+                        if (sweeping || thinkingId) return;
+                        void playAiDecision(card, index, () => false);
+                      }}
                       leadingAction={
                         card.requestId ? (
                           <InboxButton
@@ -183,22 +287,72 @@ export function AlertsView({
             ))}
           </div>
 
-          {inbox.notices.length > 0 ? (
-            <FigmaText className="mb-[16px] mt-[36px] font-bold text-[24px] text-figma-ink">
-              Уведомления
-            </FigmaText>
+          {visibleNotices.length > 0 || parked.length > 0 ? (
+            <div className="mb-[16px] mt-[36px] flex items-center gap-[12px]">
+              <FigmaText className="font-bold text-[24px] text-figma-ink">Уведомления</FigmaText>
+              <motion.button
+                type="button"
+                aria-label="Очистить уведомления"
+                disabled={clearing}
+                onClick={() => {
+                  const cards = visibleNotices;
+                  setClearing(true);
+                  const flyMs = animate ? 480 + cards.length * 20 : 0;
+                  window.setTimeout(() => {
+                    setHiddenNoticeIds((current) => {
+                      const next = new Set(current);
+                      for (const card of cards) next.add(card.id);
+                      return next;
+                    });
+                    dismissAllToasts();
+                    void Promise.all(
+                      cards
+                        .map((card) => card.sourceNoticeId)
+                        .filter((id): id is string => id !== null)
+                        .map((id) => onMarkNoticeSeen(id)),
+                    );
+                    setClearing(false);
+                  }, flyMs);
+                }}
+                className="flex size-[43px] items-center justify-center rounded-full bg-figma-ink text-white"
+                whileHover={animate ? { scale: 1.08 } : undefined}
+                whileTap={animate ? { scale: 0.9 } : undefined}
+                transition={{ duration: 0.16 }}
+              >
+                <Trash2 size={22} strokeWidth={2} />
+              </motion.button>
+            </div>
           ) : null}
 
           <div className="flex flex-col gap-[20px] pb-[24px]">
-            {inbox.notices.map((card, index) => (
+            {parked.map((toast) => (
+              <InboxNoticeCardView
+                key={toast.id}
+                title={toast.title}
+                body={toast.body || toast.etaLabel || ''}
+                icon={NOTICE_ICON[toast.kind]}
+                onHide={() => dismissToast(toast.id)}
+              />
+            ))}
+            {visibleNotices.map((card, index) => (
               <motion.div
                 key={card.id}
                 initial={animate ? { opacity: 0, y: 12 } : false}
-                animate={{ opacity: 1, y: 0 }}
+                animate={
+                  clearing
+                    ? {
+                        opacity: 0,
+                        x: index % 2 === 0 ? -900 : 900,
+                        rotate: index % 2 === 0 ? -8 : 8,
+                      }
+                    : { opacity: 1, y: 0, x: 0, rotate: 0 }
+                }
                 transition={
-                  animate
-                    ? { ...fadeSoft, delay: 0.04 * (inbox.alerts.length + index) }
-                    : { duration: 0 }
+                  clearing
+                    ? { duration: 0.42, ease: fadeSoft.ease, delay: index * 0.02 }
+                    : animate
+                      ? { ...fadeSoft, delay: 0.04 * (inbox.alerts.length + index) }
+                      : { duration: 0 }
                 }
               >
                 <NoticeCard card={card} onMarkSeen={onMarkNoticeSeen} />
@@ -253,5 +407,203 @@ function NoticeCard({
         })().catch(() => undefined);
       }}
     />
+  );
+}
+
+const SWEEP_WIDTH = 426;
+const THUMB = 63;
+const TRAVEL = SWEEP_WIDTH - 20 - THUMB;
+
+/**
+ * Unlock-style control. Dragging the arrow to the sparkle, or a double tap,
+ * starts a visual pass over the inbox. It does not resolve alerts.
+ */
+function AiSweepSlider({
+  top,
+  armed,
+  engaged,
+  motionOn,
+  onCommit,
+}: {
+  top: number;
+  armed: boolean;
+  engaged: boolean;
+  motionOn: boolean;
+  onCommit: () => void;
+}) {
+  const [progress, setProgress] = useState(0);
+  const progressRef = useRef(0);
+  const [nudge, setNudge] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const drag = useRef<{ x: number; progress: number; scale: number } | null>(null);
+  const lastTap = useRef(0);
+  const held = useRef(false);
+  useEffect(() => {
+    if (engaged) {
+      held.current = true;
+      progressRef.current = 1;
+      setProgress(1);
+      setNudge(false);
+      return;
+    }
+    if (held.current) {
+      held.current = false;
+      progressRef.current = 0;
+      setProgress(0);
+    }
+  }, [engaged]);
+  useEffect(() => {
+    if (engaged || !armed) return;
+    const timer = window.setTimeout(() => setNudge(true), 3000);
+    return () => window.clearTimeout(timer);
+  }, [armed, engaged]);
+
+  const commit = () => {
+    if (!armed) {
+      setProgress(0);
+      setNudge(false);
+      return;
+    }
+    progressRef.current = 1;
+    setProgress(1);
+    setNudge(false);
+    onCommit();
+  };
+
+  return (
+    // Pointer-only affordance on a decorative panel; the same action stays on the
+    // keyboard-reachable alert cards themselves.
+    // biome-ignore lint/a11y/noStaticElementInteractions: decorative double-click surface, keyboard path is the alert cards
+    <div
+      className="absolute left-[430px] z-20 flex h-[79px] w-[426px] items-center overflow-hidden rounded-full bg-figma-ink pl-[10px] pr-[10px]"
+      style={{ top }}
+      onDoubleClick={() => {
+        if (!engaged) commit();
+      }}
+      onPointerDown={(event) => {
+        if (engaged) return;
+        if ((event.target as HTMLElement).closest('button')) return;
+        setDragging(true);
+        setNudge(false);
+        const rect = event.currentTarget.getBoundingClientRect();
+        const scale = rect.width / SWEEP_WIDTH || 1;
+        const local = (event.clientX - rect.left) / scale;
+        const next = Math.min(1, Math.max(0, (local - 10 - THUMB / 2) / TRAVEL));
+        progressRef.current = next;
+        setProgress(next);
+        drag.current = { x: event.clientX, progress: next, scale };
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }}
+      onPointerMove={(event) => {
+        const origin = drag.current;
+        if (!origin || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+        const next = Math.min(
+          1,
+          Math.max(0, origin.progress + (event.clientX - origin.x) / (TRAVEL * origin.scale)),
+        );
+        progressRef.current = next;
+        setProgress(next);
+      }}
+      onPointerUp={(event) => {
+        if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+        drag.current = null;
+        setDragging(false);
+        if (progressRef.current > 0.55) commit();
+        else {
+          progressRef.current = 0;
+          setProgress(0);
+        }
+      }}
+    >
+      <motion.button
+        type="button"
+        aria-label="Решить все с AI"
+        className="absolute top-[8px] z-10 flex size-[63px] cursor-grab items-center justify-center active:cursor-grabbing"
+        style={{ left: 10 }}
+        animate={{ x: engaged ? TRAVEL : progress * TRAVEL }}
+        transition={dragging ? { duration: 0 } : { type: 'spring', stiffness: 420, damping: 32 }}
+        onPointerDown={(event) => {
+          if (engaged) return;
+          setDragging(true);
+          setNudge(false);
+          const scale =
+            event.currentTarget.getBoundingClientRect().width / event.currentTarget.offsetWidth ||
+            1;
+          drag.current = { x: event.clientX, progress: progressRef.current, scale };
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}
+        onPointerMove={(event) => {
+          const origin = drag.current;
+          if (!origin) return;
+          const next = Math.min(
+            1,
+            Math.max(0, origin.progress + (event.clientX - origin.x) / (TRAVEL * origin.scale)),
+          );
+          progressRef.current = next;
+          setProgress(next);
+        }}
+        onPointerUp={() => {
+          drag.current = null;
+          setDragging(false);
+          const now = Date.now();
+          const repeat = now - lastTap.current < 320;
+          lastTap.current = now;
+          if (progressRef.current > 0.55 || repeat) commit();
+          else {
+            progressRef.current = 0;
+            setProgress(0);
+          }
+        }}
+      >
+        <span
+          aria-hidden
+          className="absolute inset-0 rounded-full border border-white/30"
+          style={{
+            background:
+              engaged || progress > 0.9 ? '#272930' : `rgba(255,255,255,${0.22 + progress * 0.35})`,
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
+          }}
+        />
+        <motion.span
+          aria-hidden
+          className="relative z-10 flex items-center justify-center text-white"
+          animate={nudge && progress === 0 && !engaged && motionOn ? { x: [0, 7, 0] } : { x: 0 }}
+          transition={
+            nudge && progress === 0 && !engaged && motionOn
+              ? { duration: 0.9, repeat: Infinity, ease: 'easeInOut' }
+              : { duration: 0.2 }
+          }
+        >
+          <ArrowRight size={28} strokeWidth={2} />
+        </motion.span>
+      </motion.button>
+      <span
+        className={`figma-nowrap pointer-events-none absolute inset-0 flex items-center justify-center font-semibold text-[18px] ${
+          engaged ? 'client-ai-fill client-ai-text' : 'text-[#ededed]'
+        }`}
+        style={{ opacity: engaged ? 1 : 1 - progress }}
+      >
+        {engaged ? 'AI решает' : 'Решить все с AI'}
+      </span>
+      <span className="sweep-spark pointer-events-none absolute right-[10px] top-[9px] flex size-[60px] items-center justify-center rounded-full">
+        <span
+          aria-hidden
+          className="block bg-figma-ink"
+          style={{
+            width: 26,
+            height: 26,
+            WebkitMaskImage: 'url(/figma/icon-sparkles.svg)',
+            maskImage: 'url(/figma/icon-sparkles.svg)',
+            WebkitMaskRepeat: 'no-repeat',
+            maskRepeat: 'no-repeat',
+            WebkitMaskPosition: 'center',
+            maskPosition: 'center',
+            WebkitMaskSize: 'contain',
+            maskSize: 'contain',
+          }}
+        />
+      </span>
+    </div>
   );
 }

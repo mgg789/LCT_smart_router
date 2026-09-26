@@ -4,7 +4,7 @@ segment: engineer
 title: Профиль и транспорт
 summary: В настройках можно сменить имя, тип транспорта и почту для входа; квалификации (skills) и офис в приложении сегодня не редактируются — за этим нужно к диспетчеру.
 tags: [профиль, настройки, транспорт]
-actions: [call_dispatch_helper]
+actions: []
 related: [eng-13-vehicle-and-road, eng-15-work-types-catalogue]
 updated: 2026-09-20
 ---

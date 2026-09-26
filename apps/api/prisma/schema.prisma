@@ -107,11 +107,6 @@ enum LiveEngineerLineStatus {
   pending
   online
   no_show_offline
-  /// The engineer was on the line and left it deliberately -- distinct from
-  /// `no_show_offline`, which is set only by the automatic sweep for someone who never
-  /// showed up. An engineer who worked part of the day did show up; this status must
-  /// never be reported to the dispatcher as a no-show.
-  stood_down
   technical_break
 }
 
@@ -135,7 +130,6 @@ enum WindowOrigin {
 enum ControlMode {
   auto
   manual
-  assisted
 }
 
 enum PlanOrigin {
@@ -155,7 +149,17 @@ enum FactKind {
   lunch_finished
 }
 
+/// A signed immutable reward entry. Positive categories come from explicit facts;
+/// penalties are manual dispatcher decisions with an audited reason.
+enum EngineerRewardCategory {
+  arrival
+  completion
+  passport
+  penalty
+}
+
 enum StopKind {
+  handoff
   job
   lunch
   wait
@@ -208,6 +212,7 @@ enum NotificationCategory {
   request_cancelled
   request_completed
   engineer_day_summary
+  dispatcher_monthly_report
   engineer_attention_required
   plan_rebuilt
 }
@@ -243,97 +248,13 @@ enum ApiTokenCategory {
   master
 }
 
-// ---------------------------------------------------------------------------
-// AI gateway reference values.
-// ---------------------------------------------------------------------------
-
-/// Assigned by the server from the trusted session that opened the conversation. Model
-/// output can never change it -- the profile gates which tools and documents the run may
-/// see, so it has to stay outside anything the model writes.
-enum AiRoleProfile {
-  client
-  engineer
-  dispatcher_readonly
-  dispatcher_fix
-}
-
-/// While a conversation is `dispatcher`, the assistant writes nothing into it: a human
-/// has taken the turn and an AI reply landing on top of theirs is exactly the failure
-/// this mode exists to prevent.
-enum AiConversationMode {
-  ai
-  dispatcher
-}
-
-/// A new dispatcher dialogue always starts in `help`; `fix` is only entered by an
-/// explicit request for a change, never inferred from wording.
-enum AiAssistMode {
-  help
-  fix
-}
-
-enum AiMessageAuthor {
-  user
-  assistant
-  dispatcher
-  system
-}
-
-/// Exactly the four agreed UI forms. Nothing else is ever generated, so a renderer never
-/// has to guess how to draw a message.
-enum AiMessageKind {
-  text
-  text_action
-  text_action_cancel
-  text_confirmation
-}
-
-enum AiRunState {
-  running
-  stopping
-  stopped
-  completed
-  failed
-}
-
-/// A user-requested stop must never be shown as a rollback of an applied write, hence
-/// `cancelled_before_apply` and `outcome_unknown` are their own states rather than a
-/// reuse of `rejected` (mirrors the applied/rejected/conflict/outcome_unknown split on
-/// the system-wide OperationState).
-enum AiOperationState {
-  prepared
-  awaiting_confirmation
-  running
-  applied
-  rejected
-  cancelled_before_apply
-  outcome_unknown
-}
-
-enum AiKnowledgeSegment {
-  client
-  engineer
-  dispatcher
-}
-
-enum AiHandoffState {
-  waiting
-  answered
-  closed
-}
-
-/// Who opened the handover. A dialogue the dispatcher started themselves is never
-/// «waiting for a dispatcher», so the queue badge must be able to tell the two apart
-/// without inspecting who wrote the first message.
-enum AiHandoffOrigin {
-  user
-  dispatcher
-}
-
-enum AiProviderKind {
-  agents
-  openai_chat
-  replay
+/// Physical access technology recorded for a building, never inferred from a request.
+enum ConnectionType {
+  fiber
+  ethernet
+  dsl
+  radio
+  other
 }
 
 // ---------------------------------------------------------------------------
@@ -458,6 +379,8 @@ model Engineer {
   days    EngineerDay[]
   facts   RequestFact[]
   liveStates LiveEngineerState[]
+  passportPoints EngineerPassportPoint[]
+  rewards EngineerReward[]
 
   @@index([inputOrder])
   @@map("engineers")
@@ -591,10 +514,90 @@ model Request {
   assignments   AppliedPlanAssignment[]
   stops         AppliedPlanStop[]
   liveStates    LiveRequestState[]
+  rewards       EngineerReward[]
 
   @@index([lifecycle, assignmentState])
   @@index([arrivalOrder])
   @@map("requests")
+}
+
+/// A canonical building address. It is resolved before a passport write, so an outage
+/// cannot silently merge nearby coordinates into one physical object.
+model Building {
+  id               String @id @default(uuid())
+  canonicalAddress String @unique @map("canonical_address")
+  createdAt        BigInt @map("created_at")
+  updatedAt        BigInt @map("updated_at")
+
+  passport ObjectPassport?
+
+  @@map("buildings")
+}
+
+/// Durable LocationIQ reverse results. Coordinate keys are rounded only for cache
+/// lookup; the stored canonical address is always provider/fixture supplied.
+model ReverseGeocodeCache {
+  coordinateKey    String @id @map("coordinate_key")
+  canonicalAddress String @map("canonical_address")
+  provider         String
+  resolvedAt       BigInt @map("resolved_at")
+
+  @@map("reverse_geocode_cache")
+}
+
+/// One current object passport per building. New saves replace fields on this row;
+/// Operations and the points ledger preserve the historical who/when trail.
+model ObjectPassport {
+  id             String @id @default(uuid())
+  buildingId     String @unique @map("building_id")
+  connectionType ConnectionType @map("connection_type")
+  difficulty     Int
+  equipment      String?
+  accessNotes    String? @map("access_notes")
+  comment        String?
+  updatedAt      BigInt @map("updated_at")
+
+  building Building @relation(fields: [buildingId], references: [id], onDelete: Cascade)
+
+  @@map("object_passports")
+}
+
+/// Immutable reward entries. The operation id is unique so a transport retry cannot
+/// award a second 35-point update even if the operation journal is later inspected.
+model EngineerPassportPoint {
+  id          String @id @default(uuid())
+  engineerId  String @map("engineer_id")
+  operationId String @unique @map("operation_id")
+  points      Int
+  awardedAt   BigInt @map("awarded_at")
+
+  engineer Engineer @relation(fields: [engineerId], references: [id], onDelete: Cascade)
+
+  @@index([engineerId, awardedAt])
+  @@map("engineer_passport_points")
+}
+
+/// Unified immutable engineer reward ledger. `awardedAt` is the wall-clock month
+/// bucket; evidence may include the logical LIVE timestamp of the action.
+model EngineerReward {
+  id          String                 @id @default(uuid())
+  engineerId  String                 @map("engineer_id")
+  requestId   String?                @map("request_id")
+  workdayId   String?                @map("workday_id")
+  category    EngineerRewardCategory
+  points      Int
+  operationId String                 @unique @map("operation_id")
+  dedupKey    String                 @unique @map("dedup_key")
+  awardedAt   BigInt                 @map("awarded_at")
+  reason      String
+  evidence    Json
+
+  engineer Engineer @relation(fields: [engineerId], references: [id], onDelete: Cascade)
+  request  Request?  @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([engineerId, awardedAt])
+  @@index([workdayId])
+  @@map("engineer_rewards")
 }
 
 /// Previous conditions of a request. A reschedule replaces the single set of live
@@ -714,6 +717,12 @@ model LiveRequestState {
   assumedStartedAt      BigInt?         @map("assumed_started_at")
   assumedCompletedAt    BigInt?         @map("assumed_completed_at")
   reportedEtaAt         BigInt?         @map("reported_eta_at")
+  reportedEtaRecordedAt BigInt?         @map("reported_eta_recorded_at")
+  reportedEtaBaselineAt BigInt?         @map("reported_eta_baseline_at")
+  promisedFinishAt      BigInt?         @map("promised_finish_at")
+  promisedFinishRecordedAt BigInt?      @map("promised_finish_recorded_at")
+  promisedFinishBaselineAt BigInt?      @map("promised_finish_baseline_at")
+  /// Latest accepted promise audit data used by revised-timing reward policy.
   /// Original plan owner pinned by an explicit ETA while Router rebuilds the remainder.
   reservedEngineerId    String?         @map("reserved_engineer_id")
   /// An infeasible ETA invalidates this engineer's current accepted route until a newer
@@ -892,6 +901,7 @@ model AppliedPlanStop {
   sequence  Int
   kind      StopKind
   requestId String? @map("request_id")
+  handoff   Json?
   lat       Float
   lon       Float
   /// Computed schedule, not confirmed facts: arrival <= start <= end.
@@ -938,43 +948,8 @@ model ControlState {
   changedBy    String? @map("changed_by")
   /// The revision frozen as the starting point when manual mode was switched on.
   frozenPlanId String? @map("frozen_plan_id")
-  /// Dispatcher pins survive leaving assisted editing; execution facts remain authoritative.
-  dispatcherConstraints Json @default("{\"assignments\":[],\"orders\":[]}") @map("dispatcher_constraints")
-  constraintsVersion Int @default(1) @map("constraints_version")
 
   @@map("control_state")
-}
-
-/// A version-bound candidate. Preparing or cancelling it never changes the working plan.
-model DispatchPlanProposal {
-  id String @id @default(uuid())
-  source String
-  actorId String? @map("actor_id")
-  state String @default("prepared")
-  payloadFingerprint String @map("payload_fingerprint")
-  reviewFingerprint String @map("review_fingerprint")
-  sourceModeVersion Int @map("source_mode_version")
-  sourcePlanRevision Int @map("source_plan_revision")
-  sourceConstraintsVersion Int @map("source_constraints_version")
-  sourceGeneration Int @map("source_generation")
-  sourceTaskFingerprint String @map("source_task_fingerprint")
-  contextVersion String @map("context_version")
-  change Json
-  constraints Json
-  candidate Json
-  inputPayload String @map("input_payload")
-  impact Json
-  requiresConfirmation Boolean @map("requires_confirmation")
-  /// Automatic packages produce at most one review card even when polled repeatedly.
-  resultKey String? @unique @map("result_key")
-  createdAt BigInt @map("created_at")
-  expiresAt BigInt @map("expires_at")
-  appliedAt BigInt? @map("applied_at")
-  appliedPlanRevision Int? @map("applied_plan_revision")
-
-  @@index([source, state, createdAt])
-  @@index([actorId, createdAt])
-  @@map("dispatch_plan_proposals")
 }
 
 // ---------------------------------------------------------------------------
@@ -1160,6 +1135,111 @@ model ExternalIdMap {
   @@unique([source, entityType, externalId])
   @@index([internalId])
   @@map("external_id_map")
+}
+
+/// Accepted paired meeting. Stock moves once, only after both authenticated confirmations.
+model EquipmentHandoff {
+  id String @id
+  workDate String @map("work_date")
+  donorEngineerId String @map("donor_engineer_id")
+  receiverEngineerId String @map("receiver_engineer_id")
+  requestId String @map("request_id")
+  items Json
+  lat Float
+  lon Float
+  meetingAt BigInt @map("meeting_at")
+  donorConfirmedAt BigInt? @map("donor_confirmed_at")
+  receiverConfirmedAt BigInt? @map("receiver_confirmed_at")
+  completedAt BigInt? @map("completed_at")
+  createdAt BigInt @map("created_at")
+  @@index([workDate, completedAt])
+  @@map("equipment_handoffs")
+}
+
+enum AiRoleProfile {
+  client
+  engineer
+  dispatcher_readonly
+  dispatcher_fix
+}
+
+/// While a conversation is `dispatcher`, the assistant writes nothing into it: a human
+/// has taken the turn and an AI reply landing on top of theirs is exactly the failure
+/// this mode exists to prevent.
+enum AiConversationMode {
+  ai
+  dispatcher
+}
+
+/// A new dispatcher dialogue always starts in `help`; `fix` is only entered by an
+/// explicit request for a change, never inferred from wording.
+enum AiAssistMode {
+  help
+  fix
+}
+
+enum AiMessageAuthor {
+  user
+  assistant
+  dispatcher
+  system
+}
+
+/// Exactly the four agreed UI forms. Nothing else is ever generated, so a renderer never
+/// has to guess how to draw a message.
+enum AiMessageKind {
+  text
+  text_action
+  text_action_cancel
+  text_confirmation
+}
+
+enum AiRunState {
+  running
+  stopping
+  stopped
+  completed
+  failed
+}
+
+/// A user-requested stop must never be shown as a rollback of an applied write, hence
+/// `cancelled_before_apply` and `outcome_unknown` are their own states rather than a
+/// reuse of `rejected` (mirrors the applied/rejected/conflict/outcome_unknown split on
+/// the system-wide OperationState).
+enum AiOperationState {
+  prepared
+  awaiting_confirmation
+  running
+  applied
+  rejected
+  cancelled_before_apply
+  outcome_unknown
+}
+
+enum AiKnowledgeSegment {
+  client
+  engineer
+  dispatcher
+}
+
+enum AiHandoffState {
+  waiting
+  answered
+  closed
+}
+
+/// Who opened the handover. A dialogue the dispatcher started themselves is never
+/// «waiting for a dispatcher», so the queue badge must be able to tell the two apart
+/// without inspecting who wrote the first message.
+enum AiHandoffOrigin {
+  user
+  dispatcher
+}
+
+enum AiProviderKind {
+  agents
+  openai_chat
+  replay
 }
 
 // ---------------------------------------------------------------------------

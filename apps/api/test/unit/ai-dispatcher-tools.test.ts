@@ -4,12 +4,12 @@ import type { AiOperationService } from '../../src/ai/operations';
 import { buildAiActionCatalog } from '../../src/ai/operations/ai-action.catalog';
 import { buildDispatcherReadTools } from '../../src/ai/tools/dispatcher-read.tools';
 import { buildDispatcherWriteTools } from '../../src/ai/tools/dispatcher-write.tools';
+import { buildEngineerTools } from '../../src/ai/tools/engineer.tools';
 import type { ToolContext } from '../../src/ai/tools/tool.types';
 import type { AppliedPlanCurrentShape } from '../../src/api/plan-view.types';
 import type { Actor } from '../../src/auth';
 import type { AppConfigService } from '../../src/common/config';
 import { SysError } from '../../src/common/errors';
-import type { OperationContext } from '../../src/operations';
 import type { AlertsService } from '../../src/orchestrator/alerts';
 import type { EngineersService } from '../../src/orchestrator/engineers/engineers.service';
 import type { LiveService } from '../../src/orchestrator/live/live.service';
@@ -248,8 +248,8 @@ describe('compare_policies is called at most once per run', () => {
   });
 });
 
-describe('basis survives into a dispatcher tool result', () => {
-  it('get_day_plan passes reasons[].basis through unchanged', async () => {
+describe('assignment reasons survive into a dispatcher tool result', () => {
+  it('get_day_plan passes reasons.assignment.factors through unchanged', async () => {
     const planRow: AppliedPlanCurrentShape = {
       id: 'plan-1',
       revision: 1,
@@ -263,14 +263,20 @@ describe('basis survives into a dispatcher tool result', () => {
           requestId: 'req-1',
           status: 'unassigned',
           engineerId: null,
-          reasons: [
-            {
-              code: 'NO_FEASIBLE_ASSIGNMENT_FOUND',
-              basis: 'calculation_outcome',
-              text: 'Bounded search found no slot',
-              facts: { idle_skilled_ids: ['eng-9'] },
+          reasons: {
+            assignment: {
+              chosen: null,
+              factors: [
+                {
+                  code: 'NO_FEASIBLE_ASSIGNMENT_FOUND',
+                  basis: 'calculation_outcome',
+                  detail: 'Bounded search found no slot',
+                  facts: { idle_skilled_ids: ['eng-9'] },
+                },
+              ],
+              alternatives: [],
             },
-          ],
+          },
         },
       ],
     } as unknown as AppliedPlanCurrentShape;
@@ -293,10 +299,22 @@ describe('basis survives into a dispatcher tool result', () => {
     const result = await getDayPlan.run(toolContext('run-basis-test'), {});
     assert.ok(result.ok);
     const body = JSON.parse(result.resultContent) as {
-      plan: { assignments: Array<{ reasons: Array<{ basis: string; code: string }> }> };
+      plan: {
+        assignments: Array<{
+          reasons: {
+            assignment?: { factors?: Array<{ basis: string; code: string }> };
+          };
+        }>;
+      };
     };
-    assert.equal(body.plan.assignments[0]?.reasons[0]?.basis, 'calculation_outcome');
-    assert.equal(body.plan.assignments[0]?.reasons[0]?.code, 'NO_FEASIBLE_ASSIGNMENT_FOUND');
+    assert.equal(
+      body.plan.assignments[0]?.reasons.assignment?.factors?.[0]?.basis,
+      'calculation_outcome',
+    );
+    assert.equal(
+      body.plan.assignments[0]?.reasons.assignment?.factors?.[0]?.code,
+      'NO_FEASIBLE_ASSIGNMENT_FOUND',
+    );
   });
 });
 
@@ -323,113 +341,40 @@ function fullCatalogueDeps(live: LiveService) {
 }
 
 /**
- * `live.engineer.offline` (`LiveService.goOffline`'s AI-prepared counterpart): the
- * engineer's own mid-day stand-down. The precheck mirrors `LiveService.goOffline`'s own
- * refusals so a card is never shown for something certain to fail, and `apply` must reach
- * `LiveService.act` with exactly `kind: 'offline'` -- the same DTO member a direct
- * `/engineer/live/actions` call would use.
+ * A mid-day stand-down is deliberately not an assistant write in this contour: the
+ * dispatcher takes an engineer off the line, and a device goes back through the
+ * equipment handoff. The catalogue must not offer the removed `live.engineer.offline`
+ * action, and the engineer's own tool must say so in plain Russian instead of
+ * preparing a write the catalogue would always refuse.
  */
-describe('live.engineer.offline (the engineer stand-down AI action)', () => {
-  it('precheck refuses while the engineer is on a technical break', async () => {
-    const catalog = buildAiActionCatalog(
-      fullCatalogueDeps({
-        engineerView: async () => ({
-          engineer: { lineStatus: 'technical_break' },
-          current: null,
-        }),
-      } as unknown as LiveService),
-    );
-    const spec = catalog.get('live.engineer.offline');
-    assert.ok(spec);
-    await assert.rejects(
-      () =>
-        spec.precheck({
-          actor: engineerActor,
-          accountId: 'eng-1',
-          targetRef: 'eng-1',
-          payload: { note: 'Плохое самочувствие' },
-          now: 1_700_000_000,
-        }),
-      (error: unknown) => error instanceof SysError && error.code === 'VALIDATION_FAILED',
-    );
+describe('offline during a live day is not an assistant write', () => {
+  it('the action catalogue no longer offers live.engineer.offline', () => {
+    const catalog = buildAiActionCatalog(fullCatalogueDeps(inert<LiveService>()));
+    assert.equal(catalog.get('live.engineer.offline'), undefined);
   });
 
-  it('precheck refuses while a visit is in progress', async () => {
-    const catalog = buildAiActionCatalog(
-      fullCatalogueDeps({
-        engineerView: async () => ({
-          engineer: { lineStatus: 'online' },
-          current: { phase: 'in_progress', request: { id: 'req-1' } },
-        }),
-      } as unknown as LiveService),
-    );
-    const spec = catalog.get('live.engineer.offline');
-    assert.ok(spec);
-    await assert.rejects(
-      () =>
-        spec.precheck({
-          actor: engineerActor,
-          accountId: 'eng-1',
-          targetRef: 'eng-1',
-          payload: { note: 'Плохое самочувствие' },
-          now: 1_700_000_000,
-        }),
-      (error: unknown) => error instanceof SysError && error.code === 'WORK_ALREADY_STARTED',
-    );
-  });
-
-  it('precheck accepts a plain online engineer with no current visit', async () => {
-    const catalog = buildAiActionCatalog(
-      fullCatalogueDeps({
-        engineerView: async () => ({
-          engineer: { lineStatus: 'online' },
-          current: null,
-        }),
-      } as unknown as LiveService),
-    );
-    const spec = catalog.get('live.engineer.offline');
-    assert.ok(spec);
-    await spec.precheck({
-      actor: engineerActor,
-      accountId: 'eng-1',
-      targetRef: 'eng-1',
-      payload: { note: 'Плохое самочувствие' },
-      now: 1_700_000_000,
+  it('change_status_to explains instead of preparing a doomed write while LIVE runs', async () => {
+    const live = {
+      // Throwing is the legacy gate's way of saying the LIVE workday is running.
+      assertLegacyMutationAllowed: async () => {
+        throw new Error('live workday running');
+      },
+    } as unknown as LiveService;
+    const tools = buildEngineerTools({
+      aiOperations: inert<AiOperationService>(),
+      live,
+      config: inert<AppConfigService>(),
     });
-  });
-
-  it('apply confirms straight into LiveService.act with kind "offline"', async () => {
-    const calls: Array<{ engineerId: string; input: unknown }> = [];
-    const catalog = buildAiActionCatalog(
-      fullCatalogueDeps({
-        act: async (_context: OperationContext, engineerId: string, input: unknown) => {
-          calls.push({ engineerId, input });
-          return { engineer: { lineStatus: 'stood_down' } };
-        },
-      } as unknown as LiveService),
-    );
-    const spec = catalog.get('live.engineer.offline');
-    assert.ok(spec);
-    const context: OperationContext = {
-      tx: inert(),
-      now: 1_700_000_000,
+    const changeStatus = tools.find((tool) => tool.name === 'change_status_to');
+    assert.ok(changeStatus);
+    const context: ToolContext = {
+      ...toolContext('run-offline-test'),
       actor: engineerActor,
-      operationId: 'op-offline-1',
+      engineerId: 'eng-1',
+      segments: ['engineer'],
     };
-    await spec.apply({
-      actor: engineerActor,
-      accountId: 'eng-1',
-      targetRef: 'eng-1',
-      payload: { note: 'Плохое самочувствие' },
-      now: 1_700_000_000,
-      context,
-    });
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0]?.engineerId, 'eng-1');
-    assert.deepEqual(calls[0]?.input, {
-      operationId: 'op-offline-1',
-      kind: 'offline',
-      note: 'Плохое самочувствие',
-    });
+    const result = await changeStatus.run(context, { status: 0 });
+    assert.ok(result.ok);
+    assert.match(result.resultContent, /только диспетчер/);
   });
 });

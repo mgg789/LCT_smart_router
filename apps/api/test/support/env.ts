@@ -30,22 +30,14 @@ process.env.NODE_ENV = 'test';
 // This build has no SMTP-gateway, so the login code has to come back in the response for
 // any contour test to be able to sign anyone in.
 process.env.AUTH_DEV_EXPOSE_CODES = 'true';
+// The assistant runs against recorded fixtures in tests: a developer's live provider
+// in this file would make the runs non-deterministic and cost real money.
+process.env.LLM_PROVIDER = 'replay';
 // Tests run from apps/api; the dataset lives at the repository root.
 process.env.DATASET_ROOT = resolve(process.cwd(), '../../data/dataset/anonymized');
 // AppModule tests use the deterministic in-process Router client. The real Docker Router is
 // exercised by the repository smoke command and must not race database integration tests.
 delete process.env.ROUTER_BASE_URL;
-
-// No test may ever reach a paid endpoint: force the offline replay provider and remove
-// any key a developer's own .env might carry, so a misconfigured environment cannot
-// silently make a test suite call a real model.
-process.env.LLM_PROVIDER = 'replay';
-process.env.LLM_FALLBACK_PROVIDER = 'none';
-delete process.env.LLM_TOKEN;
-// Fixtures live at apps/api/test/fixtures/ai; tests run with cwd = apps/api, unlike the
-// deployed default (repo-root relative), so this is resolved the same way DATASET_ROOT
-// is above.
-process.env.AI_REPLAY_DIR = resolve(process.cwd(), 'test/fixtures/ai');
 
 if (!process.env.DATABASE_URL) {
   throw new Error(

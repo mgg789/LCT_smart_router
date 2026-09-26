@@ -6,7 +6,7 @@ import argparse
 import json
 from pathlib import Path
 
-from core.api import DispatcherPreviewRequest, TechnicalSettingsRequest
+from core.api import TechnicalSettingsRequest
 from core.contracts import (
     PolicyComparison,
     RouterResult,
@@ -16,7 +16,6 @@ from core.contracts import (
 )
 
 _SCHEMAS = {
-    "dispatcher-plan-preview-v1.json": DispatcherPreviewRequest,
     "policy-comparison-v1.json": PolicyComparison,
     "router-task-snapshot-1.0.json": RouterTaskSnapshot,
     "router-result-1.0.json": RouterResult,

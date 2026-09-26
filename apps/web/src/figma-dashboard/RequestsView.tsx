@@ -1,6 +1,5 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useMemo, useState } from 'react';
-import type { LiveHistoryItem } from '../api/live';
 import type { DashboardSnapshot } from '../api/types';
 import { unassignedRequests } from '../domain/dashboard';
 import { FIGMA_ASSETS } from './assets';
@@ -40,12 +39,10 @@ const STATUS_DOT: Record<RequestRowStatus, string> = {
  */
 export function RequestsView({
   snapshot,
-  history,
   selectedRequestId,
   onSelect,
 }: {
   snapshot: DashboardSnapshot | null;
-  history?: readonly LiveHistoryItem[];
   selectedRequestId: string | null;
   onSelect: (requestId: string) => void;
 }) {
@@ -54,7 +51,7 @@ export function RequestsView({
   const [searchFocused, setSearchFocused] = useState(false);
   const [sort, setSort] = useState<RequestSortId>('usage');
   const [sortOpen, setSortOpen] = useState(false);
-  const source = snapshot ? rowsFromSnapshot(snapshot, history) : [...DEMO_REQUEST_ROWS];
+  const source = snapshot ? rowsFromSnapshot(snapshot) : [...DEMO_REQUEST_ROWS];
   const unassignedCount = snapshot
     ? unassignedRequests(snapshot).length
     : source.filter((row) => row.status === 'unassigned').length;

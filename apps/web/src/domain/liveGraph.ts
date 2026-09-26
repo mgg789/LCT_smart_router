@@ -64,18 +64,7 @@ export function projectLiveGraph(
   route: PlanRouteView | null,
   progress: LiveRouteProgress | null,
   visibleRequestIds?: ReadonlySet<string>,
-  preservePlanOrder = route?.timingStatus === 'unverified',
 ): LiveGraphProjection {
-  // LIVE and plan are separate reads. A stale forecast of the next visit must not
-  // reintroduce a job that a newer manual revision assigned to another engineer.
-  const forecastId = progress?.next?.requestId;
-  if (
-    preservePlanOrder &&
-    progress?.next?.kind === 'job' &&
-    !route?.stops.some((stop) => stop.requestId === forecastId)
-  ) {
-    progress = { ...progress, next: null };
-  }
   // LIVE arrival promises and actual arrivals supersede stale solver timestamps.
   const overrides = progress
     ? [progress.anchor, progress.lunch, progress.next].filter(isPoint)
@@ -99,7 +88,7 @@ export function projectLiveGraph(
         ...planned,
         ...factual.map((point) => nodeFromPoint(point, nodeSequence(point, planned))),
       ]);
-  const orderedTimeline = preservePlanOrder ? timelineNodes : orderTimeline(timelineNodes);
+  const orderedTimeline = orderTimeline(timelineNodes);
 
   // Slice using the complete order before removing completed jobs. Otherwise a
   // removed factual anchor makes an old lunch reappear behind the active span.
@@ -146,6 +135,7 @@ export function projectLiveGraph(
 export function nodeKey(point: LiveRoutePoint): string {
   if (point.kind === 'start') return 'start';
   if (point.kind === 'job' && point.requestId) return `job:${point.requestId}`;
+  if (point.kind === 'handoff' && point.handoffId) return `handoff:${point.handoffId}`;
   return `lunch:${point.lat.toFixed(6)}:${point.lon.toFixed(6)}`;
 }
 
@@ -161,6 +151,7 @@ function stableRouteNodes(route: PlanRouteView | null): LiveGraphNode[] {
     .map((vertex) => ({
       kind: vertex.kind === 'wait' ? 'job' : vertex.kind,
       requestId: vertex.requestId,
+      handoffId: vertex.handoffId ?? null,
       lat: vertex.lat,
       lon: vertex.lon,
       at: vertex.startAt,
@@ -168,8 +159,10 @@ function stableRouteNodes(route: PlanRouteView | null): LiveGraphNode[] {
         vertex.kind === 'start'
           ? 'start'
           : nodeKey({
-              kind: vertex.kind === 'lunch' ? 'lunch' : 'job',
+              kind:
+                vertex.kind === 'lunch' ? 'lunch' : vertex.kind === 'handoff' ? 'handoff' : 'job',
               requestId: vertex.requestId,
+              handoffId: vertex.handoffId ?? null,
               lat: vertex.lat,
               lon: vertex.lon,
               at: vertex.startAt,
@@ -191,11 +184,12 @@ function isPoint(point: LiveRoutePoint | null): point is LiveRoutePoint {
 }
 
 function samePoint(
-  left: Pick<LiveRoutePoint, 'kind' | 'requestId' | 'lat' | 'lon'>,
-  right: Pick<LiveRoutePoint, 'kind' | 'requestId' | 'lat' | 'lon'>,
+  left: Pick<LiveRoutePoint, 'kind' | 'requestId' | 'handoffId' | 'lat' | 'lon'>,
+  right: Pick<LiveRoutePoint, 'kind' | 'requestId' | 'handoffId' | 'lat' | 'lon'>,
 ): boolean {
   if (left.kind !== right.kind) return false;
   if (left.kind === 'job') return left.requestId !== null && left.requestId === right.requestId;
+  if (left.kind === 'handoff') return left.handoffId !== null && left.handoffId === right.handoffId;
   if (left.kind === 'start') return true;
   return left.lat === right.lat && left.lon === right.lon;
 }

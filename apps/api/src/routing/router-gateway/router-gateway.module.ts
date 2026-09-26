@@ -4,7 +4,6 @@ import { HealthRegistry } from '../../common/health';
 import { AlertsModule } from '../../orchestrator/alerts';
 import { PrismaService } from '../../persistence';
 import { AppliedPlanService } from './applied-plan.service';
-import { AssistedPlanningService } from './assisted-planning.service';
 import { ControlStateService } from './control-state.service';
 import { HttpRouterClient } from './http-router-client';
 import { ManualPlanService } from './manual-plan.service';
@@ -40,7 +39,6 @@ import { RouterResultCoordinator } from './router-result-coordinator';
     AppliedPlanService,
     ControlStateService,
     ManualPlanService,
-    AssistedPlanningService,
     ResultAcceptanceService,
     {
       provide: RouterResultCoordinator,
@@ -65,7 +63,6 @@ import { RouterResultCoordinator } from './router-result-coordinator';
     AppliedPlanService,
     ControlStateService,
     ManualPlanService,
-    AssistedPlanningService,
     ResultAcceptanceService,
     RouterResultCoordinator,
   ],

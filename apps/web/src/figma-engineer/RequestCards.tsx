@@ -5,6 +5,7 @@ import { skillLabel } from '../lib/reasons';
 import { ENGINEER_ASSETS } from './assets';
 import { formatMinutesRu, formatPlanTime, formatPlanWindow } from './engineerClock';
 import {
+  type EngineerHandoffItem,
   type EngineerJobItem,
   type EngineerLunchItem,
   visibleServiceDurationSec,
@@ -28,8 +29,9 @@ export function EngineerListCard({
   onLate,
   onStart,
   actions,
+  handoffAction,
 }: {
-  item: EngineerJobItem | EngineerLunchItem;
+  item: EngineerJobItem | EngineerLunchItem | EngineerHandoffItem;
   motionOn: boolean;
   delay: number;
   latePending?: boolean;
@@ -39,6 +41,7 @@ export function EngineerListCard({
   onLate?: () => void;
   onStart?: () => void;
   actions?: ReactNode;
+  handoffAction?: () => void;
 }) {
   return (
     <motion.article
@@ -48,6 +51,8 @@ export function EngineerListCard({
     >
       {item.kind === 'lunch' ? (
         <LunchCard item={item} />
+      ) : item.kind === 'handoff' ? (
+        <HandoffCard item={item} onConfirm={handoffAction} />
       ) : item.variant === 'upcoming' ? (
         <UpcomingCard
           item={item}
@@ -63,6 +68,60 @@ export function EngineerListCard({
         <RegularCard item={item} onOpen={onOpen} onRoute={onRoute} />
       )}
     </motion.article>
+  );
+}
+
+function HandoffCard({ item, onConfirm }: { item: EngineerHandoffItem; onConfirm?: () => void }) {
+  const ownConfirmed =
+    item.role === 'donor'
+      ? item.handoff.donorConfirmedAt !== null
+      : item.handoff.receiverConfirmedAt !== null;
+  const complete = item.handoff.completedAt !== null;
+  const items = [
+    item.handoff.items.router ? `Роутер ×${item.handoff.items.router}` : null,
+    item.handoff.items.set_top_box ? `ТВ-приставка ×${item.handoff.items.set_top_box}` : null,
+    item.handoff.items.smart_speaker ? `Умная колонка ×${item.handoff.items.smart_speaker}` : null,
+  ].filter((value): value is string => value !== null);
+  return (
+    <div
+      className="border-2 border-[#2563EB] bg-white"
+      style={{ borderRadius: eu(20), padding: `${eu(20)} ${eu(24)}` }}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="font-murs text-figma-ink" style={{ fontSize: eu(28) }}>
+            Передача оборудования
+          </p>
+          <p
+            className="font-medium text-figma-muted"
+            style={{ marginTop: eu(8), fontSize: eu(18) }}
+          >
+            {item.role === 'donor' ? 'Передать' : 'Принять'} · {items.join(', ')}
+          </p>
+        </div>
+        <span className="font-murs text-[#2563EB]" style={{ fontSize: eu(28) }}>
+          {formatPlanTime(item.stop.startAt)}
+        </span>
+      </div>
+      <p className="font-medium text-figma-muted" style={{ marginTop: eu(10), fontSize: eu(18) }}>
+        {complete
+          ? 'Передача подтверждена обеими сторонами'
+          : ownConfirmed
+            ? 'Ожидаем подтверждение партнёра'
+            : 'Встреча на маршруте'}
+      </p>
+      {!complete && !ownConfirmed ? (
+        <button
+          type="button"
+          disabled={!onConfirm}
+          onClick={onConfirm}
+          className="w-full bg-[#2563EB] font-semibold text-white disabled:opacity-50"
+          style={{ marginTop: eu(14), height: eu(64), borderRadius: eu(16), fontSize: eu(20) }}
+        >
+          {item.role === 'donor' ? 'Передать' : 'Принять'}
+        </button>
+      ) : null}
+    </div>
   );
 }
 
@@ -119,7 +178,7 @@ function UpcomingCard({
             className="font-murs leading-none tracking-[-0.02em] text-figma-ink"
             style={{ fontSize: eu(40) }}
           >
-            {item.timingUnverified ? 'Без ETA' : formatPlanTime(item.stop.startAt)}
+            {formatPlanTime(item.stop.startAt)}
           </p>
           <p
             className="break-words font-semibold tracking-[-0.02em] text-figma-dim"
@@ -234,7 +293,7 @@ function RegularCard({
           className="font-murs leading-none tracking-[-0.02em] text-figma-ink"
           style={{ fontSize: eu(40) }}
         >
-          {item.timingUnverified ? 'Без ETA' : formatPlanTime(item.stop.startAt)}
+          {formatPlanTime(item.stop.startAt)}
         </p>
         <p
           className="break-words font-semibold tracking-[-0.02em] text-figma-dim"

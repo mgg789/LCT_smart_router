@@ -271,11 +271,26 @@ async function main(): Promise<void> {
   let dispatcher = await signIn();
   pass('dispatcher signs in by password', 'no SMTP involved');
 
-  const reset = await call('POST', '/api/v1/dispatch/data/reset', dispatcher, {
-    operationId: randomUUID(),
-    kind: 'empty',
-    confirmation: 'erase all application data',
-  });
+  // A leftover LIVE poll from the previous e2e test can still hold `live_workdays`
+  // and wait for `routing_current`. Reset now takes the same lock order; a short
+  // retry covers the remaining Postgres deadlock abort (500/503). 409 is a caller
+  // error and is never retried.
+  const resetEmpty = async (token: string): Promise<HttpResult> =>
+    call('POST', '/api/v1/dispatch/data/reset', token, {
+      operationId: randomUUID(),
+      kind: 'empty',
+      confirmation: 'erase all application data',
+    });
+  let reset = await resetEmpty(dispatcher);
+  for (
+    let attempt = 1;
+    attempt < 3 && (reset.status === 500 || reset.status === 503);
+    attempt += 1
+  ) {
+    await sleep(250 * attempt);
+    dispatcher = await signIn();
+    reset = await resetEmpty(dispatcher);
+  }
   requireStatus(reset, 201, 'empty data reset');
   dispatcher = await signIn();
   pass('application data reset', `generation=${String(reset.body.generation)}`);

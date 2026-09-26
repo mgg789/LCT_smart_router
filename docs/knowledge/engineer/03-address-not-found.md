@@ -4,7 +4,7 @@ segment: engineer
 title: Не могу найти адрес
 summary: Если адрес заявки физически не найден и добраться до клиента нельзя, это оформляется как «Невозможно выполнить» или «Другая проблема» — заявка уходит с вашего маршрута.
 tags: [адрес, доступ, проблема]
-actions: [report_cannot_complete, call_dispatch_helper]
+actions: [report_cannot_complete]
 related: [eng-10-cannot-complete, eng-13-vehicle-and-road, eng-17-when-to-call-the-dispatcher]
 updated: 2026-09-20
 ---

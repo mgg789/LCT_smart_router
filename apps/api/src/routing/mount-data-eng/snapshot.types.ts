@@ -1,3 +1,4 @@
+import type { HandoffMetadata } from '../router-gateway/result.types';
 /**
  * `RouterTaskSnapshot` — the published input sector.
  *
@@ -47,8 +48,6 @@ export interface SnapshotRequest {
   /** `null` means the request places no transport restriction. */
   readonly required_transport: TransportCode | null;
   readonly required_equipment: EquipmentCode | null;
-  /** Hard dispatcher assignment; omission leaves the request fully automatic. */
-  readonly pinned_engineer_id?: string;
 }
 
 export interface SnapshotLunch {
@@ -87,6 +86,8 @@ export interface SnapshotEngineer {
   readonly expected_online_at: UnixSeconds | null;
   /** Morning issue already includes one spare for every equipment kind used by the crew. */
   readonly equipment_stock: SnapshotEquipmentStock;
+  /** Total physical carrying limit across all kinds; supplied by company settings. */
+  readonly equipment_capacity?: number;
   /** The single lunch of the day has been used. Router schedules no second one. */
   readonly lunch_taken: boolean;
   readonly lunch: SnapshotLunch;
@@ -98,6 +99,9 @@ export interface SnapshotPolicy {
 }
 
 export interface RouterTaskSnapshot {
+  readonly pending_equipment_handoffs?: Array<
+    HandoffMetadata & { location: GeoPoint; meeting_at: number }
+  >;
   readonly schema_version: string;
   /** Moment of this publication of changed data. It does not tick on its own. */
   readonly planning_as_of: UnixSeconds;
@@ -107,8 +111,6 @@ export interface RouterTaskSnapshot {
   readonly requests: SnapshotRequest[];
   readonly engineers: SnapshotEngineer[];
   readonly policy: SnapshotPolicy;
-  /** Relative order only: automatic jobs may still be inserted between pinned ones. */
-  readonly pinned_orders?: Array<{ readonly engineer_id: string; readonly request_ids: string[] }>;
 }
 
 export const SNAPSHOT_SCHEMA_VERSION = '1.0';

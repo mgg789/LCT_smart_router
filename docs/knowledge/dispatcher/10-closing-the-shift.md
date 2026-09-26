@@ -4,7 +4,7 @@ segment: dispatcher
 title: Закрытие смены
 summary: Смену нельзя закрыть, пока остаётся хотя бы один нерешённый блокирующий алерт, и сервер проверяет это заново на своей стороне в момент закрытия, а не доверяет счётчику, который диспетчер видел раньше.
 tags: [shift, close, alerts]
-actions: [get_shift_status, get_alerts, close_shift]
+actions: [get_shift_status, list_alerts, prepare_close_shift]
 related: [disp-04-alert-time-risk-unassigned, disp-01-day-shape]
 updated: 2026-09-20
 ---

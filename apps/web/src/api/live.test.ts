@@ -26,6 +26,7 @@ describe('dispatcher live client', () => {
             stats: stats,
           },
           engineers: [engineer],
+          handoffs: [],
           history: [
             {
               request: { ...request, assumedCompletedAt: 1_790_001_200 },

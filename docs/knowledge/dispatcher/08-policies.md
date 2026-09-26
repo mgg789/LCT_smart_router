@@ -4,7 +4,7 @@ segment: dispatcher
 title: Шесть политик и их компромиссы
 summary: Все шесть готовых политик сначала одинаково жмут покрытие — срочные неназначенные, все неназначенные, пропущенные необязательные обеды, суммарное опоздание, — и расходятся только после этого, каждая на свой хвост критериев; редактора весов нет и не появится.
 tags: [policy, compact, sla, covering, сравнение]
-actions: [get_policies, compare_policies, select_policy]
+actions: [get_policies, compare_policies, prepare_select_policy]
 related: [disp-02-reading-the-plan, disp-03-unassigned-triage]
 updated: 2026-09-20
 ---

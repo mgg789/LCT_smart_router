@@ -1,54 +1,15 @@
+import type { EngineerDayView, EngineerView } from '@lct/shared';
 import type { Engineer, EngineerDay } from '../generated/prisma/client';
 
-export interface EngineerView {
-  readonly id: string;
-  readonly version: number;
-  readonly displayName: string;
-  readonly inputOrder: number;
-  readonly skills: string[];
-  readonly transportType: string;
-  readonly region: string | null;
-  readonly homeLat: number | null;
-  readonly homeLon: number | null;
-  readonly hasAccount: boolean;
-  /** The login address, when the profile has one linked; null on imported brigades. */
-  readonly email: string | null;
-}
+export type { EngineerDayView, EngineerView };
 
 /**
  * Availability, lunch and the shift of one working day.
  *
  * The three groups of state stay visibly separate: working availability is not network
  * connectivity, and neither is the progress of the work (context/32 section 5.2).
+ * The shape is `@lct/shared`.
  */
-export interface EngineerDayView {
-  readonly engineerId: string;
-  readonly workDate: string;
-  readonly version: number;
-  readonly shiftStartAt: number;
-  readonly shiftEndAt: number;
-  readonly availability: string;
-  readonly expectedOnlineAt: number | null;
-  readonly attendanceOptOut: boolean;
-  readonly lastAttendanceAt: number | null;
-  readonly attendanceGraceUntil: number | null;
-  readonly equipmentStock: {
-    readonly router: number;
-    readonly setTopBox: number;
-    readonly smartSpeaker: number;
-  };
-  readonly equipmentIssuedAt: number | null;
-  readonly lunch: {
-    readonly enabled: boolean;
-    readonly durationSec: number | null;
-    readonly windowStartAt: number | null;
-    readonly windowEndAt: number | null;
-    readonly required: boolean;
-    /** The single lunch of the day has been used. Not a statement that it has finished. */
-    readonly taken: boolean;
-    readonly startedAt: number | null;
-  };
-}
 
 export function toEngineerView(
   engineer: Engineer & { account?: { email: string } | null },
@@ -59,7 +20,7 @@ export function toEngineerView(
     displayName: engineer.displayName,
     inputOrder: engineer.inputOrder,
     skills: engineer.skills,
-    transportType: engineer.transportType,
+    transportType: engineer.transportType === 'transit' ? 'walk' : engineer.transportType,
     region: engineer.region,
     homeLat: engineer.homeLat,
     homeLon: engineer.homeLon,

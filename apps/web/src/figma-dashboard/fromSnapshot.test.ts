@@ -15,43 +15,6 @@ import {
 } from './fromSnapshot';
 
 describe('Figma MAIN snapshot mapper', () => {
-  it('keeps manual sequence even when the old schedule runs in the opposite order', () => {
-    const original = createDevSnapshot();
-    if (!original.plan.plan) throw new Error('Fixture plan is required');
-    const snapshot = {
-      ...original,
-      plan: {
-        ...original.plan,
-        mode: 'manual' as const,
-        plan: {
-          ...original.plan.plan,
-          origin: 'manual' as const,
-          routes: original.plan.plan.routes.map((route) => ({
-            ...route,
-            stops: [...route.stops].reverse().map((s, sequence) => ({ ...s, sequence })),
-          })),
-        },
-      },
-    };
-    const view = dashboardViewFromSnapshot(snapshot, { engineerId: null, requestId: null });
-    expect(view.totalKm).toBeNull();
-    const cards = withLiveRouteStops(view.engineers, snapshot, null);
-    for (const route of snapshot.plan.plan.routes) {
-      const card = cards.find((item) => item.id === route.engineerId);
-      expect(card?.km).toBeNull();
-      expect(card?.stops.filter((s) => s.kind === 'job').map((s) => s.requestId)).toEqual(
-        route.stops.filter((s) => s.kind === 'job').map((s) => s.requestId),
-      );
-      expect(
-        card?.stops
-          .filter(
-            (s) =>
-              s.kind === 'job' && !snapshot.requests.find((r) => r.id === s.requestId)?.startedAt,
-          )
-          .every((s) => s.time === '—'),
-      ).toBe(true);
-    }
-  });
   it('formats the header date and policy the same way as the live day page', () => {
     expect(figmaDateLabel('2026-09-15')).toBe('15 сентября, 2026');
     expect(policyLabel('fast')).toBe('Быстрее до клиента');
@@ -112,12 +75,57 @@ describe('Figma MAIN snapshot mapper', () => {
     expect(notificationFromAlert(firstAlert).icon).toBe('delay');
   });
 
-  it('keeps other router settings when only lunch or traffic changes', () => {
-    const snapshot = createDevSnapshot();
+  it('keeps other router settings when only lunch, traffic or metro changes', () => {
+    const snapshot = {
+      ...createDevSnapshot(),
+      routerSettings: {
+        ...nextRouterSettings(createDevSnapshot(), {}),
+        metroEnabled: true,
+      },
+    };
     const next = nextRouterSettings(snapshot, { lunchesEnabled: true, trafficEnabled: true });
     expect(next.lunchesEnabled).toBe(true);
     expect(next.trafficEnabled).toBe(true);
     expect(next.routerContextVersion).toBe(snapshot.routerContextVersion);
     expect(next.accessBufferSec).toBe(600);
+    expect(next.metroEnabled).toBe(true);
+  });
+
+  it('preserves the future equipment transfer flag during unrelated setting edits', () => {
+    const base = createDevSnapshot();
+    const snapshot = {
+      ...base,
+      routerSettings: {
+        ...nextRouterSettings(base, {}),
+        equipmentTransfersEnabled: true,
+      },
+    };
+    expect(nextRouterSettings(snapshot, { lunchesEnabled: true }).equipmentTransfersEnabled).toBe(
+      true,
+    );
+  });
+
+  it('keeps an address out of the unassigned banner', () => {
+    const snapshot = createDevSnapshot();
+    const request = snapshot.requests.find((item) => item.assignmentState !== 'assigned');
+    expect(request).toBeTruthy();
+    if (!request || !snapshot.plan.plan) return;
+    const address = 'Город Москва, пр-кт.Волгоградский, д. 128';
+    const stripped = {
+      ...snapshot,
+      requests: snapshot.requests.map((item) =>
+        item.id === request.id ? { ...item, addressText: address, workTypeTitle: '' } : item,
+      ),
+      plan: {
+        ...snapshot.plan,
+        plan: {
+          ...snapshot.plan.plan,
+          assignments: [],
+        },
+      },
+    };
+    const view = dashboardViewFromSnapshot(stripped, { engineerId: null, requestId: null });
+    expect(view.unassignedReason).toBe('План ещё считается');
+    expect(view.unassignedReason).not.toContain('Волгоградский');
   });
 });

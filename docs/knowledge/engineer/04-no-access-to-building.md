@@ -4,7 +4,7 @@ segment: engineer
 title: Нет доступа в здание
 summary: Не пускают в подъезд/офис, не работает домофон, нет ключа от щитка — если попасть на объект так и не удалось, это «Невозможно выполнить» с пояснением, и заявка отменяется.
 tags: [доступ, домофон, здание]
-actions: [report_cannot_complete, call_dispatch_helper]
+actions: [report_cannot_complete]
 related: [eng-05-client-absent-or-refuses, eng-10-cannot-complete, eng-17-when-to-call-the-dispatcher]
 updated: 2026-09-20
 ---

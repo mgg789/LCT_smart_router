@@ -15,6 +15,7 @@ Criterion = Literal[
     "distance",
     "engineers_used",
     "additional_engineers",
+    "extra_assignments",
     "window_start_delay",
     "max_jobs_per_engineer",
     "total_lateness",
@@ -25,6 +26,7 @@ Criterion = Literal[
 SearchStage = Literal[
     "coverage",
     "additional_engineers",
+    "extra_assignments",
     "travel_time",
     "distance",
     "engineers_used",
@@ -101,9 +103,19 @@ _CATALOG: dict[str, PolicySpec] = {
     ),
     "covering": PolicySpec(
         policy_id="covering",
-        definition_version="covering-2",
-        ordered_criteria=_COVERAGE + ("additional_engineers", "engineers_used", "distance", "travel_time"),
-        search_stages=("coverage", "additional_engineers", "engineers_used", "distance", "travel_time"),
+        definition_version="covering-3",
+        # After the reserve count, shed jobs off those reserves before shortening
+        # travel. Counting every busy engineer here let a reserve replace a roster
+        # engineer who could have taken the same ordinary jobs.
+        ordered_criteria=_COVERAGE
+        + ("additional_engineers", "extra_assignments", "distance", "travel_time"),
+        search_stages=(
+            "coverage",
+            "additional_engineers",
+            "extra_assignments",
+            "distance",
+            "travel_time",
+        ),
     ),
 }
 POLICY_CATALOG_VERSION = sha256(
@@ -167,6 +179,11 @@ def criterion_values(snapshot: RouterTaskSnapshot, plan: Plan) -> dict[Criterion
         "additional_engineers": sum(
             route.engineer_id.startswith("covering-") and route.metrics.assigned_count > 0
             for route in plan.routes
+        ),
+        "extra_assignments": sum(
+            route.metrics.assigned_count
+            for route in plan.routes
+            if route.engineer_id.startswith("covering-")
         ),
         "window_start_delay": sum(
             stop.start_at - requests[stop.request_id].window_start_at for stop in job_stops

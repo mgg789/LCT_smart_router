@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { HandoffView } from '../api/live';
 import type {
   EngineerDayView,
   EngineerPlanResponse,
@@ -184,6 +185,56 @@ describe('engineerDay', () => {
     expect(actual).toEqual({ kind: 'lunch', startAt: 600, endAt: 750 });
     expect(engineerListItems(stale, day, actual)).toEqual([actual]);
     expect(engineerListItems(stale, day, null)).toEqual([]);
+  });
+
+  it('inserts a handoff in route order with the engineer role', () => {
+    const handoff: HandoffView = {
+      id: 'handoff-1',
+      donorEngineerId: 'eng-1',
+      receiverEngineerId: 'eng-2',
+      requestId: 'req-1',
+      items: { router: 1, set_top_box: 0, smart_speaker: 2 },
+      lat: 55.76,
+      lon: 37.63,
+      meetingAt: 300,
+      donorConfirmedAt: null,
+      receiverConfirmedAt: null,
+      completedAt: null,
+    };
+    const items = engineerListItems(
+      plan(
+        [
+          stop({ kind: 'job', requestId: 'req-1', sequence: 1, startAt: 120 }),
+          stop({
+            kind: 'handoff',
+            sequence: 2,
+            startAt: 300,
+            endAt: 330,
+            lat: handoff.lat,
+            lon: handoff.lon,
+            handoff: {
+              handoff_id: handoff.id,
+              donor_engineer_id: handoff.donorEngineerId,
+              receiver_engineer_id: handoff.receiverEngineerId,
+              request_id: handoff.requestId,
+              items: handoff.items,
+            },
+          }),
+        ],
+        [request({ id: 'req-1' })],
+      ),
+      day,
+      null,
+      [handoff],
+      'eng-1',
+    );
+
+    expect(items.map((item) => item.kind)).toEqual(['job', 'handoff']);
+    expect(items[1]).toMatchObject({
+      kind: 'handoff',
+      role: 'donor',
+      handoff: { id: 'handoff-1' },
+    });
   });
 
   it('lists request ids that still need a fetch', () => {

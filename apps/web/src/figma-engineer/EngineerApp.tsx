@@ -14,7 +14,7 @@ import {
   sendEngineerLiveAction,
 } from '../api/live';
 import type { EngineerDayView, EngineerPlanResponse, EngineerView } from '../api/types';
-import { mapForecastLabel } from '../domain/mapForecast';
+import { PassportOffer } from '../components/passports/PassportOffer';
 import { TRANSPORT_OPTIONS } from '../figma-dashboard/addEntity';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { ENGINEER_ASSETS } from './assets';
@@ -24,6 +24,8 @@ import {
   DESIGN_PREVIEW_PLAN,
   DESIGN_PREVIEW_PROFILE,
 } from './designPreview';
+import { EngineerAiPane } from './EngineerAiPane';
+import { EngineerDayResults } from './EngineerDayResults';
 import { EngineerMenu, type EngineerMenuId } from './EngineerMenu';
 import { EngineerSettings } from './EngineerSettings';
 import { engineerHeaderStamp } from './engineerClock';
@@ -228,13 +230,15 @@ export function EngineerApp({
 
   const items = useMemo(
     () =>
-      engineerListItems(plan, live ? null : day, lunch)
+      engineerListItems(plan, live ? null : day, lunch, live?.handoffs ?? [], live?.engineer.id)
         .filter((item) =>
           item.kind === 'lunch'
             ? !live || item.endAt > logicalNow
-            : item.request.lifecycle !== 'completed' &&
-              item.request.lifecycle !== 'cancelled' &&
-              (!item.request.assumedCompletedAt || live?.engineer.stats.completedCount === 0),
+            : item.kind === 'handoff'
+              ? true
+              : item.request.lifecycle !== 'completed' &&
+                item.request.lifecycle !== 'cancelled' &&
+                (!item.request.assumedCompletedAt || live?.engineer.stats.completedCount === 0),
         )
         .map((item) =>
           item.kind === 'job' && live
@@ -257,6 +261,7 @@ export function EngineerApp({
     setActionBusy(true);
     try {
       const next = await sendEngineerLiveAction(token, action);
+      window.dispatchEvent(new Event('engineer-rewards-changed'));
       const receivedAt = Date.now();
       setError(null);
       const terminalId =
@@ -458,14 +463,6 @@ export function EngineerApp({
               >
                 Список заявок
               </h1>
-              {mapForecastLabel(plan?.route) ? (
-                <p
-                  className="font-medium text-figma-muted"
-                  style={{ marginTop: eu(12), fontSize: eu(20) }}
-                >
-                  {mapForecastLabel(plan?.route)}
-                </p>
-              ) : null}
               {notice ? (
                 <p
                   className="font-medium text-figma-muted"
@@ -536,35 +533,62 @@ export function EngineerApp({
               ) : null}
               <div className="flex flex-col" style={{ marginTop: eu(20), gap: eu(20) }}>
                 {items.map((item, index) => (
-                  <EngineerListCard
-                    key={item.kind === 'lunch' ? `lunch-${item.startAt}` : item.request.id}
-                    item={item}
-                    motionOn={motionOn}
-                    delay={index * 0.04}
-                    actions={live && item.kind === 'job' ? controls(item.request.id) : undefined}
-                    startPending={item.kind === 'job' && startPendingId === item.request.id}
-                    onOpen={
-                      item.kind === 'job'
-                        ? () => {
-                            setOpenedJob(item);
-                            setScreen('day');
-                            setNotice(null);
-                          }
-                        : undefined
+                  <div
+                    key={
+                      item.kind === 'lunch'
+                        ? `lunch-${item.startAt}`
+                        : item.kind === 'handoff'
+                          ? `handoff-${item.handoff.id}`
+                          : item.request.id
                     }
-                    onRoute={item.kind === 'job' ? () => openRoute(item) : undefined}
-                    onStart={item.kind === 'job' ? () => void startJob(item.request.id) : undefined}
-                  />
+                  >
+                    <EngineerListCard
+                      item={item}
+                      motionOn={motionOn}
+                      delay={index * 0.04}
+                      actions={live && item.kind === 'job' ? controls(item.request.id) : undefined}
+                      handoffAction={
+                        live && item.kind === 'handoff'
+                          ? () =>
+                              void applyLiveAction({
+                                kind: 'handoff_confirm',
+                                handoffId: item.handoff.id,
+                              })
+                          : undefined
+                      }
+                      startPending={item.kind === 'job' && startPendingId === item.request.id}
+                      onOpen={
+                        item.kind === 'job'
+                          ? () => {
+                              setOpenedJob(item);
+                              setScreen('day');
+                              setNotice(null);
+                            }
+                          : undefined
+                      }
+                      onRoute={item.kind === 'job' ? () => openRoute(item) : undefined}
+                      onStart={
+                        item.kind === 'job' ? () => void startJob(item.request.id) : undefined
+                      }
+                    />
+                    {!designPreview &&
+                    item.kind === 'job' &&
+                    live?.current?.request.id === item.request.id &&
+                    live.current.phase === 'in_progress' ? (
+                      <PassportOffer
+                        key={item.request.id}
+                        token={token}
+                        requestId={item.request.id}
+                      />
+                    ) : null}
+                  </div>
                 ))}
               </div>
             </>
           ) : (
-            <ComingSoon
-              title="Помощник"
-              body="Чат с помощником появится отдельным экраном. Сейчас можно вернуться к списку заявок."
-              motionOn={motionOn}
-              onBack={() => setScreen('day')}
-            />
+            <div className="relative min-h-0 flex-1" style={{ marginTop: eu(24) }}>
+              <EngineerAiPane token={token} displayName={profile?.displayName ?? null} />
+            </div>
           )}
         </div>
 
@@ -580,6 +604,7 @@ export function EngineerApp({
             >
               <div className="h-full overflow-y-auto">
                 <RequestDetail
+                  token={designPreview ? undefined : token}
                   item={detailJob}
                   actions={live ? controls(detailJob.request.id, true) : undefined}
                   nowMs={designPreview ? DESIGN_PREVIEW_NOW_MS : logicalNow * 1000}
@@ -595,8 +620,16 @@ export function EngineerApp({
         </AnimatePresence>
 
         {live ? (
-          <LiveDayOverlay live={live} now={logicalNow} busy={actionBusy} send={applyLiveAction} />
+          <LiveDayOverlay
+            live={live}
+            now={logicalNow}
+            busy={actionBusy}
+            send={applyLiveAction}
+            token={designPreview ? null : token}
+            equipment={day?.equipmentStock ?? null}
+          />
         ) : null}
+        {live && !designPreview ? <EngineerDayResults token={token} live={live} /> : null}
         <AnimatePresence>
           {screen === 'settings' ? (
             <motion.div
@@ -635,6 +668,7 @@ export function EngineerApp({
 
         {overlayOpen ? null : (
           <EngineerMenu
+            token={designPreview ? undefined : token}
             open={menuOpen}
             motionOn={motionOn}
             name={name}
@@ -655,58 +689,15 @@ export function EngineerApp({
             }}
             onBreak={() => void startBreak()}
             onSupport={() => {
-              setNotice('Поддержка и помощник — следующие экраны.');
+              setOpenedJob(null);
+              setScreen('assistant');
               setMenuOpen(false);
+              setNotice(null);
             }}
             onSignOut={onSignOut}
           />
         )}
       </div>
     </main>
-  );
-}
-
-function ComingSoon({
-  title,
-  body,
-  motionOn,
-  onBack,
-}: {
-  title: string;
-  body: string;
-  motionOn: boolean;
-  onBack: () => void;
-}) {
-  return (
-    <motion.section
-      initial={motionOn ? { opacity: 0, y: 12 } : false}
-      animate={{ opacity: 1, y: 0 }}
-      transition={motionOn ? { duration: 0.28, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
-      style={{ marginTop: eu(40) }}
-    >
-      <h1 className="font-extrabold tracking-[0.02em] text-figma-ink" style={{ fontSize: eu(36) }}>
-        {title}
-      </h1>
-      <p
-        className="font-medium text-figma-muted"
-        style={{ marginTop: eu(16), fontSize: eu(20), lineHeight: eu(28) }}
-      >
-        {body}
-      </p>
-      <motion.button
-        type="button"
-        onClick={onBack}
-        whileTap={{ scale: 0.98 }}
-        className="bg-figma-bee font-semibold text-figma-ink"
-        style={{
-          marginTop: eu(24),
-          borderRadius: eu(20),
-          padding: `${eu(18)} ${eu(32)}`,
-          fontSize: eu(22),
-        }}
-      >
-        К списку заявок
-      </motion.button>
-    </motion.section>
   );
 }

@@ -7,6 +7,13 @@ import { requestUrgency } from './fromSnapshot';
 import { shortRequestId } from './requestsTable';
 import { DEMO_TOASTS, type ToastKind, type ToastNotification } from './toasts';
 
+/**
+ * Inbox rows are `alert:<id>`. The resolve API looks the row up by the bare id.
+ */
+export function dispatchAlertId(cardId: string): string {
+  return cardId.startsWith('alert:') ? cardId.slice('alert:'.length) : cardId;
+}
+
 export type InboxAlertCard = {
   sourceAlert: AlertView | null;
   id: string;

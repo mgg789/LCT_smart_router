@@ -16,13 +16,13 @@ export const STACK_NAV = [
 
 export type StackNavId = (typeof STACK_NAV)[number];
 
-export type StackViewKey = 'main' | 'requests' | 'engineers' | 'alerts' | 'policy';
+export type StackViewKey = 'main' | 'requests' | 'engineers' | 'alerts' | 'policy' | 'chats' | 'ai';
 
-/** Sidebar tabs parked until chats / AI ship. */
-export const LOCKED_NAV = new Set<NavItemId>(['chats', 'ai']);
+/** Sidebar tabs that stay out of the wheel. Chats are locked for this release. */
+export const LOCKED_NAV = new Set<NavItemId>(['chats']);
 
 /**
- * True while chats / AI stay out of the demo.
+ * True for a sidebar tab the wheel and the click both skip.
  */
 export function isNavLocked(id: NavItemId): boolean {
   return LOCKED_NAV.has(id);
@@ -58,13 +58,16 @@ export function stackNavIndex(id: NavItemId): number {
 
 /**
  * Shared pane for stack tabs that render the same body.
- * Day / chats / AI share the day plan; engineers, requests, alerts, policy are unique.
+ * Day stays the plan. Chats and AI are their own screens. Engineers, requests, alerts
+ * and policy are unique.
  */
 export function stackViewKey(id: NavItemId): StackViewKey {
   if (id === 'requests') return 'requests';
   if (id === 'engineers') return 'engineers';
   if (id === 'alerts') return 'alerts';
   if (id === 'policy') return 'policy';
+  if (id === 'chats') return 'chats';
+  if (id === 'ai') return 'ai';
   return 'main';
 }
 

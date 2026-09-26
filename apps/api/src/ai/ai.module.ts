@@ -10,7 +10,7 @@ import { LiveModule } from '../orchestrator/live';
 import { RequestsModule } from '../orchestrator/requests';
 import { AiHealthProbe } from './ai-health.probe';
 import { KnowledgeModule, KnowledgeService } from './knowledge';
-import { AiOperationService } from './operations';
+import { ActionDecisionGate, ActionGuardService, AiOperationService } from './operations';
 import {
   AgentsSdkProvider,
   createDeepseekClient,
@@ -95,6 +95,7 @@ function buildProvider(
           baseUrl: config.get('LLM_BASE_URL'),
           apiKey: config.get('LLM_TOKEN') ?? '',
           timeoutMs: config.get('LLM_REQUEST_TIMEOUT_MS'),
+          proxyToken: config.get('LLM_PROXY_TOKEN'),
         }),
         clock,
       );
@@ -104,6 +105,7 @@ function buildProvider(
           baseUrl: config.get('LLM_BASE_URL'),
           apiKey: config.get('LLM_TOKEN') ?? '',
           timeoutMs: config.get('LLM_REQUEST_TIMEOUT_MS'),
+          proxyToken: config.get('LLM_PROXY_TOKEN'),
         }),
         clock,
       );
@@ -175,6 +177,8 @@ function buildFallbackProvider(
     StopService,
     DispatchChatsService,
     RoleProfileService,
+    ActionGuardService,
+    ActionDecisionGate,
     AiOperationService,
     ToolRegistry,
     AgentRuntimeService,
@@ -192,6 +196,8 @@ function buildFallbackProvider(
     StopService,
     DispatchChatsService,
     RoleProfileService,
+    ActionGuardService,
+    ActionDecisionGate,
     AiOperationService,
     ToolRegistry,
     AgentRuntimeService,

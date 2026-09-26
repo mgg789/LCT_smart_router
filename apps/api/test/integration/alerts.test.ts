@@ -84,6 +84,42 @@ describe('dispatcher alert lifecycle', () => {
     await app?.close();
   });
 
+  it('does not freeze day results while LIVE execution is still running', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const day = await prisma.liveWorkday.create({
+      data: {
+        generation: 996,
+        workDate: date,
+        status: 'running',
+        logicalStartAt: BigInt(now),
+        logicalEndAt: BigInt(now + 3600),
+        startedAtWallSec: BigInt(now),
+        createdAt: BigInt(now),
+        updatedAt: BigInt(now),
+      },
+    });
+    liveDayIds.push(day.id);
+    const operationId = randomUUID();
+    opIds.push(operationId);
+    await assert.rejects(
+      () =>
+        operations.execute(
+          {
+            operationId,
+            actor,
+            action: 'shift.close',
+            targetRef: date,
+            payload: { workDate: date },
+          },
+          (context) => alerts.closeShift(context, date),
+        ),
+      (error: unknown) => error instanceof SysError && error.code === 'SHIFT_CLOSE_BLOCKED',
+    );
+    assert.equal(await prisma.shiftClosure.count({ where: { workDate: date } }), 0);
+    assert.equal(await prisma.appState.count({ where: { key: `performance.day.${day.id}` } }), 0);
+    await prisma.liveWorkday.delete({ where: { id: day.id } });
+  });
+
   it('a vanished Router condition creates a new episode when it returns', async () => {
     const routerId = unique('router-condition');
     const firstResult = unique('router-result');
@@ -163,15 +199,6 @@ describe('dispatcher alert lifecycle', () => {
       (error: unknown) => error instanceof SysError && error.code === 'SHIFT_CLOSE_BLOCKED',
     );
     const resolveId = randomUUID();
-    const control = await prisma.controlState.findUniqueOrThrow({ where: { id: 'singleton' } });
-    const pointer = await prisma.appliedPlanCurrent.findUnique({
-      where: { id: 'singleton' },
-      include: { plan: true },
-    });
-    const expectedPlan = {
-      expectedModeVersion: control.modeVersion,
-      expectedPlanRevision: pointer?.plan.revision ?? 0,
-    };
     opIds.push(resolveId);
     const request = {
       operationId: resolveId,
@@ -181,11 +208,7 @@ describe('dispatcher alert lifecycle', () => {
       payload: { action: 'keep_manual', reason: 'dispatcher reviewed' },
     };
     const first = await operations.execute(request, (context) =>
-      alerts.resolve(context, id, {
-        action: 'keep_manual',
-        reason: 'dispatcher reviewed',
-        ...expectedPlan,
-      }),
+      alerts.resolve(context, id, { action: 'keep_manual', reason: 'dispatcher reviewed' }),
     );
     const repeat = await operations.execute(request, () => {
       throw new Error('handler must not run');

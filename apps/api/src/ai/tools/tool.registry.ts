@@ -6,7 +6,7 @@ import { AlertsService } from '../../orchestrator/alerts';
 import { LiveService } from '../../orchestrator/live/live.service';
 import { PolicyService } from '../../orchestrator/policy';
 import { RequestsService } from '../../orchestrator/requests/requests.service';
-import { PrismaService, UnitOfWork } from '../../persistence';
+import { PrismaService } from '../../persistence';
 import { SnapshotBuilder } from '../../routing/mount-data-eng';
 import {
   AppliedPlanService,
@@ -15,15 +15,10 @@ import {
 } from '../../routing/router-gateway';
 import { AiOperationService } from '../operations';
 import type { LlmToolSpec } from '../provider';
-import { ChatEventBus } from '../runtime/chat-event.bus';
-import { RunEventBus } from '../runtime/run-event.bus';
-import { RunRegistry } from '../runtime/run-registry';
-import { StopService } from '../runtime/stop.service';
 import { buildClientTools } from './client.tools';
 import { buildDispatcherReadTools } from './dispatcher-read.tools';
 import { buildDispatcherWriteTools } from './dispatcher-write.tools';
 import { buildEngineerTools } from './engineer.tools';
-import { buildCallDispatchHelperTool } from './handoff.tool';
 import { buildSearchDocumentationTool } from './knowledge.tool';
 import { KnowledgeSearchPort } from './knowledge-search.port';
 import type { AnyToolSpec } from './tool.types';
@@ -50,11 +45,6 @@ export class ToolRegistry {
     requests: RequestsService,
     live: LiveService,
     config: AppConfigService,
-    uow: UnitOfWork,
-    stop: StopService,
-    bus: RunEventBus,
-    registry: RunRegistry,
-    chatBus: ChatEventBus,
     prisma: PrismaService,
     plans: AppliedPlanService,
     control: ControlStateService,
@@ -64,8 +54,7 @@ export class ToolRegistry {
     builder: SnapshotBuilder,
   ) {
     const searchDocumentation = buildSearchDocumentationTool(knowledge);
-    const callDispatchHelper = buildCallDispatchHelperTool({ uow, stop, bus, registry, chatBus });
-    const clientTools = buildClientTools({ aiOperations, requests, config });
+    const clientTools = buildClientTools({ aiOperations, requests, config, prisma });
     const engineerTools = buildEngineerTools({ aiOperations, live, config });
     const dispatcherReadTools = buildDispatcherReadTools({
       prisma,
@@ -84,8 +73,11 @@ export class ToolRegistry {
     const dispatcherFixTools = [...dispatcherReadonlyTools, ...dispatcherWriteTools];
 
     this.catalogues = {
-      client: [...clientTools, searchDocumentation, callDispatchHelper],
-      engineer: [...engineerTools, searchDocumentation, callDispatchHelper],
+      // Handoff to a human dispatcher is switched off for this release: the client
+      // support screen and the dispatcher chats tab are locked, so the model must not
+      // be able to open that queue.
+      client: [...clientTools, searchDocumentation],
+      engineer: [...engineerTools, searchDocumentation],
       dispatcher_readonly: dispatcherReadonlyTools,
       dispatcher_fix: dispatcherFixTools,
     };
@@ -114,8 +106,8 @@ export class ToolRegistry {
   }
 
   /** Every tool this registry can ever hand to a model, for the schema-invariant walk
-   *  (test/unit/ai-tools.test.ts) -- deduplicated, since `search_documentation` and
-   *  `call_dispatch_helper` are shared across profiles. */
+   *  (test/unit/ai-tools.test.ts) -- deduplicated, since `search_documentation` is
+   *  shared across profiles. */
   allTools(): readonly AnyToolSpec[] {
     const byName = new Map<string, AnyToolSpec>();
     for (const profile of Object.values(this.catalogues)) {

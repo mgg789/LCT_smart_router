@@ -4,7 +4,7 @@ segment: dispatcher
 title: Как читать рабочий план
 summary: GET /dispatch/plan отдаёт неизменяемую применённую ревизию плана вместе с моментом, который она описывает, и объяснение любого назначения — это только структурированные reasons[] от солвера, никогда пересказ намерений алгоритма.
 tags: [план, reasons, ревизия]
-actions: [get_plan]
+actions: [get_day_plan]
 related: [disp-03-unassigned-triage, disp-08-policies, disp-09-manual-mode]
 updated: 2026-09-20
 ---

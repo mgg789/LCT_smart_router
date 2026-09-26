@@ -21,53 +21,26 @@ export const reportFactSchema = z.object({
 });
 export type ReportFactDto = z.infer<typeof reportFactSchema>;
 
-const planExpectation = {
-  expectedModeVersion: z.number().int().positive(),
-  /** Zero names the absence of an applied plan. */
-  expectedPlanRevision: z.number().int().nonnegative(),
-};
-
-export const setModeSchema = z
-  .object({
-    operationId: z.uuid(),
-    mode: z.enum(['auto', 'manual', 'assisted']),
-    reason: z.string().trim().min(1).max(2000).optional(),
-    ...planExpectation,
-  })
-  .refine((value) => value.mode === 'auto' || Boolean(value.reason), {
-    message: 'A reason is required to enter dispatcher control',
-    path: ['reason'],
-  });
+export const setModeSchema = z.object({
+  operationId: z.uuid(),
+  mode: z.enum(['auto', 'manual']),
+});
 export type SetModeDto = z.infer<typeof setModeSchema>;
 
 export const reassignSchema = z.object({
   operationId: z.uuid(),
   requestId: z.string().min(1),
   engineerId: z.string().min(1),
-  ...planExpectation,
 });
 export type ReassignDto = z.infer<typeof reassignSchema>;
 
-export const reorderSchema = z
-  .object({
-    operationId: z.uuid(),
-    engineerId: z.string().min(1),
-    /** The finished order of one queue, saved once per completed drop (context/39 DB5). */
-    requestIds: z.array(z.string().min(1)).min(1),
-    ...planExpectation,
-  })
-  .refine((value) => new Set(value.requestIds).size === value.requestIds.length, {
-    message: 'A request may appear only once',
-    path: ['requestIds'],
-  });
+export const reorderSchema = z.object({
+  operationId: z.uuid(),
+  engineerId: z.string().min(1),
+  /** The finished order of one queue, saved once per completed drop (context/39 DB5). */
+  requestIds: z.array(z.string().min(1)).min(1),
+});
 export type ReorderDto = z.infer<typeof reorderSchema>;
-
-/** Read-only consequences of one gesture, with the same version guards as its write. */
-export const manualPreviewSchema = z.union([
-  reassignSchema.extend({ kind: z.literal('reassign') }),
-  reorderSchema.safeExtend({ kind: z.literal('reorder') }),
-]);
-export type ManualPreviewDto = z.infer<typeof manualPreviewSchema>;
 
 /**
  * A result package pushed in for testing and for the demo contour.
