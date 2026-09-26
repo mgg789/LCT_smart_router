@@ -172,7 +172,7 @@ services:
     environment:
       SYS1_LLM_BASE_URL: ${SYS1_LLM_BASE_URL:-}
       SYS1_LLM_TOKEN: ${LLM_PROXY_TOKEN:-}
-      SYS1_MODEL: ${SYS1_MODEL:-typesafe/jev-router}
+      SYS1_MODEL: ${SYS1_MODEL:-typesafe/jev-1.13}
     healthcheck:
       test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:12444/health >/dev/null || exit 1']
       interval: 30s
