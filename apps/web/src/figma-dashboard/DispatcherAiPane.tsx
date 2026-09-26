@@ -404,9 +404,10 @@ function Composer({
   onStop: () => void;
   fieldRef: RefObject<HTMLTextAreaElement | null>;
 }) {
+  // biome-ignore lint/correctness/useExhaustiveDependencies: draft changes textarea scrollHeight after React commits the value.
   useEffect(() => {
     if (fieldRef.current) fitComposerField(fieldRef.current);
-  }, [fieldRef]);
+  }, [draft, fieldRef]);
   return (
     <form onSubmit={onSubmit} className="pointer-events-auto w-full max-w-[813px]">
       {notice || status ? (

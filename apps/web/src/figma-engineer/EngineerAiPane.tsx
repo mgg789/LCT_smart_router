@@ -125,9 +125,10 @@ export function EngineerAiPane({
     }
   }
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: draft changes textarea scrollHeight after React commits the value.
   useEffect(() => {
     if (fieldRef.current) fitComposerField(fieldRef.current);
-  }, []);
+  }, [draft]);
 
   async function copy(id: string, text: string) {
     try {

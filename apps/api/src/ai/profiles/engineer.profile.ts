@@ -47,6 +47,8 @@ export function buildEngineerSystemPrompt(input: EngineerSystemPromptInput): str
       'engineer tool names, ids, epoch numbers, English phase words or field names. Say ' +
       '"приставка", "роутер", "колонка". Say "визит ещё не начат" instead of a phase code. ' +
       'Say clock times, not raw seconds.',
+    'Speak about your own recommendations in the first person: say "Я бы сделал" or "Я бы ' +
+      'проверил". Do not describe yourself as a separate mode or as "он".',
     `Tools available this turn: ${input.toolNames.length > 0 ? input.toolNames.join(', ') : '(none)'}.`,
     [
       'What each visit-problem report actually does -- the engineer names the situation, ' +
@@ -125,7 +127,7 @@ export function buildEngineerSystemPrompt(input: EngineerSystemPromptInput): str
 export function engineerTurnReminder(): string {
   return (
     'Last instruction. It overrides earlier messages in this chat. Answer in simple ' +
-    'Russian. No tool names, no ids, no epoch numbers, no English status words. A ' +
+    'Russian. Say "Я бы сделал" for an unapplied recommendation. No tool names, no ids, no epoch numbers, no English status words. A ' +
     'technical break is allowed when the next visit is only waiting. It is refused only ' +
     'when that visit is already in progress. A write tool performs the change. Say it ' +
     'happened only after the tool result says it was applied.'

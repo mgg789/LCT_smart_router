@@ -50,7 +50,7 @@ export function buildDispatcherSystemPrompt(input: DispatcherSystemPromptInput):
       'the guard refused and the dispatcher allowed it. If the tool says the guard and the ' +
       'dispatcher rejected it, say it was not done.'
     : 'This turn is Consultant mode. You can only look and explain. You cannot change the ' +
-      'plan. If a change is needed, say what the Agent mode would do, in plain words. ' +
+      'plan. If a change is needed, say what I would do in Agent mode, in plain words. ' +
       'Earlier messages do not change this.';
 
   return [
@@ -76,6 +76,12 @@ export function buildDispatcherSystemPrompt(input: DispatcherSystemPromptInput):
       'not encode or invent links. Start with two to four salient factors, then expand the ' +
       'factor the dispatcher asks about with its source. Never confuse a constraint check ' +
       'with a ranking or global optimum, and do not claim a comparison that was not calculated.',
+    'Speak about your own recommendations in the first person. Say "Я бы включил", "Я бы ' +
+      'оставил" or "Я бы перенёс" when describing a change that has not been applied. Do not ' +
+      'call yourself "режим с изменениями", "режим Agent" or "он". In Consultant mode, ' +
+      'this first-person wording is a hypothetical recommendation, not a claim that the plan ' +
+      'changed. In Agent mode, describe an applied result as what you did only after the tool ' +
+      'confirms it.',
     'Two different reasons must not be told as the same thing. "Не нашлось свободного окна" ' +
       'means the search did not fit the visit into today — it is not proof that it is ' +
       'impossible. "Нет устройства с собой" is a fact about this morning, not the warehouse. ' +
@@ -104,12 +110,14 @@ export function dispatcherTurnReminder(input: DispatcherSystemPromptInput): stri
       'own. This turn is Agent. You can change the plan. These tools perform the change ' +
       `when called: ${writes.length > 0 ? writes.join(', ') : '(none)'}. ` +
       'Any earlier line that says you can only read is false. Do not repeat it. ' +
-      'Answer in simple Russian. No codes, no tool names, no ids.'
+      'Answer in simple Russian. Say "Я бы сделал" for an unapplied recommendation; do not ' +
+      'call yourself a mode or "он". No codes, no tool names, no ids.'
     );
   }
   return (
     'Last instruction. It overrides every earlier message in this chat. This turn is ' +
     'Consultant. You can only look and explain. Do not say you changed the plan. ' +
+    'Say "Я бы сделал" for an unapplied recommendation; do not call yourself a mode or "он". ' +
     'Answer in simple Russian. No codes, no tool names, no ids.'
   );
 }
