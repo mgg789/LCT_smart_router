@@ -78,13 +78,13 @@ services:
       context: ..
       dockerfile: core/Dockerfile
     restart: unless-stopped
-    # The MKAD road API runs on the host next to osrm-routed. Without this alias
-    # the container's 127.0.0.1 is itself.
+    # The bundled road service prepares solver costs in batches. The host alias
+    # remains available for an explicitly configured operator-owned endpoint.
     extra_hosts:
       - 'host.docker.internal:host-gateway'
     environment:
       ROUTER_DATABASE_URL: postgresql://router_readonly:${ROUTER_DB_PASSWORD:-router_dev_password}@postgres:5432/${POSTGRES_DB:-lct}?sslmode=disable
-      ROUTER_ROAD_API_URL: ${ROUTER_ROAD_API_URL:-http://host.docker.internal:8123}
+      ROUTER_ROAD_API_URL: ${ROUTER_ROAD_API_URL:-http://road-api:8123}
       ROUTER_ROAD_API_CACHE: /app/state/road-api-cache
       ROUTER_ROAD_API_MAP_VERSION: moscow-mkad
     command:
@@ -141,9 +141,8 @@ services:
       ROUTER_BASE_URL: http://router:8100
       # Road geometry for city legs (MKAD OSRM graph, /route2 with the v2 traffic
       # model). The graph is vendored in services/road-api and always deployed.
-      # Deliberately a different variable from the Router's own ROUTER_ROAD_API_URL:
-      # the api only borrows polylines, while the Router's road times change solver
-      # behaviour (and the golden plan), so that switch stays explicit for the core.
+      # The API borrows selected-leg polylines. Router prepares costs separately
+      # from the same road service before searching; it never queries each move.
       API_ROAD_API_URL: ${API_ROAD_API_URL:-http://road-api:8123}
       ROUTER_POLL_INTERVAL_MS: ${ROUTER_POLL_INTERVAL_MS:-500}
       ROUTER_REQUEST_TIMEOUT_MS: ${ROUTER_REQUEST_TIMEOUT_MS:-3000}

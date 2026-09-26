@@ -589,8 +589,10 @@ class RoadGraphStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
         try:
-            temporary.write_bytes(data)
-            with temporary.open("rb") as handle:
+            # Windows requires a writable descriptor for FlushFileBuffers/fsync.
+            with temporary.open("wb") as handle:
+                handle.write(data)
+                handle.flush()
                 os.fsync(handle.fileno())
             temporary.replace(path)
         finally:

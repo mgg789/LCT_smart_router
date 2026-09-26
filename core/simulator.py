@@ -19,8 +19,9 @@ from core.contracts import (
     RouterTaskSnapshot,
 )
 from core.engine import SearchSettings, apply_system_policy, official_roster, solve
-from core.geo import content_hash
-from core.runtime import calculate_policy_catalog, construction_travel, parse_snapshot
+from core.geo import RoadGraph, TravelSource, content_hash
+from core.planning_travel import planning_travel
+from core.runtime import calculate_policy_catalog, parse_snapshot
 from core.schedule import assemble_plan, fixed_order, validate_plan
 
 SEARCH_BUDGET_MS = 8000
@@ -382,7 +383,7 @@ def _local(
 
 
 def _bounded(snapshot: RouterTaskSnapshot, settings: SearchSettings, travel, context_version: str) -> Plan:
-    """One capped solve on the copy. Straight-line construction; the live worker is not involved."""
+    """One capped solve with the same road costs; the live worker is not involved."""
     output = solve(
         snapshot,
         travel,
@@ -401,15 +402,15 @@ def simulate_patch(
     base: Plan | None,
     *,
     publication_id: str,
+    graph: RoadGraph | TravelSource,
 ) -> dict:
     """Answer one what-if. `base` is a copy of the applied plan and is not written back."""
     digest = content_hash(raw)
     task = apply_system_policy(official_roster(parse_snapshot(raw)), settings)
     tuned = _settings_of(settings, patch)
-    travel = construction_travel(tuned, task.planning_as_of)
     if patch.catalog:
         _comparison, plans = calculate_policy_catalog(
-            raw, publication_id, travel, tuned, context_version, SEARCH_BUDGET_MS
+            raw, publication_id, graph, tuned, context_version, SEARCH_BUDGET_MS
         )
         return {
             "input_hash": digest,
@@ -427,6 +428,7 @@ def simulate_patch(
             ],
         }
     patched = apply_system_policy(_snapshot_of(task, patch), tuned)
+    travel = planning_travel(graph, tuned, patched)
     local = patch.window is not None or patch.pin is not None or patch.unassign_request_id is not None
     method = "insertion"
     candidate: Plan | None = None

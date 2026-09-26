@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from core.contracts import (
     Diagnostic,
     Plan,
+    PlanEvidence,
     Policy,
     PolicyComparison,
     PolicyComparisonRow,
@@ -32,8 +33,9 @@ from core.engine import (
     solve,
 )
 from core.evidence import build_plan_evidence
-from core.geo import GraphTravel, RoadGraph, StraightTravel, configure_travel, content_hash
-from core.osrm import OSRMTravel, attach_live_roads
+from core.geo import GraphTravel, RoadGraph, content_hash
+from core.osrm import OSRMTravel
+from core.planning_travel import planning_configuration, planning_travel
 from core.policy import POLICY_CATALOG_VERSION, compile_policy
 from core.predict_calibration import PredictCalibration, PredictCalibrationStore
 from core.roadimport import ImportedRoadOverlay
@@ -177,11 +179,6 @@ def _install_worker_graph(graph: RoadGraph | OSRMTravel) -> None:
     _worker_graph = graph
 
 
-def construction_travel(settings: SearchSettings, planning_as_of: int | None):
-    """Solve on straight lines. Metro still applies. OSRM and the road API do not."""
-    return configure_travel(StraightTravel(), settings.technical(), planning_as_of)
-
-
 def calculate_installed(
     raw: bytes,
     settings: SearchSettings,
@@ -250,10 +247,8 @@ def calculate(
             technical_settings=settings.technical(),
             errors=[Diagnostic(code="WAITING_HANDOFF", message="Confirmed equipment meeting is overdue.", entity_id=overdue.handoff_id)],
         ), None
-    # The carried graph is not quoted. Construction is a straight line; metro wraps it.
-    del graph
-    provider = construction_travel(settings, snapshot.planning_as_of)
     try:
+        provider = planning_travel(graph, settings, snapshot)
         output = solve(snapshot, provider, settings, memory, context_version)
         effective_snapshot = output.memory.snapshot
         main_evidence = build_plan_evidence(effective_snapshot, output.main, provider)
@@ -313,10 +308,7 @@ def calculate_policy_catalog(
     if not 1 <= search_budget_ms <= 8000:
         raise ValueError("COMPARISON_BUDGET_INVALID")
     snapshot = apply_system_policy(official_roster(parse_snapshot(raw)), settings)
-    provider = GraphTravel(graph) if isinstance(graph, RoadGraph) else graph
-    if not offline:
-        provider = attach_live_roads(provider)
-    provider = configure_travel(provider, settings.technical(), snapshot.planning_as_of)
+    provider = planning_travel(graph, settings, snapshot, offline=offline)
     comparison_settings = replace(
         settings,
         time_limit_ms=search_budget_ms,
@@ -554,6 +546,7 @@ class RouterRuntime:
             "router-v2",
             POLICY_CATALOG_VERSION,
             resource,
+            planning_configuration(),
             {
                 "time_limit_ms": self.settings.time_limit_ms,
                 "solution_limit": self.settings.solution_limit,
@@ -616,7 +609,7 @@ class RouterRuntime:
                 raise ValueError("PUBLICATION_CHANGED")
             settings = copy.deepcopy(self.settings)
         snapshot = apply_system_policy(parse_snapshot(raw), settings)
-        provider = construction_travel(settings, snapshot.planning_as_of)
+        provider = planning_travel(self._graph, settings, snapshot)
         result = evaluate_manual(snapshot, provider, active.main, routes)
         latest = self.reader.read()
         latest_raw = latest if isinstance(latest, bytes) else latest.payload
@@ -675,7 +668,7 @@ class RouterRuntime:
                 raise ValueError("PUBLICATION_CHANGED")
             settings = copy.deepcopy(self.settings)
         snapshot = apply_system_policy(parse_snapshot(raw), settings)
-        provider = construction_travel(settings, snapshot.planning_as_of)
+        provider = planning_travel(self._graph, settings, snapshot)
         prediction = predict_situation(
             snapshot,
             provider,
@@ -707,7 +700,7 @@ class RouterRuntime:
             settings = copy.deepcopy(self.settings)
             version = self.context_version
         task = apply_system_policy(snapshot, settings)
-        provider = construction_travel(settings, task.planning_as_of)
+        provider = planning_travel(self._graph, settings, task)
         result = propose_window(task, provider, request_id, routes, day_end_at)
         with self._lock:
             if version != self.context_version:
@@ -838,6 +831,7 @@ class RouterRuntime:
                 parsed,
                 base,
                 publication_id=publication.publication_id,
+                graph=self._graph,
             )
             try:
                 latest = self.reader.read()
@@ -903,14 +897,16 @@ class RouterRuntime:
                 })
                 return plan.model_copy(update={"assignments": assignments, "summary": summary})
             main, baseline_plan = scope(main), scope(baseline_plan)
-        main_evidence = (
-            completed[0][0].main_evidence if status == "partial" else
-            build_plan_evidence(snapshot, main, construction_travel(self.settings, snapshot.planning_as_of))
-        )
-        baseline_evidence = (
-            completed[0][0].baseline_evidence if status == "partial" else
-            build_plan_evidence(snapshot, baseline_plan, construction_travel(self.settings, snapshot.planning_as_of))
-        )
+        # Reuse evidence computed by each worker with its exact road matrix. Rebuilding
+        # it here would do road preparation and scheduling under the coordinator lock.
+        main_evidence = PlanEvidence(requests=[
+            item for result, _ in completed if result.main_evidence is not None
+            for item in result.main_evidence.requests
+        ])
+        baseline_evidence = PlanEvidence(requests=[
+            item for result, _ in completed if result.baseline_evidence is not None
+            for item in result.baseline_evidence.requests
+        ])
         self.result = RouterResult(
             status=status, result_id=str(uuid4()), input_publication_id=publication_id,
             input_hash=content_hash(raw), planning_as_of=snapshot.planning_as_of,

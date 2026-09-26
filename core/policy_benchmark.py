@@ -1,4 +1,4 @@
-"""Reproduce offline policy comparisons on all official regions and their union."""
+"""Reproduce policy comparisons on official regions with explicit offline/live roads."""
 
 import argparse
 import hashlib
@@ -21,6 +21,7 @@ def main() -> None:
     parser.add_argument("--budget-ms", type=int, default=2000)
     parser.add_argument("--access-buffer-sec", type=int, default=600)
     parser.add_argument("--no-traffic", action="store_true")
+    parser.add_argument("--live-roads", action="store_true", help="Use explicitly configured road services and their caches")
     parser.add_argument("--lateness-minutes", type=int, choices=(0, 5, 10, 15, 20), default=0)
     parser.add_argument("--repeat", type=int, default=1)
     args = parser.parse_args()
@@ -43,6 +44,7 @@ def main() -> None:
         "settings": settings.technical().model_dump(),
         "search_budget_ms": args.budget_ms,
         "repeat": args.repeat,
+        "road_sources": "configured_live_and_cache" if args.live_roads else "offline_graph",
         "scenarios": [],
     }
     for name, scenario in zip((*names, "all"), [*regions, combine_official_scenarios(regions)]):
@@ -55,7 +57,7 @@ def main() -> None:
                 settings,
                 "offline-benchmark",
                 args.budget_ms,
-                offline=True,
+                offline=not args.live_roads,
             )
             for _ in range(args.repeat)
         ]

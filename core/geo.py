@@ -154,8 +154,8 @@ class TravelUnavailable(ValueError):
 class StraightTravel:
     """Construction quote: a straight line between the two points.
 
-    A solve must not call OSRM or the MKAD road API. Metro still wraps this
-    provider. Exact polylines are drawn later, one plan edge at a time.
+    Used only as an explicit fallback when no prepared road costs are available.
+    Exact polylines are drawn later, one selected plan edge at a time.
     """
 
     version = "straight-v1"
@@ -583,6 +583,9 @@ class MixedTravel:
         self, origin: GeoPoint, destination: GeoPoint, quote: TravelQuote | None, profile: Transport
     ) -> bool:
         """Upgrade centroid, approximate and missing graph legs when a better source exists."""
+        profiles = getattr(self.overlay, "profiles", None)
+        if profiles is not None and profile not in profiles:
+            return False
         if (
             profile == "car"
             and getattr(self.overlay, "replaces_car_graph", False)
@@ -614,6 +617,22 @@ class MixedTravel:
         departure_at: int | None,
     ) -> TravelQuote | None:
         """Quote the base graph, then a live overlay when this leg is not already road-quality."""
+        if profile == "car" and getattr(self.overlay, "replaces_car_graph", False) and origin != destination:
+            # A prepared car matrix is authoritative. Building a Dijkstra path first
+            # would spend most search time producing geometry that is discarded.
+            try:
+                return self.overlay.quote(origin, destination, profile) if departure_at is None else quote_at(
+                    self.overlay, origin, destination, profile, departure_at
+                )
+            except TravelUnavailable as exc:
+                if profile not in self._warned_profiles:
+                    logging.getLogger(__name__).warning(
+                        "TRAVEL_OVERLAY_UNAVAILABLE profile=%s code=%s; using local travel", profile, exc
+                    )
+                    self._warned_profiles.add(profile)
+                return self.travel.quote(origin, destination, profile) if departure_at is None else quote_at(
+                    self.travel, origin, destination, profile, departure_at
+                )
         base = (
             self.travel.quote(origin, destination, profile)
             if departure_at is None
