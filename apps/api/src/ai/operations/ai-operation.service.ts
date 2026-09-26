@@ -18,6 +18,7 @@ import {
 } from '../../orchestrator/requests/window-confirmation';
 import { PrismaService, UnitOfWork } from '../../persistence';
 import { SnapshotPublisher } from '../../routing/mount-data-eng';
+import { PlanRestoreService, RouterClient } from '../../routing/router-gateway';
 import type { AiPreviewRow } from '../runtime/ai-event.types';
 import { type AiRunEventInput, RunEventBus } from '../runtime/run-event.bus';
 import { RunRegistry } from '../runtime/run-registry';
@@ -102,6 +103,8 @@ export class AiOperationService {
     alerts: AlertsService,
     policy: PolicyService,
     publisher: SnapshotPublisher,
+    restore: PlanRestoreService,
+    router: RouterClient,
   ) {
     this.catalog = buildAiActionCatalog({
       requests,
@@ -111,6 +114,8 @@ export class AiOperationService {
       policy,
       publisher,
       prisma,
+      restore,
+      router,
       timeZone: config.get('APP_TIME_ZONE'),
     });
   }
@@ -218,6 +223,7 @@ export class AiOperationService {
       intent: 'Проверка безопасности',
     });
     const allowed =
+      input.action !== 'plan.restore' &&
       !mayChangeRequestWindow(input.action, parsed.data) &&
       (await this.guard.allows(input.action, preview));
     if (allowed) {
@@ -349,6 +355,9 @@ export class AiOperationService {
     };
 
     try {
+      // Keep external Router I/O out of the OperationsService transaction. The action
+      // still verifies its durable fence and revision CAS inside that transaction.
+      const apply = spec.prepareApply ? await spec.prepareApply(applyArgs) : spec.apply;
       const outcome = await this.operations.execute(
         {
           operationId: input.operationId,
@@ -361,7 +370,7 @@ export class AiOperationService {
           expectedVersion: op.expectedVersion,
           confirmation: op.id,
         },
-        (context) => spec.apply({ ...applyArgs, context }),
+        (context) => apply({ ...applyArgs, context }),
       );
       await this.finish(
         op,

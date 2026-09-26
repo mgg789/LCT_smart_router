@@ -1370,10 +1370,14 @@ function formatUnknownReason(reason: unknown): string {
       lunchStatus: z.string().optional(),
       assignedBefore: z.number().optional(),
       assignedAfter: z.number().optional(),
+      lostSubmittedRequestIds: z.array(z.string()).optional(),
+      baselineAssignedRequestIds: z.array(z.string()).optional(),
     })
     .safeParse(reason);
   if (facts.success) {
     const value = facts.data;
+    if (value.lostSubmittedRequestIds && value.baselineAssignedRequestIds)
+      return `После смены политики ${value.lostSubmittedRequestIds.length} из ${value.baselineAssignedRequestIds.length} ранее назначенных заявок потеряли исполнителя. Проверьте новую политику или прошлый план. Неназначенные заявки требуют отдельного решения.`;
     if (value.shiftStartAt !== undefined && value.thresholdAt !== undefined)
       return `Смена началась в ${formatClock(value.shiftStartAt)}. К ${formatClock(value.thresholdAt)} отметка о выходе не поступила.`;
     if (value.plannedStartAt !== undefined && value.windowEndAt !== undefined) {

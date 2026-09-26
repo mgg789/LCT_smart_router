@@ -6,10 +6,12 @@ import { after, before, describe, it } from 'node:test';
 import type { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../../src/app.module';
-import { AllExceptionsFilter } from '../../src/common/errors';
+import type { Actor } from '../../src/auth';
+import { AllExceptionsFilter, SysError } from '../../src/common/errors';
 import { BigIntGuardInterceptor } from '../../src/common/serialization';
 import type { PrismaClient } from '../../src/generated/prisma/client';
 import { ExecutionOverrunCoordinator } from '../../src/orchestrator/facts';
+import { McpToolsService } from '../../src/orchestrator/mcp/mcp-tools';
 import type { RouterTaskSnapshot } from '../../src/routing/mount-data-eng';
 import { RouterClient, type UpdateRouterTechnicalSettings } from '../../src/routing/router-gateway';
 import { createTestClient, databaseUrl, unique } from '../support/database';
@@ -1251,6 +1253,45 @@ describe('router gateway', () => {
       assert.equal(
         current.plan.routes[0]?.stops[0]?.startAt,
         pair.previous.routes[0]?.stops[0]?.startAt,
+      );
+
+      const mcp = app.get(McpToolsService);
+      const mcpActor: Actor = {
+        kind: 'account',
+        source: 'ui',
+        id: 'mcp-dispatcher-test',
+        role: 'dispatcher',
+        tokenCategory: null,
+        accountId: 'mcp-dispatcher-test',
+      };
+      const mcpPrevious = (await mcp.call('get_previous_plan', {}, mcpActor)) as {
+        current: { revision: number };
+        previous: { revision: number };
+        eligibility: { eligible: boolean };
+      };
+      assert.equal(mcpPrevious.current.revision, body.restoredRevision);
+      assert.equal(mcpPrevious.eligibility.eligible, true);
+
+      const mcpOperationId = randomUUID();
+      const mcpRestored = await mcp.call(
+        'restore_previous_plan',
+        { operationId: mcpOperationId, expectedRevision: mcpPrevious.current.revision },
+        mcpActor,
+      );
+      const mcpReplay = await mcp.call(
+        'restore_previous_plan',
+        { operationId: mcpOperationId, expectedRevision: mcpPrevious.current.revision },
+        mcpActor,
+      );
+      assert.deepEqual(mcpReplay, mcpRestored, 'the supplied MCP operationId must replay');
+      await assert.rejects(
+        () =>
+          mcp.call(
+            'restore_previous_plan',
+            { operationId: randomUUID(), expectedRevision: mcpPrevious.current.revision },
+            mcpActor,
+          ),
+        (error: unknown) => error instanceof SysError && error.code === 'VERSION_CONFLICT',
       );
       router.getActiveContextVersion = getActiveContextVersion;
     });

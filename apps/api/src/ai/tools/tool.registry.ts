@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { AppConfigService } from '../../common/config';
+import { Clock } from '../../common/time';
 import type { AiRoleProfile } from '../../generated/prisma/client';
 import { AlertsService } from '../../orchestrator/alerts';
 import { LiveService } from '../../orchestrator/live/live.service';
@@ -12,6 +13,7 @@ import { SnapshotBuilder } from '../../routing/mount-data-eng';
 import {
   AppliedPlanService,
   ControlStateService,
+  PlanRestoreService,
   RouterClient,
 } from '../../routing/router-gateway';
 import { AiOperationService } from '../operations';
@@ -43,12 +45,14 @@ export class ToolRegistry {
 
   constructor(
     aiOperations: AiOperationService,
+    clock: Clock,
     knowledge: KnowledgeSearchPort,
     requests: RequestsService,
     live: LiveService,
     config: AppConfigService,
     prisma: PrismaService,
     plans: AppliedPlanService,
+    restore: PlanRestoreService,
     control: ControlStateService,
     alerts: AlertsService,
     policy: PolicyService,
@@ -63,12 +67,15 @@ export class ToolRegistry {
       prisma,
       live,
       plans,
+      restore,
       control,
       requests,
       alerts,
       policy,
       router,
       builder,
+      now: () => clock.nowSeconds(),
+      timeZone: config.get('APP_TIME_ZONE'),
     });
     const dispatcherWriteTools = buildDispatcherWriteTools({ aiOperations, config });
 

@@ -526,6 +526,7 @@ export class AlertsService {
         operationId: baseline.data.operationId,
         baselineAssignedRequestIds: baseline.data.requestIds,
         lostSubmittedRequestIds: lost,
+        text: `После смены политики ${lost.length} из ${baseline.data.requestIds.length} ранее назначенных заявок потеряли исполнителя. Проверьте новую политику или прошлый план; неназначенные заявки требуют отдельного решения.`,
         expiresAt: baseline.data.expiresAt,
       },
     });
@@ -1371,7 +1372,10 @@ export class AlertsService {
     for (const alert of openSystem) {
       if (awaitingWindow.has(alert.id)) continue;
       const dedupKey = alert.dedupKey;
-      if (dedupKey?.startsWith('system:plan_degraded:policy:')) {
+      if (
+        dedupKey?.startsWith('system:plan_degraded:policy:') &&
+        !(alert.resolutionAction === 'restore_auto' && pointer?.plan.origin === 'auto')
+      ) {
         const reasons = z.object({ expiresAt: z.number().nullable() }).safeParse(alert.reasons);
         if (reasons.success && (reasons.data.expiresAt === null || now <= reasons.data.expiresAt))
           continue;

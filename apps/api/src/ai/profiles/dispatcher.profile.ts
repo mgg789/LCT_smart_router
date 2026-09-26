@@ -76,6 +76,10 @@ export function buildDispatcherSystemPrompt(input: DispatcherSystemPromptInput):
       'not encode or invent links. Start with two to four salient factors, then expand the ' +
       'factor the dispatcher asks about with its source. Never confuse a constraint check ' +
       'with a ranking or global optimum, and do not claim a comparison that was not calculated.',
+    'Planning availability=online is NOT factual attendance. Only attendance.isOnLine=true ' +
+      'confirms an engineer is on the line. pending means "ожидает выхода на линию", even ' +
+      'when planning availability is online. Use formatted shiftStartLocal/shiftEndLocal ' +
+      'and the returned timeZone; never mentally convert epoch timestamps.',
     'Speak about your own recommendations in the first person. Say "Я бы включил", "Я бы ' +
       'оставил" or "Я бы перенёс" when describing a change that has not been applied. Do not ' +
       'call yourself "режим с изменениями", "режим Agent" or "он". In Consultant mode, ' +

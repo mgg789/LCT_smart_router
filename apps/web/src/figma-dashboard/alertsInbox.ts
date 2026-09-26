@@ -153,17 +153,10 @@ function alertCardFromSnapshot(snapshot: DashboardSnapshot, alert: AlertView): I
   const engineer = alert.engineerIds[0]
     ? (snapshot.engineers.find((item) => item.id === alert.engineerIds[0]) ?? null)
     : null;
-  const lunch = alert.code.includes('LUNCH');
   const unassigned =
-    !lunch &&
-    Boolean(
-      request &&
-        (request.assignmentState === 'unassigned' ||
-          request.assignmentState === 'pending' ||
-          alert.code.includes('UNASSIGNED') ||
-          alert.code.includes('NO_SKILL') ||
-          alert.code.includes('NO_FEASIBLE') ||
-          alert.code.includes('NO_AVAILABLE')),
+    alert.code === 'unassigned' ||
+    ['UNASSIGNED', 'NO_SKILL', 'NO_FEASIBLE', 'NO_AVAILABLE'].some((code) =>
+      alert.code.includes(code),
     );
   return {
     id: `alert:${alert.id}`,

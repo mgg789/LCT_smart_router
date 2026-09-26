@@ -89,6 +89,49 @@ describe('dispatcher alert lifecycle', () => {
     await app?.close();
   });
 
+  it('finishes a requested AUTO resolution before the policy warning expires once AUTO is applied', async () => {
+    const previous = await prisma.appliedPlanCurrent.findUnique({ where: { id: 'singleton' } });
+    const now = Math.floor(Date.now() / 1000);
+    const plan = await prisma.appliedPlan.create({
+      data: { origin: 'auto', planAsOf: BigInt(now), appliedAt: BigInt(now) },
+    });
+    const id = randomUUID();
+    ids.push(id);
+    try {
+      await prisma.appliedPlanCurrent.upsert({
+        where: { id: 'singleton' },
+        create: { id: 'singleton', planId: plan.id, updatedAt: BigInt(now) },
+        update: { planId: plan.id },
+      });
+      await prisma.alert.create({
+        data: {
+          id,
+          dedupKey: `system:plan_degraded:policy:${id}`,
+          code: 'plan_degraded',
+          severity: 'warning',
+          engineerIds: [],
+          requestIds: [],
+          reasons: { expiresAt: now + 86400 },
+          createdAt: BigInt(now),
+          workDate: date,
+          resolutionAction: 'restore_auto',
+        },
+      });
+      await alerts.list(date);
+      const resolved = await prisma.alert.findUniqueOrThrow({ where: { id } });
+      assert.notEqual(resolved.resolvedAt, null);
+      assert.equal(resolved.resolutionAction, 'restore_auto');
+    } finally {
+      if (previous)
+        await prisma.appliedPlanCurrent.update({
+          where: { id: 'singleton' },
+          data: { planId: previous.planId },
+        });
+      else await prisma.appliedPlanCurrent.deleteMany({ where: { planId: plan.id } });
+      await prisma.appliedPlan.delete({ where: { id: plan.id } });
+    }
+  });
+
   it('counts all tomorrow overlaps beyond the preview limit without claiming crew demand', async () => {
     const start = BigInt(Date.parse('2098-06-15T07:00:00Z') / 1000);
     const tomorrow = start + 86_400n;

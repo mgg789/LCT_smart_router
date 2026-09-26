@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { toDayView, toEngineerView } from '../../api/engineer-view';
+import { agentEngineerAttendance, toAgentDayView } from '../../api/agent-engineer-view';
+import { toEngineerView } from '../../api/engineer-view';
 import { toPlanView } from '../../api/plan-view';
 import { toRequestView } from '../../api/request-view';
 import { SysError } from '../../common/errors';
@@ -19,6 +20,7 @@ import { SnapshotBuilder } from '../../routing/mount-data-eng';
 import {
   AppliedPlanService,
   ControlStateService,
+  PlanRestoreService,
   RouterClient,
 } from '../../routing/router-gateway';
 import { EvidenceReader } from '../explain/evidence.reader';
@@ -38,6 +40,9 @@ export interface DispatcherReadToolDeps {
   readonly policy: PolicyService;
   readonly router: RouterClient;
   readonly builder: SnapshotBuilder;
+  readonly restore: PlanRestoreService;
+  readonly now: () => number;
+  readonly timeZone?: string;
 }
 
 const skillSchema = z.enum(['local', 'connection', 'emergency']);
@@ -102,6 +107,9 @@ type ComparePoliciesArgs = z.infer<typeof comparePoliciesSchema>;
 
 const getRouterSettingsSchema = z.object({});
 type GetRouterSettingsArgs = z.infer<typeof getRouterSettingsSchema>;
+
+const getPreviousPlanSchema = z.object({});
+type GetPreviousPlanArgs = z.infer<typeof getPreviousPlanSchema>;
 
 const getSnapshotDiagnosticsSchema = z.object({});
 type GetSnapshotDiagnosticsArgs = z.infer<typeof getSnapshotDiagnosticsSchema>;
@@ -185,7 +193,7 @@ export function buildDispatcherReadTools(deps: DispatcherReadToolDeps): readonly
       );
       const openByCode = countBy(openAlerts, (alert) => alert.code);
       const onlineCount = live.engineers.filter(
-        (engineer) => engineer.availability === 'online',
+        (engineer) => agentEngineerAttendance(engineer).isOnLine,
       ).length;
       const plan = planRow
         ? {
@@ -206,9 +214,20 @@ export function buildDispatcherReadTools(deps: DispatcherReadToolDeps): readonly
           requestCount: live.workday.requestCount,
           engineerCount: live.engineers.length,
           engineersOnline: onlineCount,
+          engineersAwaitingCheckIn: live.engineers.filter(
+            (engineer) => engineer.lineStatus === 'pending',
+          ).length,
+          engineersAvailableForPlanning: live.engineers.filter(
+            (engineer) => engineer.availability === 'online',
+          ).length,
           stats: live.workday.stats,
         },
         control: { mode: control.mode, modeVersion: control.modeVersion },
+        engineers: live.engineers.map((engineer) => ({
+          id: engineer.id,
+          name: engineer.name,
+          attendance: agentEngineerAttendance(engineer),
+        })),
         plan,
         openAlertCount: openAlerts.length,
         openAlertsByCode: openByCode,
@@ -253,24 +272,55 @@ export function buildDispatcherReadTools(deps: DispatcherReadToolDeps): readonly
     },
   };
 
+  const getPreviousPlan: ToolSpec<GetPreviousPlanArgs> = {
+    name: 'get_previous_plan',
+    description:
+      'Current applied plan, its immediate predecessor and the server-calculated eligibility ' +
+      'to restore it. Eligibility is checked again when a confirmation card is applied.',
+    schema: getPreviousPlanSchema,
+    async run(): Promise<ToolResult> {
+      const pair = await deps.restore.previous(
+        { tx: deps.prisma, now: deps.now() },
+        await deps.router.getActiveContextVersion(),
+      );
+      return ok(
+        pair.eligibility.eligible
+          ? `Revision ${pair.current?.revision} can restore predecessor ${pair.previous?.revision}`
+          : `Previous-plan restore unavailable: ${pair.eligibility.reason}`,
+        {
+          current: pair.current ? toPlanView(pair.current) : null,
+          previous: pair.previous ? toPlanView(pair.previous) : null,
+          eligibility: pair.eligibility,
+        },
+      );
+    },
+  };
+
   const listEngineers: ToolSpec<ListEngineersArgs> = {
     name: 'list_engineers',
     description:
       'Engineers with their skills, transport and current day (shift, availability, ' +
-      'lunch, equipment). Filter by region, availability or skill.',
+      'lunch, equipment) and factual attendance. availability=online means planning eligibility, ' +
+      'NOT checked in. Use attendance.isOnLine/label. Filter by region, availability or skill.',
     schema: listEngineersSchema,
     async run(_ctx: ToolContext, args: ListEngineersArgs): Promise<ToolResult> {
+      const live = await deps.live.dispatchView();
       const engineers = await deps.prisma.engineer.findMany({
         where: { archivedAt: null, ...(args.region ? { region: args.region } : {}) },
         orderBy: { inputOrder: 'asc' },
         include: {
           account: { select: { email: true } },
-          days: { orderBy: { workDate: 'desc' }, take: 1 },
+          days: { where: { workDate: live.workday.workDate }, take: 1 },
         },
       });
       let views = engineers.map((engineer) => ({
         ...toEngineerView(engineer),
-        day: engineer.days[0] ? toDayView(engineer.days[0]) : null,
+        day: engineer.days[0]
+          ? toAgentDayView(engineer.days[0], deps.timeZone ?? 'Europe/Moscow')
+          : null,
+        attendance: agentEngineerAttendance(
+          live.engineers.find((state) => state.id === engineer.id),
+        ),
       }));
       if (args.availability) {
         views = views.filter((view) => view.day?.availability === args.availability);
@@ -765,6 +815,7 @@ export function buildDispatcherReadTools(deps: DispatcherReadToolDeps): readonly
   return [
     getSituation,
     getDayPlan,
+    getPreviousPlan,
     listEngineers,
     listRequests,
     getRequest,

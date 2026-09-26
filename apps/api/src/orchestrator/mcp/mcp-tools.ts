@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { ActionGuardService } from '../../ai/operations';
+import { agentEngineerAttendance, toAgentDayView } from '../../api/agent-engineer-view';
 import { toDayView, toEngineerView } from '../../api/engineer-view';
 import { toPlanView } from '../../api/plan-view';
 import { type RequestView, toRequestView } from '../../api/request-view';
@@ -16,6 +17,7 @@ import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-dat
 import {
   AppliedPlanService,
   ControlStateService,
+  PlanRestoreService,
   RouterClient,
 } from '../../routing/router-gateway';
 import { AlertsService, type ResolveAlertInput } from '../alerts';
@@ -204,6 +206,7 @@ export class McpToolsService {
     private readonly policyService: PolicyService,
     private readonly dispatcherSettings: DispatcherSettingsService,
     private readonly plans: AppliedPlanService,
+    private readonly restore: PlanRestoreService,
     private readonly control: ControlStateService,
     private readonly router: RouterClient,
     private readonly publisher: SnapshotPublisher,
@@ -320,6 +323,7 @@ export class McpToolsService {
               name: engineer.name,
               lineStatus: engineer.lineStatus,
               availability: engineer.availability,
+              attendance: agentEngineerAttendance(engineer),
               routeState: engineer.routeState,
               activeRequestId: engineer.activeRequestId,
               canFinishDay: engineer.canFinishDay,
@@ -378,6 +382,80 @@ export class McpToolsService {
                   })),
                 };
           return { mode: control.mode, modeVersion: control.modeVersion, plan: planView };
+        },
+      ),
+      defineTool(
+        {
+          name: 'get_previous_plan',
+          title: 'Предыдущий план',
+          description:
+            'Current plan, its immediate predecessor and the precise server-calculated restore ' +
+            'eligibility. Read this before restore_previous_plan.',
+          inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+        },
+        z.object({}),
+        async () => {
+          const pair = await this.restore.previous(
+            { tx: this.prisma, now: now() },
+            await this.router.getActiveContextVersion(),
+          );
+          return {
+            current: pair.current ? toPlanView(pair.current) : null,
+            previous: pair.previous ? toPlanView(pair.previous) : null,
+            eligibility: pair.eligibility,
+          };
+        },
+      ),
+      defineTool(
+        {
+          name: 'restore_previous_plan',
+          title: 'Восстановить предыдущий план',
+          description:
+            'Restore the immediate predecessor as a new revision. expectedRevision is a CAS ' +
+            'fence from get_previous_plan. Reuse operationId after an uncertain response; omit ' +
+            'it only for a new intent.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              expectedRevision: { type: 'integer', minimum: 1 },
+              operationId: {
+                type: 'string',
+                format: 'uuid',
+                description: 'Optional caller idempotency key. Reuse for retries.',
+              },
+            },
+            required: ['expectedRevision'],
+            additionalProperties: false,
+          },
+        },
+        z.object({
+          expectedRevision: z.number().int().positive(),
+          operationId: z.uuid().optional(),
+        }),
+        async (args, actor) => {
+          const operationId = args.operationId ?? randomUUID();
+          // Same ordering as DispatchPlanHistoryController: external Router I/O happens
+          // before OperationsService starts its transaction; restore re-checks its durable
+          // mutation fence and revision CAS inside that transaction.
+          const contextFence = await this.restore.contextMutationFence(this.prisma);
+          const activeContextVersion = await this.router.getActiveContextVersion();
+          const outcome = await this.operations.execute(
+            {
+              operationId,
+              actor,
+              action: 'plan.restore',
+              targetRef: String(args.expectedRevision),
+              payload: { operationId, expectedRevision: args.expectedRevision },
+            },
+            (context) =>
+              this.restore.restore(
+                context,
+                args.expectedRevision,
+                activeContextVersion,
+                contextFence,
+              ),
+          );
+          return outcome.result;
         },
       ),
       defineTool(
@@ -621,24 +699,30 @@ export class McpToolsService {
           name: 'list_engineers',
           title: 'Список инженеров',
           description:
-            'Engineers with skills, transport, login state and their latest working day ' +
-            '(shift, availability, lunch, equipment).',
+            'Engineers with the current LIVE working day, skills, shift and equipment. ' +
+            'Planning availability=online does NOT mean checked in. Use attendance.isOnLine/label.',
           inputSchema: { type: 'object', properties: {}, additionalProperties: false },
         },
         z.object({}),
         async () => {
+          const live = await this.live.dispatchView();
           const engineers = await this.prisma.engineer.findMany({
             where: { archivedAt: null },
             orderBy: { inputOrder: 'asc' },
             include: {
               account: { select: { email: true } },
-              days: { orderBy: { workDate: 'desc' }, take: 1 },
+              days: { where: { workDate: live.workday.workDate }, take: 1 },
             },
           });
           return {
             engineers: engineers.map((engineer) => ({
               ...toEngineerView(engineer),
-              day: engineer.days[0] ? toDayView(engineer.days[0]) : null,
+              day: engineer.days[0]
+                ? toAgentDayView(engineer.days[0], this.config.get('APP_TIME_ZONE'))
+                : null,
+              attendance: agentEngineerAttendance(
+                live.engineers.find((state) => state.id === engineer.id),
+              ),
             })),
           };
         },

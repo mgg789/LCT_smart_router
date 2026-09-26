@@ -244,7 +244,7 @@ describe('AI tool catalogue scoping', () => {
     assert.ok(!names.includes('finish_visit'));
   });
 
-  it('gives dispatcher_readonly its sixteen routing read tools (ToolRegistry adds knowledge and operation verification)', () => {
+  it('gives dispatcher_readonly its seventeen routing read tools (ToolRegistry adds knowledge and operation verification)', () => {
     const names = dispatcherCatalogueUnderTest()
       .filter((tool) => !tool.name.startsWith('prepare_'))
       .map((tool) => tool.name)
@@ -256,6 +256,7 @@ describe('AI tool catalogue scoping', () => {
       'explain_entity',
       'get_day_plan',
       'get_policies',
+      'get_previous_plan',
       'get_request',
       'get_request_history',
       'get_router_settings',
@@ -269,7 +270,7 @@ describe('AI tool catalogue scoping', () => {
     ]);
   });
 
-  it('gives dispatcher_fix exactly the twelve documented preparers on top of the read tools', () => {
+  it('gives dispatcher_fix exactly the thirteen documented preparers on top of the read tools', () => {
     const names = dispatcherCatalogueUnderTest()
       .filter((tool) => tool.name.startsWith('prepare_'))
       .map((tool) => tool.name)
@@ -283,6 +284,7 @@ describe('AI tool catalogue scoping', () => {
       'prepare_move_window',
       'prepare_reschedule_request',
       'prepare_resolve_alert',
+      'prepare_restore_previous_plan',
       'prepare_select_policy',
       'prepare_set_engineer_availability',
       'prepare_set_engineer_workday',

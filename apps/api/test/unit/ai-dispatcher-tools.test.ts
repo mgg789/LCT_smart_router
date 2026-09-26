@@ -21,6 +21,7 @@ import type { SnapshotPublisher } from '../../src/routing/mount-data-eng';
 import type {
   AppliedPlanService,
   ControlStateService,
+  PlanRestoreService,
   RouterClient,
 } from '../../src/routing/router-gateway';
 
@@ -89,6 +90,8 @@ describe('The dispatcher AI catalogue never offers a denylisted action', () => {
     policy: inert<PolicyService>(),
     publisher: inert<SnapshotPublisher>(),
     prisma: inert<PrismaService>(),
+    restore: inert<PlanRestoreService>(),
+    router: inert<RouterClient>(),
     timeZone: 'Europe/Moscow',
   });
 
@@ -140,6 +143,8 @@ describe('prepare_resolve_alert (alert.resolve) refuses an out-of-catalogue acti
       alerts: inert<AlertsService>(),
       policy: inert<PolicyService>(),
       publisher: inert<SnapshotPublisher>(),
+      restore: inert<PlanRestoreService>(),
+      router: inert<RouterClient>(),
       prisma: {
         alert: {
           findUnique: async () => ({
@@ -176,6 +181,8 @@ describe('prepare_resolve_alert (alert.resolve) refuses an out-of-catalogue acti
       alerts: inert<AlertsService>(),
       policy: inert<PolicyService>(),
       publisher: inert<SnapshotPublisher>(),
+      restore: inert<PlanRestoreService>(),
+      router: inert<RouterClient>(),
       prisma: {
         alert: {
           findUnique: async () => ({
@@ -221,6 +228,8 @@ describe('compare_policies is called at most once per run', () => {
       alerts: inert(),
       policy: inert(),
       builder: inert(),
+      restore: inert(),
+      now: () => 0,
       router: {
         getPolicyComparison: async () => {
           calls += 1;
@@ -283,6 +292,8 @@ describe('evaluate_manual_order preserves a comparable whole-plan baseline', () 
       alerts: inert(),
       policy: inert(),
       builder: inert(),
+      restore: inert(),
+      now: () => 0,
       router: {
         getActiveContextVersion: async () => 'ctx-3',
         evaluateManual: async (input: { routes: Record<string, string[]> }) => {
@@ -335,6 +346,8 @@ describe('evaluate_manual_order preserves a comparable whole-plan baseline', () 
       alerts: inert(),
       policy: inert(),
       builder: inert(),
+      restore: inert(),
+      now: () => 0,
       router: {
         getActiveContextVersion: async () => (++versionReads === 1 ? 'ctx-3' : 'ctx-4'),
         evaluateManual: async () => ({
@@ -373,6 +386,8 @@ describe('evaluate_manual_order preserves a comparable whole-plan baseline', () 
       alerts: inert(),
       policy: inert(),
       builder: inert(),
+      restore: inert(),
+      now: () => 0,
       router: { getActiveContextVersion: async () => 'ctx-3' } as unknown as RouterClient,
     });
     const tool = tools.find((item) => item.name === 'evaluate_manual_order');
@@ -399,6 +414,8 @@ describe('evaluate_manual_order preserves a comparable whole-plan baseline', () 
       alerts: inert(),
       policy: inert(),
       builder: inert(),
+      restore: inert(),
+      now: () => 0,
       router: { getActiveContextVersion: async () => 'ctx-3' } as unknown as RouterClient,
     });
     const tool = tools.find((item) => item.name === 'evaluate_manual_order');
@@ -428,6 +445,8 @@ describe('evaluate_manual_order preserves a comparable whole-plan baseline', () 
       alerts: inert(),
       policy: inert(),
       builder: inert(),
+      restore: inert(),
+      now: () => 0,
       router: {
         getActiveContextVersion: async () => 'ctx-3',
         evaluateManual: async () => ({
@@ -466,6 +485,8 @@ describe('evaluate_manual_order preserves a comparable whole-plan baseline', () 
       alerts: inert(),
       policy: inert(),
       builder: inert(),
+      restore: inert(),
+      now: () => 0,
       router: {
         getActiveContextVersion: async () => 'ctx-3',
         evaluateManual: async () => ({
@@ -537,6 +558,8 @@ describe('assignment reasons survive into a dispatcher tool result', () => {
       alerts: inert(),
       policy: inert(),
       builder: inert(),
+      restore: inert(),
+      now: () => 0,
       router: inert(),
     });
     const getDayPlan = tools.find((tool) => tool.name === 'get_day_plan');
@@ -563,6 +586,75 @@ describe('assignment reasons survive into a dispatcher tool result', () => {
   });
 });
 
+describe('plan.restore AI action', () => {
+  it('is dispatcher-fix-only, rejects a stale revision, and performs Router preflight before its transaction handler', async () => {
+    const calls: string[] = [];
+    const restore = {
+      previous: async () => ({
+        current: { revision: 7 },
+        previous: { revision: 6 },
+        eligibility: { eligible: true, reason: null },
+      }),
+      contextMutationFence: async () => {
+        calls.push('fence');
+        return { operations: [] };
+      },
+      restore: async () => {
+        calls.push('restore');
+        return { fromRevision: 6, restoredRevision: 8, origin: 'restore' as const };
+      },
+    } as unknown as PlanRestoreService;
+    const router = {
+      getActiveContextVersion: async () => {
+        calls.push('router');
+        return 'router-context-1';
+      },
+    } as unknown as RouterClient;
+    const catalog = buildAiActionCatalog({
+      ...fullCatalogueDeps(inert<LiveService>()),
+      restore,
+      router,
+    });
+    const spec = catalog.get('plan.restore');
+    assert.ok(spec);
+    assert.deepEqual(spec.allowedProfiles, ['dispatcher_fix']);
+    assert.equal(spec.apply, undefined);
+    assert.ok(spec.prepareApply);
+
+    await assert.rejects(
+      () =>
+        spec.precheck({
+          actor,
+          accountId: actor.id,
+          targetRef: '6',
+          payload: { expectedRevision: 6 },
+          now: 1_700_000_000,
+        }),
+      (error: unknown) => error instanceof SysError && error.code === 'VERSION_CONFLICT',
+    );
+    assert.deepEqual(calls, ['router'], 'the stale precheck reads the current Router context');
+    calls.length = 0;
+
+    const transactionHandler = await spec.prepareApply({
+      actor,
+      accountId: actor.id,
+      targetRef: '7',
+      payload: { expectedRevision: 7 },
+      now: 1_700_000_000,
+    });
+    assert.deepEqual(calls, ['fence', 'router']);
+    await transactionHandler({
+      actor,
+      accountId: actor.id,
+      targetRef: '7',
+      payload: { expectedRevision: 7 },
+      now: 1_700_000_000,
+      context: {} as never,
+    });
+    assert.deepEqual(calls, ['fence', 'router', 'restore']);
+  });
+});
+
 const engineerActor: Actor = {
   kind: 'account',
   source: 'ui',
@@ -581,6 +673,8 @@ function fullCatalogueDeps(live: LiveService) {
     policy: inert<PolicyService>(),
     publisher: inert<SnapshotPublisher>(),
     prisma: inert<PrismaService>(),
+    restore: inert<PlanRestoreService>(),
+    router: inert<RouterClient>(),
     timeZone: 'Europe/Moscow',
   };
 }
