@@ -1,6 +1,21 @@
-import type { PlanView } from '../api/types';
+import type { DashboardSnapshot, PlanView } from '../api/types';
 import { DayMap } from '../components/DayMap';
 import type { PlanHistorySelection } from './PlanHistorySelector';
+
+/** Selects the plan payload rendered by the map while the chooser is open. */
+export function snapshotForPlanHistory(
+  snapshot: DashboardSnapshot,
+  previous: PlanView | null,
+  historyOpen: boolean,
+  historySelection: PlanHistorySelection,
+): DashboardSnapshot {
+  if (!historyOpen || historySelection !== 'previous' || previous === null) return snapshot;
+  return {
+    ...snapshot,
+    nowAt: previous.planAsOf,
+    plan: { ...snapshot.plan, plan: previous },
+  };
+}
 
 /** Compare durable route geometry; historical routes never inherit live moving markers. */
 export function PlanHistoryMap({
@@ -13,19 +28,8 @@ export function PlanHistoryMap({
   historyOpen: boolean;
   historySelection: PlanHistorySelection;
 }) {
-  const revision = props.snapshot.plan.plan?.revision;
-  const historical =
-    historyOpen &&
-    historySelection === 'previous' &&
-    previous !== null &&
-    typeof revision === 'number';
-  const snapshot = historical
-    ? {
-        ...props.snapshot,
-        nowAt: previous.planAsOf,
-        plan: { ...props.snapshot.plan, plan: previous },
-      }
-    : props.snapshot;
+  const historical = historyOpen && historySelection === 'previous' && previous !== null;
+  const snapshot = snapshotForPlanHistory(props.snapshot, previous, historyOpen, historySelection);
   return (
     <DayMap
       {...props}

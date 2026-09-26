@@ -36,7 +36,11 @@ import { FIGMA_ARTBOARD, type NavItemId, type NotificationTone } from './fixture
 import { nextRouterSettings, policyLabel } from './fromSnapshot';
 import { MapCard, RouteCard } from './MapRoute';
 import { McpAgentIndicator } from './McpAgentIndicator';
-import { type PlanHistorySelection, PlanHistorySelector } from './PlanHistorySelector';
+import {
+  type PlanHistoryAnchor,
+  type PlanHistorySelection,
+  PlanHistorySelector,
+} from './PlanHistorySelector';
 import { PlanMetricsModal } from './PlanMetricsModal';
 import { PolicyComparisonView } from './PolicyComparisonView';
 import { FigmaText } from './primitives';
@@ -201,7 +205,7 @@ export function MainDashboardPage() {
       }
       if (event.key !== 'Tab') return;
       const focusable = Array.from(
-        dialog.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'),
+        dialog.querySelectorAll<HTMLElement>('button:not(:disabled), [data-plan-history-tooltip]'),
       );
       if (focusable.length === 0) {
         event.preventDefault();
@@ -209,7 +213,7 @@ export function MainDashboardPage() {
         return;
       }
       const current = document.activeElement;
-      const index = focusable.indexOf(current as HTMLButtonElement);
+      const index = focusable.indexOf(current as HTMLElement);
       const next = event.shiftKey
         ? focusable[(index <= 0 ? focusable.length : index) - 1]
         : focusable[(index + 1) % focusable.length];
@@ -263,6 +267,10 @@ export function MainDashboardPage() {
     }
   }, [dash.clearFocus, regions, selectedRegion]);
   const mapFrame = !showRightPanel ? MAP_EXPANDED : showRouteCard ? MAP_COMPACT : MAP_REQUEST_ONLY;
+  const historyAnchor: PlanHistoryAnchor = {
+    left: mapFrame.left + mapFrame.width / 2,
+    bottom: FIGMA_ARTBOARD.height - mapFrame.top - mapFrame.height + 28,
+  };
   useEffect(() => {
     const openAlerts = (dash.snapshot?.alerts ?? []).filter((alert) => alert.resolvedAt === null);
     if (dash.isDemo && openAlerts.length === 0) seedDemoToasts();
@@ -815,7 +823,7 @@ export function MainDashboardPage() {
                 key="plan-history-veil"
                 data-plan-history-veil
                 aria-hidden="true"
-                className="absolute inset-0 z-[120] bg-figma-ink/10 backdrop-blur-[1px]"
+                className="absolute inset-0 z-[120] bg-figma-ink/10"
                 initial={motionOn ? { opacity: 0 } : false}
                 animate={{ opacity: 1 }}
                 exit={motionOn ? { opacity: 0 } : undefined}
@@ -830,6 +838,8 @@ export function MainDashboardPage() {
                 busy={dash.busy}
                 motionOn={motionOn}
                 error={historyError}
+                restoreUnavailableReason={dash.restoreUnavailableReason}
+                anchor={historyAnchor}
                 onSelect={setHistorySelection}
                 onChoose={async () => {
                   if (historySelection === 'previous') {

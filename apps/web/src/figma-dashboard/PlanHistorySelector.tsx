@@ -3,6 +3,13 @@ import type { PlanView } from '../api/types';
 
 export type PlanHistorySelection = 'previous' | 'current';
 
+export interface PlanHistoryAnchor {
+  /** Horizontal center in the dashboard artboard coordinate space. */
+  readonly left: number;
+  /** Distance from the dashboard artboard bottom to the chooser. */
+  readonly bottom: number;
+}
+
 /**
  * Bottom-centered plan history chooser. The parent supplies a modal veil so every
  * dashboard action stays unavailable until the dispatcher chooses a plan.
@@ -15,6 +22,8 @@ export function PlanHistorySelector({
   busy,
   motionOn,
   error,
+  restoreUnavailableReason,
+  anchor,
   onSelect,
   onChoose,
 }: {
@@ -25,9 +34,13 @@ export function PlanHistorySelector({
   busy: boolean;
   motionOn: boolean;
   error?: string | null;
+  restoreUnavailableReason?: string | null;
+  anchor?: PlanHistoryAnchor;
   onSelect: (selection: PlanHistorySelection) => void;
   onChoose: () => void;
 }) {
+  const unavailableReason =
+    restoreUnavailableReason?.trim() || 'Предыдущий план сейчас недоступен для восстановления.';
   return (
     <motion.aside
       data-plan-history-dialog
@@ -35,7 +48,8 @@ export function PlanHistorySelector({
       aria-modal="true"
       aria-label="Выбор плана"
       tabIndex={-1}
-      className="absolute bottom-[28px] left-1/2 z-[121] flex w-[760px] -translate-x-1/2 items-center gap-[10px] rounded-full bg-white p-[12px] shadow-[0_18px_44px_rgba(39,41,48,0.22)]"
+      className="absolute z-[121] grid w-[760px] -translate-x-1/2 grid-cols-[1fr_auto_1fr] items-center gap-[10px] rounded-full bg-white p-[12px] shadow-[0_18px_44px_rgba(39,41,48,0.22)]"
+      style={anchor ? { left: anchor.left, bottom: anchor.bottom } : { left: '50%', bottom: 28 }}
       initial={motionOn ? { opacity: 0, y: 18, scale: 0.97 } : false}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={motionOn ? { opacity: 0, y: 18, scale: 0.97 } : undefined}
@@ -49,26 +63,34 @@ export function PlanHistorySelector({
           {error}
         </p>
       ) : null}
-      <button
-        type="button"
-        aria-pressed={selection === 'previous'}
-        onClick={() => onSelect('previous')}
-        disabled={!canRestore || busy}
-        className="min-w-[182px] rounded-full px-[18px] py-[16px] text-[20px] font-semibold text-figma-ink transition-[background-color,transform] duration-150 hover:scale-[1.02] aria-pressed:bg-figma-bee disabled:cursor-not-allowed disabled:opacity-40"
+      <span
+        className="group relative inline-flex min-w-[182px] justify-self-start"
+        tabIndex={!canRestore ? 0 : undefined}
+        title={!canRestore ? unavailableReason : undefined}
+        data-plan-history-tooltip={!canRestore ? true : undefined}
+        data-plan-history-previous
       >
-        До · {previous.revision}
-      </button>
-      <button
-        type="button"
-        aria-pressed={selection === 'current'}
-        onClick={() => onSelect('current')}
-        disabled={busy}
-        className="min-w-[182px] rounded-full px-[18px] py-[16px] text-[20px] font-semibold text-figma-ink transition-[background-color,transform] duration-150 hover:scale-[1.02] aria-pressed:bg-figma-bee disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        После · {currentRevision ?? '—'}
-      </button>
+        <button
+          type="button"
+          aria-pressed={selection === 'previous'}
+          onClick={() => onSelect('previous')}
+          disabled={!canRestore || busy}
+          className="min-w-[182px] rounded-full px-[18px] py-[16px] text-[20px] font-semibold text-figma-ink transition-[background-color,transform] duration-150 hover:scale-[1.02] aria-pressed:bg-figma-bee disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          До · {previous.revision}
+        </button>
+        {!canRestore ? (
+          <span
+            role="tooltip"
+            className="pointer-events-none invisible absolute bottom-[calc(100%+12px)] left-1/2 z-10 w-[300px] -translate-x-1/2 rounded-[16px] border border-figma-ink/20 bg-white p-[12px] text-center text-[14px] leading-[1.35] text-figma-ink opacity-0 shadow-xl transition-[opacity,visibility] duration-150 group-hover:visible group-hover:opacity-100 group-focus-visible:visible group-focus-visible:opacity-100"
+          >
+            {unavailableReason}
+          </span>
+        ) : null}
+      </span>
       <motion.button
         type="button"
+        data-plan-history-confirm
         onClick={onChoose}
         disabled={busy || (selection === 'previous' && !canRestore)}
         className="min-w-[220px] rounded-full border border-figma-ink px-[18px] py-[15px] text-[20px] font-semibold text-figma-ink transition-[background-color,transform] duration-150 hover:scale-[1.02] hover:bg-figma-canvas disabled:cursor-not-allowed disabled:opacity-40"
@@ -76,6 +98,16 @@ export function PlanHistorySelector({
       >
         Выбрать этот
       </motion.button>
+      <button
+        type="button"
+        data-plan-history-current
+        aria-pressed={selection === 'current'}
+        onClick={() => onSelect('current')}
+        disabled={busy}
+        className="min-w-[182px] justify-self-end rounded-full px-[18px] py-[16px] text-[20px] font-semibold text-figma-ink transition-[background-color,transform] duration-150 hover:scale-[1.02] aria-pressed:bg-figma-bee disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        После · {currentRevision ?? '—'}
+      </button>
     </motion.aside>
   );
 }

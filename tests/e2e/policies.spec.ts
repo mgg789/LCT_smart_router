@@ -82,6 +82,22 @@ test('previous routes survive reload and restore through a new server revision',
   await expect(
     page.getByRole('region', { name: 'Карта маршрутов', includeHidden: true }),
   ).toBeVisible();
+  const mapRegion = page.getByRole('region', { name: 'Карта маршрутов', includeHidden: true });
+  const veil = page.locator('[data-plan-history-veil]');
+  await expect(veil).not.toHaveClass(/backdrop-blur/);
+  const capsuleBox = await controls.boundingBox();
+  const mapBox = await mapRegion.boundingBox();
+  const confirmBox = await controls
+    .getByRole('button', { name: 'Выбрать этот', exact: true })
+    .boundingBox();
+  if (!capsuleBox || !mapBox || !confirmBox) {
+    throw new Error('Plan history chooser or map bounds were not rendered');
+  }
+  const mapCenter = mapBox.x + mapBox.width / 2;
+  const capsuleCenter = capsuleBox.x + capsuleBox.width / 2;
+  const confirmCenter = confirmBox.x + confirmBox.width / 2;
+  expect(Math.abs(capsuleCenter - mapCenter)).toBeLessThanOrEqual(2);
+  expect(Math.abs(confirmCenter - capsuleCenter)).toBeLessThanOrEqual(2);
   const previous = controls.getByRole('button', {
     name: `До · ${history.previous.revision}`,
     exact: true,

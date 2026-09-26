@@ -22,6 +22,7 @@ describe('plan history selector', () => {
         canRestore
         busy={false}
         motionOn={false}
+        anchor={{ left: 900, bottom: 42 }}
         onSelect={vi.fn()}
         onChoose={vi.fn()}
       />,
@@ -33,6 +34,10 @@ describe('plan history selector', () => {
     expect(html).toContain('aria-modal="true"');
     expect(html).toContain('data-plan-history-dialog="true"');
     expect(html).toContain('tabindex="-1"');
+    expect(html.indexOf('До · 142')).toBeLessThan(html.indexOf('Выбрать этот'));
+    expect(html.indexOf('Выбрать этот')).toBeLessThan(html.indexOf('После · 143'));
+    expect(html).toContain('left:900px');
+    expect(html).toContain('bottom:42px');
   });
 
   it('does not offer an unavailable predecessor as a selectable plan', () => {
@@ -44,11 +49,14 @@ describe('plan history selector', () => {
         canRestore={false}
         busy={false}
         motionOn={false}
+        restoreUnavailableReason="План уже устарел"
         onSelect={vi.fn()}
         onChoose={vi.fn()}
       />,
     );
 
     expect(html).toContain('disabled=""');
+    expect(html).toContain('План уже устарел');
+    expect(html).toContain('role="tooltip"');
   });
 });
