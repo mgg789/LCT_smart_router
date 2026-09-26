@@ -49,6 +49,20 @@ describe('buildEngineerSystemPrompt', () => {
     assert.match(prompt, /"other"[\s\S]*[Cc]ancels the visit/);
   });
 
+  it('separates advice from a command to record a problem and asks one clarification at a time', () => {
+    const prompt = buildEngineerSystemPrompt({ now: NOW, timeZone: TIME_ZONE, toolNames: [] });
+    assert.match(prompt, /question about what a button does[\s\S]*not permission/i);
+    assert.match(prompt, /one focused clarification at a time/i);
+    assert.match(prompt, /cancels the current[\s\S]*removes it from today/i);
+  });
+
+  it('limits troubleshooting to curated sources and does not invent vendor repair instructions', () => {
+    const prompt = buildEngineerSystemPrompt({ now: NOW, timeZone: TIME_ZONE, toolNames: [] });
+    assert.match(prompt, /not a manufacturer repair service/i);
+    assert.match(prompt, /do not invent device tests/i);
+    assert.match(prompt, /stock counts are unavailable/i);
+  });
+
   it('never lets the assistant record arrival or completion itself', () => {
     const prompt = buildEngineerSystemPrompt({ now: NOW, timeZone: TIME_ZONE, toolNames: [] });
     assert.match(prompt, /never record|do not (record|describe a visit as started)/i);

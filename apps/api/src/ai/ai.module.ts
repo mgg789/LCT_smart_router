@@ -7,6 +7,7 @@ import { HealthRegistry } from '../common/health';
 import { Clock } from '../common/time';
 import { EngineersModule } from '../orchestrator/engineers';
 import { LiveModule } from '../orchestrator/live';
+import { PassportsModule } from '../orchestrator/passports/passports.module';
 import { RequestsModule } from '../orchestrator/requests';
 import { AiHealthProbe } from './ai-health.probe';
 import { KnowledgeModule, KnowledgeService } from './knowledge';
@@ -153,7 +154,7 @@ function buildFallbackProvider(
  */
 @Global()
 @Module({
-  imports: [RequestsModule, EngineersModule, LiveModule, KnowledgeModule],
+  imports: [RequestsModule, EngineersModule, LiveModule, PassportsModule, KnowledgeModule],
   providers: [
     {
       provide: LlmProvider,

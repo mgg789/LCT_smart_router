@@ -14,6 +14,7 @@ import type { AlertsService } from '../../src/orchestrator/alerts';
 import type { EngineersService } from '../../src/orchestrator/engineers/engineers.service';
 import type { LiveService } from '../../src/orchestrator/live/live.service';
 import type { PolicyService } from '../../src/orchestrator/policy';
+import type { PassportsService } from '../../src/orchestrator/passports/passports.service';
 import type { RequestsService } from '../../src/orchestrator/requests/requests.service';
 import type { PrismaService } from '../../src/persistence';
 import type { SnapshotPublisher } from '../../src/routing/mount-data-eng';
@@ -364,6 +365,7 @@ describe('offline during a live day is not an assistant write', () => {
       aiOperations: inert<AiOperationService>(),
       live,
       config: inert<AppConfigService>(),
+      passports: inert<PassportsService>(),
     });
     const changeStatus = tools.find((tool) => tool.name === 'change_status_to');
     assert.ok(changeStatus);

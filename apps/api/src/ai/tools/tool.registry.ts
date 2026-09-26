@@ -5,6 +5,7 @@ import type { AiRoleProfile } from '../../generated/prisma/client';
 import { AlertsService } from '../../orchestrator/alerts';
 import { LiveService } from '../../orchestrator/live/live.service';
 import { PolicyService } from '../../orchestrator/policy';
+import { PassportsService } from '../../orchestrator/passports/passports.service';
 import { RequestsService } from '../../orchestrator/requests/requests.service';
 import { PrismaService } from '../../persistence';
 import { SnapshotBuilder } from '../../routing/mount-data-eng';
@@ -52,10 +53,11 @@ export class ToolRegistry {
     policy: PolicyService,
     router: RouterClient,
     builder: SnapshotBuilder,
+    passports: PassportsService,
   ) {
     const searchDocumentation = buildSearchDocumentationTool(knowledge);
     const clientTools = buildClientTools({ aiOperations, requests, config, prisma });
-    const engineerTools = buildEngineerTools({ aiOperations, live, config });
+    const engineerTools = buildEngineerTools({ aiOperations, live, config, passports });
     const dispatcherReadTools = buildDispatcherReadTools({
       prisma,
       live,
