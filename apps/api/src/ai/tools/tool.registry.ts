@@ -22,6 +22,7 @@ import { buildDispatcherWriteTools } from './dispatcher-write.tools';
 import { buildEngineerTools } from './engineer.tools';
 import { buildSearchDocumentationTool } from './knowledge.tool';
 import { KnowledgeSearchPort } from './knowledge-search.port';
+import { buildOperationVerificationTool } from './operation-verification.tool';
 import type { AnyToolSpec } from './tool.types';
 
 /**
@@ -71,7 +72,11 @@ export class ToolRegistry {
     });
     const dispatcherWriteTools = buildDispatcherWriteTools({ aiOperations, config });
 
-    const dispatcherReadonlyTools = [...dispatcherReadTools, searchDocumentation];
+    const dispatcherReadonlyTools = [
+      ...dispatcherReadTools,
+      buildOperationVerificationTool(prisma),
+      searchDocumentation,
+    ];
     const dispatcherFixTools = [...dispatcherReadonlyTools, ...dispatcherWriteTools];
 
     this.catalogues = {
