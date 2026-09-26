@@ -12,7 +12,7 @@ import math
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import Protocol, cast, runtime_checkable
 
 from pydantic import Field, model_validator
 
@@ -193,8 +193,11 @@ def quote_at(
     departure_at: int,
 ) -> TravelQuote | None:
     """Quote at a departure clock when supported, otherwise use the legacy quote."""
-    if isinstance(travel, TimedTravelSource):
-        return travel.quote_at(origin, destination, profile, departure_at)
+    # This is the innermost path of route search. Structural Protocol checks
+    # repeatedly inspect legacy providers; select the optional method directly.
+    timed_quote = getattr(travel, "quote_at", None)
+    if callable(timed_quote):
+        return cast(TimedTravelSource, travel).quote_at(origin, destination, profile, departure_at)
     return travel.quote(origin, destination, profile)
 
 

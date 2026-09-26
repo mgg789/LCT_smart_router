@@ -5,6 +5,7 @@ import hashlib
 import json
 import platform
 import subprocess
+import time
 from pathlib import Path
 
 import ortools
@@ -49,8 +50,11 @@ def main() -> None:
     }
     for name, scenario in zip((*names, "all"), [*regions, combine_official_scenarios(regions)]):
         raw = scenario.snapshot.model_dump_json().encode()
-        runs = [
-            calculate_policy_comparison(
+        runs = []
+        elapsed_ms = []
+        for _ in range(args.repeat):
+            started = time.perf_counter()
+            runs.append(calculate_policy_comparison(
                 raw,
                 name,
                 scenario.graph,
@@ -58,9 +62,8 @@ def main() -> None:
                 "offline-benchmark",
                 args.budget_ms,
                 offline=not args.live_roads,
-            )
-            for _ in range(args.repeat)
-        ]
+            ))
+            elapsed_ms.append(round((time.perf_counter() - started) * 1000, 2))
         comparable = [
             [(row.strategy_id, row.summary.model_dump()) for row in run.rows] for run in runs
         ]
@@ -73,6 +76,7 @@ def main() -> None:
                 "graph_version": scenario.graph.version,
                 "comparison": runs[0].model_dump(),
                 "repeat_metrics_identical": len(runs) > 1,
+                "elapsed_ms": elapsed_ms,
             }
         )
         print(

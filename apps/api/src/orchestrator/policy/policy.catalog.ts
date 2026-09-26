@@ -24,8 +24,8 @@ export const POLICIES: readonly PolicySpec[] = [
     policyId: 'fast',
     title: 'Fast',
     description:
-      'Common order first: urgent coverage, total coverage, optional lunches and total ' +
-      'lateness; then travel time, distance and engineers used.',
+      'Urgent coverage, total coverage and optional lunches first; then travel time, ' +
+      'total lateness, distance and engineers used. Shared feasibility bounds still apply.',
     isDefault: false,
     parameters: {},
   },
@@ -33,8 +33,8 @@ export const POLICIES: readonly PolicySpec[] = [
     policyId: 'compact',
     title: 'Compact',
     description:
-      'Common coverage and lateness order first; then use fewer engineers, shorter distance ' +
-      'and less travel time.',
+      'Common coverage first; then use fewer engineers, reduce total lateness, distance ' +
+      'and travel time.',
     isDefault: true,
     parameters: {},
   },
@@ -42,8 +42,8 @@ export const POLICIES: readonly PolicySpec[] = [
     policyId: 'sla',
     title: 'SLA safe',
     description:
-      'After common urgent and total coverage, maximize minimum start slack against the ' +
-      'original customer window, then reduce travel.',
+      'After common coverage, minimize total lateness, then maximize minimum completion ' +
+      'slack against the original customer window and reduce travel.',
     isDefault: false,
     parameters: {},
   },
@@ -52,7 +52,7 @@ export const POLICIES: readonly PolicySpec[] = [
     title: 'Balanced',
     description:
       'After common urgent and total coverage, minimize the maximum utilized shift fraction, ' +
-      'then minimize workload spread in seconds.',
+      'then total lateness and workload spread in seconds.',
     isDefault: false,
     parameters: {},
   },
@@ -60,7 +60,7 @@ export const POLICIES: readonly PolicySpec[] = [
     policyId: 'eco',
     title: 'Eco',
     description:
-      'Common coverage and lateness order first; then minimize distance, engineers used and ' +
+      'Common coverage first; then minimize distance, total lateness, engineers used and ' +
       'travel time.',
     isDefault: false,
     parameters: {},

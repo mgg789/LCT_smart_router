@@ -54,7 +54,10 @@ describe('request failure metadata', () => {
     );
     try {
       const request = loadPolicyComparison('test-session');
-      const assertion = expect(request).rejects.toMatchObject({ status: 0 });
+      const assertion = expect(request).rejects.toMatchObject({
+        status: 0,
+        message: 'Сервер не ответил за 90 секунд',
+      });
       await vi.advanceTimersByTimeAsync(12_000);
       expect(signal?.aborted).toBe(false);
       await vi.advanceTimersByTimeAsync(78_000);

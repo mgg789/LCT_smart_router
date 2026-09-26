@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
+import { SysError } from '../../src/common/errors';
 import { HttpRouterClient } from '../../src/routing/router-gateway/http-router-client';
 
 const originalFetch = globalThis.fetch;
@@ -9,6 +10,14 @@ afterEach(() => {
 });
 
 describe('HttpRouterClient', () => {
+  it('reports an unfinished policy calculation as a refreshable state conflict', async () => {
+    globalThis.fetch = async () => new Response('', { status: 503 });
+    const client = new HttpRouterClient({ baseUrl: 'http://router:8100', requestTimeoutMs: 100 });
+    await assert.rejects(
+      () => client.getPolicyComparison(),
+      (error) => error instanceof SysError && error.code === 'VERSION_CONFLICT',
+    );
+  });
   it('maps a cold policy comparison with a timeout longer than ordinary Router calls', async () => {
     globalThis.fetch = async (input, init) => {
       assert.equal(String(input), 'http://router:8100/v1/policy-comparison');

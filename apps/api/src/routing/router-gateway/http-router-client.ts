@@ -602,6 +602,12 @@ export class HttpRouterClient extends RouterClient {
         signal: controller.signal,
       });
       if (!response.ok) {
+        if (response.status === 503 && path === '/v1/policy-comparison') {
+          throw new SysError(
+            'VERSION_CONFLICT',
+            'The working plan is still being rebuilt; retry the comparison when it is ready',
+          );
+        }
         if (response.status === 409) {
           let detail: unknown = null;
           try {

@@ -53,26 +53,25 @@ _COVERAGE: tuple[Criterion, ...] = (
     "urgent_unassigned",
     "unassigned",
     "missed_optional_lunches",
-    "total_lateness",
 )
 _CATALOG: dict[str, PolicySpec] = {
     "fast": PolicySpec(
         policy_id="fast",
-        definition_version="fast-1",
-        ordered_criteria=_COVERAGE + ("travel_time", "distance", "engineers_used"),
+        definition_version="fast-2",
+        ordered_criteria=_COVERAGE + ("travel_time", "total_lateness", "distance", "engineers_used"),
         search_stages=("coverage", "travel_time", "distance", "engineers_used"),
     ),
     "compact": PolicySpec(
         policy_id="compact",
-        definition_version="compact-1",
-        ordered_criteria=_COVERAGE + ("engineers_used", "distance", "travel_time"),
+        definition_version="compact-2",
+        ordered_criteria=_COVERAGE + ("engineers_used", "total_lateness", "distance", "travel_time"),
         search_stages=("coverage", "engineers_used", "distance", "travel_time"),
     ),
     "sla": PolicySpec(
         policy_id="sla",
         definition_version="sla-2",
         ordered_criteria=_COVERAGE
-        + ("window_end_risk", "travel_time", "distance", "engineers_used"),
+        + ("total_lateness", "window_end_risk", "travel_time", "distance", "engineers_used"),
         search_stages=(
             "coverage",
             "window_end_risk",
@@ -83,9 +82,9 @@ _CATALOG: dict[str, PolicySpec] = {
     ),
     "balanced": PolicySpec(
         policy_id="balanced",
-        definition_version="balanced-2",
+        definition_version="balanced-3",
         ordered_criteria=_COVERAGE
-        + ("max_workload_ratio", "workload_spread", "travel_time", "distance", "engineers_used"),
+        + ("max_workload_ratio", "total_lateness", "workload_spread", "travel_time", "distance", "engineers_used"),
         search_stages=(
             "coverage",
             "max_workload_ratio",
@@ -97,8 +96,8 @@ _CATALOG: dict[str, PolicySpec] = {
     ),
     "eco": PolicySpec(
         policy_id="eco",
-        definition_version="eco-1",
-        ordered_criteria=_COVERAGE + ("distance", "engineers_used", "travel_time"),
+        definition_version="eco-2",
+        ordered_criteria=_COVERAGE + ("distance", "total_lateness", "engineers_used", "travel_time"),
         search_stages=("coverage", "distance", "engineers_used", "travel_time"),
     ),
     "covering": PolicySpec(
@@ -108,7 +107,7 @@ _CATALOG: dict[str, PolicySpec] = {
         # travel. Counting every busy engineer here let a reserve replace a roster
         # engineer who could have taken the same ordinary jobs.
         ordered_criteria=_COVERAGE
-        + ("additional_engineers", "extra_assignments", "distance", "travel_time"),
+        + ("total_lateness", "additional_engineers", "extra_assignments", "distance", "travel_time"),
         search_stages=(
             "coverage",
             "additional_engineers",
@@ -120,7 +119,8 @@ _CATALOG: dict[str, PolicySpec] = {
 }
 POLICY_CATALOG_VERSION = sha256(
     json.dumps(
-        [asdict(_CATALOG[policy_id]) for policy_id in sorted(_CATALOG)],
+        {"search_revision": "shared-portfolio-v4",
+         "policies": [asdict(_CATALOG[policy_id]) for policy_id in sorted(_CATALOG)]},
         sort_keys=True,
         separators=(",", ":"),
     ).encode("utf-8")

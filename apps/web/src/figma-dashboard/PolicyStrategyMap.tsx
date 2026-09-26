@@ -122,6 +122,7 @@ export function PolicyStrategyMap({
           id: sourceId,
           type: 'line',
           source: sourceId,
+          filter: ['==', ['get', 'schematic'], false],
           layout: {
             'line-cap': 'round',
             'line-join': 'round',
@@ -131,6 +132,23 @@ export function PolicyStrategyMap({
             'line-color': STRATEGY_COLORS[strategy.strategyId] ?? '#272930',
             'line-width': 3,
             'line-opacity': 0.9,
+          },
+        });
+        map.addLayer({
+          id: `${sourceId}-schematic`,
+          type: 'line',
+          source: sourceId,
+          filter: ['==', ['get', 'schematic'], true],
+          layout: {
+            'line-cap': 'round',
+            'line-join': 'round',
+            visibility: hiddenRef.current.has(strategy.strategyId) ? 'none' : 'visible',
+          },
+          paint: {
+            'line-color': STRATEGY_COLORS[strategy.strategyId] ?? '#272930',
+            'line-width': 2,
+            'line-opacity': 0.7,
+            'line-dasharray': [2, 2],
           },
         });
       });
@@ -175,6 +193,12 @@ export function PolicyStrategyMap({
         'visibility',
         hidden.has(strategy.strategyId) ? 'none' : 'visible',
       );
+      if (map.getLayer(`strategy-${index}-schematic`))
+        map.setLayoutProperty(
+          `strategy-${index}-schematic`,
+          'visibility',
+          hidden.has(strategy.strategyId) ? 'none' : 'visible',
+        );
     }
   }, [hidden, strategies]);
 
@@ -197,48 +221,55 @@ export function PolicyStrategyMap({
           }}
         />
       </div>
-      <ul className="flex w-[240px] shrink-0 flex-col gap-[10px] overflow-auto">
-        {strategies.map((strategy) => {
-          const checked = !hidden.has(strategy.strategyId);
-          return (
-            <li key={strategy.strategyId}>
-              <button
-                type="button"
-                onClick={() => {
-                  setHidden((current) => {
-                    const next = new Set(current);
-                    if (next.has(strategy.strategyId)) next.delete(strategy.strategyId);
-                    else next.add(strategy.strategyId);
-                    return next;
-                  });
-                }}
-                className="flex w-full items-center gap-[10px] text-left"
-              >
-                <span
-                  className={`flex size-[28px] shrink-0 items-center justify-center rounded-[10px] ${
-                    checked ? 'bg-figma-ink' : 'border-2 border-[#d4d5d8] bg-white'
-                  }`}
+      <div className="flex w-[240px] shrink-0 flex-col gap-[16px] overflow-auto">
+        <p className="text-[13px] leading-[18px] text-figma-muted">
+          Пунктир — схема плеча. Дорожные линии подгружаются отдельно; показатели плана при этом не
+          меняются.
+        </p>
+        <ul className="flex flex-col gap-[10px]">
+          {strategies.map((strategy) => {
+            const checked = !hidden.has(strategy.strategyId);
+            return (
+              <li key={strategy.strategyId}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHidden((current) => {
+                      const next = new Set(current);
+                      if (next.has(strategy.strategyId)) next.delete(strategy.strategyId);
+                      else next.add(strategy.strategyId);
+                      return next;
+                    });
+                  }}
+                  className="flex w-full items-center gap-[10px] text-left"
+                  aria-pressed={checked}
                 >
-                  {checked ? (
-                    <img
-                      src="/figma/check-mark.svg"
-                      alt=""
-                      className="size-[18px] brightness-0 invert"
-                    />
-                  ) : null}
-                </span>
-                <span
-                  className="size-[12px] shrink-0 rounded-full"
-                  style={{ background: STRATEGY_COLORS[strategy.strategyId] ?? '#272930' }}
-                />
-                <span className="font-semibold text-[15px] text-figma-ink">
-                  {strategyName(strategy.strategyId)}
-                </span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+                  <span
+                    className={`flex size-[28px] shrink-0 items-center justify-center rounded-[10px] ${
+                      checked ? 'bg-figma-ink' : 'border-2 border-[#d4d5d8] bg-white'
+                    }`}
+                  >
+                    {checked ? (
+                      <img
+                        src="/figma/check-mark.svg"
+                        alt=""
+                        className="size-[18px] brightness-0 invert"
+                      />
+                    ) : null}
+                  </span>
+                  <span
+                    className="size-[12px] shrink-0 rounded-full"
+                    style={{ background: STRATEGY_COLORS[strategy.strategyId] ?? '#272930' }}
+                  />
+                  <span className="font-semibold text-[15px] text-figma-ink">
+                    {strategyName(strategy.strategyId)}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
     </div>
   );
 }
@@ -288,7 +319,10 @@ function lineCollection(
         .filter((segment) => segment.points.length >= 2)
         .map((segment) => ({
           type: 'Feature' as const,
-          properties: { engineerId: route.engineerId },
+          properties: {
+            engineerId: route.engineerId,
+            schematic: segment.travelSource !== 'metro' && segment.points.length <= 2,
+          },
           geometry: {
             type: 'LineString' as const,
             coordinates: segment.points.map((point) => [point.lon, point.lat] as [number, number]),

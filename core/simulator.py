@@ -394,6 +394,22 @@ def _bounded(snapshot: RouterTaskSnapshot, settings: SearchSettings, travel, con
     return output.main
 
 
+def catalog_result(digest: str, publication_id: str, context_version: str,
+                   patch: SimulationPatch, plans: dict[str, Plan], base: Plan | None) -> dict:
+    """Project cached comparison plans without a second search or any plan mutation."""
+    return {
+        "input_hash": digest,
+        "input_publication_id": publication_id,
+        "router_context_version": context_version,
+        "patch_hash": patch_hash(patch),
+        "method": "catalog",
+        "strategies": [
+            {"strategy_id": strategy_id, "metrics": _metrics(plan), "routes": route_view(plan, base)}
+            for strategy_id, plan in plans.items()
+        ],
+    }
+
+
 def simulate_patch(
     raw: bytes,
     settings: SearchSettings,
@@ -410,23 +426,9 @@ def simulate_patch(
     tuned = _settings_of(settings, patch)
     if patch.catalog:
         _comparison, plans = calculate_policy_catalog(
-            raw, publication_id, graph, tuned, context_version, SEARCH_BUDGET_MS
+            raw, publication_id, graph, tuned, context_version, tuned.time_limit_ms
         )
-        return {
-            "input_hash": digest,
-            "input_publication_id": publication_id,
-            "router_context_version": context_version,
-            "patch_hash": patch_hash(patch),
-            "method": "catalog",
-            "strategies": [
-                {
-                    "strategy_id": strategy_id,
-                    "metrics": _metrics(plan),
-                    "routes": route_view(plan, base),
-                }
-                for strategy_id, plan in plans.items()
-            ],
-        }
+        return catalog_result(digest, publication_id, context_version, patch, plans, base)
     patched = apply_system_policy(_snapshot_of(task, patch), tuned)
     travel = planning_travel(graph, tuned, patched)
     local = patch.window is not None or patch.pin is not None or patch.unassign_request_id is not None

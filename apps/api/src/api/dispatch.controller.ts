@@ -248,6 +248,10 @@ export class DispatchController {
         );
       await rememberSimulation(this.prisma, patch, result);
     }
+    const roster = await this.prisma.engineer.findMany({
+      select: { id: true, transportType: true },
+    });
+    const transports = new Map(roster.map((engineer) => [engineer.id, engineer.transportType]));
     return {
       method: result.method,
       cached: result.cached,
@@ -256,7 +260,10 @@ export class DispatchController {
       routerContextVersion: result.router_context_version,
       text: russianDelta(patch, result),
       delta: toDeltaView(result),
-      routes: (result.routes ?? []).map(toRouteView),
+      routes: this.mapRouting.projectSimulationRoutes(
+        (result.routes ?? []).map(toRouteView),
+        transports,
+      ),
       strategies: (result.strategies ?? []).map((row) => ({
         strategyId: row.strategy_id,
         metrics: {
@@ -265,7 +272,7 @@ export class DispatchController {
           lateAssignedCount: row.metrics.late_assigned_count,
           distanceKm: row.metrics.distance_km,
         },
-        routes: row.routes.map(toRouteView),
+        routes: this.mapRouting.projectSimulationRoutes(row.routes.map(toRouteView), transports),
       })),
     };
   }

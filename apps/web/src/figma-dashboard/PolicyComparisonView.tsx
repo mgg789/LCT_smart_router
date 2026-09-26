@@ -1,5 +1,4 @@
-import { motion } from 'framer-motion';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { type SimulationResponse, simulateChange } from '../api/client';
 import type {
   DashboardSnapshot,
@@ -8,8 +7,9 @@ import type {
 } from '../api/types';
 import { unassignedRequests } from '../domain/dashboard';
 import type { RegionSelection } from '../domain/regions';
-import { strategyDescription } from '../lib/policyComparison';
+import { comparisonValue, comparisonWinners, strategyDescription } from '../lib/policyComparison';
 import { formatClock, formatDurationMin, formatKm } from '../lib/time';
+import { PolicyComparisonOverview } from './PolicyComparisonOverview';
 import { type DayRequestPoint, PolicyStrategyMap } from './PolicyStrategyMap';
 import { FigmaText } from './primitives';
 
@@ -56,11 +56,10 @@ export function PolicyComparisonView({
   selectedRegion: RegionSelection;
   motionOn: boolean;
 }) {
-  const [mode, setMode] = useState<'table' | 'map'>('table');
+  const [mode, setMode] = useState<'overview' | 'table' | 'map'>('overview');
   const [mapRoutes, setMapRoutes] = useState<SimulationResponse | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
   const [mapLoading, setMapLoading] = useState(false);
-  const mapRoutesRef = useRef<SimulationResponse | null>(null);
   const engineerRegionKey = JSON.stringify(
     (snapshot?.engineers ?? []).map((engineer) => [engineer.id, engineer.region ?? '']),
   );
@@ -71,28 +70,50 @@ export function PolicyComparisonView({
   const dayRequests = useMemo(() => dayRequestPoints(snapshot), [snapshot]);
 
   const comparisonKey = `${comparison?.inputHash ?? ''}:${comparison?.routerContextVersion ?? ''}`;
-  // comparisonKey is not an argument of the catalog call. It refetches the map when the snapshot under the table changes.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: refetch trigger, not an input of simulateChange
   useEffect(() => {
     if (mode !== 'map' || !token) return;
     let active = true;
-    if (!mapRoutesRef.current) setMapLoading(true);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let attempts = 0;
+    setMapLoading(true);
     setMapError(null);
-    void simulateChange(token, { catalog: true })
-      .then((result) => {
-        if (!active) return;
-        mapRoutesRef.current = result;
-        setMapRoutes(result);
-      })
-      .catch((cause: unknown) => {
-        if (active)
-          setMapError(cause instanceof Error ? cause.message : 'Не удалось построить карту');
-      })
-      .finally(() => {
-        if (active) setMapLoading(false);
-      });
+    const load = () => {
+      void simulateChange(token, { catalog: true })
+        .then((result) => {
+          if (!active) return;
+          if (comparisonKey !== `${result.inputHash}:${result.routerContextVersion}`) {
+            setMapError(
+              'Исходный план изменился. Пересчитайте сравнение для согласованных данных.',
+            );
+            return;
+          }
+          setMapRoutes(result);
+          attempts++;
+          if (
+            attempts < 6 &&
+            result.strategies.some((strategy) =>
+              strategy.routes.some((route) =>
+                route.segments.some(
+                  (segment) => segment.travelSource !== 'metro' && segment.points.length === 2,
+                ),
+              ),
+            )
+          ) {
+            timer = setTimeout(load, 1500);
+          }
+        })
+        .catch((cause: unknown) => {
+          if (active)
+            setMapError(cause instanceof Error ? cause.message : 'Не удалось построить карту');
+        })
+        .finally(() => {
+          if (active) setMapLoading(false);
+        });
+    };
+    load();
     return () => {
       active = false;
+      if (timer) clearTimeout(timer);
     };
   }, [mode, token, comparisonKey]);
   const appliedInputHash = snapshot?.plan.appliedResult?.inputHash ?? null;
@@ -123,29 +144,35 @@ export function PolicyComparisonView({
           </p>
         </div>
         <div className="flex items-center gap-[12px]">
-          <div className="relative flex h-[67px] items-center rounded-[20px] bg-figma-soft p-[6px]">
-            <motion.span
-              aria-hidden
-              className="absolute top-[6px] bottom-[6px] w-[calc(50%-6px)] rounded-[16px] bg-white"
-              initial={false}
-              animate={{ left: mode === 'table' ? 6 : 'calc(50%)' }}
-              transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-            />
+          <fieldset
+            className="relative flex h-[67px] items-center rounded-[20px] bg-figma-soft p-[6px]"
+            aria-label="Вид сравнения"
+          >
+            <button
+              type="button"
+              onClick={() => setMode('overview')}
+              aria-pressed={mode === 'overview'}
+              className={`relative z-[1] h-[55px] w-[120px] rounded-[16px] font-semibold text-[16px] transition-colors duration-150 ${mode === 'overview' ? 'bg-white text-figma-ink' : 'text-figma-muted'}`}
+            >
+              Обзор
+            </button>
             <button
               type="button"
               onClick={() => setMode('table')}
-              className={`relative z-[1] h-[55px] w-[120px] rounded-[16px] font-semibold text-[16px] ${mode === 'table' ? 'text-figma-ink' : 'text-figma-muted'}`}
+              aria-pressed={mode === 'table'}
+              className={`relative z-[1] h-[55px] w-[120px] rounded-[16px] font-semibold text-[16px] transition-colors duration-150 ${mode === 'table' ? 'bg-white text-figma-ink' : 'text-figma-muted'}`}
             >
               Таблица
             </button>
             <button
               type="button"
               onClick={() => setMode('map')}
-              className={`relative z-[1] h-[55px] w-[120px] rounded-[16px] font-semibold text-[16px] ${mode === 'map' ? 'text-figma-ink' : 'text-figma-muted'}`}
+              aria-pressed={mode === 'map'}
+              className={`relative z-[1] h-[55px] w-[120px] rounded-[16px] font-semibold text-[16px] transition-colors duration-150 ${mode === 'map' ? 'bg-white text-figma-ink' : 'text-figma-muted'}`}
             >
               Карта
             </button>
-          </div>
+          </fieldset>
           <button
             type="button"
             onClick={onRefresh}
@@ -161,9 +188,8 @@ export function PolicyComparisonView({
 
       {comparison ? (
         <div className="absolute left-[30px] top-[118px] flex flex-wrap gap-[8px]">
-          <MetaChip label={`Снимок ${comparison.inputPublicationId}`} />
           <MetaChip label={`Расчёт ${formatClock(comparison.computedAt)}`} />
-          <MetaChip label={`Бюджет поиска ${comparison.searchBudgetMs} мс на политику`} />
+          <MetaChip label="Просмотр не меняет рабочий план" />
           {isStale ? <MetaChip label="План уже изменился — пересчитайте сравнение" bee /> : null}
         </div>
       ) : null}
@@ -196,7 +222,7 @@ export function PolicyComparisonView({
             </div>
           )
         ) : null}
-        {mode === 'table' ? (
+        {mode !== 'map' ? (
           <>
             {error ? (
               <div className="rounded-[20px] bg-figma-soft px-[24px] py-[20px]">
@@ -225,59 +251,66 @@ export function PolicyComparisonView({
               </div>
             ) : null}
 
-            {comparison ? (
-              <table className="w-full min-w-[1280px] border-separate border-spacing-0 text-left">
-                <thead>
-                  <tr>
-                    <th className="sticky left-0 z-[1] w-[160px] bg-white" />
-                    {columns.map((row) => (
-                      <th
-                        key={row.strategyId}
-                        className="min-w-[168px] px-[12px] pb-[18px] align-top"
-                      >
-                        <div className="font-semibold text-[16px] tracking-[-0.2px] text-figma-ink">
-                          {SHORT_NAME[row.strategyId] ?? row.strategyId}
-                        </div>
-                        <p className="mt-[8px] font-medium text-[12px] leading-[16px] text-figma-muted">
-                          {strategyDescription(row.strategyId)}
-                        </p>
-                        {!row.isUsable ? (
-                          <p className="mt-[6px] font-medium text-[12px] text-figma-danger">
-                            План непригоден
+            {comparison && mode === 'overview' ? <PolicyComparisonOverview rows={columns} /> : null}
+            {comparison && mode === 'table' ? (
+              <>
+                <p className="mb-[16px] text-[14px] text-figma-muted">
+                  Выделены лучшие показатели при одинаковом составе. Резервные инженеры учитываются
+                  отдельно; при разном покрытии сравнивайте также затраты на заявку.
+                </p>
+                <table className="w-full min-w-[1280px] border-separate border-spacing-0 text-left">
+                  <thead>
+                    <tr>
+                      <th className="sticky left-0 z-[1] w-[160px] bg-white" />
+                      {columns.map((row) => (
+                        <th
+                          key={row.strategyId}
+                          className="min-w-[168px] px-[12px] pb-[18px] align-top"
+                        >
+                          <div className="font-semibold text-[16px] tracking-[-0.2px] text-figma-ink">
+                            {SHORT_NAME[row.strategyId] ?? row.strategyId}
+                          </div>
+                          <p className="mt-[8px] font-medium text-[12px] leading-[16px] text-figma-muted">
+                            {strategyDescription(row.strategyId)}
                           </p>
-                        ) : null}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {metricRows.map((metric) => {
-                    const best = winners(columns, metric);
-                    return (
-                      <tr key={metric.label}>
-                        <th className="sticky left-0 z-[1] bg-white py-[12px] pr-[12px] text-left font-semibold text-[14px] text-figma-muted">
-                          {metric.label}
+                          {!row.isUsable ? (
+                            <p className="mt-[6px] font-medium text-[12px] text-figma-danger">
+                              План непригоден
+                            </p>
+                          ) : null}
                         </th>
-                        {columns.map((row) => {
-                          const green = best.has(row.strategyId);
-                          return (
-                            <td
-                              key={row.strategyId}
-                              className={`border-t border-[#ececec] px-[12px] py-[12px] text-[15px] ${
-                                green
-                                  ? 'font-semibold text-[#15803d]'
-                                  : 'font-medium text-figma-ink'
-                              }`}
-                            >
-                              {metric.text(row)}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {metricRows.map((metric) => {
+                      const best = comparisonWinners(columns, metric.score, metric.better);
+                      return (
+                        <tr key={metric.label}>
+                          <th className="sticky left-0 z-[1] bg-white py-[12px] pr-[12px] text-left font-semibold text-[14px] text-figma-muted">
+                            {metric.label}
+                          </th>
+                          {columns.map((row) => {
+                            const green = best.has(row.strategyId);
+                            return (
+                              <td
+                                key={row.strategyId}
+                                className={`border-t border-[#ececec] px-[12px] py-[12px] text-[15px] ${
+                                  green
+                                    ? 'font-semibold text-[#15803d]'
+                                    : 'font-medium text-figma-ink'
+                                }`}
+                              >
+                                {metric.text(row)}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </>
             ) : null}
           </>
         ) : null}
@@ -288,7 +321,7 @@ export function PolicyComparisonView({
 
 interface MetricSpec {
   readonly label: string;
-  readonly better: 'min' | 'max';
+  readonly better: 'min' | 'max' | null;
   readonly score: (row: PolicyComparisonRow) => number | null;
   readonly text: (row: PolicyComparisonRow) => string;
 }
@@ -312,6 +345,12 @@ export function comparisonMetrics(recorded: boolean): MetricSpec[] {
       better: 'min',
       score: (row) => row.metrics.unassignedCount,
       text: (row) => String(row.metrics.unassignedCount),
+    },
+    {
+      label: 'В исходном окне',
+      better: 'max',
+      score: (row) => comparisonValue(row, 'onTime'),
+      text: (row) => String(comparisonValue(row, 'onTime')),
     },
     {
       label: 'Срочные',
@@ -343,7 +382,7 @@ export function comparisonMetrics(recorded: boolean): MetricSpec[] {
     },
     {
       label: 'Работа на заявку',
-      better: 'min',
+      better: null,
       score: (row) => perAssigned(row.metrics.workTimeSec, row.metrics.assignedCount),
       text: (row) => formatDurationPerAssigned(row.metrics.workTimeSec, row.metrics.assignedCount),
     },
@@ -382,7 +421,7 @@ export function comparisonMetrics(recorded: boolean): MetricSpec[] {
     },
     {
       label: 'Работы всего',
-      better: 'min',
+      better: null,
       score: (row) => row.metrics.workTimeSec,
       text: (row) => formatDurationMin(row.metrics.workTimeSec),
     },
@@ -424,7 +463,7 @@ export function comparisonMetrics(recorded: boolean): MetricSpec[] {
     },
     {
       label: 'Расчёт',
-      better: 'min',
+      better: null,
       score: (row) => (recorded ? null : Math.round(row.calculationMs)),
       text: (row) => (recorded ? 'не замерено' : `${Math.round(row.calculationMs)} мс`),
     },
@@ -460,22 +499,6 @@ function formatCountPerAssigned(count: number, assignedCount: number): string {
     unavailable ??
     `${(count / assignedCount).toLocaleString('ru-RU', { maximumFractionDigits: 2 })} / заявка`
   );
-}
-
-function winners(columns: PolicyComparisonRow[], metric: MetricSpec): Set<string> {
-  const scored = columns
-    .filter((row) => row.isUsable)
-    .map((row) => ({ id: row.strategyId, value: metric.score(row) }))
-    .filter(
-      (item): item is { id: PolicyComparisonRow['strategyId']; value: number } =>
-        item.value !== null,
-    );
-  if (scored.length === 0) return new Set();
-  const target =
-    metric.better === 'min'
-      ? Math.min(...scored.map((item) => item.value))
-      : Math.max(...scored.map((item) => item.value));
-  return new Set(scored.filter((item) => item.value === target).map((item) => item.id));
 }
 
 /**

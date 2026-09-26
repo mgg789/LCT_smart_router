@@ -2,11 +2,14 @@ import { createHash } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import type { PlanRouteSegmentView, PlanView } from '../../api/plan-view';
 import { readRouterPhase, writeRouterPhase } from '../../routing/router-gateway/router-phase';
+import type { toRouteView } from '../simulator/simulation-store';
 import { DispatcherSettingsService } from './dispatcher-settings.service';
 
 /** A down road API must not hold a plan read. A live local `/route2` answers well inside this. */
 const FETCH_TIMEOUT_MS = 1_500;
 const CACHE_LIMIT = 400;
+/** A comparison can contain seven distinct 205-job plans plus the working route set. */
+const ROAD_SHAPE_CACHE_LIMIT = 2000;
 /** Paid geometry adds little information below this straight-line distance. */
 export const MAP_API_MIN_DISTANCE_M = 300;
 /** How long a road-shape miss (outage or outside MKAD) is remembered. */
@@ -220,6 +223,36 @@ export class MapRoutingService {
     return this.idleWait;
   }
 
+  /** Borrow cached car polylines for read-only comparisons; never alter plan costs or facts. */
+  projectSimulationRoutes(
+    routes: ReturnType<typeof toRouteView>[],
+    transports: ReadonlyMap<string, string>,
+  ): ReturnType<typeof toRouteView>[] {
+    const base = roadApiBase();
+    if (!base) return routes;
+    return routes.map((route) => ({
+      ...route,
+      segments: route.segments.map((segment) => {
+        if (
+          transports.get(route.engineerId) !== 'car' ||
+          segment.travelSource === 'metro' ||
+          segment.points.length !== 2
+        )
+          return segment;
+        const from = segment.points[0];
+        const to = segment.points[1];
+        if (!from || !to || straightLineMetres(from, to) <= MAP_API_MIN_DISTANCE_M) return segment;
+        const key = this.shapeKey(base, from, to);
+        const points = this.freshShape(key);
+        if (points === undefined && !this.shapeQueued.has(key)) {
+          this.shapeQueued.add(key);
+          this.enqueueShape(base, { key, from, to });
+        }
+        return points ? { ...segment, points: [...points] } : segment;
+      }),
+    }));
+  }
+
   /** Up to {@link ROAD_FETCH_CONCURRENCY} edges at once. One slow call must not hold the day. */
   private enqueueShape(
     base: string,
@@ -427,7 +460,7 @@ export class MapRoutingService {
     // the next plan read asks again instead of pinning a dashed chord for hours.
     const ttl = points ? ROAD_SHAPE_TTL_MS : ROAD_MISS_TTL_MS;
     this.roadShapeCache.set(key, { expiresAt: Date.now() + ttl, points });
-    if (this.roadShapeCache.size > CACHE_LIMIT) {
+    if (this.roadShapeCache.size > ROAD_SHAPE_CACHE_LIMIT) {
       const first = this.roadShapeCache.keys().next().value;
       if (typeof first === 'string') this.roadShapeCache.delete(first);
     }

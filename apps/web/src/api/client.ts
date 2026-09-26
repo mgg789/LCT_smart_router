@@ -1717,7 +1717,9 @@ export async function requestJson<T>(
   } catch (cause) {
     if (cause instanceof DashboardApiError) throw cause;
     throw new DashboardApiError(
-      controller.signal.aborted ? 'Сервер не ответил за 12 секунд' : 'Нет связи с сервером',
+      controller.signal.aborted
+        ? `Сервер не ответил за ${Math.ceil(timeoutMs / 1000)} секунд`
+        : 'Нет связи с сервером',
       0,
       path,
     );
