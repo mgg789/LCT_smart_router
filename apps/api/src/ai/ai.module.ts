@@ -99,6 +99,7 @@ function buildProvider(
           proxyToken: config.get('LLM_PROXY_TOKEN'),
         }),
         clock,
+        config.get('LLM_CHAT_REASONING_EFFORT'),
       );
     case 'agents':
       return new AgentsSdkProvider(
