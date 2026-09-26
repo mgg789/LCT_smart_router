@@ -2,10 +2,11 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useCallback, useEffect, useState } from 'react';
 import { DashboardApiError } from '../api/client';
 import { FigmaIcon } from '../figma-dashboard/primitives';
+import { DeskShell } from '../figma-engineer/DeskShell';
 import { engineerHeaderStamp } from '../figma-engineer/engineerClock';
 import { eu } from '../figma-engineer/engineerScale';
 import { PhoneErrorNotice } from '../figma-engineer/PhoneErrorNotice';
-import { usePhoneDeck } from '../figma-engineer/phoneDeck';
+import { usePhoneDesk } from '../figma-engineer/phoneDesk';
 import { isPhoneFailureNotice } from '../figma-engineer/phoneNotice';
 import { CLIENT_ASSETS } from './assets';
 import { ClientEmailGate } from './ClientEmailGate';
@@ -30,6 +31,7 @@ import {
   clientSubmitHint,
   EMPTY_CLIENT_DRAFT,
   prefillClientDraft,
+  splitClientRequests,
 } from './clientPreview';
 import { clientRequestIdFromPath, clientRequestPath } from './clientRequestSeo';
 import {
@@ -58,7 +60,7 @@ interface EmailGateState {
  */
 export function ClientApp() {
   const motionOn = !useReducedMotion();
-  const { deck, pane } = usePhoneDeck();
+  const desk = usePhoneDesk();
   const [menuOpen, setMenuOpen] = useState(false);
   const [screen, setScreen] = useState<ClientScreenId>('new');
   const [draft, setDraft] = useState<ClientRequestDraft>(EMPTY_CLIENT_DRAFT);
@@ -307,9 +309,21 @@ export function ClientApp() {
     }
   };
 
-  const detail = opened ? (
+  /**
+   * What the second pane shows when nothing is open.
+   *
+   * A desk has room for the list and one request at once, and the one a
+   * customer came to look at is the live one — the visit on its way, or else
+   * the newest that is still open. Leaving the pane empty would spend half the
+   * screen saying nothing; on the phone there is no second pane and nothing
+   * opens by itself.
+   */
+  const standing = desk && screen === 'list' ? splitClientRequests(requests).featured : null;
+  const shown = opened ?? standing;
+
+  const detail = shown ? (
     <ClientRequestDetail
-      item={opened}
+      item={shown}
       nowMs={nowMs}
       notice={inlineNotice}
       onBack={closeDetail}
@@ -317,182 +331,198 @@ export function ClientApp() {
     />
   ) : null;
 
-  return (
-    <main
-      className={
-        deck ? 'phone-deck bg-figma-canvas' : 'min-h-full overflow-x-hidden bg-figma-canvas'
-      }
-    >
-      <div
-        className={`engineer-phone client-phone relative overflow-hidden ${deck ? 'h-full' : 'h-dvh'}`}
-      >
-        {failure ? (
-          <PhoneErrorNotice title="Ошибка" body={failure} onClose={() => setNotice(null)} />
-        ) : null}
-        <div
-          className="flex h-full min-h-0 flex-col overflow-y-auto"
-          style={{ padding: `${eu(36)} ${eu(40)} ${eu(40)}` }}
+  const gateSheet = (
+    <AnimatePresence>
+      {gate ? (
+        <motion.div
+          key="client-email-gate"
+          className="absolute inset-0 z-40 bg-figma-canvas"
+          initial={motionOn ? { y: 24, opacity: 0 } : false}
+          animate={{ y: 0, opacity: 1 }}
+          exit={motionOn ? { y: 24, opacity: 0 } : undefined}
+          transition={motionOn ? slide : { duration: 0 }}
         >
-          <header className="flex items-center" style={{ gap: eu(20) }}>
-            <motion.button
-              type="button"
-              aria-label="Меню"
-              aria-expanded={menuOpen}
-              onClick={() => setMenuOpen(true)}
-              whileTap={{ scale: 0.96 }}
-              transition={{ duration: 0.16 }}
-              className="flex shrink-0 items-center justify-center overflow-hidden bg-figma-ink"
-              style={{
-                width: eu(90),
-                height: eu(90),
-                borderRadius: eu(20),
-              }}
-            >
-              <FigmaIcon
-                src={CLIENT_ASSETS.menu}
-                alt=""
-                width={36}
-                height={25}
-                style={{ width: eu(36), height: eu(25) }}
-              />
-            </motion.button>
-            {screen === 'list' ? (
-              <p
-                className="min-w-0 font-murs tracking-[-0.02em] text-figma-ink"
-                style={{ fontSize: eu(32), position: 'relative', top: 2 }}
-              >
-                {engineerHeaderStamp(nowMs)}
-              </p>
-            ) : null}
-            {screen === 'new' || screen === 'sent' ? (
-              <p
-                className="min-w-0 font-murs tracking-[0.02em] text-figma-ink"
-                style={{ fontSize: eu(40), position: 'relative', top: 1 }}
-              >
-                NAVIX
-              </p>
-            ) : null}
-          </header>
+          <ClientEmailGate
+            purpose={gate.purpose}
+            email={gate.email}
+            codeStep={gate.codeStep}
+            devCode={gate.devCode}
+            busy={busy}
+            notice={inlineNotice}
+            onEmailChange={(email) => setGate({ ...gate, email })}
+            onRequestCode={() => {
+              void askCode(gate.email.trim());
+            }}
+            onConfirm={(code) => {
+              void confirmCode(code);
+            }}
+            onClose={() => {
+              setGate(null);
+              setNotice(null);
+            }}
+          />
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
+  );
 
-          {screen === 'new' ? (
-            <ClientNewRequest
-              draft={draft}
-              busy={busy}
-              notice={busy ? 'Отправляем…' : inlineNotice}
-              onChange={setDraft}
-              onSubmit={submit}
+  const column = (
+    <>
+      {failure ? (
+        <PhoneErrorNotice title="Ошибка" body={failure} onClose={() => setNotice(null)} />
+      ) : null}
+      <div
+        className="flex h-full min-h-0 flex-col overflow-y-auto"
+        style={{ padding: `${eu(36)} ${eu(40)} ${eu(40)}` }}
+      >
+        <header className={`flex items-center ${desk ? 'hidden' : ''}`} style={{ gap: eu(20) }}>
+          <motion.button
+            type="button"
+            aria-label="Меню"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen(true)}
+            whileTap={{ scale: 0.96 }}
+            transition={{ duration: 0.16 }}
+            className="flex shrink-0 items-center justify-center overflow-hidden bg-figma-ink"
+            style={{
+              width: eu(90),
+              height: eu(90),
+              borderRadius: eu(20),
+            }}
+          >
+            <FigmaIcon
+              src={CLIENT_ASSETS.menu}
+              alt=""
+              width={36}
+              height={25}
+              style={{ width: eu(36), height: eu(25) }}
             />
-          ) : null}
-          {screen === 'sent' && sent ? (
-            <ClientSent
-              item={sent}
-              onList={openList}
-              onAnother={() => {
-                setSent(null);
-                go('new');
-              }}
-            />
-          ) : null}
+          </motion.button>
           {screen === 'list' ? (
-            <ClientRequests
-              requests={requests}
-              notice={inlineNotice}
-              motionOn={motionOn}
-              onOpen={openCard}
-              onNewRequest={() => go('new')}
-            />
-          ) : null}
-          {screen === 'support' ? (
             <p
-              className="font-medium text-figma-muted"
-              style={{ marginTop: eu(48), fontSize: eu(20) }}
+              className="min-w-0 font-murs tracking-[-0.02em] text-figma-ink"
+              style={{ fontSize: eu(32), position: 'relative', top: 2 }}
             >
-              Поддержка пока недоступна.
+              {engineerHeaderStamp(nowMs)}
             </p>
           ) : null}
-        </div>
-
-        <AnimatePresence>
-          {opened && !pane ? (
-            <motion.div
-              key={`detail-${opened.id}`}
-              className="absolute left-0 top-0 z-30 h-full w-full bg-figma-canvas"
-              initial={motionOn ? { x: '100%' } : false}
-              animate={{ x: '0%' }}
-              exit={motionOn ? { x: '100%' } : undefined}
-              transition={motionOn ? slide : { duration: 0 }}
+          {screen === 'new' || screen === 'sent' ? (
+            <p
+              className="min-w-0 font-murs tracking-[0.02em] text-figma-ink"
+              style={{ fontSize: eu(40), position: 'relative', top: 1 }}
             >
-              <div className="h-full overflow-y-auto">{detail}</div>
-            </motion.div>
+              NAVIX
+            </p>
           ) : null}
-        </AnimatePresence>
+        </header>
 
-        <AnimatePresence>
-          {gate ? (
-            <motion.div
-              key="client-email-gate"
-              className="absolute inset-0 z-30 bg-figma-canvas"
-              initial={motionOn ? { y: 24, opacity: 0 } : false}
-              animate={{ y: 0, opacity: 1 }}
-              exit={motionOn ? { y: 24, opacity: 0 } : undefined}
-              transition={motionOn ? slide : { duration: 0 }}
-            >
-              <ClientEmailGate
-                purpose={gate.purpose}
-                email={gate.email}
-                codeStep={gate.codeStep}
-                devCode={gate.devCode}
-                busy={busy}
-                notice={inlineNotice}
-                onEmailChange={(email) => setGate({ ...gate, email })}
-                onRequestCode={() => {
-                  void askCode(gate.email.trim());
-                }}
-                onConfirm={(code) => {
-                  void confirmCode(code);
-                }}
-                onClose={() => {
-                  setGate(null);
-                  setNotice(null);
-                }}
-              />
-            </motion.div>
-          ) : null}
-        </AnimatePresence>
-
-        {(opened && !pane) || gate ? null : (
-          <ClientMenu
-            open={menuOpen}
-            motionOn={motionOn}
-            email={session?.email ?? null}
-            active={screen === 'sent' ? 'new' : screen}
-            onClose={() => setMenuOpen(false)}
-            onNavigate={(id) => {
-              if (id === 'list') openList();
-              else go(id);
+        {screen === 'new' ? (
+          <ClientNewRequest
+            draft={draft}
+            busy={busy}
+            notice={busy ? 'Отправляем…' : inlineNotice}
+            onChange={setDraft}
+            onSubmit={submit}
+          />
+        ) : null}
+        {screen === 'sent' && sent ? (
+          <ClientSent
+            item={sent}
+            onList={openList}
+            onAnother={() => {
+              setSent(null);
+              go('new');
             }}
+          />
+        ) : null}
+        {screen === 'list' ? (
+          <ClientRequests
+            requests={requests}
+            notice={inlineNotice}
+            motionOn={motionOn}
+            onOpen={openCard}
             onNewRequest={() => go('new')}
           />
-        )}
+        ) : null}
+        {screen === 'support' ? (
+          <p
+            className="font-medium text-figma-muted"
+            style={{ marginTop: eu(48), fontSize: eu(20) }}
+          >
+            Поддержка пока недоступна.
+          </p>
+        ) : null}
       </div>
 
-      {pane ? (
-        <AnimatePresence>
-          {opened ? (
-            <motion.aside
-              key={`detail-${opened.id}`}
-              aria-label="Заявка"
-              className="phone-deck-pane"
-              initial={motionOn ? { opacity: 0, x: 24 } : false}
-              animate={{ opacity: 1, x: 0 }}
-              exit={motionOn ? { opacity: 0, x: 24 } : undefined}
-              transition={motionOn ? slide : { duration: 0 }}
-            >
-              <div className="h-full overflow-y-auto">{detail}</div>
-            </motion.aside>
-          ) : null}
-        </AnimatePresence>
-      ) : null}
+      <AnimatePresence>
+        {opened && !desk ? (
+          <motion.div
+            key={`detail-${opened.id}`}
+            className="absolute left-0 top-0 z-30 h-full w-full bg-figma-canvas"
+            initial={motionOn ? { x: '100%' } : false}
+            animate={{ x: '0%' }}
+            exit={motionOn ? { x: '100%' } : undefined}
+            transition={motionOn ? slide : { duration: 0 }}
+          >
+            <div className="h-full overflow-y-auto">{detail}</div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      {desk ? null : gateSheet}
+
+      {(opened && !desk) || gate ? null : (
+        <ClientMenu
+          open={menuOpen}
+          motionOn={motionOn}
+          email={session?.email ?? null}
+          active={screen === 'sent' ? 'new' : screen}
+          onClose={() => setMenuOpen(false)}
+          onNavigate={(id) => {
+            if (id === 'list') openList();
+            else go(id);
+          }}
+          onNewRequest={() => go('new')}
+        />
+      )}
+    </>
+  );
+
+  if (desk) {
+    return (
+      <DeskShell
+        activeNavId={screen === 'sent' ? 'new' : screen}
+        brand={CLIENT_ASSETS.logo}
+        detail={detail}
+        header={
+          <>
+            <p className="font-murs text-[28px] tracking-[0.02em] text-figma-ink">NAVIX</p>
+            <span className="flex-1" />
+            {session?.email ? (
+              <p className="font-medium text-[16px] text-figma-muted">{session.email}</p>
+            ) : null}
+          </>
+        }
+        nav={[
+          { id: 'new', label: 'Новая', icon: CLIENT_ASSETS.sparkles, onSelect: () => go('new') },
+          { id: 'list', label: 'Заявки', icon: CLIENT_ASSETS.list, onSelect: openList },
+          {
+            id: 'support',
+            label: 'Поддержка',
+            icon: CLIENT_ASSETS.support,
+            onSelect: () => go('support'),
+          },
+        ]}
+        overlays={gateSheet}
+      >
+        {column}
+      </DeskShell>
+    );
+  }
+
+  return (
+    <main className="min-h-full overflow-x-hidden bg-figma-canvas">
+      <div className="engineer-phone client-phone relative h-dvh overflow-hidden">{column}</div>
     </main>
   );
 }

@@ -240,47 +240,92 @@ body {
 }
 
 /**
- * Client / engineer app on a desktop-sized landscape window.
+ * Client / engineer app on a desktop window.
  *
- * A phone screen stretched across a monitor is unreadable, so the column keeps
- * a phone's proportions and the desk gives it somewhere to sit: the app as a
- * card on the canvas, and — on the client — the open request as a second card
- * beside it rather than a pane sliding over the first. That is the whole point
- * of the extra width; a customer comparing a request against the list should
- * not have to go back and forth.
+ * Both apps are drawn as a 670-wide phone screen and every size inside them is
+ * a fraction of that width, so a desktop cannot be served by stretching one
+ * column — it only makes the same screen taller. The desk is a real layout
+ * instead: a permanent rail where the phone has a hamburger, a header strip,
+ * and two panes side by side where the phone stacks one over the other.
+ *
+ * Each pane is its own `--eu` context sized by a container query, so the same
+ * screens render at the pane's width without knowing they are on a desk.
  */
-.phone-deck {
+.phone-desk {
   display: flex;
+  width: 100%;
   height: 100dvh;
-  align-items: stretch;
-  justify-content: center;
-  gap: 28px;
-  padding: 32px;
   overflow: hidden;
+  background: var(--color-figma-canvas);
 }
 
-.phone-deck > * {
-  min-height: 0;
+.phone-desk-rail {
+  display: flex;
+  width: 158px;
+  flex: none;
+  flex-direction: column;
+  border-right: 0.5px solid rgba(158, 158, 158, 0.3);
+  background: #fff;
 }
 
-.phone-deck .engineer-phone,
-.phone-deck .client-phone {
-  --phone-width: 520px;
-  height: 100%;
+.phone-desk-body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.phone-desk-header {
+  display: flex;
+  height: 92px;
+  flex: none;
+  align-items: center;
+  gap: 24px;
+  padding: 0 32px;
+}
+
+.phone-desk-panes {
+  display: flex;
   min-height: 0;
-  margin-inline: 0;
+  flex: 1;
+  gap: 24px;
+  padding: 0 32px 32px;
+}
+
+/*
+ * `cqw`, not a percentage: a percentage inside a custom property is resolved
+ * where it is used, and `--eu` is used for font sizes, where a percentage means
+ * something else entirely. Container units are lengths everywhere.
+ */
+.phone-desk-col {
+  min-width: 0;
+  overflow: hidden auto;
   border-radius: 28px;
   background: var(--color-figma-canvas);
-  box-shadow: 0 24px 64px rgba(39, 41, 48, 0.14);
+  container-type: inline-size;
 }
 
-.phone-deck-pane {
-  width: 560px;
-  overflow: hidden;
-  border-radius: 28px;
-  background: var(--color-figma-canvas);
-  box-shadow: 0 24px 64px rgba(39, 41, 48, 0.14);
-  --eu: calc(560px / 670);
+.phone-desk-col-list {
+  flex: 0 1 640px;
+  --phone-width: min(100cqw, 640px);
+  --eu: calc(var(--phone-width) / 670);
+}
+
+.phone-desk-col-detail {
+  flex: 1 1 0;
+  background: #fff;
+  --phone-width: min(100cqw, 1000px);
+  --eu: calc(var(--phone-width) / 670);
+}
+
+/*
+ * The pane's own scroll is the one that moves, and the screen inside fills it.
+ * Two class names on purpose: the screens carry `min-h-dvh` from their phone
+ * layout, which in a pane would reserve a whole viewport inside 876 pixels and
+ * leave a scrollbar under content that fits.
+ */
+.phone-desk .phone-desk-col > * {
+  min-height: 100%;
 }
 
 @keyframes ai-reason-shimmer {
