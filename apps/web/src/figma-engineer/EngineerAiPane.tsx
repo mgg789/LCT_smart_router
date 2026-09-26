@@ -20,6 +20,13 @@ import {
 } from '../hooks/useAssistantChat';
 import { eu } from './engineerScale';
 
+/** First-turn prompts for route context, problem triage and retaining checks already done. */
+export const ENGINEER_QUICK_QUESTIONS = [
+  'Покажи контекст моего выезда',
+  'Помоги разобраться в проблеме',
+  'Я уже проверил … что дальше?',
+] as const;
+
 /**
  * First name for the empty greeting. A missing profile stays unnamed: the frame's
  * "Илья" is a sample, not this engineer's name.
@@ -67,11 +74,19 @@ export function EngineerAiPane({
     !chat.sending &&
     (chat.runState !== 'running' || spoken.length === 0) &&
     chat.unavailable !== 'auth';
+  const canFollowUp = canSend && !running;
   const risky = [...chat.operations.values()].find(
     (operation) =>
       operation.guardRisk === true &&
       (operation.state === 'awaiting_confirmation' || operation.state === 'prepared'),
   );
+
+  /** Fills and focuses the composer without submitting a follow-up question. */
+  function fillFollowUp(question: string) {
+    if (!canFollowUp) return;
+    setDraft(question);
+    fieldRef.current?.focus();
+  }
 
   useEffect(() => {
     if (running && startedAt.current === null) startedAt.current = Date.now();
@@ -228,6 +243,16 @@ export function EngineerAiPane({
             >
               {composer}
             </motion.div>
+            <div className="flex max-w-full flex-wrap justify-center" style={{ gap: eu(12) }}>
+              {ENGINEER_QUICK_QUESTIONS.map((question) => (
+                <QuickQuestion
+                  key={question}
+                  question={question}
+                  disabled={!canFollowUp}
+                  onSelect={fillFollowUp}
+                />
+              ))}
+            </div>
           </div>
         ) : (
           <>
@@ -258,6 +283,7 @@ export function EngineerAiPane({
                           .find((item) => item.author === 'user');
                         if (previous && canSend) void chat.sendMessage(previous.text);
                       }}
+                      onFollowUp={canFollowUp ? fillFollowUp : undefined}
                     />
                   ),
                 )}
@@ -288,6 +314,29 @@ export function EngineerAiPane({
         ) : null}
       </div>
     </LayoutGroup>
+  );
+}
+
+/** Adds a safe suggested question to the draft; selection never sends it. */
+function QuickQuestion({
+  question,
+  disabled,
+  onSelect,
+}: {
+  question: string;
+  disabled: boolean;
+  onSelect: (question: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={() => onSelect(question)}
+      className="rounded-full bg-white px-4 py-3 text-center font-semibold text-figma-ink transition-colors hover:bg-figma-bee focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-figma-ink disabled:cursor-not-allowed disabled:opacity-50"
+      style={{ fontSize: eu(18) }}
+    >
+      {question}
+    </button>
   );
 }
 
@@ -390,12 +439,14 @@ function AssistantBubble({
   copied,
   onCopy,
   onAgain,
+  onFollowUp,
 }: {
   message: AssistantChatMessage;
   thoughtSeconds: number | null;
   copied: boolean;
   onCopy: () => void;
   onAgain: () => void;
+  onFollowUp?: (question: string) => void;
 }) {
   return (
     <div className="flex flex-col items-start">
@@ -423,7 +474,7 @@ function AssistantBubble({
         className="font-medium text-figma-ink"
         style={{ marginTop: eu(16), fontSize: eu(24), maxWidth: eu(590) }}
       >
-        <AiMarkdown text={message.text} />
+        <AiMarkdown text={message.text} onFollowUp={onFollowUp} />
       </div>
       {!message.pending ? (
         <div className="flex items-center" style={{ marginTop: eu(12), gap: eu(18) }}>

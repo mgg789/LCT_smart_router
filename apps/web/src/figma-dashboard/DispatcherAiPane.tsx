@@ -1,6 +1,13 @@
 import { LayoutGroup, motion, useReducedMotion } from 'framer-motion';
 import { Trash2 } from 'lucide-react';
-import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from 'react';
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  type RefObject,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import type { AiActionButton } from '../api/ai';
 import { AiOperationCard } from '../components/ai/AiOperationCard';
 import { fitComposerField, focusComposer } from '../components/ai/composerField';
@@ -17,6 +24,12 @@ import { FigmaIcon } from './primitives';
 /** Date row sits at 84px and is 40px tall. The transcript starts just under it. */
 const CONTENT_TOP = 148;
 const RATINGS_KEY = 'lct.ai.ratings';
+
+/** First-turn questions about assignment reasons and already calculated plan alternatives. */
+export const DISPATCHER_QUICK_QUESTIONS = [
+  'Что влияет на назначение заявок?',
+  'Сравни рассчитанные варианты плана',
+] as const;
 
 /** Where an assistant button may send the dispatcher. The id is one the server already vetted. */
 export interface AiOpenTarget {
@@ -40,6 +53,7 @@ export function DashboardAi({ token, onOpenObject }: PaneProps) {
   const [rating, setRating] = useState<Readonly<Record<string, 'up' | 'down'>>>(readRatings);
   const startedAt = useRef<number | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
 
   const running = chat.runState === 'running' || chat.sending;
   const liveAssistant = chat.messages.find(
@@ -93,6 +107,14 @@ export function DashboardAi({ token, onOpenObject }: PaneProps) {
     !chat.sending &&
     (chat.runState !== 'running' || spoken.length === 0) &&
     chat.unavailable !== 'auth';
+  const canFollowUp = canSend && !running;
+
+  /** Fills and focuses the composer without submitting a follow-up question. */
+  function fillFollowUp(question: string) {
+    if (!canFollowUp) return;
+    setDraft(question);
+    composerRef.current?.focus();
+  }
 
   function submit() {
     const text = draft.trim();
@@ -129,6 +151,7 @@ export function DashboardAi({ token, onOpenObject }: PaneProps) {
         submit();
       }}
       onStop={() => void chat.stop()}
+      fieldRef={composerRef}
     />
   );
 
@@ -166,6 +189,16 @@ export function DashboardAi({ token, onOpenObject }: PaneProps) {
             <motion.div layoutId="dispatcher-ai-composer" className="w-full max-w-[813px]">
               {composer}
             </motion.div>
+            <div className="flex max-w-[813px] flex-wrap justify-center gap-[10px]">
+              {DISPATCHER_QUICK_QUESTIONS.map((question) => (
+                <FollowUpSuggestion
+                  key={question}
+                  question={question}
+                  disabled={!canFollowUp}
+                  onSelect={fillFollowUp}
+                />
+              ))}
+            </div>
           </div>
         ) : (
           <>
@@ -195,6 +228,7 @@ export function DashboardAi({ token, onOpenObject }: PaneProps) {
                       onApply={(operationId) => void chat.applyOperation(operationId)}
                       onCancel={(operationId) => void chat.cancelOperation(operationId)}
                       onOpenObject={onOpenObject}
+                      onFollowUp={canFollowUp ? fillFollowUp : undefined}
                     />
                   ),
                 )}
@@ -357,6 +391,7 @@ function Composer({
   onKeyDown,
   onSubmit,
   onStop,
+  fieldRef,
 }: {
   draft: string;
   canSend: boolean;
@@ -367,8 +402,8 @@ function Composer({
   onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onStop: () => void;
+  fieldRef: RefObject<HTMLTextAreaElement | null>;
 }) {
-  const fieldRef = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     if (fieldRef.current) fitComposerField(fieldRef.current);
   }, []);
@@ -426,6 +461,28 @@ function Composer({
   );
 }
 
+/** Adds a safe suggested question to the composer; selection never sends it. */
+function FollowUpSuggestion({
+  question,
+  disabled,
+  onSelect,
+}: {
+  question: string;
+  disabled: boolean;
+  onSelect: (question: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={() => onSelect(question)}
+      className="rounded-full bg-white px-[18px] py-[10px] text-[14px] font-medium text-figma-ink transition-colors hover:bg-figma-bee focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-figma-ink disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {question}
+    </button>
+  );
+}
+
 function UserBubble({ text }: { text: string }) {
   return (
     <div className="flex flex-col items-end gap-[8px]">
@@ -449,6 +506,7 @@ function AssistantBubble({
   onApply,
   onCancel,
   onOpenObject,
+  onFollowUp,
 }: {
   message: AssistantChatMessage;
   thoughtSeconds: number | null;
@@ -459,6 +517,7 @@ function AssistantBubble({
   onApply: (operationId: string) => void;
   onCancel: (operationId: string) => void;
   onOpenObject?: (target: AiOpenTarget) => void;
+  onFollowUp?: (question: string) => void;
 }) {
   const operationId = message.actions.find((action) => action.operationId)?.operationId;
   return (
@@ -480,7 +539,7 @@ function AssistantBubble({
         ) : null}
       </div>
       <div className="mt-[16px] max-w-[956px] pl-[80px] text-[20px] font-medium tracking-[-0.272px] text-figma-ink">
-        <AiMarkdown text={message.text} />
+        <AiMarkdown text={message.text} onFollowUp={onFollowUp} />
         {message.kind === 'text_confirmation' ? null : (
           <ActionRow
             actions={message.actions}
