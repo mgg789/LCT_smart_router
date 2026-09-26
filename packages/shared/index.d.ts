@@ -564,6 +564,84 @@ export interface PolicyComparisonResponse {
 
 export type DataUploadMode = 'new_region' | 'append_requests';
 
+/** Canonical columns recognised by the tabular import review; indices are zero-based. */
+export type TabularField =
+  | 'externalId'
+  | 'addressText'
+  | 'lat'
+  | 'lon'
+  | 'workType'
+  | 'duration'
+  | 'windowStart'
+  | 'windowEnd'
+  | 'priority'
+  | 'requiredSkill'
+  | 'brigade'
+  | 'transportType'
+  | 'requiredTransport';
+
+/** Bounded source bytes and explicit parsing choices; analysis never imports business data. */
+export interface TabularFileInput {
+  readonly fileName: string;
+  readonly payloadBase64: string;
+  readonly sheet?: number;
+  readonly encoding?: 'auto' | 'utf8' | 'windows1251' | 'utf16le';
+  readonly delimiter?: 'auto' | ',' | ';' | '\t' | '|';
+  readonly headerRow?: number;
+}
+
+/** Source rows retain parsed record numbers for diagnostics and explicit correction. */
+export interface TabularAnalysis {
+  readonly sourceHash: string;
+  readonly format: 'csv' | 'tsv' | 'xlsx';
+  readonly encoding: string;
+  readonly delimiter: string | null;
+  readonly sheetNames: string[];
+  readonly selectedSheet: number;
+  readonly headerRow: number;
+  readonly headers: string[];
+  readonly rows: Array<{ readonly rowNumber: number; readonly values: string[] }>;
+  readonly columns: Partial<Record<TabularField, number>>;
+  readonly missing: Array<{ readonly field: TabularField; readonly count: number }>;
+  readonly officeAddress: string | null;
+  readonly notices: string[];
+  readonly durationUnit: 'minutes' | 'seconds';
+}
+
+/** Dispatcher-approved missing-value defaults and cell corrections; no silent row exclusions. */
+export interface TabularCompletionOptions {
+  readonly mode: DataUploadMode;
+  readonly region: string;
+  readonly workDate: string;
+  readonly columns: Partial<Record<TabularField, number>>;
+  readonly defaults: Partial<Record<TabularField, string>>;
+  readonly durationUnit: 'minutes' | 'seconds';
+  readonly depot: { readonly addressText: string; readonly lat?: number; readonly lon?: number };
+  readonly engineers: {
+    readonly count: number;
+    readonly transportType: 'car' | 'walk' | 'bike' | 'transit';
+    readonly skills: Array<'local' | 'connection' | 'emergency'>;
+    readonly shiftStart: string;
+    readonly shiftEnd: string;
+  };
+  readonly edits: Array<{
+    readonly rowNumber: number;
+    readonly field: TabularField;
+    readonly value: string;
+  }>;
+}
+
+/** Either a complete canonical package or actionable cell errors; neither outcome applies a plan. */
+export interface TabularConversion {
+  readonly file: DataUploadFile | null;
+  readonly issues: Array<{
+    readonly rowNumber: number | null;
+    readonly field: TabularField | 'depot' | 'engineers' | 'workDate';
+    readonly message: string;
+  }>;
+  readonly notices: string[];
+}
+
 export interface DataUploadRequest {
   readonly externalId: string;
   readonly addressText: string;

@@ -11,6 +11,7 @@ import {
   DATASET_REGIONS,
   DatasetImportService,
   ImportPreparationService,
+  TabularImportService,
   UploadImportService,
 } from '../orchestrator/imports';
 import { ResetService } from '../orchestrator/reset';
@@ -30,6 +31,12 @@ import {
   uploadDataPackageSchema,
 } from './dto/data.dto';
 import { type RoadImportDto, roadImportSchema } from './dto/road-import.dto';
+import {
+  type TabularAnalyzeDto,
+  type TabularConvertDto,
+  tabularAnalyzeSchema,
+  tabularConvertSchema,
+} from './dto/tabular.dto';
 
 /** Dataset, road-resource, demo rewind and reset endpoints. */
 @Roles('dispatcher')
@@ -43,12 +50,25 @@ export class DispatchDataController {
     private readonly imports: DatasetImportService,
     private readonly importPreparations: ImportPreparationService,
     private readonly uploadImports: UploadImportService,
+    private readonly tabularImports: TabularImportService,
     private readonly roadImports: RoadImportService,
     private readonly resetService: ResetService,
     private readonly demoStand: DemoStandService,
     private readonly router: RouterClient,
     private readonly ai: AiService,
   ) {}
+
+  @Post('data/tabular/analyze')
+  @ApiOperation({ summary: 'Analyze a bounded CSV, TSV, or XLSX upload without importing it' })
+  async analyzeTabular(@Body(zodBody(tabularAnalyzeSchema)) dto: TabularAnalyzeDto) {
+    return this.tabularImports.analyze(dto);
+  }
+
+  @Post('data/tabular/convert')
+  @ApiOperation({ summary: 'Convert a reviewed tabular upload into the standard upload package' })
+  async convertTabular(@Body(zodBody(tabularConvertSchema)) dto: TabularConvertDto) {
+    return this.tabularImports.convert(dto);
+  }
 
   @Get('data/state')
   @ApiOperation({ summary: 'Whether the application has been initialised, and how' })
