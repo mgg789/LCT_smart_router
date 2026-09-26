@@ -29,7 +29,7 @@ const COST_MEASURES = {
 } as const;
 type CostMeasure = keyof typeof COST_MEASURES;
 
-/** Two small-multiple comparisons with direct labels and the same FIFO reference. */
+/** Coverage, travel, lateness and staffing comparisons with the same FIFO reference. */
 export function PolicyComparisonOverview({ rows }: { rows: readonly PolicyComparisonRow[] }) {
   const [measure, setMeasure] = useState<CostMeasure>('kmPerJob');
   const [includeReserve, setIncludeReserve] = useState(false);
@@ -144,6 +144,20 @@ export function PolicyComparisonOverview({ rows }: { rows: readonly PolicyCompar
             nested
           />
         </section>
+        <ComparisonBars
+          rows={visible}
+          measure="lateShare"
+          {...COST_MEASURES.lateShare}
+          better="min"
+        />
+        <ComparisonBars
+          rows={visible}
+          measure="engineers"
+          title="Задействованные инженеры"
+          unit="инж."
+          description="Число инженеров с назначениями. Сопоставляйте вместе с покрытием заявок."
+          better="min"
+        />
       </div>
       {reserve ? (
         <label className="flex cursor-pointer items-center gap-[12px] rounded-[16px] border border-figma-muted/20 p-[18px] text-[15px] text-figma-ink">

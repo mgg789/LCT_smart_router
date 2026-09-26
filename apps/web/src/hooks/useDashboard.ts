@@ -788,7 +788,7 @@ export function useDashboard() {
       !planHistory?.eligibility.eligible ||
       !planHistory.current
     )
-      return;
+      return false;
     setEntityMutationPending(true);
     try {
       const restored = await restorePreviousPlan(token, planHistory.current.revision);
@@ -797,9 +797,11 @@ export function useDashboard() {
         `Восстановлен план ревизии ${restored.fromRevision} новой ревизией ${restored.restoredRevision}.`,
       );
       await refresh();
+      return true;
     } catch (cause) {
       reportFailure(cause);
       setError(errorMessage(cause));
+      return false;
     } finally {
       setEntityMutationPending(false);
     }

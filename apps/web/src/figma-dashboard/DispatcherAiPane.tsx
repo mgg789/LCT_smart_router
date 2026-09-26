@@ -421,23 +421,25 @@ function Composer({
       {/* Click on the black bar focuses the field. The textarea remains the keyboard target. */}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: The bar is not a second control; it only moves focus into the textarea. */}
       <div
-        className="flex min-h-[79px] items-center gap-[12px] rounded-[40px] bg-figma-ink px-[10px] py-[8px]"
+        className="flex min-h-[79px] items-end gap-[12px] rounded-[40px] bg-figma-ink px-[10px] py-[8px]"
         onMouseDown={(event) => focusComposer(event, fieldRef.current)}
       >
         <span className="flex size-[60px] shrink-0 items-center justify-center rounded-full bg-figma-bee">
           <FigmaIcon src={FIGMA_ASSETS.iconSparkles} alt="" width={26} height={26} />
         </span>
-        <textarea
-          ref={fieldRef}
-          value={draft}
-          rows={1}
-          onChange={(event) => onDraft(event.target.value)}
-          onKeyDown={onKeyDown}
-          disabled={!canSend && !running}
-          placeholder="Спроси меня о чем нибудь..."
-          aria-label="Сообщение ассистенту"
-          className="min-w-0 flex-1 resize-none bg-transparent font-semibold text-[18px] leading-[1.35] text-white outline-none placeholder:text-[#ededed] disabled:opacity-60"
-        />
+        <div className="flex min-w-0 flex-1 self-stretch items-center">
+          <textarea
+            ref={fieldRef}
+            value={draft}
+            rows={1}
+            onChange={(event) => onDraft(event.target.value)}
+            onKeyDown={onKeyDown}
+            disabled={!canSend && !running}
+            placeholder="Спроси меня о чем нибудь..."
+            aria-label="Сообщение ассистенту"
+            className="min-w-0 flex-1 resize-none bg-transparent font-semibold text-[18px] leading-[1.35] text-white outline-none placeholder:text-[#ededed] disabled:opacity-60"
+          />
+        </div>
         {running ? (
           <button
             type="button"

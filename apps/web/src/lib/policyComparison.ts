@@ -39,7 +39,13 @@ export function percentVsFifo(
 }
 
 /** Values suitable for comparing strategies with unequal assigned-job counts. */
-export type ComparisonMeasure = 'assigned' | 'onTime' | 'kmPerJob' | 'travelPerJob' | 'lateShare';
+export type ComparisonMeasure =
+  | 'assigned'
+  | 'onTime'
+  | 'engineers'
+  | 'kmPerJob'
+  | 'travelPerJob'
+  | 'lateShare';
 
 /** Normalize costs by assigned work; an empty plan has no per-job efficiency. */
 export function comparisonValue(
@@ -49,6 +55,7 @@ export function comparisonValue(
   const metrics = row.metrics;
   if (measure === 'assigned') return metrics.assignedCount;
   if (measure === 'onTime') return metrics.assignedCount - metrics.lateAssignedCount;
+  if (measure === 'engineers') return metrics.engineersUsed;
   if (metrics.assignedCount === 0) return null;
   if (measure === 'kmPerJob') return metrics.distanceKm / metrics.assignedCount;
   if (measure === 'travelPerJob') return metrics.travelTimeSec / metrics.assignedCount / 60;

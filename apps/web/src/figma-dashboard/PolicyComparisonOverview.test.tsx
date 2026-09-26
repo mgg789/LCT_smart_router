@@ -96,6 +96,9 @@ describe('honest policy comparisons', () => {
     expect(html).toContain('Показатель расходов');
     expect(html).toContain('Меньше опозданий');
     expect(html).toContain('Меньше инженеров');
+    expect(html).toContain('aria-label="Доля опозданий"');
+    expect(html).toContain('aria-label="Задействованные инженеры"');
+    expect(comparisonValue(row('fast', 10, 80), 'engineers')).toBe(3);
     expect(html).not.toContain('20 из 20');
   });
 

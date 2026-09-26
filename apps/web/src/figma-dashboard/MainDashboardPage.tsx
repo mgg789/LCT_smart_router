@@ -110,6 +110,7 @@ export function MainDashboardPage() {
   const [reviewDelta, setReviewDelta] = useState<PlanDelta | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historySelection, setHistorySelection] = useState<PlanHistorySelection>('current');
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const artboardRef = useRef<HTMLDivElement>(null);
   const rememberedDelta = useRef<PlanDelta | null>(readStoredPlanDelta());
   useEffect(() => {
@@ -779,10 +780,14 @@ export function MainDashboardPage() {
             setSettingsOpen(true);
           }}
           onOpenPreviousPlan={() => {
+            setActiveNav('day');
+            setStackDir(stackSlideDir(stackNav, 'day'));
+            setStackNav('day');
             setUserMenuOpen(false);
             setPolicyOpen(false);
             setNotifOpen(false);
             setHistorySelection('current');
+            setHistoryError(null);
             setHistoryOpen(true);
           }}
           onEndDay={() => {
@@ -824,12 +829,17 @@ export function MainDashboardPage() {
                 canRestore={dash.canRejectDelta}
                 busy={dash.busy}
                 motionOn={motionOn}
+                error={historyError}
                 onSelect={setHistorySelection}
-                onChoose={() => {
+                onChoose={async () => {
                   if (historySelection === 'previous') {
                     if (!dash.canRejectDelta) return;
-                    setHistoryOpen(false);
-                    void dash.rejectDelta();
+                    setHistoryError(null);
+                    if (await dash.rejectDelta()) setHistoryOpen(false);
+                    else
+                      setHistoryError(
+                        'Не удалось восстановить план. Повторите выбор или выберите текущий.',
+                      );
                     return;
                   }
                   setHistoryOpen(false);

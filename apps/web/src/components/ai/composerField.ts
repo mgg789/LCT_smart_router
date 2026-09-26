@@ -10,11 +10,7 @@ export function composerFieldHeight(scrollHeight: number, lineHeight: number): n
 }
 
 /**
- * Grows a chat textarea with its text, then scrolls inside a five-line cap.
- * The surrounding circles stay a fixed size; only this element changes height.
- */
-/**
- * A click anywhere on the dark composer focuses the field.
+ * Focuses a chat textarea when the dark composer background is clicked.
  * The send button and the field itself keep their own pointer behavior.
  */
 export function focusComposer(

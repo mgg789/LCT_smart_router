@@ -1,6 +1,46 @@
 import { z } from 'zod';
 import { expect, readPlan, signIn, test } from './fixtures';
 
+test('assistant composer caps at five lines and keeps its circles on the bottom edge', async ({
+  page,
+  live,
+}) => {
+  expect(live.plan.assignments.length).toBeGreaterThan(0);
+  await signIn(page);
+  await page.getByRole('button', { name: 'AI', exact: true }).click();
+  const field = page.getByRole('textbox', { name: 'Сообщение ассистенту' });
+  const geometry = () =>
+    field.evaluate((element) => {
+      const bar = element.parentElement?.parentElement;
+      const yellow = bar?.querySelector('span');
+      const send = bar?.querySelector('button');
+      if (!bar || !yellow || !send) throw new Error('Composer controls are missing');
+      const bottom = bar.getBoundingClientRect().bottom;
+      return {
+        height: element.getBoundingClientRect().height,
+        line: Number.parseFloat(getComputedStyle(element).lineHeight),
+        overflow: getComputedStyle(element).overflowY,
+        yellowGap: bottom - yellow.getBoundingClientRect().bottom,
+        sendGap: bottom - send.getBoundingClientRect().bottom,
+        circleRatio: send.getBoundingClientRect().width / send.getBoundingClientRect().height,
+      };
+    });
+  await field.fill('Строка');
+  const single = await geometry();
+  await field.fill('Один\nДва\nТри\nЧетыре\nПять');
+  await expect.poll(async () => (await geometry()).height).toBeCloseTo(single.height * 5, 0);
+  await expect.poll(async () => (await geometry()).circleRatio).toBeCloseTo(1, 2);
+  const five = await geometry();
+  expect(five.height).toBeGreaterThan(single.height);
+  expect(five.yellowGap).toBeCloseTo(single.yellowGap, 0);
+  expect(five.sendGap).toBeCloseTo(single.sendGap, 0);
+  expect(five.circleRatio).toBeCloseTo(1, 2);
+  await field.fill('Один\nДва\nТри\nЧетыре\nПять\nШесть\nСемь');
+  const seven = await geometry();
+  expect(seven.height).toBeCloseTo(five.height, 0);
+  expect(seven.overflow).toBe('auto');
+});
+
 test('live plan renders the local map and replans when an engineer goes offline', async ({
   page,
   live,

@@ -74,6 +74,8 @@ it('renders the dispatcher composer before a session is open', () => {
   expect(html).toContain('Спроси меня о чем нибудь...');
   expect(html).toContain('Сообщение ассистенту');
   expect(html).toContain('Загружаем диалог');
+  expect(html).toContain('items-end gap-[12px] rounded-[40px]');
+  expect(html).toContain('self-stretch items-center');
 });
 
 it('offers generic dispatcher prompts about reasons and calculated alternatives', () => {

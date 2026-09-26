@@ -151,7 +151,7 @@ export function EngineerAiPane({
     >
       {/* biome-ignore lint/a11y/noStaticElementInteractions: The bar is not a second control; it only moves focus into the textarea. */}
       <div
-        className="flex items-center bg-figma-ink"
+        className="flex items-end bg-figma-ink"
         onMouseDown={(event) => focusComposer(event, fieldRef.current)}
         style={{
           minHeight: eu(112),
@@ -175,18 +175,20 @@ export function EngineerAiPane({
             style={{ width: eu(28), height: eu(28) }}
           />
         </span>
-        <textarea
-          ref={fieldRef}
-          value={draft}
-          rows={1}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={onKeyDown}
-          disabled={!canSend && !running}
-          placeholder="Спроси меня о чем нибудь..."
-          aria-label="Сообщение ассистенту"
-          className="min-w-0 flex-1 resize-none bg-transparent font-semibold text-[#d9d9d9] outline-none placeholder:text-[#d9d9d9] disabled:opacity-60"
-          style={{ fontSize: eu(26), lineHeight: 1.35 }}
-        />
+        <div className="flex min-w-0 flex-1 self-stretch items-center">
+          <textarea
+            ref={fieldRef}
+            value={draft}
+            rows={1}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={onKeyDown}
+            disabled={!canSend && !running}
+            placeholder="Спроси меня о чем нибудь..."
+            aria-label="Сообщение ассистенту"
+            className="min-w-0 flex-1 resize-none bg-transparent font-semibold text-[#d9d9d9] outline-none placeholder:text-[#d9d9d9] disabled:opacity-60"
+            style={{ fontSize: eu(26), lineHeight: 1.35 }}
+          />
+        </div>
         {running && !empty ? (
           <button
             type="button"

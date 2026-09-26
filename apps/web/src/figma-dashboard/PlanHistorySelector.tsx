@@ -14,6 +14,7 @@ export function PlanHistorySelector({
   canRestore,
   busy,
   motionOn,
+  error,
   onSelect,
   onChoose,
 }: {
@@ -23,6 +24,7 @@ export function PlanHistorySelector({
   canRestore: boolean;
   busy: boolean;
   motionOn: boolean;
+  error?: string | null;
   onSelect: (selection: PlanHistorySelection) => void;
   onChoose: () => void;
 }) {
@@ -39,6 +41,14 @@ export function PlanHistorySelector({
       exit={motionOn ? { opacity: 0, y: 18, scale: 0.97 } : undefined}
       transition={motionOn ? { duration: 0.28, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
     >
+      {error ? (
+        <p
+          role="alert"
+          className="absolute bottom-full left-0 mb-[12px] w-full rounded-[20px] bg-white p-[16px] text-center text-[16px] text-figma-ink"
+        >
+          {error}
+        </p>
+      ) : null}
       <button
         type="button"
         aria-pressed={selection === 'previous'}

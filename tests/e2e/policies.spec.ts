@@ -33,6 +33,8 @@ test('plan metrics lead to a real FIFO comparison without applying another polic
   await expect(coverage).toBeVisible({ timeout: 30_000 });
   await expect(coverage.getByRole('listitem').filter({ hasText: 'FIFO · базовое' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Дорога на назначение' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Доля опозданий' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Задействованные инженеры' })).toBeVisible();
   await page
     .getByRole('group', { name: 'Вид сравнения' })
     .getByRole('button', { name: 'Таблица', exact: true })
@@ -73,14 +75,28 @@ test('previous routes survive reload and restore through a new server revision',
     reason: null,
   });
   await page.reload();
-  const controls = page.getByRole('region', { name: 'Сравнение маршрутов до и после' });
+  await page.getByRole('button', { name: 'Политики', exact: true }).click();
+  await page.getByRole('button', { name: 'Меню пользователя', exact: true }).click();
+  await page.getByRole('button', { name: 'Прошлый план', exact: true }).click();
+  const controls = page.getByRole('dialog', { name: 'Выбор плана' });
+  await expect(
+    page.getByRole('region', { name: 'Карта маршрутов', includeHidden: true }),
+  ).toBeVisible();
   const previous = controls.getByRole('button', {
     name: `До · ${history.previous.revision}`,
     exact: true,
   });
   await previous.click();
   await expect(previous).toHaveAttribute('aria-pressed', 'true');
-  await controls.getByRole('button', { name: 'Вернуть прежний план', exact: true }).click();
+  await page.keyboard.press('Escape');
+  await expect(controls).toBeVisible();
+  for (let index = 0; index < 5; index += 1) {
+    await page.keyboard.press('Tab');
+    expect(await controls.evaluate((element) => element.contains(document.activeElement))).toBe(
+      true,
+    );
+  }
+  await controls.getByRole('button', { name: 'Выбрать этот', exact: true }).click();
   await expect.poll(async () => (await readPlan(live.api)).origin).toBe('restore');
   const restored = await readPlan(live.api);
   expect(restored.revision).toBeGreaterThan(history.current.revision);
