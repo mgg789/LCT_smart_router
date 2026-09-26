@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { expect, readPlan, signIn, test } from './fixtures';
 
 test('import warnings allow cancellation before a confirmed immutable upload', async ({
@@ -5,6 +6,11 @@ test('import warnings allow cancellation before a confirmed immutable upload', a
   live,
 }) => {
   await signIn(page);
+  // Isolate import/settings effects from autonomous AUTO plan publication.
+  const manual = await live.api.post('/api/v1/dispatch/mode', {
+    data: { operationId: randomUUID(), mode: 'manual' },
+  });
+  expect(manual.ok()).toBe(true);
   const before = await readPlan(live.api);
   const now = Math.floor(Date.now() / 1000);
   const file = {
@@ -49,13 +55,20 @@ test('import warnings allow cancellation before a confirmed immutable upload', a
       buffer: Buffer.from(JSON.stringify(file)),
     });
   await modal.getByRole('button', { name: 'Применить', exact: true }).click();
-  await expect(modal.getByRole('region', { name: 'Проверка данных' })).toBeVisible();
+  const review = page.getByRole('dialog', { name: /^Проверка данных:/ });
+  await expect(review).toBeVisible();
+  await expect(review.getByRole('button')).toHaveCount(2);
+  await page.keyboard.press('Escape');
+  await expect(review).toBeVisible();
+  await page.mouse.click(5, 5);
+  await expect(review).toBeVisible();
+  await expect(review.getByRole('button', { name: 'Загрузить так' })).toBeInViewport();
   expect((await readPlan(live.api)).revision).toBe(before.revision);
-  await modal.getByRole('button', { name: 'Отменить', exact: true }).click();
-  await expect(modal.getByRole('region', { name: 'Проверка данных' })).toBeHidden();
+  await review.getByRole('button', { name: 'Продолжить', exact: true }).click();
+  await expect(review).toBeHidden();
   expect((await readPlan(live.api)).revision).toBe(before.revision);
   await modal.getByRole('button', { name: 'Применить', exact: true }).click();
-  await modal.getByRole('button', { name: 'Загрузить так', exact: true }).click();
+  await review.getByRole('button', { name: 'Загрузить так', exact: true }).click();
   await expect(modal.getByText('Данные загружены', { exact: true })).toBeVisible();
   await expect(modal.getByText('Заявки: +1, инженеры: +1', { exact: true })).toBeVisible();
 });
@@ -65,16 +78,31 @@ test('calibration shows honest missing-history status without changing the plan'
   live,
 }, testInfo) => {
   await signIn(page);
+  // Isolate import/settings effects from autonomous AUTO plan publication.
+  const manual = await live.api.post('/api/v1/dispatch/mode', {
+    data: { operationId: randomUUID(), mode: 'manual' },
+  });
+  expect(manual.ok()).toBe(true);
   const before = await readPlan(live.api);
   await page.getByRole('button', { name: 'Меню пользователя', exact: true }).click();
   await page.getByRole('button', { name: 'Настройки', exact: true }).click();
   const modal = page.getByRole('dialog');
   await modal.getByRole('button', { name: 'AI', exact: true }).click();
   await expect(modal.getByText('Покрытие фактами', { exact: true })).toBeVisible();
-  const weather = modal.getByRole('region', { name: 'Погодная калибровка' });
+  const weather = modal.getByRole('region', { name: 'Калибровка коэффициентов' });
   await expect(weather).toBeVisible();
   await expect(weather.getByText('Недостаточно истории', { exact: true })).toBeVisible();
   await expect(weather).toContainText('Покрытие данными не является оценкой точности');
+  await expect(modal.getByText('0%', { exact: true })).toBeVisible();
+  const toggle = modal.getByRole('switch', { name: 'Калибровка по реальным результатам' });
+  for (let i = 0; i < 4; i += 1) {
+    const response = page.waitForResponse(
+      (r) => r.request().method() === 'PUT' && r.url().endsWith('/dispatch/ai'),
+    );
+    await toggle.click();
+    await response;
+    await expect(modal.getByText('0%', { exact: true })).toBeVisible();
+  }
   expect((await readPlan(live.api)).revision).toBe(before.revision);
   await testInfo.attach('calibration-status', {
     body: await modal.screenshot(),

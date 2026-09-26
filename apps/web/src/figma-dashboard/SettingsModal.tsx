@@ -1229,10 +1229,10 @@ function AiForm({ token }: { token: string | null }) {
     <div className="flex flex-col gap-[16px] pb-[8px]">
       <AiSection
         title="ML"
-        note="Проверка плана учится на фактах исполнения. Выключено — остаётся заводская калибровка."
+        note="Коэффициенты оценки риска уточняются по фактам исполнения. При выключении используются заводские значения."
       >
         <SettingSwitch
-          label="Дообучение оценки плана"
+          label="Калибровка по реальным результатам"
           checked={enabled}
           onChange={() => {
             const next = !enabled;
@@ -1263,10 +1263,10 @@ function AiForm({ token }: { token: string | null }) {
             </p>
           ) : null}
           <section
-            aria-label="Погодная калибровка"
+            aria-label="Калибровка коэффициентов"
             className="mt-[14px] text-[14px] text-figma-muted"
           >
-            <p className="font-semibold text-figma-ink">Погодная калибровка</p>
+            <p className="font-semibold text-figma-ink">Калибровка коэффициентов</p>
             <p>
               {status?.weatherCalibration?.status === 'validated'
                 ? 'Проверено на последующих днях'

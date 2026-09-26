@@ -12,6 +12,7 @@ import type {
 import { parseDataUpload } from '../domain/dataUpload';
 import { regionStyle } from '../domain/regions';
 import { FIGMA_ASSETS } from './assets';
+import { ImportQualityDialog } from './ImportQualityDialog';
 import { ModalLayer, ModalScrim } from './modalLayer';
 import { FigmaIcon } from './primitives';
 
@@ -301,51 +302,6 @@ export function DataUploadModal({
             </div>
           ) : null}
 
-          {qualityReport ? (
-            <section
-              aria-label="Проверка данных"
-              className="mt-[12px] rounded-[20px] bg-figma-soft px-[20px] py-[16px]"
-            >
-              <h3 className="font-semibold text-[18px] text-figma-ink">
-                Проверка данных: {qualityReport.findings.length} находок
-              </h3>
-              <p className="mt-[6px] text-[14px] text-figma-muted">
-                Это особенности данных. Вы можете загрузить пакет без изменений.
-              </p>
-              <ul className="mt-[10px] space-y-[10px] text-[15px] text-figma-ink">
-                {qualityReport.findings.map((finding) => (
-                  <li key={`${finding.layer}:${finding.code}`}>
-                    <p>
-                      {finding.message} · {finding.count}
-                    </p>
-                    <p className="text-figma-muted">Примеры: {finding.examples.join(', ')}</p>
-                  </li>
-                ))}
-              </ul>
-              <details className="mt-[10px] text-[13px] text-figma-muted">
-                <summary>Данные проверки</summary>
-                <p>Версии: {Object.values(qualityReport.versions).join(' · ')}</p>
-                {qualityReport.findings.map((finding) => (
-                  <p key={`${finding.layer}:${finding.code}`}>
-                    {finding.code}: {finding.layer}
-                    {finding.score === undefined ? '' : ` · ${finding.score.toFixed(3)}`}
-                  </p>
-                ))}
-              </details>
-              <div className="mt-[14px] flex gap-[10px]">
-                <button
-                  type="button"
-                  className="rounded-[16px] bg-figma-bee px-[20px] py-[12px] font-semibold text-figma-ink"
-                  onClick={() => decideQuality(true)}
-                >
-                  Загрузить так
-                </button>
-                <GhostButton disabled={false} onClick={() => decideQuality(false)}>
-                  Отменить
-                </GhostButton>
-              </div>
-            </section>
-          ) : null}
           {submitError ? (
             <div role="alert" className="mt-[12px] rounded-[20px] bg-[#fdecec] px-[20px] py-[16px]">
               <p className="font-semibold text-[18px] text-figma-danger">Сервер отклонил пакет</p>
@@ -446,6 +402,13 @@ export function DataUploadModal({
           </div>
         </div>
       </motion.div>
+      {qualityReport ? (
+        <ImportQualityDialog
+          report={qualityReport}
+          motionOn={motionOn}
+          onDecision={decideQuality}
+        />
+      ) : null}
     </ModalLayer>
   );
 }
