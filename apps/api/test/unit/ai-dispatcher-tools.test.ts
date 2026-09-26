@@ -249,6 +249,250 @@ describe('compare_policies is called at most once per run', () => {
   });
 });
 
+describe('evaluate_manual_order preserves a comparable whole-plan baseline', () => {
+  const published = {
+    snapshot: { inputHash: 'a'.repeat(64) },
+  };
+  const appliedPlan = {
+    revision: 17,
+    routes: [
+      {
+        engineerId: 'eng-1',
+        stops: [
+          { kind: 'job', requestId: 'job-1' },
+          { kind: 'lunch', requestId: null },
+        ],
+      },
+      {
+        engineerId: 'eng-2',
+        stops: [{ kind: 'job', requestId: 'job-2' }],
+      },
+    ],
+  };
+
+  it('replaces one route, preserves every other route and labels Router’s baseline', async () => {
+    let evaluatedRoutes: Record<string, string[]> | undefined;
+    const tools = buildDispatcherReadTools({
+      prisma: {
+        routingCurrent: { findUnique: async () => published },
+      } as unknown as PrismaService,
+      live: inert(),
+      plans: { current: async () => appliedPlan } as unknown as AppliedPlanService,
+      control: inert(),
+      requests: inert(),
+      alerts: inert(),
+      policy: inert(),
+      builder: inert(),
+      router: {
+        getActiveContextVersion: async () => 'ctx-3',
+        evaluateManual: async (input: { routes: Record<string, string[]> }) => {
+          evaluatedRoutes = input.routes;
+          return {
+            input_hash: 'a'.repeat(64),
+            router_context_version: 'ctx-3',
+            policy_id: 'compact',
+            feasible: true,
+            degraded: false,
+            criterion: null,
+            before: [1, 2],
+            after: [1, 2],
+          };
+        },
+      } as unknown as RouterClient,
+    });
+    const tool = tools.find((item) => item.name === 'evaluate_manual_order');
+    assert.ok(tool);
+
+    const outcome = await tool.run(toolContext('manual-order-test'), {
+      engineerId: 'eng-1',
+      requestIds: ['job-1'],
+    });
+
+    assert.ok(outcome.ok);
+    assert.deepEqual(evaluatedRoutes, { 'eng-1': ['job-1'], 'eng-2': ['job-2'] });
+    const result = JSON.parse(outcome.resultContent) as {
+      baseline: { kind: string };
+      provenance: { appliedPlanRevision: number; inputHash: string; routerContextVersion: string };
+      limitations: string[];
+    };
+    assert.equal(result.baseline.kind, 'router_automatic_result');
+    assert.equal(result.provenance.appliedPlanRevision, 17);
+    assert.equal(result.provenance.inputHash, 'a'.repeat(64));
+    assert.equal(result.provenance.routerContextVersion, 'ctx-3');
+    assert.match(result.limitations[0] ?? '', /not a separately evaluated copy/);
+  });
+
+  it('rejects the result if the Router context changes during evaluation', async () => {
+    let versionReads = 0;
+    const tools = buildDispatcherReadTools({
+      prisma: {
+        routingCurrent: { findUnique: async () => published },
+      } as unknown as PrismaService,
+      live: inert(),
+      plans: { current: async () => appliedPlan } as unknown as AppliedPlanService,
+      control: inert(),
+      requests: inert(),
+      alerts: inert(),
+      policy: inert(),
+      builder: inert(),
+      router: {
+        getActiveContextVersion: async () => (++versionReads === 1 ? 'ctx-3' : 'ctx-4'),
+        evaluateManual: async () => ({
+          input_hash: 'a'.repeat(64),
+          router_context_version: 'ctx-3',
+          policy_id: 'compact',
+          feasible: true,
+          degraded: false,
+          criterion: null,
+          before: [1, 2],
+          after: [1, 2],
+        }),
+      } as unknown as RouterClient,
+    });
+    const tool = tools.find((item) => item.name === 'evaluate_manual_order');
+    assert.ok(tool);
+
+    await assert.rejects(
+      tool.run(toolContext('manual-order-stale-test'), {
+        engineerId: 'eng-1',
+        requestIds: ['job-1'],
+      }),
+      /Planning data changed during the evaluation/,
+    );
+  });
+
+  it('rejects an engineer that is not present in the applied plan', async () => {
+    const tools = buildDispatcherReadTools({
+      prisma: {
+        routingCurrent: { findUnique: async () => published },
+      } as unknown as PrismaService,
+      live: inert(),
+      plans: { current: async () => appliedPlan } as unknown as AppliedPlanService,
+      control: inert(),
+      requests: inert(),
+      alerts: inert(),
+      policy: inert(),
+      builder: inert(),
+      router: { getActiveContextVersion: async () => 'ctx-3' } as unknown as RouterClient,
+    });
+    const tool = tools.find((item) => item.name === 'evaluate_manual_order');
+    assert.ok(tool);
+
+    await assert.rejects(
+      tool.run(toolContext('manual-order-unknown-engineer'), {
+        engineerId: 'eng-3',
+        requestIds: ['job-1'],
+      }),
+      /selected engineer has no route/,
+    );
+  });
+
+  it('accepts only a permutation of the selected route request IDs', async () => {
+    const tools = buildDispatcherReadTools({
+      prisma: {
+        routingCurrent: { findUnique: async () => published },
+      } as unknown as PrismaService,
+      live: inert(),
+      plans: { current: async () => appliedPlan } as unknown as AppliedPlanService,
+      control: inert(),
+      requests: inert(),
+      alerts: inert(),
+      policy: inert(),
+      builder: inert(),
+      router: { getActiveContextVersion: async () => 'ctx-3' } as unknown as RouterClient,
+    });
+    const tool = tools.find((item) => item.name === 'evaluate_manual_order');
+    assert.ok(tool);
+
+    await assert.rejects(
+      tool.run(toolContext('manual-order-invalid-set'), {
+        engineerId: 'eng-1',
+        requestIds: ['job-1', 'job-1'],
+      }),
+      /each request from this route exactly once/,
+    );
+  });
+
+  it('rejects a result when the applied-plan revision changes during evaluation', async () => {
+    let planReads = 0;
+    const tools = buildDispatcherReadTools({
+      prisma: {
+        routingCurrent: { findUnique: async () => published },
+      } as unknown as PrismaService,
+      live: inert(),
+      plans: {
+        current: async () => (planReads++ === 0 ? appliedPlan : { ...appliedPlan, revision: 18 }),
+      } as unknown as AppliedPlanService,
+      control: inert(),
+      requests: inert(),
+      alerts: inert(),
+      policy: inert(),
+      builder: inert(),
+      router: {
+        getActiveContextVersion: async () => 'ctx-3',
+        evaluateManual: async () => ({
+          input_hash: 'a'.repeat(64),
+          router_context_version: 'ctx-3',
+          policy_id: 'compact',
+          feasible: true,
+          degraded: false,
+          criterion: null,
+          before: [1, 2],
+          after: [1, 2],
+        }),
+      } as unknown as RouterClient,
+    });
+    const tool = tools.find((item) => item.name === 'evaluate_manual_order');
+    assert.ok(tool);
+
+    await assert.rejects(
+      tool.run(toolContext('manual-order-revision-changed'), {
+        engineerId: 'eng-1',
+        requestIds: ['job-1'],
+      }),
+      /Planning data changed during the evaluation/,
+    );
+  });
+
+  it('rejects an evaluation whose Router echoes a different input hash', async () => {
+    const tools = buildDispatcherReadTools({
+      prisma: {
+        routingCurrent: { findUnique: async () => published },
+      } as unknown as PrismaService,
+      live: inert(),
+      plans: { current: async () => appliedPlan } as unknown as AppliedPlanService,
+      control: inert(),
+      requests: inert(),
+      alerts: inert(),
+      policy: inert(),
+      builder: inert(),
+      router: {
+        getActiveContextVersion: async () => 'ctx-3',
+        evaluateManual: async () => ({
+          input_hash: 'b'.repeat(64),
+          router_context_version: 'ctx-3',
+          policy_id: 'compact',
+          feasible: true,
+          degraded: false,
+          criterion: null,
+          before: [1, 2],
+          after: [1, 2],
+        }),
+      } as unknown as RouterClient,
+    });
+    const tool = tools.find((item) => item.name === 'evaluate_manual_order');
+    assert.ok(tool);
+
+    await assert.rejects(
+      tool.run(toolContext('manual-order-echo-mismatch'), {
+        engineerId: 'eng-1',
+        requestIds: ['job-1'],
+      }),
+      /Planning data changed during the evaluation/,
+    );
+  });
+});
+
 describe('assignment reasons survive into a dispatcher tool result', () => {
   it('get_day_plan passes reasons.assignment.factors through unchanged', async () => {
     const planRow: AppliedPlanCurrentShape = {

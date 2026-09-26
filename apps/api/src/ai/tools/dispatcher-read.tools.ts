@@ -510,32 +510,124 @@ export function buildDispatcherReadTools(deps: DispatcherReadToolDeps): readonly
   const evaluateManualOrder: ToolSpec<EvaluateManualOrderArgs> = {
     name: 'evaluate_manual_order',
     description:
-      'What-if: scores a proposed fixed visit order for one engineer against the current ' +
-      "policy, without applying it or changing the plan on screen (Router's " +
-      'evaluateManual). Use it to check a reorder idea before suggesting it.',
+      'What-if: scores a proposed fixed visit order for one engineer while preserving every ' +
+      'other route from the applied plan. Does not apply a change. Router compares the full ' +
+      'route set with its automatic result; the result names that baseline and its snapshot ' +
+      'and context versions. Use it to check a reorder idea before suggesting it.',
     schema: evaluateManualOrderSchema,
     async run(_ctx: ToolContext, args: EvaluateManualOrderArgs): Promise<ToolResult> {
-      const current = await deps.prisma.routingCurrent.findUnique({
-        where: { id: 'singleton' },
-        include: { snapshot: true },
-      });
-      if (!current) {
+      const [current, appliedPlan, contextVersion] = await Promise.all([
+        deps.prisma.routingCurrent.findUnique({
+          where: { id: 'singleton' },
+          include: { snapshot: true },
+        }),
+        deps.plans.current(deps.prisma),
+        deps.router.getActiveContextVersion(),
+      ]);
+      if (!current || !appliedPlan) {
         throw SysError.validationFailed('No published planning task to evaluate against');
       }
-      const contextVersion = await deps.router.getActiveContextVersion();
       if (!contextVersion) {
         throw SysError.notConfigured('Router Core');
       }
+
+      const targetRoute = appliedPlan.routes.find((route) => route.engineerId === args.engineerId);
+      if (!targetRoute) {
+        throw SysError.validationFailed(
+          'The selected engineer has no route in the applied plan to reorder',
+        );
+      }
+      const originalRequestIds = targetRoute.stops.flatMap((stop) =>
+        stop.kind === 'job' && stop.requestId !== null ? [stop.requestId] : [],
+      );
+      const originalRequestIdSet = new Set(originalRequestIds);
+      const proposedRequestIds = new Set(args.requestIds);
+      if (
+        originalRequestIdSet.size !== originalRequestIds.length ||
+        proposedRequestIds.size !== args.requestIds.length ||
+        args.requestIds.length !== originalRequestIds.length ||
+        originalRequestIds.some((requestId) => !proposedRequestIds.has(requestId))
+      ) {
+        throw SysError.validationFailed(
+          'The proposed order must contain each request from this route exactly once',
+        );
+      }
+
+      // Replace only the requested engineer's visit order. The other applied routes stay
+      // in the Router input so `after` compares the proposal as a whole plan, not as one
+      // route against an accidentally empty day.
+      const routes = Object.fromEntries(
+        appliedPlan.routes.map((route) => [
+          route.engineerId,
+          route.stops.flatMap((stop) =>
+            stop.kind === 'job' && stop.requestId !== null ? [stop.requestId] : [],
+          ),
+        ]),
+      );
+      routes[args.engineerId] = args.requestIds;
+
       const evaluation = await deps.router.evaluateManual({
         input_hash: current.snapshot.inputHash,
         router_context_version: contextVersion,
-        routes: { [args.engineerId]: args.requestIds },
+        routes,
       });
+
+      // Router validates the publication and context around its calculation. Re-read at
+      // this boundary too, so the assistant never presents an obsolete result as current.
+      const [latest, latestPlan, latestContextVersion] = await Promise.all([
+        deps.prisma.routingCurrent.findUnique({
+          where: { id: 'singleton' },
+          include: { snapshot: true },
+        }),
+        deps.plans.current(deps.prisma),
+        deps.router.getActiveContextVersion(),
+      ]);
+      if (
+        !latest ||
+        latest.snapshot.inputHash !== current.snapshot.inputHash ||
+        !latestPlan ||
+        latestPlan.revision !== appliedPlan.revision ||
+        latestContextVersion !== contextVersion ||
+        evaluation.input_hash !== current.snapshot.inputHash ||
+        evaluation.router_context_version !== contextVersion
+      ) {
+        throw SysError.validationFailed(
+          'Planning data changed during the evaluation; recalculate before relying on this result',
+        );
+      }
+
+      const result = {
+        schema_version: '1.0',
+        method: 'router.manual_fixed_order',
+        baseline: {
+          kind: 'router_automatic_result',
+          meaning: 'Router compares the proposed full route set with its automatic result.',
+        },
+        proposal: { engineerId: args.engineerId, requestIds: args.requestIds },
+        preservedRoutes: routes,
+        provenance: {
+          appliedPlanRevision: appliedPlan.revision,
+          inputHash: evaluation.input_hash,
+          routerContextVersion: evaluation.router_context_version,
+          policyId: evaluation.policy_id,
+        },
+        evaluation: {
+          feasible: evaluation.feasible,
+          degraded: evaluation.degraded,
+          criterion: evaluation.criterion,
+          before: evaluation.before,
+          after: evaluation.after,
+        },
+        limitations: [
+          'The before score is Router’s automatic result, not a separately evaluated copy of the displayed applied plan.',
+          'This evaluates the fixed order provided; Router does not search for a better order.',
+        ],
+      };
       return ok(
         evaluation.feasible
-          ? `Feasible; degraded relative to the current plan: ${evaluation.degraded}`
+          ? `Feasible; degraded relative to Router’s automatic baseline: ${evaluation.degraded}`
           : 'Not feasible as proposed',
-        evaluation,
+        result,
       );
     },
   };
