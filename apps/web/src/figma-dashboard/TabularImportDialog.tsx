@@ -6,7 +6,18 @@ import type {
   TabularFileInput,
 } from '@lct/shared';
 import { motion } from 'framer-motion';
-import { type ReactNode, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import {
+  Children,
+  cloneElement,
+  isValidElement,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { analyzeTabular, convertTabular } from '../api/tabular';
 
@@ -355,7 +366,7 @@ export function TabularImportDialog({
           <section className="rounded-[16px] bg-figma-soft p-[16px]">
             <h3 className="font-semibold text-[17px]">Источник</h3>
             <div className="mt-[10px] grid grid-cols-2 gap-[10px] md:grid-cols-4">
-              <LabelInput label="Кодировка">
+              <TabularFieldControl label="Кодировка">
                 <select
                   value={encoding}
                   onChange={(event) =>
@@ -368,8 +379,8 @@ export function TabularImportDialog({
                   <option value="windows1251">Windows-1251</option>
                   <option value="utf16le">UTF-16 LE</option>
                 </select>
-              </LabelInput>
-              <LabelInput label="Разделитель">
+              </TabularFieldControl>
+              <TabularFieldControl label="Разделитель">
                 <select
                   value={delimiter}
                   onChange={(event) =>
@@ -383,8 +394,8 @@ export function TabularImportDialog({
                   <option value="\t">Табуляция</option>
                   <option value="|">Вертикальная черта</option>
                 </select>
-              </LabelInput>
-              <LabelInput label="Строка заголовка">
+              </TabularFieldControl>
+              <TabularFieldControl label="Строка заголовка">
                 <input
                   type="number"
                   min={1}
@@ -392,9 +403,9 @@ export function TabularImportDialog({
                   onChange={(event) => setHeaderRow(Math.max(1, Number(event.target.value) || 1))}
                   className="tabular-control-input"
                 />
-              </LabelInput>
+              </TabularFieldControl>
               {analysis?.format === 'xlsx' ? (
-                <LabelInput label="Лист">
+                <TabularFieldControl label="Лист">
                   <select
                     value={sheet ?? analysis.selectedSheet}
                     onChange={(event) => {
@@ -410,7 +421,7 @@ export function TabularImportDialog({
                       </option>
                     ))}
                   </select>
-                </LabelInput>
+                </TabularFieldControl>
               ) : null}
             </div>
             <button
@@ -445,7 +456,7 @@ export function TabularImportDialog({
                 </div>
                 <div className="mt-[10px] grid grid-cols-2 gap-[8px] md:grid-cols-3 lg:grid-cols-4">
                   {TABULAR_FIELDS.map((field) => (
-                    <LabelInput key={field} label={FIELD_LABELS[field]}>
+                    <TabularFieldControl key={field} label={FIELD_LABELS[field]}>
                       <select
                         value={columns[field] ?? ''}
                         onChange={(event) => updateColumn(field, event.target.value)}
@@ -458,7 +469,7 @@ export function TabularImportDialog({
                           </option>
                         ))}
                       </select>
-                    </LabelInput>
+                    </TabularFieldControl>
                   ))}
                 </div>
               </section>
@@ -467,7 +478,7 @@ export function TabularImportDialog({
                 <h3 className="font-semibold text-[17px]">Явные значения для пропусков</h3>
                 <div className="mt-[10px] grid grid-cols-2 gap-[8px] md:grid-cols-3 lg:grid-cols-4">
                   {TABULAR_FIELDS.map((field) => (
-                    <LabelInput key={field} label={FIELD_LABELS[field]}>
+                    <TabularFieldControl key={field} label={FIELD_LABELS[field]}>
                       <input
                         value={defaults[field]}
                         onChange={(event) =>
@@ -476,7 +487,7 @@ export function TabularImportDialog({
                         placeholder="Оставить пустым"
                         className="tabular-control-input"
                       />
-                    </LabelInput>
+                    </TabularFieldControl>
                   ))}
                 </div>
                 <div className="mt-[10px] flex flex-wrap gap-[8px]">
@@ -501,7 +512,7 @@ export function TabularImportDialog({
               <section className="mt-[16px] rounded-[16px] bg-figma-soft p-[16px]">
                 <h3 className="font-semibold text-[17px]">Параметры импорта</h3>
                 <div className="mt-[10px] grid grid-cols-2 gap-[8px] md:grid-cols-4">
-                  <LabelInput label="Режим">
+                  <TabularFieldControl label="Режим">
                     <select
                       value={mode}
                       onChange={(event) =>
@@ -512,8 +523,8 @@ export function TabularImportDialog({
                       <option value="new_region">Новый регион</option>
                       <option value="append_requests">Дополнить заявки</option>
                     </select>
-                  </LabelInput>
-                  <LabelInput label="Регион">
+                  </TabularFieldControl>
+                  <TabularFieldControl label="Регион">
                     <input
                       list="tabular-region-options"
                       value={region}
@@ -526,42 +537,42 @@ export function TabularImportDialog({
                         <option key={item} value={item} />
                       ))}
                     </datalist>
-                  </LabelInput>
-                  <LabelInput label="Рабочая дата">
+                  </TabularFieldControl>
+                  <TabularFieldControl label="Рабочая дата">
                     <input
                       type="date"
                       value={workDate}
                       onChange={(event) => setWorkDate(event.target.value)}
                       className="tabular-control-input"
                     />
-                  </LabelInput>
+                  </TabularFieldControl>
                   {mode === 'new_region' ? (
                     <>
-                      <LabelInput label="Адрес базы">
+                      <TabularFieldControl label="Адрес базы">
                         <input
                           value={depotAddress}
                           onChange={(event) => setDepotAddress(event.target.value)}
                           placeholder="Не подставляется автоматически"
                           className="tabular-control-input"
                         />
-                      </LabelInput>
-                      <LabelInput label="Широта базы">
+                      </TabularFieldControl>
+                      <TabularFieldControl label="Широта базы">
                         <input
                           value={depotLat}
                           onChange={(event) => setDepotLat(event.target.value)}
                           placeholder="не обязательно"
                           className="tabular-control-input"
                         />
-                      </LabelInput>
-                      <LabelInput label="Долгота базы">
+                      </TabularFieldControl>
+                      <TabularFieldControl label="Долгота базы">
                         <input
                           value={depotLon}
                           onChange={(event) => setDepotLon(event.target.value)}
                           placeholder="не обязательно"
                           className="tabular-control-input"
                         />
-                      </LabelInput>
-                      <LabelInput label="Инженеры (если в файле нет бригад)">
+                      </TabularFieldControl>
+                      <TabularFieldControl label="Инженеры (если в файле нет бригад)">
                         <input
                           type="number"
                           min={1}
@@ -569,8 +580,8 @@ export function TabularImportDialog({
                           onChange={(event) => setEngineerCount(event.target.value)}
                           className="tabular-control-input"
                         />
-                      </LabelInput>
-                      <LabelInput label="Транспорт">
+                      </TabularFieldControl>
+                      <TabularFieldControl label="Транспорт">
                         <select
                           value={engineerTransport}
                           onChange={(event) =>
@@ -583,23 +594,23 @@ export function TabularImportDialog({
                           <option value="bike">Велосипед</option>
                           <option value="transit">Общественный</option>
                         </select>
-                      </LabelInput>
-                      <LabelInput label="Начало смены">
+                      </TabularFieldControl>
+                      <TabularFieldControl label="Начало смены">
                         <input
                           type="time"
                           value={shiftStart}
                           onChange={(event) => setShiftStart(event.target.value)}
                           className="tabular-control-input"
                         />
-                      </LabelInput>
-                      <LabelInput label="Конец смены">
+                      </TabularFieldControl>
+                      <TabularFieldControl label="Конец смены">
                         <input
                           type="time"
                           value={shiftEnd}
                           onChange={(event) => setShiftEnd(event.target.value)}
                           className="tabular-control-input"
                         />
-                      </LabelInput>
+                      </TabularFieldControl>
                     </>
                   ) : null}
                 </div>
@@ -749,13 +760,22 @@ export function TabularImportDialog({
   );
 }
 
-function LabelInput({ label, children }: { label: string; children: ReactNode }) {
+/** Links the visible field label to its native control without including option text. */
+export function TabularFieldControl({ label, children }: { label: string; children: ReactNode }) {
+  const id = useId();
   return (
-    // biome-ignore lint/a11y/noLabelWithoutControl: native controls are descendants of this label.
-    <label className="block min-w-0 text-[13px] font-medium">
-      <span className="mb-[4px] block text-figma-muted">{label}</span>
-      {children}
-    </label>
+    <div className="block min-w-0 text-[13px] font-medium">
+      <label htmlFor={id} className="mb-[4px] block text-figma-muted">
+        {label}
+      </label>
+      {Children.map(children, (child) =>
+        isValidElement<{ id?: string }>(child) &&
+        typeof child.type === 'string' &&
+        ['input', 'select', 'textarea'].includes(child.type)
+          ? cloneElement(child, { id })
+          : child,
+      )}
+    </div>
   );
 }
 
