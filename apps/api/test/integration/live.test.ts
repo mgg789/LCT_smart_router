@@ -463,7 +463,9 @@ describe('LIVE workday', () => {
       assert.equal(completion.points, 30);
     });
 
-  it('keeps normal entry/start/ETA publication-free and publishes a material overrun once', { skip: 'known v1.5 gap: the automatic no-show, lunch-projection and day-rollover transitions regressed in the release tree; the port of the late dev fixes is tracked for the next release' }, async () => {
+  it('keeps normal entry/start/ETA publication-free and publishes a material overrun once', {
+    skip: 'known v1.5 gap: the automatic no-show, lunch-projection and day-rollover transitions regressed in the release tree; the port of the late dev fixes is tracked for the next release',
+  }, async () => {
     const engineer = await liveCreateEngineer();
     const request = await liveCreateRequest();
     await liveApplyPlan(engineer.id, [request]);
@@ -610,7 +612,9 @@ describe('LIVE workday', () => {
     );
   });
 
-  it('requires line entry, blocks legacy fact writes, and accepts a late return after no-show', { skip: 'known v1.5 gap: the automatic no-show, lunch-projection and day-rollover transitions regressed in the release tree; the port of the late dev fixes is tracked for the next release' }, async () => {
+  it('requires line entry, blocks legacy fact writes, and accepts a late return after no-show', {
+    skip: 'known v1.5 gap: the automatic no-show, lunch-projection and day-rollover transitions regressed in the release tree; the port of the late dev fixes is tracked for the next release',
+  }, async () => {
     const engineer = await liveCreateEngineer();
     await liveCreateEngineer();
     const request = await liveCreateRequest();
@@ -1122,7 +1126,9 @@ describe('LIVE workday', () => {
     assert.equal(afterTaken.engineer.progress?.lunch, null);
   });
 
-  it('keeps automatic lunch blocking after the plan is rebuilt without a second lunch', { skip: 'known v1.5 gap: the automatic no-show, lunch-projection and day-rollover transitions regressed in the release tree; the port of the late dev fixes is tracked for the next release' }, async () => {
+  it('keeps automatic lunch blocking after the plan is rebuilt without a second lunch', {
+    skip: 'known v1.5 gap: the automatic no-show, lunch-projection and day-rollover transitions regressed in the release tree; the port of the late dev fixes is tracked for the next release',
+  }, async () => {
     const engineer = await liveCreateEngineer(true);
     const request = await liveCreateRequest();
     await liveApplyPlan(engineer.id, [request], true);
@@ -1185,7 +1191,9 @@ describe('LIVE workday', () => {
     assert.equal(afterReplan.current, null, 'no work action is available during automatic lunch');
   });
 
-  it('projects an active lunch as the Router start point until its durable end time', { skip: 'known v1.5 gap: the automatic no-show, lunch-projection and day-rollover transitions regressed in the release tree; the port of the late dev fixes is tracked for the next release' }, async () => {
+  it('projects an active lunch as the Router start point until its durable end time', {
+    skip: 'known v1.5 gap: the automatic no-show, lunch-projection and day-rollover transitions regressed in the release tree; the port of the late dev fixes is tracked for the next release',
+  }, async () => {
     const engineer = await liveCreateEngineer(true);
     const request = await liveCreateRequest();
     await liveApplyPlan(engineer.id, [request], true);
@@ -1412,7 +1420,9 @@ describe('LIVE workday', () => {
     assert.equal(await prisma.requestFact.count({ where: { requestId: request.id } }), 0);
   });
 
-  it('keeps explicit overdue work active, accepts more time, and cancels with equipment detail', { skip: 'known v1.5 gap: the automatic no-show, lunch-projection and day-rollover transitions regressed in the release tree; the port of the late dev fixes is tracked for the next release' }, async () => {
+  it('keeps explicit overdue work active, accepts more time, and cancels with equipment detail', {
+    skip: 'known v1.5 gap: the automatic no-show, lunch-projection and day-rollover transitions regressed in the release tree; the port of the late dev fixes is tracked for the next release',
+  }, async () => {
     const engineer = await liveCreateEngineer();
     const request = await liveCreateRequest();
     // Keep this continuation test independent from previous cases' leftover demand.
@@ -1638,7 +1648,9 @@ describe('LIVE workday', () => {
     }
   });
 
-  it('waits until 17:00 and all current-day work and alerts are cleared, ignoring tomorrow', { skip: 'known v1.5 gap: the automatic no-show, lunch-projection and day-rollover transitions regressed in the release tree; the port of the late dev fixes is tracked for the next release' }, async () => {
+  it('waits until 17:00 and all current-day work and alerts are cleared, ignoring tomorrow', {
+    skip: 'known v1.5 gap: the automatic no-show, lunch-projection and day-rollover transitions regressed in the release tree; the port of the late dev fixes is tracked for the next release',
+  }, async () => {
     const engineer = await liveCreateEngineer();
     const removedEngineer = await liveCreateEngineer();
     const submitted = await prisma.request.findMany({
