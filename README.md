@@ -278,6 +278,7 @@ Dashboard / Client / Engineer (apps/web)  ──►  System Layer (apps/api)  �
 ```text
 apps/web          — дашборд диспетчера, приложение инженера, клиент (React)
 apps/api          — System Layer (NestJS): API, операции, снимки, AI-контур, MCP
+packages/shared   — общие wire-типы дашборда (`@lct/shared`)
 core/             — Router Core (Python): движок, runtime, гео-контур, предикты
 data/             — официальный датасет + геокод-пакеты + метро-граф
 demo/             — видео-демо и скриншоты живого стенда
