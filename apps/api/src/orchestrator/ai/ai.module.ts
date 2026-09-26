@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { AiService } from './ai.service';
 import { MiniAiService } from './mini-ai.service';
+import { WeatherDayCacheService } from './weather-day-cache.service';
 
 /**
  * AI contour controls. Calibration never mutates a plan. The mini calls only
@@ -13,7 +14,7 @@ import { MiniAiService } from './mini-ai.service';
  */
 @Global()
 @Module({
-  providers: [AiService, MiniAiService],
+  providers: [AiService, MiniAiService, WeatherDayCacheService],
   exports: [AiService, MiniAiService],
 })
 export class AiModule {}

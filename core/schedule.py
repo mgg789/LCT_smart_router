@@ -328,6 +328,7 @@ def schedule_steps(
                     distance_km=quote.distance_m / 1000,
                     geometry=None if quote.provenance == "traffic_api" and not quote.geometry_exact else Geometry(points=list(quote.points)),
                     travel_source=quote.provenance, traffic_factor=quote.traffic_factor,
+                    weather_multiplier_used=quote.weather_multiplier_used,
                     segments=[RouteSegment(geometry=Geometry(points=list(segment.points)), travel_source=segment.provenance, duration_sec=segment.duration_sec, distance_m=segment.distance_m) for segment in quote.segments],
                 )
             )
@@ -416,6 +417,7 @@ def schedule_steps(
                 ),
                 travel_source=quote.provenance,
                 traffic_factor=quote.traffic_factor,
+                weather_multiplier_used=quote.weather_multiplier_used,
                 segments=[
                     RouteSegment(
                         geometry=Geometry(points=list(segment.points)),

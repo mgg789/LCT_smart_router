@@ -8,6 +8,7 @@ import { SysError } from '../../common/errors';
 import { canonicalHash, canonicalJson } from '../../common/json';
 import type { ImportPreparation } from '../../generated/prisma/client';
 import type { OperationContext } from '../../operations';
+import { lockWorkingSetGeneration } from '../../persistence';
 import { readEquipmentSettings } from '../equipment/equipment-policy';
 import { normalizeAddress } from './dataset.parser';
 import { DatasetImportService, type DatasetRegion } from './dataset-import.service';
@@ -94,6 +95,7 @@ export class ImportPreparationService {
     input: UploadDataPackageInput,
     timeZoneOffsetSec: number,
   ): Promise<ImportPreparationView> {
+    await lockWorkingSetGeneration(context.tx);
     const existingDepot =
       input.mode === 'append_requests'
         ? await context.tx.depot.findUnique({
@@ -144,6 +146,7 @@ export class ImportPreparationService {
     timeZoneOffsetSec: number,
     engineerCountPerRegion: Partial<Record<DatasetRegion, number>>,
   ): Promise<ImportPreparationView> {
+    await lockWorkingSetGeneration(context.tx);
     const prepared = this.datasets.prepareRegions(
       context,
       regions,
@@ -209,6 +212,7 @@ export class ImportPreparationService {
 
   /** Atomically confirms a stored batch and returns its original result on retries. */
   async confirm(context: OperationContext, actor: Actor, prepareId: string): Promise<unknown> {
+    await lockWorkingSetGeneration(context.tx);
     const row = await this.findOwned(context, actor, prepareId);
     if (row.status === 'confirmed') return parseStoredResponse(row.response);
     if (row.status !== 'prepared')

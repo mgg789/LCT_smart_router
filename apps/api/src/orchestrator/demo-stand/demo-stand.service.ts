@@ -7,6 +7,7 @@ import { Clock } from '../../common/time';
 import type { OperationContext } from '../../operations';
 import { OperationsService } from '../../operations';
 import { PrismaService } from '../../persistence';
+import { AiService } from '../ai';
 import { workDateOf } from '../engineers/workday';
 import { UploadImportService } from '../imports';
 import { canonicalTextAddress } from '../passports/passport-policy';
@@ -50,6 +51,7 @@ export class DemoStandService implements OnModuleInit {
     private readonly operations: OperationsService,
     private readonly reset: ResetService,
     private readonly uploads: UploadImportService,
+    private readonly ai: AiService,
   ) {}
 
   get enabled(): boolean {
@@ -217,6 +219,7 @@ export class DemoStandService implements OnModuleInit {
       },
       (context) => this.restore(context),
     );
+    await this.ai.rollbackToFactory();
   }
 
   private async needsRestore(now: number): Promise<boolean> {

@@ -312,6 +312,7 @@ class RouteLeg(Record):
     geometry: Geometry | None
     travel_source: TravelProvenance
     traffic_factor: Annotated[float, Field(ge=1.0)] = 1.0
+    weather_multiplier_used: Annotated[float, Field(gt=0.0, le=3.0)] | None = None
     segments: list[RouteSegment] = Field(default_factory=list)
 
     @model_validator(mode="after")

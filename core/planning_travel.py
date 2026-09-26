@@ -9,7 +9,7 @@ import math
 import os
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Sequence
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -31,6 +31,7 @@ from core.road_api import live_road_api_from_env
 
 if TYPE_CHECKING:
     from core.engine import SearchSettings
+    from core.predict_calibration import WeatherMultiplierCalibration
 
 PLANNING_TRAVEL_VERSION = "prepared-road-costs-v1"
 _LOGGER = logging.getLogger(__name__)
@@ -339,10 +340,23 @@ def planning_travel(
     snapshot: RouterTaskSnapshot,
     *,
     offline: bool = False,
+    learned_weather: Sequence[WeatherMultiplierCalibration] = (),
+    learned_weather_enabled: bool = False,
 ) -> TravelSource:
-    """Use the same prepared road/traffic source for solve, comparisons and previews."""
+    """Use prepared road costs; learned weather affects solver quotes only by explicit opt-in."""
     base = _prepared_travel(graph, settings, snapshot, offline)
-    return configure_travel(base, settings.technical(), snapshot.planning_as_of)
+    configured = configure_travel(base, settings.technical(), snapshot.planning_as_of)
+    regions = {engineer.region for engineer in snapshot.engineers}
+    if not learned_weather_enabled or len(regions) != 1 or None in regions or not learned_weather:
+        return configured
+    from core.geo import TechnicalTravel
+    from core.weather import LearnedWeatherTravel
+
+    region = next(iter(regions))
+    return TechnicalTravel(
+        LearnedWeatherTravel(configured.travel, region, tuple(learned_weather)),
+        configured.settings,
+    )
 
 
 def planning_configuration() -> dict:

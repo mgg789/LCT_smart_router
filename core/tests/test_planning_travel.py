@@ -1,6 +1,7 @@
 """Real road costs are prepared once and shared by every planning entry point."""
 
 import copy
+from dataclasses import replace
 from datetime import datetime
 
 import httpx
@@ -132,8 +133,13 @@ def test_unavailable_road_service_keeps_regional_graph(snapshot, graph, tmp_path
     base = GraphTravel(graph)
     for source in graph.nodes:
         for target in graph.nodes:
-            assert travel.quote(source.location, target.location, "car") == base.quote(
-                source.location, target.location, "car"
+            actual = travel.quote(source.location, target.location, "car")
+            expected = base.quote(source.location, target.location, "car")
+            assert actual is not None
+            assert expected is not None
+            # The wrapper records calm-weather provenance without changing any road cost.
+            assert actual == (
+                replace(expected, weather_multiplier_used=1.0) if expected.distance_m else expected
             )
     assert len(calls) == 1
     assert not list(tmp_path.rglob("*.json"))

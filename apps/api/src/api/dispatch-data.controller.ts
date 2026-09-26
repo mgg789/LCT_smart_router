@@ -335,6 +335,7 @@ export class DispatchDataController {
       { operationId: dto.operationId, actor, action: 'data.restart_demo', payload: dto },
       (context) => this.demoStand.restore(context),
     );
+    if (this.router.isConfigured()) await this.ai.rollbackToFactory();
     return outcome.result;
   }
 

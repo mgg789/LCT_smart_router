@@ -2,6 +2,7 @@
 
 import copy
 import json
+import os
 import threading
 import time
 from concurrent.futures import Future, ProcessPoolExecutor
@@ -37,7 +38,12 @@ from core.geo import GraphTravel, RoadGraph, TravelSource, content_hash
 from core.osrm import OSRMTravel
 from core.planning_travel import planning_configuration, planning_travel
 from core.policy import POLICY_CATALOG_VERSION, compile_policy
-from core.predict_calibration import PredictCalibration, PredictCalibrationStore
+from core.predict_calibration import (
+    PredictCalibration,
+    PredictCalibrationStore,
+    WeatherMultiplierCalibration,
+    factory_calibration,
+)
 from core.roadimport import ImportedRoadOverlay
 from core.route_search import RouteEvaluator, improve_routes
 from core.schedule import assemble_plan, baseline, score, validate_plan
@@ -186,11 +192,16 @@ def calculate_installed(
     context_version: str,
     memory: EngineMemory | None = None,
     publication_id: str | None = None,
+    learned_weather: tuple[WeatherMultiplierCalibration, ...] = (),
+    learned_weather_enabled: bool = False,
 ) -> tuple[RouterResult, EngineOutput | None]:
     """Solve with the graph installed at worker start, so the parent stays responsive."""
     if _worker_graph is None:
         raise RuntimeError("WORKER_GRAPH_MISSING")
-    return calculate(raw, _worker_graph, settings, context_version, memory, publication_id)
+    return calculate(
+        raw, _worker_graph, settings, context_version, memory, publication_id,
+        learned_weather, learned_weather_enabled,
+    )
 
 
 def calculate(
@@ -200,6 +211,8 @@ def calculate(
     context_version: str,
     memory: EngineMemory | None = None,
     publication_id: str | None = None,
+    learned_weather: tuple[WeatherMultiplierCalibration, ...] = (),
+    learned_weather_enabled: bool = False,
 ) -> tuple[RouterResult, EngineOutput | None]:
     """Worker entry point: one immutable input/context pair yields both plans."""
     if len(raw) > MAX_SNAPSHOT_BYTES:
@@ -249,7 +262,11 @@ def calculate(
             errors=[Diagnostic(code="WAITING_HANDOFF", message="Confirmed equipment meeting is overdue.", entity_id=overdue.handoff_id)],
         ), None
     try:
-        provider = planning_travel(graph, settings, snapshot)
+        provider = planning_travel(
+            graph, settings, snapshot,
+            learned_weather=learned_weather,
+            learned_weather_enabled=learned_weather_enabled,
+        )
         output = solve(snapshot, provider, settings, memory, context_version)
         effective_snapshot = output.memory.snapshot
         main_evidence = build_plan_evidence(effective_snapshot, output.main, provider)
@@ -475,6 +492,10 @@ class RouterRuntime:
             Path(".router/predict-calibration.json")
         )
         self._predict_calibration = self._predict_calibration_store.load()
+        self._learned_weather_solver_enabled = (
+            os.environ.get("ROUTER_LEARNED_WEATHER_SOLVER_ENABLED", "false").strip().lower()
+            == "true"
+        )
         self.settings = settings or SearchSettings()
         saved = settings_store.load() if settings_store is not None else None
         if saved is not None:
@@ -560,6 +581,13 @@ class RouterRuntime:
                 "solution_limit": self.settings.solution_limit,
                 "technical_settings": self.settings.technical().model_dump(),
             },
+            {
+                "learned_weather_solver_enabled": self._learned_weather_solver_enabled,
+                "weather_calibration": (
+                    self._predict_calibration.content_version()
+                    if self._learned_weather_solver_enabled else None
+                ),
+            },
         ]
         digest = content_hash(json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8"))
         self._context_cache = digest
@@ -635,8 +663,12 @@ class RouterRuntime:
 
     def set_predict_calibration(self, calibration: PredictCalibration, operation_id: str) -> dict:
         """Replace the simulator calibration atomically; the store survives restarts."""
+        if calibration.working_set_generation < self._predict_calibration.working_set_generation:
+            raise ValueError("CALIBRATION_GENERATION_STALE")
         self._predict_calibration_store.save(calibration)
         self._predict_calibration = calibration
+        if self._learned_weather_solver_enabled:
+            self._context_cache = None
         return {
             "operation_id": operation_id,
             "version": calibration.content_version(),
@@ -652,6 +684,9 @@ class RouterRuntime:
         as_of: int | None = None,
         completed: dict | None = None,
         cancel_rate: float | None = None,
+        calibration_override: PredictCalibration | None = None,
+        scenario_seed: str | None = None,
+        working_set_generation: int | None = None,
     ) -> dict:
         """Dry Monte-Carlo outlook for one fixed plan; never optimizes or applies.
 
@@ -659,6 +694,8 @@ class RouterRuntime:
         never be attached to another manual revision or changed resource set.
         """
         from core.robustness import predict_situation
+
+        self._sync_working_set_generation(working_set_generation, calibration_override)
 
         publication = self.reader.read()
         raw = publication if isinstance(publication, bytes) else publication.payload
@@ -685,7 +722,8 @@ class RouterRuntime:
             as_of=as_of,
             completed=completed,
             cancel_rate=cancel_rate,
-            calibration=self._predict_calibration,
+            calibration=calibration_override or self._predict_calibration,
+            scenario_seed=scenario_seed,
         )
         latest = self.reader.read()
         latest_raw = latest if isinstance(latest, bytes) else latest.payload
@@ -697,6 +735,30 @@ class RouterRuntime:
             "router_context_version": context_version,
             **prediction,
         }
+
+    def _sync_working_set_generation(
+        self,
+        requested_generation: int | None,
+        calibration_override: PredictCalibration | None,
+    ) -> None:
+        """Adopt reset epochs before predicting and reject any older evidence override."""
+        if requested_generation is None:
+            return
+        with self._lock:
+            current_generation = self._predict_calibration.working_set_generation
+            if requested_generation < current_generation:
+                raise ValueError("CALIBRATION_GENERATION_STALE")
+            if calibration_override is not None and (
+                calibration_override.working_set_generation < requested_generation
+            ):
+                raise ValueError("CALIBRATION_GENERATION_STALE")
+            if requested_generation > current_generation:
+                factory = factory_calibration().model_copy(update={
+                    "working_set_generation": requested_generation,
+                })
+                self._predict_calibration_store.save(factory)
+                self._predict_calibration = factory
+                self._context_cache = None
 
     def propose_window(
         self, snapshot: RouterTaskSnapshot, request_id: str, routes: dict, day_end_at: int
@@ -1178,6 +1240,8 @@ class RouterRuntime:
                             key[1],
                             self._memory,
                             self._pending_publication_id,
+                            tuple(self._predict_calibration.weather_multipliers),
+                            self._learned_weather_solver_enabled,
                         )
                     else:
                         self._future = self._executor.submit(
@@ -1188,6 +1252,8 @@ class RouterRuntime:
                             key[1],
                             self._memory,
                             self._pending_publication_id,
+                            tuple(self._predict_calibration.weather_multipliers),
+                            self._learned_weather_solver_enabled,
                         )
                 except Exception:
                     self.result = RouterResult(

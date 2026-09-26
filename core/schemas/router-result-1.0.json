@@ -1143,6 +1143,20 @@
           "minimum": 0,
           "title": "Travel Time Sec",
           "type": "integer"
+        },
+        "weather_multiplier_used": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "maximum": 3.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Weather Multiplier Used"
         }
       },
       "required": [

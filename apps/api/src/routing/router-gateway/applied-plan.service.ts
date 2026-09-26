@@ -471,6 +471,7 @@ export class AppliedPlanService {
             geometry: leg.geometry ?? null,
             travelSource: leg.travel_source,
             trafficFactor: leg.traffic_factor,
+            weatherMultiplierUsed: leg.weather_multiplier_used ?? null,
             ...(leg.segments?.length
               ? {
                   segments: leg.segments.map((segment) => ({

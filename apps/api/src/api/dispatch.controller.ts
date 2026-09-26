@@ -1,13 +1,14 @@
-import { randomUUID } from 'node:crypto';
-import { Body, Controller, Get, Post, Put, Query } from '@nestjs/common';
+import { createHash, randomUUID } from 'node:crypto';
+import { Body, Controller, Get, Logger, Post, Put, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { type Actor, CurrentActor, Roles } from '../auth';
 import { SysError } from '../common/errors';
 import { Clock } from '../common/time';
 import { zodBody } from '../common/validation';
 import { OperationsService } from '../operations';
-import { AiService, MiniAiService } from '../orchestrator/ai';
+import { AiService, factoryCalibrationDocument, MiniAiService } from '../orchestrator/ai';
 import { collectOptimizeLevers, type OptimizeLever } from '../orchestrator/ai/optimize-levers';
+import { workDateOf } from '../orchestrator/engineers/workday';
 import { LiveService } from '../orchestrator/live';
 import { businessNow } from '../orchestrator/live/business-clock';
 import { type UpdateMcpSettingsDto, updateMcpSettingsSchema } from '../orchestrator/mcp/mcp.dto';
@@ -78,6 +79,8 @@ import { weatherView } from './weather-view';
 @ApiTags('dispatch')
 @Controller('dispatch')
 export class DispatchController {
+  private readonly logger = new Logger(DispatchController.name);
+  private readonly weatherEvidenceFlights = new Set<string>();
   constructor(
     private readonly policyService: PolicyService,
     private readonly publisher: SnapshotPublisher,
@@ -153,7 +156,9 @@ export class DispatchController {
   })
   async situationPredict(@Body(zodBody(situationPredictSchema)) dto: SituationPredictDto) {
     if (!this.router.isConfigured()) throw SysError.notConfigured('Router Core');
-    return this.router.predictSituation({
+    const workingSetGeneration = Number(await this.ai.currentWorkingSetGeneration());
+    const calibrationOverride = await this.ai.predictionCalibrationOverride(workingSetGeneration);
+    const input = {
       input_hash: dto.inputHash,
       router_context_version: dto.routerContextVersion,
       routes: dto.routes,
@@ -161,7 +166,237 @@ export class DispatchController {
       as_of: dto.asOf ?? null,
       completed: dto.completed,
       cancel_rate: dto.cancelRate ?? null,
+      working_set_generation: workingSetGeneration,
+      ...(calibrationOverride ? { calibration_override: calibrationOverride } : {}),
+    };
+    const prediction = await this.router.predictSituation(input);
+    const flightKey = `${dto.inputHash}:${dto.routerContextVersion}`;
+    if (!this.weatherEvidenceFlights.has(flightKey)) {
+      this.weatherEvidenceFlights.add(flightKey);
+      void this.captureWeatherRiskEvidence(dto, input)
+        .catch((error: unknown) => {
+          // Shadow evidence must never make the ordinary, read-only forecast unavailable.
+          this.logger.debug(`Weather shadow evidence was not captured: ${String(error)}`);
+        })
+        .finally(() => this.weatherEvidenceFlights.delete(flightKey));
+    }
+    return prediction;
+  }
+
+  /** Stores paired predictions only when the request is an exact replay of the applied route. */
+  private async captureWeatherRiskEvidence(
+    dto: SituationPredictDto,
+    input: {
+      input_hash: string;
+      router_context_version: string;
+      routes: Record<string, string[]>;
+      simulations: number;
+      as_of: number | null;
+      completed: Record<string, string[]>;
+      cancel_rate: number | null;
+      working_set_generation: number;
+    },
+  ): Promise<void> {
+    const shadow = await this.ai.weatherShadowOverride();
+    if (!shadow) return;
+    const expectedGeneration = await this.ai.currentWorkingSetGeneration();
+    const plan = await this.plans.current(this.prisma);
+    if (!plan || plan.routerResult?.inputHash !== dto.inputHash) return;
+    const currentRoutes = Object.fromEntries(
+      plan.routes.map((route) => [
+        route.engineerId,
+        route.stops
+          .filter((stop) => stop.kind === 'job' && stop.requestId !== null)
+          .map((stop) => stop.requestId as string),
+      ]),
+    );
+    if (!sameRoutes(currentRoutes, dto.routes)) return;
+    const active = await this.router.getPredictCalibration().catch(() => null);
+    const baselineCalibration = {
+      ...(active?.calibration ?? factoryCalibrationDocument()),
+      weather_multipliers: [],
+    };
+    const requestIds = [...new Set(Object.values(currentRoutes).flat())];
+    const [requests, engineers, settings] = await Promise.all([
+      this.prisma.request.findMany({
+        where: { id: { in: requestIds } },
+        select: { id: true, windowEndAt: true, lifecycle: true },
+      }),
+      this.prisma.engineer.findMany({
+        where: { id: { in: Object.keys(currentRoutes) } },
+        select: { id: true, region: true, transportType: true },
+      }),
+      this.router.getTechnicalSettings().catch(() => null),
+    ]);
+    const requestById = new Map(requests.map((row) => [row.id, row]));
+    const engineerById = new Map(engineers.map((row) => [row.id, row]));
+    const capturedRecordedAt = Math.floor(this.clock.nowSeconds());
+    const simulationAsOf = await businessNow(this.prisma, this.clock.nowSeconds());
+    const finishedFacts = await this.prisma.requestFact.findMany({
+      where: {
+        requestId: { in: requestIds },
+        engineerId: { in: Object.keys(currentRoutes) },
+        kind: 'finished',
+        occurredAt: { lte: BigInt(simulationAsOf) },
+        recordedAt: { lte: BigInt(capturedRecordedAt) },
+      },
+      select: { requestId: true, engineerId: true },
     });
+    const finishedByEngineer = new Map<string, Set<string>>();
+    for (const fact of finishedFacts) {
+      if (!fact.engineerId) continue;
+      const finished = finishedByEngineer.get(fact.engineerId) ?? new Set<string>();
+      finished.add(fact.requestId);
+      finishedByEngineer.set(fact.engineerId, finished);
+    }
+    const actualCompleted = Object.fromEntries(
+      Object.entries(currentRoutes).map(([engineerId, route]) => {
+        const finished = finishedByEngineer.get(engineerId) ?? new Set<string>();
+        const prefix: string[] = [];
+        for (const requestId of route) {
+          if (!finished.has(requestId)) break;
+          prefix.push(requestId);
+        }
+        return [engineerId, prefix];
+      }),
+    );
+    const evidenceInput = { ...input, as_of: simulationAsOf, completed: actualCompleted };
+    const captureTime = Math.floor(this.clock.nowSeconds());
+    const eligibleCandidates = shadow.candidates.filter((candidate) =>
+      plan.routes.some((route) => {
+        const engineer = engineerById.get(route.engineerId);
+        return (
+          engineer?.region === candidate.region &&
+          engineer.transportType === candidate.transport_type
+        );
+      }),
+    );
+    if (!eligibleCandidates.length) return;
+    const candidateIndex = captureTime % eligibleCandidates.length;
+    const selectedCandidate = eligibleCandidates[candidateIndex];
+    if (!selectedCandidate) return;
+    const captureCandidates = [selectedCandidate];
+    const paired = new Map<
+      string,
+      {
+        baseline: Record<string, { breach_prob: number | null }>;
+        candidate: Record<string, { breach_prob: number | null }>;
+      }
+    >();
+    for (const candidate of captureCandidates) {
+      const hasGroupRoute = plan.routes.some((route) => {
+        const engineer = engineerById.get(route.engineerId);
+        return (
+          engineer?.region === candidate.region &&
+          engineer.transportType === candidate.transport_type
+        );
+      });
+      if (!hasGroupRoute) continue;
+      const scenarioSeed = createHash('sha256')
+        .update(
+          JSON.stringify({
+            planId: plan.id,
+            inputHash: dto.inputHash,
+            routerContextVersion: dto.routerContextVersion,
+            candidateVersion: candidate.candidate_version,
+            routes: currentRoutes,
+            simulations: dto.simulations,
+          }),
+        )
+        .digest('hex')
+        .slice(0, 32);
+      const [factoryPrediction, candidatePrediction] = await Promise.all([
+        this.router.predictSituation({
+          ...evidenceInput,
+          calibration_override: baselineCalibration,
+          scenario_seed: scenarioSeed,
+        }),
+        this.router.predictSituation({
+          ...evidenceInput,
+          calibration_override: {
+            ...shadow.calibration,
+            weather_multipliers: shadow.calibration.weather_multipliers.filter(
+              (item) => item.validation_version === candidate.candidate_version,
+            ),
+          },
+          scenario_seed: scenarioSeed,
+        }),
+      ]);
+      paired.set(candidate.candidate_version, {
+        baseline: factoryPrediction.requests,
+        candidate: candidatePrediction.requests,
+      });
+    }
+    // Use a fresh server clock after simulations and recheck lifecycle facts. A finish
+    // arriving while the paired predictions run must never become a pre-finish label.
+    const predictedAt = await businessNow(this.prisma, this.clock.nowSeconds());
+    const recordedAt = Math.floor(this.clock.nowSeconds());
+    const finalFinishedFacts = await this.prisma.requestFact.findMany({
+      where: {
+        requestId: { in: requestIds },
+        engineerId: { in: Object.keys(currentRoutes) },
+        kind: 'finished',
+        occurredAt: { lte: BigInt(predictedAt) },
+        recordedAt: { lte: BigInt(recordedAt) },
+      },
+      select: { requestId: true },
+    });
+    const alreadyFinished = new Set(finalFinishedFacts.map((fact) => fact.requestId));
+    const evidence: Array<Parameters<AiService['recordWeatherRiskPredictions']>[1][number]> = [];
+    for (const route of plan.routes) {
+      const engineer = engineerById.get(route.engineerId);
+      if (!engineer?.region) continue;
+      const order = currentRoutes[route.engineerId] ?? [];
+      for (let index = 0; index < order.length; index += 1) {
+        const requestId = order[index];
+        if (!requestId || (dto.completed[route.engineerId] ?? []).includes(requestId)) continue;
+        const request = requestById.get(requestId);
+        if (!request || request.lifecycle === 'completed' || alreadyFinished.has(requestId))
+          continue;
+        const stop = route.stops.find((candidate) => candidate.requestId === requestId);
+        if (!stop) continue;
+        const workDate = workDateOf(Number(stop.arrivalAt), 'Europe/Moscow');
+        const terminalTolerance =
+          !settings?.strictTimeWindows && index === order.length - 1 ? 1200 : 0;
+        const allowedLateness = settings?.strictTimeWindows
+          ? 0
+          : Math.max(settings?.windowLatenessToleranceSec ?? 0, terminalTolerance);
+        for (const candidate of captureCandidates) {
+          if (
+            candidate.region !== engineer.region ||
+            candidate.transport_type !== engineer.transportType
+          )
+            continue;
+          const predictions = paired.get(candidate.candidate_version);
+          const baselineProbability = predictions?.baseline[requestId]?.breach_prob;
+          const candidateProbability = predictions?.candidate[requestId]?.breach_prob;
+          if (
+            baselineProbability === null ||
+            baselineProbability === undefined ||
+            candidateProbability === null ||
+            candidateProbability === undefined
+          )
+            continue;
+          evidence.push({
+            planId: plan.id,
+            requestId,
+            engineerId: engineer.id,
+            region: candidate.region,
+            transportType: candidate.transport_type,
+            weatherKind: candidate.kind,
+            workDate,
+            candidateVersion: candidate.candidate_version,
+            inputHash: dto.inputHash,
+            routerContextVersion: dto.routerContextVersion,
+            predictedAt,
+            baselineProbability,
+            candidateProbability,
+            breachAfterAt: Number(request.windowEndAt) + allowedLateness,
+          });
+        }
+      }
+    }
+    await this.ai.recordWeatherRiskPredictions(expectedGeneration, evidence);
   }
 
   @Get('weather')
@@ -551,6 +786,7 @@ export class DispatchController {
       { operationId: dto.operationId, actor, action: 'dispatch.ai.replace', payload: dto },
       async (context) => this.ai.present(await this.ai.replace(context.tx, context.now, dto)),
     );
+    if (dto.planCalibrationEnabled === false) await this.ai.rollbackToFactory();
     this.ai.scheduleRefresh();
     return outcome.result;
   }
@@ -603,4 +839,25 @@ function readRosterEngineerIds(payload: string): string[] {
   } catch {
     return [];
   }
+}
+
+function sameRoutes(
+  left: Readonly<Record<string, readonly string[]>>,
+  right: Readonly<Record<string, readonly string[]>>,
+): boolean {
+  const leftKeys = Object.keys(left).sort();
+  const rightKeys = Object.keys(right).sort();
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every((key, index) => {
+      const other = rightKeys[index];
+      const a = left[key] ?? [];
+      const b = other ? (right[other] ?? []) : [];
+      return (
+        key === other &&
+        a.length === b.length &&
+        a.every((requestId, position) => requestId === b[position])
+      );
+    })
+  );
 }

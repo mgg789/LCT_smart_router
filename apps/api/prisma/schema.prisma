@@ -635,12 +635,52 @@ model RequestFact {
   recordedAt  BigInt @map("recorded_at")
   note        String?
   operationId String? @map("operation_id")
+  /// Immutable calibration evidence captured with the confirmed fact; never inferred later.
+  metadata    Json?
 
   request  Request   @relation(fields: [requestId], references: [id], onDelete: Cascade)
   engineer Engineer? @relation(fields: [engineerId], references: [id])
 
   @@index([requestId, occurredAt])
   @@map("request_facts")
+}
+
+/// Region/day weather history cached for offline calibration replay after one archive fetch.
+model WeatherDayCache {
+  region      String
+  workDate    String @map("work_date")
+  locationHash String @map("location_hash")
+  weatherCode Int    @map("weather_code")
+  kind        String
+  fetchedAt   BigInt @map("fetched_at")
+
+  @@id([region, workDate])
+  @@index([workDate])
+  @@map("weather_day_cache")
+}
+
+/// Immutable paired prediction evidence; labels are attached only after later confirmed finish.
+model WeatherRiskPrediction {
+  planId              String @map("plan_id")
+  requestId           String @map("request_id")
+  engineerId          String @map("engineer_id")
+  region              String
+  transportType       TransportType @map("transport_type")
+  weatherKind         String @map("weather_kind")
+  workDate            String @map("work_date")
+  candidateVersion    String @map("candidate_version")
+  inputHash           String @map("input_hash")
+  routerContextVersion String @map("router_context_version")
+  predictedAt         BigInt @map("predicted_at")
+  baselineProbability Float @map("baseline_probability")
+  candidateProbability Float @map("candidate_probability")
+  breachAfterAt       BigInt @map("breach_after_at")
+  actualBreach        Boolean? @map("actual_breach")
+  resolvedAt          BigInt? @map("resolved_at")
+
+  @@id([planId, requestId, candidateVersion])
+  @@index([region, transportType, weatherKind, workDate, candidateVersion])
+  @@map("weather_risk_predictions")
 }
 
 // ---------------------------------------------------------------------------

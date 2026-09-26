@@ -48,6 +48,24 @@ const predictCalibrationSchema = z.object({
         travel_multiplier: z.number(),
       }),
     ),
+    weather_multipliers: z
+      .array(
+        z.object({
+          region: z.string().min(1),
+          transport_type: z.enum(['car', 'walk', 'bike', 'transit']),
+          kind: z.enum(['rain', 'snow', 'storm']),
+          multiplier: z.number().min(0.5).max(3),
+          source: z.literal('learned'),
+          observations: z.number().int().nonnegative(),
+          days: z.number().int().nonnegative(),
+          baseline_travel_error: z.number().nonnegative(),
+          candidate_travel_error: z.number().nonnegative(),
+          baseline_brier: z.number().min(0).max(1),
+          candidate_brier: z.number().min(0).max(1),
+          validation_version: z.string().min(1),
+        }),
+      )
+      .default([]),
   }),
 });
 

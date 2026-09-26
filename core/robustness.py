@@ -46,6 +46,14 @@ def _point(point: GeoPoint) -> tuple[float, float]:
     return (round(point.lat, 6), round(point.lon, 6))
 
 
+def _sample_weather_kind(regime: str, seed: str, simulation: int) -> str:
+    """Resolve heavy weather independently of available learned coefficients."""
+    if regime != "heavy":
+        return {"normal": "clear", "rain": "rain"}.get(regime, "clear")
+    kind_rng = random.Random(f"{seed}:{simulation}:heavy-kind")
+    return kind_rng.choices(("snow", "storm"), weights=(0.5, 0.5))[0]
+
+
 def _validate_routes(evaluator: RouteEvaluator, routes: dict[str, list[str]]) -> None:
     """Mirror manual-evaluation refusals: unknown, duplicate or foreign orders fail."""
     engineers = {e.engineer_id for e in evaluator.engineers}
@@ -76,6 +84,7 @@ def predict_situation(
     cancel_rate: float | None = None,
     dispersion_scale: float = 1.0,
     calibration: PredictCalibration | None = None,
+    scenario_seed: str | None = None,
 ) -> dict:
     """Return dry per-request and plan-level probabilities for one fixed plan.
 
@@ -94,15 +103,19 @@ def predict_situation(
     names = [r.name for r in regimes]
     weights = [r.probability for r in regimes]
     multipliers = {r.name: r.travel_multiplier for r in regimes}
-    seed = _master_seed(
-        "",
-        json.dumps(routes, sort_keys=True),
-        json.dumps(completed, sort_keys=True),
-        simulations,
-        as_of,
-        cancels,
-        round(dispersion_scale, 6),
-        calibration.content_version(),
+    seed = (
+        _master_seed("paired-weather-risk", scenario_seed, json.dumps(routes, sort_keys=True), simulations)
+        if scenario_seed is not None
+        else _master_seed(
+            "",
+            json.dumps(routes, sort_keys=True),
+            json.dumps(completed, sort_keys=True),
+            simulations,
+            as_of,
+            cancels,
+            round(dispersion_scale, 6),
+            calibration.content_version(),
+        )
     )
     engineers = {e.engineer_id: e for e in evaluator.engineers}
     indexes = {e.engineer_id: i for i, e in enumerate(evaluator.engineers)}
@@ -149,6 +162,17 @@ def predict_situation(
             clock = float(max(release, as_of or 0))
             lunch = engineer.lunch
             lunch_pending = lunch.enabled and not engineer.lunch_taken
+            candidate_kind = _sample_weather_kind(regime, seed, sim)
+            learned_weather = next(
+                (
+                    item.multiplier for item in calibration.weather_multipliers
+                    if item.region == (engineer.region or "")
+                    and item.transport_type == engineer.transport_type
+                    and item.kind == candidate_kind
+                    and item.source == "learned"
+                ),
+                None,
+            )
             for position, request_id in enumerate(order):
                 request = evaluator.requests[request_id]
                 if request_id in done:
@@ -166,11 +190,20 @@ def predict_situation(
                 road = quote(point, request.location, engineer.travel_profile(), clock)
                 if road is None:
                     raise ValueError("route quote unavailable during robustness simulation")
-                duration = float(road.duration_sec) * regime_mult
                 if dispersion_scale > 0:
+                    canonical_duration = float(road.duration_sec)
+                    if road.weather_multiplier_used is not None:
+                        canonical_duration /= road.weather_multiplier_used
+                    duration = canonical_duration * (
+                        learned_weather if learned_weather is not None else regime_mult
+                    )
                     duration *= rng.lognormvariate(
                         0.0, _leg_cv(road.distance_m, calibration) * dispersion_scale
                     )
+                else:
+                    # A zero-dispersion replay is the exact point schedule: do not
+                    # strip the quote's already-applied weather factor or add a regime.
+                    duration = float(road.duration_sec)
                 arrive = clock + duration
                 start = max(arrive, float(request.window_start_at))
                 service = float(request.service_duration_sec)

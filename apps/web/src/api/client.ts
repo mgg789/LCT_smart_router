@@ -1638,6 +1638,7 @@ const aiViewSchema = z.object({
         totalGroups: z.number().int().nonnegative(),
         version: z.string().nullable(),
         source: z.literal('travel_elapsed_proxy'),
+        uncertainty: z.literal('not_estimated').optional(),
         reason: z.string(),
       })
       .optional(),
