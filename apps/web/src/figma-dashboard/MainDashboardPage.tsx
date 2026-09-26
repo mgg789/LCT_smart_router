@@ -18,7 +18,8 @@ import { type CaseExplanation, explainSelection } from '../lib/explanations';
 import { formatClock, formatDurationMin } from '../lib/time';
 import { AddEntityModal } from './AddEntityModal';
 import { AlertsView } from './AlertsView';
-import { useArtboardScale } from './artboardScale';
+import { useArtboardCanvas } from './artboardScale';
+import { ArtboardStretchProvider, stretchOf, useArtboardStretch } from './artboardStretch';
 import { FIGMA_ASSETS } from './assets';
 import { ConfirmDangerModal } from './ConfirmDangerModal';
 import { Copyable } from './Copyable';
@@ -38,7 +39,6 @@ import {
 import { EngineersView } from './EngineersView';
 import {
   type EngineerCard,
-  FIGMA_ARTBOARD,
   filterEngineers,
   formatNotificationCount,
   isCompletedStop,
@@ -137,9 +137,30 @@ const PANEL_TOP = 154 - HEADER_LIFT;
 const PANEL_HEIGHT = 893 + HEADER_LIFT;
 const UNASSIGNED_TOP = 778 + HEADER_LIFT;
 const CLOSE_PANEL_SIZE = 43;
-const MAP_COMPACT = { left: 623, top: PANEL_TOP, width: 751, height: 582 + HEADER_LIFT };
-const MAP_REQUEST_ONLY = { left: 623, top: PANEL_TOP, width: 751, height: PANEL_HEIGHT };
-const MAP_EXPANDED = { left: 623, top: PANEL_TOP, width: 1267, height: PANEL_HEIGHT };
+const MAP_LEFT = 623;
+const MAP_COMPACT_WIDTH = 751;
+const MAP_EXPANDED_WIDTH = 1267;
+const MAP_COMPACT_HEIGHT = 582 + HEADER_LIFT;
+const ROUTE_CARD_TOP = 768;
+const ROUTE_CARD_HEIGHT = 279;
+const DETAIL_PANEL_LEFT = 1406;
+
+/**
+ * Where the map sits for a given canvas.
+ *
+ * Spare width goes to the map and spare height to the panels: the crew column
+ * on the left and the detail panel on the right are read top to bottom and gain
+ * nothing from being wider, while the map is the one thing on this screen that
+ * is always worth more of both.
+ */
+function mapFrameFor(
+  { dx, dy }: { dx: number; dy: number },
+  mode: 'expanded' | 'compact' | 'request-only',
+) {
+  const width = (mode === 'expanded' ? MAP_EXPANDED_WIDTH : MAP_COMPACT_WIDTH) + dx;
+  const height = (mode === 'compact' ? MAP_COMPACT_HEIGHT : PANEL_HEIGHT) + dy;
+  return { left: MAP_LEFT, top: PANEL_TOP, width, height };
+}
 const ROUTE_STOP_WIDTH = 260;
 const ROUTE_TOPIC_WIDTH = 240;
 const ROUTE_DOT_SIZE = 20;
@@ -305,7 +326,7 @@ export function MainDashboardPage() {
   const panelMode = rightPanelMode(dash.selectedEngineerId, dash.selectedRequest?.id ?? null);
   const showRightPanel = panelMode !== null;
   const showRouteCard = Boolean(selectedEngineer);
-  const mapFrame = !showRightPanel ? MAP_EXPANDED : showRouteCard ? MAP_COMPACT : MAP_REQUEST_ONLY;
+  const mapMode = !showRightPanel ? 'expanded' : showRouteCard ? 'compact' : 'request-only';
   const regionLabel =
     selectedRegion === ALL_REGIONS ? 'Все регионы' : regionStyle(selectedRegion).label;
   const panelExplanation = useMemo(() => {
@@ -566,7 +587,8 @@ export function MainDashboardPage() {
     userMenuOpen,
   ]);
 
-  const scale = useArtboardScale();
+  const canvas = useArtboardCanvas();
+  const stretch = stretchOf(canvas);
   const motionOn = !reduceMotion;
 
   if (!dash.authenticated) {
@@ -631,16 +653,23 @@ export function MainDashboardPage() {
   }
 
   return (
-    <div className="flex h-full w-full items-center justify-center overflow-hidden bg-figma-canvas">
+    <div className="flex h-full w-full justify-center overflow-auto bg-figma-canvas">
+      {/*
+       * `zoom`, not `transform: scale`: zoom takes part in layout, so the
+       * canvas below really is `canvas.width` wide, children measure themselves
+       * in artboard units, and a wider or taller window simply hands the board
+       * more of them. A transform would leave the layout at 1920×1080 and only
+       * paint it smaller, which is what used to leave black bars either side of
+       * an ultrawide monitor.
+       */}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: Outside-pointer dismissal supplements the menus' keyboard-accessible controls; this artboard is not an extra focus target. */}
       <div
         className="relative shrink-0 bg-figma-canvas"
         data-name="MAIN"
         style={{
-          width: FIGMA_ARTBOARD.width,
-          height: FIGMA_ARTBOARD.height,
-          transform: `scale(${scale})`,
-          transformOrigin: 'center center',
+          width: canvas.width,
+          height: canvas.height,
+          zoom: canvas.scale,
         }}
         onMouseDown={(event) => {
           const target = event.target as HTMLElement;
@@ -653,572 +682,574 @@ export function MainDashboardPage() {
           if (regionOpen && !target.closest('[data-region-panel]')) setRegionOpen(false);
         }}
       >
-        <SidebarNav
-          activeNav={activeNav}
-          motionOn={motionOn}
-          onSelect={(id) => {
-            if (isNavLocked(id)) return;
-            if (id === 'requests' && activeNav === 'requests') {
-              setOpenedRequestId(null);
-            }
-            if (id !== 'requests') {
-              setOpenedRequestId(null);
-            }
-            setStackDir(stackSlideDir(stackNav, id));
-            setStackNav(id);
-            setActiveNav(id);
-            setPolicyOpen(false);
-            if (id === 'alerts') setUserMenuOpen(false);
-          }}
-          onUpload={() => {
-            setPolicyOpen(false);
-            setUserMenuOpen(false);
-            setUploadOpen(true);
-          }}
-        />
-        <AddEntityButton
-          motionOn={motionOn}
-          onOpen={() => {
-            setPolicyOpen(false);
-            setUserMenuOpen(false);
-            setNotifOpen(false);
-            setUploadOpen(false);
-            setMetricsOpen(false);
-            setAddOpen(true);
-          }}
-        />
-        <PlanMetricsButton
-          motionOn={motionOn}
-          onOpen={() => {
-            setPolicyOpen(false);
-            setUserMenuOpen(false);
-            setNotifOpen(false);
-            setUploadOpen(false);
-            setAddOpen(false);
-            setMetricsOpen(true);
-          }}
-        />
-        <PlanMetricsModal
-          open={metricsOpen}
-          motionOn={motionOn}
-          snapshot={dash.snapshot}
-          comparison={dash.policyComparison}
-          token={dash.token}
-          onOpenRequest={(requestId) => {
-            setMetricsOpen(false);
-            setStackDir(stackSlideDir(stackNav, 'requests'));
-            setStackNav('requests');
-            setActiveNav('requests');
-            setOpenedRequestId(requestId);
-            dash.selectRequest(requestId);
-          }}
-          onClose={() => setMetricsOpen(false)}
-        />
-        <AddEntityModal
-          open={addOpen}
-          snapshot={dash.snapshot}
-          motionOn={motionOn}
-          live={dash.source === 'live'}
-          token={dash.token}
-          submitting={dash.entityMutationPending}
-          onClose={() => setAddOpen(false)}
-          onCreateRequest={dash.createRequest}
-          onCreateEngineer={dash.createEngineer}
-        />
-        <PolicyControl
-          open={policyOpen}
-          policyLabel={policyTitle}
-          policies={policies}
-          selectedId={policyId}
-          lunchOn={lunchOn}
-          trafficOn={trafficOn}
-          metroOn={metroOn}
-          equipmentTransfersOn={equipmentTransfersOn}
-          motionOn={motionOn}
-          onToggle={() => {
-            setUserMenuOpen(false);
-            setAddOpen(false);
-            setPolicyOpen((value) => !value);
-          }}
-          onSelect={applyPolicy}
-          onLunchToggle={applyLunch}
-          onTrafficToggle={applyTraffic}
-          onMetroToggle={applyMetro}
-          onEquipmentTransfersToggle={applyEquipmentTransfers}
-          onManualMode={() => {
-            if (!dash.snapshot) return;
-            void dash.setMode(dash.snapshot.plan.mode === 'auto' ? 'manual' : 'auto');
-          }}
-        />
-        <NotificationControl
-          open={notifOpen}
-          count={inbox.count}
-          tone={inbox.tone}
-          motionOn={motionOn}
-          onToggle={() => {
-            setPolicyOpen(false);
-            setUserMenuOpen(false);
-            setNotifOpen((value) => !value);
-          }}
-        />
-        <ToastColumn
-          open={notifOpen}
-          motionOn={motionOn}
-          scale={scale}
-          onCollapse={() => {
-            setNotifOpen(false);
-            setToastColumnPinned(false);
-          }}
-          onToastAction={(toast) => {
-            if (!toast.actionLabel) return;
-            const next = dash.pendingDelta ?? rememberedDelta.current;
-            if (next) setReviewDelta(next);
-          }}
-        />
-        <AnimatePresence>
-          {reviewDelta ? (
-            <ReplanDeltaCard
-              key="replan-delta"
-              delta={reviewDelta}
-              canReject={dash.canRejectDelta && reviewDelta === dash.pendingDelta}
-              busy={dash.rebuilding}
-              motionOn={motionOn}
-              onAccept={() => {
-                setReviewDelta(null);
-                if (dash.pendingDelta) dash.acceptDelta();
-              }}
-              onReject={() => {
-                setReviewDelta(null);
-                dash.rejectDelta();
-              }}
-              onOpenRequest={(requestId) => {
-                setReviewDelta(null);
-                setStackDir(stackSlideDir(stackNav, 'day'));
-                setStackNav('day');
-                setActiveNav('day');
-                dash.selectRequest(requestId);
-              }}
+        <ArtboardStretchProvider value={stretch}>
+          <SidebarNav
+            activeNav={activeNav}
+            motionOn={motionOn}
+            onSelect={(id) => {
+              if (isNavLocked(id)) return;
+              if (id === 'requests' && activeNav === 'requests') {
+                setOpenedRequestId(null);
+              }
+              if (id !== 'requests') {
+                setOpenedRequestId(null);
+              }
+              setStackDir(stackSlideDir(stackNav, id));
+              setStackNav(id);
+              setActiveNav(id);
+              setPolicyOpen(false);
+              if (id === 'alerts') setUserMenuOpen(false);
+            }}
+            onUpload={() => {
+              setPolicyOpen(false);
+              setUserMenuOpen(false);
+              setUploadOpen(true);
+            }}
+          />
+          <AddEntityButton
+            motionOn={motionOn}
+            onOpen={() => {
+              setPolicyOpen(false);
+              setUserMenuOpen(false);
+              setNotifOpen(false);
+              setUploadOpen(false);
+              setMetricsOpen(false);
+              setAddOpen(true);
+            }}
+          />
+          <PlanMetricsButton
+            motionOn={motionOn}
+            onOpen={() => {
+              setPolicyOpen(false);
+              setUserMenuOpen(false);
+              setNotifOpen(false);
+              setUploadOpen(false);
+              setAddOpen(false);
+              setMetricsOpen(true);
+            }}
+          />
+          <PlanMetricsModal
+            open={metricsOpen}
+            motionOn={motionOn}
+            snapshot={dash.snapshot}
+            comparison={dash.policyComparison}
+            token={dash.token}
+            onOpenRequest={(requestId) => {
+              setMetricsOpen(false);
+              setStackDir(stackSlideDir(stackNav, 'requests'));
+              setStackNav('requests');
+              setActiveNav('requests');
+              setOpenedRequestId(requestId);
+              dash.selectRequest(requestId);
+            }}
+            onClose={() => setMetricsOpen(false)}
+          />
+          <AddEntityModal
+            open={addOpen}
+            snapshot={dash.snapshot}
+            motionOn={motionOn}
+            live={dash.source === 'live'}
+            token={dash.token}
+            submitting={dash.entityMutationPending}
+            onClose={() => setAddOpen(false)}
+            onCreateRequest={dash.createRequest}
+            onCreateEngineer={dash.createEngineer}
+          />
+          <PolicyControl
+            open={policyOpen}
+            policyLabel={policyTitle}
+            policies={policies}
+            selectedId={policyId}
+            lunchOn={lunchOn}
+            trafficOn={trafficOn}
+            metroOn={metroOn}
+            equipmentTransfersOn={equipmentTransfersOn}
+            motionOn={motionOn}
+            onToggle={() => {
+              setUserMenuOpen(false);
+              setAddOpen(false);
+              setPolicyOpen((value) => !value);
+            }}
+            onSelect={applyPolicy}
+            onLunchToggle={applyLunch}
+            onTrafficToggle={applyTraffic}
+            onMetroToggle={applyMetro}
+            onEquipmentTransfersToggle={applyEquipmentTransfers}
+            onManualMode={() => {
+              if (!dash.snapshot) return;
+              void dash.setMode(dash.snapshot.plan.mode === 'auto' ? 'manual' : 'auto');
+            }}
+          />
+          <NotificationControl
+            open={notifOpen}
+            count={inbox.count}
+            tone={inbox.tone}
+            motionOn={motionOn}
+            onToggle={() => {
+              setPolicyOpen(false);
+              setUserMenuOpen(false);
+              setNotifOpen((value) => !value);
+            }}
+          />
+          <ToastColumn
+            open={notifOpen}
+            motionOn={motionOn}
+            scale={canvas.scale}
+            onCollapse={() => {
+              setNotifOpen(false);
+              setToastColumnPinned(false);
+            }}
+            onToastAction={(toast) => {
+              if (!toast.actionLabel) return;
+              const next = dash.pendingDelta ?? rememberedDelta.current;
+              if (next) setReviewDelta(next);
+            }}
+          />
+          <AnimatePresence>
+            {reviewDelta ? (
+              <ReplanDeltaCard
+                key="replan-delta"
+                delta={reviewDelta}
+                canReject={dash.canRejectDelta && reviewDelta === dash.pendingDelta}
+                busy={dash.rebuilding}
+                motionOn={motionOn}
+                onAccept={() => {
+                  setReviewDelta(null);
+                  if (dash.pendingDelta) dash.acceptDelta();
+                }}
+                onReject={() => {
+                  setReviewDelta(null);
+                  dash.rejectDelta();
+                }}
+                onOpenRequest={(requestId) => {
+                  setReviewDelta(null);
+                  setStackDir(stackSlideDir(stackNav, 'day'));
+                  setStackNav('day');
+                  setActiveNav('day');
+                  dash.selectRequest(requestId);
+                }}
+              />
+            ) : null}
+          </AnimatePresence>
+          <DataUploadModal
+            open={uploadOpen}
+            submitting={dash.uploadingData}
+            readOnly={dash.writesDisabled}
+            existingRegions={regions.map((region) => region.id)}
+            motionOn={motionOn}
+            onClose={() => {
+              if (!dash.uploadingData) setUploadOpen(false);
+            }}
+            onUpload={dash.uploadDataset}
+            onImportOfficial={dash.importOfficialTzDataset}
+            onRoadImport={dash.importRoadResource}
+          />
+          <UserMenu
+            open={userMenuOpen}
+            covered={notifOpen}
+            motionOn={motionOn}
+            onToggle={() => {
+              setPolicyOpen(false);
+              setUserMenuOpen((value) => !value);
+            }}
+            onSettings={() => {
+              setUserMenuOpen(false);
+              setSettingsTab('general');
+              setSettingsOpen(true);
+            }}
+            onEndDay={() => {
+              setUserMenuOpen(false);
+              setResultsOpen(true);
+            }}
+            demoStand={dash.liveWorkday?.demoStand === true}
+            onRestartDay={() => {
+              setUserMenuOpen(false);
+              setDangerAction('restartDay');
+            }}
+            onReset={() => {
+              setUserMenuOpen(false);
+              setDangerAction('resetData');
+            }}
+            onSignOut={() => {
+              setUserMenuOpen(false);
+              setDangerAction('signOut');
+            }}
+          />
+          <SettingsModal
+            open={settingsOpen}
+            motionOn={motionOn}
+            token={dash.token}
+            routerSettings={dash.snapshot?.routerSettings}
+            submitting={dash.busy}
+            initialTab={settingsTab}
+            onClose={() => setSettingsOpen(false)}
+            onSave={async ({ dispatcher, router }) => {
+              if (!dash.token || !dash.snapshot) {
+                throw new Error('Нужна живая сессия диспетчера');
+              }
+              await updateDispatcherSettings(dash.token, dispatcher);
+              dash.applyRoutingSettings(dash.snapshot.policyId, router);
+              setSettingsOpen(false);
+            }}
+          />
+          {dash.token ? (
+            <DispatcherDayResults
+              token={dash.token}
+              live={dash.liveWorkday}
+              shift={dash.snapshot?.shift}
+              open={resultsOpen}
+              onOpen={() => setResultsOpen(true)}
+              onClose={() => setResultsOpen(false)}
+              closeShift={dash.closeShift}
+              requests={dash.snapshot?.requests ?? []}
+              workDate={dash.snapshot?.workDate ?? dash.liveWorkday?.workday.workDate ?? null}
             />
           ) : null}
-        </AnimatePresence>
-        <DataUploadModal
-          open={uploadOpen}
-          submitting={dash.uploadingData}
-          readOnly={dash.writesDisabled}
-          existingRegions={regions.map((region) => region.id)}
-          motionOn={motionOn}
-          onClose={() => {
-            if (!dash.uploadingData) setUploadOpen(false);
-          }}
-          onUpload={dash.uploadDataset}
-          onImportOfficial={dash.importOfficialTzDataset}
-          onRoadImport={dash.importRoadResource}
-        />
-        <UserMenu
-          open={userMenuOpen}
-          covered={notifOpen}
-          motionOn={motionOn}
-          onToggle={() => {
-            setPolicyOpen(false);
-            setUserMenuOpen((value) => !value);
-          }}
-          onSettings={() => {
-            setUserMenuOpen(false);
-            setSettingsTab('general');
-            setSettingsOpen(true);
-          }}
-          onEndDay={() => {
-            setUserMenuOpen(false);
-            setResultsOpen(true);
-          }}
-          demoStand={dash.liveWorkday?.demoStand === true}
-          onRestartDay={() => {
-            setUserMenuOpen(false);
-            setDangerAction('restartDay');
-          }}
-          onReset={() => {
-            setUserMenuOpen(false);
-            setDangerAction('resetData');
-          }}
-          onSignOut={() => {
-            setUserMenuOpen(false);
-            setDangerAction('signOut');
-          }}
-        />
-        <SettingsModal
-          open={settingsOpen}
-          motionOn={motionOn}
-          token={dash.token}
-          routerSettings={dash.snapshot?.routerSettings}
-          submitting={dash.busy}
-          initialTab={settingsTab}
-          onClose={() => setSettingsOpen(false)}
-          onSave={async ({ dispatcher, router }) => {
-            if (!dash.token || !dash.snapshot) {
-              throw new Error('Нужна живая сессия диспетчера');
-            }
-            await updateDispatcherSettings(dash.token, dispatcher);
-            dash.applyRoutingSettings(dash.snapshot.policyId, router);
-            setSettingsOpen(false);
-          }}
-        />
-        {dash.token ? (
-          <DispatcherDayResults
-            token={dash.token}
-            live={dash.liveWorkday}
-            shift={dash.snapshot?.shift}
-            open={resultsOpen}
-            onOpen={() => setResultsOpen(true)}
-            onClose={() => setResultsOpen(false)}
-            closeShift={dash.closeShift}
-            requests={dash.snapshot?.requests ?? []}
-            workDate={dash.snapshot?.workDate ?? dash.liveWorkday?.workday.workDate ?? null}
+          <WorsenModal
+            text={dash.worseningText}
+            onCancel={() => dash.answerWorsening(false)}
+            onConfirm={() => dash.answerWorsening(true)}
           />
-        ) : null}
-        <WorsenModal
-          text={dash.worseningText}
-          onCancel={() => dash.answerWorsening(false)}
-          onConfirm={() => dash.answerWorsening(true)}
-        />
-        <ConfirmDangerModal
-          actionId={dangerAction}
-          motionOn={motionOn}
-          onCancel={() => setDangerAction(null)}
-          onConfirm={(id) => {
-            setDangerAction(null);
-            if (id === 'endDay') {
-              if (dash.snapshot) {
+          <ConfirmDangerModal
+            actionId={dangerAction}
+            motionOn={motionOn}
+            onCancel={() => setDangerAction(null)}
+            onConfirm={(id) => {
+              setDangerAction(null);
+              if (id === 'endDay') {
+                if (dash.snapshot) {
+                  void dash
+                    .closeShift(dash.snapshot.workDate, crypto.randomUUID())
+                    .then(() => {
+                      pushToast({
+                        id: 'shift-closed',
+                        kind: 'system',
+                        title: 'Смена закрыта',
+                        body: 'Сервер подтвердил закрытие диспетчерской смены.',
+                      });
+                    })
+                    .catch((cause: unknown) => {
+                      pushToast({
+                        id: 'shift-close-error',
+                        kind: 'error',
+                        title: 'Не удалось закрыть смену',
+                        body: cause instanceof Error ? cause.message : 'Повторите действие позже.',
+                      });
+                    });
+                }
+                return;
+              }
+              if (id === 'restartDay' || id === 'resetData') {
+                if (!dash.liveWorkday?.demoStand) {
+                  pushToast({
+                    id: `unsupported-${id}`,
+                    kind: 'system',
+                    title: 'Действие пока недоступно',
+                    body: 'Перезапуск дня доступен на публичном демо-стенде.',
+                  });
+                  return;
+                }
                 void dash
-                  .closeShift(dash.snapshot.workDate, crypto.randomUUID())
+                  .restartDemoDay()
                   .then(() => {
+                    clearWorkDayStarted(window.localStorage);
+                    clearAssistantSessions(window.localStorage);
+                    setWelcomeOpen(true);
                     pushToast({
-                      id: 'shift-closed',
+                      id: 'demo-day-restarted',
                       kind: 'system',
-                      title: 'Смена закрыта',
-                      body: 'Сервер подтвердил закрытие диспетчерской смены.',
+                      title: 'День сброшен',
+                      body: 'Исходный набор из 14 заявок и двух инженеров готов. Почта бригады снята.',
                     });
                   })
                   .catch((cause: unknown) => {
                     pushToast({
-                      id: 'shift-close-error',
+                      id: 'demo-day-restart-error',
                       kind: 'error',
-                      title: 'Не удалось закрыть смену',
+                      title: 'Не удалось начать день заново',
                       body: cause instanceof Error ? cause.message : 'Повторите действие позже.',
                     });
                   });
-              }
-              return;
-            }
-            if (id === 'restartDay' || id === 'resetData') {
-              if (!dash.liveWorkday?.demoStand) {
-                pushToast({
-                  id: `unsupported-${id}`,
-                  kind: 'system',
-                  title: 'Действие пока недоступно',
-                  body: 'Перезапуск дня доступен на публичном демо-стенде.',
-                });
                 return;
               }
-              void dash
-                .restartDemoDay()
-                .then(() => {
-                  clearWorkDayStarted(window.localStorage);
-                  clearAssistantSessions(window.localStorage);
-                  setWelcomeOpen(true);
-                  pushToast({
-                    id: 'demo-day-restarted',
-                    kind: 'system',
-                    title: 'День сброшен',
-                    body: 'Исходный набор из 14 заявок и двух инженеров готов. Почта бригады снята.',
-                  });
-                })
-                .catch((cause: unknown) => {
-                  pushToast({
-                    id: 'demo-day-restart-error',
-                    kind: 'error',
-                    title: 'Не удалось начать день заново',
-                    body: cause instanceof Error ? cause.message : 'Повторите действие позже.',
-                  });
-                });
-              return;
-            }
-            void dash.signOut();
-          }}
-        />
-        {activeNav === 'requests' && openedRequestId ? null : (
-          <div
-            className="absolute left-[180px] z-[15] flex h-[40px] items-center gap-[14px]"
-            style={{ top: DATE_TOP }}
-          >
-            <FigmaText className="figma-nowrap font-murs text-[32px] tracking-[-0.544px] text-figma-ink">
-              {view?.dateLabel ?? 'Рабочий день'}
-              {dash.liveWorkday ? ` · ${formatClock(dash.liveWorkday.workday.liveNow)}` : ''}
-            </FigmaText>
-            <McpAgentIndicator
-              active={mcpActive}
-              motionOn={motionOn}
-              onClick={() => {
-                setSettingsTab('api');
-                setSettingsOpen(true);
-              }}
-            />
-          </div>
-        )}
-        <div
-          className={`absolute inset-0 ${
-            stackViewKey(stackNav) === 'engineers' ? 'overflow-visible' : 'overflow-hidden'
-          }`}
-        >
-          <AnimatePresence initial={false} custom={stackDir}>
-            <motion.div
-              key={stackViewKey(stackNav)}
-              custom={stackDir}
-              className={`absolute inset-0 isolate bg-figma-canvas ${
-                settledPane === stackViewKey(stackNav) ? 'stack-pane-settled' : ''
-              }`}
-              initial={motionOn && stackDir !== 0 ? stackSlideEnter(stackDir) : false}
-              animate={{ x: 0, y: 0 }}
-              exit={motionOn && stackDir !== 0 ? stackSlideExit(stackDir) : undefined}
-              transition={motionOn && stackDir !== 0 ? slide : { duration: 0 }}
-              onAnimationStart={() => setSettledPane('')}
-              onAnimationComplete={() => setSettledPane(stackViewKey(stackNav))}
+              void dash.signOut();
+            }}
+          />
+          {activeNav === 'requests' && openedRequestId ? null : (
+            <div
+              className="absolute left-[180px] z-[15] flex h-[40px] items-center gap-[14px]"
+              style={{ top: DATE_TOP }}
             >
-              {stackViewKey(stackNav) === 'chats' ? <DashboardChats token={dash.token} /> : null}
-              {stackViewKey(stackNav) === 'ai' ? (
-                <DashboardAi
-                  token={dash.token}
-                  onOpenObject={(target) => {
-                    if (target.type === 'request') {
-                      setStackDir(stackSlideDir(stackNav, 'requests'));
-                      setStackNav('requests');
-                      setActiveNav('requests');
-                      setOpenedRequestId(target.id);
-                      dash.selectRequest(target.id);
-                      return;
-                    }
-                    if (target.type === 'engineer') {
-                      setStackDir(stackSlideDir(stackNav, 'engineers'));
-                      setStackNav('engineers');
-                      setActiveNav('engineers');
-                      dash.selectEngineer(target.id);
-                      return;
-                    }
-                    setStackDir(stackSlideDir(stackNav, 'alerts'));
-                    setStackNav('alerts');
-                    setActiveNav('alerts');
-                  }}
-                />
-              ) : null}
-              {stackViewKey(stackNav) === 'policy' ? (
-                <PolicyComparisonView
-                  snapshot={dash.snapshot}
-                  comparison={dash.policyComparison}
-                  loading={dash.policyComparisonLoading}
-                  error={dash.policyComparisonError}
-                  recorded={dash.isDemo}
-                  readOnly={dash.source === 'cached'}
-                  token={dash.token}
-                  onRefresh={() => void dash.refreshPolicyComparison()}
-                  regions={[
-                    { id: ALL_REGIONS, label: 'Все регионы' },
-                    ...regions.map((item) => ({ id: item.id, label: item.label })),
-                  ]}
-                  selectedRegion={selectedRegion}
-                  motionOn={motionOn}
-                />
-              ) : null}
-              {stackViewKey(stackNav) === 'alerts' ? (
-                <AlertsView
-                  token={dash.token ?? undefined}
-                  snapshot={dash.snapshot}
-                  toasts={toasts}
-                  demoMode={dash.isDemo}
-                  motionOn={motionOn}
-                  onMarkNoticeSeen={dash.markNoticeSeen}
-                  onResolve={dash.resolveAlert}
-                  writesDisabled={dash.writesDisabled || dash.busy}
-                  onOpenRequest={(requestId) => {
-                    setStackDir(stackSlideDir(stackNav, 'requests'));
-                    setStackNav('requests');
-                    setActiveNav('requests');
-                    setOpenedRequestId(requestId);
-                    dash.selectRequest(requestId);
-                  }}
-                />
-              ) : null}
-              {stackViewKey(stackNav) === 'requests' ? (
-                <RequestsView
-                  snapshot={dash.snapshot}
-                  selectedRequestId={dash.selectedRequest?.id ?? null}
-                  onSelect={(requestId) => {
-                    setOpenedRequestId(requestId);
-                    dash.selectRequest(requestId);
-                  }}
-                />
-              ) : null}
-              {stackViewKey(stackNav) === 'engineers' ? (
-                <EngineersView
-                  token={dash.source === 'live' ? (dash.token ?? undefined) : undefined}
-                  snapshot={visibleSnapshot}
-                  handoffs={dash.liveWorkday?.handoffs ?? []}
-                  selectedEngineerId={dash.selectedEngineerId}
-                  motionOn={motionOn}
-                  busy={dash.busy || dash.writesDisabled}
-                  onSelectEngineer={dash.selectEngineer}
-                  onLinkEmail={dash.saveEngineerLogin}
-                  onDeleteEngineer={dash.deleteEngineer}
-                  onSetAvailability={(engineerId, availability) => {
-                    void dash.updateEngineerAvailability(engineerId, availability);
-                  }}
-                />
-              ) : null}
-              {stackViewKey(stackNav) === 'main' ? (
-                <>
-                  <EngineersColumn
-                    engineers={visibleEngineers}
-                    totalCount={roster.length}
-                    requestCount={requestCount}
-                    totalKm={totalKm}
-                    planLabel={planLabel}
-                    unassignedTitle={view?.unassignedTitle ?? 'Данные загружаются'}
-                    unassignedReason={view?.unassignedReason ?? '—'}
-                    selectedEngineerId={dash.selectedEngineerId}
-                    searchOpen={searchOpen}
-                    searchQuery={searchQuery}
-                    motionOn={motionOn}
-                    onSearchToggle={() => {
-                      if (searchOpen) {
-                        setSearchOpen(false);
-                        setSearchQuery('');
+              <FigmaText className="figma-nowrap font-murs text-[32px] tracking-[-0.544px] text-figma-ink">
+                {view?.dateLabel ?? 'Рабочий день'}
+                {dash.liveWorkday ? ` · ${formatClock(dash.liveWorkday.workday.liveNow)}` : ''}
+              </FigmaText>
+              <McpAgentIndicator
+                active={mcpActive}
+                motionOn={motionOn}
+                onClick={() => {
+                  setSettingsTab('api');
+                  setSettingsOpen(true);
+                }}
+              />
+            </div>
+          )}
+          <div
+            className={`absolute inset-0 ${
+              stackViewKey(stackNav) === 'engineers' ? 'overflow-visible' : 'overflow-hidden'
+            }`}
+          >
+            <AnimatePresence initial={false} custom={stackDir}>
+              <motion.div
+                key={stackViewKey(stackNav)}
+                custom={stackDir}
+                className={`absolute inset-0 isolate bg-figma-canvas ${
+                  settledPane === stackViewKey(stackNav) ? 'stack-pane-settled' : ''
+                }`}
+                initial={motionOn && stackDir !== 0 ? stackSlideEnter(stackDir) : false}
+                animate={{ x: 0, y: 0 }}
+                exit={motionOn && stackDir !== 0 ? stackSlideExit(stackDir) : undefined}
+                transition={motionOn && stackDir !== 0 ? slide : { duration: 0 }}
+                onAnimationStart={() => setSettledPane('')}
+                onAnimationComplete={() => setSettledPane(stackViewKey(stackNav))}
+              >
+                {stackViewKey(stackNav) === 'chats' ? <DashboardChats token={dash.token} /> : null}
+                {stackViewKey(stackNav) === 'ai' ? (
+                  <DashboardAi
+                    token={dash.token}
+                    onOpenObject={(target) => {
+                      if (target.type === 'request') {
+                        setStackDir(stackSlideDir(stackNav, 'requests'));
+                        setStackNav('requests');
+                        setActiveNav('requests');
+                        setOpenedRequestId(target.id);
+                        dash.selectRequest(target.id);
                         return;
                       }
-                      setSearchOpen(true);
-                    }}
-                    onSearchChange={setSearchQuery}
-                    onSelect={(id) => {
-                      dash.selectEngineer(id);
-                      setSearchOpen(false);
-                      setSearchQuery('');
-                    }}
-                    onSelectUnassigned={() => {
-                      if (view?.firstUnassignedId) dash.selectRequest(view.firstUnassignedId);
+                      if (target.type === 'engineer') {
+                        setStackDir(stackSlideDir(stackNav, 'engineers'));
+                        setStackNav('engineers');
+                        setActiveNav('engineers');
+                        dash.selectEngineer(target.id);
+                        return;
+                      }
+                      setStackDir(stackSlideDir(stackNav, 'alerts'));
+                      setStackNav('alerts');
+                      setActiveNav('alerts');
                     }}
                   />
-                  <MapCard
-                    snapshot={visibleSnapshot}
-                    selectedEngineerId={dash.selectedEngineerId}
-                    selectedRequestId={dash.selectedRequest?.id ?? null}
-                    progressByEngineer={liveProgress}
-                    completedByEngineer={liveCompleted}
-                    handoffs={dash.liveWorkday?.handoffs ?? []}
-                    frame={mapFrame}
-                    regionLabel={regionLabel}
+                ) : null}
+                {stackViewKey(stackNav) === 'policy' ? (
+                  <PolicyComparisonView
+                    snapshot={dash.snapshot}
+                    comparison={dash.policyComparison}
+                    loading={dash.policyComparisonLoading}
+                    error={dash.policyComparisonError}
+                    recorded={dash.isDemo}
+                    readOnly={dash.source === 'cached'}
+                    token={dash.token}
+                    onRefresh={() => void dash.refreshPolicyComparison()}
                     regions={[
                       { id: ALL_REGIONS, label: 'Все регионы' },
                       ...regions.map((item) => ({ id: item.id, label: item.label })),
                     ]}
                     selectedRegion={selectedRegion}
-                    regionOpen={regionOpen}
                     motionOn={motionOn}
-                    onSelectRequest={dash.selectRequest}
-                    onToggleRegion={() => {
-                      setPolicyOpen(false);
-                      setUserMenuOpen(false);
-                      setRegionOpen((value) => !value);
+                  />
+                ) : null}
+                {stackViewKey(stackNav) === 'alerts' ? (
+                  <AlertsView
+                    token={dash.token ?? undefined}
+                    snapshot={dash.snapshot}
+                    toasts={toasts}
+                    demoMode={dash.isDemo}
+                    motionOn={motionOn}
+                    onMarkNoticeSeen={dash.markNoticeSeen}
+                    onResolve={dash.resolveAlert}
+                    writesDisabled={dash.writesDisabled || dash.busy}
+                    onOpenRequest={(requestId) => {
+                      setStackDir(stackSlideDir(stackNav, 'requests'));
+                      setStackNav('requests');
+                      setActiveNav('requests');
+                      setOpenedRequestId(requestId);
+                      dash.selectRequest(requestId);
                     }}
-                    onSelectRegion={(id) => {
-                      setSelectedRegion(id);
-                      setRegionOpen(false);
+                  />
+                ) : null}
+                {stackViewKey(stackNav) === 'requests' ? (
+                  <RequestsView
+                    snapshot={dash.snapshot}
+                    selectedRequestId={dash.selectedRequest?.id ?? null}
+                    onSelect={(requestId) => {
+                      setOpenedRequestId(requestId);
+                      dash.selectRequest(requestId);
+                    }}
+                  />
+                ) : null}
+                {stackViewKey(stackNav) === 'engineers' ? (
+                  <EngineersView
+                    token={dash.source === 'live' ? (dash.token ?? undefined) : undefined}
+                    snapshot={visibleSnapshot}
+                    handoffs={dash.liveWorkday?.handoffs ?? []}
+                    selectedEngineerId={dash.selectedEngineerId}
+                    motionOn={motionOn}
+                    busy={dash.busy || dash.writesDisabled}
+                    onSelectEngineer={dash.selectEngineer}
+                    onLinkEmail={dash.saveEngineerLogin}
+                    onDeleteEngineer={dash.deleteEngineer}
+                    onSetAvailability={(engineerId, availability) => {
+                      void dash.updateEngineerAvailability(engineerId, availability);
+                    }}
+                  />
+                ) : null}
+                {stackViewKey(stackNav) === 'main' ? (
+                  <>
+                    <EngineersColumn
+                      engineers={visibleEngineers}
+                      totalCount={roster.length}
+                      requestCount={requestCount}
+                      totalKm={totalKm}
+                      planLabel={planLabel}
+                      unassignedTitle={view?.unassignedTitle ?? 'Данные загружаются'}
+                      unassignedReason={view?.unassignedReason ?? '—'}
+                      selectedEngineerId={dash.selectedEngineerId}
+                      searchOpen={searchOpen}
+                      searchQuery={searchQuery}
+                      motionOn={motionOn}
+                      onSearchToggle={() => {
+                        if (searchOpen) {
+                          setSearchOpen(false);
+                          setSearchQuery('');
+                          return;
+                        }
+                        setSearchOpen(true);
+                      }}
+                      onSearchChange={setSearchQuery}
+                      onSelect={(id) => {
+                        dash.selectEngineer(id);
+                        setSearchOpen(false);
+                        setSearchQuery('');
+                      }}
+                      onSelectUnassigned={() => {
+                        if (view?.firstUnassignedId) dash.selectRequest(view.firstUnassignedId);
+                      }}
+                    />
+                    <MapCard
+                      snapshot={visibleSnapshot}
+                      selectedEngineerId={dash.selectedEngineerId}
+                      selectedRequestId={dash.selectedRequest?.id ?? null}
+                      progressByEngineer={liveProgress}
+                      completedByEngineer={liveCompleted}
+                      handoffs={dash.liveWorkday?.handoffs ?? []}
+                      frame={mapFrameFor(stretch, mapMode)}
+                      regionLabel={regionLabel}
+                      regions={[
+                        { id: ALL_REGIONS, label: 'Все регионы' },
+                        ...regions.map((item) => ({ id: item.id, label: item.label })),
+                      ]}
+                      selectedRegion={selectedRegion}
+                      regionOpen={regionOpen}
+                      motionOn={motionOn}
+                      onSelectRequest={dash.selectRequest}
+                      onToggleRegion={() => {
+                        setPolicyOpen(false);
+                        setUserMenuOpen(false);
+                        setRegionOpen((value) => !value);
+                      }}
+                      onSelectRegion={(id) => {
+                        setSelectedRegion(id);
+                        setRegionOpen(false);
+                        dash.clearFocus();
+                      }}
+                      token={dash.token}
+                    />
+                    <AnimatePresence>
+                      {showRouteCard && selectedEngineer ? (
+                        <RouteCard
+                          key="route-card"
+                          engineer={selectedEngineer}
+                          progress={liveProgress.get(selectedEngineer.id) ?? null}
+                          handoffs={dash.liveWorkday?.handoffs ?? []}
+                          engineerNames={engineerNames}
+                          motionOn={motionOn}
+                          onSelectRequest={dash.selectRequest}
+                        />
+                      ) : null}
+                    </AnimatePresence>
+                    <AnimatePresence>
+                      {showRightPanel ? (
+                        <DetailPanel
+                          key={
+                            panelMode === 'request'
+                              ? (dash.selectedRequest?.id ?? 'request')
+                              : (dash.selectedEngineerId ?? 'plan')
+                          }
+                          mode={panelMode === 'request' ? 'request' : 'plan'}
+                          onOpenEngineer={() => {
+                            setStackDir(stackSlideDir(stackNav, 'engineers'));
+                            setStackNav('engineers');
+                            setActiveNav('engineers');
+                          }}
+                          request={dash.selectedRequest}
+                          engineer={dash.selectedEngineer}
+                          explanation={panelExplanation}
+                          token={dash.token}
+                          roster={(dash.snapshot?.engineers ?? []).slice(0, 8).map((item) => ({
+                            name: item.displayName,
+                            skills: item.skills,
+                            transport: item.transportType,
+                            availability: item.day?.availability ?? null,
+                          }))}
+                          motionOn={motionOn}
+                          onClose={() => dash.clearFocus()}
+                        />
+                      ) : null}
+                    </AnimatePresence>
+                  </>
+                ) : null}
+              </motion.div>
+            </AnimatePresence>
+            <AnimatePresence initial={false}>
+              {activeNav === 'requests' && openedRequestId ? (
+                <motion.div
+                  key={openedRequestId}
+                  className="absolute inset-0 isolate z-10 bg-figma-canvas"
+                  initial={motionOn ? { x: '100%' } : false}
+                  animate={{ x: 0 }}
+                  exit={motionOn ? { x: '100%' } : undefined}
+                  transition={motionOn ? slide : { duration: 0 }}
+                >
+                  <RequestDetailView
+                    token={dash.source === 'live' ? (dash.token ?? undefined) : undefined}
+                    snapshot={dash.snapshot}
+                    requestId={openedRequestId}
+                    motionOn={motionOn}
+                    onBack={() => {
+                      setOpenedRequestId(null);
                       dash.clearFocus();
                     }}
-                    token={dash.token}
+                    onCancelVisit={
+                      dash.writesDisabled
+                        ? undefined
+                        : async () => {
+                            await dash.cancelRequest(openedRequestId);
+                            setOpenedRequestId(null);
+                            dash.clearFocus();
+                          }
+                    }
+                    onAssignEngineer={
+                      dash.writesDisabled
+                        ? undefined
+                        : async (engineerId) => {
+                            await dash.assignRequest(openedRequestId, engineerId);
+                          }
+                    }
                   />
-                  <AnimatePresence>
-                    {showRouteCard && selectedEngineer ? (
-                      <RouteCard
-                        key="route-card"
-                        engineer={selectedEngineer}
-                        progress={liveProgress.get(selectedEngineer.id) ?? null}
-                        handoffs={dash.liveWorkday?.handoffs ?? []}
-                        engineerNames={engineerNames}
-                        motionOn={motionOn}
-                        onSelectRequest={dash.selectRequest}
-                      />
-                    ) : null}
-                  </AnimatePresence>
-                  <AnimatePresence>
-                    {showRightPanel ? (
-                      <DetailPanel
-                        key={
-                          panelMode === 'request'
-                            ? (dash.selectedRequest?.id ?? 'request')
-                            : (dash.selectedEngineerId ?? 'plan')
-                        }
-                        mode={panelMode === 'request' ? 'request' : 'plan'}
-                        onOpenEngineer={() => {
-                          setStackDir(stackSlideDir(stackNav, 'engineers'));
-                          setStackNav('engineers');
-                          setActiveNav('engineers');
-                        }}
-                        request={dash.selectedRequest}
-                        engineer={dash.selectedEngineer}
-                        explanation={panelExplanation}
-                        token={dash.token}
-                        roster={(dash.snapshot?.engineers ?? []).slice(0, 8).map((item) => ({
-                          name: item.displayName,
-                          skills: item.skills,
-                          transport: item.transportType,
-                          availability: item.day?.availability ?? null,
-                        }))}
-                        motionOn={motionOn}
-                        onClose={() => dash.clearFocus()}
-                      />
-                    ) : null}
-                  </AnimatePresence>
-                </>
+                </motion.div>
               ) : null}
-            </motion.div>
-          </AnimatePresence>
-          <AnimatePresence initial={false}>
-            {activeNav === 'requests' && openedRequestId ? (
-              <motion.div
-                key={openedRequestId}
-                className="absolute inset-0 isolate z-10 bg-figma-canvas"
-                initial={motionOn ? { x: '100%' } : false}
-                animate={{ x: 0 }}
-                exit={motionOn ? { x: '100%' } : undefined}
-                transition={motionOn ? slide : { duration: 0 }}
-              >
-                <RequestDetailView
-                  token={dash.source === 'live' ? (dash.token ?? undefined) : undefined}
-                  snapshot={dash.snapshot}
-                  requestId={openedRequestId}
-                  motionOn={motionOn}
-                  onBack={() => {
-                    setOpenedRequestId(null);
-                    dash.clearFocus();
-                  }}
-                  onCancelVisit={
-                    dash.writesDisabled
-                      ? undefined
-                      : async () => {
-                          await dash.cancelRequest(openedRequestId);
-                          setOpenedRequestId(null);
-                          dash.clearFocus();
-                        }
-                  }
-                  onAssignEngineer={
-                    dash.writesDisabled
-                      ? undefined
-                      : async (engineerId) => {
-                          await dash.assignRequest(openedRequestId, engineerId);
-                        }
-                  }
-                />
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
-        </div>
+            </AnimatePresence>
+          </div>
+        </ArtboardStretchProvider>
       </div>
     </div>
   );
@@ -1254,7 +1285,7 @@ function SidebarNav({
   return (
     <aside
       ref={railRef}
-      className="absolute left-0 top-0 z-20 h-[1080px] w-[158px] overflow-visible rounded-br-[20px] rounded-tr-[20px] border-r-[0.5px] border-solid border-[rgba(158,158,158,0.3)] bg-white"
+      className="absolute inset-y-0 left-0 z-20 w-[158px] overflow-visible rounded-br-[20px] rounded-tr-[20px] border-r-[0.5px] border-solid border-[rgba(158,158,158,0.3)] bg-white"
     >
       <div className="absolute left-[79px] top-[56px] -translate-x-1/2 -translate-y-1/2">
         <FigmaIcon src={FIGMA_ASSETS.logo} alt="LCT Smart Router" width={64} height={64} />
@@ -1336,11 +1367,12 @@ function NotificationControl({
   motionOn: boolean;
   onToggle: () => void;
 }) {
+  const { dx } = useArtboardStretch();
   return (
     <div
       data-notif-panel
       className="pointer-events-none absolute z-[70]"
-      style={{ left: NOTIF_PANEL_LEFT, top: NOTIF_PANEL_TOP, width: 363, height: 51 }}
+      style={{ left: NOTIF_PANEL_LEFT + dx, top: NOTIF_PANEL_TOP, width: 363, height: 51 }}
     >
       <motion.button
         type="button"
@@ -1387,11 +1419,12 @@ function UserMenu({
   onReset: () => void;
   onSignOut: () => void;
 }) {
+  const { dx } = useArtboardStretch();
   return (
     <div
       data-user-menu
       className={`absolute ${covered ? 'z-[40]' : 'z-[85]'}`}
-      style={{ left: HEADER_AVATAR_LEFT, top: HEADER_AVATAR_TOP }}
+      style={{ left: HEADER_AVATAR_LEFT + dx, top: HEADER_AVATAR_TOP }}
     >
       <motion.button
         type="button"
@@ -1515,12 +1548,13 @@ function NotificationBadge({ count, tone }: { count: number; tone: NotificationT
  * Dark plus in the MAIN header, left of the policy chip. Opens the add-entity dialog.
  */
 function PlanMetricsButton({ motionOn, onOpen }: { motionOn: boolean; onOpen: () => void }) {
+  const { dx } = useArtboardStretch();
   return (
     <motion.button
       type="button"
       onClick={onOpen}
       className="absolute z-50 flex h-[51px] items-center gap-[10px] rounded-[27px] bg-figma-ink py-[4px] pl-[4px] pr-[16px] text-white"
-      style={{ left: METRICS_BUTTON_LEFT, top: POLICY_TOP, width: METRICS_BUTTON_WIDTH }}
+      style={{ left: METRICS_BUTTON_LEFT + dx, top: POLICY_TOP, width: METRICS_BUTTON_WIDTH }}
       whileHover={motionOn ? { y: -1 } : undefined}
       whileTap={motionOn ? { scale: 0.98 } : undefined}
       transition={{ duration: 0.16 }}
@@ -1536,6 +1570,7 @@ function PlanMetricsButton({ motionOn, onOpen }: { motionOn: boolean; onOpen: ()
 }
 
 function AddEntityButton({ motionOn, onOpen }: { motionOn: boolean; onOpen: () => void }) {
+  const { dx } = useArtboardStretch();
   return (
     <motion.button
       type="button"
@@ -1543,7 +1578,7 @@ function AddEntityButton({ motionOn, onOpen }: { motionOn: boolean; onOpen: () =
       onClick={onOpen}
       className="absolute z-50 flex items-center justify-center rounded-full bg-figma-ink"
       style={{
-        left: ADD_BUTTON_LEFT,
+        left: ADD_BUTTON_LEFT + dx,
         top: ADD_BUTTON_TOP,
         width: ADD_BUTTON_SIZE,
         height: ADD_BUTTON_SIZE,
@@ -1592,6 +1627,7 @@ function PolicyControl({
   onEquipmentTransfersToggle: () => void;
   onManualMode: () => void;
 }) {
+  const { dx } = useArtboardStretch();
   const options =
     policies.length > 0
       ? policies
@@ -1604,7 +1640,7 @@ function PolicyControl({
     <motion.div
       data-policy-panel
       className="absolute z-50 w-[363px] overflow-hidden rounded-[27px] bg-white"
-      style={{ left: POLICY_LEFT, top: POLICY_TOP }}
+      style={{ left: POLICY_LEFT + dx, top: POLICY_TOP }}
       initial={false}
       animate={{
         height: open ? POLICY_OPEN_HEIGHT + extra : 51,
@@ -1799,6 +1835,7 @@ function EngineersColumn({
   onSelect: (id: string) => void;
   onSelectUnassigned: () => void;
 }) {
+  const { dy } = useArtboardStretch();
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -1808,7 +1845,7 @@ function EngineersColumn({
   return (
     <section
       className="absolute left-[180px] w-[411px] overflow-hidden rounded-[20px] bg-white"
-      style={{ top: PANEL_TOP, height: PANEL_HEIGHT }}
+      style={{ top: PANEL_TOP, height: PANEL_HEIGHT + dy }}
     >
       <div className="absolute left-[30px] top-[30px] z-0 flex items-center">
         <FigmaText className="figma-nowrap font-extrabold text-[28px] tracking-[-0.476px] text-figma-ink">
@@ -1931,7 +1968,7 @@ function EngineersColumn({
         type="button"
         onClick={onSelectUnassigned}
         className="absolute left-[30px] z-30 flex w-[351px] flex-col items-center justify-center overflow-clip rounded-[20px] bg-figma-bee px-[29px] py-[25px]"
-        style={{ top: UNASSIGNED_TOP }}
+        style={{ top: UNASSIGNED_TOP + dy }}
         whileHover={motionOn ? { scale: 1.01 } : undefined}
         transition={{ duration: 0.16 }}
       >
@@ -2108,6 +2145,7 @@ function RouteCard({
   handoffs: readonly HandoffView[];
   engineerNames: ReadonlyMap<string, string>;
 }) {
+  const { dx, dy } = useArtboardStretch();
   const scrollerRef = useRef<HTMLDivElement>(null);
   const skipClick = useRef(false);
   const liveMarker = routeProgressMarker(engineer.stops, progress);
@@ -2210,9 +2248,15 @@ function RouteCard({
 
   return (
     <motion.section
-      className={`absolute left-[623px] top-[768px] h-[279px] w-[751px] overflow-hidden rounded-[20px] bg-white ${
+      className={`absolute overflow-hidden rounded-[20px] bg-white ${
         grabbing ? 'cursor-grabbing select-none' : thumb.visible ? 'cursor-grab' : ''
       }`}
+      style={{
+        left: MAP_LEFT,
+        top: ROUTE_CARD_TOP + dy,
+        width: MAP_COMPACT_WIDTH + dx,
+        height: ROUTE_CARD_HEIGHT,
+      }}
       initial={motionOn ? { opacity: 0, y: 20 } : false}
       animate={{ opacity: 1, y: 0 }}
       exit={motionOn ? { opacity: 0, y: 28 } : undefined}
@@ -2410,6 +2454,7 @@ function DetailPanel({
   onClose: () => void;
   onOpenEngineer?: () => void;
 }) {
+  const { dx, dy } = useArtboardStretch();
   const [aiOn, setAiOn] = useState(false);
   const [largeOn, setLargeOn] = useState(false);
   const urgency = request ? requestUrgency(request) : null;
@@ -2427,8 +2472,8 @@ function DetailPanel({
 
   return (
     <motion.aside
-      className="absolute left-[1406px] w-[484px] overflow-hidden rounded-[20px] bg-figma-ink"
-      style={{ top: PANEL_TOP, height: PANEL_HEIGHT }}
+      className="absolute w-[484px] overflow-hidden rounded-[20px] bg-figma-ink"
+      style={{ left: DETAIL_PANEL_LEFT + dx, top: PANEL_TOP, height: PANEL_HEIGHT + dy }}
       initial={motionOn ? { opacity: 0, x: 28 } : false}
       animate={{ opacity: 1, x: 0 }}
       exit={motionOn ? { opacity: 0, x: 36 } : undefined}
