@@ -1,0 +1,22 @@
+{
+  "version": "import-student-v1",
+  "featureVersion": "import-features-v1",
+  "features": [
+    "log_address_length",
+    "digit_share",
+    "letter_share",
+    "replacement_share",
+    "has_number",
+    "comma_count",
+    "log_window_minutes",
+    "has_coordinates"
+  ],
+  "enabled": false,
+  "threshold": 1,
+  "intercept": 0,
+  "weights": [],
+  "trainingStatus": "rejected",
+  "humanAudit": "pending",
+  "metricGate": false,
+  "trainingManifestHash": "99651cb7cc5484ec744a7ed3348a9e8f0801c39b72b4ff98752009ee6edfe78b"
+}
