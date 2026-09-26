@@ -60,6 +60,9 @@ docker run --rm --network host \
     # graph reaches ConfigModule.forRoot. Integration tests read .env by hand (see
     # test/support/env.ts); exporting the dispatcher pair covers the rest of the suite.
     eval "$(grep -E "^DISPATCHER_(EMAIL|PASSWORD)=" .env | sed "s/^/export /")"
+    # The whole integration suite signs in many times from one loopback address;
+    # the per-IP auth budgets are the production operator's concern, not a test one.
+    export RATE_LIMIT_MULTIPLIER=1000
     pnpm --filter api exec prisma generate
     pnpm --filter api exec prisma migrate deploy
     pnpm --filter api test
