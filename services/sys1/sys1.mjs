@@ -1,21 +1,24 @@
 #!/usr/bin/env node
 /**
- * Sys1 — server-side stand-in for the local System one gateway (jev-local).
- *
- * The assistant contour talks to a tiny typed decision API (`/v1/choice`, `/v1/noul`)
- * that on a developer machine is served by jev-local (a local MLX model). A server
- * has no such model, so this service answers the same contract from a chat
- * completion endpoint (the OpenRouter mirror in the demo contour) instead:
+ * Sys1 — server-side stand-in for the developer's local System one gateway
+ * (jev-local). Both speak the same tiny typed contract:
  *
  *   POST /v1/noul   { state, question, criteria?{false,true} } -> { noul, confidence }
  *   POST /v1/choice { state, question, options[] }             -> { choice, confidence }
  *   GET  /health                                               -> { ok, service, ready }
  *
+ * The answers come from the real System One decision model (typesafe/jev-1.13) on
+ * OpenRouter through its decisions endpoint (`POST /api/alpha/decisions`) — a
+ * different API type from chat completions: questions travel as a record of
+ * `{type, instructions, criteria}` and answers come back as a record keyed by the
+ * question id. In the demo contour requests reach OpenRouter through the mirror
+ * (X-Proxy-Token auth; the provider key stays injected server-side).
+ *
  * Configuration (environment):
- *   SYS1_LLM_BASE_URL  OpenAI-compatible base URL, e.g. https://openrouter.droidje.com/api/v1
+ *   SYS1_LLM_BASE_URL  OpenRouter base (default https://openrouter.ai/api — the
+ *                      mirror in the demo contour)
  *   SYS1_LLM_TOKEN     Value of the X-Proxy-Token header the mirror expects
- *   SYS1_MODEL         Model slug (default: typesafe/jev-router — the actual
- *                      System One model; it self-routes and balances cost)
+ *   SYS1_MODEL         Decision model (default typesafe/jev-1.13)
  *   SYS1_PORT          Listen port (default 12444, same as jev-local)
  *
  * An unset base URL or a failed upstream call answers 503: the application treats
@@ -25,10 +28,10 @@
 import { createServer } from 'node:http';
 
 const PORT = Number(process.env.SYS1_PORT ?? 12444);
-const BASE_URL = (process.env.SYS1_LLM_BASE_URL ?? '').replace(/\/$/, '');
+const BASE_URL = (process.env.SYS1_LLM_BASE_URL ?? 'https://openrouter.ai/api').replace(/\/$/, '');
 const TOKEN = process.env.SYS1_LLM_TOKEN ?? '';
-const MODEL = process.env.SYS1_MODEL ?? 'typesafe/jev-router';
-const LLM_TIMEOUT_MS = Number(process.env.SYS1_LLM_TIMEOUT_MS ?? 12_000);
+const MODEL = process.env.SYS1_MODEL ?? 'typesafe/jev-1.13';
+const DECISIONS_TIMEOUT_MS = Number(process.env.SYS1_LLM_TIMEOUT_MS ?? 30_000);
 const BODY_LIMIT = 64 * 1024;
 
 const JSON_HEADERS = { 'content-type': 'application/json' };
@@ -56,31 +59,15 @@ function readBody(req, limit = BODY_LIMIT) {
   });
 }
 
-/** Pulls the first JSON object out of a model answer; models decorate JSON with prose. */
-function extractJson(text) {
-  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  for (const candidate of [fenced?.[1], text]) {
-    if (!candidate) continue;
-    const start = candidate.indexOf('{');
-    const end = candidate.lastIndexOf('}');
-    if (start === -1 || end <= start) continue;
-    try {
-      const parsed = JSON.parse(candidate.slice(start, end + 1));
-      if (parsed && typeof parsed === 'object') return parsed;
-    } catch {
-      // try the next candidate
-    }
-  }
-  return null;
-}
-
-async function askLLM(userContent, systemInstruction) {
-  if (!BASE_URL) {
-    throw Object.assign(new Error('SYS1_LLM_BASE_URL is not configured'), { status: 503 });
+/** One decisions call with a single question; returns the answer record. */
+async function decide({ stateText, id, type, question, criteria }) {
+  const base = new URL(BASE_URL);
+  if (base.protocol !== 'https:' && base.protocol !== 'http:') {
+    throw Object.assign(new Error('SYS1_LLM_BASE_URL must be http(s)'), { status: 503 });
   }
   let response;
   try {
-    response = await fetch(`${BASE_URL}/chat/completions`, {
+    response = await fetch(`${base.origin}/api/alpha/decisions`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -89,30 +76,30 @@ async function askLLM(userContent, systemInstruction) {
       },
       body: JSON.stringify({
         model: MODEL,
-        messages: [
-          { role: 'system', content: systemInstruction },
-          { role: 'user', content: userContent },
-        ],
-        temperature: 0,
-        max_tokens: 200,
+        state: { text: stateText },
+        questions: {
+          [id]: { type, instructions: question, criteria },
+        },
       }),
-      signal: AbortSignal.timeout(LLM_TIMEOUT_MS),
+      signal: AbortSignal.timeout(DECISIONS_TIMEOUT_MS),
     });
   } catch (error) {
-    throw Object.assign(new Error(`LLM unreachable: ${error?.message ?? 'unknown'}`), {
+    throw Object.assign(new Error(`decisions unreachable: ${error?.message ?? 'unknown'}`), {
       status: 503,
     });
   }
   if (!response.ok) {
-    throw Object.assign(new Error(`LLM HTTP ${response.status}`), { status: 502 });
+    const detail = (await response.json().catch(() => ({})))?.error?.message;
+    throw Object.assign(new Error(`decisions HTTP ${response.status}${detail ? `: ${detail}` : ''}`), {
+      status: 502,
+    });
   }
   const body = await response.json();
-  const text = body?.choices?.[0]?.message?.content ?? '';
-  const parsed = extractJson(text);
-  if (parsed === null) {
-    throw Object.assign(new Error('LLM answer is not JSON'), { status: 502 });
+  const answer = body?.answers?.[id];
+  if (!answer || typeof answer !== 'object') {
+    throw Object.assign(new Error('decisions answer is missing'), { status: 502 });
   }
-  return parsed;
+  return answer;
 }
 
 const server = createServer(async (req, res) => {
@@ -133,33 +120,36 @@ const server = createServer(async (req, res) => {
       send(res, 400, { error: 'invalid JSON body' });
       return;
     }
-    const state = typeof input.state === 'string' ? input.state : JSON.stringify(input.state ?? '');
+    const state =
+      typeof input.state === 'string' ? input.state : JSON.stringify(input.state ?? '');
     const question = typeof input.question === 'string' ? input.question : '';
     const isChoice = url.pathname === '/v1/choice';
-    const systemInstruction = isChoice
-      ? 'Ты — быстрый классификатор System one. Тебе дают состояние, вопрос и пронумерованные ' +
-        'варианты. Выбери ровно один вариант, лучший по вопросу, и ответь СТРОГО одним ' +
-        'JSON-объектом без пояснений: {"choice":"<точный текст выбранного варианта>"}'
-      : 'Ты — быстрый классификатор System one. Тебе дают состояние и вопрос; оцени ' +
-        'вероятность истинности ответа «да» числом от 0 до 1 и ответь СТРОГО одним ' +
-        'JSON-объектом без пояснений: {"noul":<число от 0 до 1>}';
 
-    const userParts = [`состояние:\n${state}`, `вопрос:\n${question}`];
     if (isChoice) {
-      const options = Array.isArray(input.options) ? input.options.filter((o) => typeof o === 'string') : [];
-      userParts.push(`варианты:\n${options.map((o, i) => `${i + 1}. ${o}`).join('\n')}`);
-    } else if (input.criteria && typeof input.criteria === 'object') {
-      userParts.push(
-        `интерпретация: false — ${input.criteria.false ?? 'неверно'}; true — ${input.criteria.true ?? 'верно'}`,
-      );
-    }
-
-    const answer = await askLLM(userParts.join('\n\n'), systemInstruction);
-    if (isChoice) {
-      const options = Array.isArray(input.options) ? input.options.filter((o) => typeof o === 'string') : [];
+      const options = Array.isArray(input.options)
+        ? input.options.filter((o) => typeof o === 'string' && o.length > 0)
+        : [];
+      if (options.length === 0) {
+        send(res, 400, { error: 'options[] required for /v1/choice' });
+        return;
+      }
+      // The decisions API takes choice criteria as a record keyed by the option
+      // itself; a missing description degrades to the option text.
+      const criteria = {};
+      for (const option of options) {
+        criteria[option] = input.criteria?.[option] ?? option;
+      }
+      const answer = await decide({
+        stateText: state,
+        id: 'choice',
+        type: 'choice',
+        question,
+        criteria,
+      });
       let choice = typeof answer.choice === 'string' ? answer.choice.trim() : '';
-      // Models sometimes echo the list numbering or paraphrase; snap the answer back
-      // to the exact option text the application matches on.
+      // Snap the answer back to the exact option text the application matches on:
+      // near-miss answers are resolved against the option list, ambiguous ones are
+      // refused and degrade at the caller.
       if (choice && !options.includes(choice)) {
         const bare = choice.replace(/^\d+[.)]\s*/, '');
         const exact = options.find((o) => o === bare);
@@ -167,20 +157,39 @@ const server = createServer(async (req, res) => {
         if (exact) choice = exact;
         else if (contains.length === 1) choice = contains[0];
       }
-      if (!choice) {
-        send(res, 502, { error: 'LLM returned no choice' });
+      if (!choice || !options.includes(choice)) {
+        send(res, 502, { error: 'decision outside the option list' });
         return;
       }
-      send(res, 200, { choice, confidence: 1 });
+      send(res, 200, {
+        choice,
+        probabilities: answer.probabilities ?? undefined,
+        confidence: typeof answer.confidence === 'number' ? answer.confidence : 1,
+      });
       return;
     }
+
+    const criteria =
+      input.criteria && typeof input.criteria === 'object'
+        ? { false: String(input.criteria.false ?? 'неверно'), true: String(input.criteria.true ?? 'верно') }
+        : { false: 'неверно', true: 'верно' };
+    const answer = await decide({
+      stateText: state,
+      id: 'noul',
+      type: 'noul',
+      question,
+      criteria,
+    });
     const raw = answer.noul;
     const noul = typeof raw === 'number' ? raw : Number(String(raw ?? '').replace(',', '.'));
     if (!Number.isFinite(noul)) {
-      send(res, 502, { error: 'LLM returned no noul' });
+      send(res, 502, { error: 'decision returned no noul' });
       return;
     }
-    send(res, 200, { noul: Math.min(1, Math.max(0, noul)), confidence: 1 });
+    send(res, 200, {
+      noul: Math.min(1, Math.max(0, noul)),
+      confidence: typeof answer.confidence === 'number' ? answer.confidence : 1,
+    });
   } catch (error) {
     send(res, error?.status ?? 503, { error: error?.message ?? 'sys1 unavailable' });
   }
@@ -188,6 +197,6 @@ const server = createServer(async (req, res) => {
 
 server.listen(PORT, '0.0.0.0', () => {
   process.stdout.write(
-    `sys1 listening on :${PORT}, model=${MODEL}, base=${BASE_URL || '(not configured)'}\n`,
+    `sys1 listening on :${PORT}, model=${MODEL}, base=${BASE_URL}\n`,
   );
 });
