@@ -686,5 +686,6 @@
       },
       "match_level": "district_centroid_projection"
     }
-  ]
+  ],
+  "version": "official-southeast-geocodes-2026-09-20"
 }

@@ -141,7 +141,10 @@ services:
       ROUTER_BASE_URL: http://router:8100
       # Road geometry for city legs (MKAD OSRM graph, /route2 with the v2 traffic
       # model). The graph is vendored in services/road-api and always deployed.
-      ROUTER_ROAD_API_URL: ${ROUTER_ROAD_API_URL:-http://road-api:8123}
+      # Deliberately a different variable from the Router's own ROUTER_ROAD_API_URL:
+      # the api only borrows polylines, while the Router's road times change solver
+      # behaviour (and the golden plan), so that switch stays explicit for the core.
+      API_ROAD_API_URL: ${API_ROAD_API_URL:-http://road-api:8123}
       ROUTER_POLL_INTERVAL_MS: ${ROUTER_POLL_INTERVAL_MS:-500}
       ROUTER_REQUEST_TIMEOUT_MS: ${ROUTER_REQUEST_TIMEOUT_MS:-3000}
     volumes:

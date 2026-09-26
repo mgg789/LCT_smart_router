@@ -662,5 +662,6 @@
       "match_level": "house_without_unit",
       "source": "https://nominatim.openstreetmap.org"
     }
-  ]
+  ],
+  "schema_version": "1.0"
 }
