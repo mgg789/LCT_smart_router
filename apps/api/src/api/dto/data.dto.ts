@@ -161,6 +161,10 @@ export const importDatasetSchema = z
   });
 export type ImportDatasetDto = z.infer<typeof importDatasetSchema>;
 
+/** Idempotency key for confirming or cancelling an already stored preparation. */
+export const importPreparationActionSchema = z.object({ operationId: z.uuid() }).strict();
+export type ImportPreparationActionDto = z.infer<typeof importPreparationActionSchema>;
+
 export const resetSchema = z.object({
   operationId: z.uuid(),
   /**

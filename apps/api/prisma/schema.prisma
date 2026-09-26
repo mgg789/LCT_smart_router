@@ -1128,6 +1128,29 @@ model ImportPackage {
   @@map("import_packages")
 }
 
+/// Immutable normalized import batches awaiting explicit dispatcher confirmation.
+model ImportPreparation {
+  id                 String  @id @default(uuid())
+  source             String
+  status             String  @default("prepared")
+  ownerKind          String  @map("owner_kind")
+  ownerId            String  @map("owner_id")
+  immutableBatchHash String  @map("immutable_batch_hash")
+  versions           String
+  payload            String
+  findings           String
+  createdAt          BigInt  @map("created_at")
+  expiresAt          BigInt  @map("expires_at")
+  confirmedAt        BigInt? @map("confirmed_at")
+  cancelledAt        BigInt? @map("cancelled_at")
+  operationId        String? @unique @map("operation_id")
+  response           String?
+
+  @@index([ownerKind, ownerId, status])
+  @@index([expiresAt])
+  @@map("import_preparations")
+}
+
 /// source + entity type + external id -> internal id. Deleting the API key that imported
 /// the data must not make this mapping unresolvable (context/41 section 7.2).
 model ExternalIdMap {

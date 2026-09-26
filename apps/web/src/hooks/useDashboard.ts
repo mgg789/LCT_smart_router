@@ -7,6 +7,7 @@ import {
   createDispatchRequest,
   DashboardApiError,
   deleteDispatchEngineer,
+  ImportCancelledError,
   importOfficialDataset,
   importRoadData,
   linkEngineerAccount,
@@ -44,6 +45,7 @@ import type {
   PlanDelta,
   PolicyComparisonResponse,
   PolicyId,
+  ReviewImportQuality,
   RoadImportSummary,
   RouterTechnicalSettings,
 } from '../api/types';
@@ -1179,7 +1181,7 @@ export function useDashboard() {
   }, [invalidateAsyncReads, refresh, refreshLive, token]);
 
   const uploadDataset = useCallback(
-    async (file: DataUploadFile): Promise<DataUploadSummary> => {
+    async (file: DataUploadFile, review?: ReviewImportQuality): Promise<DataUploadSummary> => {
       if (!token || sourceRef.current !== 'live' || uploadingData) {
         throw new Error('Загрузка данных уже выполняется');
       }
@@ -1188,7 +1190,7 @@ export function useDashboard() {
       setUploadingData(true);
       setError(null);
       try {
-        const summary = await uploadDataPackage(token, file);
+        const summary = await uploadDataPackage(token, file, review);
         if (generation !== readGeneration.current) return summary;
         try {
           const next = await loadDashboardSnapshot(token);
@@ -1212,6 +1214,7 @@ export function useDashboard() {
         );
         return summary;
       } catch (cause) {
+        if (cause instanceof ImportCancelledError) throw cause;
         if (generation === readGeneration.current) {
           reportFailure(cause);
           setOperationWarning(
@@ -1270,57 +1273,61 @@ export function useDashboard() {
     [invalidateAsyncReads, pushEvent, refreshLive, reportFailure, token, uploadingData],
   );
 
-  const importOfficialTzDataset = useCallback(async (): Promise<OfficialImportSummary> => {
-    if (!token || sourceRef.current !== 'live' || uploadingData) {
-      throw new Error('Загрузка данных уже выполняется');
-    }
-    invalidateAsyncReads();
-    const generation = readGeneration.current;
-    setUploadingData(true);
-    setError(null);
-    try {
-      const summary = await importOfficialDataset(token);
-      if (generation !== readGeneration.current) return summary;
+  const importOfficialTzDataset = useCallback(
+    async (review?: ReviewImportQuality): Promise<OfficialImportSummary> => {
+      if (!token || sourceRef.current !== 'live' || uploadingData) {
+        throw new Error('Загрузка данных уже выполняется');
+      }
+      invalidateAsyncReads();
+      const generation = readGeneration.current;
+      setUploadingData(true);
+      setError(null);
       try {
-        const next = await loadDashboardSnapshot(token);
+        const summary = await importOfficialDataset(token, review);
         if (generation !== readGeneration.current) return summary;
-        setSnapshot(next);
-      } catch (refreshCause) {
-        if (generation !== readGeneration.current) return summary;
-        reportFailure(refreshCause);
-        setOperationWarning(
-          'Датасет принят сервером, но обновление экрана не подтверждено. Не запускайте импорт повторно.',
+        try {
+          const next = await loadDashboardSnapshot(token);
+          if (generation !== readGeneration.current) return summary;
+          setSnapshot(next);
+        } catch (refreshCause) {
+          if (generation !== readGeneration.current) return summary;
+          reportFailure(refreshCause);
+          setOperationWarning(
+            'Датасет принят сервером, но обновление экрана не подтверждено. Не запускайте импорт повторно.',
+          );
+          setError(`Датасет принят, но экран не обновился: ${errorMessage(refreshCause)}`);
+        }
+        setFocus({ engineerId: null, requestId: null });
+        setPolicyComparison(null);
+        await refreshLive();
+        pushEvent(
+          summary.applied
+            ? `Датасет из ТЗ: ${summary.requestsCreated} заявок, ${summary.engineersCreated} инженеров.`
+            : 'Официальный датасет из ТЗ уже был загружен.',
         );
-        setError(`Датасет принят, но экран не обновился: ${errorMessage(refreshCause)}`);
+        return summary;
+      } catch (cause) {
+        if (cause instanceof ImportCancelledError) throw cause;
+        if (generation === readGeneration.current) {
+          reportFailure(cause);
+          setOperationWarning('Импорт датасета из ТЗ не подтверждён. Проверьте список заявок.');
+          setError(errorMessage(cause));
+        }
+        throw cause;
+      } finally {
+        setUploadingData(false);
       }
-      setFocus({ engineerId: null, requestId: null });
-      setPolicyComparison(null);
-      await refreshLive();
-      pushEvent(
-        summary.applied
-          ? `Датасет из ТЗ: ${summary.requestsCreated} заявок, ${summary.engineersCreated} инженеров.`
-          : 'Официальный датасет из ТЗ уже был загружен.',
-      );
-      return summary;
-    } catch (cause) {
-      if (generation === readGeneration.current) {
-        reportFailure(cause);
-        setOperationWarning('Импорт датасета из ТЗ не подтверждён. Проверьте список заявок.');
-        setError(errorMessage(cause));
-      }
-      throw cause;
-    } finally {
-      setUploadingData(false);
-    }
-  }, [
-    invalidateAsyncReads,
-    pushEvent,
-    refreshLive,
-    token,
-    uploadingData,
-    reportFailure,
-    setSnapshot,
-  ]);
+    },
+    [
+      invalidateAsyncReads,
+      pushEvent,
+      refreshLive,
+      token,
+      uploadingData,
+      reportFailure,
+      setSnapshot,
+    ],
+  );
 
   const displaySnapshot = useMemo(
     () =>

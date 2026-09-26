@@ -6,6 +6,8 @@ import {
   DashboardApiError,
   deleteDispatchEngineer,
   getDispatcherSettings,
+  ImportCancelledError,
+  importOfficialDataset,
   importRoadData,
   loadDashboardSnapshot,
   loadPolicyComparison,
@@ -479,10 +481,22 @@ describe('live dashboard client', () => {
 
   it('adds an idempotency key to a locally validated data package', async () => {
     let sentBody: Record<string, unknown> | null = null;
+    let preparedBody: Record<string, unknown> | null = null;
     vi.stubGlobal(
       'fetch',
       vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
         sentBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        if (String(_input).endsWith('/prepare')) {
+          preparedBody = sentBody;
+          return json({
+            prepareId: 'prepared-1',
+            source: 'upload',
+            immutableBatchHash: 'hash',
+            expiresAt: 1900000000,
+            versions: { rules: 'v1', statistics: 'v1', student: 'disabled' },
+            findings: [],
+          });
+        }
         return json({
           applied: true,
           region: 'east',
@@ -519,9 +533,50 @@ describe('live dashboard client', () => {
 
     expect(sentBody).toMatchObject({
       operationId: expect.any(String),
+    });
+    expect(preparedBody).toMatchObject({
       schemaVersion: '1.0',
       mode: 'append_requests',
     });
+  });
+
+  it('waits for review and cancels a prepared official batch without a commit', async () => {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request) => {
+        calls.push(String(input));
+        if (String(input).endsWith('/cancel')) return json({ cancelled: true });
+        return json({
+          prepareId: 'official-1',
+          source: 'official',
+          immutableBatchHash: 'hash',
+          expiresAt: 1900000000,
+          versions: { rules: 'v1', statistics: 'v1', student: 'disabled' },
+          findings: [
+            {
+              code: 'wide-window',
+              layer: 'rules',
+              count: 1,
+              examples: ['r1'],
+              message: 'Окно на весь день',
+            },
+          ],
+        });
+      }),
+    );
+    const review = vi.fn(async () => {
+      expect(calls).toHaveLength(1);
+      return false;
+    });
+    await expect(importOfficialDataset('session-token', review)).rejects.toBeInstanceOf(
+      ImportCancelledError,
+    );
+    expect(review).toHaveBeenCalledOnce();
+    expect(calls).toEqual([
+      '/api/v1/dispatch/data/import/prepare',
+      '/api/v1/dispatch/data/import/prepare/official-1/cancel',
+    ]);
   });
 });
 

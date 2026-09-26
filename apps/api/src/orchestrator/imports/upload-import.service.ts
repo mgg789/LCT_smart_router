@@ -81,6 +81,7 @@ export class UploadImportService {
     context: OperationContext,
     input: UploadDataPackageInput,
     timeZoneOffsetSec: number,
+    equipmentSettings?: DispatcherSettings,
   ): Promise<UploadDataPackageSummary> {
     const identitySource = `region:${input.region}`;
     const packageSource = `upload:${input.region}:${input.sourceVersion}`;
@@ -173,7 +174,7 @@ export class UploadImportService {
       const equipment = allocateUploadedEquipment(
         input.requests,
         engineers,
-        await readEquipmentSettings(context.tx),
+        equipmentSettings ?? (await readEquipmentSettings(context.tx)),
       );
       for (const engineerInput of engineers) {
         const rows = await context.tx.$queryRaw<Array<{ value: bigint }>>`

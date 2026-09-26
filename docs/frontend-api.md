@@ -455,6 +455,13 @@ twogis: {provider, configured, ok, message}, yandex: {…}}`. Проба идё�
                             "requestsWithoutCoordinates": 0, "warnings": [], "errors": []}}]}
 ```
 
+Новый Dashboard использует двухэтапный импорт: `/dispatch/data/import/prepare` или
+`/dispatch/data/upload/prepare`, затем `/:prepareId/confirm` либо `/:prepareId/cancel`.
+Подготовка принимает прежний пакет с `operationId`, возвращает находки и срок 24 часа;
+подтверждение/отмена принимают новый `operationId`. При наличии находок нужно решение
+пользователя; без находок клиент подтверждает автоматически. Подробности —
+[контролёр импорта](./import-quality.md). Следующие прямые методы сохранены для совместимости.
+
 **POST `/dispatch/data/import`** — официальный CSV-датасет, атомарно по всем регионам:
 
 ```json
@@ -608,7 +615,8 @@ SPA `/engineer/` (вход по коду, список заявок и обед�
 1. `POST /auth/login-code` + `verify` с `role: "dispatcher"` (или запасной
    `POST /auth/dispatcher/password`) → токен; `GET /health/services` — баннер состояния.
 2. `GET /dispatch/data/state` → если `initialized: false` — экран импорта
-   (`POST /dispatch/data/import {regions:"all"}`).
+   (подготовка `POST /dispatch/data/import/prepare {operationId, regions:"all"}`,
+   затем подтверждение сохранённого пакета).
 3. `GET /dispatch/requests` + `GET /dispatch/engineers` + `GET /dispatch/plan` — день.
 4. `GET /dispatch/alerts`; неназначенные — из `plan.assignments` (`status: "unassigned"`)
    с причинами из §10.

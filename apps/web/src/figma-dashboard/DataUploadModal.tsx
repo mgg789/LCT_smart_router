@@ -1,9 +1,12 @@
 import { motion } from 'framer-motion';
 import { type ChangeEvent, type DragEvent, useEffect, useId, useRef, useState } from 'react';
+import { ImportCancelledError } from '../api/client';
 import type {
   DataUploadFile,
   DataUploadSummary,
+  ImportPreparationView,
   OfficialImportSummary,
+  ReviewImportQuality,
   RoadImportSummary,
 } from '../api/types';
 import { parseDataUpload } from '../domain/dataUpload';
@@ -37,8 +40,8 @@ export function DataUploadModal({
   existingRegions: readonly string[];
   motionOn: boolean;
   onClose: () => void;
-  onUpload: (file: DataUploadFile) => Promise<DataUploadSummary>;
-  onImportOfficial: () => Promise<OfficialImportSummary>;
+  onUpload: (file: DataUploadFile, review?: ReviewImportQuality) => Promise<DataUploadSummary>;
+  onImportOfficial: (review?: ReviewImportQuality) => Promise<OfficialImportSummary>;
   onRoadImport: (payloadBase64: string) => Promise<RoadImportSummary>;
 }) {
   const inputId = useId();
@@ -54,9 +57,31 @@ export function DataUploadModal({
   const [roadFileName, setRoadFileName] = useState<string | null>(null);
   const [roadResult, setRoadResult] = useState<RoadImportSummary | null>(null);
   const [roadError, setRoadError] = useState<string | null>(null);
+  const [qualityReport, setQualityReport] = useState<ImportPreparationView | null>(null);
+  const qualityDecision = useRef<((accepted: boolean) => void) | null>(null);
+  const reviewQuality: ReviewImportQuality = (report) =>
+    new Promise((resolve) => {
+      qualityDecision.current = resolve;
+      setQualityReport(report);
+    });
+  const decideQuality = (accepted: boolean) => {
+    qualityDecision.current?.(accepted);
+    qualityDecision.current = null;
+    setQualityReport(null);
+  };
+
+  useEffect(
+    () => () => {
+      qualityDecision.current?.(false);
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!open) return;
+    qualityDecision.current?.(false);
+    qualityDecision.current = null;
+    setQualityReport(null);
     setFileNames([]);
     setCandidates([]);
     setIssues([]);
@@ -276,6 +301,51 @@ export function DataUploadModal({
             </div>
           ) : null}
 
+          {qualityReport ? (
+            <section
+              aria-label="Проверка данных"
+              className="mt-[12px] rounded-[20px] bg-figma-soft px-[20px] py-[16px]"
+            >
+              <h3 className="font-semibold text-[18px] text-figma-ink">
+                Проверка данных: {qualityReport.findings.length} находок
+              </h3>
+              <p className="mt-[6px] text-[14px] text-figma-muted">
+                Это особенности данных. Вы можете загрузить пакет без изменений.
+              </p>
+              <ul className="mt-[10px] space-y-[10px] text-[15px] text-figma-ink">
+                {qualityReport.findings.map((finding) => (
+                  <li key={`${finding.layer}:${finding.code}`}>
+                    <p>
+                      {finding.message} · {finding.count}
+                    </p>
+                    <p className="text-figma-muted">Примеры: {finding.examples.join(', ')}</p>
+                  </li>
+                ))}
+              </ul>
+              <details className="mt-[10px] text-[13px] text-figma-muted">
+                <summary>Данные проверки</summary>
+                <p>Версии: {Object.values(qualityReport.versions).join(' · ')}</p>
+                {qualityReport.findings.map((finding) => (
+                  <p key={`${finding.layer}:${finding.code}`}>
+                    {finding.code}: {finding.layer}
+                    {finding.score === undefined ? '' : ` · ${finding.score.toFixed(3)}`}
+                  </p>
+                ))}
+              </details>
+              <div className="mt-[14px] flex gap-[10px]">
+                <button
+                  type="button"
+                  className="rounded-[16px] bg-figma-bee px-[20px] py-[12px] font-semibold text-figma-ink"
+                  onClick={() => decideQuality(true)}
+                >
+                  Загрузить так
+                </button>
+                <GhostButton disabled={false} onClick={() => decideQuality(false)}>
+                  Отменить
+                </GhostButton>
+              </div>
+            </section>
+          ) : null}
           {submitError ? (
             <div role="alert" className="mt-[12px] rounded-[20px] bg-[#fdecec] px-[20px] py-[16px]">
               <p className="font-semibold text-[18px] text-figma-danger">Сервер отклонил пакет</p>
@@ -310,11 +380,15 @@ export function DataUploadModal({
               setSubmitError(null);
               setCandidates([]);
               setIssues([]);
-              void onImportOfficial()
+              void onImportOfficial(reviewQuality)
                 .then(setResult)
                 .catch((error: unknown) =>
                   setSubmitError(
-                    error instanceof Error ? error.message : 'Не удалось загрузить сет из ТЗ',
+                    error instanceof ImportCancelledError
+                      ? null
+                      : error instanceof Error
+                        ? error.message
+                        : 'Не удалось загрузить сет из ТЗ',
                   ),
                 );
             }}
@@ -342,13 +416,17 @@ export function DataUploadModal({
                   try {
                     let last: UploadResult | null = null;
                     for (const file of candidates) {
-                      last = await onUpload(file);
+                      last = await onUpload(file, reviewQuality);
                     }
                     setResult(last);
                     setCandidates([]);
                   } catch (error: unknown) {
                     setSubmitError(
-                      error instanceof Error ? error.message : 'Не удалось загрузить пакет',
+                      error instanceof ImportCancelledError
+                        ? null
+                        : error instanceof Error
+                          ? error.message
+                          : 'Не удалось загрузить пакет',
                     );
                   }
                 })();

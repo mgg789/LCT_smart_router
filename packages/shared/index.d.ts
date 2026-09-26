@@ -9,6 +9,34 @@ export type PolicyId = 'compact' | 'fast' | 'sla' | 'balanced' | 'eco' | 'coveri
 export type StrategyId = PolicyId | 'baseline';
 export type EquipmentType = 'router' | 'set_top_box' | 'smart_speaker';
 
+/** Advisory finding: never changes or rejects a structurally valid import. */
+export interface ImportQualityFinding {
+  readonly code: string;
+  readonly layer: 'rules' | 'statistics' | 'student';
+  readonly count: number;
+  readonly examples: readonly string[];
+  readonly message: string;
+  readonly score?: number;
+}
+
+/** Immutable server-side preparation, owned by the authenticated dispatcher for 24 hours. */
+export interface ImportPreparationView {
+  readonly prepareId: string;
+  readonly source: string;
+  readonly immutableBatchHash: string;
+  readonly versions: {
+    readonly rules: string;
+    readonly statistics: string;
+    readonly student: string;
+    readonly transform?: string;
+  };
+  readonly expiresAt: number;
+  readonly findings: readonly ImportQualityFinding[];
+}
+
+/** UI acknowledgement callback; false cancels without committing business data. */
+export type ReviewImportQuality = (report: ImportPreparationView) => Promise<boolean>;
+
 export interface EquipmentStock {
   readonly router: number;
   readonly setTopBox: number;

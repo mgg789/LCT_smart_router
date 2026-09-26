@@ -16,12 +16,14 @@ import type {
   DispatcherSettingsView,
   EngineerDayView,
   GeocodeHit,
+  ImportPreparationView,
   MapProvidersStatus,
   McpSettingsView,
   OfficialImportSummary,
   PlanAssignmentView,
   PolicyComparisonResponse,
   PolicyId,
+  ReviewImportQuality,
   RoadImportSummary,
   RouterTechnicalSettings,
 } from './types';
@@ -1225,11 +1227,71 @@ export async function setEngineerAvailability(
 }
 
 /** Uploads one locally validated data package as an idempotent backend operation. */
-export function uploadDataPackage(token: string, file: DataUploadFile): Promise<DataUploadSummary> {
-  return requestJson('/api/v1/dispatch/data/upload', dataUploadSummarySchema, token, {
+export async function uploadDataPackage(
+  token: string,
+  file: DataUploadFile,
+  review?: ReviewImportQuality,
+): Promise<DataUploadSummary> {
+  const path = '/api/v1/dispatch/data/upload/prepare';
+  const report = await requestJson(path, importPreparationSchema, token, {
     method: 'POST',
-    body: JSON.stringify({ operationId: crypto.randomUUID(), ...file }),
+    body: JSON.stringify({ ...file, operationId: crypto.randomUUID() }),
   });
+  await acknowledgeImport(token, path, report, review);
+  return requestJson(`${path}/${report.prepareId}/confirm`, dataUploadSummarySchema, token, {
+    method: 'POST',
+    body: JSON.stringify({ operationId: crypto.randomUUID() }),
+  });
+}
+
+const importPreparationSchema = z.object({
+  prepareId: z.string(),
+  source: z.string(),
+  immutableBatchHash: z.string(),
+  expiresAt: z.number(),
+  versions: z.object({
+    rules: z.string(),
+    statistics: z.string(),
+    student: z.string(),
+    transform: z.string().optional(),
+  }),
+  findings: z.array(
+    z.object({
+      code: z.string(),
+      layer: z.enum(['rules', 'statistics', 'student']),
+      count: z.number().int().nonnegative(),
+      examples: z.array(z.string()),
+      message: z.string(),
+      score: z.number().optional(),
+    }),
+  ),
+});
+
+/** Distinguishes an explicit pre-write cancellation from an uncertain commit failure. */
+export class ImportCancelledError extends Error {
+  constructor() {
+    super('Загрузка отменена. Рабочие данные не изменены.');
+  }
+}
+
+async function acknowledgeImport(
+  token: string,
+  path: string,
+  report: ImportPreparationView,
+  review?: ReviewImportQuality,
+): Promise<void> {
+  if (report.findings.length === 0) return;
+  if (review && (await review(report))) return;
+  await requestJson(
+    `${path}/${report.prepareId}/cancel`,
+    z.object({ cancelled: z.boolean() }),
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({ operationId: crypto.randomUUID() }),
+    },
+  );
+  throw new ImportCancelledError();
 }
 
 /** Imports one native OSRM JSON or gzip payload without adding user-defined envelope fields. */
@@ -1261,10 +1323,19 @@ const officialImportSummarySchema = z
 /**
  * Loads the official TZ dataset shipped in the repo (`regions: all`) without curl.
  */
-export function importOfficialDataset(token: string): Promise<OfficialImportSummary> {
-  return requestJson('/api/v1/dispatch/data/import', officialImportSummarySchema, token, {
+export async function importOfficialDataset(
+  token: string,
+  review?: ReviewImportQuality,
+): Promise<OfficialImportSummary> {
+  const path = '/api/v1/dispatch/data/import/prepare';
+  const report = await requestJson(path, importPreparationSchema, token, {
     method: 'POST',
     body: JSON.stringify({ operationId: crypto.randomUUID(), regions: 'all' }),
+  });
+  await acknowledgeImport(token, path, report, review);
+  return requestJson(`${path}/${report.prepareId}/confirm`, officialImportSummarySchema, token, {
+    method: 'POST',
+    body: JSON.stringify({ operationId: crypto.randomUUID() }),
   });
 }
 
@@ -1558,6 +1629,18 @@ const aiViewSchema = z.object({
     }),
     computedAt: z.number().nullable(),
     syncedToRouter: z.boolean(),
+    weatherCalibration: z
+      .object({
+        status: z.enum(['factory', 'collecting', 'shadow', 'validated']),
+        observationCount: z.number().int().nonnegative(),
+        days: z.number().int().nonnegative(),
+        eligibleGroups: z.number().int().nonnegative(),
+        totalGroups: z.number().int().nonnegative(),
+        version: z.string().nullable(),
+        source: z.literal('travel_elapsed_proxy'),
+        reason: z.string(),
+      })
+      .optional(),
   }),
 });
 
