@@ -29,6 +29,14 @@ test('plan metrics lead to a real FIFO comparison without applying another polic
   const calculate = page.getByRole('button', { name: /^(Сравнить|Пересчитать)$/ });
   await expect(calculate).toBeVisible();
   await calculate.click();
+  const coverage = page.getByRole('region', { name: 'Сколько заявок удаётся назначить' });
+  await expect(coverage).toBeVisible({ timeout: 30_000 });
+  await expect(coverage.getByRole('listitem').filter({ hasText: 'FIFO · базовое' })).toBeVisible();
+  await expect(page.getByRole('region', { name: 'Дорога на назначение' })).toBeVisible();
+  await page
+    .getByRole('group', { name: 'Вид сравнения' })
+    .getByRole('button', { name: 'Таблица', exact: true })
+    .click();
   await expect(page.getByText('Пробег на заявку', { exact: true })).toBeVisible({
     timeout: 30_000,
   });
