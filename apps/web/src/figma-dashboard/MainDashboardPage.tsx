@@ -664,7 +664,11 @@ export function MainDashboardPage() {
        */}
       {/* biome-ignore lint/a11y/noStaticElementInteractions: Outside-pointer dismissal supplements the menus' keyboard-accessible controls; this artboard is not an extra focus target. */}
       <div
-        className="relative shrink-0 bg-figma-canvas"
+        // Clips at its own edge, which is now the window's: screens that let a
+        // deck or a veil hang past the drawing (the crew carousel) would
+        // otherwise push scrollbars onto the wrapper. The wrapper still scrolls
+        // when the board has stopped shrinking and no longer fits.
+        className="relative shrink-0 overflow-hidden bg-figma-canvas"
         data-name="MAIN"
         style={{
           width: canvas.width,
