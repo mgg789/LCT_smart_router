@@ -139,7 +139,8 @@ export function CompletionChart({
         За этот период пока нет данных для графика.
       </p>
     );
-  const max = Math.max(1, ...rows.map((row) => row.completed));
+  const max = Math.max(0, ...rows.map((row) => row.completed));
+  const scale = Math.max(1, max);
   return (
     <section className="rounded-3xl bg-white p-5 sm:p-6" aria-label="Выполненные заявки по дням">
       <div className="mb-5 flex flex-wrap items-baseline justify-between gap-2">
@@ -163,7 +164,7 @@ export function CompletionChart({
               >
                 <div
                   className="w-full rounded-full bg-figma-work"
-                  style={{ height: `${(row.completed / max) * 100}%` }}
+                  style={{ height: `${(row.completed / scale) * 100}%` }}
                 />
               </div>
               <span className="text-xs text-figma-dim">{row.workDate.slice(-2)}</span>

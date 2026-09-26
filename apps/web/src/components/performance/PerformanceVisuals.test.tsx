@@ -2,7 +2,12 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { engineerAnalyticsSchema, monthlyPerformanceSchema } from '../../api/performance';
 import { MonthlyReportContent } from './MonthlyResults';
-import { EngineerMetricGrid, metricNumber, teamDifference } from './PerformanceVisuals';
+import {
+  CompletionChart,
+  EngineerMetricGrid,
+  metricNumber,
+  teamDifference,
+} from './PerformanceVisuals';
 
 const analytics = {
   recordedWorkdays: 2,
@@ -25,6 +30,13 @@ const analytics = {
 };
 
 describe('factual performance presentation', () => {
+  it('labels an entirely zero activity chart with an actual zero maximum', () => {
+    const html = renderToStaticMarkup(
+      <CompletionChart rows={[{ workDate: '2026-09-27', completed: 0 }]} />,
+    );
+    expect(html).toContain('максимум 0 в день');
+    expect(html).not.toContain('NaN');
+  });
   it('keeps missing evidence distinct from measured zero and zero benchmarks finite', () => {
     expect(metricNumber(null, ' мин')).toBe('—');
     expect(metricNumber(0, ' мин')).toBe('0 мин');
