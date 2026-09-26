@@ -23,7 +23,7 @@ test('decision cards name the price of a last-resort action', () => {
   assert.match(text, /1\. Иванов 11:00–12:00/);
 });
 
-test('tomorrow window states the crew that must be on shift at that hour', () => {
+test('tomorrow window reports demand without inferring simultaneous crew requirements', () => {
   const start = Date.parse('2026-09-26T07:00:00Z') / 1000;
   const text = tomorrowCrewLine({
     windowStartAt: start,
@@ -44,8 +44,9 @@ test('tomorrow window states the crew that must be on shift at that hour', () =>
   assert.match(text, /уже 1 заявка/);
   assert.match(text, /ce741e6d/);
   assert.doesNotMatch(text, /aa22bb33/);
-  assert.match(text, /1 инженер должен выйти на смену, чтобы одновременно решать заявку/);
-  assert.match(text, /одновременно будут 2 заявки: 2 инженера должны выйти на смену/);
+  assert.match(text, /после переноса этой заявки — 2 заявки/);
+  assert.match(text, /не определяет число необходимых инженеров/);
+  assert.doesNotMatch(text, /должны выйти|должен выйти|одновременно будут/);
 });
 
 test('moscow clock uses the plus-three offset', () => {

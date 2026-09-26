@@ -613,7 +613,8 @@ export class MapRoutingService {
 }
 
 function roadApiBase(): string | null {
-  const raw = process.env.ROUTER_ROAD_API_URL?.trim();
+  // Compose separates API geometry from Router costs; preserve old local setups.
+  const raw = process.env.API_ROAD_API_URL?.trim() || process.env.ROUTER_ROAD_API_URL?.trim();
   if (!raw) return null;
   return raw.replace(/\/$/, '');
 }

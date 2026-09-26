@@ -84,6 +84,45 @@ describe('dispatcher alert lifecycle', () => {
     await app?.close();
   });
 
+  it('counts all tomorrow overlaps beyond the preview limit without claiming crew demand', async () => {
+    const start = BigInt(Date.parse('2098-06-15T07:00:00Z') / 1000);
+    const tomorrow = start + 86_400n;
+    for (let index = 0; index < 13; index += 1) {
+      const row = await prisma.request.create({
+        data: {
+          arrivalOrder: 20_000 + index,
+          addressText: 'Tomorrow load regression',
+          lat: 55.75,
+          lon: 37.6,
+          needsGeocoding: false,
+          normProfileCode: 'local',
+          normativeTravelDurationSec: 600,
+          technicalDurationSec: 600,
+          documentationDurationSec: 300,
+          serviceDurationSec: 900,
+          windowStartAt: tomorrow,
+          windowEndAt: tomorrow + 7200n,
+          requiredSkill: 'local',
+          lifecycle: 'submitted',
+          assignmentState: 'unassigned',
+          origin: 'manual',
+          createdAt: start,
+          updatedAt: start,
+        },
+      });
+      requestIds.push(row.id);
+    }
+    // biome-ignore lint/complexity/useLiteralKeys: exercise the private DB aggregation without making it public API.
+    const text = await alerts['tomorrowLoadLine']({
+      id: randomUUID(),
+      windowStartAt: start,
+      windowEndAt: start + 7200n,
+    });
+    assert.match(text, /уже 13 заявок/);
+    assert.match(text, /после переноса этой заявки — 14 заявок/);
+    assert.doesNotMatch(text, /должны выйти|должен выйти/);
+  });
+
   it('does not freeze day results while LIVE execution is still running', async () => {
     const now = Math.floor(Date.now() / 1000);
     const day = await prisma.liveWorkday.create({

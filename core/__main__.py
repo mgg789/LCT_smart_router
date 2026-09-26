@@ -8,6 +8,7 @@ from pathlib import Path
 from core.engine import SearchSettings
 from core.geo import Gazetteer, GraphTravel, RoadGraph
 from core.osrm import OSRMTravel
+from core.predict_calibration import PredictCalibrationStore
 from core.runtime import FileSnapshotReader, PostgresSnapshotReader, RouterRuntime, calculate
 from core.settings import FileTechnicalSettingsStore
 
@@ -240,6 +241,9 @@ def main() -> None:
                     graph,
                     settings,
                     settings_store=FileTechnicalSettingsStore(args.settings),
+                    predict_calibration_store=PredictCalibrationStore(
+                        args.settings.with_name("predict-calibration.json")
+                    ),
                 ),
                 road_store=RoadGraphStore(road_store),
             ),

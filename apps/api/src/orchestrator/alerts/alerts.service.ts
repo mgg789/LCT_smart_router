@@ -429,18 +429,27 @@ export class AlertsService {
     const end = Number(request.windowEndAt) + 86_400;
     const dayStart = Math.floor((start + 3 * 60 * 60) / 86_400) * 86_400 - 3 * 60 * 60;
     try {
-      const rows = await this.prisma.request.findMany({
-        where: {
-          id: { not: request.id },
-          lifecycle: { in: ['submitted', 'in_progress'] },
-          windowStartAt: { gte: BigInt(dayStart), lt: BigInt(Math.min(end, dayStart + 86_400)) },
-          windowEndAt: { gt: BigInt(start) },
-        },
-        select: { id: true, windowStartAt: true, windowEndAt: true },
-        orderBy: { windowStartAt: 'asc' },
-        take: 12,
-      });
+      const where: Prisma.RequestWhereInput = {
+        id: { not: request.id },
+        lifecycle: { in: ['submitted', 'in_progress'] },
+        windowStartAt: { gte: BigInt(dayStart), lt: BigInt(Math.min(end, dayStart + 86_400)) },
+        windowEndAt: { gt: BigInt(start) },
+      };
+      // Count and examples share one snapshot; only the display list is bounded.
+      const [overlapCount, rows] = await this.prisma.$transaction(
+        [
+          this.prisma.request.count({ where }),
+          this.prisma.request.findMany({
+            where,
+            select: { id: true, windowStartAt: true, windowEndAt: true },
+            orderBy: [{ windowStartAt: 'asc' }, { id: 'asc' }],
+            take: 6,
+          }),
+        ],
+        { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
+      );
       return `${tomorrowCrewLine({
+        overlapCount,
         windowStartAt: Number(request.windowStartAt),
         windowEndAt: Number(request.windowEndAt),
         others: rows.map((row) => ({

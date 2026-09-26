@@ -479,7 +479,7 @@ twogis: {provider, configured, ok, message}, yandex: {…}}`. Проба идё�
 | `{operationId, kind: "empty", confirmation: "erase all application data"}` | Полный сброс «всё в ноль» |
 
 Без точной фразы подтверждения — отказ. Обычный `empty` сбрасывает и сессии.
-На публичном стенде `kind: "demo"` сохраняет сессию диспетчера и заново сеет 14/2.
+На публичном стенде `kind: "demo"` сохраняет сессию диспетчера и заново сеет 14/3.
 Сброс сериализуется с LIVE-опросом: сначала дни, затем `control_state` и
 `routing_current`, иначе concurrent `GET /dispatch/live` даёт 500 на reset.
 

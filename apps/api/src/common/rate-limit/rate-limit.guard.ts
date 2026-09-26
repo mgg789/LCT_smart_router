@@ -4,6 +4,7 @@ import { AppConfigService } from '../config';
 import { SysError } from '../errors';
 
 export const RATE_LIMIT_METADATA = 'rate_limit_rule';
+export const PRE_AUTH_RATE_LIMIT_METADATA = 'pre_auth_rate_limit_rule';
 
 export interface RateLimitRule {
   /**
@@ -26,6 +27,14 @@ export interface RateLimitRule {
 export const RateLimit = (rule: RateLimitRule): MethodDecorator =>
   SetMetadata(RATE_LIMIT_METADATA, rule);
 
+/**
+ * Declares a budget that must run before the global authentication guard resolves a
+ * credential. Use this only for public credential endpoints whose invalid credentials
+ * are otherwise expensive to resolve (for example the MCP transport).
+ */
+export const PreAuthRateLimit = (rule: RateLimitRule): MethodDecorator =>
+  SetMetadata(PRE_AUTH_RATE_LIMIT_METADATA, rule);
+
 interface Bucket {
   readonly windowStart: number;
   count: number;
@@ -36,11 +45,11 @@ interface Bucket {
  *  a guard whose only job is to make abuse slightly expensive. */
 @Injectable()
 export class RateLimitGuard implements CanActivate {
-  private readonly buckets = new Map<string, Bucket>();
+  protected readonly buckets = new Map<string, Bucket>();
 
   constructor(
-    private readonly reflector: Reflector,
-    private readonly config: AppConfigService,
+    protected readonly reflector: Reflector,
+    protected readonly config: AppConfigService,
   ) {}
 
   canActivate(context: ExecutionContext): boolean {
@@ -54,6 +63,10 @@ export class RateLimitGuard implements CanActivate {
     // An operator whose edge already rate-limits (nginx, an API gateway) can raise
     // every budget at once; the integration suites raise it so a whole test file
     // signing in from one loopback address does not trip the auth budgets.
+    return this.enforce(context, rule);
+  }
+
+  protected enforce(context: ExecutionContext, rule: RateLimitRule): boolean {
     const max = rule.max * this.config.get('RATE_LIMIT_MULTIPLIER');
     const request = context.switchToHttp().getRequest<{
       headers: Record<string, string | string[] | undefined>;
@@ -90,18 +103,29 @@ export class RateLimitGuard implements CanActivate {
 }
 
 /**
- * The client address the proxy chain saw first. Our own nginx hops append the previous
- * address to `X-Forwarded-For`, so without proxies this falls back to the socket peer.
- * A spoofed first entry only moves the caller into its own bucket: the request is still
- * served and still counted, and the real peer stays in the chain for the log.
+ * Applies a pre-authentication budget. It is registered globally before ActorGuard so
+ * invalid bearer values and invalid header credentials consume the same client budget.
  */
-function clientAddress(request: {
-  headers: Record<string, string | string[] | undefined>;
-  ip?: string;
-}): string {
-  const forwarded = request.headers['x-forwarded-for'];
-  if (typeof forwarded === 'string' && forwarded.trim().length > 0) {
-    return forwarded.split(',')[0]?.trim() || 'unknown';
+@Injectable()
+export class PreAuthRateLimitGuard extends RateLimitGuard {
+  override canActivate(context: ExecutionContext): boolean {
+    const rule = this.reflector.getAllAndOverride<RateLimitRule | undefined>(
+      PRE_AUTH_RATE_LIMIT_METADATA,
+      [context.getHandler(), context.getClass()],
+    );
+    if (!rule) {
+      return true;
+    }
+    return this.enforce(context, rule);
   }
+}
+
+/**
+ * Uses Express' trusted address. This app does not configure proxy trust, so accepting
+ * `X-Forwarded-For` here would let a caller mint a fresh bucket on every request. Behind
+ * a shared reverse proxy, all callers therefore share the proxy's `req.ip` bucket until
+ * a trusted proxy chain is configured explicitly at the application boundary.
+ */
+function clientAddress(request: { ip?: string }): string {
   return request.ip ?? 'unknown';
 }

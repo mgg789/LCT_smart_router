@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import type { LiveActionDto } from '../../api/dto/live.dto';
 import type {
@@ -62,7 +62,6 @@ type DayWithStates = LiveWorkday & {
  */
 @Injectable()
 export class LiveService {
-  private readonly logger = new Logger(LiveService.name);
   private advanceInFlight: Promise<void> | null = null;
 
   constructor(
@@ -78,18 +77,6 @@ export class LiveService {
     private readonly publisher: SnapshotPublisher,
     private readonly demoStand: DemoStandService,
   ) {}
-
-  /**
-   * Fire-and-forget advance for paths that must not pay the latency. The rejection is
-   * contained here: on Node an unhandled rejection aborts the whole process.
-   */
-  private advanceInBackground(): void {
-    this.advanceOnce().catch((error: unknown) => {
-      this.logger.warn(
-        `Background advance failed: ${error instanceof Error ? error.message : 'unknown'}`,
-      );
-    });
-  }
 
   /**
    * Dispatcher entry.

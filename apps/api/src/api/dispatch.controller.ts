@@ -1373,7 +1373,7 @@ export class DispatchController {
 
   @Post('data/restart-demo')
   @ApiOperation({
-    summary: 'Rewind the public 14/2 demo day (DEMO_STAND only); keeps the dispatcher session',
+    summary: 'Rewind the public 14/3 demo day (DEMO_STAND only); keeps the dispatcher session',
   })
   async restartDemo(
     @CurrentActor() actor: Actor,

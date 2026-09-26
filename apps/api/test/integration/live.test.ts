@@ -1122,9 +1122,7 @@ describe('LIVE workday', () => {
     assert.equal(afterTaken.engineer.progress?.lunch, null);
   });
 
-  it('keeps automatic lunch blocking after the plan is rebuilt without a second lunch', {
-    skip: 'known v1.5 gap: the automatic no-show, lunch-projection and day-rollover transitions regressed in the release tree; the port of the late dev fixes is tracked for the next release',
-  }, async () => {
+  it('keeps automatic lunch blocking after the plan is rebuilt without a second lunch', async () => {
     const engineer = await liveCreateEngineer(true);
     const request = await liveCreateRequest();
     await liveApplyPlan(engineer.id, [request], true);
@@ -1187,9 +1185,7 @@ describe('LIVE workday', () => {
     assert.equal(afterReplan.current, null, 'no work action is available during automatic lunch');
   });
 
-  it('projects an active lunch as the Router start point until its durable end time', {
-    skip: 'known v1.5 gap: the automatic no-show, lunch-projection and day-rollover transitions regressed in the release tree; the port of the late dev fixes is tracked for the next release',
-  }, async () => {
+  it('projects an active lunch as the Router start point until its durable end time', async () => {
     const engineer = await liveCreateEngineer(true);
     const request = await liveCreateRequest();
     await liveApplyPlan(engineer.id, [request], true);
