@@ -135,6 +135,8 @@ enum ControlMode {
 enum PlanOrigin {
   auto
   manual
+  /// A dispatcher restored the immediately preceding immutable revision after revalidation.
+  restore
 }
 
 /// Confirmed execution facts. Every one of them comes from an explicit mark by the
@@ -363,6 +365,9 @@ model Engineer {
   inputOrder    Int @map("input_order")
   skills        Skill[]
   transportType TransportType @map("transport_type")
+  /// Explicitly sourced pedestrian crews may be prohibited from public transit.
+  /// True preserves the historic walking-profile behaviour for existing data.
+  transitEligible Boolean @default(true) @map("transit_eligible")
   depotId       String? @map("depot_id")
   /// Usual start point. May be absent; it is never filled with invented coordinates.
   homeLat       Float? @map("home_lat")
@@ -1525,4 +1530,18 @@ model PlanSimulation {
   @@unique([baseHash, contextVersion, patchHash])
   @@index([baseHash, createdAt])
   @@map("plan_simulations")
+}
+
+/// Shared fixed-window request budgets. The composite key lets every API instance
+/// increment one bucket atomically without an in-memory or per-process bypass.
+model RateLimitBucket {
+  scope       String
+  clientKey   String @map("client_key")
+  windowStart BigInt @map("window_start")
+  count       Int
+  updatedAt   BigInt @map("updated_at")
+
+  @@id([scope, clientKey, windowStart])
+  @@index([windowStart])
+  @@map("rate_limit_buckets")
 }

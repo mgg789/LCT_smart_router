@@ -9,7 +9,7 @@ from core.contracts import (
     RequestEvidence,
     RouterTaskSnapshot,
 )
-from core.schedule import TravelProvider, eligible, fixed_order, release_at
+from core.schedule import TravelProvider, eligible, fixed_order, release_at, transport_matches
 
 
 def build_plan_evidence(
@@ -87,13 +87,16 @@ def build_plan_evidence(
                 or request.region == engineer.region
             )
             skill_match = request.required_skill in engineer.skills
-            transport_match = request.required_transport in (None, engineer.transport_type)
+            transport_match = transport_matches(request.required_transport, engineer)
             equipment_stock = (
                 engineer.equipment_stock.quantity(request.required_equipment)
                 if request.required_equipment is not None
                 else None
             )
-            equipment_match = request.required_equipment is None or equipment_stock > 0
+            equipment_match = (
+                request.required_equipment is None
+                or (equipment_stock is not None and equipment_stock > 0)
+            )
             release = release_at(snapshot, engineer)
             available = release is not None
             static_ok = eligible(snapshot, engineer, request)

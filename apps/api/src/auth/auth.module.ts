@@ -1,6 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
-import { PreAuthRateLimitGuard } from '../common/rate-limit';
+import { PreAuthRateLimitGuard, RateLimitGuard } from '../common/rate-limit';
 import { ApiTokenService } from './api-token.service';
 import { AuthService } from './auth.service';
 import { ActorGuard } from './guards/actor.guard';
@@ -21,8 +21,10 @@ import { SessionService } from './session.service';
     LoginCodeService,
     SessionService,
     ApiTokenService,
-    // Credential budgets must run before ActorGuard resolves bearer values. Route-level
-    // RateLimitGuard remains responsible for the ordinary public API budgets.
+    // Both ordinary and pre-auth budgets are global so metadata is enforced even when a
+    // controller's @UseGuards class is not registered in that controller's module.
+    { provide: APP_GUARD, useClass: RateLimitGuard },
+    // Credential budgets must run before ActorGuard resolves bearer values.
     { provide: APP_GUARD, useClass: PreAuthRateLimitGuard },
     { provide: APP_GUARD, useClass: ActorGuard },
   ],

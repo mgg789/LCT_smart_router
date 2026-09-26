@@ -377,7 +377,7 @@ def load_official_region(
         )
         engineer_details[engineer_id] = {
             "control_team": team,
-            "skills": skills,
+            "skills": [str(skill) for skill in skills],
             "transport_type": profile.transport_type,
             "shift_start": profile.shift_start,
             "shift_end": profile.shift_end,

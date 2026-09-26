@@ -33,7 +33,7 @@ from core.engine import (
     solve,
 )
 from core.evidence import build_plan_evidence
-from core.geo import GraphTravel, RoadGraph, content_hash
+from core.geo import GraphTravel, RoadGraph, TravelSource, content_hash
 from core.osrm import OSRMTravel
 from core.planning_travel import planning_configuration, planning_travel
 from core.policy import POLICY_CATALOG_VERSION, compile_policy
@@ -45,6 +45,7 @@ from core.settings import StoredTechnicalSettingsOperation, TechnicalSettingsSto
 
 MAX_SNAPSHOT_BYTES = 16 * 1024 * 1024
 COMPARISON_POLICY_IDS = ("fast", "compact", "sla", "balanced", "eco")
+GraphInput = RoadGraph | OSRMTravel | ImportedRoadOverlay | TravelSource
 
 
 def _regional_snapshots(snapshot: RouterTaskSnapshot) -> dict[str, RouterTaskSnapshot]:
@@ -173,7 +174,7 @@ class PostgresSnapshotReader:
 _worker_graph = None
 
 
-def _install_worker_graph(graph: RoadGraph | OSRMTravel) -> None:
+def _install_worker_graph(graph: GraphInput) -> None:
     """Keep the road graph in the worker. Resending it on every solve stalled the API."""
     global _worker_graph
     _worker_graph = graph
@@ -194,7 +195,7 @@ def calculate_installed(
 
 def calculate(
     raw: bytes,
-    graph: RoadGraph | OSRMTravel,
+    graph: GraphInput,
     settings: SearchSettings,
     context_version: str,
     memory: EngineMemory | None = None,
@@ -288,7 +289,7 @@ def calculate(
 def calculate_policy_catalog(
     raw: bytes,
     publication_id: str,
-    graph: RoadGraph | OSRMTravel,
+    graph: GraphInput,
     settings: SearchSettings,
     context_version: str,
     search_budget_ms: int = 8000,
@@ -374,6 +375,8 @@ def calculate_policy_catalog(
     # FIFO is never optimized, replaced, or supplied with additional engineers.
     selected: dict[str, Plan] = {"baseline": fifo}
     for index, row in enumerate(rows):
+        if row.strategy_id == "baseline":
+            continue
         candidate_snapshot = snapshot.model_copy(
             update={"policy": Policy(policy_id=row.strategy_id, parameters={})}
         )
@@ -418,7 +421,7 @@ def calculate_policy_catalog(
 def calculate_policy_comparison(
     raw: bytes,
     publication_id: str,
-    graph: RoadGraph | OSRMTravel,
+    graph: GraphInput,
     settings: SearchSettings,
     context_version: str,
     search_budget_ms: int = 8000,
@@ -448,7 +451,7 @@ class RouterRuntime:
     def __init__(
         self,
         reader: SnapshotReader,
-        graph: RoadGraph | OSRMTravel,
+        graph: GraphInput,
         settings: SearchSettings | None = None,
         poll_sec: float = 0.2,
         executor=None,
@@ -471,6 +474,7 @@ class RouterRuntime:
         if saved is not None:
             self.settings = replace(
                 self.settings,
+                strict_time_windows=saved.strict_time_windows,
                 lunches_enabled=saved.lunches_enabled,
                 traffic_enabled=saved.traffic_enabled,
                 metro_enabled=saved.metro_enabled,
@@ -537,11 +541,7 @@ class RouterRuntime:
         cached = self._context_cache
         if cached is not None:
             return cached
-        resource = (
-            self._graph.version
-            if hasattr(self._graph, "version")
-            else self._graph.model_dump(mode="json")
-        )
+        resource = self._graph.version
         data = [
             "router-v2",
             POLICY_CATALOG_VERSION,
@@ -877,7 +877,11 @@ class RouterRuntime:
             completed_result = self._regional_outputs.get(region)
             progress.append(RegionalProgress(
                 region=region,
-                status="pending" if completed_result is None else completed_result[0].status,
+                status=(
+                    "pending"
+                    if completed_result is None or completed_result[0].status == "partial"
+                    else completed_result[0].status
+                ),
                 request_count=len(part.requests),
             ))
         # The comprehension above intentionally keeps a result entry and a pending
@@ -989,6 +993,7 @@ class RouterRuntime:
                 raise ValueError("SETTINGS_STORE_UNAVAILABLE")
             updated_settings = replace(
                 self.settings,
+                strict_time_windows=requested.strict_time_windows,
                 lunches_enabled=requested.lunches_enabled,
                 traffic_enabled=requested.traffic_enabled,
                 equipment_enabled=requested.equipment_enabled,

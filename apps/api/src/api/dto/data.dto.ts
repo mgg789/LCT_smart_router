@@ -20,10 +20,7 @@ const uploadRequest = z
     windowEndAt: z.number().int().nonnegative(),
     priority: z.enum(['normal', 'urgent']),
     requiredSkill: z.enum(['local', 'connection', 'emergency']),
-    requiredTransport: z
-      .enum(['car', 'walk', 'bike', 'transit'])
-      .transform((value) => (value === 'transit' ? 'walk' : value))
-      .optional(),
+    requiredTransport: z.enum(['car', 'walk', 'bike', 'transit']).optional(),
     requiredEquipment: z.enum(['router', 'set_top_box', 'smart_speaker']).optional(),
     workType: z.string().trim().min(1).max(200).optional(),
   })
@@ -37,9 +34,7 @@ const uploadEngineer = z
     externalId: z.string().trim().min(1).max(200),
     displayName: z.string().trim().min(1).max(300),
     skills: z.array(z.enum(['local', 'connection', 'emergency'])).min(1),
-    transportType: z
-      .enum(['car', 'walk', 'bike', 'transit'])
-      .transform((value) => (value === 'transit' ? 'walk' : value)),
+    transportType: z.enum(['car', 'walk', 'bike', 'transit']),
     start: coordinate,
     shiftStartAt: z.number().int().nonnegative(),
     shiftEndAt: z.number().int().nonnegative(),

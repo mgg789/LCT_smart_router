@@ -10,6 +10,7 @@ import { SysError } from '../../src/common/errors';
 import type { Alert, Engineer, EngineerDay, PrismaClient } from '../../src/generated/prisma/client';
 import { OperationsService } from '../../src/operations';
 import { AlertsService } from '../../src/orchestrator/alerts';
+import { tomorrowLoadLine } from '../../src/orchestrator/alerts/alert-brief';
 import { EngineersService } from '../../src/orchestrator/engineers';
 import { UnitOfWork } from '../../src/persistence';
 import {
@@ -112,8 +113,7 @@ describe('dispatcher alert lifecycle', () => {
       });
       requestIds.push(row.id);
     }
-    // biome-ignore lint/complexity/useLiteralKeys: exercise the private DB aggregation without making it public API.
-    const text = await alerts['tomorrowLoadLine']({
+    const text = await tomorrowLoadLine(prisma, {
       id: randomUUID(),
       windowStartAt: start,
       windowEndAt: start + 7200n,

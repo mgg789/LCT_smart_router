@@ -3,7 +3,7 @@
 from core.contracts import GeoPoint, RouterTechnicalSettings
 from core.geo import GraphTravel, RoadGraph, TravelQuote, configure_travel, routing_context_version
 from core.metro import MetroNetwork, MetroTravel, choose_metro, configured_metro_travel
-from core.schedule import baseline
+from core.schedule import baseline, eligible
 
 
 def _network(*, disconnected: bool = False) -> MetroNetwork:
@@ -71,7 +71,7 @@ def test_metro_shortest_path_includes_transfer_and_composite_segments():
     assert sum(segment.duration_sec for segment in quote.segments) == quote.duration_sec
     assert len(quote.segments[1].points) >= 2
     assert GeoPoint(lat=55.755, lon=37.620) in quote.segments[1].points
-    assert MetroTravel(_WalkingTravel(), _network()).quote(origin, destination, "walk").provenance == "metro"
+    assert MetroTravel(_WalkingTravel(), _network()).quote(origin, destination, "walk").provenance == "road_matrix"
 
 
 def test_metro_is_not_used_when_disabled_outside_boundary_or_unreachable():
@@ -99,6 +99,33 @@ def test_solver_persists_selected_metro_segments(snapshot):
     leg = plan.routes[0].legs[0]
     assert leg.travel_source == "metro"
     assert [segment.travel_source for segment in leg.segments] == ["road_matrix", "metro", "road_matrix"]
+
+
+def test_explicit_walk_only_profile_excludes_transit_work_and_metro(snapshot):
+    origin = GeoPoint(lat=55.750, lon=37.600)
+    destination = GeoPoint(lat=55.760, lon=37.650)
+    walk_only = snapshot.engineers[0].model_copy(
+        update={
+            "transport_type": "walk",
+            "transit_eligible": False,
+            "start_location": origin,
+        }
+    )
+    transit_required = snapshot.requests[0].model_copy(
+        update={"location": destination, "required_transport": "transit"}
+    )
+    task = snapshot.model_copy(update={"engineers": [walk_only], "requests": [transit_required]})
+
+    assert not eligible(task, walk_only, transit_required)
+    assert MetroTravel(_WalkingTravel(), _network()).quote(
+        origin, destination, walk_only.travel_profile()
+    ).provenance == "road_matrix"
+
+    legacy_walk = walk_only.model_copy(update={"transit_eligible": True})
+    assert eligible(task, legacy_walk, transit_required)
+    assert MetroTravel(_WalkingTravel(), _network()).quote(
+        origin, destination, legacy_walk.travel_profile()
+    ).provenance == "metro"
 
 
 def test_legacy_transit_is_pedestrian_and_microedge_policy_is_consistent():
@@ -165,7 +192,7 @@ def test_metro_compares_all_accessible_stations_and_joins_real_segment_geometry(
                 return TravelQuote(10_000, 5_000, (start, end), "road_matrix")
             return TravelQuote(10, 100, (start, end), "road_matrix")
 
-    quote = MetroTravel(CostedWalk(), network).quote(origin, destination, "walk")
+    quote = MetroTravel(CostedWalk(), network).quote(origin, destination, "transit")
     assert quote is not None and quote.provenance == "metro"
     assert quote.segments[1].points[0] == GeoPoint(lat=55.750, lon=37.605)
     assert quote.points == (

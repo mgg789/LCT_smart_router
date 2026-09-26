@@ -70,6 +70,8 @@ export interface EngineerView {
   readonly inputOrder: number;
   readonly skills: string[];
   readonly transportType: 'car' | 'walk' | 'bike' | 'transit';
+  /** False only when an imported source explicitly marks this walking crew as no-transit. */
+  readonly transitEligible?: boolean;
   readonly region: string | null;
   readonly homeLat: number | null;
   readonly homeLon: number | null;
@@ -296,7 +298,7 @@ export interface PlanAssignmentView {
 
 export interface PlanView {
   readonly revision: number;
-  readonly origin: 'auto' | 'manual';
+  readonly origin: 'auto' | 'manual' | 'restore';
   readonly planAsOf: number;
   readonly appliedAt: number;
   readonly routes: PlanRouteView[];
@@ -342,6 +344,13 @@ export interface DispatchShiftView {
   readonly unresolvedCount: number;
 }
 
+/** Durable current/predecessor pair; eligibility is rechecked transactionally on restore. */
+export interface PlanHistoryResponse {
+  readonly current: PlanView | null;
+  readonly previous: PlanView | null;
+  readonly eligibility: { readonly eligible: boolean; readonly reason: string | null };
+}
+
 export interface DispatchPlanResponse {
   readonly mode: 'auto' | 'manual';
   readonly modeVersion: number;
@@ -385,6 +394,8 @@ export interface DashboardSnapshot {
 }
 
 export interface RouterTechnicalSettings {
+  /** Disable all lateness and terminal shift/window allowances; default false. */
+  readonly strictTimeWindows?: boolean;
   readonly lunchesEnabled: boolean;
   readonly metroEnabled: boolean;
   readonly departureLatenessToleranceSec: number;
@@ -454,7 +465,7 @@ export interface EngineerAuthSession {
 
 export interface EngineerPlanResponse {
   readonly planAsOf: number | null;
-  readonly origin: 'auto' | 'manual' | null;
+  readonly origin: 'auto' | 'manual' | 'restore' | null;
   readonly revision: number | null;
   readonly route: PlanRouteView | null;
   readonly requests: RequestView[];

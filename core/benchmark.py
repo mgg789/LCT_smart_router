@@ -488,16 +488,27 @@ def benchmark_payload(run: BenchmarkRun) -> dict:
         return result
 
     config = run.scenario.config if isinstance(run.scenario, OfficialScenario) else None
+    multi_zone = run.scenario if isinstance(run.scenario, MultiZoneScenario) else None
+    if config is None:
+        if multi_zone is None:
+            raise ValueError("unsupported benchmark scenario")
+        scenario_id = multi_zone.scenario_id
+        zones = list(multi_zone.zones)
+        assumptions = multi_zone.assumptions
+    else:
+        scenario_id = config.scenario_id
+        zones = [config.region]
+        assumptions = config.assumptions
     return {
         "schema_version": "1.0",
-        "scenario_id": config.scenario_id if config else run.scenario.scenario_id,
+        "scenario_id": scenario_id,
         "source": {
             "requests": len(run.scenario.snapshot.requests),
             "engineers": len(run.scenario.snapshot.engineers),
             "geocode_quality": run.scenario.geocode_quality,
-            "zones": [config.region] if config else list(run.scenario.zones),
+            "zones": zones,
         },
-        "assumptions": config.assumptions if config else run.scenario.assumptions,
+        "assumptions": assumptions,
         "search": {
             "path": run.output.path,
             "elapsed_sec": run.elapsed_sec,

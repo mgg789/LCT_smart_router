@@ -117,6 +117,7 @@ const engineerSchema = z.object({
   inputOrder: z.number().int(),
   skills: z.array(z.string()),
   transportType: z.enum(['car', 'walk', 'bike', 'transit']),
+  transitEligible: z.boolean().optional().default(true),
   region: z.string().nullable(),
   homeLat: z.number().nullable(),
   homeLon: z.number().nullable(),
@@ -226,12 +227,50 @@ const rawAssignmentSchema = z.object({
 
 const planSchema = z.object({
   revision: z.number().int(),
-  origin: z.enum(['auto', 'manual']),
+  origin: z.enum(['auto', 'manual', 'restore']),
   planAsOf: z.number().int(),
   appliedAt: z.number().int(),
   routes: z.array(routeSchema),
   assignments: z.array(rawAssignmentSchema),
 });
+
+/** Read persisted revisions; restore eligibility is never inferred from browser state. */
+export async function loadPlanHistory(token: string) {
+  const history = await requestJson(
+    '/api/v1/dispatch/plan/previous',
+    z.object({
+      current: planSchema.nullable(),
+      previous: planSchema.nullable(),
+      eligibility: z.object({ eligible: z.boolean(), reason: z.string().nullable() }),
+    }),
+    token,
+  );
+  const normalize = (plan: z.infer<typeof planSchema> | null) =>
+    plan
+      ? {
+          ...plan,
+          assignments: plan.assignments.map(normalizeAssignment),
+        }
+      : null;
+  return { ...history, current: normalize(history.current), previous: normalize(history.previous) };
+}
+
+/** Restore the server's predecessor as a new revision, with a stale-view CAS guard. */
+export async function restorePreviousPlan(token: string, expectedRevision: number) {
+  return requestJson(
+    '/api/v1/dispatch/plan/restore',
+    z.object({
+      fromRevision: z.number().int(),
+      restoredRevision: z.number().int(),
+      origin: z.literal('restore'),
+    }),
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({ operationId: crypto.randomUUID(), expectedRevision }),
+    },
+  );
+}
 
 const dispatchPlanSchema = z.object({
   mode: z.enum(['auto', 'manual']),
@@ -397,6 +436,7 @@ const technicalSettingsSchema = z.object({
   metroEnabled: z.boolean().default(false),
   departureLatenessToleranceSec: z.number().int().nonnegative(),
   taskStartLatenessToleranceSec: z.number().int().nonnegative(),
+  strictTimeWindows: z.boolean().default(false),
   windowLatenessToleranceSec: z.number().int().nonnegative().max(1_200).default(0),
   trafficEnabled: z.boolean().default(true),
   equipmentEnabled: z.boolean().default(true),
@@ -1019,6 +1059,7 @@ export async function updateRouterTechnicalSettings(
       body: JSON.stringify({
         operationId: crypto.randomUUID(),
         expectedContextVersion: settings.routerContextVersion,
+        strictTimeWindows: settings.strictTimeWindows ?? false,
         lunchesEnabled: settings.lunchesEnabled,
         metroEnabled: settings.metroEnabled,
         departureLatenessToleranceSec: settings.departureLatenessToleranceSec,

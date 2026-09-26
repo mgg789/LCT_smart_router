@@ -186,7 +186,9 @@ def criterion_values(snapshot: RouterTaskSnapshot, plan: Plan) -> dict[Criterion
             if route.engineer_id.startswith("covering-")
         ),
         "window_start_delay": sum(
-            stop.start_at - requests[stop.request_id].window_start_at for stop in job_stops
+            stop.start_at - requests[stop.request_id].window_start_at
+            for stop in job_stops
+            if stop.request_id is not None
         ),
         "max_jobs_per_engineer": max(
             (route.metrics.assigned_count for route in plan.routes), default=0

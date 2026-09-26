@@ -59,6 +59,9 @@ importers:
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2
+      helmet:
+        specifier: 8.3.0
+        version: 8.3.0
       iconv-lite:
         specifier: 0.7.3
         version: 0.7.3
@@ -1939,6 +1942,10 @@ packages:
 
   hast-util-whitespace@3.0.0:
     resolution: {integrity: sha512-88JUN06ipLwsnv+dVn+OIYOvAuvBMy/Qoi6O7mQHxdPXpjy+Cd6xRkWwux7DKO+4sYILtLBRIKgsdpS2gQc7qw==}
+
+  helmet@8.3.0:
+    resolution: {integrity: sha512-Qgpiaws3Sm30Av8Eah6sjMCZZwjlBu+E68rhpCWBshY1lb09HtLwj5GviX0OyQIn+ulUS0iX0AxN5n3tLZzz1w==}
+    engines: {node: '>=18.0.0'}
 
   html-encoding-sniffer@6.0.0:
     resolution: {integrity: sha512-CV9TW3Y3f8/wT0BRFc1/KAVQ3TUHiXmaAb6VW9vtiMFf7SLoMd1PdAc4W3KFOFETBJUb90KatHqlsZMWV+R9Gg==}
@@ -4952,6 +4959,8 @@ snapshots:
   hast-util-whitespace@3.0.0:
     dependencies:
       '@types/hast': 3.0.5
+
+  helmet@8.3.0: {}
 
   html-encoding-sniffer@6.0.0(@noble/hashes@1.8.0):
     dependencies:

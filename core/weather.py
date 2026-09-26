@@ -15,6 +15,9 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Literal
 
+from core.contracts import GeoPoint, Transport
+from core.geo import TravelQuote, TravelSource
+
 WeatherKind = Literal["clear", "cloud", "rain", "snow", "storm", "unknown"]
 
 _MOSCOW_LAT = 55.7558
@@ -198,7 +201,7 @@ class WeatherTravel:
     """Scale car duration and the traffic factor by the cached weather multiplier."""
 
     def __init__(
-        self, travel: object, multiplier: float | None = None, kind: WeatherKind | None = None
+        self, travel: TravelSource, multiplier: float | None = None, kind: WeatherKind | None = None
     ):
         """Remember the forecast multiplier and kind. Tests may pass both instead of fetching."""
         self.travel = travel
@@ -218,17 +221,17 @@ class WeatherTravel:
             ).encode("utf-8")
         )
 
-    def quote(self, origin: object, destination: object, profile: str):
+    def quote(self, origin: GeoPoint, destination: GeoPoint, profile: Transport) -> TravelQuote | None:
         """Scale one static car quote. Other profiles pass through."""
         return self._scale(self.travel.quote(origin, destination, profile), profile)
 
-    def quote_at(self, origin: object, destination: object, profile: str, departure_at: int):
+    def quote_at(self, origin: GeoPoint, destination: GeoPoint, profile: Transport, departure_at: int) -> TravelQuote | None:
         """Scale one departure-aware car quote. Other profiles pass through."""
         from core.geo import quote_at
 
         return self._scale(quote_at(self.travel, origin, destination, profile, departure_at), profile)
 
-    def _scale(self, quote: object, profile: str):
+    def _scale(self, quote: TravelQuote | None, profile: Transport) -> TravelQuote | None:
         if quote is None or quote.distance_m == 0:
             return quote
         factor = 1.0

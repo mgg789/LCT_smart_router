@@ -5,17 +5,8 @@
   "attributionUrl": "https://www.openstreetmap.org/copyright",
   "endpoint": "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
   "sourceTimestamp": "2026-09-26T18:45:17Z",
-  "bounds": [
-    37.5,
-    54.8,
-    38.2,
-    55.81
-  ],
-  "regions": [
-    "east",
-    "south_central",
-    "southeast"
-  ],
+  "bounds": [37.5, 54.8, 38.2, 55.81],
+  "regions": ["east", "south_central", "southeast"],
   "query": "[out:json][timeout:50][maxsize:134217728];(way[\"highway\"~\"^(motorway|trunk|primary|secondary|tertiary|residential|unclassified|living_street)(_link)?$\"](54.80,37.50,55.81,38.20);way[\"waterway\"~\"^(river|canal)$\"](54.80,37.50,55.81,38.20);way[\"natural\"=\"water\"](54.80,37.50,55.81,38.20);way[\"leisure\"=\"park\"](54.80,37.50,55.81,38.20););out geom;",
   "sourceSha256": "12c8b5a209e637860c48775d85e4dc0ea91a6bd2cbe97ec2995fb0570b0eaca0",
   "fileSha256": "448728579bd32559b6638d36ff7994ddf3a1103efd4d88e444bb7c69e61d4209",

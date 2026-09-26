@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { asLunchStatus, type PlanRouteView } from '../../api/plan-view';
+import type { AppliedPlanCurrentShape } from '../../api/plan-view.types';
 import { SysError } from '../../common/errors';
 import { type AppliedPlan, Prisma } from '../../generated/prisma/client';
 import { AlertsService } from '../../orchestrator/alerts';
@@ -97,6 +98,19 @@ export class AppliedPlanService {
       },
     });
     return pointer?.plan ?? null;
+  }
+
+  /** The immutable revision immediately before `beforeRevision`, including drawable routes. */
+  async previous(tx: Tx, beforeRevision: number): Promise<AppliedPlanCurrentShape | null> {
+    return tx.appliedPlan.findFirst({
+      where: { revision: { lt: beforeRevision } },
+      orderBy: { revision: 'desc' },
+      include: {
+        routerResult: true,
+        routes: { include: { stops: { orderBy: { sequence: 'asc' } } } },
+        assignments: true,
+      },
+    });
   }
 
   /**
@@ -248,16 +262,122 @@ export class AppliedPlanService {
       throw SysError.notFound('Applied plan');
     }
 
+    return this.copyRevision(tx, now, current, {
+      origin: 'manual',
+      createdBy: actorId,
+      note,
+      planAsOf: BigInt(now),
+    });
+  }
+
+  /** Copies an already accepted revision byte-for-byte into a new immutable restore revision. */
+  async restoreRevision(
+    tx: Tx,
+    now: number,
+    source: AppliedPlanCurrentShape,
+    actorId: string,
+  ): Promise<AppliedPlan> {
+    return this.copyRevision(tx, now, source, {
+      origin: 'restore',
+      createdBy: actorId,
+      note: `restore revision ${source.revision}`,
+      planAsOf: source.planAsOf,
+    });
+  }
+
+  /** Recreates only still-valid handoff reservations for a restored immutable route. */
+  async restoreHandoffs(tx: Tx, now: number, source: AppliedPlanCurrentShape): Promise<void> {
+    const routes: RouterPlan['routes'] = source.routes.map((route) => ({
+      engineer_id: route.engineerId,
+      start_location: { lat: route.startLat, lon: route.startLon },
+      start_at: route.startAt === null ? null : Number(route.startAt),
+      finish_at: route.finishAt === null ? null : Number(route.finishAt),
+      stops: route.stops.map((stop) => ({
+        stop_id: `restore:${route.engineerId}:${stop.sequence}`,
+        sequence: stop.sequence,
+        kind: stop.kind,
+        request_id: stop.requestId,
+        handoff: handoffMetadataSchema.safeParse(stop.handoff).data ?? null,
+        location: { lat: stop.lat, lon: stop.lon },
+        arrival_at: Number(stop.arrivalAt),
+        start_at: Number(stop.startAt),
+        end_at: Number(stop.endAt),
+      })),
+      legs: [],
+      lunch: {
+        status: route.lunchStatus === 'scheduled' ? 'scheduled' : 'not_scheduled',
+        stop_id: null,
+        reasons: [],
+      },
+      metrics: {
+        distance_km: route.distanceKm,
+        travel_time_sec: route.travelTimeSec,
+        work_time_sec: route.workTimeSec,
+        waiting_time_sec: route.waitingTimeSec,
+        lunch_time_sec: route.lunchTimeSec,
+        assigned_count: route.assignedCount,
+      },
+      reasons: [],
+    }));
+    const assignments: RouterPlan['assignments'] = source.assignments.flatMap((item) =>
+      item.status === 'assigned' || item.status === 'unassigned'
+        ? [
+            {
+              request_id: item.requestId,
+              status: item.status,
+              engineer_id: item.engineerId,
+              stop_id: item.stopId,
+              reasons: [],
+            },
+          ]
+        : [],
+    );
+    await persistHandoffs(
+      tx,
+      {
+        is_usable: true,
+        metric_scope: 'snapshot_remaining',
+        routes,
+        assignments,
+        summary: {
+          requests_total: assignments.length,
+          assigned_count: assignments.filter((item) => item.status === 'assigned').length,
+          unassigned_count: assignments.filter((item) => item.status === 'unassigned').length,
+          urgent_total: 0,
+          urgent_assigned_count: 0,
+          engineers_used: routes.filter((route) => route.metrics.assigned_count > 0).length,
+          distance_km: routes.reduce((sum, route) => sum + route.metrics.distance_km, 0),
+          travel_time_sec: routes.reduce((sum, route) => sum + route.metrics.travel_time_sec, 0),
+          work_time_sec: routes.reduce((sum, route) => sum + route.metrics.work_time_sec, 0),
+          waiting_time_sec: routes.reduce((sum, route) => sum + route.metrics.waiting_time_sec, 0),
+          lunch_time_sec: routes.reduce((sum, route) => sum + route.metrics.lunch_time_sec, 0),
+        },
+        alerts: [],
+      },
+      workDateOf(Number(source.planAsOf), 'Europe/Moscow'),
+      now,
+    );
+  }
+
+  private async copyRevision(
+    tx: Tx,
+    now: number,
+    current: AppliedPlanCurrentShape,
+    metadata: {
+      origin: 'manual' | 'restore';
+      createdBy: string;
+      note: string;
+      planAsOf: bigint;
+    },
+  ): Promise<AppliedPlan> {
     const revision = await tx.appliedPlan.create({
       data: {
-        origin: 'manual',
+        origin: metadata.origin,
         routerResultId: current.routerResultId,
-        // A manual plan describes the moment it was edited, not the moment of the
-        // automatic result it started from.
-        planAsOf: BigInt(now),
+        planAsOf: metadata.planAsOf,
         appliedAt: BigInt(now),
-        createdBy: actorId,
-        note,
+        createdBy: metadata.createdBy,
+        note: metadata.note,
       },
     });
 

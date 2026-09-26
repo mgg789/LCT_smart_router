@@ -299,7 +299,7 @@ function orderOf(strategyId: string): number {
 }
 
 /** Shown rows. Green marks the best displayed value; ties stay green together. */
-function comparisonMetrics(recorded: boolean): MetricSpec[] {
+export function comparisonMetrics(recorded: boolean): MetricSpec[] {
   return [
     {
       label: 'Назначено',
@@ -329,39 +329,79 @@ function comparisonMetrics(recorded: boolean): MetricSpec[] {
           : String(row.metrics.engineersUsed),
     },
     {
-      label: 'Пробег',
+      label: 'Пробег на заявку',
+      better: 'min',
+      score: (row) => perAssigned(row.metrics.distanceKm, row.metrics.assignedCount),
+      text: (row) => formatKmPerAssigned(row.metrics.distanceKm, row.metrics.assignedCount),
+    },
+    {
+      label: 'Дорога на заявку',
+      better: 'min',
+      score: (row) => perAssigned(row.metrics.travelTimeSec, row.metrics.assignedCount),
+      text: (row) =>
+        formatDurationPerAssigned(row.metrics.travelTimeSec, row.metrics.assignedCount),
+    },
+    {
+      label: 'Работа на заявку',
+      better: 'min',
+      score: (row) => perAssigned(row.metrics.workTimeSec, row.metrics.assignedCount),
+      text: (row) => formatDurationPerAssigned(row.metrics.workTimeSec, row.metrics.assignedCount),
+    },
+    {
+      label: 'Ожидание на заявку',
+      better: 'min',
+      score: (row) => perAssigned(row.metrics.waitingTimeSec, row.metrics.assignedCount),
+      text: (row) =>
+        formatDurationPerAssigned(row.metrics.waitingTimeSec, row.metrics.assignedCount),
+    },
+    {
+      label: 'Опоздания на заявку',
+      better: 'min',
+      score: (row) => perAssigned(row.metrics.lateAssignedCount, row.metrics.assignedCount),
+      text: (row) =>
+        formatCountPerAssigned(row.metrics.lateAssignedCount, row.metrics.assignedCount),
+    },
+    {
+      label: 'Задержка на заявку',
+      better: 'min',
+      score: (row) => perAssigned(row.metrics.totalLatenessSec, row.metrics.assignedCount),
+      text: (row) =>
+        formatDurationPerAssigned(row.metrics.totalLatenessSec, row.metrics.assignedCount),
+    },
+    {
+      label: 'Пробег всего',
       better: 'min',
       score: (row) => displayKm(row.metrics.distanceKm),
       text: (row) => formatKm(row.metrics.distanceKm),
     },
     {
-      label: 'Дорога',
+      label: 'Дорога всего',
       better: 'min',
-      score: (row) => Math.round(row.metrics.travelTimeSec / 60),
+      score: (row) => row.metrics.travelTimeSec,
       text: (row) => formatDurationMin(row.metrics.travelTimeSec),
     },
     {
-      label: 'Работы',
+      label: 'Работы всего',
       better: 'min',
-      score: (row) => Math.round(row.metrics.workTimeSec / 60),
+      score: (row) => row.metrics.workTimeSec,
       text: (row) => formatDurationMin(row.metrics.workTimeSec),
     },
     {
-      label: 'Ожидание',
+      label: 'Ожидание всего',
       better: 'min',
-      score: (row) => Math.round(row.metrics.waitingTimeSec / 60),
+      score: (row) => row.metrics.waitingTimeSec,
       text: (row) => formatDurationMin(row.metrics.waitingTimeSec),
     },
     {
-      label: 'Опоздания',
+      label: 'Опоздания, всего',
       better: 'min',
       score: (row) => row.metrics.lateAssignedCount,
       text: (row) => String(row.metrics.lateAssignedCount),
     },
     {
-      label: 'Сумма опозданий',
+      label: 'Сумма опозданий, всего',
       better: 'min',
-      score: (row) => Math.round(row.metrics.totalLatenessSec / 60),
+      score: (row) => row.metrics.totalLatenessSec,
       text: (row) => formatDurationMin(row.metrics.totalLatenessSec),
     },
     {
@@ -393,6 +433,33 @@ function comparisonMetrics(recorded: boolean): MetricSpec[] {
 
 function displayKm(km: number): number {
   return km >= 10 ? Math.round(km) : Math.round(km * 10) / 10;
+}
+
+/** A missing denominator is not a zero-cost route and must not win a comparison. */
+export function perAssigned(value: number, assignedCount: number): number | null {
+  return assignedCount > 0 ? value / assignedCount : null;
+}
+
+function unavailablePerAssigned(assignedCount: number): string | null {
+  return assignedCount > 0 ? null : '— (нет назначений)';
+}
+
+export function formatKmPerAssigned(distanceKm: number, assignedCount: number): string {
+  const unavailable = unavailablePerAssigned(assignedCount);
+  return unavailable ?? `${formatKm(distanceKm / assignedCount)} / заявка`;
+}
+
+function formatDurationPerAssigned(durationSec: number, assignedCount: number): string {
+  const unavailable = unavailablePerAssigned(assignedCount);
+  return unavailable ?? `${formatDurationMin(durationSec / assignedCount)} / заявка`;
+}
+
+function formatCountPerAssigned(count: number, assignedCount: number): string {
+  const unavailable = unavailablePerAssigned(assignedCount);
+  return (
+    unavailable ??
+    `${(count / assignedCount).toLocaleString('ru-RU', { maximumFractionDigits: 2 })} / заявка`
+  );
 }
 
 function winners(columns: PolicyComparisonRow[], metric: MetricSpec): Set<string> {

@@ -46,7 +46,7 @@ def snapshot_points(snapshot: RouterTaskSnapshot) -> list[GeoPoint]:
 
 
 def _cost(value: object) -> float:
-    if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
+    if not isinstance(value, (int, float)) or isinstance(value, bool) or not math.isfinite(value) or value < 0:
         raise ValueError("invalid matrix cost")
     return float(value)
 
@@ -318,6 +318,8 @@ def _prepared_travel(
     if isinstance(base, OSRMTravel):
         # With no regional graph, an offline miss is an honest provider failure.
         # Inventing a straight-line base here would hide a missing required source.
+        if osrm is None:
+            raise TravelUnavailable("PLANNING_OSRM_UNAVAILABLE")
         base = prepare_osrm(osrm, points, offline)
     elif osrm is not None:
         base = MixedTravel(base, prepare_osrm(osrm, points, offline))

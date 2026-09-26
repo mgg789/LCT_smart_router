@@ -131,8 +131,10 @@ def decode_road_api(data: dict) -> TravelQuote:
     distance = data.get("distance_m")
     geometry = data.get("geometry")
     if (
-        type(duration) not in (int, float)
-        or type(distance) not in (int, float)
+        not isinstance(duration, (int, float))
+        or isinstance(duration, bool)
+        or not isinstance(distance, (int, float))
+        or isinstance(distance, bool)
         or not math.isfinite(duration)
         or not math.isfinite(distance)
         or min(duration, distance) < 0

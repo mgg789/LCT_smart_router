@@ -12,7 +12,7 @@ import math
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 from pydantic import Field, model_validator
 
@@ -147,6 +147,17 @@ class TravelSource(Protocol):
         ...
 
 
+@runtime_checkable
+class TimedTravelSource(Protocol):
+    """Travel provider that can price a leg at a departure clock."""
+
+    def quote_at(
+        self, origin: GeoPoint, destination: GeoPoint, profile: Transport, departure_at: int
+    ) -> TravelQuote | None:
+        """Return one departure-aware route quote."""
+        ...
+
+
 class TravelUnavailable(ValueError):
     """Provider failure with a safe diagnostic code, distinct from a proven NoRoute."""
 
@@ -182,9 +193,8 @@ def quote_at(
     departure_at: int,
 ) -> TravelQuote | None:
     """Quote at a departure clock when supported, otherwise use the legacy quote."""
-    timed_quote = getattr(travel, "quote_at", None)
-    if callable(timed_quote):
-        return timed_quote(origin, destination, profile, departure_at)
+    if isinstance(travel, TimedTravelSource):
+        return travel.quote_at(origin, destination, profile, departure_at)
     return travel.quote(origin, destination, profile)
 
 
@@ -277,6 +287,14 @@ def configure_travel(
 ) -> TechnicalTravel:
     """Return one timing and optional planning-time-traffic context for all paths."""
     from core.weather import WeatherTravel, weather_kind, weather_multiplier
+
+    if settings.strict_time_windows:
+        settings = settings.model_copy(update={
+            "window_lateness_tolerance_sec": 0,
+            "departure_lateness_tolerance_sec": 0,
+            "task_start_lateness_tolerance_sec": 0,
+            "task_overrun_tolerance_sec": 0,
+        })
 
     if isinstance(travel, TechnicalTravel) and travel.settings == settings:
         configured_base = travel.travel
@@ -407,6 +425,9 @@ def routing_context_version(travel: TravelSource, settings: RouterTechnicalSetti
         "access_buffer_sec": settings.access_buffer_sec,
         "fixed_travel_time_sec": settings.fixed_travel_time_sec,
     }
+    # Keep legacy relaxed identities stable, but never reuse their memory in strict mode.
+    if settings.strict_time_windows:
+        context["strict_time_windows"] = True
     return content_hash(json.dumps(context, sort_keys=True, separators=(",", ":")).encode("utf-8"))
 
 
@@ -599,7 +620,7 @@ class MixedTravel:
         if graph is None or not callable(nearest):
             return False
         source, target = nearest(origin), nearest(destination)
-        if source is None or target is None:
+        if not isinstance(source, str) or not isinstance(target, str):
             return True
         return not (_road_quality_node(graph, source) and _road_quality_node(graph, target))
 

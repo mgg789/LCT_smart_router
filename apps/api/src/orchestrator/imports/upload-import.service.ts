@@ -165,6 +165,11 @@ export class UploadImportService {
     let engineersCreated = 0;
     if (input.mode === 'new_region') {
       const engineers = input.engineers ?? [];
+      const transportTypes = new Set(engineers.map((engineer) => engineer.transportType));
+      // A source which explicitly distinguishes both pedestrian modes has authority over
+      // that distinction. Older packages retain the legacy metro-capable walking default.
+      const sourceDistinguishesPedestrianModes =
+        transportTypes.has('walk') && transportTypes.has('transit');
       const equipment = allocateUploadedEquipment(
         input.requests,
         engineers,
@@ -180,6 +185,8 @@ export class UploadImportService {
             inputOrder: Number(rows[0]?.value ?? 0),
             skills: engineerInput.skills,
             transportType: engineerInput.transportType,
+            transitEligible:
+              !sourceDistinguishesPedestrianModes || engineerInput.transportType !== 'walk',
             depotId,
             homeLat: engineerInput.start.lat,
             homeLon: engineerInput.start.lon,

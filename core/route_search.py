@@ -50,6 +50,7 @@ class RouteEvaluator:
     def __init__(self, snapshot: RouterTaskSnapshot, travel: TravelProvider):
         self.snapshot = snapshot
         self.travel = travel
+        self.strict = getattr(getattr(travel, "settings", None), "strict_time_windows", False)
         self.requests = {r.request_id: r for r in snapshot.requests}
         self.engineers = sorted(snapshot.engineers, key=lambda e: e.engineer_id)
         self.allowed = {
@@ -61,7 +62,10 @@ class RouteEvaluator:
             for r in snapshot.requests
         }
         self.releases = [release_at(snapshot, e) for e in self.engineers]
-        self.terminal_releases = [terminal_release_at(snapshot, e) for e in self.engineers]
+        self.terminal_releases = [
+            release_at(snapshot, e) if self.strict else terminal_release_at(snapshot, e)
+            for e in self.engineers
+        ]
         self.ends = [min(e.shift_end_at, snapshot.horizon_end_at) for e in self.engineers]
         self.cache: dict[tuple[int, tuple[str, ...]], RouteState | None] = {}
         self.evaluations = 0
@@ -112,18 +116,18 @@ class RouteEvaluator:
                 stock[request.required_equipment] -= 1
                 if stock[request.required_equipment] < 0:
                     return None
-            road = quote_at(self.travel, point, request.location, engineer.transport_type, clock)
+            road = quote_at(self.travel, point, request.location, engineer.travel_profile(), clock)
             if road is None:
                 return None
             start = max(clock + road.duration_sec, request.window_start_at)
             clock = start + request.service_duration_sec
             margin = request.window_end_at - clock
-            window_tolerance = max(
+            window_tolerance = 0 if self.strict else max(
                 self.tolerance,
                 TERMINAL_WINDOW_LATENESS_TOLERANCE_SEC if position == len(jobs) - 1 else 0,
             )
             if margin < -window_tolerance or clock > job_completion_limit(
-                self.snapshot, engineer, terminal=position == len(jobs) - 1
+                self.snapshot, engineer, terminal=position == len(jobs) - 1, strict=self.strict
             ):
                 return None
             travel += road.duration_sec
@@ -140,8 +144,9 @@ class RouteEvaluator:
 
     def from_route(self, route: EngineerRoute) -> RouteState:
         """Convert canonical lunch/baseline routes to the same score representation."""
-        stops = [s for s in route.stops if s.kind == "job"]
-        slacks = [self.requests[s.request_id].window_end_at - s.end_at for s in stops]
+        stops = [s for s in route.stops if s.kind == "job" and s.request_id is not None]
+        job_ids = tuple(s.request_id for s in stops if s.request_id is not None)
+        slacks = [self.requests[job_id].window_end_at - stop.end_at for job_id, stop in zip(job_ids, stops)]
         m = route.metrics
         engineer = next(e for e in self.engineers if e.engineer_id == route.engineer_id)
         missed = int(
@@ -151,15 +156,15 @@ class RouteEvaluator:
             and route.lunch.status != "scheduled"
         )
         return RouteState(
-            tuple(s.request_id for s in stops),
+            job_ids,
             m.travel_time_sec,
             round(m.distance_km * 1000),
             m.work_time_sec + m.travel_time_sec + m.waiting_time_sec + m.lunch_time_sec,
-            sum(self.requests[s.request_id].priority == "urgent" for s in stops),
+            sum(self.requests[job_id].priority == "urgent" for job_id in job_ids),
             sum(s < 0 for s in slacks),
             sum(max(0, -s) for s in slacks),
             min(slacks, default=None),
-            sum(s.start_at - self.requests[s.request_id].window_start_at for s in stops),
+            sum(stop.start_at - self.requests[job_id].window_start_at for job_id, stop in zip(job_ids, stops)),
             missed,
         )
 
@@ -212,7 +217,8 @@ class RouteEvaluator:
         ]
         if any(route is None for route in routes):
             return None
-        plan = assemble_plan(self.snapshot, routes)
+        complete_routes = [route for route in routes if route is not None]
+        plan = assemble_plan(self.snapshot, complete_routes)
         validate_plan(self.snapshot, plan, self.travel)
         return plan
 
@@ -233,7 +239,8 @@ def improve_routes(
     an early relaxed deadline cannot consume the entire remaining route.
     """
     evaluator = RouteEvaluator(snapshot, travel)
-    empty = [evaluator.evaluate(i, ()) for i in range(len(evaluator.engineers))]
+    empty_candidates = [evaluator.evaluate(i, ()) for i in range(len(evaluator.engineers))]
+    empty = [state if state is not None else RouteState(()) for state in empty_candidates]
     if any(state is None for state in empty):
         return seeds
     policy_id = snapshot.policy.policy_id
@@ -317,7 +324,7 @@ def improve_routes(
     regions = {e.region for e in evaluator.engineers}
     if None not in regions and all(r.region in regions for r in requests):
         combined = list(empty)
-        for region in sorted(regions):
+        for region in sorted(region for region in regions if region is not None):
             indices = [i for i, e in enumerate(evaluator.engineers) if e.region == region]
             choices = []
             for candidate in portfolio:

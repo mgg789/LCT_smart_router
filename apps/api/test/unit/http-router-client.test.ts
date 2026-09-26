@@ -124,6 +124,7 @@ describe('HttpRouterClient', () => {
         router_context_version: 'ctx-new',
         technical_settings: {
           lunches_enabled: true,
+          strict_time_windows: true,
           metro_enabled: true,
           departure_lateness_tolerance_sec: 180,
           task_start_lateness_tolerance_sec: 240,
@@ -142,6 +143,7 @@ describe('HttpRouterClient', () => {
 
     assert.deepEqual(await client.getTechnicalSettings(), {
       lunchesEnabled: false,
+      strictTimeWindows: false,
       departureLatenessToleranceSec: 60,
       taskStartLatenessToleranceSec: 120,
       travelTimeMode: 'graph_with_access_buffer',
@@ -156,6 +158,7 @@ describe('HttpRouterClient', () => {
         operationId: 'op-1',
         expectedContextVersion: 'ctx-old',
         lunchesEnabled: true,
+        strictTimeWindows: true,
         metroEnabled: true,
         departureLatenessToleranceSec: 180,
         taskStartLatenessToleranceSec: 240,
@@ -169,6 +172,7 @@ describe('HttpRouterClient', () => {
         operationId: 'op-1',
         status: 'accepted',
         lunchesEnabled: true,
+        strictTimeWindows: true,
         metroEnabled: true,
         departureLatenessToleranceSec: 180,
         taskStartLatenessToleranceSec: 240,
@@ -185,6 +189,7 @@ describe('HttpRouterClient', () => {
       operation_id: 'op-1',
       expected_context_version: 'ctx-old',
       lunches_enabled: true,
+      strict_time_windows: true,
       metro_enabled: true,
       departure_lateness_tolerance_sec: 180,
       task_start_lateness_tolerance_sec: 240,
@@ -208,6 +213,7 @@ describe('HttpRouterClient', () => {
           operationId: 'op-2',
           expectedContextVersion: 'stale',
           lunchesEnabled: false,
+          strictTimeWindows: false,
           departureLatenessToleranceSec: 0,
           taskStartLatenessToleranceSec: 0,
           travelTimeMode: 'graph_with_access_buffer',
@@ -284,6 +290,7 @@ describe('HttpRouterClient', () => {
 
     assert.deepEqual(await client.getTechnicalSettings(), {
       lunchesEnabled: false,
+      strictTimeWindows: false,
       departureLatenessToleranceSec: 60,
       taskStartLatenessToleranceSec: 120,
       windowLatenessToleranceSec: 900,
@@ -334,6 +341,7 @@ describe('HttpRouterClient', () => {
           operationId: 'lost-response-op',
           expectedContextVersion: 'ctx-before-restart',
           lunchesEnabled: true,
+          strictTimeWindows: true,
           departureLatenessToleranceSec: 300,
           taskStartLatenessToleranceSec: 600,
           travelTimeMode: 'graph_with_access_buffer',

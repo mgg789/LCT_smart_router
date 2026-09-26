@@ -20,6 +20,7 @@ describe('engineerRoster', () => {
     expect(skillChipLabel('connection')).toBe('Подключение');
     expect(skillChipLabel('local')).toBe('Локальные работы');
     expect(engineerTransportLabel('car')).toBe('Легковой, до 3.5 т');
+    expect(engineerTransportLabel('walk', false)).toBe('Пешеход (без ОТ)');
     expect(engineerPhotoIndex('east-team-01', 3, 'Бригада 1')).toBe(0);
     expect(engineerPhotoIndex('east-team-05', 3, 'Бригада 5')).toBe(1);
     expect(engineerPhotoIndex('same-id', 3, 'Алексей Соколов')).toBe(

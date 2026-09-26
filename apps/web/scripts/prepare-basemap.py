@@ -112,7 +112,10 @@ def main() -> None:
         "transform": "OSM ways only; selected road/water/park tags; coordinates rounded to 6 decimals then simplified at 0.00004 degrees (<=4.5 m latitude). Ways intersect the query bbox; full way geometry may extend outside it. No buildings or address guarantee.",
     }
     (output / "manifest.json").write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        "{\n" + ",\n".join(
+            f"  {json.dumps(key)}: {json.dumps(value, ensure_ascii=False)}"
+            for key, value in manifest.items()
+        ) + "\n}\n", encoding="utf-8"
     )
     print(f"Saved {len(data['features'])} OSM features, {len(payload)} bytes")
 

@@ -67,6 +67,8 @@ export interface SnapshotEngineer {
   readonly input_order: number;
   readonly skills: SkillCode[];
   readonly transport_type: TransportCode;
+  /** Whether a pedestrian profile may use public transport for route legs. */
+  readonly transit_eligible: boolean;
   readonly shift_start_at: UnixSeconds;
   readonly shift_end_at: UnixSeconds;
   /** Where the remaining route continues from. Chosen by sys, not by Router. */

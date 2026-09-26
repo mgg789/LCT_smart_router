@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 import { AlertCoordinator } from './alert-coordinator';
+import { AlertWindowQuery } from './alert-window-query';
 import { AlertsService } from './alerts.service';
 
 /**
@@ -11,7 +12,7 @@ import { AlertsService } from './alerts.service';
  */
 @Global()
 @Module({
-  providers: [AlertsService, AlertCoordinator],
+  providers: [AlertsService, AlertCoordinator, AlertWindowQuery],
   exports: [AlertsService, AlertCoordinator],
 })
 export class AlertsModule {}

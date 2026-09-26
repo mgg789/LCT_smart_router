@@ -18,7 +18,7 @@
 | [48-official-facts-2026-09-16.md](./48-official-facts-2026-09-16.md) | **Ключевые официальные факты задачи** по итогам обеих частей сессии — выжимка по темам + оргтребования (ссылка на репо на платформе) + сверка с нашим контекстом | Быстрая сверка фактов и допущений |
 | [49-qa-2026-09-16-impact.md](./49-qa-2026-09-16-impact.md) | **Наш разбор QA-сессии** (не официальная информация): сверка 47/48 с концепцией v14 и кодом — что уточнилось/изменилось, неожиданные плюсы, что почти не влияет на оценку, что поменять (default-политика, обеды, UI-объяснения, границы прототипа) + план действий | Планирование работ и подготовка демо |
 | [17-lct-beeline.md](./17-lct-beeline.md) | Формат ЛЦТ 2026: даты (экспертиза репо 30.09–14.10, финал 23.10), критерии Положения, бизнес-контекст Билайна | Планирование сроков и питча |
-| [Историческая приёмка V0.1](../docs/tz-acceptance.md) | Снимок соответствия ТЗ и UI на 18.09.2026; текущие экраны — [docs/web.md](../docs/web.md), контракты — [docs/frontend-api.md](../docs/frontend-api.md) | История приёмки; не текущий статус dev |
+| [Текущая приёмка ТЗ](../docs/tz-acceptance.md) | Сверка dev с семью шагами ТЗ, ограничениями и фактическими границами цикла 2.0 | Проверка возможностей и подготовка защиты |
 | [V0.1 MVP — что выпускаем](../docs/release-v0.1.md) | Честный состав тега: что вошло, чего нет, как ждать сравнение политик, какие тесты прогнаны | Перед релизом и питчем |
 
 Датасет: `data/dataset/anonymized/` — 6 CSV (`east`/`southeast`/`south_central` × `synthetic_data`/`control_distribution`), рабочий архив — `data/dataset/anonymization.zip`, оригинальная упаковка организаторов — `data/dataset/dataset_original.zip` (D-20).
@@ -78,7 +78,6 @@
 | [Beeline visual reference](../docs/design/beeline/README.md) | Official Yellowbe PDFs, website symbol and colour evidence; Smart Router branding rules with source limitations (D-21) |
 | [UI mockup examples](../docs/design/mockups/README.md) | Three generated PNG examples: dispatcher, engineer and client; illustrative content, known limitations, not an approved specification |
 | [13-demo-presentation.md](./13-demo-presentation.md) | Стратегия питча и живого демо; сценарий перекалибровать под 18 §5 (7 шагов + сравнение с FIFO) |
-| [51-review-1.5-actions.md](./51-review-1.5-actions.md) | Разбор ревью 1.5 и уточнение DRO-140 от 26.09: дорожные матрицы до поиска; текущая реализация — [docs/solver.md](../docs/solver.md) |
 
 ## 5. Архив (`archive/`)
 

@@ -408,7 +408,12 @@ def _parse_osrm(document: dict[str, Any], profile: str | None) -> tuple[list[Gra
         source_id, target_id = add_node(source_point), add_node(target_point)
         distance = route.get("distance")
         duration = route.get("duration")
-        if type(distance) not in (int, float) or type(duration) not in (int, float):
+        if (
+            not isinstance(distance, (int, float))
+            or isinstance(distance, bool)
+            or not isinstance(duration, (int, float))
+            or isinstance(duration, bool)
+        ):
             raise RoadImportError("INVALID_COST", "OSRM route needs numeric distance and duration")
         route_key = (source_id, target_id, selected)
         if route_key in seen_routes:

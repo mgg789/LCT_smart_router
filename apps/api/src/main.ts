@@ -1,13 +1,29 @@
 import 'reflect-metadata';
-import { Logger } from '@nestjs/common';
+import { type INestApplication, Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AppConfigService } from './common/config';
 import { AllExceptionsFilter } from './common/errors';
 import { JsonLogger } from './common/logging';
 import { BigIntGuardInterceptor } from './common/serialization';
+
+/** Applies the API-only response headers shared by production bootstrap and HTTP tests. */
+export function applySecurityHeaders(app: INestApplication, isProduction: boolean): void {
+  // The API is proxied by the web server in the deployed contour and does not serve
+  // frontend assets itself. Helmet's CSP is disabled here because Swagger UI is an API
+  // developer surface with inline bootstrapping; the separate web server owns the
+  // frontend CSP. HSTS stays off on local HTTP so browsers remain usable during dev.
+  app.use(
+    helmet({
+      contentSecurityPolicy: false,
+      crossOriginEmbedderPolicy: false,
+      hsts: isProduction ? undefined : false,
+    }),
+  );
+}
 
 async function bootstrap(): Promise<void> {
   const level = (process.env.LOG_LEVEL ?? 'info') as 'debug' | 'info' | 'warn' | 'error';
@@ -22,6 +38,7 @@ async function bootstrap(): Promise<void> {
 
   const config = app.get(AppConfigService);
   const isProduction = config.isProduction;
+  applySecurityHeaders(app, isProduction);
 
   app.setGlobalPrefix('api/v1', { exclude: ['health/live', 'health/ready', 'health/services'] });
   app.useGlobalFilters(new AllExceptionsFilter());
@@ -45,4 +62,6 @@ async function bootstrap(): Promise<void> {
   new Logger('Bootstrap').log(`System Layer listening on port ${port}`);
 }
 
-void bootstrap();
+if (require.main === module) {
+  void bootstrap();
+}

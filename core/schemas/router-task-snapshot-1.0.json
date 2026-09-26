@@ -102,6 +102,11 @@
         "start_location": {
           "$ref": "#/$defs/GeoPoint"
         },
+        "transit_eligible": {
+          "default": true,
+          "title": "Transit Eligible",
+          "type": "boolean"
+        },
         "transport_type": {
           "enum": [
             "car",

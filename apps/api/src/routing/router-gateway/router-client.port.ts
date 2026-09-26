@@ -61,6 +61,8 @@ export interface RouterRoadImportResult {
 }
 
 export interface RouterTechnicalSettings {
+  /** Disable all lateness and terminal shift/window allowances; default false. */
+  readonly strictTimeWindows?: boolean;
   readonly lunchesEnabled: boolean;
   readonly departureLatenessToleranceSec: number;
   readonly taskStartLatenessToleranceSec: number;
