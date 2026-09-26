@@ -156,7 +156,7 @@
 git clone <этот репозиторий> && cd LCT
 cp .env.example .env        # обязательно: задать DISPATCHER_EMAIL и DISPATCHER_PASSWORD
 pnpm install
-pnpm compose:up             # postgres + миграции + router core + api + web
+pnpm compose:up             # postgres + миграции + router core + api + web + дорожный API (osrm, road-api) + sys1
 ```
 
 |Сервис|Адрес|Что это|
@@ -278,10 +278,12 @@ Dashboard / Client / Engineer (apps/web)  ──►  System Layer (apps/api)  �
 ```text
 apps/web          — дашборд диспетчера, приложение инженера, клиент (React)
 apps/api          — System Layer (NestJS): API, операции, снимки, AI-контур, MCP
+packages/shared   — общие wire-типы дашборда (`@lct/shared`)
 core/             — Router Core (Python): движок, runtime, гео-контур, предикты
 data/             — официальный датасет + геокод-пакеты + метро-граф
 demo/             — видео-демо и скриншоты живого стенда
 infra/            — docker-compose локального и демо-контура
+services/         — вспомогательные сервисы контура: road-api (граф МКАД, OSRM), sys1 (System one стенда)
 docs/             — документация подсистем (по-русски)
 context/          — рабочие записи команды: ТЗ, QA-сессия с организаторами, решения
 ```
