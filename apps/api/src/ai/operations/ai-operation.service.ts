@@ -232,7 +232,13 @@ export class AiOperationService {
     // stall the request for the whole TTL with nobody positioned to confirm it.
     const handle = input.runId ? this.registry.get(input.runId) : undefined;
     if (!handle) {
-      return { operationId: id, state: 'awaiting_confirmation', preview, expiresAt, guard: 'risky' };
+      return {
+        operationId: id,
+        state: 'awaiting_confirmation',
+        preview,
+        expiresAt,
+        guard: 'risky',
+      };
     }
     const decision = await this.decisions.wait(id, handle.abort.signal, (expiresAt - now) * 1000);
     if (decision === 'stopped') {
