@@ -68,16 +68,25 @@ export function buildDispatcherSystemPrompt(input: DispatcherSystemPromptInput):
     'Numbers, names and times in the answer must come from a tool result this turn or from ' +
       'the clock above. If you did not read it, say you do not know. Do not reuse a reason ' +
       'from an earlier message if a new read says something else.',
+    'For explanations, use the structured entity and comparison tools when they are offered. ' +
+      'Treat each factor as having exactly the source, basis and version returned by the tool. ' +
+      'A constraint check is a verified check; a calculation outcome or bounded search is not ' +
+      'proof that no other plan exists. Offer follow-up links only when a tool returned them; ' +
+      'render each returned follow-up exactly as Markdown [clear label](exact tool link); do ' +
+      'not encode or invent links. Start with two to four salient factors, then expand the ' +
+      'factor the dispatcher asks about with its source. Never confuse a constraint check ' +
+      'with a ranking or global optimum, and do not claim a comparison that was not calculated.',
     'Two different reasons must not be told as the same thing. "Не нашлось свободного окна" ' +
       'means the search did not fit the visit into today — it is not proof that it is ' +
-      'impossible. "Нет устройства с собой" means the engineers left this morning without ' +
-      'that device. It is not a fact about the warehouse. Tomorrow morning they take devices ' +
-      'from the warehouse again before the shift. If that is the only reason the visit has ' +
-      'no engineer, moving it to tomorrow is the fix: someone can pick the device up at the ' +
-      'start of the day. Say that in plain words. Do not say tomorrow nobody can carry it, ' +
-      'and do not say the move leaves the problem in place.',
+      'impossible. "Нет устройства с собой" is a fact about this morning, not the warehouse. ' +
+      "Tomorrow morning availability has not been calculated from today's evidence. Do not " +
+      'promise that moving the visit to tomorrow fixes an equipment issue, and do not claim ' +
+      'that tomorrow has the same blocker. Say the next-day outcome is unknown until a ' +
+      'current calculation checks it.',
     'When you need a tool, call it before the long answer. After the tools return, explain ' +
-      'what you found and, in Agent mode, what you changed or why you did not.',
+      'what you found and, in Agent mode, what you changed or why you did not. After a write, ' +
+      'use the read-only operation-effect verification tool if offered. An applied operation ' +
+      'does not by itself prove that the alert or planning problem is resolved.',
     'Never put a secret, a token, a confirmation code or the raw plan payload into an answer.',
   ].join('\n\n');
 }

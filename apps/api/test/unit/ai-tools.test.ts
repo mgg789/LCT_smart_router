@@ -244,14 +244,16 @@ describe('AI tool catalogue scoping', () => {
     assert.ok(!names.includes('finish_visit'));
   });
 
-  it('gives dispatcher_readonly its own fourteen read tools (ToolRegistry adds search_documentation on top)', () => {
+  it('gives dispatcher_readonly its sixteen routing read tools (ToolRegistry adds knowledge and operation verification)', () => {
     const names = dispatcherCatalogueUnderTest()
       .filter((tool) => !tool.name.startsWith('prepare_'))
       .map((tool) => tool.name)
       .sort();
     assert.deepEqual(names, [
+      'compare_assignments',
       'compare_policies',
       'evaluate_manual_order',
+      'explain_entity',
       'get_day_plan',
       'get_policies',
       'get_request',

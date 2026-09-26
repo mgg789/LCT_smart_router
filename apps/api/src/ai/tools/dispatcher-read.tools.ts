@@ -21,6 +21,11 @@ import {
   ControlStateService,
   RouterClient,
 } from '../../routing/router-gateway';
+import { EvidenceReader } from '../explain/evidence.reader';
+import {
+  runDispatcherCompareAssignments,
+  runDispatcherExplainEntity,
+} from './dispatcher-explanation.tools';
 import type { ToolContext, ToolResult, ToolSpec } from './tool.types';
 
 export interface DispatcherReadToolDeps {
@@ -109,6 +114,40 @@ const evaluateManualOrderSchema = z.object({
 });
 type EvaluateManualOrderArgs = z.infer<typeof evaluateManualOrderSchema>;
 
+const dispatcherEntitySchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('request'), id: z.string().min(1) }),
+  z.object({ type: z.literal('route'), engineerId: z.string().min(1) }),
+  z.object({ type: z.literal('leg'), legId: z.string().min(1) }),
+  z.object({ type: z.literal('lunch'), engineerId: z.string().min(1) }),
+  z.object({ type: z.literal('plan') }),
+]);
+const explainEntitySchema = z.object({
+  entity: dispatcherEntitySchema,
+  aspect: z.enum([
+    'overview',
+    'assignment',
+    'window',
+    'travel',
+    'alternatives',
+    'schedule',
+    'lunch',
+    'metrics',
+    'policy',
+  ]),
+});
+type ExplainEntityArgs = z.infer<typeof explainEntitySchema>;
+
+const compareAssignmentsSchema = z
+  .object({
+    requestId: z.string().min(1),
+    engineerIds: z.array(z.string().min(1)).min(1).max(3),
+  })
+  .refine((args) => new Set(args.engineerIds).size === args.engineerIds.length, {
+    message: 'Engineer ids must be unique',
+    path: ['engineerIds'],
+  });
+type CompareAssignmentsArgs = z.infer<typeof compareAssignmentsSchema>;
+
 /**
  * The `help`-mode (and shared `fix`-mode) read catalogue.
  *
@@ -126,6 +165,7 @@ type EvaluateManualOrderArgs = z.infer<typeof evaluateManualOrderSchema>;
  * every reason-carrying result's `basis` passthrough).
  */
 export function buildDispatcherReadTools(deps: DispatcherReadToolDeps): readonly ToolSpec[] {
+  const evidenceReader = new EvidenceReader();
   const getSituation: ToolSpec<GetSituationArgs> = {
     name: 'get_situation',
     description:
@@ -440,27 +480,93 @@ export function buildDispatcherReadTools(deps: DispatcherReadToolDeps): readonly
         include: { snapshot: true },
       });
       const contextVersion = await deps.router.getActiveContextVersion();
-      const stored =
-        current && contextVersion
-          ? await readSimulation(
-              deps.prisma,
-              current.snapshot.inputHash,
-              contextVersion,
-              simulationPatchHash(patch),
-            )
-          : null;
+      if (!current || !contextVersion) {
+        throw SysError.validationFailed('No current published task and Router version to simulate');
+      }
+      const patchHash = simulationPatchHash(patch);
+      const stored = await readSimulation(
+        deps.prisma,
+        current.snapshot.inputHash,
+        contextVersion,
+        patchHash,
+      );
       const result = stored ?? (await deps.router.simulate(patch));
+
+      const latest = await deps.prisma.routingCurrent.findUnique({
+        where: { id: 'singleton' },
+        include: { snapshot: true },
+      });
+      const latestContextVersion = await deps.router.getActiveContextVersion();
       if (
-        !stored &&
-        current &&
-        contextVersion &&
-        result.input_hash === current.snapshot.inputHash &&
-        result.router_context_version === contextVersion
+        !latest ||
+        latest.snapshot.inputHash !== current.snapshot.inputHash ||
+        latestContextVersion !== contextVersion ||
+        result.input_hash !== current.snapshot.inputHash ||
+        result.router_context_version !== contextVersion ||
+        result.patch_hash !== patchHash
       ) {
+        throw SysError.validationFailed(
+          'Planning data changed during the simulation; recalculate before relying on this result',
+        );
+      }
+      if (!stored) {
         await rememberSimulation(deps.prisma, patch, result);
       }
+
+      // Pins and removals live in the local route order. Router's bounded fallback
+      // solves the unmodified assignment constraints, so its metrics cannot prove them.
+      if ((args.pin || args.unassignRequestId) && result.method !== 'insertion') {
+        return ok('Запрошенное изменение назначения не подтверждено расчётом.', {
+          schema_version: '1.0',
+          status: 'unavailable',
+          method: result.method,
+          change: args,
+          provenance: {
+            inputHash: result.input_hash,
+            routerContextVersion: result.router_context_version,
+            patchHash: result.patch_hash,
+          },
+          limitations: [
+            'Общий поиск не гарантирует запрошенное закрепление или снятие назначения. Его метрики нельзя выдавать за результат этого изменения.',
+          ],
+        });
+      }
+
       const text = russianDelta(patch, result);
-      return ok(text, { text });
+      const limitations =
+        result.method === 'bounded'
+          ? ['Bounded search did not find a variant is not proof that no feasible plan exists.']
+          : result.method === 'insertion'
+            ? [
+                'This result checks the stated local insertion or pin against the available base plan.',
+              ]
+            : [
+                'This is a comparison of the returned policy catalogue, not a local edit simulation.',
+              ];
+      return ok(text, {
+        schema_version: '1.0',
+        status: result.delta ? 'compared' : 'catalogue',
+        method: result.method,
+        baseline: result.delta
+          ? { kind: 'router_base_plan', counts: result.delta.before }
+          : { kind: 'not_returned_for_catalogue' },
+        change: { ...args, routerPatch: patch },
+        delta: result.delta ?? null,
+        routes: result.routes ?? [],
+        strategies: result.strategies ?? [],
+        provenance: {
+          inputPublicationId:
+            result.input_publication_id === 'stored'
+              ? current.snapshot.id
+              : result.input_publication_id,
+          inputHash: result.input_hash,
+          routerContextVersion: result.router_context_version,
+          patchHash: result.patch_hash,
+          cached: result.cached,
+        },
+        limitations,
+        text,
+      });
     },
   };
 
@@ -632,6 +738,30 @@ export function buildDispatcherReadTools(deps: DispatcherReadToolDeps): readonly
     },
   };
 
+  const explainEntity: ToolSpec<ExplainEntityArgs> = {
+    name: 'explain_entity',
+    description:
+      'Explain one request, route, travel leg, lunch stop or the plan for a named aspect. ' +
+      'Returns source-linked factors, evidence/version provenance and a deterministic ' +
+      'follow-up question link. Unsupported or stale aspects are explicitly unavailable.',
+    schema: explainEntitySchema,
+    async run(_ctx, args): Promise<ToolResult> {
+      return runDispatcherExplainEntity(deps, evidenceReader, args);
+    },
+  };
+
+  const compareAssignments: ToolSpec<CompareAssignmentsArgs> = {
+    name: 'compare_assignments',
+    description:
+      'Compare Router-calculated candidate checks for one request and one to three engineers ' +
+      'from the same current evidence package. This is compatibility and bounded route-end ' +
+      'evidence, not a reassignment optimization or a ranking.',
+    schema: compareAssignmentsSchema,
+    async run(_ctx, args): Promise<ToolResult> {
+      return runDispatcherCompareAssignments(deps, evidenceReader, args);
+    },
+  };
+
   return [
     getSituation,
     getDayPlan,
@@ -647,6 +777,8 @@ export function buildDispatcherReadTools(deps: DispatcherReadToolDeps): readonly
     getRouterSettings,
     getSnapshotDiagnostics,
     evaluateManualOrder,
+    explainEntity,
+    compareAssignments,
   ];
 }
 
