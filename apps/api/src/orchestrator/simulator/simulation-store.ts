@@ -13,6 +13,7 @@ export interface SimulationPatchInput {
   readonly trafficEnabled?: boolean;
   readonly equipmentEnabled?: boolean;
   readonly equipmentTransfersEnabled?: boolean;
+  readonly bringOnlineEngineerId?: string;
   readonly window?: {
     readonly requestId: string;
     readonly windowStartAt: number;
@@ -75,6 +76,9 @@ export function toRouterPatch(input: SimulationPatchInput): RouterSimulationPatc
       ? { pin: { request_id: input.pin.requestId, engineer_id: input.pin.engineerId } }
       : {}),
     ...(input.unassignRequestId ? { unassign_request_id: input.unassignRequestId } : {}),
+    ...(input.bringOnlineEngineerId
+      ? { bring_online_engineer_id: input.bringOnlineEngineerId }
+      : {}),
   };
 }
 
@@ -125,6 +129,7 @@ function patchLead(patch: RouterSimulationPatch): string {
   if (patch.window) return 'Сдвиг окна';
   if (patch.pin) return 'Закрепление заявки за инженером';
   if (patch.unassign_request_id) return 'Снятие назначения';
+  if (patch.bring_online_engineer_id) return 'Вызов инженера вне линии';
   if (
     patch.lunches_enabled !== undefined ||
     patch.metro_enabled !== undefined ||
@@ -253,6 +258,15 @@ export async function storedGuardLine(
 function matchesAction(action: string, patch: Record<string, unknown>): boolean {
   if (action === 'policy.select') return typeof patch.policy_id === 'string';
   if (action === 'move_window' || action === 'request.update') return patch.window !== undefined;
+  if (action === 'router.technical-settings.replace') {
+    return (
+      patch.lunches_enabled !== undefined ||
+      patch.metro_enabled !== undefined ||
+      patch.traffic_enabled !== undefined ||
+      patch.equipment_enabled !== undefined
+    );
+  }
+  if (action === 'engineer.set_availability') return typeof patch.bring_online_engineer_id === 'string';
   return false;
 }
 

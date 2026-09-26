@@ -12,6 +12,7 @@ export const simulationPatchSchema = z
     trafficEnabled: z.boolean().optional(),
     equipmentEnabled: z.boolean().optional(),
     equipmentTransfersEnabled: z.boolean().optional(),
+    bringOnlineEngineerId: z.string().min(1).optional(),
     window: z
       .object({
         requestId: z.string().min(1),

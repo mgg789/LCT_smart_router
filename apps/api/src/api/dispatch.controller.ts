@@ -8,7 +8,8 @@ import { Clock } from '../common/time';
 import { zodBody } from '../common/validation';
 import { AuditService, OperationsService } from '../operations';
 import { AiService, MiniAiService } from '../orchestrator/ai';
-import { AlertsService, alertActionsFor } from '../orchestrator/alerts';
+import { collectOptimizeLevers, type OptimizeLever } from '../orchestrator/ai/optimize-levers';
+import { AlertsService } from '../orchestrator/alerts';
 import { DemoStandService } from '../orchestrator/demo-stand';
 import { EngineersService, workDateOf } from '../orchestrator/engineers';
 import {
@@ -134,15 +135,6 @@ import type { DispatchLiveView } from './live-view.types';
 import { toPlanView } from './plan-view';
 import { type RequestView, toRequestView } from './request-view';
 import { weatherView } from './weather-view';
-
-const POLICY_LABEL: Record<string, string> = {
-  compact: 'Дешевле',
-  fast: 'Быстрее до клиента',
-  sla: 'Бережнее к окнам',
-  balanced: 'Ровнее загрузка',
-  eco: 'Короче пробег',
-  covering: 'Полное покрытие',
-};
 
 /**
  * Dashboard contour.
@@ -1024,46 +1016,43 @@ export class DispatchController {
 
   @Post('ai/optimize')
   @ApiOperation({
-    summary: 'Improve the live plan without moving customer windows or cancelling lunches',
+    summary: 'System one picks one simulated lever; the server applies that existing operation',
   })
   async optimizeWithModel(@CurrentActor() actor: Actor, @Body() body: { summary?: unknown }) {
     const summary = typeof body.summary === 'string' ? body.summary : '';
+    if (!this.router.isConfigured()) {
+      throw SysError.notConfigured('Router Core');
+    }
     const active = await this.uow.run((tx) => this.policyService.active(tx));
-    const control = await this.prisma.controlState.findUnique({ where: { id: 'singleton' } });
-    const day = await this.prisma.liveWorkday.findFirst({
-      where: { status: 'running' },
-      select: { workDate: true },
-    });
-    const offline = day
-      ? await this.prisma.engineerDay.findMany({
-          where: { workDate: day.workDate, availability: 'offline' },
-          include: { engineer: { select: { displayName: true } } },
-          orderBy: { engineer: { inputOrder: 'asc' } },
-          take: 6,
-        })
-      : [];
-    const decision = await this.miniAi.planOptimization({
-      summary,
+    const levers = await collectOptimizeLevers({
+      router: this.router,
+      prisma: this.prisma,
       currentPolicyId: active.policyId,
-      currentPolicyLabel: POLICY_LABEL[active.policyId] ?? active.policyId,
-      manual: control?.mode === 'manual',
-      callCandidates: offline.map((item) => ({
-        id: item.engineerId,
-        label: item.engineer.displayName,
-      })),
     });
-    if (decision.policyId !== active.policyId) {
+    const decision = await this.miniAi.planOptimization({ summary, levers });
+    const lever = levers.find((item) => item.id === decision.id);
+    if (!lever) {
+      return { id: 'current', label: 'План уже оптимален', steps: ['План уже оптимален'] };
+    }
+    await this.applyOptimizeLever(actor, lever);
+    return { id: lever.id, label: lever.label, steps: decision.steps };
+  }
+
+  /** Applies the one lever System one picked. The simulation itself already stayed off the plan. */
+  private async applyOptimizeLever(actor: Actor, lever: OptimizeLever): Promise<void> {
+    if (lever.kind === 'policy' && lever.policyId) {
+      const policyId = lever.policyId;
       const operationId = randomUUID();
       await this.operations.execute(
         {
           operationId,
           actor,
           action: 'policy.select',
-          targetRef: decision.policyId,
-          payload: { operationId, policyId: decision.policyId },
+          targetRef: policyId,
+          payload: { operationId, policyId },
         },
         async (context) => {
-          const selected = await this.policyService.select(context, decision.policyId);
+          const selected = await this.policyService.select(context, policyId);
           await this.publisher.publishIfChanged(
             context.tx,
             context.now,
@@ -1072,40 +1061,58 @@ export class DispatchController {
           return selected;
         },
       );
+      return;
     }
-    if (decision.callEngineerId) {
-      const open = await this.prisma.alert.findMany({
-        where: { kind: 'alert', resolvedAt: null, invalidatedAt: null },
-        orderBy: { createdAt: 'desc' },
-        take: 20,
-      });
-      const target = open.find((alert) => alertActionsFor(alert.code).includes('add_engineer'));
-      if (target) {
-        const operationId = randomUUID();
-        const dto = {
-          operationId,
-          action: 'add_engineer' as const,
-          engineerId: decision.callEngineerId,
-          reason: 'Решено с AI автоматически',
-        };
-        await this.operations.execute(
-          { operationId, actor, action: 'alert.resolve', targetRef: target.id, payload: dto },
-          (context) => this.alertsService.resolve(context, target.id, dto),
-        );
-      }
-    }
-    if (decision.restoreAuto) {
+    if (lever.kind === 'settings' && lever.settings) {
+      const current = await this.router.getTechnicalSettings();
       const operationId = randomUUID();
+      const requested = {
+        operationId,
+        expectedContextVersion: current.routerContextVersion,
+        lunchesEnabled: lever.settings.lunchesEnabled ?? current.lunchesEnabled,
+        departureLatenessToleranceSec: current.departureLatenessToleranceSec,
+        taskStartLatenessToleranceSec: current.taskStartLatenessToleranceSec,
+        windowLatenessToleranceSec: current.windowLatenessToleranceSec,
+        trafficEnabled: lever.settings.trafficEnabled ?? current.trafficEnabled,
+        metroEnabled: lever.settings.metroEnabled ?? current.metroEnabled,
+        equipmentTransfersEnabled: current.equipmentTransfersEnabled,
+        equipmentEnabled: lever.settings.equipmentEnabled ?? current.equipmentEnabled,
+        travelTimeMode: current.travelTimeMode,
+        accessBufferSec: current.accessBufferSec,
+        fixedTravelTimeSec: current.fixedTravelTimeSec,
+        earlyFinishReplanThresholdSec: current.earlyFinishReplanThresholdSec,
+        taskOverrunToleranceSec: current.taskOverrunToleranceSec,
+      };
+      await this.operations.executeExternal(
+        {
+          operationId,
+          actor,
+          action: 'router.technical-settings.replace',
+          targetRef: 'router-core',
+          expectedVersion: null,
+          payload: requested,
+        },
+        () => this.router.updateTechnicalSettings(requested),
+      );
+      if (lever.settings.lunchesEnabled !== undefined) {
+        await this.live.synchronizeGlobalLunchSwitch(requested.lunchesEnabled);
+      }
+      return;
+    }
+    if (lever.kind === 'engineer' && lever.engineerId) {
+      const operationId = randomUUID();
+      const engineerId = lever.engineerId;
       await this.operations.execute(
-        { operationId, actor, action: 'control.auto', payload: { operationId, mode: 'auto' } },
-        (context) => this.control.returnToAuto(context),
+        {
+          operationId,
+          actor,
+          action: 'engineer.set_availability',
+          targetRef: engineerId,
+          payload: { operationId, availability: 'online' },
+        },
+        (context) => this.live.setDispatcherAvailability(context, engineerId, 'online', null),
       );
     }
-    return {
-      id: decision.policyId,
-      label: decision.policyLabel,
-      steps: decision.steps,
-    };
   }
 
   @Post('alerts/:id/ai-resolve')

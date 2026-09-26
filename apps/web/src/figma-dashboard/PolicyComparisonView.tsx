@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { simulateChange, type SimulationResponse } from '../api/client';
 import type {
   DashboardSnapshot,
@@ -41,6 +41,7 @@ export function PolicyComparisonView({
   onRefresh,
   regions,
   selectedRegion,
+  motionOn,
 }: {
   snapshot: DashboardSnapshot | null;
   comparison: PolicyComparisonResponse | null;
@@ -52,29 +53,31 @@ export function PolicyComparisonView({
   onRefresh: () => void;
   regions: { id: RegionSelection; label: string }[];
   selectedRegion: RegionSelection;
+  motionOn: boolean;
 }) {
   const [mode, setMode] = useState<'table' | 'map'>('table');
   const [mapRoutes, setMapRoutes] = useState<SimulationResponse | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
   const [mapLoading, setMapLoading] = useState(false);
-  const engineerRegions = useMemo(
-    () =>
-      Object.fromEntries(
-        (snapshot?.engineers ?? []).flatMap((engineer) =>
-          engineer.region ? [[engineer.id, engineer.region] as const] : [],
-        ),
-      ),
-    [snapshot],
+  const mapRoutesRef = useRef<SimulationResponse | null>(null);
+  const engineerRegionKey = JSON.stringify(
+    (snapshot?.engineers ?? []).map((engineer) => [engineer.id, engineer.region ?? '']),
   );
+  const engineerRegions = useMemo(() => {
+    const pairs = JSON.parse(engineerRegionKey) as readonly (readonly [string, string])[];
+    return Object.fromEntries(pairs.filter((pair) => pair[1] !== ''));
+  }, [engineerRegionKey]);
 
   useEffect(() => {
     if (mode !== 'map' || !token) return;
     let active = true;
-    setMapLoading(true);
+    if (!mapRoutesRef.current) setMapLoading(true);
     setMapError(null);
     void simulateChange(token, { catalog: true })
       .then((result) => {
-        if (active) setMapRoutes(result);
+        if (!active) return;
+        mapRoutesRef.current = result;
+        setMapRoutes(result);
       })
       .catch((cause: unknown) => {
         if (active) setMapError(cause instanceof Error ? cause.message : 'Не удалось построить карту');
@@ -176,6 +179,7 @@ export function PolicyComparisonView({
               regions={regions}
               selectedRegion={selectedRegion}
               engineerRegions={engineerRegions}
+              motionOn={motionOn}
             />
           ) : (
             <div className="flex h-[220px] items-center justify-center rounded-[20px] bg-figma-soft px-[30px] text-center">
@@ -259,22 +263,6 @@ export function PolicyComparisonView({
                   </tr>
                 );
               })}
-              <tr>
-                <th className="sticky left-0 z-[1] bg-white py-[14px] pr-[12px] text-left font-semibold text-[14px] text-figma-ink">
-                  Лучший
-                </th>
-                {columns.map((row) => {
-                  const count = metricRows.filter((metric) => winners(columns, metric).has(row.strategyId)).length;
-                  return (
-                    <td
-                      key={row.strategyId}
-                      className="border-t border-[#ececec] px-[12px] py-[14px] font-semibold text-[16px] text-figma-ink"
-                    >
-                      {count}
-                    </td>
-                  );
-                })}
-              </tr>
             </tbody>
           </table>
         ) : null}

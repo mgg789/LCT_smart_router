@@ -254,18 +254,26 @@ export class HttpRouterClient extends RouterClient {
       },
       30_000,
     );
+    const slot = z.object({
+      engineerId: z.string(),
+      windowStartAt: z.number().int(),
+      windowEndAt: z.number().int(),
+      serviceStartAt: z.number().int(),
+      serviceEndAt: z.number().int(),
+      neighborRequestIds: z.array(z.string()).default([]),
+      slackSec: z.number().int().default(0),
+    });
     return z
       .discriminatedUnion('status', [
-        z.object({ status: z.literal('none'), proposal: z.null() }),
+        z.object({
+          status: z.literal('none'),
+          proposal: z.null(),
+          proposals: z.array(slot).default([]),
+        }),
         z.object({
           status: z.literal('available'),
-          proposal: z.object({
-            engineerId: z.string(),
-            windowStartAt: z.number().int(),
-            windowEndAt: z.number().int(),
-            serviceStartAt: z.number().int(),
-            serviceEndAt: z.number().int(),
-          }),
+          proposal: slot,
+          proposals: z.array(slot).default([]),
         }),
       ])
       .parse(raw);

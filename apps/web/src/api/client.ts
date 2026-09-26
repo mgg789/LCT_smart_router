@@ -1576,7 +1576,7 @@ export function optimizePlanWithAi(
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ summary }),
     },
-    30_000,
+    120_000,
   );
 }
 

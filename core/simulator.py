@@ -58,6 +58,7 @@ class SimulationPatch(Record):
     traffic_enabled: bool | None = None
     equipment_enabled: bool | None = None
     equipment_transfers_enabled: bool | None = None
+    bring_online_engineer_id: str | None = None
     window: WindowShift | None = None
     pin: EngineerPin | None = None
     unassign_request_id: str | None = None
@@ -77,6 +78,7 @@ class SimulationPatch(Record):
                 self.traffic_enabled,
                 self.equipment_enabled,
                 self.equipment_transfers_enabled,
+                self.bring_online_engineer_id,
             )
         )
         if self.catalog and (local or settings):
@@ -141,7 +143,22 @@ def _snapshot_of(snapshot: RouterTaskSnapshot, patch: SimulationPatch) -> Router
     policy = snapshot.policy
     if patch.policy_id is not None:
         policy = Policy(policy_id=patch.policy_id, parameters={})
-    return snapshot.model_copy(update={"requests": requests, "policy": policy})
+    engineers = list(snapshot.engineers)
+    if patch.bring_online_engineer_id is not None:
+        found = False
+        brought = []
+        for engineer in engineers:
+            if engineer.engineer_id == patch.bring_online_engineer_id:
+                found = True
+                brought.append(engineer.model_copy(update={"availability": "online"}))
+            else:
+                brought.append(engineer)
+        if not found:
+            raise ValueError("UNKNOWN_ENGINEER")
+        engineers = brought
+    return snapshot.model_copy(
+        update={"requests": requests, "policy": policy, "engineers": engineers}
+    )
 
 
 def _orders(plan: Plan, snapshot: RouterTaskSnapshot) -> dict[str, list[str]]:

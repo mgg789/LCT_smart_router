@@ -74,7 +74,13 @@ export class ActionGuardService {
   /** Stored what-if numbers only. A missing row leaves the guard text unchanged. */
   private async storedFacts(action: string): Promise<string> {
     if (!this.prisma || !this.router?.isConfigured()) return '';
-    if (action !== 'policy.select' && action !== 'move_window' && action !== 'request.update') {
+    if (
+      action !== 'policy.select' &&
+      action !== 'move_window' &&
+      action !== 'request.update' &&
+      action !== 'router.technical-settings.replace' &&
+      action !== 'engineer.set_availability'
+    ) {
       return '';
     }
     try {

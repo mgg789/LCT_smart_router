@@ -6,6 +6,7 @@ import { ALL_REGIONS, type RegionSelection } from '../domain/regions';
 import { localMapStyle } from '../domain/localBasemap';
 import { ONLINE_MAP_STYLE, watchMapStartup } from '../domain/mapAvailability';
 import { strategyLabel } from '../lib/policyComparison';
+import { RegionSwitch } from './RegionSwitch';
 
 const STRATEGY_IDS = new Set<string>(['fast', 'compact', 'sla', 'balanced', 'eco', 'covering', 'baseline']);
 
@@ -38,17 +39,22 @@ export function PolicyStrategyMap({
   regions,
   selectedRegion,
   engineerRegions,
+  motionOn,
 }: {
   strategies: SimulationResponse['strategies'];
   regions: { id: RegionSelection; label: string }[];
   selectedRegion: RegionSelection;
   /** Engineer id to region id. Simulation routes use account ids, not region prefixes. */
   engineerRegions: Readonly<Record<string, string>>;
+  motionOn: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const nodesRef = useRef<GraphFeature[]>([]);
+  const strategiesRef = useRef(strategies);
   const engineerRegionsRef = useRef(engineerRegions);
+  const fittedRegionRef = useRef<RegionSelection | null>(null);
+  strategiesRef.current = strategies;
   engineerRegionsRef.current = engineerRegions;
   const hiddenRef = useRef<ReadonlySet<string>>(new Set());
   const regionRef = useRef<RegionSelection>(selectedRegion);
@@ -91,7 +97,7 @@ export function PolicyStrategyMap({
               'circle-color': '#272930',
             },
           });
-          strategies.forEach((strategy, index) => {
+          strategiesRef.current.forEach((strategy, index) => {
             const sourceId = `strategy-${index}`;
             map.addSource(sourceId, {
               type: 'geojson',
@@ -113,7 +119,7 @@ export function PolicyStrategyMap({
               },
             });
           });
-          fitRegion(map, nodesRef.current, regionRef.current);
+          fitRegionOnce(map, nodesRef.current, regionRef.current, fittedRegionRef);
         })
         .catch(() => undefined);
     };
@@ -127,7 +133,7 @@ export function PolicyStrategyMap({
       map.remove();
       mapRef.current = null;
     };
-  }, [strategies]);
+  }, []);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -139,7 +145,7 @@ export function PolicyStrategyMap({
         source.setData(lineCollection(strategy, region, engineerRegions));
       }
     });
-    fitRegion(map, nodesRef.current, region);
+    fitRegionOnce(map, nodesRef.current, region, fittedRegionRef);
   }, [region, strategies, engineerRegions]);
 
   useEffect(() => {
@@ -161,39 +167,18 @@ export function PolicyStrategyMap({
     <div className="flex h-full min-h-[640px] gap-[16px]">
       <div className="relative min-w-0 flex-1 overflow-hidden rounded-[20px]">
         <div ref={host} className="h-full w-full" />
-        <div className="absolute left-[16px] top-[16px] z-10">
-          <div className="overflow-hidden rounded-[27px] bg-white shadow-[0_8px_22px_rgba(39,41,48,0.12)]">
-            <button
-              type="button"
-              onClick={() => setRegionOpen((value) => !value)}
-              className="flex h-[51px] items-center gap-[8px] pl-[16px] pr-[16px] font-semibold text-[18px] tracking-[-0.3px] text-figma-ink"
-            >
-              {label}
-              <span aria-hidden className={`text-[12px] ${regionOpen ? 'rotate-180' : ''}`}>
-                ▾
-              </span>
-            </button>
-            {regionOpen ? (
-              <div className="pb-[8px]">
-                {regions.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => {
-                      setRegion(item.id);
-                      setRegionOpen(false);
-                    }}
-                    className={`flex h-[40px] w-full items-center px-[16px] text-left text-[16px] ${
-                      item.id === region ? 'font-semibold text-figma-ink' : 'font-medium text-figma-muted'
-                    }`}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        </div>
+        <RegionSwitch
+          open={regionOpen}
+          label={label}
+          regions={regions}
+          selectedId={region}
+          motionOn={motionOn}
+          onToggle={() => setRegionOpen((value) => !value)}
+          onSelect={(id) => {
+            setRegion(id);
+            setRegionOpen(false);
+          }}
+        />
       </div>
       <ul className="flex w-[240px] shrink-0 flex-col gap-[10px] overflow-auto">
         {strategies.map((strategy) => {
@@ -276,7 +261,16 @@ function lineCollection(
   };
 }
 
-function fitRegion(map: maplibregl.Map, nodes: GraphFeature[], region: RegionSelection): void {
+/**
+ * Fits once per chosen region. Later snapshot refreshes must not pull the camera back.
+ */
+function fitRegionOnce(
+  map: maplibregl.Map,
+  nodes: GraphFeature[],
+  region: RegionSelection,
+  fittedRegion: { current: RegionSelection | null },
+): void {
+  if (fittedRegion.current === region) return;
   const points = nodes.filter((feature) => region === ALL_REGIONS || feature.properties.region === region);
   if (points.length === 0) return;
   const bounds = new maplibregl.LngLatBounds();
@@ -284,5 +278,7 @@ function fitRegion(map: maplibregl.Map, nodes: GraphFeature[], region: RegionSel
     const [lon, lat] = feature.geometry.coordinates;
     bounds.extend([lon, lat]);
   }
-  if (!bounds.isEmpty()) map.fitBounds(bounds, { padding: 48, maxZoom: 13, duration: 0 });
+  if (bounds.isEmpty()) return;
+  fittedRegion.current = region;
+  map.fitBounds(bounds, { padding: 48, maxZoom: 13, duration: 0 });
 }

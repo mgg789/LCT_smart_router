@@ -63,8 +63,8 @@ export class ClientController {
    */
   /**
    * Fills the new-request form from a free-text story. Public because the form
-   * opens before the mailbox is confirmed. System one only chooses among
-   * candidates the text already contains.
+   * opens before the mailbox is confirmed. Rules read the text, System one
+   * chooses among those candidates, and one model call fills only the gaps.
    */
   @Public()
   @Post('interpret')

@@ -408,8 +408,8 @@ function OptimizeButton({ token, summary }: { token: string | null; summary: str
         aria-hidden
         className="panel-ai-fill block size-[32px]"
         style={{
-          WebkitMaskImage: 'url(/figma/load-balancer.svg)',
-          maskImage: 'url(/figma/load-balancer.svg)',
+          WebkitMaskImage: 'url(/figma/pencil-ai.svg)',
+          maskImage: 'url(/figma/pencil-ai.svg)',
           WebkitMaskRepeat: 'no-repeat',
           maskRepeat: 'no-repeat',
           WebkitMaskPosition: 'center',

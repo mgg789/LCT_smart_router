@@ -22,7 +22,7 @@ export function alertActionsFor(code: string): AlertAction[] {
     case 'LIVE_WINDOW_COMPLETION_RISK':
       return ['reschedule', 'move_window', 'add_engineer', 'keep_as_is'];
     case 'LIVE_TECHNICAL_BREAK_OVERRUN':
-      return ['keep_as_is'];
+      return ['message', 'extend', 'keep_as_is'];
     case 'unassigned':
       return ['reschedule', 'move_window', 'add_engineer'];
     case 'plan_degraded':

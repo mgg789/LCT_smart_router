@@ -21,16 +21,23 @@ export interface WindowProposalInput {
   day_end_at: number;
 }
 
+/** One witnessed same-day slot. Neighbors are the jobs already beside the insertion. */
+export interface WindowProposalSlot {
+  engineerId: string;
+  windowStartAt: number;
+  windowEndAt: number;
+  serviceStartAt: number;
+  serviceEndAt: number;
+  neighborRequestIds?: readonly string[];
+  slackSec?: number;
+}
+
 /** A calculation witness, not a reservation or an applied assignment. */
 export interface WindowProposal {
   status: 'available' | 'none';
-  proposal: {
-    engineerId: string;
-    windowStartAt: number;
-    windowEndAt: number;
-    serviceStartAt: number;
-    serviceEndAt: number;
-  } | null;
+  proposal: WindowProposalSlot | null;
+  /** Earliest slot first. Empty when status is none. Older routers may omit it. */
+  proposals?: readonly WindowProposalSlot[];
 }
 
 /** One native OSRM JSON or gzip payload forwarded to Router Core. */
@@ -131,6 +138,8 @@ export interface RouterSimulationPatch {
   readonly traffic_enabled?: boolean;
   readonly equipment_enabled?: boolean;
   readonly equipment_transfers_enabled?: boolean;
+  /** Marks one offline engineer online on the simulation copy only. */
+  readonly bring_online_engineer_id?: string;
   readonly window?: {
     readonly request_id: string;
     readonly window_start_at: number;

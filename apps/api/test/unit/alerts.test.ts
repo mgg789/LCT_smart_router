@@ -14,6 +14,11 @@ test('alert action catalogue exposes only dispatcher-approved actions', () => {
     'keep_as_is',
   ]);
   assert.deepEqual(alertActionsFor('engineer_overdue'), ['message', 'remove_shift', 'extend']);
+  assert.deepEqual(alertActionsFor('LIVE_TECHNICAL_BREAK_OVERRUN'), [
+    'message',
+    'extend',
+    'keep_as_is',
+  ]);
   assert.deepEqual(alertActionsFor('plan_rebuilt'), []);
   assert.equal(alertActionsFor('time_risk').includes('ai' as never), false);
 });

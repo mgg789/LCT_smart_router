@@ -26,6 +26,7 @@ import {
   SnapshotPublisher,
 } from '../../routing/mount-data-eng';
 import { RouterClient } from '../../routing/router-gateway/router-client.port';
+import { addEngineerCandidates } from '../../ai/alerts/alert-candidates';
 import { MiniAiService } from '../ai/mini-ai.service';
 import {
   DEFAULT_EXECUTION_TIMING_POLICY,
@@ -35,6 +36,7 @@ import { businessNow } from '../live/business-clock';
 import { PERFORMANCE_ALERT_PREFIX, PerformanceService } from '../performance';
 import { DispatcherSettingsService } from '../settings/dispatcher-settings.service';
 import { type AlertAction, alertActionsFor, resolutionDelay } from './alert-policy';
+import { decisionState, moscowClock, regionLabel, skillLabel } from './alert-decision-context';
 
 /** Router's immutable comparison evidence for one manual plan on one exact input. */
 const manualEvaluationSchema = z.object({
@@ -84,57 +86,6 @@ export interface AlertView {
   readonly resolutionDelaySec: number | null;
   readonly workDate: string | null;
 }
-
-const ACTION_EFFECT: Record<AlertAction, { benefit: string; drawback: string }> = {
-  reschedule: {
-    benefit: 'Снимает сегодняшний риск и сохраняет длительность окна.',
-    drawback: 'Клиент получит услугу только завтра.',
-  },
-  move_window: {
-    benefit: 'Оставляет визит сегодня в найденном выполнимом окне.',
-    drawback: 'Новое время нужно согласовать с клиентом, назначение пересчитается.',
-  },
-  add_engineer: {
-    benefit: 'Добавляет человека на линию и повышает шанс закрыть заявку сегодня.',
-    drawback: 'Нужен свободный инженер с подходящим навыком.',
-  },
-  keep_manual: {
-    benefit: 'Сохраняет уже выданный ручной порядок.',
-    drawback: 'План может быть хуже автоматического.',
-  },
-  keep_as_is: {
-    benefit: 'Не меняет согласованный маршрут.',
-    drawback: 'Причина риска остаётся.',
-  },
-  restore_auto: {
-    benefit: 'Возвращает актуальный автоматический план.',
-    drawback: 'Маршруты нескольких инженеров могут измениться.',
-  },
-  skip_lunch: {
-    benefit: 'Освобождает время под заявки.',
-    drawback: 'Инженер остаётся без обеда.',
-  },
-  keep_lunch: {
-    benefit: 'Сохраняет перерыв.',
-    drawback: 'Часть заявок может остаться без назначения.',
-  },
-  message: {
-    benefit: 'Инженер получает напоминание и остаётся на смене.',
-    drawback: 'Само по себе не двигает маршрут.',
-  },
-  remove_shift: {
-    benefit: 'Снимает молчащего инженера, чтобы заявки ушли другим.',
-    drawback: 'Его работы нужно переназначить.',
-  },
-  message_remove: {
-    benefit: 'Сначала предупреждает, затем снимает со смены.',
-    drawback: 'Инженер теряет оставшиеся заявки дня.',
-  },
-  extend: {
-    benefit: 'Даёт ещё немного времени выйти на связь.',
-    drawback: 'Заявки продолжают ждать.',
-  },
-};
 
 /**
  * Durable dispatcher decision queue.
@@ -262,60 +213,25 @@ export class AlertsService {
     if (alert?.kind !== 'alert' || alert.resolvedAt !== null) {
       throw SysError.validationFailed('Этот алерт уже нельзя разобрать.');
     }
-    const catalogue = alertActionsFor(alert.code);
-    let windowOffer: { start: number; end: number; version: number } | null = null;
-    if (catalogue.includes('move_window')) {
-      try {
-        const offer = await this.proposeWindow(id);
-        if (offer.status === 'available' && offer.proposal) {
-          windowOffer = {
-            start: offer.proposal.windowStartAt,
-            end: offer.proposal.windowEndAt,
-            version: offer.requestVersion,
-          };
-        }
-      } catch {
-        windowOffer = null;
-      }
-    }
-    const actions = catalogue.filter((item) => item !== 'move_window' || windowOffer !== null);
-    const engineers = await this.prisma.engineer.findMany({
-      take: 8,
-      orderBy: { inputOrder: 'asc' },
-      select: { id: true, displayName: true },
-    });
+    const brief = await this.systemOneBrief(alert);
     const choice = await this.miniAi.chooseAlert({
-      summary: JSON.stringify({
-        code: alert.code,
-        reasons: alert.reasons,
-        requestIds: alert.requestIds,
-        engineerIds: alert.engineerIds,
-        windowToday: windowOffer
-          ? { start: windowOffer.start, end: windowOffer.end }
-          : 'сегодня выполнимого окна нет',
-        options: actions.map((item) => ({
-          action: item,
-          benefit: ACTION_EFFECT[item].benefit,
-          drawback: ACTION_EFFECT[item].drawback,
-        })),
-      }).slice(0, 4_000),
-      actions,
-      engineers: engineers.map((item) => ({ id: item.id, label: item.displayName })),
+      summary: brief.summary,
+      actions: brief.actions,
+      engineers: brief.engineers,
+      windows: brief.windows,
+      minutes: brief.minutes,
     });
-    const action = actions.find((item) => item === choice.action);
+    const action = brief.actions.find((item) => item === choice.action);
     if (!action) {
       throw SysError.validationFailed('Модель выбрала действие вне списка.');
-    }
-    if (action === 'move_window' && !windowOffer) {
-      throw SysError.validationFailed('Сегодня нет окна, куда можно сдвинуть визит.');
     }
     const picked = {
       choice: choice.action,
       engineerId: choice.engineerId ?? null,
       minutes: choice.minutes ?? null,
-      windowStartAt: action === 'move_window' && windowOffer ? windowOffer.start : null,
-      windowEndAt: action === 'move_window' && windowOffer ? windowOffer.end : null,
-      expectedRequestVersion: action === 'move_window' && windowOffer ? windowOffer.version : null,
+      windowStartAt: action === 'move_window' ? (choice.windowStartAt ?? null) : null,
+      windowEndAt: action === 'move_window' ? (choice.windowEndAt ?? null) : null,
+      expectedRequestVersion: action === 'move_window' ? brief.requestVersion : null,
     };
     if (options?.apply === false) {
       return { alert: this.view(alert), ...picked, applied: false };
@@ -324,7 +240,7 @@ export class AlertsService {
     const dto = {
       operationId,
       action,
-      reason: 'Решено с AI автоматически',
+      reason: choice.reason,
       ...(picked.engineerId ? { engineerId: picked.engineerId } : {}),
       ...(picked.minutes ? { minutes: picked.minutes } : {}),
       ...(picked.windowStartAt !== null && picked.windowEndAt !== null
@@ -340,6 +256,156 @@ export class AlertsService {
       (context) => this.resolve(context, id, dto),
     );
     return { alert: outcome.result, ...picked, applied: true };
+  }
+
+  /**
+   * Facts and the full catalogue for one System one call.
+   * Window search runs first. A missing slot drops only the window action.
+   */
+  private async systemOneBrief(alert: {
+    id: string;
+    code: string;
+    reasons: unknown;
+    requestIds: string[];
+    engineerIds: string[];
+    workDate: string | null;
+  }): Promise<{
+    summary: string;
+    actions: AlertAction[];
+    engineers: { id: string; label: string; facts: string }[];
+    windows: { label: string; windowStartAt: number; windowEndAt: number; facts: string }[];
+    requestVersion: number | null;
+    minutes: number[];
+  }> {
+    const catalogue = alertActionsFor(alert.code);
+    let requestVersion: number | null = null;
+    let slots: Array<{
+      engineerId: string;
+      windowStartAt: number;
+      windowEndAt: number;
+      neighborRequestIds: readonly string[];
+      slackSec: number;
+    }> = [];
+    if (catalogue.includes('move_window')) {
+      try {
+        const offer = await this.proposeWindow(alert.id);
+        requestVersion = offer.requestVersion;
+        const list =
+          offer.proposals && offer.proposals.length > 0
+            ? offer.proposals
+            : offer.proposal
+              ? [offer.proposal]
+              : [];
+        slots = list.slice(0, 8).map((item) => ({
+          engineerId: item.engineerId,
+          windowStartAt: item.windowStartAt,
+          windowEndAt: item.windowEndAt,
+          neighborRequestIds: item.neighborRequestIds ?? [],
+          slackSec: item.slackSec ?? 0,
+        }));
+      } catch {
+        slots = [];
+      }
+    }
+    const actions = catalogue.filter((item) => item !== 'move_window' || slots.length > 0);
+    const request = alert.requestIds[0]
+      ? await this.prisma.request.findUnique({ where: { id: alert.requestIds[0] } })
+      : null;
+    const roster = await this.prisma.engineer.findMany({
+      where: { archivedAt: null },
+      include: { days: { where: { workDate: alert.workDate ?? '' }, take: 1 } },
+    });
+    const eligible = addEngineerCandidates(alert.engineerIds, request, roster)
+      .slice()
+      .sort((left, right) => left.displayName.localeCompare(right.displayName, 'ru'))
+      .slice(0, 8);
+    const current = await this.prisma.appliedPlanCurrent.findUnique({ where: { id: 'singleton' } });
+    const routes = current
+      ? await this.prisma.appliedPlanRoute.findMany({
+          where: { planId: current.planId },
+          select: { engineerId: true, assignedCount: true, workTimeSec: true },
+        })
+      : [];
+    const load = new Map(routes.map((route) => [route.engineerId, route]));
+    const neighborIds = [...new Set(slots.flatMap((slot) => slot.neighborRequestIds))].slice(0, 24);
+    const neighbors = neighborIds.length
+      ? await this.prisma.request.findMany({
+          where: { id: { in: neighborIds } },
+          select: { id: true, addressText: true, windowStartAt: true, windowEndAt: true },
+        })
+      : [];
+    const neighborText = new Map(
+      neighbors.map((item) => [
+        item.id,
+        `${item.addressText} ${moscowClock(Number(item.windowStartAt))}–${moscowClock(Number(item.windowEndAt))}`,
+      ]),
+    );
+    const people = new Map(roster.map((item) => [item.id, item.displayName]));
+    const windows = slots.map((slot, index) => {
+      const name = people.get(slot.engineerId) ?? slot.engineerId;
+      const beside =
+        slot.neighborRequestIds.length > 0
+          ? slot.neighborRequestIds.map((item) => neighborText.get(item) ?? item).join('; ')
+          : 'соседних заявок нет';
+      const route = load.get(slot.engineerId);
+      const facts = `${name}, запас ${Math.round(slot.slackSec / 60)} мин, заявок в маршруте ${route?.assignedCount ?? 0}. Рядом: ${beside}.`;
+      return {
+        label: `${index + 1}. ${name} ${moscowClock(slot.windowStartAt)}–${moscowClock(slot.windowEndAt)}`,
+        windowStartAt: slot.windowStartAt,
+        windowEndAt: slot.windowEndAt,
+        facts,
+      };
+    });
+    const nameCounts = new Map<string, number>();
+    for (const item of eligible) {
+      nameCounts.set(item.displayName, (nameCounts.get(item.displayName) ?? 0) + 1);
+    }
+    const engineers = eligible.map((item) => {
+      const route = load.get(item.engineerId);
+      const facts = `вне линии, навык ${item.skills.map((skill) => skillLabel(skill)).join(', ')}, регион ${regionLabel(item.region)}, заявок ${route?.assignedCount ?? 0}`;
+      const label =
+        (nameCounts.get(item.displayName) ?? 0) > 1
+          ? `${item.displayName} (${item.engineerId.slice(0, 4)})`
+          : item.displayName;
+      return { id: item.engineerId, label, facts };
+    });
+    const ownId = alert.engineerIds[0];
+    const ownDay =
+      ownId && alert.workDate
+        ? await this.prisma.engineerDay.findUnique({
+            where: { engineerId_workDate: { engineerId: ownId, workDate: alert.workDate } },
+            include: { engineer: { select: { displayName: true } } },
+          })
+        : null;
+    const ownRoute = ownId ? load.get(ownId) : undefined;
+    const span = ownDay ? Number(ownDay.shiftEndAt) - Number(ownDay.shiftStartAt) : 0;
+    const occupancy =
+      span > 0 ? `${Math.round((100 * (ownRoute?.workTimeSec ?? 0)) / span)}%` : 'смена не задана';
+    const engineerLine = ownDay
+      ? `инженер ${ownDay.engineer.displayName}, ${ownDay.availability === 'online' ? 'на линии' : 'вне линии'}, занятость смены ${occupancy}, заявок ${ownRoute?.assignedCount ?? 0}`
+      : 'инженер в алерте не указан';
+    const requestLine = request
+      ? `окно клиента ${moscowClock(Number(request.windowStartAt))}–${moscowClock(Number(request.windowEndAt))}, навык ${skillLabel(request.requiredSkill)}, регион ${regionLabel(request.region)}, адрес ${request.addressText}`
+      : 'заявка в алерте не указана';
+    const reasons = Array.isArray(alert.reasons)
+      ? alert.reasons.filter((item): item is string => typeof item === 'string').slice(0, 6)
+      : [];
+    const summary = decisionState({
+      code: alert.code,
+      reasons,
+      facts: `${requestLine}. ${engineerLine}. Опоздание и соседние заявки — в причинах и в строках окон.`,
+      windows: windows.map((item) => `${item.label}: ${item.facts}`),
+      engineers: engineers.map((item) => `${item.label}: ${item.facts}`),
+      actions,
+    }).slice(0, 5_500);
+    return {
+      summary,
+      actions,
+      engineers,
+      windows,
+      requestVersion,
+      minutes: alert.code === 'shift_no_show' ? [15] : [15, 30, 60],
+    };
   }
 
   private async thresholds(db: PrismaService | Tx = this.prisma) {
