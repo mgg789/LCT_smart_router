@@ -64,7 +64,7 @@ test('import warnings allow cancellation before a confirmed immutable upload', a
   await expect(review).toBeVisible();
   await expect(review.getByRole('button', { name: 'Загрузить так' })).toBeInViewport();
   expect((await readPlan(live.api)).revision).toBe(before.revision);
-  await review.getByRole('button', { name: 'Продолжить', exact: true }).click();
+  await review.getByRole('button', { name: 'Вернуться', exact: true }).click();
   await expect(review).toBeHidden();
   expect((await readPlan(live.api)).revision).toBe(before.revision);
   await modal.getByRole('button', { name: 'Применить', exact: true }).click();

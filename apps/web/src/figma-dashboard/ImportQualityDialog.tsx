@@ -3,6 +3,11 @@ import { useEffect, useId, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import type { ImportPreparationView } from '../api/types';
 
+/** Label for leaving the import review and returning to the upload form. */
+export const IMPORT_QUALITY_BACK_LABEL = 'Вернуться';
+/** Label for accepting the reviewed package without changing its contents. */
+export const IMPORT_QUALITY_ACCEPT_LABEL = 'Загрузить так';
+
 /** Mandatory import review above the upload dialog; only an explicit decision dismisses it. */
 export function ImportQualityDialog({
   report,
@@ -50,7 +55,7 @@ export function ImportQualityDialog({
           </h2>
           <p className="mt-[8px] text-[16px] text-figma-muted">
             Проверьте особенности данных. «Загрузить так» импортирует пакет без изменений.
-            «Продолжить» вернёт к выбору данных без импорта.
+            «Вернуться» вернёт к выбору данных без импорта.
           </p>
         </div>
         <div ref={findings} className="min-h-0 overflow-y-auto px-[24px] py-[20px]">
@@ -81,14 +86,14 @@ export function ImportQualityDialog({
             onClick={() => onDecision(false)}
             className="rounded-[20px] bg-figma-track px-[24px] py-[16px] font-semibold text-[16px]"
           >
-            Продолжить
+            {IMPORT_QUALITY_BACK_LABEL}
           </button>
           <button
             type="button"
             onClick={() => onDecision(true)}
             className="rounded-[20px] bg-figma-bee px-[24px] py-[16px] font-semibold text-[16px]"
           >
-            Загрузить так
+            {IMPORT_QUALITY_ACCEPT_LABEL}
           </button>
         </div>
       </motion.div>

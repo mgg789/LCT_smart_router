@@ -214,7 +214,7 @@ export function UserMenu({
   return (
     <div
       data-user-menu
-      className={`absolute ${covered ? 'z-[40]' : 'z-[85]'}`}
+      className={`absolute ${covered ? 'z-[40]' : 'z-[60]'}`}
       style={{ left: HEADER_AVATAR_LEFT, top: HEADER_AVATAR_TOP }}
     >
       <motion.button
