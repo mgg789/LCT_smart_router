@@ -871,6 +871,8 @@ export function MainDashboardPage() {
             onOpen={() => setResultsOpen(true)}
             onClose={() => setResultsOpen(false)}
             closeShift={dash.closeShift}
+            requests={dash.snapshot?.requests ?? []}
+            workDate={dash.snapshot?.workDate ?? dash.liveWorkday?.workday.workDate ?? null}
           />
         ) : null}
         <WorsenModal

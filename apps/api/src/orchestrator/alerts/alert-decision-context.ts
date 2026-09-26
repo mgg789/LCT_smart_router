@@ -108,6 +108,78 @@ export function skillLabel(skill: string | null | undefined): string {
   return SKILL_LABEL[skill] ?? skill;
 }
 
+interface TomorrowRequest {
+  readonly id: string;
+  readonly windowStartAt: number;
+  readonly windowEndAt: number;
+}
+
+/**
+ * How many other requests already sit in this visit's window tomorrow.
+ *
+ * Moving the visit there does not create capacity: each overlapping request
+ * needs its own engineer on shift at that moment. The closing count adds
+ * this request: that is the load `reschedule` would create.
+ */
+export function tomorrowCrewLine(input: {
+  readonly windowStartAt: number;
+  readonly windowEndAt: number;
+  readonly others: readonly TomorrowRequest[];
+}): string {
+  const start = input.windowStartAt + 86_400;
+  const end = input.windowEndAt + 86_400;
+  const dayStart = moscowDayStart(start);
+  const overlapping = input.others
+    .filter(
+      (item) =>
+        item.windowStartAt >= dayStart &&
+        item.windowStartAt < dayStart + 86_400 &&
+        item.windowStartAt < end &&
+        item.windowEndAt > start,
+    )
+    .sort((left, right) => left.windowStartAt - right.windowStartAt);
+  const already = overlapping.length;
+  const together = already + 1;
+  const listed = overlapping
+    .slice(0, 6)
+    .map(
+      (item) =>
+        `${item.id.slice(0, 8)} ${moscowClock(item.windowStartAt)}–${moscowClock(item.windowEndAt)}`,
+    )
+    .join(', ');
+  const names = listed.length > 0 ? ` Уже стоят: ${listed}.` : '';
+  const clock = `${moscowClock(start)}–${moscowClock(end)}`;
+  return (
+    `На завтра в окно ${clock} уже ${ruCount(already, 'заявка', 'заявки', 'заявок')}.` +
+    `${names} ${engineerShift(already)}, чтобы одновременно решать заявку в этот момент.` +
+    ` Если перенести и эту, одновременно будут ${ruCount(together, 'заявка', 'заявки', 'заявок')}: ${engineerShift(together)}.`
+  );
+}
+
+/** Moscow midnight at or before `unix`, as Unix seconds. */
+function moscowDayStart(unix: number): number {
+  const shifted = unix + MOSCOW_OFFSET_SEC;
+  return Math.floor(shifted / 86_400) * 86_400 - MOSCOW_OFFSET_SEC;
+}
+
+function engineerShift(count: number): string {
+  const word = ruCount(count, 'инженер', 'инженера', 'инженеров');
+  const verb = count % 10 === 1 && count % 100 !== 11 ? 'должен выйти' : 'должны выйти';
+  return `${word} ${verb} на смену`;
+}
+
+function ruCount(count: number, one: string, few: string, many: string): string {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  const word =
+    mod10 === 1 && mod100 !== 11
+      ? one
+      : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)
+        ? few
+        : many;
+  return `${count} ${word}`;
+}
+
 /**
  * One block System one reads before it picks an action id.
  * Every allowed action is a card. The case numbers are repeated on each card.

@@ -36,7 +36,13 @@ import { businessNow } from '../live/business-clock';
 import { PERFORMANCE_ALERT_PREFIX, PerformanceService } from '../performance';
 import { DispatcherSettingsService } from '../settings/dispatcher-settings.service';
 import { type AlertAction, alertActionsFor, resolutionDelay } from './alert-policy';
-import { decisionState, moscowClock, regionLabel, skillLabel } from './alert-decision-context';
+import {
+  decisionState,
+  moscowClock,
+  regionLabel,
+  skillLabel,
+  tomorrowCrewLine,
+} from './alert-decision-context';
 
 /** Router's immutable comparison evidence for one manual plan on one exact input. */
 const manualEvaluationSchema = z.object({
@@ -387,13 +393,15 @@ export class AlertsService {
     const requestLine = request
       ? `окно клиента ${moscowClock(Number(request.windowStartAt))}–${moscowClock(Number(request.windowEndAt))}, навык ${skillLabel(request.requiredSkill)}, регион ${regionLabel(request.region)}, адрес ${request.addressText}`
       : 'заявка в алерте не указана';
+    const tomorrowLine =
+      request && catalogue.includes('reschedule') ? await this.tomorrowLoadLine(request) : '';
     const reasons = Array.isArray(alert.reasons)
       ? alert.reasons.filter((item): item is string => typeof item === 'string').slice(0, 6)
       : [];
     const summary = decisionState({
       code: alert.code,
       reasons,
-      facts: `${requestLine}. ${engineerLine}. Опоздание и соседние заявки — в причинах и в строках окон.`,
+      facts: `${requestLine}. ${engineerLine}. ${tomorrowLine}Опоздание и соседние заявки — в причинах и в строках окон.`,
       windows: windows.map((item) => `${item.label}: ${item.facts}`),
       engineers: engineers.map((item) => `${item.label}: ${item.facts}`),
       actions,
@@ -406,6 +414,44 @@ export class AlertsService {
       requestVersion,
       minutes: alert.code === 'shift_no_show' ? [15] : [15, 30, 60],
     };
+  }
+
+  /**
+   * Other open requests already placed on tomorrow inside this visit's clock window.
+   * A failed read stays in the brief as unknown, so System one does not treat silence as zero.
+   */
+  private async tomorrowLoadLine(request: {
+    id: string;
+    windowStartAt: bigint;
+    windowEndAt: bigint;
+  }): Promise<string> {
+    const start = Number(request.windowStartAt) + 86_400;
+    const end = Number(request.windowEndAt) + 86_400;
+    const dayStart = Math.floor((start + 3 * 60 * 60) / 86_400) * 86_400 - 3 * 60 * 60;
+    try {
+      const rows = await this.prisma.request.findMany({
+        where: {
+          id: { not: request.id },
+          lifecycle: { in: ['submitted', 'in_progress'] },
+          windowStartAt: { gte: BigInt(dayStart), lt: BigInt(Math.min(end, dayStart + 86_400)) },
+          windowEndAt: { gt: BigInt(start) },
+        },
+        select: { id: true, windowStartAt: true, windowEndAt: true },
+        orderBy: { windowStartAt: 'asc' },
+        take: 12,
+      });
+      return `${tomorrowCrewLine({
+        windowStartAt: Number(request.windowStartAt),
+        windowEndAt: Number(request.windowEndAt),
+        others: rows.map((row) => ({
+          id: row.id,
+          windowStartAt: Number(row.windowStartAt),
+          windowEndAt: Number(row.windowEndAt),
+        })),
+      })} `;
+    } catch {
+      return 'На завтра число заявок в это окно посчитать не удалось. ';
+    }
   }
 
   private async thresholds(db: PrismaService | Tx = this.prisma) {
