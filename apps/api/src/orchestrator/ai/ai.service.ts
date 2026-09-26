@@ -35,6 +35,8 @@ const FULL_SERVICE_SAMPLES = 50;
 const MIN_LEG_SAMPLES = 15;
 const FULL_LEG_SAMPLES = 100;
 const MIN_CANCEL_REQUESTS = 30;
+/** Invalidates caches produced before planned rows stopped counting as observations. */
+const CALIBRATION_SIGNATURE_VERSION = 'v2';
 
 /** One long leg bucket boundary; short city legs are noisier than highway legs. */
 const LEG_LONG_KM = 25;
@@ -374,7 +376,7 @@ export class AiService {
       if (pushedVersion === null) return null;
       const cache: CachedCalibration = {
         signature,
-        computedAt: Date.now(),
+        computedAt: Math.floor(Date.now() / 1000),
         confidence: computed.confidence,
         samples: computed.samples,
         calibration: computed.calibration,
@@ -387,11 +389,11 @@ export class AiService {
         create: {
           key: APP_STATE_KEYS.AI_CALIBRATION,
           value: cache as unknown as Prisma.InputJsonObject,
-          updatedAt: BigInt(Date.now()),
+          updatedAt: BigInt(Math.floor(Date.now() / 1000)),
         },
         update: {
           value: cache as unknown as Prisma.InputJsonObject,
-          updatedAt: BigInt(Date.now()),
+          updatedAt: BigInt(Math.floor(Date.now() / 1000)),
         },
       });
       return cache;
@@ -405,8 +407,15 @@ export class AiService {
   private async dataSignature(db: PrismaService | Tx = this.prisma): Promise<string> {
     const [facts, requests, cancelled, weatherRows, riskRows, generation] = await Promise.all([
       db.requestFact.count({ where: { kind: { in: ['arrived', 'started', 'finished'] } } }),
-      db.request.count({ where: { lifecycle: { not: 'draft' } } }),
-      db.request.count({ where: { lifecycle: 'cancelled' } }),
+      db.request.count({
+        where: {
+          origin: { not: 'synthesized' },
+          lifecycle: { in: ['completed', 'cancelled'] },
+        },
+      }),
+      db.request.count({
+        where: { origin: { not: 'synthesized' }, lifecycle: 'cancelled' },
+      }),
       db.weatherDayCache.findMany({
         select: { region: true, workDate: true, locationHash: true, weatherCode: true, kind: true },
         orderBy: [{ region: 'asc' }, { workDate: 'asc' }],
@@ -448,7 +457,7 @@ export class AiService {
         ),
       )
       .digest('hex');
-    return `${String(generation?.value ?? 1)}:${facts}:${requests}:${cancelled}:${weatherFingerprint}:${riskFingerprint}`;
+    return `${String(generation?.value ?? 1)}:${CALIBRATION_SIGNATURE_VERSION}:${facts}:${requests}:${cancelled}:${weatherFingerprint}:${riskFingerprint}`;
   }
 
   /** Estimates dispersion from execution facts; below minimums it stays factory. */
@@ -482,6 +491,7 @@ export class AiService {
           lat: true,
           lon: true,
           lifecycle: true,
+          origin: true,
         },
       }),
     ]);
@@ -546,7 +556,14 @@ export class AiService {
     const legCv = (samples: number[]) =>
       samples.length >= MIN_LEG_SAMPLES ? std(samples) / Math.max(1, avg(samples)) : null;
 
-    const considered = requests.filter((row) => row.lifecycle !== 'draft');
+    // Submitted and in-progress requests describe planned demand, not an observed
+    // cancellation outcome. Synthetic rows are also excluded even if a fixture moves
+    // them to a terminal lifecycle; coverage must be earned by real execution history.
+    const considered = requests.filter(
+      (row) =>
+        row.origin !== 'synthesized' &&
+        (row.lifecycle === 'completed' || row.lifecycle === 'cancelled'),
+    );
     const cancelled = considered.filter((row) => row.lifecycle === 'cancelled').length;
     const learnedCancel =
       considered.length >= MIN_CANCEL_REQUESTS ? (cancelled + 1) / (considered.length + 2) : null;
@@ -931,7 +948,18 @@ export class AiService {
       where: { key: APP_STATE_KEYS.AI_CALIBRATION },
       select: { value: true },
     });
-    return row ? (row.value as unknown as CachedCalibration) : null;
+    if (!row) return null;
+    const cached = row.value as unknown as CachedCalibration;
+    return {
+      ...cached,
+      // `computedAt` was accidentally persisted with Date.now() milliseconds in an
+      // earlier build. The public API uses Unix seconds; normalize legacy cache values
+      // at the read boundary so existing state remains compatible after the fix.
+      computedAt:
+        cached.computedAt >= 10_000_000_000
+          ? Math.floor(cached.computedAt / 1000)
+          : cached.computedAt,
+    };
   }
 
   /** Drops frozen candidates when calibration is disabled so re-enabling recomputes them. */
