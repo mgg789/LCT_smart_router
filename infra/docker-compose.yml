@@ -183,7 +183,9 @@ services:
   # geometry and travel times to the road-api below; graph pages are copied into a
   # tmpfs so cold queries stay in milliseconds (services/road-api/README.md).
   osrm:
-    image: osrm/osrm-backend:v5.27.1
+    # The vendored graph was built by osrm v26.x (see services/road-api/README.md);
+    # older majors cannot read its fingerprint format.
+    image: ghcr.io/project-osrm/osrm-backend:latest
     restart: unless-stopped
     command: >
       sh -c 'cp /src/moscow-mkad.osrm* /graph/ &&
