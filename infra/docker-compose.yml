@@ -158,6 +158,27 @@ services:
     ports:
       - '127.0.0.1:${API_PORT:-8000}:8000'
 
+  # Server-side System one: answers the same /v1/choice and /v1/noul contract as the
+  # developer's local jev-local gateway, from a chat completion endpoint (the
+  # OpenRouter mirror in the demo contour). Never published to a host port: the API
+  # reaches it over the compose network as http://sys1:12444 when .env sets
+  # JEV_API_URL accordingly. Unset SYS1_LLM_BASE_URL keeps it answering 503, which
+  # the application treats as its documented degradation.
+  sys1:
+    build:
+      context: ../services/sys1
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      SYS1_LLM_BASE_URL: ${SYS1_LLM_BASE_URL:-}
+      SYS1_LLM_TOKEN: ${LLM_PROXY_TOKEN:-}
+      SYS1_MODEL: ${SYS1_MODEL:-typesafe/jev-router}
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:12444/health >/dev/null || exit 1']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
   web:
     build:
       context: ..
