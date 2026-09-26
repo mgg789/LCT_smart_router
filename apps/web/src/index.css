@@ -227,10 +227,60 @@ body {
 
 .engineer-phone,
 .client-phone {
-  width: min(100%, 430px);
+  --phone-width: min(100vw, 430px);
+  width: var(--phone-width);
   min-height: 100%;
   margin-inline: auto;
-  --eu: calc(min(100vw, 430px) / 670);
+  /*
+   * One source for both: the column's width and the unit its contents are
+   * written in cannot disagree, so overriding `--phone-width` in a wider shell
+   * rescales the whole screen with it.
+   */
+  --eu: calc(var(--phone-width) / 670);
+}
+
+/**
+ * Client / engineer app on a desktop-sized landscape window.
+ *
+ * A phone screen stretched across a monitor is unreadable, so the column keeps
+ * a phone's proportions and the desk gives it somewhere to sit: the app as a
+ * card on the canvas, and — on the client — the open request as a second card
+ * beside it rather than a pane sliding over the first. That is the whole point
+ * of the extra width; a customer comparing a request against the list should
+ * not have to go back and forth.
+ */
+.phone-deck {
+  display: flex;
+  height: 100dvh;
+  align-items: stretch;
+  justify-content: center;
+  gap: 28px;
+  padding: 32px;
+  overflow: hidden;
+}
+
+.phone-deck > * {
+  min-height: 0;
+}
+
+.phone-deck .engineer-phone,
+.phone-deck .client-phone {
+  --phone-width: 520px;
+  height: 100%;
+  min-height: 0;
+  margin-inline: 0;
+  border-radius: 28px;
+  background: var(--color-figma-canvas);
+  box-shadow: 0 24px 64px rgba(39, 41, 48, 0.14);
+}
+
+.phone-deck-pane {
+  width: 560px;
+  overflow: hidden;
+  border-radius: 28px;
+  background: var(--color-figma-canvas);
+  box-shadow: 0 24px 64px rgba(39, 41, 48, 0.14);
+  --eu: calc(560px / 670);
 }
 
 @keyframes ai-reason-shimmer {

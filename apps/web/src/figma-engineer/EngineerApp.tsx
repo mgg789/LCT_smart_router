@@ -35,6 +35,7 @@ import { engineerMapsUrl } from './engineerRoute';
 import { eu } from './engineerScale';
 import { LiveControls, LiveDayOverlay } from './LiveControls';
 import { loadEngineerSessionLive } from './liveSession';
+import { usePhoneDeck } from './phoneDeck';
 import { EngineerListCard } from './RequestCards';
 import { RequestDetail } from './RequestDetail';
 import {
@@ -65,6 +66,7 @@ export function EngineerApp({
   designPreview?: boolean;
 }) {
   const motionOn = !useReducedMotion();
+  const { deck } = usePhoneDeck();
   const [menuOpen, setMenuOpen] = useState(false);
   const [screen, setScreen] = useState<EngineerMenuId>('day');
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -419,7 +421,7 @@ export function EngineerApp({
 
   return (
     <main className="min-h-full overflow-x-hidden bg-figma-canvas">
-      <div className="engineer-phone relative h-dvh overflow-hidden">
+      <div className={`engineer-phone relative overflow-hidden ${deck ? 'h-full' : 'h-dvh'}`}>
         <div
           className="flex h-full min-h-0 flex-col overflow-y-auto"
           style={{ padding: `${eu(36)} ${eu(40)} ${eu(40)}` }}

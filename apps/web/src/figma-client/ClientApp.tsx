@@ -5,6 +5,7 @@ import { FigmaIcon } from '../figma-dashboard/primitives';
 import { engineerHeaderStamp } from '../figma-engineer/engineerClock';
 import { eu } from '../figma-engineer/engineerScale';
 import { PhoneErrorNotice } from '../figma-engineer/PhoneErrorNotice';
+import { usePhoneDeck } from '../figma-engineer/phoneDeck';
 import { isPhoneFailureNotice } from '../figma-engineer/phoneNotice';
 import { CLIENT_ASSETS } from './assets';
 import { ClientEmailGate } from './ClientEmailGate';
@@ -57,6 +58,7 @@ interface EmailGateState {
  */
 export function ClientApp() {
   const motionOn = !useReducedMotion();
+  const { deck, pane } = usePhoneDeck();
   const [menuOpen, setMenuOpen] = useState(false);
   const [screen, setScreen] = useState<ClientScreenId>('new');
   const [draft, setDraft] = useState<ClientRequestDraft>(EMPTY_CLIENT_DRAFT);
@@ -297,9 +299,33 @@ export function ClientApp() {
   const failure = isPhoneFailureNotice(notice) ? notice : null;
   const inlineNotice = failure ? null : notice;
 
+  const closeDetail = () => {
+    setOpenedId(null);
+    setNotice(null);
+    if (window.location.pathname.startsWith('/client/requests/')) {
+      window.history.pushState({}, '', '/client');
+    }
+  };
+
+  const detail = opened ? (
+    <ClientRequestDetail
+      item={opened}
+      nowMs={nowMs}
+      notice={inlineNotice}
+      onBack={closeDetail}
+      onChangeTime={() => setNotice('Смена окна этой заявки появится отдельным шагом.')}
+    />
+  ) : null;
+
   return (
-    <main className="min-h-full overflow-x-hidden bg-figma-canvas">
-      <div className="engineer-phone client-phone relative h-dvh overflow-hidden">
+    <main
+      className={
+        deck ? 'phone-deck bg-figma-canvas' : 'min-h-full overflow-x-hidden bg-figma-canvas'
+      }
+    >
+      <div
+        className={`engineer-phone client-phone relative overflow-hidden ${deck ? 'h-full' : 'h-dvh'}`}
+      >
         {failure ? (
           <PhoneErrorNotice title="Ошибка" body={failure} onClose={() => setNotice(null)} />
         ) : null}
@@ -387,7 +413,7 @@ export function ClientApp() {
         </div>
 
         <AnimatePresence>
-          {opened ? (
+          {opened && !pane ? (
             <motion.div
               key={`detail-${opened.id}`}
               className="absolute left-0 top-0 z-30 h-full w-full bg-figma-canvas"
@@ -396,21 +422,7 @@ export function ClientApp() {
               exit={motionOn ? { x: '100%' } : undefined}
               transition={motionOn ? slide : { duration: 0 }}
             >
-              <div className="h-full overflow-y-auto">
-                <ClientRequestDetail
-                  item={opened}
-                  nowMs={nowMs}
-                  notice={inlineNotice}
-                  onBack={() => {
-                    setOpenedId(null);
-                    setNotice(null);
-                    if (window.location.pathname.startsWith('/client/requests/')) {
-                      window.history.pushState({}, '', '/client');
-                    }
-                  }}
-                  onChangeTime={() => setNotice('Смена окна этой заявки появится отдельным шагом.')}
-                />
-              </div>
+              <div className="h-full overflow-y-auto">{detail}</div>
             </motion.div>
           ) : null}
         </AnimatePresence>
@@ -448,7 +460,7 @@ export function ClientApp() {
           ) : null}
         </AnimatePresence>
 
-        {opened || gate ? null : (
+        {(opened && !pane) || gate ? null : (
           <ClientMenu
             open={menuOpen}
             motionOn={motionOn}
@@ -463,6 +475,24 @@ export function ClientApp() {
           />
         )}
       </div>
+
+      {pane ? (
+        <AnimatePresence>
+          {opened ? (
+            <motion.aside
+              key={`detail-${opened.id}`}
+              aria-label="Заявка"
+              className="phone-deck-pane"
+              initial={motionOn ? { opacity: 0, x: 24 } : false}
+              animate={{ opacity: 1, x: 0 }}
+              exit={motionOn ? { opacity: 0, x: 24 } : undefined}
+              transition={motionOn ? slide : { duration: 0 }}
+            >
+              <div className="h-full overflow-y-auto">{detail}</div>
+            </motion.aside>
+          ) : null}
+        </AnimatePresence>
+      ) : null}
     </main>
   );
 }
