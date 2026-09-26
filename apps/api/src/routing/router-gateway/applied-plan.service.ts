@@ -276,11 +276,13 @@ export class AppliedPlanService {
     now: number,
     source: AppliedPlanCurrentShape,
     actorId: string,
+    validatedInputHash: string,
   ): Promise<AppliedPlan> {
     return this.copyRevision(tx, now, source, {
       origin: 'restore',
       createdBy: actorId,
       note: `restore revision ${source.revision}`,
+      validatedInputHash,
       planAsOf: source.planAsOf,
     });
   }
@@ -368,12 +370,14 @@ export class AppliedPlanService {
       createdBy: string;
       note: string;
       planAsOf: bigint;
+      validatedInputHash?: string;
     },
   ): Promise<AppliedPlan> {
     const revision = await tx.appliedPlan.create({
       data: {
         origin: metadata.origin,
         routerResultId: current.routerResultId,
+        validatedInputHash: metadata.validatedInputHash ?? null,
         planAsOf: metadata.planAsOf,
         appliedAt: BigInt(now),
         createdBy: metadata.createdBy,

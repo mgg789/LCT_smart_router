@@ -335,7 +335,8 @@ export class DispatchController {
     });
     const phase = visibleRouterPhase(
       published !== null &&
-        published.snapshot.inputHash !== (plan?.routerResult?.inputHash ?? null),
+        published.snapshot.inputHash !==
+          (plan?.validatedInputHash ?? plan?.routerResult?.inputHash ?? null),
     );
     return {
       mode: control.mode,

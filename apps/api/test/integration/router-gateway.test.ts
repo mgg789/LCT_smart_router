@@ -1172,10 +1172,17 @@ describe('router gateway', () => {
         'ctx-1',
       );
       assert.equal(first.body.accepted, true, first.body.detail);
+      const policyChange = await call('POST', '/api/v1/dispatch/policy', dispatcherToken, {
+        operationId: randomUUID(),
+        policyId: 'eco',
+      });
+      assert.equal(policyChange.status, 201, await policyChange.clone().text());
+      const changedInputHash = await publishedHash();
+      assert.notEqual(changedInputHash, inputHash);
       const second = await feed(
         buildRouterResult({
           resultId: unique('restore-second'),
-          inputHash,
+          inputHash: changedInputHash,
           contextVersion: 'ctx-1',
           planningAsOf: now(),
           assigned: [
@@ -1231,6 +1238,7 @@ describe('router gateway', () => {
 
       const after = await call('GET', '/api/v1/dispatch/plan', dispatcherToken);
       const current = (await after.json()) as {
+        calculating: boolean;
         plan: {
           revision: number;
           origin: string;
@@ -1239,6 +1247,7 @@ describe('router gateway', () => {
       };
       assert.equal(current.plan.revision, body.restoredRevision);
       assert.equal(current.plan.origin, 'restore');
+      assert.equal(current.calculating, false);
       assert.equal(
         current.plan.routes[0]?.stops[0]?.startAt,
         pair.previous.routes[0]?.stops[0]?.startAt,

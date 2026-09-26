@@ -843,6 +843,8 @@ model AppliedPlan {
   revision       Int        @unique @default(autoincrement())
   origin         PlanOrigin
   routerResultId String? @map("router_result_id")
+  /// Snapshot against which a restored revision was revalidated; source result stays immutable.
+  validatedInputHash String? @map("validated_input_hash")
   /// The moment the shown plan describes: `planningAsOf` of the applied result, or the
   /// time of the manual edit. Never the timestamp of a newer, not yet computed snapshot
   /// (context/36 section 6).

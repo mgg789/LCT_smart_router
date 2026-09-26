@@ -7,7 +7,9 @@ import { FactsModule } from '../facts';
 import { RewardsModule } from '../rewards';
 import { LiveCoordinator } from './live.coordinator';
 import { LiveService } from './live.service';
+import { LiveDayState } from './live-day-state';
 import { LiveReadProjection } from './live-read-projection';
+import { LiveRouteQuery } from './live-route-query';
 
 @Module({
   imports: [
@@ -18,7 +20,7 @@ import { LiveReadProjection } from './live-read-projection';
     RouterGatewayModule,
     DemoStandModule,
   ],
-  providers: [LiveService, LiveCoordinator, LiveReadProjection],
+  providers: [LiveService, LiveCoordinator, LiveReadProjection, LiveDayState, LiveRouteQuery],
   exports: [LiveService, LiveCoordinator],
 })
 export class LiveModule {}

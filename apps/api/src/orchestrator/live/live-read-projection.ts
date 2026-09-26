@@ -72,7 +72,13 @@ export class LiveReadProjection {
       tx.appliedPlanCurrent.findUnique({
         where: { id: 'singleton' },
         select: {
-          plan: { select: { revision: true, routerResult: { select: { inputHash: true } } } },
+          plan: {
+            select: {
+              revision: true,
+              validatedInputHash: true,
+              routerResult: { select: { inputHash: true } },
+            },
+          },
         },
       }),
       tx.routingCurrent.findUnique({
@@ -80,7 +86,8 @@ export class LiveReadProjection {
         select: { snapshot: { select: { inputHash: true } } },
       }),
     ]);
-    const appliedHash = applied?.plan.routerResult?.inputHash ?? null;
+    const appliedHash =
+      applied?.plan.validatedInputHash ?? applied?.plan.routerResult?.inputHash ?? null;
     const publishedHash = published?.snapshot.inputHash ?? null;
     const phase = visibleRouterPhase(publishedHash !== null && publishedHash !== appliedHash);
     return {

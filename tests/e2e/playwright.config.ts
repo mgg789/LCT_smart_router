@@ -23,8 +23,10 @@ export default defineConfig({
   workers: 1,
   forbidOnly: true,
   retries: 0,
-  // Headroom for one extra smoke seed if empty reset races a leftover LIVE poll.
-  timeout: 180_000,
+  // Bounded release checks: failures retain evidence instead of consuming hours in retries.
+  timeout: 90_000,
+  globalTimeout: phase === 'browser' ? 210_000 : 45_000,
+  maxFailures: 1,
   expect: { timeout: 20_000 },
   grep: phase === 'browser' ? undefined : new RegExp(`@${phase}`),
   grepInvert: phase === 'browser' ? /@router-/ : undefined,

@@ -106,11 +106,16 @@ export class PlanRestoreService {
       throw SysError.validationFailed(
         'Complete accepted equipment meetings before restoring a previous plan',
       );
+    const validatedInput = await context.tx.routingCurrent.findUniqueOrThrow({
+      where: { id: 'singleton' },
+      select: { snapshot: { select: { inputHash: true } } },
+    });
     const restored = await this.plans.restoreRevision(
       context.tx,
       context.now,
       previous,
       context.actor.id,
+      validatedInput.snapshot.inputHash,
     );
     await this.plans.restoreHandoffs(context.tx, context.now, previous);
     await this.plans.publishRevision(context.tx, context.now, restored.id);

@@ -47,6 +47,7 @@ const POLICY_LEFT = 1329;
 const POLICY_TOP = 10;
 const POLICY_OPEN_HEIGHT = 629;
 const springQuick = { type: 'spring' as const, stiffness: 420, damping: 36, mass: 0.8 };
+/** Navigates dashboard sections while retaining the existing disabled-section policy. */
 export function SidebarNav({
   activeNav,
   onSelect,
@@ -335,7 +336,7 @@ function NotificationBadge({ count, tone }: { count: number; tone: NotificationT
 }
 
 /**
- * Dark plus in the MAIN header, left of the policy chip. Opens the add-entity dialog.
+ * Opens the metrics surface without changing the selected routing policy.
  */
 export function PlanMetricsButton({ motionOn, onOpen }: { motionOn: boolean; onOpen: () => void }) {
   return (
@@ -358,6 +359,7 @@ export function PlanMetricsButton({ motionOn, onOpen }: { motionOn: boolean; onO
   );
 }
 
+/** Opens the existing add-entity dialog from the header. */
 export function AddEntityButton({ motionOn, onOpen }: { motionOn: boolean; onOpen: () => void }) {
   return (
     <motion.button
@@ -380,6 +382,7 @@ export function AddEntityButton({ motionOn, onOpen }: { motionOn: boolean; onOpe
   );
 }
 
+/** Displays persisted routing controls; callbacks retain the dashboard's CAS mutation flow. */
 export function PolicyControl({
   open,
   policyLabel: selectedLabel,
