@@ -20,11 +20,7 @@ import {
   type Tx,
   UnitOfWork,
 } from '../../persistence';
-import {
-  PUBLICATION_TRIGGERS,
-  SnapshotBuilder,
-  SnapshotPublisher,
-} from '../../routing/mount-data-eng';
+import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import { RouterClient } from '../../routing/router-gateway/router-client.port';
 import { MiniAiService } from '../ai/mini-ai.service';
 import {
@@ -34,7 +30,10 @@ import {
 import { businessNow } from '../live/business-clock';
 import { PERFORMANCE_ALERT_PREFIX, PerformanceService } from '../performance';
 import { DispatcherSettingsService } from '../settings/dispatcher-settings.service';
+import { buildAlertBrief } from './alert-brief';
 import { type AlertAction, alertActionsFor, resolutionDelay } from './alert-policy';
+import { type AlertView, toAlertView } from './alert-view';
+import { AlertWindowQuery } from './alert-window-query';
 
 /** Router's immutable comparison evidence for one manual plan on one exact input. */
 const manualEvaluationSchema = z.object({
@@ -66,75 +65,7 @@ export interface ResolveAlertInput {
   readonly engineerId?: string;
 }
 
-export interface AlertView {
-  readonly id: string;
-  readonly kind: 'alert' | 'notice';
-  readonly code: string;
-  readonly severity: string;
-  readonly engineerIds: string[];
-  readonly requestIds: string[];
-  readonly reasons: unknown;
-  readonly restoreOption: unknown;
-  readonly actions: AlertAction[];
-  readonly createdAt: number;
-  readonly seenAt: number | null;
-  readonly resolvedAt: number | null;
-  readonly resolutionAction: string | null;
-  readonly resolutionReason: string | null;
-  readonly resolutionDelaySec: number | null;
-  readonly workDate: string | null;
-}
-
-const ACTION_EFFECT: Record<AlertAction, { benefit: string; drawback: string }> = {
-  reschedule: {
-    benefit: 'Снимает сегодняшний риск и сохраняет длительность окна.',
-    drawback: 'Клиент получит услугу только завтра.',
-  },
-  move_window: {
-    benefit: 'Оставляет визит сегодня в найденном выполнимом окне.',
-    drawback: 'Новое время нужно согласовать с клиентом, назначение пересчитается.',
-  },
-  add_engineer: {
-    benefit: 'Добавляет человека на линию и повышает шанс закрыть заявку сегодня.',
-    drawback: 'Нужен свободный инженер с подходящим навыком.',
-  },
-  keep_manual: {
-    benefit: 'Сохраняет уже выданный ручной порядок.',
-    drawback: 'План может быть хуже автоматического.',
-  },
-  keep_as_is: {
-    benefit: 'Не меняет согласованный маршрут.',
-    drawback: 'Причина риска остаётся.',
-  },
-  restore_auto: {
-    benefit: 'Возвращает актуальный автоматический план.',
-    drawback: 'Маршруты нескольких инженеров могут измениться.',
-  },
-  skip_lunch: {
-    benefit: 'Освобождает время под заявки.',
-    drawback: 'Инженер остаётся без обеда.',
-  },
-  keep_lunch: {
-    benefit: 'Сохраняет перерыв.',
-    drawback: 'Часть заявок может остаться без назначения.',
-  },
-  message: {
-    benefit: 'Инженер получает напоминание и остаётся на смене.',
-    drawback: 'Само по себе не двигает маршрут.',
-  },
-  remove_shift: {
-    benefit: 'Снимает молчащего инженера, чтобы заявки ушли другим.',
-    drawback: 'Его работы нужно переназначить.',
-  },
-  message_remove: {
-    benefit: 'Сначала предупреждает, затем снимает со смены.',
-    drawback: 'Инженер теряет оставшиеся заявки дня.',
-  },
-  extend: {
-    benefit: 'Даёт ещё немного времени выйти на связь.',
-    drawback: 'Заявки продолжают ждать.',
-  },
-};
+export type { AlertView } from './alert-view';
 
 /**
  * Durable dispatcher decision queue.
@@ -153,9 +84,9 @@ export class AlertsService {
     private readonly router: RouterClient,
     private readonly operations: OperationsService,
     private readonly miniAi: MiniAiService,
+    private readonly windowQuery: AlertWindowQuery,
     @Optional() private readonly timing?: ExecutionTimingPolicy,
     @Optional() private readonly dispatcherSettings?: DispatcherSettingsService,
-    @Optional() private readonly snapshotBuilder?: SnapshotBuilder,
     @Optional() private readonly performance?: PerformanceService,
   ) {}
 
@@ -166,58 +97,7 @@ export class AlertsService {
 
   /** Builds a fresh, unpublished preview; network work never holds a DB transaction. */
   async proposeWindow(id: string) {
-    const builder = this.snapshotBuilder;
-    if (!builder) throw SysError.notConfigured('Router snapshot builder');
-    const prepare = (planningAt?: number) =>
-      this.uow.run(async (tx) => {
-        const alert = await tx.alert.findUnique({ where: { id } });
-        if (!alert || alert.resolvedAt !== null || !alert.requestIds[0])
-          throw new SysError('VALIDATION_FAILED', 'An open request alert is required');
-        const request = await tx.request.findUnique({ where: { id: alert.requestIds[0] } });
-        if (request?.lifecycle !== 'submitted')
-          throw new SysError('WORK_ALREADY_STARTED', 'Only submitted work can change windows');
-        const now = planningAt ?? (await businessNow(tx, this.clock.nowSeconds()));
-        const built = await builder.build(tx, now);
-        const current = await tx.appliedPlanCurrent.findUnique({
-          where: { id: 'singleton' },
-          include: {
-            plan: { include: { routes: { include: { stops: { orderBy: { sequence: 'asc' } } } } } },
-          },
-        });
-        const ids = new Set(built.snapshot.requests.map((item) => item.request_id));
-        if (!ids.has(request.id))
-          throw new SysError(
-            'VALIDATION_FAILED',
-            'Request is outside the current planning horizon',
-          );
-        const engineers = new Set(built.snapshot.engineers.map((item) => item.engineer_id));
-        const routes = Object.fromEntries(
-          (current?.plan.routes ?? [])
-            .filter((route) => engineers.has(route.engineerId))
-            .map((route) => [
-              route.engineerId,
-              route.stops.flatMap((stop) =>
-                stop.requestId && ids.has(stop.requestId) ? [stop.requestId] : [],
-              ),
-            ]),
-        );
-        const date = new Date((now + 10800) * 1000).toISOString().slice(0, 10);
-        return {
-          requestVersion: request.version,
-          input: {
-            snapshot: built.snapshot,
-            request_id: request.id,
-            routes,
-            day_end_at: Date.parse(`${date}T00:00:00+03:00`) / 1000 + 86400,
-          },
-          identity: canonicalHash({
-            task: built.taskFingerprint,
-            plan: current?.planId ?? null,
-            version: request.version,
-          }),
-        };
-      });
-    const prepared = await prepare();
+    const prepared = await this.windowQuery.prepare(id);
     const key = canonicalHash(prepared.input);
     const cached = this.windowCache.get(key);
     let value = cached && cached.expiresAt > Date.now() ? cached.value : null;
@@ -228,7 +108,10 @@ export class AlertsService {
       value.catch(() => this.windowCache.delete(key));
     }
     const result = await value;
-    if ((await prepare(prepared.input.snapshot.planning_as_of)).identity !== prepared.identity)
+    if (
+      (await this.windowQuery.prepare(id, prepared.input.snapshot.planning_as_of)).identity !==
+      prepared.identity
+    )
       throw new SysError(
         'VALIDATION_FAILED',
         'The plan changed while calculating; request a fresh window',
@@ -262,69 +145,34 @@ export class AlertsService {
     if (alert?.kind !== 'alert' || alert.resolvedAt !== null) {
       throw SysError.validationFailed('Этот алерт уже нельзя разобрать.');
     }
-    const catalogue = alertActionsFor(alert.code);
-    let windowOffer: { start: number; end: number; version: number } | null = null;
-    if (catalogue.includes('move_window')) {
-      try {
-        const offer = await this.proposeWindow(id);
-        if (offer.status === 'available' && offer.proposal) {
-          windowOffer = {
-            start: offer.proposal.windowStartAt,
-            end: offer.proposal.windowEndAt,
-            version: offer.requestVersion,
-          };
-        }
-      } catch {
-        windowOffer = null;
-      }
-    }
-    const actions = catalogue.filter((item) => item !== 'move_window' || windowOffer !== null);
-    const engineers = await this.prisma.engineer.findMany({
-      take: 8,
-      orderBy: { inputOrder: 'asc' },
-      select: { id: true, displayName: true },
-    });
+    const brief = await buildAlertBrief(this.prisma, (id) => this.proposeWindow(id), alert);
     const choice = await this.miniAi.chooseAlert({
-      summary: JSON.stringify({
-        code: alert.code,
-        reasons: alert.reasons,
-        requestIds: alert.requestIds,
-        engineerIds: alert.engineerIds,
-        windowToday: windowOffer
-          ? { start: windowOffer.start, end: windowOffer.end }
-          : 'сегодня выполнимого окна нет',
-        options: actions.map((item) => ({
-          action: item,
-          benefit: ACTION_EFFECT[item].benefit,
-          drawback: ACTION_EFFECT[item].drawback,
-        })),
-      }).slice(0, 4_000),
-      actions,
-      engineers: engineers.map((item) => ({ id: item.id, label: item.displayName })),
+      summary: brief.summary,
+      actions: brief.actions,
+      engineers: brief.engineers,
+      windows: brief.windows,
+      minutes: brief.minutes,
     });
-    const action = actions.find((item) => item === choice.action);
+    const action = brief.actions.find((item) => item === choice.action);
     if (!action) {
       throw SysError.validationFailed('Модель выбрала действие вне списка.');
-    }
-    if (action === 'move_window' && !windowOffer) {
-      throw SysError.validationFailed('Сегодня нет окна, куда можно сдвинуть визит.');
     }
     const picked = {
       choice: choice.action,
       engineerId: choice.engineerId ?? null,
       minutes: choice.minutes ?? null,
-      windowStartAt: action === 'move_window' && windowOffer ? windowOffer.start : null,
-      windowEndAt: action === 'move_window' && windowOffer ? windowOffer.end : null,
-      expectedRequestVersion: action === 'move_window' && windowOffer ? windowOffer.version : null,
+      windowStartAt: action === 'move_window' ? (choice.windowStartAt ?? null) : null,
+      windowEndAt: action === 'move_window' ? (choice.windowEndAt ?? null) : null,
+      expectedRequestVersion: action === 'move_window' ? brief.requestVersion : null,
     };
     if (options?.apply === false) {
-      return { alert: this.view(alert), ...picked, applied: false };
+      return { alert: toAlertView(alert), ...picked, applied: false };
     }
     const operationId = randomUUID();
     const dto = {
       operationId,
       action,
-      reason: 'Решено с AI автоматически',
+      reason: choice.reason,
       ...(picked.engineerId ? { engineerId: picked.engineerId } : {}),
       ...(picked.minutes ? { minutes: picked.minutes } : {}),
       ...(picked.windowStartAt !== null && picked.windowEndAt !== null
@@ -372,7 +220,7 @@ export class AlertsService {
       }),
     ]);
     const alerts = [...open, ...history];
-    return alerts.map((alert) => this.view(alert));
+    return alerts.map((alert) => toAlertView(alert));
   }
 
   /** Used by the coordinator; no dashboard request is required for alert creation. */
@@ -701,7 +549,7 @@ export class AlertsService {
     if (alert.kind !== 'alert') {
       throw new SysError('VALIDATION_FAILED', 'A notice has no resolution action');
     }
-    if (alert.resolvedAt !== null || alert.invalidatedAt !== null) return this.view(alert);
+    if (alert.resolvedAt !== null || alert.invalidatedAt !== null) return toAlertView(alert);
     const actions = alertActionsFor(alert.code);
     if (!actions.includes(input.action)) {
       throw new SysError('VALIDATION_FAILED', 'This action is not available for the alert', {
@@ -720,7 +568,7 @@ export class AlertsService {
         },
       });
       await recordAlertAttribution(context.tx, context.now, alert, context.actor, input, false);
-      return this.view(pending);
+      return toAlertView(pending);
     }
     const elapsed = context.now - Number(alert.createdAt);
     const resolved = await context.tx.alert.update({
@@ -734,7 +582,7 @@ export class AlertsService {
       },
     });
     await recordAlertAttribution(context.tx, context.now, alert, context.actor, input, true);
-    return this.view(resolved);
+    return toAlertView(resolved);
   }
 
   async shiftStatus(
@@ -1649,43 +1497,6 @@ export class AlertsService {
       select: { workDate: true },
     });
     return day?.workDate ?? null;
-  }
-
-  private view(alert: {
-    id: string;
-    kind: string;
-    code: string;
-    severity: string;
-    engineerIds: string[];
-    requestIds: string[];
-    reasons: unknown;
-    restoreOption: unknown;
-    createdAt: bigint;
-    seenAt: bigint | null;
-    resolvedAt: bigint | null;
-    resolutionAction: string | null;
-    resolutionReason: string | null;
-    resolutionDelaySec: number | null;
-    workDate: string | null;
-  }): AlertView {
-    return {
-      id: alert.id,
-      kind: alert.kind === 'notice' ? 'notice' : 'alert',
-      code: alert.code,
-      severity: alert.severity,
-      engineerIds: alert.engineerIds,
-      requestIds: alert.requestIds,
-      reasons: Array.isArray(alert.reasons) ? alert.reasons : [alert.reasons],
-      restoreOption: alert.restoreOption,
-      actions: alert.kind === 'notice' ? [] : alertActionsFor(alert.code),
-      createdAt: Number(alert.createdAt),
-      seenAt: alert.seenAt === null ? null : Number(alert.seenAt),
-      resolvedAt: alert.resolvedAt === null ? null : Number(alert.resolvedAt),
-      resolutionAction: alert.resolutionAction,
-      resolutionReason: alert.resolutionReason,
-      resolutionDelaySec: alert.resolutionDelaySec,
-      workDate: alert.workDate,
-    };
   }
 }
 

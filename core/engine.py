@@ -5,7 +5,7 @@ optimality. Engine owns all route choices; Runtime only validates and publishes.
 """
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 
@@ -13,6 +13,7 @@ from core.contracts import (
     Engineer,
     EngineerRoute,
     EquipmentHandoff,
+    EquipmentStock,
     EquipmentType,
     GeoPoint,
     Plan,
@@ -41,6 +42,7 @@ from core.schedule import (
     score,
     terminal_eligible,
     terminal_release_at,
+    transport_matches,
     validate_plan,
 )
 
@@ -62,6 +64,7 @@ class SearchSettings:
     # A customer visit is feasible when its *completion* is within this grace after
     # the promised window.  LIVE uses ten minutes by default; callers may still make
     # the Router stricter or relax it explicitly within the bounded product limit.
+    strict_time_windows: bool = False
     window_lateness_tolerance_sec: int = 600
     departure_lateness_tolerance_sec: int = 0
     task_start_lateness_tolerance_sec: int = 0
@@ -99,6 +102,7 @@ class SearchSettings:
     def technical(self) -> RouterTechnicalSettings:
         """Expose only persisted context controls, excluding per-run search budgets."""
         return RouterTechnicalSettings(
+            strict_time_windows=self.strict_time_windows,
             lunches_enabled=self.lunches_enabled,
             traffic_enabled=self.traffic_enabled,
             equipment_enabled=self.equipment_enabled,
@@ -276,7 +280,7 @@ def _search(
         return assemble_plan(snapshot, [])
     origin = snapshot.horizon_start_at
     horizon = snapshot.horizon_end_at - origin
-    time_horizon = horizon + TERMINAL_SHIFT_OVERTIME_SEC
+    time_horizon = horizon + (0 if settings.strict_time_windows else TERMINAL_SHIFT_OVERTIME_SEC)
     if horizon > 31 * 86400:
         raise ValueError("HORIZON_RANGE: v1 supports at most 31 days per snapshot")
     nodes: list[_Node] = []
@@ -297,6 +301,9 @@ def _search(
     for e, engineer in enumerate(engineers):
         if not engineer.lunch.enabled or engineer.lunch_taken:
             continue
+        lunch_duration = engineer.lunch.duration_sec
+        if lunch_duration is None:
+            continue
         anchors = [starts[e]] + [
             index for key, index in jobs.items() if eligible(snapshot, engineer, request_by_id[key])
         ]
@@ -307,7 +314,7 @@ def _search(
                 _Node(
                     "lunch",
                     nodes[anchor].point,
-                    engineer.lunch.duration_sec,
+                    lunch_duration,
                     owner=e,
                     anchor=anchor,
                 )
@@ -323,11 +330,11 @@ def _search(
             nodes[a].point.lon,
             nodes[b].point.lat,
             nodes[b].point.lon,
-            engineers[e].transport_type,
+            engineers[e].travel_profile(),
         )
         if key not in quote_cache:
             quote_cache[key] = travel.quote(
-                nodes[a].point, nodes[b].point, engineers[e].transport_type
+                nodes[a].point, nodes[b].point, engineers[e].travel_profile()
             )
         return quote_cache[key]
 
@@ -336,7 +343,7 @@ def _search(
     physical = sorted(set(jobs.values()) | set(starts))
     profile_representatives = {}
     for e, engineer in enumerate(engineers):
-        profile_representatives.setdefault(engineer.transport_type, e)
+        profile_representatives.setdefault(engineer.travel_profile(), e)
     for e in profile_representatives.values():
         for a in physical:
             for b in physical:
@@ -435,7 +442,7 @@ def _search(
             time_dimension.CumulVar(routing.Start(e)).SetRange(release - origin, release - origin)
             time_dimension.CumulVar(routing.End(e)).SetRange(
                 release - origin,
-                job_completion_limit(snapshot, engineer, terminal=True) - origin,
+                job_completion_limit(snapshot, engineer, terminal=True, strict=settings.strict_time_windows) - origin,
             )
         routing.AddVariableMinimizedByFinalizer(time_dimension.CumulVar(routing.End(e)))
 
@@ -469,7 +476,7 @@ def _search(
             request.window_end_at
             + max(
                 settings.window_lateness_tolerance_sec,
-                TERMINAL_WINDOW_LATENESS_TOLERANCE_SEC,
+                0 if settings.strict_time_windows else TERMINAL_WINDOW_LATENESS_TOLERANCE_SEC,
             )
             - request.service_duration_sec
             - origin,
@@ -491,7 +498,7 @@ def _search(
                 solver.Add(
                     time_dimension.CumulVar(index) + request.service_duration_sec
                     <= normal_limit
-                    + TERMINAL_SHIFT_OVERTIME_SEC * next_is_end
+                    + (0 if settings.strict_time_windows else TERMINAL_SHIFT_OVERTIME_SEC) * next_is_end
                     + inactive_time_slack * (1 - on_vehicle)
                 )
                 solver.Add(
@@ -510,20 +517,29 @@ def _search(
         indices = [manager.NodeToIndex(n) for n in alternatives]
         for n, index in zip(alternatives, indices):
             routing.VehicleVar(index).SetValues([-1, e])
+            anchor_node = nodes[n].anchor
+            if anchor_node is None:
+                routing.ActiveVar(index).SetValue(0)
+                continue
             anchor = (
                 routing.Start(e)
-                if nodes[n].anchor == starts[e]
-                else manager.NodeToIndex(nodes[n].anchor)
+                if anchor_node == starts[e]
+                else manager.NodeToIndex(anchor_node)
             )
             solver.Add(
                 routing.ActiveVar(index) <= solver.IsEqualCstVar(routing.NextVar(anchor), index)
             )
-            if nodes[nodes[n].anchor].kind == "job":
+            if nodes[anchor_node].kind == "job":
                 solver.Add(routing.ActiveVar(index) <= routing.ActiveVar(anchor))
+            if (
+                engineer.lunch.window_start_at is None
+                or engineer.lunch.window_end_at is None
+                or engineer.lunch.duration_sec is None
+            ):
+                routing.ActiveVar(index).SetValue(0)
+                continue
             lower = max(0, engineer.lunch.window_start_at - origin)
-            upper = min(
-                horizon, engineer.lunch.window_end_at - engineer.lunch.duration_sec - origin
-            )
+            upper = min(horizon, engineer.lunch.window_end_at - engineer.lunch.duration_sec - origin)
             if release_at(snapshot, engineer) is None or lower > upper:
                 routing.ActiveVar(index).SetValue(0)
             else:
@@ -742,9 +758,7 @@ def _covering_template_can_serve(
     if request.region is not None and engineer.region not in (None, request.region):
         return False
     if not (
-        request.required_transport is None
-        or request.required_transport == engineer.transport_type
-        or {request.required_transport, engineer.transport_type} <= {"walk", "transit"}
+        transport_matches(request.required_transport, engineer)
     ):
         return False
     if (
@@ -1101,13 +1115,13 @@ def solve(
 
 def _route_steps(route: EngineerRoute) -> list[str | None | HandoffStep]:
     """Recover the canonical replay steps from a validated route."""
-    return [
-        stop.request_id if stop.kind == "job" else (
-            HandoffStep(stop.handoff, stop.location, stop.start_at) if stop.kind == "handoff" else None
-        )
-        for stop in route.stops
-        if stop.kind != "wait"
-    ]
+    steps: list[str | None | HandoffStep] = []
+    for stop in route.stops:
+        if stop.kind == "job":
+            steps.append(stop.request_id)
+        elif stop.kind == "handoff" and stop.handoff is not None:
+            steps.append(HandoffStep(stop.handoff, stop.location, stop.start_at))
+    return steps
 
 
 def _insert_steps(steps: list[str | None | HandoffStep], item: str | HandoffStep):
@@ -1140,8 +1154,7 @@ def _rescue_equipment_handoffs(
             if engineer.engineer_id in engineers
             and (request.region is None or engineer.region is None or engineer.region == request.region)
             and request.required_skill in engineer.skills
-            and (request.required_transport is None or request.required_transport == engineer.transport_type
-                 or {request.required_transport, engineer.transport_type} <= {"walk", "transit"})
+            and transport_matches(request.required_transport, engineer)
             and release_at(snapshot, engineer) is not None
         ]
         routes = {route.engineer_id: route for route in current.routes}
@@ -1155,7 +1168,8 @@ def _rescue_equipment_handoffs(
                 donor_route = routes[donor.engineer_id]
                 consumed = sum(
                     requests[stop.request_id].required_equipment == request.required_equipment
-                    for stop in donor_route.stops if stop.kind == "job"
+                    for stop in donor_route.stops
+                    if stop.kind == "job" and stop.request_id is not None
                 )
                 if donor.equipment_stock.quantity(request.required_equipment) <= consumed:
                     continue
@@ -1175,7 +1189,11 @@ def _rescue_equipment_handoffs(
                             donor_engineer_id=donor.engineer_id,
                             receiver_engineer_id=receiver.engineer_id,
                             request_id=request.request_id,
-                            items={request.required_equipment: 1},
+                            items=EquipmentStock(
+                                router=1 if request.required_equipment == "router" else 0,
+                                set_top_box=1 if request.required_equipment == "set_top_box" else 0,
+                                smart_speaker=1 if request.required_equipment == "smart_speaker" else 0,
+                            ),
                         )
                         donor_event = HandoffStep(handoff, location, meeting_at)
                         receiver_event = HandoffStep(handoff, location, meeting_at)
@@ -1219,6 +1237,11 @@ def _solve_prepared(
     """Run the existing baseline + staged search on an already expanded snapshot."""
     settings = settings or SearchSettings()
     default_context_version = routing_context_version(travel, settings.technical())
+    if settings.strict_time_windows:
+        settings = replace(settings, window_lateness_tolerance_sec=0,
+                           departure_lateness_tolerance_sec=0,
+                           task_start_lateness_tolerance_sec=0, task_overrun_tolerance_sec=0,
+                           tolerance_sec=None)
     travel = configure_travel(travel, settings.technical(), snapshot.planning_as_of)
     snapshot = apply_system_policy(snapshot, settings)
     search_snapshot = _without_optional_lunches(snapshot)
@@ -1231,26 +1254,28 @@ def _solve_prepared(
         and memory.context_version == context_version
         and memory.snapshot.policy == snapshot.policy
     )
-    projected = (
-        _project(snapshot, memory.plan, travel) if compatible and memory.plan.is_usable else None
-    )
-    same_assignments = (
-        projected is not None
-        and memory is not None
-        and {a.request_id: a.engineer_id for a in projected.assignments}
-        == {a.request_id: a.engineer_id for a in memory.plan.assignments}
-    )
-    if (
-        same_assignments
-        and _small_change(memory.snapshot, snapshot, settings.departure_lateness_tolerance_sec)
-        and _task_starts_within_tolerance(
-            memory.plan, projected, settings.task_start_lateness_tolerance_sec
-        )
-    ):
-        projected = projected.model_copy(
-            update={"alerts": projected.alerts + lunch_coverage_alerts(snapshot, projected, travel)}
-        )
-        return EngineOutput(projected, base, "REVALIDATE", memory)
+    projected = None
+    if compatible and memory is not None and memory.plan.is_usable:
+        candidate = _project(snapshot, memory.plan, travel)
+        if candidate is not None:
+            projected = candidate
+            same_assignments = {
+                a.request_id: a.engineer_id for a in candidate.assignments
+            } == {a.request_id: a.engineer_id for a in memory.plan.assignments}
+            if (
+                same_assignments
+                and _small_change(memory.snapshot, snapshot, settings.departure_lateness_tolerance_sec)
+                and _task_starts_within_tolerance(
+                    memory.plan, candidate, settings.task_start_lateness_tolerance_sec
+                )
+            ):
+                projected = candidate.model_copy(
+                    update={
+                        "alerts": candidate.alerts
+                        + lunch_coverage_alerts(snapshot, candidate, travel)
+                    }
+                )
+                return EngineOutput(projected, base, "REVALIDATE", memory)
     path = "REPAIR_AND_IMPROVE" if projected else "COLD_START"
     search_base = base if search_snapshot is snapshot else baseline(search_snapshot, travel)
     validate_plan(search_snapshot, search_base, travel)
@@ -1268,7 +1293,9 @@ def _solve_prepared(
     deadline = time.monotonic() + settings.time_limit_ms / 1000
     # Static OR-Tools remains a seed generator only when forecast traffic is disabled.
     # Departure-dependent routes are optimized by exact whole-route evaluation.
-    stages = policy.search_stages if not settings.traffic_enabled else ()
+    stages: tuple[str, ...] = (
+        tuple(stage for stage in policy.search_stages) if not settings.traffic_enabled else ()
+    )
     stages = tuple(
         stage
         for stage in stages
@@ -1279,6 +1306,20 @@ def _solve_prepared(
         remaining = int((deadline - time.monotonic()) * 1000)
         if remaining <= 0:
             break
+        preserved_criteria: tuple[Criterion, ...] = tuple(
+            stage
+            for stage in stages[1:i]
+            if stage
+            in (
+                "additional_engineers",
+                "extra_assignments",
+                "travel_time",
+                "distance",
+                "engineers_used",
+                "window_start_delay",
+                "max_jobs_per_engineer",
+            )
+        )
         candidate = _search(
             search_snapshot,
             travel,
@@ -1286,7 +1327,7 @@ def _solve_prepared(
             stage,
             incumbent,
             remaining // (len(stages) - i),
-            tuple(stages[1:i]),
+            preserved_criteria,
         )
         if candidate is not None and (
             incumbent is None

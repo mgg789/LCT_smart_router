@@ -36,7 +36,7 @@ for _ in $(seq 1 40); do
 done
 docker exec "$pg_name" pg_isready -U lct -d lct
 
-docker run --rm --network host \
+docker run --rm -i --network host \
   -v "$PWD:/app" \
   -w /app \
   -e DATABASE_URL="$database_url" \
@@ -45,7 +45,7 @@ docker run --rm --network host \
   -e NODE_ENV=test \
   -e AUTH_DEV_EXPOSE_CODES=true \
   docker.io/library/node:24-bookworm \
-  bash -lc '
+  bash -se <<'NODE_TESTS'
     set -euo pipefail
     corepack enable
     corepack prepare pnpm@10.28.2 --activate
@@ -66,4 +66,4 @@ docker run --rm --network host \
     pnpm --filter api exec prisma generate
     pnpm --filter api exec prisma migrate deploy
     pnpm --filter api test
-  '
+NODE_TESTS

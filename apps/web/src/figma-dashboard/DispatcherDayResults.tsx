@@ -6,8 +6,9 @@ import {
   loadDayPerformance,
   shouldShowDayResults,
 } from '../api/performance';
-import type { DispatchShiftView } from '../api/types';
+import type { DispatchShiftView, RequestView } from '../api/types';
 import { RewardDialog } from '../components/rewards/RewardDialog';
+import { tomorrowRequestRows } from './tomorrowRequests';
 
 /** Opens once execution finishes and the final blocking alert has a recorded outcome. */
 export function DispatcherDayResults({
@@ -18,6 +19,8 @@ export function DispatcherDayResults({
   onOpen,
   onClose,
   closeShift,
+  requests = [],
+  workDate = null,
 }: {
   token: string;
   live: DispatchLiveView | null;
@@ -26,6 +29,12 @@ export function DispatcherDayResults({
   onOpen: () => void;
   onClose: () => void;
   closeShift: (workDate: string, operationId: string) => Promise<void>;
+  /** Day's request list. Tomorrow's rows are the ones whose window starts the next Moscow day. */
+  requests?: readonly Pick<
+    RequestView,
+    'id' | 'lifecycle' | 'windowStartAt' | 'windowEndAt' | 'workTypeTitle'
+  >[];
+  workDate?: string | null;
 }) {
   const [data, setData] = useState<DayPerformance | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -39,6 +48,8 @@ export function DispatcherDayResults({
   const [month, setMonth] = useState(currentMonth);
   const [downloading, setDownloading] = useState(false);
   const workdayId = live?.workday.id;
+  const day = workDate ?? live?.workday.workDate ?? null;
+  const tomorrow = day ? tomorrowRequestRows(requests, day) : [];
   const ready = shouldShowDayResults(live?.workday.status, shift?.unresolvedCount, shift?.closedAt);
   const key = `navix.results.dispatcher.${workdayId}`;
   useEffect(() => {
@@ -152,6 +163,7 @@ export function DispatcherDayResults({
             </p>
             <p className="mt-2">{data.policy.explanation}</p>
           </details>
+          <TomorrowList rows={tomorrow} />
           {data.actual.assumedCompleted > 0 ? (
             <p className="mt-4 text-sm text-figma-dim">
               По расписанию без подтверждения: {data.actual.assumedCompleted}. Это отдельно от
@@ -214,5 +226,38 @@ export function DispatcherDayResults({
         </div>
       ) : null}
     </RewardDialog>
+  );
+}
+
+/** Expandable table of the next day's visits, morning first. */
+function TomorrowList({ rows }: { rows: ReturnType<typeof tomorrowRequestRows> }) {
+  return (
+    <details className="mt-5 rounded-2xl bg-white p-4">
+      <summary className="cursor-pointer font-semibold text-figma-ink">
+        Заявок на завтра {rows.length}
+      </summary>
+      {rows.length === 0 ? (
+        <p className="mt-3 text-sm text-figma-dim">На следующий день заявок нет.</p>
+      ) : (
+        <table className="mt-3 w-full text-left text-sm">
+          <thead>
+            <tr className="text-xs text-figma-dim">
+              <th className="pb-2 font-semibold">Номер</th>
+              <th className="pb-2 font-semibold">Тип</th>
+              <th className="pb-2 font-semibold">Окно</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id} className="border-t border-figma-hint/30">
+                <td className="py-2 pr-3 font-semibold">{row.number}</td>
+                <td className="py-2 pr-3">{row.type}</td>
+                <td className="py-2 whitespace-nowrap">{row.window}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </details>
   );
 }

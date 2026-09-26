@@ -12,6 +12,8 @@ import {
   type RouterResultStatus,
   type RouterRoadImportInput,
   type RouterRoadImportResult,
+  type RouterSimulation,
+  type RouterSimulationPatch,
   type RouterTechnicalSettingsState,
   type RouterTechnicalSettingsUpdate,
   type RouterWeather,
@@ -120,10 +122,62 @@ const policyComparisonSchema = z.object({
   ),
 });
 
+const simulationCountsSchema = z.object({
+  assigned_count: z.number().int().nonnegative(),
+  unassigned_count: z.number().int().nonnegative(),
+  late_assigned_count: z.number().int().nonnegative(),
+  total_lateness_sec: z.number().int().nonnegative(),
+  distance_km: z.number().nonnegative(),
+  engineers_used: z.number().int().nonnegative().optional(),
+  additional_engineers: z.number().int().nonnegative().optional(),
+});
+
+const simulationRouteSchema = z.object({
+  engineer_id: z.string().min(1),
+  segments: z.array(
+    z.object({
+      travel_source: z.string().min(1),
+      points: z.array(z.object({ lat: z.number(), lon: z.number() })),
+    }),
+  ),
+});
+
+const simulationSchema = z.object({
+  input_hash: z.string().length(64),
+  input_publication_id: z.string().min(1),
+  router_context_version: z.string().min(1),
+  patch_hash: z.string().length(64),
+  method: z.enum(['insertion', 'bounded', 'catalog']),
+  cached: z.boolean(),
+  delta: z
+    .object({
+      assigned: z.number().int(),
+      unassigned: z.number().int(),
+      late_assigned: z.number().int(),
+      total_lateness_sec: z.number().int(),
+      distance_km: z.number(),
+      transfers: z.number().int().nonnegative(),
+      before: simulationCountsSchema,
+      after: simulationCountsSchema,
+    })
+    .optional(),
+  routes: z.array(simulationRouteSchema).optional(),
+  strategies: z
+    .array(
+      z.object({
+        strategy_id: z.string().min(1),
+        metrics: simulationCountsSchema,
+        routes: z.array(simulationRouteSchema),
+      }),
+    )
+    .optional(),
+});
+
 const technicalSettingsSchema = z.object({
   lunches_enabled: z.boolean(),
   departure_lateness_tolerance_sec: z.number().int().nonnegative().max(86_400),
   task_start_lateness_tolerance_sec: z.number().int().nonnegative().max(86_400),
+  strict_time_windows: z.boolean().default(false),
   window_lateness_tolerance_sec: z.number().int().nonnegative().max(1_200).optional(),
   traffic_enabled: z.boolean().optional(),
   metro_enabled: z.boolean().optional(),
@@ -203,18 +257,26 @@ export class HttpRouterClient extends RouterClient {
       },
       30_000,
     );
+    const slot = z.object({
+      engineerId: z.string(),
+      windowStartAt: z.number().int(),
+      windowEndAt: z.number().int(),
+      serviceStartAt: z.number().int(),
+      serviceEndAt: z.number().int(),
+      neighborRequestIds: z.array(z.string()).default([]),
+      slackSec: z.number().int().default(0),
+    });
     return z
       .discriminatedUnion('status', [
-        z.object({ status: z.literal('none'), proposal: z.null() }),
+        z.object({
+          status: z.literal('none'),
+          proposal: z.null(),
+          proposals: z.array(slot).default([]),
+        }),
         z.object({
           status: z.literal('available'),
-          proposal: z.object({
-            engineerId: z.string(),
-            windowStartAt: z.number().int(),
-            windowEndAt: z.number().int(),
-            serviceStartAt: z.number().int(),
-            serviceEndAt: z.number().int(),
-          }),
+          proposal: slot,
+          proposals: z.array(slot).default([]),
         }),
       ])
       .parse(raw);
@@ -321,6 +383,7 @@ export class HttpRouterClient extends RouterClient {
       body: JSON.stringify({
         operation_id: input.operationId,
         expected_context_version: input.expectedContextVersion,
+        strict_time_windows: input.strictTimeWindows ?? false,
         lunches_enabled: input.lunchesEnabled,
         departure_lateness_tolerance_sec: input.departureLatenessToleranceSec,
         task_start_lateness_tolerance_sec: input.taskStartLatenessToleranceSec,
@@ -446,6 +509,24 @@ export class HttpRouterClient extends RouterClient {
       .parse(raw);
   }
 
+  /** What-if. The Router call does not publish; the caller stores the answer. */
+  override async simulate(patch: RouterSimulationPatch): Promise<RouterSimulation> {
+    const raw = await this.fetchJson(
+      '/v1/simulate',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(patch),
+      },
+      Math.max(this.options.requestTimeoutMs, 90_000),
+    );
+    const parsed = simulationSchema.safeParse(raw);
+    if (!parsed.success) {
+      throw new Error(`Router /v1/simulate response is invalid: ${parsed.error.message}`);
+    }
+    return parsed.data;
+  }
+
   /** Runs or reads Router's cached same-snapshot policy comparison. */
   override async getPolicyComparison(): Promise<PolicyComparison> {
     // A cold comparison includes fixed-roster refinement and expanded-workforce
@@ -521,6 +602,12 @@ export class HttpRouterClient extends RouterClient {
         signal: controller.signal,
       });
       if (!response.ok) {
+        if (response.status === 503 && path === '/v1/policy-comparison') {
+          throw new SysError(
+            'VERSION_CONFLICT',
+            'The working plan is still being rebuilt; retry the comparison when it is ready',
+          );
+        }
         if (response.status === 409) {
           let detail: unknown = null;
           try {
@@ -555,6 +642,7 @@ function toTechnicalSettings(
   routerContextVersion: string,
 ): RouterTechnicalSettingsState {
   return {
+    strictTimeWindows: settings.strict_time_windows,
     lunchesEnabled: settings.lunches_enabled,
     departureLatenessToleranceSec: settings.departure_lateness_tolerance_sec,
     taskStartLatenessToleranceSec: settings.task_start_lateness_tolerance_sec,

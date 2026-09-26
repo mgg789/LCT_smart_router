@@ -18,11 +18,14 @@ import {
   requestDispatcherLoginCode,
   resolveDispatchAlert,
   restartDemoStand,
+  restorePreviousPlan,
   selectRoutingPolicy,
   setDispatchMode,
   setEngineerAttendanceOptOut,
   setEngineerAvailability,
   signOutDispatcher,
+  simulateChange,
+  simulationWorsens,
   unlinkEngineerAccount,
   updateRouterTechnicalSettings,
   uploadDataPackage,
@@ -67,6 +70,8 @@ import {
   startRecoverySession,
 } from '../domain/resilience';
 
+import { usePlanHistory } from './usePlanHistory';
+
 const SESSION_KEY = 'lct.dispatcher.session';
 /** A cold MKAD solve of the demo day has taken about four minutes. */
 const DEFAULT_REBUILD_TIMEOUT_MS = 360_000;
@@ -75,13 +80,6 @@ export interface DayEvent {
   readonly id: string;
   readonly at: number;
   readonly text: string;
-}
-
-interface RoutingBaseline {
-  readonly snapshot: DashboardSnapshot;
-  readonly policyId: PolicyId;
-  readonly lunchesEnabled: boolean;
-  readonly routerSettings: RouterTechnicalSettings | null;
 }
 
 /** Owns authentication and the live Dashboard-to-backend state flow. */
@@ -139,8 +137,14 @@ export function useDashboard() {
   const [uploadingData, setUploadingData] = useState(false);
   const [entityMutationPending, setEntityMutationPending] = useState(false);
   const [pendingDelta, setPendingDelta] = useState<PlanDelta | null>(null);
-  const [baseline, setBaseline] = useState<RoutingBaseline | null>(null);
+  const planHistory = usePlanHistory(
+    token,
+    snapshot?.plan.plan?.revision ?? null,
+    source === 'live',
+  );
   const [policyComparison, setPolicyComparison] = useState<PolicyComparisonResponse | null>(null);
+  const [worseningText, setWorseningText] = useState<string | null>(null);
+  const worseningResolve = useRef<((accepted: boolean) => void) | null>(null);
   const [policyComparisonLoading, setPolicyComparisonLoading] = useState(false);
   const [policyComparisonError, setPolicyComparisonError] = useState<string | null>(null);
   const [events, setEvents] = useState<DayEvent[]>([]);
@@ -472,7 +476,6 @@ export function useDashboard() {
     setSnapshot(null);
     setFocus({ engineerId: null, requestId: null });
     setPendingDelta(null);
-    setBaseline(null);
     setPolicyComparison(null);
     setPolicyComparisonError(null);
     setError(null);
@@ -507,7 +510,6 @@ export function useDashboard() {
             )
           : null,
       );
-      setBaseline(null);
       setFocus({ engineerId: null, requestId: null });
       pushEvent(
         `Демо: ${demoScenarios.find((item) => item.id === id)?.title}. Записанный результат Router.`,
@@ -523,7 +525,6 @@ export function useDashboard() {
     snapshotRef.current = cached?.snapshot ?? null;
     setSnapshotState(cached?.snapshot ?? null);
     setPendingDelta(null);
-    setBaseline(null);
     setFocus({ engineerId: null, requestId: null });
     setEvents([]);
     setLiveWorkday(null);
@@ -587,12 +588,7 @@ export function useDashboard() {
   );
 
   const rebuild = useCallback(
-    async (
-      nextPolicy: PolicyId,
-      nextSettings: RouterTechnicalSettings,
-      reason: string,
-      keepBaseline: boolean,
-    ) => {
+    async (nextPolicy: PolicyId, nextSettings: RouterTechnicalSettings, reason: string) => {
       if (
         !token ||
         sourceRef.current !== 'live' ||
@@ -614,14 +610,6 @@ export function useDashboard() {
       setPendingDelta(null);
       setError(null);
       pushEvent(`${reason}. Router пересчитывает план…`);
-      if (keepBaseline) {
-        setBaseline({
-          snapshot: previous,
-          policyId: previous.policyId,
-          lunchesEnabled: previous.lunchesEnabled,
-          routerSettings: previous.routerSettings ?? null,
-        });
-      }
       try {
         if (previous.plan.mode === 'manual') {
           await setDispatchMode(token, 'auto');
@@ -636,6 +624,20 @@ export function useDashboard() {
         }
         if (generation !== readGeneration.current) return false;
         if (nextPolicy !== previous.policyId) {
+          try {
+            const preview = await simulateChange(token, { policyId: nextPolicy });
+            if (simulationWorsens(preview.delta)) {
+              const accepted = await new Promise<boolean>((resolve) => {
+                worseningResolve.current = resolve;
+                setWorseningText(preview.text);
+              });
+              setWorseningText(null);
+              worseningResolve.current = null;
+              if (!accepted) return false;
+            }
+          } catch {
+            // No stored answer: the dispatcher can still apply the policy.
+          }
           expectedInputHash = await selectRoutingPolicy(token, nextPolicy);
         }
         if (generation !== readGeneration.current) return false;
@@ -707,6 +709,7 @@ export function useDashboard() {
             ? 'обеды включены'
             : 'обеды выключены'
           : null,
+        nextSettings.strictTimeWindows !== current.strictTimeWindows ||
         nextSettings.windowLatenessToleranceSec !== current.windowLatenessToleranceSec ||
         nextSettings.departureLatenessToleranceSec !== current.departureLatenessToleranceSec ||
         nextSettings.taskStartLatenessToleranceSec !== current.taskStartLatenessToleranceSec
@@ -730,7 +733,6 @@ export function useDashboard() {
           policyId,
           nextSettings,
           changes.join(', ') || 'технические настройки обновлены',
-          true,
         );
       }
     },
@@ -739,7 +741,6 @@ export function useDashboard() {
 
   const acceptDelta = useCallback(() => {
     setPendingDelta(null);
-    setBaseline(null);
     pushEvent('Изменения плана просмотрены.');
   }, [pushEvent]);
 
@@ -780,25 +781,29 @@ export function useDashboard() {
     }
   }, [pushEvent, refresh, reportFailure, startingWorkday, token]);
 
-  const rejectDelta = useCallback(() => {
-    if (!baseline) {
+  const rejectDelta = useCallback(async () => {
+    if (
+      !token ||
+      sourceRef.current !== 'live' ||
+      !planHistory?.eligibility.eligible ||
+      !planHistory.current
+    )
       return;
+    setEntityMutationPending(true);
+    try {
+      const restored = await restorePreviousPlan(token, planHistory.current.revision);
+      setPendingDelta(null);
+      pushEvent(
+        `Восстановлен план ревизии ${restored.fromRevision} новой ревизией ${restored.restoredRevision}.`,
+      );
+      await refresh();
+    } catch (cause) {
+      reportFailure(cause);
+      setError(errorMessage(cause));
+    } finally {
+      setEntityMutationPending(false);
     }
-    const previousDelta = pendingDelta;
-    setPendingDelta(null);
-    void rebuild(
-      baseline.policyId,
-      baseline.routerSettings ?? defaultRouterSettings(baseline.snapshot),
-      'возвращаем прежние настройки',
-      false,
-    ).then((restored) => {
-      if (restored) {
-        setBaseline(null);
-      } else {
-        setPendingDelta(previousDelta);
-      }
-    });
-  }, [baseline, pendingDelta, rebuild]);
+  }, [token, planHistory, refresh, pushEvent, reportFailure]);
 
   const setMode = useCallback(
     async (mode: 'auto' | 'manual') => {
@@ -897,7 +902,6 @@ export function useDashboard() {
       setAvailabilityPendingId(engineerId);
       setRebuilding(true);
       setPendingDelta(null);
-      setBaseline(null);
       setError(null);
       pushEvent(
         availability === 'offline'
@@ -1337,6 +1341,12 @@ export function useDashboard() {
     /** Live session credential; null in the demo and cached contours. Screens that call
      * the live API directly (token management) read it rather than guessing the source. */
     token,
+    worseningText,
+    answerWorsening: (accepted: boolean) => {
+      setWorseningText(null);
+      worseningResolve.current?.(accepted);
+      worseningResolve.current = null;
+    },
     dismissOperationWarning: () => setOperationWarning(null),
     selectDemoScenario,
     leaveDemo,
@@ -1364,7 +1374,9 @@ export function useDashboard() {
     uploadingData,
     entityMutationPending,
     pendingDelta,
-    canRejectDelta: baseline !== null,
+    canRejectDelta: planHistory?.eligibility.eligible === true,
+    previousPlan: planHistory?.previous ?? null,
+    restoreUnavailableReason: planHistory?.eligibility.reason ?? null,
     policyComparison,
     policyComparisonLoading,
     policyComparisonError,
@@ -1419,6 +1431,7 @@ function sameRouterSettings(
     left.lunchesEnabled === right.lunchesEnabled &&
     left.departureLatenessToleranceSec === right.departureLatenessToleranceSec &&
     left.taskStartLatenessToleranceSec === right.taskStartLatenessToleranceSec &&
+    (left.strictTimeWindows ?? false) === (right.strictTimeWindows ?? false) &&
     left.windowLatenessToleranceSec === right.windowLatenessToleranceSec &&
     left.trafficEnabled === right.trafficEnabled &&
     left.metroEnabled === right.metroEnabled &&

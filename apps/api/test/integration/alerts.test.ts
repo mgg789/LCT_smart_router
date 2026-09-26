@@ -10,6 +10,7 @@ import { SysError } from '../../src/common/errors';
 import type { Alert, Engineer, EngineerDay, PrismaClient } from '../../src/generated/prisma/client';
 import { OperationsService } from '../../src/operations';
 import { AlertsService } from '../../src/orchestrator/alerts';
+import { tomorrowLoadLine } from '../../src/orchestrator/alerts/alert-brief';
 import { EngineersService } from '../../src/orchestrator/engineers';
 import { UnitOfWork } from '../../src/persistence';
 import {
@@ -82,6 +83,44 @@ describe('dispatcher alert lifecycle', () => {
     await prisma.$disconnect();
     mock.timers.reset();
     await app?.close();
+  });
+
+  it('counts all tomorrow overlaps beyond the preview limit without claiming crew demand', async () => {
+    const start = BigInt(Date.parse('2098-06-15T07:00:00Z') / 1000);
+    const tomorrow = start + 86_400n;
+    for (let index = 0; index < 13; index += 1) {
+      const row = await prisma.request.create({
+        data: {
+          arrivalOrder: 20_000 + index,
+          addressText: 'Tomorrow load regression',
+          lat: 55.75,
+          lon: 37.6,
+          needsGeocoding: false,
+          normProfileCode: 'local',
+          normativeTravelDurationSec: 600,
+          technicalDurationSec: 600,
+          documentationDurationSec: 300,
+          serviceDurationSec: 900,
+          windowStartAt: tomorrow,
+          windowEndAt: tomorrow + 7200n,
+          requiredSkill: 'local',
+          lifecycle: 'submitted',
+          assignmentState: 'unassigned',
+          origin: 'manual',
+          createdAt: start,
+          updatedAt: start,
+        },
+      });
+      requestIds.push(row.id);
+    }
+    const text = await tomorrowLoadLine(prisma, {
+      id: randomUUID(),
+      windowStartAt: start,
+      windowEndAt: start + 7200n,
+    });
+    assert.match(text, /уже 13 заявок/);
+    assert.match(text, /после переноса этой заявки — 14 заявок/);
+    assert.doesNotMatch(text, /должны выйти|должен выйти/);
   });
 
   it('does not freeze day results while LIVE execution is still running', async () => {

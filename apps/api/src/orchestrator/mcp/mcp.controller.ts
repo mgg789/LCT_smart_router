@@ -5,6 +5,7 @@ import type { Actor } from '../../auth';
 import { effectiveRoles } from '../../auth';
 import { Public } from '../../common/access';
 import { SysError } from '../../common/errors';
+import { PreAuthRateLimit } from '../../common/rate-limit';
 import { McpService } from './mcp.service';
 import { handleMcpPayload, type McpProtocolHost } from './mcp-protocol';
 import { McpToolsService } from './mcp-tools';
@@ -28,6 +29,7 @@ export class McpController {
   ) {}
 
   @Post()
+  @PreAuthRateLimit({ scope: 'mcp:transport', max: 30, windowSec: 60 })
   @ApiOperation({ summary: 'MCP JSON-RPC endpoint (initialize, tools/list, tools/call)' })
   async handle(
     @Req() request: Request & { actor?: Actor },

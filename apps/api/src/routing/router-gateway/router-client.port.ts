@@ -21,16 +21,23 @@ export interface WindowProposalInput {
   day_end_at: number;
 }
 
+/** One witnessed same-day slot. Neighbors are the jobs already beside the insertion. */
+export interface WindowProposalSlot {
+  engineerId: string;
+  windowStartAt: number;
+  windowEndAt: number;
+  serviceStartAt: number;
+  serviceEndAt: number;
+  neighborRequestIds?: readonly string[];
+  slackSec?: number;
+}
+
 /** A calculation witness, not a reservation or an applied assignment. */
 export interface WindowProposal {
   status: 'available' | 'none';
-  proposal: {
-    engineerId: string;
-    windowStartAt: number;
-    windowEndAt: number;
-    serviceStartAt: number;
-    serviceEndAt: number;
-  } | null;
+  proposal: WindowProposalSlot | null;
+  /** Earliest slot first. Empty when status is none. Older routers may omit it. */
+  proposals?: readonly WindowProposalSlot[];
 }
 
 /** One native OSRM JSON or gzip payload forwarded to Router Core. */
@@ -54,6 +61,8 @@ export interface RouterRoadImportResult {
 }
 
 export interface RouterTechnicalSettings {
+  /** Disable all lateness and terminal shift/window allowances; default false. */
+  readonly strictTimeWindows?: boolean;
   readonly lunchesEnabled: boolean;
   readonly departureLatenessToleranceSec: number;
   readonly taskStartLatenessToleranceSec: number;
@@ -121,6 +130,72 @@ export interface PolicyComparisonMetrics {
   readonly minWindowSlackSec: number | null;
   readonly workloadSpreadSec: number;
   readonly maxWorkloadSec: number;
+}
+
+export interface RouterSimulationPatch {
+  readonly catalog?: boolean;
+  readonly policy_id?: string;
+  readonly lunches_enabled?: boolean;
+  readonly metro_enabled?: boolean;
+  readonly traffic_enabled?: boolean;
+  readonly equipment_enabled?: boolean;
+  readonly equipment_transfers_enabled?: boolean;
+  /** Marks one offline engineer online on the simulation copy only. */
+  readonly bring_online_engineer_id?: string;
+  readonly window?: {
+    readonly request_id: string;
+    readonly window_start_at: number;
+    readonly window_end_at: number;
+  };
+  readonly pin?: { readonly request_id: string; readonly engineer_id: string };
+  readonly unassign_request_id?: string;
+}
+
+export interface SimulationCounts {
+  readonly assigned_count: number;
+  readonly unassigned_count: number;
+  readonly late_assigned_count: number;
+  readonly total_lateness_sec: number;
+  readonly distance_km: number;
+  /** Crews that carry a job. Older stored rows omit this. */
+  readonly engineers_used?: number;
+  /** Reserve crews whose ids start with `covering-`. Not the named shift roster. */
+  readonly additional_engineers?: number;
+}
+
+export interface SimulationRouteSegment {
+  readonly travel_source: string;
+  readonly points: readonly { readonly lat: number; readonly lon: number }[];
+}
+
+export interface SimulationRoute {
+  readonly engineer_id: string;
+  readonly segments: readonly SimulationRouteSegment[];
+}
+
+export interface RouterSimulation {
+  readonly input_hash: string;
+  readonly input_publication_id: string;
+  readonly router_context_version: string;
+  readonly patch_hash: string;
+  readonly method: 'insertion' | 'bounded' | 'catalog';
+  readonly cached: boolean;
+  readonly delta?: {
+    readonly assigned: number;
+    readonly unassigned: number;
+    readonly late_assigned: number;
+    readonly total_lateness_sec: number;
+    readonly distance_km: number;
+    readonly transfers: number;
+    readonly before: SimulationCounts;
+    readonly after: SimulationCounts;
+  };
+  readonly routes?: readonly SimulationRoute[];
+  readonly strategies?: readonly {
+    readonly strategy_id: string;
+    readonly metrics: SimulationCounts;
+    readonly routes: readonly SimulationRoute[];
+  }[];
 }
 
 export interface PolicyComparison {
@@ -206,6 +281,11 @@ export abstract class RouterClient {
   /** Compares every prepared policy and FIFO on one immutable current publication. */
   getPolicyComparison(): Promise<PolicyComparison> {
     throw SysError.notConfigured('Router Core policy comparison');
+  }
+
+  /** What-if on the ready publication. Does not accept the result into the working plan. */
+  simulate(_patch: RouterSimulationPatch): Promise<RouterSimulation> {
+    throw SysError.notConfigured('Router Core simulation');
   }
 
   /** Runs dry Monte-Carlo situation predictions for one fixed plan; never optimizes. */

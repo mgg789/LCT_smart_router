@@ -14,6 +14,8 @@ from pydantic import ValidationError
 
 from core.contracts import (
     Diagnostic,
+    Plan,
+    PlanEvidence,
     Policy,
     PolicyComparison,
     PolicyComparisonRow,
@@ -31,17 +33,19 @@ from core.engine import (
     solve,
 )
 from core.evidence import build_plan_evidence
-from core.geo import GraphTravel, RoadGraph, StraightTravel, configure_travel, content_hash
-from core.osrm import OSRMTravel, attach_live_roads
+from core.geo import GraphTravel, RoadGraph, TravelSource, content_hash
+from core.osrm import OSRMTravel
+from core.planning_travel import planning_configuration, planning_travel
 from core.policy import POLICY_CATALOG_VERSION, compile_policy
 from core.predict_calibration import PredictCalibration, PredictCalibrationStore
 from core.roadimport import ImportedRoadOverlay
-from core.route_search import improve_routes
+from core.route_search import RouteEvaluator, improve_routes
 from core.schedule import assemble_plan, baseline, score, validate_plan
 from core.settings import StoredTechnicalSettingsOperation, TechnicalSettingsStore
 
 MAX_SNAPSHOT_BYTES = 16 * 1024 * 1024
 COMPARISON_POLICY_IDS = ("fast", "compact", "sla", "balanced", "eco")
+GraphInput = RoadGraph | OSRMTravel | ImportedRoadOverlay | TravelSource
 
 
 def _regional_snapshots(snapshot: RouterTaskSnapshot) -> dict[str, RouterTaskSnapshot]:
@@ -170,15 +174,10 @@ class PostgresSnapshotReader:
 _worker_graph = None
 
 
-def _install_worker_graph(graph: RoadGraph | OSRMTravel) -> None:
+def _install_worker_graph(graph: GraphInput) -> None:
     """Keep the road graph in the worker. Resending it on every solve stalled the API."""
     global _worker_graph
     _worker_graph = graph
-
-
-def construction_travel(settings: SearchSettings, planning_as_of: int | None):
-    """Solve on straight lines. Metro still applies. OSRM and the road API do not."""
-    return configure_travel(StraightTravel(), settings.technical(), planning_as_of)
 
 
 def calculate_installed(
@@ -196,7 +195,7 @@ def calculate_installed(
 
 def calculate(
     raw: bytes,
-    graph: RoadGraph | OSRMTravel,
+    graph: GraphInput,
     settings: SearchSettings,
     context_version: str,
     memory: EngineMemory | None = None,
@@ -249,10 +248,8 @@ def calculate(
             technical_settings=settings.technical(),
             errors=[Diagnostic(code="WAITING_HANDOFF", message="Confirmed equipment meeting is overdue.", entity_id=overdue.handoff_id)],
         ), None
-    # The carried graph is not quoted. Construction is a straight line; metro wraps it.
-    del graph
-    provider = construction_travel(settings, snapshot.planning_as_of)
     try:
+        provider = planning_travel(graph, settings, snapshot)
         output = solve(snapshot, provider, settings, memory, context_version)
         effective_snapshot = output.memory.snapshot
         main_evidence = build_plan_evidence(effective_snapshot, output.main, provider)
@@ -289,31 +286,30 @@ def calculate(
     return result, output
 
 
-def calculate_policy_comparison(
+def calculate_policy_catalog(
     raw: bytes,
     publication_id: str,
-    graph: RoadGraph | OSRMTravel,
+    graph: GraphInput,
     settings: SearchSettings,
     context_version: str,
     search_budget_ms: int = 8000,
     *,
     offline: bool = False,
-) -> PolicyComparison:
+) -> tuple[PolicyComparison, dict[str, Plan]]:
     """Calculate all catalog policies and FIFO on one immutable snapshot.
 
     The function is intentionally independent from Runtime memory: every policy
     gets the same cold-start snapshot and bounded budget, and no candidate can
     affect the active plan or the next replanning anchor. Rows share the travel
     space the installed graph serves, so their summaries are directly comparable
-    with the published plan's metrics.
+    with the published plan's metrics. One shared candidate portfolio is scored
+    once per policy. The selected plan for each strategy is returned with the
+    summary. Nothing here is published.
     """
     if not 1 <= search_budget_ms <= 8000:
         raise ValueError("COMPARISON_BUDGET_INVALID")
     snapshot = apply_system_policy(official_roster(parse_snapshot(raw)), settings)
-    provider = GraphTravel(graph) if isinstance(graph, RoadGraph) else graph
-    if not offline:
-        provider = attach_live_roads(provider)
-    provider = configure_travel(provider, settings.technical(), snapshot.planning_as_of)
+    provider = planning_travel(graph, settings, snapshot, offline=offline)
     comparison_settings = replace(
         settings,
         time_limit_ms=search_budget_ms,
@@ -334,39 +330,44 @@ def calculate_policy_comparison(
         summary=fifo.summary,
     )
     candidates = [fifo]
+    # Reuse exact route evaluations, materialized plans and the common construction
+    # portfolio, while each policy keeps its independent improvement path.
+    seed_snapshot = snapshot.model_copy(update={"policy": Policy(policy_id="compact", parameters={})})
+    if not settings.traffic_enabled or any(engineer.lunch.enabled for engineer in snapshot.engineers):
+        seeded = solve(seed_snapshot, provider, comparison_settings, memory=None, context_version=context_version)
+        if seeded.main.is_usable:
+            candidates.append(seeded.main)
+    initial = list(candidates)
+    constructed_candidates: list[Plan] = []
+    evaluator = RouteEvaluator(seed_snapshot, provider)
     for policy_id in COMPARISON_POLICY_IDS:
-        candidate_snapshot = snapshot.model_copy(
-            update={"policy": Policy(policy_id=policy_id, parameters={})}
-        )
+        candidate_snapshot = snapshot.model_copy(update={"policy": Policy(policy_id=policy_id, parameters={})})
         started = time.monotonic()
-        output = solve(
-            candidate_snapshot,
-            provider,
-            comparison_settings,
-            memory=None,
-            context_version=context_version,
-        )
-        if output.main.is_usable:
-            candidates.append(output.main)
-        rows.append(
-            PolicyComparisonRow(
-                strategy_id=policy_id,
-                kind="policy",
-                is_usable=output.main.is_usable,
-                calculation_ms=max(0, round((time.monotonic() - started) * 1000)),
-                summary=output.main.summary,
-            )
-        )
+        portfolio = improve_routes(candidate_snapshot, provider, initial, search_budget_ms, _evaluator=evaluator)
+        best = min(portfolio, key=lambda plan: score(candidate_snapshot, plan))
+        candidates.append(best)
+        constructed_candidates.extend(portfolio)
+        rows.append(PolicyComparisonRow(
+            strategy_id=policy_id, kind="policy", is_usable=best.is_usable,
+            calculation_ms=max(0, round((time.monotonic() - started) * 1000)), summary=best.summary,
+        ))
     # Refine each objective from the common coverage frontier, rather than letting
     # independently weaker coverage hide all resource-policy differences.
-    shared = list(candidates)
+    def distinct(plans: list[Plan]) -> list[Plan]:
+        by_route = {}
+        for plan in plans:
+            key = tuple((route.engineer_id, tuple((stop.kind, stop.request_id, stop.start_at, stop.end_at) for stop in route.stops)) for route in plan.routes)
+            by_route.setdefault(key, plan)
+        return list(by_route.values())
+
+    shared = distinct(candidates)
     for policy_id in COMPARISON_POLICY_IDS:
         candidate_snapshot = snapshot.model_copy(
             update={"policy": Policy(policy_id=policy_id, parameters={})}
         )
         started = time.monotonic()
         candidates.extend(
-            improve_routes(candidate_snapshot, provider, shared, search_budget_ms, construct=False)
+            improve_routes(candidate_snapshot, provider, shared, search_budget_ms, construct=False, _evaluator=evaluator)
         )
         index = next(i for i, row in enumerate(rows) if row.strategy_id == policy_id)
         rows[index] = rows[index].model_copy(
@@ -377,11 +378,16 @@ def calculate_policy_comparison(
         )
     # Each strategy selects from the same immutable, validated candidate portfolio.
     # FIFO is never optimized, replaced, or supplied with additional engineers.
+    candidates = distinct([*candidates, *constructed_candidates])
+    selected: dict[str, Plan] = {"baseline": fifo}
     for index, row in enumerate(rows):
+        if row.strategy_id == "baseline":
+            continue
         candidate_snapshot = snapshot.model_copy(
             update={"policy": Policy(policy_id=row.strategy_id, parameters={})}
         )
         best = min(candidates, key=lambda plan: score(candidate_snapshot, plan))
+        selected[row.strategy_id] = best
         rows[index] = row.model_copy(update={"is_usable": best.is_usable, "summary": best.summary})
     # Expanded-workforce plans must never enter the fixed-roster candidate pool.
     started = time.monotonic()
@@ -406,7 +412,8 @@ def calculate_policy_comparison(
         )
     )
     rows.append(baseline_row)
-    return PolicyComparison(
+    selected["covering"] = covering.main
+    comparison = PolicyComparison(
         input_publication_id=publication_id,
         input_hash=content_hash(raw),
         router_context_version=context_version,
@@ -414,6 +421,30 @@ def calculate_policy_comparison(
         search_budget_ms=search_budget_ms,
         rows=rows,
     )
+    return comparison, selected
+
+
+def calculate_policy_comparison(
+    raw: bytes,
+    publication_id: str,
+    graph: GraphInput,
+    settings: SearchSettings,
+    context_version: str,
+    search_budget_ms: int = 8000,
+    *,
+    offline: bool = False,
+) -> PolicyComparison:
+    """Summary rows only. Routes stay in calculate_policy_catalog for the map store."""
+    comparison, _plans = calculate_policy_catalog(
+        raw,
+        publication_id,
+        graph,
+        settings,
+        context_version,
+        search_budget_ms,
+        offline=offline,
+    )
+    return comparison
 
 
 class RouterRuntime:
@@ -426,7 +457,7 @@ class RouterRuntime:
     def __init__(
         self,
         reader: SnapshotReader,
-        graph: RoadGraph | OSRMTravel,
+        graph: GraphInput,
         settings: SearchSettings | None = None,
         poll_sec: float = 0.2,
         executor=None,
@@ -449,6 +480,7 @@ class RouterRuntime:
         if saved is not None:
             self.settings = replace(
                 self.settings,
+                strict_time_windows=saved.strict_time_windows,
                 lunches_enabled=saved.lunches_enabled,
                 traffic_enabled=saved.traffic_enabled,
                 metro_enabled=saved.metro_enabled,
@@ -484,6 +516,10 @@ class RouterRuntime:
         self._thread: threading.Thread | None = None
         self._operations = settings_store.load_operations() if settings_store is not None else {}
         self._comparison_cache: dict[tuple[str, str], PolicyComparison] = {}
+        self._comparison_plans: dict[tuple[str, str], dict[str, Plan]] = {}
+        self._comparison_lock = threading.Lock()
+        self._sim_lock = threading.Lock()
+        self._simulation_cache: dict[tuple[str, str, str], dict] = {}
         self.result = RouterResult(status="pending", router_context_version=self.context_version)
         self.last_path: str | None = None
 
@@ -513,15 +549,12 @@ class RouterRuntime:
         cached = self._context_cache
         if cached is not None:
             return cached
-        resource = (
-            self._graph.version
-            if hasattr(self._graph, "version")
-            else self._graph.model_dump(mode="json")
-        )
+        resource = self._graph.version
         data = [
             "router-v2",
             POLICY_CATALOG_VERSION,
             resource,
+            planning_configuration(),
             {
                 "time_limit_ms": self.settings.time_limit_ms,
                 "solution_limit": self.settings.solution_limit,
@@ -584,7 +617,7 @@ class RouterRuntime:
                 raise ValueError("PUBLICATION_CHANGED")
             settings = copy.deepcopy(self.settings)
         snapshot = apply_system_policy(parse_snapshot(raw), settings)
-        provider = construction_travel(settings, snapshot.planning_as_of)
+        provider = planning_travel(self._graph, settings, snapshot)
         result = evaluate_manual(snapshot, provider, active.main, routes)
         latest = self.reader.read()
         latest_raw = latest if isinstance(latest, bytes) else latest.payload
@@ -643,7 +676,7 @@ class RouterRuntime:
                 raise ValueError("PUBLICATION_CHANGED")
             settings = copy.deepcopy(self.settings)
         snapshot = apply_system_policy(parse_snapshot(raw), settings)
-        provider = construction_travel(settings, snapshot.planning_as_of)
+        provider = planning_travel(self._graph, settings, snapshot)
         prediction = predict_situation(
             snapshot,
             provider,
@@ -675,7 +708,7 @@ class RouterRuntime:
             settings = copy.deepcopy(self.settings)
             version = self.context_version
         task = apply_system_policy(snapshot, settings)
-        provider = construction_travel(settings, task.planning_as_of)
+        provider = planning_travel(self._graph, settings, task)
         result = propose_window(task, provider, request_id, routes, day_end_at)
         with self._lock:
             if version != self.context_version:
@@ -683,7 +716,11 @@ class RouterRuntime:
         return result
 
     def compare_policies(self, search_budget_ms: int | None = None) -> PolicyComparison:
-        """Compare seven strategies on the ready publication without mutating Runtime."""
+        """Coalesce table/map catalog requests without locking the active worker."""
+        with self._comparison_lock:
+            return self._compare_policies(search_budget_ms)
+
+    def _compare_policies(self, search_budget_ms: int | None) -> PolicyComparison:
         if search_budget_ms is not None and not 1 <= search_budget_ms <= 8000:
             raise ValueError("COMPARISON_BUDGET_INVALID")
         try:
@@ -722,7 +759,7 @@ class RouterRuntime:
             cached = self._comparison_cache.get(key)
             if cached is not None and cached.search_budget_ms == effective_budget_ms:
                 return cached.model_copy(deep=True)
-        comparison = calculate_policy_comparison(
+        comparison, plans = calculate_policy_catalog(
             publication.payload,
             publication.publication_id,
             graph,
@@ -752,8 +789,84 @@ class RouterRuntime:
                 or self.context_version != context_version
             ):
                 raise ValueError("PUBLICATION_CHANGED")
+            # Only the current publication can be read, so retaining historical
+            # full route catalogs would grow memory without serving a valid read.
+            self._comparison_cache.clear()
+            self._comparison_plans.clear()
             self._comparison_cache[key] = comparison
+            self._comparison_plans[key] = plans
             return comparison.model_copy(deep=True)
+
+    def simulate(self, patch: dict) -> dict:
+        """What-if on a byte copy of the ready publication. Does not write the active plan.
+
+        Simulations share one lock so they queue behind each other. The live worker
+        uses a different lock and does not wait on this queue.
+        """
+        from core.simulator import SimulationPatch, catalog_result, patch_hash, simulate_patch
+
+        try:
+            parsed = SimulationPatch.model_validate(patch)
+        except Exception as exc:
+            raise ValueError("PATCH_INVALID") from exc
+        try:
+            publication = self.reader.read()
+        except Exception as exc:
+            raise RuntimeError("ACTIVE_PUBLICATION_UNAVAILABLE") from exc
+        if isinstance(publication, bytes):
+            digest = content_hash(publication)
+            publication = SnapshotPublication(
+                publication_id=f"legacy:{digest}",
+                publication_seq=0,
+                payload=publication,
+                declared_sha256=digest,
+                published_at=int(time.time()),
+            )
+        digest = content_hash(publication.payload)
+        with self._lock:
+            active = self.result.model_copy(deep=True)
+            context_version = self.context_version
+            settings = copy.deepcopy(self.settings)
+            if (
+                active.status != "ready"
+                or active.input_publication_id != publication.publication_id
+                or active.input_hash != digest
+                or active.router_context_version != context_version
+                or active.main is None
+            ):
+                raise ValueError("PUBLICATION_CHANGED")
+            base = active.main.model_copy(deep=True)
+        key = (digest, context_version, patch_hash(parsed))
+        with self._sim_lock:
+            cached = self._simulation_cache.get(key)
+            if cached is not None:
+                return {**cached, "cached": True}
+            if parsed.catalog:
+                with self._comparison_lock:
+                    comparison = self._compare_policies(None)
+                    with self._lock:
+                        plans = self._comparison_plans.get((digest, context_version))
+                    if plans is None or comparison.input_hash != digest or comparison.router_context_version != context_version:
+                        raise ValueError("PUBLICATION_CHANGED")
+                    result = catalog_result(digest, publication.publication_id, context_version, parsed, plans, base)
+            else:
+                result = simulate_patch(
+                    publication.payload, settings, context_version, parsed, base,
+                    publication_id=publication.publication_id, graph=self._graph,
+                )
+            try:
+                latest = self.reader.read()
+            except Exception as exc:
+                raise RuntimeError("ACTIVE_PUBLICATION_UNAVAILABLE") from exc
+            latest_raw = latest if isinstance(latest, bytes) else latest.payload
+            with self._lock:
+                if content_hash(latest_raw) != digest or self.context_version != context_version:
+                    raise ValueError("PUBLICATION_CHANGED")
+            if len(self._simulation_cache) > 32:
+                self._simulation_cache.clear()
+            stored = {**result, "cached": False}
+            self._simulation_cache[key] = stored
+            return stored
 
     def state(self) -> dict:
         """Expose service state separately from an older result's context version."""
@@ -785,7 +898,11 @@ class RouterRuntime:
             completed_result = self._regional_outputs.get(region)
             progress.append(RegionalProgress(
                 region=region,
-                status="pending" if completed_result is None else completed_result[0].status,
+                status=(
+                    "pending"
+                    if completed_result is None or completed_result[0].status == "partial"
+                    else completed_result[0].status
+                ),
                 request_count=len(part.requests),
             ))
         # The comprehension above intentionally keeps a result entry and a pending
@@ -805,14 +922,16 @@ class RouterRuntime:
                 })
                 return plan.model_copy(update={"assignments": assignments, "summary": summary})
             main, baseline_plan = scope(main), scope(baseline_plan)
-        main_evidence = (
-            completed[0][0].main_evidence if status == "partial" else
-            build_plan_evidence(snapshot, main, construction_travel(self.settings, snapshot.planning_as_of))
-        )
-        baseline_evidence = (
-            completed[0][0].baseline_evidence if status == "partial" else
-            build_plan_evidence(snapshot, baseline_plan, construction_travel(self.settings, snapshot.planning_as_of))
-        )
+        # Reuse evidence computed by each worker with its exact road matrix. Rebuilding
+        # it here would do road preparation and scheduling under the coordinator lock.
+        main_evidence = PlanEvidence(requests=[
+            item for result, _ in completed if result.main_evidence is not None
+            for item in result.main_evidence.requests
+        ])
+        baseline_evidence = PlanEvidence(requests=[
+            item for result, _ in completed if result.baseline_evidence is not None
+            for item in result.baseline_evidence.requests
+        ])
         self.result = RouterResult(
             status=status, result_id=str(uuid4()), input_publication_id=publication_id,
             input_hash=content_hash(raw), planning_as_of=snapshot.planning_as_of,
@@ -836,6 +955,8 @@ class RouterRuntime:
         self._active_region = ""
         self.last_path = None
         self._comparison_cache.clear()
+        self._comparison_plans.clear()
+        self._simulation_cache.clear()
         self.result = RouterResult(status="pending", router_context_version=self.context_version)
 
     def update_graph(self, graph: RoadGraph) -> None:
@@ -894,6 +1015,7 @@ class RouterRuntime:
                 raise ValueError("SETTINGS_STORE_UNAVAILABLE")
             updated_settings = replace(
                 self.settings,
+                strict_time_windows=requested.strict_time_windows,
                 lunches_enabled=requested.lunches_enabled,
                 traffic_enabled=requested.traffic_enabled,
                 equipment_enabled=requested.equipment_enabled,

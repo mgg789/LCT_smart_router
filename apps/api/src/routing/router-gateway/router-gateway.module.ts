@@ -7,6 +7,7 @@ import { AppliedPlanService } from './applied-plan.service';
 import { ControlStateService } from './control-state.service';
 import { HttpRouterClient } from './http-router-client';
 import { ManualPlanService } from './manual-plan.service';
+import { PlanRestoreService } from './plan-restore.service';
 import { ResultAcceptanceService } from './result-acceptance.service';
 import { NullRouterClient, RouterClient } from './router-client.port';
 import { RouterHealthProbe } from './router-health.probe';
@@ -39,6 +40,7 @@ import { RouterResultCoordinator } from './router-result-coordinator';
     AppliedPlanService,
     ControlStateService,
     ManualPlanService,
+    PlanRestoreService,
     ResultAcceptanceService,
     {
       provide: RouterResultCoordinator,
@@ -63,6 +65,7 @@ import { RouterResultCoordinator } from './router-result-coordinator';
     AppliedPlanService,
     ControlStateService,
     ManualPlanService,
+    PlanRestoreService,
     ResultAcceptanceService,
     RouterResultCoordinator,
   ],

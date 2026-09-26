@@ -399,6 +399,41 @@ def test_policy_comparison_api_requires_ready_publication(snapshot, graph):
     assert response.json()["detail"] == "ACTIVE_PUBLICATION_UNAVAILABLE"
 
 
+def test_table_and_map_share_one_catalog_even_when_requested_concurrently(snapshot, graph, monkeypatch):
+    """One expensive search supplies both metrics and routes, without changing the working plan."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    import core.runtime as runtime_module
+
+    executor = ControlledExecutor()
+    runtime = RouterRuntime(Reader(snapshot.model_dump_json().encode()), graph,
+                            SearchSettings(time_limit_ms=100), executor=executor)
+    runtime.tick()
+    executor.complete(0)
+    runtime.tick()
+    before = runtime.read_result()
+    original = runtime_module.calculate_policy_catalog
+    calls = []
+
+    def calculate_once(*args, **kwargs):
+        calls.append(1)
+        time.sleep(0.03)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(runtime_module, "calculate_policy_catalog", calculate_once)
+    with ThreadPoolExecutor(max_workers=2) as threads:
+        table_future = threads.submit(runtime.compare_policies)
+        map_future = threads.submit(runtime.simulate, {"catalog": True})
+        table, mapped = table_future.result(), map_future.result()
+    assert len(calls) == 1
+    by_id = {row["strategy_id"]: row["metrics"] for row in mapped["strategies"]}
+    for row in table.rows:
+        assert row.summary.assigned_count == by_id[row.strategy_id]["assigned_count"]
+        assert row.summary.distance_km == by_id[row.strategy_id]["distance_km"]
+    assert runtime.read_result() == before
+    runtime.close()
+
+
 def test_covering_comparison_does_not_leak_extra_crews_into_other_policies(snapshot, graph):
     """Expanded capacity is reported explicitly and never improves the fixed-roster pool."""
     from core.runtime import calculate_policy_comparison

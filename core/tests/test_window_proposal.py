@@ -14,6 +14,9 @@ def test_finds_verified_insertion_and_preserves_input(snapshot, graph):
     )
     assert result["status"] == "available"
     proposal = result["proposal"]
+    assert result["proposals"]
+    assert result["proposals"][0] == proposal
+    assert proposal["slackSec"] >= 0
     assert proposal["windowStartAt"] <= proposal["serviceStartAt"]
     assert proposal["serviceEndAt"] <= proposal["windowEndAt"] <= snapshot.horizon_end_at
     narrowed = snapshot.model_copy(
@@ -47,6 +50,7 @@ def test_no_slot_when_shift_is_over(snapshot, graph):
     assert propose_window(task, GraphTravel(graph), "job-1", {}, snapshot.horizon_end_at) == {
         "status": "none",
         "proposal": None,
+        "proposals": [],
     }
 
 

@@ -135,6 +135,8 @@ enum ControlMode {
 enum PlanOrigin {
   auto
   manual
+  /// A dispatcher restored the immediately preceding immutable revision after revalidation.
+  restore
 }
 
 /// Confirmed execution facts. Every one of them comes from an explicit mark by the
@@ -363,6 +365,9 @@ model Engineer {
   inputOrder    Int @map("input_order")
   skills        Skill[]
   transportType TransportType @map("transport_type")
+  /// Explicitly sourced pedestrian crews may be prohibited from public transit.
+  /// True preserves the historic walking-profile behaviour for existing data.
+  transitEligible Boolean @default(true) @map("transit_eligible")
   depotId       String? @map("depot_id")
   /// Usual start point. May be absent; it is never filled with invented coordinates.
   homeLat       Float? @map("home_lat")
@@ -838,6 +843,8 @@ model AppliedPlan {
   revision       Int        @unique @default(autoincrement())
   origin         PlanOrigin
   routerResultId String? @map("router_result_id")
+  /// Snapshot against which a restored revision was revalidated; source result stays immutable.
+  validatedInputHash String? @map("validated_input_hash")
   /// The moment the shown plan describes: `planningAsOf` of the applied result, or the
   /// time of the manual edit. Never the timestamp of a newer, not yet computed snapshot
   /// (context/36 section 6).
@@ -1507,4 +1514,36 @@ model AiDocument {
   @@unique([slug, section])
   @@index([segment])
   @@map("ai_documents")
+}
+
+/// What-if answer for one publication, context and patch. Never the applied plan.
+model PlanSimulation {
+  id             String @id
+  baseHash       String @map("base_hash")
+  contextVersion String @map("context_version")
+  patchHash      String @map("patch_hash")
+  patch          Json
+  method         String
+  summary        Json
+  routes         Json
+  delta          Json
+  createdAt      BigInt @map("created_at")
+
+  @@unique([baseHash, contextVersion, patchHash])
+  @@index([baseHash, createdAt])
+  @@map("plan_simulations")
+}
+
+/// Shared fixed-window request budgets. The composite key lets every API instance
+/// increment one bucket atomically without an in-memory or per-process bypass.
+model RateLimitBucket {
+  scope       String
+  clientKey   String @map("client_key")
+  windowStart BigInt @map("window_start")
+  count       Int
+  updatedAt   BigInt @map("updated_at")
+
+  @@id([scope, clientKey, windowStart])
+  @@index([windowStart])
+  @@map("rate_limit_buckets")
 }

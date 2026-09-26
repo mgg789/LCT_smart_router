@@ -23,7 +23,7 @@ export function ReplanDeltaCard({
   return (
     <motion.aside
       aria-label="Изменения после перепланирования"
-      className="absolute left-1/2 top-1/2 z-[85] w-[520px] rounded-[24px] bg-figma-ink p-[22px] text-white shadow-[0_16px_40px_rgba(15,16,20,0.28)]"
+      className="absolute left-1/2 top-1/2 z-[85] w-[640px] rounded-[24px] bg-figma-ink p-[22px] text-white shadow-[0_16px_40px_rgba(15,16,20,0.28)]"
       initial={
         motionOn ? { opacity: 0, x: '-50%', y: '-46%', scale: 0.98 } : { x: '-50%', y: '-50%' }
       }
@@ -41,9 +41,9 @@ export function ReplanDeltaCard({
         </span>
       </div>
       <div className="mt-4 grid grid-cols-3 gap-2">
-        <DeltaMetric label="Передано" value={delta.transferred} />
-        <DeltaMetric label="Сдвинуто" value={delta.shifted} />
-        <DeltaMetric label="Риски SLA" value={`${delta.slaBefore} → ${delta.slaAfter}`} />
+        {deltaFacts(delta).map((fact) => (
+          <DeltaMetric key={fact.label} label={fact.label} value={fact.value} />
+        ))}
       </div>
       {delta.lines.length > 0 ? (
         <ul className="mt-4 max-h-[280px] space-y-1.5 overflow-y-auto text-[15px]">
@@ -104,6 +104,40 @@ function DeltaLine({
       <span className="text-white/70">: {line.text}</span>
     </li>
   );
+}
+
+/** Numbers a dispatcher can compare without opening the plan. Missing fields stay hidden. */
+function deltaFacts(delta: PlanDelta): { label: string; value: string }[] {
+  const facts: { label: string; value: string }[] = [];
+  if (delta.assignedBefore !== undefined && delta.assignedAfter !== undefined) {
+    facts.push({
+      label: 'Назначено',
+      value: `${delta.assignedBefore} → ${delta.assignedAfter}`,
+    });
+  }
+  facts.push({
+    label: 'Без назначения',
+    value: `${delta.slaBefore} → ${delta.slaAfter}`,
+  });
+  facts.push({ label: 'Передано', value: String(delta.transferred) });
+  facts.push({ label: 'Сдвинуто', value: String(delta.shifted) });
+  if (delta.distanceBeforeKm !== undefined && delta.distanceAfterKm !== undefined) {
+    facts.push({
+      label: 'Пробег, км',
+      value: `${formatKm(delta.distanceBeforeKm)} → ${formatKm(delta.distanceAfterKm)}`,
+    });
+  }
+  if (delta.engineersBefore !== undefined && delta.engineersAfter !== undefined) {
+    facts.push({
+      label: 'Инженеры',
+      value: `${delta.engineersBefore} → ${delta.engineersAfter}`,
+    });
+  }
+  return facts;
+}
+
+function formatKm(value: number): string {
+  return value.toLocaleString('ru-RU', { maximumFractionDigits: 1 });
 }
 
 function DeltaMetric({ label, value }: { label: string; value: string | number }) {

@@ -17,6 +17,15 @@ describe('JSON region and request package upload', () => {
   let baseUrl: string;
   let token: string;
   const region = unique('uploaded').replaceAll('-', '_');
+  const mixedRegion = unique('uploaded_mixed').replaceAll('-', '_');
+  const legacyWalkRegion = unique('uploaded_legacy_walk').replaceAll('-', '_');
+  const isolatedRegions = [region, mixedRegion, legacyWalkRegion];
+  const importedSources = [
+    `upload:${region}:test-v1`,
+    `upload:${region}:test-v2`,
+    `upload:${mixedRegion}:mixed-v1`,
+    `upload:${legacyWalkRegion}:legacy-walk-v1`,
+  ];
 
   const call = async (body: unknown) =>
     fetch(`${baseUrl}/api/v1/dispatch/data/upload`, {
@@ -103,16 +112,23 @@ describe('JSON region and request package upload', () => {
   });
 
   after(async () => {
-    const requests = await prisma.request.findMany({ where: { region }, select: { id: true } });
-    const engineers = await prisma.engineer.findMany({ where: { region }, select: { id: true } });
+    const requests = await prisma.request.findMany({
+      where: { region: { in: isolatedRegions } },
+      select: { id: true },
+    });
+    const engineers = await prisma.engineer.findMany({
+      where: { region: { in: isolatedRegions } },
+      select: { id: true },
+    });
     await prisma.appliedPlanCurrent.deleteMany({});
     await prisma.appliedPlan.deleteMany({});
     await prisma.routingCurrent.deleteMany({});
     await prisma.routingSnapshot.deleteMany({});
     await prisma.externalIdMap.deleteMany({
       where: {
-        source: {
-          in: [`region:${region}`, `upload:${region}:test-v1`, `upload:${region}:test-v2`],
+        source: { in: isolatedRegions.map((item) => `region:${item}`) },
+        internalId: {
+          in: [...requests.map((item) => item.id), ...engineers.map((item) => item.id)],
         },
       },
     });
@@ -121,10 +137,8 @@ describe('JSON region and request package upload', () => {
       where: { engineerId: { in: engineers.map((item) => item.id) } },
     });
     await prisma.engineer.deleteMany({ where: { id: { in: engineers.map((item) => item.id) } } });
-    await prisma.depot.deleteMany({ where: { region } });
-    await prisma.importPackage.deleteMany({
-      where: { source: { startsWith: `upload:${region}:` } },
-    });
+    await prisma.depot.deleteMany({ where: { region: { in: isolatedRegions } } });
+    await prisma.importPackage.deleteMany({ where: { source: { in: importedSources } } });
     await prisma.$disconnect();
     await app?.close();
   });
@@ -242,5 +256,118 @@ describe('JSON region and request package upload', () => {
     });
     const body = (await response.json()) as { requests: Array<{ region: string | null }> };
     assert.ok(body.requests.some((request) => request.region === region));
+  });
+
+  it('preserves explicit walk and transit roles in a mixed upload', async () => {
+    const day = today();
+    const response = await call({
+      operationId: randomUUID(),
+      schemaVersion: '1.0',
+      mode: 'new_region',
+      region: mixedRegion,
+      sourceVersion: 'mixed-v1',
+      depot: { addressText: 'Mixed depot', lat: 55.7, lon: 37.6 },
+      engineers: [
+        {
+          externalId: 'mixed-car',
+          displayName: 'Mixed Car',
+          skills: ['connection'],
+          transportType: 'car',
+          start: { lat: 55.7, lon: 37.6 },
+          shiftStartAt: day.start,
+          shiftEndAt: day.end,
+          equipmentStock: { router: 2, setTopBox: 0, smartSpeaker: 0 },
+        },
+        {
+          externalId: 'mixed-walk',
+          displayName: 'Mixed Walk',
+          skills: ['connection'],
+          transportType: 'walk',
+          start: { lat: 55.701, lon: 37.601 },
+          shiftStartAt: day.start,
+          shiftEndAt: day.end,
+          equipmentStock: { router: 0, setTopBox: 0, smartSpeaker: 0 },
+        },
+        {
+          externalId: 'mixed-transit',
+          displayName: 'Mixed Transit',
+          skills: ['connection'],
+          transportType: 'transit',
+          start: { lat: 55.702, lon: 37.602 },
+          shiftStartAt: day.start,
+          shiftEndAt: day.end,
+          equipmentStock: { router: 0, setTopBox: 0, smartSpeaker: 0 },
+        },
+      ],
+      requests: [
+        {
+          externalId: 'mixed-request',
+          addressText: 'Mixed request',
+          lat: 55.71,
+          lon: 37.61,
+          serviceDurationSec: 900,
+          windowStartAt: day.start + 3600,
+          windowEndAt: day.start + 4 * 3600,
+          priority: 'normal',
+          requiredSkill: 'connection',
+        },
+      ],
+    });
+    assert.equal(response.status, 201, await response.clone().text());
+
+    const engineers = await prisma.engineer.findMany({
+      where: { region: mixedRegion },
+      select: { transportType: true, transitEligible: true },
+    });
+    assert.deepEqual(
+      Object.fromEntries(
+        engineers.map((engineer) => [engineer.transportType, engineer.transitEligible]),
+      ),
+      { car: true, walk: false, transit: true },
+    );
+  });
+
+  it('keeps a legacy single-walk upload transit eligible', async () => {
+    const day = today();
+    const response = await call({
+      operationId: randomUUID(),
+      schemaVersion: '1.0',
+      mode: 'new_region',
+      region: legacyWalkRegion,
+      sourceVersion: 'legacy-walk-v1',
+      depot: { addressText: 'Legacy walk depot', lat: 55.7, lon: 37.6 },
+      engineers: [
+        {
+          externalId: 'legacy-walk',
+          displayName: 'Legacy Walk',
+          skills: ['connection'],
+          transportType: 'walk',
+          start: { lat: 55.7, lon: 37.6 },
+          shiftStartAt: day.start,
+          shiftEndAt: day.end,
+          equipmentStock: { router: 0, setTopBox: 0, smartSpeaker: 0 },
+        },
+      ],
+      requests: [
+        {
+          externalId: 'legacy-walk-request',
+          addressText: 'Legacy walk request',
+          lat: 55.71,
+          lon: 37.61,
+          serviceDurationSec: 900,
+          windowStartAt: day.start + 3600,
+          windowEndAt: day.start + 4 * 3600,
+          priority: 'normal',
+          requiredSkill: 'connection',
+        },
+      ],
+    });
+    assert.equal(response.status, 201, await response.clone().text());
+
+    const engineer = await prisma.engineer.findFirstOrThrow({
+      where: { region: legacyWalkRegion },
+    });
+    assert.equal(engineer.transportType, 'walk');
+    assert.equal(engineer.transitEligible, true);
   });
 });

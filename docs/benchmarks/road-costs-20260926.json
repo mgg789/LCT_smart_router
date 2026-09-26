@@ -1,0 +1,326 @@
+{
+  "settings": {
+    "lunches_enabled": false,
+    "traffic_enabled": true,
+    "equipment_enabled": true,
+    "equipment_transfers_enabled": false,
+    "metro_enabled": false,
+    "window_lateness_tolerance_sec": 600,
+    "departure_lateness_tolerance_sec": 0,
+    "task_start_lateness_tolerance_sec": 0,
+    "travel_time_mode": "graph_with_access_buffer",
+    "access_buffer_sec": 600,
+    "fixed_travel_time_sec": 1200,
+    "early_finish_replan_threshold_sec": 900,
+    "task_overrun_tolerance_sec": 600
+  },
+  "cases": [
+    {
+      "region": "east",
+      "requests": 66,
+      "points": 66,
+      "prepare_ms": [
+        1283.79,
+        563.03
+      ],
+      "results": {
+        "straight_before": {
+          "solve_ms": 695.51,
+          "main": {
+            "distance_km": 193.132,
+            "travel_time_sec": 84993,
+            "work_time_sec": 208200,
+            "waiting_time_sec": 96621,
+            "lunch_time_sec": 0,
+            "assigned_count": 60,
+            "requests_total": 66,
+            "unassigned_count": 6,
+            "urgent_total": 13,
+            "urgent_assigned_count": 11,
+            "engineers_used": 12,
+            "late_assigned_count": 2,
+            "total_lateness_sec": 329,
+            "min_window_slack_sec": -203,
+            "workload_spread_sec": 16294,
+            "max_workload_sec": 37200
+          },
+          "baseline": {
+            "distance_km": 145.679,
+            "travel_time_sec": 63578,
+            "work_time_sec": 107400,
+            "waiting_time_sec": 250849,
+            "lunch_time_sec": 0,
+            "assigned_count": 32,
+            "requests_total": 66,
+            "unassigned_count": 34,
+            "urgent_total": 13,
+            "urgent_assigned_count": 1,
+            "engineers_used": 12,
+            "late_assigned_count": 2,
+            "total_lateness_sec": 477,
+            "min_window_slack_sec": -300,
+            "workload_spread_sec": 5490,
+            "max_workload_sec": 37824
+          },
+          "sources": {
+            "approximate": 60
+          },
+          "usable": true
+        },
+        "roads_after": {
+          "solve_ms": 1861.58,
+          "main": {
+            "distance_km": 302.94,
+            "travel_time_sec": 102182,
+            "work_time_sec": 207600,
+            "waiting_time_sec": 98524,
+            "lunch_time_sec": 0,
+            "assigned_count": 60,
+            "requests_total": 66,
+            "unassigned_count": 6,
+            "urgent_total": 13,
+            "urgent_assigned_count": 11,
+            "engineers_used": 12,
+            "late_assigned_count": 3,
+            "total_lateness_sec": 716,
+            "min_window_slack_sec": -320,
+            "workload_spread_sec": 14415,
+            "max_workload_sec": 38323
+          },
+          "baseline": {
+            "distance_km": 163.676,
+            "travel_time_sec": 61613,
+            "work_time_sec": 85800,
+            "waiting_time_sec": 245342,
+            "lunch_time_sec": 0,
+            "assigned_count": 26,
+            "requests_total": 66,
+            "unassigned_count": 40,
+            "urgent_total": 13,
+            "urgent_assigned_count": 1,
+            "engineers_used": 12,
+            "late_assigned_count": 2,
+            "total_lateness_sec": 1435,
+            "min_window_slack_sec": -1177,
+            "workload_spread_sec": 25223,
+            "max_workload_sec": 37200
+          },
+          "sources": {
+            "traffic_api": 38,
+            "road_matrix": 22
+          },
+          "usable": true
+        }
+      }
+    },
+    {
+      "region": "southeast",
+      "requests": 83,
+      "points": 76,
+      "prepare_ms": [
+        619.33,
+        74.02
+      ],
+      "results": {
+        "straight_before": {
+          "solve_ms": 999.68,
+          "main": {
+            "distance_km": 736.462,
+            "travel_time_sec": 169614,
+            "work_time_sec": 210600,
+            "waiting_time_sec": 33711,
+            "lunch_time_sec": 0,
+            "assigned_count": 55,
+            "requests_total": 83,
+            "unassigned_count": 28,
+            "urgent_total": 31,
+            "urgent_assigned_count": 26,
+            "engineers_used": 12,
+            "late_assigned_count": 2,
+            "total_lateness_sec": 621,
+            "min_window_slack_sec": -434,
+            "workload_spread_sec": 11002,
+            "max_workload_sec": 39731
+          },
+          "baseline": {
+            "distance_km": 461.736,
+            "travel_time_sec": 110143,
+            "work_time_sec": 115200,
+            "waiting_time_sec": 158097,
+            "lunch_time_sec": 0,
+            "assigned_count": 34,
+            "requests_total": 83,
+            "unassigned_count": 49,
+            "urgent_total": 31,
+            "urgent_assigned_count": 4,
+            "engineers_used": 12,
+            "late_assigned_count": 3,
+            "total_lateness_sec": 1623,
+            "min_window_slack_sec": -765,
+            "workload_spread_sec": 18501,
+            "max_workload_sec": 37200
+          },
+          "sources": {
+            "approximate": 55
+          },
+          "usable": true
+        },
+        "roads_after": {
+          "solve_ms": 1941.32,
+          "main": {
+            "distance_km": 700.807,
+            "travel_time_sec": 170549,
+            "work_time_sec": 206400,
+            "waiting_time_sec": 31584,
+            "lunch_time_sec": 0,
+            "assigned_count": 53,
+            "requests_total": 83,
+            "unassigned_count": 30,
+            "urgent_total": 31,
+            "urgent_assigned_count": 26,
+            "engineers_used": 12,
+            "late_assigned_count": 1,
+            "total_lateness_sec": 434,
+            "min_window_slack_sec": -434,
+            "workload_spread_sec": 10544,
+            "max_workload_sec": 38483
+          },
+          "baseline": {
+            "distance_km": 475.303,
+            "travel_time_sec": 109316,
+            "work_time_sec": 115200,
+            "waiting_time_sec": 155340,
+            "lunch_time_sec": 0,
+            "assigned_count": 34,
+            "requests_total": 83,
+            "unassigned_count": 49,
+            "urgent_total": 31,
+            "urgent_assigned_count": 4,
+            "engineers_used": 12,
+            "late_assigned_count": 2,
+            "total_lateness_sec": 858,
+            "min_window_slack_sec": -699,
+            "workload_spread_sec": 18501,
+            "max_workload_sec": 37200
+          },
+          "sources": {
+            "road_matrix": 43,
+            "traffic_api": 10
+          },
+          "usable": true
+        }
+      }
+    },
+    {
+      "region": "south_central",
+      "requests": 56,
+      "points": 56,
+      "prepare_ms": [
+        617.2,
+        50.66
+      ],
+      "results": {
+        "straight_before": {
+          "solve_ms": 690.88,
+          "main": {
+            "distance_km": 154.888,
+            "travel_time_sec": 71542,
+            "work_time_sec": 180000,
+            "waiting_time_sec": 121917,
+            "lunch_time_sec": 0,
+            "assigned_count": 48,
+            "requests_total": 56,
+            "unassigned_count": 8,
+            "urgent_total": 16,
+            "urgent_assigned_count": 15,
+            "engineers_used": 11,
+            "late_assigned_count": 1,
+            "total_lateness_sec": 100,
+            "min_window_slack_sec": -100,
+            "workload_spread_sec": 9861,
+            "max_workload_sec": 39261
+          },
+          "baseline": {
+            "distance_km": 160.007,
+            "travel_time_sec": 62689,
+            "work_time_sec": 100800,
+            "waiting_time_sec": 210206,
+            "lunch_time_sec": 0,
+            "assigned_count": 28,
+            "requests_total": 56,
+            "unassigned_count": 28,
+            "urgent_total": 16,
+            "urgent_assigned_count": 1,
+            "engineers_used": 11,
+            "late_assigned_count": 4,
+            "total_lateness_sec": 2265,
+            "min_window_slack_sec": -931,
+            "workload_spread_sec": 5048,
+            "max_workload_sec": 37200
+          },
+          "sources": {
+            "approximate": 48
+          },
+          "usable": true
+        },
+        "roads_after": {
+          "solve_ms": 928.31,
+          "main": {
+            "distance_km": 197.326,
+            "travel_time_sec": 73586,
+            "work_time_sec": 180000,
+            "waiting_time_sec": 110579,
+            "lunch_time_sec": 0,
+            "assigned_count": 48,
+            "requests_total": 56,
+            "unassigned_count": 8,
+            "urgent_total": 16,
+            "urgent_assigned_count": 15,
+            "engineers_used": 11,
+            "late_assigned_count": 0,
+            "total_lateness_sec": 0,
+            "min_window_slack_sec": 18,
+            "workload_spread_sec": 22945,
+            "max_workload_sec": 38182
+          },
+          "baseline": {
+            "distance_km": 179.613,
+            "travel_time_sec": 63191,
+            "work_time_sec": 99600,
+            "waiting_time_sec": 206904,
+            "lunch_time_sec": 0,
+            "assigned_count": 27,
+            "requests_total": 56,
+            "unassigned_count": 29,
+            "urgent_total": 16,
+            "urgent_assigned_count": 1,
+            "engineers_used": 11,
+            "late_assigned_count": 3,
+            "total_lateness_sec": 1029,
+            "min_window_slack_sec": -583,
+            "workload_spread_sec": 7800,
+            "max_workload_sec": 37200
+          },
+          "sources": {
+            "traffic_api": 25,
+            "road_matrix": 23
+          },
+          "usable": true
+        }
+      }
+    }
+  ],
+  "base_commit": "25fa260",
+  "phase": "DRO-140 measured working changes; standalone runs, not a latency SLA",
+  "pair_comparison": {
+    "points": 16,
+    "directed_pairs": 240,
+    "route2_http_calls": 240,
+    "matrix_http_calls": 1,
+    "matrix_forecast_bands": 11,
+    "route2_ms": 4890.88,
+    "matrix_ms": 20.85,
+    "service_base_cache": "warmed by regional benchmark; route2 always obtains per-step geometry",
+    "timing_models": "route2 per-step forecast; matrix endpoint forecast unless a corridor profile was cached"
+  }
+}

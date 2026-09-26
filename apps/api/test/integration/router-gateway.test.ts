@@ -11,6 +11,7 @@ import { BigIntGuardInterceptor } from '../../src/common/serialization';
 import type { PrismaClient } from '../../src/generated/prisma/client';
 import { ExecutionOverrunCoordinator } from '../../src/orchestrator/facts';
 import type { RouterTaskSnapshot } from '../../src/routing/mount-data-eng';
+import { RouterClient, type UpdateRouterTechnicalSettings } from '../../src/routing/router-gateway';
 import { createTestClient, databaseUrl, unique } from '../support/database';
 import { buildRouterResult } from '../support/router-result';
 
@@ -1143,6 +1144,440 @@ describe('router gateway', () => {
         ((await response.json()) as { error: { code: string } }).error.code,
         'MODE_AUTO',
       );
+    });
+
+    it('restores the immediate predecessor as a new immutable revision', async () => {
+      const router = app.get<RouterClient>(RouterClient);
+      const getActiveContextVersion = router.getActiveContextVersion.bind(router);
+      router.getActiveContextVersion = async () => 'ctx-1';
+      const request = await submitRequest();
+      const inputHash = await publishedHash();
+      const first = await feed(
+        buildRouterResult({
+          resultId: unique('restore-first'),
+          inputHash,
+          contextVersion: 'ctx-1',
+          planningAsOf: now(),
+          assigned: [
+            {
+              requestId: request.id,
+              engineerId,
+              lat: request.lat,
+              lon: request.lon,
+              startAt: now() + 2 * HOUR,
+              durationSec: 1800,
+            },
+          ],
+        }),
+        'ctx-1',
+      );
+      assert.equal(first.body.accepted, true, first.body.detail);
+      const policyChange = await call('POST', '/api/v1/dispatch/policy', dispatcherToken, {
+        operationId: randomUUID(),
+        policyId: 'eco',
+      });
+      assert.equal(policyChange.status, 201, await policyChange.clone().text());
+      const changedInputHash = await publishedHash();
+      assert.notEqual(changedInputHash, inputHash);
+      const second = await feed(
+        buildRouterResult({
+          resultId: unique('restore-second'),
+          inputHash: changedInputHash,
+          contextVersion: 'ctx-1',
+          planningAsOf: now(),
+          assigned: [
+            {
+              requestId: request.id,
+              engineerId,
+              lat: request.lat,
+              lon: request.lon,
+              startAt: now() + 3 * HOUR,
+              durationSec: 1800,
+            },
+          ],
+        }),
+        'ctx-1',
+      );
+      assert.equal(second.body.accepted, true, second.body.detail);
+
+      const before = await call('GET', '/api/v1/dispatch/plan/previous', dispatcherToken);
+      assert.equal(before.status, 200, await before.clone().text());
+      const pair = (await before.json()) as {
+        current: { revision: number };
+        previous: { revision: number; routes: Array<{ stops: Array<{ startAt: number }> }> };
+        eligibility: { eligible: boolean };
+      };
+      assert.equal(pair.eligibility.eligible, true);
+      assert.equal(pair.previous.revision, first.body.planRevision);
+
+      const restores = await Promise.all([
+        call('POST', '/api/v1/dispatch/plan/restore', dispatcherToken, {
+          operationId: randomUUID(),
+          expectedRevision: pair.current.revision,
+        }),
+        call('POST', '/api/v1/dispatch/plan/restore', dispatcherToken, {
+          operationId: randomUUID(),
+          expectedRevision: pair.current.revision,
+        }),
+      ]);
+      const restored = restores.find((response) => response.status === 201);
+      const rejected = restores.find((response) => response.status === 409);
+      const restoreBodies = (
+        await Promise.all(restores.map((response) => response.clone().text()))
+      ).join('\n');
+      assert.ok(restored, restoreBodies);
+      assert.ok(rejected, restoreBodies);
+      const body = (await restored.json()) as {
+        fromRevision: number;
+        restoredRevision: number;
+        origin: string;
+      };
+      assert.equal(body.fromRevision, pair.previous.revision);
+      assert.equal(body.origin, 'restore');
+      assert.ok(body.restoredRevision > pair.current.revision);
+
+      const after = await call('GET', '/api/v1/dispatch/plan', dispatcherToken);
+      const current = (await after.json()) as {
+        calculating: boolean;
+        plan: {
+          revision: number;
+          origin: string;
+          routes: Array<{ stops: Array<{ startAt: number }> }>;
+        };
+      };
+      assert.equal(current.plan.revision, body.restoredRevision);
+      assert.equal(current.plan.origin, 'restore');
+      assert.equal(current.calculating, false);
+      assert.equal(
+        current.plan.routes[0]?.stops[0]?.startAt,
+        pair.previous.routes[0]?.stops[0]?.startAt,
+      );
+      router.getActiveContextVersion = getActiveContextVersion;
+    });
+
+    it('refuses restore when a request appeared after both candidate revisions', async () => {
+      const router = app.get<RouterClient>(RouterClient);
+      const original = router.getActiveContextVersion.bind(router);
+      router.getActiveContextVersion = async () => 'ctx-1';
+      const request = await submitRequest();
+      const inputHash = await publishedHash();
+      for (const startAt of [now() + 2 * HOUR, now() + 3 * HOUR]) {
+        const applied = await feed(
+          buildRouterResult({
+            resultId: unique('restore-membership'),
+            inputHash,
+            contextVersion: 'ctx-1',
+            planningAsOf: now(),
+            assigned: [
+              {
+                requestId: request.id,
+                engineerId,
+                lat: request.lat,
+                lon: request.lon,
+                startAt,
+                durationSec: 1800,
+              },
+            ],
+          }),
+          'ctx-1',
+        );
+        assert.equal(applied.body.accepted, true, applied.body.detail);
+      }
+      const pair = (await (
+        await call('GET', '/api/v1/dispatch/plan/previous', dispatcherToken)
+      ).json()) as {
+        current: { revision: number };
+      };
+      await submitRequest();
+      const response = await call('POST', '/api/v1/dispatch/plan/restore', dispatcherToken, {
+        operationId: randomUUID(),
+        expectedRevision: pair.current.revision,
+      });
+      assert.equal(response.status, 409, await response.clone().text());
+      assert.equal(
+        ((await response.json()) as { error: { details: { reason: string } } }).error.details
+          .reason,
+        'INPUT_CONDITIONS_CHANGED',
+      );
+      router.getActiveContextVersion = original;
+    });
+
+    it('refuses restore when a formerly unassigned request has started', async () => {
+      const router = app.get<RouterClient>(RouterClient);
+      const original = router.getActiveContextVersion.bind(router);
+      router.getActiveContextVersion = async () => 'ctx-1';
+      const request = await submitRequest();
+      const inputHash = await publishedHash();
+      const unassigned = await feed(
+        buildRouterResult({
+          resultId: unique('restore-unassigned'),
+          inputHash,
+          contextVersion: 'ctx-1',
+          planningAsOf: now(),
+          unassigned: [{ requestId: request.id, code: 'NO_CAPACITY', text: 'No capacity' }],
+        }),
+        'ctx-1',
+      );
+      assert.equal(unassigned.body.accepted, true, unassigned.body.detail);
+      const assigned = await feed(
+        buildRouterResult({
+          resultId: unique('restore-assigned'),
+          inputHash,
+          contextVersion: 'ctx-1',
+          planningAsOf: now(),
+          assigned: [
+            {
+              requestId: request.id,
+              engineerId,
+              lat: request.lat,
+              lon: request.lon,
+              startAt: now() + 3 * HOUR,
+              durationSec: 1800,
+            },
+          ],
+        }),
+        'ctx-1',
+      );
+      assert.equal(assigned.body.accepted, true, assigned.body.detail);
+      const pair = (await (
+        await call('GET', '/api/v1/dispatch/plan/previous', dispatcherToken)
+      ).json()) as {
+        current: { revision: number };
+      };
+      const started = await call(
+        'POST',
+        `/api/v1/engineer/requests/${request.id}/facts`,
+        engineerToken,
+        { operationId: randomUUID(), kind: 'started' },
+      );
+      assert.equal(started.status, 201, await started.clone().text());
+      const response = await call('POST', '/api/v1/dispatch/plan/restore', dispatcherToken, {
+        operationId: randomUUID(),
+        expectedRevision: pair.current.revision,
+      });
+      assert.equal(response.status, 409, await response.clone().text());
+      assert.equal(
+        ((await response.json()) as { error: { details: { reason: string } } }).error.details
+          .reason,
+        'EXECUTION_FACTS_CHANGED',
+      );
+      router.getActiveContextVersion = original;
+    });
+
+    it('refuses restore when a Router context mutation starts after external preflight', async () => {
+      const router = app.get<RouterClient>(RouterClient);
+      const original = router.getActiveContextVersion.bind(router);
+      const request = await submitRequest();
+      const inputHash = await publishedHash();
+      router.getActiveContextVersion = async () => 'ctx-1';
+      for (const startAt of [now() + 2 * HOUR, now() + 3 * HOUR]) {
+        const applied = await feed(
+          buildRouterResult({
+            resultId: unique('restore-fence'),
+            inputHash,
+            contextVersion: 'ctx-1',
+            planningAsOf: now(),
+            assigned: [
+              {
+                requestId: request.id,
+                engineerId,
+                lat: request.lat,
+                lon: request.lon,
+                startAt,
+                durationSec: 1800,
+              },
+            ],
+          }),
+          'ctx-1',
+        );
+        assert.equal(applied.body.accepted, true, applied.body.detail);
+      }
+      const pair = (await (
+        await call('GET', '/api/v1/dispatch/plan/previous', dispatcherToken)
+      ).json()) as {
+        current: { revision: number };
+      };
+      const operationId = randomUUID();
+      router.getActiveContextVersion = async () => {
+        await prisma.operation.create({
+          data: {
+            operationId,
+            actorKind: 'system',
+            actorId: null,
+            source: 'system',
+            action: 'router.technical-settings.replace',
+            targetRef: 'router-core',
+            payloadFingerprint: 'test-context-fence',
+            state: 'outcome_unknown',
+            createdAt: BigInt(now()),
+          },
+        });
+        return 'ctx-1';
+      };
+      const response = await call('POST', '/api/v1/dispatch/plan/restore', dispatcherToken, {
+        operationId: randomUUID(),
+        expectedRevision: pair.current.revision,
+      });
+      assert.equal(response.status, 409, await response.clone().text());
+      assert.equal(
+        ((await response.json()) as { error: { details: { reason: string } } }).error.details
+          .reason,
+        'ROUTER_CONTEXT_MUTATION_PENDING',
+      );
+      await prisma.operation.delete({ where: { operationId } });
+      router.getActiveContextVersion = original;
+    });
+
+    it('refuses restore while an equipment handoff remains unconfirmed', async () => {
+      const router = app.get<RouterClient>(RouterClient);
+      const original = router.getActiveContextVersion.bind(router);
+      router.getActiveContextVersion = async () => 'ctx-1';
+      const request = await submitRequest();
+      const inputHash = await publishedHash();
+      for (const startAt of [now() + 2 * HOUR, now() + 3 * HOUR]) {
+        const applied = await feed(
+          buildRouterResult({
+            resultId: unique('restore-handoff'),
+            inputHash,
+            contextVersion: 'ctx-1',
+            planningAsOf: now(),
+            assigned: [
+              {
+                requestId: request.id,
+                engineerId,
+                lat: request.lat,
+                lon: request.lon,
+                startAt,
+                durationSec: 1800,
+              },
+            ],
+          }),
+          'ctx-1',
+        );
+        assert.equal(applied.body.accepted, true, applied.body.detail);
+      }
+      const pair = (await (
+        await call('GET', '/api/v1/dispatch/plan/previous', dispatcherToken)
+      ).json()) as {
+        current: { revision: number };
+      };
+      const handoffId = unique('restore-pending-handoff');
+      await prisma.equipmentHandoff.create({
+        data: {
+          id: handoffId,
+          workDate: new Date().toISOString().slice(0, 10),
+          donorEngineerId: engineerId,
+          receiverEngineerId: engineerId,
+          requestId: request.id,
+          items: { router: 1 },
+          lat: request.lat,
+          lon: request.lon,
+          meetingAt: BigInt(now() + HOUR),
+          createdAt: BigInt(now()),
+        },
+      });
+      const response = await call('POST', '/api/v1/dispatch/plan/restore', dispatcherToken, {
+        operationId: randomUUID(),
+        expectedRevision: pair.current.revision,
+      });
+      assert.equal(response.status, 422, await response.clone().text());
+      assert.match(await response.text(), /equipment meetings/i);
+      await prisma.equipmentHandoff.delete({ where: { id: handoffId } });
+      router.getActiveContextVersion = original;
+    });
+
+    it('refuses an equipment assignment rollback after the morning issue', async () => {
+      const router = app.get<RouterClient>(RouterClient);
+      const original = router.getActiveContextVersion.bind(router);
+      router.getActiveContextVersion = async () => 'ctx-1';
+      const request = await submitRequest('connection_request', 'router');
+      const inputHash = await publishedHash();
+      const assigned = await feed(
+        buildRouterResult({
+          resultId: unique('restore-equipment-assigned'),
+          inputHash,
+          contextVersion: 'ctx-1',
+          planningAsOf: now(),
+          assigned: [
+            {
+              requestId: request.id,
+              engineerId,
+              lat: request.lat,
+              lon: request.lon,
+              startAt: now() + 2 * HOUR,
+              durationSec: 1800,
+            },
+          ],
+        }),
+        'ctx-1',
+      );
+      assert.equal(assigned.body.accepted, true, assigned.body.detail);
+      const unassigned = await feed(
+        buildRouterResult({
+          resultId: unique('restore-equipment-unassigned'),
+          inputHash,
+          contextVersion: 'ctx-1',
+          planningAsOf: now(),
+          unassigned: [{ requestId: request.id, code: 'NO_CAPACITY', text: 'No capacity' }],
+        }),
+        'ctx-1',
+      );
+      assert.equal(unassigned.body.accepted, true, unassigned.body.detail);
+      const pair = (await (
+        await call('GET', '/api/v1/dispatch/plan/previous', dispatcherToken)
+      ).json()) as {
+        current: { revision: number };
+      };
+      const response = await call('POST', '/api/v1/dispatch/plan/restore', dispatcherToken, {
+        operationId: randomUUID(),
+        expectedRevision: pair.current.revision,
+      });
+      assert.equal(response.status, 409, await response.clone().text());
+      assert.equal(
+        ((await response.json()) as { error: { details: { reason: string } } }).error.details
+          .reason,
+        'EQUIPMENT_ISSUED_ASSIGNMENT_CHANGED',
+      );
+      router.getActiveContextVersion = original;
+    });
+
+    it('forwards strict time-window mode to Router technical settings', async () => {
+      const router = app.get<RouterClient>(RouterClient);
+      const originalConfigured = router.isConfigured.bind(router);
+      const originalUpdate = router.updateTechnicalSettings.bind(router);
+      const captured: { input?: UpdateRouterTechnicalSettings } = {};
+      router.isConfigured = () => true;
+      router.updateTechnicalSettings = async (input) => {
+        captured.input = input;
+        return { ...input, routerContextVersion: 'ctx-strict', status: 'accepted' as const };
+      };
+      const response = await call(
+        'PUT',
+        '/api/v1/dispatch/router/technical-settings',
+        dispatcherToken,
+        {
+          operationId: randomUUID(),
+          expectedContextVersion: 'ctx-before',
+          strictTimeWindows: true,
+          lunchesEnabled: false,
+          departureLatenessToleranceSec: 0,
+          taskStartLatenessToleranceSec: 0,
+          windowLatenessToleranceSec: 0,
+          trafficEnabled: false,
+          metroEnabled: false,
+          equipmentTransfersEnabled: false,
+          equipmentEnabled: true,
+          travelTimeMode: 'graph_with_access_buffer',
+          accessBufferSec: 300,
+          fixedTravelTimeSec: 600,
+          earlyFinishReplanThresholdSec: 900,
+          taskOverrunToleranceSec: 600,
+        },
+      );
+      assert.equal(response.status, 200, await response.clone().text());
+      assert.equal(captured.input?.strictTimeWindows, true);
+      router.isConfigured = originalConfigured;
+      router.updateTechnicalSettings = originalUpdate;
     });
   });
 });

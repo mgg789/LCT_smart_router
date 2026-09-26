@@ -58,8 +58,9 @@ def test_catalog_is_strict_and_versioned(snapshot):
     compact = snapshot.model_dump()
     compact["policy"] = {"policy_id": "compact", "parameters": {}}
     task = RouterTaskSnapshot.model_validate(compact)
-    assert compile_policy(task.policy).ordered_criteria[-3:] == (
+    assert compile_policy(task.policy).ordered_criteria[-4:] == (
         "engineers_used",
+        "total_lateness",
         "distance",
         "travel_time",
     )
@@ -103,6 +104,28 @@ def test_switching_policy_does_not_keep_previous_routes(snapshot, graph):
     assert fast.path == "COLD_START"
     assert fast.main.summary.engineers_used == 2
     assert fast.main.summary.travel_time_sec == 0
+
+
+def test_fast_and_sla_expose_a_real_tradeoff_inside_identical_window_bounds(snapshot, graph):
+    """A permitted small delay buys a shorter drive only when the dispatcher chose Fast."""
+    start = snapshot.planning_as_of
+    data = graph.model_dump()
+    for edge in data["edges"]:
+        edge["duration_sec"]["car"] = 60 if int(edge["source"]) < int(edge["target"]) else 180
+    travel = GraphTravel(RoadGraph.model_validate(data))
+    requests = [request.model_copy(update={
+        "service_duration_sec": 300, "window_start_at": start,
+        "window_end_at": start + (650 if index == 1 else 7200),
+    }) for index, request in enumerate(snapshot.requests[:2])]
+    settings = SearchSettings(time_limit_ms=300, access_buffer_sec=0, traffic_enabled=False,
+                              window_lateness_tolerance_sec=600, metro_enabled=False)
+    task = snapshot.model_copy(update={"requests": requests})
+    fast = solve(task.model_copy(update={"policy": Policy(policy_id="fast", parameters={})}), travel, settings).main
+    sla = solve(task.model_copy(update={"policy": Policy(policy_id="sla", parameters={})}), travel, settings).main
+    assert fast.is_usable and sla.is_usable
+    assert fast.summary.assigned_count == sla.summary.assigned_count == 2
+    assert fast.summary.travel_time_sec < sla.summary.travel_time_sec
+    assert fast.summary.total_lateness_sec > sla.summary.total_lateness_sec == 0
 
 
 def test_repeated_policy_switches_do_not_flatten_to_one_plan(snapshot, graph):

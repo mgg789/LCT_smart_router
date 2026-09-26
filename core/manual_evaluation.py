@@ -20,7 +20,9 @@ def evaluate_manual(snapshot: RouterTaskSnapshot, travel, automatic: Plan, route
     if len(jobs) != len(set(jobs)) or set(jobs) - set(evaluator.requests):
         raise ValueError("INVALID_MANUAL_REQUESTS")
     automatic_orders = {
-        r.engineer_id: tuple(s.request_id for s in r.stops if s.kind == "job")
+        r.engineer_id: tuple(
+            s.request_id for s in r.stops if s.kind == "job" and s.request_id is not None
+        )
         for r in automatic.routes
     }
     if set(automatic_orders) - engineers:
@@ -31,13 +33,15 @@ def evaluate_manual(snapshot: RouterTaskSnapshot, travel, automatic: Plan, route
     ]
     if any(state is None for state in auto_states):
         raise ValueError("AUTOMATIC_PLAN_STALE")
+    auto_states = [state for state in auto_states if state is not None]
     manual_states = [
-        evaluator.evaluate(i, tuple(routes.get(e.engineer_id, ())))
+        evaluator.evaluate(i, tuple(job for job in routes.get(e.engineer_id, ()) if job is not None))
         for i, e in enumerate(evaluator.engineers)
     ]
     before = evaluator.score(auto_states, snapshot.policy.policy_id)
     feasible = all(state is not None for state in manual_states)
-    after = evaluator.score(manual_states, snapshot.policy.policy_id) if feasible else None
+    after_states = [state for state in manual_states if state is not None]
+    after = evaluator.score(after_states, snapshot.policy.policy_id) if feasible else None
     criteria = compile_policy(snapshot.policy).ordered_criteria
     criterion = (
         next((criteria[i] for i, value in enumerate(before) if after and value != after[i]), None)
@@ -47,7 +51,7 @@ def evaluate_manual(snapshot: RouterTaskSnapshot, travel, automatic: Plan, route
     return {
         "policy_id": snapshot.policy.policy_id,
         "feasible": feasible,
-        "degraded": not feasible or after > before,
+        "degraded": not feasible or (after is not None and after > before),
         "criterion": criterion,
         "before": list(before),
         "after": list(after) if after is not None else None,

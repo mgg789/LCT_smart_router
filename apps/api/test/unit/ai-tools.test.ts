@@ -239,7 +239,7 @@ describe('AI tool catalogue scoping', () => {
     assert.ok(!names.includes('finish_visit'));
   });
 
-  it('gives dispatcher_readonly its own thirteen read tools (ToolRegistry adds search_documentation on top)', () => {
+  it('gives dispatcher_readonly its own fourteen read tools (ToolRegistry adds search_documentation on top)', () => {
     const names = dispatcherCatalogueUnderTest()
       .filter((tool) => !tool.name.startsWith('prepare_'))
       .map((tool) => tool.name)
@@ -258,6 +258,7 @@ describe('AI tool catalogue scoping', () => {
       'list_alerts',
       'list_engineers',
       'list_requests',
+      'simulate_change',
     ]);
   });
 

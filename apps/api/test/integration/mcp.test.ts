@@ -2,6 +2,7 @@ import '../support/env';
 import assert from 'node:assert/strict';
 import { after, before, describe, it } from 'node:test';
 import type { INestApplication } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../../src/app.module';
 import { AllExceptionsFilter } from '../../src/common/errors';
@@ -176,6 +177,10 @@ describe('dashboard mcp server', () => {
       'ai_resolve_alert',
       'list_engineers',
       'select_policy',
+      'simulate_plan_change',
+      'review_action',
+      'get_router_controls',
+      'set_control_mode',
       'update_dispatcher_settings',
     ]) {
       assert.ok(names.includes(expected), `missing tool ${expected}`);
@@ -263,5 +268,39 @@ describe('dashboard mcp server', () => {
     // The pin was a real master key: revoking it closes the bearer path too.
     const bearerResponse = await rpc({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, bearer());
     assert.equal(bearerResponse.status, 401);
+  });
+
+  it('limits invalid bearer and PIN attempts before authentication despite spoofed forwarding', async () => {
+    const config = app.get(ConfigService);
+    const previous = config.get<number>('RATE_LIMIT_MULTIPLIER');
+    config.set('RATE_LIMIT_MULTIPLIER', 1);
+    try {
+      const statuses: number[] = [];
+      for (let index = 0; index < 31; index += 1) {
+        const credential: Record<string, string> =
+          index % 2 === 0
+            ? { authorization: 'Bearer invalid-mcp-credential' }
+            : { 'x-mcp-pin': 'invalid-mcp-credential' };
+        const response = await rpc(
+          { jsonrpc: '2.0', id: index, method: 'tools/list' },
+          { ...credential, 'x-forwarded-for': `192.0.2.${index + 1}` },
+        );
+        statuses.push(response.status);
+        await response.arrayBuffer();
+      }
+      assert.ok(statuses.includes(401));
+      assert.equal(statuses.at(-1), 429);
+      for (const headers of [
+        pinHeader(),
+        bearer(),
+        { authorization: `Bearer ${dispatcherToken}` },
+      ]) {
+        const response = await rpc({ jsonrpc: '2.0', id: 99, method: 'tools/list' }, headers);
+        assert.equal(response.status, 429);
+        await response.arrayBuffer();
+      }
+    } finally {
+      config.set('RATE_LIMIT_MULTIPLIER', previous);
+    }
   });
 });

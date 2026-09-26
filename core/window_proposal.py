@@ -11,8 +11,10 @@ def propose_window(
 ) -> dict:
     """Keep assigned job orders and search every insertion using canonical travel/scheduling.
 
-    Returns the earliest witnessed service interval, never a fabricated slot or a
-    claim that rearranging the whole day could not yield another solution.
+    `proposal` stays the earliest witnessed slot for the manual form. `proposals`
+    lists up to eight distinct slots (engineer, window, neighbors, slack). The
+    search still stops after eight seconds and never claims another arrangement
+    of the whole day was impossible.
     """
     requests = {request.request_id: request for request in snapshot.requests}
     if request_id not in requests:
@@ -25,7 +27,7 @@ def propose_window(
     start = max(snapshot.planning_as_of, snapshot.horizon_start_at)
     end = min(snapshot.horizon_end_at, day_end_at)
     if start >= end:
-        return {"status": "none", "proposal": None}
+        return _none()
     target = requests[request_id].model_copy(
         update={"window_start_at": start, "window_end_at": end}
     )
@@ -73,6 +75,11 @@ def propose_window(
             visit = next(stop for stop in checked.stops if stop.request_id == request_id)
             if visit.start_at < window_start or visit.end_at > window_end:
                 continue
+            neighbors = []
+            if index > 0:
+                neighbors.append(order[index - 1])
+            if index < len(order):
+                neighbors.append(order[index])
             candidates.append(
                 {
                     "engineerId": engineer.engineer_id,
@@ -80,9 +87,32 @@ def propose_window(
                     "windowEndAt": window_end,
                     "serviceStartAt": visit.start_at,
                     "serviceEndAt": visit.end_at,
+                    "neighborRequestIds": neighbors,
+                    "slackSec": max(0, window_end - visit.end_at),
                 }
             )
-    if not candidates:
-        return {"status": "none", "proposal": None}
-    candidates.sort(key=lambda item: (item["serviceStartAt"], item["engineerId"]))
-    return {"status": "available", "proposal": candidates[0]}
+    picked = _distinct(candidates)
+    if not picked:
+        return _none()
+    return {"status": "available", "proposal": picked[0], "proposals": picked}
+
+
+def _none() -> dict:
+    """Same empty shape the manual form and the choice list both understand."""
+    return {"status": "none", "proposal": None, "proposals": []}
+
+
+def _distinct(candidates: list[dict]) -> list[dict]:
+    """Earliest slots first. The same engineer and quarter-hour collapses to one."""
+    ordered = sorted(candidates, key=lambda item: (item["serviceStartAt"], item["engineerId"]))
+    seen: set[tuple] = set()
+    picked = []
+    for item in ordered:
+        key = (item["engineerId"], item["windowStartAt"] // 900)
+        if key in seen:
+            continue
+        seen.add(key)
+        picked.append(item)
+        if len(picked) == 8:
+            break
+    return picked

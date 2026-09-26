@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from itertools import combinations
-from typing import Protocol
+from typing import Literal, Protocol
 
 from core.contracts import (
     Assignment,
@@ -134,7 +134,7 @@ def release_at(snapshot: RouterTaskSnapshot, engineer: Engineer) -> int | None:
 
 
 def job_completion_limit(
-    snapshot: RouterTaskSnapshot, engineer: Engineer, *, terminal: bool
+    snapshot: RouterTaskSnapshot, engineer: Engineer, *, terminal: bool, strict: bool = False
 ) -> int:
     """Return the hard completion limit for a job in this route position.
 
@@ -142,8 +142,8 @@ def job_completion_limit(
     shift recovery allowance.  Its customer-window allowance is checked
     separately and is likewise terminal-only.
     """
-    limit = engineer.shift_end_at + (TERMINAL_SHIFT_OVERTIME_SEC if terminal else 0)
-    horizon = snapshot.horizon_end_at + (TERMINAL_SHIFT_OVERTIME_SEC if terminal else 0)
+    limit = engineer.shift_end_at + (TERMINAL_SHIFT_OVERTIME_SEC if terminal and not strict else 0)
+    horizon = snapshot.horizon_end_at + (TERMINAL_SHIFT_OVERTIME_SEC if terminal and not strict else 0)
     return min(limit, horizon)
 
 
@@ -159,7 +159,7 @@ def _matches_static_constraints(engineer: Engineer, request: Request) -> bool:
     return (
         (request.region is None or engineer.region is None or request.region == engineer.region)
         and request.required_skill in engineer.skills
-        and _transport_matches(request.required_transport, engineer.transport_type)
+        and transport_matches(request.required_transport, engineer)
         and (
             request.required_equipment is None
             or engineer.equipment_stock.quantity(request.required_equipment) > 0
@@ -172,13 +172,18 @@ def _matches_non_equipment_constraints(engineer: Engineer, request: Request) -> 
     return (
         (request.region is None or engineer.region is None or request.region == engineer.region)
         and request.required_skill in engineer.skills
-        and _transport_matches(request.required_transport, engineer.transport_type)
+        and transport_matches(request.required_transport, engineer)
     )
 
 
-def _transport_matches(required: Transport | None, actual: Transport) -> bool:
-    """Accept the two persisted pedestrian aliases while preserving other hard modes."""
-    return required is None or required == actual or {required, actual} <= {"walk", "transit"}
+def transport_matches(required: Transport | None, engineer: Engineer) -> bool:
+    """Keep legacy aliases only for crews without an explicit walk-only declaration."""
+    actual = engineer.transport_type
+    return (
+        required is None
+        or required == actual
+        or ({required, actual} <= {"walk", "transit"} and engineer.transit_eligible)
+    )
 
 
 def eligible(snapshot: RouterTaskSnapshot, engineer: Engineer, request: Request) -> bool:
@@ -232,11 +237,12 @@ def schedule_steps(
     """
     # A plain dict lookup. The name deliberately avoids colliding with the famous HTTP
     # client package: static SSRF rules flag that shape even though no network call exists.
+    strict = getattr(getattr(travel, "settings", None), "strict_time_windows", False)
     request_map = {r.request_id: r for r in snapshot.requests}
     job_steps = [item for item in steps if isinstance(item, str)]
     terminal_candidate = len(job_steps) == 1 and len(steps) == 1
     release = release_at(snapshot, engineer)
-    if release is None and terminal_candidate:
+    if release is None and terminal_candidate and not strict:
         release = terminal_release_at(snapshot, engineer)
     if release is None and steps:
         return None
@@ -279,7 +285,8 @@ def schedule_steps(
     end_limit = min(engineer.shift_end_at, snapshot.horizon_end_at)
 
     def add_stop(
-        kind: str, request_id: str | None, arrival: int, start: int, end: int, point: GeoPoint,
+        kind: Literal["job", "lunch", "wait", "handoff"], request_id: str | None,
+        arrival: int, start: int, end: int, point: GeoPoint,
         handoff: EquipmentHandoff | None = None,
     ) -> RouteStop:
         stop = RouteStop(
@@ -298,7 +305,7 @@ def schedule_steps(
 
     for step_index, step in enumerate(steps):
         if isinstance(step, HandoffStep):
-            quote = quote_at(travel, location, step.location, engineer.transport_type, clock)
+            quote = quote_at(travel, location, step.location, engineer.travel_profile(), clock)
             if quote is None:
                 return None
             arrival = clock + quote.duration_sec
@@ -341,6 +348,8 @@ def schedule_steps(
         request_id = step
         if request_id is None:
             lunch = engineer.lunch
+            if lunch.window_start_at is None or lunch.window_end_at is None or lunch.duration_sec is None:
+                return None
             start = max(clock, lunch.window_start_at)
             end = start + lunch.duration_sec
             if end > min(end_limit, lunch.window_end_at):
@@ -364,7 +373,7 @@ def schedule_steps(
             travel,
             location,
             request.location,
-            engineer.transport_type,
+            engineer.travel_profile(),
             clock,
         )
         if quote is None:
@@ -376,12 +385,12 @@ def schedule_steps(
         # The customer window covers the end of the normative work, not only arrival.
         # This is intentionally the same predicate used by the OR-Tools seed and the
         # fast neighbourhood evaluator.
-        window_tolerance = max(
+        window_tolerance = 0 if strict else max(
             tolerance,
             TERMINAL_WINDOW_LATENESS_TOLERANCE_SEC if step_index == len(steps) - 1 else 0,
         )
         if end > request.window_end_at + window_tolerance or end > job_completion_limit(
-            snapshot, engineer, terminal=step_index == len(steps) - 1
+            snapshot, engineer, terminal=step_index == len(steps) - 1, strict=strict
         ):
             return None
         previous_stop = stops[-1].stop_id if stops else None
@@ -546,7 +555,7 @@ def _candidate_pool(snapshot: RouterTaskSnapshot, request: Request, routes: list
     transport = [
         engineer
         for engineer in skilled
-        if _transport_matches(request.required_transport, engineer.transport_type)
+        if transport_matches(request.required_transport, engineer)
     ]
     idle_regional = [engineer for engineer in regional if engineer.engineer_id not in busy]
     idle_skilled = [engineer for engineer in skilled if engineer.engineer_id not in busy]
@@ -692,16 +701,18 @@ def assemble_plan(
                 ],
             )
         )
-    totals = {
-        name: sum(getattr(r.metrics, name) for r in routes) for name in RouteMetrics.model_fields
-    }
-    totals["distance_km"] = sum(round(r.metrics.distance_km * 1000) for r in routes) / 1000
+    distance_km = sum(round(r.metrics.distance_km * 1000) for r in routes) / 1000
+    travel_time_sec = sum(r.metrics.travel_time_sec for r in routes)
+    work_time_sec = sum(r.metrics.work_time_sec for r in routes)
+    waiting_time_sec = sum(r.metrics.waiting_time_sec for r in routes)
+    lunch_time_sec = sum(r.metrics.lunch_time_sec for r in routes)
+    assigned_count = sum(r.metrics.assigned_count for r in routes)
     windows = {request.request_id: request.window_end_at for request in snapshot.requests}
     slacks = [
         windows[stop.request_id] - stop.end_at
         for route in routes
         for stop in route.stops
-        if stop.kind == "job"
+        if stop.kind == "job" and stop.request_id is not None
     ]
     # Include all available engineers, including idle ones: excluding idle crews
     # would make a one-person overloaded plan appear perfectly balanced.
@@ -719,7 +730,12 @@ def assemble_plan(
         min_window_slack_sec=min(slacks, default=None),
         workload_spread_sec=max(loads, default=0) - min(loads, default=0),
         max_workload_sec=max(loads, default=0),
-        **totals,
+        distance_km=distance_km,
+        travel_time_sec=travel_time_sec,
+        work_time_sec=work_time_sec,
+        waiting_time_sec=waiting_time_sec,
+        lunch_time_sec=lunch_time_sec,
+        assigned_count=assigned_count,
         requests_total=len(snapshot.requests),
         unassigned_count=len(snapshot.requests) - len(assigned),
         urgent_total=sum(r.priority == "urgent" for r in snapshot.requests),
@@ -841,7 +857,7 @@ def lunch_coverage_alerts(
                 "lunch": engineer.lunch.model_copy(update={"enabled": False, "required": False})
             }
         )
-        jobs = [s.request_id for s in route.stops if s.kind == "job"]
+        jobs = [s.request_id for s in route.stops if s.kind == "job" and s.request_id is not None]
         witness = None
         for request_id in unassigned:
             for index in range(len(jobs) + 1):
@@ -915,15 +931,22 @@ def validate_plan(snapshot: RouterTaskSnapshot, plan: Plan, travel: TravelProvid
     handoffs: dict[str, list[tuple[str, RouteStop]]] = {}
     for route in plan.routes:
         engineer = engineers[route.engineer_id]
-        steps: list[ScheduleStep] = [
-            s.request_id if s.kind == "job" else (
-                HandoffStep(s.handoff, s.location, s.start_at) if s.kind == "handoff" else None
-            )
-            for s in route.stops
-            if s.kind != "wait"
-        ]
+        steps: list[ScheduleStep] = []
+        for stop in route.stops:
+            if stop.kind == "job":
+                if stop.request_id is None:
+                    raise ValueError("RESULT_INVALID: job stop missing request")
+                steps.append(stop.request_id)
+            elif stop.kind == "handoff":
+                if stop.handoff is None:
+                    raise ValueError("RESULT_INVALID: handoff stop missing metadata")
+                steps.append(HandoffStep(stop.handoff, stop.location, stop.start_at))
+            elif stop.kind == "lunch":
+                steps.append(None)
         expected = schedule_steps(snapshot, engineer, steps, travel)
         require(expected is not None, "hard schedule constraints")
+        if expected is None:
+            raise ValueError("RESULT_INVALID: hard schedule constraints")
         require(
             route.stops == expected.stops and route.legs == expected.legs,
             "interval/path arithmetic",
@@ -938,10 +961,12 @@ def validate_plan(snapshot: RouterTaskSnapshot, plan: Plan, travel: TravelProvid
         for stop in route.stops:
             if stop.kind == "job":
                 require(stop.request_id not in observed, "duplicate assigned job")
-                observed[stop.request_id] = (route.engineer_id, stop.stop_id)
+                if stop.request_id is not None:
+                    observed[stop.request_id] = (route.engineer_id, stop.stop_id)
             if stop.kind == "handoff":
                 require(stop.handoff is not None, "handoff metadata")
-                handoffs.setdefault(stop.handoff.handoff_id, []).append((route.engineer_id, stop))
+                if stop.handoff is not None:
+                    handoffs.setdefault(stop.handoff.handoff_id, []).append((route.engineer_id, stop))
         if expected.lunch.status in ("scheduled", "disabled", "already_taken"):
             require(
                 route.lunch.status == expected.lunch.status
@@ -958,7 +983,7 @@ def validate_plan(snapshot: RouterTaskSnapshot, plan: Plan, travel: TravelProvid
             )
             if route.lunch.status == "skipped_for_work":
                 feasible = fixed_order(
-                    snapshot, engineer, [s for s in steps if s is not None], travel
+                    snapshot, engineer, [s for s in steps if isinstance(s, str)], travel
                 )
                 require(
                     feasible is not None and feasible.lunch.status != "scheduled",
@@ -982,6 +1007,8 @@ def validate_plan(snapshot: RouterTaskSnapshot, plan: Plan, travel: TravelProvid
         require(first.end_at - first.start_at == 300 and second.end_at - second.start_at == 300, "handoff duration")
         handoff = first.handoff
         require(handoff is not None, "handoff missing")
+        if handoff is None:
+            raise ValueError("RESULT_INVALID: handoff missing")
         require({participants[0][0], participants[1][0]} == {handoff.donor_engineer_id, handoff.receiver_engineer_id}, "handoff participants")
         donor, receiver = engineers[handoff.donor_engineer_id], engineers[handoff.receiver_engineer_id]
         require(donor.region is None or receiver.region is None or donor.region == receiver.region, "handoff region")

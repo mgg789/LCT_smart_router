@@ -28,6 +28,7 @@ const engineerSchema = z.object({
   inputOrder: z.number().int(),
   skills: z.array(z.string()),
   transportType: z.enum(['car', 'walk', 'bike', 'transit']),
+  transitEligible: z.boolean().optional().default(true),
   region: z.string().nullable(),
   homeLat: z.number().nullable(),
   homeLon: z.number().nullable(),
@@ -192,7 +193,7 @@ const daySchema = z.object({
 
 const planSchema = z.object({
   planAsOf: z.number().int().nullable(),
-  origin: z.enum(['auto', 'manual']).nullable().optional(),
+  origin: z.enum(['auto', 'manual', 'restore']).nullable().optional(),
   revision: z.number().int().nullable().optional(),
   route: routeSchema.nullable(),
   requests: z.array(requestSchema).optional().default([]),

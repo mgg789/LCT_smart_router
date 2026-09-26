@@ -1,40 +1,34 @@
 import { randomUUID } from 'node:crypto';
-import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Get, Post, Put, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { type Actor, CurrentActor, Roles } from '../auth';
-import { AppConfigService } from '../common/config';
 import { SysError } from '../common/errors';
 import { Clock } from '../common/time';
 import { zodBody } from '../common/validation';
-import { AuditService, OperationsService } from '../operations';
+import { OperationsService } from '../operations';
 import { AiService, MiniAiService } from '../orchestrator/ai';
-import { AlertsService, alertActionsFor } from '../orchestrator/alerts';
-import { DemoStandService } from '../orchestrator/demo-stand';
-import { EngineersService, workDateOf } from '../orchestrator/engineers';
-import {
-  DATASET_REGIONS,
-  DatasetImportService,
-  UploadImportService,
-} from '../orchestrator/imports';
+import { collectOptimizeLevers, type OptimizeLever } from '../orchestrator/ai/optimize-levers';
 import { LiveService } from '../orchestrator/live';
 import { businessNow } from '../orchestrator/live/business-clock';
 import { type UpdateMcpSettingsDto, updateMcpSettingsSchema } from '../orchestrator/mcp/mcp.dto';
-// Direct file imports: the mcp barrel pulls the tool registry, which sits on CJS
-// barrel cycles with alerts/ai — the same trap alerts.module.ts documents.
 import { McpService } from '../orchestrator/mcp/mcp.service';
 import { type McpSettingsView } from '../orchestrator/mcp/mcp-settings';
-import { PassportsService } from '../orchestrator/passports';
 import { PolicyService } from '../orchestrator/policy';
-import { RequestsService } from '../orchestrator/requests';
-import { ResetService } from '../orchestrator/reset';
-import { RoadImportService } from '../orchestrator/road-import';
 import {
   DispatcherSettingsService,
   GeocodingService,
   MapRoutingService,
-  moscowMinutesToUnix,
 } from '../orchestrator/settings';
-import { APP_STATE_KEYS, PrismaService, UnitOfWork } from '../persistence';
+import {
+  readSimulation,
+  rememberSimulation,
+  russianDelta,
+  simulationPatchHash,
+  toDeltaView,
+  toRouterPatch,
+  toRouteView,
+} from '../orchestrator/simulator';
+import { PrismaService, UnitOfWork } from '../persistence';
 import {
   PUBLICATION_TRIGGERS,
   SnapshotBuilder,
@@ -50,42 +44,6 @@ import {
 import { visibleRouterPhase } from '../routing/router-gateway/router-phase';
 import { type AiSettingsDto, aiSettingsSchema } from './dto/ai.dto';
 import {
-  type CloseShiftDto,
-  closeShiftSchema,
-  type ResolveAlertDto,
-  resolveAlertSchema,
-} from './dto/alert.dto';
-import {
-  type ImportDatasetDto,
-  importDatasetSchema,
-  type ResetDto,
-  type RestartDemoDto,
-  resetSchema,
-  restartDemoSchema,
-  type UploadDataPackageDto,
-  uploadDataPackageSchema,
-} from './dto/data.dto';
-import {
-  type ArchiveEngineerDto,
-  archiveEngineerSchema,
-  type ChangeEngineerEmailDto,
-  type CreateEngineerDto,
-  changeEngineerEmailSchema,
-  createEngineerSchema,
-  type LinkEngineerAccountDto,
-  linkEngineerAccountSchema,
-  operationOnlySchema,
-  type SetAvailabilityDto,
-  type SetWorkdayDto,
-  setAvailabilitySchema,
-  setWorkdaySchema,
-  type UnlinkEngineerAccountDto,
-  type UpdateEngineerDto,
-  unlinkEngineerAccountSchema,
-  updateEngineerSchema,
-} from './dto/engineer.dto';
-import { type StartLiveWorkdayDto, startLiveWorkdaySchema } from './dto/live.dto';
-import {
   type ReassignDto,
   type ReorderDto,
   reassignSchema,
@@ -98,15 +56,6 @@ import {
 import { type SelectPolicyDto, selectPolicySchema } from './dto/policy.dto';
 import { type SituationPredictDto, situationPredictSchema } from './dto/prediction.dto';
 import {
-  type CancelRequestDto,
-  cancelRequestSchema,
-  type DispatcherCreateRequestDto,
-  type DispatcherUpdateRequestDto,
-  dispatcherCreateRequestSchema,
-  dispatcherUpdateRequestSchema,
-} from './dto/request.dto';
-import { type RoadImportDto, roadImportSchema } from './dto/road-import.dto';
-import {
   type UpdateRouterTechnicalSettingsDto,
   updateRouterTechnicalSettingsSchema,
 } from './dto/router.dto';
@@ -114,41 +63,22 @@ import {
   type UpdateDispatcherSettingsDto,
   updateDispatcherSettingsSchema,
 } from './dto/settings.dto';
-import {
-  type EngineerDayView,
-  type EngineerView,
-  toDayView,
-  toEngineerView,
-} from './engineer-view';
-import type { DispatchLiveView } from './live-view.types';
+import { type SimulationPatchDto, simulationPatchSchema } from './dto/simulation.dto';
 import { toPlanView } from './plan-view';
-import { type RequestView, toRequestView } from './request-view';
 import { weatherView } from './weather-view';
 
-const POLICY_LABEL: Record<string, string> = {
-  compact: 'Дешевле',
-  fast: 'Быстрее до клиента',
-  sla: 'Бережнее к окнам',
-  balanced: 'Ровнее загрузка',
-  eco: 'Короче пробег',
-  covering: 'Полное покрытие',
-};
-
 /**
- * Dashboard contour.
+ * Routing and dispatcher-owned settings contour.
  *
- * The dispatcher edits the conditions of the task and the data behind it. In AUTO that is
- * never a direct write of an assignment: changing a condition forms a new planning task,
- * and Router discovers it on its own (context/32 section 6.3).
+ * Requests, engineers, LIVE, alerts and data imports have dedicated controllers. This
+ * controller intentionally retains routing methods so policy, undo and strict settings
+ * changes have one stable integration point for the dispatcher contour.
  */
 @Roles('dispatcher')
 @ApiTags('dispatch')
 @Controller('dispatch')
 export class DispatchController {
   constructor(
-    private readonly requests: RequestsService,
-    private readonly engineers: EngineersService,
-    private readonly alertsService: AlertsService,
     private readonly policyService: PolicyService,
     private readonly publisher: SnapshotPublisher,
     private readonly builder: SnapshotBuilder,
@@ -157,520 +87,23 @@ export class DispatchController {
     private readonly manual: ManualPlanService,
     private readonly acceptance: ResultAcceptanceService,
     private readonly router: RouterClient,
-    private readonly imports: DatasetImportService,
-    private readonly uploadImports: UploadImportService,
-    private readonly roadImports: RoadImportService,
-    private readonly resetService: ResetService,
-    private readonly demoStand: DemoStandService,
-    private readonly config: AppConfigService,
     private readonly operations: OperationsService,
-    private readonly audit: AuditService,
     private readonly prisma: PrismaService,
     private readonly uow: UnitOfWork,
     private readonly clock: Clock,
+    private readonly mapRouting: MapRoutingService,
     private readonly live: LiveService,
     private readonly ai: AiService,
     private readonly miniAi: MiniAiService,
     private readonly dispatcherSettings: DispatcherSettingsService,
     private readonly geocoding: GeocodingService,
-    private readonly mapRouting: MapRoutingService,
-    private readonly passports: PassportsService,
     private readonly mcp: McpService,
   ) {}
-
-  @Get('live')
-  @ApiOperation({ summary: 'Durable LIVE workday state for the dispatcher dashboard' })
-  async liveView(): Promise<DispatchLiveView> {
-    return this.live.dispatchView();
-  }
-
-  @Post('live/start')
-  @ApiOperation({ summary: 'Start the current LIVE workday and publish its t=0 task' })
-  async startLive(
-    @CurrentActor() actor: Actor,
-    @Body(zodBody(startLiveWorkdaySchema)) dto: StartLiveWorkdayDto,
-  ): Promise<DispatchLiveView> {
-    const outcome = await this.operations.execute(
-      { operationId: dto.operationId, actor, action: 'live.workday.start', payload: dto },
-      async (context) => this.live.start(context),
-    );
-    return outcome.result;
-  }
-
-  @Get('requests')
-  @ApiOperation({ summary: 'Requests of the day, including started, finished and cancelled' })
-  async list(
-    @Query('lifecycle') lifecycle?: string,
-    @Query('assignment') assignment?: string,
-  ): Promise<{ requests: RequestView[] }> {
-    const requests = await this.prisma.request.findMany({
-      // Unlike the customer's list, this one keeps completed and cancelled work: the
-      // dispatcher needs the whole day, not only what is still open (context/39 DB1).
-      where: {
-        ...(lifecycle ? { lifecycle: lifecycle as never } : {}),
-        ...(assignment ? { assignmentState: assignment as never } : {}),
-      },
-      orderBy: [{ arrivalOrder: 'asc' }, { createdAt: 'asc' }],
-    });
-    const live = await this.prisma.liveRequestState.findMany({
-      where: { workday: { status: 'running' } },
-      select: { requestId: true, assumedStartedAt: true, assumedCompletedAt: true },
-    });
-    const states = new Map(live.map((item) => [item.requestId, item]));
-    return {
-      requests: requests.map((request) => toRequestView(request, states.get(request.id) ?? null)),
-    };
-  }
-
-  @Get('requests/:id/passport')
-  @ApiOperation({ summary: 'Object passport for any dispatcher-visible request' })
-  async passport(@Param('id') requestId: string) {
-    return this.passports.dispatcherRead(requestId);
-  }
-
-  @Get('engineers/:id/points')
-  @ApiOperation({ summary: 'Current Moscow-month passport points of an engineer' })
-  async engineerPoints(@Param('id') engineerId: string) {
-    await this.engineers.byId(this.prisma, engineerId);
-    return this.passports.monthlyPoints(engineerId);
-  }
-
-  @Post('requests')
-  @ApiOperation({ summary: 'Create and submit an unplanned request' })
-  async create(
-    @CurrentActor() actor: Actor,
-    @Body(zodBody(dispatcherCreateRequestSchema)) dto: DispatcherCreateRequestDto,
-  ): Promise<{ request: RequestView }> {
-    const outcome = await this.operations.execute(
-      {
-        operationId: dto.operationId,
-        actor,
-        action: 'request.create',
-        payload: dto,
-      },
-      async (context) => {
-        let clientAccountId: string | null = null;
-        if (dto.clientEmail) {
-          const email = dto.clientEmail.trim().toLowerCase();
-          const account = await context.tx.account.upsert({
-            where: { email },
-            update: {},
-            create: {
-              email,
-              createdAt: BigInt(context.now),
-              updatedAt: BigInt(context.now),
-            },
-          });
-          // The account exists so the request has an owner and a real address to write to.
-          // It is not marked as a verified address: only the customer's own login proves
-          // that (context/41 section 10).
-          await context.tx.accountRole.upsert({
-            where: { accountId_role: { accountId: account.id, role: 'client' } },
-            update: {},
-            create: { accountId: account.id, role: 'client', grantedAt: BigInt(context.now) },
-          });
-          clientAccountId = account.id;
-        }
-
-        const prepared = await this.requests.prepare(context, clientAccountId, {
-          contactName: dto.contactName ?? null,
-          addressText: dto.addressText,
-          lat: dto.lat ?? null,
-          lon: dto.lon ?? null,
-          workType: dto.workType,
-          ...(dto.requiredEquipment === undefined
-            ? {}
-            : { requiredEquipment: dto.requiredEquipment }),
-          windowStartAt: dto.windowStartAt,
-          windowEndAt: dto.windowEndAt,
-          urgent: dto.urgent,
-          problemText: dto.problemText ?? null,
-        });
-        // A request the dispatcher creates is already a task: there is no separate screen
-        // for the customer to confirm content they did not type.
-        return toRequestView(await this.requests.submit(context, prepared.id, prepared.version));
-      },
-    );
-    return { request: outcome.result };
-  }
-
-  @Patch('requests/:id')
-  @ApiOperation({ summary: 'Change the conditions of a request that has not started' })
-  async update(
-    @CurrentActor() actor: Actor,
-    @Param('id') id: string,
-    @Body(zodBody(dispatcherUpdateRequestSchema)) dto: DispatcherUpdateRequestDto,
-  ): Promise<{ request: RequestView }> {
-    const outcome = await this.operations.execute(
-      {
-        operationId: dto.operationId,
-        actor,
-        action: 'request.update',
-        targetRef: id,
-        expectedVersion: dto.expectedVersion ?? null,
-        payload: dto,
-      },
-      async (context) =>
-        toRequestView(
-          await this.requests.updateConditions(context, id, dto.expectedVersion ?? null, {
-            ...(dto.windowStartAt === undefined ? {} : { windowStartAt: dto.windowStartAt }),
-            ...(dto.windowEndAt === undefined ? {} : { windowEndAt: dto.windowEndAt }),
-            ...(dto.addressText === undefined ? {} : { addressText: dto.addressText }),
-            ...(dto.lat === undefined ? {} : { lat: dto.lat }),
-            ...(dto.lon === undefined ? {} : { lon: dto.lon }),
-            ...(dto.urgent === undefined ? {} : { urgent: dto.urgent }),
-            ...(dto.requiredEquipment === undefined
-              ? {}
-              : { requiredEquipment: dto.requiredEquipment }),
-          }),
-        ),
-    );
-    return { request: outcome.result };
-  }
-
-  @Post('requests/:id/cancel')
-  @ApiOperation({ summary: 'Cancel a request that has not started' })
-  async cancel(
-    @CurrentActor() actor: Actor,
-    @Param('id') id: string,
-    @Body(zodBody(cancelRequestSchema)) dto: CancelRequestDto,
-  ): Promise<{ request: RequestView }> {
-    const outcome = await this.operations.execute(
-      {
-        operationId: dto.operationId,
-        actor,
-        action: 'request.cancel',
-        targetRef: id,
-        expectedVersion: dto.expectedVersion ?? null,
-        payload: dto,
-      },
-      async (context) =>
-        toRequestView(
-          await this.requests.cancel(context, id, dto.expectedVersion ?? null, dto.reason ?? null),
-        ),
-    );
-    return { request: outcome.result };
-  }
-
-  @Get('requests/:id/history')
-  @ApiOperation({ summary: 'Previous conditions of a request' })
-  async history(@Param('id') id: string) {
-    const request = await this.prisma.request.findUnique({ where: { id } });
-    if (!request) {
-      throw SysError.notFound('Request', { requestId: id });
-    }
-    const entries = await this.prisma.requestConditionHistory.findMany({
-      where: { requestId: id },
-      orderBy: { changedAt: 'desc' },
-    });
-    const actors = await this.audit.actorsFor(
-      entries.flatMap((entry) => (entry.operationId === null ? [] : [entry.operationId])),
-    );
-    return {
-      // History is a journal of what the conditions used to be. It is never a second
-      // active promise to the customer (context/36 section 4). `actor` is the audit row
-      // written in the same transaction, so the journal is read rather than only stored.
-      history: entries.map((entry) => ({
-        changedAt: Number(entry.changedAt),
-        operationId: entry.operationId,
-        reason: entry.reason,
-        previous: entry.previous,
-        actor: entry.operationId === null ? null : (actors.get(entry.operationId) ?? null),
-      })),
-      asOf: this.clock.nowSeconds(),
-    };
-  }
-
-  @Get('engineers')
-  @ApiOperation({ summary: 'Engineers with their skills, transport and current day' })
-  async listEngineers(): Promise<{
-    engineers: Array<EngineerView & { day: EngineerDayView | null }>;
-  }> {
-    const engineers = await this.prisma.engineer.findMany({
-      where: { archivedAt: null },
-      orderBy: { inputOrder: 'asc' },
-      include: {
-        account: { select: { email: true } },
-        days: { orderBy: { workDate: 'desc' }, take: 1 },
-      },
-    });
-    return {
-      engineers: engineers.map((engineer) => ({
-        ...toEngineerView(engineer),
-        // Availability, the current day and the profile stay visibly separate; they are
-        // never blended into one "working / offline / unassigned" status
-        // (context/39 DB4).
-        day: engineer.days[0] ? toDayView(engineer.days[0]) : null,
-      })),
-    };
-  }
-
-  @Post('engineers')
-  @ApiOperation({ summary: 'Add an engineer profile, optionally with a login address' })
-  async createEngineer(
-    @CurrentActor() actor: Actor,
-    @Body(zodBody(createEngineerSchema)) dto: CreateEngineerDto,
-  ): Promise<{ engineer: EngineerView }> {
-    const outcome = await this.operations.execute(
-      {
-        operationId: dto.operationId,
-        actor,
-        action: 'engineer.create',
-        payload: dto,
-      },
-      async (context) =>
-        await (async () => {
-          const created = await this.engineers.create(context, {
-            email: dto.email ?? null,
-            displayName: dto.displayName,
-            skills: dto.skills,
-            transportType: dto.transportType,
-            region: dto.region ?? null,
-            homeLat: dto.homeLat ?? null,
-            homeLon: dto.homeLon ?? null,
-          });
-          const settings = await this.dispatcherSettings.read(context.tx);
-          const workDate = workDateOf(context.now, this.config.get('APP_TIME_ZONE'));
-          await this.engineers.setWorkday(context, created.id, {
-            workDate,
-            shiftStartAt: moscowMinutesToUnix(workDate, settings.dayStartMin),
-            shiftEndAt: moscowMinutesToUnix(workDate, settings.dayEndMin),
-          });
-          return toEngineerView(created);
-        })(),
-    );
-    return { engineer: outcome.result };
-  }
-
-  @Delete('engineers/:id')
-  @ApiOperation({ summary: 'Archive an engineer profile and revoke its login' })
-  async archiveEngineer(
-    @CurrentActor() actor: Actor,
-    @Param('id') id: string,
-    @Body(zodBody(archiveEngineerSchema)) dto: ArchiveEngineerDto,
-  ): Promise<{ engineer: EngineerView }> {
-    const outcome = await this.operations.execute(
-      {
-        operationId: dto.operationId,
-        actor,
-        action: 'engineer.archive',
-        targetRef: id,
-        expectedVersion: dto.expectedVersion ?? null,
-        payload: dto,
-      },
-      async (context) =>
-        toEngineerView(await this.engineers.archive(context, id, dto.expectedVersion ?? null)),
-    );
-    return { engineer: outcome.result };
-  }
-
-  @Post('engineers/link-account')
-  @ApiOperation({ summary: 'Give an engineer profile that has no login its email address' })
-  async linkEngineerAccount(
-    @CurrentActor() actor: Actor,
-    @Body(zodBody(linkEngineerAccountSchema)) dto: LinkEngineerAccountDto,
-  ): Promise<{ engineer: EngineerView }> {
-    const outcome = await this.operations.execute(
-      {
-        operationId: dto.operationId,
-        actor,
-        action: 'engineer.link_account',
-        targetRef: dto.engineerId,
-        payload: dto,
-      },
-      async (context) =>
-        toEngineerView(await this.engineers.linkAccount(context, dto.engineerId, dto.email)),
-      // A login address is not a planning input. Acceptance of a route must not
-      // hold this save until the browser gives up.
-      { isolated: true },
-    );
-    return { engineer: outcome.result };
-  }
-
-  @Put('engineers/:id/email')
-  @ApiOperation({ summary: 'Replace the login address of an engineer profile' })
-  async changeEngineerEmail(
-    @CurrentActor() actor: Actor,
-    @Param('id') id: string,
-    @Body(zodBody(changeEngineerEmailSchema)) dto: ChangeEngineerEmailDto,
-  ): Promise<{ engineer: EngineerView }> {
-    const outcome = await this.operations.execute(
-      {
-        operationId: dto.operationId,
-        actor,
-        action: 'engineer.change_email',
-        targetRef: id,
-        expectedVersion: dto.expectedVersion ?? null,
-        payload: dto,
-      },
-      async (context) =>
-        toEngineerView(
-          await this.engineers.changeEmail(context, id, dto.expectedVersion ?? null, dto.email),
-        ),
-      { isolated: true },
-    );
-    return { engineer: outcome.result };
-  }
-
-  @Post('engineers/unlink-account')
-  @ApiOperation({ summary: 'Remove the login from an engineer without deleting the profile' })
-  async unlinkEngineerAccount(
-    @CurrentActor() actor: Actor,
-    @Body(zodBody(unlinkEngineerAccountSchema)) dto: UnlinkEngineerAccountDto,
-  ): Promise<{ engineer: EngineerView }> {
-    const outcome = await this.operations.execute(
-      {
-        operationId: dto.operationId,
-        actor,
-        action: 'engineer.unlink_account',
-        targetRef: dto.engineerId,
-        payload: dto,
-      },
-      async (context) =>
-        toEngineerView(await this.engineers.unlinkAccount(context, dto.engineerId)),
-      { isolated: true },
-    );
-    return { engineer: outcome.result };
-  }
-
-  @Patch('engineers/:id')
-  @ApiOperation({ summary: 'Change the profile of an engineer' })
-  async updateEngineer(
-    @CurrentActor() actor: Actor,
-    @Param('id') id: string,
-    @Body(zodBody(updateEngineerSchema)) dto: UpdateEngineerDto,
-  ): Promise<{ engineer: EngineerView }> {
-    const outcome = await this.operations.execute(
-      {
-        operationId: dto.operationId,
-        actor,
-        action: 'engineer.update_profile',
-        targetRef: id,
-        expectedVersion: dto.expectedVersion ?? null,
-        payload: dto,
-      },
-      // The same handler the engineer's own edit goes through, so the two meet the same
-      // version check and neither overwrites the other silently (context/39 DB4).
-      async (context) =>
-        toEngineerView(
-          await this.engineers.updateProfile(context, id, dto.expectedVersion ?? null, {
-            ...(dto.displayName === undefined ? {} : { displayName: dto.displayName }),
-            ...(dto.skills === undefined ? {} : { skills: dto.skills }),
-            ...(dto.transportType === undefined ? {} : { transportType: dto.transportType }),
-            ...(dto.region === undefined ? {} : { region: dto.region }),
-            ...(dto.homeLat === undefined ? {} : { homeLat: dto.homeLat }),
-            ...(dto.homeLon === undefined ? {} : { homeLon: dto.homeLon }),
-          }),
-        ),
-    );
-    return { engineer: outcome.result };
-  }
-
-  @Post('engineers/:id/workday')
-  @ApiOperation({ summary: 'Set the shift and lunch conditions of one working day' })
-  async setWorkday(
-    @CurrentActor() actor: Actor,
-    @Param('id') id: string,
-    @Body(zodBody(setWorkdaySchema)) dto: SetWorkdayDto,
-  ): Promise<{ day: EngineerDayView }> {
-    const outcome = await this.operations.execute(
-      {
-        operationId: dto.operationId,
-        actor,
-        action: 'engineer.set_workday',
-        targetRef: id,
-        payload: dto,
-      },
-      async (context) =>
-        toDayView(
-          await this.engineers.setWorkday(context, id, {
-            workDate: dto.workDate,
-            shiftStartAt: dto.shiftStartAt,
-            shiftEndAt: dto.shiftEndAt,
-            ...(dto.lunch === undefined ? {} : { lunch: dto.lunch }),
-            ...(dto.lunchRequired === undefined ? {} : { lunchRequired: dto.lunchRequired }),
-            ...(dto.attendanceOptOut === undefined
-              ? {}
-              : { attendanceOptOut: dto.attendanceOptOut }),
-          }),
-        ),
-    );
-    return { day: outcome.result };
-  }
-
-  @Post('engineers/:id/availability')
-  @ApiOperation({ summary: 'Take an engineer off the line, or put them back on' })
-  async setEngineerAvailability(
-    @CurrentActor() actor: Actor,
-    @Param('id') id: string,
-    @Body(zodBody(setAvailabilitySchema)) dto: SetAvailabilityDto,
-  ): Promise<{
-    day: EngineerDayView;
-    publication: { publicationId: string; inputHash: string; planningAsOf: number } | null;
-  }> {
-    const outcome = await this.operations.execute(
-      {
-        operationId: dto.operationId,
-        actor,
-        action: 'engineer.set_availability',
-        targetRef: id,
-        payload: dto,
-      },
-      // Working availability only. It does not finish the work in hand and does not
-      // reassign it (context/42 DF-06).
-      async (context) =>
-        toDayView(
-          await this.live.setDispatcherAvailability(
-            context,
-            id,
-            dto.availability,
-            dto.expectedOnlineAt ?? null,
-          ),
-        ),
-    );
-    const current = await this.prisma.routingCurrent.findUnique({
-      where: { id: 'singleton' },
-      include: { snapshot: true },
-    });
-    return {
-      day: outcome.result,
-      publication: current
-        ? {
-            publicationId: current.snapshot.id,
-            inputHash: current.snapshot.inputHash,
-            planningAsOf: Number(current.snapshot.planningAsOf),
-          }
-        : null,
-    };
-  }
-
-  @Post('engineers/:id/technical-break')
-  @ApiOperation({ summary: 'Take an engineer off the line for a 15-minute technical stop' })
-  async startEngineerTechnicalBreak(
-    @CurrentActor() actor: Actor,
-    @Param('id') id: string,
-    @Body(zodBody(operationOnlySchema)) dto: { operationId: string },
-  ): Promise<{ day: EngineerDayView }> {
-    await this.live.assertLegacyMutationAllowed();
-    const outcome = await this.operations.execute(
-      {
-        operationId: dto.operationId,
-        actor,
-        action: 'engineer.technical_break',
-        targetRef: id,
-        payload: dto,
-      },
-      async (context) => toDayView(await this.engineers.startTechnicalBreak(context, id)),
-    );
-    return { day: outcome.result };
-  }
 
   @Get('router/technical-settings')
   @ApiOperation({ summary: 'Read Router-owned routing and execution controls' })
   async routerTechnicalSettings() {
-    if (!this.router.isConfigured()) {
-      throw SysError.notConfigured('Router Core');
-    }
+    if (!this.router.isConfigured()) throw SysError.notConfigured('Router Core');
     return this.router.getTechnicalSettings();
   }
 
@@ -680,13 +113,12 @@ export class DispatchController {
     @CurrentActor() actor: Actor,
     @Body(zodBody(updateRouterTechnicalSettingsSchema)) dto: UpdateRouterTechnicalSettingsDto,
   ) {
-    if (!this.router.isConfigured()) {
-      throw SysError.notConfigured('Router Core');
-    }
+    if (!this.router.isConfigured()) throw SysError.notConfigured('Router Core');
     const requested = {
       operationId: dto.operationId,
       expectedContextVersion: dto.expectedContextVersion,
       lunchesEnabled: dto.lunchesEnabled,
+      strictTimeWindows: dto.strictTimeWindows,
       departureLatenessToleranceSec: dto.departureLatenessToleranceSec,
       taskStartLatenessToleranceSec: dto.taskStartLatenessToleranceSec,
       windowLatenessToleranceSec: dto.windowLatenessToleranceSec,
@@ -709,12 +141,8 @@ export class DispatchController {
         expectedVersion: null,
         payload: dto,
       },
-      // Router owns and persists these controls. The external-operation envelope journals
-      // the intent first, then releases the sys transaction before this private HTTP call.
       () => this.router.updateTechnicalSettings(requested),
     );
-    // Router's switch only permits lunch nodes. Daily engineer conditions provide the
-    // actual lunch contract, including when a dispatcher enables it after LIVE started.
     await this.live.synchronizeGlobalLunchSwitch(dto.lunchesEnabled);
     return outcome.result;
   }
@@ -724,12 +152,7 @@ export class DispatchController {
     summary: 'Dry Monte-Carlo probabilities for one fixed plan and execution situation',
   })
   async situationPredict(@Body(zodBody(situationPredictSchema)) dto: SituationPredictDto) {
-    if (!this.router.isConfigured()) {
-      throw SysError.notConfigured('Router Core');
-    }
-    // Dry numbers only: the call never returns a plan and never changes one. The caller
-    // supplies the applied plan's identity, so a prediction can never attach to another
-    // manual revision (Router rechecks the publication CAS on both ends).
+    if (!this.router.isConfigured()) throw SysError.notConfigured('Router Core');
     return this.router.predictSituation({
       input_hash: dto.inputHash,
       router_context_version: dto.routerContextVersion,
@@ -756,9 +179,6 @@ export class DispatchController {
   @ApiOperation({ summary: 'Prepared policies and the one in force' })
   async policies() {
     return {
-      // A catalogue of prepared variants. There is no editor of weights, criteria order
-      // or solver parameters here, and a rich policy structure in the contracts does not
-      // create one (context/42 DF-15).
       policies: this.policyService.list(),
       active: await this.policyService.active(this.prisma),
     };
@@ -767,9 +187,7 @@ export class DispatchController {
   @Get('policy-comparison')
   @ApiOperation({ summary: 'Compare all prepared policies and FIFO on the current task' })
   async policyComparison() {
-    if (!this.router.isConfigured()) {
-      throw SysError.notConfigured('Router Core');
-    }
+    if (!this.router.isConfigured()) throw SysError.notConfigured('Router Core');
     const comparison = await this.router.getPolicyComparison();
     const current = await this.prisma.routingCurrent.findUnique({
       where: { id: 'singleton' },
@@ -785,19 +203,78 @@ export class DispatchController {
         'Planning data changed while the policy comparison was calculated; retry the read',
       );
     }
-    // Persist the exact measured rows only after the publication identity has been
-    // rechecked. Extra-engineer covering rows remain in the evidence, while the roster
-    // hash is derived from the published base input and is used during policy selection.
     const rosterEngineerIds = readRosterEngineerIds(current.snapshot.payload);
-    await this.uow.run(async (tx) => {
-      await this.policyService.recordComparison(
+    await this.uow.run(async (tx) =>
+      this.policyService.recordComparison(
         tx,
         comparison,
         rosterEngineerIds,
         await businessNow(this.prisma, this.clock.nowSeconds()),
-      );
-    });
+      ),
+    );
     return comparison;
+  }
+
+  @Post('simulate')
+  @ApiOperation({ summary: 'What-if on the current publication; does not change the working plan' })
+  async simulate(@Body(zodBody(simulationPatchSchema)) dto: SimulationPatchDto) {
+    if (!this.router.isConfigured()) throw SysError.notConfigured('Router Core');
+    const patch = toRouterPatch(dto);
+    const current = await this.prisma.routingCurrent.findUnique({
+      where: { id: 'singleton' },
+      include: { snapshot: true },
+    });
+    if (!current)
+      throw new SysError('VERSION_CONFLICT', 'There is no published planning task to simulate');
+    const contextVersion = await this.router.getActiveContextVersion();
+    if (!contextVersion)
+      throw new SysError('VERSION_CONFLICT', 'Router has no context version for this publication');
+    const hash = simulationPatchHash(patch);
+    const stored = await readSimulation(
+      this.prisma,
+      current.snapshot.inputHash,
+      contextVersion,
+      hash,
+    );
+    const result = stored ?? (await this.router.simulate(patch));
+    if (!stored) {
+      if (
+        result.input_hash !== current.snapshot.inputHash ||
+        result.router_context_version !== contextVersion
+      )
+        throw new SysError(
+          'VERSION_CONFLICT',
+          'Planning data changed while the simulation was calculated; retry the read',
+        );
+      await rememberSimulation(this.prisma, patch, result);
+    }
+    const roster = await this.prisma.engineer.findMany({
+      select: { id: true, transportType: true },
+    });
+    const transports = new Map(roster.map((engineer) => [engineer.id, engineer.transportType]));
+    return {
+      method: result.method,
+      cached: result.cached,
+      patchHash: result.patch_hash,
+      inputHash: result.input_hash,
+      routerContextVersion: result.router_context_version,
+      text: russianDelta(patch, result),
+      delta: toDeltaView(result),
+      routes: this.mapRouting.projectSimulationRoutes(
+        (result.routes ?? []).map(toRouteView),
+        transports,
+      ),
+      strategies: (result.strategies ?? []).map((row) => ({
+        strategyId: row.strategy_id,
+        metrics: {
+          assignedCount: row.metrics.assigned_count,
+          unassignedCount: row.metrics.unassigned_count,
+          lateAssignedCount: row.metrics.late_assigned_count,
+          distanceKm: row.metrics.distance_km,
+        },
+        routes: this.mapRouting.projectSimulationRoutes(row.routes.map(toRouteView), transports),
+      })),
+    };
   }
 
   @Post('policy')
@@ -816,10 +293,6 @@ export class DispatchController {
       },
       async (context) => {
         const selected = await this.policyService.select(context, dto.policyId);
-        // The choice is data of the task, so it is republished. A new criterion does not
-        // mean a new plan is on screen yet: until a current result is accepted, the
-        // chosen policy and the policy the shown plan was built with are different things
-        // (context/42 DF-15).
         const publication = await this.publisher.publishIfChanged(
           context.tx,
           context.now,
@@ -839,17 +312,10 @@ export class DispatchController {
       include: { snapshot: true },
     });
     if (!current) {
-      // A valid state, not an error: nothing has yet changed the planning task.
       const pending = await this.builder.build(this.prisma, this.clock.nowSeconds());
       return { published: false, snapshot: null, diagnostics: pending.diagnostics };
     }
-    // Diagnostics are rebuilt from the current state rather than read off the published
-    // document. The reason is specific: a request that cannot be projected -- one still
-    // waiting for coordinates -- does not change the task, so nothing is republished, and
-    // a count frozen at publication time would never mention it. Building them live is a
-    // read; it publishes nothing and moves no pointer.
     const live = await this.builder.build(this.prisma, this.clock.nowSeconds());
-
     return {
       published: true,
       publicationId: current.snapshot.id,
@@ -860,8 +326,6 @@ export class DispatchController {
       generation: current.snapshot.generation,
       diagnostics: live.diagnostics,
       diagnosticsAtPublication: current.snapshot.diagnostics,
-      // The exact bytes Router hashes, returned as text on purpose: re-encoding them
-      // would defeat the point of storing them verbatim.
       payload: current.snapshot.payload,
     };
   }
@@ -872,14 +336,14 @@ export class DispatchController {
     const plan = await this.plans.current(this.prisma);
     const control = await this.control.current(this.prisma);
     const lastPackage = await this.acceptance.lastPackage();
-
     const published = await this.prisma.routingCurrent.findUnique({
       where: { id: 'singleton' },
       select: { snapshot: { select: { inputHash: true } } },
     });
-    const appliedHash = plan?.routerResult?.inputHash ?? null;
     const phase = visibleRouterPhase(
-      published !== null && published.snapshot.inputHash !== appliedHash,
+      published !== null &&
+        published.snapshot.inputHash !==
+          (plan?.validatedInputHash ?? plan?.routerResult?.inputHash ?? null),
     );
     return {
       mode: control.mode,
@@ -889,13 +353,7 @@ export class DispatchController {
       routerMessage: phase.message,
       geometryDone: phase.geometryDone,
       geometryTotal: phase.geometryTotal,
-      // The moment the shown plan describes. While a recalculation is under way the
-      // interface keeps this plan and says it is being rebuilt, rather than clearing the
-      // day (context/36 section 6).
       plan: plan ? this.mapRouting.projectPlan(toPlanView(plan)) : null,
-      // Direct relation to the package that produced the working revision. Unlike the
-      // diagnostic last package, this cannot be confused by another result received in
-      // the same second.
       appliedResult: plan?.routerResult
         ? {
             resultId: plan.routerResult.resultId,
@@ -909,8 +367,6 @@ export class DispatchController {
             inputHash: lastPackage.inputHash,
             routerContextVersion: lastPackage.routerContextVersion,
             accepted: lastPackage.accepted,
-            // Why a finished result did not become the working plan, kept so a refusal is
-            // explainable rather than invisible.
             rejectionCode: lastPackage.rejectionCode,
             receivedAt: Number(lastPackage.receivedAt),
           }
@@ -918,196 +374,11 @@ export class DispatchController {
     };
   }
 
-  @Get('alerts')
-  @ApiOperation({ summary: 'Explainable problems reported by the plan' })
-  async alerts(@Query('workDate') workDate?: string) {
-    if (workDate && !/^\d{4}-\d{2}-\d{2}$/.test(workDate)) {
-      throw new SysError('VALIDATION_FAILED', 'workDate must be YYYY-MM-DD');
-    }
-    return { alerts: await this.alertsService.list(workDate) };
-  }
-
-  @Post('alerts/:id/seen')
-  @ApiOperation({ summary: 'Mark an alert as seen' })
-  async markAlertSeen(@Param('id') id: string) {
-    // Seen is not resolved. The underlying condition is unchanged, and it clears only when
-    // the real state changes (context/39 DB2).
-    await this.alertsService.markSeen(id, this.clock.nowSeconds());
-    return { seen: true };
-  }
-
-  @Post('notices/:id/seen')
-  @ApiOperation({ summary: 'Mark an informational notice as seen without resolving any alert' })
-  async markNoticeSeen(@Param('id') id: string) {
-    await this.alertsService.markSeen(id, this.clock.nowSeconds());
-    return { seen: true };
-  }
-
-  @Post('ai/explain')
-  @ApiOperation({ summary: 'Short language-model wording for a context the screen already has' })
-  async explainWithModel(@Body() body: { kind?: unknown; context?: unknown }) {
-    if (body.kind !== 'reasons' && body.kind !== 'plan') {
-      throw SysError.validationFailed('kind must be reasons or plan');
-    }
-    return { text: await this.miniAi.explain(body.kind, body.context ?? {}) };
-  }
-
-  @Post('ai/optimize')
-  @ApiOperation({
-    summary: 'Improve the live plan without moving customer windows or cancelling lunches',
-  })
-  async optimizeWithModel(@CurrentActor() actor: Actor, @Body() body: { summary?: unknown }) {
-    const summary = typeof body.summary === 'string' ? body.summary : '';
-    const active = await this.uow.run((tx) => this.policyService.active(tx));
-    const control = await this.prisma.controlState.findUnique({ where: { id: 'singleton' } });
-    const day = await this.prisma.liveWorkday.findFirst({
-      where: { status: 'running' },
-      select: { workDate: true },
-    });
-    const offline = day
-      ? await this.prisma.engineerDay.findMany({
-          where: { workDate: day.workDate, availability: 'offline' },
-          include: { engineer: { select: { displayName: true } } },
-          orderBy: { engineer: { inputOrder: 'asc' } },
-          take: 6,
-        })
-      : [];
-    const decision = await this.miniAi.planOptimization({
-      summary,
-      currentPolicyId: active.policyId,
-      currentPolicyLabel: POLICY_LABEL[active.policyId] ?? active.policyId,
-      manual: control?.mode === 'manual',
-      callCandidates: offline.map((item) => ({
-        id: item.engineerId,
-        label: item.engineer.displayName,
-      })),
-    });
-    if (decision.policyId !== active.policyId) {
-      const operationId = randomUUID();
-      await this.operations.execute(
-        {
-          operationId,
-          actor,
-          action: 'policy.select',
-          targetRef: decision.policyId,
-          payload: { operationId, policyId: decision.policyId },
-        },
-        async (context) => {
-          const selected = await this.policyService.select(context, decision.policyId);
-          await this.publisher.publishIfChanged(
-            context.tx,
-            context.now,
-            PUBLICATION_TRIGGERS.POLICY_CHANGED,
-          );
-          return selected;
-        },
-      );
-    }
-    if (decision.callEngineerId) {
-      const open = await this.prisma.alert.findMany({
-        where: { kind: 'alert', resolvedAt: null, invalidatedAt: null },
-        orderBy: { createdAt: 'desc' },
-        take: 20,
-      });
-      const target = open.find((alert) => alertActionsFor(alert.code).includes('add_engineer'));
-      if (target) {
-        const operationId = randomUUID();
-        const dto = {
-          operationId,
-          action: 'add_engineer' as const,
-          engineerId: decision.callEngineerId,
-          reason: 'Решено с AI автоматически',
-        };
-        await this.operations.execute(
-          { operationId, actor, action: 'alert.resolve', targetRef: target.id, payload: dto },
-          (context) => this.alertsService.resolve(context, target.id, dto),
-        );
-      }
-    }
-    if (decision.restoreAuto) {
-      const operationId = randomUUID();
-      await this.operations.execute(
-        { operationId, actor, action: 'control.auto', payload: { operationId, mode: 'auto' } },
-        (context) => this.control.returnToAuto(context),
-      );
-    }
-    return {
-      id: decision.policyId,
-      label: decision.policyLabel,
-      steps: decision.steps,
-    };
-  }
-
-  @Post('alerts/:id/ai-resolve')
-  @ApiOperation({
-    summary: 'System one picks an allowed alert action; apply=0 returns the choice only',
-  })
-  async resolveAlertWithModel(
-    @CurrentActor() actor: Actor,
-    @Param('id') id: string,
-    @Query('apply') apply?: string,
-  ) {
-    return this.alertsService.resolveWithSystemOne(actor, id, { apply: apply !== '0' });
-  }
-
-  @Post('alerts/:id/resolve')
-  @ApiOperation({ summary: 'Apply one dispatcher-selected alert resolution atomically' })
-  async resolveAlert(
-    @CurrentActor() actor: Actor,
-    @Param('id') id: string,
-    @Body(zodBody(resolveAlertSchema)) dto: ResolveAlertDto,
-  ) {
-    const outcome = await this.operations.execute(
-      { operationId: dto.operationId, actor, action: 'alert.resolve', targetRef: id, payload: dto },
-      (context) => this.alertsService.resolve(context, id, dto),
-    );
-    return { alert: outcome.result };
-  }
-
-  @Get('alerts/:id/window-proposal')
-  @ApiOperation({ summary: 'Preview a feasible same-day customer window without applying it' })
-  async proposeAlertWindow(@Param('id') id: string) {
-    return this.alertsService.proposeWindow(id);
-  }
-
-  @Get('shift')
-  @ApiOperation({ summary: 'Day close status; open alerts are a hard close gate' })
-  async shift(@Query('workDate') workDate?: string) {
-    if (!workDate || !/^\d{4}-\d{2}-\d{2}$/.test(workDate)) {
-      throw new SysError('VALIDATION_FAILED', 'workDate must be YYYY-MM-DD');
-    }
-    return this.alertsService.shiftStatus(workDate);
-  }
-
-  @Post('shift/close')
-  @ApiOperation({ summary: 'Close a day only when every blocking alert has an outcome' })
-  async closeShift(
-    @CurrentActor() actor: Actor,
-    @Body(zodBody(closeShiftSchema)) dto: CloseShiftDto,
-  ) {
-    const outcome = await this.operations.execute(
-      {
-        operationId: dto.operationId,
-        actor,
-        action: 'shift.close',
-        targetRef: dto.workDate,
-        payload: dto,
-      },
-      (context) => this.alertsService.closeShift(context, dto.workDate),
-    );
-    return outcome.result;
-  }
-
   @Post('mode')
   @ApiOperation({ summary: 'Switch emergency manual control on or off' })
   async setMode(@CurrentActor() actor: Actor, @Body(zodBody(setModeSchema)) dto: SetModeDto) {
     const outcome = await this.operations.execute(
-      {
-        operationId: dto.operationId,
-        actor,
-        action: `control.${dto.mode}`,
-        payload: dto,
-      },
+      { operationId: dto.operationId, actor, action: `control.${dto.mode}`, payload: dto },
       async (context) =>
         dto.mode === 'manual'
           ? this.control.enterManual(context)
@@ -1127,7 +398,7 @@ export class DispatchController {
         targetRef: dto.requestId,
         payload: dto,
       },
-      async (context) => this.manual.reassign(context, dto.requestId, dto.engineerId),
+      (context) => this.manual.reassign(context, dto.requestId, dto.engineerId),
     );
     return outcome.result;
   }
@@ -1143,211 +414,110 @@ export class DispatchController {
         targetRef: dto.engineerId,
         payload: dto,
       },
-      async (context) => this.manual.reorder(context, dto.engineerId, dto.requestIds),
+      (context) => this.manual.reorder(context, dto.engineerId, dto.requestIds),
     );
     return outcome.result;
   }
 
   @Post('debug/router-result')
-  @ApiOperation({
-    summary: 'Feed a Router result through the acceptance checks (debug contour)',
-  })
+  @ApiOperation({ summary: 'Feed a Router result through the acceptance checks (debug contour)' })
   async submitResult(@Body(zodBody(submitResultSchema)) dto: SubmitResultDto) {
-    // The production path is the opposite direction: sys polls Router. This endpoint
-    // exists only while that client does not, and it runs the identical checks -- it is a
-    // way in for a test, not a second way to apply a plan (context/41 section 6.3).
     return this.acceptance.accept(dto.result, dto.activeContextVersion ?? null);
   }
 
-  @Get('data/state')
-  @ApiOperation({ summary: 'Whether the application has been initialised, and how' })
-  async dataState() {
-    const state = await this.prisma.appState.findMany({
-      where: {
-        key: {
-          in: [
-            APP_STATE_KEYS.INITIALIZED,
-            APP_STATE_KEYS.STARTUP_PROFILE,
-            APP_STATE_KEYS.GENERATION,
-          ],
-        },
-      },
-    });
-    const byKey = new Map(state.map((row) => [row.key, row.value]));
-    const packages = await this.prisma.importPackage.findMany({
-      orderBy: { appliedAt: 'desc' },
-      take: 20,
-    });
-    const [depots, requestRegions, engineerRegions] = await Promise.all([
-      this.prisma.depot.findMany({ select: { region: true } }),
-      this.prisma.request.findMany({
-        where: { region: { not: null } },
-        distinct: ['region'],
-        select: { region: true },
-      }),
-      this.prisma.engineer.findMany({
-        where: { region: { not: null }, archivedAt: null },
-        distinct: ['region'],
-        select: { region: true },
-      }),
-    ]);
-    const availableRegions = [
-      ...new Set(
-        [...depots, ...requestRegions, ...engineerRegions].flatMap((item) =>
-          item.region === null ? [] : [item.region],
-        ),
-      ),
-    ].sort();
-    return {
-      // An empty `requests` table is not proof that setup never happened; after a
-      // deliberate empty reset it is the intended state (context/37 section 9.5).
-      initialized: byKey.get(APP_STATE_KEYS.INITIALIZED) ?? false,
-      startupProfile: byKey.get(APP_STATE_KEYS.STARTUP_PROFILE) ?? null,
-      generation: byKey.get(APP_STATE_KEYS.GENERATION) ?? 1,
-      demoStand: this.demoStand.enabled,
-      availableRegions,
-      imports: packages.map((item) => ({
-        source: item.source,
-        checksum: item.checksum,
-        appliedAt: Number(item.appliedAt),
-        summary: item.summary,
-      })),
-    };
-  }
-
-  @Post('data/upload')
-  @ApiOperation({ summary: 'Atomically load a new region or append requests from JSON' })
-  async uploadData(
-    @CurrentActor() actor: Actor,
-    @Body(zodBody(uploadDataPackageSchema)) dto: UploadDataPackageDto,
-  ) {
-    const outcome = await this.operations.execute(
-      {
-        operationId: dto.operationId,
-        actor,
-        action: 'data.upload',
-        targetRef: dto.region,
-        payload: dto,
-      },
-      async (context) =>
-        this.uploadImports.importPackage(
-          context,
-          dto,
-          this.config.get('DATASET_TIME_ZONE_OFFSET_SEC'),
-        ),
-    );
-    return outcome.result;
-  }
-
-  @Post('data/import')
-  @ApiOperation({ summary: 'Atomically load one, several or all official dataset regions' })
-  async importDataset(
-    @CurrentActor() actor: Actor,
-    @Body(zodBody(importDatasetSchema)) dto: ImportDatasetDto,
-  ) {
-    const outcome = await this.operations.execute(
-      {
-        operationId: dto.operationId,
-        actor,
-        action: 'data.import',
-        targetRef: dto.region ?? (dto.regions === 'all' ? 'all' : dto.regions?.join(',')),
-        payload: dto,
-      },
-      async (context) => {
-        const regions = dto.region
-          ? [dto.region]
-          : dto.regions === 'all'
-            ? [...DATASET_REGIONS]
-            : (dto.regions ?? []);
-        return this.imports.importRegions(
-          context,
-          regions,
-          this.config.get('DATASET_ROOT'),
-          this.config.get('DATASET_TIME_ZONE_OFFSET_SEC'),
-          dto.engineerCountPerRegion ?? {},
-        );
-      },
-    );
-    return outcome.result;
-  }
-
-  @Post('data/road-import')
-  @Post('road-import')
-  @ApiOperation({ summary: 'Import a native OSRM JSON or gzip road resource' })
-  async importRoadData(
-    @CurrentActor() actor: Actor,
-    @Body(zodBody(roadImportSchema)) dto: RoadImportDto,
-  ) {
-    if (!this.router.isConfigured()) {
-      throw SysError.notConfigured('Router Core');
-    }
-    const outcome = await this.operations.executeExternal(
-      {
-        operationId: dto.operationId,
-        actor,
-        action: 'router.road_import',
-        targetRef: dto.profile,
-        payload: dto,
-      },
-      () => this.roadImports.importRoadData(dto),
-    );
-    return outcome.result;
-  }
-
-  @Post('data/restart-demo')
+  @Post('ai/optimize')
   @ApiOperation({
-    summary: 'Rewind the public 14/2 demo day (DEMO_STAND only); keeps the dispatcher session',
+    summary: 'System one picks one simulated lever; the server applies that existing operation',
   })
-  async restartDemo(
-    @CurrentActor() actor: Actor,
-    @Body(zodBody(restartDemoSchema)) dto: RestartDemoDto,
-  ) {
-    if (actor.kind !== 'account') {
-      throw SysError.forbidden('Demo rewind is confirmed from the Dashboard');
-    }
-    this.demoStand.assertEnabled();
-    const outcome = await this.operations.execute(
-      {
-        operationId: dto.operationId,
-        actor,
-        action: 'data.restart_demo',
-        payload: dto,
-      },
-      async (context) => this.demoStand.restore(context),
-    );
-    return outcome.result;
+  async optimizeWithModel(@CurrentActor() actor: Actor, @Body() body: { summary?: unknown }) {
+    const summary = typeof body.summary === 'string' ? body.summary : '';
+    if (!this.router.isConfigured()) throw SysError.notConfigured('Router Core');
+    const active = await this.uow.run((tx) => this.policyService.active(tx));
+    const levers = await collectOptimizeLevers({
+      router: this.router,
+      prisma: this.prisma,
+      currentPolicyId: active.policyId,
+    });
+    const decision = await this.miniAi.planOptimization({ summary, levers });
+    const lever = levers.find((item) => item.id === decision.id);
+    if (!lever)
+      return { id: 'current', label: 'План уже оптимален', steps: ['План уже оптимален'] };
+    await this.applyOptimizeLever(actor, lever);
+    return { id: lever.id, label: lever.label, steps: decision.steps };
   }
 
-  @Post('data/reset')
-  @ApiOperation({ summary: 'Reset to the test data, or to an empty working set' })
-  async reset(@CurrentActor() actor: Actor, @Body(zodBody(resetSchema)) dto: ResetDto) {
-    if (actor.kind !== 'account') {
-      // A destructive reset is a confirmed human action. An integration key carries the
-      // dispatcher's authority but not their confirmation (context/42 DF-24).
-      throw SysError.forbidden('A reset is confirmed from the Dashboard');
+  private async applyOptimizeLever(actor: Actor, lever: OptimizeLever): Promise<void> {
+    if (lever.kind === 'policy' && lever.policyId) {
+      const operationId = randomUUID();
+      await this.operations.execute(
+        {
+          operationId,
+          actor,
+          action: 'policy.select',
+          targetRef: lever.policyId,
+          payload: { operationId, policyId: lever.policyId },
+        },
+        async (context) => {
+          const selected = await this.policyService.select(context, lever.policyId as string);
+          await this.publisher.publishIfChanged(
+            context.tx,
+            context.now,
+            PUBLICATION_TRIGGERS.POLICY_CHANGED,
+          );
+          return selected;
+        },
+      );
+      return;
     }
-    const outcome = await this.operations.execute(
-      {
-        operationId: dto.operationId,
-        actor,
-        action: `data.reset.${dto.kind}`,
-        payload: dto,
-        confirmation: dto.confirmation,
-      },
-      async (context) => {
-        if (dto.kind === 'demo' && this.demoStand.enabled) {
-          ResetService.assertConfirmation(dto.kind, dto.confirmation);
-          return this.demoStand.restore(context);
-        }
-        return this.resetService.run(context, dto.kind, dto.confirmation);
-      },
-    );
-    // A fresh working set has no execution facts, so the plan-assessment model
-    // goes back to the factory assumptions together with the data it fit.
-    if (this.router.isConfigured()) {
-      await this.ai.rollbackToFactory();
+    if (lever.kind === 'settings' && lever.settings) {
+      const current = await this.router.getTechnicalSettings();
+      const operationId = randomUUID();
+      const requested = {
+        operationId,
+        expectedContextVersion: current.routerContextVersion,
+        lunchesEnabled: lever.settings.lunchesEnabled ?? current.lunchesEnabled,
+        departureLatenessToleranceSec: current.departureLatenessToleranceSec,
+        taskStartLatenessToleranceSec: current.taskStartLatenessToleranceSec,
+        windowLatenessToleranceSec: current.windowLatenessToleranceSec,
+        trafficEnabled: lever.settings.trafficEnabled ?? current.trafficEnabled,
+        metroEnabled: lever.settings.metroEnabled ?? current.metroEnabled,
+        equipmentTransfersEnabled: current.equipmentTransfersEnabled,
+        equipmentEnabled: lever.settings.equipmentEnabled ?? current.equipmentEnabled,
+        travelTimeMode: current.travelTimeMode,
+        accessBufferSec: current.accessBufferSec,
+        fixedTravelTimeSec: current.fixedTravelTimeSec,
+        earlyFinishReplanThresholdSec: current.earlyFinishReplanThresholdSec,
+        taskOverrunToleranceSec: current.taskOverrunToleranceSec,
+      };
+      await this.operations.executeExternal(
+        {
+          operationId,
+          actor,
+          action: 'router.technical-settings.replace',
+          targetRef: 'router-core',
+          expectedVersion: null,
+          payload: requested,
+        },
+        () => this.router.updateTechnicalSettings(requested),
+      );
+      if (lever.settings.lunchesEnabled !== undefined)
+        await this.live.synchronizeGlobalLunchSwitch(lever.settings.lunchesEnabled);
+      return;
     }
-    return outcome.result;
+    if (lever.kind === 'engineer' && lever.engineerId) {
+      const operationId = randomUUID();
+      await this.operations.execute(
+        {
+          operationId,
+          actor,
+          action: 'engineer.set_availability',
+          targetRef: lever.engineerId,
+          payload: { operationId, availability: 'online' },
+        },
+        (context) =>
+          this.live.setDispatcherAvailability(context, lever.engineerId as string, 'online', null),
+      );
+    }
   }
 
   @Get('mcp')
@@ -1378,16 +548,8 @@ export class DispatchController {
     @Body(zodBody(aiSettingsSchema)) dto: AiSettingsDto,
   ) {
     const outcome = await this.operations.execute(
-      {
-        operationId: dto.operationId,
-        actor,
-        action: 'dispatch.ai.replace',
-        payload: dto,
-      },
-      async (context) => {
-        const stored = await this.ai.replace(context.tx, context.now, dto);
-        return this.ai.present(stored);
-      },
+      { operationId: dto.operationId, actor, action: 'dispatch.ai.replace', payload: dto },
+      async (context) => this.ai.present(await this.ai.replace(context.tx, context.now, dto)),
     );
     this.ai.scheduleRefresh();
     return outcome.result;
@@ -1407,13 +569,8 @@ export class DispatchController {
   ) {
     const { operationId, ...patch } = dto;
     const outcome = await this.operations.execute(
-      {
-        operationId,
-        actor,
-        action: 'dispatch.settings.replace',
-        payload: dto,
-      },
-      async (context) => this.dispatcherSettings.replace(context, patch),
+      { operationId, actor, action: 'dispatch.settings.replace', payload: dto },
+      (context) => this.dispatcherSettings.replace(context, patch),
     );
     return outcome.result;
   }

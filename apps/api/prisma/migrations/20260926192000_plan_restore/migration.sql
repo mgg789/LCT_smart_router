@@ -1,0 +1,1 @@
+ALTER TYPE "PlanOrigin" ADD VALUE IF NOT EXISTS 'restore';

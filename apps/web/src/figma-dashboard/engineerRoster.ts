@@ -132,7 +132,8 @@ export function skillChipLabel(skill: string): string {
 /**
  * Figma 49:5253 transport line for a stored transport code.
  */
-export function engineerTransportLabel(transport: string): string {
+export function engineerTransportLabel(transport: string, transitEligible = true): string {
+  if (transport === 'walk' && !transitEligible) return 'Пешеход (без ОТ)';
   return TRANSPORT_COPY[transport] ?? transport;
 }
 
@@ -262,7 +263,7 @@ export function engineerProfilesFromSnapshot(
         hasAccount: engineer.hasAccount,
         skills: engineer.skills,
         skillLabels: engineer.skills.map(skillChipLabel),
-        transportLabel: engineerTransportLabel(engineer.transportType),
+        transportLabel: engineerTransportLabel(engineer.transportType, engineer.transitEligible),
         officeLabel: engineerOfficeLabel(engineer.region),
         assignedCount,
         cardStatus: cardStatus(activity, engineer.day?.availability ?? null, assignedCount),

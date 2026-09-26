@@ -2,6 +2,7 @@ export * from './applied-plan.service';
 export * from './control-state.service';
 export * from './http-router-client';
 export * from './manual-plan.service';
+export * from './plan-restore.service';
 export * from './result.types';
 export * from './result-acceptance.service';
 export * from './router-client.port';

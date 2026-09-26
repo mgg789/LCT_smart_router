@@ -1,4 +1,4 @@
-import type { StrategyId } from '../api/types';
+import type { PolicyComparisonRow, StrategyId } from '../api/types';
 import { POLICY_DESCRIPTIONS, POLICY_LABELS } from './reasons';
 import { formatDurationMin } from './time';
 
@@ -36,4 +36,48 @@ export function percentVsFifo(
   }
   const percent = Math.round(((value - baseline) / baseline) * 100);
   return `${percent > 0 ? '+' : ''}${percent}%`;
+}
+
+/** Values suitable for comparing strategies with unequal assigned-job counts. */
+export type ComparisonMeasure = 'assigned' | 'onTime' | 'kmPerJob' | 'travelPerJob' | 'lateShare';
+
+/** Normalize costs by assigned work; an empty plan has no per-job efficiency. */
+export function comparisonValue(
+  row: PolicyComparisonRow,
+  measure: ComparisonMeasure,
+): number | null {
+  const metrics = row.metrics;
+  if (measure === 'assigned') return metrics.assignedCount;
+  if (measure === 'onTime') return metrics.assignedCount - metrics.lateAssignedCount;
+  if (metrics.assignedCount === 0) return null;
+  if (measure === 'kmPerJob') return metrics.distanceKm / metrics.assignedCount;
+  if (measure === 'travelPerJob') return metrics.travelTimeSec / metrics.assignedCount / 60;
+  return (metrics.lateAssignedCount / metrics.assignedCount) * 100;
+}
+
+/** Reserve capacity is shown explicitly and never wins a fixed-roster comparison. */
+export function usesReserve(row: PolicyComparisonRow): boolean {
+  return (row.additionalEngineers ?? 0) > 0;
+}
+
+/** Joint winners among usable fixed-roster rows; equal columns convey no advantage. */
+export function comparisonWinners(
+  rows: readonly PolicyComparisonRow[],
+  readValue: (row: PolicyComparisonRow) => number | null,
+  better: 'min' | 'max' | null,
+): ReadonlySet<string> {
+  if (better === null) return new Set();
+  const values = rows
+    .filter((row) => row.isUsable && !usesReserve(row))
+    .map((row) => ({ id: row.strategyId, value: readValue(row) }))
+    .filter(
+      (row): row is { id: StrategyId; value: number } =>
+        row.value !== null && Number.isFinite(row.value),
+    );
+  if (values.length < 2 || values.every((row) => row.value === values[0]?.value)) return new Set();
+  const target =
+    better === 'min'
+      ? Math.min(...values.map((row) => row.value))
+      : Math.max(...values.map((row) => row.value));
+  return new Set(values.filter((row) => row.value === target).map((row) => row.id));
 }

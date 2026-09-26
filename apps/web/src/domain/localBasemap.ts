@@ -1,7 +1,7 @@
 import type { StyleSpecification } from 'maplibre-gl';
 
-/** Offline OSM coverage for the presentation area, west/south/east/north in WGS84. */
-export const LOCAL_MAP_BOUNDS = [37.63, 55.68, 37.82, 55.76] as const;
+/** Offline OSM coverage for the three official regions and outlying towns, west/south/east/north in WGS84. */
+export const LOCAL_MAP_BOUNDS = [37.5, 54.8, 38.2, 55.81] as const;
 
 /** Local street/water/park layers below route overlays; never needs remote tiles or glyphs. */
 export function localMapStyle(): StyleSpecification {
@@ -10,7 +10,7 @@ export function localMapStyle(): StyleSpecification {
     sources: {
       'local-basemap': {
         type: 'geojson',
-        data: '/maps/east-demo.geojson',
+        data: '/maps/official-regions.geojson',
         attribution: '© OpenStreetMap contributors · ODbL',
       },
     },

@@ -10,6 +10,12 @@ import { resolve } from 'node:path';
  */
 
 function loadRootEnv(): void {
+  // An explicitly isolated test database must never inherit the developer's
+  // provider, mail, or demo settings from the local application environment.
+  if (process.env.TEST_DATABASE_URL) {
+    process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
+    return;
+  }
   try {
     const content = readFileSync(resolve(process.cwd(), '../../.env'), 'utf8');
     for (const line of content.split('\n')) {

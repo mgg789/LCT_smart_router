@@ -74,6 +74,6 @@ export class ExecutionTimingPolicy {
 function fromRouterSettings(settings: RouterTechnicalSettings): ExecutionTimingPolicyValue {
   return {
     earlyFinishReplanThresholdSec: settings.earlyFinishReplanThresholdSec,
-    taskOverrunToleranceSec: settings.taskOverrunToleranceSec,
+    taskOverrunToleranceSec: settings.strictTimeWindows ? 0 : settings.taskOverrunToleranceSec,
   };
 }

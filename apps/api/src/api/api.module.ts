@@ -18,7 +18,13 @@ import { AiController } from './ai.controller';
 import { AuthController } from './auth.controller';
 import { ClientController } from './client.controller';
 import { DispatchController } from './dispatch.controller';
+import { DispatchAlertsController } from './dispatch-alerts.controller';
 import { DispatchChatsController } from './dispatch-chats.controller';
+import { DispatchDataController } from './dispatch-data.controller';
+import { DispatchEngineersController } from './dispatch-engineers.controller';
+import { DispatchLiveController } from './dispatch-live.controller';
+import { DispatchPlanHistoryController } from './dispatch-plan-history.controller';
+import { DispatchRequestsController } from './dispatch-requests.controller';
 import { EngineerController } from './engineer.controller';
 import { MonthlyReportsController } from './monthly-reports.controller';
 import {
@@ -60,6 +66,12 @@ import { RewardsController } from './rewards.controller';
     ClientController,
     EngineerController,
     DispatchController,
+    DispatchAlertsController,
+    DispatchDataController,
+    DispatchEngineersController,
+    DispatchLiveController,
+    DispatchPlanHistoryController,
+    DispatchRequestsController,
     RewardsController,
     DispatchPerformanceController,
     EngineerPerformanceController,

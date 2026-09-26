@@ -1,10 +1,11 @@
-"""Reproduce offline policy comparisons on all official regions and their union."""
+"""Reproduce policy comparisons on official regions with explicit offline/live roads."""
 
 import argparse
 import hashlib
 import json
 import platform
 import subprocess
+import time
 from pathlib import Path
 
 import ortools
@@ -21,6 +22,7 @@ def main() -> None:
     parser.add_argument("--budget-ms", type=int, default=2000)
     parser.add_argument("--access-buffer-sec", type=int, default=600)
     parser.add_argument("--no-traffic", action="store_true")
+    parser.add_argument("--live-roads", action="store_true", help="Use explicitly configured road services and their caches")
     parser.add_argument("--lateness-minutes", type=int, choices=(0, 5, 10, 15, 20), default=0)
     parser.add_argument("--repeat", type=int, default=1)
     args = parser.parse_args()
@@ -43,22 +45,25 @@ def main() -> None:
         "settings": settings.technical().model_dump(),
         "search_budget_ms": args.budget_ms,
         "repeat": args.repeat,
+        "road_sources": "configured_live_and_cache" if args.live_roads else "offline_graph",
         "scenarios": [],
     }
     for name, scenario in zip((*names, "all"), [*regions, combine_official_scenarios(regions)]):
         raw = scenario.snapshot.model_dump_json().encode()
-        runs = [
-            calculate_policy_comparison(
+        runs = []
+        elapsed_ms = []
+        for _ in range(args.repeat):
+            started = time.perf_counter()
+            runs.append(calculate_policy_comparison(
                 raw,
                 name,
                 scenario.graph,
                 settings,
                 "offline-benchmark",
                 args.budget_ms,
-                offline=True,
-            )
-            for _ in range(args.repeat)
-        ]
+                offline=not args.live_roads,
+            ))
+            elapsed_ms.append(round((time.perf_counter() - started) * 1000, 2))
         comparable = [
             [(row.strategy_id, row.summary.model_dump()) for row in run.rows] for run in runs
         ]
@@ -71,6 +76,7 @@ def main() -> None:
                 "graph_version": scenario.graph.version,
                 "comparison": runs[0].model_dump(),
                 "repeat_metrics_identical": len(runs) > 1,
+                "elapsed_ms": elapsed_ms,
             }
         )
         print(

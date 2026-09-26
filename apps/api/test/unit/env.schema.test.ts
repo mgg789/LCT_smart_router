@@ -28,6 +28,11 @@ describe('environment validation', () => {
     assert.equal(env.ROUTER_REQUEST_TIMEOUT_MS, 3000);
     assert.equal(env.LOCATION_IQ_TOKEN, undefined);
     assert.equal(env.DEMO_STAND, false);
+    assert.equal(env.AUTH_DEV_EXPOSE_CODES, false);
+    assert.equal(
+      validateEnv({ ...REQUIRED, AUTH_DEV_EXPOSE_CODES: 'true' }).AUTH_DEV_EXPOSE_CODES,
+      true,
+    );
   });
 
   it('coerces PORT from its string form', () => {

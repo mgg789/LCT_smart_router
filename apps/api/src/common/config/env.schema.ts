@@ -46,6 +46,9 @@ export const envSchema = z.object({
    */
   ROUTER_ROAD_API_URL: z.url().optional(),
 
+  /** Road geometry endpoint for the API; takes precedence over the legacy Router key. */
+  API_ROAD_API_URL: z.url().optional(),
+
   /**
    * Optional duration of an entire logical workday in wall-clock seconds. Empty means
    * ordinary 1:1 time. LIVE persists the chosen value when the dispatcher starts a day,
@@ -135,7 +138,7 @@ export const envSchema = z.object({
   LOCATION_IQ_TOKEN: z.string().min(1).optional(),
 
   /**
-   * Public demo stand: seed today's 14/2 live-demo, accelerate the day, and rewind after
+   * Public demo stand: seed today's 14/3 live-demo, accelerate the day, and rewind after
    * the shift or «День заново». Leave unset/false on developer machines.
    */
   DEMO_STAND: z

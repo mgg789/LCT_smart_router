@@ -117,6 +117,7 @@ const engineerSchema = z.object({
   inputOrder: z.number().int(),
   skills: z.array(z.string()),
   transportType: z.enum(['car', 'walk', 'bike', 'transit']),
+  transitEligible: z.boolean().optional().default(true),
   region: z.string().nullable(),
   homeLat: z.number().nullable(),
   homeLon: z.number().nullable(),
@@ -226,12 +227,50 @@ const rawAssignmentSchema = z.object({
 
 const planSchema = z.object({
   revision: z.number().int(),
-  origin: z.enum(['auto', 'manual']),
+  origin: z.enum(['auto', 'manual', 'restore']),
   planAsOf: z.number().int(),
   appliedAt: z.number().int(),
   routes: z.array(routeSchema),
   assignments: z.array(rawAssignmentSchema),
 });
+
+/** Read persisted revisions; restore eligibility is never inferred from browser state. */
+export async function loadPlanHistory(token: string) {
+  const history = await requestJson(
+    '/api/v1/dispatch/plan/previous',
+    z.object({
+      current: planSchema.nullable(),
+      previous: planSchema.nullable(),
+      eligibility: z.object({ eligible: z.boolean(), reason: z.string().nullable() }),
+    }),
+    token,
+  );
+  const normalize = (plan: z.infer<typeof planSchema> | null) =>
+    plan
+      ? {
+          ...plan,
+          assignments: plan.assignments.map(normalizeAssignment),
+        }
+      : null;
+  return { ...history, current: normalize(history.current), previous: normalize(history.previous) };
+}
+
+/** Restore the server's predecessor as a new revision, with a stale-view CAS guard. */
+export async function restorePreviousPlan(token: string, expectedRevision: number) {
+  return requestJson(
+    '/api/v1/dispatch/plan/restore',
+    z.object({
+      fromRevision: z.number().int(),
+      restoredRevision: z.number().int(),
+      origin: z.literal('restore'),
+    }),
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({ operationId: crypto.randomUUID(), expectedRevision }),
+    },
+  );
+}
 
 const dispatchPlanSchema = z.object({
   mode: z.enum(['auto', 'manual']),
@@ -397,6 +436,7 @@ const technicalSettingsSchema = z.object({
   metroEnabled: z.boolean().default(false),
   departureLatenessToleranceSec: z.number().int().nonnegative(),
   taskStartLatenessToleranceSec: z.number().int().nonnegative(),
+  strictTimeWindows: z.boolean().default(false),
   windowLatenessToleranceSec: z.number().int().nonnegative().max(1_200).default(0),
   trafficEnabled: z.boolean().default(true),
   equipmentEnabled: z.boolean().default(true),
@@ -1019,6 +1059,7 @@ export async function updateRouterTechnicalSettings(
       body: JSON.stringify({
         operationId: crypto.randomUUID(),
         expectedContextVersion: settings.routerContextVersion,
+        strictTimeWindows: settings.strictTimeWindows ?? false,
         lunchesEnabled: settings.lunchesEnabled,
         metroEnabled: settings.metroEnabled,
         departureLatenessToleranceSec: settings.departureLatenessToleranceSec,
@@ -1054,6 +1095,96 @@ export async function setDispatchMode(token: string, mode: 'auto' | 'manual'): P
     method: 'POST',
     body: JSON.stringify({ operationId: crypto.randomUUID(), mode }),
   });
+}
+
+const simulationPointSchema = z.object({ lat: z.number(), lon: z.number() });
+const simulationRouteSchema = z.object({
+  engineerId: z.string(),
+  segments: z.array(
+    z.object({
+      travelSource: z.string(),
+      points: z.array(simulationPointSchema),
+    }),
+  ),
+});
+const simulationDeltaSchema = z.object({
+  assigned: z.number(),
+  unassigned: z.number(),
+  lateAssigned: z.number(),
+  totalLatenessSec: z.number(),
+  distanceKm: z.number(),
+  transfers: z.number(),
+  beforeLate: z.number(),
+  afterLate: z.number(),
+  beforeUnassigned: z.number(),
+  afterUnassigned: z.number(),
+});
+export const simulationResponseSchema = z.object({
+  method: z.enum(['insertion', 'bounded', 'catalog']),
+  cached: z.boolean(),
+  patchHash: z.string(),
+  inputHash: z.string(),
+  routerContextVersion: z.string(),
+  text: z.string(),
+  delta: simulationDeltaSchema.nullable(),
+  routes: z.array(simulationRouteSchema),
+  strategies: z.array(
+    z.object({
+      strategyId: z.string(),
+      metrics: z.object({
+        assignedCount: z.number(),
+        unassignedCount: z.number(),
+        lateAssignedCount: z.number(),
+        distanceKm: z.number(),
+      }),
+      routes: z.array(simulationRouteSchema),
+    }),
+  ),
+});
+export type SimulationResponse = z.infer<typeof simulationResponseSchema>;
+
+export interface SimulationPatch {
+  readonly catalog?: boolean;
+  readonly policyId?: 'fast' | 'compact' | 'sla' | 'balanced' | 'eco' | 'covering';
+  readonly lunchesEnabled?: boolean;
+  readonly metroEnabled?: boolean;
+  readonly trafficEnabled?: boolean;
+  readonly equipmentEnabled?: boolean;
+  readonly equipmentTransfersEnabled?: boolean;
+  readonly window?: {
+    readonly requestId: string;
+    readonly windowStartAt: number;
+    readonly windowEndAt: number;
+  };
+  readonly pin?: { readonly requestId: string; readonly engineerId: string };
+  readonly unassignRequestId?: string;
+}
+
+/** Read-only what-if. The working plan is not replaced. */
+export function simulateChange(token: string, patch: SimulationPatch): Promise<SimulationResponse> {
+  return requestJson(
+    '/api/v1/dispatch/simulate',
+    simulationResponseSchema,
+    token,
+    { method: 'POST', body: JSON.stringify(patch) },
+    90_000,
+  );
+}
+
+/**
+ * Same what-if call the manual editor will use later.
+ * This pass does not rebuild the manual editor; callers still have to confirm a worse delta.
+ */
+export function previewManualChange(
+  token: string,
+  patch: SimulationPatch,
+): Promise<SimulationResponse> {
+  return simulateChange(token, patch);
+}
+
+/** Lateness or unassigned count grew. A shorter route by itself is not a warning. */
+export function simulationWorsens(delta: SimulationResponse['delta']): boolean {
+  return delta !== null && (delta.lateAssigned > 0 || delta.unassigned > 0);
 }
 
 /** Loads all Router strategies and the official FIFO baseline for one immutable input. */
@@ -1486,7 +1617,7 @@ export function optimizePlanWithAi(
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ summary }),
     },
-    30_000,
+    120_000,
   );
 }
 
@@ -1586,7 +1717,9 @@ export async function requestJson<T>(
   } catch (cause) {
     if (cause instanceof DashboardApiError) throw cause;
     throw new DashboardApiError(
-      controller.signal.aborted ? 'Сервер не ответил за 12 секунд' : 'Нет связи с сервером',
+      controller.signal.aborted
+        ? `Сервер не ответил за ${Math.ceil(timeoutMs / 1000)} секунд`
+        : 'Нет связи с сервером',
       0,
       path,
     );

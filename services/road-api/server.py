@@ -29,6 +29,7 @@ import time
 import urllib.parse
 import urllib.request
 import urllib.error
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -60,13 +61,17 @@ def _load_cache():
 
 
 def _save_cache():
+    global _cache_dirty
     if not _cache_dirty:
         return
     CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    CACHE_PATH.write_text(
+    temporary = CACHE_PATH.with_suffix(".tmp")
+    temporary.write_text(
         json.dumps(_base_cache, ensure_ascii=False, separators=(",", ":")),
         encoding="utf-8",
     )
+    temporary.replace(CACHE_PATH)
+    _cache_dirty = False
 
 
 def _pair_key(a, b):
@@ -138,7 +143,9 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         raise RuntimeError("OSRM must not redirect")
 
 
-_OPENER = urllib.request.build_opener(_NoRedirect)
+# OSRM is explicitly restricted to local/private addresses above. Windows can
+# otherwise send even loopback requests through its system proxy.
+_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoRedirect)
 
 
 def haversine_m(a, b):
@@ -458,6 +465,51 @@ def build_matrix(raw_points, departure_epoch, bbox=None, refine=False):
     }
 
 
+def build_planning_matrix(raw_points, departure_epoch):
+    """Batch road costs for every forecast regime, without pairwise route calls.
+
+    The solver chooses a column by its actual departure minute. Geometry is fetched
+    only for selected legs; cold preparation performs one OSRM table request.
+    """
+    if len(raw_points) > 1000:
+        raise ValueError("planning matrix is limited to 1000 points")
+    transitions = sorted({0, *(
+        minute for start, end, *_ in traffic.BANDS for minute in (start, end)
+    ), *(
+        minute for start, end in traffic.RUSH_WINDOWS for minute in (start, end)
+    )})
+    midnight = datetime.fromtimestamp(departure_epoch, traffic.MSK).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    ).timestamp()
+    result = build_matrix(raw_points, midnight)
+    # Freeze the base cells once. Another handler may refine the shared cache,
+    # but it cannot mix different corridor revisions inside this response.
+    with _CACHE_LOCK:
+        bases = {key: dict(value) for key, value in _base_cache.items()}
+    for i, row in enumerate(result["matrix"]):
+        for j, cell in enumerate(row):
+            if cell["mode"] == "self":
+                cell["forecast_duration_s"] = [0.0] * len(transitions)
+            elif cell["mode"] == "road":
+                a, b = raw_points[i], raw_points[j]
+                base = bases[_pair_key(a, b)]
+                ra = traffic.haversine_m(a, traffic.MOSCOW_CENTER)
+                rb = traffic.haversine_m(b, traffic.MOSCOW_CENTER)
+                direction = traffic.step_direction(ra, rb)
+                refined = base.get("pv") == PROFILE_PV and base.get("profile")
+                cell["base_duration_s"] = base["duration_s"]
+                cell["distance_m"] = base["distance_m"]
+                cell["forecast_duration_s"] = [round(
+                    _factored_from_profile(base, minute, direction, (ra + rb) / 2)
+                    if refined else base["duration_s"] * traffic.endpoint_factor(midnight + minute * 60, a, b)[0],
+                    1,
+                ) for minute in transitions]
+    result["model_version"] = traffic.MODEL_VERSION
+    result["forecast_band_starts"] = transitions
+    result["forecast_timezone"] = "Europe/Moscow"
+    return result
+
+
 MODEL_INFO = {
     "model_version": traffic.MODEL_VERSION,
     "base": "moscow-radial-v1 (core/traffic_engine.py, LCT_smart_router)",
@@ -581,7 +633,10 @@ class Handler(BaseHTTPRequestHandler):
                         raise ValueError("bbox must be minlon,minlat,maxlon,maxlat")
                     bbox = tuple(vals)
                 refine = query.get("refine") in ("1", "true", "yes")
-                self._json(200, build_matrix(raw_points, departure, bbox, refine))
+                if query.get("planning") == "1":
+                    self._json(200, build_planning_matrix(raw_points, departure))
+                else:
+                    self._json(200, build_matrix(raw_points, departure, bbox, refine))
             else:
                 self._json(404, {"error": "not found"})
         except (ValueError, KeyError) as exc:

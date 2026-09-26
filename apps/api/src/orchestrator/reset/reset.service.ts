@@ -87,7 +87,7 @@ export class ResetService {
 
   /**
    * Erases the working set and advances generation. Used by the confirmed Dashboard
-   * reset and by the public demo-stand rewind, which then re-imports today's 14/2 day.
+   * reset and by the public demo-stand rewind, which then re-imports today's 14/3 day.
    */
   async clearWorkingSet(
     context: OperationContext,

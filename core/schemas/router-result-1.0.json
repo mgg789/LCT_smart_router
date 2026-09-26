@@ -1363,6 +1363,11 @@
           "title": "Metro Enabled",
           "type": "boolean"
         },
+        "strict_time_windows": {
+          "default": false,
+          "title": "Strict Time Windows",
+          "type": "boolean"
+        },
         "task_overrun_tolerance_sec": {
           "default": 600,
           "maximum": 86400,

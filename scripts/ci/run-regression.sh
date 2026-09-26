@@ -14,9 +14,11 @@ source "$root/tests/e2e/contour.env"
 set +a
 export MSYS_NO_PATHCONV=1
 run_id="$(date -u +%Y%m%dT%H%M%S)-$$-${RANDOM}"
-project="lct-regression-${run_id,,}"
+project="lct-regression-$(printf '%s' "$run_id" | tr '[:upper:]' '[:lower:]')"
 output="$root/artifacts/regression/$run_id"
 mkdir -p "$output"
+# Serialize memory-heavy image builds on small runners; cached layers are reused.
+export COMPOSE_PARALLEL_LIMIT="${COMPOSE_PARALLEL_LIMIT:-1}"
 
 compose() {
   docker compose --project-name "$project" \
@@ -46,16 +48,16 @@ trap 'exit 143' TERM
 
 printf 'Regression project: %s\n' "$project"
 compose up -d --build --wait --wait-timeout 180 2>&1 | tee "$output/startup.log"
-compose exec -T regression pnpm test:e2e:types 2>&1 | tee "$output/typecheck.log"
+compose exec -T regression timeout 60 pnpm test:e2e:types 2>&1 | tee "$output/typecheck.log"
 compose exec -T postgres createdb -U lct lct_api_checks
-compose exec -T regression bash -ec '
+compose exec -T regression timeout 90 bash -ec '
   export DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/lct_api_checks"
   pnpm --filter api exec prisma migrate deploy
   pnpm --filter api exec node --test dist-test/test/integration/engineers.test.js
 ' 2>&1 | tee "$output/api-engineers.log"
-compose exec -T regression pnpm smoke 2>&1 | tee "$output/smoke.log"
-compose exec -T regression pnpm test:e2e 2>&1 | tee "$output/browser.log"
+compose exec -T regression timeout 100 pnpm smoke 2>&1 | tee "$output/smoke.log"
+compose exec -T regression timeout 240 pnpm test:e2e 2>&1 | tee "$output/browser.log"
 compose stop router 2>&1 | tee "$output/router-stop.log"
-compose exec -T -e E2E_PHASE=router-down regression pnpm test:e2e 2>&1 | tee "$output/router-down.log"
+compose exec -T -e E2E_PHASE=router-down regression timeout 60 pnpm test:e2e 2>&1 | tee "$output/router-down.log"
 compose start --wait --wait-timeout 90 router 2>&1 | tee "$output/router-start.log"
-compose exec -T -e E2E_PHASE=router-recovery regression pnpm test:e2e 2>&1 | tee "$output/router-recovery.log"
+compose exec -T -e E2E_PHASE=router-recovery regression timeout 60 pnpm test:e2e 2>&1 | tee "$output/router-recovery.log"

@@ -7,6 +7,13 @@ import { AlertsService } from '../../orchestrator/alerts';
 import { LiveService } from '../../orchestrator/live/live.service';
 import { PolicyService } from '../../orchestrator/policy';
 import { RequestsService } from '../../orchestrator/requests/requests.service';
+import {
+  readSimulation,
+  rememberSimulation,
+  russianDelta,
+  simulationPatchHash,
+  toRouterPatch,
+} from '../../orchestrator/simulator';
 import { PrismaService } from '../../persistence';
 import { SnapshotBuilder } from '../../routing/mount-data-eng';
 import {
@@ -384,6 +391,79 @@ export function buildDispatcherReadTools(deps: DispatcherReadToolDeps): readonly
     },
   };
 
+  const simulateChangeSchema = z
+    .object({
+      policyId: z.enum(['fast', 'compact', 'sla', 'balanced', 'eco', 'covering']).optional(),
+      lunchesEnabled: z.boolean().optional(),
+      metroEnabled: z.boolean().optional(),
+      trafficEnabled: z.boolean().optional(),
+      equipmentEnabled: z.boolean().optional(),
+      equipmentTransfersEnabled: z.boolean().optional(),
+      window: z
+        .object({
+          requestId: z.string().min(1),
+          windowStartAt: z.number().int().nonnegative(),
+          windowEndAt: z.number().int().nonnegative(),
+        })
+        .optional(),
+      pin: z
+        .object({
+          requestId: z.string().min(1),
+          engineerId: z.string().min(1),
+        })
+        .optional(),
+      unassignRequestId: z.string().min(1).optional(),
+      bringOnlineEngineerId: z.string().min(1).max(80).optional(),
+    })
+    .strict();
+  type SimulateChangeArgs = z.infer<typeof simulateChangeSchema>;
+
+  const simulateChange: ToolSpec<SimulateChangeArgs> = {
+    name: 'simulate_change',
+    description:
+      'Read-only what-if against the current plan. Does not apply the change. ' +
+      'One of: policyId (fast, compact, sla, balanced, eco, covering), a settings toggle ' +
+      '(lunchesEnabled, metroEnabled, trafficEnabled, equipmentEnabled, equipmentTransfersEnabled), ' +
+      'bringOnlineEngineerId (mark one offline engineer available on the copy only), ' +
+      'one window, one pin, or one unassignRequestId. Do not mix a window with a policy. ' +
+      'The Russian text states assigned, unassigned, lateness, distance, transfers, ' +
+      'engineers in work, and additional covering crews. Quote those numbers. ' +
+      'A covering crew is a reserve clone, not a named person on the shift. ' +
+      'Policy «полное покрытие» raises coverage first and may add reserve crews; ' +
+      'it does not promise every request is assigned, because skill, region, window, ' +
+      'shift and equipment still apply. Do not invent a headcount the text does not state.',
+    schema: simulateChangeSchema,
+    async run(_ctx, args): Promise<ToolResult> {
+      const patch = toRouterPatch(args);
+      const current = await deps.prisma.routingCurrent.findUnique({
+        where: { id: 'singleton' },
+        include: { snapshot: true },
+      });
+      const contextVersion = await deps.router.getActiveContextVersion();
+      const stored =
+        current && contextVersion
+          ? await readSimulation(
+              deps.prisma,
+              current.snapshot.inputHash,
+              contextVersion,
+              simulationPatchHash(patch),
+            )
+          : null;
+      const result = stored ?? (await deps.router.simulate(patch));
+      if (
+        !stored &&
+        current &&
+        contextVersion &&
+        result.input_hash === current.snapshot.inputHash &&
+        result.router_context_version === contextVersion
+      ) {
+        await rememberSimulation(deps.prisma, patch, result);
+      }
+      const text = russianDelta(patch, result);
+      return ok(text, { text });
+    },
+  };
+
   const getRouterSettings: ToolSpec<GetRouterSettingsArgs> = {
     name: 'get_router_settings',
     description:
@@ -471,6 +551,7 @@ export function buildDispatcherReadTools(deps: DispatcherReadToolDeps): readonly
     getShiftStatus,
     getPolicies,
     comparePolicies,
+    simulateChange,
     getRouterSettings,
     getSnapshotDiagnostics,
     evaluateManualOrder,

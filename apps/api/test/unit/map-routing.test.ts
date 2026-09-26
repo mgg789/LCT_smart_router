@@ -66,6 +66,51 @@ function plan(segments: PlanRouteSegmentView[]): PlanView {
 }
 
 describe('map routing transport and composite geometry', () => {
+  it('enriches read-only comparison car lines asynchronously and preserves the source routes', async () => {
+    const previousApi = process.env.API_ROAD_API_URL;
+    process.env.API_ROAD_API_URL = 'http://road.test';
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls++;
+      return new Response(
+        JSON.stringify({
+          mode: 'road',
+          geometry: [
+            [a.lat, a.lon],
+            [55.725, 37.755],
+            [b.lat, b.lon],
+          ],
+        }),
+        { status: 200 },
+      );
+    };
+    const routing = service();
+    const routes = [
+      { engineerId: 'driver', segments: [{ travelSource: 'approximate', points: [a, b] }] },
+      { engineerId: 'walker', segments: [{ travelSource: 'approximate', points: [a, b] }] },
+      { engineerId: 'driver', segments: [{ travelSource: 'metro', points: [a, b] }] },
+    ];
+    const original = JSON.stringify(routes);
+    const modes = new Map([
+      ['driver', 'car'],
+      ['walker', 'walk'],
+    ]);
+    try {
+      const immediate = routing.projectSimulationRoutes(routes, modes);
+      assert.equal(immediate[0]?.segments[0]?.points.length, 2);
+      await routing.whenIdle();
+      const ready = routing.projectSimulationRoutes(routes, modes);
+      assert.equal(ready[0]?.segments[0]?.points.length, 3);
+      assert.equal(ready[1]?.segments[0]?.points.length, 2);
+      assert.equal(ready[2]?.segments[0]?.points.length, 2);
+      assert.equal(JSON.stringify(routes), original);
+      assert.equal(calls, 1);
+    } finally {
+      if (previousApi === undefined) delete process.env.API_ROAD_API_URL;
+      else process.env.API_ROAD_API_URL = previousApi;
+    }
+  });
+
   it('skips paid providers below 300 metres even when configured', async () => {
     let calls = 0;
     globalThis.fetch = async () => {
@@ -233,6 +278,46 @@ describe('map routing transport and composite geometry', () => {
     } finally {
       if (previous === undefined) delete process.env.ROUTER_ROAD_API_URL;
       else process.env.ROUTER_ROAD_API_URL = previous;
+    }
+  });
+
+  it('uses the API-specific road endpoint ahead of the legacy Router setting', async () => {
+    const previousApi = process.env.API_ROAD_API_URL;
+    const previousRouter = process.env.ROUTER_ROAD_API_URL;
+    process.env.API_ROAD_API_URL = 'http://api-road.test';
+    process.env.ROUTER_ROAD_API_URL = 'http://legacy-road.test';
+    const urls: string[] = [];
+    globalThis.fetch = async (input) => {
+      urls.push(String(input));
+      return Response.json({
+        mode: 'road',
+        geometry: [
+          [a.lat, a.lon],
+          [55.725, 37.751],
+          [b.lat, b.lon],
+        ],
+      });
+    };
+    try {
+      const routing = new MapRoutingService({ read: async () => DEFAULT_DISPATCHER_SETTINGS });
+      routing.projectPlan(
+        plan([
+          {
+            geometry: { points: [a, b] },
+            travelSource: 'approximate',
+            travelTimeSec: 300,
+            distanceKm: 1,
+          },
+        ]),
+      );
+      await routing.whenIdle();
+      assert.ok(urls.length > 0);
+      assert.ok(urls.every((url) => new URL(url).origin === 'http://api-road.test'));
+    } finally {
+      if (previousApi === undefined) delete process.env.API_ROAD_API_URL;
+      else process.env.API_ROAD_API_URL = previousApi;
+      if (previousRouter === undefined) delete process.env.ROUTER_ROAD_API_URL;
+      else process.env.ROUTER_ROAD_API_URL = previousRouter;
     }
   });
 

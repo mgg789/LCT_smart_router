@@ -218,8 +218,7 @@ export class SnapshotBuilder {
         window_end_at: windowEnd,
         priority: request.priority,
         required_skill: request.requiredSkill,
-        required_transport:
-          request.requiredTransport === 'transit' ? 'walk' : request.requiredTransport,
+        required_transport: request.requiredTransport,
         required_equipment: request.requiredEquipment,
       });
     }
@@ -344,7 +343,8 @@ export class SnapshotBuilder {
       region: engineer.region,
       input_order: engineer.inputOrder,
       skills: engineer.skills,
-      transport_type: engineer.transportType === 'transit' ? 'walk' : engineer.transportType,
+      transport_type: engineer.transportType,
+      transit_eligible: engineer.transitEligible,
       shift_start_at: shiftStart,
       shift_end_at: Number(day.shiftEndAt),
       start_location: { lat, lon },

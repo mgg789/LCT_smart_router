@@ -1,9 +1,7 @@
 import { z } from 'zod';
 import { expect, readPlan, signIn, test } from './fixtures';
 
-// Skipped: known v1.5 gap - drives the pre-redesign dashboard surface; rewriting
-// it for the figma-dashboard UI is tracked for the next release.
-test.skip('live plan renders the local map and replans when an engineer goes offline', async ({
+test('live plan renders the local map and replans when an engineer goes offline', async ({
   page,
   live,
 }, testInfo) => {
@@ -11,15 +9,20 @@ test.skip('live plan renders the local map and replans when an engineer goes off
   await expect(page.getByText('0 без назначения', { exact: false })).toBeVisible();
   await expect(page.locator('[data-map-ready="true"]')).toBeVisible();
   await expect(
-    page.getByText('Сохранённая карта района демо · улицы, парки и водоёмы'),
+    page.getByText('Сохранённая карта трёх регионов · улицы, парки и водоёмы'),
   ).toBeVisible();
   await page
     .getByRole('button')
     .filter({ has: page.getByTitle('Smoke East Engineer') })
     .click();
-  await expect(page.getByText('Как они повлияли', { exact: true })).toBeVisible();
-  await expect(page.getByText(/транспорт авто/)).toBeVisible();
+  // The Figma dashboard renders the selected engineer's factual profile in the
+  // dedicated roster surface instead of the retired inline explanation card.
   await page.getByRole('button', { name: 'Инженеры', exact: true }).click();
+  // The outgoing map card briefly remains mounted during the screen transition.
+  const roster = page.locator('section[data-name="ENGINEERS"]');
+  await expect(roster.getByText('Smoke East Engineer', { exact: true })).toBeVisible();
+  await expect(roster.getByText('Транспорт', { exact: true })).toBeVisible();
+  await expect(roster.getByText('Легковой, до 3.5 т', { exact: true })).toBeVisible();
   // The dossier action reflects accepted server state, not an optimistic toggle.
   await page.getByRole('button', { name: 'Снять со смены', exact: true }).click();
   await expect
@@ -50,7 +53,7 @@ test.skip('live plan renders the local map and replans when an engineer goes off
   });
 });
 
-test.skip('connection loss preserves the real day, disables writes and recovers', async ({
+test('connection loss preserves the real day, disables writes and recovers', async ({
   page,
   context,
   live,
