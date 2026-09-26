@@ -58,7 +58,7 @@ describe('request lifecycle', () => {
   let clientEmail: string;
   const requestIds: string[] = [];
 
-  const call = async (method: string, path: string, token: string, body?: unknown) =>
+  const rawCall = async (method: string, path: string, token: string, body?: unknown) =>
     fetch(`${baseUrl}${path}`, {
       method,
       headers: {
@@ -67,6 +67,24 @@ describe('request lifecycle', () => {
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
+
+  // Existing lifecycle scenarios explicitly accept the new confirmation gate.
+  const call = async (method: string, path: string, token: string, body?: unknown) => {
+    const response = await rawCall(method, path, token, body);
+    if (response.ok) return response;
+    const envelope = (await response.clone().json()) as ErrorBody;
+    const details = envelope.error?.details;
+    if (details?.kind !== 'window_change_confirmation') return response;
+    return fetch(`${baseUrl}${path}`, {
+      method,
+      headers: {
+        authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+        'x-window-change-confirmation': String(details.confirmation),
+      },
+      body: JSON.stringify(body),
+    });
+  };
 
   const prepare = async (overrides: Record<string, unknown> = {}) => {
     const response = await call('POST', '/api/v1/client/requests', clientToken, {
@@ -161,6 +179,45 @@ describe('request lifecycle', () => {
     await prisma.account.deleteMany({ where: { email: clientEmail } });
     await prisma.$disconnect();
     await app?.close();
+  });
+
+  it('requires exact window confirmation, leaves data and operation untouched on decline, and retries once', async () => {
+    const draft = await prepare();
+    await call('POST', `/api/v1/client/requests/${draft.id}/submit`, clientToken, {
+      operationId: randomUUID(),
+      expectedVersion: draft.version,
+    });
+    const current = await prisma.request.findUniqueOrThrow({ where: { id: draft.id } });
+    const body = {
+      operationId: randomUUID(),
+      expectedVersion: current.version,
+      windowStartAt: DAY + 14 * HOUR,
+      windowEndAt: DAY + 16 * HOUR,
+    };
+    const path = `/api/v1/client/requests/${draft.id}/reschedule`;
+    const challenge = await rawCall('POST', path, clientToken, body);
+    assert.equal(challenge.status, 422);
+    const details = ((await challenge.json()) as ErrorBody).error.details;
+    assert.equal(details.kind, 'window_change_confirmation');
+    const untouched = await prisma.request.findUniqueOrThrow({ where: { id: draft.id } });
+    assert.equal(untouched.version, current.version);
+    assert.equal(untouched.windowStartAt, current.windowStartAt);
+    assert.equal(await prisma.operation.count({ where: { operationId: body.operationId } }), 0);
+    const headers = {
+      authorization: `Bearer ${clientToken}`,
+      'content-type': 'application/json',
+      'x-window-change-confirmation': String(details.confirmation),
+    };
+    const apply = () =>
+      fetch(`${baseUrl}${path}`, { method: 'POST', headers, body: JSON.stringify(body) });
+    const accepted = await apply();
+    assert.equal(accepted.status, 201, await accepted.clone().text());
+    const replayed = await apply();
+    assert.equal(replayed.status, 201);
+    assert.equal(
+      (await prisma.request.findUniqueOrThrow({ where: { id: draft.id } })).version,
+      current.version + 1,
+    );
   });
 
   it('derives skill, duration and priority from the type of work', async () => {

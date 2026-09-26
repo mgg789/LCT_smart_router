@@ -12,6 +12,10 @@ import { EngineersService } from '../../orchestrator/engineers/engineers.service
 import { LiveService } from '../../orchestrator/live/live.service';
 import { PolicyService } from '../../orchestrator/policy';
 import { RequestsService } from '../../orchestrator/requests/requests.service';
+import {
+  isWindowConfirmationRequired,
+  mayChangeRequestWindow,
+} from '../../orchestrator/requests/window-confirmation';
 import { PrismaService, UnitOfWork } from '../../persistence';
 import { SnapshotPublisher } from '../../routing/mount-data-eng';
 import type { AiPreviewRow } from '../runtime/ai-event.types';
@@ -213,7 +217,9 @@ export class AiOperationService {
       toolName: input.action,
       intent: 'Проверка безопасности',
     });
-    const allowed = await this.guard.allows(input.action, preview);
+    const allowed =
+      !mayChangeRequestWindow(input.action, parsed.data) &&
+      (await this.guard.allows(input.action, preview));
     if (allowed) {
       const outcome = await this.confirm({
         actor: input.actor,
@@ -368,6 +374,15 @@ export class AiOperationService {
       this.decisions.resolve(op.id, 'allow');
       return { aiOperationId: op.id, state: 'applied', result: outcome.result };
     } catch (error) {
+      if (isWindowConfirmationRequired(error)) {
+        // The business transaction rolled back without an outcome. Keep the prepared
+        // card retryable while the UI obtains approval for the exact current bounds.
+        await this.prisma.aiOperation.updateMany({
+          where: { id: op.id, state: 'running' },
+          data: { state: 'awaiting_confirmation', confirmedAt: null, version: { increment: 1 } },
+        });
+        throw error;
+      }
       if (error instanceof SysError) {
         await this.finish(op, 'rejected', this.clock.nowSeconds(), {
           code: error.code,

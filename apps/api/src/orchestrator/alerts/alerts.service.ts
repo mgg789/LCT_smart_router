@@ -29,6 +29,7 @@ import {
 } from '../facts/execution-timing-policy';
 import { businessNow } from '../live/business-clock';
 import { PERFORMANCE_ALERT_PREFIX, PerformanceService } from '../performance';
+import { requireWindowConfirmation } from '../requests/window-confirmation';
 import { DispatcherSettingsService } from '../settings/dispatcher-settings.service';
 import { buildAlertBrief } from './alert-brief';
 import { type AlertAction, alertActionsFor, resolutionDelay } from './alert-policy';
@@ -165,7 +166,9 @@ export class AlertsService {
       windowEndAt: action === 'move_window' ? (choice.windowEndAt ?? null) : null,
       expectedRequestVersion: action === 'move_window' ? brief.requestVersion : null,
     };
-    if (options?.apply === false) {
+    // Window proposals are always preview-only here: a second model call must not
+    // replace the exact proposal the human saw while confirming the explicit resolve.
+    if (options?.apply === false || action === 'move_window' || action === 'reschedule') {
       return { alert: toAlertView(alert), ...picked, applied: false };
     }
     const operationId = randomUUID();
@@ -678,6 +681,14 @@ export class AlertsService {
       if (start === undefined || end === undefined || end <= start) {
         throw new SysError('VALIDATION_FAILED', 'Moving a window needs both ordered bounds');
       }
+      requireWindowConfirmation(context.actor, {
+        requestId,
+        version: request.version,
+        previousStartAt: Number(request.windowStartAt),
+        previousEndAt: Number(request.windowEndAt),
+        windowStartAt: start,
+        windowEndAt: end,
+      });
       const liveDay = await context.tx.liveWorkday.findFirst({ where: { status: 'running' } });
       const assignedStop = await context.tx.appliedPlanStop.findFirst({
         where: { requestId, route: { plan: { current: { isNot: null } } } },

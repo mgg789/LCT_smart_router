@@ -25,6 +25,11 @@ import type {
   RoadImportSummary,
   RouterTechnicalSettings,
 } from './types';
+import {
+  confirmWindowChange,
+  WindowChangeDeclined,
+  windowConfirmationFrom,
+} from './windowConfirmation';
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
 const policyIdSchema = z.enum(['compact', 'fast', 'sla', 'balanced', 'eco', 'covering']);
@@ -1698,6 +1703,31 @@ export async function requestJson<T>(
     });
     const body: unknown = await response.json().catch(() => null);
     if (!response.ok) {
+      const challenge = windowConfirmationFrom(body);
+      if (challenge) {
+        if (new Headers(init.headers).has('x-window-change-confirmation')) {
+          throw new DashboardApiError(
+            'Заявка изменилась или подтверждение устарело. Откройте действие заново.',
+            409,
+            path,
+          );
+        }
+        globalThis.clearTimeout(timeout);
+        if (!(await confirmWindowChange(challenge))) throw new WindowChangeDeclined();
+        return await requestJson(
+          path,
+          schema,
+          token,
+          {
+            ...init,
+            headers: {
+              ...Object.fromEntries(new Headers(init.headers)),
+              'x-window-change-confirmation': challenge.confirmation,
+            },
+          },
+          timeoutMs,
+        );
+      }
       throw new DashboardApiError(
         apiErrorMessage(body, response.status),
         response.status,
@@ -1715,6 +1745,7 @@ export async function requestJson<T>(
       );
     return parsed.data;
   } catch (cause) {
+    if (cause instanceof WindowChangeDeclined) throw cause;
     if (cause instanceof DashboardApiError) throw cause;
     throw new DashboardApiError(
       controller.signal.aborted

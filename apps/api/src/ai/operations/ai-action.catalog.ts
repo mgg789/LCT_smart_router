@@ -620,15 +620,24 @@ export function buildAiActionCatalog(deps: AiActionCatalogDeps): ReadonlyMap<str
     },
     async apply({ context, targetRef, payload }) {
       const input = payload as ResolveAlertPayload;
+      const alertId = requireTargetRef(targetRef, 'an alert');
+      const alert =
+        input.action === 'move_window'
+          ? await context.tx.alert.findUnique({ where: { id: alertId } })
+          : null;
+      const request = alert?.requestIds[0]
+        ? await context.tx.request.findUnique({ where: { id: alert.requestIds[0] } })
+        : null;
       const resolveInput: ResolveAlertInput = {
         action: input.action,
+        ...(request ? { expectedRequestVersion: request.version } : {}),
         ...(input.reason === undefined ? {} : { reason: input.reason }),
         ...(input.minutes === undefined ? {} : { minutes: input.minutes }),
         ...(input.windowStartAt === undefined ? {} : { windowStartAt: input.windowStartAt }),
         ...(input.windowEndAt === undefined ? {} : { windowEndAt: input.windowEndAt }),
         ...(input.engineerId === undefined ? {} : { engineerId: input.engineerId }),
       };
-      return deps.alerts.resolve(context, requireTargetRef(targetRef, 'an alert'), resolveInput);
+      return deps.alerts.resolve(context, alertId, resolveInput);
     },
   });
 

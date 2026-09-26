@@ -3,6 +3,7 @@ import { SysError, toErrorCode } from '../common/errors';
 import { canonicalHash } from '../common/json';
 import { Clock } from '../common/time';
 import type { OperationState } from '../generated/prisma/client';
+import { isWindowConfirmationRequired } from '../orchestrator/requests/window-confirmation';
 import { PrismaService, type Tx, UnitOfWork } from '../persistence';
 import { AuditService } from './audit.service';
 import type {
@@ -130,7 +131,7 @@ export class OperationsService {
         }
       }
 
-      if (error instanceof SysError) {
+      if (error instanceof SysError && !isWindowConfirmationRequired(error)) {
         // The handler's transaction is gone, so the refusal is recorded in its own.
         // A refusal must use the same boundary as the attempt: journaling it on the
         // routing lock would make a fast account rejection wait out a plan apply.

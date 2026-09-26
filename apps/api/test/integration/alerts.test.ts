@@ -1,3 +1,7 @@
+import {
+  isWindowConfirmationRequired,
+  requireWindowConfirmation,
+} from '../../src/orchestrator/requests/window-confirmation';
 import '../support/env';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -311,13 +315,27 @@ describe('dispatcher alert lifecycle', () => {
       },
     });
     ids.push(issue.id);
+    let windowChangeConfirmation: string | undefined;
+    try {
+      requireWindowConfirmation(actor, {
+        requestId: request.id,
+        version: request.version,
+        previousStartAt: Number(request.windowStartAt),
+        previousEndAt: Number(request.windowEndAt),
+        windowStartAt: Number(request.windowStartAt) + 86400,
+        windowEndAt: Number(request.windowEndAt) + 86400,
+      });
+    } catch (error) {
+      assert.ok(isWindowConfirmationRequired(error));
+      windowChangeConfirmation = String(error.details.confirmation);
+    }
     const invoke = () => {
       const operationId = randomUUID();
       opIds.push(operationId);
       return operations.execute(
         {
           operationId,
-          actor,
+          actor: { ...actor, windowChangeConfirmation },
           action: 'alert.resolve',
           targetRef: issue.id,
           payload: { action: 'reschedule' },
@@ -410,8 +428,32 @@ describe('dispatcher alert lifecycle', () => {
       windowStartAt: Number(now) + 600,
       windowEndAt: Number(now) + 1200,
     };
+    let windowChangeConfirmation: string | undefined;
+    await assert.rejects(
+      () =>
+        operations.execute(
+          { operationId, actor, action: 'alert.resolve', targetRef: first.id, payload: input },
+          (context) => alerts.resolve(context, first.id, input),
+        ),
+      (error: unknown) => {
+        assert.ok(isWindowConfirmationRequired(error));
+        windowChangeConfirmation = String(error.details.confirmation);
+        return true;
+      },
+    );
+    assert.equal(await prisma.operation.count({ where: { operationId } }), 0);
+    assert.equal(
+      (await prisma.request.findUniqueOrThrow({ where: { id: request.id } })).version,
+      request.version,
+    );
     await operations.execute(
-      { operationId, actor, action: 'alert.resolve', targetRef: first.id, payload: input },
+      {
+        operationId,
+        actor: { ...actor, windowChangeConfirmation },
+        action: 'alert.resolve',
+        targetRef: first.id,
+        payload: input,
+      },
       (context) => alerts.resolve(context, first.id, input),
     );
     const staleId = randomUUID();
