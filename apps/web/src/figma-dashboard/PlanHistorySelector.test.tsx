@@ -49,14 +49,15 @@ describe('plan history selector', () => {
         canRestore={false}
         busy={false}
         motionOn={false}
-        restoreUnavailableReason="План уже устарел"
+        restoreUnavailableReason="SCHEDULE_IN_THE_PAST"
         onSelect={vi.fn()}
         onChoose={vi.fn()}
       />,
     );
 
     expect(html).toContain('disabled=""');
-    expect(html).toContain('План уже устарел');
+    expect(html).toContain('время начала которых уже прошло');
+    expect(html).not.toContain('SCHEDULE_IN_THE_PAST');
     expect(html).toContain('role="tooltip"');
   });
 });

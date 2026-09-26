@@ -1,6 +1,25 @@
 import { motion } from 'framer-motion';
 import type { PlanView } from '../api/types';
 
+const restoreReasons: Readonly<Record<string, string>> = {
+  NO_CURRENT_PLAN: 'Текущий план ещё не построен.',
+  NO_PREVIOUS_PLAN: 'Предыдущего плана пока нет.',
+  SCHEDULE_IN_THE_PAST:
+    'В предыдущем плане есть визиты, время начала которых уже прошло. Вернуть этот план нельзя.',
+  REQUEST_SET_CHANGED: 'Состав заявок изменился после построения предыдущего плана.',
+  ROUTER_CONTEXT_CHANGED:
+    'Условия расчёта маршрутов изменились. Предыдущий план больше не соответствует им.',
+  ROUTER_CONTEXT_UNAVAILABLE:
+    'Не удалось проверить актуальные условия маршрутов. Попробуйте позже.',
+  ROUTER_CONTEXT_MUTATION_PENDING: 'Условия маршрутов сейчас обновляются. Дождитесь завершения.',
+  EXECUTION_FACTS_CHANGED:
+    'После построения предыдущего плана изменились фактические статусы выполнения заявок.',
+  SNAPSHOT_UNAVAILABLE: 'Исходные данные предыдущего плана недоступны для проверки.',
+  INPUT_CONDITIONS_CHANGED: 'Изменились заявки, смены инженеров или границы рабочего дня.',
+  EQUIPMENT_ISSUED_ASSIGNMENT_CHANGED:
+    'Оборудование уже выдано, а предыдущий план назначает связанные заявки другим инженерам.',
+};
+
 export type PlanHistorySelection = 'previous' | 'current';
 
 export interface PlanHistoryAnchor {
@@ -40,7 +59,11 @@ export function PlanHistorySelector({
   onChoose: () => void;
 }) {
   const unavailableReason =
-    restoreUnavailableReason?.trim() || 'Предыдущий план сейчас недоступен для восстановления.';
+    (restoreUnavailableReason && restoreReasons[restoreUnavailableReason]) ||
+    (restoreUnavailableReason && !/^[A-Z_]+$/.test(restoreUnavailableReason)
+      ? restoreUnavailableReason.trim()
+      : null) ||
+    'Предыдущий план сейчас недоступен для восстановления. Обновите данные и попробуйте снова.';
   return (
     <motion.aside
       data-plan-history-dialog
