@@ -1,13 +1,9 @@
 import { z } from 'zod';
 import { expect, readPlan, signIn, test } from './fixtures';
 
-const DASHBOARD_REDESIGN_SKIP =
-  'known v1.5 gap: these scenarios drive the pre-redesign dashboard surface; ' +
-  'rewriting them for the figma-dashboard UI is tracked for the next release';
-
-test('live plan renders the local map and replans when an engineer goes offline', {
-  skip: DASHBOARD_REDESIGN_SKIP,
-}, async ({
+// Skipped: known v1.5 gap - drives the pre-redesign dashboard surface; rewriting
+// it for the figma-dashboard UI is tracked for the next release.
+test.skip('live plan renders the local map and replans when an engineer goes offline', async ({
   page,
   live,
 }, testInfo) => {
@@ -54,9 +50,7 @@ test('live plan renders the local map and replans when an engineer goes offline'
   });
 });
 
-test('connection loss preserves the real day, disables writes and recovers', {
-  skip: DASHBOARD_REDESIGN_SKIP,
-}, async ({
+test.skip('connection loss preserves the real day, disables writes and recovers', async ({
   page,
   context,
   live,
