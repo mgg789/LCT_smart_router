@@ -382,6 +382,8 @@ function Composer({
           {notice ?? status}
         </p>
       ) : null}
+      {/* Click on the black bar focuses the field. The textarea remains the keyboard target. */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: The bar is not a second control; it only moves focus into the textarea. */}
       <div
         className="flex min-h-[79px] items-center gap-[12px] rounded-[40px] bg-figma-ink px-[10px] py-[8px]"
         onMouseDown={(event) => focusComposer(event, fieldRef.current)}

@@ -17,8 +17,12 @@ import {
 } from 'lucide-react';
 import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { DashboardApiError, loadAlertWindowProposal, simulateChange, simulationWorsens } from '../api/client';
-import { WorsenModal } from './WorsenModal';
+import {
+  DashboardApiError,
+  loadAlertWindowProposal,
+  simulateChange,
+  simulationWorsens,
+} from '../api/client';
 import type { AlertResolutionInput, AlertView, DashboardSnapshot } from '../api/types';
 import {
   ALERT_ACTION_SPECS,
@@ -29,6 +33,7 @@ import {
   isAlertActionId,
 } from '../domain/alerts';
 import { InboxButton } from './inboxCard';
+import { WorsenModal } from './WorsenModal';
 
 const fieldClass =
   'mt-[8px] block w-full rounded-[12px] border border-figma-ink/30 bg-white p-[12px] text-[18px] text-figma-ink focus:outline-figma-ink';
@@ -460,7 +465,13 @@ function ResolutionForm({
         input.windowEndAt <= input.windowStartAt
       )
         throw new Error('Конец окна должен быть позже начала.');
-      if (action === 'move_window' && token && request && input.windowStartAt && input.windowEndAt) {
+      if (
+        action === 'move_window' &&
+        token &&
+        request &&
+        input.windowStartAt &&
+        input.windowEndAt
+      ) {
         try {
           const preview = await simulateChange(token, {
             window: {

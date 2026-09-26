@@ -23,7 +23,10 @@ export function WorsenModal({
             aria-labelledby={titleId}
             className="relative flex w-[560px] flex-col rounded-[20px] bg-white px-[30px] pb-[24px] pt-[28px]"
           >
-            <h2 id={titleId} className="font-extrabold text-[28px] tracking-[-0.476px] text-figma-ink">
+            <h2
+              id={titleId}
+              className="font-extrabold text-[28px] tracking-[-0.476px] text-figma-ink"
+            >
               Станет хуже
             </h2>
             <p className="mt-[12px] font-medium text-[18px] text-figma-muted">{text}</p>

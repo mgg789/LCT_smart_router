@@ -205,7 +205,10 @@ export async function collectOptimizeLevers(input: {
   return levers;
 }
 
-function deltaFromCounts(before: SimulationCounts, after: SimulationCounts): NonNullable<RouterSimulation['delta']> {
+function deltaFromCounts(
+  before: SimulationCounts,
+  after: SimulationCounts,
+): NonNullable<RouterSimulation['delta']> {
   return {
     assigned: after.assigned_count - before.assigned_count,
     unassigned: after.unassigned_count - before.unassigned_count,

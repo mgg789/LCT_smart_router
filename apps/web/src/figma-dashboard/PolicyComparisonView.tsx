@@ -1,16 +1,16 @@
 import { motion } from 'framer-motion';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { simulateChange, type SimulationResponse } from '../api/client';
+import { type SimulationResponse, simulateChange } from '../api/client';
 import type {
   DashboardSnapshot,
   PolicyComparisonResponse,
   PolicyComparisonRow,
 } from '../api/types';
-import type { RegionSelection } from '../domain/regions';
 import { unassignedRequests } from '../domain/dashboard';
-import { PolicyStrategyMap, type DayRequestPoint } from './PolicyStrategyMap';
+import type { RegionSelection } from '../domain/regions';
 import { strategyDescription } from '../lib/policyComparison';
 import { formatClock, formatDurationMin, formatKm } from '../lib/time';
+import { type DayRequestPoint, PolicyStrategyMap } from './PolicyStrategyMap';
 import { FigmaText } from './primitives';
 
 export const POLICY_PAGE_CAPTION = 'Одинаковые заявки и дорожные условия';
@@ -70,6 +70,9 @@ export function PolicyComparisonView({
   }, [engineerRegionKey]);
   const dayRequests = useMemo(() => dayRequestPoints(snapshot), [snapshot]);
 
+  const comparisonKey = `${comparison?.inputHash ?? ''}:${comparison?.routerContextVersion ?? ''}`;
+  // comparisonKey is not an argument of the catalog call. It refetches the map when the snapshot under the table changes.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: refetch trigger, not an input of simulateChange
   useEffect(() => {
     if (mode !== 'map' || !token) return;
     let active = true;
@@ -82,7 +85,8 @@ export function PolicyComparisonView({
         setMapRoutes(result);
       })
       .catch((cause: unknown) => {
-        if (active) setMapError(cause instanceof Error ? cause.message : 'Не удалось построить карту');
+        if (active)
+          setMapError(cause instanceof Error ? cause.message : 'Не удалось построить карту');
       })
       .finally(() => {
         if (active) setMapLoading(false);
@@ -90,7 +94,7 @@ export function PolicyComparisonView({
     return () => {
       active = false;
     };
-  }, [mode, token, comparison?.inputHash, comparison?.routerContextVersion]);
+  }, [mode, token, comparisonKey]);
   const appliedInputHash = snapshot?.plan.appliedResult?.inputHash ?? null;
   const isStale =
     comparison !== null &&
@@ -142,16 +146,16 @@ export function PolicyComparisonView({
               Карта
             </button>
           </div>
-        <button
-          type="button"
-          onClick={onRefresh}
-          disabled={loading || readOnly || !snapshot}
-          className="flex h-[67px] items-center justify-center rounded-[20px] bg-figma-bee px-[28px] transition-transform duration-150 hover:scale-[1.01] disabled:opacity-50"
-        >
-          <span className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
-            {loading ? 'Считаем…' : comparison ? 'Пересчитать' : 'Сравнить'}
-          </span>
-        </button>
+          <button
+            type="button"
+            onClick={onRefresh}
+            disabled={loading || readOnly || !snapshot}
+            className="flex h-[67px] items-center justify-center rounded-[20px] bg-figma-bee px-[28px] transition-transform duration-150 hover:scale-[1.01] disabled:opacity-50"
+          >
+            <span className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
+              {loading ? 'Считаем…' : comparison ? 'Пересчитать' : 'Сравнить'}
+            </span>
+          </button>
         </div>
       </div>
 
@@ -193,83 +197,89 @@ export function PolicyComparisonView({
           )
         ) : null}
         {mode === 'table' ? (
-        <>
-        {error ? (
-          <div className="rounded-[20px] bg-figma-soft px-[24px] py-[20px]">
-            <p className="font-semibold text-[20px] text-figma-danger">Сравнение не загрузилось</p>
-            <p className="mt-[8px] font-medium text-[16px] text-figma-muted">{error}</p>
-          </div>
-        ) : null}
+          <>
+            {error ? (
+              <div className="rounded-[20px] bg-figma-soft px-[24px] py-[20px]">
+                <p className="font-semibold text-[20px] text-figma-danger">
+                  Сравнение не загрузилось
+                </p>
+                <p className="mt-[8px] font-medium text-[16px] text-figma-muted">{error}</p>
+              </div>
+            ) : null}
 
-        {loading && !comparison ? (
-          <div className="grid grid-cols-3 gap-[16px]">
-            {['a', 'b', 'c', 'd', 'e', 'f'].map((key) => (
-              <div key={key} className="h-[120px] animate-pulse rounded-[20px] bg-figma-soft" />
-            ))}
-          </div>
-        ) : null}
-
-        {!loading && !comparison && !error ? (
-          <div className="flex h-[220px] items-center justify-center rounded-[20px] bg-figma-soft px-[30px] text-center">
-            <p className="font-medium text-[18px] text-figma-muted">
-              {readOnly
-                ? 'Новое сравнение станет доступно после восстановления связи.'
-                : 'Запустите сравнение. Активный план и выбранная политика при этом не изменятся.'}
-            </p>
-          </div>
-        ) : null}
-
-        {comparison ? (
-          <table className="w-full min-w-[1280px] border-separate border-spacing-0 text-left">
-            <thead>
-              <tr>
-                <th className="sticky left-0 z-[1] w-[160px] bg-white" />
-                {columns.map((row) => (
-                  <th
-                    key={row.strategyId}
-                    className="min-w-[168px] px-[12px] pb-[18px] align-top"
-                  >
-                    <div className="font-semibold text-[16px] tracking-[-0.2px] text-figma-ink">
-                      {SHORT_NAME[row.strategyId] ?? row.strategyId}
-                    </div>
-                    <p className="mt-[8px] font-medium text-[12px] leading-[16px] text-figma-muted">
-                      {strategyDescription(row.strategyId)}
-                    </p>
-                    {!row.isUsable ? (
-                      <p className="mt-[6px] font-medium text-[12px] text-figma-danger">План непригоден</p>
-                    ) : null}
-                  </th>
+            {loading && !comparison ? (
+              <div className="grid grid-cols-3 gap-[16px]">
+                {['a', 'b', 'c', 'd', 'e', 'f'].map((key) => (
+                  <div key={key} className="h-[120px] animate-pulse rounded-[20px] bg-figma-soft" />
                 ))}
-              </tr>
-            </thead>
-            <tbody>
-              {metricRows.map((metric) => {
-                const best = winners(columns, metric);
-                return (
-                  <tr key={metric.label}>
-                    <th className="sticky left-0 z-[1] bg-white py-[12px] pr-[12px] text-left font-semibold text-[14px] text-figma-muted">
-                      {metric.label}
-                    </th>
-                    {columns.map((row) => {
-                      const green = best.has(row.strategyId);
-                      return (
-                        <td
-                          key={row.strategyId}
-                          className={`border-t border-[#ececec] px-[12px] py-[12px] text-[15px] ${
-                            green ? 'font-semibold text-[#15803d]' : 'font-medium text-figma-ink'
-                          }`}
-                        >
-                          {metric.text(row)}
-                        </td>
-                      );
-                    })}
+              </div>
+            ) : null}
+
+            {!loading && !comparison && !error ? (
+              <div className="flex h-[220px] items-center justify-center rounded-[20px] bg-figma-soft px-[30px] text-center">
+                <p className="font-medium text-[18px] text-figma-muted">
+                  {readOnly
+                    ? 'Новое сравнение станет доступно после восстановления связи.'
+                    : 'Запустите сравнение. Активный план и выбранная политика при этом не изменятся.'}
+                </p>
+              </div>
+            ) : null}
+
+            {comparison ? (
+              <table className="w-full min-w-[1280px] border-separate border-spacing-0 text-left">
+                <thead>
+                  <tr>
+                    <th className="sticky left-0 z-[1] w-[160px] bg-white" />
+                    {columns.map((row) => (
+                      <th
+                        key={row.strategyId}
+                        className="min-w-[168px] px-[12px] pb-[18px] align-top"
+                      >
+                        <div className="font-semibold text-[16px] tracking-[-0.2px] text-figma-ink">
+                          {SHORT_NAME[row.strategyId] ?? row.strategyId}
+                        </div>
+                        <p className="mt-[8px] font-medium text-[12px] leading-[16px] text-figma-muted">
+                          {strategyDescription(row.strategyId)}
+                        </p>
+                        {!row.isUsable ? (
+                          <p className="mt-[6px] font-medium text-[12px] text-figma-danger">
+                            План непригоден
+                          </p>
+                        ) : null}
+                      </th>
+                    ))}
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        ) : null}
-        </>
+                </thead>
+                <tbody>
+                  {metricRows.map((metric) => {
+                    const best = winners(columns, metric);
+                    return (
+                      <tr key={metric.label}>
+                        <th className="sticky left-0 z-[1] bg-white py-[12px] pr-[12px] text-left font-semibold text-[14px] text-figma-muted">
+                          {metric.label}
+                        </th>
+                        {columns.map((row) => {
+                          const green = best.has(row.strategyId);
+                          return (
+                            <td
+                              key={row.strategyId}
+                              className={`border-t border-[#ececec] px-[12px] py-[12px] text-[15px] ${
+                                green
+                                  ? 'font-semibold text-[#15803d]'
+                                  : 'font-medium text-figma-ink'
+                              }`}
+                            >
+                              {metric.text(row)}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            ) : null}
+          </>
         ) : null}
       </div>
     </section>
@@ -358,9 +368,13 @@ function comparisonMetrics(recorded: boolean): MetricSpec[] {
       label: 'Запас окна',
       better: 'max',
       score: (row) =>
-        row.metrics.minWindowSlackSec === null ? null : Math.round(row.metrics.minWindowSlackSec / 60),
+        row.metrics.minWindowSlackSec === null
+          ? null
+          : Math.round(row.metrics.minWindowSlackSec / 60),
       text: (row) =>
-        row.metrics.minWindowSlackSec === null ? '—' : formatDurationMin(row.metrics.minWindowSlackSec),
+        row.metrics.minWindowSlackSec === null
+          ? '—'
+          : formatDurationMin(row.metrics.minWindowSlackSec),
     },
     {
       label: 'Разброс загрузки',
@@ -385,7 +399,10 @@ function winners(columns: PolicyComparisonRow[], metric: MetricSpec): Set<string
   const scored = columns
     .filter((row) => row.isUsable)
     .map((row) => ({ id: row.strategyId, value: metric.score(row) }))
-    .filter((item): item is { id: PolicyComparisonRow['strategyId']; value: number } => item.value !== null);
+    .filter(
+      (item): item is { id: PolicyComparisonRow['strategyId']; value: number } =>
+        item.value !== null,
+    );
   if (scored.length === 0) return new Set();
   const target =
     metric.better === 'min'
@@ -434,4 +451,3 @@ function MetaChip({ label, bee = false }: { label: string; bee?: boolean }) {
     </span>
   );
 }
-

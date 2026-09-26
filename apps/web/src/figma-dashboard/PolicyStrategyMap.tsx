@@ -2,13 +2,21 @@ import maplibregl from 'maplibre-gl';
 import { useEffect, useRef, useState } from 'react';
 import type { SimulationResponse } from '../api/client';
 import type { StrategyId } from '../api/types';
-import { ALL_REGIONS, type RegionSelection } from '../domain/regions';
 import { localMapStyle } from '../domain/localBasemap';
 import { ONLINE_MAP_STYLE, watchMapStartup } from '../domain/mapAvailability';
+import { ALL_REGIONS, type RegionSelection } from '../domain/regions';
 import { strategyLabel } from '../lib/policyComparison';
 import { RegionSwitch } from './RegionSwitch';
 
-const STRATEGY_IDS = new Set<string>(['fast', 'compact', 'sla', 'balanced', 'eco', 'covering', 'baseline']);
+const STRATEGY_IDS = new Set<string>([
+  'fast',
+  'compact',
+  'sla',
+  'balanced',
+  'eco',
+  'covering',
+  'baseline',
+]);
 
 function strategyName(id: string): string {
   return STRATEGY_IDS.has(id) ? strategyLabel(id as StrategyId) : id;
@@ -212,14 +220,20 @@ export function PolicyStrategyMap({
                   }`}
                 >
                   {checked ? (
-                    <img src="/figma/check-mark.svg" alt="" className="size-[18px] brightness-0 invert" />
+                    <img
+                      src="/figma/check-mark.svg"
+                      alt=""
+                      className="size-[18px] brightness-0 invert"
+                    />
                   ) : null}
                 </span>
                 <span
                   className="size-[12px] shrink-0 rounded-full"
                   style={{ background: STRATEGY_COLORS[strategy.strategyId] ?? '#272930' }}
                 />
-                <span className="font-semibold text-[15px] text-figma-ink">{strategyName(strategy.strategyId)}</span>
+                <span className="font-semibold text-[15px] text-figma-ink">
+                  {strategyName(strategy.strategyId)}
+                </span>
               </button>
             </li>
           );

@@ -1,7 +1,7 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
+import { storedGuardLine } from '../../orchestrator/simulator';
 import { PrismaService } from '../../persistence';
 import { RouterClient } from '../../routing/router-gateway';
-import { storedGuardLine } from '../../orchestrator/simulator';
 import type { AiPreviewRow } from '../runtime/ai-event.types';
 
 /**
@@ -106,12 +106,7 @@ export class ActionGuardService {
         this.router.getActiveContextVersion(),
       ]);
       if (!current || !contextVersion) return '';
-      return await storedGuardLine(
-        this.prisma,
-        current.snapshot.inputHash,
-        contextVersion,
-        action,
-      );
+      return await storedGuardLine(this.prisma, current.snapshot.inputHash, contextVersion, action);
     } catch (error) {
       this.logger.warn(
         `Stored simulation was not added: ${error instanceof Error ? error.message : 'unknown'}`,

@@ -63,8 +63,7 @@ const TOOL_CATALOGUE: ReadonlyArray<{ name: string; description: string }> = [
   },
   {
     name: 'select_policy',
-    description:
-      'выбрать политику планирования. Перед этим: simulate_plan_change и review_action',
+    description: 'выбрать политику планирования. Перед этим: simulate_plan_change и review_action',
   },
   {
     name: 'get_router_controls',
@@ -96,7 +95,11 @@ const TOOL_CATALOGUE: ReadonlyArray<{ name: string; description: string }> = [
   },
   { name: 'update_dispatcher_settings', description: 'сменить оперативные настройки' },
   { name: 'start_workday', description: 'начать рабочий день (LIVE)' },
-  { name: 'close_shift', description: 'закрыть смену (пока есть неразобранные алерты — откажет). Перед закрытием вызови review_action' },
+  {
+    name: 'close_shift',
+    description:
+      'закрыть смену (пока есть неразобранные алерты — откажет). Перед закрытием вызови review_action',
+  },
 ];
 
 /** Renders the markdown file the dispatcher sends to their agent. */

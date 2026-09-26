@@ -6,7 +6,13 @@ it('lists tomorrow requests from morning to evening and keeps the number to eigh
     [
       request('ce741e6d-aaaa-bbbb-cccc-dddddddddddd', '15:00', 'Подключение'),
       request('aa11bb22-aaaa-bbbb-cccc-dddddddddddd', '09:30', 'Авария'),
-      request('cancelled1-aaaa-bbbb-cccc-dddddddddddd', '10:00', 'Сегодня', 'cancelled', '2026-09-26'),
+      request(
+        'cancelled1-aaaa-bbbb-cccc-dddddddddddd',
+        '10:00',
+        'Сегодня',
+        'cancelled',
+        '2026-09-26',
+      ),
       request('draft0001-aaaa-bbbb-cccc-dddddddddddd', '11:00', 'Черновик', 'draft'),
     ],
     '2026-09-26',

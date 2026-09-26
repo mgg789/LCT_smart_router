@@ -21,7 +21,10 @@ function counts(partial: Partial<SimulationCounts>): SimulationCounts {
 test('an improvement lowers open work or lateness and does not raise the other', () => {
   const before = counts({});
   assert.equal(countsImprove(before, counts({ unassigned_count: 1 })), true);
-  assert.equal(countsImprove(before, counts({ late_assigned_count: 0, unassigned_count: 3 })), false);
+  assert.equal(
+    countsImprove(before, counts({ late_assigned_count: 0, unassigned_count: 3 })),
+    false,
+  );
   assert.equal(countsImprove(before, counts({ distance_km: 10 })), true);
   assert.equal(countsImprove(before, counts({ distance_km: 19.99 })), false);
 });

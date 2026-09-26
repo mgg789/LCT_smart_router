@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
+import { ActionGuardService } from '../../ai/operations';
 import { toDayView, toEngineerView } from '../../api/engineer-view';
 import { toPlanView } from '../../api/plan-view';
 import { type RequestView, toRequestView } from '../../api/request-view';
@@ -17,7 +18,6 @@ import {
   ControlStateService,
   RouterClient,
 } from '../../routing/router-gateway';
-import { ActionGuardService } from '../../ai/operations';
 import { AlertsService, type ResolveAlertInput } from '../alerts';
 import { LiveService } from '../live';
 import { PolicyService } from '../policy';
@@ -25,8 +25,8 @@ import { DispatcherSettingsService } from '../settings';
 import {
   rememberSimulation,
   russianDelta,
-  toRouterPatch,
   type SimulationPatchInput,
+  toRouterPatch,
 } from '../simulator/simulation-store';
 import { McpService } from './mcp.service';
 import { ROUTING_PRINCIPLES } from './mcp-principles';
@@ -123,7 +123,10 @@ const reviewArgs = whatIfArgs
 const whatIfInputSchema = {
   type: 'object',
   properties: {
-    catalog: { type: 'boolean', description: 'Compare every policy. Do not combine with other fields.' },
+    catalog: {
+      type: 'boolean',
+      description: 'Compare every policy. Do not combine with other fields.',
+    },
     policyId: { type: 'string', enum: ['fast', 'compact', 'sla', 'balanced', 'eco', 'covering'] },
     lunchesEnabled: { type: 'boolean' },
     metroEnabled: { type: 'boolean' },
@@ -987,7 +990,9 @@ export class McpToolsService {
         },
         reviewArgs,
         async (args) => {
-          const delta = hasWhatIf(args) ? (await this.previewChange(args)).text : 'Симуляция не запускалась: в аргументах нет рычага.';
+          const delta = hasWhatIf(args)
+            ? (await this.previewChange(args)).text
+            : 'Симуляция не запускалась: в аргументах нет рычага.';
           const verdict = await this.guard.review(args.action, args.context, delta);
           return {
             verdict,

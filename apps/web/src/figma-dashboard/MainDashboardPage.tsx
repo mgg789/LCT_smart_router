@@ -20,9 +20,7 @@ import { AddEntityModal } from './AddEntityModal';
 import { AlertsView } from './AlertsView';
 import { useArtboardScale } from './artboardScale';
 import { FIGMA_ASSETS } from './assets';
-import { RegionSwitch } from './RegionSwitch';
 import { ConfirmDangerModal } from './ConfirmDangerModal';
-import { WorsenModal } from './WorsenModal';
 import { Copyable } from './Copyable';
 import type { DangerActionId } from './confirmPhrase';
 import { DashboardAi, DashboardChats } from './DashboardAssist';
@@ -64,6 +62,7 @@ import { McpAgentIndicator } from './McpAgentIndicator';
 import { PlanMetricsModal } from './PlanMetricsModal';
 import { PolicyComparisonView } from './PolicyComparisonView';
 import { FigmaIcon, FigmaText } from './primitives';
+import { RegionSwitch } from './RegionSwitch';
 import { ReplanDeltaCard } from './ReplanDeltaCard';
 import { RequestDetailView } from './RequestDetailView';
 import { RequestsView } from './RequestsView';
@@ -86,6 +85,7 @@ import {
 } from './toasts';
 import { WeatherBadge } from './WeatherBadge';
 import { WelcomeScreen } from './WelcomeScreen';
+import { WorsenModal } from './WorsenModal';
 import {
   clearWorkDayStarted,
   hasStartedWorkDay,

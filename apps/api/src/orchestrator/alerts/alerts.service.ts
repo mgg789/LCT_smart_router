@@ -5,6 +5,7 @@ import { lunchCoverageWitness, policyCoverageRegressed } from './coverage-policy
 
 export { lunchCoverageWitness, policyCoverageRegressed } from './coverage-policy';
 
+import { addEngineerCandidates } from '../../ai/alerts/alert-candidates';
 import type { Actor } from '../../auth';
 import { SysError } from '../../common/errors';
 import { canonicalHash } from '../../common/json';
@@ -26,7 +27,6 @@ import {
   SnapshotPublisher,
 } from '../../routing/mount-data-eng';
 import { RouterClient } from '../../routing/router-gateway/router-client.port';
-import { addEngineerCandidates } from '../../ai/alerts/alert-candidates';
 import { MiniAiService } from '../ai/mini-ai.service';
 import {
   DEFAULT_EXECUTION_TIMING_POLICY,
@@ -35,7 +35,6 @@ import {
 import { businessNow } from '../live/business-clock';
 import { PERFORMANCE_ALERT_PREFIX, PerformanceService } from '../performance';
 import { DispatcherSettingsService } from '../settings/dispatcher-settings.service';
-import { type AlertAction, alertActionsFor, resolutionDelay } from './alert-policy';
 import {
   decisionState,
   moscowClock,
@@ -43,6 +42,7 @@ import {
   skillLabel,
   tomorrowCrewLine,
 } from './alert-decision-context';
+import { type AlertAction, alertActionsFor, resolutionDelay } from './alert-policy';
 
 /** Router's immutable comparison evidence for one manual plan on one exact input. */
 const manualEvaluationSchema = z.object({

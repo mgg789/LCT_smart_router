@@ -56,11 +56,7 @@ export function mergeStoryGaps(
   if (!next.contactName && data.contactName && wordsInSource(data.contactName, source)) {
     next.contactName = data.contactName.trim().slice(0, 80);
   }
-  if (
-    !next.email &&
-    data.email &&
-    source.toLowerCase().includes(data.email.trim().toLowerCase())
-  ) {
+  if (!next.email && data.email && source.toLowerCase().includes(data.email.trim().toLowerCase())) {
     next.email = data.email.trim();
   }
   if (!next.address && data.address && wordsInSource(data.address, source)) {

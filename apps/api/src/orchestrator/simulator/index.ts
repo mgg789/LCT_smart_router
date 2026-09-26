@@ -1,3 +1,4 @@
+export type { SimulationDeltaView } from './simulation-store';
 export {
   readSimulation,
   rememberSimulation,
@@ -5,8 +6,7 @@ export {
   simulationPatchHash,
   storedGuardLine,
   toDeltaView,
-  toRouteView,
   toRouterPatch,
+  toRouteView,
   worsensPlan,
 } from './simulation-store';
-export type { SimulationDeltaView } from './simulation-store';

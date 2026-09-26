@@ -41,7 +41,10 @@ export interface AlertChoice {
 const MESSAGE_OPTIONS: ReadonlyArray<{ label: string; text: string }> = [
   { label: 'Всё ли в порядке', text: 'Всё ли в порядке? Нужна короткая отметка по заявке.' },
   { label: 'Нужна отметка', text: 'Нужна отметка о прибытии или завершении визита.' },
-  { label: 'Свяжитесь с диспетчером', text: 'Свяжитесь с диспетчером, если смена сегодня не состоится.' },
+  {
+    label: 'Свяжитесь с диспетчером',
+    text: 'Свяжитесь с диспетчером, если смена сегодня не состоится.',
+  },
   { label: 'Сформулировать', text: '' },
 ];
 
@@ -136,7 +139,8 @@ export class MiniAiService {
     }
     const finished = finishStoryDraft(fields, source);
     return {
-      problem: (PROBLEMS.find((item) => item === finished.problem) ?? 'Другое...') as StoryDraft['problem'],
+      problem: (PROBLEMS.find((item) => item === finished.problem) ??
+        'Другое...') as StoryDraft['problem'],
       contactName: finished.contactName,
       email: finished.email,
       windowStart: finished.windowStart,
@@ -163,14 +167,14 @@ export class MiniAiService {
   }): Promise<AlertChoice> {
     const actions = input.actions.filter((item) => item.length > 0);
     if (actions.length === 0) throw new SysError('VALIDATION_FAILED', 'У алерта нет вариантов.');
+    const sole = actions.length < 2 ? actions[0] : undefined;
     const action =
-      actions.length < 2
-        ? actions[0]!
-        : await this.choice(
-            input.summary,
-            'Какое действие выбрать? Верни id из списка. У крайних вариантов цена уже написана.',
-            actions,
-          );
+      sole ??
+      (await this.choice(
+        input.summary,
+        'Какое действие выбрать? Верни id из списка. У крайних вариантов цена уже написана.',
+        actions,
+      ));
     if (!actions.includes(action)) {
       throw new SysError('VALIDATION_FAILED', 'Модель выбрала действие вне списка.');
     }
@@ -261,13 +265,20 @@ export class MiniAiService {
   ): Promise<string | undefined> {
     if (action !== 'add_engineer') return undefined;
     if (engineers.length === 0) {
-      throw new SysError('VALIDATION_FAILED', 'Нет инженера вне линии с нужным навыком и регионом.');
+      throw new SysError(
+        'VALIDATION_FAILED',
+        'Нет инженера вне линии с нужным навыком и регионом.',
+      );
     }
     if (engineers.length === 1) return engineers[0]?.id;
     const state = `${summary}\n\nКандидаты вне линии:\n${engineers
       .map((item) => `${item.label}: ${item.facts ?? 'загрузка не посчитана'}`)
       .join('\n')}`;
-    const label = await this.choice(state, 'Кого вызвать на линию?', engineers.map((item) => item.label));
+    const label = await this.choice(
+      state,
+      'Кого вызвать на линию?',
+      engineers.map((item) => item.label),
+    );
     const found = engineers.find((item) => item.label === label);
     if (!found) throw new SysError('VALIDATION_FAILED', 'Модель выбрала инженера вне списка.');
     return found.id;
@@ -276,7 +287,12 @@ export class MiniAiService {
   private async chooseWindow(
     action: string,
     summary: string,
-    windows: ReadonlyArray<{ label: string; windowStartAt: number; windowEndAt: number; facts: string }>,
+    windows: ReadonlyArray<{
+      label: string;
+      windowStartAt: number;
+      windowEndAt: number;
+      facts: string;
+    }>,
   ): Promise<{ windowStartAt: number; windowEndAt: number } | undefined> {
     if (action !== 'move_window') return undefined;
     if (windows.length === 0) {
@@ -286,7 +302,11 @@ export class MiniAiService {
     const state = `${summary}\n\nСлоты на сегодня. В строке соседние заявки, загрузка и запас до опоздания.\n${windows
       .map((item) => `${item.label}: ${item.facts}`)
       .join('\n')}`;
-    const label = await this.choice(state, 'Какое окно выбрать?', windows.map((item) => item.label));
+    const label = await this.choice(
+      state,
+      'Какое окно выбрать?',
+      windows.map((item) => item.label),
+    );
     const found = windows.find((item) => item.label === label);
     if (!found) throw new SysError('VALIDATION_FAILED', 'Модель выбрала окно вне списка.');
     return found;
@@ -313,7 +333,9 @@ export class MiniAiService {
       'Какое письмо отправить инженеру?',
       MESSAGE_OPTIONS.map((item) => item.label),
     );
-    const found = MESSAGE_OPTIONS.find((item) => item.label === label) ?? MESSAGE_OPTIONS[0]!;
+    const fallback = MESSAGE_OPTIONS[0];
+    if (!fallback) return '';
+    const found = MESSAGE_OPTIONS.find((item) => item.label === label) ?? fallback;
     if (found.label !== 'Сформулировать') return found.text;
     try {
       const text = await this.complete(
@@ -334,7 +356,7 @@ export class MiniAiService {
         `Engineer message was not drafted: ${error instanceof Error ? error.message : 'unknown'}`,
       );
     }
-    return MESSAGE_OPTIONS[0]!.text;
+    return fallback.text;
   }
 
   /** System one choice that leaves the field empty when the call fails. */
@@ -470,7 +492,9 @@ const PROBLEM_HINTS: ReadonlyArray<[RegExp, (typeof PROBLEMS)[number]]> = [
 
 /** Topics the text itself names. System one does not see the rest of the catalogue. */
 function hintedProblems(source: string): string[] {
-  return unique(PROBLEM_HINTS.filter(([pattern]) => pattern.test(source)).map(([, label]) => label));
+  return unique(
+    PROBLEM_HINTS.filter(([pattern]) => pattern.test(source)).map(([, label]) => label),
+  );
 }
 
 /** Street-like lines already present in the story. */
@@ -483,9 +507,9 @@ function addressCandidates(source: string): { lines: string[]; places: string[] 
     /(?:ул\.?|улиц\p{L}*|проспект\p{L}*|пр-т|переул\p{L}*|шоссе|набережн\p{L}*|бульвар\p{L}*)[^,.\n]{0,48}/iu,
   );
   const place = source.match(/на\s+[А-ЯЁ][^,.\n]{2,48}/u);
-  const numbered = [...source.matchAll(/(?:^|[^\p{L}\p{N}])([А-ЯЁ][а-яё]{2,}\s+\d+[а-яА-Я]?)/gu)].map(
-    (match) => match[1] ?? '',
-  );
+  const numbered = [
+    ...source.matchAll(/(?:^|[^\p{L}\p{N}])([А-ЯЁ][а-яё]{2,}\s+\d+[а-яА-Я]?)/gu),
+  ].map((match) => match[1] ?? '');
   const stated = source.match(/адрес\s+([^,.\n]{3,48})/iu);
   const places = unique([
     ...(stated?.[1] ? [stated[1].trim()] : []),

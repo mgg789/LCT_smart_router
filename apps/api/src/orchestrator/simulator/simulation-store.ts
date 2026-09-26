@@ -266,7 +266,10 @@ export async function storedGuardLine(
     const before = asRecord(delta.before);
     const after = asRecord(delta.after);
     if (!matchesAction(action, patch)) continue;
-    if (typeof before.late_assigned_count !== 'number' || typeof after.late_assigned_count !== 'number') {
+    if (
+      typeof before.late_assigned_count !== 'number' ||
+      typeof after.late_assigned_count !== 'number'
+    ) {
       continue;
     }
     return `опозданий было ${before.late_assigned_count}, станет ${after.late_assigned_count}`;
@@ -285,7 +288,8 @@ function matchesAction(action: string, patch: Record<string, unknown>): boolean 
       patch.equipment_enabled !== undefined
     );
   }
-  if (action === 'engineer.set_availability') return typeof patch.bring_online_engineer_id === 'string';
+  if (action === 'engineer.set_availability')
+    return typeof patch.bring_online_engineer_id === 'string';
   return false;
 }
 

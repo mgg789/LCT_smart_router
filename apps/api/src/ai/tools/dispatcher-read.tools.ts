@@ -7,13 +7,6 @@ import { AlertsService } from '../../orchestrator/alerts';
 import { LiveService } from '../../orchestrator/live/live.service';
 import { PolicyService } from '../../orchestrator/policy';
 import { RequestsService } from '../../orchestrator/requests/requests.service';
-import { PrismaService } from '../../persistence';
-import { SnapshotBuilder } from '../../routing/mount-data-eng';
-import {
-  AppliedPlanService,
-  ControlStateService,
-  RouterClient,
-} from '../../routing/router-gateway';
 import {
   readSimulation,
   rememberSimulation,
@@ -21,6 +14,13 @@ import {
   simulationPatchHash,
   toRouterPatch,
 } from '../../orchestrator/simulator';
+import { PrismaService } from '../../persistence';
+import { SnapshotBuilder } from '../../routing/mount-data-eng';
+import {
+  AppliedPlanService,
+  ControlStateService,
+  RouterClient,
+} from '../../routing/router-gateway';
 import type { ToolContext, ToolResult, ToolSpec } from './tool.types';
 
 export interface DispatcherReadToolDeps {

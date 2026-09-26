@@ -41,8 +41,8 @@ import {
   russianDelta,
   simulationPatchHash,
   toDeltaView,
-  toRouteView,
   toRouterPatch,
+  toRouteView,
 } from '../orchestrator/simulator';
 import { APP_STATE_KEYS, PrismaService, UnitOfWork } from '../persistence';
 import {

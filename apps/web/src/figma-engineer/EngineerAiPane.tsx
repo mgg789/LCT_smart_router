@@ -133,6 +133,7 @@ export function EngineerAiPane({
       className="w-full"
       style={{ maxWidth: '100%' }}
     >
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: The bar is not a second control; it only moves focus into the textarea. */}
       <div
         className="flex items-center bg-figma-ink"
         onMouseDown={(event) => focusComposer(event, fieldRef.current)}
