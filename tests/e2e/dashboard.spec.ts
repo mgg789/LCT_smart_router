@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { expect, readPlan, signIn, test } from './fixtures';
 
-test('assistant composer caps at five lines and keeps its circles on the bottom edge', async ({
+test('assistant composer caps at eight lines and keeps its circles on the bottom edge', async ({
   page,
   live,
 }) => {
@@ -27,18 +27,18 @@ test('assistant composer caps at five lines and keeps its circles on the bottom 
     });
   await field.fill('Строка');
   const single = await geometry();
-  await field.fill('Один\nДва\nТри\nЧетыре\nПять');
-  await expect.poll(async () => (await geometry()).height).toBeCloseTo(single.height * 5, 0);
+  await field.fill('Один\nДва\nТри\nЧетыре\nПять\nШесть\nСемь\nВосемь');
+  await expect.poll(async () => (await geometry()).height).toBeCloseTo(single.height * 8, 0);
   await expect.poll(async () => (await geometry()).circleRatio).toBeCloseTo(1, 2);
-  const five = await geometry();
-  expect(five.height).toBeGreaterThan(single.height);
-  expect(five.yellowGap).toBeCloseTo(single.yellowGap, 0);
-  expect(five.sendGap).toBeCloseTo(single.sendGap, 0);
-  expect(five.circleRatio).toBeCloseTo(1, 2);
-  await field.fill('Один\nДва\nТри\nЧетыре\nПять\nШесть\nСемь');
-  const seven = await geometry();
-  expect(seven.height).toBeCloseTo(five.height, 0);
-  expect(seven.overflow).toBe('auto');
+  const eight = await geometry();
+  expect(eight.height).toBeGreaterThan(single.height);
+  expect(eight.yellowGap).toBeCloseTo(single.yellowGap, 0);
+  expect(eight.sendGap).toBeCloseTo(single.sendGap, 0);
+  expect(eight.circleRatio).toBeCloseTo(1, 2);
+  await field.fill('Один\nДва\nТри\nЧетыре\nПять\nШесть\nСемь\nВосемь\nДевять');
+  const nine = await geometry();
+  expect(nine.height).toBeCloseTo(eight.height, 0);
+  expect(nine.overflow).toBe('auto');
 });
 
 test('live plan renders the local map and replans when an engineer goes offline', async ({

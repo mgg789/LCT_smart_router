@@ -21,11 +21,21 @@ const COST_MEASURES = {
     unit: 'мин',
     description: 'Время в пути / назначенные заявки. Меньше — лучше.',
   },
-  lateShare: {
-    title: 'Доля опозданий',
-    unit: '%',
-    description: 'Опоздания среди назначенных заявок. Меньше — лучше.',
+  waitingPerJob: {
+    title: 'Ожидание на назначение',
+    unit: 'мин',
+    description: 'Ожидание / назначенные заявки. Меньше — лучше.',
   },
+  latenessPerJob: {
+    title: 'Задержка на назначение',
+    unit: 'мин',
+    description: 'Суммарное опоздание / назначенные заявки. Меньше — лучше.',
+  },
+} as const;
+const LATE_SHARE_MEASURE = {
+  title: 'Доля опозданий',
+  unit: '%',
+  description: 'Опоздания среди назначенных заявок. Меньше — лучше.',
 } as const;
 type CostMeasure = keyof typeof COST_MEASURES;
 
@@ -106,13 +116,19 @@ export function PolicyComparisonOverview({ rows }: { rows: readonly PolicyCompar
               value={measure}
               onChange={(event) => {
                 const value = event.target.value;
-                if (value === 'kmPerJob' || value === 'travelPerJob' || value === 'lateShare')
+                if (
+                  value === 'kmPerJob' ||
+                  value === 'travelPerJob' ||
+                  value === 'waitingPerJob' ||
+                  value === 'latenessPerJob'
+                )
                   setMeasure(value);
               }}
             >
               <option value="kmPerJob">Километры на заявку</option>
               <option value="travelPerJob">Минуты дороги на заявку</option>
-              <option value="lateShare">Доля опозданий</option>
+              <option value="waitingPerJob">Ожидание на заявку</option>
+              <option value="latenessPerJob">Задержка на заявку</option>
             </select>
           </label>
           <ComparisonBars
@@ -123,12 +139,7 @@ export function PolicyComparisonOverview({ rows }: { rows: readonly PolicyCompar
             nested
           />
         </section>
-        <ComparisonBars
-          rows={visible}
-          measure="lateShare"
-          {...COST_MEASURES.lateShare}
-          better="min"
-        />
+        <ComparisonBars rows={visible} measure="lateShare" {...LATE_SHARE_MEASURE} better="min" />
         <ComparisonBars
           rows={visible}
           measure="engineers"
@@ -144,9 +155,19 @@ export function PolicyComparisonOverview({ rows }: { rows: readonly PolicyCompar
             type="checkbox"
             checked={includeReserve}
             onChange={(event) => setIncludeReserve(event.target.checked)}
-            className="size-[20px] accent-figma-ink"
+            className="peer sr-only"
           />
-          <span>
+          <span
+            aria-hidden="true"
+            className={`flex size-[28px] shrink-0 items-center justify-center rounded-[10px] peer-focus-visible:ring-2 peer-focus-visible:ring-figma-ink peer-focus-visible:ring-offset-2 ${
+              includeReserve ? 'bg-figma-ink' : 'border-2 border-[#d4d5d8] bg-white'
+            }`}
+          >
+            {includeReserve ? (
+              <img src="/figma/check-mark.svg" alt="" className="size-[18px] brightness-0 invert" />
+            ) : null}
+          </span>
+          <span className="relative top-[1px]">
             Показать «Полное покрытие»: +{reserve.additionalEngineers} резервных инженеров. Этот
             результат использует больше ресурсов и сравнивается отдельно.
           </span>

@@ -458,12 +458,15 @@ export function PolicyControl({
           : { duration: 0 }
       }
     >
-      <div className="relative h-[51px] w-full">
+      <motion.div
+        className="relative h-[51px] w-full"
+        whileHover={motionOn ? { y: -1 } : undefined}
+        transition={{ duration: 0.16 }}
+      >
         <motion.button
           type="button"
           onClick={onToggle}
           className="absolute inset-y-0 left-0 right-[52px] px-[16px] text-left"
-          whileHover={motionOn ? { x: 2 } : undefined}
           transition={{ duration: 0.16 }}
         >
           <FigmaText className="figma-nowrap font-semibold text-[18px] tracking-[-0.306px] text-figma-ink">
@@ -474,7 +477,6 @@ export function PolicyControl({
           type="button"
           onClick={onToggle}
           className="absolute right-[4px] top-[4px] size-[43px]"
-          whileHover={motionOn ? { scale: 1.08 } : undefined}
           whileTap={motionOn ? { scale: 0.96 } : undefined}
           transition={{ duration: 0.16 }}
         >
@@ -492,7 +494,7 @@ export function PolicyControl({
             />
           </motion.span>
         </motion.button>
-      </div>
+      </motion.div>
       <div
         className={`relative w-[363px] ${open ? '' : 'pointer-events-none'}`}
         style={{ height: 592 + extra }}

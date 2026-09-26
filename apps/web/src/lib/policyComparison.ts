@@ -45,6 +45,8 @@ export type ComparisonMeasure =
   | 'engineers'
   | 'kmPerJob'
   | 'travelPerJob'
+  | 'waitingPerJob'
+  | 'latenessPerJob'
   | 'lateShare';
 
 /** Normalize costs by assigned work; an empty plan has no per-job efficiency. */
@@ -59,6 +61,8 @@ export function comparisonValue(
   if (metrics.assignedCount === 0) return null;
   if (measure === 'kmPerJob') return metrics.distanceKm / metrics.assignedCount;
   if (measure === 'travelPerJob') return metrics.travelTimeSec / metrics.assignedCount / 60;
+  if (measure === 'waitingPerJob') return metrics.waitingTimeSec / metrics.assignedCount / 60;
+  if (measure === 'latenessPerJob') return metrics.totalLatenessSec / metrics.assignedCount / 60;
   return (metrics.lateAssignedCount / metrics.assignedCount) * 100;
 }
 

@@ -9,6 +9,8 @@ function row(
   assignedCount: number,
   distanceKm: number,
   additionalEngineers = 0,
+  waitingTimeSec = 0,
+  totalLatenessSec = 0,
 ): PolicyComparisonRow {
   return {
     strategyId,
@@ -26,10 +28,10 @@ function row(
       distanceKm,
       travelTimeSec: distanceKm * 60,
       workTimeSec: assignedCount * 600,
-      waitingTimeSec: 0,
+      waitingTimeSec,
       lunchTimeSec: 0,
       lateAssignedCount: 0,
-      totalLatenessSec: 0,
+      totalLatenessSec,
       minWindowSlackSec: null,
       workloadSpreadSec: 0,
       maxWorkloadSec: 0,
@@ -95,8 +97,15 @@ describe('honest policy comparisons', () => {
     expect(html).toContain('резервных инженеров');
     expect(html).toContain('Показатель расходов');
     expect(html).toContain('aria-label="Доля опозданий"');
+    expect(html).toContain('Ожидание на заявку');
+    expect(html).toContain('Задержка на заявку');
+    expect(html).not.toContain('value="lateShare"');
     expect(html).toContain('aria-label="Задействованные инженеры"');
     expect(comparisonValue(row('fast', 10, 80), 'engineers')).toBe(3);
+    expect(comparisonValue(row('fast', 10, 80, 0, 120), 'waitingPerJob')).toBe(0.2);
+    expect(comparisonValue(row('fast', 10, 80, 0, 0, 600), 'latenessPerJob')).toBe(1);
+    expect(comparisonValue(row('fast', 0, 0), 'waitingPerJob')).toBeNull();
+    expect(comparisonValue(row('fast', 0, 0), 'latenessPerJob')).toBeNull();
     expect(html).not.toContain('20 из 20');
   });
 

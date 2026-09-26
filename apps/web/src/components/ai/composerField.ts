@@ -1,5 +1,5 @@
 /** How many lines the composer grows before the text itself scrolls. */
-export const COMPOSER_LINE_LIMIT = 5;
+export const COMPOSER_LINE_LIMIT = 8;
 
 /** Calculates the bounded textarea height used before the composer starts scrolling. */
 export function composerFieldHeight(scrollHeight: number, lineHeight: number): number {
