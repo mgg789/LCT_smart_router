@@ -139,9 +139,9 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-lct}:${POSTGRES_PASSWORD:-lct_dev_password}@postgres:5432/${POSTGRES_DB:-lct}?schema=public
       DATASET_ROOT: /app/data/dataset/anonymized
       ROUTER_BASE_URL: http://router:8100
-      # Same host road API the router uses. The API only borrows its polyline for
-      # legs the solver stored as a straight chord (walk access, outside-graph pairs).
-      ROUTER_ROAD_API_URL: ${ROUTER_ROAD_API_URL:-http://host.docker.internal:8123}
+      # Road geometry for city legs (MKAD OSRM graph, /route2 with the v2 traffic
+      # model). The graph is vendored in services/road-api and always deployed.
+      ROUTER_ROAD_API_URL: ${ROUTER_ROAD_API_URL:-http://road-api:8123}
       ROUTER_POLL_INTERVAL_MS: ${ROUTER_POLL_INTERVAL_MS:-500}
       ROUTER_REQUEST_TIMEOUT_MS: ${ROUTER_REQUEST_TIMEOUT_MS:-3000}
     volumes:
@@ -178,6 +178,43 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+
+  # MKAD road graph (OSRM MLD, vendored under services/road-api/osrm). Serves road
+  # geometry and travel times to the road-api below; graph pages are copied into a
+  # tmpfs so cold queries stay in milliseconds (services/road-api/README.md).
+  osrm:
+    # The vendored graph was built by osrm v26.x (see services/road-api/README.md);
+    # older majors cannot read its fingerprint format.
+    image: ghcr.io/project-osrm/osrm-backend:latest
+    restart: unless-stopped
+    command: >
+      sh -c 'cp /src/moscow-mkad.osrm* /graph/ &&
+      osrm-routed --algorithm mld --max-table-size 4096 /graph/moscow-mkad.osrm'
+    volumes:
+      - ../services/road-api/osrm:/src:ro
+    tmpfs:
+      - /graph:size=768m
+
+  # Point-to-point road routing over the graph above (/route, /route2, /matrix2).
+  # The System Layer calls /route2 for road polylines; /health reports osrm reach.
+  road-api:
+    build:
+      context: ../services/road-api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      OSRM_URL: http://osrm:5000
+    volumes:
+      - ../services/road-api/data:/srv/data:ro
+    depends_on:
+      - osrm
+    healthcheck:
+      # Ready only when OSRM answers: the first queries warm the graph pages.
+      test: ['CMD-SHELL', 'python3 -c "import json,urllib.request; assert json.load(urllib.request.urlopen(\"http://127.0.0.1:8123/health\", timeout=25))[\"osrm\"]"']
+      interval: 30s
+      timeout: 30s
+      retries: 10
+      start_period: 60s
 
   web:
     build:

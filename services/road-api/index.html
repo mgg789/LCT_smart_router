@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>МКАД-роутер — дорожный граф Москвы</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  html, body { margin: 0; height: 100%; font-family: -apple-system, "Segoe UI", sans-serif; }
+  #map { height: 100%; }
+  .panel {
+    position: absolute; top: 12px; left: 12px; z-index: 1000;
+    background: rgba(255,255,255,.96); border-radius: 10px;
+    box-shadow: 0 2px 12px rgba(0,0,0,.25); padding: 14px 16px;
+    width: 320px; max-width: calc(100vw - 24px);
+  }
+  .panel h1 { margin: 0 0 4px; font-size: 17px; }
+  .panel .hint { color: #555; font-size: 13px; margin: 0 0 10px; }
+  .status { font-size: 12px; margin-bottom: 8px; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; }
+  .dot.ok { background: #16a34a; } .dot.bad { background: #dc2626; }
+  #result { font-size: 14px; line-height: 1.45; }
+  #result .mode-road { color: #1d4ed8; font-weight: 600; }
+  #result .mode-straight { color: #c2410c; font-weight: 600; }
+  #result .err { color: #dc2626; }
+  #result .pts { color: #555; font-size: 12px; margin-top: 6px; }
+  .badge { display:inline-block; padding: 1px 7px; border-radius: 9px; font-size: 11px;
+           background: #e5e7eb; margin-right: 4px; }
+  .badge.in { background: #dcfce7; color: #166534; }
+  .badge.out { background: #fee2e2; color: #991b1b; }
+  .mk { font-size: 12px; font-weight: 700; color: #fff; background: #1d4ed8;
+        border-radius: 50%; width: 22px; height: 22px; display: flex;
+        align-items: center; justify-content: center; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+  .mk.b { background: #dc2626; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div class="panel">
+  <h1>МКАД-роутер</h1>
+  <p class="hint">Кликните точку A, затем точку B. Обе внутри МКАД — маршрут по дорогам;
+     любая точка вне МКАД — прямая линия.</p>
+  <div class="status"><span class="dot bad" id="osrm-dot"></span><span id="osrm-text">OSRM проверяется…</span></div>
+  <div id="result">Ожидание точек…</div>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const map = L.map('map').setView([55.751, 37.618], 10);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19, attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+fetch('/mkad-exact.geojson').then(r => r.json()).then(fc => {
+  L.geoJSON(fc, { style: { color: '#1d4ed8', weight: 3, opacity: .9, fill: false } })
+    .addTo(map).bindTooltip('МКАД');
+});
+
+let points = [], markers = [], line = null;
+
+const A_ICON = L.divIcon({ className: '', html: '<div class="mk">A</div>', iconSize: [22, 22], iconAnchor: [11, 11] });
+const B_ICON = L.divIcon({ className: '', html: '<div class="mk b">B</div>', iconSize: [22, 22], iconAnchor: [11, 11] });
+
+function reset(points_) {
+  points = points_;
+  markers.forEach(m => map.removeLayer(m));
+  if (line) map.removeLayer(line);
+  markers = []; line = null;
+}
+
+function fmtKm(m) { return (m / 1000).toFixed(m < 10000 ? 2 : 1) + ' км'; }
+function fmtMin(s) { return Math.max(1, Math.round(s / 60)) + ' мин'; }
+
+function badgeInside(inMkad) {
+  return `<span class="badge ${inMkad ? 'in' : 'out'}">${inMkad ? 'внутри МКАД' : 'вне МКАД'}</span>`;
+}
+
+async function route() {
+  const [a, b] = points;
+  const box = document.getElementById('result');
+  box.innerHTML = 'Считаю маршрут…';
+  try {
+    const q = `a=${a.lat},${a.lng}&b=${b.lat},${b.lng}`;
+    const r = await fetch('/route?' + q);
+    const d = await r.json();
+    if (!r.ok) { box.innerHTML = `<span class="err">${d.error || 'ошибка маршрута'}</span>`; return; }
+    line = L.polyline(d.geometry, d.mode === 'road'
+      ? { color: '#1d4ed8', weight: 5, opacity: .85 }
+      : { color: '#ea580c', weight: 4, dashArray: '10 10', opacity: .9 }).addTo(map);
+    map.fitBounds(line.getBounds(), { padding: [40, 40] });
+    const mode = d.mode === 'road'
+      ? '<span class="mode-road">По дорогам (OSRM)</span>'
+      : '<span class="mode-straight">Прямая — есть точка вне МКАД</span>';
+    const dur = d.mode === 'road'
+      ? fmtMin(d.duration_s)
+      : fmtMin(d.duration_s) + ' <small>(допущение 40 км/ч)</small>';
+    const snap = d.snapped ? `<div class="pts">Привязка: ${d.snapped[0].lat.toFixed(5)},${d.snapped[0].lon.toFixed(5)} → ${d.snapped[1].lat.toFixed(5)},${d.snapped[1].lon.toFixed(5)}</div>` : '';
+    box.innerHTML =
+      `${mode}<br>Расстояние: <b>${fmtKm(d.distance_m)}</b> · Время: <b>${dur}</b>` +
+      `<div class="pts">${badgeInside(d.a_inside_mkad)} A ${a.lat.toFixed(5)}, ${a.lng.toFixed(5)}<br>` +
+      `${badgeInside(d.b_inside_mkad)} B ${b.lat.toFixed(5)}, ${b.lng.toFixed(5)}</div>` + snap;
+  } catch (e) {
+    box.innerHTML = `<span class="err">Сеть/сервер: ${e}</span>`;
+  }
+}
+
+map.on('click', e => {
+  if (points.length >= 2) reset([]);
+  points.push(e.latlng);
+  markers.push(L.marker(e.latlng, { icon: points.length === 1 ? A_ICON : B_ICON }).addTo(map));
+  document.getElementById('result').innerHTML =
+    points.length === 1 ? 'Точка A задана — теперь точка B…' : 'Считаю маршрут…';
+  if (points.length === 2) route();
+});
+
+fetch('/health').then(r => r.json()).then(d => {
+  document.getElementById('osrm-dot').className = 'dot ' + (d.osrm ? 'ok' : 'bad');
+  document.getElementById('osrm-text').textContent = d.osrm
+    ? 'OSRM работает (локальный граф в пределах МКАД)'
+    : 'OSRM недоступен — маршруты по дорогам не работают';
+});
+
+// Скриптовая проверка: demoRoute(latA, lonA, latB, lonB)
+window.demoRoute = async (latA, lonA, latB, lonB) => {
+  reset([]);
+  points = [L.latLng(latA, lonA), L.latLng(latB, lonB)];
+  markers.push(L.marker(points[0], { icon: A_ICON }).addTo(map));
+  markers.push(L.marker(points[1], { icon: B_ICON }).addTo(map));
+  await route();
+  const r = await fetch('/route?' + `a=${latA},${lonA}&b=${latB},${lonB}`);
+  return r.json();
+};
+</script>
+</body>
+</html>
