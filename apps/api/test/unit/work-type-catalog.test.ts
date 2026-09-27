@@ -9,6 +9,7 @@ import {
   importedWorkCategory,
   WORK_NORM_PROFILES,
   WORK_TYPES,
+  workTypeDisplayTitle,
 } from '../../src/orchestrator/requests/work-type.catalog';
 
 const EXPECTED_MAPPING = {
@@ -20,6 +21,15 @@ const EXPECTED_MAPPING = {
 } as const;
 
 describe('work type normative catalogue', () => {
+  it('shows human work titles for legacy codes without losing imported names', () => {
+    assert.equal(workTypeDisplayTitle('local_repair'), 'Локальный ремонт');
+    assert.equal(workTypeDisplayTitle('network_emergency'), 'Авария');
+    assert.equal(workTypeDisplayTitle('no_link'), 'Нет линка');
+    assert.equal(workTypeDisplayTitle('vendor_internal_code'), 'Другой тип работ');
+    assert.equal(workTypeDisplayTitle('Установка антенны'), 'Установка антенны');
+    assert.equal(workTypeDisplayTitle(null), null);
+  });
+
   it('keeps business priority separate from qualification and preserves unknown type classification', () => {
     assert.equal(findWorkType('outage')?.category, 'emergency');
     assert.equal(findWorkType('no_link')?.category, 'service');

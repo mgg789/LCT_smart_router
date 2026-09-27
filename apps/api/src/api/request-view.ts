@@ -2,7 +2,11 @@ import type { RequestView } from '@lct/shared';
 import type { Request } from '../generated/prisma/client';
 // Catalog file only — the requests barrel also loads Nest modules and can leave
 // `findWorkType` undefined under CJS circular imports in unit tests.
-import { findWorkType, findWorkTypeByTitle } from '../orchestrator/requests/work-type.catalog';
+import {
+  findWorkType,
+  findWorkTypeByTitle,
+  workTypeDisplayTitle,
+} from '../orchestrator/requests/work-type.catalog';
 
 export type { RequestView };
 
@@ -36,7 +40,7 @@ export function toRequestView(
     lon: request.lon,
     needsGeocoding: request.needsGeocoding,
     workType: request.workTypeHd,
-    workTypeTitle: workType?.title ?? request.workTypeHd,
+    workTypeTitle: workTypeDisplayTitle(request.workTypeHd),
     workCategory: workType?.category ?? request.workCategory,
     receivedAt: nullableNumber(request.receivedAt),
     requiredSkill: request.requiredSkill,

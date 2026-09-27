@@ -4,13 +4,7 @@ import { FIGMA_ASSETS } from './assets';
 import { type EngineerCard, requestCountLabel, truncateEnd } from './fixtures';
 import { FigmaIcon, FigmaText } from './primitives';
 import { TintIcon } from './TintIcon';
-
-const TRANSPORT_ICONS: Readonly<Record<string, string>> = {
-  car: FIGMA_ASSETS.transportCar,
-  walk: FIGMA_ASSETS.transportWalk,
-  bike: FIGMA_ASSETS.transportBike,
-  transit: FIGMA_ASSETS.transportWalk,
-};
+import { TRANSPORT_ICONS } from './transport';
 
 const SEARCH_CONTROL_SIZE = 40;
 const SEARCH_OPEN_WIDTH = 351;

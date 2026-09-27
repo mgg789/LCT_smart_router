@@ -54,10 +54,7 @@ export function WorkTypePicker({
         })}
       </select>
       {selected?.category === 'emergency' ? (
-        <p className="text-[14px] text-figma-danger">
-          100 минут работы. Направим первую доступную подходящую бригаду; начатые работы не
-          прерываются. Ориентир реакции — до 2 часов с поступления.
-        </p>
+        <p className="text-[14px] text-figma-danger">Направим первую свободную бригаду</p>
       ) : null}
       {error ? (
         <div role="alert" className="text-[14px] text-figma-danger">

@@ -287,6 +287,7 @@ export function UserMenu({
               <MenuAction motionOn={motionOn} tone="danger" onClick={onSignOut}>
                 Выйти
               </MenuAction>
+              <p className="text-center text-[12px] text-figma-muted">v1.8.7</p>
             </div>
           </motion.div>
         ) : null}

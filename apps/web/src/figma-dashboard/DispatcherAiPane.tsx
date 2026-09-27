@@ -424,7 +424,7 @@ function Composer({
         className="flex min-h-[79px] items-end gap-[12px] rounded-[40px] bg-figma-ink px-[10px] py-[8px]"
         onMouseDown={(event) => focusComposer(event, fieldRef.current)}
       >
-        <span className="flex size-[60px] shrink-0 items-center justify-center rounded-full bg-figma-bee">
+        <span className="flex size-[63px] shrink-0 items-center justify-center rounded-full bg-figma-bee">
           <FigmaIcon src={FIGMA_ASSETS.iconSparkles} alt="" width={26} height={26} />
         </span>
         <div className="flex min-w-0 flex-1 self-stretch items-center">

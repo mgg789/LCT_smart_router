@@ -29,6 +29,7 @@ import {
   simulateChange,
   simulationWorsens,
   unlinkEngineerAccount,
+  updateDispatchEngineerProfile,
   updateRouterTechnicalSettings,
   uploadDataPackage,
   verifyDispatcherLoginCode,
@@ -1076,6 +1077,19 @@ export function useDashboard() {
     ],
   );
 
+  const updateEngineerProfile = useCallback(
+    (
+      engineerId: string,
+      patch: { region?: string; transportType?: 'car' | 'walk' | 'bike' | 'transit' },
+    ) =>
+      performEntityMutation(async (session) => {
+        const engineer = snapshotRef.current?.engineers.find((item) => item.id === engineerId);
+        if (!engineer) throw new Error('Инженер не найден. Обновите список.');
+        await updateDispatchEngineerProfile(session, engineerId, engineer.version, patch);
+      }, 'Профиль инженера обновлён.'),
+    [performEntityMutation],
+  );
+
   const createRequest = useCallback(
     (input: CreateDispatchRequestInput) =>
       performEntityMutation(async (session) => {
@@ -1433,6 +1447,7 @@ export function useDashboard() {
     refreshPolicyComparison,
     updateEngineerAvailability,
     saveEngineerLogin,
+    updateEngineerProfile,
     unlinkEngineerLogin,
     createRequest,
     cancelRequest,

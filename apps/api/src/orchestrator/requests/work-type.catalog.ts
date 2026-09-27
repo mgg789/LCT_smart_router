@@ -286,6 +286,21 @@ export function findWorkTypeByTitle(title: string): WorkTypeSpec | undefined {
   return BY_TITLE.get(normalizeTitle(title));
 }
 
+/** Human-facing title, including legacy imported norm codes; routing codes stay unchanged. */
+export function workTypeDisplayTitle(value: string | null): string | null {
+  if (!value) return null;
+  const known = findWorkType(value) ?? findWorkTypeByTitle(value);
+  if (known) return known.title;
+  const legacy: Readonly<Record<string, string>> = {
+    local_repair: 'Локальный ремонт',
+    connection_base: 'Подключение',
+    network_emergency: 'Авария',
+    outage_tkd: 'Устранение неисправности',
+    equipment_order: 'Дозаказ оборудования',
+  };
+  return legacy[value] ?? (/^[a-z][a-z0-9_-]*$/i.test(value) ? 'Другой тип работ' : value);
+}
+
 /** Unknown named imports need an explicit business tier, never a skill-based guess. */
 export function importedWorkCategory(input: {
   workType?: string;

@@ -546,8 +546,8 @@ function numberOrNull(value: bigint | null): number | null {
 }
 
 /**
- * Picks the planning region whose existing-request geocenter is closest to the
- * new point. Regions without request points fall back to engineer homes, then depots.
+ * Picks the nearest office, with request geocenters / engineer homes for regions
+ * that have no office coordinate. Includes new, empty regions.
  */
 async function resolveRegion(
   tx: Tx,
@@ -583,14 +583,16 @@ async function resolveRegion(
       ),
     );
   }
-  if (centers.size === 0) {
-    const depotRows = await tx.depot.findMany({
-      where: { lat: { not: null }, lon: { not: null } },
-      select: { region: true, lat: true, lon: true },
-    });
-    centers = regionCenters(toRegionPoints(depotRows));
+  // Office coordinates take precedence and include empty, newly created regions.
+  const depotRows = await tx.depot.findMany({
+    where: { lat: { not: null }, lon: { not: null } },
+    select: { region: true, lat: true, lon: true },
+  });
+  const withOffices = new Map(centers);
+  for (const [region, center] of regionCenters(toRegionPoints(depotRows))) {
+    withOffices.set(region, center);
   }
-  return nearestRegion(point, centers);
+  return nearestRegion(point, withOffices);
 }
 
 function toRegionPoints(

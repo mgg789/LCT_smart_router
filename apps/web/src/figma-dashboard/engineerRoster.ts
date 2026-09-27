@@ -2,19 +2,12 @@ import type { HandoffView } from '../api/live';
 import type { DashboardSnapshot, EngineerDayView, PlanStopView, RequestView } from '../api/types';
 import { requestById, routeForEngineer } from '../domain/dashboard';
 import { regionStyle } from '../domain/regions';
-import { skillLabel } from '../lib/reasons';
+import { skillLabel, transportLabel } from '../lib/reasons';
 import { formatClock } from '../lib/time';
 import { officesForRegion, SKILL_OPTIONS } from './addEntity';
 import { givenName } from './engineerRing';
 import { requestCountLabel } from './fixtures';
 import { shortRequestId } from './requestsTable';
-
-const TRANSPORT_COPY: Record<string, string> = {
-  car: 'Легковой, до 3.5 т',
-  walk: 'Пешком',
-  bike: 'Велосипед',
-  transit: 'Общественный транспорт',
-};
 
 const EMAIL_SHAPE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -56,6 +49,8 @@ export type EngineerProfile = {
   readonly skills: readonly string[];
   readonly skillLabels: readonly string[];
   readonly transportLabel: string;
+  readonly transportType: 'car' | 'walk' | 'bike' | 'transit';
+  readonly region: string | null;
   readonly officeLabel: string;
   readonly assignedCount: number;
   readonly cardStatus: string;
@@ -132,9 +127,8 @@ export function skillChipLabel(skill: string): string {
 /**
  * Figma 49:5253 transport line for a stored transport code.
  */
-export function engineerTransportLabel(transport: string, transitEligible = true): string {
-  if (transport === 'walk' && !transitEligible) return 'Пешеход (без ОТ)';
-  return TRANSPORT_COPY[transport] ?? transport;
+export function engineerTransportLabel(transport: string): string {
+  return transportLabel(transport);
 }
 
 /**
@@ -263,7 +257,9 @@ export function engineerProfilesFromSnapshot(
         hasAccount: engineer.hasAccount,
         skills: engineer.skills,
         skillLabels: engineer.skills.map(skillChipLabel),
-        transportLabel: engineerTransportLabel(engineer.transportType, engineer.transitEligible),
+        transportLabel: engineerTransportLabel(engineer.transportType),
+        transportType: engineer.transportType,
+        region: engineer.region,
         officeLabel: engineerOfficeLabel(engineer.region),
         assignedCount,
         cardStatus: cardStatus(activity, engineer.day?.availability ?? null, assignedCount),

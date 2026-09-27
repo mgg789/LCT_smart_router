@@ -8,7 +8,7 @@ import { PolicyService } from '../../orchestrator/policy';
 // Catalog file only, not the `requests` barrel: it also loads Nest modules and can leave
 // `findWorkType` undefined under CJS circular imports in unit tests (mirrors
 // `ai-action.catalog.ts`'s own note on this).
-import { findWorkType } from '../../orchestrator/requests/work-type.catalog';
+import { workTypeDisplayTitle } from '../../orchestrator/requests/work-type.catalog';
 import { PrismaService, UnitOfWork } from '../../persistence';
 import { AppliedPlanService } from '../../routing/router-gateway/applied-plan.service';
 import { RouterClient } from '../../routing/router-gateway/router-client.port';
@@ -63,6 +63,7 @@ const EXPLAIN_SYSTEM_PROMPT = [
   'while "basis": "calculation_outcome" only means a bounded search did not find a variant -- that is a limit of the search,',
   'not proof that no such variant exists, and your answer must say so explicitly whenever it relies on a calculation_outcome reason.',
   'Rephrase the given facts for a human dispatcher in Russian, in the shape Facts -> Influence -> Result; do not add analysis the context does not contain.',
+  'Formulate the cause from explicit facts and verified constraints, not only from a ready-made reason code. If all suitable engineers are offline, explain that no suitable engineer is available now. Do not then claim that the cause is unknown merely because solver reasons are empty. Distinguish a current verified blocker from an unverified historical solver decision; never invent missing facts.',
 ].join(' ');
 
 /**
@@ -334,9 +335,7 @@ export class ExplainService {
       windowStartAt: Number(request.windowStartAt),
       windowEndAt: Number(request.windowEndAt),
       serviceDurationSec: request.serviceDurationSec,
-      workTypeTitle: request.workTypeHd
-        ? (findWorkType(request.workTypeHd)?.title ?? request.workTypeHd)
-        : null,
+      workTypeTitle: workTypeDisplayTitle(request.workTypeHd),
     }));
 
     const routes: ExplainPlanRouteView[] = (plan?.routes ?? []).map((route) => ({

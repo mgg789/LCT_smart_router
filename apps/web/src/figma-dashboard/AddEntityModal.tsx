@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { type DispatchRegion, loadDispatchRegions } from '../api/regions';
 import type { DashboardSnapshot } from '../api/types';
 import { useWorkTypes } from '../api/workTypes';
 import { WorkTypePicker } from '../components/WorkTypePicker';
@@ -21,6 +22,7 @@ import {
 import { FIGMA_ASSETS } from './assets';
 import { ModalLayer, ModalScrim } from './modalLayer';
 import { FigmaIcon } from './primitives';
+import { RegionForm } from './RegionForm';
 
 const fade = { duration: 0.22, ease: [0.22, 1, 0.36, 1] as const };
 /** Tall enough for the engineer tab; shorter tabs keep the empty canvas. */
@@ -32,8 +34,7 @@ const FIELD =
 
 /**
  * Header «plus» dialog: request / engineer / region.
- * Request and engineer call live dispatch APIs. Region/office create is
- * temporarily disabled; alert create is removed.
+ * All three tabs use durable dispatch APIs.
  */
 export function AddEntityModal({
   open,
@@ -45,7 +46,9 @@ export function AddEntityModal({
   onClose,
   onCreateRequest,
   onCreateEngineer,
+  onRegionCreated,
 }: {
+  onRegionCreated?: () => Promise<unknown>;
   open: boolean;
   snapshot: DashboardSnapshot | null;
   motionOn: boolean;
@@ -71,6 +74,8 @@ export function AddEntityModal({
     homeLon?: number | null;
   }) => Promise<void>;
 }) {
+  const [regionBusy, setRegionBusy] = useState(false);
+  const busy = submitting || regionBusy;
   const [tab, setTab] = useState<AddTab>('request');
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -90,7 +95,7 @@ export function AddEntityModal({
 
   return (
     <ModalLayer open={open} motionOn={motionOn}>
-      <ModalScrim label="Закрыть добавление" disabled={submitting} onClose={onClose} />
+      <ModalScrim label="Закрыть добавление" disabled={busy} onClose={onClose} />
       <motion.div
         role="dialog"
         aria-modal="true"
@@ -112,7 +117,7 @@ export function AddEntityModal({
           <button
             type="button"
             aria-label="Закрыть"
-            disabled={submitting}
+            disabled={busy}
             onClick={onClose}
             className="flex size-[36px] items-center justify-center transition-transform duration-150 hover:scale-110 disabled:opacity-50"
           >
@@ -154,33 +159,39 @@ export function AddEntityModal({
             />
           ) : null}
           {tab === 'region' ? (
-            <p className="mt-[24px] font-medium text-[16px] leading-[24px] text-figma-muted">
-              Создание офиса и региона временно отключено.
-            </p>
+            <RegionForm
+              token={token}
+              onError={setError}
+              onStatus={setStatus}
+              onCreated={onRegionCreated}
+              onBusy={setRegionBusy}
+            />
           ) : null}
         </div>
 
-        {tab !== 'region' || error || status ? (
-          <div className="shrink-0 pt-[16px]">
-            {error ? (
-              <p role="alert" className="mb-[12px] font-medium text-[15px] text-figma-danger">
-                {error}
-              </p>
-            ) : null}
-            {status ? (
-              <p role="status" className="mb-[12px] font-medium text-[15px] text-figma-muted">
-                {status}
-              </p>
-            ) : null}
-            {tab !== 'region' ? (
-              <SubmitRow
-                submitting={submitting}
-                label={tab === 'request' ? 'Создать заявку' : 'Добавить инженера'}
-                formId={`add-form-${tab}`}
-              />
-            ) : null}
-          </div>
-        ) : null}
+        <div className="shrink-0 pt-[16px]">
+          {error ? (
+            <p role="alert" className="mb-[12px] font-medium text-[15px] text-figma-danger">
+              {error}
+            </p>
+          ) : null}
+          {status ? (
+            <p role="status" className="mb-[12px] font-medium text-[15px] text-figma-muted">
+              {status}
+            </p>
+          ) : null}
+          <SubmitRow
+            submitting={busy}
+            label={
+              tab === 'request'
+                ? 'Создать заявку'
+                : tab === 'region'
+                  ? 'Добавить регион'
+                  : 'Добавить инженера'
+            }
+            formId={`add-form-${tab}`}
+          />
+        </div>
       </motion.div>
     </ModalLayer>
   );
@@ -208,7 +219,7 @@ function TabSwitch({
         />
         {ADD_TABS.map((item) => {
           const active = item === tab;
-          const disabled = item === 'region';
+          const disabled = false;
           return (
             <button
               key={item}
@@ -328,7 +339,10 @@ function RequestForm({
         error={catalogue.error}
         onRetry={catalogue.retry}
       />
-      <div className="mt-[20px] grid grid-cols-2 gap-[16px]">
+      <div
+        hidden={emergency}
+        className={emergency ? 'hidden' : 'mt-[20px] grid grid-cols-2 gap-[16px]'}
+      >
         <Field label="Начало окна" htmlFor="add-request-start">
           <input
             id="add-request-start"
@@ -405,7 +419,22 @@ function EngineerForm({
   const [homeLat, setHomeLat] = useState<number | null>(null);
   const [homeLon, setHomeLon] = useState<number | null>(null);
   const [homeAddress, setHomeAddress] = useState('');
-  const regions = selectableRegions(snapshot);
+  const [officeRegions, setOfficeRegions] = useState<DispatchRegion[]>([]);
+  useEffect(() => {
+    if (token)
+      void loadDispatchRegions(token)
+        .then(setOfficeRegions)
+        .catch(() => undefined);
+  }, [token]);
+  const regions = useMemo(() => {
+    const existing = selectableRegions(snapshot);
+    return [
+      ...existing,
+      ...officeRegions
+        .filter((office) => !existing.some((region) => region.id === office.region))
+        .map((office) => ({ id: office.region, label: office.region })),
+    ];
+  }, [snapshot, officeRegions]);
   const [displayName, setDisplayName] = useState('');
   const [transportType, setTransportType] = useState<TransportId>('car');
   const [skills, setSkills] = useState<SkillId[]>(['connection']);
@@ -413,7 +442,7 @@ function EngineerForm({
   const [email, setEmail] = useState('');
 
   useEffect(() => {
-    if (region && !regions.some((item) => item.id === region)) {
+    if (!regions.some((item) => item.id === region)) {
       setRegion(regions[0]?.id ?? '');
     }
   }, [region, regions]);

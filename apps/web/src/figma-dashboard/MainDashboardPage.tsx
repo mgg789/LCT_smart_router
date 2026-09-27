@@ -681,6 +681,7 @@ export function MainDashboardPage() {
           onClose={() => setAddOpen(false)}
           onCreateRequest={dash.createRequest}
           onCreateEngineer={dash.createEngineer}
+          onRegionCreated={dash.refresh}
         />
         <PolicyControl
           open={policyOpen}
@@ -1083,6 +1084,7 @@ export function MainDashboardPage() {
                   busy={dash.busy || dash.writesDisabled}
                   onSelectEngineer={dash.selectEngineer}
                   onLinkEmail={dash.saveEngineerLogin}
+                  onUpdateProfile={dash.updateEngineerProfile}
                   onDeleteEngineer={dash.deleteEngineer}
                   onSetAvailability={(engineerId, availability) => {
                     void dash.updateEngineerAvailability(engineerId, availability);

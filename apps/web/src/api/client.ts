@@ -933,6 +933,24 @@ export function createDispatchEngineer(
   );
 }
 
+/** Updates roster transport or region with optimistic version checking. */
+export function updateDispatchEngineerProfile(
+  token: string,
+  engineerId: string,
+  expectedVersion: number,
+  patch: { region?: string; transportType?: 'car' | 'walk' | 'bike' | 'transit' },
+): Promise<unknown> {
+  return requestJson(
+    `/api/v1/dispatch/engineers/${encodeURIComponent(engineerId)}`,
+    z.object({ engineer: engineerProfileSchema }),
+    token,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ operationId: crypto.randomUUID(), expectedVersion, ...patch }),
+    },
+  );
+}
+
 /** Archives a routing profile while preserving its historical plans and facts. */
 export function deleteDispatchEngineer(
   token: string,
