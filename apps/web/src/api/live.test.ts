@@ -29,7 +29,12 @@ describe('dispatcher live client', () => {
           handoffs: [],
           history: [
             {
-              request: { ...request, assumedCompletedAt: 1_790_001_200 },
+              request: {
+                ...request,
+                workCategory: 'emergency',
+                receivedAt: 1_790_000_100,
+                assumedCompletedAt: 1_790_001_200,
+              },
               engineerId: 'engineer-1',
               stop: null,
               outcome: 'assumed_completed',
@@ -45,7 +50,12 @@ describe('dispatcher live client', () => {
     expect(live.history[0]).toMatchObject({
       engineerId: 'engineer-1',
       outcome: 'assumed_completed',
-      request: { assumedCompletedAt: 1_790_001_200, completedAt: null },
+      request: {
+        workCategory: 'emergency',
+        receivedAt: 1_790_000_100,
+        assumedCompletedAt: 1_790_001_200,
+        completedAt: null,
+      },
     });
   });
 });

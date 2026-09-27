@@ -24,6 +24,7 @@ export type RequestTableRow = {
   number: string;
   address: string;
   service: string;
+  workCategory?: RequestView['workCategory'];
   window: string;
   windowStartAt: number;
   engineer: string;
@@ -93,6 +94,7 @@ export function rowsFromSnapshot(snapshot: DashboardSnapshot): RequestTableRow[]
       id: request.id,
       number: request.id,
       address: shortRequestAddress(request.addressText),
+      workCategory: request.workCategory,
       service: request.workTypeTitle ?? skillLabel(request.requiredSkill),
       window: `${formatClock(request.windowStartAt)}-${formatClock(request.windowEndAt)}`,
       windowStartAt: request.windowStartAt,

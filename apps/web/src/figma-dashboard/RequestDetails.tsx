@@ -2,6 +2,7 @@ import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
 import { X } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import type { EngineerView, RequestView } from '../api/types';
+import { WorkTypeLabel } from '../components/WorkTypeLabel';
 import type { CaseExplanation } from '../lib/explanations';
 import { formatDurationMin } from '../lib/time';
 import { Copyable } from './Copyable';
@@ -97,7 +98,9 @@ export function RequestDetails({
         {mode === 'request' && request ? (
           <div className="pr-[52px]">
             <FigmaText className="font-murs text-[32px] leading-[36px] tracking-[-0.544px] text-white">
-              {request.workTypeTitle || 'Заявка'}
+              <WorkTypeLabel category={request.workCategory}>
+                {request.workTypeTitle || 'Заявка'}
+              </WorkTypeLabel>
             </FigmaText>
             <Copyable
               value={shortRequestId(request.id)}

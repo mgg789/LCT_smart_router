@@ -1,6 +1,8 @@
 import { motion } from 'framer-motion';
 import { useEffect, useRef, useState } from 'react';
 import type { DashboardSnapshot } from '../api/types';
+import { useWorkTypes } from '../api/workTypes';
+import { WorkTypePicker } from '../components/WorkTypePicker';
 import { AddressPointField } from './AddressPointField';
 import {
   ADD_TAB_LABEL,
@@ -14,7 +16,6 @@ import {
   type TransportId,
   validateEngineerDraft,
   validateRequestDraft,
-  WORK_TYPE_OPTIONS,
   windowFromClocks,
 } from './addEntity';
 import { FIGMA_ASSETS } from './assets';
@@ -256,7 +257,10 @@ function RequestForm({
     lon?: number | null;
   }) => Promise<void>;
 }) {
-  const [workType, setWorkType] = useState<string>(WORK_TYPE_OPTIONS[0].code);
+  const catalogue = useWorkTypes();
+  const [workType, setWorkType] = useState<string>('connection_request');
+  const selectedType = catalogue.rows.find((row) => row.code === workType);
+  const emergency = selectedType?.category === 'emergency';
   const [addressText, setAddressText] = useState('');
   const [lat, setLat] = useState<number | null>(null);
   const [lon, setLon] = useState<number | null>(null);
@@ -270,19 +274,27 @@ function RequestForm({
         event.preventDefault();
         onError(null);
         onStatus(null);
-        const issue = validateRequestDraft({
-          workType,
-          addressText,
-          startClock,
-          endClock,
-          lat,
-          lon,
-        });
+        const issue = validateRequestDraft(
+          {
+            workType,
+            addressText,
+            startClock: emergency ? '00:00' : startClock,
+            endClock: emergency ? '23:59' : endClock,
+            lat,
+            lon,
+          },
+          catalogue.rows,
+        );
         if (issue) {
           onError(issue);
           return;
         }
-        const window = windowFromClocks(workDate, startClock, endClock);
+        const window = emergency
+          ? {
+              windowStartAt: Math.floor(Date.now() / 1000),
+              windowEndAt: Math.floor(Date.now() / 1000) + 6000,
+            }
+          : windowFromClocks(workDate, startClock, endClock);
         if (typeof window === 'string') {
           onError(window);
           return;
@@ -292,7 +304,7 @@ function RequestForm({
           addressText: addressText.trim(),
           lat,
           lon,
-          ...fitWindowToService(window, workType),
+          ...fitWindowToService(window, selectedType?.serviceDurationSec ?? 0),
         })
           .then(() => {
             setAddressText('');
@@ -309,24 +321,18 @@ function RequestForm({
           });
       }}
     >
-      <Field label="Тип" htmlFor="add-request-type">
-        <select
-          id="add-request-type"
-          value={workType}
-          onChange={(event) => setWorkType(event.target.value)}
-          className={FIELD}
-        >
-          {WORK_TYPE_OPTIONS.map((item) => (
-            <option key={item.code} value={item.code}>
-              {item.title}
-            </option>
-          ))}
-        </select>
-      </Field>
+      <WorkTypePicker
+        rows={catalogue.rows}
+        value={workType}
+        onChange={setWorkType}
+        error={catalogue.error}
+        onRetry={catalogue.retry}
+      />
       <div className="mt-[20px] grid grid-cols-2 gap-[16px]">
         <Field label="Начало окна" htmlFor="add-request-start">
           <input
             id="add-request-start"
+            disabled={emergency}
             type="time"
             value={startClock}
             onChange={(event) => setStartClock(event.target.value)}
@@ -336,6 +342,7 @@ function RequestForm({
         <Field label="Конец окна" htmlFor="add-request-end">
           <input
             id="add-request-end"
+            disabled={emergency}
             type="time"
             value={endClock}
             onChange={(event) => setEndClock(event.target.value)}

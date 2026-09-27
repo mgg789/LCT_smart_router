@@ -554,8 +554,14 @@ SPA `/engineer/` (вход по коду, список заявок и обед�
 
 ## 8. Контур клиента `/api/v1/client/...` (роль `client`)
 
-`GET /client/work-types` → `{workTypes: [{code, title}]}` — каталог типов работ (выбор
-в форме; код = ключ для `POST .../requests {workType}`). `POST /client/requests`
+`GET /client/work-types` — публичный единый каталог для форм клиента и диспетчера:
+`{workTypes: [{code, title, category, categoryTitle, serviceDurationSec, requiredSkill}]}`.
+Код — ключ для `POST .../requests {workType}`; `category` принимает `emergency`,
+`connection`, `service`. Авария выделяется красным; её норматив — 100 минут, время
+поступления задаётся сервером, ручное окно визита недоступно. `RequestView.workCategory`
+сохраняется также в адаптерах инженера и LIVE для одинакового отображения.
+Новые типы из импортируемого набора сохраняют своё название и требуют явной группы;
+[классификация и правила](request-priorities.md). `POST /client/requests`
 (черновик) → `POST /client/requests/:id/submit` (подтверждение) → заявка становится
 задачей. Приложение `/client/` этот двухшаговый путь не использует: код на почту — это
 подтверждение, и следом один вызов `POST /client/requests/submitted` (то же тело, что у

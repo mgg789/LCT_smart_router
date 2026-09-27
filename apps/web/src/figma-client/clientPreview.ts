@@ -8,6 +8,7 @@ export type ClientMapPoint = { lat: number; lon: number };
 export const CLIENT_MAP_CENTER: ClientMapPoint = { lat: 55.7558, lon: 37.6173 };
 
 export const CLIENT_PROBLEMS = [
+  'Авария',
   'Интернет не работает',
   'Починить роутер',
   'IP-телефония',
@@ -26,6 +27,7 @@ export const CLIENT_PROBLEM_WORK: Record<
   ClientProblem,
   { workType: string; requiredEquipment?: 'router' }
 > = {
+  Авария: { workType: 'outage' },
   'Интернет не работает': { workType: 'no_link' },
   'Починить роутер': { workType: 'router_replacement', requiredEquipment: 'router' },
   'IP-телефония': { workType: 'information' },
@@ -56,6 +58,7 @@ export interface ClientRequestView {
   office: string | null;
   company: string;
   workTypeTitle: string;
+  workCategory?: 'emergency' | 'connection' | 'service';
   problemTitle: string;
   description: string;
   durationSec: number;
@@ -71,6 +74,8 @@ export interface ClientRequestView {
 
 export interface ClientRequestDraft {
   problem: ClientProblem | '';
+  workType?: string;
+  workTypeTitle?: string;
   contactName: string;
   address: string;
   windowStart: string;
@@ -234,6 +239,7 @@ export function clientSubmitHint(draft: ClientRequestDraft): string | null {
   if (draft.address.trim().length === 0) return 'Укажите адрес.';
   if (!draft.email.trim().includes('@')) return 'Укажите почту.';
   if (draft.point === null) return 'Отметьте точку на карте или выберите адрес из подсказок.';
+  if ((draft.workType ?? CLIENT_PROBLEM_WORK[draft.problem].workType) === 'outage') return null;
   if (!isClock(draft.windowStart) || !isClock(draft.windowEnd)) return 'Укажите окно визита.';
   const [startHour, startMinute] = parseClock(draft.windowStart);
   const [endHour, endMinute] = parseClock(draft.windowEnd);
@@ -311,14 +317,21 @@ export function clientPrepareBody(
   const addressText = draft.address.trim();
   const email = draft.email.trim();
   if (contactName.length === 0 || addressText.length === 0 || !email.includes('@')) return null;
-  if (!isClock(draft.windowStart) || !isClock(draft.windowEnd) || draft.point === null) return null;
+  const work = draft.workType ? { workType: draft.workType } : CLIENT_PROBLEM_WORK[problem];
+  const emergency = work.workType === 'outage';
+  if (
+    draft.point === null ||
+    (!emergency && (!isClock(draft.windowStart) || !isClock(draft.windowEnd)))
+  )
+    return null;
   const [startHour, startMinute] = parseClock(draft.windowStart);
   const [endHour, endMinute] = parseClock(draft.windowEnd);
   const workDate = moscowWorkDate(nowMs);
-  const windowStartAt = moscowAt(workDate, startHour, startMinute);
-  const windowEndAt = moscowAt(workDate, endHour, endMinute);
+  const windowStartAt = emergency
+    ? Math.floor(nowMs / 1000)
+    : moscowAt(workDate, startHour, startMinute);
+  const windowEndAt = emergency ? windowStartAt + 100 * 60 : moscowAt(workDate, endHour, endMinute);
   if (windowEndAt <= windowStartAt) return null;
-  const work = CLIENT_PROBLEM_WORK[problem];
   return {
     contactName,
     addressText,
@@ -328,8 +341,8 @@ export function clientPrepareBody(
     ...(work.requiredEquipment === undefined ? {} : { requiredEquipment: work.requiredEquipment }),
     windowStartAt,
     windowEndAt,
-    urgent: false,
-    problemText: problem,
+    urgent: emergency,
+    problemText: draft.workTypeTitle ?? problem,
   };
 }
 

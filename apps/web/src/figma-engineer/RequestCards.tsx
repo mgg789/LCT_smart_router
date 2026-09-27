@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import type { ReactNode } from 'react';
+import { WorkTypeLabel } from '../components/WorkTypeLabel';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { skillLabel } from '../lib/reasons';
 import { ENGINEER_ASSETS } from './assets';
@@ -190,7 +191,9 @@ function UpcomingCard({
             className="flex flex-wrap items-center font-medium tracking-[-0.02em] text-figma-muted"
             style={{ marginTop: eu(12), columnGap: eu(10), rowGap: eu(4), fontSize: eu(20) }}
           >
-            <span>{service}</span>
+            <span>
+              <WorkTypeLabel category={item.request.workCategory}>{service}</WorkTypeLabel>
+            </span>
             <FigmaIcon
               src={ENGINEER_ASSETS.dot}
               alt=""
@@ -305,7 +308,7 @@ function RegularCard({
           className="font-medium tracking-[-0.02em] text-figma-muted"
           style={{ marginTop: eu(12), fontSize: eu(20) }}
         >
-          {service}
+          <WorkTypeLabel category={item.request.workCategory}>{service}</WorkTypeLabel>
         </p>
         <span
           className="inline-flex items-center rounded-full bg-figma-ink font-semibold text-white"

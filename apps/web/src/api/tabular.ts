@@ -14,6 +14,7 @@ const tabularFieldSchema = z.enum([
   'lat',
   'lon',
   'workType',
+  'workCategory',
   'duration',
   'windowStart',
   'windowEnd',

@@ -12,31 +12,6 @@ export const ADD_TAB_LABEL: Record<AddTab, string> = {
   region: 'Регион',
 };
 
-/**
- * Work types shown in the add-request form. Codes match GET /client/work-types
- * and POST /dispatch/requests {workType}.
- */
-export const WORK_TYPE_OPTIONS = [
-  { code: 'connection_request', title: 'Заявка на подключение' },
-  { code: 'convergence', title: 'Конвергенция абонента' },
-  { code: 'equipment_order', title: 'Дозаказ оборудования' },
-  { code: 'router_replacement', title: 'Роутер. Замена' },
-  { code: 'stb_replacement', title: 'ТВ/TVE/ENT. Замена приставки' },
-  { code: 'gigabit_switch', title: 'Переключение на Гбит/с' },
-  { code: 'outage', title: 'Авария' },
-  { code: 'no_link', title: 'Нет линка' },
-  { code: 'disconnects', title: 'Разрывы' },
-  { code: 'low_speed', title: 'Низкая скорость' },
-  { code: 'port_errors', title: 'Рост ошибок на порту' },
-  { code: 'ip_169', title: 'IP-адрес 169...' },
-  { code: 'cable_work', title: 'Работа с кабелем' },
-  { code: 'monitoring', title: 'Мониторинг' },
-  { code: 'other_errors', title: 'TVE/ENT. Другие ошибки' },
-  { code: 'information', title: 'Информация' },
-] as const;
-
-export type WorkTypeCode = (typeof WORK_TYPE_OPTIONS)[number]['code'];
-
 export const SKILL_OPTIONS = [
   { id: 'local', label: 'Локальные работы' },
   { id: 'connection', label: 'Подключение' },
@@ -153,33 +128,11 @@ export function parseClock(value: string): { hour: number; minute: number } | nu
   return { hour, minute };
 }
 
-/** On-site norms mirrored from the System Layer catalogue. */
-export const WORK_TYPE_SERVICE_SEC: Record<WorkTypeCode, number> = {
-  connection_request: 4200,
-  convergence: 4200,
-  equipment_order: 1200,
-  router_replacement: 1200,
-  stb_replacement: 1200,
-  gigabit_switch: 4200,
-  outage: 4800,
-  no_link: 4800,
-  disconnects: 4800,
-  low_speed: 4800,
-  port_errors: 4800,
-  ip_169: 4800,
-  cable_work: 1800,
-  monitoring: 1800,
-  other_errors: 1800,
-  information: 1800,
-};
-
 /** Stretch a typed window so the work norm actually fits. */
 export function fitWindowToService(
   window: { windowStartAt: number; windowEndAt: number },
-  workType: string,
+  service: number,
 ): { windowStartAt: number; windowEndAt: number } {
-  const service =
-    workType in WORK_TYPE_SERVICE_SEC ? WORK_TYPE_SERVICE_SEC[workType as WorkTypeCode] : 0;
   if (window.windowEndAt - window.windowStartAt >= service) return window;
   return { windowStartAt: window.windowStartAt, windowEndAt: window.windowStartAt + service };
 }
@@ -199,15 +152,18 @@ export function windowFromClocks(
   return { windowStartAt, windowEndAt };
 }
 
-export function validateRequestDraft(draft: {
-  workType: string;
-  addressText: string;
-  startClock: string;
-  endClock: string;
-  lat?: number | null;
-  lon?: number | null;
-}): string | null {
-  if (!WORK_TYPE_OPTIONS.some((item) => item.code === draft.workType)) return 'Выберите тип заявки';
+export function validateRequestDraft(
+  draft: {
+    workType: string;
+    addressText: string;
+    startClock: string;
+    endClock: string;
+    lat?: number | null;
+    lon?: number | null;
+  },
+  workTypes: readonly { code: string }[],
+): string | null {
+  if (!workTypes.some((item) => item.code === draft.workType)) return 'Выберите тип заявки';
   if (!draft.addressText.trim()) return 'Укажите адрес';
   if (draft.lat == null || draft.lon == null) {
     return 'Выберите адрес из подсказки или точку на карте';

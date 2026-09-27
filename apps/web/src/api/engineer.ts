@@ -54,6 +54,8 @@ const requestSchema = z.object({
   requiredEquipment: z.enum(['router', 'set_top_box', 'smart_speaker']).nullable(),
   workType: z.string().nullable(),
   workTypeTitle: z.string().nullable(),
+  workCategory: z.enum(['emergency', 'connection', 'service']).optional(),
+  receivedAt: z.number().int().nullable().optional(),
   requiredSkill: z.string(),
   normProfileCode: z.string().optional(),
   normativeTravelDurationSec: z.number().int().optional(),

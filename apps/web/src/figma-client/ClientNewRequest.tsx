@@ -1,6 +1,8 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowRight, Mic } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { useWorkTypes } from '../api/workTypes';
+import { WorkTypePicker } from '../components/WorkTypePicker';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { eu } from '../figma-engineer/engineerScale';
 import { CLIENT_ASSETS } from './assets';
@@ -12,6 +14,7 @@ import {
   searchClientAddress,
 } from './clientApi';
 import {
+  CLIENT_PROBLEM_WORK,
   CLIENT_PROBLEMS,
   type ClientMapPoint,
   type ClientProblem,
@@ -46,6 +49,11 @@ export function ClientNewRequest({
   onSubmit: () => void;
 }) {
   const motionOn = !useReducedMotion();
+  const catalogue = useWorkTypes();
+  const selectedCode =
+    draft.workType ?? (draft.problem ? CLIENT_PROBLEM_WORK[draft.problem].workType : '');
+  const emergency =
+    catalogue.rows.find((row) => row.code === selectedCode)?.category === 'emergency';
   const [mode, setMode] = useState<'story' | 'form'>(initialMode);
   const [story, setStory] = useState('');
   const [listening, setListening] = useState(false);
@@ -190,6 +198,8 @@ export function ClientNewRequest({
         onChange({
           ...local,
           problem,
+          workType: undefined,
+          workTypeTitle: undefined,
           contactName: picked.contactName || local.contactName,
           email: picked.email || local.email,
           windowStart: picked.windowStart || local.windowStart,
@@ -320,17 +330,24 @@ export function ClientNewRequest({
                 }}
                 onSubmit={(event) => {
                   event.preventDefault();
-                  onSubmit();
+                  if (catalogue.rows.some((row) => row.code === selectedCode)) onSubmit();
                 }}
               >
                 <div className="flex flex-wrap" style={{ gap: eu(12) }}>
-                  {CLIENT_PROBLEMS.map((problem) => {
+                  {CLIENT_PROBLEMS.filter((problem) => problem !== 'Авария').map((problem) => {
                     const selected = draft.problem === problem;
                     return (
                       <motion.button
                         key={problem}
                         type="button"
-                        onClick={() => onChange({ ...draft, problem })}
+                        onClick={() =>
+                          onChange({
+                            ...draft,
+                            problem,
+                            workType: undefined,
+                            workTypeTitle: undefined,
+                          })
+                        }
                         whileTap={{ scale: 0.98 }}
                         transition={tap}
                         aria-pressed={selected}
@@ -349,6 +366,24 @@ export function ClientNewRequest({
                       </motion.button>
                     );
                   })}
+                </div>
+
+                <div className="mt-[20px]">
+                  <WorkTypePicker
+                    rows={catalogue.rows}
+                    value={selectedCode}
+                    error={catalogue.error}
+                    onRetry={catalogue.retry}
+                    onChange={(workType) => {
+                      const selected = catalogue.rows.find((row) => row.code === workType);
+                      onChange({
+                        ...draft,
+                        workType,
+                        workTypeTitle: selected?.title,
+                        problem: selected?.category === 'emergency' ? 'Авария' : 'Другое...',
+                      });
+                    }}
+                  />
                 </div>
 
                 <label
@@ -450,20 +485,22 @@ export function ClientNewRequest({
                   </motion.button>
                 </div>
 
-                <div className="flex" style={{ marginTop: eu(24), gap: eu(16) }}>
-                  <ClockField
-                    id="client-window-start"
-                    label="с"
-                    value={draft.windowStart}
-                    onChange={(windowStart) => onChange({ ...draft, windowStart })}
-                  />
-                  <ClockField
-                    id="client-window-end"
-                    label="до"
-                    value={draft.windowEnd}
-                    onChange={(windowEnd) => onChange({ ...draft, windowEnd })}
-                  />
-                </div>
+                {!emergency ? (
+                  <div className="flex" style={{ marginTop: eu(24), gap: eu(16) }}>
+                    <ClockField
+                      id="client-window-start"
+                      label="с"
+                      value={draft.windowStart}
+                      onChange={(windowStart) => onChange({ ...draft, windowStart })}
+                    />
+                    <ClockField
+                      id="client-window-end"
+                      label="до"
+                      value={draft.windowEnd}
+                      onChange={(windowEnd) => onChange({ ...draft, windowEnd })}
+                    />
+                  </div>
+                ) : null}
 
                 <label
                   htmlFor="client-email"
@@ -500,7 +537,7 @@ export function ClientNewRequest({
                 ) : null}
                 <motion.button
                   type="submit"
-                  disabled={busy}
+                  disabled={busy || !catalogue.rows.some((row) => row.code === selectedCode)}
                   whileTap={{ scale: 0.98 }}
                   className="w-full bg-figma-bee font-semibold tracking-[-0.03em] text-figma-ink disabled:opacity-50"
                   style={{

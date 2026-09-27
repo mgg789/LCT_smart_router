@@ -27,6 +27,7 @@ const TABULAR_FIELDS: readonly TabularField[] = [
   'lat',
   'lon',
   'workType',
+  'workCategory',
   'duration',
   'windowStart',
   'windowEnd',
@@ -43,6 +44,7 @@ const FIELD_LABELS: Record<TabularField, string> = {
   lat: 'Широта',
   lon: 'Долгота',
   workType: 'Тип работ',
+  workCategory: 'Группа неизвестного типа',
   duration: 'Длительность',
   windowStart: 'Начало окна',
   windowEnd: 'Конец окна',
@@ -59,6 +61,7 @@ const DEFAULT_VALUES: Record<TabularField, string> = {
   lat: '',
   lon: '',
   workType: '',
+  workCategory: '',
   duration: '60',
   windowStart: '09:00',
   windowEnd: '18:00',
@@ -479,14 +482,32 @@ export function TabularImportDialog({
                 <div className="mt-[10px] grid grid-cols-2 gap-[8px] md:grid-cols-3 lg:grid-cols-4">
                   {TABULAR_FIELDS.map((field) => (
                     <TabularFieldControl key={field} label={FIELD_LABELS[field]}>
-                      <input
-                        value={defaults[field]}
-                        onChange={(event) =>
-                          setDefaults((current) => ({ ...current, [field]: event.target.value }))
-                        }
-                        placeholder="Оставить пустым"
-                        className="tabular-control-input"
-                      />
+                      {field === 'workCategory' ? (
+                        <select
+                          value={defaults[field]}
+                          onChange={(event) =>
+                            setDefaults((current) => ({
+                              ...current,
+                              workCategory: event.target.value,
+                            }))
+                          }
+                          className="tabular-control-input"
+                        >
+                          <option value="">Выбрать явно для новых типов</option>
+                          <option value="emergency">Авария</option>
+                          <option value="connection">Подключение</option>
+                          <option value="service">Ремонт / Дозаказ</option>
+                        </select>
+                      ) : (
+                        <input
+                          value={defaults[field]}
+                          onChange={(event) =>
+                            setDefaults((current) => ({ ...current, [field]: event.target.value }))
+                          }
+                          placeholder="Оставить пустым"
+                          className="tabular-control-input"
+                        />
+                      )}
                     </TabularFieldControl>
                   ))}
                 </div>
