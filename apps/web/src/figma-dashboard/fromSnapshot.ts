@@ -18,6 +18,7 @@ import {
   unassignedRequests,
 } from '../domain/dashboard';
 import { projectLiveGraph } from '../domain/liveGraph';
+import { t } from '../i18n';
 import { explainSelection } from '../lib/explanations';
 import { factorLabel, POLICY_LABELS, skillLabel, transportLabel } from '../lib/reasons';
 import { formatClock, formatDayTitle, formatDurationMin } from '../lib/time';
@@ -41,19 +42,19 @@ const REASON_ICON_ORDER = [
 ] as const satisfies readonly ReasonIconKey[];
 
 const EMPTY_REQUEST: EngineerRequest = {
-  number: 'План дня',
-  title: 'Все маршруты',
-  tags: ['Общий план'],
-  company: 'Выберите заявку',
-  address: 'На карте все смены',
+  number: t('figma-dashboard.fromSnapshot.255f2a4738'),
+  title: t('figma-dashboard.fromSnapshot.b02db5971a'),
+  tags: [t('figma-dashboard.fromSnapshot.94a31bf356')],
+  company: t('figma-dashboard.fromSnapshot.e15552105f'),
+  address: t('figma-dashboard.fromSnapshot.7d3fcb4fe2'),
   window: '—',
-  work: 'Клик по инженеру или точке',
-  whyTitle: 'Почему этот план?',
+  work: t('figma-dashboard.fromSnapshot.19cde6dad4'),
+  whyTitle: t('figma-dashboard.fromSnapshot.ec4f706a09'),
   reasons: [
-    { icon: 'reasonCheck', label: 'Навык, транспорт и окна в расчёте' },
-    { icon: 'reasonCar', label: 'Совместимость техники проверена' },
-    { icon: 'reasonClock', label: 'Слоты внутри клиентских окон' },
-    { icon: 'reasonPin', label: 'Доезды из матрицы маршрута' },
+    { icon: 'reasonCheck', label: t('figma-dashboard.fromSnapshot.d32fd39489') },
+    { icon: 'reasonCar', label: t('figma-dashboard.fromSnapshot.94edff44b2') },
+    { icon: 'reasonClock', label: t('figma-dashboard.fromSnapshot.f3c0cfc4ab') },
+    { icon: 'reasonPin', label: t('figma-dashboard.fromSnapshot.caeef48328') },
   ],
 };
 
@@ -189,7 +190,10 @@ export function dashboardViewFromSnapshot(
   return {
     dateLabel: figmaDateLabel(snapshot.workDate),
     requestCount: snapshot.requests.length,
-    planLabel: `${unassigned.length} без назначения - план от ${formatClock(planAsOf)}`,
+    planLabel: t('figma-dashboard.fromSnapshot.a11d091038', {
+      value0: unassigned.length,
+      value1: formatClock(planAsOf),
+    }),
     unassignedTitle: unassignedCountTitle(unassigned.length),
     unassignedReason: unassignedBannerReason(firstUnassignedAssignment, firstUnassigned),
     firstUnassignedId: firstUnassigned?.id ?? null,
@@ -213,8 +217,13 @@ export function withTechnicalBreaks(
       .filter((item) => item.engineerId === engineer.id)
       .map((item) => ({
         time: formatClock(item.startedAt),
-        place: 'Техническая остановка',
-        status: item.endedAt === null ? `до ${formatClock(item.plannedEndAt)}` : 'выполнено',
+        place: t('figma-dashboard.fromSnapshot.15ac3e38fe'),
+        status:
+          item.endedAt === null
+            ? t('figma-dashboard.fromSnapshot.66e004d65b', {
+                value0: formatClock(item.plannedEndAt),
+              })
+            : t('figma-dashboard.fromSnapshot.f40eba382c'),
         kind: 'technical' as const,
         at: item.startedAt,
       }));
@@ -260,31 +269,31 @@ export function withLiveRouteStops(
         ),
         place:
           node.kind === 'start'
-            ? 'Выход на смену'
+            ? t('figma-dashboard.fromSnapshot.422d4c8ff1')
             : node.kind === 'lunch'
-              ? 'Обед'
+              ? t('figma-dashboard.fromSnapshot.69a29fbff8')
               : node.kind === 'handoff'
-                ? 'Передача оборудования'
+                ? t('figma-dashboard.fromSnapshot.31f207a99a')
                 : node.kind === 'delivery'
-                  ? 'Доставка оборудования'
+                  ? t('figma-dashboard.fromSnapshot.abbe1ea907')
                   : node.kind === 'office_pickup'
-                    ? 'Забрать в офисе'
+                    ? t('figma-dashboard.fromSnapshot.238a113959')
                     : request
                       ? routeStopAddress(request.addressText)
-                      : 'Заявка',
+                      : t('figma-dashboard.fromSnapshot.77b3e0166b'),
         status:
           node.kind === 'start'
             ? state?.lineStartedAt
-              ? 'ВЫШЕЛ'
+              ? t('figma-dashboard.fromSnapshot.0cb57c23be')
               : state?.noShowAt
-                ? 'НЕ ВЫШЕЛ'
-                : 'ожидаем выхода'
+                ? t('figma-dashboard.fromSnapshot.72b8248551')
+                : t('figma-dashboard.fromSnapshot.c79dabf212')
             : node.kind === 'lunch'
-              ? 'обед'
+              ? t('figma-dashboard.fromSnapshot.c0f7d29eab')
               : node.kind === 'handoff'
                 ? handoffStatus(live?.handoffs ?? [], node.handoffId, state?.id)
                 : node.kind === 'delivery' || node.kind === 'office_pickup'
-                  ? 'оборудование'
+                  ? t('figma-dashboard.fromSnapshot.2505cac3d2')
                   : stopStatus(request),
         active: node.kind !== 'start' && graph.activeNodeKeys.has(node.key),
         failed: node.kind === 'start' && Boolean(state?.noShowAt),
@@ -311,10 +320,10 @@ export function withLiveRouteStops(
         place: routeStopAddress(item.request.addressText),
         status:
           item.outcome === 'cancelled'
-            ? 'отменено'
+            ? t('figma-dashboard.fromSnapshot.8a09723017')
             : item.outcome === 'assumed_completed'
-              ? 'по расписанию'
-              : 'выполнено',
+              ? t('figma-dashboard.fromSnapshot.51ec8d5076')
+              : t('figma-dashboard.fromSnapshot.f40eba382c'),
         completed: item.outcome !== 'cancelled',
       };
       if (previous) Object.assign(previous, terminalStop);
@@ -328,8 +337,11 @@ export function withLiveRouteStops(
         requestId: null,
         at: startAt,
         time: formatClock(startAt),
-        place: 'Обед',
-        status: now >= endAt ? 'выполнено' : 'обед',
+        place: t('figma-dashboard.fromSnapshot.69a29fbff8'),
+        status:
+          now >= endAt
+            ? t('figma-dashboard.fromSnapshot.f40eba382c')
+            : t('figma-dashboard.fromSnapshot.c0f7d29eab'),
         active: now >= startAt && now < endAt,
         completed: now >= endAt,
       };
@@ -344,7 +356,10 @@ export function withLiveRouteStops(
       ? state.stats.completedCount + state.stats.assumedCompletedCount
       : engineer.doneCount;
     const remaining = stops.filter(
-      (stop) => stop.kind === 'job' && !stop.completed && stop.status !== 'отменено',
+      (stop) =>
+        stop.kind === 'job' &&
+        !stop.completed &&
+        stop.status !== t('figma-dashboard.fromSnapshot.8a09723017'),
     ).length;
     return {
       ...engineer,
@@ -354,8 +369,8 @@ export function withLiveRouteStops(
       lineLabel:
         state?.lineStatus === 'no_show_offline'
           ? state.lineStartedAt
-            ? 'Снят со смены'
-            : 'Не вышел'
+            ? t('figma-dashboard.fromSnapshot.fedfda3fb7')
+            : t('figma-dashboard.fromSnapshot.bfab9f3069')
           : undefined,
       lineFailed: state?.lineStatus === 'no_show_offline',
     };
@@ -382,16 +397,18 @@ function engineerCardFromSummary(
     shift:
       summary.shiftStartAt && summary.shiftEndAt
         ? `${formatClock(summary.shiftStartAt)}-${formatClock(summary.shiftEndAt)}`
-        : 'смена не задана',
+        : t('figma-dashboard.fromSnapshot.8a998b0216'),
     requestCount: summary.assignedCount,
     doneCount: summary.doneCount,
-    routeUpdated: `план обновлён в ${formatClock(planAsOf)}`,
+    routeUpdated: t('figma-dashboard.fromSnapshot.f5f57efff6', { value0: formatClock(planAsOf) }),
     stops: routeStopsFromRoute(snapshot, route),
     request: request
       ? requestPanelFromSnapshot(request, assignment, explanation?.title ?? null)
       : {
           ...EMPTY_REQUEST,
-          whyTitle: `Смена ${summary.displayName.split(' ')[0] ?? ''}`.trim(),
+          whyTitle: t('figma-dashboard.fromSnapshot.7c092982ec', {
+            value0: summary.displayName.split(' ')[0] ?? '',
+          }).trim(),
         },
     primaryRequestId: request?.id,
   };
@@ -403,15 +420,17 @@ function handoffStatus(
   engineerId: string | undefined,
 ): string {
   const handoff = handoffs.find((item) => item.id === handoffId);
-  if (!handoff) return 'передача';
-  if (handoff.completedAt !== null) return 'выполнено';
+  if (!handoff) return t('figma-dashboard.fromSnapshot.cfd07ab768');
+  if (handoff.completedAt !== null) return t('figma-dashboard.fromSnapshot.f40eba382c');
   if (
     (engineerId === handoff.donorEngineerId && handoff.donorConfirmedAt !== null) ||
     (engineerId === handoff.receiverEngineerId && handoff.receiverConfirmedAt !== null)
   ) {
-    return 'ждём партнёра';
+    return t('figma-dashboard.fromSnapshot.4acb9f2702');
   }
-  return engineerId === handoff.donorEngineerId ? 'Передать' : 'Принять';
+  return engineerId === handoff.donorEngineerId
+    ? t('figma-dashboard.fromSnapshot.1dc58eaa3a')
+    : t('figma-dashboard.fromSnapshot.9659ad64c2');
 }
 
 function requestPanelFromSnapshot(
@@ -422,20 +441,22 @@ function requestPanelFromSnapshot(
   const skill = request.requiredSkill ? skillLabel(request.requiredSkill) : null;
   const tags = [
     request.workTypeTitle,
-    request.priority === 'urgent' ? 'Срочная' : null,
+    request.priority === 'urgent' ? t('figma-dashboard.fromSnapshot.7d27aa7f9c') : null,
     skill && skill !== request.workTypeTitle ? skill : null,
   ].filter((item): item is string => Boolean(item));
   return {
-    number: `Заявка № ${shortRequestId(request.id)}`,
-    title: request.workTypeTitle ?? 'Заявка',
+    number: t('figma-dashboard.fromSnapshot.80b3e93473', { value0: shortRequestId(request.id) }),
+    title: request.workTypeTitle ?? t('figma-dashboard.fromSnapshot.77b3e0166b'),
     tags: tags.slice(0, 2),
-    company: request.contactName ?? 'Клиент',
+    company: request.contactName ?? t('figma-dashboard.fromSnapshot.3e622aecbf'),
     address: shortAddress(request.addressText),
     window: `${formatClock(request.windowStartAt)}-${formatClock(request.windowEndAt)}`,
     work: request.workTypeTitle ?? formatDurationMin(request.serviceDurationSec),
     whyTitle:
       whyTitle ??
-      (assignment?.status === 'unassigned' ? 'Почему без назначения' : 'Почему этот инженер?'),
+      (assignment?.status === 'unassigned'
+        ? t('figma-dashboard.fromSnapshot.9da41e73a4')
+        : t('figma-dashboard.fromSnapshot.d1a6f2cb24')),
     reasons: reasonsFromAssignment(assignment),
   };
 }
@@ -465,8 +486,8 @@ function stopToCard(snapshot: DashboardSnapshot, stop: PlanStopView): RouteStop 
   if (stop.kind === 'lunch') {
     return {
       time: formatClock(stop.startAt),
-      place: 'Обед',
-      status: 'обед',
+      place: t('figma-dashboard.fromSnapshot.69a29fbff8'),
+      status: t('figma-dashboard.fromSnapshot.c0f7d29eab'),
       requestId: null,
       kind: 'lunch',
       at: stop.startAt,
@@ -475,8 +496,8 @@ function stopToCard(snapshot: DashboardSnapshot, stop: PlanStopView): RouteStop 
   if (stop.kind === 'start') {
     return {
       time: formatClock(stop.startAt),
-      place: 'Старт смены',
-      status: 'старт смены',
+      place: t('figma-dashboard.fromSnapshot.ae64d5c267'),
+      status: t('figma-dashboard.fromSnapshot.ddf53b03c7'),
       requestId: null,
       kind: 'start',
       at: stop.startAt,
@@ -485,8 +506,11 @@ function stopToCard(snapshot: DashboardSnapshot, stop: PlanStopView): RouteStop 
   if (stop.kind === 'delivery' || stop.kind === 'office_pickup') {
     return {
       time: formatClock(stop.startAt),
-      place: stop.kind === 'delivery' ? 'Доставка оборудования' : 'Забрать в офисе',
-      status: 'оборудование',
+      place:
+        stop.kind === 'delivery'
+          ? t('figma-dashboard.fromSnapshot.abbe1ea907')
+          : t('figma-dashboard.fromSnapshot.238a113959'),
+      status: t('figma-dashboard.fromSnapshot.2505cac3d2'),
       requestId: null,
       kind: stop.kind,
       at: stop.startAt,
@@ -495,8 +519,8 @@ function stopToCard(snapshot: DashboardSnapshot, stop: PlanStopView): RouteStop 
   if (stop.kind === 'handoff') {
     return {
       time: formatClock(stop.startAt),
-      place: 'Передача оборудования',
-      status: 'передача',
+      place: t('figma-dashboard.fromSnapshot.31f207a99a'),
+      status: t('figma-dashboard.fromSnapshot.cfd07ab768'),
       requestId: null,
       kind: 'handoff',
       handoffId: stop.handoff?.handoff_id,
@@ -506,7 +530,9 @@ function stopToCard(snapshot: DashboardSnapshot, stop: PlanStopView): RouteStop 
   const request = stop.requestId ? requestById(snapshot, stop.requestId) : null;
   return {
     time: formatClock(stop.startAt),
-    place: request ? routeStopAddress(request.addressText) : 'Заявка',
+    place: request
+      ? routeStopAddress(request.addressText)
+      : t('figma-dashboard.fromSnapshot.77b3e0166b'),
     status: stopStatus(request),
     requestId: stop.requestId,
     kind: 'job',
@@ -525,25 +551,26 @@ export function routeStopAddress(address: string): string {
  * Dispatcher urgency chip. Emergency skill is the only third signal in the contract.
  */
 export function requestUrgency(request: Pick<RequestView, 'priority' | 'requiredSkill'>): {
-  label: 'Базовая' | 'Срочная' | 'Экстренная';
+  label: string;
   tone: 'neutral' | 'urgent' | 'emergency';
 } {
   if (request.requiredSkill === 'emergency') {
-    return { label: 'Экстренная', tone: 'emergency' };
+    return { label: t('figma-dashboard.fromSnapshot.c543fd76ec'), tone: 'emergency' };
   }
   if (request.priority === 'urgent') {
-    return { label: 'Срочная', tone: 'urgent' };
+    return { label: t('figma-dashboard.fromSnapshot.7d27aa7f9c'), tone: 'urgent' };
   }
-  return { label: 'Базовая', tone: 'neutral' };
+  return { label: t('figma-dashboard.fromSnapshot.633208f96e'), tone: 'neutral' };
 }
 
 function stopStatus(request: RequestView | null): string {
-  if (!request) return 'запланировано';
-  if (request.lifecycle === 'cancelled') return 'отменено';
-  if (request.assumedCompletedAt) return 'по расписанию';
-  if (request.lifecycle === 'completed' || request.assignmentState === 'done') return 'выполнено';
-  if (request.lifecycle === 'in_progress') return 'сейчас - визит';
-  return 'запланировано';
+  if (!request) return t('figma-dashboard.fromSnapshot.94096c9f49');
+  if (request.lifecycle === 'cancelled') return t('figma-dashboard.fromSnapshot.8a09723017');
+  if (request.assumedCompletedAt) return t('figma-dashboard.fromSnapshot.51ec8d5076');
+  if (request.lifecycle === 'completed' || request.assignmentState === 'done')
+    return t('figma-dashboard.fromSnapshot.f40eba382c');
+  if (request.lifecycle === 'in_progress') return t('figma-dashboard.fromSnapshot.775f97e371');
+  return t('figma-dashboard.fromSnapshot.94096c9f49');
 }
 
 function firstAssignedRequest(snapshot: DashboardSnapshot, engineerId: string): RequestView | null {
@@ -568,18 +595,19 @@ function unassignedBannerReason(
 ): string {
   const code = assignment?.reasons.assignment?.factors[0]?.code;
   if (code) return factorLabel(code);
-  if (!request) return 'Все заявки назначены';
-  if (!assignment) return 'План ещё считается';
-  return 'Назначение не найдено';
+  if (!request) return t('figma-dashboard.fromSnapshot.a1c1218974');
+  if (!assignment) return t('figma-dashboard.fromSnapshot.f05f481c05');
+  return t('figma-dashboard.fromSnapshot.abc45d9d14');
 }
 
 function unassignedCountTitle(count: number): string {
   const mod10 = count % 10;
   const mod100 = count % 100;
-  if (mod10 === 1 && mod100 !== 11) return `${count} заявка без назначения`;
+  if (mod10 === 1 && mod100 !== 11)
+    return t('figma-dashboard.fromSnapshot.424fee003a', { value0: count });
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14))
-    return `${count} заявки без назначения`;
-  return `${count} заявок без назначения`;
+    return t('figma-dashboard.fromSnapshot.860276a056', { value0: count });
+  return t('figma-dashboard.fromSnapshot.951723d625', { value0: count });
 }
 
 function shortAddress(address: string): string {

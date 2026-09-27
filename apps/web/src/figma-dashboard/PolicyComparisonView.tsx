@@ -8,6 +8,7 @@ import type {
 } from '../api/types';
 import { unassignedRequests } from '../domain/dashboard';
 import type { RegionSelection } from '../domain/regions';
+import { locale, t } from '../i18n';
 import { comparisonValue, comparisonWinners, strategyDescription } from '../lib/policyComparison';
 import { formatClock, formatDurationMin, formatKm } from '../lib/time';
 import { useArtboardStretch } from './artboardStretch';
@@ -15,18 +16,18 @@ import { PolicyComparisonOverview } from './PolicyComparisonOverview';
 import { type DayRequestPoint, PolicyStrategyMap } from './PolicyStrategyMap';
 import { FigmaText } from './primitives';
 
-export const POLICY_PAGE_CAPTION = 'Одинаковые заявки и дорожные условия';
+export const POLICY_PAGE_CAPTION = t('figma-dashboard.PolicyComparisonView.2a62007976');
 
 const COLUMN_ORDER = ['baseline', 'fast', 'compact', 'sla', 'balanced', 'eco', 'covering'] as const;
 
 const SHORT_NAME: Record<string, string> = {
-  baseline: 'FIFO (базовое)',
-  fast: 'Быстрее',
-  compact: 'Дешевле',
-  sla: 'По окнам',
-  balanced: 'Ровнее загрузка',
-  eco: 'Короче пробег',
-  covering: 'Полное покрытие',
+  baseline: t('figma-dashboard.PolicyComparisonView.90980a8366'),
+  fast: t('figma-dashboard.PolicyComparisonView.568e623109'),
+  compact: t('figma-dashboard.PolicyComparisonView.1024b68fd8'),
+  sla: t('figma-dashboard.PolicyComparisonView.3869fe38ea'),
+  balanced: t('figma-dashboard.PolicyComparisonView.94b4982ffa'),
+  eco: t('figma-dashboard.PolicyComparisonView.25907df14d'),
+  covering: t('figma-dashboard.PolicyComparisonView.0ae6737c4d'),
 };
 
 /**
@@ -86,9 +87,7 @@ export function PolicyComparisonView({
         .then((result) => {
           if (!active) return;
           if (comparisonKey !== `${result.inputHash}:${result.routerContextVersion}`) {
-            setMapError(
-              'Исходный план изменился. Пересчитайте сравнение для согласованных данных.',
-            );
+            setMapError(t('figma-dashboard.PolicyComparisonView.70eba3ac85'));
             return;
           }
           setMapRoutes(result);
@@ -108,7 +107,11 @@ export function PolicyComparisonView({
         })
         .catch((cause: unknown) => {
           if (active)
-            setMapError(cause instanceof Error ? cause.message : 'Не удалось построить карту');
+            setMapError(
+              cause instanceof Error
+                ? cause.message
+                : t('figma-dashboard.PolicyComparisonView.57dae77a8c'),
+            );
         })
         .finally(() => {
           if (active) setMapLoading(false);
@@ -147,7 +150,7 @@ export function PolicyComparisonView({
       <div className="absolute inset-x-[30px] top-[30px] flex items-start justify-between">
         <div>
           <FigmaText className="figma-nowrap font-extrabold text-[28px] tracking-[-0.476px] text-figma-ink">
-            Сравнение политик
+            {t('figma-dashboard.PolicyComparisonView.00e6ded47b')}
           </FigmaText>
           <p className="mt-[8px] font-semibold text-[18px] tracking-[-0.306px] text-figma-muted">
             {POLICY_PAGE_CAPTION}
@@ -156,7 +159,7 @@ export function PolicyComparisonView({
         <div className="flex items-center gap-[12px]">
           <fieldset
             className="relative flex h-[67px] items-center rounded-[20px] bg-figma-soft p-[6px]"
-            aria-label="Вид сравнения"
+            aria-label={t('figma-dashboard.PolicyComparisonView.2eb89a0b1c')}
           >
             <button
               type="button"
@@ -171,7 +174,7 @@ export function PolicyComparisonView({
                   transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
                 />
               ) : null}
-              Обзор
+              {t('figma-dashboard.PolicyComparisonView.bd3a5be11e')}
             </button>
             <button
               type="button"
@@ -186,7 +189,7 @@ export function PolicyComparisonView({
                   transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
                 />
               ) : null}
-              Таблица
+              {t('figma-dashboard.PolicyComparisonView.b7f18dd0a9')}
             </button>
             <button
               type="button"
@@ -201,7 +204,7 @@ export function PolicyComparisonView({
                   transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
                 />
               ) : null}
-              Карта
+              {t('figma-dashboard.PolicyComparisonView.2751c91000')}
             </button>
           </fieldset>
           <button
@@ -211,7 +214,11 @@ export function PolicyComparisonView({
             className="flex h-[67px] items-center justify-center rounded-[20px] bg-figma-bee px-[28px] transition-transform duration-150 hover:scale-[1.01] disabled:opacity-50"
           >
             <span className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
-              {loading ? 'Считаем…' : comparison ? 'Пересчитать' : 'Сравнить'}
+              {loading
+                ? t('figma-dashboard.PolicyComparisonView.1369ab27fa')
+                : comparison
+                  ? t('figma-dashboard.PolicyComparisonView.4d5cff3f67')
+                  : t('figma-dashboard.PolicyComparisonView.83b70468cd')}
             </span>
           </button>
         </div>
@@ -219,9 +226,15 @@ export function PolicyComparisonView({
 
       {comparison ? (
         <div className="absolute left-[30px] top-[118px] flex flex-wrap gap-[8px]">
-          <MetaChip label={`Расчёт ${formatClock(comparison.computedAt)}`} />
-          <MetaChip label="Просмотр не меняет рабочий план" />
-          {isStale ? <MetaChip label="План уже изменился — пересчитайте сравнение" bee /> : null}
+          <MetaChip
+            label={t('figma-dashboard.PolicyComparisonView.5e7ce1b2fa', {
+              value0: formatClock(comparison.computedAt),
+            })}
+          />
+          <MetaChip label={t('figma-dashboard.PolicyComparisonView.9e1b808417')} />
+          {isStale ? (
+            <MetaChip label={t('figma-dashboard.PolicyComparisonView.4a2437795b')} bee />
+          ) : null}
         </div>
       ) : null}
 
@@ -239,12 +252,14 @@ export function PolicyComparisonView({
             {mode === 'map' ? (
               mapLoading ? (
                 <div className="flex h-[220px] items-center justify-center rounded-[20px] bg-figma-soft">
-                  <p className="font-semibold text-[20px] text-figma-ink">Считаем</p>
+                  <p className="font-semibold text-[20px] text-figma-ink">
+                    {t('figma-dashboard.PolicyComparisonView.2da7373e8b')}
+                  </p>
                 </div>
               ) : mapError ? (
                 <div className="rounded-[20px] bg-figma-soft px-[24px] py-[20px]">
                   <p className="font-semibold text-[20px] text-figma-danger">
-                    Карта не загрузилась
+                    {t('figma-dashboard.PolicyComparisonView.516fcb16fb')}
                   </p>
                   <p className="mt-[8px] font-medium text-[16px] text-figma-muted">{mapError}</p>
                 </div>
@@ -260,7 +275,7 @@ export function PolicyComparisonView({
               ) : (
                 <div className="flex h-[220px] items-center justify-center rounded-[20px] bg-figma-soft px-[30px] text-center">
                   <p className="font-medium text-[18px] text-figma-muted">
-                    На карте появятся все стратегии сразу. Рабочий план при этом не меняется.
+                    {t('figma-dashboard.PolicyComparisonView.fc705451df')}
                   </p>
                 </div>
               )
@@ -270,7 +285,7 @@ export function PolicyComparisonView({
                 {error ? (
                   <div className="rounded-[20px] bg-figma-soft px-[24px] py-[20px]">
                     <p className="font-semibold text-[20px] text-figma-danger">
-                      Сравнение не загрузилось
+                      {t('figma-dashboard.PolicyComparisonView.32865b0e88')}
                     </p>
                     <p className="mt-[8px] font-medium text-[16px] text-figma-muted">{error}</p>
                   </div>
@@ -291,8 +306,8 @@ export function PolicyComparisonView({
                   <div className="flex h-[220px] items-center justify-center rounded-[20px] bg-figma-soft px-[30px] text-center">
                     <p className="font-medium text-[18px] text-figma-muted">
                       {readOnly
-                        ? 'Новое сравнение станет доступно после восстановления связи.'
-                        : 'Запустите сравнение. Активный план и выбранная политика при этом не изменятся.'}
+                        ? t('figma-dashboard.PolicyComparisonView.79bf6d3fac')
+                        : t('figma-dashboard.PolicyComparisonView.0c8eb8515e')}
                     </p>
                   </div>
                 ) : null}
@@ -303,8 +318,7 @@ export function PolicyComparisonView({
                 {comparison && mode === 'table' ? (
                   <>
                     <p className="mb-[16px] text-[14px] text-figma-muted">
-                      Выделены лучшие показатели при одинаковом составе. Резервные инженеры
-                      учитываются отдельно; при разном покрытии сравнивайте также затраты на заявку.
+                      {t('figma-dashboard.PolicyComparisonView.266cedd453')}
                     </p>
                     <table className="w-full min-w-[1280px] border-separate border-spacing-0 text-left">
                       <thead>
@@ -323,7 +337,7 @@ export function PolicyComparisonView({
                               </p>
                               {!row.isUsable ? (
                                 <p className="mt-[6px] font-medium text-[12px] text-figma-danger">
-                                  План непригоден
+                                  {t('figma-dashboard.PolicyComparisonView.839499a642')}
                                 </p>
                               ) : null}
                             </th>
@@ -385,31 +399,31 @@ function orderOf(strategyId: string): number {
 export function comparisonMetrics(recorded: boolean): MetricSpec[] {
   return [
     {
-      label: 'Назначено',
+      label: t('figma-dashboard.PolicyComparisonView.a0769f1663'),
       better: 'max',
       score: (row) => row.metrics.assignedCount,
       text: (row) => `${row.metrics.assignedCount}/${row.metrics.requestsTotal}`,
     },
     {
-      label: 'Без назначения',
+      label: t('figma-dashboard.PolicyComparisonView.6de28b421e'),
       better: 'min',
       score: (row) => row.metrics.unassignedCount,
       text: (row) => String(row.metrics.unassignedCount),
     },
     {
-      label: 'В исходном окне',
+      label: t('figma-dashboard.PolicyComparisonView.db3e6086f2'),
       better: 'max',
       score: (row) => comparisonValue(row, 'onTime'),
       text: (row) => String(comparisonValue(row, 'onTime')),
     },
     {
-      label: 'Срочные',
+      label: t('figma-dashboard.PolicyComparisonView.206cadea2e'),
       better: 'max',
       score: (row) => row.metrics.urgentAssignedCount,
       text: (row) => `${row.metrics.urgentAssignedCount}/${row.metrics.urgentTotal}`,
     },
     {
-      label: 'Инженеры',
+      label: t('figma-dashboard.PolicyComparisonView.960ef88466'),
       better: 'min',
       score: (row) => row.metrics.engineersUsed,
       text: (row) =>
@@ -418,83 +432,83 @@ export function comparisonMetrics(recorded: boolean): MetricSpec[] {
           : String(row.metrics.engineersUsed),
     },
     {
-      label: 'Пробег на заявку',
+      label: t('figma-dashboard.PolicyComparisonView.ecf155346f'),
       better: 'min',
       score: (row) => perAssigned(row.metrics.distanceKm, row.metrics.assignedCount),
       text: (row) => formatKmPerAssigned(row.metrics.distanceKm, row.metrics.assignedCount),
     },
     {
-      label: 'Дорога на заявку',
+      label: t('figma-dashboard.PolicyComparisonView.2dcccaea22'),
       better: 'min',
       score: (row) => perAssigned(row.metrics.travelTimeSec, row.metrics.assignedCount),
       text: (row) =>
         formatDurationPerAssigned(row.metrics.travelTimeSec, row.metrics.assignedCount),
     },
     {
-      label: 'Работа на заявку',
+      label: t('figma-dashboard.PolicyComparisonView.5419a37735'),
       better: null,
       score: (row) => perAssigned(row.metrics.workTimeSec, row.metrics.assignedCount),
       text: (row) => formatDurationPerAssigned(row.metrics.workTimeSec, row.metrics.assignedCount),
     },
     {
-      label: 'Ожидание на заявку',
+      label: t('figma-dashboard.PolicyComparisonView.4aaa8bfb65'),
       better: 'min',
       score: (row) => perAssigned(row.metrics.waitingTimeSec, row.metrics.assignedCount),
       text: (row) =>
         formatDurationPerAssigned(row.metrics.waitingTimeSec, row.metrics.assignedCount),
     },
     {
-      label: 'Опоздания на заявку',
+      label: t('figma-dashboard.PolicyComparisonView.6a21d0cce3'),
       better: 'min',
       score: (row) => perAssigned(row.metrics.lateAssignedCount, row.metrics.assignedCount),
       text: (row) =>
         formatCountPerAssigned(row.metrics.lateAssignedCount, row.metrics.assignedCount),
     },
     {
-      label: 'Задержка на заявку',
+      label: t('figma-dashboard.PolicyComparisonView.15f6401442'),
       better: 'min',
       score: (row) => perAssigned(row.metrics.totalLatenessSec, row.metrics.assignedCount),
       text: (row) =>
         formatDurationPerAssigned(row.metrics.totalLatenessSec, row.metrics.assignedCount),
     },
     {
-      label: 'Пробег всего',
+      label: t('figma-dashboard.PolicyComparisonView.2a81b8992a'),
       better: 'min',
       score: (row) => displayKm(row.metrics.distanceKm),
       text: (row) => formatKm(row.metrics.distanceKm),
     },
     {
-      label: 'Дорога всего',
+      label: t('figma-dashboard.PolicyComparisonView.99ff703b11'),
       better: 'min',
       score: (row) => row.metrics.travelTimeSec,
       text: (row) => formatDurationMin(row.metrics.travelTimeSec),
     },
     {
-      label: 'Работы всего',
+      label: t('figma-dashboard.PolicyComparisonView.8a2a97863d'),
       better: null,
       score: (row) => row.metrics.workTimeSec,
       text: (row) => formatDurationMin(row.metrics.workTimeSec),
     },
     {
-      label: 'Ожидание всего',
+      label: t('figma-dashboard.PolicyComparisonView.80a1c8a7e0'),
       better: 'min',
       score: (row) => row.metrics.waitingTimeSec,
       text: (row) => formatDurationMin(row.metrics.waitingTimeSec),
     },
     {
-      label: 'Опоздания, всего',
+      label: t('figma-dashboard.PolicyComparisonView.1810b2784f'),
       better: 'min',
       score: (row) => row.metrics.lateAssignedCount,
       text: (row) => String(row.metrics.lateAssignedCount),
     },
     {
-      label: 'Сумма опозданий, всего',
+      label: t('figma-dashboard.PolicyComparisonView.749034fcd1'),
       better: 'min',
       score: (row) => row.metrics.totalLatenessSec,
       text: (row) => formatDurationMin(row.metrics.totalLatenessSec),
     },
     {
-      label: 'Запас окна',
+      label: t('figma-dashboard.PolicyComparisonView.923373d35b'),
       better: 'max',
       score: (row) =>
         row.metrics.minWindowSlackSec === null
@@ -506,16 +520,21 @@ export function comparisonMetrics(recorded: boolean): MetricSpec[] {
           : formatDurationMin(row.metrics.minWindowSlackSec),
     },
     {
-      label: 'Разброс загрузки',
+      label: t('figma-dashboard.PolicyComparisonView.2033203a89'),
       better: 'min',
       score: (row) => Math.round(row.metrics.workloadSpreadSec / 60),
       text: (row) => formatDurationMin(row.metrics.workloadSpreadSec),
     },
     {
-      label: 'Расчёт',
+      label: t('figma-dashboard.PolicyComparisonView.b3ae4c0025'),
       better: null,
       score: (row) => (recorded ? null : Math.round(row.calculationMs)),
-      text: (row) => (recorded ? 'не замерено' : `${Math.round(row.calculationMs)} мс`),
+      text: (row) =>
+        recorded
+          ? t('figma-dashboard.PolicyComparisonView.b91237d074')
+          : t('figma-dashboard.PolicyComparisonView.2337013f83', {
+              value0: Math.round(row.calculationMs),
+            }),
     },
   ];
 }
@@ -530,24 +549,36 @@ export function perAssigned(value: number, assignedCount: number): number | null
 }
 
 function unavailablePerAssigned(assignedCount: number): string | null {
-  return assignedCount > 0 ? null : '— (нет назначений)';
+  return assignedCount > 0 ? null : t('figma-dashboard.PolicyComparisonView.abef1b5174');
 }
 
 export function formatKmPerAssigned(distanceKm: number, assignedCount: number): string {
   const unavailable = unavailablePerAssigned(assignedCount);
-  return unavailable ?? `${formatKm(distanceKm / assignedCount)} / заявка`;
+  return (
+    unavailable ??
+    t('figma-dashboard.PolicyComparisonView.9fc77f1fdb', {
+      value0: formatKm(distanceKm / assignedCount),
+    })
+  );
 }
 
 function formatDurationPerAssigned(durationSec: number, assignedCount: number): string {
   const unavailable = unavailablePerAssigned(assignedCount);
-  return unavailable ?? `${formatDurationMin(durationSec / assignedCount)} / заявка`;
+  return (
+    unavailable ??
+    t('figma-dashboard.PolicyComparisonView.9fc77f1fdb', {
+      value0: formatDurationMin(durationSec / assignedCount),
+    })
+  );
 }
 
 function formatCountPerAssigned(count: number, assignedCount: number): string {
   const unavailable = unavailablePerAssigned(assignedCount);
   return (
     unavailable ??
-    `${(count / assignedCount).toLocaleString('ru-RU', { maximumFractionDigits: 2 })} / заявка`
+    t('figma-dashboard.PolicyComparisonView.9fc77f1fdb', {
+      value0: (count / assignedCount).toLocaleString(locale, { maximumFractionDigits: 2 }),
+    })
   );
 }
 

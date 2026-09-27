@@ -4,6 +4,7 @@ import { FigmaIcon } from '../figma-dashboard/primitives';
 import { formatMinutesRu, formatPlanTime, formatPlanWindow } from '../figma-engineer/engineerClock';
 import { eu } from '../figma-engineer/engineerScale';
 import { RequestMap } from '../figma-engineer/RequestMap';
+import { t } from '../i18n';
 import { CLIENT_ASSETS } from './assets';
 import { type ClientRequestView, splitClientRequests } from './clientPreview';
 
@@ -35,7 +36,7 @@ export function ClientRequests({
         className="font-extrabold tracking-[0.02em] text-figma-ink"
         style={{ marginTop: eu(48), fontSize: eu(36) }}
       >
-        Список заявок
+        {t('figma-client.ClientRequests.db511eb63e')}
       </h1>
       {notice ? (
         <p
@@ -81,14 +82,14 @@ export function ClientRequests({
           fontSize: eu(28),
         }}
       >
-        Новая заявка
+        {t('figma-client.ClientRequests.ee5790e7f4')}
       </motion.button>
 
       <h2
         className="font-extrabold tracking-[0.02em] text-figma-ink"
         style={{ marginTop: eu(36), fontSize: eu(36) }}
       >
-        Архив
+        {t('figma-client.ClientRequests.3c54b5e783')}
       </h2>
       <div className="flex flex-col" style={{ marginTop: eu(20), gap: eu(20) }}>
         {archive.map((item, index) => (

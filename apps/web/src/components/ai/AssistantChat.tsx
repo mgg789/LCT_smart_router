@@ -2,6 +2,7 @@ import { Send, Square } from 'lucide-react';
 import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
 import type { AiAssistMode } from '../../api/ai';
 import { type AssistantSurface, useAssistantChat } from '../../hooks/useAssistantChat';
+import { t } from '../../i18n';
 import { AiUnavailablePanel } from './AiUnavailablePanel';
 import { ChatBottomSpacer } from './ChatBottomSpacer';
 import { ChatMessage } from './ChatMessage';
@@ -80,10 +81,12 @@ export function AssistantChat({
   return (
     <section className={VARIANT_CLASS[variant]}>
       <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-4">
-        {chat.loading && <p className="text-sm text-muted">Загружаем диалог…</p>}
+        {chat.loading && (
+          <p className="text-sm text-muted">{t('components.ai.AssistantChat.6e1c9169aa')}</p>
+        )}
         {!chat.loading && chat.messages.length === 0 && (
           <p className="rounded-2xl border border-dashed border-line p-6 text-center text-sm text-muted">
-            Задайте вопрос ассистенту.
+            {t('components.ai.AssistantChat.12405d3030')}
           </p>
         )}
         {chat.messages.map((message) => (
@@ -122,7 +125,7 @@ export function AssistantChat({
             onKeyDown={onComposerKeyDown}
             disabled={!canSend}
             rows={1}
-            placeholder="Напишите сообщение…"
+            placeholder={t('components.ai.AssistantChat.bb8ca90854')}
             className="max-h-32 min-h-[2.5rem] flex-1 resize-none rounded-xl border border-line bg-canvas px-3 py-2 text-sm disabled:opacity-50"
           />
           {chat.runState === 'running' ? (
@@ -132,7 +135,7 @@ export function AssistantChat({
               className="flex shrink-0 items-center gap-1.5 rounded-full border border-line bg-white px-4 py-2 text-sm"
             >
               <Square className="h-4 w-4" />
-              Остановить
+              {t('components.ai.AssistantChat.3396400da0')}
             </button>
           ) : (
             <button
@@ -142,7 +145,7 @@ export function AssistantChat({
               className="flex shrink-0 items-center gap-1.5 rounded-full bg-bee px-4 py-2 text-sm font-semibold text-ink disabled:opacity-50"
             >
               <Send className="h-4 w-4" />
-              Отправить
+              {t('components.ai.AssistantChat.ceb68a9287')}
             </button>
           )}
         </div>

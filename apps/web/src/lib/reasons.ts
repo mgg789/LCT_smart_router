@@ -1,35 +1,37 @@
+import { t } from '../i18n';
+
 const FACTOR_LABELS: Record<string, string> = {
-  skill_match: 'Подходит навык',
-  skill_missing: 'Нет нужного навыка',
-  equipment_ok: 'Есть требуемое оборудование',
-  equipment_missing: 'Нет оборудования',
-  travel_delta: 'Близко к предыдущей точке',
-  sla_margin: 'Начало внутри окна',
-  window_tight: 'Окно узкое',
-  load_balance: 'Выравнивает загрузку',
-  cluster: 'В том же районе',
-  urgent_priority: 'Срочная заявка',
-  CONSTRAINTS_SATISFIED: 'Ограничения соблюдены',
-  NO_SKILL_MATCH: 'Нет нужного навыка',
-  NO_TRANSPORT_MATCH: 'Нет подходящего транспорта',
-  NO_EQUIPMENT_STOCK: 'Нет нужного оборудования',
-  NO_AVAILABLE_ENGINEER: 'Нет свободного инженера',
-  NO_FEASIBLE_ASSIGNMENT_FOUND: 'Назначение не найдено',
-  LUNCH_NOT_PLACED: 'Обед не поставлен',
-  LUNCH_SKIPPED_FOR_WORK: 'Обед пропущен ради заявок',
-  REQUIRED_LUNCH_UNPLACED: 'Обязательный обед не размещён',
+  skill_match: t('lib.reasons.3911162cca'),
+  skill_missing: t('lib.reasons.af30f432b6'),
+  equipment_ok: t('lib.reasons.0c4356c1f7'),
+  equipment_missing: t('lib.reasons.a66b9a19d5'),
+  travel_delta: t('lib.reasons.7cf1477c18'),
+  sla_margin: t('lib.reasons.3791d1b8d0'),
+  window_tight: t('lib.reasons.c7541f2a0f'),
+  load_balance: t('lib.reasons.3c18885fec'),
+  cluster: t('lib.reasons.adf9c4d408'),
+  urgent_priority: t('lib.reasons.9e48878009'),
+  CONSTRAINTS_SATISFIED: t('lib.reasons.0245b37a16'),
+  NO_SKILL_MATCH: t('lib.reasons.af30f432b6'),
+  NO_TRANSPORT_MATCH: t('lib.reasons.ce4157a6fe'),
+  NO_EQUIPMENT_STOCK: t('lib.reasons.077fb337b0'),
+  NO_AVAILABLE_ENGINEER: t('lib.reasons.c4283171cb'),
+  NO_FEASIBLE_ASSIGNMENT_FOUND: t('lib.reasons.abc45d9d14'),
+  LUNCH_NOT_PLACED: t('lib.reasons.11032943cf'),
+  LUNCH_SKIPPED_FOR_WORK: t('lib.reasons.2d51485c5a'),
+  REQUIRED_LUNCH_UNPLACED: t('lib.reasons.603d927202'),
 };
 
 const REASON_DETAILS: Record<string, string> = {
-  CONSTRAINTS_SATISFIED: 'Навык, транспорт и расписание соблюдены.',
-  NO_SKILL_MATCH: 'Нет инженера с нужным навыком.',
-  NO_TRANSPORT_MATCH: 'Нет инженера с подходящим транспортом.',
-  NO_EQUIPMENT_STOCK: 'Нет инженера с нужным оборудованием.',
-  NO_AVAILABLE_ENGINEER: 'Нет свободного подходящего инженера.',
-  NO_FEASIBLE_ASSIGNMENT_FOUND: 'Поиск не нашёл допустимого назначения.',
-  LUNCH_NOT_PLACED: 'Обед не удалось поставить в этот маршрут.',
-  LUNCH_SKIPPED_FOR_WORK: 'Обед пропущен, чтобы сохранить заявки.',
-  REQUIRED_LUNCH_UNPLACED: 'Обязательный обед не удалось разместить.',
+  CONSTRAINTS_SATISFIED: t('lib.reasons.d8a558d5c6'),
+  NO_SKILL_MATCH: t('lib.reasons.002c118b7a'),
+  NO_TRANSPORT_MATCH: t('lib.reasons.01289aa758'),
+  NO_EQUIPMENT_STOCK: t('lib.reasons.9b3d0ddc4b'),
+  NO_AVAILABLE_ENGINEER: t('lib.reasons.c5f6469c7d'),
+  NO_FEASIBLE_ASSIGNMENT_FOUND: t('lib.reasons.4421360bef'),
+  LUNCH_NOT_PLACED: t('lib.reasons.d0a8cc8da7'),
+  LUNCH_SKIPPED_FOR_WORK: t('lib.reasons.21cb51876e'),
+  REQUIRED_LUNCH_UNPLACED: t('lib.reasons.bb0ef6dc0a'),
 };
 
 /**
@@ -52,11 +54,11 @@ export function reasonDetail(code: string, fallback: string): string {
   if (hasCyrillic(fallback)) {
     return fallback;
   }
-  return FACTOR_LABELS[code] ?? 'Подробности есть в данных расчёта.';
+  return FACTOR_LABELS[code] ?? t('lib.reasons.e7e8630767');
 }
 
 export function modeLabel(mode: 'auto' | 'manual'): string {
-  return mode === 'auto' ? 'Авто' : 'Вручную';
+  return mode === 'auto' ? t('lib.reasons.8dca2f7831') : t('lib.reasons.3e17d77fcc');
 }
 
 function hasCyrillic(text: string): boolean {
@@ -82,23 +84,23 @@ export function initials(name: string): string {
 }
 
 export const SKILL_LABELS: Record<string, string> = {
-  local: 'локальные работы',
-  connection: 'подключение',
-  emergency: 'авария',
+  local: t('lib.reasons.64189f2d9f'),
+  connection: t('lib.reasons.9bed4efc86'),
+  emergency: t('lib.reasons.b1eb2830e9'),
 };
 
 export const SKILL_MARKS: Record<string, string> = {
-  local: 'Л',
-  connection: 'П',
-  emergency: 'А',
+  local: t('lib.reasons.a4af3e9a60'),
+  connection: t('lib.reasons.1a37f2acd5'),
+  emergency: t('lib.reasons.1d15dbf70d'),
 };
 
 export const TRANSPORT_LABELS: Record<string, string> = {
-  car: 'авто',
-  walk: 'пешком',
-  bike: 'велосипед',
+  car: t('lib.reasons.4af423e9b1'),
+  walk: t('lib.reasons.12d94a87f5'),
+  bike: t('lib.reasons.0469f75bb5'),
   // Legacy API snapshots used `transit`; the dispatcher UI now groups it with walking.
-  transit: 'пешком',
+  transit: t('lib.reasons.12d94a87f5'),
 };
 
 /** Dispatcher label for a stored skill code. Unknown codes stay as-is. */
@@ -117,25 +119,21 @@ export function transportLabel(transport: string): string {
 }
 
 export const POLICY_LABELS: Record<string, string> = {
-  personal: 'Моя политика',
-  compact: 'Дешевле',
-  fast: 'Быстрее до клиента',
-  sla: 'Бережнее к окнам',
-  balanced: 'Ровнее загрузка',
-  eco: 'Короче пробег',
-  covering: 'Полное покрытие',
+  personal: t('lib.reasons.0a8232003c'),
+  compact: t('lib.reasons.1024b68fd8'),
+  fast: t('lib.reasons.0b6a715a58'),
+  sla: t('lib.reasons.e5d759f5a5'),
+  balanced: t('lib.reasons.94b4982ffa'),
+  eco: t('lib.reasons.25907df14d'),
+  covering: t('lib.reasons.0ae6737c4d'),
 };
 
 export const POLICY_DESCRIPTIONS: Record<string, string> = {
-  compact:
-    'При том же покрытии сначала сокращает число занятых инженеров, затем опоздания и пробег. Условия допустимости общие для всех политик.',
-  fast: 'При том же покрытии сначала сокращает время в пути, затем опоздания и пробег. Допустимые задержки видны в сравнении.',
-  sla: 'При том же покрытии сначала сокращает суммарное опоздание, затем увеличивает минимальный запас до конца клиентского окна.',
-  balanced:
-    'При том же покрытии сначала снижает максимальную долю занятой смены, затем опоздания и разброс загрузки.',
-  eco: 'При том же покрытии сначала сокращает пробег, затем опоздания и число инженеров. Время дороги может быть больше.',
-  covering:
-    'Повышает покрытие, перераспределяя заявки и добавляя инженеров нужного региона. Сокращает дополнительный состав; недостижимые окна остаются без назначения.',
-  baseline:
-    'Базовая из ТЗ: заявки по очереди поступления первому подходящему свободному инженеру. Нужна для сравнения, не как рабочая политика.',
+  compact: t('lib.reasons.e407aab96e'),
+  fast: t('lib.reasons.6b628a24af'),
+  sla: t('lib.reasons.581c0252dd'),
+  balanced: t('lib.reasons.3723e50b4d'),
+  eco: t('lib.reasons.2ae6aeca24'),
+  covering: t('lib.reasons.66878ca8a0'),
+  baseline: t('lib.reasons.051c2a5c7f'),
 };

@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import type { RegionSelection } from '../domain/regions';
+import { t } from '../i18n';
 import { FIGMA_ASSETS } from './assets';
 import { FigmaIcon, FigmaText } from './primitives';
 
@@ -74,7 +75,11 @@ export function RegionSwitch({
           >
             <FigmaIcon
               src={FIGMA_ASSETS.policyArrowClosed}
-              alt={open ? 'Свернуть регионы' : 'Выбрать регион'}
+              alt={
+                open
+                  ? t('figma-dashboard.RegionSwitch.283e851233')
+                  : t('figma-dashboard.RegionSwitch.6d1b736154')
+              }
               width={43}
               height={43}
             />

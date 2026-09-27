@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { EngineerLiveView, EquipmentLogisticsView } from '../api/live';
+import { t } from '../i18n';
 
 /** Copy follows authoritative logistics state; an unavailable planner never means infeasible. */
 export function equipmentLogisticsMessage(
@@ -8,19 +9,24 @@ export function equipmentLogisticsMessage(
   now: number,
 ): string {
   if (!entry || entry.state === 'searching')
-    return 'Ищем оборудование у коллег. Пожалуйста, оставайтесь на заявке.';
+    return t('figma-engineer.EquipmentLogisticsStatus.bdadd330a5');
   if (entry.state === 'assigned') {
     const minutes =
       entry.expectedAt === null ? null : Math.max(0, Math.ceil((entry.expectedAt - now) / 60));
-    return `${entry.donorName ?? 'Инженер'} привезёт вам оборудование${minutes === null ? '' : minutes > 0 ? ` через ${minutes} мин` : ' в ближайшее время'}. Пожалуйста, ждите. Время ожидания добавлено к заявке.`;
+    return t('figma-engineer.EquipmentLogisticsStatus.5deabad764', {
+      value0: entry.donorName ?? t('figma-engineer.EquipmentLogisticsStatus.88d71676fa'),
+      value1:
+        minutes === null
+          ? ''
+          : minutes > 0
+            ? t('figma-engineer.EquipmentLogisticsStatus.3ffc6b5291', { value0: minutes })
+            : t('figma-engineer.EquipmentLogisticsStatus.a1f99cb9f9'),
+    });
   }
-  if (entry.state === 'error')
-    return 'Планировщик временно недоступен. Заявка остаётся в работе. Сообщите диспетчеру; состояние обновится после восстановления связи.';
-  if (entry.state === 'none')
-    return 'Подходящей доставки оборудования не найдено. Заявка завершена с проблемой.';
-  if (entry.state === 'cancelled')
-    return 'Доставка оборудования отменена. Уточните дальнейшие действия у диспетчера.';
-  return 'Оборудование доставлено. Можно продолжать работу; время выполнения заявки уточнено.';
+  if (entry.state === 'error') return t('figma-engineer.EquipmentLogisticsStatus.1299e691e0');
+  if (entry.state === 'none') return t('figma-engineer.EquipmentLogisticsStatus.512c8dc67e');
+  if (entry.state === 'cancelled') return t('figma-engineer.EquipmentLogisticsStatus.31846ecbd1');
+  return t('figma-engineer.EquipmentLogisticsStatus.1776116c54');
 }
 
 /** Receiver-only status survives route updates and remains dismissible during network failures. */
@@ -61,7 +67,10 @@ export function EquipmentLogisticsStatus({
           onClick={() => setDismissed(null)}
           className="fixed bottom-4 left-4 right-4 z-40 rounded-2xl bg-figma-bee p-4 font-semibold text-figma-ink"
         >
-          Оборудование: {entry.state === 'assigned' ? 'ожидаем доставку' : 'проверить статус'}
+          {t('figma-engineer.EquipmentLogisticsStatus.1c5f670936')}
+          {entry.state === 'assigned'
+            ? t('figma-engineer.EquipmentLogisticsStatus.d620e9c7a8')
+            : t('figma-engineer.EquipmentLogisticsStatus.f470d20fa5')}
         </button>
       ) : null}
       {createPortal(
@@ -76,8 +85,8 @@ export function EquipmentLogisticsStatus({
         >
           <h2 id="equipment-logistics-title" className="font-murs text-2xl">
             {searching || entry?.state === 'searching'
-              ? 'Ищем оборудование'
-              : 'Оборудование для заявки'}
+              ? t('figma-engineer.EquipmentLogisticsStatus.42d8182b86')
+              : t('figma-engineer.EquipmentLogisticsStatus.b7b111ee77')}
           </h2>
           <p aria-live="polite" className="mt-4 leading-relaxed">
             {equipmentLogisticsMessage(searching ? undefined : entry, now)}
@@ -87,7 +96,7 @@ export function EquipmentLogisticsStatus({
             onClick={close}
             className="mt-6 w-full rounded-full bg-figma-bee px-6 py-3 font-semibold"
           >
-            Понятно
+            {t('figma-engineer.EquipmentLogisticsStatus.e2ce86b38f')}
           </button>
         </dialog>,
         document.body,

@@ -1,6 +1,7 @@
 import type { AlertView, DashboardSnapshot } from '../api/types';
 import { alertTitle } from '../domain/alerts';
 import { requestById } from '../domain/dashboard';
+import { t } from '../i18n';
 import { factorLabel } from '../lib/reasons';
 import { formatClock } from '../lib/time';
 import { requestUrgency } from './fromSnapshot';
@@ -61,8 +62,10 @@ export function sortByArrival<T extends { createdAt: number }>(items: readonly T
  */
 export function formatAlertReason(body: string): string {
   const text = body.trim();
-  if (!text) return 'Причина: не указана';
-  return text.startsWith('Причина:') ? text : `Причина: ${text}`;
+  if (!text) return t('figma-dashboard.alertsInbox.5b7075c8fc');
+  return text.startsWith(t('figma-dashboard.alertsInbox.449f62a839'))
+    ? text
+    : t('figma-dashboard.alertsInbox.78fcf07634', { value0: text });
 }
 
 /**
@@ -164,7 +167,7 @@ function alertCardFromSnapshot(snapshot: DashboardSnapshot, alert: AlertView): I
     createdAt: alert.createdAt,
     title:
       request && unassigned
-        ? `Заявка № ${shortRequestId(request.id)} без назначения`
+        ? t('figma-dashboard.alertsInbox.8283fa678b', { value0: shortRequestId(request.id) })
         : alertTitle(alert.code) === alert.code
           ? factorLabel(alert.code)
           : alertTitle(alert.code),
@@ -172,7 +175,7 @@ function alertCardFromSnapshot(snapshot: DashboardSnapshot, alert: AlertView): I
     badge:
       request && requestUrgency(request).tone !== 'neutral'
         ? requestUrgency(request).label
-        : `Результат в ${formatClock(alert.createdAt)}`,
+        : t('figma-dashboard.alertsInbox.26f6469881', { value0: formatClock(alert.createdAt) }),
     engineerName: engineer?.displayName ?? null,
     requestId: request?.id ?? null,
   };
@@ -185,7 +188,7 @@ function alertCardFromToast(toast: ToastNotification): InboxAlertCard {
     createdAt: toast.createdAt,
     title: toast.title.replace(/^Алёрт:\s*/u, ''),
     body: formatAlertReason(toast.body),
-    badge: 'Срочная',
+    badge: t('figma-dashboard.alertsInbox.7d27aa7f9c'),
     engineerName: null,
     requestId: toast.requestId ?? null,
   };

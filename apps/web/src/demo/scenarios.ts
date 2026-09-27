@@ -1,6 +1,7 @@
 /** Recorded Router scenarios, validated again at the UI boundary. No server writes. */
 import { parseDashboardSnapshot, parsePolicyComparison } from '../api/client';
 import type { PolicyId } from '../api/types';
+import { t } from '../i18n';
 import pack from './generated/recorded.json';
 
 /** Policies present in the recorded demo pack. Covering is live-only and not replayed. */
@@ -20,7 +21,7 @@ function recordedPolicyId(policy: PolicyId): RecordedPolicyId {
 /** Select a recorded calculation; rejects unknown scenarios. Covering falls back to compact. */
 export function recordedScenario(id: string, policy: PolicyId = 'compact') {
   const scenario = pack.scenarios.find((item) => item.id === id);
-  if (!scenario) throw new Error('Неизвестный демо-сценарий');
+  if (!scenario) throw new Error(t('demo.scenarios.7da5e55f3e'));
   return {
     snapshot: parseDashboardSnapshot(scenario.snapshots[recordedPolicyId(policy)]),
     comparison: parsePolicyComparison(scenario.comparison),

@@ -27,6 +27,7 @@ import {
 import { regionStyle, requestRegion, routeRegion } from '../domain/regions';
 import { requestMapPoint } from '../domain/requestPoint';
 import { type MapRouteSegment, mapRouteSegments, routeLineKind } from '../domain/travel';
+import { t } from '../i18n';
 import { engineerColor, skillMark } from '../lib/reasons';
 
 const OSRM_LINE = '#8A8F98';
@@ -741,7 +742,7 @@ export function DayMap({
             type: 'symbol',
             source: 'starts',
             layout: {
-              'text-field': 'Начало дня',
+              'text-field': t('components.DayMap.cf1dfa079c'),
               'text-size': 11,
               'text-offset': [0, 1.2],
               'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
@@ -817,7 +818,7 @@ export function DayMap({
             type: 'symbol',
             source: 'lunches',
             layout: {
-              'text-field': 'Обед',
+              'text-field': t('components.DayMap.69a29fbff8'),
               'text-size': 11,
               'text-offset': [0, 1.2],
               'text-font': ['Open Sans Regular', 'Arial Unicode MS Regular'],
@@ -953,14 +954,14 @@ export function DayMap({
     <>
       <section
         ref={containerRef}
-        aria-label="Карта маршрутов"
+        aria-label={t('components.DayMap.b44875750d')}
         aria-busy={!mapReady && !mapFailed}
         data-map-ready={mapReady}
         className="absolute inset-0 h-full w-full"
       />
       {!soloRequestId && !mapReady && !mapFailed ? (
         <div className="absolute top-14 left-3 rounded-xl bg-white px-3 py-2 text-xs text-muted">
-          Загружаем карту…
+          {t('components.DayMap.9514ff87b5')}
         </div>
       ) : null}
       {!soloRequestId && (localMap || mapFailed) ? (
@@ -968,38 +969,38 @@ export function DayMap({
           role="status"
           className="absolute top-3 left-3 right-3 rounded-xl bg-white px-3 py-2 text-xs text-ink shadow"
         >
-          {mapFailed
-            ? 'Карта недоступна в этом браузере. Используйте список заявок и таймлайн.'
-            : 'Сохранённая карта трёх регионов · улицы, парки и водоёмы'}
+          {mapFailed ? t('components.DayMap.0aca4d7172') : t('components.DayMap.bcc5576431')}
           {localMap && !forceLocal && !mapFailed ? (
             <button
               type="button"
               className="ml-2 underline"
               onClick={() => setRetry((value) => value + 1)}
             >
-              Повторить онлайн-карту
+              {t('components.DayMap.b650521777')}
             </button>
           ) : null}
         </div>
       ) : null}
       {soloRequestId ? null : (
         <div className="pointer-events-none absolute bottom-3 left-3 rounded-xl bg-white/90 px-3 py-2 text-[11px] text-muted shadow">
-          {localMap || mapFailed ? 'Оффлайн' : 'Онлайн'}
+          {localMap || mapFailed
+            ? t('components.DayMap.2c7bb29d64')
+            : t('components.DayMap.fd6bf6cb1a')}
         </div>
       )}
       <div className="absolute right-2 bottom-1 rounded bg-white/90 px-2 text-[10px] text-muted">
         ©{' '}
         <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
-          OpenStreetMap contributors
+          {t('components.DayMap.980ca2cea8')}
         </a>
         {' · '}
         {localMap ? (
           <a href="https://opendatacommons.org/licenses/odbl/1-0/" target="_blank" rel="noreferrer">
-            ODbL
+            {t('components.DayMap.8656c5d416')}
           </a>
         ) : (
           <a href="https://carto.com/attributions" target="_blank" rel="noreferrer">
-            CARTO
+            {t('components.DayMap.c4911d01c1')}
           </a>
         )}
       </div>

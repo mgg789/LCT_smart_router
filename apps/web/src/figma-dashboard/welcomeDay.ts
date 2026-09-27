@@ -1,3 +1,4 @@
+import { locale } from '../i18n';
 export const WORKDAY_STARTED_KEY = 'lct.dispatcher.workday.started';
 
 /** Moscow civil date `YYYY-MM-DD` at the given instant. */
@@ -12,7 +13,7 @@ export function moscowWorkDate(nowMs = Date.now()): string {
 
 /** Moscow `HH:MM` clock for the welcome chip. */
 export function moscowClockLabel(nowMs = Date.now()): string {
-  return new Intl.DateTimeFormat('ru-RU', {
+  return new Intl.DateTimeFormat(locale, {
     timeZone: 'Europe/Moscow',
     hour: '2-digit',
     minute: '2-digit',

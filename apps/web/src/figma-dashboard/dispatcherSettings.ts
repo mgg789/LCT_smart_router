@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 export const DISPATCHER_SETTINGS_KEY = 'lct.dispatcher.settings';
 
 export type MapProvider = '2gis' | 'yandex';
@@ -58,13 +59,13 @@ export function isValidShiftWindow(start: string, end: string): boolean {
  */
 export function validateDispatcherSettings(draft: DispatcherSettings): string | null {
   if (!isValidShiftWindow(draft.shiftStart, draft.shiftEnd)) {
-    return 'Укажите начало и конец дня в формате ЧЧ:ММ, конец позже начала.';
+    return t('figma-dashboard.dispatcherSettings.bc1e9d89f5');
   }
   if (!Number.isInteger(draft.latenessMin) || draft.latenessMin < 0 || draft.latenessMin > 15) {
-    return 'Допустимое опоздание — целое число от 0 до 15 минут.';
+    return t('figma-dashboard.dispatcherSettings.5337fcd6ed');
   }
   if (draft.mapProvider !== '2gis' && draft.mapProvider !== 'yandex') {
-    return 'Выберите 2ГИС или Яндекс.';
+    return t('figma-dashboard.dispatcherSettings.8eef938af7');
   }
   return null;
 }

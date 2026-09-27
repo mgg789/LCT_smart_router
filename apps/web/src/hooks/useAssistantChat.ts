@@ -26,6 +26,7 @@ import {
 } from '../api/ai';
 import { DashboardApiError } from '../api/client';
 import { WindowChangeDeclined } from '../api/windowConfirmation';
+import { t } from '../i18n';
 import { useChatStream } from './useChatStream';
 
 /** Where the chat panel is mounted. Drives the role profile a new conversation opens as. */
@@ -170,7 +171,7 @@ function roleProfileFor(
 }
 
 function errorMessage(cause: unknown): string {
-  return cause instanceof Error ? cause.message : 'Не удалось выполнить действие';
+  return cause instanceof Error ? cause.message : t('hooks.useAssistantChat.b9f61453dd');
 }
 
 function messageFromApi(message: AiMessage): AssistantChatMessage {

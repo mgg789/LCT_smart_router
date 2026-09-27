@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import type { EngineerView } from '../api/types';
 import { TRANSPORT_OPTIONS } from '../figma-dashboard/addEntity';
 import { FigmaIcon } from '../figma-dashboard/primitives';
+import { t } from '../i18n';
 import { ENGINEER_ASSETS } from './assets';
 import { eu } from './engineerScale';
 import { type EngineerSettingsDraft, validateEngineerSettings } from './settingsDraft';
@@ -48,7 +49,7 @@ export function EngineerSettings({
       <header className="flex items-center" style={{ gap: eu(20) }}>
         <motion.button
           type="button"
-          aria-label="Назад к списку"
+          aria-label={t('figma-engineer.EngineerSettings.86657fb2a8')}
           disabled={submitting}
           onClick={onBack}
           whileTap={{ scale: 0.96 }}
@@ -68,7 +69,7 @@ export function EngineerSettings({
           className="min-w-0 font-extrabold tracking-[0.02em] text-figma-ink"
           style={{ fontSize: eu(36) }}
         >
-          Настройки
+          {t('figma-engineer.EngineerSettings.985b5e0f2c')}
         </h1>
       </header>
 
@@ -90,7 +91,7 @@ export function EngineerSettings({
           htmlFor="eng-settings-name"
           style={{ marginTop: eu(48), fontSize: eu(22) }}
         >
-          Имя
+          {t('figma-engineer.EngineerSettings.1da7e9372e')}
           <input
             id="eng-settings-name"
             type="text"
@@ -116,7 +117,7 @@ export function EngineerSettings({
           htmlFor="eng-settings-email"
           style={{ marginTop: eu(28), fontSize: eu(22) }}
         >
-          Email
+          {t('figma-engineer.EngineerSettings.969ccbd3cf')}
           <input
             id="eng-settings-email"
             type="email"
@@ -136,7 +137,7 @@ export function EngineerSettings({
         </label>
 
         <p className="font-semibold text-figma-ink" style={{ marginTop: eu(28), fontSize: eu(22) }}>
-          Вид транспорта
+          {t('figma-engineer.EngineerSettings.826f702afc')}
         </p>
         <div className="flex flex-wrap" style={{ marginTop: eu(12), gap: eu(12) }}>
           {TRANSPORT_OPTIONS.map((option) => {
@@ -184,7 +185,9 @@ export function EngineerSettings({
             fontSize: eu(28),
           }}
         >
-          {submitting ? 'Сохраняем…' : 'Сохранить'}
+          {submitting
+            ? t('figma-engineer.EngineerSettings.9c27c381dd')
+            : t('figma-engineer.EngineerSettings.b4d30cae52')}
         </motion.button>
       </form>
     </section>

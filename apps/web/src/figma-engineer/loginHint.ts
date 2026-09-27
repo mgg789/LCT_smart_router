@@ -1,4 +1,5 @@
 import { formatCodeCountdown } from '../figma-dashboard/loginCopy';
+import { t } from '../i18n';
 
 export type EngineerCodeHint =
   | { readonly kind: 'demo'; readonly text: string }
@@ -16,7 +17,10 @@ export function engineerCodeHint(input: {
   showDevCode?: boolean;
 }): EngineerCodeHint {
   if (input.showDevCode && input.devCode) {
-    return { kind: 'demo', text: `Демо код ${input.devCode} без срока` };
+    return {
+      kind: 'demo',
+      text: t('figma-engineer.loginHint.9015168dcd', { value0: input.devCode }),
+    };
   }
   if (input.remainingSec > 0) {
     return { kind: 'countdown', text: formatCodeCountdown(input.remainingSec) };

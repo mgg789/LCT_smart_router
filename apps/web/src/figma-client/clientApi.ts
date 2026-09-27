@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { requestJson } from '../api/client';
+import { t } from '../i18n';
 import {
   CLIENT_MAP_CENTER,
   type ClientProfileMemory,
@@ -173,9 +174,11 @@ export function clientCardFromApi(request: ClientApiRequest): ClientRequestView 
     addressText: request.addressText,
     office: null,
     company: '',
-    workTypeTitle: request.workTypeTitle ?? request.problemText ?? 'Заявка',
+    workTypeTitle:
+      request.workTypeTitle ?? request.problemText ?? t('figma-client.clientApi.77b3e0166b'),
     workCategory: request.workCategory,
-    problemTitle: request.problemText ?? request.workTypeTitle ?? 'Заявка',
+    problemTitle:
+      request.problemText ?? request.workTypeTitle ?? t('figma-client.clientApi.77b3e0166b'),
     description: request.problemText ?? '',
     durationSec: request.serviceDurationSec,
     status: cardStatus(request, actual),
@@ -234,7 +237,7 @@ export async function createSubmittedClientRequest(
 ): Promise<ClientApiRequest> {
   const prepared = clientPrepareBody(draft);
   if (prepared === null) {
-    throw new Error('Заполните ФИО, адрес, точку на карте и почту.');
+    throw new Error(t('figma-client.clientApi.ac708c5d6b'));
   }
   const body = await requestJson(
     '/api/v1/client/requests/submitted',

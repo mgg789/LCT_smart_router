@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 /** Visible slots on the upper arc: −2 … +2 around the upright center card. */
 export const RING_SLOT_SPAN = 2;
 
@@ -286,6 +287,7 @@ export function bestEngineerIndex(
  */
 export function givenName(displayName: string): string {
   const parts = displayName.trim().split(/\s+/).filter(Boolean);
-  if (parts[0] === 'Бригада' && parts[1]) return `${parts[0]} ${parts[1]}`;
+  if (parts[0] === t('figma-dashboard.engineerRing.e4b5334865') && parts[1])
+    return `${parts[0]} ${parts[1]}`;
   return parts[0] ?? displayName;
 }

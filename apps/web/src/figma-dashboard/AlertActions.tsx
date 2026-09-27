@@ -33,6 +33,7 @@ import {
   alertWindowSeconds,
   isAlertActionId,
 } from '../domain/alerts';
+import { t } from '../i18n';
 import { InboxButton } from './inboxCard';
 import { WorsenModal } from './WorsenModal';
 
@@ -102,7 +103,9 @@ export function AlertActions({
             />
           ) : (
             <span key={action} className="text-[16px] text-figma-muted">
-              Вариант «{action}» требует обновления интерфейса.
+              {t('figma-dashboard.AlertActions.9eda61a9ac')}
+              {action}
+              {t('figma-dashboard.AlertActions.6b766517ee')}
             </span>
           ),
         )}
@@ -112,12 +115,11 @@ export function AlertActions({
           disabled={disabled || waiting || pending || thinking || !token || !alert}
           thinking={thinking}
           spec={{
-            label: 'Решить с AI',
-            summary: 'AI выбирает допустимое действие для этого алерта.',
-            effect: 'Сервер проверяет ответ по списку и проводит обычное решение алерта.',
-            benefit: 'Не нужно выбирать вариант вручную, если список уже известен.',
-            drawback:
-              'Сдвиг окна применяется только после вашего подтверждения. Время предлагает Router.',
+            label: t('figma-dashboard.AlertActions.29476f2252'),
+            summary: t('figma-dashboard.AlertActions.22eee1186f'),
+            effect: t('figma-dashboard.AlertActions.e56e25835f'),
+            benefit: t('figma-dashboard.AlertActions.2171ab0983'),
+            drawback: t('figma-dashboard.AlertActions.cf21c65f01'),
             tone: 'ink',
           }}
           onClick={() => {
@@ -131,18 +133,17 @@ export function AlertActions({
       ) : null}
       {disabled && actions.length > 0 ? (
         <p className="mt-[12px] text-[16px] text-figma-muted">
-          Решения доступны при подключении к рабочему серверу и завершении текущей операции.
+          {t('figma-dashboard.AlertActions.432b8f6b3a')}
         </p>
       ) : null}
       {waiting ? (
         <p role="status" className="mt-[12px] text-[16px] text-figma-muted">
-          Ожидаем применения автоматического плана. Алерт остаётся открытым до подтверждения
-          сервера.
+          {t('figma-dashboard.AlertActions.d03273ed80')}
         </p>
       ) : null}
       {alert?.resolutionAction === 'move_window' && alert.resolvedAt === null ? (
         <p role="status" className="mt-[12px] text-[16px] text-figma-muted">
-          Окно изменено. Алерт останется открытым, пока заявка не получит назначение.
+          {t('figma-dashboard.AlertActions.c8486df0d9')}
         </p>
       ) : null}
       {selected && alert && snapshot && !waiting ? (
@@ -220,11 +221,14 @@ function ExplainedAction({
     setPosition(null);
   }
   return (
+    // biome-ignore lint/a11y/noNoninteractiveElementInteractions: Tooltip events bubble from the keyboard-accessible native action buttons.
     <fieldset
       ref={anchor}
       className="m-0 inline-flex min-w-0 border-0 p-0"
       tabIndex={disabled ? 0 : undefined}
-      aria-label={disabled ? `${spec.label}: недоступно` : undefined}
+      aria-label={
+        disabled ? t('figma-dashboard.AlertActions.9baa6ef546', { value0: spec.label }) : undefined
+      }
       aria-describedby={id}
       onMouseEnter={show}
       onMouseLeave={hide}
@@ -285,7 +289,11 @@ function ExplainedAction({
         </span>
       )}
       <span id={id} className="sr-only">
-        {spec.summary} {spec.effect} Плюсы: {spec.benefit} Минусы: {spec.drawback}
+        {spec.summary} {spec.effect}
+        {t('figma-dashboard.AlertActions.5a573dacd4')}
+        {spec.benefit}
+        {t('figma-dashboard.AlertActions.c3c0e35608')}
+        {spec.drawback}
       </span>
       {typeof document === 'undefined'
         ? null
@@ -312,15 +320,15 @@ function ExplainedAction({
                   <p className="font-bold">{spec.label}</p>
                   <p>{spec.summary}</p>
                   <p className="mt-[8px]">
-                    <strong>Что произойдёт: </strong>
+                    <strong>{t('figma-dashboard.AlertActions.035ddf5e16')}</strong>
                     {spec.effect}
                   </p>
                   <p className="mt-[8px]">
-                    <strong>Плюсы: </strong>
+                    <strong>{t('figma-dashboard.AlertActions.2761e0962f')}</strong>
                     {spec.benefit}
                   </p>
                   <p className="mt-[8px]">
-                    <strong>Минусы: </strong>
+                    <strong>{t('figma-dashboard.AlertActions.3fd4b46e09')}</strong>
                     {spec.drawback}
                   </p>
                 </motion.div>
@@ -333,7 +341,7 @@ function ExplainedAction({
 }
 
 function WindowAiNote({ token, alertId }: { token: string; alertId: string }) {
-  const [text, setText] = useState('AI проверяет, есть ли сегодня окно для сдвига…');
+  const [text, setText] = useState(t('figma-dashboard.AlertActions.33581244d6'));
   useEffect(() => {
     let active = true;
     void loadAlertWindowProposal(token, alertId)
@@ -342,12 +350,15 @@ function WindowAiNote({ token, alertId }: { token: string; alertId: string }) {
         const offer = result.proposal;
         setText(
           result.status === 'available' && offer
-            ? `AI может сдвинуть окно на ${alertWindowInput(offer.windowStartAt)}–${alertWindowInput(offer.windowEndAt)}.`
-            : 'Сегодня нет окон, куда можно сдвинуть визит.',
+            ? t('figma-dashboard.AlertActions.f6f4399d97', {
+                value0: alertWindowInput(offer.windowStartAt),
+                value1: alertWindowInput(offer.windowEndAt),
+              })
+            : t('figma-dashboard.AlertActions.143a384ad6'),
         );
       })
       .catch(() => {
-        if (active) setText('Сегодня не удалось проверить окно для сдвига.');
+        if (active) setText(t('figma-dashboard.AlertActions.cb869b60e8'));
       });
     return () => {
       active = false;
@@ -381,13 +392,13 @@ function ResolutionForm({
   const [end, setEnd] = useState('');
   const [expectedRequestVersion, setExpectedRequestVersion] = useState(request?.version);
   const [proposalStatus, setProposalStatus] = useState('loading');
-  const [proposalText, setProposalText] = useState('Подбираем выполнимое окно через Router…');
+  const [proposalText, setProposalText] = useState(t('figma-dashboard.AlertActions.099189b8c4'));
   useEffect(() => {
     if (action !== 'move_window') return;
     let active = true;
     if (!token) {
       setProposalStatus('unavailable');
-      setProposalText('Подбор доступен только при подключении к рабочему серверу.');
+      setProposalText(t('figma-dashboard.AlertActions.90f68f2e16'));
       return;
     }
     void loadAlertWindowProposal(token, alert.id)
@@ -398,20 +409,13 @@ function ResolutionForm({
         if (result.proposal) {
           setStart(alertWindowInput(result.proposal.windowStartAt));
           setEnd(alertWindowInput(result.proposal.windowEndAt));
-          setProposalText(
-            'Найдено выполнимое окно с учётом дороги и текущего маршрута инженера. Это расчёт, не резервирование; алёрт останется до подтверждённого назначения.',
-          );
-        } else
-          setProposalText(
-            'В текущих маршрутах на сегодня выполнимое окно не найдено. Рекомендуем «На завтра». Можно задать окно вручную — алёрт останется до назначения.',
-          );
+          setProposalText(t('figma-dashboard.AlertActions.b16175e011'));
+        } else setProposalText(t('figma-dashboard.AlertActions.7e04b8e3d7'));
       })
       .catch(() => {
         if (!active) return;
         setProposalStatus('unavailable');
-        setProposalText(
-          'Не удалось проверить окно через Router. Это не означает, что окна нет. Закройте и повторите подбор или укажите окно вручную.',
-        );
+        setProposalText(t('figma-dashboard.AlertActions.cbd6e7db44'));
       });
     return () => {
       active = false;
@@ -448,10 +452,11 @@ function ResolutionForm({
     setError(null);
     try {
       if (!(alert.actions ?? []).includes(action) || alert.resolvedAt !== null)
-        throw new Error('Этот вариант больше недоступен. Обновите список алертов.');
+        throw new Error(t('figma-dashboard.AlertActions.27e20f534d'));
       let expectedPriorityVersion: string | undefined;
       if (action === 'prioritize') {
-        if (!token || !alert.workDate) throw new Error('Не удалось определить день заявки.');
+        if (!token || !alert.workDate)
+          throw new Error(t('figma-dashboard.AlertActions.7b1fa03ae0'));
         const { priority } = await loadRequestPriority(token, alert.workDate);
         if (priority && priority.requestId !== alert.requestIds[0]) {
           const accepted = await new Promise<boolean>((resolve) => {
@@ -479,15 +484,15 @@ function ResolutionForm({
         ...(action === 'extend' ? { minutes: alert.code === 'shift_no_show' ? 15 : minutes } : {}),
       };
       if (action === 'keep_manual' && !reason.trim())
-        throw new Error('Укажите причину сохранения ручного плана.');
+        throw new Error(t('figma-dashboard.AlertActions.207ed55c4f'));
       if (action === 'add_engineer' && !candidates.some((item) => item.id === engineerId))
-        throw new Error('Выберите доступного инженера.');
+        throw new Error(t('figma-dashboard.AlertActions.95e4d5cb8c'));
       if (
         input.windowStartAt !== undefined &&
         input.windowEndAt !== undefined &&
         input.windowEndAt <= input.windowStartAt
       )
-        throw new Error('Конец окна должен быть позже начала.');
+        throw new Error(t('figma-dashboard.AlertActions.868110d225'));
       if (
         action === 'move_window' &&
         token &&
@@ -520,7 +525,7 @@ function ResolutionForm({
         input.minutes !== undefined &&
         (!Number.isInteger(input.minutes) || input.minutes < 1 || input.minutes > 240)
       )
-        throw new Error('Укажите от 1 до 240 целых минут.');
+        throw new Error(t('figma-dashboard.AlertActions.8911886ff8'));
       const fingerprint = JSON.stringify(input);
       if (retry.current?.fingerprint !== fingerprint)
         retry.current = { fingerprint, operationId: crypto.randomUUID() };
@@ -530,7 +535,7 @@ function ResolutionForm({
       if (cause instanceof DashboardApiError && cause.status >= 400 && cause.status < 500)
         retry.current = null;
       setError(
-        cause instanceof Error ? cause.message : 'Не удалось применить решение. Повторите попытку.',
+        cause instanceof Error ? cause.message : t('figma-dashboard.AlertActions.a275d333f3'),
       );
     } finally {
       lock.current = false;
@@ -547,14 +552,10 @@ function ResolutionForm({
       }}
     >
       <WorsenModal
-        title="Заменить приоритет?"
-        cancelLabel="Назад"
-        confirmLabel="Перестроить"
-        text={
-          priorityWarning
-            ? 'Этот план уже построен с приоритетом другой заявки. Перестройка с приоритетом этой приведет к сбросу приоритета той и возможно она не попадет в новый план.'
-            : null
-        }
+        title={t('figma-dashboard.AlertActions.6a37cd2d98')}
+        cancelLabel={t('figma-dashboard.AlertActions.1a9fb1f3cf')}
+        confirmLabel={t('figma-dashboard.AlertActions.c192b4bc78')}
+        text={priorityWarning ? t('figma-dashboard.AlertActions.2db5af1cfa') : null}
         onCancel={() => priorityResolve.current?.(false)}
         onConfirm={() => priorityResolve.current?.(true)}
       />
@@ -568,7 +569,7 @@ function ResolutionForm({
               {proposalText}
             </p>
             <label>
-              Начало окна (Москва)
+              {t('figma-dashboard.AlertActions.8d7f6b9bb4')}
               <input
                 required
                 type="datetime-local"
@@ -579,7 +580,7 @@ function ResolutionForm({
               />
             </label>
             <label>
-              Конец окна (Москва)
+              {t('figma-dashboard.AlertActions.94d3ce22e5')}
               <input
                 required
                 type="datetime-local"
@@ -593,14 +594,14 @@ function ResolutionForm({
         ) : null}
         {spec.input === 'engineer' ? (
           <label className="block">
-            Дополнительный инженер
+            {t('figma-dashboard.AlertActions.0410b11c1c')}
             <select
               required
               value={engineerId}
               onChange={(e) => setEngineerId(e.target.value)}
               className={fieldClass}
             >
-              <option value="">Выберите инженера</option>
+              <option value="">{t('figma-dashboard.AlertActions.36fc8b94f4')}</option>
               {candidates.map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.displayName}
@@ -609,17 +610,17 @@ function ResolutionForm({
             </select>
             <span className="mt-[8px] block text-[16px] text-figma-muted">
               {candidates.length
-                ? 'Сервер дополнительно проверит совместимость транспорта и актуальность смены.'
-                : 'Нет подходящих инженеров вне линии. Проверьте состав и смены во вкладке «Инженеры».'}
+                ? t('figma-dashboard.AlertActions.cab18c32f6')
+                : t('figma-dashboard.AlertActions.d1df40457d')}
             </span>
           </label>
         ) : null}
         {spec.input === 'minutes' ? (
           alert.code === 'shift_no_show' ? (
-            <p>Ожидание будет продлено на 15 минут.</p>
+            <p>{t('figma-dashboard.AlertActions.b4d82bc0a7')}</p>
           ) : (
             <label className="block">
-              Дополнительное время, мин.
+              {t('figma-dashboard.AlertActions.a0ccaacaf7')}
               <input
                 required
                 type="number"
@@ -635,10 +636,10 @@ function ResolutionForm({
         ) : null}
         <label className="block">
           {spec.input === 'reason'
-            ? 'Причина (обязательно)'
+            ? t('figma-dashboard.AlertActions.c31a4497cc')
             : spec.input === 'message'
-              ? 'Сообщение инженеру (необязательно)'
-              : 'Комментарий (необязательно)'}
+              ? t('figma-dashboard.AlertActions.1d0678167e')
+              : t('figma-dashboard.AlertActions.781d9bde52')}
           <textarea
             required={spec.input === 'reason'}
             maxLength={2000}
@@ -661,10 +662,12 @@ function ResolutionForm({
             }
             className="rounded-[20px] bg-figma-bee px-[32px] py-[16px] font-semibold disabled:opacity-45"
           >
-            {pending ? 'Применяем…' : 'Применить решение'}
+            {pending
+              ? t('figma-dashboard.AlertActions.b001f5d801')
+              : t('figma-dashboard.AlertActions.efc540a528')}
           </button>
           <InboxButton variant="outline" onClick={onClose}>
-            Отмена
+            {t('figma-dashboard.AlertActions.8fbe9b75cb')}
           </InboxButton>
         </div>
       </fieldset>

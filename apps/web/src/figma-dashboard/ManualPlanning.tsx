@@ -10,6 +10,7 @@ import {
   saveManualPriorities,
 } from '../api/manual';
 import type { DashboardSnapshot } from '../api/types';
+import { t } from '../i18n';
 import { formatClock } from '../lib/time';
 import { ModalLayer, ModalScrim } from './modalLayer';
 
@@ -17,7 +18,12 @@ const FIELD =
   'h-[40px] min-w-0 rounded-[12px] border border-figma-ink/20 bg-white px-[12px] text-[16px] text-figma-ink';
 const BUTTON =
   'rounded-[16px] bg-figma-bee px-[20px] py-[12px] font-semibold text-figma-ink disabled:opacity-40';
-const LABELS = { assignment: 'Исполнитель', window: 'Окно заявки', lunch: 'Обед', shift: 'Смена' };
+const LABELS = {
+  assignment: t('figma-dashboard.ManualPlanning.037174d588'),
+  window: t('figma-dashboard.ManualPlanning.a0d7e011c3'),
+  lunch: t('figma-dashboard.ManualPlanning.69a29fbff8'),
+  shift: t('figma-dashboard.ManualPlanning.9f6558c272'),
+};
 type Editor = {
   kind: 'window' | 'lunch' | 'shift';
   targetId: string;
@@ -126,7 +132,9 @@ export function ManualPlanningProvider({
       await action();
       await refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Не удалось сохранить решение');
+      setError(
+        cause instanceof Error ? cause.message : t('figma-dashboard.ManualPlanning.fad71eebdb'),
+      );
       setPanel((current) => current ?? 'priorities');
       if (token) setState(await loadManualState(token).catch(() => state));
     } finally {
@@ -144,19 +152,19 @@ export function ManualPlanningProvider({
     ? LABELS[editor.kind]
     : panel === 'mode'
       ? active
-        ? 'Вернуться в автоматический режим?'
-        : 'Ручное управление'
+        ? t('figma-dashboard.ManualPlanning.d86a7ceb6d')
+        : t('figma-dashboard.ManualPlanning.31f5da9ced')
       : panel === 'intro'
-        ? 'Теперь вам доступно ручное управление'
+        ? t('figma-dashboard.ManualPlanning.b9e4f1d6c1')
         : state?.needsReview
-          ? 'Конфликт приоритетов'
-          : 'Приоритеты решений';
+          ? t('figma-dashboard.ManualPlanning.ae8726f728')
+          : t('figma-dashboard.ManualPlanning.ea80e4af49');
   return (
     <ManualContext.Provider value={{ snapshot, state, active, busy, save, edit: setEditor }}>
       {children}
       <ModalLayer open={panel !== null || editor !== null} motionOn>
         <ModalScrim
-          label="Закрыть ручное управление"
+          label={t('figma-dashboard.ManualPlanning.73d239f9ad')}
           disabled={busy || panel === 'intro'}
           onClose={() => {
             setPanel(null);
@@ -174,18 +182,18 @@ export function ManualPlanningProvider({
             <>
               <p className="mb-[16px] leading-relaxed">
                 {active
-                  ? 'Все ручные решения будут удалены. Исходные условия заявок, обедов и смен восстановятся, а автоматический расчёт заново построит план. Фактическое выполнение и начатые работы сохранятся.'
-                  : 'Ручной режим может снизить эффективность плана и оставить часть заявок без назначения. Вы задаёте обязательные решения, а алгоритм продолжает строить маршруты с их учётом. Новые решения получают одинаковый наивысший приоритет. Если решения несовместимы, расставьте их по важности. Начатые работы и фактические отметки сохраняются.'}
+                  ? t('figma-dashboard.ManualPlanning.8c3db87659')
+                  : t('figma-dashboard.ManualPlanning.08dee4935b')}
               </p>
               {!active ? (
                 <label className="block">
-                  Причина перехода в ручной режим
+                  {t('figma-dashboard.ManualPlanning.ee62d851ca')}
                   <textarea
                     value={reason}
                     onChange={(event) => setReason(event.target.value)}
                     maxLength={1000}
                     className={`${FIELD} mt-[8px] h-[90px] w-full py-[10px]`}
-                    placeholder="Почему требуется вмешательство диспетчера"
+                    placeholder={t('figma-dashboard.ManualPlanning.ee03d28228')}
                   />
                 </label>
               ) : null}
@@ -215,7 +223,9 @@ export function ManualPlanningProvider({
                   });
                 }}
               >
-                {active ? 'Включить автоматический режим' : 'Продолжить в ручном режиме'}
+                {active
+                  ? t('figma-dashboard.ManualPlanning.4b9201608f')
+                  : t('figma-dashboard.ManualPlanning.42d0a74285')}
               </button>
             </>
           ) : null}
@@ -223,12 +233,10 @@ export function ManualPlanningProvider({
           {panel === 'priorities' && !editor ? (
             <>
               <p className="mb-[16px] text-figma-muted">
-                Перетащите важнейшие решения вверх. Красной рамкой отмечены несовместимые решения. В
-                текущем расчёте не удалось совместить их — это не доказывает, что решения
-                невозможны. Применение порядка запускает новый расчёт.
+                {t('figma-dashboard.ManualPlanning.6344221560')}
               </p>
               {ordered.length === 0 ? (
-                <p>Ручных решений пока нет.</p>
+                <p>{t('figma-dashboard.ManualPlanning.9505ee1e7f')}</p>
               ) : (
                 <Reorder.Group
                   axis="y"
@@ -264,20 +272,19 @@ export function ManualPlanningProvider({
                                 ? item.engineerId
                                   ? (snapshot?.engineers.find((row) => row.id === item.engineerId)
                                       ?.displayName ?? item.engineerId)
-                                  : 'Без назначения'
+                                  : t('figma-dashboard.ManualPlanning.6de28b421e')
                                 : `${formatClock(item.startAt ?? 0)}–${formatClock(item.endAt ?? 0)}`}
                             </p>
                             {state?.resolution?.rejectedIds.includes(id) && (
                               <p className="text-figma-danger">
-                                Решение не выполнено: его не удалось совместить с условиями плана.
-                                Подтверждение приоритетов не означает выполнения этого решения.
+                                {t('figma-dashboard.ManualPlanning.6d1ecbeaef')}
                               </p>
                             )}
                           </div>
                           <button
                             type="button"
                             disabled={busy || index === 0}
-                            aria-label="Повысить приоритет"
+                            aria-label={t('figma-dashboard.ManualPlanning.f20dfd9cb1')}
                             onClick={() =>
                               setOrdered((rows) => {
                                 orderDirty.current = true;
@@ -297,7 +304,7 @@ export function ManualPlanningProvider({
                           <button
                             type="button"
                             disabled={busy}
-                            aria-label="Удалить решение"
+                            aria-label={t('figma-dashboard.ManualPlanning.fc8d6b8050')}
                             onClick={() => {
                               if (token && state)
                                 void perform(async () =>
@@ -327,7 +334,7 @@ export function ManualPlanningProvider({
                     });
                 }}
               >
-                Применить порядок
+                {t('figma-dashboard.ManualPlanning.96d8588dc7')}
               </button>
             </>
           ) : null}
@@ -361,7 +368,9 @@ export function ManualPlanningProvider({
             }}
             className="ml-[14px] mt-[18px] rounded-[16px] border border-figma-ink/30 px-[20px] py-[12px]"
           >
-            {panel === 'intro' ? 'Понятно' : 'Назад'}
+            {panel === 'intro'
+              ? t('figma-dashboard.ManualPlanning.e2ce86b38f')
+              : t('figma-dashboard.ManualPlanning.1a9fb1f3cf')}
           </button>
         </section>
       </ModalLayer>
@@ -381,38 +390,33 @@ export function ManualFeaturePresentation() {
             className="mt-[3px] size-[24px] shrink-0"
           />
           <span>
-            <strong>Назначения.</strong> Выбирайте инженера на линии или оставляйте заявку без
-            исполнителя в её панели.
+            <strong>{t('figma-dashboard.ManualPlanning.643c7aa928')}</strong>
+            {t('figma-dashboard.ManualPlanning.3d062943fd')}
           </span>
         </li>
         <li className="flex items-start gap-[12px]">
           <img src="/figma/manual-window.svg" alt="" className="mt-[3px] size-[24px] shrink-0" />
           <span>
-            <strong>Окна заявок.</strong> Задавайте ручное окно рядом с исходным. Изменение требует
-            подтверждения.
+            <strong>{t('figma-dashboard.ManualPlanning.df666a3d4d')}</strong>
+            {t('figma-dashboard.ManualPlanning.047440bba7')}
           </span>
         </li>
         <li className="flex items-start gap-[12px]">
           <img src="/figma/manual-lunch.svg" alt="" className="mt-[3px] size-[24px] shrink-0" />
           <span>
-            <strong>Обеды.</strong> Нажмите будущий обед в маршруте инженера, чтобы изменить его
-            время.
+            <strong>{t('figma-dashboard.ManualPlanning.34dbb755c4')}</strong>
+            {t('figma-dashboard.ManualPlanning.bc544f46f4')}
           </span>
         </li>
         <li className="flex items-start gap-[12px]">
           <img src="/figma/manual-shift.svg" alt="" className="mt-[3px] size-[24px] shrink-0" />
           <span>
-            <strong>Смены.</strong> Редактируйте время смены в досье инженера. Выполненные действия
-            не меняются.
+            <strong>{t('figma-dashboard.ManualPlanning.1e7ba85ac0')}</strong>
+            {t('figma-dashboard.ManualPlanning.bb4264eb26')}
           </span>
         </li>
       </ul>
-      <p>
-        Алгоритм продолжает перестраивать маршруты. Новые решения имеют одинаковый наивысший
-        приоритет. Если текущий расчёт не смог совместить решения, откроется «Конфликт приоритетов»:
-        перетащите важнейшие выше и примените порядок. Панель всегда доступна через «Приоритеты» в
-        системном меню.
-      </p>
+      <p>{t('figma-dashboard.ManualPlanning.94da197e0c')}</p>
     </div>
   );
 }
@@ -444,9 +448,9 @@ function TimeEditor({
     >
       <div className="flex gap-[16px]">
         <label>
-          Начало
+          {t('figma-dashboard.ManualPlanning.4af5d2efad')}
           <input
-            aria-label="Начало"
+            aria-label={t('figma-dashboard.ManualPlanning.4af5d2efad')}
             type="time"
             disabled={editor.kind === 'shift' && editor.startAt < nowAt}
             value={start}
@@ -455,9 +459,9 @@ function TimeEditor({
           />
         </label>
         <label>
-          Конец
+          {t('figma-dashboard.ManualPlanning.9e6f8f9f1f')}
           <input
-            aria-label="Конец"
+            aria-label={t('figma-dashboard.ManualPlanning.9e6f8f9f1f')}
             type="time"
             value={end}
             onChange={(event) => setEnd(event.target.value)}
@@ -477,7 +481,7 @@ function TimeEditor({
         }
         className={`${BUTTON} mt-[18px]`}
       >
-        Сохранить решение
+        {t('figma-dashboard.ManualPlanning.d0f76330e9')}
       </button>
     </form>
   );
@@ -501,9 +505,9 @@ export function ManualRequestControls({ requestId }: { requestId: string }) {
   return (
     <div className="my-[16px] space-y-[10px] rounded-[16px] bg-white/10 p-[12px] text-white">
       <label className="block">
-        Исполнитель
+        {t('figma-dashboard.ManualPlanning.037174d588')}
         <select
-          aria-label="Ручной исполнитель"
+          aria-label={t('figma-dashboard.ManualPlanning.431dabe260')}
           disabled={manual.busy || !manual.state}
           className={`${FIELD} mt-[6px] w-full`}
           value={assignment ? (assignment.engineerId ?? '') : (assigned ?? '')}
@@ -515,7 +519,7 @@ export function ManualRequestControls({ requestId }: { requestId: string }) {
             })
           }
         >
-          <option value="">Нет исполнителя</option>
+          <option value="">{t('figma-dashboard.ManualPlanning.998a2d9df7')}</option>
           {manual.snapshot?.engineers
             .filter((engineer) => engineer.day?.availability === 'online')
             .map((engineer) => (
@@ -526,14 +530,15 @@ export function ManualRequestControls({ requestId }: { requestId: string }) {
         </select>
       </label>
       <p className="text-[14px]">
-        Исходное окно: {formatClock(request.windowStartAt)}–{formatClock(request.windowEndAt)}
+        {t('figma-dashboard.ManualPlanning.1a86f242d7')}
+        {formatClock(request.windowStartAt)}–{formatClock(request.windowEndAt)}
       </p>
       <button
         type="button"
         disabled={manual.busy || request.workCategory === 'emergency'}
         title={
           request.workCategory === 'emergency'
-            ? 'Авария направляется первой свободной бригаде'
+            ? t('figma-dashboard.ManualPlanning.e58f2e7a8c')
             : undefined
         }
         className={BUTTON}
@@ -547,8 +552,11 @@ export function ManualRequestControls({ requestId }: { requestId: string }) {
         }
       >
         {window
-          ? `Ручное окно: ${formatClock(window.startAt ?? 0)}–${formatClock(window.endAt ?? 0)}`
-          : 'Изменить окно'}
+          ? t('figma-dashboard.ManualPlanning.dedf299b8b', {
+              value0: formatClock(window.startAt ?? 0),
+              value1: formatClock(window.endAt ?? 0),
+            })
+          : t('figma-dashboard.ManualPlanning.e8ce4d0ae3')}
       </button>
     </div>
   );
@@ -591,7 +599,9 @@ export function ManualEngineerControls({
       className={`${BUTTON} my-[8px] text-[14px]`}
       onClick={() => manual.edit({ kind, targetId: engineerId, startAt, endAt })}
     >
-      {kind === 'shift' ? 'Изменить смену' : 'Изменить обед'}
+      {kind === 'shift'
+        ? t('figma-dashboard.ManualPlanning.dd3482fc72')
+        : t('figma-dashboard.ManualPlanning.2d040ef9ab')}
     </button>
   );
 }

@@ -1,6 +1,7 @@
 import type { EngineerAnalytics } from '../../api/performance';
+import { locale, t } from '../../i18n';
 
-const number = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 });
+const number = new Intl.NumberFormat(locale, { maximumFractionDigits: 1 });
 
 /** Missing evidence is never formatted as a measured zero. */
 export function metricNumber(value: number | null | undefined, suffix = ''): string {
@@ -9,10 +10,14 @@ export function metricNumber(value: number | null | undefined, suffix = ''): str
 
 /** A stable benchmark also handles a zero team baseline without infinite percentages. */
 export function teamDifference(value: number | null, team: number | null): string {
-  if (value === null || team === null) return 'Недостаточно данных для сравнения';
+  if (value === null || team === null)
+    return t('components.performance.PerformanceVisuals.c465b5d855');
   const delta = value - team;
-  if (Math.abs(delta) < 0.05) return 'На уровне среднего команды';
-  return `${delta > 0 ? '+' : '−'}${metricNumber(Math.abs(delta))} к среднему команды`;
+  if (Math.abs(delta) < 0.05) return t('components.performance.PerformanceVisuals.8a5fdf8c72');
+  return t('components.performance.PerformanceVisuals.ffee815ef8', {
+    value0: delta > 0 ? '+' : '−',
+    value1: metricNumber(Math.abs(delta)),
+  });
 }
 
 /** Summary tile uses the shared brand palette and keeps the metric definition visible. */
@@ -85,43 +90,66 @@ export function EngineerMetricGrid({
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
       <ResultMetric
-        label="Выполнено за смену"
+        label={t('components.performance.PerformanceVisuals.e213230fe0')}
         value={metricNumber(analytics.completedPerRecordedWorkday)}
-        note={`${analytics.recordedWorkdays} учтённых смен${team ? ` · ${teamDifference(analytics.completedPerRecordedWorkday, team.completedPerRecordedWorkday)}` : ''}`}
+        note={t('components.performance.PerformanceVisuals.199cb133d0', {
+          value0: analytics.recordedWorkdays,
+          value1: team
+            ? ` · ${teamDifference(analytics.completedPerRecordedWorkday, team.completedPerRecordedWorkday)}`
+            : '',
+        })}
       />
       <ResultMetric
-        label="Завершено вовремя"
+        label={t('components.performance.PerformanceVisuals.a4fd3a961b')}
         value={metricNumber(punctual.rate === null ? null : punctual.rate * 100, '%')}
         tone="good"
-        note={`${punctual.count} из ${punctual.sampleCount} с сохранённым сроком`}
+        note={t('components.performance.PerformanceVisuals.089c5871fc', {
+          value0: punctual.count,
+          value1: punctual.sampleCount,
+        })}
       />
       <ResultMetric
-        label="Задержка на заявку"
-        value={metricNumber(punctual.averageLatenessMinutes, ' мин')}
+        label={t('components.performance.PerformanceVisuals.15f6401442')}
+        value={metricNumber(
+          punctual.averageLatenessMinutes,
+          t('components.performance.PerformanceVisuals.84d5d93d12'),
+        )}
         tone={
           punctual.averageLatenessMinutes && punctual.averageLatenessMinutes > 0
             ? 'warning'
             : 'plain'
         }
-        note={`По ${punctual.sampleCount} измеренным завершениям, включая нулевую задержку`}
+        note={t('components.performance.PerformanceVisuals.c38f683255', {
+          value0: punctual.sampleCount,
+        })}
       />
       <ResultMetric
-        label="Среднее время работы"
-        value={metricNumber(analytics.measuredDuration.averageMinutes, ' мин')}
-        note={`${analytics.measuredDuration.sampleCount} пар отметок начала и конца`}
+        label={t('components.performance.PerformanceVisuals.43fa7f8440')}
+        value={metricNumber(
+          analytics.measuredDuration.averageMinutes,
+          t('components.performance.PerformanceVisuals.84d5d93d12'),
+        )}
+        note={t('components.performance.PerformanceVisuals.9244e4aafc', {
+          value0: analytics.measuredDuration.sampleCount,
+        })}
       />
       <ResultMetric
-        label="Работа с отметками"
-        value={metricNumber(analytics.utilization.recordedWorkMinutes, ' мин')}
-        note={`Из ${metricNumber(analytics.utilization.scheduledMinutes)} мин учтённых смен`}
+        label={t('components.performance.PerformanceVisuals.a5c5fe5f1e')}
+        value={metricNumber(
+          analytics.utilization.recordedWorkMinutes,
+          t('components.performance.PerformanceVisuals.84d5d93d12'),
+        )}
+        note={t('components.performance.PerformanceVisuals.0603f61a9b', {
+          value0: metricNumber(analytics.utilization.scheduledMinutes),
+        })}
       />
       <ResultMetric
-        label="Подтверждённая занятость"
+        label={t('components.performance.PerformanceVisuals.68efd21fa9')}
         value={metricNumber(
           analytics.utilization.rate === null ? null : analytics.utilization.rate * 100,
           '%',
         )}
-        note="Только работа между отметками; дорога и работа без отметок сюда не входят"
+        note={t('components.performance.PerformanceVisuals.cd6b9b1b92')}
       />
     </div>
   );
@@ -136,17 +164,24 @@ export function CompletionChart({
   if (!rows.length)
     return (
       <p className="rounded-2xl bg-white p-5 text-sm text-figma-dim">
-        За этот период пока нет данных для графика.
+        {t('components.performance.PerformanceVisuals.ec5bc64be0')}
       </p>
     );
   const max = Math.max(0, ...rows.map((row) => row.completed));
   const scale = Math.max(1, max);
   return (
-    <section className="rounded-3xl bg-white p-5 sm:p-6" aria-label="Выполненные заявки по дням">
+    <section
+      className="rounded-3xl bg-white p-5 sm:p-6"
+      aria-label={t('components.performance.PerformanceVisuals.b1f4829f54')}
+    >
       <div className="mb-5 flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-lg font-bold">Ритм месяца</h3>
+        <h3 className="text-lg font-bold">
+          {t('components.performance.PerformanceVisuals.09c36b01b0')}
+        </h3>
         <span className="text-xs text-figma-dim">
-          Подтверждённые завершения · максимум {max} в день
+          {t('components.performance.PerformanceVisuals.8164ac547b')}
+          {max}
+          {t('components.performance.PerformanceVisuals.09d6d557ec')}
         </span>
       </div>
       <div className="overflow-x-auto pb-2">
@@ -155,7 +190,10 @@ export function CompletionChart({
             <div
               key={row.workDate}
               className="flex w-7 flex-col items-center gap-2"
-              title={`${row.workDate}: ${row.completed} выполнено`}
+              title={t('components.performance.PerformanceVisuals.a6012a89b3', {
+                value0: row.workDate,
+                value1: row.completed,
+              })}
             >
               <span className="text-xs font-semibold tabular-nums">{row.completed}</span>
               <div

@@ -56,7 +56,7 @@ describe('data upload validation', () => {
     expect(parsed.ok).toBe(false);
     if (!parsed.ok) {
       expect(parsed.issues.join(' ')).toContain('append_requests');
-      expect(parsed.issues.join(' ')).toContain('duplicate externalId');
+      expect(parsed.issues.join(' ')).toContain('Повторяющийся externalId');
     }
   });
 

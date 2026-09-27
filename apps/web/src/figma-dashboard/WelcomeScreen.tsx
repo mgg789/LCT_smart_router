@@ -1,5 +1,6 @@
 import { motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useState } from 'react';
+import { t } from '../i18n';
 import { formatDayTitle } from '../lib/time';
 import { useArtboardScale } from './artboardScale';
 import { FIGMA_ASSETS } from './assets';
@@ -19,7 +20,7 @@ export function WelcomeScreen({
   motionOn,
   onStart,
   disabled = false,
-  buttonLabel = 'Начать рабочий день',
+  buttonLabel = t('figma-dashboard.WelcomeScreen.9b0cb182f2'),
 }: {
   requestCount: number | null;
   motionOn: boolean;
@@ -40,7 +41,9 @@ export function WelcomeScreen({
   const dateLabel = formatDayTitle(moscowWorkDate(nowMs)).replace(/ \d{4}$/, '');
   const clock = moscowClockLabel(nowMs);
   const requests =
-    requestCount === null ? 'Заявки загружаются' : `${requestCountLabel(requestCount)} на сегодня`;
+    requestCount === null
+      ? t('figma-dashboard.WelcomeScreen.ed5399aa3a')
+      : t('figma-dashboard.WelcomeScreen.ff112644cd', { value0: requestCountLabel(requestCount) });
 
   return (
     <div className="flex h-full w-full items-center justify-center overflow-hidden bg-black">
@@ -73,7 +76,7 @@ export function WelcomeScreen({
           transition={animate ? { ...reveal, delay: 0.12 } : { duration: 0 }}
         >
           <FigmaText className="figma-nowrap absolute left-1/2 top-[548px] -translate-x-1/2 font-murs text-[180px] leading-none text-white">
-            NAVIX
+            {t('figma-dashboard.WelcomeScreen.d675af9943')}
           </FigmaText>
         </motion.div>
 

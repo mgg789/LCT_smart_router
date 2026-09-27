@@ -1,6 +1,7 @@
 import type { WorkTypeView } from '@lct/shared';
 import { useEffect, useState } from 'react';
 import { z } from 'zod';
+import { t } from '../i18n';
 import { requestJson } from './client';
 
 const catalogueSchema = z.object({
@@ -33,7 +34,7 @@ export function useWorkTypes() {
       })
       .catch((cause: unknown) => {
         if (active)
-          setError(cause instanceof Error ? cause.message : 'Каталог типов не загрузился');
+          setError(cause instanceof Error ? cause.message : t('api.workTypes.47b03cd3a0'));
       });
     return () => {
       active = false;

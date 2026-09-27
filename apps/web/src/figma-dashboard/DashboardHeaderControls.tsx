@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useId, useRef, useState } from 'react';
 import type { PolicyId } from '../api/types';
+import { t } from '../i18n';
 import { useArtboardStretch } from './artboardStretch';
 import { FIGMA_ASSETS } from './assets';
 import { isNavLocked, sidebarWheelNav } from './dashboardSlide';
@@ -87,7 +88,12 @@ export function SidebarNav({
       className="absolute inset-y-0 left-0 z-20 w-[158px] overflow-visible rounded-br-[20px] rounded-tr-[20px] border-r-[0.5px] border-solid border-[rgba(158,158,158,0.3)] bg-white"
     >
       <div className="absolute left-[79px] top-[56px] -translate-x-1/2 -translate-y-1/2">
-        <FigmaIcon src={FIGMA_ASSETS.logo} alt="LCT Smart Router" width={64} height={64} />
+        <FigmaIcon
+          src={FIGMA_ASSETS.logo}
+          alt={t('figma-dashboard.DashboardHeaderControls.d985a55a7b')}
+          width={64}
+          height={64}
+        />
       </div>
       <nav className="absolute left-[12px] top-[110px] w-[134px]">
         <motion.div
@@ -108,7 +114,7 @@ export function SidebarNav({
               disabled={locked}
               aria-label={item.label}
               aria-disabled={locked}
-              title={locked ? 'Скоро' : undefined}
+              title={locked ? t('figma-dashboard.DashboardHeaderControls.72c299e0d6') : undefined}
               onClick={() => onSelect(item.id)}
               className={`relative flex h-[74px] w-full items-end justify-center pb-[12px] transition-transform duration-200 ease-out ${
                 locked ? 'cursor-not-allowed opacity-35' : 'hover:scale-[1.02]'
@@ -135,7 +141,7 @@ export function SidebarNav({
       </nav>
       <motion.button
         type="button"
-        aria-label="Загрузить данные"
+        aria-label={t('figma-dashboard.DashboardHeaderControls.724b169fae')}
         onClick={onUpload}
         className="absolute bottom-[28px] left-[12px] flex h-[56px] w-[134px] items-center justify-center rounded-full"
         whileHover={motionOn ? { scale: 1.12 } : undefined}
@@ -175,7 +181,11 @@ export function NotificationControl({
     >
       <motion.button
         type="button"
-        aria-label={open ? 'Скрыть уведомления' : 'Показать уведомления'}
+        aria-label={
+          open
+            ? t('figma-dashboard.DashboardHeaderControls.7ab47cf943')
+            : t('figma-dashboard.DashboardHeaderControls.5422796d15')
+        }
         aria-pressed={open}
         onClick={onToggle}
         className="pointer-events-auto absolute right-[6px] top-[6px] flex size-[43px] items-center justify-center"
@@ -236,7 +246,7 @@ export function UserMenu({
         type="button"
         onClick={onToggle}
         className="relative z-50 flex items-center gap-[20px]"
-        aria-label="Меню пользователя"
+        aria-label={t('figma-dashboard.DashboardHeaderControls.91b15c0032')}
         whileHover={motionOn ? { scale: 1.04 } : undefined}
         whileTap={motionOn ? { scale: 0.98 } : undefined}
         transition={{ duration: 0.16 }}
@@ -270,7 +280,7 @@ export function UserMenu({
           >
             <div className="flex flex-col gap-[8px]">
               <MenuAction motionOn={motionOn} tone="ink" onClick={onSettings}>
-                Настройки
+                {t('figma-dashboard.DashboardHeaderControls.985b5e0f2c')}
               </MenuAction>
               {manualMode ? (
                 <MenuAction
@@ -278,23 +288,23 @@ export function UserMenu({
                   tone="bee"
                   onClick={() => openManualPlanning('priorities')}
                 >
-                  Приоритеты
+                  {t('figma-dashboard.DashboardHeaderControls.bc58eaa8cf')}
                 </MenuAction>
               ) : null}
               {hasPreviousPlan ? (
                 <MenuAction motionOn={motionOn} tone="bee" onClick={onOpenPreviousPlan}>
-                  Прошлый план
+                  {t('figma-dashboard.DashboardHeaderControls.fbde84ea39')}
                 </MenuAction>
               ) : null}
             </div>
             <div className="mx-auto my-[8px] h-px w-[40px] bg-figma-ink/20" />
             <div className="flex flex-col gap-[8px]">
               <MenuAction motionOn={motionOn} tone="bee" onClick={onEndDay}>
-                Завершить день
+                {t('figma-dashboard.DashboardHeaderControls.070512aa40')}
               </MenuAction>
               {demoStand ? (
                 <MenuAction motionOn={motionOn} tone="danger" onClick={onRestartDay}>
-                  День заново
+                  {t('figma-dashboard.DashboardHeaderControls.79953852a9')}
                 </MenuAction>
               ) : null}
             </div>
@@ -302,13 +312,15 @@ export function UserMenu({
             <div className="flex flex-col gap-[8px]">
               {demoStand ? (
                 <MenuAction motionOn={motionOn} tone="danger" onClick={onReset}>
-                  Сбросить данные
+                  {t('figma-dashboard.DashboardHeaderControls.d613027d96')}
                 </MenuAction>
               ) : null}
               <MenuAction motionOn={motionOn} tone="danger" onClick={onSignOut}>
-                Выйти
+                {t('figma-dashboard.DashboardHeaderControls.5690c2e63b')}
               </MenuAction>
-              <p className="text-center text-[12px] text-figma-muted">v1.8.7</p>
+              <p className="text-center text-[12px] text-figma-muted">
+                {t('figma-dashboard.DashboardHeaderControls.18f4939c70')}
+              </p>
             </div>
           </motion.div>
         ) : null}
@@ -385,7 +397,7 @@ export function PlanMetricsButton({ motionOn, onOpen }: { motionOn: boolean; onO
         <TintIcon src="/figma/chart-dots-2.svg" color="#272930" size={22} />
       </span>
       <span className="figma-nowrap font-semibold text-[18px] tracking-[-0.3px]">
-        Метрики плана
+        {t('figma-dashboard.DashboardHeaderControls.bb25ab0a14')}
       </span>
     </motion.button>
   );
@@ -397,7 +409,7 @@ export function AddEntityButton({ motionOn, onOpen }: { motionOn: boolean; onOpe
   return (
     <motion.button
       type="button"
-      aria-label="Добавить"
+      aria-label={t('figma-dashboard.DashboardHeaderControls.71038c53bb')}
       onClick={onOpen}
       className="absolute z-50 flex items-center justify-center rounded-full bg-figma-ink"
       style={{
@@ -480,7 +492,9 @@ export function PolicyControl({
     ...baseOptions.filter((option) => option.id !== 'personal'),
     {
       id: 'personal',
-      label: personalConfigured ? (personalTitle ?? 'Моя политика') : 'Задать свою',
+      label: personalConfigured
+        ? (personalTitle ?? t('figma-dashboard.DashboardHeaderControls.0a8232003c'))
+        : t('figma-dashboard.DashboardHeaderControls.e8f84c5d65'),
     },
   ];
   const personalIndex = options.length - 1;
@@ -517,7 +531,9 @@ export function PolicyControl({
           transition={{ duration: 0.16 }}
         >
           <FigmaText className="figma-nowrap font-semibold text-[18px] tracking-[-0.306px] text-figma-ink">
-            {open ? 'Выбери свою политику' : `Политика: ${selectedLabel}`}
+            {open
+              ? t('figma-dashboard.DashboardHeaderControls.8c3690ab32')
+              : t('figma-dashboard.DashboardHeaderControls.43e8b56b2e', { value0: selectedLabel })}
           </FigmaText>
         </motion.button>
         <motion.button
@@ -535,7 +551,11 @@ export function PolicyControl({
           >
             <FigmaIcon
               src={FIGMA_ASSETS.policyArrowClosed}
-              alt={open ? 'Свернуть' : 'Открыть политики'}
+              alt={
+                open
+                  ? t('figma-dashboard.DashboardHeaderControls.36c25d9ffc')
+                  : t('figma-dashboard.DashboardHeaderControls.c8a77f9592')
+              }
               width={43}
               height={43}
             />
@@ -574,7 +594,7 @@ export function PolicyControl({
           <button
             type="button"
             onClick={onEditPersonal}
-            aria-label="Изменить личную политику"
+            aria-label={t('figma-dashboard.DashboardHeaderControls.5cb8591e49')}
             className="absolute right-[18px] flex size-[32px] items-center justify-center"
             style={{ top: 12 + personalIndex * 44 }}
           >
@@ -592,40 +612,40 @@ export function PolicyControl({
         ) : null}
         <PolicySwitch
           on={lunchOn}
-          label="Рассчитать обеды"
-          description="Включено: маршрут учитывает обеденные перерывы инженеров. Выключено: автоматический обед в план не добавляется."
+          label={t('figma-dashboard.DashboardHeaderControls.e637b4349a')}
+          description={t('figma-dashboard.DashboardHeaderControls.9f815f3e6c')}
           top={283 + extra}
           motionOn={motionOn}
           onToggle={onLunchToggle}
         />
         <PolicySwitch
           on={trafficOn}
-          label="Прогнозировать пробки"
-          description="Включено: время дороги учитывает прогноз пробок на момент поездки. Выключено: план рассчитывается без прогнозного изменения трафика."
+          label={t('figma-dashboard.DashboardHeaderControls.da5093f3a2')}
+          description={t('figma-dashboard.DashboardHeaderControls.c21d123a9b')}
           top={327 + extra}
           motionOn={motionOn}
           onToggle={onTrafficToggle}
         />
         <PolicySwitch
           on={metroOn}
-          label="Маршруты с метро"
-          description="Разрешает учитывать метро при расчёте подходящих пеших маршрутов. Без этого используются наземные варианты."
+          label={t('figma-dashboard.DashboardHeaderControls.33c7521988')}
+          description={t('figma-dashboard.DashboardHeaderControls.c0cd85f550')}
           top={371 + extra}
           motionOn={motionOn}
           onToggle={onMetroToggle}
         />
         <PolicySwitch
           on={equipmentTransfersOn}
-          label="Передача оборудования"
-          description="Разрешает планировать встречи инженеров для передачи оборудования, если это помогает выполнить заявки."
+          label={t('figma-dashboard.DashboardHeaderControls.31f207a99a')}
+          description={t('figma-dashboard.DashboardHeaderControls.d352c95199')}
           top={415 + extra}
           motionOn={motionOn}
           onToggle={onEquipmentTransfersToggle}
         />
         <PolicySwitch
           on={strictTimeWindowsOn}
-          label="Строгое время"
-          description="Включено: без допуска к окну заявки и концу смены. Выключено: применяются настроенные допуски опоздания и последней заявки."
+          label={t('figma-dashboard.DashboardHeaderControls.564d7c0f91')}
+          description={t('figma-dashboard.DashboardHeaderControls.0108439215')}
           top={459 + extra}
           motionOn={motionOn}
           onToggle={onStrictTimeWindowsToggle}
@@ -633,11 +653,11 @@ export function PolicyControl({
         <PolicySwitch
           on={ordinaryReplanningDisabled}
           disabled={replanningSaving}
-          label="Перестройка по обычным"
+          label={t('figma-dashboard.DashboardHeaderControls.475e95d6c4')}
           description={
             ordinaryReplanningDisabled
-              ? 'Включено — без перестройки: новые обычные заявки остаются в алертах даже при аварийном пересчёте. Аварии перестраивают план. Выключение вернёт накопленные заявки в распределение.'
-              : 'Выключено — обычный режим: любая новая заявка запускает перестройку. Включите, чтобы обычные заявки ожидали решения в алертах; аварии всегда перестраивают план.'
+              ? t('figma-dashboard.DashboardHeaderControls.512b38f4e9')
+              : t('figma-dashboard.DashboardHeaderControls.21177e15c8')
           }
           top={503 + extra}
           motionOn={motionOn}
@@ -650,7 +670,9 @@ export function PolicyControl({
           style={{ top: 561 + extra }}
         >
           <span className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
-            {manualMode ? 'Автоматическое управление' : 'Ручное управление'}
+            {manualMode
+              ? t('figma-dashboard.DashboardHeaderControls.2bb4d0f192')
+              : t('figma-dashboard.DashboardHeaderControls.31f5da9ced')}
           </span>
         </button>
       </div>

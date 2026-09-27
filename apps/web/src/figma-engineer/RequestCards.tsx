@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import type { ReactNode } from 'react';
 import { WorkTypeLabel } from '../components/WorkTypeLabel';
 import { FigmaIcon } from '../figma-dashboard/primitives';
+import { t } from '../i18n';
 import { skillLabel } from '../lib/reasons';
 import { ENGINEER_ASSETS } from './assets';
 import { formatMinutesRu, formatPlanTime, formatPlanWindow } from './engineerClock';
@@ -92,30 +93,35 @@ function LogisticsCard({
   const entry = item.logistics;
   const office = entry.kind === 'office_pickup';
   const equipment = {
-    router: 'Роутер',
-    set_top_box: 'ТВ-приставка',
-    smart_speaker: 'Умная колонка',
+    router: t('figma-engineer.RequestCards.4a65bf9c4b'),
+    set_top_box: t('figma-engineer.RequestCards.140d6d4877'),
+    smart_speaker: t('figma-engineer.RequestCards.cd9e2a8ef6'),
   }[entry.equipmentType];
   return (
     <div className="rounded-[20px] border-2 border-figma-bee bg-white p-6 text-figma-ink">
       <div className="flex items-start justify-between gap-3">
         <h3 className="font-murs text-xl">
-          {office ? 'Забрать в офисе' : 'Доставка оборудования'}
+          {office
+            ? t('figma-engineer.RequestCards.238a113959')
+            : t('figma-engineer.RequestCards.abbe1ea907')}
         </h3>
         <span className="font-semibold">{formatPlanTime(item.stop.startAt)}</span>
       </div>
-      <p className="mt-3 font-medium">{equipment} · 1 шт.</p>
+      <p className="mt-3 font-medium">
+        {equipment}
+        {t('figma-engineer.RequestCards.efaf48a440')}
+      </p>
       <p className="mt-2 text-figma-muted">
         {office
-          ? 'Заберите оборудование в офисе и подтвердите получение.'
-          : 'Передайте оборудование инженеру на точке его заявки.'}
+          ? t('figma-engineer.RequestCards.350eb49b02')
+          : t('figma-engineer.RequestCards.33de542a22')}
       </p>
       <p className="mt-2 text-figma-muted">
         {entry.state === 'completed'
-          ? 'Выполнено'
+          ? t('figma-engineer.RequestCards.c045c25ac4')
           : entry.state === 'cancelled'
-            ? 'Отменено'
-            : `Заявка № ${entry.requestId.slice(0, 8)}`}
+            ? t('figma-engineer.RequestCards.23a2a9bfcf')
+            : t('figma-engineer.RequestCards.80b3e93473', { value0: entry.requestId.slice(0, 8) })}
       </p>
       {entry.state === 'assigned' ? (
         <a
@@ -128,7 +134,10 @@ function LogisticsCard({
           rel="noopener noreferrer"
           className="mt-3 inline-block font-semibold underline"
         >
-          Маршрут к точке {office ? 'выдачи' : 'передачи'}
+          {t('figma-engineer.RequestCards.5f428defda')}
+          {office
+            ? t('figma-engineer.RequestCards.3029e27d7a')
+            : t('figma-engineer.RequestCards.58b97f7566')}
         </a>
       ) : null}
       {entry.state === 'assigned' ? (
@@ -138,7 +147,9 @@ function LogisticsCard({
           onClick={onConfirm}
           className="mt-4 w-full rounded-2xl bg-figma-bee px-4 py-3 font-semibold disabled:opacity-50"
         >
-          {office ? 'Принял' : 'Передал'}
+          {office
+            ? t('figma-engineer.RequestCards.7e0d88c818')
+            : t('figma-engineer.RequestCards.8ae4b5099a')}
         </button>
       ) : null}
     </div>
@@ -152,9 +163,15 @@ function HandoffCard({ item, onConfirm }: { item: EngineerHandoffItem; onConfirm
       : item.handoff.receiverConfirmedAt !== null;
   const complete = item.handoff.completedAt !== null;
   const items = [
-    item.handoff.items.router ? `Роутер ×${item.handoff.items.router}` : null,
-    item.handoff.items.set_top_box ? `ТВ-приставка ×${item.handoff.items.set_top_box}` : null,
-    item.handoff.items.smart_speaker ? `Умная колонка ×${item.handoff.items.smart_speaker}` : null,
+    item.handoff.items.router
+      ? t('figma-engineer.RequestCards.6b2c9456a3', { value0: item.handoff.items.router })
+      : null,
+    item.handoff.items.set_top_box
+      ? t('figma-engineer.RequestCards.ec5d45a6b4', { value0: item.handoff.items.set_top_box })
+      : null,
+    item.handoff.items.smart_speaker
+      ? t('figma-engineer.RequestCards.b1d7e933cd', { value0: item.handoff.items.smart_speaker })
+      : null,
   ].filter((value): value is string => value !== null);
   return (
     <div
@@ -164,13 +181,16 @@ function HandoffCard({ item, onConfirm }: { item: EngineerHandoffItem; onConfirm
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="font-murs text-figma-ink" style={{ fontSize: eu(28) }}>
-            Передача оборудования
+            {t('figma-engineer.RequestCards.31f207a99a')}
           </p>
           <p
             className="font-medium text-figma-muted"
             style={{ marginTop: eu(8), fontSize: eu(18) }}
           >
-            {item.role === 'donor' ? 'Передать' : 'Принять'} · {items.join(', ')}
+            {item.role === 'donor'
+              ? t('figma-engineer.RequestCards.1dc58eaa3a')
+              : t('figma-engineer.RequestCards.9659ad64c2')}{' '}
+            · {items.join(', ')}
           </p>
         </div>
         <span className="font-murs text-[#2563EB]" style={{ fontSize: eu(28) }}>
@@ -179,10 +199,10 @@ function HandoffCard({ item, onConfirm }: { item: EngineerHandoffItem; onConfirm
       </div>
       <p className="font-medium text-figma-muted" style={{ marginTop: eu(10), fontSize: eu(18) }}>
         {complete
-          ? 'Передача подтверждена обеими сторонами'
+          ? t('figma-engineer.RequestCards.170fe4bd47')
           : ownConfirmed
-            ? 'Ожидаем подтверждение партнёра'
-            : 'Встреча на маршруте'}
+            ? t('figma-engineer.RequestCards.adf983000e')
+            : t('figma-engineer.RequestCards.130c491174')}
       </p>
       {!complete && !ownConfirmed ? (
         <button
@@ -192,7 +212,9 @@ function HandoffCard({ item, onConfirm }: { item: EngineerHandoffItem; onConfirm
           className="w-full bg-[#2563EB] font-semibold text-white disabled:opacity-50"
           style={{ marginTop: eu(14), height: eu(64), borderRadius: eu(16), fontSize: eu(20) }}
         >
-          {item.role === 'donor' ? 'Передать' : 'Принять'}
+          {item.role === 'donor'
+            ? t('figma-engineer.RequestCards.1dc58eaa3a')
+            : t('figma-engineer.RequestCards.9659ad64c2')}
         </button>
       ) : null}
     </div>
@@ -312,7 +334,9 @@ function UpcomingCard({
               fontSize: eu(28),
             }}
           >
-            {latePending ? 'Отмечено' : 'Опаздываю'}
+            {latePending
+              ? t('figma-engineer.RequestCards.8dc8c1de5b')
+              : t('figma-engineer.RequestCards.fb13f1838c')}
           </motion.button>
           <motion.button
             type="button"
@@ -331,7 +355,7 @@ function UpcomingCard({
               fontSize: eu(28),
             }}
           >
-            Приступить
+            {t('figma-engineer.RequestCards.90ef4cfbd4')}
           </motion.button>
         </div>
       )}
@@ -425,7 +449,7 @@ function LunchCard({ item }: { item: EngineerLunchItem }) {
         className="font-murs tracking-[-0.03em] text-figma-ink"
         style={{ fontSize: eu(28), position: 'relative', top: 2 }}
       >
-        Обед
+        {t('figma-engineer.RequestCards.69a29fbff8')}
       </p>
       <p
         className="font-semibold tracking-[-0.03em] text-figma-dim"
@@ -441,7 +465,7 @@ function MapThumb({ onRoute }: { onRoute?: () => void }) {
   return (
     <button
       type="button"
-      aria-label="Построить маршрут"
+      aria-label={t('figma-engineer.RequestCards.7007fd4ac5')}
       onClick={(event) => {
         stopInside(event);
         onRoute?.();

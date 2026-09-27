@@ -5,6 +5,7 @@ import {
   currentWindowConfirmation,
   subscribeWindowConfirmation,
 } from '../api/windowConfirmation';
+import { locale, t } from '../i18n';
 
 /** Native modal gates every window write, including background AI and sequential alert actions. */
 export function WindowConfirmationDialog() {
@@ -19,7 +20,7 @@ export function WindowConfirmationDialog() {
     if (!change && dialog.current?.open) dialog.current.close();
   }, [change]);
   const format = (value: number) =>
-    new Intl.DateTimeFormat('ru-RU', {
+    new Intl.DateTimeFormat(locale, {
       timeZone: 'Europe/Moscow',
       day: '2-digit',
       month: '2-digit',
@@ -39,18 +40,20 @@ export function WindowConfirmationDialog() {
       {change ? (
         <>
           <h2 id="window-confirmation-title" className="font-extrabold text-[24px]">
-            Вы уверены, что хотите сдвинуть временное окно заявки?
+            {t('components.WindowConfirmationDialog.f0c3ae8341')}
           </h2>
           <p className="mt-[16px] text-[18px]">
-            Мы уведомим пользователя о смене времени, но высок риск, что он отменит свою заявку.
-            Подтверждайте только если уверены.
+            {t('components.WindowConfirmationDialog.b886fbe326')}
           </p>
           <p className="mt-[16px] text-[16px] text-figma-muted">
-            Заявка № {change.requestId.slice(0, 8)}
+            {t('components.WindowConfirmationDialog.aa0ad3a10e')}
+            {change.requestId.slice(0, 8)}
             <br />
-            Было: {format(change.previousStartAt)} — {format(change.previousEndAt)}
+            {t('components.WindowConfirmationDialog.7831171752')}
+            {format(change.previousStartAt)} — {format(change.previousEndAt)}
             <br />
-            Станет: {format(change.windowStartAt)} — {format(change.windowEndAt)}
+            {t('components.WindowConfirmationDialog.a5ebdb6349')}
+            {format(change.windowStartAt)} — {format(change.windowEndAt)}
           </p>
           <div className="mt-[24px] flex flex-wrap justify-end gap-[12px]">
             <button
@@ -58,14 +61,14 @@ export function WindowConfirmationDialog() {
               onClick={() => answerWindowConfirmation(false)}
               className="rounded-full bg-figma-soft px-[24px] py-[14px] font-semibold"
             >
-              Отклонить шаг
+              {t('components.WindowConfirmationDialog.d518543d2d')}
             </button>
             <button
               type="button"
               onClick={() => answerWindowConfirmation(true)}
               className="rounded-full bg-figma-bee px-[24px] py-[14px] font-semibold"
             >
-              Подтвердить сдвиг
+              {t('components.WindowConfirmationDialog.e5db618a36')}
             </button>
           </div>
         </>

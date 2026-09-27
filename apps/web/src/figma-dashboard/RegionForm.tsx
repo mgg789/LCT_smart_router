@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { createDispatchRegion, type DispatchRegion, loadDispatchRegions } from '../api/regions';
+import { t } from '../i18n';
 import { AddressPointField } from './AddressPointField';
 
 /** Adds a durable region; existing offices remain visible while choosing its location. */
@@ -32,7 +33,7 @@ export function RegionForm({
           }
         })
         .catch(() => {
-          if (!cancelled) onError('Не удалось загрузить офисы. Откройте вкладку повторно.');
+          if (!cancelled) onError(t('figma-dashboard.RegionForm.6a9e6fd1c3'));
         });
     return () => {
       cancelled = true;
@@ -46,11 +47,11 @@ export function RegionForm({
         onError(null);
         onStatus(null);
         if (!token || !loaded) {
-          onError('Нужно подключение к серверу и список офисов.');
+          onError(t('figma-dashboard.RegionForm.122b83b734'));
           return;
         }
         if (!name.trim() || !address.trim() || !point) {
-          onError('Укажите название, адрес и точку офиса на карте.');
+          onError(t('figma-dashboard.RegionForm.5bab74a793'));
           return;
         }
         onBusy(true);
@@ -64,17 +65,19 @@ export function RegionForm({
             setName('');
             setAddress('');
             setPoint(null);
-            onStatus('Регион добавлен. Новые заявки будут относиться к ближайшему офису.');
+            onStatus(t('figma-dashboard.RegionForm.88974d440b'));
             await onCreated?.();
           })
           .catch((cause: unknown) =>
-            onError(cause instanceof Error ? cause.message : 'Не удалось добавить регион'),
+            onError(
+              cause instanceof Error ? cause.message : t('figma-dashboard.RegionForm.b6db0833e8'),
+            ),
           )
           .finally(() => onBusy(false));
       }}
     >
       <label htmlFor="add-region-name" className="block font-semibold text-[16px] text-figma-ink">
-        Название региона
+        {t('figma-dashboard.RegionForm.67d0202dc7')}
       </label>
       <input
         id="add-region-name"
@@ -85,7 +88,7 @@ export function RegionForm({
       />
       <AddressPointField
         id="add-region-office"
-        label="Адрес офиса"
+        label={t('figma-dashboard.RegionForm.32e658c99f')}
         token={token}
         addressText={address}
         lat={point?.lat ?? null}
@@ -105,7 +108,7 @@ export function RegionForm({
         }}
       />
       <p className="mt-[12px] text-[14px] text-figma-muted">
-        На карте отмечены существующие офисы. Регион создаётся без заявок и инженеров.
+        {t('figma-dashboard.RegionForm.379a75ce8d')}
       </p>
     </form>
   );

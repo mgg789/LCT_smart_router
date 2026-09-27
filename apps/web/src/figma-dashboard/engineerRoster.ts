@@ -2,6 +2,7 @@ import type { HandoffView } from '../api/live';
 import type { DashboardSnapshot, EngineerDayView, PlanStopView, RequestView } from '../api/types';
 import { requestById, routeForEngineer } from '../domain/dashboard';
 import { regionStyle } from '../domain/regions';
+import { t } from '../i18n';
 import { skillLabel, transportLabel } from '../lib/reasons';
 import { formatClock } from '../lib/time';
 import { officesForRegion, SKILL_OPTIONS } from './addEntity';
@@ -177,7 +178,7 @@ export function engineerActivity(
   if (day?.availability === 'technical_break') {
     return {
       kind: 'break',
-      title: 'Технический перерыв',
+      title: t('figma-dashboard.engineerRoster.d358dd229b'),
       startClock: null,
       untilClock: day.expectedOnlineAt ? formatClock(day.expectedOnlineAt) : null,
       nextTitle: null,
@@ -206,10 +207,14 @@ export function engineerActivity(
     const next = nextJobAfter(route?.stops ?? [], current?.endAt ?? lunchStart ?? nowAt);
     return {
       kind: 'lunch',
-      title: 'Обед',
+      title: t('figma-dashboard.engineerRoster.69a29fbff8'),
       startClock: lunchStart ? formatClock(lunchStart) : null,
       untilClock: until ? formatClock(until) : null,
-      nextTitle: next ? `Заявка № ${shortRequestId(next.requestId ?? '')}` : null,
+      nextTitle: next
+        ? t('figma-dashboard.engineerRoster.80b3e93473', {
+            value0: shortRequestId(next.requestId ?? ''),
+          })
+        : null,
       nextClock: next ? formatClock(next.startAt) : null,
     };
   }
@@ -275,11 +280,14 @@ function cardStatus(
   availability: 'online' | 'offline' | 'technical_break' | null,
   assignedCount: number,
 ): string {
-  if (activity.kind === 'break' || availability === 'technical_break') return 'техперерыв';
-  if (activity.kind === 'handoff') return 'передача';
-  if (activity.kind === 'lunch') return 'обед';
-  if (availability === 'offline') return 'не на смене';
-  return `в работе - ${requestCountLabel(assignedCount)}`;
+  if (activity.kind === 'break' || availability === 'technical_break')
+    return t('figma-dashboard.engineerRoster.1521cc8a0a');
+  if (activity.kind === 'handoff') return t('figma-dashboard.engineerRoster.cfd07ab768');
+  if (activity.kind === 'lunch') return t('figma-dashboard.engineerRoster.c0f7d29eab');
+  if (availability === 'offline') return t('figma-dashboard.engineerRoster.1a6b537560');
+  return t('figma-dashboard.engineerRoster.2a71290aa4', {
+    value0: requestCountLabel(assignedCount),
+  });
 }
 
 function handoffForStop(stop: PlanStopView, handoffs: readonly HandoffView[]): HandoffView | null {
@@ -299,10 +307,13 @@ function handoffActivity(
   const receiver =
     snapshot.engineers.find((item) => item.id === handoff.receiverEngineerId)?.displayName ??
     handoff.receiverEngineerId;
-  const action = engineerId === handoff.donorEngineerId ? 'Передать' : 'Принять';
+  const action =
+    engineerId === handoff.donorEngineerId
+      ? t('figma-dashboard.engineerRoster.1dc58eaa3a')
+      : t('figma-dashboard.engineerRoster.9659ad64c2');
   return {
     kind: 'handoff',
-    title: 'Передача оборудования',
+    title: t('figma-dashboard.engineerRoster.31f207a99a'),
     subtitle: `${action} · ${donor} → ${receiver} · ${handoffItemsLabel(handoff)}`,
     startClock: formatClock(meetingAt),
     untilClock: formatClock(meetingAt + 300),
@@ -313,9 +324,15 @@ function handoffActivity(
 
 function handoffItemsLabel(handoff: HandoffView): string {
   return [
-    handoff.items.router ? `роутер ×${handoff.items.router}` : null,
-    handoff.items.set_top_box ? `ТВ-приставка ×${handoff.items.set_top_box}` : null,
-    handoff.items.smart_speaker ? `умная колонка ×${handoff.items.smart_speaker}` : null,
+    handoff.items.router
+      ? t('figma-dashboard.engineerRoster.1e9031add0', { value0: handoff.items.router })
+      : null,
+    handoff.items.set_top_box
+      ? t('figma-dashboard.engineerRoster.ec5d45a6b4', { value0: handoff.items.set_top_box })
+      : null,
+    handoff.items.smart_speaker
+      ? t('figma-dashboard.engineerRoster.c2d1794b26', { value0: handoff.items.smart_speaker })
+      : null,
   ]
     .filter((item): item is string => item !== null)
     .join(', ');
@@ -357,13 +374,19 @@ function jobActivity(
   return {
     kind: 'job',
     requestId: request.id,
-    title: `Заявка № ${shortRequestId(request.id)}`,
+    title: t('figma-dashboard.engineerRoster.80b3e93473', { value0: shortRequestId(request.id) }),
     address: shortAddress(request.addressText),
     client: request.contactName,
-    arrived: request.startedAt ? `Прибыл в ${formatClock(request.startedAt)}` : null,
+    arrived: request.startedAt
+      ? t('figma-dashboard.engineerRoster.13a4d41ee3', { value0: formatClock(request.startedAt) })
+      : null,
     startClock: formatClock(startAt),
     finishClock: formatClock(finishAt),
-    nextTitle: next ? `Заявка № ${shortRequestId(next.requestId ?? '')}` : null,
+    nextTitle: next
+      ? t('figma-dashboard.engineerRoster.80b3e93473', {
+          value0: shortRequestId(next.requestId ?? ''),
+        })
+      : null,
     nextClock: next ? formatClock(next.startAt) : null,
   };
 }

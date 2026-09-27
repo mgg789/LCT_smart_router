@@ -1,12 +1,13 @@
 import { useId } from 'react';
+import { t } from '../i18n';
 import { ModalLayer, ModalScrim } from './modalLayer';
 
 /** Asks before a policy change or window shift that adds lateness or unassigned work. */
 export function WorsenModal({
   text,
-  title = 'Станет хуже',
-  cancelLabel = 'Отмена',
-  confirmLabel = 'Всё равно применить',
+  title = t('figma-dashboard.WorsenModal.84d10d1755'),
+  cancelLabel = t('figma-dashboard.WorsenModal.8fbe9b75cb'),
+  confirmLabel = t('figma-dashboard.WorsenModal.1ba4b5b92d'),
   onCancel,
   onConfirm,
 }: {
@@ -22,7 +23,7 @@ export function WorsenModal({
     <ModalLayer open={text !== null} motionOn={false} zClass="z-[110]">
       {text ? (
         <>
-          <ModalScrim label="Закрыть предупреждение" onClose={onCancel} />
+          <ModalScrim label={t('figma-dashboard.WorsenModal.e7c9a9e482')} onClose={onCancel} />
           <div
             role="dialog"
             aria-modal="true"

@@ -22,13 +22,14 @@ import {
   type AssistantChatMessage,
   useAssistantChat,
 } from '../hooks/useAssistantChat';
+import { t } from '../i18n';
 import { eu } from './engineerScale';
 
 /** First-turn prompts for route context, problem triage and retaining checks already done. */
 export const ENGINEER_QUICK_QUESTIONS = [
-  'Покажи контекст моего выезда',
-  'Помоги разобраться в проблеме',
-  'Я уже проверил … что дальше?',
+  t('figma-engineer.EngineerAiPane.176369bc5c'),
+  t('figma-engineer.EngineerAiPane.7b0bae4276'),
+  t('figma-engineer.EngineerAiPane.4917c6fbc2'),
 ] as const;
 
 /**
@@ -37,8 +38,9 @@ export const ENGINEER_QUICK_QUESTIONS = [
  */
 export function engineerGreeting(displayName: string | null | undefined): string {
   const first = displayName?.trim().split(/\s+/)[0] ?? '';
-  if (first.length === 0 || first === 'Инженер') return 'С чего начнем сегодня?';
-  return `${first}, с чего начнем сегодня?`;
+  if (first.length === 0 || first === t('figma-engineer.EngineerAiPane.88d71676fa'))
+    return t('figma-engineer.EngineerAiPane.8e356a4b41');
+  return t('figma-engineer.EngineerAiPane.b33fce20e1', { value0: first });
 }
 
 /**
@@ -180,7 +182,7 @@ export function EngineerAiPane({
       className="w-full"
       style={{ maxWidth: '100%' }}
     >
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: The bar is not a second control; it only moves focus into the textarea. */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/noNoninteractiveElementInteractions: The bar is not a second control; it only moves focus into the textarea. */}
       <div
         className="flex items-end bg-figma-ink"
         onMouseDown={(event) => focusComposer(event, fieldRef.current)}
@@ -214,8 +216,8 @@ export function EngineerAiPane({
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={onKeyDown}
             disabled={!canSend && !running}
-            placeholder="Спроси меня о чем нибудь..."
-            aria-label="Сообщение ассистенту"
+            placeholder={t('figma-engineer.EngineerAiPane.a1d1bf51d7')}
+            aria-label={t('figma-engineer.EngineerAiPane.c520ad9958')}
             className="min-w-0 flex-1 resize-none bg-transparent font-semibold text-[#d9d9d9] outline-none placeholder:text-[#d9d9d9] disabled:opacity-60"
             style={{ fontSize: eu(26), lineHeight: 1.35 }}
           />
@@ -224,7 +226,7 @@ export function EngineerAiPane({
           <button
             type="button"
             onClick={() => void chat.stop()}
-            aria-label="Остановить"
+            aria-label={t('figma-engineer.EngineerAiPane.3396400da0')}
             className="flex shrink-0 items-center justify-center rounded-full bg-white/10"
             style={{ width: eu(78), height: eu(78) }}
           >
@@ -234,7 +236,7 @@ export function EngineerAiPane({
           <button
             type="submit"
             disabled={!canSend || draft.trim().length === 0}
-            aria-label="Отправить"
+            aria-label={t('figma-engineer.EngineerAiPane.ceb68a9287')}
             className="flex shrink-0 items-center justify-center rounded-full bg-white/10 disabled:opacity-40"
             style={{ width: eu(78), height: eu(78) }}
           >
@@ -420,7 +422,14 @@ function UserBubble({
           {text}
         </p>
       </div>
-      <IconButton label={copied ? 'Скопировано' : 'Копировать'} onClick={onCopy}>
+      <IconButton
+        label={
+          copied
+            ? t('figma-engineer.EngineerAiPane.d2d08c715e')
+            : t('figma-engineer.EngineerAiPane.1ecddf40bf')
+        }
+        onClick={onCopy}
+      >
         <FigmaIcon
           src={FIGMA_ASSETS.aiCopy}
           alt=""
@@ -466,7 +475,7 @@ function GuardModal({
           </dl>
         ) : null}
         <p className="font-medium text-[#d92d20]" style={{ marginTop: eu(18), fontSize: eu(24) }}>
-          Гуард пометил это действие как рисковое!
+          {t('figma-engineer.EngineerAiPane.a363333a47')}
         </p>
         <div className="flex" style={{ marginTop: eu(22), gap: eu(12) }}>
           <button
@@ -475,7 +484,7 @@ function GuardModal({
             className="flex-1 rounded-full bg-figma-ink font-semibold text-white"
             style={{ height: eu(72), fontSize: eu(22) }}
           >
-            Отклонить
+            {t('figma-engineer.EngineerAiPane.899c5d6de8')}
           </button>
           <button
             type="button"
@@ -483,7 +492,7 @@ function GuardModal({
             className="flex-1 rounded-full bg-[#d92d20] font-semibold text-white"
             style={{ height: eu(72), fontSize: eu(22) }}
           >
-            Разрешить
+            {t('figma-engineer.EngineerAiPane.241ed4211a')}
           </button>
         </div>
       </div>
@@ -538,7 +547,14 @@ function AssistantBubble({
       </div>
       {!message.pending ? (
         <div className="flex items-center" style={{ marginTop: eu(12), gap: eu(18) }}>
-          <IconButton label={copied ? 'Скопировано' : 'Копировать'} onClick={onCopy}>
+          <IconButton
+            label={
+              copied
+                ? t('figma-engineer.EngineerAiPane.d2d08c715e')
+                : t('figma-engineer.EngineerAiPane.1ecddf40bf')
+            }
+            onClick={onCopy}
+          >
             <FigmaIcon
               src={FIGMA_ASSETS.aiCopy}
               alt=""
@@ -547,7 +563,7 @@ function AssistantBubble({
               style={{ width: eu(28), height: eu(28) }}
             />
           </IconButton>
-          <IconButton label="Спросить ещё раз" onClick={onAgain}>
+          <IconButton label={t('figma-engineer.EngineerAiPane.1a4a5b2dce')} onClick={onAgain}>
             <RefreshCw style={{ width: eu(22), height: eu(22) }} aria-hidden />
           </IconButton>
         </div>
@@ -578,7 +594,7 @@ function ThinkingRow({ avatarSrc }: { avatarSrc: string }) {
         <span className="ai-think-dot" />
         <span className="ai-think-dot" />
         <span className="ai-think-dot" />
-        <span className="sr-only">Ассистент думает</span>
+        <span className="sr-only">{t('figma-engineer.EngineerAiPane.6bb1ef689f')}</span>
       </div>
     </div>
   );

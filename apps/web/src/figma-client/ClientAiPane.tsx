@@ -1,10 +1,11 @@
 import { EngineerAiPane } from '../figma-engineer/EngineerAiPane';
+import { t } from '../i18n';
 
 /** Prompts reflect the real client tool catalogue, scoped to the signed-in account. */
 export const CLIENT_QUICK_QUESTIONS = [
-  'Покажи мои активные заявки',
-  'Помоги создать заявку',
-  'Как подготовиться к визиту инженера?',
+  t('figma-client.ClientAiPane.fa964a6cdc'),
+  t('figma-client.ClientAiPane.1d44951b61'),
+  t('figma-client.ClientAiPane.c06662b042'),
 ] as const;
 
 /** Client-role conversations use existing sessions, operation previews and confirmation APIs. */

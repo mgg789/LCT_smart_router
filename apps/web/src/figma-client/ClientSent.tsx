@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { eu } from '../figma-engineer/engineerScale';
+import { t } from '../i18n';
 import type { ClientRequestView } from './clientPreview';
 
 /**
@@ -20,13 +21,15 @@ export function ClientSent({
       style={{ paddingTop: eu(48), paddingBottom: eu(96) }}
     >
       <h1 className="font-murs tracking-[-0.02em] text-figma-ink" style={{ fontSize: eu(44) }}>
-        Заявка отправлена
+        {t('figma-client.ClientSent.965f25015f')}
       </h1>
       <p
         className="font-medium text-figma-muted"
         style={{ marginTop: eu(16), fontSize: eu(22), lineHeight: eu(30) }}
       >
-        {item.addressText}. Статус: {item.statusLabel}.
+        {item.addressText}
+        {t('figma-client.ClientSent.24513972bf')}
+        {item.statusLabel}.
       </p>
       <motion.button
         type="button"
@@ -40,7 +43,7 @@ export function ClientSent({
           fontSize: eu(24),
         }}
       >
-        Мои заявки
+        {t('figma-client.ClientSent.39f6d85e6e')}
       </motion.button>
       <motion.button
         type="button"
@@ -54,7 +57,7 @@ export function ClientSent({
           fontSize: eu(24),
         }}
       >
-        Ещё заявка
+        {t('figma-client.ClientSent.dc4e3b52c4')}
       </motion.button>
     </section>
   );

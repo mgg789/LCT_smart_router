@@ -11,6 +11,7 @@ import {
 import type { ComponentType } from 'react';
 import type { AiOperationState } from '../../api/ai';
 import type { AiOperationView } from '../../hooks/useAssistantChat';
+import { t } from '../../i18n';
 
 interface Props {
   readonly operationId: string;
@@ -41,38 +42,38 @@ interface StateMeta {
  */
 const STATE_META: Record<AiOperationState, StateMeta> = {
   prepared: {
-    label: 'Подготовлено',
+    label: t('components.ai.AiOperationCard.a83a4005e5'),
     icon: Hourglass,
     badgeClassName: 'border-line bg-canvas text-muted',
   },
   awaiting_confirmation: {
-    label: 'Ждёт подтверждения',
+    label: t('components.ai.AiOperationCard.6bfcb02910'),
     icon: Clock3,
     badgeClassName: 'border-bee bg-bee text-ink',
   },
   running: {
-    label: 'Выполняется…',
+    label: t('components.ai.AiOperationCard.176e44dd22'),
     icon: Loader2,
     badgeClassName: 'border-line bg-canvas text-ink',
     spin: true,
   },
   applied: {
-    label: 'Применено',
+    label: t('components.ai.AiOperationCard.a358e81fa2'),
     icon: CheckCircle2,
     badgeClassName: 'border-ink bg-ink text-white',
   },
   rejected: {
-    label: 'Отклонено',
+    label: t('components.ai.AiOperationCard.a997f50008'),
     icon: XCircle,
     badgeClassName: 'border-line bg-canvas text-muted',
   },
   cancelled_before_apply: {
-    label: 'Отменено до применения',
+    label: t('components.ai.AiOperationCard.59bca29fdb'),
     icon: Ban,
     badgeClassName: 'border-line bg-canvas text-muted',
   },
   outcome_unknown: {
-    label: 'Результат неизвестен',
+    label: t('components.ai.AiOperationCard.8cf46ff28c'),
     icon: AlertTriangle,
     badgeClassName: 'border-dashed border-muted bg-canvas text-muted',
   },
@@ -92,7 +93,9 @@ export function AiOperationCard({ operationId, operation, disabled, onApply, onC
   return (
     <div className="mt-3 rounded-2xl border border-line bg-white p-4">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-sm font-semibold">{operation?.action ?? 'Операция'}</span>
+        <span className="text-sm font-semibold">
+          {operation?.action ?? t('components.ai.AiOperationCard.822d93cab5')}
+        </span>
         <span
           className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${meta.badgeClassName}`}
         >
@@ -127,18 +130,21 @@ export function AiOperationCard({ operationId, operation, disabled, onApply, onC
             onClick={onApply}
             className="rounded-full bg-bee px-4 py-2 text-sm font-semibold text-ink"
           >
-            Применить
+            {t('components.ai.AiOperationCard.e15f960d93')}
           </button>
           <button
             type="button"
             onClick={onCancel}
             className="rounded-full border border-line bg-white px-4 py-2 text-sm"
           >
-            Отменить
+            {t('components.ai.AiOperationCard.7c47f7292b')}
           </button>
         </motion.div>
       )}
-      <span className="sr-only">operation:{operationId}</span>
+      <span className="sr-only">
+        {t('components.ai.AiOperationCard.a949b54b13')}
+        {operationId}
+      </span>
     </div>
   );
 }

@@ -8,6 +8,7 @@ import {
   planQualityAdvice,
   unroutedPlanAdvice,
 } from '../domain/planQuality';
+import { t } from '../i18n';
 import { formatDurationMin, formatKm } from '../lib/time';
 import { FIGMA_ASSETS } from './assets';
 import { ModalLayer, ModalScrim } from './modalLayer';
@@ -120,7 +121,7 @@ export function PlanMetricsModal({
         : null;
   return (
     <ModalLayer open={open} motionOn={motionOn}>
-      <ModalScrim label="Закрыть метрики плана" onClose={onClose} />
+      <ModalScrim label={t('figma-dashboard.PlanMetricsModal.e47a7a1a53')} onClose={onClose} />
       <motion.div
         role="dialog"
         aria-labelledby="plan-metrics-title"
@@ -135,7 +136,7 @@ export function PlanMetricsModal({
             id="plan-metrics-title"
             className="figma-text font-extrabold text-[28px] tracking-[-0.476px] text-figma-ink"
           >
-            Метрики плана
+            {t('figma-dashboard.PlanMetricsModal.bb25ab0a14')}
           </h2>
           <div className="flex items-center gap-[8px]">
             <button
@@ -143,11 +144,11 @@ export function PlanMetricsModal({
               onClick={onOpenPolicyComparison}
               className="rounded-full bg-figma-soft px-[14px] py-[8px] text-[14px] font-semibold text-figma-ink transition-colors hover:bg-figma-track"
             >
-              Сравнить политики
+              {t('figma-dashboard.PlanMetricsModal.ca95afa2b5')}
             </button>
             <button
               type="button"
-              aria-label="Закрыть"
+              aria-label={t('figma-dashboard.PlanMetricsModal.a7a4033657')}
               onClick={onClose}
               className="flex size-[36px] items-center justify-center transition-transform duration-150 hover:scale-110"
             >
@@ -184,16 +185,28 @@ export function PlanMetricsModal({
         />
         {metrics ? (
           <dl className="mt-[18px] grid grid-cols-2 gap-[10px]">
-            <Metric label="Без назначения" value={String(metrics.unassigned)} />
-            <Metric label="Инженеры в маршруте" value={String(metrics.engineers)} />
-            <Metric label="Пробег" value={formatKm(metrics.distanceKm)} />
-            <Metric label="В пути" value={formatDurationMin(metrics.travelSec)} />
             <Metric
-              label="Ожидаемые опоздания"
+              label={t('figma-dashboard.PlanMetricsModal.6de28b421e')}
+              value={String(metrics.unassigned)}
+            />
+            <Metric
+              label={t('figma-dashboard.PlanMetricsModal.3da7cc2a49')}
+              value={String(metrics.engineers)}
+            />
+            <Metric
+              label={t('figma-dashboard.PlanMetricsModal.69cc064f06')}
+              value={formatKm(metrics.distanceKm)}
+            />
+            <Metric
+              label={t('figma-dashboard.PlanMetricsModal.254688bbb1')}
+              value={formatDurationMin(metrics.travelSec)}
+            />
+            <Metric
+              label={t('figma-dashboard.PlanMetricsModal.03f4a03340')}
               value={prediction ? String(prediction.expectedLate).replace('.', ',') : '…'}
             />
             <Metric
-              label="Худшая задержка"
+              label={t('figma-dashboard.PlanMetricsModal.f0afbef961')}
               value={prediction ? formatDurationMin(prediction.p95MaxLateSec) : '…'}
             />
             <OptimizeButton
@@ -202,7 +215,9 @@ export function PlanMetricsModal({
             />
           </dl>
         ) : (
-          <p className="mt-[18px] text-[16px] text-figma-muted">План ещё не применён.</p>
+          <p className="mt-[18px] text-[16px] text-figma-muted">
+            {t('figma-dashboard.PlanMetricsModal.45a9da62f0')}
+          </p>
         )}
       </motion.div>
     </ModalLayer>
@@ -230,14 +245,14 @@ function QualityCard({
   if (pending && !advice) {
     return (
       <div className="mt-[18px] rounded-[20px] bg-figma-soft px-[18px] py-[16px] text-[16px] text-figma-muted">
-        Проверяем, как день переживёт разный трафик и длительности…
+        {t('figma-dashboard.PlanMetricsModal.c31e8f9735')}
       </div>
     );
   }
   if (failed || !advice) {
     return (
       <div className="mt-[18px] rounded-[20px] bg-figma-soft px-[18px] py-[16px] text-[16px] text-figma-muted">
-        Оценку надёжности сейчас не удалось посчитать. Цифры плана ниже остаются.
+        {t('figma-dashboard.PlanMetricsModal.09ef92b65f')}
       </div>
     );
   }
@@ -273,8 +288,16 @@ function QualityBody({
       {explainable ? (
         <button
           type="button"
-          aria-label={aiOn ? 'Обычная оценка' : 'Объяснить с AI'}
-          title={aiOn ? 'Обычная оценка' : 'Объяснить с AI'}
+          aria-label={
+            aiOn
+              ? t('figma-dashboard.PlanMetricsModal.83290b9944')
+              : t('figma-dashboard.PlanMetricsModal.f50242f50b')
+          }
+          title={
+            aiOn
+              ? t('figma-dashboard.PlanMetricsModal.83290b9944')
+              : t('figma-dashboard.PlanMetricsModal.f50242f50b')
+          }
           onClick={() => setAiOn((value) => !value)}
           className="absolute right-[12px] top-[12px] flex size-[36px] items-center justify-center rounded-full bg-black/10"
         >
@@ -301,7 +324,7 @@ function QualityBody({
       <p
         className={`font-extrabold text-[22px] tracking-[-0.3px] ${explainable ? 'pr-[40px]' : ''}`}
       >
-        {aiOn ? 'Оценка AI' : advice.title}
+        {aiOn ? t('figma-dashboard.PlanMetricsModal.979b44ea5c') : advice.title}
       </p>
       <AnimatePresence mode="wait" initial={false}>
         <motion.div
@@ -314,8 +337,7 @@ function QualityBody({
           {aiOn ? (
             aiReady ? (
               <p className="mt-[6px] text-[16px] leading-[1.35]">
-                {aiText ??
-                  'Текстовый разбор пока не подключён. Оценка дня остаётся прежней, без выдуманного текста.'}
+                {aiText ?? t('figma-dashboard.PlanMetricsModal.7cb144b02c')}
               </p>
             ) : (
               <div className="mt-[12px] space-y-[10px]" aria-hidden>
@@ -333,7 +355,9 @@ function QualityBody({
           ) : (
             <>
               <p className="mt-[6px] text-[16px] leading-[1.35]">{advice.summary}</p>
-              <p className="mt-[12px] font-semibold text-[15px]">Как улучшить</p>
+              <p className="mt-[12px] font-semibold text-[15px]">
+                {t('figma-dashboard.PlanMetricsModal.6ff3cf63b8')}
+              </p>
               <ul className="mt-[6px] space-y-[6px] text-[15px] leading-[1.35]">
                 {advice.lines.map((line) => (
                   <li key={`${line.before}${line.shortId ?? ''}${line.after}`}>
@@ -381,17 +405,23 @@ function OptimizeButton({ token, summary }: { token: string | null; summary: str
     <button
       type="button"
       disabled={!token || pending}
-      title={note ?? 'System one выбирает политику и публикует её'}
+      title={note ?? t('figma-dashboard.PlanMetricsModal.202a8a5212')}
       onClick={() => {
         if (!token || pending) return;
         setPending(true);
         setNote(null);
         void optimizePlanWithAi(token, summary)
           .then((picked) => {
-            const already = picked.id === 'current' || picked.label === 'План уже оптимален';
-            setNote(already ? 'План уже оптимален' : 'Оптимизировано');
+            const already =
+              picked.id === 'current' ||
+              picked.label === t('figma-dashboard.PlanMetricsModal.83de91dcc0');
+            setNote(
+              already
+                ? t('figma-dashboard.PlanMetricsModal.83de91dcc0')
+                : t('figma-dashboard.PlanMetricsModal.35201dff73'),
+            );
           })
-          .catch(() => setNote('Не удалось выбрать политику'))
+          .catch(() => setNote(t('figma-dashboard.PlanMetricsModal.9db6447f15')))
           .finally(() => setPending(false));
       }}
       className="col-span-2 flex h-[52px] items-center justify-center gap-[10px] rounded-[18px] bg-figma-ink disabled:cursor-wait"
@@ -411,7 +441,9 @@ function OptimizeButton({ token, summary }: { token: string | null; summary: str
         }}
       />
       <span className="panel-ai-fill client-ai-text font-semibold text-[18px] tracking-[-0.3px]">
-        {pending ? 'Оптимизируем…' : (note ?? 'Оптимизировать')}
+        {pending
+          ? t('figma-dashboard.PlanMetricsModal.5798be2637')
+          : (note ?? t('figma-dashboard.PlanMetricsModal.9b9f2f7843'))}
       </span>
     </button>
   );
@@ -471,7 +503,9 @@ function overrunEngineers(snapshot: DashboardSnapshot, prediction: SituationPred
   return Object.entries(prediction.engineers).map(([engineerId, row]) => ({
     name:
       snapshot.engineers.find((engineer) => engineer.id === engineerId)?.displayName ??
-      (engineerId.startsWith('covering-') ? 'Резервная смена' : engineerId),
+      (engineerId.startsWith('covering-')
+        ? t('figma-dashboard.PlanMetricsModal.a311a9f1ed')
+        : engineerId),
     overrunProb: row.overrunProb,
   }));
 }

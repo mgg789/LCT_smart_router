@@ -1,12 +1,13 @@
 import type { AiActionButton } from '../../api/ai';
 import type { AiOperationView, AssistantChatMessage } from '../../hooks/useAssistantChat';
+import { t } from '../../i18n';
 import { AiOperationCard } from './AiOperationCard';
 
 const AUTHOR_LABEL: Record<AssistantChatMessage['author'], string> = {
-  user: 'Вы',
-  assistant: 'Ассистент',
-  dispatcher: 'Диспетчер',
-  system: 'Система',
+  user: t('components.ai.ChatMessage.041bfceecc'),
+  assistant: t('components.ai.ChatMessage.e69724d99d'),
+  dispatcher: t('components.ai.ChatMessage.d75c355491'),
+  system: t('components.ai.ChatMessage.6da215b1bd'),
 };
 
 export interface ChatMessageProps {
@@ -132,7 +133,7 @@ function MessageBody({
               onCancel={() => onCancelOperation(operationId)}
             />
           ) : (
-            <p className="mt-2 text-xs text-muted">Операция недоступна</p>
+            <p className="mt-2 text-xs text-muted">{t('components.ai.ChatMessage.69b0f99567')}</p>
           )}
         </>
       );

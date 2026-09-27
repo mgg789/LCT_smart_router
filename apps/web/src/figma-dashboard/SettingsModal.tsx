@@ -22,6 +22,7 @@ import type {
   McpSettingsView,
   RouterTechnicalSettings,
 } from '../api/types';
+import { t } from '../i18n';
 import { formatMoscowDate, moscowAt } from '../lib/time';
 import { FIGMA_ASSETS } from './assets';
 import { clockFromMinutes, minutesFromClock } from './dispatcherSettings';
@@ -35,18 +36,18 @@ const FIELD =
   'mt-[8px] h-[56px] w-full rounded-[20px] border border-figma-ink/15 bg-white px-[18px] font-medium text-[18px] tracking-[-0.3px] text-figma-ink outline-none placeholder:text-figma-hint focus:border-figma-ink';
 
 const TABS = [
-  { id: 'general', label: 'Общее' },
-  { id: 'api', label: 'API' },
-  { id: 'maps', label: 'Карты' },
-  { id: 'ai', label: 'AI' },
+  { id: 'general', label: t('figma-dashboard.SettingsModal.b250a3d659') },
+  { id: 'api', label: t('figma-dashboard.SettingsModal.c8e5998f6a') },
+  { id: 'maps', label: t('figma-dashboard.SettingsModal.ee7e9d92da') },
+  { id: 'ai', label: t('figma-dashboard.SettingsModal.11fb682be0') },
 ] as const;
 export type SettingsTab = (typeof TABS)[number]['id'];
 
 const CATEGORY_LABELS: Record<ApiTokenCategory, string> = {
-  client: 'Клиентское приложение',
-  eng: 'Приложение инженера',
-  client_eng: 'Клиент + инженер',
-  master: 'Мастер — дашборд и отладка',
+  client: t('figma-dashboard.SettingsModal.726c247ad9'),
+  eng: t('figma-dashboard.SettingsModal.db2721208c'),
+  client_eng: t('figma-dashboard.SettingsModal.9f42e82072'),
+  master: t('figma-dashboard.SettingsModal.8a6fafe349'),
 };
 
 type GeneralDraft = {
@@ -156,7 +157,9 @@ export function SettingsModal({
       })
       .catch((cause: unknown) => {
         if (cancelled) return;
-        setError(cause instanceof Error ? cause.message : 'Не удалось загрузить настройки');
+        setError(
+          cause instanceof Error ? cause.message : t('figma-dashboard.SettingsModal.c265cda846'),
+        );
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -172,7 +175,11 @@ export function SettingsModal({
 
   return (
     <ModalLayer open={open} motionOn={motionOn}>
-      <ModalScrim label="Закрыть настройки" disabled={submitting} onClose={onClose} />
+      <ModalScrim
+        label={t('figma-dashboard.SettingsModal.ea43616020')}
+        disabled={submitting}
+        onClose={onClose}
+      />
       <motion.div
         role="dialog"
         aria-modal="true"
@@ -188,11 +195,11 @@ export function SettingsModal({
             id="figma-settings-title"
             className="figma-text figma-nowrap font-extrabold text-[28px] tracking-[-0.476px] text-figma-ink"
           >
-            Настройки
+            {t('figma-dashboard.SettingsModal.985b5e0f2c')}
           </h2>
           <button
             type="button"
-            aria-label="Закрыть"
+            aria-label={t('figma-dashboard.SettingsModal.a7a4033657')}
             disabled={submitting}
             onClick={onClose}
             className="flex size-[36px] items-center justify-center transition-transform duration-150 hover:scale-110 disabled:opacity-50"
@@ -210,7 +217,7 @@ export function SettingsModal({
         >
           {loading ? (
             <p className="mt-[24px] font-medium text-[16px] text-figma-muted">
-              Загружаем настройки…
+              {t('figma-dashboard.SettingsModal.a709de0bac')}
             </p>
           ) : null}
           {tab === 'general' ? <GeneralForm draft={draft} setField={setField} /> : null}
@@ -245,7 +252,7 @@ export function SettingsModal({
             onClick={() => {
               if (!routerSettings) return;
               if (minutesFromClock(draft.shiftEnd) <= minutesFromClock(draft.shiftStart)) {
-                setError('Конец дня должен быть позже начала.');
+                setError(t('figma-dashboard.SettingsModal.da8f0a2fd2'));
                 return;
               }
               setError(null);
@@ -286,7 +293,11 @@ export function SettingsModal({
                   trafficEnabled: draft.trafficEnabled,
                 },
               }).catch((cause: unknown) => {
-                setError(cause instanceof Error ? cause.message : 'Не удалось сохранить настройки');
+                setError(
+                  cause instanceof Error
+                    ? cause.message
+                    : t('figma-dashboard.SettingsModal.6e7ee8b60e'),
+                );
               });
             }}
             className={`mt-[16px] flex h-[56px] w-full items-center justify-center rounded-[20px] font-medium text-[18px] transition-transform duration-150 ${
@@ -295,7 +306,9 @@ export function SettingsModal({
                 : 'bg-figma-bee text-figma-ink hover:scale-[1.01]'
             }`}
           >
-            {submitting ? 'Сохраняем…' : 'Сохранить'}
+            {submitting
+              ? t('figma-dashboard.SettingsModal.9c27c381dd')
+              : t('figma-dashboard.SettingsModal.b4d30cae52')}
           </button>
         ) : null}
       </motion.div>
@@ -383,7 +396,7 @@ function GeneralForm({
   return (
     <div className="pb-[8px]">
       <div className="grid grid-cols-2 gap-[16px]">
-        <Field label="Начало дня" htmlFor="settings-shift-start">
+        <Field label={t('figma-dashboard.SettingsModal.cf1dfa079c')} htmlFor="settings-shift-start">
           <input
             id="settings-shift-start"
             type="time"
@@ -392,7 +405,7 @@ function GeneralForm({
             className={FIELD}
           />
         </Field>
-        <Field label="Конец дня" htmlFor="settings-shift-end">
+        <Field label={t('figma-dashboard.SettingsModal.9046545750')} htmlFor="settings-shift-end">
           <input
             id="settings-shift-end"
             type="time"
@@ -402,7 +415,7 @@ function GeneralForm({
           />
         </Field>
       </div>
-      <Field label="Допустимое опоздание, мин" htmlFor="settings-lateness">
+      <Field label={t('figma-dashboard.SettingsModal.7e45b15e9d')} htmlFor="settings-lateness">
         <input
           id="settings-lateness"
           type="number"
@@ -414,104 +427,110 @@ function GeneralForm({
           className={FIELD}
         />
       </Field>
-      <p className="mt-[20px] font-semibold text-[16px] text-figma-ink">Только alert</p>
+      <p className="mt-[20px] font-semibold text-[16px] text-figma-ink">
+        {t('figma-dashboard.SettingsModal.91dd7dae26')}
+      </p>
       <p className="mt-[4px] font-medium text-[14px] text-figma-muted">
-        До этих порогов диспетчер видит предупреждение, план сам не пересчитывается.
+        {t('figma-dashboard.SettingsModal.b6103c4b20')}
       </p>
       <div className="grid grid-cols-2 gap-[16px]">
         <MinuteField
           id="settings-noshow"
-          label="Невыход, мин"
+          label={t('figma-dashboard.SettingsModal.69b3b8bde2')}
           value={draft.noShowMin}
           onChange={(value) => setField('noShowMin', value)}
         />
         <MinuteField
           id="settings-overdue"
-          label="Опоздание инженера, мин"
+          label={t('figma-dashboard.SettingsModal.9e071f34a7')}
           value={draft.overdueMin}
           onChange={(value) => setField('overdueMin', value)}
         />
         <MinuteField
           id="settings-timerisk"
-          label="Риск окна, мин"
+          label={t('figma-dashboard.SettingsModal.23d02e0526')}
           value={draft.timeRiskMin}
           onChange={(value) => setField('timeRiskMin', value)}
         />
         <MinuteField
           id="settings-repeat"
-          label="Повтор alert, мин"
+          label={t('figma-dashboard.SettingsModal.6e57becadd')}
           value={draft.repeatAfterMin}
           onChange={(value) => setField('repeatAfterMin', value)}
         />
       </div>
-      <p className="mt-[20px] font-semibold text-[16px] text-figma-ink">После этого — пересчёт</p>
+      <p className="mt-[20px] font-semibold text-[16px] text-figma-ink">
+        {t('figma-dashboard.SettingsModal.0f037c1941')}
+      </p>
       <p className="mt-[4px] font-medium text-[14px] text-figma-muted">
-        Пороги Router: раннее окончание и переработка на точке публикуют новый снимок.
+        {t('figma-dashboard.SettingsModal.85f00bf1c7')}
       </p>
       <div className="grid grid-cols-2 gap-[16px]">
         <MinuteField
           id="settings-early"
-          label="Ранний финиш, мин"
+          label={t('figma-dashboard.SettingsModal.d6cfb3abcf')}
           value={draft.earlyFinishReplanMin}
           onChange={(value) => setField('earlyFinishReplanMin', value)}
         />
         <MinuteField
           id="settings-overrun"
-          label="Переработка на точке, мин"
+          label={t('figma-dashboard.SettingsModal.4f35eb760d')}
           value={draft.taskOverrunMin}
           onChange={(value) => setField('taskOverrunMin', value)}
         />
         <MinuteField
           id="settings-access"
-          label="Буфер доступа, мин"
+          label={t('figma-dashboard.SettingsModal.9f93f2879e')}
           value={draft.accessBufferMin}
           onChange={(value) => setField('accessBufferMin', value)}
         />
       </div>
       <div className="mt-[20px] space-y-[12px]">
-        <p className="font-semibold text-[16px] text-figma-ink">Максимум оборудования с собой</p>
+        <p className="font-semibold text-[16px] text-figma-ink">
+          {t('figma-dashboard.SettingsModal.2753855eb8')}
+        </p>
         <div className="grid grid-cols-3 gap-[12px]">
           <CapacityField
             id="settings-capacity-walk"
-            label="Пешком"
+            label={t('figma-dashboard.SettingsModal.7e072732b4')}
             value={draft.equipmentCapacityWalk}
             onChange={(value) => setField('equipmentCapacityWalk', value)}
           />
           <CapacityField
             id="settings-capacity-bike"
-            label="Велосипед"
+            label={t('figma-dashboard.SettingsModal.06458c4e6b')}
             value={draft.equipmentCapacityBike}
             onChange={(value) => setField('equipmentCapacityBike', value)}
           />
           <CapacityField
             id="settings-capacity-car"
-            label="Авто"
+            label={t('figma-dashboard.SettingsModal.8dca2f7831')}
             value={draft.equipmentCapacityCar}
             onChange={(value) => setField('equipmentCapacityCar', value)}
           />
         </div>
         <SettingSwitch
-          label="Обеды в плане"
+          label={t('figma-dashboard.SettingsModal.34d5dfb903')}
           checked={draft.lunchesEnabled}
           onChange={() => setField('lunchesEnabled', !draft.lunchesEnabled)}
         />
         <SettingSwitch
-          label="Учитывать оборудование"
+          label={t('figma-dashboard.SettingsModal.373981cffc')}
           checked={draft.equipmentEnabled}
           onChange={() => setField('equipmentEnabled', !draft.equipmentEnabled)}
         />
         <SettingSwitch
-          label="Пробки от карт"
+          label={t('figma-dashboard.SettingsModal.4f9c37af69')}
           checked={draft.trafficEnabled}
           onChange={() => setField('trafficEnabled', !draft.trafficEnabled)}
         />
         <SettingSwitch
-          label="Маршруты с метро"
+          label={t('figma-dashboard.SettingsModal.33c7521988')}
           checked={draft.metroEnabled}
           onChange={() => setField('metroEnabled', !draft.metroEnabled)}
         />
         <SettingSwitch
-          label="Передача оборудования"
+          label={t('figma-dashboard.SettingsModal.31f207a99a')}
           checked={draft.equipmentTransfersEnabled}
           onChange={() => setField('equipmentTransfersEnabled', !draft.equipmentTransfersEnabled)}
         />
@@ -546,10 +565,9 @@ function MapsForm({
   return (
     <div>
       <p className="font-medium text-[15px] leading-[22px] text-figma-muted">
-        Можно задать оба ключа. Если отвечают оба — берём 2ГИС. Если 2ГИС молчит — Яндекс. Без
-        ключей остаются геоцентры и OSRM.
+        {t('figma-dashboard.SettingsModal.4be473e9ad')}
       </p>
-      <Field label="Токен 2ГИС" htmlFor="settings-twogis">
+      <Field label={t('figma-dashboard.SettingsModal.39a7f14866')} htmlFor="settings-twogis">
         <input
           id="settings-twogis"
           type="password"
@@ -557,7 +575,11 @@ function MapsForm({
           spellCheck={false}
           value={twogisKey}
           placeholder={
-            server?.twogisApiKeySet ? `Задан ···${server.twogisApiKeyLast4 ?? ''}` : 'Ключ API'
+            server?.twogisApiKeySet
+              ? t('figma-dashboard.SettingsModal.760d4970f4', {
+                  value0: server.twogisApiKeyLast4 ?? '',
+                })
+              : t('figma-dashboard.SettingsModal.7a63ad80c1')
           }
           onChange={(event) => {
             onClearTwogis(false);
@@ -573,10 +595,10 @@ function MapsForm({
             checked={clearTwogis}
             onChange={(event) => onClearTwogis(event.target.checked)}
           />
-          Удалить ключ 2ГИС
+          {t('figma-dashboard.SettingsModal.2a5b098d48')}
         </label>
       ) : null}
-      <Field label="Токен Яндекс" htmlFor="settings-yandex">
+      <Field label={t('figma-dashboard.SettingsModal.0cdfc8b6db')} htmlFor="settings-yandex">
         <input
           id="settings-yandex"
           type="password"
@@ -584,7 +606,11 @@ function MapsForm({
           spellCheck={false}
           value={yandexKey}
           placeholder={
-            server?.yandexApiKeySet ? `Задан ···${server.yandexApiKeyLast4 ?? ''}` : 'Ключ API'
+            server?.yandexApiKeySet
+              ? t('figma-dashboard.SettingsModal.760d4970f4', {
+                  value0: server.yandexApiKeyLast4 ?? '',
+                })
+              : t('figma-dashboard.SettingsModal.7a63ad80c1')
           }
           onChange={(event) => {
             onClearYandex(false);
@@ -600,17 +626,27 @@ function MapsForm({
             checked={clearYandex}
             onChange={(event) => onClearYandex(event.target.checked)}
           />
-          Удалить ключ Яндекс
+          {t('figma-dashboard.SettingsModal.c88c6c1528')}
         </label>
       ) : null}
       {status ? (
         <div className="mt-[20px] rounded-[20px] bg-figma-canvas px-[18px] py-[16px] font-medium text-[15px] text-figma-ink">
           <p>
-            Активный провайдер:{' '}
-            {status.active === 'none' ? 'нет' : status.active === 'twogis' ? '2ГИС' : 'Яндекс'}
+            {t('figma-dashboard.SettingsModal.9286ca49cd')}{' '}
+            {status.active === 'none'
+              ? t('figma-dashboard.SettingsModal.dc9337ff5b')
+              : status.active === 'twogis'
+                ? t('figma-dashboard.SettingsModal.b91aab0a1e')
+                : t('figma-dashboard.SettingsModal.5ed92773c8')}
           </p>
-          <p className="mt-[6px] text-figma-muted">2ГИС — {status.twogis.message}</p>
-          <p className="mt-[4px] text-figma-muted">Яндекс — {status.yandex.message}</p>
+          <p className="mt-[6px] text-figma-muted">
+            {t('figma-dashboard.SettingsModal.0e3de00aa9')}
+            {status.twogis.message}
+          </p>
+          <p className="mt-[4px] text-figma-muted">
+            {t('figma-dashboard.SettingsModal.5707c06238')}
+            {status.yandex.message}
+          </p>
         </div>
       ) : null}
     </div>
@@ -622,7 +658,9 @@ function ApiTokensTab({ token }: { token: string | null }) {
     <div>
       <McpServerSection token={token} />
       <div className="my-[24px] h-px bg-figma-ink/10" aria-hidden />
-      <p className="font-semibold text-[16px] text-figma-ink">Интеграционные ключи</p>
+      <p className="font-semibold text-[16px] text-figma-ink">
+        {t('figma-dashboard.SettingsModal.c99ba6e8a6')}
+      </p>
       <ApiTokenList token={token} />
     </div>
   );
@@ -645,7 +683,9 @@ function McpServerSection({ token }: { token: string | null }) {
     void getMcpSettings(token)
       .then(setView)
       .catch((cause: unknown) => {
-        setError(cause instanceof Error ? cause.message : 'Не удалось загрузить MCP-настройки');
+        setError(
+          cause instanceof Error ? cause.message : t('figma-dashboard.SettingsModal.d38f5d18af'),
+        );
       });
   }, [token]);
 
@@ -665,7 +705,9 @@ function McpServerSection({ token }: { token: string | null }) {
         setPendingOn(false);
       })
       .catch((cause: unknown) => {
-        setError(cause instanceof Error ? cause.message : 'Не удалось сохранить MCP-настройки');
+        setError(
+          cause instanceof Error ? cause.message : t('figma-dashboard.SettingsModal.477e081d11'),
+        );
         reload();
         setPendingOn(false);
       })
@@ -702,7 +744,7 @@ function McpServerSection({ token }: { token: string | null }) {
   const savePin = () => {
     const value = pin.trim();
     if (value.length < 6) {
-      setError('Пароль — минимум 6 символов. «Сгенерировать» предложит надёжный.');
+      setError(t('figma-dashboard.SettingsModal.38c0d438b1'));
       return;
     }
     apply({ enabled: true, pin: value });
@@ -711,22 +753,25 @@ function McpServerSection({ token }: { token: string | null }) {
   return (
     <section>
       <p className="font-extrabold text-[18px] tracking-[-0.3px] text-figma-ink">
-        MCP-сервер дашборда
+        {t('figma-dashboard.SettingsModal.6ca5b81007')}
       </p>
       <p className="mt-[4px] font-medium text-[14px] leading-[1.4] text-figma-muted">
-        Подключите своего ИИ-агента к дашборду: он будет работать за диспетчера — следить за
-        обстановкой, разбирать алерты, вести день. Пока агент работает, в шапке мигает робот.
+        {t('figma-dashboard.SettingsModal.4cf1352d97')}
       </p>
       <div className="mt-[12px]">
-        <SettingSwitch label="Активировать MCP-сервер" checked={enabled} onChange={toggle} />
+        <SettingSwitch
+          label={t('figma-dashboard.SettingsModal.c072abdfc2')}
+          checked={enabled}
+          onChange={toggle}
+        />
       </div>
       {enabled ? (
         <div className="mt-[16px] w-full">
           <Field
             label={
               view?.pinSet
-                ? `Пароль задан ···${view.pinLast4 ?? ''} — введите новый, чтобы заменить`
-                : 'MCP-пароль'
+                ? t('figma-dashboard.SettingsModal.62cc62d08d', { value0: view.pinLast4 ?? '' })
+                : t('figma-dashboard.SettingsModal.7ae946cad8')
             }
             htmlFor="settings-mcp-pin"
           >
@@ -737,7 +782,7 @@ function McpServerSection({ token }: { token: string | null }) {
                 autoComplete="off"
                 spellCheck={false}
                 value={pin}
-                placeholder="По этому паролю агент подключается к дашборду"
+                placeholder={t('figma-dashboard.SettingsModal.c6a812129d')}
                 onChange={(event) => {
                   setError(null);
                   setPin(event.target.value);
@@ -754,7 +799,7 @@ function McpServerSection({ token }: { token: string | null }) {
               className="flex h-[44px] items-center gap-[8px] rounded-full border border-figma-ink/15 px-[16px] font-semibold text-[15px] text-figma-ink disabled:opacity-50"
             >
               <Wand2 className="h-4 w-4" />
-              Сгенерировать
+              {t('figma-dashboard.SettingsModal.ab5e1191a7')}
             </button>
             <button
               type="button"
@@ -766,7 +811,9 @@ function McpServerSection({ token }: { token: string | null }) {
                   : 'bg-figma-ink text-white hover:scale-[1.02]'
               }`}
             >
-              {busy ? 'Сохраняем…' : 'Сохранить пароль'}
+              {busy
+                ? t('figma-dashboard.SettingsModal.9c27c381dd')
+                : t('figma-dashboard.SettingsModal.4119dd076a')}
             </button>
             <button
               type="button"
@@ -778,19 +825,19 @@ function McpServerSection({ token }: { token: string | null }) {
                   pin: pin.trim(),
                 });
               }}
-              title={pinReady ? undefined : 'Введите пароль ещё раз — сервер хранит только его хеш'}
+              title={pinReady ? undefined : t('figma-dashboard.SettingsModal.5a7fe59ad9')}
               className={`ml-auto flex h-[44px] items-center gap-[8px] rounded-full px-[16px] font-semibold text-[15px] transition-transform duration-150 ${
                 busy || !pinReady
                   ? 'bg-figma-track text-figma-hint'
                   : 'bg-figma-bee text-figma-ink hover:scale-[1.02]'
               }`}
             >
-              Скачать setup.md
+              {t('figma-dashboard.SettingsModal.e32a62a74c')}
             </button>
           </div>
           {view && !view.pinSet ? (
             <p className="mt-[10px] font-medium text-[13px] text-figma-hint">
-              Сервер включится вместе с паролем: без него агенту нечем подключиться.
+              {t('figma-dashboard.SettingsModal.1fcc7add0a')}
             </p>
           ) : null}
           {view?.activeNow ? (
@@ -801,12 +848,14 @@ function McpServerSection({ token }: { token: string | null }) {
                 animate={{ opacity: [1, 0.3, 1] }}
                 transition={{ duration: 1.6, repeat: Infinity, ease: 'easeInOut' }}
               />
-              Сейчас с дашбордом работает агент{view.lastToolName ? ` · ${view.lastToolName}` : ''}
+              {t('figma-dashboard.SettingsModal.e2b61fbdb9')}
+              {view.lastToolName ? ` · ${view.lastToolName}` : ''}
             </p>
           ) : null}
           {endpointUrl ? (
             <p className="mt-[10px] break-all font-medium text-[13px] text-figma-hint">
-              Endpoint: {endpointUrl}
+              {t('figma-dashboard.SettingsModal.a6bfdd68b1')}
+              {endpointUrl}
             </p>
           ) : null}
         </div>
@@ -842,7 +891,9 @@ function ApiTokenList({ token }: { token: string | null }) {
         setError(null);
       })
       .catch((cause: unknown) => {
-        setError(cause instanceof Error ? cause.message : 'Не удалось загрузить токены');
+        setError(
+          cause instanceof Error ? cause.message : t('figma-dashboard.SettingsModal.1eb6ea9038'),
+        );
       })
       .finally(() => setLoading(false));
   }, [token]);
@@ -853,7 +904,9 @@ function ApiTokenList({ token }: { token: string | null }) {
 
   if (!token) {
     return (
-      <p className="mt-[24px] font-medium text-[16px] text-figma-muted">Нужна сессия диспетчера.</p>
+      <p className="mt-[24px] font-medium text-[16px] text-figma-muted">
+        {t('figma-dashboard.SettingsModal.df8d670234')}
+      </p>
     );
   }
 
@@ -863,17 +916,17 @@ function ApiTokenList({ token }: { token: string | null }) {
         <p className="mb-[12px] font-medium text-[15px] text-figma-danger">{error}</p>
       ) : null}
       <div className="grid gap-[12px] md:grid-cols-[1fr_220px]">
-        <Field label="Название" htmlFor="token-name">
+        <Field label={t('figma-dashboard.SettingsModal.0918b4ba92')} htmlFor="token-name">
           <input
             id="token-name"
             value={name}
             maxLength={120}
             onChange={(event) => setName(event.target.value)}
-            placeholder="Мобильное приложение"
+            placeholder={t('figma-dashboard.SettingsModal.c5a03502ac')}
             className={FIELD}
           />
         </Field>
-        <Field label="Права" htmlFor="token-category">
+        <Field label={t('figma-dashboard.SettingsModal.b2880545f3')} htmlFor="token-category">
           <select
             id="token-category"
             value={category}
@@ -891,12 +944,12 @@ function ApiTokenList({ token }: { token: string | null }) {
       <div className="mt-[16px] flex flex-wrap items-center gap-[12px]">
         <ExpiryChoice
           checked={expiryMode === 'never'}
-          label="Без срока"
+          label={t('figma-dashboard.SettingsModal.28c54755b5')}
           onSelect={() => setExpiryMode('never')}
         />
         <ExpiryChoice
           checked={expiryMode === 'date'}
-          label="До даты"
+          label={t('figma-dashboard.SettingsModal.4dabc1fe49')}
           onSelect={() => setExpiryMode('date')}
         />
         {expiryMode === 'date' ? (
@@ -912,7 +965,7 @@ function ApiTokenList({ token }: { token: string | null }) {
           disabled={creating || !name.trim()}
           onClick={() => {
             if (expiryMode === 'date' && !expiryDate) {
-              setError('Выберите дату сгорания или оставьте «без срока»');
+              setError(t('figma-dashboard.SettingsModal.9ec6a0154d'));
               return;
             }
             setCreating(true);
@@ -930,19 +983,25 @@ function ApiTokenList({ token }: { token: string | null }) {
                 reload();
               })
               .catch((cause: unknown) => {
-                setError(cause instanceof Error ? cause.message : 'Не удалось создать токен');
+                setError(
+                  cause instanceof Error
+                    ? cause.message
+                    : t('figma-dashboard.SettingsModal.bf1eb1fd5f'),
+                );
               })
               .finally(() => setCreating(false));
           }}
           className="ml-auto flex h-[48px] items-center gap-[8px] rounded-full bg-figma-bee px-[18px] font-semibold text-[16px] disabled:opacity-50"
         >
           <Plus className="h-4 w-4" />
-          {creating ? 'Создаём…' : 'Создать'}
+          {creating
+            ? t('figma-dashboard.SettingsModal.c2f23e8321')
+            : t('figma-dashboard.SettingsModal.e2be34974a')}
         </button>
       </div>
       {created ? (
         <div className="mt-[16px] rounded-[20px] bg-figma-ink px-[18px] py-[16px] text-white">
-          <p className="font-semibold">Токен создан — скопируйте сейчас</p>
+          <p className="font-semibold">{t('figma-dashboard.SettingsModal.9adb5d542d')}</p>
           <div className="mt-[10px] flex items-center gap-[8px]">
             <code className="min-w-0 flex-1 break-all font-mono text-[13px]">{created.token}</code>
             <button
@@ -954,20 +1013,26 @@ function ApiTokenList({ token }: { token: string | null }) {
               className="flex items-center gap-[6px] rounded-full bg-figma-bee px-[12px] py-[8px] font-semibold text-[14px] text-figma-ink"
             >
               <Copy className="h-4 w-4" />
-              {copied ? 'Скопировано' : 'Копировать'}
+              {copied
+                ? t('figma-dashboard.SettingsModal.d2d08c715e')
+                : t('figma-dashboard.SettingsModal.1ecddf40bf')}
             </button>
           </div>
         </div>
       ) : null}
       <div className="mt-[20px] flex items-center justify-between">
-        <p className="font-semibold text-[16px] text-figma-ink">Созданные токены</p>
+        <p className="font-semibold text-[16px] text-figma-ink">
+          {t('figma-dashboard.SettingsModal.f6bc2c9735')}
+        </p>
         <button type="button" onClick={reload} className="font-medium text-[13px] text-figma-muted">
-          {loading ? 'Обновляем…' : 'Обновить'}
+          {loading
+            ? t('figma-dashboard.SettingsModal.33dfa84ce0')
+            : t('figma-dashboard.SettingsModal.603e460bf5')}
         </button>
       </div>
       {tokens.length === 0 && !loading ? (
         <p className="mt-[12px] font-medium text-[15px] text-figma-muted">
-          Пока нет ни одного токена.
+          {t('figma-dashboard.SettingsModal.a19e4865da')}
         </p>
       ) : (
         <ul className="mt-[12px] space-y-[8px]">
@@ -985,8 +1050,13 @@ function ApiTokenList({ token }: { token: string | null }) {
                   </span>
                 </div>
                 <p className="mt-[4px] text-[13px] text-figma-muted">
-                  Создан {formatMoscowDate(item.createdAt)} ·{' '}
-                  {item.expiresAt === null ? 'без срока' : `до ${formatMoscowDate(item.expiresAt)}`}
+                  {t('figma-dashboard.SettingsModal.763594e637')}
+                  {formatMoscowDate(item.createdAt)} ·{' '}
+                  {item.expiresAt === null
+                    ? t('figma-dashboard.SettingsModal.c05bf056df')
+                    : t('figma-dashboard.SettingsModal.66e004d65b', {
+                        value0: formatMoscowDate(item.expiresAt),
+                      })}
                 </p>
               </div>
               {item.revokedAt === null ? (
@@ -1002,10 +1072,14 @@ function ApiTokenList({ token }: { token: string | null }) {
                   }}
                   className="rounded-full border border-figma-ink/15 px-[12px] py-[6px] text-[14px] text-figma-muted"
                 >
-                  {revokingId === item.id ? 'Точно отозвать?' : 'Отозвать'}
+                  {revokingId === item.id
+                    ? t('figma-dashboard.SettingsModal.e5f38c3a60')
+                    : t('figma-dashboard.SettingsModal.b66927e0fc')}
                 </button>
               ) : (
-                <span className="text-[13px] text-figma-danger">Отозван</span>
+                <span className="text-[13px] text-figma-danger">
+                  {t('figma-dashboard.SettingsModal.c9b3ac9dd9')}
+                </span>
               )}
             </li>
           ))}
@@ -1189,7 +1263,9 @@ function AiForm({ token }: { token: string | null }) {
       })
       .catch((cause: unknown) => {
         if (!cancelled)
-          setError(cause instanceof Error ? cause.message : 'Не удалось загрузить AI-настройки');
+          setError(
+            cause instanceof Error ? cause.message : t('figma-dashboard.SettingsModal.cb94f9024a'),
+          );
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -1216,7 +1292,9 @@ function AiForm({ token }: { token: string | null }) {
       })
       .catch((cause: unknown) => {
         setEnabled(view?.settings.planCalibrationEnabled ?? false);
-        setError(cause instanceof Error ? cause.message : 'Не удалось сохранить AI-настройки');
+        setError(
+          cause instanceof Error ? cause.message : t('figma-dashboard.SettingsModal.7b4f238028'),
+        );
       })
       .finally(() => setSaving(false));
   };
@@ -1236,11 +1314,11 @@ function AiForm({ token }: { token: string | null }) {
     <div className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1 space-y-[16px] overflow-y-auto pb-[16px] [scrollbar-width:thin]">
         <AiSection
-          title="ML"
-          note="Коэффициенты оценки риска уточняются по фактам исполнения. При выключении используются заводские значения."
+          title={t('figma-dashboard.SettingsModal.a5713dc015')}
+          note={t('figma-dashboard.SettingsModal.4342e341ae')}
         >
           <SettingSwitch
-            label="Калибровка по реальным результатам"
+            label={t('figma-dashboard.SettingsModal.7c215748bf')}
             checked={enabled}
             onChange={() => {
               const next = !enabled;
@@ -1250,7 +1328,9 @@ function AiForm({ token }: { token: string | null }) {
           />
           <div className="mt-[14px] rounded-[16px] bg-white px-[16px] py-[14px]">
             <div className="flex items-baseline justify-between">
-              <span className="font-semibold text-[16px] text-figma-ink">Покрытие фактами</span>
+              <span className="font-semibold text-[16px] text-figma-ink">
+                {t('figma-dashboard.SettingsModal.62e3bdccda')}
+              </span>
               <span className="font-extrabold text-[20px] text-figma-ink">
                 {loading && !status ? '…' : `${percent}%`}
               </span>
@@ -1262,69 +1342,80 @@ function AiForm({ token }: { token: string | null }) {
               />
             </div>
             <p className="mt-[10px] font-medium text-[14px] leading-[1.4] text-figma-muted">
-              {loading && !status ? 'Считаем покрытие фактами.' : calibrationCaption(status)}
+              {loading && !status
+                ? t('figma-dashboard.SettingsModal.27fc294c71')
+                : calibrationCaption(status)}
             </p>
             {status ? (
               <p className="mt-[6px] font-medium text-[13px] text-figma-hint">
-                Источник: {status.source === 'learned' ? 'факты исполнения' : 'заводские допущения'}
-                {status.computedAt ? ` · обновлено ${formatMoscowDate(status.computedAt)}` : ''}
+                {t('figma-dashboard.SettingsModal.f30d1d4879')}
+                {status.source === 'learned'
+                  ? t('figma-dashboard.SettingsModal.e22e64fdaa')
+                  : t('figma-dashboard.SettingsModal.69325aa9f7')}
+                {status.computedAt
+                  ? t('figma-dashboard.SettingsModal.b8c038e481', {
+                      value0: formatMoscowDate(status.computedAt),
+                    })
+                  : ''}
               </p>
             ) : null}
             <section
-              aria-label="Калибровка коэффициентов"
+              aria-label={t('figma-dashboard.SettingsModal.8d19ebcf17')}
               className="mt-[14px] text-[14px] text-figma-muted"
             >
-              <p className="font-semibold text-figma-ink">Калибровка коэффициентов</p>
+              <p className="font-semibold text-figma-ink">
+                {t('figma-dashboard.SettingsModal.8d19ebcf17')}
+              </p>
               <p>
                 {status?.weatherCalibration?.status === 'validated'
-                  ? 'Проверено на последующих днях'
+                  ? t('figma-dashboard.SettingsModal.0b0187f034')
                   : status?.weatherCalibration?.status === 'shadow'
-                    ? 'Проверка на новых днях'
-                    : 'Недостаточно истории'}
+                    ? t('figma-dashboard.SettingsModal.4fd9c369d3')
+                    : t('figma-dashboard.SettingsModal.b96c4f0ced')}
               </p>
               <p>
                 {status?.weatherCalibration?.reason ??
-                  'Недостаточно истории. Используются заводские параметры.'}
+                  t('figma-dashboard.SettingsModal.a544285aa7')}
               </p>
               {status?.weatherCalibration ? (
                 <p>
-                  Наблюдений: {status.weatherCalibration.observationCount}, дней:{' '}
-                  {status.weatherCalibration.days}, проверенных групп:{' '}
-                  {status.weatherCalibration.eligibleGroups} из{' '}
+                  {t('figma-dashboard.SettingsModal.bd6c3aff1a')}
+                  {status.weatherCalibration.observationCount}
+                  {t('figma-dashboard.SettingsModal.c27df725a6')} {status.weatherCalibration.days}
+                  {t('figma-dashboard.SettingsModal.917de06187')}{' '}
+                  {status.weatherCalibration.eligibleGroups}
+                  {t('figma-dashboard.SettingsModal.6350a14dac')}{' '}
                   {status.weatherCalibration.totalGroups}.
                 </p>
               ) : null}
-              <p>
-                Время между завершением работы и прибытием может включать ожидание. Покрытие данными
-                не является оценкой точности.
-              </p>
+              <p>{t('figma-dashboard.SettingsModal.4eb1d4b516')}</p>
             </section>
           </div>
         </AiSection>
 
         <AiSection
-          title="LLM (OpenAI SDK)"
-          note="Настройки из окружения сервера отображаются автоматически. Сохранённые изменения используются в новых вызовах."
+          title={t('figma-dashboard.SettingsModal.1b196cc1c1')}
+          note={t('figma-dashboard.SettingsModal.e9ede6a562')}
         >
-          <Field label="URL" htmlFor="ai-llm-url">
+          <Field label={t('figma-dashboard.SettingsModal.e7a241deba')} htmlFor="ai-llm-url">
             <input
               id="ai-llm-url"
               autoComplete="off"
               name="ai-llm-url"
               type="text"
-              placeholder="https://api.openai.com/v1"
+              placeholder={t('figma-dashboard.SettingsModal.d9617135d6')}
               value={llmUrl}
               onChange={(event) => setLlmUrl(event.target.value)}
               className={FIELD}
             />
           </Field>
-          <Field label="Model" htmlFor="ai-llm-model">
+          <Field label={t('figma-dashboard.SettingsModal.5e2c614c23')} htmlFor="ai-llm-model">
             <input
               id="ai-llm-model"
               autoComplete="off"
               name="ai-llm-model"
               type="text"
-              placeholder="gpt-4.1-mini"
+              placeholder={t('figma-dashboard.SettingsModal.13a647d426')}
               value={llmModel}
               onChange={(event) => setLlmModel(event.target.value)}
               className={FIELD}
@@ -1345,8 +1436,8 @@ function AiForm({ token }: { token: string | null }) {
               type="password"
               placeholder={
                 view?.settings.llmApiKeySet
-                  ? 'Задан — введите новый, чтобы заменить'
-                  : 'Токен пока не задан'
+                  ? t('figma-dashboard.SettingsModal.9e0fbf4f5c')
+                  : t('figma-dashboard.SettingsModal.9e058051d7')
               }
               value={llmKey}
               onChange={(event) => setLlmKey(event.target.value)}
@@ -1356,28 +1447,28 @@ function AiForm({ token }: { token: string | null }) {
         </AiSection>
 
         <AiSection
-          title="System one (Jev API)"
-          note="Настройки System one из окружения сервера. Изменения применяются после сохранения."
+          title={t('figma-dashboard.SettingsModal.723ac2d8d7')}
+          note={t('figma-dashboard.SettingsModal.ee57da02ec')}
         >
-          <Field label="URL" htmlFor="ai-jev-url">
+          <Field label={t('figma-dashboard.SettingsModal.e7a241deba')} htmlFor="ai-jev-url">
             <input
               id="ai-jev-url"
               autoComplete="off"
               name="ai-jev-url"
               type="text"
-              placeholder="https://jev.example/v1"
+              placeholder={t('figma-dashboard.SettingsModal.f395ea88ec')}
               value={jevUrl}
               onChange={(event) => setJevUrl(event.target.value)}
               className={FIELD}
             />
           </Field>
-          <Field label="Model" htmlFor="ai-jev-model">
+          <Field label={t('figma-dashboard.SettingsModal.5e2c614c23')} htmlFor="ai-jev-model">
             <input
               id="ai-jev-model"
               autoComplete="off"
               name="ai-jev-model"
               type="text"
-              placeholder="jev"
+              placeholder={t('figma-dashboard.SettingsModal.9e66a118b9')}
               value={jevModel}
               onChange={(event) => setJevModel(event.target.value)}
               className={FIELD}
@@ -1398,8 +1489,8 @@ function AiForm({ token }: { token: string | null }) {
               type="password"
               placeholder={
                 view?.settings.jevApiKeySet
-                  ? 'Задан — введите новый, чтобы заменить'
-                  : 'Токен пока не задан'
+                  ? t('figma-dashboard.SettingsModal.9e0fbf4f5c')
+                  : t('figma-dashboard.SettingsModal.9e058051d7')
               }
               value={jevKey}
               onChange={(event) => setJevKey(event.target.value)}
@@ -1428,7 +1519,9 @@ function AiForm({ token }: { token: string | null }) {
             : 'bg-figma-bee text-figma-ink hover:scale-[1.01]'
         }`}
       >
-        {saving ? 'Сохраняем…' : 'Сохранить AI-настройки'}
+        {saving
+          ? t('figma-dashboard.SettingsModal.9c27c381dd')
+          : t('figma-dashboard.SettingsModal.74d2e58479')}
       </button>
       {error ? (
         <p role="alert" className="mt-[10px] font-medium text-[15px] text-figma-danger">
@@ -1458,15 +1551,20 @@ function AiSection({
 }
 
 function calibrationCaption(status: AiView['status'] | undefined): string {
-  if (!status) return 'Индикатор появится, когда контур ответит.';
+  if (!status) return t('figma-dashboard.SettingsModal.0249be9639');
   if (!status.syncedToRouter && status.samples.service === 0) {
-    return 'Фактов исполнения пока нет — работаем на заводских допущениях.';
+    return t('figma-dashboard.SettingsModal.6980c4f40d');
   }
   if (status.confidence >= 1) {
-    return 'Калибровка полностью построена на фактах исполнения.';
+    return t('figma-dashboard.SettingsModal.f2379beeb8');
   }
-  const parts = [`${status.samples.service} работ`, `${status.samples.legs} переездов`];
+  const parts = [
+    t('figma-dashboard.SettingsModal.bde17ef704', { value0: status.samples.service }),
+    t('figma-dashboard.SettingsModal.9beb7e60e4', { value0: status.samples.legs }),
+  ];
   if (status.samples.executionDays > 0)
-    parts.push(`${status.samples.executionDays} дн. исполнения`);
-  return `Дообучается на фактах: ${parts.join(', ')}.`;
+    parts.push(
+      t('figma-dashboard.SettingsModal.1d3b0a9e8a', { value0: status.samples.executionDays }),
+    );
+  return t('figma-dashboard.SettingsModal.b66d4d2b21', { value0: parts.join(', ') });
 }

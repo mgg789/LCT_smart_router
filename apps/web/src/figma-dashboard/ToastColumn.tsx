@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { t } from '../i18n';
 import { ARTBOARD_BLEED } from './artboardScale';
 import { FIGMA_ASSETS } from './assets';
 import { FigmaIcon } from './primitives';
@@ -73,7 +74,7 @@ export function ToastColumn({
 }) {
   const visible = useVisibleColumnToasts();
   const latestDetailId = visible.reduce<string | null>((best, toast) => {
-    if (toast.actionLabel !== 'Подробнее') return best;
+    if (toast.actionLabel !== t('figma-dashboard.ToastColumn.59589fe2a5')) return best;
     if (!best) return toast.id;
     const current = visible.find((item) => item.id === best);
     return (toast.createdAt ?? 0) >= (current?.createdAt ?? 0) ? toast.id : best;
@@ -161,7 +162,7 @@ export function ToastColumn({
                 />
                 <motion.button
                   type="button"
-                  aria-label="Свернуть уведомления"
+                  aria-label={t('figma-dashboard.ToastColumn.8bea0d440d')}
                   onClick={onCollapse}
                   className="pointer-events-auto absolute z-20 flex items-center justify-center rounded-full bg-white shadow-[0_10px_24px_rgba(15,16,20,0.20)]"
                   style={{
@@ -182,7 +183,7 @@ export function ToastColumn({
             {open ? (
               <button
                 type="button"
-                aria-label="Свернуть уведомления"
+                aria-label={t('figma-dashboard.ToastColumn.8bea0d440d')}
                 className="absolute z-[5] cursor-default bg-transparent"
                 style={{
                   top: -ARTBOARD_BLEED,
@@ -500,7 +501,7 @@ function ToastFace({
         <button
           type="button"
           data-toast-close
-          aria-label="Закрыть уведомление"
+          aria-label={t('figma-dashboard.ToastColumn.1907d5c300')}
           className="absolute right-[16px] top-[13px] flex size-[29px] items-center justify-center transition-transform duration-150 hover:scale-110"
           onPointerDown={(event) => event.stopPropagation()}
           onClick={() => onClose?.()}

@@ -1,29 +1,30 @@
 import { useEffect, useState } from 'react';
 import type { DashboardSnapshot } from '../api/types';
 import { regionOptions, regionStyle } from '../domain/regions';
+import { t } from '../i18n';
 import { moscowAt } from '../lib/time';
 
 export const ADD_TABS = ['request', 'engineer', 'region'] as const;
 export type AddTab = (typeof ADD_TABS)[number];
 
 export const ADD_TAB_LABEL: Record<AddTab, string> = {
-  request: 'Заявка',
-  engineer: 'Инженер',
-  region: 'Регион',
+  request: t('figma-dashboard.addEntity.77b3e0166b'),
+  engineer: t('figma-dashboard.addEntity.88d71676fa'),
+  region: t('figma-dashboard.addEntity.d7506709ce'),
 };
 
 export const SKILL_OPTIONS = [
-  { id: 'local', label: 'Локальные работы' },
-  { id: 'connection', label: 'Подключение' },
-  { id: 'emergency', label: 'Авария' },
+  { id: 'local', label: t('figma-dashboard.addEntity.d90d1d1aa8') },
+  { id: 'connection', label: t('figma-dashboard.addEntity.ab71afb97f') },
+  { id: 'emergency', label: t('figma-dashboard.addEntity.b8cbf459a0') },
 ] as const;
 
 export type SkillId = (typeof SKILL_OPTIONS)[number]['id'];
 
 export const TRANSPORT_OPTIONS = [
-  { id: 'car', label: 'Авто' },
-  { id: 'walk', label: 'Пешком' },
-  { id: 'bike', label: 'Велосипед' },
+  { id: 'car', label: t('figma-dashboard.addEntity.8dca2f7831') },
+  { id: 'walk', label: t('figma-dashboard.addEntity.7e072732b4') },
+  { id: 'bike', label: t('figma-dashboard.addEntity.06458c4e6b') },
 ] as const;
 
 export type TransportId = (typeof TRANSPORT_OPTIONS)[number]['id'];
@@ -33,12 +34,12 @@ export type TransportId = (typeof TRANSPORT_OPTIONS)[number]['id'];
  * these labels seed the inbox card until POST /dispatch/alerts exists.
  */
 export const ALERT_TYPE_OPTIONS = [
-  { id: 'sla', label: 'Риск SLA' },
-  { id: 'window', label: 'Окно заявки' },
-  { id: 'skill', label: 'Нет навыка' },
-  { id: 'lunch', label: 'Обед не влезает' },
-  { id: 'coverage', label: 'Непокрытие' },
-  { id: 'other', label: 'Другое' },
+  { id: 'sla', label: t('figma-dashboard.addEntity.ad9e05b4a9') },
+  { id: 'window', label: t('figma-dashboard.addEntity.a0d7e011c3') },
+  { id: 'skill', label: t('figma-dashboard.addEntity.97b480d8d7') },
+  { id: 'lunch', label: t('figma-dashboard.addEntity.6183795ae0') },
+  { id: 'coverage', label: t('figma-dashboard.addEntity.a47331f22c') },
+  { id: 'other', label: t('figma-dashboard.addEntity.001f75c6b3') },
 ] as const;
 
 export type AlertTypeId = (typeof ALERT_TYPE_OPTIONS)[number]['id'];
@@ -145,10 +146,10 @@ export function windowFromClocks(
 ): { windowStartAt: number; windowEndAt: number } | string {
   const start = parseClock(startClock);
   const end = parseClock(endClock);
-  if (!start || !end) return 'Укажите окно в формате ЧЧ:ММ';
+  if (!start || !end) return t('figma-dashboard.addEntity.7bf6526c33');
   const windowStartAt = moscowAt(workDate, start.hour, start.minute);
   const windowEndAt = moscowAt(workDate, end.hour, end.minute);
-  if (windowEndAt <= windowStartAt) return 'Окно должно заканчиваться позже начала';
+  if (windowEndAt <= windowStartAt) return t('figma-dashboard.addEntity.1694ee9e17');
   return { windowStartAt, windowEndAt };
 }
 
@@ -163,13 +164,14 @@ export function validateRequestDraft(
   },
   workTypes: readonly { code: string }[],
 ): string | null {
-  if (!workTypes.some((item) => item.code === draft.workType)) return 'Выберите тип заявки';
-  if (!draft.addressText.trim()) return 'Укажите адрес';
+  if (!workTypes.some((item) => item.code === draft.workType))
+    return t('figma-dashboard.addEntity.ac2f9dd3d7');
+  if (!draft.addressText.trim()) return t('figma-dashboard.addEntity.adb52cde02');
   if (draft.lat == null || draft.lon == null) {
-    return 'Выберите адрес из подсказки или точку на карте';
+    return t('figma-dashboard.addEntity.4dd430a328');
   }
   if (!parseClock(draft.startClock) || !parseClock(draft.endClock))
-    return 'Укажите окно в формате ЧЧ:ММ';
+    return t('figma-dashboard.addEntity.7bf6526c33');
   return null;
 }
 
@@ -182,27 +184,27 @@ export function validateEngineerDraft(draft: {
   homeLat?: number | null;
   homeLon?: number | null;
 }): string | null {
-  if (!draft.displayName.trim()) return 'Укажите имя инженера';
-  if (draft.skills.length === 0) return 'Выберите хотя бы один навык';
+  if (!draft.displayName.trim()) return t('figma-dashboard.addEntity.833dc660a6');
+  if (draft.skills.length === 0) return t('figma-dashboard.addEntity.6a4298336b');
   if (!TRANSPORT_OPTIONS.some((item) => item.id === draft.transportType))
-    return 'Выберите транспорт';
-  if (!draft.region) return 'Выберите регион';
+    return t('figma-dashboard.addEntity.1840f4cded');
+  if (!draft.region) return t('figma-dashboard.addEntity.afd076294c');
   if (draft.homeLat == null || draft.homeLon == null) {
-    return 'Укажите адрес офиса из подсказки или точку на карте';
+    return t('figma-dashboard.addEntity.21cfc912d9');
   }
   if (draft.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.email.trim())) {
-    return 'Проверьте адрес почты';
+    return t('figma-dashboard.addEntity.932880ca99');
   }
   return null;
 }
 
 export function validateRegionDraft(name: string): string | null {
-  return name.trim() ? null : 'Укажите название региона';
+  return name.trim() ? null : t('figma-dashboard.addEntity.d14b4e74e2');
 }
 
 export function validateOfficeDraft(region: string, addressText: string): string | null {
-  if (!region) return 'Выберите регион привязки';
-  if (!addressText.trim()) return 'Укажите адрес офиса';
+  if (!region) return t('figma-dashboard.addEntity.4244bde3da');
+  if (!addressText.trim()) return t('figma-dashboard.addEntity.cec37ac4e6');
   return null;
 }
 
@@ -211,9 +213,10 @@ export function validateAlertDraft(draft: {
   type: string;
   reason: string;
 }): string | null {
-  if (!draft.title.trim()) return 'Укажите название';
-  if (!ALERT_TYPE_OPTIONS.some((item) => item.id === draft.type)) return 'Выберите тип алёрта';
-  if (!draft.reason.trim()) return 'Укажите причину';
+  if (!draft.title.trim()) return t('figma-dashboard.addEntity.e45da69c3e');
+  if (!ALERT_TYPE_OPTIONS.some((item) => item.id === draft.type))
+    return t('figma-dashboard.addEntity.056218708b');
+  if (!draft.reason.trim()) return t('figma-dashboard.addEntity.0f285212ad');
   return null;
 }
 

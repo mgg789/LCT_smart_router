@@ -16,6 +16,7 @@ import { loadDispatchRegions } from '../api/regions';
 import type { DashboardSnapshot } from '../api/types';
 import { MonthlyPoints } from '../components/passports/MonthlyPoints';
 import { regionStyle } from '../domain/regions';
+import { t } from '../i18n';
 import { transportLabel } from '../lib/reasons';
 import { ARTBOARD_BLEED } from './artboardScale';
 import { ENGINEER_PORTRAITS, FIGMA_ASSETS } from './assets';
@@ -503,11 +504,11 @@ export function EngineersView({
     if (!focused) return;
     const next = emailDraft.trim();
     if (!next) {
-      setEmailError('Укажите адрес почты');
+      setEmailError(t('figma-dashboard.EngineersView.6a1432381a'));
       return;
     }
     if (!isPlausibleEmail(next)) {
-      setEmailError('Проверьте адрес почты');
+      setEmailError(t('figma-dashboard.EngineersView.932880ca99'));
       return;
     }
     setEmailBusy(true);
@@ -516,7 +517,9 @@ export function EngineersView({
       await onLinkEmail(focused.id, next);
       setEmailOpen(false);
     } catch (cause) {
-      setEmailError(cause instanceof Error ? cause.message : 'Не удалось сохранить почту');
+      setEmailError(
+        cause instanceof Error ? cause.message : t('figma-dashboard.EngineersView.cad3c12081'),
+      );
     } finally {
       setEmailBusy(false);
     }
@@ -530,7 +533,9 @@ export function EngineersView({
       await onDeleteEngineer(focused.id);
       setDeleteAsk(false);
     } catch (cause) {
-      setDeleteError(cause instanceof Error ? cause.message : 'Не удалось удалить инженера');
+      setDeleteError(
+        cause instanceof Error ? cause.message : t('figma-dashboard.EngineersView.4a782d73a4'),
+      );
     } finally {
       setEmailBusy(false);
     }
@@ -582,7 +587,7 @@ export function EngineersView({
         >
           <div className="absolute inset-y-0 left-0 w-[274px] bg-figma-ink" />
           <FigmaText className="absolute left-[306px] top-[35px] font-murs text-[32px] tracking-[0.64px] text-figma-ink">
-            Нет инженеров
+            {t('figma-dashboard.EngineersView.2bea5a2c77')}
           </FigmaText>
         </div>
       )}
@@ -625,11 +630,13 @@ export function EngineersView({
           data-eng-chrome
           disabled
           aria-disabled
-          title="Скоро"
+          title={t('figma-dashboard.EngineersView.72c299e0d6')}
           className="absolute z-20 flex h-[51px] w-[225px] cursor-not-allowed items-center rounded-[27px] bg-figma-bee px-[16px] opacity-45"
           style={{ left: RING_CENTER.x - 112.5, top: RING_CHAT_TOP }}
         >
-          <FigmaText className="font-bold text-[20px] text-figma-ink">Перейти в чат</FigmaText>
+          <FigmaText className="font-bold text-[20px] text-figma-ink">
+            {t('figma-dashboard.EngineersView.3ad76b849d')}
+          </FigmaText>
           <FigmaIcon
             src={FIGMA_ASSETS.engChat}
             alt=""
@@ -659,13 +666,13 @@ export function EngineersView({
           onChange={(event) => onSearchChange(event.target.value)}
           onFocus={() => setSearchFocused(true)}
           onBlur={() => setSearchFocused(false)}
-          placeholder="Найти инженера"
+          placeholder={t('figma-dashboard.EngineersView.6614a726f7')}
           className="w-full bg-transparent font-medium text-[16px] text-figma-ink outline-none placeholder:text-figma-ink"
         />
         <motion.button
           type="button"
           className="absolute right-[4px] top-1/2 size-[43px] -translate-y-1/2"
-          aria-label="Найти инженера"
+          aria-label={t('figma-dashboard.EngineersView.6614a726f7')}
           onClick={() => searchInputRef.current?.focus()}
           animate={!motionOn || reduceMotion ? undefined : { scale: searchFocused ? 1.1 : 1 }}
           transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
@@ -787,7 +794,7 @@ function EngineerDossier({
                 value={emailDraft}
                 onChange={(event) => onEmailDraft(event.target.value)}
                 className="h-[32px] w-[320px] shrink-0 rounded-full bg-figma-track px-[14px] font-semibold text-[18px] text-figma-ink outline-none"
-                placeholder="email@example.com"
+                placeholder={t('figma-dashboard.EngineersView.2a539d6520')}
                 disabled={busy}
               />
               <button
@@ -795,14 +802,14 @@ function EngineerDossier({
                 disabled={busy}
                 className="shrink-0 font-semibold text-[16px] text-figma-ink disabled:opacity-50"
               >
-                Сохранить
+                {t('figma-dashboard.EngineersView.b4d30cae52')}
               </button>
               <button
                 type="button"
                 onClick={onToggleEmail}
                 className="shrink-0 font-semibold text-[16px] text-figma-muted"
               >
-                Отмена
+                {t('figma-dashboard.EngineersView.8fbe9b75cb')}
               </button>
               {emailError ? (
                 <p className="figma-nowrap min-w-0 truncate font-medium text-[14px] text-figma-cancel">
@@ -813,9 +820,13 @@ function EngineerDossier({
           ) : (
             <>
               <FigmaText className="font-semibold text-[20px] tracking-[-0.34px] text-figma-muted">
-                {engineer.email ?? 'Почта не привязана'}
+                {engineer.email ?? t('figma-dashboard.EngineersView.b4a8d9e6a9')}
               </FigmaText>
-              <button type="button" aria-label="Изменить почту" onClick={onToggleEmail}>
+              <button
+                type="button"
+                aria-label={t('figma-dashboard.EngineersView.58c98b74b7')}
+                onClick={onToggleEmail}
+              >
                 <FigmaIcon src={FIGMA_ASSETS.engEdit} alt="" width={24} height={24} />
               </button>
             </>
@@ -837,7 +848,7 @@ function EngineerDossier({
           <div className="flex h-full flex-col">
             <FactRow
               icon={TRANSPORT_ICONS[engineer.transportType] ?? FIGMA_ASSETS.engTransport}
-              label="Транспорт"
+              label={t('figma-dashboard.EngineersView.20f9adf729')}
               value={engineer.transportLabel}
               selected={engineer.transportType}
               options={(['car', 'walk', 'bike'] as const).map((value) => ({
@@ -852,7 +863,7 @@ function EngineerDossier({
             />
             <FactRow
               icon={FIGMA_ASSETS.engOffice}
-              label="Регион"
+              label={t('figma-dashboard.EngineersView.d7506709ce')}
               value={engineer.officeLabel}
               selected={engineer.region ?? ''}
               options={regions.map((value) => ({ value, label: regionStyle(value).label }))}
@@ -870,7 +881,11 @@ function EngineerDossier({
                 transition={tap}
                 onClick={emailOpen ? undefined : onAvailability}
               >
-                {emailOpen ? 'Сохранить' : offline ? 'Вернуть на смену' : 'Снять со смены'}
+                {emailOpen
+                  ? t('figma-dashboard.EngineersView.b4d30cae52')
+                  : offline
+                    ? t('figma-dashboard.EngineersView.7d14d86211')
+                    : t('figma-dashboard.EngineersView.f3dad72a3a')}
               </motion.button>
               {deleteAsk ? (
                 <div className="flex flex-col gap-[8px]">
@@ -881,7 +896,7 @@ function EngineerDossier({
                       className="flex h-[67px] w-[114px] items-center justify-center rounded-[20px] bg-figma-track font-semibold text-[16px] text-figma-ink disabled:opacity-50"
                       onClick={onCancelDelete}
                     >
-                      Отмена
+                      {t('figma-dashboard.EngineersView.8fbe9b75cb')}
                     </button>
                     <motion.button
                       type="button"
@@ -894,7 +909,7 @@ function EngineerDossier({
                       transition={tap}
                       onClick={onConfirmDelete}
                     >
-                      Удалить
+                      {t('figma-dashboard.EngineersView.be99b13612')}
                     </motion.button>
                   </div>
                   {deleteError ? (
@@ -913,7 +928,7 @@ function EngineerDossier({
                   transition={tap}
                   onClick={onAskDelete}
                 >
-                  Удалить
+                  {t('figma-dashboard.EngineersView.be99b13612')}
                 </motion.button>
               )}
             </div>
@@ -954,7 +969,7 @@ function FactRow({
       </FigmaText>
       {editing ? (
         <select
-          aria-label={`Изменить: ${label}`}
+          aria-label={t('figma-dashboard.EngineersView.3c6dc08b71', { value0: label })}
           value={selected}
           disabled={busy || saving}
           ref={(node) => node?.focus()}
@@ -972,7 +987,11 @@ function FactRow({
             void onSave(next)
               .then(() => setEditing(false))
               .catch((cause: unknown) => {
-                setError(cause instanceof Error ? cause.message : 'Не удалось сохранить');
+                setError(
+                  cause instanceof Error
+                    ? cause.message
+                    : t('figma-dashboard.EngineersView.6d1e3f7c5f'),
+                );
               })
               .finally(() => setSaving(false));
           }}
@@ -998,7 +1017,7 @@ function FactRow({
           <button
             type="button"
             disabled={busy || saving}
-            aria-label={`Изменить: ${label}`}
+            aria-label={t('figma-dashboard.EngineersView.3c6dc08b71', { value0: label })}
             className="shrink-0 disabled:opacity-40"
             onClick={() => {
               setError(null);
@@ -1039,7 +1058,8 @@ function EngineerActivityPane({ engineer }: { engineer: EngineerProfile }) {
         ) : null}
         {activity.startClock ? (
           <FigmaText className="mt-[8px] font-semibold text-[18px] tracking-[-0.306px] text-figma-muted">
-            Начало {activity.startClock}
+            {t('figma-dashboard.EngineersView.e3b17147c7')}
+            {activity.startClock}
           </FigmaText>
         ) : null}
         {activity.untilClock ? (
@@ -1049,14 +1069,15 @@ function EngineerActivityPane({ engineer }: { engineer: EngineerProfile }) {
         ) : null}
         <FigmaText className="mt-[8px] font-semibold text-[18px] tracking-[-0.306px] text-figma-muted">
           {activity.kind === 'lunch'
-            ? 'Ожидаемое завершение'
+            ? t('figma-dashboard.EngineersView.c3ce3c959d')
             : activity.kind === 'handoff'
-              ? 'Окно встречи'
-              : 'Ожидаемое возвращение'}
+              ? t('figma-dashboard.EngineersView.f147b7174f')
+              : t('figma-dashboard.EngineersView.de1691f6ee')}
         </FigmaText>
         {activity.nextTitle ? (
           <FigmaText className="mt-[12px] font-semibold text-[18px] tracking-[-0.306px] text-figma-muted">
-            Следующая: {activity.nextTitle}
+            {t('figma-dashboard.EngineersView.26e275a8c9')}
+            {activity.nextTitle}
             {activity.nextClock ? ` · ${activity.nextClock}` : ''}
           </FigmaText>
         ) : null}
@@ -1074,7 +1095,10 @@ function EngineerActivityPane({ engineer }: { engineer: EngineerProfile }) {
         {activity.client ? (
           <>
             <FigmaIcon src={FIGMA_ASSETS.engDot} alt="" width={5} height={5} />
-            <span>клиент “{activity.client}”</span>
+            <span>
+              {t('figma-dashboard.EngineersView.f7a5ca4bf3')}
+              {activity.client}”
+            </span>
           </>
         ) : null}
         {activity.arrived ? (
@@ -1084,18 +1108,23 @@ function EngineerActivityPane({ engineer }: { engineer: EngineerProfile }) {
           </>
         ) : null}
         <FigmaIcon src={FIGMA_ASSETS.engDot} alt="" width={5} height={5} />
-        <span>начало {activity.startClock}</span>
+        <span>
+          {t('figma-dashboard.EngineersView.2ed56df0a9')}
+          {activity.startClock}
+        </span>
       </div>
       <FigmaText className="mt-auto font-murs text-[64px] tracking-[1.28px] text-black">
         {activity.finishClock}
       </FigmaText>
       <div className="mt-[8px] flex flex-wrap items-center gap-[8px] font-semibold text-[18px] tracking-[-0.306px] text-figma-muted">
-        <span>Ожидаемое завершение</span>
+        <span>{t('figma-dashboard.EngineersView.c3ce3c959d')}</span>
         {activity.nextClock ? (
           <>
             <FigmaIcon src={FIGMA_ASSETS.engDot} alt="" width={5} height={5} />
             <span>
-              {activity.nextTitle ?? 'Следующая заявка'} в {activity.nextClock}
+              {activity.nextTitle ?? t('figma-dashboard.EngineersView.d958c168aa')}
+              {t('figma-dashboard.EngineersView.71bff885ae')}
+              {activity.nextClock}
             </span>
           </>
         ) : null}

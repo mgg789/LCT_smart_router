@@ -8,6 +8,7 @@ import { eu } from '../figma-engineer/engineerScale';
 import { PhoneErrorNotice } from '../figma-engineer/PhoneErrorNotice';
 import { usePhoneDesk } from '../figma-engineer/phoneDesk';
 import { isPhoneFailureNotice } from '../figma-engineer/phoneNotice';
+import { t } from '../i18n';
 import { CLIENT_ASSETS } from './assets';
 import { ClientAiPane } from './ClientAiPane';
 import { ClientEmailGate } from './ClientEmailGate';
@@ -320,7 +321,7 @@ export function ClientApp() {
       nowMs={nowMs}
       notice={inlineNotice}
       onBack={closeDetail}
-      onChangeTime={() => setNotice('Смена окна этой заявки появится отдельным шагом.')}
+      onChangeTime={() => setNotice(t('figma-client.ClientApp.d4f8b2e820'))}
     />
   ) : null;
 
@@ -401,7 +402,11 @@ export function ClientApp() {
   const column = (
     <>
       {failure ? (
-        <PhoneErrorNotice title="Ошибка" body={failure} onClose={() => setNotice(null)} />
+        <PhoneErrorNotice
+          title={t('figma-client.ClientApp.bf22dfeeba')}
+          body={failure}
+          onClose={() => setNotice(null)}
+        />
       ) : null}
       {/*
        * On a desk the list is the one screen worth the whole width; a form is
@@ -420,7 +425,7 @@ export function ClientApp() {
         <header className={`flex items-center ${desk ? 'hidden' : ''}`} style={{ gap: eu(20) }}>
           <motion.button
             type="button"
-            aria-label="Меню"
+            aria-label={t('figma-client.ClientApp.122f717650')}
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen(true)}
             whileTap={{ scale: 0.96 }}
@@ -453,7 +458,7 @@ export function ClientApp() {
               className="min-w-0 font-murs tracking-[0.02em] text-figma-ink"
               style={{ fontSize: eu(40), position: 'relative', top: 1 }}
             >
-              NAVIX
+              {t('figma-client.ClientApp.d675af9943')}
             </p>
           ) : null}
         </header>
@@ -463,7 +468,7 @@ export function ClientApp() {
             onModeChange={setNewMode}
             draft={draft}
             busy={busy}
-            notice={busy ? 'Отправляем…' : inlineNotice}
+            notice={busy ? t('figma-client.ClientApp.899dce11fb') : inlineNotice}
             onChange={setDraft}
             onSubmit={submit}
           />
@@ -510,7 +515,7 @@ export function ClientApp() {
                 className="rounded-full bg-figma-bee px-6 py-4 font-semibold"
                 onClick={() => setGate({ purpose: 'support', email: draft.email, codeStep: false })}
               >
-                Войти и открыть ассистента
+                {t('figma-client.ClientApp.b050495194')}
               </button>
             )}
           </div>
@@ -546,7 +551,9 @@ export function ClientApp() {
         detailKey={opened?.id}
         header={
           <>
-            <p className="font-murs text-[28px] tracking-[0.02em] text-figma-ink">NAVIX</p>
+            <p className="font-murs text-[28px] tracking-[0.02em] text-figma-ink">
+              {t('figma-client.ClientApp.d675af9943')}
+            </p>
             <span className="flex-1" />
             {session?.email ? (
               <p className="font-medium text-[16px] text-figma-muted">{session.email}</p>
@@ -576,8 +583,8 @@ function isDeadSession(error: unknown): boolean {
 }
 
 function errorText(error: unknown): string {
-  if (isDeadSession(error)) return 'Сессия закончилась. Войдите по почте ещё раз.';
+  if (isDeadSession(error)) return t('figma-client.ClientApp.519fbc6482');
   if (error instanceof DashboardApiError) return error.message;
   if (error instanceof Error) return error.message;
-  return 'Не удалось выполнить запрос.';
+  return t('figma-client.ClientApp.747aa7a100');
 }

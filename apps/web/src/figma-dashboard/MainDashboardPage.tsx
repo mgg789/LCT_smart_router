@@ -6,6 +6,7 @@ import type { PlanDelta, PolicyId } from '../api/types';
 import { ALL_REGIONS, type RegionSelection } from '../domain/regions';
 import { clearAssistantSessions } from '../hooks/useAssistantChat';
 import { useDashboard } from '../hooks/useDashboard';
+import { t } from '../i18n';
 import { formatClock } from '../lib/time';
 import { AddEntityModal } from './AddEntityModal';
 import { AlertsView } from './AlertsView';
@@ -208,72 +209,6 @@ export function MainDashboardPage() {
   const [selectedRegion, setSelectedRegion] = useState<RegionSelection>(ALL_REGIONS);
 
   useEffect(() => {
-    const artboard = artboardRef.current;
-    if (!artboard || !historyOpen || !dash.previousPlan) return;
-    const dialog = artboard.querySelector<HTMLElement>('[data-plan-history-dialog]');
-    if (!dialog) return;
-
-    // Keep the map visible while making every other direct artboard surface inert.
-    const inertNodes = Array.from(artboard.children).filter(
-      (node) =>
-        !(node instanceof HTMLElement && node.hasAttribute('data-plan-history-dialog')) &&
-        !(node instanceof HTMLElement && node.hasAttribute('data-plan-history-veil')),
-    );
-    const previouslyInert = new Map<Element, boolean>();
-    for (const node of inertNodes) {
-      previouslyInert.set(node, node.hasAttribute('inert'));
-      node.setAttribute('inert', '');
-    }
-
-    dialog.focus();
-    const onFocusIn = (event: FocusEvent) => {
-      if (event.target instanceof Node && !dialog.contains(event.target)) {
-        dialog.focus();
-      }
-    };
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (!dialog.contains(event.target as Node)) {
-        event.preventDefault();
-        event.stopPropagation();
-        dialog.focus();
-        return;
-      }
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        event.stopPropagation();
-        dialog.focus();
-        return;
-      }
-      if (event.key !== 'Tab') return;
-      const focusable = Array.from(
-        dialog.querySelectorAll<HTMLElement>('button:not(:disabled), [data-plan-history-tooltip]'),
-      );
-      if (focusable.length === 0) {
-        event.preventDefault();
-        dialog.focus();
-        return;
-      }
-      const current = document.activeElement;
-      const index = focusable.indexOf(current as HTMLElement);
-      const next = event.shiftKey
-        ? focusable[(index <= 0 ? focusable.length : index) - 1]
-        : focusable[(index + 1) % focusable.length];
-      event.preventDefault();
-      next?.focus();
-    };
-    document.addEventListener('focusin', onFocusIn, true);
-    document.addEventListener('keydown', onKeyDown, true);
-    return () => {
-      document.removeEventListener('focusin', onFocusIn, true);
-      document.removeEventListener('keydown', onKeyDown, true);
-      for (const [node, wasInert] of previouslyInert) {
-        if (wasInert) node.setAttribute('inert', '');
-        else node.removeAttribute('inert');
-      }
-    };
-  }, [dash.previousPlan, historyOpen]);
-
-  useEffect(() => {
     const syncWelcome = () => {
       if (!hasStartedWorkDay(window.localStorage, moscowWorkDate())) {
         setWelcomeOpen(true);
@@ -331,7 +266,8 @@ export function MainDashboardPage() {
     dash.snapshot?.plan.routerPhase === 'building';
   const routerError =
     dash.liveWorkday?.workday.routerPhase === 'error'
-      ? (dash.liveWorkday.workday.routerMessage ?? 'Маршрут не построился')
+      ? (dash.liveWorkday.workday.routerMessage ??
+        t('figma-dashboard.MainDashboardPage.a61c4d14d5'))
       : null;
   const geometryDone =
     dash.liveWorkday?.workday.geometryDone ?? dash.snapshot?.plan.geometryDone ?? 0;
@@ -347,7 +283,7 @@ export function MainDashboardPage() {
     pushToast({
       id: 'router-error',
       kind: 'error',
-      title: 'Маршрут не построился',
+      title: t('figma-dashboard.MainDashboardPage.a61c4d14d5'),
       body: routerError,
     });
   }, [routerError]);
@@ -361,10 +297,13 @@ export function MainDashboardPage() {
     pushToast({
       id: 'router-geometry',
       kind: 'progress',
-      title: 'Уточняем линии на карте',
-      body: `${geometryDone} из ${geometryTotal}. Пока линия не пришла, на карте прямая.`,
+      title: t('figma-dashboard.MainDashboardPage.44efac0089'),
+      body: t('figma-dashboard.MainDashboardPage.9a6eccd849', {
+        value0: geometryDone,
+        value1: geometryTotal,
+      }),
       progress: Math.round((geometryDone / geometryTotal) * 100),
-      etaLabel: 'По дорогам',
+      etaLabel: t('figma-dashboard.MainDashboardPage.508ff11cc1'),
     });
   }, [drawingLines, geometryDone, geometryTotal]);
   useEffect(() => {
@@ -377,8 +316,8 @@ export function MainDashboardPage() {
         pushToast({
           id: 'plan-ready',
           kind: 'route',
-          title: 'План перестроился',
-          body: 'Новый план уже на карте.',
+          title: t('figma-dashboard.MainDashboardPage.b02a3bb901'),
+          body: t('figma-dashboard.MainDashboardPage.2a9fe69d8f'),
         });
       }
       return;
@@ -387,9 +326,9 @@ export function MainDashboardPage() {
     pushToast({
       id: 'dispatcher-rebuild',
       kind: 'progress',
-      title: 'Пересчитываем маршруты',
-      body: 'План появится на карте, когда расчёт закончится. Это может занять несколько минут.',
-      etaLabel: 'Выполняется',
+      title: t('figma-dashboard.MainDashboardPage.57f96005f0'),
+      body: t('figma-dashboard.MainDashboardPage.815c2f5db7'),
+      etaLabel: t('figma-dashboard.MainDashboardPage.599ca07b8d'),
     });
   }, [showRebuild]);
   useEffect(() => {
@@ -447,7 +386,7 @@ export function MainDashboardPage() {
   const strictTimeWindowsOn = dash.snapshot?.routerSettings?.strictTimeWindows ?? false;
   const requestCount = view?.requestCount ?? 0;
   const totalKm = view?.totalKm ?? 0;
-  const planLabel = view?.planLabel ?? 'Данные рабочего дня загружаются';
+  const planLabel = view?.planLabel ?? t('figma-dashboard.MainDashboardPage.4ef18de84c');
 
   const applyPolicy = (nextPolicy: PolicyId) => {
     if (!dash.snapshot) return;
@@ -596,7 +535,11 @@ export function MainDashboardPage() {
         requestCount={null}
         motionOn={motionOn}
         disabled={!dash.error}
-        buttonLabel={dash.error ? 'Повторить загрузку' : 'Загружаем рабочий день…'}
+        buttonLabel={
+          dash.error
+            ? t('figma-dashboard.MainDashboardPage.298e41327f')
+            : t('figma-dashboard.MainDashboardPage.3664a54950')
+        }
         onStart={async () => {
           await dash.refreshLive();
         }}
@@ -617,7 +560,9 @@ export function MainDashboardPage() {
         requestCount={dash.snapshot ? dash.snapshot.requests.length : null}
         motionOn={motionOn}
         disabled={dash.startingWorkday}
-        buttonLabel={dash.startingWorkday ? 'Запускаем рабочий день…' : undefined}
+        buttonLabel={
+          dash.startingWorkday ? t('figma-dashboard.MainDashboardPage.a73bf26d85') : undefined
+        }
         onStart={async () => {
           if (dash.source === 'live' && !(await dash.startWorkday())) return;
           markWorkDayStarted(window.localStorage, dash.snapshot?.workDate ?? moscowWorkDate());
@@ -633,7 +578,11 @@ export function MainDashboardPage() {
         requestCount={null}
         motionOn={motionOn}
         disabled={!dash.error}
-        buttonLabel={dash.error ? 'Повторить загрузку' : 'Загружаем данные…'}
+        buttonLabel={
+          dash.error
+            ? t('figma-dashboard.MainDashboardPage.298e41327f')
+            : t('figma-dashboard.MainDashboardPage.2a066b7c60')
+        }
         onStart={async () => {
           await dash.refresh();
         }}
@@ -651,7 +600,7 @@ export function MainDashboardPage() {
        * paint it smaller, which is what used to leave black bars either side of
        * an ultrawide monitor.
        */}
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: Outside-pointer dismissal supplements the menus' keyboard-accessible controls; this artboard is not an extra focus target. */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/noNoninteractiveElementInteractions: Outside-pointer dismissal supplements the menus' keyboard-accessible controls; this artboard is not an extra focus target. */}
       <div
         ref={artboardRef}
         // Clips at its own edge, which is now the window's: screens that let a
@@ -815,7 +764,7 @@ export function MainDashboardPage() {
                 setActiveNav('ai');
                 setPolicyAiMessage({
                   id: crypto.randomUUID(),
-                  text: 'Поменяй мою личную политику',
+                  text: t('figma-dashboard.MainDashboardPage.4b744abc3b'),
                 });
               }}
             />
@@ -958,10 +907,7 @@ export function MainDashboardPage() {
                         if (!dash.canRejectDelta) return;
                         setHistoryError(null);
                         if (await dash.rejectDelta()) setHistoryOpen(false);
-                        else
-                          setHistoryError(
-                            'Не удалось восстановить план. Повторите выбор или выберите текущий.',
-                          );
+                        else setHistoryError(t('figma-dashboard.MainDashboardPage.ea74578c4b'));
                         return;
                       }
                       setHistoryOpen(false);
@@ -980,7 +926,7 @@ export function MainDashboardPage() {
               onClose={() => setSettingsOpen(false)}
               onSave={async ({ dispatcher, router }) => {
                 if (!dash.token || !dash.snapshot) {
-                  throw new Error('Нужна живая сессия диспетчера');
+                  throw new Error(t('figma-dashboard.MainDashboardPage.469d6911f3'));
                 }
                 await updateDispatcherSettings(dash.token, dispatcher);
                 dash.applyRoutingSettings(dash.snapshot.policyId, router);
@@ -1019,17 +965,19 @@ export function MainDashboardPage() {
                         pushToast({
                           id: 'shift-closed',
                           kind: 'system',
-                          title: 'Смена закрыта',
-                          body: 'Сервер подтвердил закрытие диспетчерской смены.',
+                          title: t('figma-dashboard.MainDashboardPage.6f59e1276c'),
+                          body: t('figma-dashboard.MainDashboardPage.50a205b065'),
                         });
                       })
                       .catch((cause: unknown) => {
                         pushToast({
                           id: 'shift-close-error',
                           kind: 'error',
-                          title: 'Не удалось закрыть смену',
+                          title: t('figma-dashboard.MainDashboardPage.595c87508a'),
                           body:
-                            cause instanceof Error ? cause.message : 'Повторите действие позже.',
+                            cause instanceof Error
+                              ? cause.message
+                              : t('figma-dashboard.MainDashboardPage.c7a6306e07'),
                         });
                       });
                   }
@@ -1040,8 +988,8 @@ export function MainDashboardPage() {
                     pushToast({
                       id: `unsupported-${id}`,
                       kind: 'system',
-                      title: 'Действие пока недоступно',
-                      body: 'Перезапуск дня доступен на публичном демо-стенде.',
+                      title: t('figma-dashboard.MainDashboardPage.95ac40cbf5'),
+                      body: t('figma-dashboard.MainDashboardPage.0f95eabfd8'),
                     });
                     return;
                   }
@@ -1054,16 +1002,19 @@ export function MainDashboardPage() {
                       pushToast({
                         id: 'demo-day-restarted',
                         kind: 'system',
-                        title: 'День сброшен',
-                        body: 'Исходный набор из 14 заявок и двух инженеров готов. Почта бригады снята.',
+                        title: t('figma-dashboard.MainDashboardPage.d273846126'),
+                        body: t('figma-dashboard.MainDashboardPage.fde0ab7c5b'),
                       });
                     })
                     .catch((cause: unknown) => {
                       pushToast({
                         id: 'demo-day-restart-error',
                         kind: 'error',
-                        title: 'Не удалось начать день заново',
-                        body: cause instanceof Error ? cause.message : 'Повторите действие позже.',
+                        title: t('figma-dashboard.MainDashboardPage.d9fe8bed3b'),
+                        body:
+                          cause instanceof Error
+                            ? cause.message
+                            : t('figma-dashboard.MainDashboardPage.c7a6306e07'),
                       });
                     });
                   return;
@@ -1077,7 +1028,7 @@ export function MainDashboardPage() {
                 style={{ top: DATE_TOP }}
               >
                 <FigmaText className="figma-nowrap font-murs text-[32px] tracking-[-0.544px] text-figma-ink">
-                  {view?.dateLabel ?? 'Рабочий день'}
+                  {view?.dateLabel ?? t('figma-dashboard.MainDashboardPage.23a460071e')}
                   {dash.liveWorkday ? ` · ${formatClock(dash.liveWorkday.workday.liveNow)}` : ''}
                 </FigmaText>
                 <McpAgentIndicator
@@ -1150,7 +1101,10 @@ export function MainDashboardPage() {
                       token={dash.token}
                       onRefresh={() => void dash.refreshPolicyComparison()}
                       regions={[
-                        { id: ALL_REGIONS, label: 'Все регионы' },
+                        {
+                          id: ALL_REGIONS,
+                          label: t('figma-dashboard.MainDashboardPage.504ddd410c'),
+                        },
                         ...regions.map((item) => ({ id: item.id, label: item.label })),
                       ]}
                       selectedRegion={selectedRegion}
@@ -1211,7 +1165,9 @@ export function MainDashboardPage() {
                         requestCount={requestCount}
                         totalKm={totalKm}
                         planLabel={planLabel}
-                        unassignedTitle={view?.unassignedTitle ?? 'Данные загружаются'}
+                        unassignedTitle={
+                          view?.unassignedTitle ?? t('figma-dashboard.MainDashboardPage.78b79ecad3')
+                        }
                         unassignedReason={view?.unassignedReason ?? '—'}
                         selectedEngineerId={dash.selectedEngineerId}
                         searchOpen={searchOpen}
@@ -1248,7 +1204,10 @@ export function MainDashboardPage() {
                         frame={mapFrame}
                         regionLabel={regionLabel}
                         regions={[
-                          { id: ALL_REGIONS, label: 'Все регионы' },
+                          {
+                            id: ALL_REGIONS,
+                            label: t('figma-dashboard.MainDashboardPage.504ddd410c'),
+                          },
                           ...regions.map((item) => ({ id: item.id, label: item.label })),
                         ]}
                         selectedRegion={selectedRegion}
