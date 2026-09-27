@@ -7,7 +7,9 @@ export function WorkTypePicker({
   onChange,
   error,
   onRetry,
+  showEmergencyAction = true,
 }: {
+  showEmergencyAction?: boolean;
   rows: readonly WorkTypeView[];
   value: string;
   onChange: (value: string) => void;
@@ -18,7 +20,7 @@ export function WorkTypePicker({
   const selected = rows.find((row) => row.code === value);
   return (
     <div className="flex flex-col gap-[12px]">
-      {emergency ? (
+      {emergency && showEmergencyAction ? (
         <button
           type="button"
           aria-pressed={selected?.category === 'emergency'}
@@ -35,7 +37,9 @@ export function WorkTypePicker({
         onChange={(event) => onChange(event.target.value)}
         className={`w-full rounded-[20px] border bg-white px-[18px] py-[14px] font-medium ${selected?.category === 'emergency' ? 'border-figma-danger text-figma-danger' : 'border-figma-ink/15 text-figma-ink'}`}
       >
-        {rows.length === 0 ? <option value="">Загружаем типы…</option> : null}
+        {!selected ? (
+          <option value="">{rows.length === 0 ? 'Загружаем типы…' : 'Выберите тип заявки'}</option>
+        ) : null}
         {(['emergency', 'connection', 'service'] as const).map((category) => {
           const group = rows.filter((row) => row.category === category);
           return group.length ? (

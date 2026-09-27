@@ -531,7 +531,7 @@ export function PolicyControl({
           on={lunchOn}
           label="Рассчитать обеды"
           description="Включено: маршрут учитывает обеденные перерывы инженеров. Выключено: автоматический обед в план не добавляется."
-          top={274 + extra}
+          top={278 + extra}
           motionOn={motionOn}
           onToggle={onLunchToggle}
         />
@@ -539,7 +539,7 @@ export function PolicyControl({
           on={trafficOn}
           label="Прогнозировать пробки"
           description="Включено: время дороги учитывает прогноз пробок на момент поездки. Выключено: план рассчитывается без прогнозного изменения трафика."
-          top={318 + extra}
+          top={322 + extra}
           motionOn={motionOn}
           onToggle={onTrafficToggle}
         />
@@ -547,7 +547,7 @@ export function PolicyControl({
           on={metroOn}
           label="Маршруты с метро"
           description="Разрешает учитывать метро при расчёте подходящих пеших маршрутов. Без этого используются наземные варианты."
-          top={362 + extra}
+          top={366 + extra}
           motionOn={motionOn}
           onToggle={onMetroToggle}
         />
@@ -555,15 +555,15 @@ export function PolicyControl({
           on={equipmentTransfersOn}
           label="Передача оборудования"
           description="Разрешает планировать встречи инженеров для передачи оборудования, если это помогает выполнить заявки."
-          top={406 + extra}
+          top={410 + extra}
           motionOn={motionOn}
           onToggle={onEquipmentTransfersToggle}
         />
         <PolicySwitch
           on={strictTimeWindowsOn}
-          label="Строгие окна ТЗ"
+          label="Строгое время"
           description="Включено: без допуска к окну заявки и концу смены. Выключено: применяются настроенные допуски опоздания и последней заявки."
-          top={450 + extra}
+          top={454 + extra}
           motionOn={motionOn}
           onToggle={onStrictTimeWindowsToggle}
         />
@@ -576,7 +576,7 @@ export function PolicyControl({
               ? 'Включено — без перестройки: новые обычные заявки остаются в алертах даже при аварийном пересчёте. Аварии перестраивают план. Выключение вернёт накопленные заявки в распределение.'
               : 'Выключено — обычный режим: любая новая заявка запускает перестройку. Включите, чтобы обычные заявки ожидали решения в алертах; аварии всегда перестраивают план.'
           }
-          top={494 + extra}
+          top={498 + extra}
           motionOn={motionOn}
           onToggle={onOrdinaryReplanningToggle}
         />

@@ -19,31 +19,29 @@ import {
   type ClientMapPoint,
   type ClientProblem,
   type ClientRequestDraft,
-  draftFromStory,
 } from './clientPreview';
 
 const STORY_KEY = 'lct.client.story';
 const STORY_PLACEHOLDER = 'Расскажите, что у вас случилось, когда к вам приехать, ваше ФИО и email';
 
-const tap = { duration: 0.16 };
 const slideEase = [0.22, 1, 0.36, 1] as const;
 
 /**
- * Figma FIRST 115:405 — dark new-request form with oval reason chips,
+ * Figma FIRST 115:405 — dark new-request form with a work-type selector,
  * pickable map and an expanding map overlay (122:2471).
  */
 export function ClientNewRequest({
   draft,
   busy = false,
   notice,
-  initialMode = 'story',
+  initialMode = 'form',
   onChange,
   onSubmit,
 }: {
   draft: ClientRequestDraft;
   busy?: boolean;
   notice: string | null;
-  /** Tests open the structured form without a click. The screen itself starts on the story. */
+  /** Allows an explicit entry mode; the structured form is the default. */
   initialMode?: 'story' | 'form';
   onChange: (next: ClientRequestDraft) => void;
   onSubmit: () => void;
@@ -186,25 +184,26 @@ export function ClientNewRequest({
   };
 
   const revealForm = () => {
-    const local = draftFromStory(story, draftRef.current);
+    const local = { ...draftRef.current };
     setTracing(false);
     setMode('form');
     onChange(local);
     void interpretClientStory(story)
       .then((picked) => {
+        if (draftRef.current !== local) return;
         const problem = CLIENT_PROBLEMS.includes(picked.problem as ClientProblem)
           ? (picked.problem as ClientProblem)
           : local.problem;
         onChange({
           ...local,
           problem,
-          workType: undefined,
-          workTypeTitle: undefined,
-          contactName: picked.contactName || local.contactName,
-          email: picked.email || local.email,
-          windowStart: picked.windowStart || local.windowStart,
-          windowEnd: picked.windowEnd || local.windowEnd,
-          address: picked.address || local.address,
+          workType: picked.workType,
+          workTypeTitle: catalogue.rows.find((row) => row.code === picked.workType)?.title,
+          contactName: picked.contactName,
+          email: picked.email,
+          windowStart: picked.windowStart,
+          windowEnd: picked.windowEnd,
+          address: picked.address,
         });
       })
       .catch(() => undefined);
@@ -333,43 +332,9 @@ export function ClientNewRequest({
                   if (catalogue.rows.some((row) => row.code === selectedCode)) onSubmit();
                 }}
               >
-                <div className="flex flex-wrap" style={{ gap: eu(12) }}>
-                  {CLIENT_PROBLEMS.filter((problem) => problem !== 'Авария').map((problem) => {
-                    const selected = draft.problem === problem;
-                    return (
-                      <motion.button
-                        key={problem}
-                        type="button"
-                        onClick={() =>
-                          onChange({
-                            ...draft,
-                            problem,
-                            workType: undefined,
-                            workTypeTitle: undefined,
-                          })
-                        }
-                        whileTap={{ scale: 0.98 }}
-                        transition={tap}
-                        aria-pressed={selected}
-                        className="font-medium tracking-[-0.02em] text-figma-ink"
-                        style={{
-                          minHeight: eu(48),
-                          borderRadius: eu(100),
-                          padding: `${eu(14)} ${eu(24)}`,
-                          fontSize: eu(20),
-                          background: selected
-                            ? 'var(--color-figma-bee)'
-                            : 'var(--color-figma-track)',
-                        }}
-                      >
-                        {problem}
-                      </motion.button>
-                    );
-                  })}
-                </div>
-
-                <div className="mt-[20px]">
+                <div>
                   <WorkTypePicker
+                    showEmergencyAction={false}
                     rows={catalogue.rows}
                     value={selectedCode}
                     error={catalogue.error}

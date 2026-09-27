@@ -24,7 +24,10 @@ test('dispatcher and anonymous client share grouped work types and a red emergen
   await expect(page.getByText(/100 минут работы/)).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('dispatcher-emergency.png'), fullPage: true });
   await page.goto('/client');
-  await page.getByRole('tab', { name: 'Форма', exact: true }).click();
+  await expect(page.getByRole('tab', { name: 'Форма', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
   const clientPicker = page.getByRole('combobox', { name: 'Тип заявки', exact: true });
   await expect(clientPicker.locator('option')).toHaveCount(16);
   expect(
@@ -35,14 +38,12 @@ test('dispatcher and anonymous client share grouped work types and a red emergen
       })),
     ),
   ).toEqual(dispatcherTypes);
-  await page.getByRole('button', { name: 'Авария', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Авария', exact: true })).toHaveCount(0);
+  await clientPicker.selectOption('outage');
   await expect(clientPicker).toHaveValue('outage');
   await expect(page.getByText(/100 минут работы/)).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath('client-emergency.png'), fullPage: true });
   await clientPicker.selectOption('no_link');
-  await expect(page.getByRole('button', { name: 'Авария', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'false',
-  );
+
   await expect(page.getByText(/100 минут работы/)).not.toBeVisible();
 });

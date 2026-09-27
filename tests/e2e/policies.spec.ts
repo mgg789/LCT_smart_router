@@ -191,7 +191,7 @@ test('ordinary-replanning switch persists without changing the working plan', as
     'Прогнозировать пробки',
     'Маршруты с метро',
     'Передача оборудования',
-    'Строгие окна ТЗ',
+    'Строгое время',
     'Перестройка по обычным',
   ]) {
     const control = page.getByRole('button', { name: new RegExp(`^${label}`) });
