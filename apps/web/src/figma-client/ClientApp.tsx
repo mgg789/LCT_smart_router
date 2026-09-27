@@ -501,16 +501,17 @@ export function ClientApp() {
           <motion.button
             aria-expanded={menuOpen}
             aria-label="Меню"
-            className="flex size-[48px] shrink-0 items-center justify-center rounded-[14px] bg-figma-ink"
+            className="flex size-[38px] shrink-0 items-center justify-center rounded-[11px] bg-figma-ink"
             onClick={() => setMenuOpen(true)}
             transition={{ duration: 0.16 }}
             type="button"
-            whileTap={{ scale: 0.96 }}
+            whileTap={{ scale: 0.94 }}
           >
-            <FigmaIcon alt="" height={14} src={CLIENT_ASSETS.menu} width={20} />
+            <FigmaIcon alt="" height={11} src={CLIENT_ASSETS.menu} width={16} />
           </motion.button>
         }
         overlays={menuDrawer}
+        fitScreen={desk && (screen === 'new' || screen === 'sent')}
         screenKey={screen}
       >
         {column}

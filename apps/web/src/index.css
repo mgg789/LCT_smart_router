@@ -256,12 +256,27 @@ body {
   display: flex;
   width: 100%;
   height: 100dvh;
-  flex-direction: column;
   overflow: hidden;
   background: var(--color-figma-canvas);
   /* A base for the drawer and the error notice, which sit over the whole desk. */
   --phone-width: 660px;
   --eu: calc(var(--phone-width) / 670);
+}
+
+/* Just wide enough for the menu button, with the page gutter either side. */
+.phone-desk-rail {
+  display: flex;
+  width: 72px;
+  flex: none;
+  justify-content: center;
+  padding-top: 26px;
+}
+
+.phone-desk-body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
 }
 
 .phone-desk-header {
@@ -270,7 +285,7 @@ body {
   flex: none;
   align-items: center;
   gap: 24px;
-  padding: 0 32px;
+  padding: 0 32px 0 0;
 }
 
 .phone-desk-panes {
@@ -278,7 +293,7 @@ body {
   min-height: 0;
   flex: 1;
   gap: 24px;
-  padding: 0 32px 32px;
+  padding: 0 32px 32px 0;
 }
 
 /*
@@ -302,8 +317,15 @@ body {
   --eu: calc(var(--phone-width) / 670);
 }
 
+/*
+ * The list is drawn for a thumb; on a desk it is read with a mouse and the
+ * whole day should be in view rather than two stops at a time. A lower cap
+ * here, not a smaller pane: the cards still span the width, they are simply
+ * not finger-sized.
+ */
 .phone-desk-col-list {
   flex: 1 1 0;
+  --phone-width: min(100cqw, 470px);
 }
 
 .phone-desk-col-detail {

@@ -22,17 +22,24 @@ export function DeskShell({
   lead,
   header,
   children,
+  fitScreen,
   screenKey,
   detail,
   detailKey,
   overlays,
 }: {
-  /** The app's own menu button, kept where the phone puts it: first in the row. */
+  /** The app's own menu button. It lives in the rail, clear of the content. */
   lead?: ReactNode;
-  /** Rest of the header strip: clock, account, actions. */
+  /** The header strip: clock, account, actions. */
   header?: ReactNode;
   /** The app's own screen. */
   children: ReactNode;
+  /**
+   * True for a screen that is one form and should be read at a glance — it is
+   * zoomed down to the pane rather than scrolled. A list is never fitted: it is
+   * as long as the day is.
+   */
+  fitScreen?: boolean;
   /** Changes when the pane shows a different section, so the swap can be seen. */
   screenKey?: string;
   /** The second pane; nothing is drawn when nothing is open. */
@@ -46,55 +53,63 @@ export function DeskShell({
 
   return (
     <main className="phone-desk relative">
-      <header className="phone-desk-header">
-        {lead}
-        {header}
-      </header>
+      {/*
+       * The menu button sits in a rail of its own rather than in the header
+       * row: it belongs to the whole desk, not to the screen's title line, and
+       * on a desk it is a small control rather than the phone's thumb-sized
+       * tap target.
+       */}
+      <aside className="phone-desk-rail">{lead}</aside>
 
-      <div className="phone-desk-panes">
-        <motion.section
-          className="phone-desk-col phone-desk-col-list"
-          layout={motionOn}
-          transition={motionOn ? settle : { duration: 0 }}
-        >
-          <AnimatePresence initial={false} mode="wait">
-            <motion.div
-              animate={{ opacity: 1, y: 0 }}
-              exit={motionOn ? { opacity: 0, y: -8 } : undefined}
-              initial={motionOn ? { opacity: 0, y: 8 } : false}
-              key={screenKey ?? 'screen'}
-              transition={motionOn ? settle : { duration: 0 }}
-            >
-              {children}
-            </motion.div>
+      <div className="phone-desk-body">
+        <header className="phone-desk-header">{header}</header>
+
+        <div className="phone-desk-panes">
+          <motion.section
+            className="phone-desk-col phone-desk-col-list"
+            layout={motionOn}
+            transition={motionOn ? settle : { duration: 0 }}
+          >
+            <AnimatePresence initial={false} mode="wait">
+              <motion.div
+                animate={{ opacity: 1, y: 0 }}
+                className="h-full"
+                exit={motionOn ? { opacity: 0, y: -8 } : undefined}
+                initial={motionOn ? { opacity: 0, y: 8 } : false}
+                key={screenKey ?? 'screen'}
+                transition={motionOn ? settle : { duration: 0 }}
+              >
+                {fitScreen ? <FitHeight>{children}</FitHeight> : children}
+              </motion.div>
+            </AnimatePresence>
+          </motion.section>
+
+          <AnimatePresence initial={false}>
+            {detail ? (
+              <motion.section
+                animate={{ opacity: 1, flexGrow: 1 }}
+                className="phone-desk-col phone-desk-col-detail"
+                exit={motionOn ? { opacity: 0, flexGrow: 0.0001 } : undefined}
+                initial={motionOn ? { opacity: 0, flexGrow: 0.0001 } : false}
+                key="desk-detail"
+                transition={motionOn ? settle : { duration: 0 }}
+              >
+                <AnimatePresence initial={false} mode="wait">
+                  <motion.div
+                    animate={{ opacity: 1, x: 0 }}
+                    className="h-full"
+                    exit={motionOn ? { opacity: 0, x: -12 } : undefined}
+                    initial={motionOn ? { opacity: 0, x: 12 } : false}
+                    key={detailKey ?? 'detail'}
+                    transition={motionOn ? settle : { duration: 0 }}
+                  >
+                    <FitHeight>{detail}</FitHeight>
+                  </motion.div>
+                </AnimatePresence>
+              </motion.section>
+            ) : null}
           </AnimatePresence>
-        </motion.section>
-
-        <AnimatePresence initial={false}>
-          {detail ? (
-            <motion.section
-              animate={{ opacity: 1, flexGrow: 1 }}
-              className="phone-desk-col phone-desk-col-detail"
-              exit={motionOn ? { opacity: 0, flexGrow: 0.0001 } : undefined}
-              initial={motionOn ? { opacity: 0, flexGrow: 0.0001 } : false}
-              key="desk-detail"
-              transition={motionOn ? settle : { duration: 0 }}
-            >
-              <AnimatePresence initial={false} mode="wait">
-                <motion.div
-                  animate={{ opacity: 1, x: 0 }}
-                  className="h-full"
-                  exit={motionOn ? { opacity: 0, x: -12 } : undefined}
-                  initial={motionOn ? { opacity: 0, x: 12 } : false}
-                  key={detailKey ?? 'detail'}
-                  transition={motionOn ? settle : { duration: 0 }}
-                >
-                  <FitHeight>{detail}</FitHeight>
-                </motion.div>
-              </AnimatePresence>
-            </motion.section>
-          ) : null}
-        </AnimatePresence>
+        </div>
       </div>
 
       {overlays}

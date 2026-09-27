@@ -496,7 +496,12 @@ export function EngineerApp({
           </p>
         </header>
 
-        {screen !== 'assistant' ? (
+        {/*
+         * The settings arrive as a sheet over the day. On a phone that sheet is
+         * the whole screen and the day behind it is out of the way; in a pane it
+         * is the day's own scrollbar that shows through beside a form that fits.
+         */}
+        {screen === 'day' || (!desk && screen === 'settings') ? (
           <>
             <h1
               className="font-extrabold tracking-[0.02em] text-figma-ink"
@@ -679,7 +684,9 @@ export function EngineerApp({
             exit={motionOn ? { y: sheetY } : undefined}
             transition={motionOn ? slide : { duration: 0 }}
           >
-            <div className="h-full overflow-y-auto">
+            <div
+              className={`flex h-full flex-col overflow-y-auto ${desk ? 'phone-desk-center' : ''}`}
+            >
               {profile ? (
                 <EngineerSettings
                   profile={profile}
@@ -742,16 +749,17 @@ export function EngineerApp({
           <motion.button
             aria-expanded={menuOpen}
             aria-label="Меню"
-            className="flex size-[48px] shrink-0 items-center justify-center rounded-[14px] bg-figma-ink"
+            className="flex size-[38px] shrink-0 items-center justify-center rounded-[11px] bg-figma-ink"
             onClick={() => setMenuOpen(true)}
             transition={{ duration: 0.16 }}
             type="button"
-            whileTap={{ scale: 0.96 }}
+            whileTap={{ scale: 0.94 }}
           >
-            <FigmaIcon alt="" height={14} src={ENGINEER_ASSETS.menu} width={20} />
+            <FigmaIcon alt="" height={11} src={ENGINEER_ASSETS.menu} width={16} />
           </motion.button>
         }
         overlays={menuDrawer}
+        fitScreen={desk && screen === 'settings'}
         screenKey={screen}
       >
         {column}
