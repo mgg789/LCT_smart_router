@@ -110,8 +110,10 @@ class Launcher(tk.Tk):
         secrets = tk.LabelFrame(root, text="Секреты", bg=BG, fg=TEXT, padx=12, pady=8)
         secrets.pack(fill="x", pady=18)
         self.pin = self._labeled_entry(secrets, "PIN (рекомендуется)")
-        self.email = self._labeled_entry(secrets, "DISPATCHER_EMAIL")
-        self.password = self._labeled_entry(secrets, "DISPATCHER_PASSWORD", masked=True)
+        self.email = self._labeled_entry(secrets, "DISPATCHER_EMAIL (обязательно)")
+        self.password = self._labeled_entry(
+            secrets, "DISPATCHER_PASSWORD (обязательно)", masked=True
+        )
         self.llm_token = self._labeled_entry(secrets, "LLM_TOKEN", masked=True)
         self.llm_provider = self._labeled_entry(secrets, "LLM_PROVIDER")
         self.llm_base_url = self._labeled_entry(secrets, "LLM_BASE_URL")
@@ -228,8 +230,6 @@ class Launcher(tk.Tk):
         env_path = Path(self.env_path.get()) if self.env_path.get() else None
         pin = self.pin.get().strip()
         manual_values = {
-            "DISPATCHER_EMAIL": self.email.get(),
-            "DISPATCHER_PASSWORD": self.password.get(),
             "LLM_TOKEN": self.llm_token.get(),
             "LLM_PROVIDER": self.llm_provider.get(),
             "LLM_BASE_URL": self.llm_base_url.get(),
@@ -237,12 +237,20 @@ class Launcher(tk.Tk):
         manual_env_text = "\n".join(
             f"{key}={value}" for key, value in manual_values.items() if value
         )
+        email = self.email.get().strip()
+        password = self.password.get()
+        if not email or len(password) < 8:
+            messagebox.showerror(
+                "Navix",
+                "Введите почту диспетчера и пароль длиной не менее 8 символов.",
+            )
+            return
         self.start_button.configure(state="disabled")
         self.status_var.set("Запуск…")
         self._append("Запуск проверки…")
         threading.Thread(
             target=self._worker,
-            args=(options, env_path, pin, manual_env_text),
+            args=(options, env_path, pin, manual_env_text, email, password),
             daemon=True,
         ).start()
 
@@ -286,6 +294,8 @@ class Launcher(tk.Tk):
         env_path: Path | None,
         pin: str,
         manual_env_text: str,
+        email: str,
+        password: str,
     ) -> None:
         try:
             core = cli._core()
@@ -299,6 +309,9 @@ class Launcher(tk.Tk):
                 env_text = core.fetch_secrets(pin)
             else:
                 env_text = manual_env_text
+            env_text = cli._core().override_dispatcher_credentials(
+                env_text, email, password
+            )
             result = core.launch(
                 options, env_text, lambda msg: self._events.put(("log", msg))
             )

@@ -60,6 +60,13 @@ def port(prompt: str, default: int, required: bool) -> int | None:
         print("Введите порт от 1 до 65535.")
 
 
+def dispatcher_credentials() -> tuple[str, str]:
+    """Collect the launch-time dispatcher identity without echoing its password."""
+    email = input("Почта диспетчера (обязательно): ").strip()
+    password = getpass.getpass("Пароль диспетчера (обязательно, минимум 8 символов): ")
+    return email, password
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Define optional unattended launch arguments; default is an interactive wizard."""
     parser = argparse.ArgumentParser(description="Navix launcher")
@@ -139,8 +146,8 @@ def run(args: argparse.Namespace) -> int:
                 env_text = core.read_env(input("Путь к .env: ").strip())
             elif choice == "3":
                 values = {
-                    "DISPATCHER_EMAIL": input("Почта диспетчера: ").strip(),
-                    "DISPATCHER_PASSWORD": getpass.getpass("Пароль диспетчера: "),
+                    # Dispatcher credentials are collected by the common prompt below,
+                    # after this source has been acquired.
                 }
                 if online:
                     values.update(
@@ -152,13 +159,19 @@ def run(args: argparse.Namespace) -> int:
                         LLM_BASE_URL=input("AI base URL (если нужен): ").strip(),
                         LLM_MODEL=input("AI model (если нужна): ").strip(),
                     )
-                env_text = "\n".join(f"{k}={v}" for k, v in values.items() if v)
+                env_text = "\n".join(f"{k}={v}" for k, v in values.items() if v) or "\n"
         except (OSError, ValueError):
             print(
                 "Не удалось получить настройки. Проверьте путь/PIN или выберите другой источник."
             )
     if not env_text:
         raise ValueError("Для неинтерактивного запуска укажите --env.")
+    if not interactive:
+        raise ValueError(
+            "Запуск требует интерактивного ввода почты и пароля диспетчера."
+        )
+    email, password = dispatcher_credentials()
+    env_text = core.override_dispatcher_credentials(env_text, email, password)
     for name, url in core.launch(options, env_text, print).items():
         print(f"{name}: {url}")
     return 0

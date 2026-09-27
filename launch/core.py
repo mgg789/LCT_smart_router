@@ -105,13 +105,38 @@ def parse_env(text: str) -> dict[str, str]:
         if not sep or not re.fullmatch(r"[A-Z][A-Z0-9_]*", key):
             raise ValueError("Некорректный формат .env: ожидается KEY=value.")
         if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-            value = value[1:-1]
+            if value[0] == '"':
+                try:
+                    value = json.loads(value)
+                except ValueError:
+                    raise ValueError(
+                        "Некорректное экранирование значения .env."
+                    ) from None
+            else:
+                value = value[1:-1]
         if "\x00" in value or "${" in value or "$(" in value or "`" in value:
             raise ValueError(
                 "В .env допустимы только готовые значения без подстановок."
             )
         result[key] = value
     return result
+
+
+def override_dispatcher_credentials(env_text: str, email: str, password: str) -> str:
+    """Replace packaged dispatcher credentials with values entered at launch."""
+    email = email.strip()
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email) or len(password) < 8:
+        raise ValueError("Укажите почту и пароль диспетчера (минимум 8 символов).")
+    env = parse_env(env_text)
+    env["DISPATCHER_EMAIL"] = email
+    env["DISPATCHER_PASSWORD"] = password
+    return (
+        "\n".join(
+            f"{key}=" + json.dumps(value, ensure_ascii=False)
+            for key, value in env.items()
+        )
+        + "\n"
+    )
 
 
 def validate_options(options: dict) -> None:
