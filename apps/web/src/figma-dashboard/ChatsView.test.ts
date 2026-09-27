@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { AiHandoffState, DispatchChatView } from '../api/ai';
-import { ChatsView } from './ChatsView';
+import { ChatsView, chatName } from './ChatsView';
 
 /** Every chat this endpoint lists is already in `dispatcher` mode (the server only ever
  *  returns those) -- the state under test here is the handoff's own `state`, not
@@ -70,6 +70,39 @@ function chat(
 }
 
 const noop = async () => {};
+
+describe('chatName', () => {
+  /** The switch above the list already says which side is being read; repeating it on
+   *  every row cost the width the name needed. */
+  it('drops the role the title is prefixed with, whatever dash joins it', () => {
+    const named = (title: string | null): DispatchChatView => ({
+      ...chat('waiting'),
+      conversation: { ...chat('waiting').conversation, title },
+    });
+    expect(chatName(named('Инженер · Алексей Волков'))).toBe('Алексей Волков');
+    expect(chatName(named('Клиент — Мария Смирнова'))).toBe('Мария Смирнова');
+    expect(chatName(named('Клиент: Пётр'))).toBe('Пётр');
+  });
+
+  it('keeps a name that merely begins with those letters', () => {
+    const named = (title: string): DispatchChatView => ({
+      ...chat('waiting'),
+      conversation: { ...chat('waiting').conversation, title },
+    });
+    expect(chatName(named('Клиентова Анна'))).toBe('Клиентова Анна');
+  });
+
+  /** An escalated chat names nobody: no title, no engineer id, no request id. Borrowing
+   *  the role as a name would be the very thing this strips everywhere else. */
+  it('says so when the handover carries no name at all', () => {
+    expect(
+      chatName({
+        ...chat('waiting'),
+        conversation: { ...chat('waiting').conversation, title: null },
+      }),
+    ).toBe('Без имени');
+  });
+});
 
 describe('ChatsView', () => {
   it('shows waiting, never a false "диспетчер подключён", before a human has replied', () => {

@@ -2,6 +2,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import type { AiMessage, AiRoleProfile, DispatchChatView } from '../api/ai';
 import { formatClock } from '../lib/time';
+import { AiMarkdown } from './AiMarkdown';
 import { useArtboardStretch } from './artboardStretch';
 import { ENGINEER_PORTRAITS, FIGMA_ASSETS } from './assets';
 import { FigmaIcon, FigmaText } from './primitives';
@@ -51,18 +52,22 @@ function lastSeqOf(chat: DispatchChatView): number {
   return lastMessage(chat)?.seq ?? chat.handoff.startSeq;
 }
 
+/** `Инженер · Алексей Волков` → `Алексей Волков`. */
+const ROLE_PREFIX = /^\s*(?:Инженер|Клиент)\s*[·—–:-]\s*/u;
+
 /**
  * The name the frame puts in bold.
  *
- * A chat opened from the board carries one in `conversation.title` («Инженер · Алексей
- * Волков»). One the assistant escalated carries nothing that names the person — no title,
- * no engineer id, no request id — so the role is what can honestly be shown there rather
- * than a name invented to fill the slot.
+ * A chat opened from the board carries one in `conversation.title`, prefixed by the role.
+ * The prefix is dropped here: the switch above the list already says which side is being
+ * read, so repeating it on every row costs the width the name needs.
+ *
+ * One the assistant escalated carries nothing that names the person — no title, no
+ * engineer id, no request id. That row says so rather than borrowing the role as a name.
  */
 export function chatName(chat: DispatchChatView): string {
-  const title = chat.conversation.title?.trim();
-  if (title) return title;
-  return sideOf(chat.conversation.roleProfile) === 'engineer' ? 'Инженер' : 'Клиент';
+  const title = chat.conversation.title?.trim().replace(ROLE_PREFIX, '').trim();
+  return title && title.length > 0 ? title : 'Без имени';
 }
 
 /** The frame's «В сети - заявка № 1031»: the request when the chat is about one, and in
@@ -351,12 +356,17 @@ export function ChatsView({
               className="relative overflow-hidden rounded-[200px] bg-figma-ink"
               style={{ height: 79 }}
             >
-              <span
-                className="absolute flex items-center justify-center rounded-full bg-figma-bee"
+              {/* Drawn in the frame, with nothing behind it yet: shown, and plainly off. */}
+              <button
+                type="button"
+                disabled
+                aria-label="Вложение — пока недоступно"
+                title="Вложения появятся позже"
+                className="absolute flex cursor-not-allowed items-center justify-center rounded-full bg-figma-bee opacity-40"
                 style={{ left: 10, top: 10, width: 60, height: 60 }}
               >
                 <FigmaIcon src={FIGMA_ASSETS.iconPlus} alt="" width={20} height={20} />
-              </span>
+              </button>
               <input
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
@@ -517,7 +527,17 @@ function Bubble({
           className={mine ? 'bg-figma-ink text-white' : 'bg-white text-figma-ink'}
           style={{ maxWidth: BUBBLE_MAX, borderRadius: 20, padding: '18px 24px' }}
         >
-          <p className="whitespace-pre-wrap font-medium text-[20px]">{message.text}</p>
+          {mine ? (
+            <p className="whitespace-pre-wrap font-medium text-[20px]">{message.text}</p>
+          ) : (
+            /*
+             * Only this side. The assistant answers in Markdown — lists, bold, code — and
+             * a dispatcher typing into the box below writes plain text, which Markdown
+             * would only find stray asterisks in. `AiMarkdown` already renders at the
+             * frame's 20/medium on a light background, which is exactly this bubble.
+             */
+            <AiMarkdown text={message.text} />
+          )}
         </div>
       </motion.div>
     </>
