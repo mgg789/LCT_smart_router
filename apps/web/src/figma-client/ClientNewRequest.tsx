@@ -1,6 +1,6 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowRight, Mic } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { eu } from '../figma-engineer/engineerScale';
 import { CLIENT_ASSETS } from './assets';
@@ -34,6 +34,7 @@ export function ClientNewRequest({
   busy = false,
   notice,
   initialMode = 'story',
+  onModeChange,
   onChange,
   onSubmit,
 }: {
@@ -42,11 +43,24 @@ export function ClientNewRequest({
   notice: string | null;
   /** Tests open the structured form without a click. The screen itself starts on the story. */
   initialMode?: 'story' | 'form';
+  /**
+   * The story and the form want opposite things from the desk: the story wants
+   * the screen's height so the question sits in the middle of it, the form
+   * wants to be shrunk until it is all on screen. Only this component knows
+   * which is showing.
+   */
+  onModeChange?: (mode: 'story' | 'form') => void;
   onChange: (next: ClientRequestDraft) => void;
   onSubmit: () => void;
 }) {
   const motionOn = !useReducedMotion();
-  const [mode, setMode] = useState<'story' | 'form'>(initialMode);
+  const [mode, setModeState] = useState<'story' | 'form'>(initialMode);
+  const onModeChangeRef = useRef(onModeChange);
+  onModeChangeRef.current = onModeChange;
+  const setMode = useCallback((next: 'story' | 'form') => {
+    setModeState(next);
+    onModeChangeRef.current?.(next);
+  }, []);
   const [story, setStory] = useState('');
   const [listening, setListening] = useState(false);
   const [tracing, setTracing] = useState(false);

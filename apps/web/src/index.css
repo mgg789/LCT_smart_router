@@ -360,10 +360,20 @@ body {
  * keeps a readable column in the middle of a wide pane instead of spreading a
  * single field across a monitor.
  */
-.phone-desk-center {
+.phone-desk-center,
+.phone-desk-column {
   width: 100%;
   max-width: 660px;
   margin-inline: auto;
+}
+
+/*
+ * A readable column that still gets the pane's whole height, for a screen that
+ * arranges itself — the new request puts its question in the middle of the
+ * space and its controls along the bottom, and needs the space to do it.
+ */
+.phone-desk-column {
+  height: 100%;
 }
 
 /*
@@ -393,6 +403,12 @@ body {
  */
 .phone-desk-fit {
   width: 100%;
+  /*
+   * The fit stops shrinking before the text stops reading, so on a short window
+   * the last of the card can still be past the fold. It scrolls there rather
+   * than being cut off — «Изменить время» is not optional.
+   */
+  overflow-y: auto;
 }
 
 /*

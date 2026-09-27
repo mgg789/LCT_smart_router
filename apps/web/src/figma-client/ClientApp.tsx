@@ -65,6 +65,7 @@ export function ClientApp() {
   const [draft, setDraft] = useState<ClientRequestDraft>(EMPTY_CLIENT_DRAFT);
   const [requests, setRequests] = useState<ClientRequestView[]>([]);
   const [openedId, setOpenedId] = useState<string | null>(null);
+  const [newMode, setNewMode] = useState<'story' | 'form'>('story');
   const [notice, setNotice] = useState<string | null>(null);
   const [session, setSession] = useState<StoredClientSession | null>(null);
   const [gate, setGate] = useState<EmailGateState | null>(null);
@@ -323,7 +324,9 @@ export function ClientApp() {
       {gate ? (
         <motion.div
           key="client-email-gate"
-          className="absolute inset-0 z-40 bg-figma-canvas"
+          className={`absolute inset-0 z-40 bg-figma-canvas ${
+            desk ? 'flex flex-col phone-desk-center' : ''
+          }`}
           initial={motionOn ? { y: 24, opacity: 0 } : false}
           animate={{ y: 0, opacity: 1 }}
           exit={motionOn ? { y: 24, opacity: 0 } : undefined}
@@ -399,7 +402,11 @@ export function ClientApp() {
        */}
       <div
         className={`flex h-full min-h-0 flex-col overflow-y-auto ${
-          desk && screen !== 'list' ? 'phone-desk-center' : ''
+          desk && screen !== 'list'
+            ? screen === 'new' && newMode === 'story'
+              ? 'phone-desk-column'
+              : 'phone-desk-center'
+            : ''
         }`}
         style={{ padding: `${eu(36)} ${eu(40)} ${eu(40)}` }}
       >
@@ -446,6 +453,7 @@ export function ClientApp() {
 
         {screen === 'new' ? (
           <ClientNewRequest
+            onModeChange={setNewMode}
             draft={draft}
             busy={busy}
             notice={busy ? 'Отправляем…' : inlineNotice}
@@ -519,7 +527,7 @@ export function ClientApp() {
             ) : null}
           </>
         }
-        fitScreen={desk && (screen === 'new' || screen === 'sent')}
+        fitScreen={desk && ((screen === 'new' && newMode === 'form') || screen === 'sent')}
         screenKey={screen}
       >
         {column}

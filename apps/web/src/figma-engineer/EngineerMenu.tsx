@@ -59,11 +59,6 @@ export function EngineerMenu({
           src={ENGINEER_ASSETS.menuBlobs}
           className="pointer-events-none absolute bottom-0 left-0 z-0 w-full max-w-none"
         />
-        <div
-          aria-hidden
-          className="pointer-events-none absolute bottom-0 left-0 z-[1] bg-white"
-          style={{ width: eu(220), height: eu(180) }}
-        />
         <div className="relative z-10 shrink-0 bg-figma-ink" style={{ height: eu(445) }} />
         <div
           className="relative z-10 flex min-h-0 flex-1 flex-col overflow-y-auto"
@@ -196,8 +191,12 @@ export function EngineerMenu({
             <button
               type="button"
               onClick={onSignOut}
-              className="self-start font-semibold text-figma-muted"
-              style={{ fontSize: eu(20) }}
+              className="self-start bg-white font-semibold text-figma-muted"
+              style={{
+                fontSize: eu(20),
+                borderRadius: eu(999),
+                padding: `${eu(10)} ${eu(22)}`,
+              }}
             >
               Выйти
             </button>
@@ -243,11 +242,6 @@ export function EngineerMenu({
               alt=""
               src={ENGINEER_ASSETS.menuBlobs}
               className="pointer-events-none absolute bottom-0 left-0 z-0 w-full max-w-none"
-            />
-            <div
-              aria-hidden
-              className="pointer-events-none absolute bottom-0 left-0 z-[1] bg-white"
-              style={{ width: eu(220), height: eu(180) }}
             />
             <div className="relative z-10 shrink-0 bg-figma-ink" style={{ height: eu(445) }} />
             <div
@@ -381,8 +375,12 @@ export function EngineerMenu({
                 <button
                   type="button"
                   onClick={onSignOut}
-                  className="self-start font-semibold text-figma-muted"
-                  style={{ fontSize: eu(20) }}
+                  className="self-start bg-white font-semibold text-figma-muted"
+                  style={{
+                    fontSize: eu(20),
+                    borderRadius: eu(999),
+                    padding: `${eu(10)} ${eu(22)}`,
+                  }}
                 >
                   Выйти
                 </button>
