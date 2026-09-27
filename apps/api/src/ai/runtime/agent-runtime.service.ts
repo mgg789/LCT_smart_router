@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnModuleInit, Optional } from '@nestjs/common';
 import type { Actor } from '../../auth';
 import { AppConfigService } from '../../common/config';
 import { SysError } from '../../common/errors';
 import { Clock } from '../../common/time';
 import type { AiConversation, AiRoleProfile } from '../../generated/prisma/client';
+import { AiConnectionsService } from '../../orchestrator/ai/ai-connections.service';
 import { PrismaService, UnitOfWork } from '../../persistence';
 import { buildClientSystemPrompt } from '../profiles/client.profile';
 import {
@@ -86,6 +87,7 @@ export class AgentRuntimeService implements OnModuleInit {
     private readonly toolDispatcher: ToolDispatcher,
     private readonly toolRegistry: ToolRegistry,
     private readonly chatBus: ChatEventBus,
+    @Optional() private readonly connections?: AiConnectionsService,
   ) {}
 
   /**
@@ -162,7 +164,7 @@ export class AgentRuntimeService implements OnModuleInit {
         roleProfile: input.conversation.roleProfile,
         state: 'running',
         providerKind: this.provider.kind,
-        model: this.config.get('LLM_MODEL'),
+        model: this.connections?.current.llm.model ?? this.config.get('LLM_MODEL'),
         reservedMicros: reservation.reservedMicros,
         startedAt: BigInt(now),
       },
@@ -207,7 +209,7 @@ export class AgentRuntimeService implements OnModuleInit {
     reservation: BudgetReservation,
     handle: RunHandle,
   ): Promise<void> {
-    const model = this.config.get('LLM_MODEL');
+    const model = this.connections?.current.llm.model ?? this.config.get('LLM_MODEL');
     // The env default (1024) cuts a Russian answer mid-word and, in fix mode, spends
     // the whole budget on the preamble so the write tool is never emitted.
     const maxOutputTokens = Math.max(this.config.get('LLM_MAX_OUTPUT_TOKENS'), 4_096);

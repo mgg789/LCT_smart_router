@@ -171,6 +171,8 @@ export const envSchema = z.object({
    * degrades honestly (guard refuses, short calls report `not_configured`).
    */
   JEV_API_URL: z.url().optional(),
+  JEV_MODEL: z.string().min(1).optional(),
+  JEV_API_KEY: z.string().min(1).optional(),
 
   /**
    * Multiplier applied to every per-IP request budget (auth endpoints, paid client

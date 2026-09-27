@@ -1,9 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { Actor } from '../../auth';
 import { AppConfigService } from '../../common/config';
 import { SysError } from '../../common/errors';
 import { Clock } from '../../common/time';
+import { AiConnectionsService } from '../../orchestrator/ai/ai-connections.service';
 import { PolicyService } from '../../orchestrator/policy';
 // Catalog file only, not the `requests` barrel: it also loads Nest modules and can leave
 // `findWorkType` undefined under CJS circular imports in unit tests (mirrors
@@ -100,6 +101,7 @@ export class ExplainService {
     private readonly evidence: EvidenceReader,
     private readonly provider: LlmProvider,
     @Inject(AI_FALLBACK_PROVIDER) private readonly fallbackProvider: LlmProvider | null,
+    @Optional() private readonly connections?: AiConnectionsService,
   ) {}
 
   async startExplainRun(
@@ -137,7 +139,7 @@ export class ExplainService {
         roleProfile: 'dispatcher_readonly',
         state: 'running',
         providerKind: this.provider.kind,
-        model: this.config.get('LLM_MODEL'),
+        model: this.connections?.current.llm.model ?? this.config.get('LLM_MODEL'),
         reservedMicros: reservation.reservedMicros,
         startedAt: BigInt(now),
       },
@@ -188,7 +190,7 @@ export class ExplainService {
     userText: string,
     handle: RunHandle,
   ): Promise<void> {
-    const model = this.config.get('LLM_MODEL');
+    const model = this.connections?.current.llm.model ?? this.config.get('LLM_MODEL');
     const maxOutputTokens = this.config.get('LLM_MAX_OUTPUT_TOKENS');
     const maxAttempts = this.config.get('LLM_MAX_ATTEMPTS');
     const messageId = randomUUID();

@@ -13,9 +13,11 @@ import { localMapStyle } from '../domain/localBasemap';
 import { ONLINE_MAP_STYLE, watchMapStartup } from '../domain/mapAvailability';
 import {
   MAP_CANVAS,
+  MAP_EMERGENCY,
   MAP_INK,
   MAP_LUNCH_FILL,
   MAP_LUNCH_STROKE,
+  MAP_MUTED,
   MAP_ROUTE_DASH_PX,
   MAP_ROUTE_GAP_PX,
   mapPaintColor,
@@ -617,9 +619,14 @@ export function DayMap({
                 skillMark: request ? skillMark(request.requiredSkill) : '',
                 engineerId,
                 selected: node.requestId === selectedRequestId ? 1 : 0,
-                color: mapPaintColor(engineerColor(engineerId)),
+                color:
+                  request?.workCategory === 'emergency'
+                    ? MAP_MUTED
+                    : mapPaintColor(engineerColor(engineerId)),
                 regionColor: mapPaintColor(
-                  regionStyle(request ? requestRegion(snapshot, request) : null).color,
+                  request?.workCategory === 'emergency'
+                    ? MAP_EMERGENCY
+                    : regionStyle(request ? requestRegion(snapshot, request) : null).color,
                 ),
                 current: graph.activeNodeKeys.has(node.key) ? 1 : 0,
               },
@@ -647,7 +654,10 @@ export function DayMap({
                 requestId: request.id,
                 skillMark: skillMark(request.requiredSkill),
                 selected: request.id === selectedRequestId ? 1 : 0,
-                regionColor: mapPaintColor(regionStyle(requestRegion(snapshot, request)).color),
+                regionColor:
+                  request.workCategory === 'emergency'
+                    ? MAP_EMERGENCY
+                    : mapPaintColor(regionStyle(requestRegion(snapshot, request)).color),
               },
               geometry: {
                 type: 'Point' as const,
@@ -896,7 +906,20 @@ export function DayMap({
     if (!point) return;
     const pin = document.createElement('div');
     pin.setAttribute('aria-hidden', 'true');
-    pin.className = 'size-[22px] rounded-full border-[3px] border-figma-ink bg-figma-bee shadow-lg';
+    const request = snapshot.requests.find((item) => item.id === soloRequestId);
+    const jobs = snapshot.plan.plan?.routes
+      .find((route) => route.stops.some((stop) => stop.requestId === soloRequestId))
+      ?.stops.filter((stop) => stop.kind === 'job');
+    const sequence = jobs ? jobs.findIndex((stop) => stop.requestId === soloRequestId) + 1 : 0;
+    const emergency = request?.workCategory === 'emergency';
+    pin.className = `flex size-[22px] items-center justify-center rounded-full border-[3px] text-[11px] font-semibold text-white shadow-lg ${
+      emergency
+        ? sequence > 0
+          ? 'border-figma-danger bg-figma-muted'
+          : 'border-figma-ink bg-figma-danger'
+        : 'border-figma-ink bg-figma-bee'
+    }`;
+    if (emergency && sequence > 0) pin.textContent = String(sequence);
     const marker = new maplibregl.Marker({ element: pin, anchor: 'center' })
       .setLngLat([point.lon, point.lat])
       .addTo(map);

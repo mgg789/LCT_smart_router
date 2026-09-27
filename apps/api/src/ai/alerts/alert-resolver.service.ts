@@ -1,9 +1,10 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { z } from 'zod';
 import type { Actor } from '../../auth';
 import { AppConfigService } from '../../common/config';
 import { SysError } from '../../common/errors';
 import { Clock } from '../../common/time';
+import { AiConnectionsService } from '../../orchestrator/ai/ai-connections.service';
 import type { AlertAction } from '../../orchestrator/alerts/alert-policy';
 import { alertActionsFor } from '../../orchestrator/alerts/alert-policy';
 import { PrismaService } from '../../persistence';
@@ -59,6 +60,7 @@ export class AlertResolverService {
     private readonly aiOperations: AiOperationService,
     private readonly provider: LlmProvider,
     @Inject(AI_FALLBACK_PROVIDER) private readonly fallbackProvider: LlmProvider | null,
+    @Optional() private readonly connections?: AiConnectionsService,
   ) {}
 
   async suggest(actor: Actor, alertId: string): Promise<SuggestAlertResolutionOutcome> {
@@ -149,7 +151,7 @@ export class AlertResolverService {
         roleProfile: 'dispatcher_fix',
         state: runState,
         providerKind: this.provider.kind,
-        model: this.config.get('LLM_MODEL'),
+        model: this.connections?.current.llm.model ?? this.config.get('LLM_MODEL'),
         reservedMicros: reservation.reservedMicros,
         promptTokens: usage.promptTokens,
         completionTokens: usage.completionTokens,
@@ -221,7 +223,7 @@ export class AlertResolverService {
     let usage = { promptTokens: 0, completionTokens: 0 };
     for await (const event of runProviderTurn(
       {
-        model: this.config.get('LLM_MODEL'),
+        model: this.connections?.current.llm.model ?? this.config.get('LLM_MODEL'),
         system: ALERT_RESOLVER_SYSTEM_PROMPT,
         messages: [{ role: 'user', content: contextText }],
         tools: [tool],

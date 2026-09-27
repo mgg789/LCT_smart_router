@@ -1,6 +1,7 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { SysError } from '../../common/errors';
 import { WORK_TYPES } from '../requests/work-type.catalog';
+import { AiConnectionsService } from './ai-connections.service';
 import { finishStoryDraft, mergeStoryGaps, parseModelJson, type StoryFields } from './story-draft';
 
 const PROBLEMS = [
@@ -60,6 +61,8 @@ const MESSAGE_OPTIONS: ReadonlyArray<{ label: string; text: string }> = [
  */
 @Injectable()
 export class MiniAiService {
+  constructor(@Optional() private readonly connections?: AiConnectionsService) {}
+
   private readonly logger = new Logger(MiniAiService.name);
 
   /** Short Russian explanation. Throws when the language model is not configured. */
@@ -215,8 +218,11 @@ export class MiniAiService {
    * a misconfigured URL must fail into the honest `not_configured` path instead
    * of reaching whatever other scheme the value carried.
    */
-  private jevBase(): string {
-    const raw = (process.env.JEV_API_URL ?? 'http://host.docker.internal:12444').replace(/\/$/, '');
+  private jevBase(url?: string): string {
+    const raw = (url ?? process.env.JEV_API_URL ?? 'http://host.docker.internal:12444').replace(
+      /\/$/,
+      '',
+    );
     const scheme = new URL(raw).protocol;
     if (scheme !== 'http:' && scheme !== 'https:') {
       throw new SysError('SERVICE_NOT_CONFIGURED', 'System one доступен только по HTTP(S).');
@@ -362,13 +368,19 @@ export class MiniAiService {
   ): Promise<string> {
     const uniqueOptions = [...new Set(options.map((item) => item.trim()).filter(Boolean))];
     if (uniqueOptions.length < 2) return uniqueOptions[0] ?? '';
-    const base = this.jevBase();
+    const connection = (await this.connections?.read())?.jev;
+    const base = this.jevBase(connection?.url);
     let response: Response;
     try {
       response = await fetch(`${base}/v1/choice`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json',
+          ...(connection?.key ? { authorization: `Bearer ${connection.key}` } : {}),
+        },
         body: JSON.stringify({
+          ...(connection?.model ? { model: connection.model } : {}),
           state: state.slice(0, 6_000),
           question,
           options: uniqueOptions.slice(0, 12),
@@ -397,9 +409,14 @@ export class MiniAiService {
   ): Promise<string> {
     // The same validated names the chat harness reads (env.schema.ts) -- a second
     // spelling here would leave the short-call path dead under a documented config.
-    const key = process.env.LLM_TOKEN?.trim();
-    const base = (process.env.LLM_BASE_URL ?? 'https://api.deepseek.com').replace(/\/$/, '');
-    const model = process.env.LLM_MODEL?.trim() || 'deepseek-flash';
+    const connection = (await this.connections?.read())?.llm;
+    const key = connection ? connection.key : process.env.LLM_TOKEN?.trim();
+    const base = (
+      connection?.url ??
+      process.env.LLM_BASE_URL ??
+      'https://api.deepseek.com'
+    ).replace(/\/$/, '');
+    const model = connection?.model ?? (process.env.LLM_MODEL?.trim() || 'deepseek-flash');
     if (!key) throw new SysError('SERVICE_NOT_CONFIGURED', 'Языковая модель не настроена.');
     const scheme = new URL(base).protocol;
     if (scheme !== 'https:' && scheme !== 'http:') {

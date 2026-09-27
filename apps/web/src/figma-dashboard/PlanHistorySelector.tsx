@@ -88,23 +88,33 @@ export function PlanHistorySelector({
           {error}
         </p>
       ) : null}
-      <span
-        className="group relative inline-flex min-w-[182px] justify-self-start"
-        tabIndex={!canRestore ? 0 : undefined}
-        title={!canRestore ? unavailableReason : undefined}
-        data-plan-history-tooltip={!canRestore ? true : undefined}
+      <button
+        type="button"
         data-plan-history-previous
+        aria-pressed={selection === 'previous'}
+        onClick={() => onSelect('previous')}
+        disabled={busy}
+        className="min-w-[182px] justify-self-start rounded-full px-[18px] py-[16px] text-[20px] font-semibold text-figma-ink transition-[background-color,transform] duration-150 hover:scale-[1.02] aria-pressed:bg-figma-bee disabled:opacity-40"
       >
-        <button
+        До · {previous.revision}
+      </button>
+      <span
+        className="group relative inline-flex"
+        tabIndex={selection === 'previous' && !canRestore ? 0 : undefined}
+        title={selection === 'previous' && !canRestore ? unavailableReason : undefined}
+        data-plan-history-tooltip={selection === 'previous' && !canRestore ? true : undefined}
+      >
+        <motion.button
           type="button"
-          aria-pressed={selection === 'previous'}
-          onClick={() => onSelect('previous')}
-          disabled={!canRestore || busy}
-          className="min-w-[182px] rounded-full px-[18px] py-[16px] text-[20px] font-semibold text-figma-ink transition-[background-color,transform] duration-150 hover:scale-[1.02] aria-pressed:bg-figma-bee disabled:cursor-not-allowed disabled:opacity-40"
+          data-plan-history-confirm
+          onClick={onChoose}
+          disabled={busy || (selection === 'previous' && !canRestore)}
+          className="min-w-[220px] rounded-full border border-figma-ink px-[18px] py-[15px] text-[20px] font-semibold text-figma-ink transition-[background-color,transform] duration-150 hover:scale-[1.02] hover:bg-figma-canvas disabled:cursor-not-allowed disabled:opacity-40"
+          whileTap={motionOn ? { scale: 0.97 } : undefined}
         >
-          До · {previous.revision}
-        </button>
-        {!canRestore ? (
+          Выбрать этот
+        </motion.button>
+        {selection === 'previous' && !canRestore ? (
           <span
             role="tooltip"
             className="pointer-events-none invisible absolute bottom-[calc(100%+12px)] left-1/2 z-10 w-[300px] -translate-x-1/2 rounded-[16px] border border-figma-ink/20 bg-white p-[12px] text-center text-[14px] leading-[1.35] text-figma-ink opacity-0 shadow-xl transition-[opacity,visibility] duration-150 group-hover:visible group-hover:opacity-100 group-focus-visible:visible group-focus-visible:opacity-100"
@@ -113,16 +123,6 @@ export function PlanHistorySelector({
           </span>
         ) : null}
       </span>
-      <motion.button
-        type="button"
-        data-plan-history-confirm
-        onClick={onChoose}
-        disabled={busy || (selection === 'previous' && !canRestore)}
-        className="min-w-[220px] rounded-full border border-figma-ink px-[18px] py-[15px] text-[20px] font-semibold text-figma-ink transition-[background-color,transform] duration-150 hover:scale-[1.02] hover:bg-figma-canvas disabled:cursor-not-allowed disabled:opacity-40"
-        whileTap={motionOn ? { scale: 0.97 } : undefined}
-      >
-        Выбрать этот
-      </motion.button>
       <button
         type="button"
         data-plan-history-current

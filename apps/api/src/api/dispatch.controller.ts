@@ -861,7 +861,7 @@ export class DispatchController {
   }
 
   @Put('ai')
-  @ApiOperation({ summary: 'Replace AI contour controls (plan calibration, future endpoints)' })
+  @ApiOperation({ summary: 'Replace AI contour controls and live model connections' })
   async updateAi(
     @CurrentActor() actor: Actor,
     @Body(zodBody(aiSettingsSchema)) dto: AiSettingsDto,
@@ -870,6 +870,7 @@ export class DispatchController {
       { operationId: dto.operationId, actor, action: 'dispatch.ai.replace', payload: dto },
       async (context) => this.ai.present(await this.ai.replace(context.tx, context.now, dto)),
     );
+    await this.ai.refreshConnections();
     if (dto.planCalibrationEnabled === false) await this.ai.rollbackToFactory();
     this.ai.scheduleRefresh();
     return outcome.result;

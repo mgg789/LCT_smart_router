@@ -3,13 +3,12 @@ import { Injectable } from '@nestjs/common';
 import {
   Agent,
   type AgentInputItem,
+  OpenAIChatCompletionsModel,
   RunItemStreamEvent,
   RunRawModelStreamEvent,
   type RunStreamEvent,
   type RunToolApprovalItem,
   run,
-  setDefaultOpenAIClient,
-  setOpenAIAPI,
   setTracingDisabled,
   tool,
 } from '@openai/agents';
@@ -27,14 +26,6 @@ import {
 } from './llm.types';
 import { LlmProvider } from './llm-provider.port';
 import { toLlmCallError } from './openai-error.util';
-
-/**
- * Process-wide switches (`setDefaultOpenAIClient` and friends) are registered once, not
- * once per instance -- Nest could otherwise construct this provider twice (primary and
- * fallback both set to `agents`) and have the second registration fight the first over
- * which client and API dialect are the default.
- */
-let registeredClient: OpenAiClient | null = null;
 
 /**
  * Runs one turn through `@openai/agents`, the Agents SDK the product is not yet willing
@@ -62,16 +53,11 @@ export class AgentsSdkProvider extends LlmProvider {
   private outcome: ProviderOutcome = EMPTY_PROVIDER_OUTCOME;
 
   constructor(
-    client: OpenAiClient,
+    private readonly client: OpenAiClient,
     private readonly clock: Clock,
   ) {
     super();
-    if (registeredClient !== client) {
-      setDefaultOpenAIClient(client);
-      setOpenAIAPI('chat_completions');
-      setTracingDisabled(true);
-      registeredClient = client;
-    }
+    setTracingDisabled(true);
   }
 
   isConfigured(): boolean {
@@ -87,7 +73,7 @@ export class AgentsSdkProvider extends LlmProvider {
     const agent = new Agent({
       name: 'field-engineer-routing-assistant',
       instructions: input.closing ? `${input.system}\n\n${input.closing}` : input.system,
-      model: input.model,
+      model: new OpenAIChatCompletionsModel(this.client, input.model),
       tools: input.tools.map(toApprovalTool),
     });
 

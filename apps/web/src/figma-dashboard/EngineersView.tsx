@@ -949,7 +949,7 @@ function FactRow({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   return (
-    <div className="flex h-[44px] shrink-0 items-center gap-[10px] border-b border-[#e6e6e6]">
+    <div className="flex h-[44px] w-full max-w-[520px] shrink-0 items-center gap-[10px] border-b border-[#e6e6e6]">
       <TintIcon src={icon} color="currentColor" size={20} />
       <FigmaText className="w-[124px] shrink-0 font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
         {label}

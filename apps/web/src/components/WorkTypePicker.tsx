@@ -54,7 +54,9 @@ export function WorkTypePicker({
         })}
       </select>
       {selected?.category === 'emergency' ? (
-        <p className="text-[14px] text-figma-danger">Направим первую свободную бригаду</p>
+        <p className="text-center text-[14px] text-figma-danger">
+          Направим первую свободную бригаду
+        </p>
       ) : null}
       {error ? (
         <div role="alert" className="text-[14px] text-figma-danger">

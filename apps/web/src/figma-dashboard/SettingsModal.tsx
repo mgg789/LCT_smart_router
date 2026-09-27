@@ -205,7 +205,9 @@ export function SettingsModal({
 
         <TabSwitch tab={tab} motionOn={motionOn} onChange={setTab} />
 
-        <div className="mt-[16px] min-h-0 flex-1 overflow-y-auto [scrollbar-width:thin]">
+        <div
+          className={`mt-[16px] min-h-0 flex-1 ${tab === 'ai' ? 'overflow-hidden' : 'overflow-y-auto [scrollbar-width:thin]'}`}
+        >
           {loading ? (
             <p className="mt-[24px] font-medium text-[16px] text-figma-muted">
               Загружаем настройки…
@@ -1156,8 +1158,7 @@ function Field({
 
 /**
  * AI contour settings. The calibration switch turns plan-assessment
- * self-training on execution facts on or off; the LLM and Jev endpoints are
- * reserved for a future contour and change nothing yet.
+ * self-training on execution facts on or off. Provider changes apply to subsequent calls.
  */
 function AiForm({ token }: { token: string | null }) {
   const [view, setView] = useState<AiView | null>(null);
@@ -1206,6 +1207,12 @@ function AiForm({ token }: { token: string | null }) {
       .then((next) => {
         setView(next);
         setEnabled(next.settings.planCalibrationEnabled);
+        setLlmUrl(next.settings.llmApiUrl ?? '');
+        setLlmModel(next.settings.llmModel ?? '');
+        setJevUrl(next.settings.jevApiUrl ?? '');
+        setJevModel(next.settings.jevModel ?? '');
+        setLlmKey('');
+        setJevKey('');
       })
       .catch((cause: unknown) => {
         setEnabled(view?.settings.planCalibrationEnabled ?? false);
@@ -1226,164 +1233,181 @@ function AiForm({ token }: { token: string | null }) {
     jevKey.length > 0;
 
   return (
-    <div className="flex flex-col gap-[16px] pb-[8px]">
-      <AiSection
-        title="ML"
-        note="Коэффициенты оценки риска уточняются по фактам исполнения. При выключении используются заводские значения."
-      >
-        <SettingSwitch
-          label="Калибровка по реальным результатам"
-          checked={enabled}
-          onChange={() => {
-            const next = !enabled;
-            setEnabled(next);
-            save({ planCalibrationEnabled: next });
-          }}
-        />
-        <div className="mt-[14px] rounded-[16px] bg-white px-[16px] py-[14px]">
-          <div className="flex items-baseline justify-between">
-            <span className="font-semibold text-[16px] text-figma-ink">Покрытие фактами</span>
-            <span className="font-extrabold text-[20px] text-figma-ink">
-              {loading && !status ? '…' : `${percent}%`}
-            </span>
-          </div>
-          <div className="mt-[10px] h-[12px] w-full overflow-hidden rounded-full bg-figma-track">
-            <div
-              className="h-full rounded-full bg-figma-bee transition-[width] duration-300"
-              style={{ width: `${loading && !status ? 0 : percent}%` }}
-            />
-          </div>
-          <p className="mt-[10px] font-medium text-[14px] leading-[1.4] text-figma-muted">
-            {loading && !status ? 'Считаем покрытие фактами.' : calibrationCaption(status)}
-          </p>
-          {status ? (
-            <p className="mt-[6px] font-medium text-[13px] text-figma-hint">
-              Источник: {status.source === 'learned' ? 'факты исполнения' : 'заводские допущения'}
-              {status.computedAt ? ` · обновлено ${formatMoscowDate(status.computedAt)}` : ''}
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="min-h-0 flex-1 space-y-[16px] overflow-y-auto pb-[16px] [scrollbar-width:thin]">
+        <AiSection
+          title="ML"
+          note="Коэффициенты оценки риска уточняются по фактам исполнения. При выключении используются заводские значения."
+        >
+          <SettingSwitch
+            label="Калибровка по реальным результатам"
+            checked={enabled}
+            onChange={() => {
+              const next = !enabled;
+              setEnabled(next);
+              save({ planCalibrationEnabled: next });
+            }}
+          />
+          <div className="mt-[14px] rounded-[16px] bg-white px-[16px] py-[14px]">
+            <div className="flex items-baseline justify-between">
+              <span className="font-semibold text-[16px] text-figma-ink">Покрытие фактами</span>
+              <span className="font-extrabold text-[20px] text-figma-ink">
+                {loading && !status ? '…' : `${percent}%`}
+              </span>
+            </div>
+            <div className="mt-[10px] h-[12px] w-full overflow-hidden rounded-full bg-figma-track">
+              <div
+                className="h-full rounded-full bg-figma-bee transition-[width] duration-300"
+                style={{ width: `${loading && !status ? 0 : percent}%` }}
+              />
+            </div>
+            <p className="mt-[10px] font-medium text-[14px] leading-[1.4] text-figma-muted">
+              {loading && !status ? 'Считаем покрытие фактами.' : calibrationCaption(status)}
             </p>
-          ) : null}
-          <section
-            aria-label="Калибровка коэффициентов"
-            className="mt-[14px] text-[14px] text-figma-muted"
-          >
-            <p className="font-semibold text-figma-ink">Калибровка коэффициентов</p>
-            <p>
-              {status?.weatherCalibration?.status === 'validated'
-                ? 'Проверено на последующих днях'
-                : status?.weatherCalibration?.status === 'shadow'
-                  ? 'Проверка на новых днях'
-                  : 'Недостаточно истории'}
-            </p>
-            <p>
-              {status?.weatherCalibration?.reason ??
-                'Недостаточно истории. Используются заводские параметры.'}
-            </p>
-            {status?.weatherCalibration ? (
-              <p>
-                Наблюдений: {status.weatherCalibration.observationCount}, дней:{' '}
-                {status.weatherCalibration.days}, проверенных групп:{' '}
-                {status.weatherCalibration.eligibleGroups} из{' '}
-                {status.weatherCalibration.totalGroups}.
+            {status ? (
+              <p className="mt-[6px] font-medium text-[13px] text-figma-hint">
+                Источник: {status.source === 'learned' ? 'факты исполнения' : 'заводские допущения'}
+                {status.computedAt ? ` · обновлено ${formatMoscowDate(status.computedAt)}` : ''}
               </p>
             ) : null}
-            <p>
-              Время между завершением работы и прибытием может включать ожидание. Покрытие данными
-              не является оценкой точности.
-            </p>
-          </section>
-        </div>
-      </AiSection>
+            <section
+              aria-label="Калибровка коэффициентов"
+              className="mt-[14px] text-[14px] text-figma-muted"
+            >
+              <p className="font-semibold text-figma-ink">Калибровка коэффициентов</p>
+              <p>
+                {status?.weatherCalibration?.status === 'validated'
+                  ? 'Проверено на последующих днях'
+                  : status?.weatherCalibration?.status === 'shadow'
+                    ? 'Проверка на новых днях'
+                    : 'Недостаточно истории'}
+              </p>
+              <p>
+                {status?.weatherCalibration?.reason ??
+                  'Недостаточно истории. Используются заводские параметры.'}
+              </p>
+              {status?.weatherCalibration ? (
+                <p>
+                  Наблюдений: {status.weatherCalibration.observationCount}, дней:{' '}
+                  {status.weatherCalibration.days}, проверенных групп:{' '}
+                  {status.weatherCalibration.eligibleGroups} из{' '}
+                  {status.weatherCalibration.totalGroups}.
+                </p>
+              ) : null}
+              <p>
+                Время между завершением работы и прибытием может включать ожидание. Покрытие данными
+                не является оценкой точности.
+              </p>
+            </section>
+          </div>
+        </AiSection>
 
-      <AiSection
-        title="LLM (OpenAI SDK)"
-        note="Адрес, модель и токен. Пока контур только хранит значения: живые вызовы читают LLM_PROVIDER/LLM_TOKEN/LLM_BASE_URL из окружения сервера."
-      >
-        <Field label="URL" htmlFor="ai-llm-url">
-          <input
-            id="ai-llm-url"
-            type="text"
-            placeholder="https://api.openai.com/v1"
-            value={llmUrl}
-            onChange={(event) => setLlmUrl(event.target.value)}
-            className={FIELD}
-          />
-        </Field>
-        <Field label="Model" htmlFor="ai-llm-model">
-          <input
-            id="ai-llm-model"
-            type="text"
-            placeholder="gpt-4.1-mini"
-            value={llmModel}
-            onChange={(event) => setLlmModel(event.target.value)}
-            className={FIELD}
-          />
-        </Field>
-        <Field
-          label={
-            view?.settings.llmApiKeySet ? `Token ···${view.settings.llmApiKeyLast4 ?? ''}` : 'Token'
-          }
-          htmlFor="ai-llm-key"
+        <AiSection
+          title="LLM (OpenAI SDK)"
+          note="Настройки из окружения сервера отображаются автоматически. Сохранённые изменения используются в новых вызовах."
         >
-          <input
-            id="ai-llm-key"
-            type="password"
-            placeholder={
+          <Field label="URL" htmlFor="ai-llm-url">
+            <input
+              id="ai-llm-url"
+              autoComplete="off"
+              name="ai-llm-url"
+              type="text"
+              placeholder="https://api.openai.com/v1"
+              value={llmUrl}
+              onChange={(event) => setLlmUrl(event.target.value)}
+              className={FIELD}
+            />
+          </Field>
+          <Field label="Model" htmlFor="ai-llm-model">
+            <input
+              id="ai-llm-model"
+              autoComplete="off"
+              name="ai-llm-model"
+              type="text"
+              placeholder="gpt-4.1-mini"
+              value={llmModel}
+              onChange={(event) => setLlmModel(event.target.value)}
+              className={FIELD}
+            />
+          </Field>
+          <Field
+            label={
               view?.settings.llmApiKeySet
-                ? 'Задан — введите новый, чтобы заменить'
-                : 'Токен пока не задан'
+                ? `Token ···${view.settings.llmApiKeyLast4 ?? ''}`
+                : 'Token'
             }
-            value={llmKey}
-            onChange={(event) => setLlmKey(event.target.value)}
-            className={FIELD}
-          />
-        </Field>
-      </AiSection>
+            htmlFor="ai-llm-key"
+          >
+            <input
+              id="ai-llm-key"
+              autoComplete="new-password"
+              name="ai-llm-key"
+              type="password"
+              placeholder={
+                view?.settings.llmApiKeySet
+                  ? 'Задан — введите новый, чтобы заменить'
+                  : 'Токен пока не задан'
+              }
+              value={llmKey}
+              onChange={(event) => setLlmKey(event.target.value)}
+              className={FIELD}
+            />
+          </Field>
+        </AiSection>
 
-      <AiSection
-        title="System one (Jev API)"
-        note="Адрес, модель и токен. Контур пока только хранит значения."
-      >
-        <Field label="URL" htmlFor="ai-jev-url">
-          <input
-            id="ai-jev-url"
-            type="text"
-            placeholder="https://jev.example/v1"
-            value={jevUrl}
-            onChange={(event) => setJevUrl(event.target.value)}
-            className={FIELD}
-          />
-        </Field>
-        <Field label="Model" htmlFor="ai-jev-model">
-          <input
-            id="ai-jev-model"
-            type="text"
-            placeholder="jev"
-            value={jevModel}
-            onChange={(event) => setJevModel(event.target.value)}
-            className={FIELD}
-          />
-        </Field>
-        <Field
-          label={
-            view?.settings.jevApiKeySet ? `Token ···${view.settings.jevApiKeyLast4 ?? ''}` : 'Token'
-          }
-          htmlFor="ai-jev-key"
+        <AiSection
+          title="System one (Jev API)"
+          note="Настройки System one из окружения сервера. Изменения применяются после сохранения."
         >
-          <input
-            id="ai-jev-key"
-            type="password"
-            placeholder={
+          <Field label="URL" htmlFor="ai-jev-url">
+            <input
+              id="ai-jev-url"
+              autoComplete="off"
+              name="ai-jev-url"
+              type="text"
+              placeholder="https://jev.example/v1"
+              value={jevUrl}
+              onChange={(event) => setJevUrl(event.target.value)}
+              className={FIELD}
+            />
+          </Field>
+          <Field label="Model" htmlFor="ai-jev-model">
+            <input
+              id="ai-jev-model"
+              autoComplete="off"
+              name="ai-jev-model"
+              type="text"
+              placeholder="jev"
+              value={jevModel}
+              onChange={(event) => setJevModel(event.target.value)}
+              className={FIELD}
+            />
+          </Field>
+          <Field
+            label={
               view?.settings.jevApiKeySet
-                ? 'Задан — введите новый, чтобы заменить'
-                : 'Токен пока не задан'
+                ? `Token ···${view.settings.jevApiKeyLast4 ?? ''}`
+                : 'Token'
             }
-            value={jevKey}
-            onChange={(event) => setJevKey(event.target.value)}
-            className={FIELD}
-          />
-        </Field>
-      </AiSection>
-
+            htmlFor="ai-jev-key"
+          >
+            <input
+              id="ai-jev-key"
+              autoComplete="new-password"
+              name="ai-jev-key"
+              type="password"
+              placeholder={
+                view?.settings.jevApiKeySet
+                  ? 'Задан — введите новый, чтобы заменить'
+                  : 'Токен пока не задан'
+              }
+              value={jevKey}
+              onChange={(event) => setJevKey(event.target.value)}
+              className={FIELD}
+            />
+          </Field>
+        </AiSection>
+      </div>
       <button
         type="button"
         disabled={saving || loading || !token || !dirty}
@@ -1398,7 +1422,7 @@ function AiForm({ token }: { token: string | null }) {
             ...(jevKey ? { jevApiKey: jevKey } : {}),
           })
         }
-        className={`mt-[20px] flex h-[52px] w-full items-center justify-center rounded-[20px] font-medium text-[17px] transition-transform duration-150 ${
+        className={`mt-[12px] flex h-[52px] w-full shrink-0 items-center justify-center rounded-[20px] font-medium text-[17px] transition-transform duration-150 ${
           saving || loading || !token || !dirty
             ? 'bg-figma-track text-figma-hint'
             : 'bg-figma-bee text-figma-ink hover:scale-[1.01]'

@@ -5,6 +5,7 @@ import { AppConfigService } from '../common/config';
 import type { Env } from '../common/config/env.schema';
 import { HealthRegistry } from '../common/health';
 import { Clock } from '../common/time';
+import { AiConnectionsService } from '../orchestrator/ai/ai-connections.service';
 import { EngineersModule } from '../orchestrator/engineers';
 import { LiveModule } from '../orchestrator/live';
 import { PassportsModule } from '../orchestrator/passports/passports.module';
@@ -20,6 +21,7 @@ import {
   OpenAiChatProvider,
   ReplayProvider,
 } from './provider';
+import { LiveSettingsProvider } from './provider/live-settings.provider';
 import {
   AgentRuntimeService,
   AI_FALLBACK_PROVIDER,
@@ -79,7 +81,25 @@ function buildProvider(
   kind: PrimaryProviderKind,
   config: AppConfigService,
   clock: Clock,
+  connections?: AiConnectionsService,
 ): LlmProvider {
+  if (connections && (kind === 'agents' || kind === 'openai_chat')) {
+    return new LiveSettingsProvider(kind, connections, (connection) => {
+      const client = createDeepseekClient({
+        baseUrl: connection.url,
+        apiKey: connection.key ?? '',
+        timeoutMs: config.get('LLM_REQUEST_TIMEOUT_MS'),
+        // A server-side proxy credential belongs only to its configured origin.
+        proxyToken:
+          new URL(connection.url).origin === new URL(config.get('LLM_BASE_URL')).origin
+            ? config.get('LLM_PROXY_TOKEN')
+            : undefined,
+      });
+      return kind === 'agents'
+        ? new AgentsSdkProvider(client, clock)
+        : new OpenAiChatProvider(client, clock, config.get('LLM_CHAT_REASONING_EFFORT'));
+    });
+  }
   switch (kind) {
     case 'off':
       return new OffProvider();
@@ -122,8 +142,9 @@ function buildFallbackProvider(
   kind: FallbackProviderKind,
   config: AppConfigService,
   clock: Clock,
+  connections?: AiConnectionsService,
 ): LlmProvider | null {
-  return kind === 'none' ? null : buildProvider(kind, config, clock);
+  return kind === 'none' ? null : buildProvider(kind, config, clock, connections);
 }
 
 /**
@@ -159,15 +180,22 @@ function buildFallbackProvider(
   providers: [
     {
       provide: LlmProvider,
-      inject: [AppConfigService, Clock],
-      useFactory: (config: AppConfigService, clock: Clock): LlmProvider =>
-        buildProvider(config.get('LLM_PROVIDER'), config, clock),
+      inject: [AppConfigService, Clock, AiConnectionsService],
+      useFactory: (
+        config: AppConfigService,
+        clock: Clock,
+        connections: AiConnectionsService,
+      ): LlmProvider => buildProvider(config.get('LLM_PROVIDER'), config, clock, connections),
     },
     {
       provide: AI_FALLBACK_PROVIDER,
-      inject: [AppConfigService, Clock],
-      useFactory: (config: AppConfigService, clock: Clock): LlmProvider | null =>
-        buildFallbackProvider(config.get('LLM_FALLBACK_PROVIDER'), config, clock),
+      inject: [AppConfigService, Clock, AiConnectionsService],
+      useFactory: (
+        config: AppConfigService,
+        clock: Clock,
+        connections: AiConnectionsService,
+      ): LlmProvider | null =>
+        buildFallbackProvider(config.get('LLM_FALLBACK_PROVIDER'), config, clock, connections),
     },
     { provide: KnowledgeSearchPort, useExisting: KnowledgeService },
     { provide: ToolDispatcher, useClass: AiToolDispatcher },
