@@ -159,6 +159,97 @@ describe('request lifecycle', () => {
     dispatcherToken = ((await dispatcher.json()) as { token: string }).token;
   });
 
+  it('holds ordinary arrivals without changing the plan, excludes them from emergency replans, and releases them explicitly', async () => {
+    const previous = await prisma.appliedPlanCurrent.findUnique({ where: { id: 'singleton' } });
+    const plan = await prisma.appliedPlan.create({
+      data: { origin: 'manual', planAsOf: BigInt(DAY), appliedAt: BigInt(DAY) },
+    });
+    await prisma.appliedPlanCurrent.upsert({
+      where: { id: 'singleton' },
+      create: { id: 'singleton', planId: plan.id, updatedAt: BigInt(DAY) },
+      update: { planId: plan.id },
+    });
+    const toggle = (disabled: boolean) =>
+      call('POST', '/api/v1/dispatch/policy/ordinary-replanning', dispatcherToken, {
+        operationId: randomUUID(),
+        disabled,
+      });
+    const publication = () =>
+      prisma.routingCurrent.findUnique({ where: { id: 'singleton' }, include: { snapshot: true } });
+    try {
+      assert.equal((await toggle(false)).status, 201);
+      const normal = await prepare();
+      const beforeDefault = await publication();
+      assert.equal((await submit(normal.id, normal.version)).status, 201);
+      assert.notEqual((await publication())?.snapshotId, beforeDefault?.snapshotId);
+      const before = await publication();
+      assert.equal((await toggle(true)).status, 201);
+      assert.equal((await publication())?.snapshotId, before?.snapshotId);
+      const policies = await call('GET', '/api/v1/dispatch/policies', dispatcherToken);
+      assert.equal(
+        ((await policies.json()) as { active: { ordinaryReplanningDisabled: boolean } }).active
+          .ordinaryReplanningDisabled,
+        true,
+      );
+      const now = Math.floor(Date.now() / 1000);
+      const held = await prepare({
+        workType: 'connection_request',
+        urgent: true,
+        windowStartAt: now,
+        windowEndAt: now + 86400,
+      });
+      const submitted = await submit(held.id, held.version);
+      assert.equal(submitted.status, 201);
+      assert.equal(((await submitted.json()) as RequestBody).request.assignmentState, 'unassigned');
+      assert.ok(
+        (await prisma.request.findUniqueOrThrow({ where: { id: held.id } })).routingDeferredUntil,
+      );
+      assert.equal((await publication())?.snapshotId, before?.snapshotId);
+      assert.equal(
+        (await prisma.appliedPlanCurrent.findUniqueOrThrow({ where: { id: 'singleton' } })).planId,
+        plan.id,
+      );
+      const alerts = await call('GET', '/api/v1/dispatch/alerts', dispatcherToken);
+      assert.equal(alerts.status, 200);
+      const alertBody = (await alerts.json()) as {
+        alerts: Array<{ requestIds: string[]; reasons: unknown }>;
+      };
+      assert.ok(
+        alertBody.alerts.some(
+          (a: { requestIds: string[]; reasons: unknown }) =>
+            a.requestIds.includes(held.id) &&
+            JSON.stringify(a.reasons).includes('ordinaryReplanningDisabled'),
+        ),
+      );
+      const emergency = await prepare({
+        workType: 'outage',
+        windowStartAt: now,
+        windowEndAt: now + 86400,
+      });
+      assert.equal((await submit(emergency.id, emergency.version)).status, 201);
+      const emergencyPublication = await publication();
+      assert.notEqual(emergencyPublication?.snapshotId, before?.snapshotId);
+      const requests = JSON.parse(emergencyPublication?.snapshot.payload ?? '{}')
+        .requests as Array<{ request_id: string }>;
+      assert.ok(requests.some((r) => r.request_id === emergency.id));
+      assert.ok(!requests.some((r) => r.request_id === held.id));
+      assert.equal((await toggle(false)).status, 201);
+      const released = await prisma.request.findUniqueOrThrow({ where: { id: held.id } });
+      assert.equal(released.routingDeferredUntil, null);
+      assert.equal(released.assignmentState, 'pending');
+      assert.notEqual((await publication())?.snapshotId, emergencyPublication?.snapshotId);
+    } finally {
+      await toggle(false);
+      if (previous)
+        await prisma.appliedPlanCurrent.update({
+          where: { id: 'singleton' },
+          data: { planId: previous.planId },
+        });
+      else await prisma.appliedPlanCurrent.delete({ where: { id: 'singleton' } });
+      await prisma.appliedPlan.delete({ where: { id: plan.id } });
+    }
+  });
+
   after(async () => {
     if (requestIds.length > 0) {
       await prisma.requestConditionHistory.deleteMany({ where: { requestId: { in: requestIds } } });

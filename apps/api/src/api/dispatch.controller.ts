@@ -54,7 +54,12 @@ import {
   setModeSchema,
   submitResultSchema,
 } from './dto/plan.dto';
-import { type SelectPolicyDto, selectPolicySchema } from './dto/policy.dto';
+import {
+  type OrdinaryReplanningDto,
+  ordinaryReplanningSchema,
+  type SelectPolicyDto,
+  selectPolicySchema,
+} from './dto/policy.dto';
 import { type SituationPredictDto, situationPredictSchema } from './dto/prediction.dto';
 import {
   type UpdateRouterTechnicalSettingsDto,
@@ -510,6 +515,34 @@ export class DispatchController {
         routes: this.mapRouting.projectSimulationRoutes(row.routes.map(toRouteView), transports),
       })),
     };
+  }
+
+  @Post('policy/ordinary-replanning')
+  @ApiOperation({ summary: 'Control automatic replanning for new ordinary requests' })
+  async setOrdinaryReplanning(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(ordinaryReplanningSchema)) dto: OrdinaryReplanningDto,
+  ) {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'policy.ordinary_replanning',
+        targetRef: 'singleton',
+        payload: dto,
+      },
+      async (context) => {
+        const released = await this.policyService.setOrdinaryReplanning(context, dto.disabled);
+        if (released > 0)
+          await this.publisher.publishIfChanged(
+            context.tx,
+            context.now,
+            PUBLICATION_TRIGGERS.POLICY_CHANGED,
+          );
+        return { ordinaryReplanningDisabled: dto.disabled, released };
+      },
+    );
+    return outcome.result;
   }
 
   @Post('policy')

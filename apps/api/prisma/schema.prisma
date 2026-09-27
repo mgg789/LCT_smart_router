@@ -466,6 +466,8 @@ model Depot {
 // ---------------------------------------------------------------------------
 
 model Request {
+  /// Ordinary arrivals held outside automatic routing until the next business day or an explicit release.
+  routingDeferredUntil BigInt? @map("routing_deferred_until")
   id String @id @default(uuid())
   workCategory WorkCategory @default(service) @map("work_category")
   /// Receipt in business time; explicit source time for imports, never their upload time.

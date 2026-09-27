@@ -12,6 +12,7 @@ import {
   PERFORMANCE_POLICY_SELECTION_PREFIX,
 } from '../performance';
 import { DEFAULT_POLICY_ID, findPolicy, POLICIES, type PolicySpec } from './policy.catalog';
+import { ORDINARY_REPLANNING_KEY, ordinaryReplanningDisabled } from './replanning-policy';
 
 const evidenceSchema = z.object({
   version: z.literal(1),
@@ -118,13 +119,39 @@ export class PolicyService {
     return POLICIES;
   }
 
-  async active(tx: Tx): Promise<{ policyId: string; version: number; changedAt: number }> {
+  async active(tx: Tx): Promise<{
+    policyId: string;
+    version: number;
+    changedAt: number;
+    ordinaryReplanningDisabled: boolean;
+  }> {
     const active = await tx.activePolicy.findUnique({ where: { id: 'singleton' } });
     return {
       policyId: active?.policyId ?? DEFAULT_POLICY_ID,
+      ordinaryReplanningDisabled: await ordinaryReplanningDisabled(tx),
       version: active?.version ?? 1,
       changedAt: active ? Number(active.changedAt) : 0,
     };
+  }
+
+  /** Switching on preserves the current plan; switching off releases deferred arrivals. */
+  async setOrdinaryReplanning(context: OperationContext, disabled: boolean): Promise<number> {
+    await context.tx.appState.upsert({
+      where: { key: ORDINARY_REPLANNING_KEY },
+      create: { key: ORDINARY_REPLANNING_KEY, value: disabled, updatedAt: BigInt(context.now) },
+      update: { value: disabled, updatedAt: BigInt(context.now) },
+    });
+    if (disabled) return 0;
+    const released = await context.tx.request.updateMany({
+      where: { lifecycle: 'submitted', routingDeferredUntil: { not: null } },
+      data: {
+        routingDeferredUntil: null,
+        assignmentState: 'pending',
+        updatedAt: BigInt(context.now),
+        version: { increment: 1 },
+      },
+    });
+    return released.count;
   }
 
   /** Selects a prepared policy. Only catalogue entries are accepted. */

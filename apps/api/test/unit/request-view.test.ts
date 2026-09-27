@@ -6,6 +6,7 @@ import type { Request } from '../../src/generated/prisma/client';
 describe('request view duration evidence', () => {
   it('exposes the norm components and derives confirmed duration variance', () => {
     const request: Request = {
+      routingDeferredUntil: null,
       id: 'request-1',
       clientAccountId: null,
       arrivalOrder: 1,

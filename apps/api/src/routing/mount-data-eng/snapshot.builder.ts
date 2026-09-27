@@ -170,6 +170,10 @@ export class SnapshotBuilder {
       // engineer's start pair instead (context/33 section 5).
       where: {
         lifecycle: 'submitted',
+        OR: [
+          { routingDeferredUntil: null },
+          { routingDeferredUntil: { lte: BigInt(planningAsOf) } },
+        ],
         assignmentState: { in: ['pending', 'assigned', 'unassigned'] },
         startedAt: null,
         // LIVE keeps its "silently completed by schedule" assumption outside the

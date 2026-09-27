@@ -750,6 +750,7 @@ export class AlertsService {
           windowStartAt: BigInt(start),
           windowEndAt: BigInt(end),
           assignmentState: 'pending',
+          routingDeferredUntil: null,
           updatedAt: BigInt(context.now),
           version: { increment: 1 },
         },
@@ -815,6 +816,7 @@ export class AlertsService {
         where: { id: requestId },
         data: {
           assignmentState: 'pending',
+          routingDeferredUntil: null,
           updatedAt: BigInt(context.now),
           version: { increment: 1 },
         },
@@ -1165,7 +1167,11 @@ export class AlertsService {
         engineerIds: [],
         requestIds: [request.id],
         workDate: date,
-        reasons: { assignment: 'unassigned' },
+        reasons: {
+          assignment: 'unassigned',
+          ordinaryReplanningDisabled:
+            request.routingDeferredUntil !== null && Number(request.routingDeferredUntil) > now,
+        },
       });
     }
     const pointer = await tx.appliedPlanCurrent.findUnique({

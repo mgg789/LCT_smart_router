@@ -6,6 +6,7 @@ import { assertWriteApplied, type OperationContext } from '../../operations';
 import type { Tx } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import { businessNow } from '../live/business-clock';
+import { ordinaryArrivalHoldUntil } from '../policy/replanning-policy';
 import { nearestRegion, type RegionPoint, regionCenters } from './region-geocenter';
 import { requireWindowConfirmation } from './window-confirmation';
 import { findWorkType, fitWindowToService } from './work-type.catalog';
@@ -126,6 +127,7 @@ export class RequestsService {
         windowEndAt: BigInt(window.windowEndAt),
         lifecycle: 'draft',
         assignmentState: 'pending',
+        routingDeferredUntil: null,
         origin: 'system_rule',
         createdAt: BigInt(context.now),
         updatedAt: BigInt(context.now),
@@ -157,12 +159,18 @@ export class RequestsService {
     }
 
     const receivedAt = await businessNow(context.tx, context.now);
+    const routingDeferredUntil = await ordinaryArrivalHoldUntil(
+      context.tx,
+      receivedAt,
+      current.workCategory,
+    );
     const arrivalOrder = await nextArrivalOrder(context.tx);
     const updated = await context.tx.request.updateMany({
       where: { id: requestId, version: expectedVersion ?? current.version },
       data: {
         lifecycle: 'submitted',
-        assignmentState: 'pending',
+        assignmentState: routingDeferredUntil === null ? 'pending' : 'unassigned',
+        routingDeferredUntil,
         arrivalOrder,
         submittedAt: BigInt(context.now),
         receivedAt: BigInt(receivedAt),
@@ -189,13 +197,15 @@ export class RequestsService {
       payload: { requestId },
     });
 
-    // A confirmed request is new work to distribute, so the task changed and is
-    // republished in the same transaction (context/42 DF-10).
-    await this.publisher.publishIfChanged(
-      context.tx,
-      context.now,
-      PUBLICATION_TRIGGERS.REQUEST_SUBMITTED,
-    );
+    // A held ordinary arrival is deliberately outside the current task. All other
+    // submissions publish atomically with the lifecycle change (context/42 DF-10).
+    if (routingDeferredUntil === null) {
+      await this.publisher.publishIfChanged(
+        context.tx,
+        context.now,
+        PUBLICATION_TRIGGERS.REQUEST_SUBMITTED,
+      );
+    }
 
     return this.reload(context.tx, requestId);
   }
@@ -243,6 +253,7 @@ export class RequestsService {
         // The previous assignment does not confirm the new conditions, so the outcome
         // returns to pending and waits for a current result (context/36 section 3).
         assignmentState: 'pending',
+        routingDeferredUntil: null,
         updatedAt: BigInt(context.now),
         version: { increment: 1 },
       },
@@ -335,6 +346,7 @@ export class RequestsService {
             ? current.requiredEquipment
             : input.requiredEquipment,
         assignmentState: 'pending',
+        routingDeferredUntil: null,
         updatedAt: BigInt(context.now),
         version: { increment: 1 },
       },
