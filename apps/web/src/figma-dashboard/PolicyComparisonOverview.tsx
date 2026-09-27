@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import type { PolicyComparisonRow } from '../api/types';
 import {
   type ComparisonMeasure,
@@ -43,6 +43,34 @@ type CostMeasure = keyof typeof COST_MEASURES;
 export function PolicyComparisonOverview({ rows }: { rows: readonly PolicyComparisonRow[] }) {
   const [measure, setMeasure] = useState<CostMeasure>('kmPerJob');
   const [includeReserve, setIncludeReserve] = useState(false);
+  const reserveToggle = useRef<HTMLLabelElement>(null);
+  const scrollAnchor = useRef<{ container: HTMLElement; top: number; scale: number } | null>(null);
+  useLayoutEffect(() => {
+    const anchor = scrollAnchor.current;
+    scrollAnchor.current = null;
+    if (!anchor || !reserveToggle.current) return;
+    // Artboard transforms scale viewport pixels, while scrollTop uses layout pixels.
+    anchor.container.scrollTop +=
+      (reserveToggle.current.getBoundingClientRect().top - anchor.top) / anchor.scale;
+  });
+  const toggleReserve = (checked: boolean) => {
+    const label = reserveToggle.current;
+    let container = label?.parentElement ?? null;
+    while (container && !/(auto|scroll)/.test(getComputedStyle(container).overflowY)) {
+      container = container.parentElement;
+    }
+    if (label && container) {
+      scrollAnchor.current = {
+        container,
+        top: label.getBoundingClientRect().top,
+        scale:
+          container.offsetHeight > 0
+            ? container.getBoundingClientRect().height / container.offsetHeight || 1
+            : 1,
+      };
+    }
+    setIncludeReserve(checked);
+  };
   const fixed = rows.filter((row) => row.isUsable && !usesReserve(row));
   const visible = rows.filter((row) => includeReserve || !usesReserve(row));
   const fifo = rows.find((row) => row.strategyId === 'baseline' && row.isUsable);
@@ -150,11 +178,14 @@ export function PolicyComparisonOverview({ rows }: { rows: readonly PolicyCompar
         />
       </div>
       {reserve ? (
-        <label className="flex cursor-pointer items-center gap-[12px] rounded-[16px] border border-figma-muted/20 p-[18px] text-[15px] text-figma-ink">
+        <label
+          ref={reserveToggle}
+          className="flex cursor-pointer items-center gap-[12px] rounded-[16px] border border-figma-muted/20 p-[18px] text-[15px] text-figma-ink"
+        >
           <input
             type="checkbox"
             checked={includeReserve}
-            onChange={(event) => setIncludeReserve(event.target.checked)}
+            onChange={(event) => toggleReserve(event.target.checked)}
             className="peer sr-only"
           />
           <span
@@ -167,7 +198,7 @@ export function PolicyComparisonOverview({ rows }: { rows: readonly PolicyCompar
               <img src="/figma/check-mark.svg" alt="" className="size-[18px] brightness-0 invert" />
             ) : null}
           </span>
-          <span className="relative top-[1px]">
+          <span>
             Показать «Полное покрытие»: +{reserve.additionalEngineers} резервных инженеров. Этот
             результат использует больше ресурсов и сравнивается отдельно.
           </span>

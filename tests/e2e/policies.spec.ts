@@ -22,6 +22,17 @@ test('plan metrics lead to a real FIFO comparison without applying another polic
   live,
 }) => {
   await signIn(page);
+  // A real staffing shortage guarantees the covering candidate needs a reserve row.
+  await page.getByRole('button', { name: 'Инженеры', exact: true }).click();
+  await page.getByRole('button', { name: 'Снять со смены', exact: true }).click();
+  await expect
+    .poll(
+      async () =>
+        (await readPlan(live.api)).assignments.filter((item) => item.status === 'unassigned')
+          .length,
+      { timeout: 30_000 },
+    )
+    .toBe(5);
   await waitForAppliedTask(live.api);
   const before = await readPlan(live.api);
   await page.getByRole('button', { name: 'Метрики плана', exact: true }).click();
@@ -35,6 +46,29 @@ test('plan metrics lead to a real FIFO comparison without applying another polic
   await expect(page.getByRole('region', { name: 'Дорога на назначение' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Доля опозданий' })).toBeVisible();
   await expect(page.getByRole('region', { name: 'Задействованные инженеры' })).toBeVisible();
+  const reserve = page.getByRole('checkbox', { name: /Показать «Полное покрытие»/ });
+  await reserve.scrollIntoViewIfNeeded();
+  const reserveLabel = reserve.locator('..');
+  const beforeToggle = await reserveLabel.boundingBox();
+  if (!beforeToggle) throw new Error('Reserve toggle has no layout box');
+  await reserveLabel.click();
+  await expect(reserve).toBeChecked();
+  await expect
+    .poll(async () =>
+      Math.abs(
+        ((await reserveLabel.boundingBox())?.y ?? Number.POSITIVE_INFINITY) - beforeToggle.y,
+      ),
+    )
+    .toBeLessThan(1);
+  await reserveLabel.click();
+  await expect(reserve).not.toBeChecked();
+  await expect
+    .poll(async () =>
+      Math.abs(
+        ((await reserveLabel.boundingBox())?.y ?? Number.POSITIVE_INFINITY) - beforeToggle.y,
+      ),
+    )
+    .toBeLessThan(1);
   await page
     .getByRole('group', { name: 'Вид сравнения' })
     .getByRole('button', { name: 'Таблица', exact: true })
