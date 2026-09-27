@@ -580,12 +580,6 @@ export function PolicyControl({
           motionOn={motionOn}
           onToggle={onOrdinaryReplanningToggle}
         />
-        <span
-          className="absolute left-[85px] text-[12px] text-figma-muted"
-          style={{ top: 528 + extra }}
-        >
-          {ordinaryReplanningDisabled ? 'Без перестройки' : 'Обычный режим'}
-        </span>
         <button
           type="button"
           onClick={onManualMode}

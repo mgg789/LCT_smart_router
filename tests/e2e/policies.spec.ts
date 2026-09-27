@@ -206,7 +206,6 @@ test('ordinary-replanning switch persists without changing the working plan', as
   await expect(toggle.getByRole('tooltip')).not.toBeVisible();
   await toggle.click();
   await expect(toggle).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByText('Без перестройки', { exact: true })).toBeVisible();
   expect((await readPlan(live.api)).revision).toBe(before.revision);
   await page.reload();
   await open();
