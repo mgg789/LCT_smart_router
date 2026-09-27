@@ -27,7 +27,10 @@ import { findWorkType, WORK_TYPE_CODES } from '../../orchestrator/requests/work-
 import { PrismaService } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import { PlanRestoreService, RouterClient } from '../../routing/router-gateway';
+import { ManualDecisionsService } from '../../routing/router-gateway/manual-decisions.service';
+import { manualDecisionSchema } from '../../routing/router-gateway/manual-state';
 import type { AiPreviewRow } from '../runtime/ai-event.types';
+import { requireManualMode } from '../tools/manual.tools';
 
 /**
  * The AI-gateway's own catalogue of writable actions.
@@ -106,6 +109,7 @@ export interface AiActionCatalogDeps {
    *  and request rows themselves have none. */
   readonly prisma: PrismaService;
   readonly timeZone: string;
+  readonly manualDecisions?: ManualDecisionsService;
 }
 
 const requestIdSchema = z.string().min(1);
@@ -308,6 +312,73 @@ async function ensureClientAccount(
 
 export function buildAiActionCatalog(deps: AiActionCatalogDeps): ReadonlyMap<string, AiActionSpec> {
   const catalog = new Map<string, AiActionSpec>();
+  const manualEditSchema = manualDecisionSchema
+    .omit({ id: true, priority: true })
+    .extend({ expectedVersion: z.number().int().nonnegative() });
+  const manualRemoveSchema = z.object({
+    expectedVersion: z.number().int().nonnegative(),
+    decisionId: z.string().min(1),
+  });
+  const manualOrderSchema = z.object({
+    expectedVersion: z.number().int().nonnegative(),
+    decisionIds: z.array(z.string().min(1)),
+  });
+  const manualService = () => {
+    if (!deps.manualDecisions)
+      throw SysError.validationFailed('Manual decisions service unavailable');
+    return deps.manualDecisions;
+  };
+  catalog.set('manual.decision.put', {
+    zodSchema: manualEditSchema,
+    allowedProfiles: ['dispatcher_fix'],
+    precheck: () => requireManualMode(deps.prisma),
+    async preview(args) {
+      const payload = manualEditSchema.parse(args.payload);
+      return [
+        { label: 'Ручное решение', value: payload.kind },
+        { label: 'Объект', value: payload.targetId },
+        { label: 'Параметры', value: JSON.stringify(payload) },
+      ];
+    },
+    async apply(args) {
+      const { expectedVersion, ...input } = manualEditSchema.parse(args.payload);
+      return manualService().put(args.context, expectedVersion, input);
+    },
+  });
+  catalog.set('manual.decision.remove', {
+    zodSchema: manualRemoveSchema,
+    allowedProfiles: ['dispatcher_fix'],
+    precheck: () => requireManualMode(deps.prisma),
+    async preview(args) {
+      return [
+        {
+          label: 'Удалить ручное решение',
+          value: manualRemoveSchema.parse(args.payload).decisionId,
+        },
+      ];
+    },
+    async apply(args) {
+      const input = manualRemoveSchema.parse(args.payload);
+      return manualService().remove(args.context, input.expectedVersion, input.decisionId);
+    },
+  });
+  catalog.set('manual.priorities', {
+    zodSchema: manualOrderSchema,
+    allowedProfiles: ['dispatcher_fix'],
+    precheck: () => requireManualMode(deps.prisma),
+    async preview(args) {
+      return [
+        {
+          label: 'Приоритеты от высшего к низшему',
+          value: manualOrderSchema.parse(args.payload).decisionIds.join(', '),
+        },
+      ];
+    },
+    async apply(args) {
+      const input = manualOrderSchema.parse(args.payload);
+      return manualService().reorder(args.context, input.expectedVersion, input.decisionIds);
+    },
+  });
 
   catalog.set('request.create', {
     zodSchema: createRequestPayloadSchema,

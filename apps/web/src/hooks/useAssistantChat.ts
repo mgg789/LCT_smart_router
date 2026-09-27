@@ -292,6 +292,7 @@ export function useAssistantChat({
             return;
           }
           const event = outcome.event;
+          const isNewEvent = event.seq > lastEventSeqRef.current;
           lastEventSeqRef.current = Math.max(lastEventSeqRef.current, event.seq);
           persist({});
           switch (event.type) {
@@ -323,6 +324,17 @@ export function useAssistantChat({
               setActivity(event.intent);
               break;
             case 'tool_result':
+              if (
+                isNewEvent &&
+                event.ok &&
+                event.toolName === 'request_manual_mode' &&
+                surface === 'dispatcher' &&
+                conversationRef.current?.assistMode === 'fix'
+              ) {
+                window.dispatchEvent(
+                  new CustomEvent('manual-planning-open', { detail: 'request-manual' }),
+                );
+              }
               setActivity(null);
               break;
             case 'operation_prepared':
@@ -428,7 +440,7 @@ export function useAssistantChat({
           }
         });
     },
-    [appendAuthoritative, persist, token, updateConversation],
+    [appendAuthoritative, persist, token, updateConversation, surface],
   );
 
   const pollDispatcherMessages = useCallback(

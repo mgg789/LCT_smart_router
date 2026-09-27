@@ -125,7 +125,9 @@ function harness(options: HarnessOptions) {
       },
     } as never,
     {
-      llmSpecsFor: () => [{ name: 'write_plan', description: 'write', parametersJsonSchema: {} }],
+      liveSpecsFor: async () => [
+        { name: 'write_plan', description: 'write', parametersJsonSchema: {} },
+      ],
     } as never,
     { publishMessage: () => undefined } as never,
   );

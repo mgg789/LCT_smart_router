@@ -42,6 +42,9 @@ it('shows online-only assignment and original window in manual mode, preserving 
 
 it('presents four manual capabilities and conflict handling after activation', () => {
   const html = renderToStaticMarkup(<ManualFeaturePresentation />);
+  for (const icon of ['assignment', 'window', 'lunch', 'shift'])
+    expect(html).toContain(`/figma/manual-${icon}.svg`);
+  expect(html).not.toContain('list-disc');
   for (const label of ['Назначения.', 'Окна заявок.', 'Обеды.', 'Смены.', 'Конфликт приоритетов'])
     expect(html).toContain(label);
 });

@@ -192,6 +192,7 @@ export function NotificationControl({
 export function UserMenu({
   open,
   covered,
+  manualMode = false,
   hasPreviousPlan,
   motionOn,
   demoStand,
@@ -205,6 +206,7 @@ export function UserMenu({
 }: {
   open: boolean;
   covered: boolean;
+  manualMode?: boolean;
   hasPreviousPlan: boolean;
   motionOn: boolean;
   demoStand: boolean;
@@ -258,16 +260,18 @@ export function UserMenu({
             style={{ boxShadow: '0 16px 36px rgba(39, 41, 48, 0.16)' }}
           >
             <div className="flex flex-col gap-[8px]">
-              <MenuAction
-                motionOn={motionOn}
-                tone="bee"
-                onClick={() => openManualPlanning('priorities')}
-              >
-                Приоритеты
-              </MenuAction>
               <MenuAction motionOn={motionOn} tone="ink" onClick={onSettings}>
                 Настройки
               </MenuAction>
+              {manualMode ? (
+                <MenuAction
+                  motionOn={motionOn}
+                  tone="bee"
+                  onClick={() => openManualPlanning('priorities')}
+                >
+                  Приоритеты
+                </MenuAction>
+              ) : null}
               {hasPreviousPlan ? (
                 <MenuAction motionOn={motionOn} tone="bee" onClick={onOpenPreviousPlan}>
                   Прошлый план

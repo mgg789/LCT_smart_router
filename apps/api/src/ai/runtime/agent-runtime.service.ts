@@ -17,7 +17,6 @@ import {
   type LlmMessage,
   LlmProvider,
   type LlmToolCall,
-  type LlmToolSpec,
   type LlmTurnInput,
   type RetryRunResult,
   runProviderTurn,
@@ -218,7 +217,6 @@ export class AgentRuntimeService implements OnModuleInit {
     // This conversation's lane decides which tools the model is even offered --
     // `ToolRegistry.catalogueFor` is the single source of truth `AiToolDispatcher` also
     // consults when a call actually comes back.
-    const tools: LlmToolSpec[] = this.toolRegistry.llmSpecsFor(conversation.roleProfile);
 
     const requiresReasoningReplay =
       this.provider.kind === 'openai_chat' &&
@@ -245,7 +243,8 @@ export class AgentRuntimeService implements OnModuleInit {
       // another write after an incomplete explanation.
       for (let step = 0; step <= maxToolSteps; step += 1) {
         this.stop.checkpoint(runId);
-        const turnTools = step < maxToolSteps ? tools : [];
+        const turnTools =
+          step < maxToolSteps ? await this.toolRegistry.liveSpecsFor(conversation.roleProfile) : [];
 
         const turnInput: LlmTurnInput = {
           model,

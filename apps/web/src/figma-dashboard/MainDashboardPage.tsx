@@ -787,6 +787,7 @@ export function MainDashboardPage() {
             onRoadImport={dash.importRoadResource}
           />
           <UserMenu
+            manualMode={dash.snapshot?.plan.mode === 'manual'}
             open={userMenuOpen}
             covered={notifOpen}
             hasPreviousPlan={dash.previousPlan !== null}

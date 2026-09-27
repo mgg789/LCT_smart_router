@@ -214,17 +214,9 @@ type PrepareRestorePreviousPlanArgs = z.infer<typeof prepareRestorePreviousPlanS
  * orchestrator method the matching `DispatchController` HTTP handler calls -- there is
  * still exactly one vocabulary of writable actions.
  *
- * Three deliberately excluded from every AI profile, per this change's task boundary:
- * `POST /dispatch/mode` (switching emergency manual control), `plan/reassign` and
- * `plan/reorder` (editing the manual plan directly) -- `context/32` section 6.4 states the
- * AI's authority to do either is not approved yet. `data/reset`, `data/import`,
- * `data/upload`, `PUT router/technical-settings`, engineer creation/linking/unlinking,
- * `auth/tokens` and `debug/router-result` are excluded outright (see the denylist test in
- * `test/unit/ai-tools.test.ts`): destructive, credential-bearing or structural actions no
- * assistant catalogue offers in any mode. A reset in particular may be *prepared* by
- * `data.dto.ts`'s own contract, but its human confirmation phrase is never supplied by an
- * AI on the dispatcher's behalf, so it has no tool here at all rather than a tool that
- * could never actually be confirmed.
+ * Manual intentions live in manual.tools.ts and require dispatcher-enabled Manual.
+ * Mode activation itself remains human-only in the builtin assistant. Destructive,
+ * credential-bearing and structural administration tools remain excluded.
  *
  * `move_window`/`reschedule` on an alert and a direct `update_request` edit both end up as
  * a `request.update` (or, for the two alert-bound ones, `alert.resolve`) card, but are

@@ -20,6 +20,12 @@ import {
   PlanRestoreService,
   RouterClient,
 } from '../../routing/router-gateway';
+import { ManualDecisionsService } from '../../routing/router-gateway/manual-decisions.service';
+import {
+  manualDecisionSchema,
+  manualStateView,
+  readManualState,
+} from '../../routing/router-gateway/manual-state';
 import { AlertsService, type ResolveAlertInput } from '../alerts';
 import { LiveService } from '../live';
 import { PolicyService } from '../policy';
@@ -212,7 +218,111 @@ export class McpToolsService {
     private readonly publisher: SnapshotPublisher,
     private readonly mcp: McpService,
     private readonly guard: ActionGuardService,
+    private readonly manualDecisions: ManualDecisionsService,
   ) {}
+
+  /** External agents use the same intent validation, CAS and operation journal as HTTP. */
+  private manualTools(): McpToolEntry[] {
+    const edit = manualDecisionSchema.omit({ id: true, priority: true }).extend({
+      expectedVersion: z.number().int().nonnegative(),
+      windowChangeConfirmation: z.string().optional(),
+    });
+    const remove = z.object({
+      expectedVersion: z.number().int().nonnegative(),
+      decisionId: z.string().min(1),
+    });
+    const order = z.object({
+      expectedVersion: z.number().int().nonnegative(),
+      decisionIds: z.array(z.string().min(1)),
+    });
+    return [
+      defineTool(
+        {
+          name: 'get_manual_state',
+          title: 'Ручные решения',
+          description:
+            'Read Manual session version, decisions and conflicts. Check mode using get_situation. New decisions tie at highest priority; smaller priority numbers win.',
+          inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+        },
+        z.object({}),
+        async () => manualStateView(await readManualState(this.prisma)),
+      ),
+      defineTool(
+        {
+          name: 'edit_manual_decision',
+          title: 'Сохранить ручное решение',
+          description:
+            'Only enabled Manual: assignment, window, lunch or shift. Read current version first. Requires explicit user consent. For a changed window first receive the exact-bounds confirmation challenge, ask the user to approve those bounds, then retry with windowChangeConfirmation from that challenge. Epoch seconds use business date/time. Started work cannot be reassigned. Conflicting decisions may be rejected by planning.',
+          inputSchema: {
+            type: 'object',
+            properties: z.toJSONSchema(edit).properties ?? {},
+            required: z.toJSONSchema(edit).required,
+            additionalProperties: false,
+          },
+        },
+        edit,
+        async (args, actor) => {
+          const { expectedVersion, windowChangeConfirmation, ...input } = args;
+          const outcome = await this.operations.execute(
+            {
+              operationId: randomUUID(),
+              actor: { ...actor, windowChangeConfirmation },
+              action: 'manual.decision.put',
+              payload: { expectedVersion, ...input },
+            },
+            (context) => this.manualDecisions.put(context, expectedVersion, input),
+          );
+          return outcome.result;
+        },
+      ),
+      defineTool(
+        {
+          name: 'remove_manual_decision',
+          title: 'Удалить ручное решение',
+          description:
+            'Only enabled Manual. Remove an explicitly chosen intention using current version; actual execution is retained. Obtain user consent first.',
+          inputSchema: {
+            type: 'object',
+            properties: z.toJSONSchema(remove).properties ?? {},
+            required: z.toJSONSchema(remove).required,
+            additionalProperties: false,
+          },
+        },
+        remove,
+        async (args, actor) => {
+          const outcome = await this.operations.execute(
+            { operationId: randomUUID(), actor, action: 'manual.decision.remove', payload: args },
+            (context) =>
+              this.manualDecisions.remove(context, args.expectedVersion, args.decisionId),
+          );
+          return outcome.result;
+        },
+      ),
+      defineTool(
+        {
+          name: 'reorder_manual_priorities',
+          title: 'Приоритеты ручных решений',
+          description:
+            'Only enabled Manual. Submit every decision ID exactly once, highest priority first, with current version. Obtain explicit user choice of priorities; rejected decisions may remain unfulfilled.',
+          inputSchema: {
+            type: 'object',
+            properties: z.toJSONSchema(order).properties ?? {},
+            required: z.toJSONSchema(order).required,
+            additionalProperties: false,
+          },
+        },
+        order,
+        async (args, actor) => {
+          const outcome = await this.operations.execute(
+            { operationId: randomUUID(), actor, action: 'manual.priorities', payload: args },
+            (context) =>
+              this.manualDecisions.reorder(context, args.expectedVersion, args.decisionIds),
+          );
+          return outcome.result;
+        },
+      ),
+    ];
+  }
 
   /** Tool catalogue for `tools/list`, in registration order. */
   listTools(): readonly McpToolDefinition[] {
@@ -996,12 +1106,13 @@ export class McpToolsService {
           return outcome.result;
         },
       ),
+      ...this.manualTools(),
       defineTool(
         {
           name: 'set_control_mode',
           title: 'Ручной или автоматический план',
           description:
-            'manual enables dispatcher constraints while live routing continues; reason is mandatory. auto clears all manual decisions and replans. ' +
+            'Atypical LAST RESORT mode. Before switching, explain that constraints can reduce efficiency and conflict; obtain explicit user consent. Never switch implicitly. manual enables dispatcher constraints while live routing continues; reason is mandatory. auto clears ALL manual decisions, restores original conditions and retains actual execution. ' +
             'Call review_action first. If the verdict is risk, wait for the dispatcher.',
           inputSchema: {
             type: 'object',

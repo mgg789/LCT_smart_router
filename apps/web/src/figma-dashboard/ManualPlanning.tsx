@@ -16,7 +16,7 @@ import { ModalLayer, ModalScrim } from './modalLayer';
 const FIELD =
   'h-[40px] min-w-0 rounded-[12px] border border-figma-ink/20 bg-white px-[12px] text-[16px] text-figma-ink';
 const BUTTON =
-  'rounded-full bg-figma-bee px-[20px] py-[12px] font-semibold text-figma-ink disabled:opacity-40';
+  'rounded-[16px] bg-figma-bee px-[20px] py-[12px] font-semibold text-figma-ink disabled:opacity-40';
 const LABELS = { assignment: 'Исполнитель', window: 'Окно заявки', lunch: 'Обед', shift: 'Смена' };
 type Editor = {
   kind: 'window' | 'lunch' | 'shift';
@@ -61,12 +61,15 @@ export function ManualPlanningProvider({
   const active = snapshot?.plan.mode === 'manual';
   useEffect(() => {
     const open = (event: Event) => {
-      setPanel((event as CustomEvent<'mode' | 'priorities'>).detail);
+      const requested = (event as CustomEvent<'mode' | 'priorities' | 'request-manual'>).detail;
+      if (requested === 'request-manual' && active) return;
+      setEditor(null);
+      setPanel(requested === 'request-manual' ? 'mode' : requested);
       setError(null);
     };
     window.addEventListener('manual-planning-open', open);
     return () => window.removeEventListener('manual-planning-open', open);
-  }, []);
+  }, [active]);
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
@@ -163,7 +166,7 @@ export function ManualPlanningProvider({
               <p className="mb-[16px] leading-relaxed">
                 {active
                   ? 'Все ручные решения будут удалены. Исходные условия заявок, обедов и смен восстановятся, а автоматический расчёт заново построит план. Фактическое выполнение и начатые работы сохранятся.'
-                  : 'Вы задаёте обязательные решения, а алгоритм продолжает строить маршруты с их учётом. Новые решения получают одинаковый наивысший приоритет. Если решения несовместимы, расставьте их по важности. Начатые работы и фактические отметки сохраняются.'}
+                  : 'Ручной режим может снизить эффективность плана и оставить часть заявок без назначения. Вы задаёте обязательные решения, а алгоритм продолжает строить маршруты с их учётом. Новые решения получают одинаковый наивысший приоритет. Если решения несовместимы, расставьте их по важности. Начатые работы и фактические отметки сохраняются.'}
               </p>
               {!active ? (
                 <label className="block">
@@ -341,7 +344,7 @@ export function ManualPlanningProvider({
               setPanel(panel === 'intro' && state?.needsReview ? 'priorities' : null);
               setEditor(null);
             }}
-            className="ml-[14px] mt-[18px] rounded-full border border-figma-ink/30 px-[20px] py-[12px]"
+            className="ml-[14px] mt-[18px] rounded-[16px] border border-figma-ink/30 px-[20px] py-[12px]"
           >
             {panel === 'intro' ? 'Понятно' : 'Назад'}
           </button>
@@ -355,22 +358,38 @@ export function ManualPlanningProvider({
 export function ManualFeaturePresentation() {
   return (
     <div className="space-y-[16px] leading-relaxed">
-      <ul className="list-disc space-y-[12px] pl-[24px]">
-        <li>
-          <strong>Назначения.</strong> Выбирайте инженера на линии или оставляйте заявку без
-          исполнителя в её панели.
+      <ul className="space-y-[12px]">
+        <li className="flex items-start gap-[12px]">
+          <img
+            src="/figma/manual-assignment.svg"
+            alt=""
+            className="mt-[3px] size-[24px] shrink-0"
+          />
+          <span>
+            <strong>Назначения.</strong> Выбирайте инженера на линии или оставляйте заявку без
+            исполнителя в её панели.
+          </span>
         </li>
-        <li>
-          <strong>Окна заявок.</strong> Задавайте ручное окно рядом с исходным. Изменение требует
-          подтверждения.
+        <li className="flex items-start gap-[12px]">
+          <img src="/figma/manual-window.svg" alt="" className="mt-[3px] size-[24px] shrink-0" />
+          <span>
+            <strong>Окна заявок.</strong> Задавайте ручное окно рядом с исходным. Изменение требует
+            подтверждения.
+          </span>
         </li>
-        <li>
-          <strong>Обеды.</strong> Нажмите будущий обед в маршруте инженера, чтобы изменить его
-          время.
+        <li className="flex items-start gap-[12px]">
+          <img src="/figma/manual-lunch.svg" alt="" className="mt-[3px] size-[24px] shrink-0" />
+          <span>
+            <strong>Обеды.</strong> Нажмите будущий обед в маршруте инженера, чтобы изменить его
+            время.
+          </span>
         </li>
-        <li>
-          <strong>Смены.</strong> Редактируйте время смены в досье инженера. Выполненные действия не
-          меняются.
+        <li className="flex items-start gap-[12px]">
+          <img src="/figma/manual-shift.svg" alt="" className="mt-[3px] size-[24px] shrink-0" />
+          <span>
+            <strong>Смены.</strong> Редактируйте время смены в досье инженера. Выполненные действия
+            не меняются.
+          </span>
         </li>
       </ul>
       <p>
