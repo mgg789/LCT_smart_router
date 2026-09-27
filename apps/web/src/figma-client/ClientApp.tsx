@@ -366,6 +366,21 @@ export function ClientApp() {
     </AnimatePresence>
   );
 
+  const menuDrawer = (
+    <ClientMenu
+      active={screen === 'sent' ? 'new' : screen}
+      email={session?.email ?? null}
+      motionOn={motionOn}
+      onClose={() => setMenuOpen(false)}
+      onNavigate={(id) => {
+        if (id === 'list') openList();
+        else go(id);
+      }}
+      onNewRequest={() => go('new')}
+      open={menuOpen}
+    />
+  );
+
   const column = (
     <>
       {failure ? (
@@ -469,22 +484,9 @@ export function ClientApp() {
         ) : null}
       </AnimatePresence>
 
-      {desk ? null : gateSheet}
+      {gateSheet}
 
-      {(opened && !desk) || gate ? null : (
-        <ClientMenu
-          open={menuOpen}
-          motionOn={motionOn}
-          email={session?.email ?? null}
-          active={screen === 'sent' ? 'new' : screen}
-          onClose={() => setMenuOpen(false)}
-          onNavigate={(id) => {
-            if (id === 'list') openList();
-            else go(id);
-          }}
-          onNewRequest={() => go('new')}
-        />
-      )}
+      {desk || (opened && !desk) || gate ? null : menuDrawer}
     </>
   );
 
@@ -494,6 +496,7 @@ export function ClientApp() {
         activeNavId={screen === 'sent' ? 'new' : screen}
         brand={CLIENT_ASSETS.logo}
         detail={detail}
+        detailKey={shown?.id}
         header={
           <>
             <p className="font-murs text-[28px] tracking-[0.02em] text-figma-ink">NAVIX</p>
@@ -513,7 +516,21 @@ export function ClientApp() {
             onSelect: () => go('support'),
           },
         ]}
-        overlays={gateSheet}
+        lead={
+          <motion.button
+            aria-expanded={menuOpen}
+            aria-label="Меню"
+            className="flex size-[48px] shrink-0 items-center justify-center rounded-[14px] bg-figma-ink"
+            onClick={() => setMenuOpen(true)}
+            transition={{ duration: 0.16 }}
+            type="button"
+            whileTap={{ scale: 0.96 }}
+          >
+            <FigmaIcon alt="" height={14} src={CLIENT_ASSETS.menu} width={20} />
+          </motion.button>
+        }
+        overlays={menuDrawer}
+        screenKey={screen}
       >
         {column}
       </DeskShell>

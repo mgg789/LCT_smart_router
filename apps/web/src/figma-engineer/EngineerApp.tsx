@@ -439,6 +439,38 @@ export function EngineerApp({
   const overlayOpen = detailJob !== null || screen === 'settings';
   const sheetY = window.innerHeight;
 
+  const menuDrawer = (
+    <EngineerMenu
+      token={designPreview ? undefined : token}
+      open={menuOpen}
+      motionOn={motionOn}
+      name={name}
+      email={email || '—'}
+      active={screen}
+      lunch={lunch}
+      breakActive={
+        live?.engineer.technicalBreak !== null && live?.engineer.technicalBreak !== undefined
+      }
+      breakPending={breakPending}
+      onClose={() => setMenuOpen(false)}
+      onNavigate={(id) => {
+        setOpenedJob(null);
+        setScreen(id);
+        setMenuOpen(false);
+        setNotice(null);
+        setSettingsError(null);
+      }}
+      onBreak={() => void startBreak()}
+      onSupport={() => {
+        setOpenedJob(null);
+        setScreen('assistant');
+        setMenuOpen(false);
+        setNotice(null);
+      }}
+      onSignOut={onSignOut}
+    />
+  );
+
   const column = (
     <>
       <div
@@ -685,37 +717,7 @@ export function EngineerApp({
         ) : null}
       </AnimatePresence>
 
-      {overlayOpen ? null : (
-        <EngineerMenu
-          token={designPreview ? undefined : token}
-          open={menuOpen}
-          motionOn={motionOn}
-          name={name}
-          email={email || '—'}
-          active={screen}
-          lunch={lunch}
-          breakActive={
-            live?.engineer.technicalBreak !== null && live?.engineer.technicalBreak !== undefined
-          }
-          breakPending={breakPending}
-          onClose={() => setMenuOpen(false)}
-          onNavigate={(id) => {
-            setOpenedJob(null);
-            setScreen(id);
-            setMenuOpen(false);
-            setNotice(null);
-            setSettingsError(null);
-          }}
-          onBreak={() => void startBreak()}
-          onSupport={() => {
-            setOpenedJob(null);
-            setScreen('assistant');
-            setMenuOpen(false);
-            setNotice(null);
-          }}
-          onSignOut={onSignOut}
-        />
-      )}
+      {desk || overlayOpen ? null : menuDrawer}
     </>
   );
 
@@ -724,6 +726,7 @@ export function EngineerApp({
       <DeskShell
         activeNavId={screen}
         brand={ENGINEER_ASSETS.house}
+        detailKey={deskJob?.request.id}
         detail={
           deskJob ? (
             <RequestDetail
@@ -748,6 +751,19 @@ export function EngineerApp({
             <p className="font-semibold text-[18px] text-figma-ink">{name}</p>
             <p className="font-medium text-[16px] text-figma-muted">{email || '—'}</p>
           </>
+        }
+        lead={
+          <motion.button
+            aria-expanded={menuOpen}
+            aria-label="Меню"
+            className="flex size-[48px] shrink-0 items-center justify-center rounded-[14px] bg-figma-ink"
+            onClick={() => setMenuOpen(true)}
+            transition={{ duration: 0.16 }}
+            type="button"
+            whileTap={{ scale: 0.96 }}
+          >
+            <FigmaIcon alt="" height={14} src={ENGINEER_ASSETS.menu} width={20} />
+          </motion.button>
         }
         nav={[
           {
@@ -778,6 +794,8 @@ export function EngineerApp({
             },
           },
         ]}
+        overlays={menuDrawer}
+        screenKey={screen}
       >
         {column}
       </DeskShell>

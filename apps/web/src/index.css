@@ -257,6 +257,12 @@ body {
   height: 100dvh;
   overflow: hidden;
   background: var(--color-figma-canvas);
+  /*
+   * A base for anything drawn over the whole desk rather than inside a pane —
+   * the menu drawer, the error notice. The panes override it with their own.
+   */
+  --phone-width: 660px;
+  --eu: calc(var(--phone-width) / 670);
 }
 
 .phone-desk-rail {
@@ -298,6 +304,7 @@ body {
  * something else entirely. Container units are lengths everywhere.
  */
 .phone-desk-col {
+  position: relative;
   min-width: 0;
   overflow: hidden auto;
   border-radius: 28px;
@@ -305,17 +312,28 @@ body {
   container-type: inline-size;
 }
 
-.phone-desk-col-list {
-  flex: 0 1 640px;
-  --phone-width: min(100cqw, 640px);
+/*
+ * Both panes read their `eu` off the same cap, so the two halves of the desk
+ * are the same size as each other and barely larger than the phone they were
+ * drawn for. A pane is free to be much wider — blocks inside stretch to fill
+ * it — but type, padding and controls stop growing here. Letting them follow
+ * the pane made a monitor render the app at half again its drawn size, which
+ * reads as a mockup blown up rather than as a desktop app.
+ */
+.phone-desk-col-list,
+.phone-desk-col-detail {
+  --phone-width: min(100cqw, 660px);
   --eu: calc(var(--phone-width) / 670);
+}
+
+.phone-desk-col-list {
+  flex: 0 0 660px;
+  min-width: 0;
 }
 
 .phone-desk-col-detail {
   flex: 1 1 0;
   background: #fff;
-  --phone-width: min(100cqw, 1000px);
-  --eu: calc(var(--phone-width) / 670);
 }
 
 /*
