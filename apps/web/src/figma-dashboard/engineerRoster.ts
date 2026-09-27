@@ -6,6 +6,7 @@ import { t } from '../i18n';
 import { skillLabel, transportLabel } from '../lib/reasons';
 import { formatClock } from '../lib/time';
 import { officesForRegion, SKILL_OPTIONS } from './addEntity';
+import { engineerPortraitIndex } from './engineerPortrait';
 import { givenName } from './engineerRing';
 import { requestCountLabel } from './fixtures';
 import { shortRequestId } from './requestsTable';
@@ -150,17 +151,7 @@ export function engineerPhotoIndex(
   portraitCount: number,
   displayName = '',
 ): number {
-  if (portraitCount <= 0) return 0;
-  const match = displayName.match(/Бригада\s+(\d+)/i);
-  if (match) {
-    const n = Number(match[1]);
-    if (Number.isFinite(n) && n > 0) return (n - 1) % portraitCount;
-  }
-  let hash = 0;
-  for (let i = 0; i < engineerId.length; i += 1) {
-    hash = (hash * 31 + engineerId.charCodeAt(i)) >>> 0;
-  }
-  return hash % portraitCount;
+  return engineerPortraitIndex(engineerId, displayName, portraitCount);
 }
 
 /**
@@ -268,7 +259,7 @@ export function engineerProfilesFromSnapshot(
         officeLabel: engineerOfficeLabel(engineer.region),
         assignedCount,
         cardStatus: cardStatus(activity, engineer.day?.availability ?? null, assignedCount),
-        photoIndex: engineerPhotoIndex(engineer.id, 3, engineer.displayName),
+        photoIndex: engineerPortraitIndex(engineer.id, engineer.displayName),
         availability: engineer.day?.availability ?? null,
         activity,
       };

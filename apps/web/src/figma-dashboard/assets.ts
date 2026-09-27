@@ -20,7 +20,7 @@ export const FIGMA_ASSETS = {
   searchPanel: '/figma/icon-search-panel.svg',
   bellHeader: '/figma/icon-bell-header.svg',
   chevronDown: '/figma/icon-chevron-down.svg',
-  avatarUser: '/figma/avatar-user.png',
+  avatarUser: '/avatars/dispatcher.png',
   avatarEngineer: '/figma/avatar-engineer.png',
   map: '/figma/map-moscow.png',
   timeline: '/figma/timeline-track.svg',
@@ -77,9 +77,4 @@ export const FIGMA_ASSETS = {
   aiThumbDown: '/figma/ai-thumb-down.svg',
 } as const;
 
-/** Three Figma portraits cycled on the Engineers ring when the API has no photo. */
-export const ENGINEER_PORTRAITS = [
-  FIGMA_ASSETS.engPortrait1,
-  FIGMA_ASSETS.engPortrait2,
-  FIGMA_ASSETS.engPortrait3,
-] as const;
+export { ENGINEER_PORTRAITS } from './engineerPortrait';

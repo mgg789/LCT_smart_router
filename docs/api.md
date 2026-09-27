@@ -1,5 +1,30 @@
 # API — эндпоинты, конвенции и недостающие контракты
 
+## Машиночитаемый контракт OpenAPI
+
+Актуальная спецификация доступна в работающем API как `/docs/openapi.json`; Swagger UI —
+`/docs`. Её исходный артефакт —
+[`apps/api/src/openapi/openapi.json`](../apps/api/src/openapi/openapi.json). Он генерируется
+из Nest-контроллеров, TypeScript-типов ответов и тех же Zod-схем, которые проверяют тело и
+query на HTTP-границе. Поэтому поля, UUID, диапазоны, enum и обязательность в запросах не
+дублируются вручную в Swagger-декораторах.
+
+После изменения маршрута, return-типа или Zod-схемы выполните
+`pnpm --filter api openapi:generate` и включите обновлённый JSON в тот же change. Проверка
+`pnpm lint:openapi` пересобирает API и завершится ошибкой при несовпадении артефакта с
+исходниками; она также входит в корневой `pnpm lint`.
+
+Генератор намеренно останавливается, если публичный успешный ответ имеет верхнеуровневый
+`any`/`unknown`, BigInt или неразворачиваемую рекурсивную структуру: контракт в таком случае
+нужно уточнить в типе ответа, а не публиковать фиктивную пустую схему. Пустая JSON Schema
+остается только для действительно произвольных JSON-полей (Prisma `JsonValue`, JSON-RPC
+`params`/`result`/`data`).
+
+Обычные защищённые операции используют `Authorization: Bearer <session-or-integration-token>`.
+MCP `POST /api/v1/mcp` принимает Bearer либо `X-MCP-Pin`; SSE отмечены media type
+`text/event-stream`, месячный экспорт — `application/pdf`. Health остаётся вне префикса:
+`/health/live`, `/health/ready`, `/health/services`.
+
 ## LIVE-день
 
 Правила и приёмка: [live.md](./live.md). Все времена в ответах — целые Unix-секунды.

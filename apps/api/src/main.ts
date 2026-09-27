@@ -3,13 +3,15 @@ import 'reflect-metadata';
 import { type INestApplication, Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { type OpenAPIObject, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { AppConfigService } from './common/config';
 import { AllExceptionsFilter } from './common/errors';
+import { HTTP_CONTRACT } from './common/http-contract';
 import { JsonLogger } from './common/logging';
 import { BigIntGuardInterceptor } from './common/serialization';
+import openApiDocument from './openapi/openapi.json';
 
 /** Applies the API-only response headers shared by production bootstrap and HTTP tests. */
 export function applySecurityHeaders(app: INestApplication, isProduction: boolean): void {
@@ -43,20 +45,15 @@ async function bootstrap(): Promise<void> {
   const isProduction = config.isProduction;
   applySecurityHeaders(app, isProduction);
 
-  app.setGlobalPrefix('api/v1', { exclude: ['health/live', 'health/ready', 'health/services'] });
+  app.setGlobalPrefix(HTTP_CONTRACT.prefix, { exclude: HTTP_CONTRACT.exclude });
   app.useGlobalFilters(new AllExceptionsFilter(telemetry.captureError));
   app.useGlobalInterceptors(new BigIntGuardInterceptor(!isProduction));
   app.enableShutdownHooks();
 
-  const openApi = new DocumentBuilder()
-    .setTitle('LCT Smart Router — System Layer')
-    .setDescription(
-      'System Layer (sys): business state, system operations, snapshot publication for ' +
-        'Router Core and application of its result.',
-    )
-    .setVersion('0.1.0')
-    .build();
-  SwaggerModule.setup('docs', app, SwaggerModule.createDocument(app, openApi), {
+  // The checked-in document is generated from the same Nest routes and runtime Zod
+  // schemas used by this process. Do not call createDocument(): decorator reflection
+  // cannot see Zod pipes or structural TypeScript return types.
+  SwaggerModule.setup('docs', app, openApiDocument as unknown as OpenAPIObject, {
     jsonDocumentUrl: 'docs/openapi.json',
   });
 

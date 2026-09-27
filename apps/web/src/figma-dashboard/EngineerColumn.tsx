@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import { t } from '../i18n';
 import { useArtboardStretch } from './artboardStretch';
 import { FIGMA_ASSETS } from './assets';
+import { engineerPortrait } from './engineerPortrait';
 import { type EngineerCard, requestCountLabel, truncateEnd } from './fixtures';
 import { FigmaIcon, FigmaText } from './primitives';
 import { TintIcon } from './TintIcon';
@@ -239,7 +240,7 @@ function EngineerRow({
     >
       <img
         alt=""
-        src={FIGMA_ASSETS.avatarEngineer}
+        src={engineerPortrait(engineer.id, engineer.name)}
         className="absolute left-[15px] top-[20px] size-[44px] max-w-none rounded-full object-cover"
       />
       <div className="absolute left-[69px] right-[15px] top-[20px] z-20 flex items-center justify-between gap-[10px]">

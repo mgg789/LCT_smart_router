@@ -121,6 +121,7 @@ tasks:
           - corepack enable
           - corepack prepare pnpm@10.28.2 --activate
           - pnpm install --frozen-lockfile
+          - pnpm --filter api exec prisma generate
           - pnpm lint
       - name: ruff
         image: docker.io/library/python:3.14-slim-bookworm
