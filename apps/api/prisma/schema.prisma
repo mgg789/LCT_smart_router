@@ -1335,6 +1335,8 @@ model AiConversation {
   /// Which request/engineer/alert the dialogue was opened about, if any. Kept as loose
   /// JSON because the set of linkable entities is expected to grow without a migration.
   contextRef  Json? @map("context_ref")
+  /// Private bounded provider context. Never returned by conversation serializers.
+  runtimeContext Json? @map("runtime_context")
   title       String?
   createdAt   BigInt @map("created_at")
   updatedAt   BigInt @map("updated_at")

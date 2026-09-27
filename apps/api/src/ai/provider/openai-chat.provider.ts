@@ -47,6 +47,7 @@ export class OpenAiChatProvider extends LlmProvider {
   constructor(
     private readonly client: OpenAI,
     private readonly clock: Clock,
+    private readonly reasoningEffort: 'none' | 'low' = 'none',
   ) {
     super();
   }
@@ -72,7 +73,9 @@ export class OpenAiChatProvider extends LlmProvider {
           ...(input.temperature === undefined ? {} : { temperature: input.temperature }),
           stream: true,
           stream_options: { include_usage: true },
-          thinking: { type: 'disabled' },
+          ...(this.reasoningEffort === 'low'
+            ? { thinking: { type: 'enabled' }, reasoning_effort: 'low' }
+            : { thinking: { type: 'disabled' } }),
         } as ChatCompletionCreateParamsStreaming,
         { signal: input.signal },
       );
@@ -99,7 +102,7 @@ export class OpenAiChatProvider extends LlmProvider {
           continue;
         }
         const reasoning = reasoningContentOf(choice.delta);
-        if (reasoning) {
+        if (reasoning !== null) {
           yield { type: 'reasoning', content: reasoning };
         }
         if (choice.delta.content) {
@@ -139,7 +142,9 @@ export class OpenAiChatProvider extends LlmProvider {
       throw toLlmCallError(error);
     }
 
-    for (const buffered of toolCallBuffers.values()) {
+    // Only a provider-confirmed complete tool-call turn is executable. A valid JSON
+    // prefix can still be present when the stream ends at `length` or ordinary `stop`.
+    for (const buffered of finishReason === 'tool_calls' ? toolCallBuffers.values() : []) {
       const parsed = tryParseJson(buffered.args);
       // Silently dropped when the model never finished the call or produced arguments
       // that do not parse: emitting a half-formed call would let the runtime execute on
@@ -194,9 +199,14 @@ function toChatMessages(
       continue;
     }
     if (message.role === 'assistant') {
-      out.push({
+      // DeepSeek's `reasoning_content` is protocol state required to continue a tool turn;
+      // the OpenAI SDK declaration intentionally does not include this vendor extension.
+      const assistantMessage = {
         role: 'assistant',
         content: message.content,
+        ...(message.reasoningContent === undefined
+          ? {}
+          : { reasoning_content: message.reasoningContent }),
         ...(message.toolCalls && message.toolCalls.length > 0
           ? {
               tool_calls: message.toolCalls.map((call) => ({
@@ -206,7 +216,8 @@ function toChatMessages(
               })),
             }
           : {}),
-      });
+      } as unknown as ChatCompletionMessageParam;
+      out.push(assistantMessage);
       continue;
     }
     out.push({ role: 'tool', tool_call_id: message.toolCallId, content: message.content });
@@ -231,9 +242,7 @@ function toChatTool(spec: LlmToolSpec): ChatCompletionTool {
 /** DeepSeek's `reasoning_content` field is not part of the official chunk type. */
 function reasoningContentOf(delta: ChatCompletionChunk.Choice['delta']): string | null {
   const withExtra = delta as unknown as { reasoning_content?: string | null };
-  return typeof withExtra.reasoning_content === 'string' && withExtra.reasoning_content.length > 0
-    ? withExtra.reasoning_content
-    : null;
+  return typeof withExtra.reasoning_content === 'string' ? withExtra.reasoning_content : null;
 }
 
 function mapFinishReason(

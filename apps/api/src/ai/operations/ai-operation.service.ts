@@ -12,8 +12,13 @@ import { EngineersService } from '../../orchestrator/engineers/engineers.service
 import { LiveService } from '../../orchestrator/live/live.service';
 import { PolicyService } from '../../orchestrator/policy';
 import { RequestsService } from '../../orchestrator/requests/requests.service';
+import {
+  isWindowConfirmationRequired,
+  mayChangeRequestWindow,
+} from '../../orchestrator/requests/window-confirmation';
 import { PrismaService, UnitOfWork } from '../../persistence';
 import { SnapshotPublisher } from '../../routing/mount-data-eng';
+import { PlanRestoreService, RouterClient } from '../../routing/router-gateway';
 import type { AiPreviewRow } from '../runtime/ai-event.types';
 import { type AiRunEventInput, RunEventBus } from '../runtime/run-event.bus';
 import { RunRegistry } from '../runtime/run-registry';
@@ -98,6 +103,8 @@ export class AiOperationService {
     alerts: AlertsService,
     policy: PolicyService,
     publisher: SnapshotPublisher,
+    restore: PlanRestoreService,
+    router: RouterClient,
   ) {
     this.catalog = buildAiActionCatalog({
       requests,
@@ -107,6 +114,8 @@ export class AiOperationService {
       policy,
       publisher,
       prisma,
+      restore,
+      router,
       timeZone: config.get('APP_TIME_ZONE'),
     });
   }
@@ -213,7 +222,10 @@ export class AiOperationService {
       toolName: input.action,
       intent: 'Проверка безопасности',
     });
-    const allowed = await this.guard.allows(input.action, preview);
+    const allowed =
+      input.action !== 'plan.restore' &&
+      !mayChangeRequestWindow(input.action, parsed.data) &&
+      (await this.guard.allows(input.action, preview));
     if (allowed) {
       const outcome = await this.confirm({
         actor: input.actor,
@@ -343,6 +355,9 @@ export class AiOperationService {
     };
 
     try {
+      // Keep external Router I/O out of the OperationsService transaction. The action
+      // still verifies its durable fence and revision CAS inside that transaction.
+      const apply = spec.prepareApply ? await spec.prepareApply(applyArgs) : spec.apply;
       const outcome = await this.operations.execute(
         {
           operationId: input.operationId,
@@ -355,7 +370,7 @@ export class AiOperationService {
           expectedVersion: op.expectedVersion,
           confirmation: op.id,
         },
-        (context) => spec.apply({ ...applyArgs, context }),
+        (context) => apply({ ...applyArgs, context }),
       );
       await this.finish(
         op,
@@ -368,6 +383,15 @@ export class AiOperationService {
       this.decisions.resolve(op.id, 'allow');
       return { aiOperationId: op.id, state: 'applied', result: outcome.result };
     } catch (error) {
+      if (isWindowConfirmationRequired(error)) {
+        // The business transaction rolled back without an outcome. Keep the prepared
+        // card retryable while the UI obtains approval for the exact current bounds.
+        await this.prisma.aiOperation.updateMany({
+          where: { id: op.id, state: 'running' },
+          data: { state: 'awaiting_confirmation', confirmedAt: null, version: { increment: 1 } },
+        });
+        throw error;
+      }
       if (error instanceof SysError) {
         await this.finish(op, 'rejected', this.clock.nowSeconds(), {
           code: error.code,

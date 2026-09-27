@@ -6,6 +6,7 @@ import { assertWriteApplied, type OperationContext } from '../../operations';
 import type { Tx } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import { nearestRegion, type RegionPoint, regionCenters } from './region-geocenter';
+import { requireWindowConfirmation } from './window-confirmation';
 import { findWorkType, fitWindowToService } from './work-type.catalog';
 
 export interface PrepareRequestInput {
@@ -206,6 +207,14 @@ export class RequestsService {
     );
     assertWindow(window.windowStartAt, window.windowEndAt);
 
+    requireWindowConfirmation(context.actor, {
+      requestId,
+      version: current.version,
+      previousStartAt: Number(current.windowStartAt),
+      previousEndAt: Number(current.windowEndAt),
+      ...window,
+    });
+
     await this.archiveConditions(context, current);
 
     const updated = await context.tx.request.updateMany({
@@ -264,6 +273,15 @@ export class RequestsService {
     const windowStartAt = requestedWindow.windowStartAt;
     const windowEndAt = requestedWindow.windowEndAt;
     assertWindow(windowStartAt, windowEndAt);
+
+    requireWindowConfirmation(context.actor, {
+      requestId,
+      version: current.version,
+      previousStartAt: Number(current.windowStartAt),
+      previousEndAt: Number(current.windowEndAt),
+      windowStartAt,
+      windowEndAt,
+    });
 
     await this.archiveConditions(context, current);
 

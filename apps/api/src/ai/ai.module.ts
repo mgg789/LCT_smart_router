@@ -7,6 +7,7 @@ import { HealthRegistry } from '../common/health';
 import { Clock } from '../common/time';
 import { EngineersModule } from '../orchestrator/engineers';
 import { LiveModule } from '../orchestrator/live';
+import { PassportsModule } from '../orchestrator/passports/passports.module';
 import { RequestsModule } from '../orchestrator/requests';
 import { AiHealthProbe } from './ai-health.probe';
 import { KnowledgeModule, KnowledgeService } from './knowledge';
@@ -98,6 +99,7 @@ function buildProvider(
           proxyToken: config.get('LLM_PROXY_TOKEN'),
         }),
         clock,
+        config.get('LLM_CHAT_REASONING_EFFORT'),
       );
     case 'agents':
       return new AgentsSdkProvider(
@@ -153,7 +155,7 @@ function buildFallbackProvider(
  */
 @Global()
 @Module({
-  imports: [RequestsModule, EngineersModule, LiveModule, KnowledgeModule],
+  imports: [RequestsModule, EngineersModule, LiveModule, PassportsModule, KnowledgeModule],
   providers: [
     {
       provide: LlmProvider,

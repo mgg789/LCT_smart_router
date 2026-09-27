@@ -40,11 +40,13 @@ class FakeDb {
   requestFact = { findMany: async () => [] };
   request = { findMany: async () => [] };
   liveRequestState = { findMany: async () => [] };
-  engineerDay = { findMany: async () => [] };
+  dayRows: { engineerId: string; workDate: string; shiftStartAt: bigint; shiftEndAt: bigint }[] =
+    [];
+  engineerDay = { findMany: async () => this.dayRows };
   engineer = {
     findMany: async () => this.engineerRows,
   };
-  liveWorkday = { findMany: async () => [] };
+  liveWorkday = { findMany: async () => [], findFirst: async () => null };
   accountRole = { findMany: async () => [{ accountId: 'dispatcher-1' }] };
 }
 
@@ -134,4 +136,25 @@ test('monthly comparison includes engineers who made no voluntary marks', async 
   assert.equal(report.engineers.find((row) => row.engineerId === 'a')?.ratio, 2);
   assert.equal(report.engineers.find((row) => row.engineerId === 'b')?.points, 0);
   assert.equal(report.engineers.find((row) => row.engineerId === 'b')?.ratio, 0);
+});
+
+test('monthly activity retains recorded zero-completion days and excludes future shifts', async () => {
+  const db = new FakeDb();
+  db.dayRows = [
+    {
+      engineerId: 'a',
+      workDate: '2026-09-21',
+      shiftStartAt: BigInt(NOW - 86400),
+      shiftEndAt: BigInt(NOW - 86400 + 3600),
+    },
+    {
+      engineerId: 'a',
+      workDate: '2026-09-23',
+      shiftStartAt: BigInt(NOW + 86400),
+      shiftEndAt: BigInt(NOW + 86400 + 3600),
+    },
+  ];
+  const report = await service(db).read('2026-09');
+  assert.deepEqual(report.analytics?.dailySeries, [{ workDate: '2026-09-21', completed: 0 }]);
+  assert.equal(report.analytics?.team.recordedWorkdays, 1);
 });

@@ -27,6 +27,11 @@ import type {
   RoadImportSummary,
   RouterTechnicalSettings,
 } from './types';
+import {
+  confirmWindowChange,
+  WindowChangeDeclined,
+  windowConfirmationFrom,
+} from './windowConfirmation';
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
 const policyIdSchema = z.enum(['compact', 'fast', 'sla', 'balanced', 'eco', 'covering']);
@@ -1436,10 +1441,14 @@ function formatUnknownReason(reason: unknown): string {
       lunchStatus: z.string().optional(),
       assignedBefore: z.number().optional(),
       assignedAfter: z.number().optional(),
+      lostSubmittedRequestIds: z.array(z.string()).optional(),
+      baselineAssignedRequestIds: z.array(z.string()).optional(),
     })
     .safeParse(reason);
   if (facts.success) {
     const value = facts.data;
+    if (value.lostSubmittedRequestIds && value.baselineAssignedRequestIds)
+      return `После смены политики ${value.lostSubmittedRequestIds.length} из ${value.baselineAssignedRequestIds.length} ранее назначенных заявок потеряли исполнителя. Проверьте новую политику или прошлый план. Неназначенные заявки требуют отдельного решения.`;
     if (value.shiftStartAt !== undefined && value.thresholdAt !== undefined)
       return `Смена началась в ${formatClock(value.shiftStartAt)}. К ${formatClock(value.thresholdAt)} отметка о выходе не поступила.`;
     if (value.plannedStartAt !== undefined && value.windowEndAt !== undefined) {
@@ -1782,6 +1791,31 @@ export async function requestJson<T>(
     });
     const body: unknown = await response.json().catch(() => null);
     if (!response.ok) {
+      const challenge = windowConfirmationFrom(body);
+      if (challenge) {
+        if (new Headers(init.headers).has('x-window-change-confirmation')) {
+          throw new DashboardApiError(
+            'Заявка изменилась или подтверждение устарело. Откройте действие заново.',
+            409,
+            path,
+          );
+        }
+        globalThis.clearTimeout(timeout);
+        if (!(await confirmWindowChange(challenge))) throw new WindowChangeDeclined();
+        return await requestJson(
+          path,
+          schema,
+          token,
+          {
+            ...init,
+            headers: {
+              ...Object.fromEntries(new Headers(init.headers)),
+              'x-window-change-confirmation': challenge.confirmation,
+            },
+          },
+          timeoutMs,
+        );
+      }
       throw new DashboardApiError(
         apiErrorMessage(body, response.status),
         response.status,
@@ -1799,6 +1833,7 @@ export async function requestJson<T>(
       );
     return parsed.data;
   } catch (cause) {
+    if (cause instanceof WindowChangeDeclined) throw cause;
     if (cause instanceof DashboardApiError) throw cause;
     throw new DashboardApiError(
       controller.signal.aborted

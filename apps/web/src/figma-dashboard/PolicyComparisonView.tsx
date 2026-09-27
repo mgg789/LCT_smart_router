@@ -1,3 +1,4 @@
+import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useMemo, useState } from 'react';
 import { type SimulationResponse, simulateChange } from '../api/client';
 import type {
@@ -57,6 +58,7 @@ export function PolicyComparisonView({
   motionOn: boolean;
 }) {
   const [mode, setMode] = useState<'overview' | 'table' | 'map'>('overview');
+  const [modeDirection, setModeDirection] = useState<1 | -1>(1);
   const [mapRoutes, setMapRoutes] = useState<SimulationResponse | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
   const [mapLoading, setMapLoading] = useState(false);
@@ -128,6 +130,12 @@ export function PolicyComparisonView({
       )
     : [];
   const metricRows = comparisonMetrics(recorded);
+  const changeMode = (next: 'overview' | 'table' | 'map') => {
+    if (next === mode) return;
+    const order = { overview: 0, table: 1, map: 2 } as const;
+    setModeDirection(order[next] > order[mode] ? 1 : -1);
+    setMode(next);
+  };
 
   return (
     <section
@@ -150,26 +158,47 @@ export function PolicyComparisonView({
           >
             <button
               type="button"
-              onClick={() => setMode('overview')}
+              onClick={() => changeMode('overview')}
               aria-pressed={mode === 'overview'}
-              className={`relative z-[1] h-[55px] w-[120px] rounded-[16px] font-semibold text-[16px] transition-colors duration-150 ${mode === 'overview' ? 'bg-white text-figma-ink' : 'text-figma-muted'}`}
+              className={`relative z-[1] h-[55px] w-[120px] rounded-[16px] font-semibold text-[16px] transition-colors duration-150 ${mode === 'overview' ? 'text-figma-ink' : 'text-figma-muted'}`}
             >
+              {mode === 'overview' ? (
+                <motion.span
+                  layoutId="policy-comparison-tab"
+                  className="absolute inset-0 -z-[1] rounded-[16px] bg-white"
+                  transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+                />
+              ) : null}
               Обзор
             </button>
             <button
               type="button"
-              onClick={() => setMode('table')}
+              onClick={() => changeMode('table')}
               aria-pressed={mode === 'table'}
-              className={`relative z-[1] h-[55px] w-[120px] rounded-[16px] font-semibold text-[16px] transition-colors duration-150 ${mode === 'table' ? 'bg-white text-figma-ink' : 'text-figma-muted'}`}
+              className={`relative z-[1] h-[55px] w-[120px] rounded-[16px] font-semibold text-[16px] transition-colors duration-150 ${mode === 'table' ? 'text-figma-ink' : 'text-figma-muted'}`}
             >
+              {mode === 'table' ? (
+                <motion.span
+                  layoutId="policy-comparison-tab"
+                  className="absolute inset-0 -z-[1] rounded-[16px] bg-white"
+                  transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+                />
+              ) : null}
               Таблица
             </button>
             <button
               type="button"
-              onClick={() => setMode('map')}
+              onClick={() => changeMode('map')}
               aria-pressed={mode === 'map'}
-              className={`relative z-[1] h-[55px] w-[120px] rounded-[16px] font-semibold text-[16px] transition-colors duration-150 ${mode === 'map' ? 'bg-white text-figma-ink' : 'text-figma-muted'}`}
+              className={`relative z-[1] h-[55px] w-[120px] rounded-[16px] font-semibold text-[16px] transition-colors duration-150 ${mode === 'map' ? 'text-figma-ink' : 'text-figma-muted'}`}
             >
+              {mode === 'map' ? (
+                <motion.span
+                  layoutId="policy-comparison-tab"
+                  className="absolute inset-0 -z-[1] rounded-[16px] bg-white"
+                  transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+                />
+              ) : null}
               Карта
             </button>
           </fieldset>
@@ -195,125 +224,144 @@ export function PolicyComparisonView({
       ) : null}
 
       <div className="absolute inset-x-[30px] top-[168px] bottom-[24px] overflow-auto [scrollbar-width:thin]">
-        {mode === 'map' ? (
-          mapLoading ? (
-            <div className="flex h-[220px] items-center justify-center rounded-[20px] bg-figma-soft">
-              <p className="font-semibold text-[20px] text-figma-ink">Считаем</p>
-            </div>
-          ) : mapError ? (
-            <div className="rounded-[20px] bg-figma-soft px-[24px] py-[20px]">
-              <p className="font-semibold text-[20px] text-figma-danger">Карта не загрузилась</p>
-              <p className="mt-[8px] font-medium text-[16px] text-figma-muted">{mapError}</p>
-            </div>
-          ) : mapRoutes && mapRoutes.strategies.length > 0 ? (
-            <PolicyStrategyMap
-              requests={dayRequests}
-              strategies={mapRoutes.strategies}
-              regions={regions}
-              selectedRegion={selectedRegion}
-              engineerRegions={engineerRegions}
-              motionOn={motionOn}
-            />
-          ) : (
-            <div className="flex h-[220px] items-center justify-center rounded-[20px] bg-figma-soft px-[30px] text-center">
-              <p className="font-medium text-[18px] text-figma-muted">
-                На карте появятся все стратегии сразу. Рабочий план при этом не меняется.
-              </p>
-            </div>
-          )
-        ) : null}
-        {mode !== 'map' ? (
-          <>
-            {error ? (
-              <div className="rounded-[20px] bg-figma-soft px-[24px] py-[20px]">
-                <p className="font-semibold text-[20px] text-figma-danger">
-                  Сравнение не загрузилось
-                </p>
-                <p className="mt-[8px] font-medium text-[16px] text-figma-muted">{error}</p>
-              </div>
+        <AnimatePresence initial={false} custom={modeDirection} mode="wait">
+          <motion.div
+            key={mode}
+            custom={modeDirection}
+            className="min-h-full"
+            initial={motionOn ? { opacity: 0, x: modeDirection > 0 ? '8%' : '-8%' } : false}
+            animate={{ opacity: 1, x: 0 }}
+            exit={motionOn ? { opacity: 0, x: modeDirection > 0 ? '-8%' : '8%' } : undefined}
+            transition={motionOn ? { duration: 0.28, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
+          >
+            {mode === 'map' ? (
+              mapLoading ? (
+                <div className="flex h-[220px] items-center justify-center rounded-[20px] bg-figma-soft">
+                  <p className="font-semibold text-[20px] text-figma-ink">Считаем</p>
+                </div>
+              ) : mapError ? (
+                <div className="rounded-[20px] bg-figma-soft px-[24px] py-[20px]">
+                  <p className="font-semibold text-[20px] text-figma-danger">
+                    Карта не загрузилась
+                  </p>
+                  <p className="mt-[8px] font-medium text-[16px] text-figma-muted">{mapError}</p>
+                </div>
+              ) : mapRoutes && mapRoutes.strategies.length > 0 ? (
+                <PolicyStrategyMap
+                  requests={dayRequests}
+                  strategies={mapRoutes.strategies}
+                  regions={regions}
+                  selectedRegion={selectedRegion}
+                  engineerRegions={engineerRegions}
+                  motionOn={motionOn}
+                />
+              ) : (
+                <div className="flex h-[220px] items-center justify-center rounded-[20px] bg-figma-soft px-[30px] text-center">
+                  <p className="font-medium text-[18px] text-figma-muted">
+                    На карте появятся все стратегии сразу. Рабочий план при этом не меняется.
+                  </p>
+                </div>
+              )
             ) : null}
-
-            {loading && !comparison ? (
-              <div className="grid grid-cols-3 gap-[16px]">
-                {['a', 'b', 'c', 'd', 'e', 'f'].map((key) => (
-                  <div key={key} className="h-[120px] animate-pulse rounded-[20px] bg-figma-soft" />
-                ))}
-              </div>
-            ) : null}
-
-            {!loading && !comparison && !error ? (
-              <div className="flex h-[220px] items-center justify-center rounded-[20px] bg-figma-soft px-[30px] text-center">
-                <p className="font-medium text-[18px] text-figma-muted">
-                  {readOnly
-                    ? 'Новое сравнение станет доступно после восстановления связи.'
-                    : 'Запустите сравнение. Активный план и выбранная политика при этом не изменятся.'}
-                </p>
-              </div>
-            ) : null}
-
-            {comparison && mode === 'overview' ? <PolicyComparisonOverview rows={columns} /> : null}
-            {comparison && mode === 'table' ? (
+            {mode !== 'map' ? (
               <>
-                <p className="mb-[16px] text-[14px] text-figma-muted">
-                  Выделены лучшие показатели при одинаковом составе. Резервные инженеры учитываются
-                  отдельно; при разном покрытии сравнивайте также затраты на заявку.
-                </p>
-                <table className="w-full min-w-[1280px] border-separate border-spacing-0 text-left">
-                  <thead>
-                    <tr>
-                      <th className="sticky left-0 z-[1] w-[160px] bg-white" />
-                      {columns.map((row) => (
-                        <th
-                          key={row.strategyId}
-                          className="min-w-[168px] px-[12px] pb-[18px] align-top"
-                        >
-                          <div className="font-semibold text-[16px] tracking-[-0.2px] text-figma-ink">
-                            {SHORT_NAME[row.strategyId] ?? row.strategyId}
-                          </div>
-                          <p className="mt-[8px] font-medium text-[12px] leading-[16px] text-figma-muted">
-                            {strategyDescription(row.strategyId)}
-                          </p>
-                          {!row.isUsable ? (
-                            <p className="mt-[6px] font-medium text-[12px] text-figma-danger">
-                              План непригоден
-                            </p>
-                          ) : null}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {metricRows.map((metric) => {
-                      const best = comparisonWinners(columns, metric.score, metric.better);
-                      return (
-                        <tr key={metric.label}>
-                          <th className="sticky left-0 z-[1] bg-white py-[12px] pr-[12px] text-left font-semibold text-[14px] text-figma-muted">
-                            {metric.label}
-                          </th>
-                          {columns.map((row) => {
-                            const green = best.has(row.strategyId);
-                            return (
-                              <td
-                                key={row.strategyId}
-                                className={`border-t border-[#ececec] px-[12px] py-[12px] text-[15px] ${
-                                  green
-                                    ? 'font-semibold text-[#15803d]'
-                                    : 'font-medium text-figma-ink'
-                                }`}
-                              >
-                                {metric.text(row)}
-                              </td>
-                            );
-                          })}
+                {error ? (
+                  <div className="rounded-[20px] bg-figma-soft px-[24px] py-[20px]">
+                    <p className="font-semibold text-[20px] text-figma-danger">
+                      Сравнение не загрузилось
+                    </p>
+                    <p className="mt-[8px] font-medium text-[16px] text-figma-muted">{error}</p>
+                  </div>
+                ) : null}
+
+                {loading && !comparison ? (
+                  <div className="grid grid-cols-3 gap-[16px]">
+                    {['a', 'b', 'c', 'd', 'e', 'f'].map((key) => (
+                      <div
+                        key={key}
+                        className="h-[120px] animate-pulse rounded-[20px] bg-figma-soft"
+                      />
+                    ))}
+                  </div>
+                ) : null}
+
+                {!loading && !comparison && !error ? (
+                  <div className="flex h-[220px] items-center justify-center rounded-[20px] bg-figma-soft px-[30px] text-center">
+                    <p className="font-medium text-[18px] text-figma-muted">
+                      {readOnly
+                        ? 'Новое сравнение станет доступно после восстановления связи.'
+                        : 'Запустите сравнение. Активный план и выбранная политика при этом не изменятся.'}
+                    </p>
+                  </div>
+                ) : null}
+
+                {comparison && mode === 'overview' ? (
+                  <PolicyComparisonOverview rows={columns} />
+                ) : null}
+                {comparison && mode === 'table' ? (
+                  <>
+                    <p className="mb-[16px] text-[14px] text-figma-muted">
+                      Выделены лучшие показатели при одинаковом составе. Резервные инженеры
+                      учитываются отдельно; при разном покрытии сравнивайте также затраты на заявку.
+                    </p>
+                    <table className="w-full min-w-[1280px] border-separate border-spacing-0 text-left">
+                      <thead>
+                        <tr>
+                          <th className="sticky left-0 z-[1] w-[160px] bg-white" />
+                          {columns.map((row) => (
+                            <th
+                              key={row.strategyId}
+                              className="min-w-[168px] px-[12px] pb-[18px] align-top"
+                            >
+                              <div className="font-semibold text-[16px] tracking-[-0.2px] text-figma-ink">
+                                {SHORT_NAME[row.strategyId] ?? row.strategyId}
+                              </div>
+                              <p className="mt-[8px] font-medium text-[12px] leading-[16px] text-figma-muted">
+                                {strategyDescription(row.strategyId)}
+                              </p>
+                              {!row.isUsable ? (
+                                <p className="mt-[6px] font-medium text-[12px] text-figma-danger">
+                                  План непригоден
+                                </p>
+                              ) : null}
+                            </th>
+                          ))}
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                      </thead>
+                      <tbody>
+                        {metricRows.map((metric) => {
+                          const best = comparisonWinners(columns, metric.score, metric.better);
+                          return (
+                            <tr key={metric.label}>
+                              <th className="sticky left-0 z-[1] bg-white py-[12px] pr-[12px] text-left font-semibold text-[14px] text-figma-muted">
+                                {metric.label}
+                              </th>
+                              {columns.map((row) => {
+                                const green = best.has(row.strategyId);
+                                return (
+                                  <td
+                                    key={row.strategyId}
+                                    className={`border-t border-[#ececec] px-[12px] py-[12px] text-[15px] ${
+                                      green
+                                        ? 'font-semibold text-[#15803d]'
+                                        : 'font-medium text-figma-ink'
+                                    }`}
+                                  >
+                                    {metric.text(row)}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </>
+                ) : null}
               </>
             ) : null}
-          </>
-        ) : null}
+          </motion.div>
+        </AnimatePresence>
       </div>
     </section>
   );

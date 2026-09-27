@@ -8,6 +8,8 @@ import type { ActorKind, ActorSource, ApiTokenCategory, Role } from '../generate
  * business rule exists in exactly one handler (context/36 section 2).
  */
 export interface Actor {
+  /** HTTP-only approval for one exact window transition; never exposed to AI tool schemas. */
+  readonly windowChangeConfirmation?: string;
   readonly kind: ActorKind;
   readonly source: ActorSource;
   /** Account id for a session, token id for an integration key. */

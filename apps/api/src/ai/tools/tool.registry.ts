@@ -1,9 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { AppConfigService } from '../../common/config';
+import { Clock } from '../../common/time';
 import type { AiRoleProfile } from '../../generated/prisma/client';
 import { AlertsService } from '../../orchestrator/alerts';
 import { LiveService } from '../../orchestrator/live/live.service';
+import { PassportsService } from '../../orchestrator/passports/passports.service';
 import { PolicyService } from '../../orchestrator/policy';
 import { RequestsService } from '../../orchestrator/requests/requests.service';
 import { PrismaService } from '../../persistence';
@@ -11,6 +13,7 @@ import { SnapshotBuilder } from '../../routing/mount-data-eng';
 import {
   AppliedPlanService,
   ControlStateService,
+  PlanRestoreService,
   RouterClient,
 } from '../../routing/router-gateway';
 import { AiOperationService } from '../operations';
@@ -21,6 +24,7 @@ import { buildDispatcherWriteTools } from './dispatcher-write.tools';
 import { buildEngineerTools } from './engineer.tools';
 import { buildSearchDocumentationTool } from './knowledge.tool';
 import { KnowledgeSearchPort } from './knowledge-search.port';
+import { buildOperationVerificationTool } from './operation-verification.tool';
 import type { AnyToolSpec } from './tool.types';
 
 /**
@@ -41,35 +45,45 @@ export class ToolRegistry {
 
   constructor(
     aiOperations: AiOperationService,
+    clock: Clock,
     knowledge: KnowledgeSearchPort,
     requests: RequestsService,
     live: LiveService,
     config: AppConfigService,
     prisma: PrismaService,
     plans: AppliedPlanService,
+    restore: PlanRestoreService,
     control: ControlStateService,
     alerts: AlertsService,
     policy: PolicyService,
     router: RouterClient,
     builder: SnapshotBuilder,
+    passports: PassportsService,
   ) {
     const searchDocumentation = buildSearchDocumentationTool(knowledge);
     const clientTools = buildClientTools({ aiOperations, requests, config, prisma });
-    const engineerTools = buildEngineerTools({ aiOperations, live, config });
+    const engineerTools = buildEngineerTools({ aiOperations, live, config, passports });
     const dispatcherReadTools = buildDispatcherReadTools({
       prisma,
       live,
       plans,
+      restore,
       control,
       requests,
       alerts,
       policy,
       router,
       builder,
+      now: () => clock.nowSeconds(),
+      timeZone: config.get('APP_TIME_ZONE'),
     });
     const dispatcherWriteTools = buildDispatcherWriteTools({ aiOperations, config });
 
-    const dispatcherReadonlyTools = [...dispatcherReadTools, searchDocumentation];
+    const dispatcherReadonlyTools = [
+      ...dispatcherReadTools,
+      buildOperationVerificationTool(prisma),
+      searchDocumentation,
+    ];
     const dispatcherFixTools = [...dispatcherReadonlyTools, ...dispatcherWriteTools];
 
     this.catalogues = {

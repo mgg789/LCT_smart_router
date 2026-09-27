@@ -27,8 +27,8 @@ const NOTIF_PANEL_LEFT = 1407,
   HEADER_AVATAR_LEFT = 1800,
   HEADER_AVATAR_TOP = 12;
 const METRICS_BUTTON_WIDTH = 232,
-  METRICS_BUTTON_LEFT = 1030,
-  ADD_BUTTON_LEFT = 963,
+  METRICS_BUTTON_LEFT = 1081,
+  ADD_BUTTON_LEFT = 1014,
   ADD_BUTTON_TOP = 10,
   ADD_BUTTON_SIZE = 51;
 
@@ -191,10 +191,12 @@ export function NotificationControl({
 export function UserMenu({
   open,
   covered,
+  hasPreviousPlan,
   motionOn,
   demoStand,
   onToggle,
   onSettings,
+  onOpenPreviousPlan,
   onEndDay,
   onRestartDay,
   onReset,
@@ -202,10 +204,12 @@ export function UserMenu({
 }: {
   open: boolean;
   covered: boolean;
+  hasPreviousPlan: boolean;
   motionOn: boolean;
   demoStand: boolean;
   onToggle: () => void;
   onSettings: () => void;
+  onOpenPreviousPlan: () => void;
   onEndDay: () => void;
   onRestartDay: () => void;
   onReset: () => void;
@@ -214,7 +218,7 @@ export function UserMenu({
   return (
     <div
       data-user-menu
-      className={`absolute ${covered ? 'z-[40]' : 'z-[60]'}`}
+      className={`absolute ${covered ? 'z-[40]' : open ? 'z-[90]' : 'z-[60]'}`}
       style={{ left: HEADER_AVATAR_LEFT, top: HEADER_AVATAR_TOP }}
     >
       <motion.button
@@ -256,6 +260,11 @@ export function UserMenu({
               <MenuAction motionOn={motionOn} tone="ink" onClick={onSettings}>
                 Настройки
               </MenuAction>
+              {hasPreviousPlan ? (
+                <MenuAction motionOn={motionOn} tone="bee" onClick={onOpenPreviousPlan}>
+                  Прошлый план
+                </MenuAction>
+              ) : null}
             </div>
             <div className="mx-auto my-[8px] h-px w-[40px] bg-figma-ink/20" />
             <div className="flex flex-col gap-[8px]">
@@ -449,12 +458,15 @@ export function PolicyControl({
           : { duration: 0 }
       }
     >
-      <div className="relative h-[51px] w-full">
+      <motion.div
+        className="relative h-[51px] w-full"
+        whileHover={motionOn ? { y: -1 } : undefined}
+        transition={{ duration: 0.16 }}
+      >
         <motion.button
           type="button"
           onClick={onToggle}
           className="absolute inset-y-0 left-0 right-[52px] px-[16px] text-left"
-          whileHover={motionOn ? { x: 2 } : undefined}
           transition={{ duration: 0.16 }}
         >
           <FigmaText className="figma-nowrap font-semibold text-[18px] tracking-[-0.306px] text-figma-ink">
@@ -465,7 +477,6 @@ export function PolicyControl({
           type="button"
           onClick={onToggle}
           className="absolute right-[4px] top-[4px] size-[43px]"
-          whileHover={motionOn ? { scale: 1.08 } : undefined}
           whileTap={motionOn ? { scale: 0.96 } : undefined}
           transition={{ duration: 0.16 }}
         >
@@ -483,7 +494,7 @@ export function PolicyControl({
             />
           </motion.span>
         </motion.button>
-      </div>
+      </motion.div>
       <div
         className={`relative w-[363px] ${open ? '' : 'pointer-events-none'}`}
         style={{ height: 592 + extra }}

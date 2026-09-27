@@ -36,6 +36,11 @@ import { FIGMA_ARTBOARD, type NavItemId, type NotificationTone } from './fixture
 import { nextRouterSettings, policyLabel } from './fromSnapshot';
 import { MapCard, RouteCard } from './MapRoute';
 import { McpAgentIndicator } from './McpAgentIndicator';
+import {
+  type PlanHistoryAnchor,
+  type PlanHistorySelection,
+  PlanHistorySelector,
+} from './PlanHistorySelector';
 import { PlanMetricsModal } from './PlanMetricsModal';
 import { PolicyComparisonView } from './PolicyComparisonView';
 import { FigmaText } from './primitives';
@@ -107,6 +112,10 @@ export function MainDashboardPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [notifOpen, setNotifOpen] = useState(false);
   const [reviewDelta, setReviewDelta] = useState<PlanDelta | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historySelection, setHistorySelection] = useState<PlanHistorySelection>('current');
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const artboardRef = useRef<HTMLDivElement>(null);
   const rememberedDelta = useRef<PlanDelta | null>(readStoredPlanDelta());
   useEffect(() => {
     if (!dash.pendingDelta) return;
@@ -158,6 +167,72 @@ export function MainDashboardPage() {
   const [selectedRegion, setSelectedRegion] = useState<RegionSelection>(ALL_REGIONS);
 
   useEffect(() => {
+    const artboard = artboardRef.current;
+    if (!artboard || !historyOpen || !dash.previousPlan) return;
+    const dialog = artboard.querySelector<HTMLElement>('[data-plan-history-dialog]');
+    if (!dialog) return;
+
+    // Keep the map visible while making every other direct artboard surface inert.
+    const inertNodes = Array.from(artboard.children).filter(
+      (node) =>
+        !(node instanceof HTMLElement && node.hasAttribute('data-plan-history-dialog')) &&
+        !(node instanceof HTMLElement && node.hasAttribute('data-plan-history-veil')),
+    );
+    const previouslyInert = new Map<Element, boolean>();
+    for (const node of inertNodes) {
+      previouslyInert.set(node, node.hasAttribute('inert'));
+      node.setAttribute('inert', '');
+    }
+
+    dialog.focus();
+    const onFocusIn = (event: FocusEvent) => {
+      if (event.target instanceof Node && !dialog.contains(event.target)) {
+        dialog.focus();
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!dialog.contains(event.target as Node)) {
+        event.preventDefault();
+        event.stopPropagation();
+        dialog.focus();
+        return;
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        dialog.focus();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = Array.from(
+        dialog.querySelectorAll<HTMLElement>('button:not(:disabled), [data-plan-history-tooltip]'),
+      );
+      if (focusable.length === 0) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const current = document.activeElement;
+      const index = focusable.indexOf(current as HTMLElement);
+      const next = event.shiftKey
+        ? focusable[(index <= 0 ? focusable.length : index) - 1]
+        : focusable[(index + 1) % focusable.length];
+      event.preventDefault();
+      next?.focus();
+    };
+    document.addEventListener('focusin', onFocusIn, true);
+    document.addEventListener('keydown', onKeyDown, true);
+    return () => {
+      document.removeEventListener('focusin', onFocusIn, true);
+      document.removeEventListener('keydown', onKeyDown, true);
+      for (const [node, wasInert] of previouslyInert) {
+        if (wasInert) node.setAttribute('inert', '');
+        else node.removeAttribute('inert');
+      }
+    };
+  }, [dash.previousPlan, historyOpen]);
+
+  useEffect(() => {
     const syncWelcome = () => {
       if (!hasStartedWorkDay(window.localStorage, moscowWorkDate())) {
         setWelcomeOpen(true);
@@ -192,6 +267,10 @@ export function MainDashboardPage() {
     }
   }, [dash.clearFocus, regions, selectedRegion]);
   const mapFrame = !showRightPanel ? MAP_EXPANDED : showRouteCard ? MAP_COMPACT : MAP_REQUEST_ONLY;
+  const historyAnchor: PlanHistoryAnchor = {
+    left: mapFrame.left + mapFrame.width / 2,
+    bottom: FIGMA_ARTBOARD.height - mapFrame.top - mapFrame.height + 28,
+  };
   useEffect(() => {
     const openAlerts = (dash.snapshot?.alerts ?? []).filter((alert) => alert.resolvedAt === null);
     if (dash.isDemo && openAlerts.length === 0) seedDemoToasts();
@@ -505,6 +584,7 @@ export function MainDashboardPage() {
     <div className="flex h-full w-full items-center justify-center overflow-hidden bg-figma-canvas">
       {/* biome-ignore lint/a11y/noStaticElementInteractions: Outside-pointer dismissal supplements the menus' keyboard-accessible controls; this artboard is not an extra focus target. */}
       <div
+        ref={artboardRef}
         className="relative shrink-0 bg-figma-canvas"
         data-name="MAIN"
         style={{
@@ -697,6 +777,7 @@ export function MainDashboardPage() {
         <UserMenu
           open={userMenuOpen}
           covered={notifOpen}
+          hasPreviousPlan={dash.previousPlan !== null}
           motionOn={motionOn}
           onToggle={() => {
             setPolicyOpen(false);
@@ -706,6 +787,17 @@ export function MainDashboardPage() {
             setUserMenuOpen(false);
             setSettingsTab('general');
             setSettingsOpen(true);
+          }}
+          onOpenPreviousPlan={() => {
+            setActiveNav('day');
+            setStackDir(stackSlideDir(stackNav, 'day'));
+            setStackNav('day');
+            setUserMenuOpen(false);
+            setPolicyOpen(false);
+            setNotifOpen(false);
+            setHistorySelection('current');
+            setHistoryError(null);
+            setHistoryOpen(true);
           }}
           onEndDay={() => {
             setUserMenuOpen(false);
@@ -725,6 +817,48 @@ export function MainDashboardPage() {
             setDangerAction('signOut');
           }}
         />
+        <AnimatePresence>
+          {historyOpen && dash.previousPlan ? (
+            <>
+              <motion.div
+                key="plan-history-veil"
+                data-plan-history-veil
+                aria-hidden="true"
+                className="absolute inset-0 z-[120] bg-figma-ink/10"
+                initial={motionOn ? { opacity: 0 } : false}
+                animate={{ opacity: 1 }}
+                exit={motionOn ? { opacity: 0 } : undefined}
+                transition={motionOn ? { duration: 0.2 } : { duration: 0 }}
+                onMouseDown={(event) => event.stopPropagation()}
+              />
+              <PlanHistorySelector
+                previous={dash.previousPlan}
+                currentRevision={dash.snapshot?.plan.plan?.revision ?? null}
+                selection={historySelection}
+                canRestore={dash.canRejectDelta}
+                busy={dash.busy}
+                motionOn={motionOn}
+                error={historyError}
+                restoreUnavailableReason={dash.restoreUnavailableReason}
+                anchor={historyAnchor}
+                onSelect={setHistorySelection}
+                onChoose={async () => {
+                  if (historySelection === 'previous') {
+                    if (!dash.canRejectDelta) return;
+                    setHistoryError(null);
+                    if (await dash.rejectDelta()) setHistoryOpen(false);
+                    else
+                      setHistoryError(
+                        'Не удалось восстановить план. Повторите выбор или выберите текущий.',
+                      );
+                    return;
+                  }
+                  setHistoryOpen(false);
+                }}
+              />
+            </>
+          ) : null}
+        </AnimatePresence>
         <SettingsModal
           open={settingsOpen}
           motionOn={motionOn}
@@ -987,11 +1121,8 @@ export function MainDashboardPage() {
                   <MapCard
                     snapshot={visibleSnapshot}
                     previousPlan={dash.previousPlan}
-                    canRestore={dash.canRejectDelta}
-                    restoreBusy={dash.busy || dash.writesDisabled}
-                    onRestore={() => {
-                      void dash.rejectDelta();
-                    }}
+                    historyOpen={historyOpen}
+                    historySelection={historySelection}
                     selectedEngineerId={dash.selectedEngineerId}
                     selectedRequestId={dash.selectedRequest?.id ?? null}
                     progressByEngineer={liveProgress}

@@ -91,6 +91,50 @@ export interface EngineerPerformanceMetric {
   readonly workMinutes: number;
 }
 
+/**
+ * Confirmed execution and shift-coverage metrics for one engineer or an aggregate team.
+ * Every nullable measurement has no sufficient durable source fact; it is never inferred.
+ */
+export interface EngineerAnalytics {
+  readonly engineerId: string | null;
+  readonly name: string | null;
+  readonly recordedWorkdays: number;
+  readonly completed: number;
+  readonly completedPerRecordedWorkday: number | null;
+  readonly measuredDuration: {
+    readonly averageMinutes: number | null;
+    readonly sampleCount: number;
+  };
+  readonly punctualCompletion: {
+    readonly count: number;
+    readonly sampleCount: number;
+    readonly rate: number | null;
+    readonly averageLatenessMinutes: number | null;
+    readonly baseline: 'accepted_finish_at';
+  };
+  readonly utilization: {
+    readonly recordedWorkMinutes: number;
+    readonly scheduledMinutes: number;
+    readonly rate: number | null;
+    readonly coverage: 'partial_confirmed_execution';
+  };
+}
+
+/** Additive factual analytics; base performance counters remain available for compatibility. */
+export interface PerformanceAnalytics {
+  readonly team: EngineerAnalytics;
+  readonly engineers: readonly EngineerAnalytics[];
+}
+
+export interface NextDayRequestPreview {
+  readonly requestId: string;
+  readonly arrivalOrder: number;
+  readonly addressText: string;
+  readonly windowStartAt: number;
+  readonly windowEndAt: number;
+  readonly priority: string;
+}
+
 export interface ScoreComponent {
   readonly score: number;
   readonly weight: number;
@@ -120,6 +164,13 @@ export interface PerformanceDaySnapshot {
   };
   readonly workMinutes: number;
   readonly engineers: readonly EngineerPerformanceMetric[];
+  readonly analytics?: PerformanceAnalytics;
+  readonly nextDay?: {
+    readonly workDate: string;
+    readonly openRequestCount: number;
+    readonly overdueOpenCount: number;
+    readonly requests: readonly NextDayRequestPreview[];
+  } | null;
   readonly alerts: {
     readonly significantTotal: number;
     readonly resolved: number;
@@ -141,4 +192,5 @@ export interface EngineerPerformanceResponse {
   readonly workDate: string;
   readonly closedAt: number | null;
   readonly engineer: EngineerPerformanceMetric | null;
+  readonly analytics?: EngineerAnalytics | null;
 }

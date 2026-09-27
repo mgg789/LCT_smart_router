@@ -1,3 +1,7 @@
+import {
+  isWindowConfirmationRequired,
+  requireWindowConfirmation,
+} from '../../src/orchestrator/requests/window-confirmation';
 import '../support/env';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -83,6 +87,49 @@ describe('dispatcher alert lifecycle', () => {
     await prisma.$disconnect();
     mock.timers.reset();
     await app?.close();
+  });
+
+  it('finishes a requested AUTO resolution before the policy warning expires once AUTO is applied', async () => {
+    const previous = await prisma.appliedPlanCurrent.findUnique({ where: { id: 'singleton' } });
+    const now = Math.floor(Date.now() / 1000);
+    const plan = await prisma.appliedPlan.create({
+      data: { origin: 'auto', planAsOf: BigInt(now), appliedAt: BigInt(now) },
+    });
+    const id = randomUUID();
+    ids.push(id);
+    try {
+      await prisma.appliedPlanCurrent.upsert({
+        where: { id: 'singleton' },
+        create: { id: 'singleton', planId: plan.id, updatedAt: BigInt(now) },
+        update: { planId: plan.id },
+      });
+      await prisma.alert.create({
+        data: {
+          id,
+          dedupKey: `system:plan_degraded:policy:${id}`,
+          code: 'plan_degraded',
+          severity: 'warning',
+          engineerIds: [],
+          requestIds: [],
+          reasons: { expiresAt: now + 86400 },
+          createdAt: BigInt(now),
+          workDate: date,
+          resolutionAction: 'restore_auto',
+        },
+      });
+      await alerts.list(date);
+      const resolved = await prisma.alert.findUniqueOrThrow({ where: { id } });
+      assert.notEqual(resolved.resolvedAt, null);
+      assert.equal(resolved.resolutionAction, 'restore_auto');
+    } finally {
+      if (previous)
+        await prisma.appliedPlanCurrent.update({
+          where: { id: 'singleton' },
+          data: { planId: previous.planId },
+        });
+      else await prisma.appliedPlanCurrent.deleteMany({ where: { planId: plan.id } });
+      await prisma.appliedPlan.delete({ where: { id: plan.id } });
+    }
   });
 
   it('counts all tomorrow overlaps beyond the preview limit without claiming crew demand', async () => {
@@ -311,13 +358,27 @@ describe('dispatcher alert lifecycle', () => {
       },
     });
     ids.push(issue.id);
+    let windowChangeConfirmation: string | undefined;
+    try {
+      requireWindowConfirmation(actor, {
+        requestId: request.id,
+        version: request.version,
+        previousStartAt: Number(request.windowStartAt),
+        previousEndAt: Number(request.windowEndAt),
+        windowStartAt: Number(request.windowStartAt) + 86400,
+        windowEndAt: Number(request.windowEndAt) + 86400,
+      });
+    } catch (error) {
+      assert.ok(isWindowConfirmationRequired(error));
+      windowChangeConfirmation = String(error.details.confirmation);
+    }
     const invoke = () => {
       const operationId = randomUUID();
       opIds.push(operationId);
       return operations.execute(
         {
           operationId,
-          actor,
+          actor: { ...actor, windowChangeConfirmation },
           action: 'alert.resolve',
           targetRef: issue.id,
           payload: { action: 'reschedule' },
@@ -410,8 +471,32 @@ describe('dispatcher alert lifecycle', () => {
       windowStartAt: Number(now) + 600,
       windowEndAt: Number(now) + 1200,
     };
+    let windowChangeConfirmation: string | undefined;
+    await assert.rejects(
+      () =>
+        operations.execute(
+          { operationId, actor, action: 'alert.resolve', targetRef: first.id, payload: input },
+          (context) => alerts.resolve(context, first.id, input),
+        ),
+      (error: unknown) => {
+        assert.ok(isWindowConfirmationRequired(error));
+        windowChangeConfirmation = String(error.details.confirmation);
+        return true;
+      },
+    );
+    assert.equal(await prisma.operation.count({ where: { operationId } }), 0);
+    assert.equal(
+      (await prisma.request.findUniqueOrThrow({ where: { id: request.id } })).version,
+      request.version,
+    );
     await operations.execute(
-      { operationId, actor, action: 'alert.resolve', targetRef: first.id, payload: input },
+      {
+        operationId,
+        actor: { ...actor, windowChangeConfirmation },
+        action: 'alert.resolve',
+        targetRef: first.id,
+        payload: input,
+      },
       (context) => alerts.resolve(context, first.id, input),
     );
     const staleId = randomUUID();

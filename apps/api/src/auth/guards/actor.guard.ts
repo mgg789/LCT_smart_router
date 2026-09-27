@@ -37,7 +37,10 @@ export class ActorGuard implements CanActivate {
         // continuing anonymously would hide an expired session from the caller.
         throw new SysError('UNAUTHENTICATED', 'The session or token is no longer valid');
       }
-      request.actor = actor;
+      request.actor = {
+        ...actor,
+        windowChangeConfirmation: request.header('x-window-change-confirmation'),
+      };
     }
 
     if (isPublic) {

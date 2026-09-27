@@ -230,6 +230,25 @@ describe('live dashboard client', () => {
                 seenAt: null,
                 resolvedAt: null,
               },
+              {
+                id: 'policy-warning',
+                code: 'plan_degraded',
+                kind: 'alert',
+                severity: 'warning',
+                engineerIds: [],
+                requestIds: ['request-1'],
+                reasons: [
+                  {
+                    lostSubmittedRequestIds: ['request-1'],
+                    baselineAssignedRequestIds: ['request-1', 'request-2'],
+                  },
+                ],
+                restoreOption: null,
+                actions: ['keep_manual', 'restore_auto'],
+                createdAt: 1_800_000_000,
+                seenAt: null,
+                resolvedAt: null,
+              },
             ],
           });
         if (path.endsWith('/shift'))
@@ -258,6 +277,9 @@ describe('live dashboard client', () => {
     expect(snapshot.policyId).toBe('compact');
     expect(snapshot.requests).toHaveLength(1);
     expect(snapshot.alerts[0]?.reasons[0]).toContain('Опоздание: 10 мин.');
+    expect(snapshot.alerts.find((alert) => alert.id === 'policy-warning')?.reasons[0]).toContain(
+      '1 из 2 ранее назначенных заявок',
+    );
     expect(snapshot.alerts[0]?.restoreOption).toEqual({
       engineer_id: 'engineer-1',
       reject_request_ids: ['request-1'],

@@ -198,6 +198,11 @@ const prepareCloseShiftSchema = z.object({
 });
 type PrepareCloseShiftArgs = z.infer<typeof prepareCloseShiftSchema>;
 
+const prepareRestorePreviousPlanSchema = z.object({
+  expectedRevision: z.number().int().positive(),
+});
+type PrepareRestorePreviousPlanArgs = z.infer<typeof prepareRestorePreviousPlanSchema>;
+
 /**
  * The `fix`-mode preparer catalogue.
  *
@@ -556,6 +561,26 @@ export function buildDispatcherWriteTools(deps: DispatcherWriteToolDeps): readon
     },
   };
 
+  const prepareRestorePreviousPlan: ToolSpec<PrepareRestorePreviousPlanArgs> = {
+    name: 'prepare_restore_previous_plan',
+    description:
+      'Prepare a human-confirmed restore of the immediate predecessor. Call get_previous_plan ' +
+      'first and use its current revision; the server checks the plan and Router context again.',
+    schema: prepareRestorePreviousPlanSchema,
+    async run(ctx: ToolContext, args: PrepareRestorePreviousPlanArgs): Promise<ToolResult> {
+      const op = await deps.aiOperations.prepare({
+        actor: ctx.actor,
+        accountId: ctx.accountId,
+        conversationId: ctx.conversationId,
+        runId: ctx.runId,
+        action: 'plan.restore',
+        targetRef: String(args.expectedRevision),
+        payload: args,
+      });
+      return prepared(op);
+    },
+  };
+
   return (
     [
       prepareMoveWindow,
@@ -570,6 +595,7 @@ export function buildDispatcherWriteTools(deps: DispatcherWriteToolDeps): readon
       prepareResolveAlert,
       prepareMarkAlertSeen,
       prepareCloseShift,
+      prepareRestorePreviousPlan,
     ] as AnyToolSpec[]
   ).map(performsNow);
 }
