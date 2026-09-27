@@ -396,6 +396,20 @@ body {
 }
 
 /*
+ * A sheet that is a screen of its own over a pane — the login. A pane caps
+ * `--eu` for what it usually holds (a list of cards), so a form inheriting it
+ * came out as full-width fields under type two sizes too small. Here the width
+ * and the unit come from one number, the way the phone column does it, so the
+ * form keeps the proportions it was drawn with.
+ */
+.phone-desk-sheet {
+  --phone-width: min(100cqw, 560px);
+  --eu: calc(var(--phone-width) / 670);
+  width: var(--phone-width);
+  margin-inline: auto;
+}
+
+/*
  * The open request is shown whole, without a scrollbar: it is one screen about
  * one visit, and hiding half of it below the fold is the thing a desk is
  * supposed to fix. `zoom` rather than a transform, so the content still lays

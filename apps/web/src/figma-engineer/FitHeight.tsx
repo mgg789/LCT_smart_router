@@ -1,5 +1,12 @@
 import type { ReactNode } from 'react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+
+/**
+ * The first measurement has to land before the frame is painted, or a screen
+ * arriving in the pane is drawn full size and then snaps down. Rendered on a
+ * server there is no frame to paint, and a layout effect there only warns.
+ */
+const useMeasureEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 
 /** Never enlarged, and never shrunk past the point where the text stops reading. */
 const MIN_FIT = 0.62;
@@ -21,8 +28,12 @@ const MIN_FIT = 0.62;
  * room, which can let it reflow shorter, which would let it zoom back in — a
  * loop that never settles. So the natural height is measured once per change at
  * zoom 1 and the ratio is taken from that.
+ *
+ * Switched off rather than removed when a pane stops wanting it: taking the
+ * wrapper out of the tree unmounts the screen inside it, which threw away the
+ * screen's own state — the new request lost the mode the fit was turned on for.
  */
-export function FitHeight({ children }: { children: ReactNode }) {
+export function FitHeight({ children, active = true }: { children: ReactNode; active?: boolean }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const [fit, setFit] = useState(1);
@@ -49,7 +60,11 @@ export function FitHeight({ children }: { children: ReactNode }) {
     setFit((current) => (Math.abs(current - next) < 0.005 ? current : next));
   }, []);
 
-  useEffect(() => {
+  useMeasureEffect(() => {
+    if (!active) {
+      setFit(1);
+      return;
+    }
     const host = hostRef.current;
     const content = contentRef.current;
     if (!host || !content || typeof ResizeObserver === 'undefined') return;
@@ -59,11 +74,17 @@ export function FitHeight({ children }: { children: ReactNode }) {
     observer.observe(host);
     observer.observe(content);
     return () => observer.disconnect();
-  }, [measure]);
+  }, [active, measure]);
 
   return (
-    <div className="phone-desk-fit h-full" ref={hostRef}>
-      <div ref={contentRef} style={{ zoom: fit }}>
+    <div className={active ? 'phone-desk-fit h-full' : 'h-full'} ref={hostRef}>
+      {/* Off, the pair of wrappers is transparent: the screen gets the pane's
+          height exactly as it would standing in this place on its own. */}
+      <div
+        className={active ? undefined : 'h-full'}
+        ref={contentRef}
+        style={active ? { zoom: fit } : undefined}
+      >
         {children}
       </div>
     </div>

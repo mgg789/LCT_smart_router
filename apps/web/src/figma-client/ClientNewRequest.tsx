@@ -1,6 +1,6 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowRight, Mic } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { eu } from '../figma-engineer/engineerScale';
 import { CLIENT_ASSETS } from './assets';
@@ -24,6 +24,8 @@ const STORY_PLACEHOLDER = 'Расскажите, что у вас случило
 
 const tap = { duration: 0.16 };
 const slideEase = [0.22, 1, 0.36, 1] as const;
+/** One length for both halves of the swap, so the handover reads as one move. */
+const swap = { duration: 0.26, ease: slideEase } as const;
 
 /**
  * Figma FIRST 115:405 — dark new-request form with oval reason chips,
@@ -54,13 +56,21 @@ export function ClientNewRequest({
   onSubmit: () => void;
 }) {
   const motionOn = !useReducedMotion();
-  const [mode, setModeState] = useState<'story' | 'form'>(initialMode);
+  const [mode, setMode] = useState<'story' | 'form'>(initialMode);
+  /**
+   * What is on screen, which trails what was asked for: the leaving half keeps
+   * the layout it was drawn in until the arriving half is there to take it.
+   */
+  const [shown, setShown] = useState<'story' | 'form'>(initialMode);
   const onModeChangeRef = useRef(onModeChange);
   onModeChangeRef.current = onModeChange;
-  const setMode = useCallback((next: 'story' | 'form') => {
-    setModeState(next);
-    onModeChangeRef.current?.(next);
-  }, []);
+  useEffect(() => {
+    onModeChangeRef.current?.(shown);
+  }, [shown]);
+  useEffect(() => {
+    // Nothing animates, so nothing reports the handover: do it here.
+    if (!motionOn) setShown(mode);
+  }, [mode, motionOn]);
   const [story, setStory] = useState('');
   const [listening, setListening] = useState(false);
   const [tracing, setTracing] = useState(false);
@@ -227,31 +237,52 @@ export function ClientNewRequest({
   const canSend = story.trim().length > 0;
   return (
     <section
-      className={mode === 'form' ? 'flex shrink-0 flex-col' : 'flex min-h-0 flex-1 flex-col'}
+      className={shown === 'form' ? 'flex shrink-0 flex-col' : 'flex min-h-0 flex-1 flex-col'}
     >
-      {mode === 'story' ? (
-        <div className="flex flex-1 items-center justify-center px-[12px]">
-          <p
-            className="text-center font-murs tracking-[-0.03em] text-figma-ink"
-            style={{ fontSize: eu(40), lineHeight: eu(48) }}
-          >
-            Расскажите о проблеме
-          </p>
+      {/*
+       * The question leaves with the story it belongs to, but the room it sat in
+       * is held until the form is actually there — collapsing it while the story
+       * is still fading pulled the whole screen upwards mid-animation.
+       */}
+      {shown === 'story' ? (
+        <div className="flex min-h-0 flex-1 items-center justify-center px-[12px]">
+          {/* Animated on the way in as well as out: this block is only here
+              while the story is, so its own mount is the question arriving. */}
+          <AnimatePresence>
+            {mode === 'story' ? (
+              <motion.p
+                key="ask"
+                className="text-center font-murs tracking-[-0.03em] text-figma-ink"
+                style={{ fontSize: eu(40), lineHeight: eu(48) }}
+                initial={motionOn ? { opacity: 0, y: 12 } : false}
+                animate={{ opacity: 1, y: 0 }}
+                exit={motionOn ? { opacity: 0, y: -10 } : undefined}
+                transition={motionOn ? swap : { duration: 0 }}
+              >
+                Расскажите о проблеме
+              </motion.p>
+            ) : null}
+          </AnimatePresence>
         </div>
       ) : (
         <div className="shrink-0" style={{ height: `calc(${eu(36)} + 28px)` }} />
       )}
       <div className="flex flex-col">
         <ModeSwitch mode={mode} onChange={setMode} />
-        <AnimatePresence initial={false}>
+        {/*
+         * One slot the two ways of filing a request take turns in. `wait` is the
+         * whole point: while both were mounted the leaving one still held its
+         * height, so the arriving form grew below it and the page snapped up
+         * when the old one finally unmounted.
+         */}
+        <AnimatePresence initial={false} mode="wait" onExitComplete={() => setShown(mode)}>
           {mode === 'story' ? (
             <motion.div
               key="story"
-              className=""
-              initial={motionOn ? { opacity: 0, y: 24 } : false}
+              initial={motionOn ? { opacity: 0, y: 18 } : false}
               animate={{ opacity: 1, y: 0 }}
-              exit={motionOn ? { opacity: 0, y: 16 } : undefined}
-              transition={motionOn ? { duration: 0.36, ease: slideEase } : { duration: 0 }}
+              exit={motionOn ? { opacity: 0, y: 12 } : undefined}
+              transition={motionOn ? swap : { duration: 0 }}
             >
               <div
                 className="relative bg-white"
@@ -312,18 +343,14 @@ export function ClientNewRequest({
                 {tracing ? <PerimeterTrace onDone={revealForm} /> : null}
               </div>
             </motion.div>
-          ) : null}
-        </AnimatePresence>
-        <AnimatePresence initial={false}>
-          {mode === 'form' ? (
+          ) : (
             <motion.div
               key="form"
-              className="overflow-hidden"
               style={{ paddingBottom: eu(48) }}
-              initial={motionOn ? { height: 0, opacity: 0 } : false}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={motionOn ? { height: 0, opacity: 0 } : undefined}
-              transition={motionOn ? { duration: 0.48, ease: slideEase } : { duration: 0 }}
+              initial={motionOn ? { opacity: 0, y: 24 } : false}
+              animate={{ opacity: 1, y: 0 }}
+              exit={motionOn ? { opacity: 0, y: 12 } : undefined}
+              transition={motionOn ? swap : { duration: 0 }}
             >
               <form
                 className="flex flex-col bg-figma-ink"
@@ -528,7 +555,7 @@ export function ClientNewRequest({
                 </motion.button>
               </form>
             </motion.div>
-          ) : null}
+          )}
         </AnimatePresence>
       </div>
 

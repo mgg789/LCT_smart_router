@@ -77,7 +77,7 @@ export function DeskShell({
                 key={screenKey ?? 'screen'}
                 transition={motionOn ? settle : { duration: 0 }}
               >
-                {fitScreen ? <FitHeight>{children}</FitHeight> : children}
+                <FitHeight active={fitScreen === true}>{children}</FitHeight>
               </motion.div>
             </AnimatePresence>
           </motion.section>

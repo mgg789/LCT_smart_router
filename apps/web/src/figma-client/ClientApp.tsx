@@ -324,33 +324,35 @@ export function ClientApp() {
       {gate ? (
         <motion.div
           key="client-email-gate"
-          className={`absolute inset-0 z-40 bg-figma-canvas ${
-            desk ? 'flex flex-col phone-desk-center' : ''
-          }`}
+          className="absolute inset-0 z-40 bg-figma-canvas"
           initial={motionOn ? { y: 24, opacity: 0 } : false}
           animate={{ y: 0, opacity: 1 }}
           exit={motionOn ? { y: 24, opacity: 0 } : undefined}
           transition={motionOn ? slide : { duration: 0 }}
         >
-          <ClientEmailGate
-            purpose={gate.purpose}
-            email={gate.email}
-            codeStep={gate.codeStep}
-            devCode={gate.devCode}
-            busy={busy}
-            notice={inlineNotice}
-            onEmailChange={(email) => setGate({ ...gate, email })}
-            onRequestCode={() => {
-              void askCode(gate.email.trim());
-            }}
-            onConfirm={(code) => {
-              void confirmCode(code);
-            }}
-            onClose={() => {
-              setGate(null);
-              setNotice(null);
-            }}
-          />
+          {/* The sheet covers the pane; the form inside it keeps a column of
+              its own, at a scale that matches that column's width. */}
+          <div className={desk ? 'phone-desk-sheet h-full' : 'h-full'}>
+            <ClientEmailGate
+              purpose={gate.purpose}
+              email={gate.email}
+              codeStep={gate.codeStep}
+              devCode={gate.devCode}
+              busy={busy}
+              notice={inlineNotice}
+              onEmailChange={(email) => setGate({ ...gate, email })}
+              onRequestCode={() => {
+                void askCode(gate.email.trim());
+              }}
+              onConfirm={(code) => {
+                void confirmCode(code);
+              }}
+              onClose={() => {
+                setGate(null);
+                setNotice(null);
+              }}
+            />
+          </div>
         </motion.div>
       ) : null}
     </AnimatePresence>
