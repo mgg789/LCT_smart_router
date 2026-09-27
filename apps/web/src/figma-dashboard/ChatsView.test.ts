@@ -82,7 +82,6 @@ describe('ChatsView', () => {
         writesDisabled: false,
         onSendMessage: noop,
         onFinish: noop,
-        onRefresh: () => {},
         onMarkRead: () => {},
       }),
     );
@@ -101,7 +100,6 @@ describe('ChatsView', () => {
         writesDisabled: false,
         onSendMessage: noop,
         onFinish: noop,
-        onRefresh: () => {},
         onMarkRead: () => {},
       }),
     );
@@ -119,7 +117,6 @@ describe('ChatsView', () => {
         writesDisabled: false,
         onSendMessage: noop,
         onFinish: noop,
-        onRefresh: () => {},
         onMarkRead: () => {},
       }),
     );
@@ -130,22 +127,43 @@ describe('ChatsView', () => {
     expect(html).toMatch(/<input[^>]*placeholder="Чат завершён"[^>]*disabled/);
   });
 
-  it('labels a dispatcher-initiated chat by its own origin, not the assistant escalation copy', () => {
-    const html = renderToStaticMarkup(
+  /** The frame previews the newest line. A chat with none yet has nothing to preview, and
+   *  falls back to how it started — which differs per side and must not be confused. */
+  it('previews an empty chat by its own origin, not the other side’s copy', () => {
+    const empty = (initiatedBy: 'user' | 'dispatcher'): DispatchChatView => ({
+      ...chat('waiting', { initiatedBy }),
+      messages: [],
+    });
+
+    const mine = renderToStaticMarkup(
       createElement(ChatsView, {
         token: 'tok',
-        chats: [chat('waiting', { initiatedBy: 'dispatcher' })],
+        chats: [empty('dispatcher')],
         loading: false,
         error: null,
         writesDisabled: false,
         onSendMessage: noop,
         onFinish: noop,
-        onRefresh: () => {},
         onMarkRead: () => {},
       }),
     );
-    expect(html).toContain('Вы написали первым');
-    expect(html).not.toContain('попросил диспетчера');
+    expect(mine).toContain('Вы написали первым');
+    expect(mine).not.toContain('попросил диспетчера');
+
+    const theirs = renderToStaticMarkup(
+      createElement(ChatsView, {
+        token: 'tok',
+        chats: [empty('user')],
+        loading: false,
+        error: null,
+        writesDisabled: false,
+        onSendMessage: noop,
+        onFinish: noop,
+        onMarkRead: () => {},
+      }),
+    );
+    expect(theirs).toContain('Клиент попросил диспетчера');
+    expect(theirs).not.toContain('Вы написали первым');
   });
 
   it('renders two handover episodes of the same conversation as two distinct rows', () => {
@@ -161,7 +179,6 @@ describe('ChatsView', () => {
         writesDisabled: false,
         onSendMessage: noop,
         onFinish: noop,
-        onRefresh: () => {},
         onMarkRead: () => {},
       }),
     );

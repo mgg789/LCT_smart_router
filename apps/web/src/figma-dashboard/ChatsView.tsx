@@ -5,14 +5,17 @@ import { formatClock } from '../lib/time';
 import { useArtboardStretch } from './artboardStretch';
 import { ENGINEER_PORTRAITS, FIGMA_ASSETS } from './assets';
 import { FigmaIcon, FigmaText } from './primitives';
+import { shortRequestId } from './requestsTable';
 
-/** Figma CHATS 95:991, in artboard units: the left card, then the thread column. */
+/** Figma CHATS 95:991, in artboard units. */
 const CARD_WIDTH = 430;
 const THREAD_LEFT = 604;
 const THREAD_WIDTH = 963;
 const ROW_STEP = 100;
 const ROW_HEIGHT = 80;
 const BUBBLE_MAX = 682;
+const COMPOSER_WIDTH = 596;
+const HAIRLINE = 'rgba(114,116,120,0.25)';
 
 export interface ChatsViewProps {
   readonly token: string | null;
@@ -22,19 +25,17 @@ export interface ChatsViewProps {
   readonly writesDisabled: boolean;
   readonly onSendMessage: (conversationId: string, text: string) => Promise<void>;
   readonly onFinish: (conversationId: string) => Promise<void>;
-  readonly onRefresh: () => void;
   readonly onMarkRead: (conversationId: string, seq: number) => void;
 }
 
 type SideFilter = 'engineer' | 'client';
 
-/** Which side of a `user` message spoke: `AiMessageAuthor` knows the role, not the person. */
 function sideOf(profile: AiRoleProfile): SideFilter {
   return profile === 'engineer' ? 'engineer' : 'client';
 }
 
-/** Who opened this episode. The board shows it because a chat the dispatcher started
- *  needs no answer, and one the other side asked for does. */
+/** Who opened this episode. The frame has no slot for it, so it only previews a row that
+ *  has no message of its own yet. */
 export function originLabel(chat: DispatchChatView): string {
   if (chat.handoff.initiatedBy === 'dispatcher') return 'Вы написали первым';
   return sideOf(chat.conversation.roleProfile) === 'engineer'
@@ -42,20 +43,41 @@ export function originLabel(chat: DispatchChatView): string {
     : 'Клиент попросил диспетчера';
 }
 
-/** The newest line, which is what a list row previews. */
 function lastMessage(chat: DispatchChatView): AiMessage | undefined {
   return chat.messages[chat.messages.length - 1];
 }
 
-/** The seq to mark a chat read up to: its newest message, or the handover's own cursor. */
 function lastSeqOf(chat: DispatchChatView): number {
   return lastMessage(chat)?.seq ?? chat.handoff.startSeq;
 }
 
 /**
- * A stable portrait per conversation. The API carries no photo for either side, and the
- * frame is drawn with one, so the pool is cycled by id rather than by list position —
- * a row must not change face when the list reorders around it.
+ * The name the frame puts in bold.
+ *
+ * A chat opened from the board carries one in `conversation.title` («Инженер · Алексей
+ * Волков»). One the assistant escalated carries nothing that names the person — no title,
+ * no engineer id, no request id — so the role is what can honestly be shown there rather
+ * than a name invented to fill the slot.
+ */
+export function chatName(chat: DispatchChatView): string {
+  const title = chat.conversation.title?.trim();
+  if (title) return title;
+  return sideOf(chat.conversation.roleProfile) === 'engineer' ? 'Инженер' : 'Клиент';
+}
+
+/** The frame's «В сети - заявка № 1031»: the request when the chat is about one, and in
+ *  every case what this dialogue is waiting for. */
+export function chatStatus(chat: DispatchChatView): string {
+  if (chat.handoff.state === 'closed') return 'Чат завершён';
+  const requestId = chat.handoff.requestIds[0];
+  const state = chat.handoff.state === 'waiting' ? 'Ожидает ответа' : 'Диалог ведёт диспетчер';
+  return requestId ? `${state} · заявка № ${shortRequestId(requestId)}` : state;
+}
+
+/**
+ * A stable portrait per conversation. Neither side of a handover carries a photo and the
+ * frame is drawn with one, so the pool is cycled by id rather than by list position — a
+ * row must not change face when the list reorders around it.
  */
 function portraitFor(id: string): string {
   let sum = 0;
@@ -63,24 +85,19 @@ function portraitFor(id: string): string {
   return ENGINEER_PORTRAITS[sum % ENGINEER_PORTRAITS.length] as string;
 }
 
-/** The name the counterpart is listed under. The handover carries no display name, so
- *  the role and the short conversation id are what honestly identifies a row. */
-function titleOf(chat: DispatchChatView): string {
-  return sideOf(chat.conversation.roleProfile) === 'engineer' ? 'Инженер' : 'Клиент';
-}
-
-function subtitleOf(chat: DispatchChatView): string {
-  if (chat.handoff.state === 'closed') return 'Чат завершён';
-  return chat.handoff.state === 'waiting' ? 'Ожидает ответа' : 'Диалог ведёт диспетчер';
-}
-
 /**
  * Figma CHATS 95:991 — the dispatcher's handed-over dialogues on the MAIN artboard.
  *
- * Two columns as drawn: a 430-wide card holding search, an «Инженеры / Клиенты» switch
- * and the rows, and a thread beside it with a header strip, the messages and one composer
- * centred under them. Spare board height goes to both columns; spare width to the thread,
- * which is the one part that reads better wider.
+ * Drawn as the frame has it: a 430-wide card with search, an «Инженеры / Клиенты» switch
+ * and 80-unit rows on a 100 step; beside it a 963-wide thread with a header strip, the
+ * messages, and one 596-wide composer centred under them. Spare board height goes to both
+ * columns, spare width to the thread.
+ *
+ * Two things the frame does not draw, and why they are here anyway. «Завершить чат» is the
+ * only way to hand a dialogue back to the assistant, and it sits in the free right half of
+ * the header strip. And a divider marks where the handover began: everything above it was
+ * addressed to the assistant, and without the mark it reads as words said to a dispatcher
+ * who was not there yet.
  *
  * Rows are keyed by `handoff.id`, not `conversation.id`: the same person can be handed
  * over several times in a day and each episode is its own row.
@@ -93,7 +110,6 @@ export function ChatsView({
   writesDisabled,
   onSendMessage,
   onFinish,
-  onRefresh,
   onMarkRead,
 }: ChatsViewProps) {
   const { dx, dy } = useArtboardStretch();
@@ -114,8 +130,8 @@ export function ChatsView({
 
   /*
    * Which side the switch starts on is derived, not stored: the tab should open on the
-   * side that actually has someone waiting, and an effect that corrects it afterwards
-   * would paint an empty «Инженеры» first and would not survive a server render.
+   * side that actually has someone waiting, and an effect correcting it afterwards would
+   * paint an empty «Инженеры» first and would not survive a server render.
    */
   const side: SideFilter =
     sidePicked ??
@@ -129,7 +145,7 @@ export function ChatsView({
     return all.filter((chat) => {
       if (sideOf(chat.conversation.roleProfile) !== side) return false;
       if (needle.length === 0) return true;
-      const haystack = `${titleOf(chat)} ${originLabel(chat)} ${lastMessage(chat)?.text ?? ''}`;
+      const haystack = `${chatName(chat)} ${lastMessage(chat)?.text ?? ''}`;
       return haystack.toLowerCase().includes(needle);
     });
   }, [all, query, side]);
@@ -164,7 +180,7 @@ export function ChatsView({
       <section className="absolute" style={{ left: 180, top: 100, width: 1710 + dx }}>
         <ChatsTitle />
         <FigmaText
-          className="absolute left-0 font-semibold text-[20px] text-figma-muted"
+          className="absolute left-0 font-semibold text-[20px] text-[#727478]"
           style={{ top: 90 }}
         >
           Чаты доступны только в живом контуре — подключитесь к рабочему серверу.
@@ -173,22 +189,15 @@ export function ChatsView({
     );
   }
 
+  const closed = selected?.handoff.state === 'closed';
+
   return (
     <section
       className="absolute"
       style={{ left: 180, top: 100, width: 1710 + dx, height: 948 + dy }}
     >
       <ChatsTitle />
-      <button
-        type="button"
-        onClick={onRefresh}
-        className="absolute flex items-center rounded-full bg-white font-semibold text-[16px] text-figma-ink"
-        style={{ left: 336, top: 108, height: 40, paddingInline: 22, gap: 8 }}
-      >
-        Обновить
-      </button>
 
-      {/* Left card: search, the side switch, and the rows. */}
       <div
         className="absolute overflow-hidden rounded-[30px] bg-white"
         style={{ left: 0, top: 67, width: CARD_WIDTH, height: 881 + dy }}
@@ -202,7 +211,7 @@ export function ChatsView({
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Поиск"
-            className="figma-nowrap w-full bg-transparent font-semibold text-[16px] text-figma-ink outline-none placeholder:text-figma-muted"
+            className="figma-nowrap w-full bg-transparent font-semibold text-[18px] text-figma-ink outline-none placeholder:text-[#727478]"
           />
         </label>
         <span
@@ -213,10 +222,10 @@ export function ChatsView({
         </span>
 
         <div
-          className="absolute flex items-center rounded-[27px] bg-figma-canvas"
-          style={{ left: 68, top: 91, width: 294, height: 51, padding: 8 }}
           role="tablist"
           aria-label="Сторона диалога"
+          className="absolute flex items-center justify-center rounded-[100px] border-[1.5px] border-[#727478] border-solid"
+          style={{ left: 68, top: 91, width: 294, height: 51, gap: 20 }}
         >
           {(
             [
@@ -230,34 +239,28 @@ export function ChatsView({
               role="tab"
               aria-selected={side === id}
               onClick={() => setSidePicked(id)}
-              className={`relative flex h-[35px] w-[139px] items-center justify-center rounded-[20px] font-semibold text-[15px] ${
-                side === id ? 'text-white' : 'text-figma-ink'
+              className={`figma-nowrap flex items-center font-medium text-[20px] leading-none ${
+                side === id
+                  ? 'rounded-[100px] border-[0.5px] border-[#727478] border-solid bg-figma-ink text-white'
+                  : 'rounded-[10px] bg-white text-figma-ink'
               }`}
+              style={side === id ? { padding: '10px 20px' } : { padding: 10 }}
             >
-              {side === id ? (
-                <motion.span
-                  layoutId="chats-side-pill"
-                  className="absolute inset-0 rounded-[20px] bg-figma-ink"
-                  transition={
-                    reduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 420, damping: 34 }
-                  }
-                />
-              ) : null}
-              <span className="relative">{label}</span>
+              {label}
             </button>
           ))}
         </div>
 
         <div
-          className="absolute overflow-y-auto"
-          style={{ left: 20, top: 174, width: 390, height: 680 + dy }}
+          className="absolute overflow-y-auto overflow-x-hidden"
+          style={{ left: 13, top: 174, width: 405, height: 680 + dy }}
         >
           {loading && all.length === 0 ? (
-            <FigmaText className="block pt-[24px] font-semibold text-[16px] text-figma-muted">
+            <FigmaText className="block pt-[24px] font-semibold text-[18px] text-[#727478]">
               Загружаем чаты…
             </FigmaText>
           ) : rows.length === 0 ? (
-            <FigmaText className="block pt-[24px] font-semibold text-[16px] text-figma-muted">
+            <FigmaText className="block pt-[24px] font-semibold text-[18px] text-[#727478]">
               {side === 'engineer' ? 'С инженерами диалогов нет.' : 'С клиентами диалогов нет.'}
             </FigmaText>
           ) : (
@@ -275,7 +278,6 @@ export function ChatsView({
         </div>
       </div>
 
-      {/* Thread. */}
       {selected ? (
         <>
           <div
@@ -288,29 +290,29 @@ export function ChatsView({
               className="shrink-0 rounded-full object-cover"
               style={{ width: 54, height: 54 }}
             />
-            <div className="min-w-0" style={{ marginLeft: 14 }}>
-              <FigmaText className="figma-nowrap font-extrabold text-[18px] tracking-[-0.306px] text-figma-ink">
-                {titleOf(selected)} · {originLabel(selected)}
+            <span className="min-w-0" style={{ marginLeft: 14 }}>
+              <FigmaText className="figma-nowrap block font-murs text-[20px] text-figma-ink">
+                {chatName(selected)}
               </FigmaText>
               <FigmaText
-                className="figma-nowrap font-semibold text-[16px] text-figma-muted"
-                style={{ marginTop: 6 }}
+                className="figma-nowrap block font-semibold text-[18px] text-[#727478]"
+                style={{ marginTop: 5 }}
               >
-                {subtitleOf(selected)}
+                {chatStatus(selected)}
               </FigmaText>
-            </div>
+            </span>
             <span className="flex-1" />
-            {selected.handoff.state !== 'closed' ? (
+            {closed ? null : (
               <button
                 type="button"
                 disabled={writesDisabled}
                 onClick={() => void onFinish(selected.conversation.id)}
-                className="shrink-0 rounded-full bg-figma-canvas font-semibold text-[15px] text-figma-ink disabled:opacity-50"
+                className="shrink-0 rounded-full bg-figma-canvas font-semibold text-[16px] text-figma-ink disabled:opacity-50"
                 style={{ height: 43, paddingInline: 22, marginRight: 10 }}
               >
                 Завершить чат
               </button>
-            ) : null}
+            )}
           </div>
 
           <div
@@ -320,8 +322,17 @@ export function ChatsView({
           >
             <div className="flex flex-col" style={{ gap: 40 }}>
               <AnimatePresence initial={false}>
-                {selected.messages.map((message) => (
-                  <Bubble key={message.id} message={message} motionOn={!reduceMotion} />
+                {selected.messages.map((message, index) => (
+                  <Bubble
+                    key={message.id}
+                    message={message}
+                    motionOn={!reduceMotion}
+                    handoverStartsHere={
+                      index > 0 &&
+                      message.seq > selected.handoff.startSeq &&
+                      (selected.messages[index - 1]?.seq ?? 0) <= selected.handoff.startSeq
+                    }
+                  />
                 ))}
               </AnimatePresence>
             </div>
@@ -331,51 +342,45 @@ export function ChatsView({
             onSubmit={submit}
             className="absolute"
             style={{
-              left: THREAD_LEFT + (THREAD_WIDTH + dx - 596) / 2,
+              left: THREAD_LEFT + (THREAD_WIDTH + dx - COMPOSER_WIDTH) / 2,
               top: 801 + dy,
-              width: 596,
+              width: COMPOSER_WIDTH,
             }}
           >
             <div
-              className="flex items-center rounded-[40px] bg-figma-ink"
-              style={{ height: 79, paddingLeft: 10, paddingRight: 8, gap: 15 }}
+              className="relative overflow-hidden rounded-[200px] bg-figma-ink"
+              style={{ height: 79 }}
             >
               <span
-                className="flex shrink-0 items-center justify-center rounded-full bg-figma-bee"
-                style={{ width: 60, height: 60 }}
+                className="absolute flex items-center justify-center rounded-full bg-figma-bee"
+                style={{ left: 10, top: 10, width: 60, height: 60 }}
               >
                 <FigmaIcon src={FIGMA_ASSETS.iconPlus} alt="" width={20} height={20} />
               </span>
               <input
                 value={draft}
                 onChange={(event) => setDraft(event.target.value)}
-                disabled={writesDisabled || selected.handoff.state === 'closed'}
-                placeholder={
-                  selected.handoff.state === 'closed' ? 'Чат завершён' : 'Отправьте сообщение'
-                }
+                disabled={writesDisabled || closed}
+                placeholder={closed ? 'Чат завершён' : 'Отправьте сообщение'}
                 aria-label="Ответить в диалог"
-                className="min-w-0 flex-1 bg-transparent font-semibold text-[17px] text-white outline-none placeholder:text-[#d9d9d9] disabled:opacity-50"
+                className="absolute bg-transparent font-semibold text-[20px] text-[#ededed] outline-none placeholder:text-[#ededed] disabled:opacity-50"
+                style={{ left: 85, right: 83, top: 0, height: 79 }}
               />
               <button
                 type="submit"
-                disabled={
-                  writesDisabled ||
-                  sending ||
-                  draft.trim().length === 0 ||
-                  selected.handoff.state === 'closed'
-                }
+                disabled={writesDisabled || sending || draft.trim().length === 0 || closed}
                 aria-label="Отправить"
-                className="flex shrink-0 items-center justify-center rounded-full bg-white/10 disabled:opacity-40"
-                style={{ width: 63, height: 63 }}
+                className="absolute flex items-center justify-center rounded-full bg-[rgba(255,255,255,0.06)] disabled:opacity-40"
+                style={{ right: 10, top: 8, width: 63, height: 63 }}
               >
-                <FigmaIcon src={FIGMA_ASSETS.arrowRightWhite} alt="" width={30} height={30} />
+                <FigmaIcon src={FIGMA_ASSETS.arrowRightWhite} alt="" width={30} height={31} />
               </button>
             </div>
           </form>
         </>
       ) : (
         <FigmaText
-          className="absolute font-semibold text-[20px] text-figma-muted"
+          className="absolute font-semibold text-[20px] text-[#727478]"
           style={{ left: THREAD_LEFT, top: 90 }}
         >
           {error ?? 'Выберите диалог слева.'}
@@ -397,7 +402,7 @@ export function ChatsView({
 
 function ChatsTitle() {
   return (
-    <FigmaText className="figma-nowrap absolute left-0 top-0 font-extrabold text-[40px] tracking-[-0.68px] text-figma-ink">
+    <FigmaText className="figma-nowrap absolute top-0 left-0 font-murs text-[40px] text-figma-ink">
       Чаты
     </FigmaText>
   );
@@ -423,9 +428,10 @@ function ChatRow({
       type="button"
       onClick={onSelect}
       aria-current={selected}
-      className="absolute left-0 flex w-[390px] items-start text-left"
-      style={{ top, height: ROW_HEIGHT }}
+      className="absolute block w-[390px] text-left"
+      style={{ left: 7, top, height: ROW_HEIGHT }}
     >
+      {/* 405 against the row's 390: the frame lets the highlight breathe past the row. */}
       {selected ? (
         <span
           aria-hidden
@@ -436,38 +442,40 @@ function ChatRow({
       <img
         alt=""
         src={portraitFor(chat.conversation.id)}
-        className="relative shrink-0 rounded-full object-cover"
-        style={{ width: 60, height: 60 }}
+        className="absolute rounded-full object-cover"
+        style={{ left: 0, top: 0, width: 60, height: 60 }}
       />
-      <span className="relative min-w-0 flex-1 overflow-hidden" style={{ marginLeft: 14 }}>
-        <FigmaText className="figma-nowrap block font-extrabold text-[18px] tracking-[-0.306px] text-figma-ink">
-          {titleOf(chat)}
-        </FigmaText>
-        <FigmaText
-          className="figma-nowrap block overflow-hidden text-ellipsis font-semibold text-[16px] text-figma-muted"
-          style={{ marginTop: 9, maxWidth: 255 }}
+      <FigmaText
+        className="figma-nowrap absolute overflow-hidden text-ellipsis font-murs text-[20px] text-figma-ink"
+        style={{ left: 74, top: 8, maxWidth: 262 }}
+      >
+        {chatName(chat)}
+      </FigmaText>
+      <FigmaText
+        className="figma-nowrap absolute overflow-hidden text-ellipsis font-semibold text-[18px] text-[#727478]"
+        style={{ left: 74, top: 39, maxWidth: 262 }}
+      >
+        {preview}
+      </FigmaText>
+      <FigmaText
+        className="figma-nowrap absolute font-semibold text-[16px] text-[#555]"
+        style={{ left: 346, top: 9 }}
+      >
+        {formatClock(at)}
+      </FigmaText>
+      {chat.unreadCount > 0 ? (
+        <span
+          className="absolute flex items-center justify-center rounded-full bg-figma-bee font-bold text-[16px] text-figma-ink"
+          style={{ left: 354, top: 28, width: 28, height: 28 }}
         >
-          {preview}
-        </FigmaText>
-      </span>
-      <span className="relative flex shrink-0 flex-col items-end" style={{ width: 44 }}>
-        <FigmaText className="figma-nowrap font-semibold text-[15px] text-figma-muted">
-          {formatClock(at)}
-        </FigmaText>
-        {chat.unreadCount > 0 ? (
-          <span
-            className="flex items-center justify-center rounded-full bg-figma-bee font-extrabold text-[15px] text-figma-ink"
-            style={{ marginTop: 7, width: 28, height: 28 }}
-          >
-            {chat.unreadCount}
-          </span>
-        ) : null}
-      </span>
+          {chat.unreadCount}
+        </span>
+      ) : null}
       {last ? null : (
         <span
           aria-hidden
-          className="absolute bg-[rgba(158,158,158,0.3)]"
-          style={{ left: 0, top: ROW_HEIGHT, width: 390, height: 1 }}
+          className="absolute"
+          style={{ left: 0, top: ROW_HEIGHT, width: 390, height: 1, background: HAIRLINE }}
         />
       )}
     </button>
@@ -475,37 +483,43 @@ function ChatRow({
 }
 
 /**
- * The dispatcher's own words are dark and right-aligned; everything arriving from the
- * other side — the person, the assistant before the handover, a system line — is white
- * and left-aligned, so one glance tells who is speaking without reading a label.
+ * The dispatcher's own words are dark and to the right; everything arriving from the other
+ * side is white and to the left, so one glance tells who is speaking without a label.
  */
-function Bubble({ message, motionOn }: { message: AiMessage; motionOn: boolean }) {
+function Bubble({
+  message,
+  motionOn,
+  handoverStartsHere,
+}: {
+  message: AiMessage;
+  motionOn: boolean;
+  handoverStartsHere: boolean;
+}) {
   const mine = message.author === 'dispatcher';
   return (
-    <motion.div
-      className={`flex w-full ${mine ? 'justify-end' : 'justify-start'}`}
-      initial={motionOn ? { opacity: 0, y: 12 } : false}
-      animate={{ opacity: 1, y: 0 }}
-      transition={motionOn ? { duration: 0.24, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
-    >
-      <div
-        className={mine ? 'bg-figma-ink text-white' : 'bg-white text-figma-ink'}
-        style={{ maxWidth: BUBBLE_MAX, borderRadius: 20, padding: '18px 24px' }}
-      >
-        {message.author === 'assistant' || message.author === 'system' ? (
-          <FigmaText
-            className={`block font-semibold text-[13px] uppercase tracking-[0.08em] ${
-              mine ? 'text-white/60' : 'text-figma-muted'
-            }`}
-            style={{ marginBottom: 6 }}
-          >
-            {message.author === 'assistant' ? 'Ассистент' : 'Система'}
+    <>
+      {handoverStartsHere ? (
+        <div className="flex items-center" style={{ gap: 16 }}>
+          <span className="flex-1" style={{ height: 1, background: HAIRLINE }} />
+          <FigmaText className="figma-nowrap font-semibold text-[15px] text-[#727478] uppercase tracking-[0.08em]">
+            Передано диспетчеру
           </FigmaText>
-        ) : null}
-        <p className="whitespace-pre-wrap font-semibold text-[18px]" style={{ lineHeight: '22px' }}>
-          {message.text}
-        </p>
-      </div>
-    </motion.div>
+          <span className="flex-1" style={{ height: 1, background: HAIRLINE }} />
+        </div>
+      ) : null}
+      <motion.div
+        className={`flex w-full ${mine ? 'justify-end' : 'justify-start'}`}
+        initial={motionOn ? { opacity: 0, y: 12 } : false}
+        animate={{ opacity: 1, y: 0 }}
+        transition={motionOn ? { duration: 0.24, ease: [0.22, 1, 0.36, 1] } : { duration: 0 }}
+      >
+        <div
+          className={mine ? 'bg-figma-ink text-white' : 'bg-white text-figma-ink'}
+          style={{ maxWidth: BUBBLE_MAX, borderRadius: 20, padding: '18px 24px' }}
+        >
+          <p className="whitespace-pre-wrap font-medium text-[20px]">{message.text}</p>
+        </div>
+      </motion.div>
+    </>
   );
 }

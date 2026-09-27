@@ -1,4 +1,5 @@
 import { PhoneAiPane } from '../components/ai/PhoneAiPane';
+import { FIGMA_ASSETS } from '../figma-dashboard/assets';
 
 /** First-turn prompts for route context, problem triage and retaining checks already done. */
 export const ENGINEER_QUICK_QUESTIONS = [
@@ -37,6 +38,7 @@ export function EngineerAiPane({
       surface="engineer"
       greeting={engineerGreeting(displayName)}
       quickQuestions={ENGINEER_QUICK_QUESTIONS}
+      avatar={FIGMA_ASSETS.aiKolobokEngineer}
     />
   );
 }

@@ -1,4 +1,5 @@
 import { PhoneAiPane } from '../components/ai/PhoneAiPane';
+import { FIGMA_ASSETS } from '../figma-dashboard/assets';
 
 /**
  * First-turn prompts for a customer: the three things someone opens support for
@@ -41,6 +42,7 @@ export function ClientSupport({
       surface="client"
       greeting={clientGreeting(contactName)}
       quickQuestions={CLIENT_QUICK_QUESTIONS}
+      avatar={FIGMA_ASSETS.aiKolobokClient}
       placeholder="Напишите нам..."
     />
   );

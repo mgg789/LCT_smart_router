@@ -39,6 +39,7 @@ export function PhoneAiPane({
   surface,
   greeting,
   quickQuestions,
+  avatar,
   placeholder = 'Спроси меня о чем нибудь...',
 }: {
   token: string | null;
@@ -47,6 +48,8 @@ export function PhoneAiPane({
   greeting: string;
   /** First-turn prompts. They belong to the assistant, so a handed-over chat hides them. */
   quickQuestions: readonly string[];
+  /** The assistant's face. Each app has its own in the frames, so it is not a constant. */
+  avatar: string;
   placeholder?: string;
 }) {
   const chat = useAssistantChat({ token, surface });
@@ -236,7 +239,7 @@ export function PhoneAiPane({
           <div className="flex flex-1 flex-col items-center justify-center" style={{ gap: eu(28) }}>
             <img
               alt=""
-              src={FIGMA_ASSETS.aiKolobok}
+              src={avatar}
               width={200}
               height={200}
               className="rounded-full object-cover"
@@ -299,6 +302,7 @@ export function PhoneAiPane({
                   ) : (
                     <AssistantBubble
                       key={message.id}
+                      avatar={avatar}
                       message={message}
                       thoughtSeconds={thoughtFor[message.id] ?? null}
                       copied={copied === message.id}
@@ -313,7 +317,7 @@ export function PhoneAiPane({
                     />
                   ),
                 )}
-                {thinking ? <ThinkingRow /> : null}
+                {thinking ? <ThinkingRow avatar={avatar} /> : null}
               </div>
             </div>
             <div
@@ -460,6 +464,7 @@ function GuardModal({
 }
 
 function AssistantBubble({
+  avatar,
   message,
   thoughtSeconds,
   copied,
@@ -467,6 +472,7 @@ function AssistantBubble({
   onAgain,
   onFollowUp,
 }: {
+  avatar: string;
   message: AssistantChatMessage;
   thoughtSeconds: number | null;
   copied: boolean;
@@ -479,7 +485,7 @@ function AssistantBubble({
       <div className="flex items-center" style={{ gap: eu(16) }}>
         <img
           alt=""
-          src={FIGMA_ASSETS.aiKolobok}
+          src={avatar}
           width={74}
           height={74}
           className="shrink-0 rounded-full object-cover"
@@ -594,13 +600,13 @@ function DispatcherBubble({
   );
 }
 
-function ThinkingRow() {
+function ThinkingRow({ avatar }: { avatar: string }) {
   const reduceMotion = useReducedMotion();
   return (
     <div className="flex items-center" style={{ gap: eu(16) }} aria-live="polite">
       <motion.img
         alt=""
-        src={FIGMA_ASSETS.aiKolobok}
+        src={avatar}
         width={74}
         height={74}
         className="shrink-0 rounded-full object-cover"

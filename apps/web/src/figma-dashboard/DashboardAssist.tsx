@@ -36,8 +36,15 @@ export function DashboardChats({ token }: { token: string | null }) {
       .finally(() => setLoading(false));
   }, [token]);
 
+  /*
+   * The frame draws no «Обновить», so the list keeps itself current: nothing here pushes,
+   * and a dispatcher reading one thread would otherwise never see a second person write.
+   * Ten seconds is the granularity the chat list is read at, not the one a message needs.
+   */
   useEffect(() => {
     refresh();
+    const timer = window.setInterval(refresh, 10_000);
+    return () => window.clearInterval(timer);
   }, [refresh]);
 
   return (
@@ -48,7 +55,6 @@ export function DashboardChats({ token }: { token: string | null }) {
         loading={loading}
         error={error}
         writesDisabled={!token}
-        onRefresh={refresh}
         onSendMessage={async (conversationId, text) => {
           if (!token) return;
           await sendDispatchChatMessage(token, conversationId, crypto.randomUUID(), text);
