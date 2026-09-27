@@ -29,6 +29,7 @@ import {
 import { AlertsService, type ResolveAlertInput } from '../alerts';
 import { LiveService } from '../live';
 import { PolicyService } from '../policy';
+import { resolveRequestReference } from '../requests/request-reference';
 import { DispatcherSettingsService } from '../settings';
 import {
   rememberSimulation,
@@ -652,7 +653,8 @@ export class McpToolsService {
         {
           name: 'get_request',
           title: 'Детали заявки',
-          description: 'One request with its details and the history of previous conditions.',
+          description:
+            'One request by full ID or unique visible 8-character prefix, with details and history. Use the returned full ID in mutations.',
           inputSchema: {
             type: 'object',
             properties: { requestId: { type: 'string' } },
@@ -662,16 +664,13 @@ export class McpToolsService {
         },
         z.object({ requestId: z.string().min(1) }),
         async (args) => {
-          const request = await this.prisma.request.findUnique({ where: { id: args.requestId } });
-          if (!request) {
-            throw SysError.notFound('Request', { requestId: args.requestId });
-          }
+          const request = await resolveRequestReference(this.prisma, args.requestId);
           const live = await this.prisma.liveRequestState.findFirst({
-            where: { requestId: args.requestId, workday: { status: 'running' } },
+            where: { requestId: request.id, workday: { status: 'running' } },
             select: { assumedStartedAt: true, assumedCompletedAt: true },
           });
           const history = await this.prisma.requestConditionHistory.findMany({
-            where: { requestId: args.requestId },
+            where: { requestId: request.id },
             orderBy: { changedAt: 'desc' },
           });
           const actors = await this.audit.actorsFor(

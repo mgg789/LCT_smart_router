@@ -66,10 +66,19 @@ export function ManualPlanningProvider({
       setEditor(null);
       setPanel(requested === 'request-manual' ? 'mode' : requested);
       setError(null);
+      if (requested === 'priorities' && token) {
+        void loadManualState(token)
+          .then((next) => {
+            setState((current) => (current && current.version > next.version ? current : next));
+          })
+          .catch(() => {
+            /* Polling retries a failed refresh. */
+          });
+      }
     };
     window.addEventListener('manual-planning-open', open);
     return () => window.removeEventListener('manual-planning-open', open);
-  }, [active]);
+  }, [active, token]);
   useEffect(() => {
     if (!token) return;
     let cancelled = false;

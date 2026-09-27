@@ -218,6 +218,7 @@ export function UserMenu({
   onReset: () => void;
   onSignOut: () => void;
 }) {
+  const [arrowHovered, setArrowHovered] = useState(false);
   return (
     <div
       data-user-menu
@@ -242,8 +243,9 @@ export function UserMenu({
         </div>
         <motion.span
           className="flex size-[20px] items-center justify-center"
-          animate={{ rotate: open ? 180 : 0 }}
-          whileHover={motionOn && !open ? { rotate: 18 } : undefined}
+          onPointerEnter={() => setArrowHovered(true)}
+          onPointerLeave={() => setArrowHovered(false)}
+          animate={{ rotate: open ? 180 : motionOn && arrowHovered ? 18 : 0 }}
           transition={{ duration: 0.2 }}
         >
           <FigmaIcon src={FIGMA_ASSETS.chevronDown} alt="" width={20} height={20} />
@@ -546,7 +548,7 @@ export function PolicyControl({
           on={lunchOn}
           label="Рассчитать обеды"
           description="Включено: маршрут учитывает обеденные перерывы инженеров. Выключено: автоматический обед в план не добавляется."
-          top={278 + extra}
+          top={283 + extra}
           motionOn={motionOn}
           onToggle={onLunchToggle}
         />
@@ -554,7 +556,7 @@ export function PolicyControl({
           on={trafficOn}
           label="Прогнозировать пробки"
           description="Включено: время дороги учитывает прогноз пробок на момент поездки. Выключено: план рассчитывается без прогнозного изменения трафика."
-          top={322 + extra}
+          top={327 + extra}
           motionOn={motionOn}
           onToggle={onTrafficToggle}
         />
@@ -562,7 +564,7 @@ export function PolicyControl({
           on={metroOn}
           label="Маршруты с метро"
           description="Разрешает учитывать метро при расчёте подходящих пеших маршрутов. Без этого используются наземные варианты."
-          top={366 + extra}
+          top={371 + extra}
           motionOn={motionOn}
           onToggle={onMetroToggle}
         />
@@ -570,7 +572,7 @@ export function PolicyControl({
           on={equipmentTransfersOn}
           label="Передача оборудования"
           description="Разрешает планировать встречи инженеров для передачи оборудования, если это помогает выполнить заявки."
-          top={410 + extra}
+          top={415 + extra}
           motionOn={motionOn}
           onToggle={onEquipmentTransfersToggle}
         />
@@ -578,7 +580,7 @@ export function PolicyControl({
           on={strictTimeWindowsOn}
           label="Строгое время"
           description="Включено: без допуска к окну заявки и концу смены. Выключено: применяются настроенные допуски опоздания и последней заявки."
-          top={454 + extra}
+          top={459 + extra}
           motionOn={motionOn}
           onToggle={onStrictTimeWindowsToggle}
         />
@@ -591,7 +593,7 @@ export function PolicyControl({
               ? 'Включено — без перестройки: новые обычные заявки остаются в алертах даже при аварийном пересчёте. Аварии перестраивают план. Выключение вернёт накопленные заявки в распределение.'
               : 'Выключено — обычный режим: любая новая заявка запускает перестройку. Включите, чтобы обычные заявки ожидали решения в алертах; аварии всегда перестраивают план.'
           }
-          top={498 + extra}
+          top={503 + extra}
           motionOn={motionOn}
           onToggle={onOrdinaryReplanningToggle}
         />

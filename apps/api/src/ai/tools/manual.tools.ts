@@ -10,6 +10,7 @@ import type { AnyToolSpec, ToolContext } from './tool.types';
 export const MANUAL_TOOL_NAMES = new Set([
   'get_manual_state',
   'prepare_manual_decision',
+  'prepare_manual_assignment',
   'prepare_remove_manual_decision',
   'prepare_manual_priorities',
 ]);
@@ -102,9 +103,30 @@ export function buildManualTools(deps: {
       },
     },
     {
+      name: 'prepare_manual_assignment',
+      description:
+        'Assign/reassign a request to an engineer in enabled Manual. Use full IDs from get_request/list_engineers and latest expectedVersion from get_manual_state. engineerId=null unassigns. Requires no date or window. Performs the existing guarded manual assignment operation.',
+      schema: z.object({
+        expectedVersion: z.number().int().nonnegative(),
+        requestId: z.string().min(1),
+        engineerId: z.string().min(1).nullable(),
+      }),
+      async run(
+        ctx,
+        args: { expectedVersion: number; requestId: string; engineerId: string | null },
+      ) {
+        return perform(ctx, 'manual.decision.put', {
+          expectedVersion: args.expectedVersion,
+          kind: 'assignment',
+          targetId: args.requestId,
+          engineerId: args.engineerId,
+        });
+      },
+    },
+    {
       name: 'prepare_manual_decision',
       description:
-        'Save an assignment (engineerId null unassigns), request window, engineer lunch or shift intention in enabled Manual. Read current version first. Intervals use local date and start/end time. Existing fact and window consent checks remain mandatory; conflicts require explicit priority choice.',
+        'Performs manual assignment/reassignment: kind=assignment, targetId=full request UUID, engineerId=chosen engineer UUID (null unassigns), expectedVersion from get_manual_state; NO date or times needed. Also saves request window, engineer lunch or shift intention in enabled Manual. Read current version first. Intervals use local date and start/end time. Existing fact and window consent checks remain mandatory; conflicts require explicit priority choice.',
       schema: edit,
       async run(ctx, args: z.infer<typeof edit>) {
         const { date, startLocal, endLocal, ...payload } = args;

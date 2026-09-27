@@ -236,15 +236,20 @@ export class AgentRuntimeService implements OnModuleInit {
     let usedFallback = false;
     let finalState: AiRunState = 'completed';
     let terminalEvent: AiRunEvent | null = null;
+    let continuationUsed = false;
+    let answerPrefix = '';
+    let continuationMessageId: string | null = null;
 
     try {
       // Keep one provider turn in reserve to turn the last tool outcomes into a user-facing
       // answer. The reserved turn has no tools, so reaching the tool budget cannot trigger
       // another write after an incomplete explanation.
-      for (let step = 0; step <= maxToolSteps; step += 1) {
+      for (let step = 0; step <= maxToolSteps + 1; step += 1) {
         this.stop.checkpoint(runId);
         const turnTools =
-          step < maxToolSteps ? await this.toolRegistry.liveSpecsFor(conversation.roleProfile) : [];
+          !continuationUsed && step < maxToolSteps
+            ? await this.toolRegistry.liveSpecsFor(conversation.roleProfile)
+            : [];
 
         const turnInput: LlmTurnInput = {
           model,
@@ -266,7 +271,7 @@ export class AgentRuntimeService implements OnModuleInit {
           signal: handle.abort.signal,
         };
 
-        const messageId = randomUUID();
+        const messageId: string = continuationMessageId ?? randomUUID();
         let text = '';
         let reasoningContent = '';
         let reasoningObserved = false;
@@ -315,7 +320,7 @@ export class AgentRuntimeService implements OnModuleInit {
           throw new RunStoppedSignal(handle.stopReason ?? 'user');
         }
 
-        if (toolCalls.length > 0 && step >= maxToolSteps) {
+        if (toolCalls.length > 0 && (step >= maxToolSteps || continuationUsed)) {
           finalState = 'failed';
           terminalEvent = await this.bus.emit(handle, {
             type: 'error',
@@ -360,14 +365,33 @@ export class AgentRuntimeService implements OnModuleInit {
           // `reasoning_content` is the scratchpad. Publishing it is what painted the
           // English monologue as the dispatcher's answer when `content` stayed empty
           // because thinking had already spent `max_tokens`.
-          const answer = text.trim();
-          if (answer.length === 0) {
+          if (truncated && text.trim() && !continuationUsed) {
+            continuationUsed = true;
+            answerPrefix = text;
+            continuationMessageId = messageId;
+            messages = [
+              ...messages,
+              {
+                role: 'assistant',
+                content: text,
+                ...(reasoningObserved ? { reasoningContent } : {}),
+              },
+              {
+                role: 'user',
+                content:
+                  'Continue the interrupted answer exactly from its last character. Do not repeat text, perform actions, or call tools. Finish concisely.',
+              },
+            ];
+            continue;
+          }
+          const answer = (answerPrefix + text).trim();
+          if (truncated || answer.length === 0) {
             finalState = 'failed';
             terminalEvent = await this.bus.emit(handle, {
               type: 'error',
               code: 'AI_UNAVAILABLE',
               message: truncated
-                ? 'Ответ оборвался на лимите вывода, текста для диспетчера не осталось'
+                ? 'Ответ оборвался на лимите вывода и не был сохранён как завершённый. Попросите продолжить ответ.'
                 : 'Ассистент не прислал текст ответа',
             });
             break;

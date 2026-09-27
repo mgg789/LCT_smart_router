@@ -6,6 +6,7 @@ import type { OperationState } from '../generated/prisma/client';
 import { isWindowConfirmationRequired } from '../orchestrator/requests/window-confirmation';
 import { PrismaService, type Tx, UnitOfWork } from '../persistence';
 import { AuditService } from './audit.service';
+import { assertManualConflictResolved } from './manual-conflict-guard';
 import type {
   ExternalOperationHandler,
   OperationHandler,
@@ -79,6 +80,7 @@ export class OperationsService {
 
     try {
       const result = await this.boundary(isolated, async (tx) => {
+        await assertManualConflictResolved(tx, request);
         const value = await handler({
           tx,
           now,
@@ -131,7 +133,11 @@ export class OperationsService {
         }
       }
 
-      if (error instanceof SysError && !isWindowConfirmationRequired(error)) {
+      if (
+        error instanceof SysError &&
+        error.details.kind !== 'manual_conflict' &&
+        !isWindowConfirmationRequired(error)
+      ) {
         // The handler's transaction is gone, so the refusal is recorded in its own.
         // A refusal must use the same boundary as the attempt: journaling it on the
         // routing lock would make a fast account rejection wait out a plan apply.
@@ -167,6 +173,7 @@ export class OperationsService {
         };
       }
     } else {
+      await assertManualConflictResolved(this.prisma, request);
       await this.reserveExternal(request, fingerprint);
       const reserved = await this.prisma.operation.findUniqueOrThrow({
         where: { operationId: request.operationId },
@@ -181,6 +188,7 @@ export class OperationsService {
     }
 
     try {
+      await assertManualConflictResolved(this.prisma, request);
       const value = await handler();
       const completedAt = this.clock.nowSeconds();
       const applied = await this.uow.run(async (tx) => {
@@ -215,7 +223,7 @@ export class OperationsService {
         replayed: true,
       };
     } catch (error) {
-      if (error instanceof SysError) {
+      if (error instanceof SysError && error.details.kind !== 'manual_conflict') {
         await this.completeExternalRefusal(request, fingerprint, error);
       }
       throw error;

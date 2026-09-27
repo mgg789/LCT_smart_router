@@ -1616,3 +1616,9 @@ Router как прежде. Выполняемые работы сохраняю
 [Контракт Manual](manual-planning.md) объединяет HTTP `/api/v1/dispatch/mode`, `/api/v1/dispatch/manual` и MCP `set_control_mode`, `get_manual_state`, `edit_manual_decision`, `remove_manual_decision`, `reorder_manual_priorities`. API/MCP не зависят от браузерного подтверждения; причина входа и проверки ручных решений обязательны. MCP требует от агента явного согласия пользователя на смену режима.
 
 Встроенный `dispatcher_fix` запрашивает вход через `request_manual_mode` (успешный `tool_result` открывает модалку, режим ещё не изменён). Только после активации доступны ручные инструменты; консультант их не получает. Сервер проверяет актуальный режим при вызове и применении, включая ранее подготовленные действия.
+
+### Конфликт ручных приоритетов
+
+Диспетчерские изменения при неразобранном конфликте получают `VALIDATION_FAILED`, `error.details.kind = manual_conflict` и полный список решений в `error.details.manual`. Разрешение: `POST /api/v1/dispatch/manual/priorities` с версией и всеми ID в порядке важности; MCP — `reorder_manual_priorities`. В Auto этот вызов возвращает `MODE_AUTO`. Асинхронный результат решения обозначен `planningStatus` (`pending`, `conflict`, `resolved`); чтение и фактические LIVE-события не блокируются. См. [Manual](manual-planning.md#конфликты-для-интеграций).
+
+AI/MCP `get_request` и история заявки принимают полный ID либо однозначный короткий номер из интерфейса. Совпадение нескольких префиксов возвращает `ambiguous_request_reference`; для последующих изменений нужно использовать полный ID из ответа. Встроенный агент в Manual получает отдельный `prepare_manual_assignment` с `requestId`, `engineerId` (или `null`) и `expectedVersion`.

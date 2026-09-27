@@ -356,6 +356,9 @@ export function DayMap({
   const soloMarkerRef = useRef<maplibregl.Marker | null>(null);
   const onSelectRef = useRef(onSelectRequest);
   const fittedKeyRef = useRef<string | null>(null);
+  const focusPointRef = useRef<ReturnType<typeof requestMapPoint>>(null);
+  const focusId = soloRequestId ?? selectedRequestId;
+  focusPointRef.current = focusId ? requestMapPoint(snapshot, focusId) : null;
   const [localMap, setLocalMap] = useState(forceLocal);
   const [mapFailed, setMapFailed] = useState(false);
   const [mapReady, setMapReady] = useState(false);
@@ -398,7 +401,16 @@ export function DayMap({
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
     map.on('click', 'stops-circle', (event) => pickRequest(event, onSelectRef));
     map.on('click', 'unassigned-circle', (event) => pickRequest(event, onSelectRef));
-    const observer = new ResizeObserver(() => map.resize());
+    const observer = new ResizeObserver(() => {
+      map.resize();
+      // The request panel animates the map width; keep its point centred in the new viewport.
+      const point = focusPointRef.current;
+      if (point)
+        map.jumpTo({
+          center: [point.lon, point.lat],
+          padding: { top: 0, bottom: 0, left: 0, right: 0 },
+        });
+    });
     observer.observe(container);
     mapRef.current = map;
     return () => {
@@ -849,9 +861,16 @@ export function DayMap({
       const fitKey = `${retry}:${forceLocal}:${selectedEngineerId ?? 'all'}:${selectedRequestId ?? ''}:${soloRequestId ?? ''}`;
       if (fittedKeyRef.current !== fitKey) {
         fittedKeyRef.current = fitKey;
-        if (soloPoint) {
+        const focusPoint =
+          soloPoint ?? (selectedRequestId ? requestMapPoint(snapshot, selectedRequestId) : null);
+        if (focusPoint) {
           map.resize();
-          map.easeTo({ center: [soloPoint.lon, soloPoint.lat], zoom: 14.2, duration: 400 });
+          map.easeTo({
+            center: [focusPoint.lon, focusPoint.lat],
+            ...(soloPoint ? { zoom: 14.2 } : {}),
+            padding: { top: 0, bottom: 0, left: 0, right: 0 },
+            duration: 400,
+          });
           return true;
         }
         const bounds = new maplibregl.LngLatBounds();

@@ -64,5 +64,13 @@ export function manualNeedsReview(state: ManualState): boolean {
 /** Public projection does not expose internal conflict acknowledgement state. */
 export function manualStateView(state: ManualState) {
   const { acknowledgedConflicts: _ack, ...view } = state;
-  return { ...view, needsReview: manualNeedsReview(state) };
+  return {
+    ...view,
+    needsReview: manualNeedsReview(state),
+    planningStatus: manualNeedsReview(state)
+      ? ('conflict' as const)
+      : state.resolution === null && state.decisions.length > 0
+        ? ('pending' as const)
+        : ('resolved' as const),
+  };
 }

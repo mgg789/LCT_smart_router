@@ -1843,6 +1843,12 @@ export async function requestJson<T>(
     });
     const body: unknown = await response.json().catch(() => null);
     if (!response.ok) {
+      const conflict = z
+        .object({ error: z.object({ details: z.object({ kind: z.literal('manual_conflict') }) }) })
+        .safeParse(body);
+      if (conflict.success && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('manual-planning-open', { detail: 'priorities' }));
+      }
       const challenge = windowConfirmationFrom(body);
       if (challenge) {
         if (new Headers(init.headers).has('x-window-change-confirmation')) {
