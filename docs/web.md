@@ -210,8 +210,9 @@ Attendance opt-out остаётся отдельным серверным дей
 | Выключатель обеда, пробки, метро и ёмкости оборудования | `GET/PUT /api/v1/dispatch/router/technical-settings` и `GET/PUT /api/v1/dispatch/settings` |
 | Создание заявки / инженера | `POST /api/v1/dispatch/requests`, `POST /api/v1/dispatch/engineers` |
 | Удаление инженера из активного состава | `DELETE /api/v1/dispatch/engineers/:id` |
-| Загрузка пакета региона/заявок | `POST /api/v1/dispatch/data/upload` |
-| Официальный сет из ТЗ | `POST /api/v1/dispatch/data/import {regions:"all"}` |
+| Загрузка пакета региона/заявок | Dashboard: `POST /api/v1/dispatch/data/upload/prepare` → `…/confirm` (прямой `…/upload` — для совместимости) |
+| Официальный сет из ТЗ | Dashboard: `POST /api/v1/dispatch/data/import/prepare {regions:"all"}` → диалог качества при findings → `…/confirm` (прямой `…/import` — для совместимости) |
+| Табличный CSV/TSV/XLSX | `POST /api/v1/dispatch/data/tabular/analyze` → разбор/заполнение в UI → `…/tabular/convert` → обычная подготовка upload |
 | Импорт дорожного ресурса OSRM | `POST /api/v1/dispatch/data/road-import` |
 | API-токены (контракт без экрана в новом UI) | `GET/POST /api/v1/auth/tokens`, `DELETE /api/v1/auth/tokens/:id` |
 
