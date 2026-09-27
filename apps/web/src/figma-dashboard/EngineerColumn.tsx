@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useRef } from 'react';
+import { useArtboardStretch } from './artboardStretch';
 import { FIGMA_ASSETS } from './assets';
 import { type EngineerCard, requestCountLabel, truncateEnd } from './fixtures';
 import { FigmaIcon, FigmaText } from './primitives';
@@ -56,6 +57,8 @@ export function EngineerColumn({
   onSelectUnassigned: () => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
+  // Read top to bottom, so spare height is worth more here than spare width.
+  const { dy } = useArtboardStretch();
 
   useEffect(() => {
     if (searchOpen) inputRef.current?.focus();
@@ -64,7 +67,7 @@ export function EngineerColumn({
   return (
     <section
       className="absolute left-[180px] w-[411px] overflow-hidden rounded-[20px] bg-white"
-      style={{ top: PANEL_TOP, height: PANEL_HEIGHT }}
+      style={{ top: PANEL_TOP, height: PANEL_HEIGHT + dy }}
     >
       <div className="absolute left-[30px] top-[30px] z-0 flex items-center">
         <FigmaText className="figma-nowrap font-extrabold text-[28px] tracking-[-0.476px] text-figma-ink">
@@ -187,7 +190,7 @@ export function EngineerColumn({
         type="button"
         onClick={onSelectUnassigned}
         className="absolute left-[30px] z-30 flex w-[351px] flex-col items-center justify-center overflow-clip rounded-[20px] bg-figma-bee px-[29px] py-[25px]"
-        style={{ top: UNASSIGNED_TOP }}
+        style={{ top: UNASSIGNED_TOP + dy }}
         whileHover={motionOn ? { scale: 1.01 } : undefined}
         transition={{ duration: 0.16 }}
       >

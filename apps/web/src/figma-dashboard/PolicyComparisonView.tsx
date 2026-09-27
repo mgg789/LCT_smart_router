@@ -10,6 +10,7 @@ import { unassignedRequests } from '../domain/dashboard';
 import type { RegionSelection } from '../domain/regions';
 import { comparisonValue, comparisonWinners, strategyDescription } from '../lib/policyComparison';
 import { formatClock, formatDurationMin, formatKm } from '../lib/time';
+import { useArtboardStretch } from './artboardStretch';
 import { PolicyComparisonOverview } from './PolicyComparisonOverview';
 import { type DayRequestPoint, PolicyStrategyMap } from './PolicyStrategyMap';
 import { FigmaText } from './primitives';
@@ -57,6 +58,7 @@ export function PolicyComparisonView({
   selectedRegion: RegionSelection;
   motionOn: boolean;
 }) {
+  const { dx, dy } = useArtboardStretch();
   const [mode, setMode] = useState<'overview' | 'table' | 'map'>('overview');
   const [modeDirection, setModeDirection] = useState<1 | -1>(1);
   const [mapRoutes, setMapRoutes] = useState<SimulationResponse | null>(null);
@@ -140,7 +142,7 @@ export function PolicyComparisonView({
   return (
     <section
       className="absolute overflow-hidden rounded-[20px] bg-white"
-      style={{ left: 180, top: 138, width: 1710, height: 909 }}
+      style={{ left: 180, top: 138, width: 1710 + dx, height: 909 + dy }}
     >
       <div className="absolute inset-x-[30px] top-[30px] flex items-start justify-between">
         <div>

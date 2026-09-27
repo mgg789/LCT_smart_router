@@ -16,6 +16,7 @@ export function ClientMenu({
   email,
   active,
   onClose,
+  docked,
   onNavigate,
   onNewRequest,
 }: {
@@ -24,9 +25,86 @@ export function ClientMenu({
   email: string | null;
   active: ClientScreenId;
   onClose: () => void;
+  /** Docked in the desk's rail: always open, no backdrop, no way to close. */
+  docked?: boolean;
   onNavigate: (id: ClientScreenId) => void;
   onNewRequest: () => void;
 }) {
+  if (docked) {
+    return (
+      <aside
+        aria-label="Меню клиента"
+        className="phone-desk-menu flex h-full w-full flex-col overflow-y-auto bg-white"
+      >
+        <div
+          className="relative z-10 flex shrink-0 flex-col items-center justify-center bg-figma-ink"
+          style={{ height: eu(445), gap: eu(20) }}
+        >
+          <FigmaIcon
+            src={CLIENT_ASSETS.logo}
+            alt=""
+            width={170}
+            height={170}
+            className="brightness-0 invert"
+            style={{ width: eu(140), height: eu(140) }}
+          />
+        </div>
+        <div
+          className="relative z-10 flex min-h-0 flex-1 flex-col bg-white"
+          style={{ padding: `${eu(24)} ${eu(20)} ${eu(28)}` }}
+        >
+          {email ? (
+            <p
+              className="relative break-all font-semibold tracking-[-0.02em] text-figma-muted"
+              style={{ fontSize: eu(24) }}
+            >
+              {email}
+            </p>
+          ) : null}
+          <nav className="relative flex flex-col" style={{ marginTop: eu(28), gap: eu(20) }}>
+            <MenuItem
+              label="Мои заявки"
+              icon={CLIENT_ASSETS.list}
+              iconWidth={28}
+              iconHeight={21}
+              active={active === 'list'}
+              onClick={() => onNavigate('list')}
+            />
+            <MenuItem
+              label="Поддержка"
+              icon={CLIENT_ASSETS.support}
+              iconWidth={30}
+              iconHeight={33}
+              active={false}
+              disabled
+              onClick={() => undefined}
+            />
+          </nav>
+          <div
+            className="relative mt-auto flex flex-col bg-white"
+            style={{ gap: eu(20), paddingTop: eu(28) }}
+          >
+            <motion.button
+              type="button"
+              onClick={onNewRequest}
+              whileTap={{ scale: 0.98 }}
+              className="flex items-center justify-center self-start bg-figma-bee font-semibold tracking-[-0.03em] text-figma-ink"
+              style={{
+                height: eu(80),
+                paddingLeft: eu(32),
+                paddingRight: eu(32),
+                borderRadius: eu(20),
+                fontSize: eu(28),
+              }}
+            >
+              Новая заявка
+            </motion.button>
+          </div>
+        </div>
+      </aside>
+    );
+  }
+
   return (
     <AnimatePresence>
       {open ? (

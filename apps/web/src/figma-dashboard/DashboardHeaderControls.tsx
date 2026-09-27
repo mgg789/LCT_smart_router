@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useRef } from 'react';
 import type { PolicyId } from '../api/types';
+import { useArtboardStretch } from './artboardStretch';
 import { FIGMA_ASSETS } from './assets';
 import { isNavLocked, sidebarWheelNav } from './dashboardSlide';
 import {
@@ -22,6 +23,10 @@ const NAV_ICONS = {
   navChats: FIGMA_ASSETS.navChats,
   navAi: FIGMA_ASSETS.navAi,
 } as const;
+/**
+ * The right-hand header controls hold the right edge of the board, which on a
+ * wide window is further right than the drawing put it.
+ */
 const NOTIF_PANEL_LEFT = 1407,
   NOTIF_PANEL_TOP = 10,
   HEADER_AVATAR_LEFT = 1800,
@@ -78,7 +83,7 @@ export function SidebarNav({
   return (
     <aside
       ref={railRef}
-      className="absolute left-0 top-0 z-20 h-[1080px] w-[158px] overflow-visible rounded-br-[20px] rounded-tr-[20px] border-r-[0.5px] border-solid border-[rgba(158,158,158,0.3)] bg-white"
+      className="absolute inset-y-0 left-0 z-20 w-[158px] overflow-visible rounded-br-[20px] rounded-tr-[20px] border-r-[0.5px] border-solid border-[rgba(158,158,158,0.3)] bg-white"
     >
       <div className="absolute left-[79px] top-[56px] -translate-x-1/2 -translate-y-1/2">
         <FigmaIcon src={FIGMA_ASSETS.logo} alt="LCT Smart Router" width={64} height={64} />
@@ -160,11 +165,12 @@ export function NotificationControl({
   motionOn: boolean;
   onToggle: () => void;
 }) {
+  const { dx } = useArtboardStretch();
   return (
     <div
       data-notif-panel
       className="pointer-events-none absolute z-[70]"
-      style={{ left: NOTIF_PANEL_LEFT, top: NOTIF_PANEL_TOP, width: 363, height: 51 }}
+      style={{ left: NOTIF_PANEL_LEFT + dx, top: NOTIF_PANEL_TOP, width: 363, height: 51 }}
     >
       <motion.button
         type="button"
@@ -215,11 +221,12 @@ export function UserMenu({
   onReset: () => void;
   onSignOut: () => void;
 }) {
+  const { dx } = useArtboardStretch();
   return (
     <div
       data-user-menu
       className={`absolute ${covered ? 'z-[40]' : open ? 'z-[90]' : 'z-[60]'}`}
-      style={{ left: HEADER_AVATAR_LEFT, top: HEADER_AVATAR_TOP }}
+      style={{ left: HEADER_AVATAR_LEFT + dx, top: HEADER_AVATAR_TOP }}
     >
       <motion.button
         type="button"
@@ -348,12 +355,13 @@ function NotificationBadge({ count, tone }: { count: number; tone: NotificationT
  * Opens the metrics surface without changing the selected routing policy.
  */
 export function PlanMetricsButton({ motionOn, onOpen }: { motionOn: boolean; onOpen: () => void }) {
+  const { dx } = useArtboardStretch();
   return (
     <motion.button
       type="button"
       onClick={onOpen}
       className="absolute z-50 flex h-[51px] items-center gap-[10px] rounded-[27px] bg-figma-ink py-[4px] pl-[4px] pr-[16px] text-white"
-      style={{ left: METRICS_BUTTON_LEFT, top: POLICY_TOP, width: METRICS_BUTTON_WIDTH }}
+      style={{ left: METRICS_BUTTON_LEFT + dx, top: POLICY_TOP, width: METRICS_BUTTON_WIDTH }}
       whileHover={motionOn ? { y: -1 } : undefined}
       whileTap={motionOn ? { scale: 0.98 } : undefined}
       transition={{ duration: 0.16 }}
@@ -370,6 +378,7 @@ export function PlanMetricsButton({ motionOn, onOpen }: { motionOn: boolean; onO
 
 /** Opens the existing add-entity dialog from the header. */
 export function AddEntityButton({ motionOn, onOpen }: { motionOn: boolean; onOpen: () => void }) {
+  const { dx } = useArtboardStretch();
   return (
     <motion.button
       type="button"
@@ -377,7 +386,7 @@ export function AddEntityButton({ motionOn, onOpen }: { motionOn: boolean; onOpe
       onClick={onOpen}
       className="absolute z-50 flex items-center justify-center rounded-full bg-figma-ink"
       style={{
-        left: ADD_BUTTON_LEFT,
+        left: ADD_BUTTON_LEFT + dx,
         top: ADD_BUTTON_TOP,
         width: ADD_BUTTON_SIZE,
         height: ADD_BUTTON_SIZE,
@@ -439,11 +448,12 @@ export function PolicyControl({
           label: policyLabel(id),
         }));
   const extra = Math.max(0, options.length - 6) * 44;
+  const { dx } = useArtboardStretch();
   return (
     <motion.div
       data-policy-panel
       className="absolute z-50 w-[363px] overflow-hidden rounded-[27px] bg-white"
-      style={{ left: POLICY_LEFT, top: POLICY_TOP }}
+      style={{ left: POLICY_LEFT + dx, top: POLICY_TOP }}
       initial={false}
       animate={{
         height: open ? POLICY_OPEN_HEIGHT + extra : 51,

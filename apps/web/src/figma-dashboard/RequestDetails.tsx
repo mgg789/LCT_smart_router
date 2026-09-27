@@ -4,6 +4,7 @@ import { type ReactNode, useState } from 'react';
 import type { EngineerView, RequestView } from '../api/types';
 import type { CaseExplanation } from '../lib/explanations';
 import { formatDurationMin } from '../lib/time';
+import { useArtboardStretch } from './artboardStretch';
 import { Copyable } from './Copyable';
 import { requestUrgency } from './fromSnapshot';
 import { FigmaText } from './primitives';
@@ -15,6 +16,8 @@ import { useAiExplanation } from './useAiExplanation';
 const HEADER_LIFT = 16;
 const PANEL_TOP = 154 - HEADER_LIFT;
 const PANEL_HEIGHT = 893 + HEADER_LIFT;
+/** Holds the board's right edge, which a wide window puts past the drawing. */
+const DETAIL_PANEL_LEFT = 1406;
 const CLOSE_PANEL_SIZE = 43;
 const slideEase = [0.22, 1, 0.36, 1] as const;
 const FACT_ICON = {
@@ -53,6 +56,7 @@ export function RequestDetails({
   onClose: () => void;
   onOpenEngineer?: () => void;
 }) {
+  const { dx, dy } = useArtboardStretch();
   const [aiOn, setAiOn] = useState(false);
   const [largeOn, setLargeOn] = useState(false);
   const urgency = request ? requestUrgency(request) : null;
@@ -70,8 +74,8 @@ export function RequestDetails({
 
   return (
     <motion.aside
-      className="absolute left-[1406px] w-[484px] overflow-hidden rounded-[20px] bg-figma-ink"
-      style={{ top: PANEL_TOP, height: PANEL_HEIGHT }}
+      className="absolute w-[484px] overflow-hidden rounded-[20px] bg-figma-ink"
+      style={{ left: DETAIL_PANEL_LEFT + dx, top: PANEL_TOP, height: PANEL_HEIGHT + dy }}
       initial={motionOn ? { opacity: 0, x: 28 } : false}
       animate={{ opacity: 1, x: 0 }}
       exit={motionOn ? { opacity: 0, x: 36 } : undefined}

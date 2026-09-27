@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { useLetterboxInsets } from './artboardScale';
+import { ARTBOARD_BLEED } from './artboardScale';
 import { FIGMA_ASSETS } from './assets';
 import { FigmaIcon } from './primitives';
 import {
@@ -80,7 +80,6 @@ export function ToastColumn({
   }, null);
   const shown = open || visible.length > 0;
   const [ghosts, setGhosts] = useState<ToastGhost[]>([]);
-  const letterbox = useLetterboxInsets(scale);
   const wheelX = useRef(0);
   const wheelReset = useRef<number | null>(null);
   const onCollapseRef = useRef(onCollapse);
@@ -147,10 +146,10 @@ export function ToastColumn({
                   aria-hidden
                   className="pointer-events-auto absolute right-0 z-0"
                   style={{
-                    top: -letterbox.y,
-                    bottom: -letterbox.y,
-                    right: -letterbox.x,
-                    width: VEIL_WIDTH + letterbox.x,
+                    top: -ARTBOARD_BLEED,
+                    bottom: -ARTBOARD_BLEED,
+                    right: -ARTBOARD_BLEED,
+                    width: VEIL_WIDTH + ARTBOARD_BLEED,
                     background:
                       'linear-gradient(to left, rgba(15,16,20,0.62), rgba(15,16,20,0.34) 48%, transparent)',
                     backdropFilter: 'blur(22px)',
@@ -186,8 +185,8 @@ export function ToastColumn({
                 aria-label="Свернуть уведомления"
                 className="absolute z-[5] cursor-default bg-transparent"
                 style={{
-                  top: -letterbox.y,
-                  bottom: -letterbox.y,
+                  top: -ARTBOARD_BLEED,
+                  bottom: -ARTBOARD_BLEED,
                   width: TOAST_WIDTH + 72,
                   left: TOAST_LEFT - TOAST_WIDTH - 72,
                 }}
@@ -202,7 +201,7 @@ export function ToastColumn({
                   top: TOAST_STACK_TOP,
                   left: TOAST_LEFT - SHADOW_PAD,
                   width: TOAST_WIDTH + SHADOW_PAD * 2,
-                  bottom: -letterbox.y,
+                  bottom: -ARTBOARD_BLEED,
                   paddingLeft: SHADOW_PAD,
                   paddingRight: SHADOW_PAD,
                   paddingBottom: 20 + SHADOW_PAD,
