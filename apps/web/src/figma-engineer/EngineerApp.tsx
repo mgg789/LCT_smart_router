@@ -405,25 +405,7 @@ export function EngineerApp({
           item.kind === 'job' && item.request.id === openedJob.request.id,
       ) ?? null)
     : null;
-  /**
-   * What the second pane shows when the engineer has not opened anything.
-   *
-   * A desk has room for the day and one stop at once, and there is exactly one
-   * stop an engineer is on: the one LIVE calls current, or else the first that
-   * is still ahead. Leaving the pane empty would spend half the screen saying
-   * nothing, and picking anything else would be guessing.
-   */
-  const standingJob = desk
-    ? (items.find(
-        (item): item is EngineerJobItem =>
-          item.kind === 'job' && item.request.id === live?.current?.request.id,
-      ) ??
-      items.find(
-        (item): item is EngineerJobItem => item.kind === 'job' && item.request.completedAt === null,
-      ) ??
-      null)
-    : null;
-  const deskJob = detailJob ?? standingJob;
+  const deskJob = screen === 'day' ? detailJob : null;
   const controls = (id: string, detail = false) =>
     live?.current?.request.id === id ? (
       <LiveControls
@@ -473,8 +455,14 @@ export function EngineerApp({
 
   const column = (
     <>
+      {/*
+       * On a desk the day is the one screen worth the whole width; the
+       * assistant and the settings are not, so they keep a readable column.
+       */}
       <div
-        className="flex h-full min-h-0 flex-col overflow-y-auto"
+        className={`flex h-full min-h-0 flex-col overflow-y-auto ${
+          desk && screen !== 'day' ? 'phone-desk-center' : ''
+        }`}
         style={{ padding: `${eu(36)} ${eu(40)} ${eu(40)}` }}
       >
         <header className={`flex items-center ${desk ? 'hidden' : ''}`} style={{ gap: eu(20) }}>
@@ -724,8 +712,6 @@ export function EngineerApp({
   if (desk) {
     return (
       <DeskShell
-        activeNavId={screen}
-        brand={ENGINEER_ASSETS.house}
         detailKey={deskJob?.request.id}
         detail={
           deskJob ? (
@@ -765,35 +751,6 @@ export function EngineerApp({
             <FigmaIcon alt="" height={14} src={ENGINEER_ASSETS.menu} width={20} />
           </motion.button>
         }
-        nav={[
-          {
-            id: 'day',
-            label: 'День',
-            icon: ENGINEER_ASSETS.route,
-            onSelect: () => {
-              setOpenedJob(null);
-              setScreen('day');
-            },
-          },
-          {
-            id: 'assistant',
-            label: 'Помощник',
-            icon: ENGINEER_ASSETS.assistant,
-            onSelect: () => {
-              setOpenedJob(null);
-              setScreen('assistant');
-            },
-          },
-          {
-            id: 'settings',
-            label: 'Профиль',
-            icon: ENGINEER_ASSETS.gear,
-            onSelect: () => {
-              setOpenedJob(null);
-              setScreen('settings');
-            },
-          },
-        ]}
         overlays={menuDrawer}
         screenKey={screen}
       >

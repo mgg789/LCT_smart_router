@@ -31,7 +31,6 @@ import {
   clientSubmitHint,
   EMPTY_CLIENT_DRAFT,
   prefillClientDraft,
-  splitClientRequests,
 } from './clientPreview';
 import { clientRequestIdFromPath, clientRequestPath } from './clientRequestSeo';
 import {
@@ -309,21 +308,9 @@ export function ClientApp() {
     }
   };
 
-  /**
-   * What the second pane shows when nothing is open.
-   *
-   * A desk has room for the list and one request at once, and the one a
-   * customer came to look at is the live one — the visit on its way, or else
-   * the newest that is still open. Leaving the pane empty would spend half the
-   * screen saying nothing; on the phone there is no second pane and nothing
-   * opens by itself.
-   */
-  const standing = desk && screen === 'list' ? splitClientRequests(requests).featured : null;
-  const shown = opened ?? standing;
-
-  const detail = shown ? (
+  const detail = opened ? (
     <ClientRequestDetail
-      item={shown}
+      item={opened}
       nowMs={nowMs}
       notice={inlineNotice}
       onBack={closeDetail}
@@ -386,8 +373,14 @@ export function ClientApp() {
       {failure ? (
         <PhoneErrorNotice title="Ошибка" body={failure} onClose={() => setNotice(null)} />
       ) : null}
+      {/*
+       * On a desk the list is the one screen worth the whole width; a form is
+       * not, so it keeps a readable column in the middle.
+       */}
       <div
-        className="flex h-full min-h-0 flex-col overflow-y-auto"
+        className={`flex h-full min-h-0 flex-col overflow-y-auto ${
+          desk && screen !== 'list' ? 'phone-desk-center' : ''
+        }`}
         style={{ padding: `${eu(36)} ${eu(40)} ${eu(40)}` }}
       >
         <header className={`flex items-center ${desk ? 'hidden' : ''}`} style={{ gap: eu(20) }}>
@@ -493,10 +486,8 @@ export function ClientApp() {
   if (desk) {
     return (
       <DeskShell
-        activeNavId={screen === 'sent' ? 'new' : screen}
-        brand={CLIENT_ASSETS.logo}
         detail={detail}
-        detailKey={shown?.id}
+        detailKey={opened?.id}
         header={
           <>
             <p className="font-murs text-[28px] tracking-[0.02em] text-figma-ink">NAVIX</p>
@@ -506,16 +497,6 @@ export function ClientApp() {
             ) : null}
           </>
         }
-        nav={[
-          { id: 'new', label: 'Новая', icon: CLIENT_ASSETS.sparkles, onSelect: () => go('new') },
-          { id: 'list', label: 'Заявки', icon: CLIENT_ASSETS.list, onSelect: openList },
-          {
-            id: 'support',
-            label: 'Поддержка',
-            icon: CLIENT_ASSETS.support,
-            onSelect: () => go('support'),
-          },
-        ]}
         lead={
           <motion.button
             aria-expanded={menuOpen}
