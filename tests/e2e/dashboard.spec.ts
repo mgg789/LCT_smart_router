@@ -102,10 +102,14 @@ test('connection loss preserves the real day, disables writes and recovers', asy
   await expect(page.getByRole('button', { name: 'Загрузить данные', exact: true })).toBeVisible();
   const ids = live.plan.assignments.map((item) => item.requestId).sort();
   await page.getByRole('button', { name: 'Инженеры', exact: true }).click();
+  const availability = page.getByRole('button', { name: 'Снять со смены', exact: true });
+  // Chrome can render before the initial live snapshot has enabled writes.
+  // Establish the healthy state before injecting a transport failure.
+  await expect(availability).toBeEnabled({ timeout: 45_000 });
   const availabilityRequest = '**/api/v1/dispatch/engineers/*/availability';
   await context.route(availabilityRequest, (route) => route.abort('internetdisconnected'));
-  await page.getByRole('button', { name: 'Снять со смены', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Снять со смены', exact: true })).toBeDisabled({
+  await availability.click();
+  await expect(availability).toBeDisabled({
     timeout: 20_000,
   });
   // Read only persisted request identities; the UI cannot quietly substitute recorded demo data.
@@ -118,7 +122,7 @@ test('connection loss preserves the real day, disables writes and recovers', asy
     );
   expect(stored.snapshot.requests.map((item) => item.id).sort()).toEqual(ids);
   await context.unroute(availabilityRequest);
-  await expect(page.getByRole('button', { name: 'Снять со смены', exact: true })).toBeEnabled();
+  await expect(availability).toBeEnabled();
   expect((await readPlan(live.api)).assignments.map((item) => item.requestId).sort()).toEqual(ids);
 });
 
