@@ -210,6 +210,8 @@ class RouterTaskSnapshot(Record):
     engineers: list[Engineer]
     policy: Policy
     pending_equipment_handoffs: list["PendingEquipmentHandoff"] = Field(default_factory=list)
+    depots: list["Depot"] = Field(default_factory=list, exclude_if=lambda value: not value)
+    pending_equipment_logistics: list["PendingEquipmentLogistics"] = Field(default_factory=list, exclude_if=lambda value: not value)
 
     @model_validator(mode="after")
     def check_identity(self) -> Self:
@@ -228,6 +230,10 @@ class RouterTaskSnapshot(Record):
         handoff_ids = [handoff.handoff_id for handoff in self.pending_equipment_handoffs]
         if len(handoff_ids) != len(set(handoff_ids)):
             raise ValueError("duplicate pending handoff")
+        depot_ids = [depot.depot_id for depot in self.depots]
+        logistics_ids = [item.logistics.logistics_id for item in self.pending_equipment_logistics]
+        if len(depot_ids) != len(set(depot_ids)) or len(logistics_ids) != len(set(logistics_ids)):
+            raise ValueError("duplicate depot or pending logistics")
         if any(
             handoff.donor_engineer_id not in engineer_ids
             or handoff.receiver_engineer_id not in engineer_ids
@@ -236,6 +242,14 @@ class RouterTaskSnapshot(Record):
         ):
             raise ValueError("invalid pending handoff")
         return self
+
+
+class Depot(Record):
+    """Verified regional office location used only for physical replenishment."""
+
+    depot_id: str = Field(min_length=1)
+    region: str | None = None
+    location: GeoPoint
 
 
 class Reason(Record):
@@ -286,6 +300,41 @@ class PendingEquipmentHandoff(EquipmentHandoff):
     meeting_at: Seconds
 
 
+class EquipmentLogistics(Record):
+    """One-sided equipment movement attached to the job it unblocks.
+
+    Unlike ``EquipmentHandoff``, a delivery is a stop only for its donor and an
+    office pickup is a stop only for its recipient.  The System Layer owns the
+    authenticated stock fact; Router only schedules this immutable intention.
+    """
+
+    logistics_id: str = Field(min_length=1)
+    kind: Literal["donor_delivery", "office_pickup"]
+    request_id: str = Field(min_length=1)
+    equipment_type: EquipmentType
+    donor_engineer_id: str | None = None
+    receiver_engineer_id: str = Field(min_length=1)
+    depot_id: str | None = None
+
+    @model_validator(mode="after")
+    def check_owner(self) -> Self:
+        """Keep the two one-sided flows distinguishable in every persisted plan."""
+        if self.kind == "donor_delivery":
+            if self.donor_engineer_id is None or self.depot_id is not None:
+                raise ValueError("delivery requires donor and no depot")
+        elif self.depot_id is None or self.donor_engineer_id is not None:
+            raise ValueError("office pickup requires depot and no donor")
+        return self
+
+
+class PendingEquipmentLogistics(Record):
+    """Accepted one-sided movement replayed at its frozen time on later replans."""
+
+    logistics: EquipmentLogistics
+    location: GeoPoint
+    at: Seconds
+
+
 class RouteSegment(Record):
     """One ordered portion of a composite leg with its own route provenance."""
 
@@ -300,13 +349,14 @@ class RouteStop(Record):
 
     stop_id: str
     sequence: int
-    kind: Literal["job", "lunch", "wait", "handoff"]
+    kind: Literal["job", "lunch", "wait", "handoff", "delivery", "office_pickup"]
     request_id: str | None
     location: GeoPoint
     arrival_at: Seconds
     start_at: Seconds
     end_at: Seconds
     handoff: EquipmentHandoff | None = None
+    logistics: EquipmentLogistics | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def check_interval(self) -> Self:
@@ -317,6 +367,12 @@ class RouteStop(Record):
             raise ValueError("only job stops must reference a request")
         if (self.kind == "handoff") != (self.handoff is not None):
             raise ValueError("only handoff stops must carry handoff metadata")
+        if (self.kind in ("delivery", "office_pickup")) != (self.logistics is not None):
+            raise ValueError("only logistics stops must carry logistics metadata")
+        if self.logistics is not None and self.kind != (
+            "delivery" if self.logistics.kind == "donor_delivery" else "office_pickup"
+        ):
+            raise ValueError("logistics stop kind differs from metadata")
         return self
 
 

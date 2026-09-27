@@ -224,7 +224,13 @@ export interface EngineerDayView {
 
 export interface PlanStopView {
   readonly sequence: number;
-  readonly kind: 'job' | 'lunch' | 'wait' | 'start' | 'handoff';
+  readonly kind: 'job' | 'lunch' | 'wait' | 'start' | 'handoff' | 'delivery' | 'office_pickup';
+  readonly logistics?: {
+    readonly logistics_id: string;
+    readonly kind: 'donor_delivery' | 'office_pickup';
+    readonly request_id: string;
+    readonly equipment_type: 'router' | 'set_top_box' | 'smart_speaker';
+  } | null;
   /** Router handoff metadata is snake_case to match the core result contract. */
   readonly handoff?: {
     readonly handoff_id: string;

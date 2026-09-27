@@ -13,6 +13,7 @@ from core.contracts import (
     Engineer,
     EngineerRoute,
     EquipmentHandoff,
+    EquipmentLogistics,
     EquipmentStock,
     EquipmentType,
     GeoPoint,
@@ -23,13 +24,14 @@ from core.contracts import (
     RouterTechnicalSettings,
     TravelTimeMode,
 )
-from core.geo import configure_travel, routing_context_version
+from core.geo import configure_travel, quote_at, routing_context_version
 from core.policy import Criterion, PolicySpec, compile_policy, criterion_values
 from core.route_search import improve_routes
 from core.schedule import (
     TERMINAL_SHIFT_OVERTIME_SEC,
     TERMINAL_WINDOW_LATENESS_TOLERANCE_SEC,
     HandoffStep,
+    LogisticsStep,
     TravelProvider,
     assemble_plan,
     baseline,
@@ -1148,14 +1150,18 @@ def solve(
     return _solve_prepared(official_roster(snapshot), travel, settings, memory, context_version)
 
 
-def _route_steps(route: EngineerRoute) -> list[str | None | HandoffStep]:
+def _route_steps(route: EngineerRoute) -> list[str | None | HandoffStep | LogisticsStep]:
     """Recover the canonical replay steps from a validated route."""
-    steps: list[str | None | HandoffStep] = []
+    steps: list[str | None | HandoffStep | LogisticsStep] = []
     for stop in route.stops:
         if stop.kind == "job":
             steps.append(stop.request_id)
         elif stop.kind == "handoff" and stop.handoff is not None:
             steps.append(HandoffStep(stop.handoff, stop.location, stop.start_at))
+        elif stop.kind in ("delivery", "office_pickup") and stop.logistics is not None:
+            steps.append(LogisticsStep(stop.logistics, stop.location, stop.start_at))
+        elif stop.kind == "lunch":
+            steps.append(None)
     return steps
 
 
@@ -1263,6 +1269,67 @@ def _rescue_equipment_handoffs(
     return current
 
 
+def _rescue_office_pickups(snapshot: RouterTaskSnapshot, plan: Plan, travel: TravelProvider, settings: SearchSettings) -> Plan:
+    """Fill equipment-blocked gaps without moving any existing occupied interval."""
+    if not settings.equipment_transfers_enabled or not plan.is_usable or not snapshot.depots:
+        return plan
+    requests = {item.request_id: item for item in snapshot.requests}
+    current = plan
+    evaluations = 0
+    for assignment in sorted(plan.assignments, key=lambda item: requests[item.request_id].priority_tier):
+        request = requests[assignment.request_id]
+        if assignment.status != "unassigned" or request.required_equipment is None:
+            continue
+        # The preceding handoff pass already tried available donors. Stock on an
+        # unavailable donor cannot block a feasible office trip by the recipient.
+        found = False
+        for engineer in snapshot.engineers:
+            release = release_at(snapshot, engineer)
+            if (request.region is not None and engineer.region is not None and request.region != engineer.region) or request.required_skill not in engineer.skills or not transport_matches(request.required_transport, engineer) or release is None:
+                continue
+            route = next(item for item in current.routes if item.engineer_id == engineer.engineer_id)
+            old = _route_steps(route)
+            occupied = [stop for stop in route.stops if stop.kind in ("job", "lunch", "handoff", "delivery", "office_pickup")]
+            original = [(stop.kind, stop.request_id, stop.start_at, stop.end_at, stop.logistics, stop.handoff) for stop in occupied]
+            for depot in snapshot.depots:
+                if depot.region is not None and engineer.region is not None and depot.region != engineer.region:
+                    continue
+                logistics = EquipmentLogistics(
+                    logistics_id=f"office-pickup:{request.request_id}:{engineer.engineer_id}:{depot.depot_id}",
+                    kind="office_pickup", request_id=request.request_id,
+                    equipment_type=request.required_equipment, receiver_engineer_id=engineer.engineer_id,
+                    depot_id=depot.depot_id,
+                )
+                for index in range(len(old) + 1):
+                    evaluations += 1
+                    if evaluations > EQUIPMENT_HANDOFF_EVALUATION_LIMIT:
+                        return current
+                    previous = occupied[index - 1] if index else None
+                    departure = previous.end_at if previous else release
+                    location = previous.location if previous else engineer.start_location
+                    quote = quote_at(travel, location, depot.location, engineer.travel_profile(), departure)
+                    if quote is None:
+                        continue
+                    pickup = LogisticsStep(logistics, depot.location, departure + quote.duration_sec)
+                    candidate = schedule_steps(snapshot, engineer, old[:index] + [pickup, request.request_id] + old[index:], travel)
+                    if candidate is None:
+                        continue
+                    observed = [(stop.kind, stop.request_id, stop.start_at, stop.end_at, stop.logistics, stop.handoff)
+                                for stop in candidate.stops
+                                if stop.kind != "wait" and stop.request_id != request.request_id and stop.logistics != logistics]
+                    if observed != original:
+                        continue
+                    next_plan = assemble_plan(snapshot, [candidate if item.engineer_id == engineer.engineer_id else item for item in current.routes])
+                    validate_plan(snapshot, next_plan, travel)
+                    current, found = next_plan, True
+                    break
+                if found:
+                    break
+            if found:
+                break
+    return current
+
+
 def _solve_prepared(
     snapshot: RouterTaskSnapshot,
     travel: TravelProvider,
@@ -1283,7 +1350,7 @@ def _solve_prepared(
     search_snapshot = _without_optional_lunches(snapshot)
     policy: PolicySpec = compile_policy(search_snapshot.policy)
     context_version = context_version or default_context_version
-    base = _rescue_equipment_handoffs(snapshot, baseline(snapshot, travel), travel, settings)
+    base = _rescue_office_pickups(snapshot, _rescue_equipment_handoffs(snapshot, baseline(snapshot, travel), travel, settings), travel, settings)
     validate_plan(snapshot, base, travel)
     priority_seed = baseline(snapshot, travel, prioritized=True)
     compatible = (
@@ -1396,7 +1463,7 @@ def _solve_prepared(
         main = _project(snapshot, search_main, travel)
         if main is None:
             raise ValueError("OPTIONAL_LUNCH_ENRICHMENT_FAILED")
-    main = _rescue_equipment_handoffs(snapshot, main, travel, settings)
+    main = _rescue_office_pickups(snapshot, _rescue_equipment_handoffs(snapshot, main, travel, settings), travel, settings)
     validate_plan(snapshot, main, travel)
     main = main.model_copy(
         update={"alerts": main.alerts + lunch_coverage_alerts(snapshot, main, travel)}

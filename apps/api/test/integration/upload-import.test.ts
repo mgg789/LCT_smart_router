@@ -166,7 +166,9 @@ describe('JSON region and request package upload', () => {
     assert.equal(day.lunchDurationSec, 1800);
     assert.equal(Number(day.lunchWindowStartAt), bounds.lunchStart);
     assert.equal(Number(day.lunchWindowEndAt), bounds.lunchEnd);
-    assert.equal(day.equipmentRouter, 2);
+    assert.equal(day.equipmentRouter, 3);
+    assert.equal(day.equipmentSetTopBox, 2);
+    assert.equal(day.equipmentSmartSpeaker, 2);
 
     const current = await prisma.routingCurrent.findUniqueOrThrow({
       where: { id: 'singleton' },

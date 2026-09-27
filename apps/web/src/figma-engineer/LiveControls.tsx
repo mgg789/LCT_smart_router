@@ -46,6 +46,13 @@ export function LiveControls({
     return null;
   const requestId = current.request.id;
   const working = current.phase === 'in_progress';
+  const awaitingEquipment = (live.logistics ?? []).some(
+    (entry) =>
+      entry.requestId === requestId &&
+      entry.kind === 'donor_delivery' &&
+      entry.receiverEngineerId === live.engineer.id &&
+      ['searching', 'assigned', 'error'].includes(entry.state),
+  );
   const submit = async (action: EngineerLiveAction) => {
     setError(null);
     if (await send(action)) setForm(null);
@@ -97,10 +104,10 @@ export function LiveControls({
             <button
               type="button"
               className={`${button} flex-1 bg-figma-ink text-white`}
-              disabled={busy}
+              disabled={busy || awaitingEquipment}
               onClick={() => void submit({ kind: working ? 'finish' : 'start', requestId })}
             >
-              {working ? 'Завершить' : 'Приступить'}
+              {awaitingEquipment ? 'Ждём оборудование' : working ? 'Завершить' : 'Приступить'}
             </button>
           ) : null}
         </div>

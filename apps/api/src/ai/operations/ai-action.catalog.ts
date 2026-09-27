@@ -883,21 +883,31 @@ export function buildAiActionCatalog(deps: AiActionCatalogDeps): ReadonlyMap<str
       rows.push({ label: 'Комментарий', value: payload.note });
       return rows;
     },
-    async apply({ context, targetRef, payload }) {
-      const input = payload as LiveProblemPayload;
-      return deps.live.act(context, requireEngineerId(targetRef), {
-        operationId: context.operationId,
-        kind: 'problem',
-        requestId: input.requestId,
-        problemKind: input.problemKind,
-        note: input.note,
-        ...(input.additionalDurationSec === undefined
-          ? {}
-          : { additionalDurationSec: input.additionalDurationSec }),
-        ...(input.missingEquipment === undefined
-          ? {}
-          : { missingEquipment: input.missingEquipment }),
-      });
+    async prepareApply(args) {
+      const input = args.payload as LiveProblemPayload;
+      const enabled =
+        deps.router.isConfigured() && input.problemKind === 'missing_equipment'
+          ? (await deps.router.getTechnicalSettings()).equipmentTransfersEnabled === true
+          : false;
+      return async ({ context, targetRef }) =>
+        deps.live.act(
+          context,
+          requireEngineerId(targetRef),
+          {
+            operationId: context.operationId,
+            kind: 'problem',
+            requestId: input.requestId,
+            problemKind: input.problemKind,
+            note: input.note,
+            ...(input.additionalDurationSec === undefined
+              ? {}
+              : { additionalDurationSec: input.additionalDurationSec }),
+            ...(input.missingEquipment === undefined
+              ? {}
+              : { missingEquipment: input.missingEquipment }),
+          },
+          enabled,
+        );
     },
   });
 

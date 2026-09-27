@@ -106,6 +106,20 @@ export interface SnapshotPolicy {
 }
 
 export interface RouterTaskSnapshot {
+  readonly depots?: Array<{ depot_id: string; region: string | null; location: GeoPoint }>;
+  readonly pending_equipment_logistics?: Array<{
+    logistics: {
+      logistics_id: string;
+      kind: 'donor_delivery' | 'office_pickup';
+      request_id: string;
+      equipment_type: EquipmentCode;
+      donor_engineer_id: string | null;
+      receiver_engineer_id: string;
+      depot_id: string | null;
+    };
+    location: GeoPoint;
+    at: number;
+  }>;
   readonly pending_equipment_handoffs?: Array<
     HandoffMetadata & { location: GeoPoint; meeting_at: number }
   >;

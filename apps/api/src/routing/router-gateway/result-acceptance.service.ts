@@ -388,6 +388,7 @@ export class ResultAcceptanceService {
           kind: stop.kind,
           request_id: stop.requestId,
           handoff: stop.handoff ?? null,
+          logistics: stop.logistics ?? null,
           location: { lat: stop.lat, lon: stop.lon },
           arrival_at: Number(stop.arrivalAt),
           start_at: Number(stop.startAt),

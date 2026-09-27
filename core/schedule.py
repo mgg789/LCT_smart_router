@@ -9,6 +9,7 @@ from core.contracts import (
     Engineer,
     EngineerRoute,
     EquipmentHandoff,
+    EquipmentLogistics,
     EquipmentType,
     Geometry,
     GeoPoint,
@@ -57,16 +58,31 @@ class HandoffStep:
     meeting_at: int
 
 
-ScheduleStep = str | None | HandoffStep
+@dataclass(frozen=True)
+class LogisticsStep:
+    """A one-sided five-minute logistics action at its actual location."""
+
+    logistics: EquipmentLogistics
+    location: GeoPoint
+    at: int
 
 
-def _pending_steps(snapshot: RouterTaskSnapshot, engineer_id: str) -> list[HandoffStep]:
+ScheduleStep = str | None | HandoffStep | LogisticsStep
+
+
+def _pending_steps(snapshot: RouterTaskSnapshot, engineer_id: str) -> list[ScheduleStep]:
     """Return the immutable future exchanges owned by one route in time order."""
-    return [
+    handoffs: list[ScheduleStep] = [
         HandoffStep(handoff, handoff.location, handoff.meeting_at)
         for handoff in sorted(snapshot.pending_equipment_handoffs, key=lambda item: item.meeting_at)
         if engineer_id in (handoff.donor_engineer_id, handoff.receiver_engineer_id)
     ]
+    logistics = [
+        LogisticsStep(item.logistics, item.location, item.at)
+        for item in sorted(snapshot.pending_equipment_logistics, key=lambda item: item.at)
+        if engineer_id == (item.logistics.donor_engineer_id if item.logistics.kind == "donor_delivery" else item.logistics.receiver_engineer_id)
+    ]
+    return sorted([*handoffs, *logistics], key=lambda item: item.meeting_at if isinstance(item, HandoffStep) else item.at)
 
 
 def _with_pending(snapshot: RouterTaskSnapshot, engineer_id: str, steps: list[ScheduleStep]) -> list[list[ScheduleStep]]:
@@ -98,11 +114,16 @@ def _baseline_eligible(snapshot: RouterTaskSnapshot, engineer: Engineer, request
         request.required_equipment is not None
         and release_at(snapshot, engineer) is not None
         and _matches_non_equipment_constraints(engineer, request)
-        and any(
+        and (any(
             handoff.receiver_engineer_id == engineer.engineer_id
             and handoff.items.quantity(request.required_equipment) > 0
             for handoff in snapshot.pending_equipment_handoffs
-        )
+        ) or any(
+            item.logistics.kind == "office_pickup"
+            and item.logistics.receiver_engineer_id == engineer.engineer_id
+            and item.logistics.equipment_type == request.required_equipment
+            for item in snapshot.pending_equipment_logistics
+        ))
     )
 
 
@@ -272,7 +293,7 @@ def schedule_steps(
             equipment_used[request.required_equipment] += 1
     # Static precheck remains useful for ordinary routes.  A receiver can start
     # with zero stock only when a preceding typed handoff credits inventory.
-    if not any(isinstance(item, HandoffStep) for item in steps) and any(
+    if not any(isinstance(item, (HandoffStep, LogisticsStep)) for item in steps) and any(
         quantity > engineer.equipment_stock.quantity(equipment_type)
         for equipment_type, quantity in equipment_used.items()
     ):
@@ -285,9 +306,9 @@ def schedule_steps(
     end_limit = min(engineer.shift_end_at, snapshot.horizon_end_at)
 
     def add_stop(
-        kind: Literal["job", "lunch", "wait", "handoff"], request_id: str | None,
+        kind: Literal["job", "lunch", "wait", "handoff", "delivery", "office_pickup"], request_id: str | None,
         arrival: int, start: int, end: int, point: GeoPoint,
-        handoff: EquipmentHandoff | None = None,
+        handoff: EquipmentHandoff | None = None, logistics: EquipmentLogistics | None = None,
     ) -> RouteStop:
         stop = RouteStop(
             stop_id=f"{engineer.engineer_id}:{len(stops)}",
@@ -299,11 +320,49 @@ def schedule_steps(
             start_at=start,
             end_at=end,
             handoff=handoff,
+            logistics=logistics,
         )
         stops.append(stop)
         return stop
 
     for step_index, step in enumerate(steps):
+        if isinstance(step, LogisticsStep):
+            quote = quote_at(travel, location, step.location, engineer.travel_profile(), clock)
+            if quote is None:
+                return None
+            arrival = clock + quote.duration_sec
+            if arrival > step.at:
+                return None
+            previous_stop = stops[-1].stop_id if stops else None
+            target = None
+            if step.at > arrival:
+                target = add_stop("wait", None, arrival, arrival, step.at, step.location)
+            logistics_stop = add_stop(
+                "delivery" if step.logistics.kind == "donor_delivery" else "office_pickup",
+                None, arrival, step.at, step.at + 300, step.location, logistics=step.logistics,
+            )
+            legs.append(RouteLeg(
+                leg_id=f"{engineer.engineer_id}:leg:{len(legs)}", from_stop_id=previous_stop,
+                to_stop_id=(target or logistics_stop).stop_id, departure_at=clock, arrival_at=arrival,
+                travel_time_sec=quote.duration_sec, distance_km=quote.distance_m / 1000,
+                geometry=None if quote.provenance == "traffic_api" and not quote.geometry_exact else Geometry(points=list(quote.points)),
+                travel_source=quote.provenance, traffic_factor=quote.traffic_factor,
+                weather_multiplier_used=quote.weather_multiplier_used,
+                segments=[RouteSegment(geometry=Geometry(points=list(segment.points)), travel_source=segment.provenance, duration_sec=segment.duration_sec, distance_m=segment.distance_m) for segment in quote.segments],
+            ))
+            equipment_type = step.logistics.equipment_type
+            if step.logistics.kind == "donor_delivery":
+                if engineer.engineer_id != step.logistics.donor_engineer_id:
+                    return None
+                inventory[equipment_type] -= 1
+            else:
+                if engineer.engineer_id != step.logistics.receiver_engineer_id:
+                    return None
+                inventory[equipment_type] += 1
+            if inventory[equipment_type] < 0 or sum(inventory.values()) > engineer.equipment_capacity:
+                return None
+            clock, location = step.at + 300, step.location
+            continue
         if isinstance(step, HandoffStep):
             quote = quote_at(travel, location, step.location, engineer.travel_profile(), clock)
             if quote is None:
@@ -949,10 +1008,15 @@ def validate_plan(snapshot: RouterTaskSnapshot, plan: Plan, travel: TravelProvid
     engineers = {e.engineer_id: e for e in snapshot.engineers}
     observed: dict[str, tuple[str, str]] = {}
     handoffs: dict[str, list[tuple[str, RouteStop]]] = {}
+    logistics_stops: dict[str, RouteStop] = {}
     for route in plan.routes:
         engineer = engineers[route.engineer_id]
         steps: list[ScheduleStep] = []
         for stop in route.stops:
+            if stop.logistics is not None:
+                identifier = stop.logistics.logistics_id
+                require(identifier not in logistics_stops, "duplicate logistics action")
+                logistics_stops[identifier] = stop
             if stop.kind == "job":
                 if stop.request_id is None:
                     raise ValueError("RESULT_INVALID: job stop missing request")
@@ -961,6 +1025,10 @@ def validate_plan(snapshot: RouterTaskSnapshot, plan: Plan, travel: TravelProvid
                 if stop.handoff is None:
                     raise ValueError("RESULT_INVALID: handoff stop missing metadata")
                 steps.append(HandoffStep(stop.handoff, stop.location, stop.start_at))
+            elif stop.kind in ("delivery", "office_pickup"):
+                if stop.logistics is None:
+                    raise ValueError("RESULT_INVALID: logistics stop missing metadata")
+                steps.append(LogisticsStep(stop.logistics, stop.location, stop.start_at))
             elif stop.kind == "lunch":
                 steps.append(None)
         expected = schedule_steps(snapshot, engineer, steps, travel)
@@ -1036,6 +1104,12 @@ def validate_plan(snapshot: RouterTaskSnapshot, plan: Plan, travel: TravelProvid
             frozen = next(item for item in snapshot.pending_equipment_handoffs if item.handoff_id == handoff_id)
             require(first.location == frozen.location and first.start_at == frozen.meeting_at, "pending handoff changed")
     require(set(handoffs) >= pending_ids, "pending handoff missing")
+    for pending in snapshot.pending_equipment_logistics:
+        stop = logistics_stops.get(pending.logistics.logistics_id)
+        require(stop is not None, "pending logistics missing")
+        if stop is not None:
+            require(stop.logistics == pending.logistics and stop.location == pending.location and stop.start_at == pending.at,
+                    "pending logistics changed")
     for assignment in plan.assignments:
         owner = observed.get(assignment.request_id)
         require(

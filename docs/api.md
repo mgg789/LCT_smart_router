@@ -1584,3 +1584,6 @@ Router как прежде. Выполняемые работы сохраняю
 
 Действие `prioritize` у `unassigned` и подтверждение замены описаны в
 [приоритетах заявок](request-priorities.md#явный-приоритет-диспетчера).
+
+Односторонние LIVE-действия `equipment_delivery_confirm` и `office_pickup_confirm`,
+состояния поиска и новые остановки описаны в [логистике оборудования](equipment-logistics.md).

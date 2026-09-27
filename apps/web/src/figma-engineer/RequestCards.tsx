@@ -8,9 +8,11 @@ import { formatMinutesRu, formatPlanTime, formatPlanWindow } from './engineerClo
 import {
   type EngineerHandoffItem,
   type EngineerJobItem,
+  type EngineerLogisticsItem,
   type EngineerLunchItem,
   visibleServiceDurationSec,
 } from './engineerDay';
+import { engineerMapsUrl } from './engineerRoute';
 import { eu } from './engineerScale';
 
 const tap = { duration: 0.16 };
@@ -31,8 +33,9 @@ export function EngineerListCard({
   onStart,
   actions,
   handoffAction,
+  logisticsAction,
 }: {
-  item: EngineerJobItem | EngineerLunchItem | EngineerHandoffItem;
+  item: EngineerJobItem | EngineerLunchItem | EngineerHandoffItem | EngineerLogisticsItem;
   motionOn: boolean;
   delay: number;
   latePending?: boolean;
@@ -43,6 +46,7 @@ export function EngineerListCard({
   onStart?: () => void;
   actions?: ReactNode;
   handoffAction?: () => void;
+  logisticsAction?: () => void;
 }) {
   return (
     <motion.article
@@ -54,6 +58,8 @@ export function EngineerListCard({
         <LunchCard item={item} />
       ) : item.kind === 'handoff' ? (
         <HandoffCard item={item} onConfirm={handoffAction} />
+      ) : item.kind === 'logistics' ? (
+        <LogisticsCard item={item} onConfirm={logisticsAction} />
       ) : item.variant === 'upcoming' ? (
         <UpcomingCard
           item={item}
@@ -69,6 +75,69 @@ export function EngineerListCard({
         <RegularCard item={item} onOpen={onOpen} onRoute={onRoute} />
       )}
     </motion.article>
+  );
+}
+
+function LogisticsCard({
+  item,
+  onConfirm,
+}: {
+  item: EngineerLogisticsItem;
+  onConfirm?: () => void;
+}) {
+  const entry = item.logistics;
+  const office = entry.kind === 'office_pickup';
+  const equipment = {
+    router: 'Роутер',
+    set_top_box: 'ТВ-приставка',
+    smart_speaker: 'Умная колонка',
+  }[entry.equipmentType];
+  return (
+    <div className="rounded-[20px] border-2 border-figma-bee bg-white p-6 text-figma-ink">
+      <div className="flex items-start justify-between gap-3">
+        <h3 className="font-murs text-xl">
+          {office ? 'Забрать в офисе' : 'Доставка оборудования'}
+        </h3>
+        <span className="font-semibold">{formatPlanTime(item.stop.startAt)}</span>
+      </div>
+      <p className="mt-3 font-medium">{equipment} · 1 шт.</p>
+      <p className="mt-2 text-figma-muted">
+        {office
+          ? 'Заберите оборудование в офисе и подтвердите получение.'
+          : 'Передайте оборудование инженеру на точке его заявки.'}
+      </p>
+      <p className="mt-2 text-figma-muted">
+        {entry.state === 'completed'
+          ? 'Выполнено'
+          : entry.state === 'cancelled'
+            ? 'Отменено'
+            : `Заявка № ${entry.requestId.slice(0, 8)}`}
+      </p>
+      {entry.state === 'assigned' ? (
+        <a
+          href={engineerMapsUrl({
+            lat: entry.location.lat,
+            lon: entry.location.lon,
+            addressText: '',
+          })}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-3 inline-block font-semibold underline"
+        >
+          Маршрут к точке {office ? 'выдачи' : 'передачи'}
+        </a>
+      ) : null}
+      {entry.state === 'assigned' ? (
+        <button
+          type="button"
+          disabled={!entry.action?.enabled || !onConfirm}
+          onClick={onConfirm}
+          className="mt-4 w-full rounded-2xl bg-figma-bee px-4 py-3 font-semibold disabled:opacity-50"
+        >
+          {office ? 'Принял' : 'Передал'}
+        </button>
+      ) : null}
+    </div>
   );
 }
 

@@ -256,6 +256,41 @@ export class SnapshotBuilder {
     }
 
     const snapshot: RouterTaskSnapshot = {
+      depots: (await tx.depot.findMany({ orderBy: { id: 'asc' } })).flatMap((depot) =>
+        depot.lat === null || depot.lon === null
+          ? []
+          : [
+              {
+                depot_id: depot.id,
+                region: depot.region,
+                location: { lat: depot.lat, lon: depot.lon },
+              },
+            ],
+      ),
+      pending_equipment_logistics: (
+        await tx.equipmentLogistics.findMany({
+          where: { workDate, status: 'assigned' },
+          orderBy: { id: 'asc' },
+        })
+      ).flatMap((row) =>
+        row.expectedAt === null
+          ? []
+          : [
+              {
+                logistics: {
+                  logistics_id: row.id,
+                  kind: row.kind,
+                  request_id: row.requestId,
+                  equipment_type: row.equipmentType,
+                  donor_engineer_id: row.donorEngineerId,
+                  receiver_engineer_id: row.receiverEngineerId,
+                  depot_id: row.depotId,
+                },
+                location: { lat: row.lat, lon: row.lon },
+                at: Number(row.expectedAt),
+              },
+            ],
+      ),
       pending_equipment_handoffs: (
         await tx.equipmentHandoff.findMany({
           where: { workDate, completedAt: null },

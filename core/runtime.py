@@ -777,6 +777,24 @@ class RouterRuntime:
                 raise ValueError("CONTEXT_CHANGED")
         return result
 
+    def propose_logistics(self, snapshot, request_id: str, receiver_engineer_id: str, routes: dict, depots: list[dict], allow_office_pickup: bool = False, expected_context_version: str | None = None) -> dict:
+        """Search frozen route gaps for a one-sided equipment action without publication."""
+        from core.logistics_proposal import propose_logistics
+
+        with self._lock:
+            settings = copy.deepcopy(self.settings)
+            version = self.context_version
+        if not settings.equipment_transfers_enabled:
+            raise ValueError("EQUIPMENT_TRANSFERS_DISABLED")
+        if expected_context_version is not None and expected_context_version != version:
+            raise ValueError("CONTEXT_CHANGED")
+        task = apply_system_policy(snapshot, settings)
+        result = propose_logistics(task, planning_travel(self._graph, settings, task), request_id, receiver_engineer_id, routes, depots, allow_office_pickup=allow_office_pickup)
+        with self._lock:
+            if version != self.context_version:
+                raise ValueError("CONTEXT_CHANGED")
+        return {**result, "router_context_version": version}
+
     def compare_policies(self, search_budget_ms: int | None = None) -> PolicyComparison:
         """Coalesce table/map catalog requests without locking the active worker."""
         with self._comparison_lock:

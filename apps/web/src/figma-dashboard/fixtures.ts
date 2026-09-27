@@ -37,7 +37,7 @@ export type RouteStop = {
   place: string;
   status: string;
   requestId?: string | null;
-  kind?: 'start' | 'job' | 'lunch' | 'technical' | 'handoff';
+  kind?: 'start' | 'job' | 'lunch' | 'technical' | 'handoff' | 'delivery' | 'office_pickup';
   handoffId?: string;
   handoff?: HandoffView;
   at?: number;

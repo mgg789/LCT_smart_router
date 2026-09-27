@@ -81,7 +81,16 @@ const requestSchema = z.object({
 
 const planStopSchema = z.object({
   sequence: z.number().int(),
-  kind: z.enum(['job', 'lunch', 'wait', 'start', 'handoff']),
+  kind: z.enum(['job', 'lunch', 'wait', 'start', 'handoff', 'delivery', 'office_pickup']),
+  logistics: z
+    .object({
+      logistics_id: z.string(),
+      kind: z.enum(['donor_delivery', 'office_pickup']),
+      request_id: z.string(),
+      equipment_type: z.enum(['router', 'set_top_box', 'smart_speaker']),
+    })
+    .nullable()
+    .optional(),
   handoff: z
     .object({
       handoff_id: z.string(),

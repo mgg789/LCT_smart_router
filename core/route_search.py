@@ -522,7 +522,7 @@ def improve_routes(
                 plans.append(plan)
     # A large combined task must retain good independent regional candidates.
     # Keep the global portfolio too: non-additive workload goals can prefer it.
-    if construct and len(regions) > 1 and None not in regions and all(r.region in regions for r in requests) and not snapshot.pending_equipment_handoffs:
+    if construct and len(regions) > 1 and None not in regions and all(r.region in regions for r in requests) and not snapshot.pending_equipment_handoffs and not snapshot.pending_equipment_logistics:
         routes = []
         for region in sorted(region for region in regions if region is not None):
             engineers = [e for e in snapshot.engineers if e.region == region]

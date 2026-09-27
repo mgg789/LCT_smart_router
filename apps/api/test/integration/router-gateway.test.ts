@@ -412,9 +412,13 @@ describe('router gateway', () => {
       orderBy: { workDate: 'desc' },
     });
     assert.ok(issuedDay.equipmentIssuedAt, 'the first accepted plan freezes the morning issue');
-    assert.equal(issuedDay.equipmentRouter, 2, 'one assigned router plus one spare is issued');
-    assert.equal(issuedDay.equipmentSetTopBox, 0);
-    assert.equal(issuedDay.equipmentSmartSpeaker, 0);
+    assert.equal(
+      issuedDay.equipmentRouter,
+      3,
+      'one assigned router plus two car spares are issued',
+    );
+    assert.equal(issuedDay.equipmentSetTopBox, 2);
+    assert.equal(issuedDay.equipmentSmartSpeaker, 2);
 
     const planResponse = await call('GET', '/api/v1/dispatch/plan', dispatcherToken);
     const planBody = (await planResponse.json()) as {

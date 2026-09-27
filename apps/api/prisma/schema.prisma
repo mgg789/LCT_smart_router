@@ -169,9 +169,25 @@ enum EngineerRewardCategory {
 
 enum StopKind {
   handoff
+  delivery
+  office_pickup
   job
   lunch
   wait
+}
+
+enum EquipmentLogisticsKind {
+  donor_delivery
+  office_pickup
+}
+
+enum EquipmentLogisticsStatus {
+  searching
+  assigned
+  none
+  completed
+  cancelled
+  error
 }
 
 enum AlertSeverity {
@@ -961,6 +977,7 @@ model AppliedPlanStop {
   kind      StopKind
   requestId String? @map("request_id")
   handoff   Json?
+  logistics Json?
   lat       Float
   lon       Float
   /// Computed schedule, not confirmed facts: arrival <= start <= end.
@@ -1236,6 +1253,34 @@ model EquipmentHandoff {
   createdAt BigInt @map("created_at")
   @@index([workDate, completedAt])
   @@map("equipment_handoffs")
+}
+
+/// One-sided urgent equipment action; legacy paired handoffs retain their own ledger.
+model EquipmentLogistics {
+  id String @id
+  workDate String @map("work_date")
+  kind EquipmentLogisticsKind
+  status EquipmentLogisticsStatus
+  requestId String @map("request_id")
+  equipmentType EquipmentType @map("equipment_type")
+  donorEngineerId String? @map("donor_engineer_id")
+  receiverEngineerId String @map("receiver_engineer_id")
+  depotId String? @map("depot_id")
+  lat Float
+  lon Float
+  expectedAt BigInt? @map("expected_at")
+  actualAt BigInt? @map("actual_at")
+  failureCode String? @map("failure_code")
+  retryAt BigInt? @map("retry_at")
+  baselineCompletionAt BigInt? @map("baseline_completion_at")
+  waitStartedAt BigInt? @map("wait_started_at")
+  consumedAt BigInt? @map("consumed_at")
+  createdAt BigInt @map("created_at")
+  updatedAt BigInt @map("updated_at")
+
+  @@unique([workDate, requestId])
+  @@index([workDate, receiverEngineerId, status])
+  @@map("equipment_logistics")
 }
 
 enum AiRoleProfile {

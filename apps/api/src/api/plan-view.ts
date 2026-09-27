@@ -6,7 +6,10 @@ import type {
   PlanView,
   TravelSource,
 } from '@lct/shared';
-import { handoffMetadataSchema } from '../routing/router-gateway/result.types';
+import {
+  handoffMetadataSchema,
+  logisticsMetadataSchema,
+} from '../routing/router-gateway/result.types';
 import type { AppliedPlanCurrentShape } from './plan-view.types';
 
 export type { PlanLegView, PlanRouteView, PlanStopView, PlanView, TravelSource };
@@ -49,6 +52,7 @@ export function toPlanView(plan: AppliedPlanCurrentShape): PlanView {
       stops: route.stops.map((stop) => ({
         sequence: stop.sequence,
         handoff: handoffMetadataSchema.safeParse(stop.handoff).data ?? null,
+        logistics: logisticsMetadataSchema.safeParse(stop.logistics).data ?? null,
         kind: stop.kind,
         requestId: stop.requestId,
         lat: stop.lat,

@@ -153,6 +153,12 @@ export class PlanRestoreService {
     previous: NonNullable<Awaited<ReturnType<AppliedPlanService['previous']>>>,
     activeContextVersion: string | null,
   ): Promise<{ eligible: boolean; reason: string | null }> {
+    if (
+      [current, previous].some((plan) =>
+        plan.routes.some((route) => route.stops.some((stop) => stop.logistics !== null)),
+      )
+    )
+      return { eligible: false, reason: 'EQUIPMENT_ISSUED_ASSIGNMENT_CHANGED' };
     if (previous.routes.some((route) => route.stops.some((stop) => Number(stop.startAt) < now)))
       return { eligible: false, reason: 'SCHEDULE_IN_THE_PAST' };
     const currentRequests = [...current.assignments.map((item) => item.requestId)].sort();

@@ -264,9 +264,13 @@ export function withLiveRouteStops(
               ? 'Обед'
               : node.kind === 'handoff'
                 ? 'Передача оборудования'
-                : request
-                  ? routeStopAddress(request.addressText)
-                  : 'Заявка',
+                : node.kind === 'delivery'
+                  ? 'Доставка оборудования'
+                  : node.kind === 'office_pickup'
+                    ? 'Забрать в офисе'
+                    : request
+                      ? routeStopAddress(request.addressText)
+                      : 'Заявка',
         status:
           node.kind === 'start'
             ? state?.lineStartedAt
@@ -278,7 +282,9 @@ export function withLiveRouteStops(
               ? 'обед'
               : node.kind === 'handoff'
                 ? handoffStatus(live?.handoffs ?? [], node.handoffId, state?.id)
-                : stopStatus(request),
+                : node.kind === 'delivery' || node.kind === 'office_pickup'
+                  ? 'оборудование'
+                  : stopStatus(request),
         active: node.kind !== 'start' && graph.activeNodeKeys.has(node.key),
         failed: node.kind === 'start' && Boolean(state?.noShowAt),
         completed:
@@ -472,6 +478,16 @@ function stopToCard(snapshot: DashboardSnapshot, stop: PlanStopView): RouteStop 
       status: 'старт смены',
       requestId: null,
       kind: 'start',
+      at: stop.startAt,
+    };
+  }
+  if (stop.kind === 'delivery' || stop.kind === 'office_pickup') {
+    return {
+      time: formatClock(stop.startAt),
+      place: stop.kind === 'delivery' ? 'Доставка оборудования' : 'Забрать в офисе',
+      status: 'оборудование',
+      requestId: null,
+      kind: stop.kind,
       at: stop.startAt,
     };
   }

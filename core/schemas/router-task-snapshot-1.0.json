@@ -1,5 +1,37 @@
 {
   "$defs": {
+    "Depot": {
+      "additionalProperties": false,
+      "description": "Verified regional office location used only for physical replenishment.",
+      "properties": {
+        "depot_id": {
+          "minLength": 1,
+          "title": "Depot Id",
+          "type": "string"
+        },
+        "location": {
+          "$ref": "#/$defs/GeoPoint"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Region"
+        }
+      },
+      "required": [
+        "depot_id",
+        "location"
+      ],
+      "title": "Depot",
+      "type": "object"
+    },
     "Engineer": {
       "additionalProperties": false,
       "description": "Prepared continuation point and availability; execution facts belong to sys.",
@@ -134,6 +166,77 @@
         "equipment_stock"
       ],
       "title": "Engineer",
+      "type": "object"
+    },
+    "EquipmentLogistics": {
+      "additionalProperties": false,
+      "description": "One-sided equipment movement attached to the job it unblocks.\n\nUnlike ``EquipmentHandoff``, a delivery is a stop only for its donor and an\noffice pickup is a stop only for its recipient.  The System Layer owns the\nauthenticated stock fact; Router only schedules this immutable intention.",
+      "properties": {
+        "depot_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Depot Id"
+        },
+        "donor_engineer_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Donor Engineer Id"
+        },
+        "equipment_type": {
+          "enum": [
+            "router",
+            "set_top_box",
+            "smart_speaker"
+          ],
+          "title": "Equipment Type",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "donor_delivery",
+            "office_pickup"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "logistics_id": {
+          "minLength": 1,
+          "title": "Logistics Id",
+          "type": "string"
+        },
+        "receiver_engineer_id": {
+          "minLength": 1,
+          "title": "Receiver Engineer Id",
+          "type": "string"
+        },
+        "request_id": {
+          "minLength": 1,
+          "title": "Request Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "logistics_id",
+        "kind",
+        "request_id",
+        "equipment_type",
+        "receiver_engineer_id"
+      ],
+      "title": "EquipmentLogistics",
       "type": "object"
     },
     "EquipmentStock": {
@@ -291,6 +394,30 @@
         "meeting_at"
       ],
       "title": "PendingEquipmentHandoff",
+      "type": "object"
+    },
+    "PendingEquipmentLogistics": {
+      "additionalProperties": false,
+      "description": "Accepted one-sided movement replayed at its frozen time on later replans.",
+      "properties": {
+        "at": {
+          "minimum": 0,
+          "title": "At",
+          "type": "integer"
+        },
+        "location": {
+          "$ref": "#/$defs/GeoPoint"
+        },
+        "logistics": {
+          "$ref": "#/$defs/EquipmentLogistics"
+        }
+      },
+      "required": [
+        "logistics",
+        "location",
+        "at"
+      ],
+      "title": "PendingEquipmentLogistics",
       "type": "object"
     },
     "Policy": {
@@ -516,6 +643,13 @@
   "additionalProperties": false,
   "description": "Complete remaining-work projection, published atomically by sys.",
   "properties": {
+    "depots": {
+      "items": {
+        "$ref": "#/$defs/Depot"
+      },
+      "title": "Depots",
+      "type": "array"
+    },
     "engineers": {
       "items": {
         "$ref": "#/$defs/Engineer"
@@ -538,6 +672,13 @@
         "$ref": "#/$defs/PendingEquipmentHandoff"
       },
       "title": "Pending Equipment Handoffs",
+      "type": "array"
+    },
+    "pending_equipment_logistics": {
+      "items": {
+        "$ref": "#/$defs/PendingEquipmentLogistics"
+      },
+      "title": "Pending Equipment Logistics",
       "type": "array"
     },
     "planning_as_of": {
