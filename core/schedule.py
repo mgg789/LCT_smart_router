@@ -70,19 +70,30 @@ class LogisticsStep:
 ScheduleStep = str | None | HandoffStep | LogisticsStep
 
 
+def _pending_time(item: HandoffStep | LogisticsStep) -> int:
+    """Return the fixed event time used to replay pending logistics in order."""
+    if isinstance(item, HandoffStep):
+        return item.meeting_at
+    return item.at
+
+
 def _pending_steps(snapshot: RouterTaskSnapshot, engineer_id: str) -> list[ScheduleStep]:
     """Return the immutable future exchanges owned by one route in time order."""
-    handoffs: list[ScheduleStep] = [
+    handoffs: list[HandoffStep] = [
         HandoffStep(handoff, handoff.location, handoff.meeting_at)
         for handoff in sorted(snapshot.pending_equipment_handoffs, key=lambda item: item.meeting_at)
         if engineer_id in (handoff.donor_engineer_id, handoff.receiver_engineer_id)
     ]
-    logistics = [
+    logistics: list[LogisticsStep] = [
         LogisticsStep(item.logistics, item.location, item.at)
         for item in sorted(snapshot.pending_equipment_logistics, key=lambda item: item.at)
         if engineer_id == (item.logistics.donor_engineer_id if item.logistics.kind == "donor_delivery" else item.logistics.receiver_engineer_id)
     ]
-    return sorted([*handoffs, *logistics], key=lambda item: item.meeting_at if isinstance(item, HandoffStep) else item.at)
+    pending: list[HandoffStep | LogisticsStep] = [*handoffs, *logistics]
+    pending.sort(key=_pending_time)
+    ordered: list[ScheduleStep] = []
+    ordered.extend(pending)
+    return ordered
 
 
 def _with_pending(snapshot: RouterTaskSnapshot, engineer_id: str, steps: list[ScheduleStep]) -> list[list[ScheduleStep]]:

@@ -353,6 +353,8 @@ def planning_travel(
     from core.weather import LearnedWeatherTravel
 
     region = next(iter(regions))
+    if region is None:
+        return configured
     return TechnicalTravel(
         LearnedWeatherTravel(configured.travel, region, tuple(learned_weather)),
         configured.settings,

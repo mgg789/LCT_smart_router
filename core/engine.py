@@ -5,6 +5,7 @@ optimality. Engine owns all route choices; Runtime only validates and publishes.
 """
 
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass, replace
 
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
@@ -32,6 +33,7 @@ from core.schedule import (
     TERMINAL_WINDOW_LATENESS_TOLERANCE_SEC,
     HandoffStep,
     LogisticsStep,
+    ScheduleStep,
     TravelProvider,
     assemble_plan,
     baseline,
@@ -1158,9 +1160,9 @@ def solve(
     return _solve_prepared(official_roster(snapshot), travel, settings, memory, context_version)
 
 
-def _route_steps(route: EngineerRoute) -> list[str | None | HandoffStep | LogisticsStep]:
+def _route_steps(route: EngineerRoute) -> list[ScheduleStep]:
     """Recover the canonical replay steps from a validated route."""
-    steps: list[str | None | HandoffStep | LogisticsStep] = []
+    steps: list[ScheduleStep] = []
     for stop in route.stops:
         if stop.kind == "job":
             steps.append(stop.request_id)
@@ -1173,7 +1175,7 @@ def _route_steps(route: EngineerRoute) -> list[str | None | HandoffStep | Logist
     return steps
 
 
-def _insert_steps(steps: list[str | None | HandoffStep], item: str | HandoffStep):
+def _insert_steps(steps: list[ScheduleStep], item: ScheduleStep) -> Iterator[list[ScheduleStep]]:
     """Yield deterministic insertion positions while retaining all existing order."""
     for index in range(len(steps) + 1):
         yield steps[:index] + [item] + steps[index:]

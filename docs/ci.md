@@ -34,13 +34,15 @@ pull request не запускаются.
 «Self-hosted воркеры» ниже), `cd` — на облачных воркерах SourceCraft, чтобы
 деплой не зависел от доступности нашего хоста.
 
-Красный прогон `ci` на pull request в `main` — условие мержа. Защита веток в
+Успешные прогоны `ci` и `regression` на pull request в `main` — условие мержа. Защита веток в
 [`.sourcecraft/branches.yaml`](../.sourcecraft/branches.yaml) блокирует прямой push
 и force-push в `main`, а также force-push/удаление `dev`.
 
 ### Задачи `ci`
 
-- **lint** — `pnpm lint` (Biome) и `ruff check core`.
+- **lint** — `pnpm lint` (Biome, i18n и актуальность OpenAPI) и `ruff check core`.
+  `lint:openapi` сам генерирует Prisma Client перед компиляцией: проверка работает
+  и в чистом checkout без локальных артефактов предыдущей сборки.
 - **test-js** — Vitest веба + typecheck; `node:test` API против одноразового
   контейнера `pgvector/pgvector:pg17` (`scripts/ci/run-js-tests.sh`). Сайдкар
   публикуется на loopback-порту, выведенном из PID скрипта: на общем воркер-хосте

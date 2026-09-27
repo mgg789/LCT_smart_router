@@ -62,7 +62,7 @@ test('live plan renders the local map and replans when an engineer goes offline'
   const roster = page.locator('section[data-name="ENGINEERS"]');
   await expect(roster.getByText('Smoke East Engineer', { exact: true })).toBeVisible();
   await expect(roster.getByText('Транспорт', { exact: true })).toBeVisible();
-  await expect(roster.getByText('Легковой, до 3.5 т', { exact: true })).toBeVisible();
+  await expect(roster.getByText('авто', { exact: true })).toBeVisible();
   // The dossier action reflects accepted server state, not an optimistic toggle.
   await page.getByRole('button', { name: 'Снять со смены', exact: true }).click();
   await expect

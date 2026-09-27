@@ -15,7 +15,7 @@
     "smoke": "pnpm test:build && node dist-test/scripts/smoke.js",
     "knowledge:index": "pnpm test:build && node dist-test/scripts/index-knowledge.js",
     "openapi:generate": "pnpm compile && node scripts/generate-openapi.cjs && node scripts/copy-report-assets.cjs dist",
-    "lint:openapi": "pnpm compile && node scripts/generate-openapi.cjs --check"
+    "lint:openapi": "prisma generate && pnpm compile && node scripts/generate-openapi.cjs --check"
   },
   "dependencies": {
     "@lct/shared": "workspace:*",

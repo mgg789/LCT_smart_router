@@ -114,15 +114,16 @@ class RouterObservability:
 
     def close(self) -> None:
         """Flush bounded exporter queues and release their worker threads at app shutdown."""
-        for sink in (self.provider, self.sentry):
-            if sink is not None:
-                try:
-                    if sink is self.provider:
-                        sink.shutdown()
-                    else:
-                        sink.close(timeout=2)
-                except Exception:
-                    LOGGER.warning("Router telemetry shutdown failed")
+        if self.provider is not None:
+            try:
+                self.provider.shutdown()
+            except Exception:
+                LOGGER.warning("Router telemetry shutdown failed")
+        if self.sentry is not None:
+            try:
+                self.sentry.close(timeout=2)
+            except Exception:
+                LOGGER.warning("Router telemetry shutdown failed")
         self.provider = self.tracer = self.sentry = None
 
     def exception(self, error: Exception) -> None:
@@ -201,7 +202,7 @@ class TelemetryMiddleware:
                 raise
             finally:
                 route = getattr(scope.get("route"), "path", "unmatched")
-                if telemetry.requests is not None:
+                if telemetry.requests is not None and telemetry.duration is not None:
                     telemetry.requests.labels(method, route, str(status)).inc()
                     telemetry.duration.labels(method, route, str(status)).observe(
                         time.perf_counter() - started

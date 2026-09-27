@@ -15,7 +15,7 @@ export function importFeatures(input: StudentInput): number[] {
     Math.log1p(chars.length),
     chars.filter((c) => /\p{Nd}/u.test(c)).length / size,
     chars.filter((c) => /\p{L}/u.test(c)).length / size,
-    chars.filter((c) => c === '�').length / size,
+    chars.filter((c) => c === '\uFFFD').length / size,
     /\p{Nd}/u.test(input.address) ? 1 : 0,
     Math.min(chars.filter((c) => c === ',').length, 10),
     Math.log1p(Math.max(0, input.windowMinutes)),

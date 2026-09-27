@@ -304,9 +304,7 @@ class LearnedWeatherTravel:
         }, sort_keys=True, separators=(",", ":")).encode("utf-8"))
 
     def quote(self, origin: GeoPoint, destination: GeoPoint, profile: Transport) -> TravelQuote | None:
-        from core.geo import quote_at
-
-        return self._apply(quote_at(self.travel, origin, destination, profile, None), profile)
+        return self._apply(self.travel.quote(origin, destination, profile), profile)
 
     def quote_at(
         self,
