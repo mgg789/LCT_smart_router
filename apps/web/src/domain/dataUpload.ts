@@ -53,7 +53,8 @@ const uploadEngineerSchema = z
     path: ['shiftEndAt'],
   });
 
-const uploadFileSchema = z
+/** Shared runtime validator for canonical JSON packages returned by imports. */
+export const uploadFileSchema = z
   .object({
     schemaVersion: z.literal('1.0'),
     mode: z.enum(['new_region', 'append_requests']),

@@ -16,11 +16,13 @@ export function RewardDialog({
   title,
   onClose,
   children,
+  wide = false,
 }: {
   open: boolean;
   title: string;
   onClose: () => void;
   children: ReactNode;
+  wide?: boolean;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -61,7 +63,7 @@ export function RewardDialog({
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={reduced ? undefined : { opacity: 0, y: 12, scale: 0.98 }}
               transition={reduced ? { duration: 0 } : reveal}
-              className="relative z-[1] max-h-[90dvh] w-[min(94vw,720px)] overflow-auto rounded-3xl bg-figma-canvas shadow-[0_16px_40px_rgba(15,16,20,0.28)]"
+              className={`relative z-[1] max-h-[90dvh] ${wide ? 'w-[min(94vw,1100px)]' : 'w-[min(94vw,720px)]'} overflow-auto rounded-3xl bg-figma-canvas shadow-[0_16px_40px_rgba(15,16,20,0.28)]`}
             >
               <div className="flex items-center justify-between gap-4 px-6 pt-6">
                 <p className="font-murs text-lg">NAVIX</p>

@@ -1,0 +1,6 @@
+{
+  "include": ["core"],
+  "exclude": ["core/tests", "core/.venv"],
+  "typeCheckingMode": "basic",
+  "pythonVersion": "3.13"
+}

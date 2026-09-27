@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { afterEach, describe, it } from 'node:test';
+import { SysError } from '../../src/common/errors';
 import { HttpRouterClient } from '../../src/routing/router-gateway/http-router-client';
 
 const originalFetch = globalThis.fetch;
@@ -9,6 +10,14 @@ afterEach(() => {
 });
 
 describe('HttpRouterClient', () => {
+  it('reports an unfinished policy calculation as a refreshable state conflict', async () => {
+    globalThis.fetch = async () => new Response('', { status: 503 });
+    const client = new HttpRouterClient({ baseUrl: 'http://router:8100', requestTimeoutMs: 100 });
+    await assert.rejects(
+      () => client.getPolicyComparison(),
+      (error) => error instanceof SysError && error.code === 'VERSION_CONFLICT',
+    );
+  });
   it('maps a cold policy comparison with a timeout longer than ordinary Router calls', async () => {
     globalThis.fetch = async (input, init) => {
       assert.equal(String(input), 'http://router:8100/v1/policy-comparison');
@@ -124,6 +133,7 @@ describe('HttpRouterClient', () => {
         router_context_version: 'ctx-new',
         technical_settings: {
           lunches_enabled: true,
+          strict_time_windows: true,
           metro_enabled: true,
           departure_lateness_tolerance_sec: 180,
           task_start_lateness_tolerance_sec: 240,
@@ -142,6 +152,7 @@ describe('HttpRouterClient', () => {
 
     assert.deepEqual(await client.getTechnicalSettings(), {
       lunchesEnabled: false,
+      strictTimeWindows: false,
       departureLatenessToleranceSec: 60,
       taskStartLatenessToleranceSec: 120,
       travelTimeMode: 'graph_with_access_buffer',
@@ -156,6 +167,7 @@ describe('HttpRouterClient', () => {
         operationId: 'op-1',
         expectedContextVersion: 'ctx-old',
         lunchesEnabled: true,
+        strictTimeWindows: true,
         metroEnabled: true,
         departureLatenessToleranceSec: 180,
         taskStartLatenessToleranceSec: 240,
@@ -169,6 +181,7 @@ describe('HttpRouterClient', () => {
         operationId: 'op-1',
         status: 'accepted',
         lunchesEnabled: true,
+        strictTimeWindows: true,
         metroEnabled: true,
         departureLatenessToleranceSec: 180,
         taskStartLatenessToleranceSec: 240,
@@ -185,6 +198,7 @@ describe('HttpRouterClient', () => {
       operation_id: 'op-1',
       expected_context_version: 'ctx-old',
       lunches_enabled: true,
+      strict_time_windows: true,
       metro_enabled: true,
       departure_lateness_tolerance_sec: 180,
       task_start_lateness_tolerance_sec: 240,
@@ -208,6 +222,7 @@ describe('HttpRouterClient', () => {
           operationId: 'op-2',
           expectedContextVersion: 'stale',
           lunchesEnabled: false,
+          strictTimeWindows: false,
           departureLatenessToleranceSec: 0,
           taskStartLatenessToleranceSec: 0,
           travelTimeMode: 'graph_with_access_buffer',
@@ -284,6 +299,7 @@ describe('HttpRouterClient', () => {
 
     assert.deepEqual(await client.getTechnicalSettings(), {
       lunchesEnabled: false,
+      strictTimeWindows: false,
       departureLatenessToleranceSec: 60,
       taskStartLatenessToleranceSec: 120,
       windowLatenessToleranceSec: 900,
@@ -334,6 +350,7 @@ describe('HttpRouterClient', () => {
           operationId: 'lost-response-op',
           expectedContextVersion: 'ctx-before-restart',
           lunchesEnabled: true,
+          strictTimeWindows: true,
           departureLatenessToleranceSec: 300,
           taskStartLatenessToleranceSec: 600,
           travelTimeMode: 'graph_with_access_buffer',

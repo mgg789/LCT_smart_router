@@ -15,7 +15,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from core.contracts import Record
+from core.contracts import Record, Transport
 
 
 class CalibrationRegime(Record):
@@ -35,6 +35,23 @@ class LearnedFrom(Record):
     execution_days: int = Field(ge=0)
 
 
+class WeatherMultiplierCalibration(Record):
+    """Validated, region- and transport-specific weather factor for predictions."""
+
+    region: str = Field(min_length=1, max_length=128)
+    transport_type: Transport
+    kind: Literal["rain", "snow", "storm"]
+    multiplier: float = Field(ge=0.5, le=3.0)
+    source: Literal["learned"]
+    observations: int = Field(ge=0)
+    days: int = Field(ge=0)
+    baseline_travel_error: float = Field(ge=0)
+    candidate_travel_error: float = Field(ge=0)
+    baseline_brier: float = Field(ge=0, le=1)
+    candidate_brier: float = Field(ge=0, le=1)
+    validation_version: str = Field(min_length=1, max_length=64)
+
+
 class PredictCalibration(Record):
     """Complete simulator calibration; ``factory`` source means lab assumptions."""
 
@@ -43,6 +60,8 @@ class PredictCalibration(Record):
     leg_cv_long: float = Field(ge=0.0, le=1.0)
     cancel_rate: float = Field(ge=0.0, le=1.0)
     regimes: list[CalibrationRegime] = Field(min_length=1, max_length=8)
+    weather_multipliers: list[WeatherMultiplierCalibration] = Field(default_factory=list, max_length=512)
+    working_set_generation: int = Field(default=1, ge=1)
     source: Literal["factory", "learned"] = "factory"
     learned_from: LearnedFrom | None = None
 
@@ -66,6 +85,7 @@ def factory_calibration() -> PredictCalibration:
             CalibrationRegime(name="rain", probability=0.30, travel_multiplier=1.12),
             CalibrationRegime(name="heavy", probability=0.05, travel_multiplier=1.25),
         ],
+        weather_multipliers=[],
         source="factory",
     )
 

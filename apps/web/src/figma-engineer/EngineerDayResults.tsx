@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { EngineerLiveView } from '../api/live';
+import { loadPersonalPerformance, type PersonalPerformance } from '../api/performance';
 import {
   loadRewardDay,
   loadRewards,
@@ -7,6 +8,11 @@ import {
   type RewardSummary,
   rewardRatioLabel,
 } from '../api/rewards';
+import {
+  EngineerMetricGrid,
+  ResultMetric,
+  ResultProgress,
+} from '../components/performance/PerformanceVisuals';
 import { RewardBreakdown } from '../components/rewards/RewardBreakdown';
 import { RewardDialog } from '../components/rewards/RewardDialog';
 
@@ -16,7 +22,11 @@ export function EngineerDayResults({ token, live }: { token: string; live: Engin
   const workdayId = live.workday.id;
   const key = `navix.results.engineer.${live.engineer.id}.${workdayId}`;
   const [open, setOpen] = useState(false);
-  const [data, setData] = useState<{ day: RewardDaySummary; month: RewardSummary } | null>(null);
+  const [data, setData] = useState<{
+    day: RewardDaySummary;
+    month: RewardSummary;
+    performance: PersonalPerformance;
+  } | null>(null);
   const [error, setError] = useState(false);
   const [retry, setRetry] = useState(0);
   useEffect(() => {
@@ -28,9 +38,13 @@ export function EngineerDayResults({ token, live }: { token: string; live: Engin
     let disposed = false;
     setData(null);
     setError(false);
-    void Promise.all([loadRewardDay(token, workdayId), loadRewards(token)])
-      .then(([day, month]) => {
-        if (!disposed) setData({ day, month });
+    void Promise.all([
+      loadRewardDay(token, workdayId),
+      loadRewards(token),
+      loadPersonalPerformance(token, workdayId),
+    ])
+      .then(([day, month, performance]) => {
+        if (!disposed) setData({ day, month, performance });
       })
       .catch(() => {
         if (!disposed) setError(true);
@@ -71,11 +85,15 @@ export function EngineerDayResults({ token, live }: { token: string; live: Engin
               <p className="mt-3 text-sm text-white/70">
                 Заработано за смену · {data.month.monthlyPoints} за месяц
               </p>
-              <p className="mt-4 font-semibold">{rewardRatioLabel(data.month.teamRatio)}</p>
+              <p className="mt-4 font-semibold">
+                За месяц: {rewardRatioLabel(data.month.teamRatio)}
+              </p>
             </div>
             <div className="mb-5 grid grid-cols-2 gap-3">
               <div className="rounded-2xl bg-figma-bee p-4">
-                <strong className="font-murs text-3xl">{live.engineer.stats.completedCount}</strong>
+                <strong className="font-murs text-3xl">
+                  {data.performance.engineer?.completed ?? live.engineer.stats.completedCount}
+                </strong>
                 <p className="mt-1 text-sm">Задач выполнено с отметкой</p>
               </div>
               <div className="rounded-2xl bg-white p-4">
@@ -85,11 +103,46 @@ export function EngineerDayResults({ token, live }: { token: string; live: Engin
                 <p className="mt-1 text-sm">Полезных действий с наградой</p>
               </div>
             </div>
+            {data.performance.analytics ? (
+              <section className="mb-5 space-y-4">
+                <h3 className="text-xl font-bold">Ваш день в деталях</h3>
+                <div className="rounded-2xl bg-white p-4">
+                  <ResultProgress
+                    label="Завершения вовремя"
+                    value={data.performance.analytics.punctualCompletion.count}
+                    total={data.performance.analytics.punctualCompletion.sampleCount}
+                  />
+                </div>
+                <EngineerMetricGrid analytics={data.performance.analytics} />
+                <p className="text-xs leading-relaxed text-figma-dim">
+                  Сроки сравниваем с сохранённым обещанным завершением. Работа без отметок и дорога
+                  не входят в подтверждённую занятость.
+                </p>
+              </section>
+            ) : (
+              <p className="mb-5 text-sm text-figma-dim">
+                Подробные измерения сроков для этой смены не сохранены.
+              </p>
+            )}
+            {(data.performance.engineer?.cancelled ?? 0) > 0 ? (
+              <div className="mb-5">
+                <ResultMetric
+                  value={data.performance.engineer?.cancelled ?? 0}
+                  label="Отменённых заявок"
+                  note="Причины отмены учитываются отдельно от вашего результата"
+                  tone="warning"
+                />
+              </div>
+            ) : null}
+            <h3 className="mb-3 text-xl font-bold">Из чего сложились баллы</h3>
             <RewardBreakdown categories={data.day.categories} />
-            {live.engineer.stats.assumedCompletedCount > 0 ? (
+            {(data.performance.engineer?.assumedCompleted ??
+              live.engineer.stats.assumedCompletedCount) > 0 ? (
               <p className="mt-4 text-sm text-figma-dim">
-                Ещё {live.engineer.stats.assumedCompletedCount} задач прошло по расписанию без
-                отметки. За них баллы не начисляются.
+                Ещё{' '}
+                {data.performance.engineer?.assumedCompleted ??
+                  live.engineer.stats.assumedCompletedCount}{' '}
+                задач прошло по расписанию без отметки. За них баллы не начисляются.
               </p>
             ) : null}
             <p className="mt-5 text-sm text-figma-dim">

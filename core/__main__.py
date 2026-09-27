@@ -8,6 +8,7 @@ from pathlib import Path
 from core.engine import SearchSettings
 from core.geo import Gazetteer, GraphTravel, RoadGraph
 from core.osrm import OSRMTravel
+from core.predict_calibration import PredictCalibrationStore
 from core.runtime import FileSnapshotReader, PostgresSnapshotReader, RouterRuntime, calculate
 from core.settings import FileTechnicalSettingsStore
 
@@ -116,9 +117,13 @@ def main() -> None:
         return
     if args.command == "benchmark":
         from core.benchmark import benchmark_payload, run_official_benchmark
-        from core.official import combine_official_scenarios, load_official_region
+        from core.official import Region, combine_official_scenarios, load_official_region
 
-        regions = args.regions or [args.region or "east"]
+        region_values = args.regions or [args.region or "east"]
+        valid_regions: tuple[Region, ...] = ("east", "southeast", "south_central")
+        if any(region not in valid_regions for region in region_values):
+            raise ValueError("invalid official region")
+        regions: list[Region] = [region for region in region_values if region in valid_regions]
         scenarios = [
             load_official_region(
                 args.dataset_dir,
@@ -185,6 +190,8 @@ def main() -> None:
     if args.command == "project":
         from core.contracts import GeoPoint
 
+        if not isinstance(graph, RoadGraph):
+            raise ValueError("project command requires a road graph")
         match = GraphTravel(graph).nearest(GeoPoint(lat=args.lat, lon=args.lon), args.limit_m)
         print(
             json.dumps(
@@ -240,6 +247,9 @@ def main() -> None:
                     graph,
                     settings,
                     settings_store=FileTechnicalSettingsStore(args.settings),
+                    predict_calibration_store=PredictCalibrationStore(
+                        args.settings.with_name("predict-calibration.json")
+                    ),
                 ),
                 road_store=RoadGraphStore(road_store),
             ),

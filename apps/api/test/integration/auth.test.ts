@@ -4,6 +4,7 @@ import { after, before, describe, it } from 'node:test';
 import type { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../../src/app.module';
+import { LoginCodeService } from '../../src/auth/login-code.service';
 import { AllExceptionsFilter } from '../../src/common/errors';
 import { BigIntGuardInterceptor } from '../../src/common/serialization';
 import type { PrismaClient } from '../../src/generated/prisma/client';
@@ -30,6 +31,7 @@ const BASE = 'http://127.0.0.1:4101';
 describe('auth-engine', () => {
   let app: INestApplication;
   let prisma: PrismaClient;
+  let loginCodes: LoginCodeService;
   const createdEmails: string[] = [];
 
   // The suite talks to the app it just started; the request URL is always resolved
@@ -73,6 +75,7 @@ describe('auth-engine', () => {
     });
     app.useGlobalFilters(new AllExceptionsFilter());
     app.useGlobalInterceptors(new BigIntGuardInterceptor(true));
+    loginCodes = app.get(LoginCodeService);
     await app.listen(4101, '127.0.0.1');
   });
 
@@ -166,6 +169,18 @@ describe('auth-engine', () => {
       role: 'client',
     });
     assert.equal(withNew.status, 201);
+  });
+
+  it('keeps one outstanding code when issuance races for one normalized email', async () => {
+    const email = `${unique('concurrent-issue')}@example.test`;
+    createdEmails.push(email);
+
+    await Promise.all([loginCodes.issue(` ${email.toUpperCase()} `), loginCodes.issue(email)]);
+
+    const outstanding = await prisma.loginCode.findMany({
+      where: { email, consumedAt: null },
+    });
+    assert.equal(outstanding.length, 1);
   });
 
   it('stops accepting a code after too many wrong attempts', async () => {

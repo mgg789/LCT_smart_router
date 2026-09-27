@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import type { LiveActionDto } from '../../api/dto/live.dto';
 import type {
@@ -7,26 +7,16 @@ import type {
   LiveEngineerStateView,
   LiveWorkdayView,
 } from '../../api/live-view.types';
-import { type PlanRouteView, type PlanStopView, toPlanView } from '../../api/plan-view';
-import { toRequestView } from '../../api/request-view';
 import { AppConfigService } from '../../common/config';
 import { SysError } from '../../common/errors';
 import { Clock } from '../../common/time';
-import type {
-  Availability,
-  Engineer,
-  LiveEngineerState,
-  LiveRequestState,
-  LiveWorkday,
-} from '../../generated/prisma/client';
+import type { Availability, LiveEngineerState, LiveWorkday } from '../../generated/prisma/client';
 import type { OperationContext } from '../../operations';
 import { APP_STATE_KEYS, PrismaService, type Tx, UnitOfWork } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import { AppliedPlanService } from '../../routing/router-gateway';
-import { visibleRouterPhase } from '../../routing/router-gateway/router-phase';
 import { DemoStandService } from '../demo-stand';
 import { EngineersService } from '../engineers';
-import { workDateOf } from '../engineers/workday';
 import { assertNoPendingHandoff, confirmHandoff, handoffView } from '../equipment/handoffs';
 import { FactsService } from '../facts';
 import {
@@ -34,6 +24,9 @@ import {
   type ExecutionTimingPolicyValue,
 } from '../facts/execution-timing-policy';
 import { RewardsService } from '../rewards';
+import { type DayWithStates, LiveDayState } from './live-day-state';
+import { LiveReadProjection } from './live-read-projection';
+import { LiveRouteQuery } from './live-route-query';
 import { forfeitsLunchOnLateEntry } from './lunch-forfeit';
 
 import {
@@ -49,11 +42,6 @@ const TECHNICAL_BREAK_OVERDUE_SEC = 20 * 60;
 const WINDOW_COMPLETION_GRACE_SEC = MATERIAL_DELAY_SEC;
 const POST_LUNCH_HANDOFF_GRACE_SEC = 5 * 60;
 
-type DayWithStates = LiveWorkday & {
-  engineers: Array<LiveEngineerState & { engineer: Engineer }>;
-  requests: LiveRequestState[];
-};
-
 /**
  * Persistent LIVE business flow. It maps wall-clock time onto the imported logical
  * timeline without changing auth/session time or the Router contracts. Every automatic
@@ -62,7 +50,6 @@ type DayWithStates = LiveWorkday & {
  */
 @Injectable()
 export class LiveService {
-  private readonly logger = new Logger(LiveService.name);
   private advanceInFlight: Promise<void> | null = null;
 
   constructor(
@@ -77,19 +64,10 @@ export class LiveService {
     private readonly plans: AppliedPlanService,
     private readonly publisher: SnapshotPublisher,
     private readonly demoStand: DemoStandService,
+    private readonly readProjection: LiveReadProjection,
+    private readonly dayState: LiveDayState,
+    private readonly routeQuery: LiveRouteQuery,
   ) {}
-
-  /**
-   * Fire-and-forget advance for paths that must not pay the latency. The rejection is
-   * contained here: on Node an unhandled rejection aborts the whole process.
-   */
-  private advanceInBackground(): void {
-    this.advanceOnce().catch((error: unknown) => {
-      this.logger.warn(
-        `Background advance failed: ${error instanceof Error ? error.message : 'unknown'}`,
-      );
-    });
-  }
 
   /**
    * Dispatcher entry.
@@ -107,7 +85,7 @@ export class LiveService {
 
   /** Starts the pending day exactly once and forces a fresh Router publication at t=0. */
   async start(context: OperationContext): Promise<DispatchLiveView> {
-    const pending = await this.ensureDay(context.tx, context.now);
+    const pending = await this.dayState.ensureDay(context.tx, context.now);
     await context.tx.$queryRaw`SELECT id FROM live_workdays WHERE id = ${pending.id} FOR UPDATE`;
     const day = await context.tx.liveWorkday.findUniqueOrThrow({ where: { id: pending.id } });
     if (day.status === 'pending') {
@@ -121,12 +99,17 @@ export class LiveService {
           version: { increment: 1 },
         },
       });
-      await this.ensureEngineerStates(context.tx, day.id, context.now);
+      await this.dayState.ensureEngineerStates(context.tx, day.id, context.now);
       await context.tx.engineerDay.updateMany({
         where: { workDate: day.workDate, lunchEnabled: true, lunchTaken: false },
         data: { lunchRequired: true },
       });
-      await this.captureRouteOrigins(context.tx, day.id, Number(day.logicalStartAt), context.now);
+      await this.dayState.captureRouteOrigins(
+        context.tx,
+        day.id,
+        Number(day.logicalStartAt),
+        context.now,
+      );
       // Import may already have published an identical task. Day start is deliberately
       // the sole exception: Router needs a publication stamped with logical t=0.
       await this.publisher.publishIfChanged(
@@ -156,14 +139,19 @@ export class LiveService {
     requestId: string,
     wallNow: number,
   ): Promise<void> {
-    const day = await this.ensureDay(tx, wallNow);
+    const day = await this.dayState.ensureDay(tx, wallNow);
     await tx.$queryRaw`SELECT id FROM live_workdays WHERE id = ${day.id} FOR UPDATE`;
-    const full = await this.dayWithStates(tx, day.id);
+    const full = await this.dayState.dayWithStates(tx, day.id);
     if (full.status !== 'running')
       throw SysError.forbidden('The dispatcher has not started the workday');
-    const current = await this.currentFor(tx, full, engineerId, this.liveNow(full, wallNow));
+    const current = await this.routeQuery.currentFor(
+      tx,
+      full,
+      engineerId,
+      this.dayState.liveNow(full, wallNow),
+    );
     this.assertCurrentRequest(current, requestId);
-    await assertNoPendingHandoff(tx, engineerId, requestId, this.liveNow(full, wallNow));
+    await assertNoPendingHandoff(tx, engineerId, requestId, this.dayState.liveNow(full, wallNow));
   }
 
   /** Legacy mutation endpoints must not bypass LIVE ordering or its business clock. */
@@ -187,7 +175,7 @@ export class LiveService {
   async synchronizeGlobalLunchSwitch(enabled: boolean): Promise<void> {
     const wallNow = this.clock.nowSeconds();
     await this.uow.run(async (tx) => {
-      const day = await this.ensureDay(tx, wallNow);
+      const day = await this.dayState.ensureDay(tx, wallNow);
       const lunch = standardLunchWindow(day.workDate);
       const changed = await tx.engineerDay.updateMany({
         where: { workDate: day.workDate, lunchTaken: false },
@@ -214,7 +202,7 @@ export class LiveService {
       if (changed.count > 0) {
         await this.publisher.publishIfChanged(
           tx,
-          day.status === 'running' ? this.liveNow(day, wallNow) : wallNow,
+          day.status === 'running' ? this.dayState.liveNow(day, wallNow) : wallNow,
           PUBLICATION_TRIGGERS.ENGINEER_WORKDAY_CHANGED,
           { businessTime: day.status === 'running' },
         );
@@ -238,13 +226,18 @@ export class LiveService {
         'Use LIVE technical breaks for return forecasts during a running workday',
       );
     await context.tx.$queryRaw`SELECT id FROM live_workdays WHERE id = ${day.id} FOR UPDATE`;
-    const state = await this.requireEngineerState(context.tx, day.id, engineerId, context.now);
+    const state = await this.dayState.requireEngineerState(
+      context.tx,
+      day.id,
+      engineerId,
+      context.now,
+    );
     if (state.lineStatus === 'technical_break')
       throw new SysError(
         'VALIDATION_FAILED',
         'The engineer must finish the technical break explicitly',
       );
-    const liveNow = this.liveNow(day, context.now);
+    const liveNow = this.dayState.liveNow(day, context.now);
     const line = lineStatusAfterDispatcherAvailability(
       availability,
       state.lineStartedAt,
@@ -275,13 +268,18 @@ export class LiveService {
     engineerId: string,
     input: LiveActionDto,
   ): Promise<EngineerLiveView> {
-    const day = await this.ensureDay(context.tx, context.now);
+    const day = await this.dayState.ensureDay(context.tx, context.now);
     if (day.status !== 'running') {
       throw new SysError('VALIDATION_FAILED', 'The dispatcher has not started the workday');
     }
-    const liveNow = this.liveNow(day, context.now);
+    const liveNow = this.dayState.liveNow(day, context.now);
     await this.advanceIn(context.tx, day, context.now, liveNow);
-    const state = await this.requireEngineerState(context.tx, day.id, engineerId, context.now);
+    const state = await this.dayState.requireEngineerState(
+      context.tx,
+      day.id,
+      engineerId,
+      context.now,
+    );
     const businessContext: OperationContext = { ...context, now: liveNow, businessTime: true };
     if (input.kind !== 'online' && input.kind !== 'break_finish' && state.lineStatus !== 'online') {
       throw SysError.forbidden('Go online before recording LIVE work actions', {
@@ -353,7 +351,7 @@ export class LiveService {
         break;
 
       case 'eta': {
-        const current = await this.currentFor(context.tx, day, engineerId, liveNow);
+        const current = await this.routeQuery.currentFor(context.tx, day, engineerId, liveNow);
         this.assertCurrentRequest(current, input.requestId);
         // Once the customer window is open the UI offers an early start *alongside*
         // the ETA controls until the planned service slot begins.
@@ -446,7 +444,7 @@ export class LiveService {
 
       case 'start': {
         await assertNoPendingHandoff(context.tx, engineerId, input.requestId, liveNow);
-        const current = await this.currentFor(context.tx, day, engineerId, liveNow);
+        const current = await this.routeQuery.currentFor(context.tx, day, engineerId, liveNow);
         this.assertCurrentRequest(current, input.requestId);
         if (current.phase !== 'ready_to_start') {
           throw new SysError('VALIDATION_FAILED', 'This visit is not ready to start yet');
@@ -622,20 +620,20 @@ export class LiveService {
       // advance or create state for the new roster even if an interrupted reset left it.
       const days = await tx.liveWorkday.findMany({ where: { generation, status: 'running' } });
       for (const day of days) {
-        await this.advanceIn(tx, day, wallNow, this.liveNow(day, wallNow), timing);
+        await this.advanceIn(tx, day, wallNow, this.dayState.liveNow(day, wallNow), timing);
       }
     });
   }
 
   private async dispatchViewIn(tx: Tx, wallNow: number): Promise<DispatchLiveView> {
-    const day = await this.ensureDay(tx, wallNow);
-    await this.ensureEngineerStates(tx, day.id, wallNow);
-    const full = await this.dayWithStates(tx, day.id);
+    const day = await this.dayState.ensureDay(tx, wallNow);
+    await this.dayState.ensureEngineerStates(tx, day.id, wallNow);
+    const full = await this.dayState.dayWithStates(tx, day.id);
     const requestCount = await tx.request.count({
       where: { lifecycle: { in: ['submitted', 'in_progress'] } },
     });
     return {
-      workday: await this.toWorkdayView(tx, full, wallNow, requestCount),
+      workday: await this.dayState.toWorkdayView(tx, full, wallNow, requestCount),
       engineers: await this.engineerStatesView(tx, full, wallNow),
       breaks: await this.breakHistory(tx, full),
       history: await this.historyView(tx, full),
@@ -650,51 +648,7 @@ export class LiveService {
   }
 
   private async breakHistory(tx: Tx, day: LiveWorkday): Promise<DispatchLiveView['breaks']> {
-    if (day.startedAtWallSec === null) return [];
-    const rows = await tx.operation.findMany({
-      where: {
-        state: 'applied',
-        action: { in: ['live.engineer.break_start', 'live.engineer.break_finish'] },
-        createdAt: { gte: day.startedAtWallSec },
-      },
-      orderBy: { createdAt: 'asc' },
-      select: { operationId: true, action: true, response: true },
-    });
-    const schema = z.object({
-      value: z.object({
-        workday: z.object({ id: z.string(), liveNow: z.number() }),
-        engineer: z.object({
-          id: z.string(),
-          technicalBreak: z.object({ startedAt: z.number(), plannedEndAt: z.number() }).nullable(),
-        }),
-      }),
-    });
-    const events = rows.flatMap((row) => {
-      const parsed = schema.safeParse(row.response);
-      return parsed.success && parsed.data.value.workday.id === day.id
-        ? [{ ...row, value: parsed.data.value }]
-        : [];
-    });
-    return events.flatMap((event) => {
-      const stop = event.value.engineer.technicalBreak;
-      if (event.action !== 'live.engineer.break_start' || !stop) return [];
-      const finish = events
-        .filter(
-          (other) =>
-            other.action === 'live.engineer.break_finish' &&
-            other.value.engineer.id === event.value.engineer.id &&
-            other.value.workday.liveNow >= stop.startedAt,
-        )
-        .sort((a, b) => a.value.workday.liveNow - b.value.workday.liveNow)[0];
-      return [
-        {
-          id: event.operationId,
-          engineerId: event.value.engineer.id,
-          ...stop,
-          endedAt: finish?.value.workday.liveNow ?? null,
-        },
-      ];
-    });
+    return this.readProjection.breakHistory(tx, day);
   }
 
   private async engineerViewIn(
@@ -702,10 +656,10 @@ export class LiveService {
     engineerId: string,
     wallNow: number,
   ): Promise<EngineerLiveView> {
-    const day = await this.ensureDay(tx, wallNow);
-    await this.requireEngineerState(tx, day.id, engineerId, wallNow);
-    const full = await this.dayWithStates(tx, day.id);
-    const liveNow = this.liveNow(full, wallNow);
+    const day = await this.dayState.ensureDay(tx, wallNow);
+    await this.dayState.requireEngineerState(tx, day.id, engineerId, wallNow);
+    const full = await this.dayState.dayWithStates(tx, day.id);
+    const liveNow = this.dayState.liveNow(full, wallNow);
     const views = await this.engineerStatesView(
       tx,
       {
@@ -716,10 +670,16 @@ export class LiveService {
     );
     const engineer = views.find((item) => item.id === engineerId);
     if (!engineer) throw SysError.notFound('Engineer', { engineerId });
-    const current = await this.currentFor(tx, full, engineerId, liveNow);
-    const lunch = await this.activeLunch(tx, full.workDate, engineerId, current.route, liveNow);
+    const current = await this.routeQuery.currentFor(tx, full, engineerId, liveNow);
+    const lunch = await this.routeQuery.activeLunch(
+      tx,
+      full.workDate,
+      engineerId,
+      current.route,
+      liveNow,
+    );
     return {
-      workday: await this.toWorkdayView(
+      workday: await this.dayState.toWorkdayView(
         tx,
         full,
         wallNow,
@@ -741,82 +701,6 @@ export class LiveService {
     };
   }
 
-  private async ensureDay(tx: Tx, wallNow: number): Promise<LiveWorkday> {
-    const generationRow = await tx.appState.findUnique({
-      where: { key: APP_STATE_KEYS.GENERATION },
-    });
-    const generation = typeof generationRow?.value === 'number' ? generationRow.value : 1;
-    // A fast demo may cross real midnight while its logical day is still running. The
-    // durable running row wins over a calendar-derived new pending card.
-    const running = await tx.liveWorkday.findFirst({
-      where: { generation, status: 'running' },
-      orderBy: { startedAtWallSec: 'desc' },
-    });
-    if (running) return running;
-    const workDate = workDateOf(wallNow, this.config.get('APP_TIME_ZONE'));
-    const existing = await tx.liveWorkday.findUnique({
-      where: { generation_workDate: { generation, workDate } },
-    });
-
-    const [days, requests] = await Promise.all([
-      tx.engineerDay.findMany({
-        where: { workDate },
-        select: { shiftStartAt: true, shiftEndAt: true },
-      }),
-      tx.request.findMany({
-        where: { lifecycle: 'submitted', windowEndAt: { gte: BigInt(wallNow - 24 * 3600) } },
-        select: { windowStartAt: true, windowEndAt: true },
-      }),
-    ]);
-    const starts = [
-      ...days.flatMap((item) => (item.shiftStartAt === null ? [] : [Number(item.shiftStartAt)])),
-      ...requests.map((item) => Number(item.windowStartAt)),
-    ].filter((value) => Number.isSafeInteger(value));
-    const ends = [
-      ...days.flatMap((item) => (item.shiftEndAt === null ? [] : [Number(item.shiftEndAt)])),
-      ...requests.map((item) => Number(item.windowEndAt)),
-    ].filter((value) => Number.isSafeInteger(value));
-    const logicalStartAt = starts.length > 0 ? Math.min(...starts) : wallNow;
-    const logicalEndAt = Math.max(
-      logicalStartAt + 1,
-      Date.parse(`${workDate}T17:00:00+03:00`) / 1000,
-      ...(ends.length > 0 ? ends : [logicalStartAt + 8 * 3600]),
-    );
-    if (existing) {
-      // An import or profile change before the dispatcher presses Start may alter the
-      // demonstration horizon. Refresh only a pending card; once started its clock is
-      // immutable and survives restarts exactly.
-      if (
-        existing.status === 'pending' &&
-        (Number(existing.logicalStartAt) !== logicalStartAt ||
-          Number(existing.logicalEndAt) !== logicalEndAt)
-      ) {
-        return tx.liveWorkday.update({
-          where: { id: existing.id },
-          data: {
-            logicalStartAt: BigInt(logicalStartAt),
-            logicalEndAt: BigInt(logicalEndAt),
-            updatedAt: BigInt(wallNow),
-            version: { increment: 1 },
-          },
-        });
-      }
-      return existing;
-    }
-    return tx.liveWorkday.upsert({
-      where: { generation_workDate: { generation, workDate } },
-      update: {},
-      create: {
-        generation,
-        workDate,
-        logicalStartAt: BigInt(logicalStartAt),
-        logicalEndAt: BigInt(logicalEndAt),
-        createdAt: BigInt(wallNow),
-        updatedAt: BigInt(wallNow),
-      },
-    });
-  }
-
   /** Archived and synthetic leftovers are not a roster the coordinator can mutate. */
   private async activeRosterEngineer(tx: Tx, engineerId: string): Promise<boolean> {
     const engineer = await tx.engineer.findFirst({
@@ -824,179 +708,6 @@ export class LiveService {
       select: { id: true },
     });
     return engineer !== null;
-  }
-
-  private async ensureEngineerStates(tx: Tx, workdayId: string, wallNow: number): Promise<void> {
-    const workday = await tx.liveWorkday.findUniqueOrThrow({ where: { id: workdayId } });
-    const days = await tx.engineerDay.findMany({
-      where: { workDate: workday.workDate, engineer: { archivedAt: null } },
-      select: { engineerId: true },
-    });
-    if (days.length === 0) return;
-    // Every LIVE read calls this guard. One idempotent insert keeps the hot polling path
-    // constant-round-trip instead of issuing one upsert per engineer every two seconds.
-    await tx.liveEngineerState.createMany({
-      data: days.map((day) => ({
-        workdayId,
-        engineerId: day.engineerId,
-        createdAt: BigInt(wallNow),
-        updatedAt: BigInt(wallNow),
-      })),
-      skipDuplicates: true,
-    });
-  }
-
-  /**
-   * Persists the depot vertex that started this LIVE day.
-   *
-   * The accepted Router plan is allowed to be replaced during the day; using its current
-   * route start for the UI cursor made the historical beginning of the route jump after
-   * a replan. The first accepted route is therefore copied exactly once into LIVE state.
-   */
-  private async captureRouteOrigins(
-    tx: Tx,
-    workdayId: string,
-    logicalStartAt: number,
-    wallNow: number,
-  ): Promise<void> {
-    const plan = await this.plans.current(tx);
-    if (!plan) return;
-    const routes = new Map(toPlanView(plan).routes.map((route) => [route.engineerId, route]));
-    const states = await tx.liveEngineerState.findMany({
-      where: {
-        workdayId,
-        OR: [{ routeOriginLat: null }, { routeOriginLon: null }, { routeOriginAt: null }],
-      },
-    });
-    for (const state of states) {
-      const route = routes.get(state.engineerId);
-      if (!route || route.startLat === undefined || route.startLon === undefined) continue;
-      await tx.liveEngineerState.update({
-        where: { id: state.id },
-        data: {
-          routeOriginLat: route.startLat,
-          routeOriginLon: route.startLon,
-          routeOriginAt: BigInt(logicalStartAt),
-          updatedAt: BigInt(wallNow),
-          version: { increment: 1 },
-        },
-      });
-    }
-  }
-
-  private async requireEngineerState(
-    tx: Tx,
-    workdayId: string,
-    engineerId: string,
-    wallNow: number,
-  ) {
-    await this.ensureEngineerStates(tx, workdayId, wallNow);
-    const state = await tx.liveEngineerState.findUnique({
-      where: { workdayId_engineerId: { workdayId, engineerId } },
-    });
-    if (!state) throw SysError.notFound('Engineer', { engineerId });
-    return state;
-  }
-
-  private async dayWithStates(tx: Tx, id: string): Promise<DayWithStates> {
-    return tx.liveWorkday.findUniqueOrThrow({
-      where: { id },
-      include: {
-        engineers: { include: { engineer: true }, orderBy: { engineer: { inputOrder: 'asc' } } },
-        requests: true,
-      },
-    });
-  }
-
-  private liveNow(
-    day: Pick<
-      LiveWorkday,
-      | 'status'
-      | 'logicalStartAt'
-      | 'logicalEndAt'
-      | 'startedAtWallSec'
-      | 'speedDurationSec'
-      | 'finishedAt'
-    >,
-    wallNow: number,
-  ): number {
-    const start = Number(day.logicalStartAt);
-    if (day.status === 'finished')
-      return nullableNumber(day.finishedAt) ?? Number(day.logicalEndAt);
-    if (day.status !== 'running' || day.startedAtWallSec === null) return start;
-    const duration = Math.max(1, Number(day.logicalEndAt) - start);
-    const elapsedWall = Math.max(0, wallNow - Number(day.startedAtWallSec));
-    const elapsedLogical =
-      day.speedDurationSec === null
-        ? elapsedWall
-        : Math.floor((elapsedWall * duration) / day.speedDurationSec);
-    // End-of-shift stops cannot be newly scheduled, but an explicit in-progress visit
-    // or technical break must still be finishable afterwards.  Keep its business clock
-    // advancing instead of freezing the action surface at logicalEndAt.
-    return start + elapsedLogical;
-  }
-
-  private async toWorkdayView(
-    tx: Tx,
-    day: LiveWorkday,
-    wallNow: number,
-    requestCount: number,
-  ): Promise<LiveWorkdayView> {
-    const duration = Math.max(1, Number(day.logicalEndAt) - Number(day.logicalStartAt));
-    return {
-      id: day.id,
-      status: day.status,
-      workDate: day.workDate,
-      logicalStartAt: Number(day.logicalStartAt),
-      logicalEndAt: Number(day.logicalEndAt),
-      startedAtWallSec: nullableNumber(day.startedAtWallSec),
-      finishedAt: nullableNumber(day.finishedAt),
-      completionReason:
-        day.completionReason === 'schedule_exhausted' || day.completionReason === 'logical_end'
-          ? day.completionReason
-          : null,
-      liveNow: this.liveNow(day, wallNow),
-      speedDurationSec: day.speedDurationSec,
-      speedFactor: day.speedDurationSec === null ? 1 : duration / day.speedDurationSec,
-      engineerStartDeadlineAt: Number(day.logicalStartAt) + NO_SHOW_SEC,
-      requestCount,
-      stats: await this.statsFor(tx, day),
-      ...(await this.planFreshness(tx)),
-    };
-  }
-
-  /** Revision and router phase without loading route geometry or calling Router. */
-  private async planFreshness(tx: Tx): Promise<{
-    planRevision: number | null;
-    calculating: boolean;
-    routerPhase: 'building' | 'ready' | 'error';
-    routerMessage: string | null;
-    geometryDone: number;
-    geometryTotal: number;
-  }> {
-    const [applied, published] = await Promise.all([
-      tx.appliedPlanCurrent.findUnique({
-        where: { id: 'singleton' },
-        select: {
-          plan: { select: { revision: true, routerResult: { select: { inputHash: true } } } },
-        },
-      }),
-      tx.routingCurrent.findUnique({
-        where: { id: 'singleton' },
-        select: { snapshot: { select: { inputHash: true } } },
-      }),
-    ]);
-    const appliedHash = applied?.plan.routerResult?.inputHash ?? null;
-    const publishedHash = published?.snapshot.inputHash ?? null;
-    const phase = visibleRouterPhase(publishedHash !== null && publishedHash !== appliedHash);
-    return {
-      planRevision: applied?.plan.revision ?? null,
-      calculating: phase.phase === 'building',
-      routerPhase: phase.phase,
-      routerMessage: phase.message,
-      geometryDone: phase.geometryDone,
-      geometryTotal: phase.geometryTotal,
-    };
   }
 
   private async engineerStatesView(
@@ -1024,7 +735,7 @@ export class LiveService {
       ),
     );
     const byRequest = new Map(day.requests.map((state) => [state.requestId, state]));
-    const liveNow = this.liveNow(day, wallNow);
+    const liveNow = this.dayState.liveNow(day, wallNow);
     // One plan read for the whole roster. Loading it again per engineer kept the
     // routing lock busy long enough that login, passports and the engineer app timed out.
     const loadedPlan = await this.plans.currentRoster(tx);
@@ -1040,7 +751,7 @@ export class LiveService {
             item.problemNote &&
             item.additionalDurationSec,
         );
-        const current = await this.currentFor(
+        const current = await this.routeQuery.currentFor(
           tx,
           day,
           state.engineerId,
@@ -1049,7 +760,7 @@ export class LiveService {
           loadedPlan?.revision ?? null,
         );
         const replanPending = 'replanPending' in current && current.replanPending === true;
-        const lunch = await this.activeLunch(
+        const lunch = await this.routeQuery.activeLunch(
           tx,
           day.workDate,
           state.engineerId,
@@ -1102,7 +813,7 @@ export class LiveService {
               : null,
           routeState,
           canFinishDay,
-          progress: await this.routeProgress(
+          progress: await this.readProjection.routeProgress(
             tx,
             state,
             current.route,
@@ -1131,11 +842,17 @@ export class LiveService {
       state.lineStatus !== 'online'
     )
       return false;
-    const current = await this.currentFor(tx, day, state.engineerId, liveNow);
+    const current = await this.routeQuery.currentFor(tx, day, state.engineerId, liveNow);
     if (
       current.current ||
       ('replanPending' in current && current.replanPending) ||
-      (await this.activeLunch(tx, day.workDate, state.engineerId, current.route, liveNow))
+      (await this.routeQuery.activeLunch(
+        tx,
+        day.workDate,
+        state.engineerId,
+        current.route,
+        liveNow,
+      ))
     )
       return false;
     const plan = await this.plans.current(tx);
@@ -1190,60 +907,7 @@ export class LiveService {
 
   /** Read-only history overlay; Router's active plan stays an immutable future plan. */
   private async historyView(tx: Tx, day: DayWithStates): Promise<DispatchLiveView['history']> {
-    const rows = await tx.request.findMany({
-      where: {
-        OR: [
-          { lifecycle: 'completed' },
-          { lifecycle: 'cancelled' },
-          { liveStates: { some: { workdayId: day.id, assumedCompletedAt: { not: null } } } },
-        ],
-      },
-      orderBy: { arrivalOrder: 'asc' },
-    });
-    const live = new Map(day.requests.map((item) => [item.requestId, item]));
-    return Promise.all(
-      rows.map(async (request) => {
-        const assignment = await tx.appliedPlanAssignment.findFirst({
-          where: { requestId: request.id },
-          orderBy: { plan: { revision: 'desc' } },
-        });
-        const stopRow = assignment
-          ? await tx.appliedPlanStop.findFirst({
-              where: { requestId: request.id, route: { planId: assignment.planId } },
-            })
-          : null;
-        const stop = stopRow
-          ? {
-              sequence: stopRow.sequence,
-              kind: stopRow.kind,
-              requestId: stopRow.requestId,
-              lat: stopRow.lat,
-              lon: stopRow.lon,
-              arrivalAt: Number(stopRow.arrivalAt),
-              startAt: Number(stopRow.startAt),
-              endAt: Number(stopRow.endAt),
-            }
-          : null;
-        const state = live.get(request.id) ?? null;
-        return {
-          request: toRequestView(request, state),
-          engineerId: assignment?.engineerId ?? null,
-          stop,
-          outcome:
-            state?.assumedCompletedAt !== null && state !== null
-              ? ('assumed_completed' as const)
-              : request.lifecycle === 'cancelled'
-                ? ('cancelled' as const)
-                : ('completed' as const),
-          terminalAt:
-            nullableNumber(state?.assumedCompletedAt ?? null) ??
-            nullableNumber(request.cancelledAt) ??
-            nullableNumber(request.completedAt) ??
-            nullableNumber(request.updatedAt) ??
-            Number(day.logicalStartAt),
-        };
-      }),
-    );
+    return this.readProjection.historyView(tx, day);
   }
 
   /** Aggregates role-scoped outcome counters from durable request and LIVE state facts. */
@@ -1252,512 +916,11 @@ export class LiveService {
     day: LiveWorkday,
     engineerId?: string,
   ): Promise<LiveWorkdayView['stats']> {
-    const states = await tx.liveRequestState.findMany({
-      where: {
-        workdayId: day.id,
-        ...(engineerId ? { reservedEngineerId: engineerId } : {}),
-      },
-      select: { requestId: true, assumedCompletedAt: true, problemKind: true },
-    });
-    const requestIds = states.map((state) => state.requestId);
-    const [completedCount, cancelledCount, technicalBreakCount] = await Promise.all([
-      requestIds.length === 0
-        ? 0
-        : tx.request.count({ where: { id: { in: requestIds }, lifecycle: 'completed' } }),
-      requestIds.length === 0
-        ? 0
-        : tx.request.count({ where: { id: { in: requestIds }, lifecycle: 'cancelled' } }),
-      engineerId
-        ? tx.operation.count({
-            where: {
-              state: 'applied',
-              action: 'live.engineer.break_start',
-              targetRef: engineerId,
-              createdAt: { gte: day.startedAtWallSec ?? BigInt(0) },
-            },
-          })
-        : tx.operation.count({
-            where: {
-              state: 'applied',
-              action: 'live.engineer.break_start',
-              createdAt: { gte: day.startedAtWallSec ?? BigInt(0) },
-            },
-          }),
-    ]);
-    return {
-      completedCount,
-      cancelledCount,
-      assumedCompletedCount: states.filter((state) => state.assumedCompletedAt !== null).length,
-      problemCount: states.filter((state) => state.problemKind !== null).length,
-      technicalBreakCount,
-    };
-  }
-
-  /** Projects the factual graph cursor without allowing a fresh Router revision to move it. */
-  private async routeProgress(
-    tx: Tx,
-    state: LiveEngineerState,
-    route: PlanRouteView | null,
-    activeRequestId: string | null,
-    lunch: { startedAt: number; endAt: number } | null,
-    liveNow: number,
-    suppressNext: boolean,
-  ): Promise<LiveEngineerStateView['progress']> {
-    const pointFor = async (requestId: string | null) => {
-      if (requestId) {
-        const request = await tx.request.findUnique({
-          where: { id: requestId },
-          select: { lat: true, lon: true },
-        });
-        if (request !== null && request.lat !== null && request.lon !== null) {
-          return { kind: 'job' as const, requestId, lat: request.lat, lon: request.lon };
-        }
-      }
-      return null;
-    };
-    const originBase =
-      state.routeOriginLat !== null && state.routeOriginLon !== null
-        ? {
-            kind: 'start' as const,
-            requestId: null,
-            lat: state.routeOriginLat,
-            lon: state.routeOriginLon,
-          }
-        : route?.startLat !== undefined && route.startLon !== undefined
-          ? {
-              kind: 'start' as const,
-              requestId: null,
-              lat: route.startLat,
-              lon: route.startLon,
-            }
-          : null;
-    if (!originBase) return null;
-    const origin = {
-      ...originBase,
-      at: nullableNumber(state.routeOriginAt) ?? route?.startAt ?? liveNow,
-    };
-    const anchorBase = (await pointFor(state.routeAnchorRequestId)) ?? originBase;
-    const anchor = {
-      ...anchorBase,
-      at: nullableNumber(state.routeAnchorReachedAt) ?? origin.at,
-    };
-    const routeJobs = (suppressNext ? [] : (route?.stops ?? [])).filter(
-      (stop): stop is PlanStopView & { requestId: string } =>
-        stop.kind === 'job' && stop.requestId !== null,
-    );
-    const anchorSequence = routeJobs.find(
-      (stop) => stop.requestId === state.routeAnchorRequestId,
-    )?.sequence;
-    const possibleNext = routeJobs.filter(
-      (stop) => anchorSequence === undefined || stop.sequence > anchorSequence,
-    );
-    const possibleIds = possibleNext.map((stop) => stop.requestId);
-    const viableNext = await tx.request.findMany({
-      where: {
-        id: { in: possibleIds },
-        lifecycle: 'submitted',
-        liveStates: {
-          none: { workdayId: state.workdayId, assumedCompletedAt: { not: null } },
-        },
-      },
-      select: { id: true },
-    });
-    const viableIds = new Set(viableNext.map((request) => request.id));
-    // The graph cursor moves forward from its durable anchor. Looking for merely a
-    // different id can select an already traversed stop that appears earlier in the
-    // immutable accepted plan.
-    const nextStop = possibleNext.find((stop) => viableIds.has(stop.requestId));
-    const next = nextStop?.requestId
-      ? {
-          kind: 'job' as const,
-          requestId: nextStop.requestId,
-          lat: nextStop.lat,
-          lon: nextStop.lon,
-          at: nextStop.startAt,
-        }
-      : null;
-    const workday = await tx.liveWorkday.findUnique({
-      where: { id: state.workdayId },
-      select: { workDate: true },
-    });
-    const engineerDay = workday
-      ? await tx.engineerDay.findUnique({
-          where: {
-            engineerId_workDate: { engineerId: state.engineerId, workDate: workday.workDate },
-          },
-          select: { lunchTaken: true },
-        })
-      : null;
-    // Lunch is a structural part of the traversed edge as soon as the preceding job is
-    // left. It is not a waiting vertex: the UI must highlight job→lunch→next before the
-    // clock enters the break, and keep that compound edge until the next job is reached.
-    const structuralLunch =
-      engineerDay?.lunchTaken ||
-      state.routeAnchorDepartedAt === null ||
-      activeRequestId !== null ||
-      nextStop === undefined
-        ? null
-        : (route?.stops.find(
-            (stop) =>
-              stop.kind === 'lunch' &&
-              stop.sequence < nextStop.sequence &&
-              (anchorSequence === undefined || stop.sequence > anchorSequence),
-          ) ?? null);
-    const persistedLunch =
-      state.activeLunchLat !== null &&
-      state.activeLunchLon !== null &&
-      state.activeLunchStartedAt !== null
-        ? {
-            kind: 'lunch' as const,
-            requestId: null,
-            lat: state.activeLunchLat,
-            lon: state.activeLunchLon,
-            at: Number(state.activeLunchStartedAt),
-          }
-        : null;
-    if (lunch || persistedLunch || structuralLunch) {
-      const lunchStop = route?.stops.find(
-        (stop) =>
-          stop.kind === 'lunch' &&
-          (lunch
-            ? stop.startAt <= lunch.startedAt && lunch.startedAt < stop.endAt
-            : persistedLunch !== null
-              ? stop.lat === persistedLunch.lat && stop.lon === persistedLunch.lon
-              : stop === structuralLunch),
-      );
-      const lunchPoint =
-        persistedLunch ??
-        (lunch
-          ? lunchStop
-            ? {
-                kind: 'lunch' as const,
-                requestId: null,
-                lat: lunchStop.lat,
-                lon: lunchStop.lon,
-                at: lunch.startedAt,
-              }
-            : null
-          : structuralLunch
-            ? {
-                kind: 'lunch' as const,
-                requestId: null,
-                lat: structuralLunch.lat,
-                lon: structuralLunch.lon,
-                at: structuralLunch.startAt,
-              }
-            : null);
-      const afterLunch = possibleNext.find(
-        (stop) => viableIds.has(stop.requestId) && (!lunch || stop.startAt >= lunch.endAt),
-      );
-      return {
-        phase: lunch ? 'lunch' : 'traveling',
-        origin,
-        anchor,
-        lunch: lunchPoint,
-        next: afterLunch?.requestId
-          ? {
-              kind: 'job',
-              requestId: afterLunch.requestId,
-              lat: afterLunch.lat,
-              lon: afterLunch.lon,
-              at: afterLunch.startAt,
-            }
-          : next,
-        occurredAt:
-          lunch?.startedAt ??
-          Number(state.routeAnchorDepartedAt ?? state.activeLunchStartedAt ?? BigInt(liveNow)),
-      };
-    }
-    if (activeRequestId) {
-      const active = await pointFor(activeRequestId);
-      if (active) {
-        const reachedAt = nullableNumber(state.routeAnchorReachedAt) ?? liveNow;
-        return {
-          phase: 'on_site',
-          origin,
-          anchor: { ...active, at: reachedAt },
-          lunch: null,
-          next,
-          occurredAt: reachedAt,
-        };
-      }
-    }
-    if (state.routeAnchorDepartedAt !== null) {
-      return {
-        phase: 'traveling',
-        origin,
-        anchor,
-        lunch: null,
-        next,
-        occurredAt: Number(state.routeAnchorDepartedAt),
-      };
-    }
-    return {
-      // Going online is a factual departure from the depot. The start marker remains
-      // only as the origin of the highlighted first edge until the first explicit or
-      // silent job start reaches its vertex.
-      phase: state.lineStartedAt === null ? 'not_started' : 'traveling',
-      origin,
-      anchor,
-      lunch: null,
-      next,
-      occurredAt:
-        nullableNumber(state.routeAnchorReachedAt) ??
-        nullableNumber(state.lineStartedAt) ??
-        liveNow,
-    };
-  }
-
-  private async currentFor(
-    tx: Tx,
-    day: DayWithStates | LiveWorkday,
-    engineerId: string,
-    liveNow: number,
-    loadedRoutes?: readonly PlanRouteView[],
-    loadedRevision?: number | null,
-  ) {
-    let routes: readonly PlanRouteView[];
-    let revision: number | null;
-    if (loadedRoutes) {
-      routes = loadedRoutes;
-      revision = loadedRevision ?? null;
-    } else {
-      const plan = await this.plans.current(tx);
-      routes = plan ? toPlanView(plan).routes : [];
-      revision = plan?.revision ?? null;
-    }
-    let route = routes.find((item) => item.engineerId === engineerId) ?? null;
-    const stateRows =
-      'requests' in day
-        ? day.requests
-        : await tx.liveRequestState.findMany({ where: { workdayId: day.id } });
-    const assumed = new Set(
-      stateRows.filter((item) => item.assumedCompletedAt !== null).map((item) => item.requestId),
-    );
-    const liveByRequest = new Map(stateRows.map((item) => [item.requestId, item]));
-    const active = await tx.request.findFirst({
-      where: { lifecycle: 'in_progress', facts: { some: { engineerId, kind: 'started' } } },
-      orderBy: { startedAt: 'desc' },
-    });
-    if (active) {
-      const startedAt = Number(active.startedAt);
-      const plannedStop: PlanStopView | null =
-        route?.stops.find((item) => item.requestId === active.id) ??
-        (active.lat !== null && active.lon !== null
-          ? {
-              sequence: 0,
-              kind: 'job',
-              requestId: active.id,
-              lat: active.lat,
-              lon: active.lon,
-              arrivalAt: startedAt,
-              startAt: startedAt,
-              endAt: Number(
-                active.expectedCompletionAt ?? BigInt(startedAt + active.serviceDurationSec),
-              ),
-            }
-          : null);
-      const stop = plannedStop
-        ? {
-            ...plannedStop,
-            arrivalAt: startedAt,
-            startAt: startedAt,
-            endAt: Number(
-              active.expectedCompletionAt ?? BigInt(startedAt + active.serviceDurationSec),
-            ),
-          }
-        : null;
-      if (stop && route?.stops.some((item) => item.requestId === active.id)) {
-        route = {
-          ...route,
-          stops: route.stops.map((item) => (item.requestId === active.id ? stop : item)),
-        };
-      }
-      if (stop && !route?.stops.some((item) => item.requestId === active.id)) {
-        route = route
-          ? { ...route, stops: [stop, ...route.stops] }
-          : {
-              engineerId,
-              startLat: stop.lat,
-              startLon: stop.lon,
-              startAt: stop.startAt,
-              finishAt: stop.endAt,
-              distanceKm: 0,
-              travelTimeSec: 0,
-              workTimeSec: active.serviceDurationSec,
-              waitingTimeSec: 0,
-              lunchTimeSec: 0,
-              assignedCount: 1,
-              lunchStatus: 'none',
-              legs: [],
-              stops: [stop],
-            };
-      }
-      return {
-        route,
-        stop,
-        phase: 'in_progress' as const,
-        current: {
-          request: toRequestView(active, liveByRequest.get(active.id) ?? null),
-          stop,
-          phase: 'in_progress' as const,
-          expectedCompletionAt: nullableNumber(active.expectedCompletionAt),
-          overrunAt: nullableNumber(active.overrunDetectedAt),
-        },
-      };
-    }
-    // Lunch is a non-interactive blocking interval. Returning no current job makes all
-    // staged actions refuse through the same server-side current-request guard.
-    if (await this.activeLunch(tx, day.workDate, engineerId, route, liveNow))
-      return { route, stop: null, phase: null, current: null };
-    const replanPending = stateRows.some(
-      (item) =>
-        item.replanPendingEngineerId === engineerId &&
-        item.replanPendingPlanRevision !== null &&
-        item.replanPendingPlanRevision === revision,
-    );
-    if (replanPending) {
-      return { route, stop: null, phase: null, current: null, replanPending: true as const };
-    }
-    const reserved = await tx.liveRequestState.findFirst({
-      where: {
-        workdayId: day.id,
-        reservedEngineerId: engineerId,
-        assumedCompletedAt: null,
-        request: { lifecycle: 'submitted' },
-        OR: [{ reportedEtaAt: { not: null } }, { assumedStartedAt: { not: null } }],
-      },
-      orderBy: { updatedAt: 'desc' },
-    });
-    if (reserved) {
-      const request = await tx.request.findUnique({ where: { id: reserved.requestId } });
-      if (request?.lifecycle === 'submitted') {
-        if (request.lat === null || request.lon === null) {
-          // A reservation can only be projected when the request remains routable.
-          // Do not invent a location merely to keep a stale card interactive.
-          return { route, stop: null, phase: null, current: null };
-        }
-        const reservedAt = reserved.reportedEtaAt ?? reserved.assumedStartedAt;
-        if (reservedAt === null) throw new Error('A reserved visit requires a start forecast');
-        const plannedAt = Number(reservedAt);
-        const stop: PlanStopView = {
-          sequence: 0,
-          kind: 'job',
-          requestId: request.id,
-          lat: request.lat,
-          lon: request.lon,
-          arrivalAt: plannedAt,
-          startAt: plannedAt,
-          endAt: plannedAt + request.serviceDurationSec,
-        };
-        // Router deliberately omits the pinned reservation from its remaining input.
-        // The engineer still needs to see the acknowledged visit, therefore the LIVE
-        // projection overlays it locally without changing the applied solver route.
-        if (route) {
-          const withoutPinned = route.stops.filter((item) => item.requestId !== request.id);
-          route = {
-            ...route,
-            assignedCount: route.assignedCount + 1,
-            workTimeSec: route.workTimeSec + request.serviceDurationSec,
-            stops: [stop, ...withoutPinned]
-              .sort((a, b) => a.startAt - b.startAt)
-              .map((item, index) => ({ ...item, sequence: index })),
-          };
-        } else {
-          route = {
-            engineerId,
-            startLat: request.lat,
-            startLon: request.lon,
-            startAt: plannedAt,
-            finishAt: stop.endAt,
-            distanceKm: 0,
-            travelTimeSec: 0,
-            workTimeSec: request.serviceDurationSec,
-            waitingTimeSec: 0,
-            lunchTimeSec: 0,
-            assignedCount: 1,
-            lunchStatus: 'none',
-            legs: [],
-            stops: [stop],
-          };
-        }
-        const phase =
-          liveNow < plannedAt && liveNow < request.windowStartAt
-            ? ('awaiting_window' as const)
-            : ('ready_to_start' as const);
-        return {
-          route,
-          stop,
-          phase,
-          current: {
-            request: toRequestView(request, reserved),
-            stop,
-            phase,
-            expectedCompletionAt: null,
-            overrunAt: null,
-          },
-        };
-      }
-    }
-    const stops = (route?.stops ?? []).filter(
-      (stop) =>
-        stop.kind === 'job' &&
-        stop.requestId &&
-        !assumed.has(stop.requestId) &&
-        stop.endAt >= liveNow,
-    );
-    const requestIds = stops.flatMap((stop) => (stop.requestId ? [stop.requestId] : []));
-    const requests = await tx.request.findMany({
-      where: { id: { in: requestIds }, lifecycle: 'submitted' },
-    });
-    const requestsById = new Map(requests.map((request) => [request.id, request]));
-    // An applied plan is immutable history until Router accepts its replacement. A
-    // completed or cancelled first stop must therefore be skipped locally instead of
-    // hiding every still-submitted stop that follows it.
-    const stop = stops.find((item) => item.requestId && requestsById.has(item.requestId)) ?? null;
-    const request = stop?.requestId ? (requestsById.get(stop.requestId) ?? null) : null;
-    if (!stop || !request) return { route, stop: null, phase: null, current: null };
-    // The published route may reserve a later service slot, but arriving after the
-    // customer window has opened is enough to let the engineer start early.
-    const phase =
-      liveNow < stop.startAt && liveNow < Number(request.windowStartAt)
-        ? ('awaiting_window' as const)
-        : ('ready_to_start' as const);
-    return {
-      route,
-      stop,
-      phase,
-      current: {
-        request: toRequestView(request, liveByRequest.get(request.id) ?? null),
-        stop,
-        phase,
-        expectedCompletionAt: null,
-        overrunAt: null,
-      },
-    };
-  }
-
-  /** Keeps an entered automatic lunch blocking after a remaining-day plan omits it. */
-  private async activeLunch(
-    tx: Tx,
-    workDate: string,
-    engineerId: string,
-    _route: PlanRouteView | null,
-    liveNow: number,
-  ) {
-    const day = await tx.engineerDay.findUnique({
-      where: { engineerId_workDate: { engineerId, workDate } },
-    });
-    // The accepted plan can lag behind a dispatcher switch. The current day fact is
-    // authoritative until Router returns a plan without the removed lunch stop.
-    if (!day?.lunchTaken || day.lunchStartedAt === null || !day.lunchDurationSec) return null;
-    const startedAt = Number(day.lunchStartedAt);
-    const endAt = startedAt + day.lunchDurationSec;
-    return startedAt <= liveNow && liveNow < endAt ? { startedAt, endAt } : null;
+    return this.readProjection.statsFor(tx, day, engineerId);
   }
 
   private assertCurrentRequest(
-    current: Awaited<ReturnType<LiveService['currentFor']>>,
+    current: Awaited<ReturnType<LiveRouteQuery['currentFor']>>,
     requestId: string,
   ): void {
     if (!current.current || current.current.request.id !== requestId) {
@@ -1828,7 +991,7 @@ export class LiveService {
             },
           },
         ],
-        createdAt: BigInt(this.liveNow(day, wallNow)),
+        createdAt: BigInt(this.dayState.liveNow(day, wallNow)),
       },
     });
   }
@@ -1862,7 +1025,7 @@ export class LiveService {
     input: Extract<LiveActionDto, { kind: 'problem' }>,
     logicalNow: number,
   ) {
-    const current = await this.currentFor(context.tx, day, engineerId, context.now);
+    const current = await this.routeQuery.currentFor(context.tx, day, engineerId, context.now);
     this.assertCurrentRequest(current, input.requestId);
     if (input.problemKind === 'delay' && input.additionalDurationSec === undefined) {
       throw new SysError('VALIDATION_FAILED', 'A delay needs an additional duration');
@@ -2095,7 +1258,7 @@ export class LiveService {
     // All readers and the timer serialize automatic transitions for one day. Without
     // this, two tabs crossing the no-show boundary could publish competing snapshots.
     await tx.$queryRaw`SELECT id FROM live_workdays WHERE id = ${day.id} FOR UPDATE`;
-    await this.ensureEngineerStates(tx, day.id, wallNow);
+    await this.dayState.ensureEngineerStates(tx, day.id, wallNow);
     let availabilityChanged = false;
     if (liveNow >= Number(day.logicalStartAt) + NO_SHOW_SEC) {
       const pending = await tx.liveEngineerState.findMany({

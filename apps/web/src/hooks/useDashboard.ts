@@ -7,6 +7,7 @@ import {
   createDispatchRequest,
   DashboardApiError,
   deleteDispatchEngineer,
+  ImportCancelledError,
   importOfficialDataset,
   importRoadData,
   linkEngineerAccount,
@@ -18,6 +19,7 @@ import {
   requestDispatcherLoginCode,
   resolveDispatchAlert,
   restartDemoStand,
+  restorePreviousPlan,
   selectRoutingPolicy,
   setDispatchMode,
   setEngineerAttendanceOptOut,
@@ -43,6 +45,7 @@ import type {
   PlanDelta,
   PolicyComparisonResponse,
   PolicyId,
+  ReviewImportQuality,
   RoadImportSummary,
   RouterTechnicalSettings,
 } from '../api/types';
@@ -69,6 +72,8 @@ import {
   startRecoverySession,
 } from '../domain/resilience';
 
+import { usePlanHistory } from './usePlanHistory';
+
 const SESSION_KEY = 'lct.dispatcher.session';
 /** A cold MKAD solve of the demo day has taken about four minutes. */
 const DEFAULT_REBUILD_TIMEOUT_MS = 360_000;
@@ -77,13 +82,6 @@ export interface DayEvent {
   readonly id: string;
   readonly at: number;
   readonly text: string;
-}
-
-interface RoutingBaseline {
-  readonly snapshot: DashboardSnapshot;
-  readonly policyId: PolicyId;
-  readonly lunchesEnabled: boolean;
-  readonly routerSettings: RouterTechnicalSettings | null;
 }
 
 /** Owns authentication and the live Dashboard-to-backend state flow. */
@@ -141,7 +139,11 @@ export function useDashboard() {
   const [uploadingData, setUploadingData] = useState(false);
   const [entityMutationPending, setEntityMutationPending] = useState(false);
   const [pendingDelta, setPendingDelta] = useState<PlanDelta | null>(null);
-  const [baseline, setBaseline] = useState<RoutingBaseline | null>(null);
+  const planHistory = usePlanHistory(
+    token,
+    snapshot?.plan.plan?.revision ?? null,
+    source === 'live',
+  );
   const [policyComparison, setPolicyComparison] = useState<PolicyComparisonResponse | null>(null);
   const [worseningText, setWorseningText] = useState<string | null>(null);
   const worseningResolve = useRef<((accepted: boolean) => void) | null>(null);
@@ -476,7 +478,6 @@ export function useDashboard() {
     setSnapshot(null);
     setFocus({ engineerId: null, requestId: null });
     setPendingDelta(null);
-    setBaseline(null);
     setPolicyComparison(null);
     setPolicyComparisonError(null);
     setError(null);
@@ -511,7 +512,6 @@ export function useDashboard() {
             )
           : null,
       );
-      setBaseline(null);
       setFocus({ engineerId: null, requestId: null });
       pushEvent(
         `Демо: ${demoScenarios.find((item) => item.id === id)?.title}. Записанный результат Router.`,
@@ -527,7 +527,6 @@ export function useDashboard() {
     snapshotRef.current = cached?.snapshot ?? null;
     setSnapshotState(cached?.snapshot ?? null);
     setPendingDelta(null);
-    setBaseline(null);
     setFocus({ engineerId: null, requestId: null });
     setEvents([]);
     setLiveWorkday(null);
@@ -591,12 +590,7 @@ export function useDashboard() {
   );
 
   const rebuild = useCallback(
-    async (
-      nextPolicy: PolicyId,
-      nextSettings: RouterTechnicalSettings,
-      reason: string,
-      keepBaseline: boolean,
-    ) => {
+    async (nextPolicy: PolicyId, nextSettings: RouterTechnicalSettings, reason: string) => {
       if (
         !token ||
         sourceRef.current !== 'live' ||
@@ -618,14 +612,6 @@ export function useDashboard() {
       setPendingDelta(null);
       setError(null);
       pushEvent(`${reason}. Router пересчитывает план…`);
-      if (keepBaseline) {
-        setBaseline({
-          snapshot: previous,
-          policyId: previous.policyId,
-          lunchesEnabled: previous.lunchesEnabled,
-          routerSettings: previous.routerSettings ?? null,
-        });
-      }
       try {
         if (previous.plan.mode === 'manual') {
           await setDispatchMode(token, 'auto');
@@ -725,6 +711,7 @@ export function useDashboard() {
             ? 'обеды включены'
             : 'обеды выключены'
           : null,
+        nextSettings.strictTimeWindows !== current.strictTimeWindows ||
         nextSettings.windowLatenessToleranceSec !== current.windowLatenessToleranceSec ||
         nextSettings.departureLatenessToleranceSec !== current.departureLatenessToleranceSec ||
         nextSettings.taskStartLatenessToleranceSec !== current.taskStartLatenessToleranceSec
@@ -748,7 +735,6 @@ export function useDashboard() {
           policyId,
           nextSettings,
           changes.join(', ') || 'технические настройки обновлены',
-          true,
         );
       }
     },
@@ -757,7 +743,6 @@ export function useDashboard() {
 
   const acceptDelta = useCallback(() => {
     setPendingDelta(null);
-    setBaseline(null);
     pushEvent('Изменения плана просмотрены.');
   }, [pushEvent]);
 
@@ -798,25 +783,31 @@ export function useDashboard() {
     }
   }, [pushEvent, refresh, reportFailure, startingWorkday, token]);
 
-  const rejectDelta = useCallback(() => {
-    if (!baseline) {
-      return;
+  const rejectDelta = useCallback(async () => {
+    if (
+      !token ||
+      sourceRef.current !== 'live' ||
+      !planHistory?.eligibility.eligible ||
+      !planHistory.current
+    )
+      return false;
+    setEntityMutationPending(true);
+    try {
+      const restored = await restorePreviousPlan(token, planHistory.current.revision);
+      setPendingDelta(null);
+      pushEvent(
+        `Восстановлен план ревизии ${restored.fromRevision} новой ревизией ${restored.restoredRevision}.`,
+      );
+      await refresh();
+      return true;
+    } catch (cause) {
+      reportFailure(cause);
+      setError(errorMessage(cause));
+      return false;
+    } finally {
+      setEntityMutationPending(false);
     }
-    const previousDelta = pendingDelta;
-    setPendingDelta(null);
-    void rebuild(
-      baseline.policyId,
-      baseline.routerSettings ?? defaultRouterSettings(baseline.snapshot),
-      'возвращаем прежние настройки',
-      false,
-    ).then((restored) => {
-      if (restored) {
-        setBaseline(null);
-      } else {
-        setPendingDelta(previousDelta);
-      }
-    });
-  }, [baseline, pendingDelta, rebuild]);
+  }, [token, planHistory, refresh, pushEvent, reportFailure]);
 
   const setMode = useCallback(
     async (mode: 'auto' | 'manual') => {
@@ -915,7 +906,6 @@ export function useDashboard() {
       setAvailabilityPendingId(engineerId);
       setRebuilding(true);
       setPendingDelta(null);
-      setBaseline(null);
       setError(null);
       pushEvent(
         availability === 'offline'
@@ -1193,7 +1183,7 @@ export function useDashboard() {
   }, [invalidateAsyncReads, refresh, refreshLive, token]);
 
   const uploadDataset = useCallback(
-    async (file: DataUploadFile): Promise<DataUploadSummary> => {
+    async (file: DataUploadFile, review?: ReviewImportQuality): Promise<DataUploadSummary> => {
       if (!token || sourceRef.current !== 'live' || uploadingData) {
         throw new Error('Загрузка данных уже выполняется');
       }
@@ -1202,7 +1192,7 @@ export function useDashboard() {
       setUploadingData(true);
       setError(null);
       try {
-        const summary = await uploadDataPackage(token, file);
+        const summary = await uploadDataPackage(token, file, review);
         if (generation !== readGeneration.current) return summary;
         try {
           const next = await loadDashboardSnapshot(token);
@@ -1226,6 +1216,7 @@ export function useDashboard() {
         );
         return summary;
       } catch (cause) {
+        if (cause instanceof ImportCancelledError) throw cause;
         if (generation === readGeneration.current) {
           reportFailure(cause);
           setOperationWarning(
@@ -1284,57 +1275,61 @@ export function useDashboard() {
     [invalidateAsyncReads, pushEvent, refreshLive, reportFailure, token, uploadingData],
   );
 
-  const importOfficialTzDataset = useCallback(async (): Promise<OfficialImportSummary> => {
-    if (!token || sourceRef.current !== 'live' || uploadingData) {
-      throw new Error('Загрузка данных уже выполняется');
-    }
-    invalidateAsyncReads();
-    const generation = readGeneration.current;
-    setUploadingData(true);
-    setError(null);
-    try {
-      const summary = await importOfficialDataset(token);
-      if (generation !== readGeneration.current) return summary;
+  const importOfficialTzDataset = useCallback(
+    async (review?: ReviewImportQuality): Promise<OfficialImportSummary> => {
+      if (!token || sourceRef.current !== 'live' || uploadingData) {
+        throw new Error('Загрузка данных уже выполняется');
+      }
+      invalidateAsyncReads();
+      const generation = readGeneration.current;
+      setUploadingData(true);
+      setError(null);
       try {
-        const next = await loadDashboardSnapshot(token);
+        const summary = await importOfficialDataset(token, review);
         if (generation !== readGeneration.current) return summary;
-        setSnapshot(next);
-      } catch (refreshCause) {
-        if (generation !== readGeneration.current) return summary;
-        reportFailure(refreshCause);
-        setOperationWarning(
-          'Датасет принят сервером, но обновление экрана не подтверждено. Не запускайте импорт повторно.',
+        try {
+          const next = await loadDashboardSnapshot(token);
+          if (generation !== readGeneration.current) return summary;
+          setSnapshot(next);
+        } catch (refreshCause) {
+          if (generation !== readGeneration.current) return summary;
+          reportFailure(refreshCause);
+          setOperationWarning(
+            'Датасет принят сервером, но обновление экрана не подтверждено. Не запускайте импорт повторно.',
+          );
+          setError(`Датасет принят, но экран не обновился: ${errorMessage(refreshCause)}`);
+        }
+        setFocus({ engineerId: null, requestId: null });
+        setPolicyComparison(null);
+        await refreshLive();
+        pushEvent(
+          summary.applied
+            ? `Датасет из ТЗ: ${summary.requestsCreated} заявок, ${summary.engineersCreated} инженеров.`
+            : 'Официальный датасет из ТЗ уже был загружен.',
         );
-        setError(`Датасет принят, но экран не обновился: ${errorMessage(refreshCause)}`);
+        return summary;
+      } catch (cause) {
+        if (cause instanceof ImportCancelledError) throw cause;
+        if (generation === readGeneration.current) {
+          reportFailure(cause);
+          setOperationWarning('Импорт датасета из ТЗ не подтверждён. Проверьте список заявок.');
+          setError(errorMessage(cause));
+        }
+        throw cause;
+      } finally {
+        setUploadingData(false);
       }
-      setFocus({ engineerId: null, requestId: null });
-      setPolicyComparison(null);
-      await refreshLive();
-      pushEvent(
-        summary.applied
-          ? `Датасет из ТЗ: ${summary.requestsCreated} заявок, ${summary.engineersCreated} инженеров.`
-          : 'Официальный датасет из ТЗ уже был загружен.',
-      );
-      return summary;
-    } catch (cause) {
-      if (generation === readGeneration.current) {
-        reportFailure(cause);
-        setOperationWarning('Импорт датасета из ТЗ не подтверждён. Проверьте список заявок.');
-        setError(errorMessage(cause));
-      }
-      throw cause;
-    } finally {
-      setUploadingData(false);
-    }
-  }, [
-    invalidateAsyncReads,
-    pushEvent,
-    refreshLive,
-    token,
-    uploadingData,
-    reportFailure,
-    setSnapshot,
-  ]);
+    },
+    [
+      invalidateAsyncReads,
+      pushEvent,
+      refreshLive,
+      token,
+      uploadingData,
+      reportFailure,
+      setSnapshot,
+    ],
+  );
 
   const displaySnapshot = useMemo(
     () =>
@@ -1388,7 +1383,9 @@ export function useDashboard() {
     uploadingData,
     entityMutationPending,
     pendingDelta,
-    canRejectDelta: baseline !== null,
+    canRejectDelta: planHistory?.eligibility.eligible === true,
+    previousPlan: planHistory?.previous ?? null,
+    restoreUnavailableReason: planHistory?.eligibility.reason ?? null,
     policyComparison,
     policyComparisonLoading,
     policyComparisonError,
@@ -1443,6 +1440,7 @@ function sameRouterSettings(
     left.lunchesEnabled === right.lunchesEnabled &&
     left.departureLatenessToleranceSec === right.departureLatenessToleranceSec &&
     left.taskStartLatenessToleranceSec === right.taskStartLatenessToleranceSec &&
+    (left.strictTimeWindows ?? false) === (right.strictTimeWindows ?? false) &&
     left.windowLatenessToleranceSec === right.windowLatenessToleranceSec &&
     left.trafficEnabled === right.trafficEnabled &&
     left.metroEnabled === right.metroEnabled &&

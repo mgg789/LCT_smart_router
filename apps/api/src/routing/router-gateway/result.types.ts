@@ -89,6 +89,8 @@ const routeLeg = z
     segments: z.array(routeSegment).optional(),
     /** Deterministic forecast or provider multiplier already included in travel_time_sec. */
     traffic_factor: z.number().min(1).default(1),
+    /** Exact weather factor included when this quote was made; absent on older Router results. */
+    weather_multiplier_used: z.number().gt(0).max(3).nullable().optional(),
   })
   .superRefine((leg, context) => {
     const segments = leg.segments ?? [];

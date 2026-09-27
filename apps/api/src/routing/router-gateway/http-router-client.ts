@@ -48,6 +48,24 @@ const predictCalibrationSchema = z.object({
         travel_multiplier: z.number(),
       }),
     ),
+    weather_multipliers: z
+      .array(
+        z.object({
+          region: z.string().min(1),
+          transport_type: z.enum(['car', 'walk', 'bike', 'transit']),
+          kind: z.enum(['rain', 'snow', 'storm']),
+          multiplier: z.number().min(0.5).max(3),
+          source: z.literal('learned'),
+          observations: z.number().int().nonnegative(),
+          days: z.number().int().nonnegative(),
+          baseline_travel_error: z.number().nonnegative(),
+          candidate_travel_error: z.number().nonnegative(),
+          baseline_brier: z.number().min(0).max(1),
+          candidate_brier: z.number().min(0).max(1),
+          validation_version: z.string().min(1),
+        }),
+      )
+      .default([]),
   }),
 });
 
@@ -177,6 +195,7 @@ const technicalSettingsSchema = z.object({
   lunches_enabled: z.boolean(),
   departure_lateness_tolerance_sec: z.number().int().nonnegative().max(86_400),
   task_start_lateness_tolerance_sec: z.number().int().nonnegative().max(86_400),
+  strict_time_windows: z.boolean().default(false),
   window_lateness_tolerance_sec: z.number().int().nonnegative().max(1_200).optional(),
   traffic_enabled: z.boolean().optional(),
   metro_enabled: z.boolean().optional(),
@@ -382,6 +401,7 @@ export class HttpRouterClient extends RouterClient {
       body: JSON.stringify({
         operation_id: input.operationId,
         expected_context_version: input.expectedContextVersion,
+        strict_time_windows: input.strictTimeWindows ?? false,
         lunches_enabled: input.lunchesEnabled,
         departure_lateness_tolerance_sec: input.departureLatenessToleranceSec,
         task_start_lateness_tolerance_sec: input.taskStartLatenessToleranceSec,
@@ -600,6 +620,12 @@ export class HttpRouterClient extends RouterClient {
         signal: controller.signal,
       });
       if (!response.ok) {
+        if (response.status === 503 && path === '/v1/policy-comparison') {
+          throw new SysError(
+            'VERSION_CONFLICT',
+            'The working plan is still being rebuilt; retry the comparison when it is ready',
+          );
+        }
         if (response.status === 409) {
           let detail: unknown = null;
           try {
@@ -634,6 +660,7 @@ function toTechnicalSettings(
   routerContextVersion: string,
 ): RouterTechnicalSettingsState {
   return {
+    strictTimeWindows: settings.strict_time_windows,
     lunchesEnabled: settings.lunches_enabled,
     departureLatenessToleranceSec: settings.departure_lateness_tolerance_sec,
     taskStartLatenessToleranceSec: settings.task_start_lateness_tolerance_sec,

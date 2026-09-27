@@ -12,6 +12,78 @@ from core.runtime import calculate_policy_comparison
 from core.schedule import assemble_plan, baseline, fixed_order, validate_plan
 
 
+def test_quote_cache_keeps_exact_seconds_profiles_and_unreachable_routes(snapshot, graph):
+    """Repeated prefixes reuse quotes, but a departure one second later is a new cost."""
+    calls = []
+
+    class Provider:
+        version = "exact-test"
+
+        def quote_at(self, origin, destination, profile, departure):
+            calls.append((profile, departure))
+            if profile == "walk":
+                return None
+            return TravelQuote(departure, 100, (origin, destination), "road_matrix")
+
+        def quote(self, origin, destination, profile):
+            raise AssertionError("Departure-aware method must be selected")
+
+    evaluator = RouteEvaluator(snapshot, Provider())
+    a, b = graph.nodes[0].location, graph.nodes[1].location
+    assert evaluator.road_quote(a, b, "car", 100).duration_sec == 100
+    assert evaluator.road_quote(a, b, "car", 100).duration_sec == 100
+    assert evaluator.road_quote(a, b, "car", 101).duration_sec == 101
+    assert evaluator.road_quote(a, b, "walk", 100) is None
+    assert evaluator.road_quote(a, b, "walk", 100) is None
+    assert calls == [("car", 100), ("car", 101), ("walk", 100)]
+
+
+def test_exchanges_two_full_routes_when_no_single_relocation_is_feasible(snapshot, graph):
+    """Swap two occupied jobs atomically; either intermediate move exceeds the shift."""
+    start = snapshot.planning_as_of
+    data = graph.model_dump()
+    for edge in data["edges"]:
+        edge["duration_sec"]["car"] = 1200
+    from core.geo import RoadGraph
+    road = GraphTravel(RoadGraph.model_validate(data))
+    engineers = [snapshot.engineers[0].model_copy(update={
+        "engineer_id": f"swap-{i}", "input_order": i,
+        "start_location": graph.nodes[node].location, "shift_end_at": start + 7200,
+    }) for i, node in enumerate((0, 3))]
+    requests = [request.model_copy(update={
+        "location": graph.nodes[node].location, "service_duration_sec": 3600,
+        "window_start_at": start, "window_end_at": start + 7200,
+    }) for request, node in zip(snapshot.requests[:2], (0, 3))]
+    task = snapshot.model_copy(update={"engineers": engineers, "requests": requests,
+                                      "horizon_end_at": start + 7200,
+                                      "policy": Policy(policy_id="fast", parameters={})})
+    travel = configure_travel(road, SearchSettings(access_buffer_sec=0, traffic_enabled=False).technical(), start)
+    a, b = [r.request_id for r in requests]
+    seed = assemble_plan(task, [fixed_order(task, engineers[0], [b], travel), fixed_order(task, engineers[1], [a], travel)])
+    assert fixed_order(task, engineers[0], [a, b], travel) is None
+    assert fixed_order(task, engineers[1], [b, a], travel) is None
+    result = min(improve_routes(task, travel, [seed], effort=100, construct=False), key=lambda plan: policy_score(task, plan))
+    validate_plan(task, result, travel)
+    assert result.summary.assigned_count == 2
+    assert result.summary.travel_time_sec == 0
+
+
+def test_shared_evaluation_cache_preserves_each_policy_search_budget(snapshot, graph):
+    """A warm cache may reduce work, but cannot give a later preset a larger search."""
+    settings = SearchSettings(access_buffer_sec=0)
+    travel = configure_travel(GraphTravel(graph), settings.technical(), snapshot.planning_as_of)
+    seed = baseline(snapshot, travel)
+    shared = RouteEvaluator(snapshot, travel)
+    improve_routes(snapshot, travel, [seed], effort=100, _evaluator=shared)
+    task = snapshot.model_copy(update={"policy": Policy(policy_id="sla", parameters={})})
+    warm = improve_routes(task, travel, [seed], effort=100, _evaluator=shared)
+    charged = shared.evaluations
+    cold_evaluator = RouteEvaluator(task, travel)
+    cold = improve_routes(task, travel, [seed], effort=100, _evaluator=cold_evaluator)
+    assert charged == cold_evaluator.evaluations
+    assert min(policy_score(task, plan) for plan in warm) == min(policy_score(task, plan) for plan in cold)
+
+
 @pytest.mark.parametrize("policy", ["fast", "compact", "sla", "balanced", "eco"])
 @pytest.mark.parametrize(
     "lower,upper,seed_jobs,expected",

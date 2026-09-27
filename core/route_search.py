@@ -7,9 +7,9 @@ Operation limits bound effort independently of machine speed; no optimality clai
 
 from dataclasses import dataclass
 
-from core.contracts import EngineerRoute, Plan, RouterTaskSnapshot
-from core.geo import quote_at
-from core.policy import compile_policy
+from core.contracts import EngineerRoute, GeoPoint, Plan, RouterTaskSnapshot, Transport
+from core.geo import TravelQuote, quote_at
+from core.policy import compile_policy, policy_score
 from core.schedule import (
     TERMINAL_WINDOW_LATENESS_TOLERANCE_SEC,
     TravelProvider,
@@ -50,6 +50,7 @@ class RouteEvaluator:
     def __init__(self, snapshot: RouterTaskSnapshot, travel: TravelProvider):
         self.snapshot = snapshot
         self.travel = travel
+        self.strict = getattr(getattr(travel, "settings", None), "strict_time_windows", False)
         self.requests = {r.request_id: r for r in snapshot.requests}
         self.engineers = sorted(snapshot.engineers, key=lambda e: e.engineer_id)
         self.allowed = {
@@ -61,20 +62,44 @@ class RouteEvaluator:
             for r in snapshot.requests
         }
         self.releases = [release_at(snapshot, e) for e in self.engineers]
-        self.terminal_releases = [terminal_release_at(snapshot, e) for e in self.engineers]
+        self.terminal_releases = [
+            release_at(snapshot, e) if self.strict else terminal_release_at(snapshot, e)
+            for e in self.engineers
+        ]
         self.ends = [min(e.shift_end_at, snapshot.horizon_end_at) for e in self.engineers]
         self.cache: dict[tuple[int, tuple[str, ...]], RouteState | None] = {}
+        self.constructed: tuple[tuple[RouteState, ...], ...] | None = None
+        self.constructed_keys: set[tuple[int, tuple[str, ...]]] = set()
+        self.materialized: dict[tuple[tuple[str, ...], ...], Plan | None] = {}
+        self.regional: dict[str, RouteEvaluator] = {}
+        self.quotes: dict[tuple[float, float, float, float, Transport, int], TravelQuote | None] = {}
         self.evaluations = 0
+        self.seen: set[tuple[int, tuple[str, ...]]] = set()
         self.tolerance = getattr(
             getattr(travel, "settings", None), "window_lateness_tolerance_sec", 0
         )
 
+    def road_quote(
+        self, origin: GeoPoint, destination: GeoPoint, profile: Transport, departure: int
+    ) -> TravelQuote | None:
+        """Memoize exact departure seconds within this task; never approximate a time band."""
+        key = (origin.lat, origin.lon, destination.lat, destination.lon, profile, departure)
+        if key not in self.quotes:
+            road = quote_at(self.travel, origin, destination, profile, departure)
+            # A bounded cache changes only runtime, never feasibility or search quotas.
+            if len(self.quotes) >= 100_000:
+                self.quotes.clear()
+            self.quotes[key] = road
+        return self.quotes[key]
+
     def evaluate(self, index: int, jobs: tuple[str, ...]) -> RouteState | None:
         """Return exact costs or infeasibility, keyed by engineer and complete order."""
         key = (index, jobs)
+        if key not in self.seen:
+            self.seen.add(key)
+            self.evaluations += 1
         if key in self.cache:
             return self.cache[key]
-        self.evaluations += 1
         state = self._evaluate(index, jobs)
         self.cache[key] = state
         return state
@@ -112,18 +137,18 @@ class RouteEvaluator:
                 stock[request.required_equipment] -= 1
                 if stock[request.required_equipment] < 0:
                     return None
-            road = quote_at(self.travel, point, request.location, engineer.transport_type, clock)
+            road = self.road_quote(point, request.location, engineer.travel_profile(), clock)
             if road is None:
                 return None
             start = max(clock + road.duration_sec, request.window_start_at)
             clock = start + request.service_duration_sec
             margin = request.window_end_at - clock
-            window_tolerance = max(
+            window_tolerance = 0 if self.strict else max(
                 self.tolerance,
                 TERMINAL_WINDOW_LATENESS_TOLERANCE_SEC if position == len(jobs) - 1 else 0,
             )
             if margin < -window_tolerance or clock > job_completion_limit(
-                self.snapshot, engineer, terminal=position == len(jobs) - 1
+                self.snapshot, engineer, terminal=position == len(jobs) - 1, strict=self.strict
             ):
                 return None
             travel += road.duration_sec
@@ -140,8 +165,9 @@ class RouteEvaluator:
 
     def from_route(self, route: EngineerRoute) -> RouteState:
         """Convert canonical lunch/baseline routes to the same score representation."""
-        stops = [s for s in route.stops if s.kind == "job"]
-        slacks = [self.requests[s.request_id].window_end_at - s.end_at for s in stops]
+        stops = [s for s in route.stops if s.kind == "job" and s.request_id is not None]
+        job_ids = tuple(s.request_id for s in stops if s.request_id is not None)
+        slacks = [self.requests[job_id].window_end_at - stop.end_at for job_id, stop in zip(job_ids, stops)]
         m = route.metrics
         engineer = next(e for e in self.engineers if e.engineer_id == route.engineer_id)
         missed = int(
@@ -151,15 +177,15 @@ class RouteEvaluator:
             and route.lunch.status != "scheduled"
         )
         return RouteState(
-            tuple(s.request_id for s in stops),
+            job_ids,
             m.travel_time_sec,
             round(m.distance_km * 1000),
             m.work_time_sec + m.travel_time_sec + m.waiting_time_sec + m.lunch_time_sec,
-            sum(self.requests[s.request_id].priority == "urgent" for s in stops),
+            sum(self.requests[job_id].priority == "urgent" for job_id in job_ids),
             sum(s < 0 for s in slacks),
             sum(max(0, -s) for s in slacks),
             min(slacks, default=None),
-            sum(s.start_at - self.requests[s.request_id].window_start_at for s in stops),
+            sum(stop.start_at - self.requests[job_id].window_start_at for job_id, stop in zip(job_ids, stops)),
             missed,
         )
 
@@ -206,14 +232,20 @@ class RouteEvaluator:
 
     def materialize(self, states: list[RouteState]) -> Plan | None:
         """Build and independently validate routes using the canonical scheduler."""
+        key = tuple(state.jobs for state in states)
+        if key in self.materialized:
+            return self.materialized[key]
         routes = [
             fixed_order(self.snapshot, e, list(s.jobs), self.travel)
             for e, s in zip(self.engineers, states)
         ]
         if any(route is None for route in routes):
+            self.materialized[key] = None
             return None
-        plan = assemble_plan(self.snapshot, routes)
+        complete_routes = [route for route in routes if route is not None]
+        plan = assemble_plan(self.snapshot, complete_routes)
         validate_plan(self.snapshot, plan, self.travel)
+        self.materialized[key] = plan
         return plan
 
 
@@ -224,6 +256,7 @@ def improve_routes(
     effort: int = 3000,
     *,
     construct: bool = True,
+    _evaluator: RouteEvaluator | None = None,
 ) -> list[Plan]:
     """Return a reproducible portfolio; preserve every supplied feasible seed.
 
@@ -232,10 +265,16 @@ def improve_routes(
     the caller separately. Construction passes also defer terminal-only visits so
     an early relaxed deadline cannot consume the entire remaining route.
     """
-    evaluator = RouteEvaluator(snapshot, travel)
-    empty = [evaluator.evaluate(i, ()) for i in range(len(evaluator.engineers))]
-    if any(state is None for state in empty):
+    # The catalog shares this cache only across policies of the same immutable task.
+    evaluator = _evaluator or RouteEvaluator(snapshot, travel)
+    # Charge every policy the same logical evaluation budget, including cache
+    # hits. A warm cache must speed up search without silently widening its scope.
+    evaluator.seen = set()
+    evaluator.evaluations = 0
+    empty_candidates = [evaluator.evaluate(i, ()) for i in range(len(evaluator.engineers))]
+    if any(state is None for state in empty_candidates):
         return seeds
+    empty = [state if state is not None else RouteState(()) for state in empty_candidates]
     policy_id = snapshot.policy.policy_id
     portfolio: list[list[RouteState]] = []
     for plan in seeds:
@@ -268,9 +307,10 @@ def improve_routes(
             ),
         ),
         ("balanced", lambda r: (r.priority != "urgent", r.window_start_at, r.window_end_at)),
+        ("sla", lambda r: (r.priority != "urgent", r.window_end_at - r.service_duration_sec, r.window_start_at)),
     )
 
-    def insert(states, request, objective, excluded=-1, *, regular_only=False):
+    def insert(states, request, objective, excluded=-1, *, regular_only=False, prioritize_lateness=False):
         best = None
         for i in evaluator.allowed[request.request_id]:
             if i == excluded:
@@ -289,6 +329,10 @@ def improve_routes(
                 if candidate is not None:
                     states[i] = candidate
                     key = evaluator.score(states, objective)
+                    if prioritize_lateness:
+                        # Retain safety-first seeds while each preset explores its
+                        # own primary resource goal inside the same feasibility bounds.
+                        key = (*key[:3], sum(state.lateness for state in states), *key[3:])
                     if best is None or key < best[0]:
                         best = (key, i, candidate)
             states[i] = old
@@ -296,28 +340,36 @@ def improve_routes(
             states[best[1]] = best[2]
         return best is not None
 
-    for objective, order in variants if construct else ():
-        states = list(empty)
-        for request in sorted(requests, key=order):
-            insert(states, request, objective)
-        portfolio.append(states)
-        # Preserve the original candidate, but also construct the ordinary day
-        # first. Terminal grace is an end-of-route recovery, not a reason to stop
-        # searching at an early window while later jobs remain feasible.
-        states = list(empty)
-        for request in sorted(requests, key=order):
-            insert(states, request, objective, regular_only=True)
-        assigned = {job for state in states for job in state.jobs}
-        for request in sorted(requests, key=order):
-            if request.request_id not in assigned:
-                insert(states, request, objective)
-        portfolio.append(states)
+    constructed_start = len(portfolio)
+    if construct and evaluator.constructed is not None:
+        portfolio.extend([list(states) for states in evaluator.constructed])
+        evaluator.seen.update(evaluator.constructed_keys)
+        evaluator.evaluations = len(evaluator.seen)
+    for objective, order in variants if construct and evaluator.constructed is None else ():
+        for safety_first in (False, True):
+            states = list(empty)
+            for request in sorted(requests, key=order):
+                insert(states, request, objective, prioritize_lateness=safety_first)
+            portfolio.append(states)
+            # Keep terminal grace as end-of-route recovery, so an early relaxed
+            # deadline cannot block all later regular-window work.
+            states = list(empty)
+            for request in sorted(requests, key=order):
+                insert(states, request, objective, regular_only=True, prioritize_lateness=safety_first)
+            assigned = {job for state in states for job in state.jobs}
+            for request in sorted(requests, key=order):
+                if request.request_id not in assigned:
+                    insert(states, request, objective, prioritize_lateness=safety_first)
+            portfolio.append(states)
+    if construct and evaluator.constructed is None:
+        evaluator.constructed = tuple(tuple(states) for states in portfolio[constructed_start:])
+        evaluator.constructed_keys = set(evaluator.seen)
     # Truly independent regions may select different construction orders. A weak
     # seed in one disconnected component must not discard a strong seed elsewhere.
     regions = {e.region for e in evaluator.engineers}
     if None not in regions and all(r.region in regions for r in requests):
         combined = list(empty)
-        for region in sorted(regions):
+        for region in sorted(region for region in regions if region is not None):
             indices = [i for i, e in enumerate(evaluator.engineers) if e.region == region]
             choices = []
             for candidate in portfolio:
@@ -375,6 +427,36 @@ def improve_routes(
         if not changed or evaluator.evaluations >= quota:
             break
     portfolio.append(states)
+    # Exchanging two occupied slots can be feasible even when neither one-job
+    # relocation is. Validate both whole routes before accepting the joint move.
+    swap_quota = evaluator.evaluations + max(500, effort * 4)
+    current_score = evaluator.score(states, policy_id)
+    for left in range(len(states)):
+        for right in range(left + 1, len(states)):
+            if evaluator.engineers[left].region != evaluator.engineers[right].region:
+                continue
+            for a in range(len(states[left].jobs)):
+                for b in range(len(states[right].jobs)):
+                    if evaluator.evaluations >= swap_quota:
+                        break
+                    left_jobs, right_jobs = list(states[left].jobs), list(states[right].jobs)
+                    left_jobs[a], right_jobs[b] = right_jobs[b], left_jobs[a]
+                    left_route = evaluator.evaluate(left, tuple(left_jobs))
+                    right_route = evaluator.evaluate(right, tuple(right_jobs))
+                    if left_route is None or right_route is None:
+                        continue
+                    candidate = list(states)
+                    candidate[left], candidate[right] = left_route, right_route
+                    candidate_score = evaluator.score(candidate, policy_id)
+                    if candidate_score < current_score:
+                        states, current_score = candidate, candidate_score
+                        portfolio.append(states)
+                if evaluator.evaluations >= swap_quota:
+                    break
+            if evaluator.evaluations >= swap_quota:
+                break
+        if evaluator.evaluations >= swap_quota:
+            break
     # Consolidating an entire route can require neutral/worse intermediate moves.
     # Evaluate it as one transaction so compact can actually release an engineer.
     for source in sorted(range(len(states)), key=lambda i: len(states[i].jobs)):
@@ -420,4 +502,27 @@ def improve_routes(
             plan = evaluator.materialize(states)
             if plan is not None:
                 plans.append(plan)
+    # A large combined task must retain good independent regional candidates.
+    # Keep the global portfolio too: non-additive workload goals can prefer it.
+    if construct and len(regions) > 1 and None not in regions and all(r.region in regions for r in requests) and not snapshot.pending_equipment_handoffs:
+        routes = []
+        for region in sorted(region for region in regions if region is not None):
+            engineers = [e for e in snapshot.engineers if e.region == region]
+            ids = {e.engineer_id for e in engineers}
+            local = snapshot.model_copy(update={
+                "engineers": engineers,
+                "requests": [r for r in snapshot.requests if r.region == region],
+            })
+            local_seeds = [assemble_plan(local, [r for r in plan.routes if r.engineer_id in ids]) for plan in plans if plan.is_usable]
+            if region not in evaluator.regional:
+                evaluator.regional[region] = RouteEvaluator(local, travel)
+                evaluator.regional[region].quotes = evaluator.quotes
+            improved = improve_routes(local, travel, local_seeds, effort, _evaluator=evaluator.regional[region])
+            usable = [plan for plan in improved if plan.is_usable]
+            if not usable:
+                return plans
+            routes.extend(min(usable, key=lambda plan: policy_score(local, plan)).routes)
+        regional = assemble_plan(snapshot, routes)
+        validate_plan(snapshot, regional, travel)
+        plans.append(regional)
     return plans

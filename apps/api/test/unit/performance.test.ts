@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { FixedClock } from '../../src/common/time';
+import { buildPerformanceAnalytics } from '../../src/orchestrator/performance/analytics';
 import {
   isSelectionInDay,
   PerformanceService,
@@ -58,6 +59,52 @@ test('engineer day response excludes other engineers and dispatcher evidence', a
     closedAt: 1,
     engineer: own,
   });
+});
+
+test('factual analytics keeps missing measurements null and weights the team by samples', () => {
+  const analytics = buildPerformanceAnalytics(
+    [
+      { engineerId: 'a', name: 'Анна', shiftMinutes: 480 },
+      { engineerId: 'b', name: 'Борис', shiftMinutes: 480 },
+    ],
+    [
+      {
+        requestId: 'r1',
+        engineerId: 'a',
+        finishedAt: 1_200,
+        durationMinutes: 40,
+        acceptedFinishAt: 1_180,
+      },
+      {
+        requestId: 'r2',
+        engineerId: 'a',
+        finishedAt: 1_300,
+        durationMinutes: null,
+        acceptedFinishAt: null,
+      },
+      {
+        requestId: 'r3',
+        engineerId: 'b',
+        finishedAt: 1_350,
+        durationMinutes: 20,
+        acceptedFinishAt: 1_400,
+      },
+    ],
+  );
+  const anna = analytics.engineers.find((row) => row.engineerId === 'a');
+  assert.equal(anna?.completedPerRecordedWorkday, 2);
+  assert.deepEqual(anna?.measuredDuration, { averageMinutes: 40, sampleCount: 1 });
+  assert.deepEqual(anna?.punctualCompletion, {
+    count: 0,
+    sampleCount: 1,
+    rate: 0,
+    // Twenty seconds must not be inflated to a full minute before averaging.
+    averageLatenessMinutes: 20 / 60,
+    baseline: 'accepted_finish_at',
+  });
+  assert.equal(analytics.team.measuredDuration.averageMinutes, 30);
+  assert.equal(analytics.team.punctualCompletion.rate, 0.5);
+  assert.equal(analytics.team.utilization.rate, 60 / 960);
 });
 
 function attribution(

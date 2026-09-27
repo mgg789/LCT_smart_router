@@ -9,6 +9,34 @@ export type PolicyId = 'compact' | 'fast' | 'sla' | 'balanced' | 'eco' | 'coveri
 export type StrategyId = PolicyId | 'baseline';
 export type EquipmentType = 'router' | 'set_top_box' | 'smart_speaker';
 
+/** Advisory finding: never changes or rejects a structurally valid import. */
+export interface ImportQualityFinding {
+  readonly code: string;
+  readonly layer: 'rules' | 'statistics' | 'student';
+  readonly count: number;
+  readonly examples: readonly string[];
+  readonly message: string;
+  readonly score?: number;
+}
+
+/** Immutable server-side preparation, owned by the authenticated dispatcher for 24 hours. */
+export interface ImportPreparationView {
+  readonly prepareId: string;
+  readonly source: string;
+  readonly immutableBatchHash: string;
+  readonly versions: {
+    readonly rules: string;
+    readonly statistics: string;
+    readonly student: string;
+    readonly transform?: string;
+  };
+  readonly expiresAt: number;
+  readonly findings: readonly ImportQualityFinding[];
+}
+
+/** UI acknowledgement callback; false cancels without committing business data. */
+export type ReviewImportQuality = (report: ImportPreparationView) => Promise<boolean>;
+
 export interface EquipmentStock {
   readonly router: number;
   readonly setTopBox: number;
@@ -70,6 +98,8 @@ export interface EngineerView {
   readonly inputOrder: number;
   readonly skills: string[];
   readonly transportType: 'car' | 'walk' | 'bike' | 'transit';
+  /** False only when an imported source explicitly marks this walking crew as no-transit. */
+  readonly transitEligible?: boolean;
   readonly region: string | null;
   readonly homeLat: number | null;
   readonly homeLon: number | null;
@@ -296,7 +326,7 @@ export interface PlanAssignmentView {
 
 export interface PlanView {
   readonly revision: number;
-  readonly origin: 'auto' | 'manual';
+  readonly origin: 'auto' | 'manual' | 'restore';
   readonly planAsOf: number;
   readonly appliedAt: number;
   readonly routes: PlanRouteView[];
@@ -342,6 +372,13 @@ export interface DispatchShiftView {
   readonly unresolvedCount: number;
 }
 
+/** Durable current/predecessor pair; eligibility is rechecked transactionally on restore. */
+export interface PlanHistoryResponse {
+  readonly current: PlanView | null;
+  readonly previous: PlanView | null;
+  readonly eligibility: { readonly eligible: boolean; readonly reason: string | null };
+}
+
 export interface DispatchPlanResponse {
   readonly mode: 'auto' | 'manual';
   readonly modeVersion: number;
@@ -385,6 +422,8 @@ export interface DashboardSnapshot {
 }
 
 export interface RouterTechnicalSettings {
+  /** Disable all lateness and terminal shift/window allowances; default false. */
+  readonly strictTimeWindows?: boolean;
   readonly lunchesEnabled: boolean;
   readonly metroEnabled: boolean;
   readonly departureLatenessToleranceSec: number;
@@ -454,7 +493,7 @@ export interface EngineerAuthSession {
 
 export interface EngineerPlanResponse {
   readonly planAsOf: number | null;
-  readonly origin: 'auto' | 'manual' | null;
+  readonly origin: 'auto' | 'manual' | 'restore' | null;
   readonly revision: number | null;
   readonly route: PlanRouteView | null;
   readonly requests: RequestView[];
@@ -524,6 +563,84 @@ export interface PolicyComparisonResponse {
 }
 
 export type DataUploadMode = 'new_region' | 'append_requests';
+
+/** Canonical columns recognised by the tabular import review; indices are zero-based. */
+export type TabularField =
+  | 'externalId'
+  | 'addressText'
+  | 'lat'
+  | 'lon'
+  | 'workType'
+  | 'duration'
+  | 'windowStart'
+  | 'windowEnd'
+  | 'priority'
+  | 'requiredSkill'
+  | 'brigade'
+  | 'transportType'
+  | 'requiredTransport';
+
+/** Bounded source bytes and explicit parsing choices; analysis never imports business data. */
+export interface TabularFileInput {
+  readonly fileName: string;
+  readonly payloadBase64: string;
+  readonly sheet?: number;
+  readonly encoding?: 'auto' | 'utf8' | 'windows1251' | 'utf16le';
+  readonly delimiter?: 'auto' | ',' | ';' | '\t' | '|';
+  readonly headerRow?: number;
+}
+
+/** Source rows retain parsed record numbers for diagnostics and explicit correction. */
+export interface TabularAnalysis {
+  readonly sourceHash: string;
+  readonly format: 'csv' | 'tsv' | 'xlsx';
+  readonly encoding: string;
+  readonly delimiter: string | null;
+  readonly sheetNames: string[];
+  readonly selectedSheet: number;
+  readonly headerRow: number;
+  readonly headers: string[];
+  readonly rows: Array<{ readonly rowNumber: number; readonly values: string[] }>;
+  readonly columns: Partial<Record<TabularField, number>>;
+  readonly missing: Array<{ readonly field: TabularField; readonly count: number }>;
+  readonly officeAddress: string | null;
+  readonly notices: string[];
+  readonly durationUnit: 'minutes' | 'seconds';
+}
+
+/** Dispatcher-approved missing-value defaults and cell corrections; no silent row exclusions. */
+export interface TabularCompletionOptions {
+  readonly mode: DataUploadMode;
+  readonly region: string;
+  readonly workDate: string;
+  readonly columns: Partial<Record<TabularField, number>>;
+  readonly defaults: Partial<Record<TabularField, string>>;
+  readonly durationUnit: 'minutes' | 'seconds';
+  readonly depot: { readonly addressText: string; readonly lat?: number; readonly lon?: number };
+  readonly engineers: {
+    readonly count: number;
+    readonly transportType: 'car' | 'walk' | 'bike' | 'transit';
+    readonly skills: Array<'local' | 'connection' | 'emergency'>;
+    readonly shiftStart: string;
+    readonly shiftEnd: string;
+  };
+  readonly edits: Array<{
+    readonly rowNumber: number;
+    readonly field: TabularField;
+    readonly value: string;
+  }>;
+}
+
+/** Either a complete canonical package or actionable cell errors; neither outcome applies a plan. */
+export interface TabularConversion {
+  readonly file: DataUploadFile | null;
+  readonly issues: Array<{
+    readonly rowNumber: number | null;
+    readonly field: TabularField | 'depot' | 'engineers' | 'workDate';
+    readonly message: string;
+  }>;
+  readonly notices: string[];
+}
 
 export interface DataUploadRequest {
   readonly externalId: string;

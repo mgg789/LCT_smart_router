@@ -88,6 +88,9 @@ class Engineer(Record):
     input_order: Seconds
     skills: list[Skill] = Field(min_length=1, max_length=3)
     transport_type: Transport
+    # Legacy walking profiles historically used the metro composite. New source data
+    # can explicitly prohibit that without changing the physical transport identity.
+    transit_eligible: bool = True
     shift_start_at: Seconds
     shift_end_at: Seconds
     start_location: GeoPoint
@@ -99,6 +102,12 @@ class Engineer(Record):
     equipment_stock: EquipmentStock
     equipment_capacity: int = Field(default_factory=_default_equipment_capacity, ge=0, le=1000)
     region: Annotated[str, Field(min_length=1)] | None = None
+
+    def travel_profile(self) -> Transport:
+        """Return the routing profile while leaving assignment transport exact."""
+        if self.transport_type == "walk" and self.transit_eligible:
+            return "transit"
+        return self.transport_type
 
     @model_validator(mode="after")
     def check_conditions(self) -> Self:
@@ -115,7 +124,11 @@ class Engineer(Record):
                     for v in (lunch.duration_sec, lunch.window_start_at, lunch.window_end_at)
                 ):
                     raise ValueError("enabled lunch requires duration and both window boundaries")
-                if lunch.window_end_at < lunch.window_start_at:
+                if (
+                    lunch.window_end_at is not None
+                    and lunch.window_start_at is not None
+                    and lunch.window_end_at < lunch.window_start_at
+                ):
                     raise ValueError("lunch window is reversed")
         if self.equipment_stock.total_units() > self.equipment_capacity:
             raise ValueError("equipment stock exceeds engineer carrying capacity")
@@ -144,6 +157,7 @@ class RouterTechnicalSettings(Record):
     equipment_enabled: bool = True
     equipment_transfers_enabled: bool = False
     metro_enabled: bool = False
+    strict_time_windows: bool = False
     window_lateness_tolerance_sec: int = Field(default=600, ge=0, le=1200)
     departure_lateness_tolerance_sec: int = Field(default=0, ge=0, le=86400)
     task_start_lateness_tolerance_sec: int = Field(default=0, ge=0, le=86400)
@@ -298,6 +312,7 @@ class RouteLeg(Record):
     geometry: Geometry | None
     travel_source: TravelProvenance
     traffic_factor: Annotated[float, Field(ge=1.0)] = 1.0
+    weather_multiplier_used: Annotated[float, Field(gt=0.0, le=3.0)] | None = None
     segments: list[RouteSegment] = Field(default_factory=list)
 
     @model_validator(mode="after")

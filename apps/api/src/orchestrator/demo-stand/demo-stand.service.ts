@@ -7,6 +7,7 @@ import { Clock } from '../../common/time';
 import type { OperationContext } from '../../operations';
 import { OperationsService } from '../../operations';
 import { PrismaService } from '../../persistence';
+import { AiService } from '../ai';
 import { workDateOf } from '../engineers/workday';
 import { UploadImportService } from '../imports';
 import { canonicalTextAddress } from '../passports/passport-policy';
@@ -35,7 +36,7 @@ const SYSTEM_ACTOR: Actor = {
 };
 
 /**
- * Public-contour 14/2 live-demo: today's Moscow windows, 30-minute days, and a wipe that
+ * Public-contour 14/3 live-demo: today's Moscow windows, 30-minute days, and a wipe that
  * keeps the dispatcher signed in. Inactive unless `DEMO_STAND=true`.
  */
 @Injectable()
@@ -50,6 +51,7 @@ export class DemoStandService implements OnModuleInit {
     private readonly operations: OperationsService,
     private readonly reset: ResetService,
     private readonly uploads: UploadImportService,
+    private readonly ai: AiService,
   ) {}
 
   get enabled(): boolean {
@@ -99,7 +101,7 @@ export class DemoStandService implements OnModuleInit {
   }
 
   /**
-   * Seeds or rewinds the 14/2 day when the stand is empty, dated for another Moscow day,
+   * Seeds or rewinds the 14/3 day when the stand is empty, dated for another Moscow day,
    * or already finished. A running day is left alone.
    */
   reconcile(): Promise<void> {
@@ -119,7 +121,7 @@ export class DemoStandService implements OnModuleInit {
   }
 
   /**
-   * Wipes playable state and reloads today's 14/2 package. Dispatcher sessions survive
+   * Wipes playable state and reloads today's 14/3 package. Dispatcher sessions survive
    * so the same operator can start the day again without signing in.
    */
   async restore(context: OperationContext): Promise<DemoStandRestoreOutcome> {
@@ -217,6 +219,7 @@ export class DemoStandService implements OnModuleInit {
       },
       (context) => this.restore(context),
     );
+    await this.ai.rollbackToFactory();
   }
 
   private async needsRestore(now: number): Promise<boolean> {

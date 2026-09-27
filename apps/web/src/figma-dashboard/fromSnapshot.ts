@@ -370,6 +370,7 @@ function engineerCardFromSummary(
     id: summary.engineerId,
     name: summary.displayName,
     km: Math.round(summary.distanceKm),
+    transportType: summary.transportType,
     status: transportLabel(summary.transportType),
     shift:
       summary.shiftStartAt && summary.shiftEndAt

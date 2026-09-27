@@ -1229,10 +1229,10 @@ function AiForm({ token }: { token: string | null }) {
     <div className="flex flex-col gap-[16px] pb-[8px]">
       <AiSection
         title="ML"
-        note="Проверка плана учится на фактах исполнения. Выключено — остаётся заводская калибровка."
+        note="Коэффициенты оценки риска уточняются по фактам исполнения. При выключении используются заводские значения."
       >
         <SettingSwitch
-          label="Дообучение оценки плана"
+          label="Калибровка по реальным результатам"
           checked={enabled}
           onChange={() => {
             const next = !enabled;
@@ -1242,7 +1242,7 @@ function AiForm({ token }: { token: string | null }) {
         />
         <div className="mt-[14px] rounded-[16px] bg-white px-[16px] py-[14px]">
           <div className="flex items-baseline justify-between">
-            <span className="font-semibold text-[16px] text-figma-ink">Точность самонастройки</span>
+            <span className="font-semibold text-[16px] text-figma-ink">Покрытие фактами</span>
             <span className="font-extrabold text-[20px] text-figma-ink">
               {loading && !status ? '…' : `${percent}%`}
             </span>
@@ -1262,6 +1262,35 @@ function AiForm({ token }: { token: string | null }) {
               {status.computedAt ? ` · обновлено ${formatMoscowDate(status.computedAt)}` : ''}
             </p>
           ) : null}
+          <section
+            aria-label="Калибровка коэффициентов"
+            className="mt-[14px] text-[14px] text-figma-muted"
+          >
+            <p className="font-semibold text-figma-ink">Калибровка коэффициентов</p>
+            <p>
+              {status?.weatherCalibration?.status === 'validated'
+                ? 'Проверено на последующих днях'
+                : status?.weatherCalibration?.status === 'shadow'
+                  ? 'Проверка на новых днях'
+                  : 'Недостаточно истории'}
+            </p>
+            <p>
+              {status?.weatherCalibration?.reason ??
+                'Недостаточно истории. Используются заводские параметры.'}
+            </p>
+            {status?.weatherCalibration ? (
+              <p>
+                Наблюдений: {status.weatherCalibration.observationCount}, дней:{' '}
+                {status.weatherCalibration.days}, проверенных групп:{' '}
+                {status.weatherCalibration.eligibleGroups} из{' '}
+                {status.weatherCalibration.totalGroups}.
+              </p>
+            ) : null}
+            <p>
+              Время между завершением работы и прибытием может включать ожидание. Покрытие данными
+              не является оценкой точности.
+            </p>
+          </section>
         </div>
       </AiSection>
 

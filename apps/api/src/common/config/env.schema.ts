@@ -46,6 +46,9 @@ export const envSchema = z.object({
    */
   ROUTER_ROAD_API_URL: z.url().optional(),
 
+  /** Road geometry endpoint for the API; takes precedence over the legacy Router key. */
+  API_ROAD_API_URL: z.url().optional(),
+
   /**
    * Optional duration of an entire logical workday in wall-clock seconds. Empty means
    * ordinary 1:1 time. LIVE persists the chosen value when the dispatcher starts a day,
@@ -135,7 +138,7 @@ export const envSchema = z.object({
   LOCATION_IQ_TOKEN: z.string().min(1).optional(),
 
   /**
-   * Public demo stand: seed today's 14/2 live-demo, accelerate the day, and rewind after
+   * Public demo stand: seed today's 14/3 live-demo, accelerate the day, and rewind after
    * the shift or «День заново». Leave unset/false on developer machines.
    */
   DEMO_STAND: z
@@ -154,6 +157,8 @@ export const envSchema = z.object({
    */
   LLM_PROXY_TOKEN: z.string().min(1).optional(),
   LLM_MODEL: z.string().min(1).default('deepseek-flash'),
+  /** Opt in only when the configured OpenAI-compatible chat endpoint supports this dialect. */
+  LLM_CHAT_REASONING_EFFORT: z.enum(['none', 'low']).default('none'),
   LLM_FALLBACK_PROVIDER: z.enum(['none', 'openai_chat', 'replay']).default('none'),
   LLM_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(60_000),
   LLM_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(5).default(2),
@@ -233,6 +238,16 @@ export function validateEnv(raw: Record<string, unknown>): Env {
       'Invalid environment configuration: a configured LLM_FALLBACK_PROVIDER needs ' +
         'LLM_MAX_ATTEMPTS >= 2 -- the fallback hop is spent out of that same budget ' +
         '(src/ai/provider/retry.policy.ts) and needs at least one attempt of its own.',
+    );
+  }
+  if (
+    parsed.data.LLM_CHAT_REASONING_EFFORT === 'low' &&
+    (parsed.data.LLM_PROVIDER !== 'openai_chat' || parsed.data.LLM_FALLBACK_PROVIDER !== 'none')
+  ) {
+    throw new Error(
+      'Invalid environment configuration: LLM_CHAT_REASONING_EFFORT=low requires ' +
+        'LLM_PROVIDER=openai_chat and LLM_FALLBACK_PROVIDER=none. Mixed provider ' +
+        'protocols cannot safely continue private reasoning state.',
     );
   }
   return parsed.data;

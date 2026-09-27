@@ -11,6 +11,22 @@ import {
 import type { ToastNotification } from './toasts';
 
 describe('ALERTS inbox', () => {
+  it('keeps a plan degradation alert distinct from its affected unassigned request', () => {
+    const snapshot = createDevSnapshot();
+    const request = snapshot.requests[0];
+    const base = snapshot.alerts[0];
+    if (!request || !base) throw new Error('fixture is incomplete');
+    const inbox = inboxFromSources(
+      {
+        ...snapshot,
+        requests: [{ ...request, assignmentState: 'unassigned' }],
+        alerts: [{ ...base, code: 'plan_degraded', requestIds: [request.id], resolvedAt: null }],
+      },
+      [],
+    );
+    expect(inbox.alerts[0]?.title).toBe('План стал хуже: требуется решение');
+    expect(inbox.alerts[0]?.title).not.toContain('без назначения');
+  });
   it('sends the bare alert id, not the inbox prefix', () => {
     expect(dispatchAlertId('alert:607b90e0-70f6-4ab9-bcb4-be85bed07cf2')).toBe(
       '607b90e0-70f6-4ab9-bcb4-be85bed07cf2',

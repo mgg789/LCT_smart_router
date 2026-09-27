@@ -28,6 +28,12 @@ describe('environment validation', () => {
     assert.equal(env.ROUTER_REQUEST_TIMEOUT_MS, 3000);
     assert.equal(env.LOCATION_IQ_TOKEN, undefined);
     assert.equal(env.DEMO_STAND, false);
+    assert.equal(env.LLM_CHAT_REASONING_EFFORT, 'none');
+    assert.equal(env.AUTH_DEV_EXPOSE_CODES, false);
+    assert.equal(
+      validateEnv({ ...REQUIRED, AUTH_DEV_EXPOSE_CODES: 'true' }).AUTH_DEV_EXPOSE_CODES,
+      true,
+    );
   });
 
   it('coerces PORT from its string form', () => {
@@ -74,5 +80,43 @@ describe('environment validation', () => {
   it('enables the public demo stand only when the flag is true', () => {
     assert.equal(validateEnv({ ...REQUIRED, DEMO_STAND: 'true' }).DEMO_STAND, true);
     assert.equal(validateEnv({ ...REQUIRED, DEMO_STAND: 'false' }).DEMO_STAND, false);
+  });
+
+  it('accepts explicit low reasoning for a compatible chat provider only as an opt-in setting', () => {
+    assert.equal(
+      validateEnv({
+        ...REQUIRED,
+        LLM_PROVIDER: 'openai_chat',
+        LLM_TOKEN: 'test-only',
+        LLM_CHAT_REASONING_EFFORT: 'low',
+      }).LLM_CHAT_REASONING_EFFORT,
+      'low',
+    );
+    assert.throws(
+      () => validateEnv({ ...REQUIRED, LLM_CHAT_REASONING_EFFORT: 'medium' }),
+      /LLM_CHAT_REASONING_EFFORT/,
+    );
+  });
+
+  it('rejects low thinking across mixed primary and fallback provider protocols', () => {
+    for (const [primary, fallback] of [
+      ['replay', 'openai_chat'],
+      ['agents', 'openai_chat'],
+      ['openai_chat', 'replay'],
+      ['openai_chat', 'openai_chat'],
+      ['off', 'none'],
+    ]) {
+      assert.throws(
+        () =>
+          validateEnv({
+            ...REQUIRED,
+            LLM_TOKEN: 'test-only',
+            LLM_PROVIDER: primary,
+            LLM_FALLBACK_PROVIDER: fallback,
+            LLM_CHAT_REASONING_EFFORT: 'low',
+          }),
+        /LLM_CHAT_REASONING_EFFORT=low requires/,
+      );
+    }
   });
 });

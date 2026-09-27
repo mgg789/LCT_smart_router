@@ -1,9 +1,47 @@
 import { z } from 'zod';
 import { expect, readPlan, signIn, test } from './fixtures';
 
-// Skipped: known v1.5 gap - drives the pre-redesign dashboard surface; rewriting
-// it for the figma-dashboard UI is tracked for the next release.
-test.skip('live plan renders the local map and replans when an engineer goes offline', async ({
+test('assistant composer caps at eight lines and keeps its circles on the bottom edge', async ({
+  page,
+  live,
+}) => {
+  expect(live.plan.assignments.length).toBeGreaterThan(0);
+  await signIn(page);
+  await page.getByRole('button', { name: 'AI', exact: true }).click();
+  const field = page.getByRole('textbox', { name: 'Сообщение ассистенту' });
+  const geometry = () =>
+    field.evaluate((element) => {
+      const bar = element.parentElement?.parentElement;
+      const yellow = bar?.querySelector('span');
+      const send = bar?.querySelector('button');
+      if (!bar || !yellow || !send) throw new Error('Composer controls are missing');
+      const bottom = bar.getBoundingClientRect().bottom;
+      return {
+        height: element.getBoundingClientRect().height,
+        line: Number.parseFloat(getComputedStyle(element).lineHeight),
+        overflow: getComputedStyle(element).overflowY,
+        yellowGap: bottom - yellow.getBoundingClientRect().bottom,
+        sendGap: bottom - send.getBoundingClientRect().bottom,
+        circleRatio: send.getBoundingClientRect().width / send.getBoundingClientRect().height,
+      };
+    });
+  await field.fill('Строка');
+  const single = await geometry();
+  await field.fill('Один\nДва\nТри\nЧетыре\nПять\nШесть\nСемь\nВосемь');
+  await expect.poll(async () => (await geometry()).height).toBeCloseTo(single.height * 8, 0);
+  await expect.poll(async () => (await geometry()).circleRatio).toBeCloseTo(1, 2);
+  const eight = await geometry();
+  expect(eight.height).toBeGreaterThan(single.height);
+  expect(eight.yellowGap).toBeCloseTo(single.yellowGap, 0);
+  expect(eight.sendGap).toBeCloseTo(single.sendGap, 0);
+  expect(eight.circleRatio).toBeCloseTo(1, 2);
+  await field.fill('Один\nДва\nТри\nЧетыре\nПять\nШесть\nСемь\nВосемь\nДевять');
+  const nine = await geometry();
+  expect(nine.height).toBeCloseTo(eight.height, 0);
+  expect(nine.overflow).toBe('auto');
+});
+
+test('live plan renders the local map and replans when an engineer goes offline', async ({
   page,
   live,
 }, testInfo) => {
@@ -11,15 +49,20 @@ test.skip('live plan renders the local map and replans when an engineer goes off
   await expect(page.getByText('0 без назначения', { exact: false })).toBeVisible();
   await expect(page.locator('[data-map-ready="true"]')).toBeVisible();
   await expect(
-    page.getByText('Сохранённая карта района демо · улицы, парки и водоёмы'),
+    page.getByText('Сохранённая карта трёх регионов · улицы, парки и водоёмы'),
   ).toBeVisible();
   await page
     .getByRole('button')
     .filter({ has: page.getByTitle('Smoke East Engineer') })
     .click();
-  await expect(page.getByText('Как они повлияли', { exact: true })).toBeVisible();
-  await expect(page.getByText(/транспорт авто/)).toBeVisible();
+  // The Figma dashboard renders the selected engineer's factual profile in the
+  // dedicated roster surface instead of the retired inline explanation card.
   await page.getByRole('button', { name: 'Инженеры', exact: true }).click();
+  // The outgoing map card briefly remains mounted during the screen transition.
+  const roster = page.locator('section[data-name="ENGINEERS"]');
+  await expect(roster.getByText('Smoke East Engineer', { exact: true })).toBeVisible();
+  await expect(roster.getByText('Транспорт', { exact: true })).toBeVisible();
+  await expect(roster.getByText('Легковой, до 3.5 т', { exact: true })).toBeVisible();
   // The dossier action reflects accepted server state, not an optimistic toggle.
   await page.getByRole('button', { name: 'Снять со смены', exact: true }).click();
   await expect
@@ -50,7 +93,7 @@ test.skip('live plan renders the local map and replans when an engineer goes off
   });
 });
 
-test.skip('connection loss preserves the real day, disables writes and recovers', async ({
+test('connection loss preserves the real day, disables writes and recovers', async ({
   page,
   context,
   live,

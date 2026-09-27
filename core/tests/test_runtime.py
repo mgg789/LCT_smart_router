@@ -8,6 +8,7 @@ from core.api import create_app
 from core.contracts import Diagnostic, RouterResult, RouterTechnicalSettings
 from core.engine import SearchSettings
 from core.geo import content_hash
+from core.predict_calibration import PredictCalibrationStore, factory_calibration
 from core.runtime import RouterRuntime, SnapshotPublication, calculate
 from core.settings import FileTechnicalSettingsStore
 from fastapi.testclient import TestClient
@@ -97,7 +98,7 @@ def test_latest_publication_is_the_only_result_exposed(snapshot, graph):
     runtime.tick()
     assert runtime.read_result().status == "pending"
     assert len(executor.tasks) == 2
-    assert executor.tasks[1][2][-1] == "publication-2"
+    assert executor.tasks[1][2][-3] == "publication-2"
     executor.complete(1)
     runtime.tick()
     result = runtime.read_result()
@@ -399,6 +400,41 @@ def test_policy_comparison_api_requires_ready_publication(snapshot, graph):
     assert response.json()["detail"] == "ACTIVE_PUBLICATION_UNAVAILABLE"
 
 
+def test_table_and_map_share_one_catalog_even_when_requested_concurrently(snapshot, graph, monkeypatch):
+    """One expensive search supplies both metrics and routes, without changing the working plan."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    import core.runtime as runtime_module
+
+    executor = ControlledExecutor()
+    runtime = RouterRuntime(Reader(snapshot.model_dump_json().encode()), graph,
+                            SearchSettings(time_limit_ms=100), executor=executor)
+    runtime.tick()
+    executor.complete(0)
+    runtime.tick()
+    before = runtime.read_result()
+    original = runtime_module.calculate_policy_catalog
+    calls = []
+
+    def calculate_once(*args, **kwargs):
+        calls.append(1)
+        time.sleep(0.03)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(runtime_module, "calculate_policy_catalog", calculate_once)
+    with ThreadPoolExecutor(max_workers=2) as threads:
+        table_future = threads.submit(runtime.compare_policies)
+        map_future = threads.submit(runtime.simulate, {"catalog": True})
+        table, mapped = table_future.result(), map_future.result()
+    assert len(calls) == 1
+    by_id = {row["strategy_id"]: row["metrics"] for row in mapped["strategies"]}
+    for row in table.rows:
+        assert row.summary.assigned_count == by_id[row.strategy_id]["assigned_count"]
+        assert row.summary.distance_km == by_id[row.strategy_id]["distance_km"]
+    assert runtime.read_result() == before
+    runtime.close()
+
+
 def test_covering_comparison_does_not_leak_extra_crews_into_other_policies(snapshot, graph):
     """Expanded capacity is reported explicitly and never improves the fixed-roster pool."""
     from core.runtime import calculate_policy_comparison
@@ -443,3 +479,23 @@ def test_snapshot_read_failure_keeps_an_inflight_solve(graph):
     assert runtime._generation == generation
     assert runtime.read_result().status == "pending"
     runtime.close()
+
+
+def test_reset_epoch_changes_factory_identity_and_rejects_stale_calibration(snapshot, graph, tmp_path):
+    store = PredictCalibrationStore(tmp_path / "predict-calibration.json")
+    runtime = RouterRuntime(Reader(snapshot.model_dump_json().encode()), graph, predict_calibration_store=store)
+    try:
+        factory = factory_calibration()
+        learned = factory.model_copy(update={"source": "learned"})
+        runtime.set_predict_calibration(learned, "learned-before-reset")
+        new_epoch = factory.model_copy(update={"working_set_generation": 2})
+        assert new_epoch.content_version() != factory.content_version()
+        runtime._sync_working_set_generation(2, None)
+        assert runtime.predict_calibration_state()["calibration"]["source"] == "factory"
+        assert runtime.predict_calibration_state()["calibration"]["working_set_generation"] == 2
+        with pytest.raises(ValueError, match="CALIBRATION_GENERATION_STALE"):
+            runtime.set_predict_calibration(factory, "late-pre-reset-write")
+        with pytest.raises(ValueError, match="CALIBRATION_GENERATION_STALE"):
+            runtime._sync_working_set_generation(1, None)
+    finally:
+        runtime.close()

@@ -16,7 +16,7 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from core.contracts import GeoPoint, Record
+from core.contracts import GeoPoint, Record, Transport
 from core.geo import TravelQuote, TravelSegment, TravelSource, content_hash, haversine_m, quote_at
 
 
@@ -135,7 +135,7 @@ def choose_metro(walking_sec: int | None, metro_sec: int | None, *, shelter: boo
 
 
 class MetroTravel:
-    """Choose an offline metro composite for pedestrian profiles when it wins."""
+    """Choose an offline metro composite for transit-eligible route profiles when it wins."""
 
     def __init__(self, travel: TravelSource, network: MetroNetwork, *, shelter: bool = False):
         self.travel = travel
@@ -160,9 +160,9 @@ class MetroTravel:
             ).encode("utf-8")
         )
 
-    def quote(self, origin: GeoPoint, destination: GeoPoint, profile: str) -> TravelQuote | None:
-        """Compare both legacy transit and canonical walking with the metro composite."""
-        if profile not in ("walk", "transit"):
+    def quote(self, origin: GeoPoint, destination: GeoPoint, profile: Transport) -> TravelQuote | None:
+        """Compare the explicit transit profile with the metro composite."""
+        if profile != "transit":
             return self.travel.quote(origin, destination, profile)
         walking = self.travel.quote(origin, destination, "walk")
         if not self._inside_moscow(origin) or not self._inside_moscow(destination):
@@ -175,14 +175,13 @@ class MetroTravel:
         return walking
 
     def quote_at(
-        self, origin: GeoPoint, destination: GeoPoint, profile: str, departure_at: int
+        self, origin: GeoPoint, destination: GeoPoint, profile: Transport, departure_at: int
     ) -> TravelQuote | None:
         """Build access, metro and egress segments only for supported city points."""
-        # Both public values resolve to pedestrian access unless this optional
-        # graph produces a complete faster journey.
+        # Transit uses pedestrian access and egress around the optional graph.
         base_profile = "walk" if profile in ("walk", "transit") else profile
         walking = quote_at(self.travel, origin, destination, base_profile, departure_at)
-        if profile not in ("walk", "transit") or not self._inside_moscow(origin) or not self._inside_moscow(destination):
+        if profile != "transit" or not self._inside_moscow(origin) or not self._inside_moscow(destination):
             return walking
         candidate = self._metro_quote(origin, destination, departure_at)
         walking_sec = None if walking is None else walking.duration_sec

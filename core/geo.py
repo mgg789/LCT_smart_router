@@ -12,7 +12,7 @@ import math
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Protocol, cast, runtime_checkable
 
 from pydantic import Field, model_validator
 
@@ -123,6 +123,7 @@ class TravelQuote:
     traffic_factor: float = 1.0
     geometry_exact: bool = False
     segments: tuple["TravelSegment", ...] = ()
+    weather_multiplier_used: float | None = None
 
 
 @dataclass(frozen=True)
@@ -147,6 +148,17 @@ class TravelSource(Protocol):
         ...
 
 
+@runtime_checkable
+class TimedTravelSource(Protocol):
+    """Travel provider that can price a leg at a departure clock."""
+
+    def quote_at(
+        self, origin: GeoPoint, destination: GeoPoint, profile: Transport, departure_at: int
+    ) -> TravelQuote | None:
+        """Return one departure-aware route quote."""
+        ...
+
+
 class TravelUnavailable(ValueError):
     """Provider failure with a safe diagnostic code, distinct from a proven NoRoute."""
 
@@ -154,8 +166,8 @@ class TravelUnavailable(ValueError):
 class StraightTravel:
     """Construction quote: a straight line between the two points.
 
-    A solve must not call OSRM or the MKAD road API. Metro still wraps this
-    provider. Exact polylines are drawn later, one plan edge at a time.
+    Used only as an explicit fallback when no prepared road costs are available.
+    Exact polylines are drawn later, one selected plan edge at a time.
     """
 
     version = "straight-v1"
@@ -182,9 +194,11 @@ def quote_at(
     departure_at: int,
 ) -> TravelQuote | None:
     """Quote at a departure clock when supported, otherwise use the legacy quote."""
+    # This is the innermost path of route search. Structural Protocol checks
+    # repeatedly inspect legacy providers; select the optional method directly.
     timed_quote = getattr(travel, "quote_at", None)
     if callable(timed_quote):
-        return timed_quote(origin, destination, profile, departure_at)
+        return cast(TimedTravelSource, travel).quote_at(origin, destination, profile, departure_at)
     return travel.quote(origin, destination, profile)
 
 
@@ -267,6 +281,7 @@ class TechnicalTravel:
             traffic_factor,
             quote.geometry_exact if provenance != "approximate" else False,
             segments,
+            quote.weather_multiplier_used,
         )
 
 
@@ -277,6 +292,14 @@ def configure_travel(
 ) -> TechnicalTravel:
     """Return one timing and optional planning-time-traffic context for all paths."""
     from core.weather import WeatherTravel, weather_kind, weather_multiplier
+
+    if settings.strict_time_windows:
+        settings = settings.model_copy(update={
+            "window_lateness_tolerance_sec": 0,
+            "departure_lateness_tolerance_sec": 0,
+            "task_start_lateness_tolerance_sec": 0,
+            "task_overrun_tolerance_sec": 0,
+        })
 
     if isinstance(travel, TechnicalTravel) and travel.settings == settings:
         configured_base = travel.travel
@@ -372,6 +395,7 @@ class ProfilePolicyTravel:
                 points=quote.points,
                 provenance=quote.provenance,
                 traffic_factor=quote.traffic_factor,
+                weather_multiplier_used=quote.weather_multiplier_used,
                 geometry_exact=quote.geometry_exact,
                 segments=quote.segments,
             )
@@ -407,6 +431,9 @@ def routing_context_version(travel: TravelSource, settings: RouterTechnicalSetti
         "access_buffer_sec": settings.access_buffer_sec,
         "fixed_travel_time_sec": settings.fixed_travel_time_sec,
     }
+    # Keep legacy relaxed identities stable, but never reuse their memory in strict mode.
+    if settings.strict_time_windows:
+        context["strict_time_windows"] = True
     return content_hash(json.dumps(context, sort_keys=True, separators=(",", ":")).encode("utf-8"))
 
 
@@ -583,6 +610,9 @@ class MixedTravel:
         self, origin: GeoPoint, destination: GeoPoint, quote: TravelQuote | None, profile: Transport
     ) -> bool:
         """Upgrade centroid, approximate and missing graph legs when a better source exists."""
+        profiles = getattr(self.overlay, "profiles", None)
+        if profiles is not None and profile not in profiles:
+            return False
         if (
             profile == "car"
             and getattr(self.overlay, "replaces_car_graph", False)
@@ -596,7 +626,7 @@ class MixedTravel:
         if graph is None or not callable(nearest):
             return False
         source, target = nearest(origin), nearest(destination)
-        if source is None or target is None:
+        if not isinstance(source, str) or not isinstance(target, str):
             return True
         return not (_road_quality_node(graph, source) and _road_quality_node(graph, target))
 
@@ -614,6 +644,22 @@ class MixedTravel:
         departure_at: int | None,
     ) -> TravelQuote | None:
         """Quote the base graph, then a live overlay when this leg is not already road-quality."""
+        if profile == "car" and getattr(self.overlay, "replaces_car_graph", False) and origin != destination:
+            # A prepared car matrix is authoritative. Building a Dijkstra path first
+            # would spend most search time producing geometry that is discarded.
+            try:
+                return self.overlay.quote(origin, destination, profile) if departure_at is None else quote_at(
+                    self.overlay, origin, destination, profile, departure_at
+                )
+            except TravelUnavailable as exc:
+                if profile not in self._warned_profiles:
+                    logging.getLogger(__name__).warning(
+                        "TRAVEL_OVERLAY_UNAVAILABLE profile=%s code=%s; using local travel", profile, exc
+                    )
+                    self._warned_profiles.add(profile)
+                return self.travel.quote(origin, destination, profile) if departure_at is None else quote_at(
+                    self.travel, origin, destination, profile, departure_at
+                )
         base = (
             self.travel.quote(origin, destination, profile)
             if departure_at is None

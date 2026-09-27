@@ -5,6 +5,7 @@ import { proposeAlertWithAi } from '../api/client';
 import type { AlertResolutionInput, DashboardSnapshot } from '../api/types';
 import { isAlertActionId } from '../domain/alerts';
 import { AlertActions } from './AlertActions';
+import { runAlertSweep } from './alertSweep';
 import { dispatchAlertId, type InboxNoticeCard, inboxFromSources } from './alertsInbox';
 import { FIGMA_ASSETS } from './assets';
 import { InboxAlertCardView, InboxButton, InboxNoticeCardView } from './inboxCard';
@@ -89,6 +90,15 @@ export function AlertsView({
   const [hiddenNoticeIds, setHiddenNoticeIds] = useState<ReadonlySet<string>>(() => new Set());
   const [sweptIds, setSweptIds] = useState<ReadonlySet<string>>(() => new Set());
   const [sweeping, setSweeping] = useState(false);
+  const sweepRunning = useRef(false);
+  const sweepGeneration = useRef(0);
+  const [decisionErrors, setDecisionErrors] = useState<Readonly<Record<string, string>>>({});
+  useEffect(
+    () => () => {
+      sweepGeneration.current += 1;
+    },
+    [],
+  );
   const [spotlight, setSpotlight] = useState<{ id: string; action: string | null } | null>(null);
   const [thinkingId, setThinkingId] = useState<string | null>(null);
   const [leaving, setLeaving] = useState<Readonly<Record<string, 1 | -1>>>({});
@@ -105,6 +115,7 @@ export function AlertsView({
     const alertId = card.sourceAlert
       ? dispatchAlertId(card.sourceAlert.id)
       : dispatchAlertId(card.id);
+    setDecisionErrors((current) => ({ ...current, [card.id]: '' }));
     setThinkingId(card.id);
     let action = card.sourceAlert?.actions?.find((item) => isAlertActionId(item)) ?? null;
     let proposal: Awaited<ReturnType<typeof proposeAlertWithAi>> | null = null;
@@ -112,8 +123,17 @@ export function AlertsView({
       try {
         proposal = await proposeAlertWithAi(token, alertId);
         action = isAlertActionId(proposal.choice) ? proposal.choice : action;
-      } catch {
-        setThinkingId(null);
+      } catch (error) {
+        if (!cancelled()) {
+          setThinkingId(null);
+          setDecisionErrors((current) => ({
+            ...current,
+            [card.id]:
+              error instanceof Error
+                ? error.message
+                : 'AI не смог предложить решение. Повторите попытку.',
+          }));
+        }
         return false;
       }
     }
@@ -142,11 +162,23 @@ export function AlertsView({
             }
           : {}),
       });
-    } catch {
-      setSpotlight(null);
+    } catch (error) {
+      if (!cancelled()) {
+        setSpotlight(null);
+        setDecisionErrors((current) => ({
+          ...current,
+          [card.id]:
+            error instanceof Error ? error.message : 'Решение не применено. Повторите попытку.',
+        }));
+      }
       return false;
     }
     if (cancelled()) return false;
+    // Replanning actions stay visible until the server verifies the new plan.
+    if (action === 'move_window' || action === 'restore_auto') {
+      setSpotlight(null);
+      return true;
+    }
     dismissToast(card.id.startsWith('alert:') ? card.id : `alert:${alertId}`);
     setLeaving((current) => ({ ...current, [card.id]: index % 2 === 0 ? 1 : -1 }));
     await wait(520);
@@ -154,24 +186,23 @@ export function AlertsView({
     setSpotlight(null);
     return true;
   }
-  useEffect(() => {
-    if (!sweeping) return;
-    let cancelled = false;
-    const queue = visibleAlerts;
-    void (async () => {
-      for (const [index, card] of queue.entries()) {
-        if (cancelled) return;
-        await playAiDecision(card, index, () => cancelled);
+  async function startSweep() {
+    if (sweepRunning.current || writesDisabled || visibleAlerts.length === 0) return;
+    sweepRunning.current = true;
+    const generation = sweepGeneration.current;
+    const cancelled = () => generation !== sweepGeneration.current;
+    setSweeping(true);
+    try {
+      await runAlertSweep(visibleAlerts, playAiDecision, cancelled);
+    } finally {
+      sweepRunning.current = false;
+      if (!cancelled()) {
+        setSweeping(false);
+        setThinkingId(null);
+        setSpotlight(null);
       }
-      if (!cancelled) setSweeping(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // The queue is the list at the moment the sweep starts; playAiDecision is read
-    // fresh through the closure on every sweep tick.
-    // biome-ignore lint/correctness/useExhaustiveDependencies: the sweep intentionally runs on the queue identity, not on the player's identity
-  }, [sweeping, visibleAlerts, playAiDecision]);
+    }
+  }
   const listRef = useRef<HTMLDivElement>(null);
   const anchors = useRef<Array<{ id: string; offset: number }>>([]);
   function rememberScroll() {
@@ -205,11 +236,11 @@ export function AlertsView({
       </FigmaText>
       <AiSweepSlider
         top={TITLE_TOP - 16}
-        armed={glassArrow}
+        armed={glassArrow && !writesDisabled}
         engaged={sweeping}
         motionOn={animate}
         onCommit={() => {
-          if (!sweeping && visibleAlerts.length > 0) setSweeping(true);
+          void startSweep();
         }}
       />
 
@@ -256,7 +287,7 @@ export function AlertsView({
                       token={token}
                       alert={card.sourceAlert}
                       snapshot={snapshot}
-                      disabled={writesDisabled}
+                      disabled={writesDisabled || sweeping}
                       onResolve={onResolve}
                       spotlightAction={spotlight?.id === card.id ? spotlight.action : null}
                       thinking={thinkingId === card.id}
@@ -283,6 +314,14 @@ export function AlertsView({
                     />
                   }
                 />
+                {decisionErrors[card.id] ? (
+                  <p
+                    role="status"
+                    className="px-[32px] pt-[12px] font-medium text-[18px] text-figma-muted"
+                  >
+                    {decisionErrors[card.id]}
+                  </p>
+                ) : null}
               </motion.div>
             ))}
           </div>
@@ -518,6 +557,13 @@ function AiSweepSlider({
       <motion.button
         type="button"
         aria-label="Решить все с AI"
+        disabled={!armed || engaged}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            commit();
+          }
+        }}
         className="absolute top-[8px] z-10 flex size-[63px] cursor-grab items-center justify-center active:cursor-grabbing"
         style={{ left: 10 }}
         animate={{ x: engaged ? TRAVEL : progress * TRAVEL }}

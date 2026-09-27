@@ -16,15 +16,22 @@ import type {
   DispatcherSettingsView,
   EngineerDayView,
   GeocodeHit,
+  ImportPreparationView,
   MapProvidersStatus,
   McpSettingsView,
   OfficialImportSummary,
   PlanAssignmentView,
   PolicyComparisonResponse,
   PolicyId,
+  ReviewImportQuality,
   RoadImportSummary,
   RouterTechnicalSettings,
 } from './types';
+import {
+  confirmWindowChange,
+  WindowChangeDeclined,
+  windowConfirmationFrom,
+} from './windowConfirmation';
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
 const policyIdSchema = z.enum(['compact', 'fast', 'sla', 'balanced', 'eco', 'covering']);
@@ -117,6 +124,7 @@ const engineerSchema = z.object({
   inputOrder: z.number().int(),
   skills: z.array(z.string()),
   transportType: z.enum(['car', 'walk', 'bike', 'transit']),
+  transitEligible: z.boolean().optional().default(true),
   region: z.string().nullable(),
   homeLat: z.number().nullable(),
   homeLon: z.number().nullable(),
@@ -226,12 +234,50 @@ const rawAssignmentSchema = z.object({
 
 const planSchema = z.object({
   revision: z.number().int(),
-  origin: z.enum(['auto', 'manual']),
+  origin: z.enum(['auto', 'manual', 'restore']),
   planAsOf: z.number().int(),
   appliedAt: z.number().int(),
   routes: z.array(routeSchema),
   assignments: z.array(rawAssignmentSchema),
 });
+
+/** Read persisted revisions; restore eligibility is never inferred from browser state. */
+export async function loadPlanHistory(token: string) {
+  const history = await requestJson(
+    '/api/v1/dispatch/plan/previous',
+    z.object({
+      current: planSchema.nullable(),
+      previous: planSchema.nullable(),
+      eligibility: z.object({ eligible: z.boolean(), reason: z.string().nullable() }),
+    }),
+    token,
+  );
+  const normalize = (plan: z.infer<typeof planSchema> | null) =>
+    plan
+      ? {
+          ...plan,
+          assignments: plan.assignments.map(normalizeAssignment),
+        }
+      : null;
+  return { ...history, current: normalize(history.current), previous: normalize(history.previous) };
+}
+
+/** Restore the server's predecessor as a new revision, with a stale-view CAS guard. */
+export async function restorePreviousPlan(token: string, expectedRevision: number) {
+  return requestJson(
+    '/api/v1/dispatch/plan/restore',
+    z.object({
+      fromRevision: z.number().int(),
+      restoredRevision: z.number().int(),
+      origin: z.literal('restore'),
+    }),
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({ operationId: crypto.randomUUID(), expectedRevision }),
+    },
+  );
+}
 
 const dispatchPlanSchema = z.object({
   mode: z.enum(['auto', 'manual']),
@@ -397,6 +443,7 @@ const technicalSettingsSchema = z.object({
   metroEnabled: z.boolean().default(false),
   departureLatenessToleranceSec: z.number().int().nonnegative(),
   taskStartLatenessToleranceSec: z.number().int().nonnegative(),
+  strictTimeWindows: z.boolean().default(false),
   windowLatenessToleranceSec: z.number().int().nonnegative().max(1_200).default(0),
   trafficEnabled: z.boolean().default(true),
   equipmentEnabled: z.boolean().default(true),
@@ -1019,6 +1066,7 @@ export async function updateRouterTechnicalSettings(
       body: JSON.stringify({
         operationId: crypto.randomUUID(),
         expectedContextVersion: settings.routerContextVersion,
+        strictTimeWindows: settings.strictTimeWindows ?? false,
         lunchesEnabled: settings.lunchesEnabled,
         metroEnabled: settings.metroEnabled,
         departureLatenessToleranceSec: settings.departureLatenessToleranceSec,
@@ -1184,11 +1232,71 @@ export async function setEngineerAvailability(
 }
 
 /** Uploads one locally validated data package as an idempotent backend operation. */
-export function uploadDataPackage(token: string, file: DataUploadFile): Promise<DataUploadSummary> {
-  return requestJson('/api/v1/dispatch/data/upload', dataUploadSummarySchema, token, {
+export async function uploadDataPackage(
+  token: string,
+  file: DataUploadFile,
+  review?: ReviewImportQuality,
+): Promise<DataUploadSummary> {
+  const path = '/api/v1/dispatch/data/upload/prepare';
+  const report = await requestJson(path, importPreparationSchema, token, {
     method: 'POST',
-    body: JSON.stringify({ operationId: crypto.randomUUID(), ...file }),
+    body: JSON.stringify({ ...file, operationId: crypto.randomUUID() }),
   });
+  await acknowledgeImport(token, path, report, review);
+  return requestJson(`${path}/${report.prepareId}/confirm`, dataUploadSummarySchema, token, {
+    method: 'POST',
+    body: JSON.stringify({ operationId: crypto.randomUUID() }),
+  });
+}
+
+const importPreparationSchema = z.object({
+  prepareId: z.string(),
+  source: z.string(),
+  immutableBatchHash: z.string(),
+  expiresAt: z.number(),
+  versions: z.object({
+    rules: z.string(),
+    statistics: z.string(),
+    student: z.string(),
+    transform: z.string().optional(),
+  }),
+  findings: z.array(
+    z.object({
+      code: z.string(),
+      layer: z.enum(['rules', 'statistics', 'student']),
+      count: z.number().int().nonnegative(),
+      examples: z.array(z.string()),
+      message: z.string(),
+      score: z.number().optional(),
+    }),
+  ),
+});
+
+/** Distinguishes an explicit pre-write cancellation from an uncertain commit failure. */
+export class ImportCancelledError extends Error {
+  constructor() {
+    super('Загрузка отменена. Рабочие данные не изменены.');
+  }
+}
+
+async function acknowledgeImport(
+  token: string,
+  path: string,
+  report: ImportPreparationView,
+  review?: ReviewImportQuality,
+): Promise<void> {
+  if (report.findings.length === 0) return;
+  if (review && (await review(report))) return;
+  await requestJson(
+    `${path}/${report.prepareId}/cancel`,
+    z.object({ cancelled: z.boolean() }),
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({ operationId: crypto.randomUUID() }),
+    },
+  );
+  throw new ImportCancelledError();
 }
 
 /** Imports one native OSRM JSON or gzip payload without adding user-defined envelope fields. */
@@ -1220,10 +1328,19 @@ const officialImportSummarySchema = z
 /**
  * Loads the official TZ dataset shipped in the repo (`regions: all`) without curl.
  */
-export function importOfficialDataset(token: string): Promise<OfficialImportSummary> {
-  return requestJson('/api/v1/dispatch/data/import', officialImportSummarySchema, token, {
+export async function importOfficialDataset(
+  token: string,
+  review?: ReviewImportQuality,
+): Promise<OfficialImportSummary> {
+  const path = '/api/v1/dispatch/data/import/prepare';
+  const report = await requestJson(path, importPreparationSchema, token, {
     method: 'POST',
     body: JSON.stringify({ operationId: crypto.randomUUID(), regions: 'all' }),
+  });
+  await acknowledgeImport(token, path, report, review);
+  return requestJson(`${path}/${report.prepareId}/confirm`, officialImportSummarySchema, token, {
+    method: 'POST',
+    body: JSON.stringify({ operationId: crypto.randomUUID() }),
   });
 }
 
@@ -1324,10 +1441,14 @@ function formatUnknownReason(reason: unknown): string {
       lunchStatus: z.string().optional(),
       assignedBefore: z.number().optional(),
       assignedAfter: z.number().optional(),
+      lostSubmittedRequestIds: z.array(z.string()).optional(),
+      baselineAssignedRequestIds: z.array(z.string()).optional(),
     })
     .safeParse(reason);
   if (facts.success) {
     const value = facts.data;
+    if (value.lostSubmittedRequestIds && value.baselineAssignedRequestIds)
+      return `После смены политики ${value.lostSubmittedRequestIds.length} из ${value.baselineAssignedRequestIds.length} ранее назначенных заявок потеряли исполнителя. Проверьте новую политику или прошлый план. Неназначенные заявки требуют отдельного решения.`;
     if (value.shiftStartAt !== undefined && value.thresholdAt !== undefined)
       return `Смена началась в ${formatClock(value.shiftStartAt)}. К ${formatClock(value.thresholdAt)} отметка о выходе не поступила.`;
     if (value.plannedStartAt !== undefined && value.windowEndAt !== undefined) {
@@ -1517,6 +1638,19 @@ const aiViewSchema = z.object({
     }),
     computedAt: z.number().nullable(),
     syncedToRouter: z.boolean(),
+    weatherCalibration: z
+      .object({
+        status: z.enum(['factory', 'collecting', 'shadow', 'validated']),
+        observationCount: z.number().int().nonnegative(),
+        days: z.number().int().nonnegative(),
+        eligibleGroups: z.number().int().nonnegative(),
+        totalGroups: z.number().int().nonnegative(),
+        version: z.string().nullable(),
+        source: z.literal('travel_elapsed_proxy'),
+        uncertainty: z.literal('not_estimated').optional(),
+        reason: z.string(),
+      })
+      .optional(),
   }),
 });
 
@@ -1657,6 +1791,31 @@ export async function requestJson<T>(
     });
     const body: unknown = await response.json().catch(() => null);
     if (!response.ok) {
+      const challenge = windowConfirmationFrom(body);
+      if (challenge) {
+        if (new Headers(init.headers).has('x-window-change-confirmation')) {
+          throw new DashboardApiError(
+            'Заявка изменилась или подтверждение устарело. Откройте действие заново.',
+            409,
+            path,
+          );
+        }
+        globalThis.clearTimeout(timeout);
+        if (!(await confirmWindowChange(challenge))) throw new WindowChangeDeclined();
+        return await requestJson(
+          path,
+          schema,
+          token,
+          {
+            ...init,
+            headers: {
+              ...Object.fromEntries(new Headers(init.headers)),
+              'x-window-change-confirmation': challenge.confirmation,
+            },
+          },
+          timeoutMs,
+        );
+      }
       throw new DashboardApiError(
         apiErrorMessage(body, response.status),
         response.status,
@@ -1674,9 +1833,12 @@ export async function requestJson<T>(
       );
     return parsed.data;
   } catch (cause) {
+    if (cause instanceof WindowChangeDeclined) throw cause;
     if (cause instanceof DashboardApiError) throw cause;
     throw new DashboardApiError(
-      controller.signal.aborted ? 'Сервер не ответил за 12 секунд' : 'Нет связи с сервером',
+      controller.signal.aborted
+        ? `Сервер не ответил за ${Math.ceil(timeoutMs / 1000)} секунд`
+        : 'Нет связи с сервером',
       0,
       path,
     );

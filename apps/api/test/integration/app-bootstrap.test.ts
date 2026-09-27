@@ -5,8 +5,11 @@ import { after, before, describe, it } from 'node:test';
 import type { INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../../src/app.module';
+import { AppConfigService } from '../../src/common/config';
 import { AllExceptionsFilter } from '../../src/common/errors';
 import { BigIntGuardInterceptor } from '../../src/common/serialization';
+import { applySecurityHeaders } from '../../src/main';
+import { PrismaService } from '../../src/persistence';
 import { databaseUrl } from '../support/database';
 
 /**
@@ -28,6 +31,7 @@ describe('application bootstrap', () => {
     // one into an actionable message.
     databaseUrl();
     app = await NestFactory.create(AppModule, { logger: false });
+    applySecurityHeaders(app, app.get(AppConfigService).isProduction);
     app.setGlobalPrefix('api/v1', {
       exclude: ['health/live', 'health/ready', 'health/services'],
     });
@@ -94,5 +98,33 @@ describe('application bootstrap', () => {
     assert.equal(body.error.code, 'NOT_FOUND');
     assert.equal(body.error.requestId, 'trace-42');
     assert.deepEqual(body.error.details, {});
+  });
+
+  it('sets API security headers without forcing local HTTP onto HTTPS', async () => {
+    const response = await fetch(`${baseUrl}/health/live`);
+    assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(response.headers.get('x-frame-options'), 'SAMEORIGIN');
+    assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
+    assert.equal(response.headers.get('cross-origin-resource-policy'), 'same-origin');
+    assert.equal(response.headers.get('strict-transport-security'), null);
+  });
+
+  it('counts one HTTP login attempt exactly once in the shared budget', async () => {
+    const prisma = app.get(PrismaService);
+    const before = await prisma.rateLimitBucket.aggregate({
+      where: { scope: 'auth:password' },
+      _sum: { count: true },
+    });
+    // Invalid input exercises the real global guards without creating an account/session.
+    await fetch(`${baseUrl}/api/v1/auth/dispatcher/password`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    });
+    const after = await prisma.rateLimitBucket.aggregate({
+      where: { scope: 'auth:password' },
+      _sum: { count: true },
+    });
+    assert.equal((after._sum.count ?? 0) - (before._sum.count ?? 0), 1);
   });
 });

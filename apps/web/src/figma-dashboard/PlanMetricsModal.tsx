@@ -1,11 +1,6 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useState } from 'react';
-import {
-  explainWithAi,
-  optimizePlanWithAi,
-  predictSituation,
-  type SituationPredictionView,
-} from '../api/client';
+import { optimizePlanWithAi, predictSituation, type SituationPredictionView } from '../api/client';
 import type { DashboardSnapshot, PolicyComparisonResponse } from '../api/types';
 import {
   type AdviceLine,
@@ -19,6 +14,7 @@ import { ModalLayer, ModalScrim } from './modalLayer';
 import { FigmaIcon } from './primitives';
 import { shortRequestId } from './requestsTable';
 import { TintIcon } from './TintIcon';
+import { useAiExplanation } from './useAiExplanation';
 
 const fade = { duration: 0.22, ease: [0.22, 1, 0.36, 1] as const };
 
@@ -38,6 +34,7 @@ export function PlanMetricsModal({
   snapshot,
   token,
   onOpenRequest,
+  onOpenPolicyComparison,
   onClose,
 }: {
   open: boolean;
@@ -46,6 +43,8 @@ export function PlanMetricsModal({
   comparison: PolicyComparisonResponse | null;
   token: string | null;
   onOpenRequest: (requestId: string) => void;
+  /** Leaves the dialog and opens the same-snapshot policy comparison workspace. */
+  onOpenPolicyComparison: () => void;
   onClose: () => void;
 }) {
   const [prediction, setPrediction] = useState<SituationPredictionView | null>(null);
@@ -131,23 +130,32 @@ export function PlanMetricsModal({
         exit={motionOn ? { opacity: 0 } : undefined}
         transition={fade}
       >
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-[12px]">
           <h2
             id="plan-metrics-title"
             className="figma-text font-extrabold text-[28px] tracking-[-0.476px] text-figma-ink"
           >
             Метрики плана
           </h2>
-          <button
-            type="button"
-            aria-label="Закрыть"
-            onClick={onClose}
-            className="flex size-[36px] items-center justify-center transition-transform duration-150 hover:scale-110"
-          >
-            <span className="-rotate-45">
-              <FigmaIcon src={FIGMA_ASSETS.toastCloseInk} alt="" width={20} height={20} />
-            </span>
-          </button>
+          <div className="flex items-center gap-[8px]">
+            <button
+              type="button"
+              onClick={onOpenPolicyComparison}
+              className="rounded-full bg-figma-soft px-[14px] py-[8px] text-[14px] font-semibold text-figma-ink transition-colors hover:bg-figma-track"
+            >
+              Сравнить политики
+            </button>
+            <button
+              type="button"
+              aria-label="Закрыть"
+              onClick={onClose}
+              className="flex size-[36px] items-center justify-center transition-transform duration-150 hover:scale-110"
+            >
+              <span className="-rotate-45">
+                <FigmaIcon src={FIGMA_ASSETS.toastCloseInk} alt="" width={20} height={20} />
+              </span>
+            </button>
+          </div>
         </div>
         <QualityCard
           advice={advice}
@@ -252,31 +260,12 @@ function QualityBody({
   const reduce = useReducedMotion();
   const explainable = advice.band === 'yellow' || advice.band === 'red';
   const [aiOn, setAiOn] = useState(false);
-  const [aiText, setAiText] = useState<string | null>(null);
-  const [aiReady, setAiReady] = useState(false);
-  const packed = JSON.stringify(context);
-  useEffect(() => {
-    if (!aiOn || !token) {
-      setAiText(null);
-      setAiReady(false);
-      return;
-    }
-    let cancelled = false;
-    setAiReady(false);
-    void explainWithAi(token, 'plan', JSON.parse(packed) as unknown)
-      .then((result) => {
-        if (!cancelled) setAiText(result.text);
-      })
-      .catch(() => {
-        if (!cancelled) setAiText(null);
-      })
-      .finally(() => {
-        if (!cancelled) setAiReady(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [aiOn, token, packed]);
+  const { text: aiText, ready: aiReady } = useAiExplanation({
+    enabled: aiOn,
+    token,
+    kind: 'plan',
+    context,
+  });
   return (
     <section
       className={`relative mt-[18px] rounded-[20px] px-[18px] py-[16px] ${BAND_CLASS[advice.band]}`}

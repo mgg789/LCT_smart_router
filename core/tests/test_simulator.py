@@ -2,16 +2,16 @@
 
 import pytest
 from core.engine import SearchSettings
-from core.runtime import construction_travel
+from core.planning_travel import planning_travel
 from core.schedule import baseline
 from core.simulator import SimulationPatch, patch_hash, simulate_patch
 
 
-def test_window_shift_keeps_the_snapshot_and_uses_insertion(snapshot):
+def test_window_shift_keeps_the_snapshot_and_uses_insertion(snapshot, graph):
     raw = snapshot.model_dump_json().encode()
     before = snapshot.model_dump()
     settings = SearchSettings(time_limit_ms=800)
-    travel = construction_travel(settings, snapshot.planning_as_of)
+    travel = planning_travel(graph, settings, snapshot)
     base = baseline(snapshot, travel)
     job = snapshot.requests[0]
     patch = SimulationPatch.model_validate(
@@ -23,7 +23,7 @@ def test_window_shift_keeps_the_snapshot_and_uses_insertion(snapshot):
             }
         }
     )
-    result = simulate_patch(raw, settings, "ctx-1", patch, base, publication_id="pub-1")
+    result = simulate_patch(raw, settings, "ctx-1", patch, base, publication_id="pub-1", graph=graph)
     assert result["method"] == "insertion"
     assert result["patch_hash"] == patch_hash(patch)
     assert "delta" in result
@@ -42,7 +42,7 @@ def test_mixed_patch_is_rejected():
         )
 
 
-def test_bring_online_keeps_the_source_snapshot(snapshot):
+def test_bring_online_keeps_the_source_snapshot(snapshot, graph):
     target = snapshot.engineers[0]
     offline = snapshot.model_copy(
         update={
@@ -62,6 +62,7 @@ def test_bring_online_keeps_the_source_snapshot(snapshot):
         patch,
         None,
         publication_id="pub-online",
+        graph=graph,
     )
     assert offline.model_dump() == before
     assert result["method"] == "bounded"

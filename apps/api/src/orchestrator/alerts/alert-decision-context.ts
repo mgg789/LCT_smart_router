@@ -117,14 +117,15 @@ interface TomorrowRequest {
 /**
  * How many other requests already sit in this visit's window tomorrow.
  *
- * Moving the visit there does not create capacity: each overlapping request
- * needs its own engineer on shift at that moment. The closing count adds
- * this request: that is the load `reschedule` would create.
+ * Overlapping customer windows describe demand, not concurrent work or required
+ * headcount. Capacity still depends on durations, travel, skills and shifts.
+ * `overlapCount`, when supplied, counts the full DB result before preview limiting.
  */
 export function tomorrowCrewLine(input: {
   readonly windowStartAt: number;
   readonly windowEndAt: number;
   readonly others: readonly TomorrowRequest[];
+  readonly overlapCount?: number;
 }): string {
   const start = input.windowStartAt + 86_400;
   const end = input.windowEndAt + 86_400;
@@ -138,7 +139,7 @@ export function tomorrowCrewLine(input: {
         item.windowEndAt > start,
     )
     .sort((left, right) => left.windowStartAt - right.windowStartAt);
-  const already = overlapping.length;
+  const already = input.overlapCount ?? overlapping.length;
   const together = already + 1;
   const listed = overlapping
     .slice(0, 6)
@@ -151,8 +152,8 @@ export function tomorrowCrewLine(input: {
   const clock = `${moscowClock(start)}–${moscowClock(end)}`;
   return (
     `На завтра в окно ${clock} уже ${ruCount(already, 'заявка', 'заявки', 'заявок')}.` +
-    `${names} ${engineerShift(already)}, чтобы одновременно решать заявку в этот момент.` +
-    ` Если перенести и эту, одновременно будут ${ruCount(together, 'заявка', 'заявки', 'заявок')}: ${engineerShift(together)}.`
+    `${names} Всего после переноса этой заявки — ${ruCount(together, 'заявка', 'заявки', 'заявок')}.` +
+    ' Пересечение клиентских окон не определяет число необходимых инженеров: нужны длительности работ, дорога, навыки и смены.'
   );
 }
 
@@ -160,12 +161,6 @@ export function tomorrowCrewLine(input: {
 function moscowDayStart(unix: number): number {
   const shifted = unix + MOSCOW_OFFSET_SEC;
   return Math.floor(shifted / 86_400) * 86_400 - MOSCOW_OFFSET_SEC;
-}
-
-function engineerShift(count: number): string {
-  const word = ruCount(count, 'инженер', 'инженера', 'инженеров');
-  const verb = count % 10 === 1 && count % 100 !== 11 ? 'должен выйти' : 'должны выйти';
-  return `${word} ${verb} на смену`;
 }
 
 function ruCount(count: number, one: string, few: string, many: string): string {

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { z } from 'zod';
+import type { AppliedPlanCurrentShape } from '../../api/plan-view.types';
 import { SysError } from '../../common/errors';
 import { Clock } from '../../common/time';
 import { NotificationsService } from '../../notifications';
@@ -499,6 +500,39 @@ export class ResultAcceptanceService {
       }
     }
 
+    return null;
+  }
+
+  /** Reuses automatic-acceptance fact guards for an immutable stored revision. */
+  async conflictWithStoredPlanFacts(tx: Tx, plan: AppliedPlanCurrentShape): Promise<string | null> {
+    // Unassigned work can have started under the newer plan; it must not disappear.
+    const requestIds = plan.assignments.map((item) => item.requestId);
+    if (requestIds.length > 0) {
+      const untouchable = await tx.request.findMany({
+        where: {
+          id: { in: requestIds },
+          OR: [
+            { startedAt: { not: null } },
+            { lifecycle: { in: ['in_progress', 'completed', 'cancelled'] } },
+          ],
+        },
+        select: { id: true, lifecycle: true },
+      });
+      if (untouchable.length > 0) {
+        return `The plan distributes work that has already started, finished or been cancelled: ${untouchable.map((item) => `${item.id} (${item.lifecycle})`).join(', ')}`;
+      }
+    }
+    const lunchEngineers = plan.routes
+      .filter((route) => route.lunchStatus === 'scheduled')
+      .map((route) => route.engineerId);
+    if (lunchEngineers.length > 0) {
+      const used = await tx.engineerDay.findMany({
+        where: { engineerId: { in: lunchEngineers }, lunchTaken: true },
+        select: { engineerId: true },
+      });
+      if (used.length > 0)
+        return `The plan schedules a second lunch for ${used.map((day) => day.engineerId).join(', ')}`;
+    }
     return null;
   }
 

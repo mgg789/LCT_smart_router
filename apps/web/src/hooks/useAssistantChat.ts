@@ -25,6 +25,7 @@ import {
   streamConversationEvents,
 } from '../api/ai';
 import { DashboardApiError } from '../api/client';
+import { WindowChangeDeclined } from '../api/windowConfirmation';
 import { useChatStream } from './useChatStream';
 
 /** Where the chat panel is mounted. Drives the role profile a new conversation opens as. */
@@ -711,6 +712,27 @@ export function useAssistantChat({
           return next;
         });
       } catch (cause) {
+        if (cause instanceof WindowChangeDeclined) {
+          try {
+            const cancelled = await cancelAiOperation(token, operationId);
+            setOperations((current) => {
+              const next = new Map(current);
+              const existing = next.get(operationId);
+              if (existing) next.set(operationId, { ...existing, state: cancelled.state });
+              return next;
+            });
+          } catch (cancelError) {
+            setError(errorMessage(cancelError));
+            return;
+          }
+        } else {
+          setOperations((current) => {
+            const next = new Map(current);
+            const existing = next.get(operationId);
+            if (existing) next.set(operationId, { ...existing, state: 'awaiting_confirmation' });
+            return next;
+          });
+        }
         setError(errorMessage(cause));
       }
     },

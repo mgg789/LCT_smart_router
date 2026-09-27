@@ -6,6 +6,7 @@ const toleranceSeconds = z.number().int().nonnegative().max(86_400);
 export const updateRouterTechnicalSettingsSchema = z.object({
   operationId: z.uuid(),
   expectedContextVersion: z.string().min(1),
+  strictTimeWindows: z.boolean().optional(),
   lunchesEnabled: z.boolean(),
   departureLatenessToleranceSec: toleranceSeconds,
   taskStartLatenessToleranceSec: toleranceSeconds,

@@ -40,7 +40,7 @@ export class LoginCodeService {
   ) {}
 
   async issue(rawEmail: string): Promise<IssuedLoginCode> {
-    const issued = await this.issueIn(this.prisma, rawEmail);
+    const issued = await this.prisma.$transaction((tx) => this.issueIn(tx, rawEmail));
     return this.toPublic(issued);
   }
 
@@ -48,8 +48,18 @@ export class LoginCodeService {
    * Issues a code inside the caller's transaction so the mail intent can be stored
    * with the hash in one commit. The plaintext code is returned only to that caller.
    */
-  async issueIn(tx: Pick<Tx, 'loginCode'>, rawEmail: string): Promise<IssuedLoginCodeInternal> {
+  async issueIn(
+    tx: Pick<Tx, 'loginCode' | '$executeRaw'>,
+    rawEmail: string,
+  ): Promise<IssuedLoginCodeInternal> {
     const email = normalizeEmail(rawEmail);
+
+    // `updateMany` followed by `create` is not a uniqueness constraint: two concurrent
+    // requests can both retire the old row and then leave two live codes. A transaction
+    // advisory lock keyed by the normalized address makes this sequence one-writer while
+    // allowing unrelated addresses to issue independently.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`login-code:${email}`}))`;
+
     const now = this.clock.nowSeconds();
     const expiresAt = now + this.config.get('LOGIN_CODE_TTL_SEC');
     const code = generateLoginCode();

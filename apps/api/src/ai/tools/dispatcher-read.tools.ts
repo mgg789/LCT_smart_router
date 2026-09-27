@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import { toDayView, toEngineerView } from '../../api/engineer-view';
+import { agentEngineerAttendance, toAgentDayView } from '../../api/agent-engineer-view';
+import { toEngineerView } from '../../api/engineer-view';
 import { toPlanView } from '../../api/plan-view';
 import { toRequestView } from '../../api/request-view';
 import { SysError } from '../../common/errors';
@@ -19,8 +20,14 @@ import { SnapshotBuilder } from '../../routing/mount-data-eng';
 import {
   AppliedPlanService,
   ControlStateService,
+  PlanRestoreService,
   RouterClient,
 } from '../../routing/router-gateway';
+import { EvidenceReader } from '../explain/evidence.reader';
+import {
+  runDispatcherCompareAssignments,
+  runDispatcherExplainEntity,
+} from './dispatcher-explanation.tools';
 import type { ToolContext, ToolResult, ToolSpec } from './tool.types';
 
 export interface DispatcherReadToolDeps {
@@ -33,6 +40,9 @@ export interface DispatcherReadToolDeps {
   readonly policy: PolicyService;
   readonly router: RouterClient;
   readonly builder: SnapshotBuilder;
+  readonly restore: PlanRestoreService;
+  readonly now: () => number;
+  readonly timeZone?: string;
 }
 
 const skillSchema = z.enum(['local', 'connection', 'emergency']);
@@ -98,6 +108,9 @@ type ComparePoliciesArgs = z.infer<typeof comparePoliciesSchema>;
 const getRouterSettingsSchema = z.object({});
 type GetRouterSettingsArgs = z.infer<typeof getRouterSettingsSchema>;
 
+const getPreviousPlanSchema = z.object({});
+type GetPreviousPlanArgs = z.infer<typeof getPreviousPlanSchema>;
+
 const getSnapshotDiagnosticsSchema = z.object({});
 type GetSnapshotDiagnosticsArgs = z.infer<typeof getSnapshotDiagnosticsSchema>;
 
@@ -108,6 +121,40 @@ const evaluateManualOrderSchema = z.object({
   requestIds: z.array(z.string().min(1)).min(1).max(50),
 });
 type EvaluateManualOrderArgs = z.infer<typeof evaluateManualOrderSchema>;
+
+const dispatcherEntitySchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('request'), id: z.string().min(1) }),
+  z.object({ type: z.literal('route'), engineerId: z.string().min(1) }),
+  z.object({ type: z.literal('leg'), legId: z.string().min(1) }),
+  z.object({ type: z.literal('lunch'), engineerId: z.string().min(1) }),
+  z.object({ type: z.literal('plan') }),
+]);
+const explainEntitySchema = z.object({
+  entity: dispatcherEntitySchema,
+  aspect: z.enum([
+    'overview',
+    'assignment',
+    'window',
+    'travel',
+    'alternatives',
+    'schedule',
+    'lunch',
+    'metrics',
+    'policy',
+  ]),
+});
+type ExplainEntityArgs = z.infer<typeof explainEntitySchema>;
+
+const compareAssignmentsSchema = z
+  .object({
+    requestId: z.string().min(1),
+    engineerIds: z.array(z.string().min(1)).min(1).max(3),
+  })
+  .refine((args) => new Set(args.engineerIds).size === args.engineerIds.length, {
+    message: 'Engineer ids must be unique',
+    path: ['engineerIds'],
+  });
+type CompareAssignmentsArgs = z.infer<typeof compareAssignmentsSchema>;
 
 /**
  * The `help`-mode (and shared `fix`-mode) read catalogue.
@@ -126,6 +173,7 @@ type EvaluateManualOrderArgs = z.infer<typeof evaluateManualOrderSchema>;
  * every reason-carrying result's `basis` passthrough).
  */
 export function buildDispatcherReadTools(deps: DispatcherReadToolDeps): readonly ToolSpec[] {
+  const evidenceReader = new EvidenceReader();
   const getSituation: ToolSpec<GetSituationArgs> = {
     name: 'get_situation',
     description:
@@ -145,7 +193,7 @@ export function buildDispatcherReadTools(deps: DispatcherReadToolDeps): readonly
       );
       const openByCode = countBy(openAlerts, (alert) => alert.code);
       const onlineCount = live.engineers.filter(
-        (engineer) => engineer.availability === 'online',
+        (engineer) => agentEngineerAttendance(engineer).isOnLine,
       ).length;
       const plan = planRow
         ? {
@@ -166,9 +214,20 @@ export function buildDispatcherReadTools(deps: DispatcherReadToolDeps): readonly
           requestCount: live.workday.requestCount,
           engineerCount: live.engineers.length,
           engineersOnline: onlineCount,
+          engineersAwaitingCheckIn: live.engineers.filter(
+            (engineer) => engineer.lineStatus === 'pending',
+          ).length,
+          engineersAvailableForPlanning: live.engineers.filter(
+            (engineer) => engineer.availability === 'online',
+          ).length,
           stats: live.workday.stats,
         },
         control: { mode: control.mode, modeVersion: control.modeVersion },
+        engineers: live.engineers.map((engineer) => ({
+          id: engineer.id,
+          name: engineer.name,
+          attendance: agentEngineerAttendance(engineer),
+        })),
         plan,
         openAlertCount: openAlerts.length,
         openAlertsByCode: openByCode,
@@ -213,24 +272,55 @@ export function buildDispatcherReadTools(deps: DispatcherReadToolDeps): readonly
     },
   };
 
+  const getPreviousPlan: ToolSpec<GetPreviousPlanArgs> = {
+    name: 'get_previous_plan',
+    description:
+      'Current applied plan, its immediate predecessor and the server-calculated eligibility ' +
+      'to restore it. Eligibility is checked again when a confirmation card is applied.',
+    schema: getPreviousPlanSchema,
+    async run(): Promise<ToolResult> {
+      const pair = await deps.restore.previous(
+        { tx: deps.prisma, now: deps.now() },
+        await deps.router.getActiveContextVersion(),
+      );
+      return ok(
+        pair.eligibility.eligible
+          ? `Revision ${pair.current?.revision} can restore predecessor ${pair.previous?.revision}`
+          : `Previous-plan restore unavailable: ${pair.eligibility.reason}`,
+        {
+          current: pair.current ? toPlanView(pair.current) : null,
+          previous: pair.previous ? toPlanView(pair.previous) : null,
+          eligibility: pair.eligibility,
+        },
+      );
+    },
+  };
+
   const listEngineers: ToolSpec<ListEngineersArgs> = {
     name: 'list_engineers',
     description:
       'Engineers with their skills, transport and current day (shift, availability, ' +
-      'lunch, equipment). Filter by region, availability or skill.',
+      'lunch, equipment) and factual attendance. availability=online means planning eligibility, ' +
+      'NOT checked in. Use attendance.isOnLine/label. Filter by region, availability or skill.',
     schema: listEngineersSchema,
     async run(_ctx: ToolContext, args: ListEngineersArgs): Promise<ToolResult> {
+      const live = await deps.live.dispatchView();
       const engineers = await deps.prisma.engineer.findMany({
         where: { archivedAt: null, ...(args.region ? { region: args.region } : {}) },
         orderBy: { inputOrder: 'asc' },
         include: {
           account: { select: { email: true } },
-          days: { orderBy: { workDate: 'desc' }, take: 1 },
+          days: { where: { workDate: live.workday.workDate }, take: 1 },
         },
       });
       let views = engineers.map((engineer) => ({
         ...toEngineerView(engineer),
-        day: engineer.days[0] ? toDayView(engineer.days[0]) : null,
+        day: engineer.days[0]
+          ? toAgentDayView(engineer.days[0], deps.timeZone ?? 'Europe/Moscow')
+          : null,
+        attendance: agentEngineerAttendance(
+          live.engineers.find((state) => state.id === engineer.id),
+        ),
       }));
       if (args.availability) {
         views = views.filter((view) => view.day?.availability === args.availability);
@@ -440,27 +530,93 @@ export function buildDispatcherReadTools(deps: DispatcherReadToolDeps): readonly
         include: { snapshot: true },
       });
       const contextVersion = await deps.router.getActiveContextVersion();
-      const stored =
-        current && contextVersion
-          ? await readSimulation(
-              deps.prisma,
-              current.snapshot.inputHash,
-              contextVersion,
-              simulationPatchHash(patch),
-            )
-          : null;
+      if (!current || !contextVersion) {
+        throw SysError.validationFailed('No current published task and Router version to simulate');
+      }
+      const patchHash = simulationPatchHash(patch);
+      const stored = await readSimulation(
+        deps.prisma,
+        current.snapshot.inputHash,
+        contextVersion,
+        patchHash,
+      );
       const result = stored ?? (await deps.router.simulate(patch));
+
+      const latest = await deps.prisma.routingCurrent.findUnique({
+        where: { id: 'singleton' },
+        include: { snapshot: true },
+      });
+      const latestContextVersion = await deps.router.getActiveContextVersion();
       if (
-        !stored &&
-        current &&
-        contextVersion &&
-        result.input_hash === current.snapshot.inputHash &&
-        result.router_context_version === contextVersion
+        !latest ||
+        latest.snapshot.inputHash !== current.snapshot.inputHash ||
+        latestContextVersion !== contextVersion ||
+        result.input_hash !== current.snapshot.inputHash ||
+        result.router_context_version !== contextVersion ||
+        result.patch_hash !== patchHash
       ) {
+        throw SysError.validationFailed(
+          'Planning data changed during the simulation; recalculate before relying on this result',
+        );
+      }
+      if (!stored) {
         await rememberSimulation(deps.prisma, patch, result);
       }
+
+      // Pins and removals live in the local route order. Router's bounded fallback
+      // solves the unmodified assignment constraints, so its metrics cannot prove them.
+      if ((args.pin || args.unassignRequestId) && result.method !== 'insertion') {
+        return ok('Запрошенное изменение назначения не подтверждено расчётом.', {
+          schema_version: '1.0',
+          status: 'unavailable',
+          method: result.method,
+          change: args,
+          provenance: {
+            inputHash: result.input_hash,
+            routerContextVersion: result.router_context_version,
+            patchHash: result.patch_hash,
+          },
+          limitations: [
+            'Общий поиск не гарантирует запрошенное закрепление или снятие назначения. Его метрики нельзя выдавать за результат этого изменения.',
+          ],
+        });
+      }
+
       const text = russianDelta(patch, result);
-      return ok(text, { text });
+      const limitations =
+        result.method === 'bounded'
+          ? ['Bounded search did not find a variant is not proof that no feasible plan exists.']
+          : result.method === 'insertion'
+            ? [
+                'This result checks the stated local insertion or pin against the available base plan.',
+              ]
+            : [
+                'This is a comparison of the returned policy catalogue, not a local edit simulation.',
+              ];
+      return ok(text, {
+        schema_version: '1.0',
+        status: result.delta ? 'compared' : 'catalogue',
+        method: result.method,
+        baseline: result.delta
+          ? { kind: 'router_base_plan', counts: result.delta.before }
+          : { kind: 'not_returned_for_catalogue' },
+        change: { ...args, routerPatch: patch },
+        delta: result.delta ?? null,
+        routes: result.routes ?? [],
+        strategies: result.strategies ?? [],
+        provenance: {
+          inputPublicationId:
+            result.input_publication_id === 'stored'
+              ? current.snapshot.id
+              : result.input_publication_id,
+          inputHash: result.input_hash,
+          routerContextVersion: result.router_context_version,
+          patchHash: result.patch_hash,
+          cached: result.cached,
+        },
+        limitations,
+        text,
+      });
     },
   };
 
@@ -510,39 +666,156 @@ export function buildDispatcherReadTools(deps: DispatcherReadToolDeps): readonly
   const evaluateManualOrder: ToolSpec<EvaluateManualOrderArgs> = {
     name: 'evaluate_manual_order',
     description:
-      'What-if: scores a proposed fixed visit order for one engineer against the current ' +
-      "policy, without applying it or changing the plan on screen (Router's " +
-      'evaluateManual). Use it to check a reorder idea before suggesting it.',
+      'What-if: scores a proposed fixed visit order for one engineer while preserving every ' +
+      'other route from the applied plan. Does not apply a change. Router compares the full ' +
+      'route set with its automatic result; the result names that baseline and its snapshot ' +
+      'and context versions. Use it to check a reorder idea before suggesting it.',
     schema: evaluateManualOrderSchema,
     async run(_ctx: ToolContext, args: EvaluateManualOrderArgs): Promise<ToolResult> {
-      const current = await deps.prisma.routingCurrent.findUnique({
-        where: { id: 'singleton' },
-        include: { snapshot: true },
-      });
-      if (!current) {
+      const [current, appliedPlan, contextVersion] = await Promise.all([
+        deps.prisma.routingCurrent.findUnique({
+          where: { id: 'singleton' },
+          include: { snapshot: true },
+        }),
+        deps.plans.current(deps.prisma),
+        deps.router.getActiveContextVersion(),
+      ]);
+      if (!current || !appliedPlan) {
         throw SysError.validationFailed('No published planning task to evaluate against');
       }
-      const contextVersion = await deps.router.getActiveContextVersion();
       if (!contextVersion) {
         throw SysError.notConfigured('Router Core');
       }
+
+      const targetRoute = appliedPlan.routes.find((route) => route.engineerId === args.engineerId);
+      if (!targetRoute) {
+        throw SysError.validationFailed(
+          'The selected engineer has no route in the applied plan to reorder',
+        );
+      }
+      const originalRequestIds = targetRoute.stops.flatMap((stop) =>
+        stop.kind === 'job' && stop.requestId !== null ? [stop.requestId] : [],
+      );
+      const originalRequestIdSet = new Set(originalRequestIds);
+      const proposedRequestIds = new Set(args.requestIds);
+      if (
+        originalRequestIdSet.size !== originalRequestIds.length ||
+        proposedRequestIds.size !== args.requestIds.length ||
+        args.requestIds.length !== originalRequestIds.length ||
+        originalRequestIds.some((requestId) => !proposedRequestIds.has(requestId))
+      ) {
+        throw SysError.validationFailed(
+          'The proposed order must contain each request from this route exactly once',
+        );
+      }
+
+      // Replace only the requested engineer's visit order. The other applied routes stay
+      // in the Router input so `after` compares the proposal as a whole plan, not as one
+      // route against an accidentally empty day.
+      const routes = Object.fromEntries(
+        appliedPlan.routes.map((route) => [
+          route.engineerId,
+          route.stops.flatMap((stop) =>
+            stop.kind === 'job' && stop.requestId !== null ? [stop.requestId] : [],
+          ),
+        ]),
+      );
+      routes[args.engineerId] = args.requestIds;
+
       const evaluation = await deps.router.evaluateManual({
         input_hash: current.snapshot.inputHash,
         router_context_version: contextVersion,
-        routes: { [args.engineerId]: args.requestIds },
+        routes,
       });
+
+      // Router validates the publication and context around its calculation. Re-read at
+      // this boundary too, so the assistant never presents an obsolete result as current.
+      const [latest, latestPlan, latestContextVersion] = await Promise.all([
+        deps.prisma.routingCurrent.findUnique({
+          where: { id: 'singleton' },
+          include: { snapshot: true },
+        }),
+        deps.plans.current(deps.prisma),
+        deps.router.getActiveContextVersion(),
+      ]);
+      if (
+        !latest ||
+        latest.snapshot.inputHash !== current.snapshot.inputHash ||
+        !latestPlan ||
+        latestPlan.revision !== appliedPlan.revision ||
+        latestContextVersion !== contextVersion ||
+        evaluation.input_hash !== current.snapshot.inputHash ||
+        evaluation.router_context_version !== contextVersion
+      ) {
+        throw SysError.validationFailed(
+          'Planning data changed during the evaluation; recalculate before relying on this result',
+        );
+      }
+
+      const result = {
+        schema_version: '1.0',
+        method: 'router.manual_fixed_order',
+        baseline: {
+          kind: 'router_automatic_result',
+          meaning: 'Router compares the proposed full route set with its automatic result.',
+        },
+        proposal: { engineerId: args.engineerId, requestIds: args.requestIds },
+        preservedRoutes: routes,
+        provenance: {
+          appliedPlanRevision: appliedPlan.revision,
+          inputHash: evaluation.input_hash,
+          routerContextVersion: evaluation.router_context_version,
+          policyId: evaluation.policy_id,
+        },
+        evaluation: {
+          feasible: evaluation.feasible,
+          degraded: evaluation.degraded,
+          criterion: evaluation.criterion,
+          before: evaluation.before,
+          after: evaluation.after,
+        },
+        limitations: [
+          'The before score is Router’s automatic result, not a separately evaluated copy of the displayed applied plan.',
+          'This evaluates the fixed order provided; Router does not search for a better order.',
+        ],
+      };
       return ok(
         evaluation.feasible
-          ? `Feasible; degraded relative to the current plan: ${evaluation.degraded}`
+          ? `Feasible; degraded relative to Router’s automatic baseline: ${evaluation.degraded}`
           : 'Not feasible as proposed',
-        evaluation,
+        result,
       );
+    },
+  };
+
+  const explainEntity: ToolSpec<ExplainEntityArgs> = {
+    name: 'explain_entity',
+    description:
+      'Explain one request, route, travel leg, lunch stop or the plan for a named aspect. ' +
+      'Returns source-linked factors, evidence/version provenance and a deterministic ' +
+      'follow-up question link. Unsupported or stale aspects are explicitly unavailable.',
+    schema: explainEntitySchema,
+    async run(_ctx, args): Promise<ToolResult> {
+      return runDispatcherExplainEntity(deps, evidenceReader, args);
+    },
+  };
+
+  const compareAssignments: ToolSpec<CompareAssignmentsArgs> = {
+    name: 'compare_assignments',
+    description:
+      'Compare Router-calculated candidate checks for one request and one to three engineers ' +
+      'from the same current evidence package. This is compatibility and bounded route-end ' +
+      'evidence, not a reassignment optimization or a ranking.',
+    schema: compareAssignmentsSchema,
+    async run(_ctx, args): Promise<ToolResult> {
+      return runDispatcherCompareAssignments(deps, evidenceReader, args);
     },
   };
 
   return [
     getSituation,
     getDayPlan,
+    getPreviousPlan,
     listEngineers,
     listRequests,
     getRequest,
@@ -555,6 +828,8 @@ export function buildDispatcherReadTools(deps: DispatcherReadToolDeps): readonly
     getRouterSettings,
     getSnapshotDiagnostics,
     evaluateManualOrder,
+    explainEntity,
+    compareAssignments,
   ];
 }
 

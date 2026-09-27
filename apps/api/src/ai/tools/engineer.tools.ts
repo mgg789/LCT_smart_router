@@ -3,6 +3,7 @@ import type { EngineerLiveView } from '../../api/live-view.types';
 import { AppConfigService } from '../../common/config';
 import { SysError } from '../../common/errors';
 import { LiveService } from '../../orchestrator/live/live.service';
+import type { PassportsService } from '../../orchestrator/passports/passports.service';
 import type { AiOperationService } from '../operations';
 import { localTimeSchema, localToUnixSeconds } from './local-time';
 import type { ToolContext, ToolResult, ToolSpec } from './tool.types';
@@ -10,6 +11,7 @@ import type { ToolContext, ToolResult, ToolSpec } from './tool.types';
 export interface EngineerToolDeps {
   readonly aiOperations: AiOperationService;
   readonly live: LiveService;
+  readonly passports: PassportsService;
   readonly config: AppConfigService;
 }
 
@@ -48,6 +50,14 @@ const changeStatusSchema = z.object({
   status: z.union([z.literal(0), z.literal(1)]),
 });
 type ChangeStatusArgs = z.infer<typeof changeStatusSchema>;
+
+const visitContextSchema = z
+  .object({
+    /** Optional request the service must authorize as currently assigned to this engineer. */
+    requestId: z.string().trim().min(1).optional(),
+  })
+  .strict();
+type VisitContextArgs = z.infer<typeof visitContextSchema>;
 
 /** The engineer's nearest current visit, resolved from the trusted session -- never a
  *  `requestId` argument a model could supply. */
@@ -146,6 +156,39 @@ function routeBrief(view: EngineerLiveView, timeZone: string): string {
   return lines.join('\n');
 }
 
+/**
+ * Returns the current visit as a small, structured snapshot for follow-up support.
+ * Inventory counts are deliberately absent: the engineer-facing live service exposes
+ * required equipment and confirmed handoffs, not an authoritative stock ledger.
+ */
+function visitContext(view: EngineerLiveView, passport: unknown): Record<string, unknown> {
+  const current = view.current;
+  return {
+    workday: {
+      status: view.workday.status,
+      workDate: view.workday.workDate,
+      planRevision: view.workday.planRevision,
+      liveNow: view.workday.liveNow,
+    },
+    currentVisit: current
+      ? {
+          requestId: current.request.id,
+          requestVersion: current.request.version,
+          address: current.request.addressText,
+          phase: current.phase,
+          requiredEquipment: current.request.requiredEquipment,
+          expectedCompletionAt: current.expectedCompletionAt,
+        }
+      : null,
+    passport,
+    inventory: {
+      status: 'unavailable',
+      reason: 'The engineer assistant has no authorized stock-count source.',
+    },
+    handoffs: view.handoffs,
+  };
+}
+
 function prepared(op: {
   operationId: string;
   state: string;
@@ -218,7 +261,10 @@ export function buildEngineerTools(deps: EngineerToolDeps): readonly ToolSpec[] 
 
   const reportMissingEquipment: ToolSpec<ReportMissingEquipmentArgs> = {
     name: 'report_missing_equipment',
-    description: 'Report that the current visit is blocked by missing equipment.',
+    description:
+      'Report missing equipment only when the engineer explicitly asks to register a ' +
+      'blocker. This cancels the current visit and removes it from today’s route; a ' +
+      'question about alternatives is not a report command.',
     schema: reportMissingEquipmentSchema,
     async run(ctx, args) {
       const engineerId = requireEngineerId(ctx);
@@ -401,6 +447,31 @@ export function buildEngineerTools(deps: EngineerToolDeps): readonly ToolSpec[] 
     },
   };
 
+  const getMyVisitContext: ToolSpec<VisitContextArgs> = {
+    name: 'get_my_visit_context',
+    description:
+      "Read the signed-in engineer's current or assigned visit context, including its " +
+      'authorized building passport. Use this before answering visit-specific questions. ' +
+      'It does not report or cancel anything, and it does not expose physical stock counts.',
+    schema: visitContextSchema,
+    async run(ctx, args) {
+      const engineerId = requireEngineerId(ctx);
+      const view = await deps.live.engineerView(engineerId);
+      const requestId = args.requestId ?? view.current?.request.id;
+      const passport = requestId ? await deps.passports.engineerRead(engineerId, requestId) : null;
+      return {
+        ok: true,
+        summary: requestId ? 'Authorized visit context read' : 'No current visit',
+        resultContent: JSON.stringify({
+          ...visitContext(view, passport),
+          selectedRequestId: requestId ?? null,
+          selectedRequestIsCurrent:
+            requestId !== undefined && requestId === view.current?.request.id,
+        }),
+      };
+    },
+  };
+
   return [
     reportDelay,
     reportMissingEquipment,
@@ -410,5 +481,6 @@ export function buildEngineerTools(deps: EngineerToolDeps): readonly ToolSpec[] 
     finishTechnicalBreak,
     changeStatusTo,
     getMyRoute,
+    getMyVisitContext,
   ];
 }

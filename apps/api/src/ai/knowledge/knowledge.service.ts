@@ -21,6 +21,9 @@ interface SearchRow {
   readonly body: string;
   readonly segment: AiKnowledgeSegment;
   readonly actions: string[];
+  readonly sourcePath: string;
+  readonly updatedAt: bigint;
+  readonly checksum: string;
 }
 
 /**
@@ -134,6 +137,7 @@ export class KnowledgeService implements OnModuleInit {
     const rows = await this.prisma.$queryRaw<SearchRow[]>`
       SELECT
         id, slug, section, title, summary, body, segment, actions,
+        source_path AS "sourcePath", updated_at AS "updatedAt", checksum,
         ts_rank_cd(
           setweight(to_tsvector(${FTS_LANGUAGE}, title), 'A') ||
           setweight(to_tsvector(${FTS_LANGUAGE}, summary), 'B') ||
@@ -161,6 +165,7 @@ export class KnowledgeService implements OnModuleInit {
     const rows = await this.prisma.$queryRaw<SearchRow[]>`
       SELECT
         id, slug, section, title, summary, body, segment, actions,
+        source_path AS "sourcePath", updated_at AS "updatedAt", checksum,
         ts_rank_cd(
           setweight(to_tsvector(${FTS_LANGUAGE}, title), 'A') ||
           setweight(to_tsvector(${FTS_LANGUAGE}, summary), 'B') ||
@@ -203,6 +208,7 @@ export class KnowledgeService implements OnModuleInit {
       )
       SELECT
         id, slug, section, title, summary, body, segment, actions,
+        source_path AS "sourcePath", updated_at AS "updatedAt", checksum,
         ts_rank_cd(
           setweight(to_tsvector(${FTS_LANGUAGE}, title), 'A') ||
           setweight(to_tsvector(${FTS_LANGUAGE}, summary), 'B') ||
@@ -233,5 +239,8 @@ function toHits(rows: SearchRow[]): KnowledgeSearchHit[] {
     body: row.body,
     segment: row.segment,
     actions: row.actions,
+    sourcePath: row.sourcePath,
+    updatedAt: Number(row.updatedAt),
+    checksum: row.checksum,
   }));
 }

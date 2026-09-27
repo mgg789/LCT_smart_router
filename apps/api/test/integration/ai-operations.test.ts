@@ -1,7 +1,9 @@
+import { ActionGuardService } from '../../src/ai/operations/action-guard';
+import { isWindowConfirmationRequired } from '../../src/orchestrator/requests/window-confirmation';
 import '../support/env';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { after, before, describe, it } from 'node:test';
+import { after, before, describe, it, mock } from 'node:test';
 import type { INestApplicationContext } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { AiOperationService, RoleProfileService } from '../../src/ai';
@@ -167,6 +169,85 @@ describe('AI operation prepare/confirm spine', () => {
     windowStartAt: 2_000_000_000,
     windowEndAt: 2_000_003_600,
     urgent: false,
+  });
+
+  it('never auto-applies a window shift, keeps a challenge retryable, and supports rejection', async () => {
+    const client = await newClientSession();
+    const create = await aiOperations.prepare({
+      actor: client.actor,
+      accountId: client.actor.accountId as string,
+      conversationId: client.conversation.id,
+      runId: client.run.id,
+      action: 'request.create',
+      targetRef: null,
+      payload: requestPayload(),
+    });
+    const created = await aiOperations.confirm({
+      actor: client.actor,
+      aiOperationId: create.operationId,
+      operationId: randomUUID(),
+    });
+    const request = created.result as { id: string; version: number; windowStartAt: number };
+    const { actor, conversation, run } = await newDispatcherSession();
+    const guard = mock.method(context.get(ActionGuardService), 'allows', async () => true);
+    try {
+      const prepare = () =>
+        aiOperations.prepare({
+          actor,
+          accountId: actor.accountId as string,
+          conversationId: conversation.id,
+          runId: run.id,
+          action: 'request.update',
+          targetRef: request.id,
+          payload: { windowStartAt: 2_000_007_200, windowEndAt: 2_000_010_800 },
+        });
+      const op = await prepare();
+      assert.equal(op.state, 'awaiting_confirmation');
+      assert.equal(guard.mock.callCount(), 0, 'a model score must not replace window consent');
+      const operationId = randomUUID();
+      let confirmation: string | undefined;
+      await assert.rejects(
+        () => aiOperations.confirm({ actor, aiOperationId: op.operationId, operationId }),
+        (error: unknown) => {
+          assert.ok(isWindowConfirmationRequired(error));
+          confirmation = String(error.details.confirmation);
+          return true;
+        },
+      );
+      assert.equal(
+        (await prisma.aiOperation.findUniqueOrThrow({ where: { id: op.operationId } })).state,
+        'awaiting_confirmation',
+      );
+      assert.equal(await prisma.operation.count({ where: { operationId } }), 0);
+      const applied = await aiOperations.confirm({
+        actor: { ...actor, windowChangeConfirmation: confirmation },
+        aiOperationId: op.operationId,
+        operationId,
+      });
+      assert.equal(applied.state, 'applied');
+      const rejected = await aiOperations.prepare({
+        actor,
+        accountId: actor.accountId as string,
+        conversationId: conversation.id,
+        runId: run.id,
+        action: 'request.update',
+        targetRef: request.id,
+        payload: { windowStartAt: 2_000_014_400, windowEndAt: 2_000_018_000 },
+      });
+      await aiOperations.cancel({ actor, aiOperationId: rejected.operationId });
+      assert.equal(
+        (await prisma.aiOperation.findUniqueOrThrow({ where: { id: rejected.operationId } })).state,
+        'cancelled_before_apply',
+      );
+      assert.equal(
+        Number(
+          (await prisma.request.findUniqueOrThrow({ where: { id: request.id } })).windowStartAt,
+        ),
+        2_000_007_200,
+      );
+    } finally {
+      guard.mock.restore();
+    }
   });
 
   it('prepares a card, then confirming it applies the write exactly once', async () => {

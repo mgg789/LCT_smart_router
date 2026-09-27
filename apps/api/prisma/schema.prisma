@@ -135,6 +135,8 @@ enum ControlMode {
 enum PlanOrigin {
   auto
   manual
+  /// A dispatcher restored the immediately preceding immutable revision after revalidation.
+  restore
 }
 
 /// Confirmed execution facts. Every one of them comes from an explicit mark by the
@@ -363,6 +365,9 @@ model Engineer {
   inputOrder    Int @map("input_order")
   skills        Skill[]
   transportType TransportType @map("transport_type")
+  /// Explicitly sourced pedestrian crews may be prohibited from public transit.
+  /// True preserves the historic walking-profile behaviour for existing data.
+  transitEligible Boolean @default(true) @map("transit_eligible")
   depotId       String? @map("depot_id")
   /// Usual start point. May be absent; it is never filled with invented coordinates.
   homeLat       Float? @map("home_lat")
@@ -630,12 +635,52 @@ model RequestFact {
   recordedAt  BigInt @map("recorded_at")
   note        String?
   operationId String? @map("operation_id")
+  /// Immutable calibration evidence captured with the confirmed fact; never inferred later.
+  metadata    Json?
 
   request  Request   @relation(fields: [requestId], references: [id], onDelete: Cascade)
   engineer Engineer? @relation(fields: [engineerId], references: [id])
 
   @@index([requestId, occurredAt])
   @@map("request_facts")
+}
+
+/// Region/day weather history cached for offline calibration replay after one archive fetch.
+model WeatherDayCache {
+  region      String
+  workDate    String @map("work_date")
+  locationHash String @map("location_hash")
+  weatherCode Int    @map("weather_code")
+  kind        String
+  fetchedAt   BigInt @map("fetched_at")
+
+  @@id([region, workDate])
+  @@index([workDate])
+  @@map("weather_day_cache")
+}
+
+/// Immutable paired prediction evidence; labels are attached only after later confirmed finish.
+model WeatherRiskPrediction {
+  planId              String @map("plan_id")
+  requestId           String @map("request_id")
+  engineerId          String @map("engineer_id")
+  region              String
+  transportType       TransportType @map("transport_type")
+  weatherKind         String @map("weather_kind")
+  workDate            String @map("work_date")
+  candidateVersion    String @map("candidate_version")
+  inputHash           String @map("input_hash")
+  routerContextVersion String @map("router_context_version")
+  predictedAt         BigInt @map("predicted_at")
+  baselineProbability Float @map("baseline_probability")
+  candidateProbability Float @map("candidate_probability")
+  breachAfterAt       BigInt @map("breach_after_at")
+  actualBreach        Boolean? @map("actual_breach")
+  resolvedAt          BigInt? @map("resolved_at")
+
+  @@id([planId, requestId, candidateVersion])
+  @@index([region, transportType, weatherKind, workDate, candidateVersion])
+  @@map("weather_risk_predictions")
 }
 
 // ---------------------------------------------------------------------------
@@ -838,6 +883,8 @@ model AppliedPlan {
   revision       Int        @unique @default(autoincrement())
   origin         PlanOrigin
   routerResultId String? @map("router_result_id")
+  /// Snapshot against which a restored revision was revalidated; source result stays immutable.
+  validatedInputHash String? @map("validated_input_hash")
   /// The moment the shown plan describes: `planningAsOf` of the applied result, or the
   /// time of the manual edit. Never the timestamp of a newer, not yet computed snapshot
   /// (context/36 section 6).
@@ -1121,6 +1168,29 @@ model ImportPackage {
   @@map("import_packages")
 }
 
+/// Immutable normalized import batches awaiting explicit dispatcher confirmation.
+model ImportPreparation {
+  id                 String  @id @default(uuid())
+  source             String
+  status             String  @default("prepared")
+  ownerKind          String  @map("owner_kind")
+  ownerId            String  @map("owner_id")
+  immutableBatchHash String  @map("immutable_batch_hash")
+  versions           String
+  payload            String
+  findings           String
+  createdAt          BigInt  @map("created_at")
+  expiresAt          BigInt  @map("expires_at")
+  confirmedAt        BigInt? @map("confirmed_at")
+  cancelledAt        BigInt? @map("cancelled_at")
+  operationId        String? @unique @map("operation_id")
+  response           String?
+
+  @@index([ownerKind, ownerId, status])
+  @@index([expiresAt])
+  @@map("import_preparations")
+}
+
 /// source + entity type + external id -> internal id. Deleting the API key that imported
 /// the data must not make this mapping unresolvable (context/41 section 7.2).
 model ExternalIdMap {
@@ -1265,6 +1335,8 @@ model AiConversation {
   /// Which request/engineer/alert the dialogue was opened about, if any. Kept as loose
   /// JSON because the set of linkable entities is expected to grow without a migration.
   contextRef  Json? @map("context_ref")
+  /// Private bounded provider context. Never returned by conversation serializers.
+  runtimeContext Json? @map("runtime_context")
   title       String?
   createdAt   BigInt @map("created_at")
   updatedAt   BigInt @map("updated_at")
@@ -1525,4 +1597,18 @@ model PlanSimulation {
   @@unique([baseHash, contextVersion, patchHash])
   @@index([baseHash, createdAt])
   @@map("plan_simulations")
+}
+
+/// Shared fixed-window request budgets. The composite key lets every API instance
+/// increment one bucket atomically without an in-memory or per-process bypass.
+model RateLimitBucket {
+  scope       String
+  clientKey   String @map("client_key")
+  windowStart BigInt @map("window_start")
+  count       Int
+  updatedAt   BigInt @map("updated_at")
+
+  @@id([scope, clientKey, windowStart])
+  @@index([windowStart])
+  @@map("rate_limit_buckets")
 }

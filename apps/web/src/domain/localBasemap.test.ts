@@ -30,7 +30,9 @@ const collection = z.object({
 
 describe('real local demo basemap', () => {
   it('contains valid attributed OSM geometry and matches its provenance hash', () => {
-    const bytes = readFileSync(new URL('../../public/maps/east-demo.geojson', import.meta.url));
+    const bytes = readFileSync(
+      new URL('../../public/maps/official-regions.geojson', import.meta.url),
+    );
     const data = collection.parse(JSON.parse(bytes.toString('utf8')));
     const manifest = z
       .object({ fileSha256: z.string(), featureCount: z.number(), license: z.literal('ODbL-1.0') })
@@ -68,11 +70,62 @@ describe('real local demo basemap', () => {
     const style = localMapStyle();
     expect(style.sources['local-basemap']).toMatchObject({
       type: 'geojson',
-      data: '/maps/east-demo.geojson',
+      data: '/maps/official-regions.geojson',
     });
     expect(style.layers.some((layer) => layer.id === 'local-roads')).toBe(true);
     expect(style.glyphs).toBeUndefined();
     expect(style.sprite).toBeUndefined();
     expect(JSON.stringify(style)).not.toContain('https://');
+  });
+
+  it('covers every official geocode in all three regions with nearby actual road geometry', () => {
+    const data = collection.parse(
+      JSON.parse(
+        readFileSync(
+          new URL('../../public/maps/official-regions.geojson', import.meta.url),
+          'utf8',
+        ),
+      ),
+    );
+    const cells = new Set<string>();
+    for (const feature of data.features) {
+      if (feature.properties.kind !== 'road' || feature.geometry.type !== 'LineString') continue;
+      for (const [lon, lat] of feature.geometry.coordinates) {
+        cells.add(`${Math.floor(lon * 100)},${Math.floor(lat * 100)}`);
+      }
+    }
+    const [west, south, east, north] = LOCAL_MAP_BOUNDS;
+    for (const region of ['east-v1', 'south-central-v1', 'southeast-v1']) {
+      const geocodes = z
+        .object({
+          entries: z.array(
+            z.object({
+              location: z.object({ lat: z.number(), lon: z.number() }),
+            }),
+          ),
+        })
+        .parse(
+          JSON.parse(
+            readFileSync(
+              new URL(`../../../../core/scenarios/${region}/geocodes.json`, import.meta.url),
+              'utf8',
+            ),
+          ),
+        );
+      for (const {
+        location: { lon, lat },
+      } of geocodes.entries) {
+        expect(lon).toBeGreaterThanOrEqual(west);
+        expect(lon).toBeLessThanOrEqual(east);
+        expect(lat).toBeGreaterThanOrEqual(south);
+        expect(lat).toBeLessThanOrEqual(north);
+        const x = Math.floor(lon * 100);
+        const y = Math.floor(lat * 100);
+        expect(
+          [-1, 0, 1].some((dx) => [-1, 0, 1].some((dy) => cells.has(`${x + dx},${y + dy}`))),
+          `${region}: road coverage at ${lat},${lon}`,
+        ).toBe(true);
+      }
+    }
   });
 });

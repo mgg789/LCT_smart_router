@@ -68,8 +68,8 @@ def test_official_east_golden(official_east_scenario, official_east_run):
         "urgent_unassigned",
         "unassigned",
         "missed_optional_lunches",
-        "total_lateness",
         "engineers_used",
+        "total_lateness",
         "distance",
         "travel_time",
     )
@@ -135,7 +135,10 @@ def test_official_travel_quotes_carry_exact_road_geometry(official_east_scenario
 
 def test_explanation_evidence_is_calculation_backed(official_east_run):
     evidence = official_east_run.evidence.requests
-    assigned = next(item for item in evidence if item.status == "assigned" and item.travel_time_sec)
+    # Search can legitimately choose a first visit that cannot move to the end.
+    # Exercise the append fields on a request with an actual append witness.
+    assigned = next(item for item in evidence if item.status == "assigned" and item.travel_time_sec
+                    and any(candidate.append_at_route_end_feasible for candidate in item.candidates))
     selected = next(
         candidate
         for candidate in assigned.candidates

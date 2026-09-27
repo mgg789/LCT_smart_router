@@ -6,6 +6,8 @@ import {
   DashboardApiError,
   deleteDispatchEngineer,
   getDispatcherSettings,
+  ImportCancelledError,
+  importOfficialDataset,
   importRoadData,
   loadDashboardSnapshot,
   loadPolicyComparison,
@@ -54,7 +56,10 @@ describe('request failure metadata', () => {
     );
     try {
       const request = loadPolicyComparison('test-session');
-      const assertion = expect(request).rejects.toMatchObject({ status: 0 });
+      const assertion = expect(request).rejects.toMatchObject({
+        status: 0,
+        message: 'Сервер не ответил за 90 секунд',
+      });
       await vi.advanceTimersByTimeAsync(12_000);
       expect(signal?.aborted).toBe(false);
       await vi.advanceTimersByTimeAsync(78_000);
@@ -225,6 +230,25 @@ describe('live dashboard client', () => {
                 seenAt: null,
                 resolvedAt: null,
               },
+              {
+                id: 'policy-warning',
+                code: 'plan_degraded',
+                kind: 'alert',
+                severity: 'warning',
+                engineerIds: [],
+                requestIds: ['request-1'],
+                reasons: [
+                  {
+                    lostSubmittedRequestIds: ['request-1'],
+                    baselineAssignedRequestIds: ['request-1', 'request-2'],
+                  },
+                ],
+                restoreOption: null,
+                actions: ['keep_manual', 'restore_auto'],
+                createdAt: 1_800_000_000,
+                seenAt: null,
+                resolvedAt: null,
+              },
             ],
           });
         if (path.endsWith('/shift'))
@@ -253,6 +277,9 @@ describe('live dashboard client', () => {
     expect(snapshot.policyId).toBe('compact');
     expect(snapshot.requests).toHaveLength(1);
     expect(snapshot.alerts[0]?.reasons[0]).toContain('Опоздание: 10 мин.');
+    expect(snapshot.alerts.find((alert) => alert.id === 'policy-warning')?.reasons[0]).toContain(
+      '1 из 2 ранее назначенных заявок',
+    );
     expect(snapshot.alerts[0]?.restoreOption).toEqual({
       engineer_id: 'engineer-1',
       reject_request_ids: ['request-1'],
@@ -476,10 +503,22 @@ describe('live dashboard client', () => {
 
   it('adds an idempotency key to a locally validated data package', async () => {
     let sentBody: Record<string, unknown> | null = null;
+    let preparedBody: Record<string, unknown> | null = null;
     vi.stubGlobal(
       'fetch',
       vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
         sentBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        if (String(_input).endsWith('/prepare')) {
+          preparedBody = sentBody;
+          return json({
+            prepareId: 'prepared-1',
+            source: 'upload',
+            immutableBatchHash: 'hash',
+            expiresAt: 1900000000,
+            versions: { rules: 'v1', statistics: 'v1', student: 'disabled' },
+            findings: [],
+          });
+        }
         return json({
           applied: true,
           region: 'east',
@@ -516,9 +555,50 @@ describe('live dashboard client', () => {
 
     expect(sentBody).toMatchObject({
       operationId: expect.any(String),
+    });
+    expect(preparedBody).toMatchObject({
       schemaVersion: '1.0',
       mode: 'append_requests',
     });
+  });
+
+  it('waits for review and cancels a prepared official batch without a commit', async () => {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request) => {
+        calls.push(String(input));
+        if (String(input).endsWith('/cancel')) return json({ cancelled: true });
+        return json({
+          prepareId: 'official-1',
+          source: 'official',
+          immutableBatchHash: 'hash',
+          expiresAt: 1900000000,
+          versions: { rules: 'v1', statistics: 'v1', student: 'disabled' },
+          findings: [
+            {
+              code: 'wide-window',
+              layer: 'rules',
+              count: 1,
+              examples: ['r1'],
+              message: 'Окно на весь день',
+            },
+          ],
+        });
+      }),
+    );
+    const review = vi.fn(async () => {
+      expect(calls).toHaveLength(1);
+      return false;
+    });
+    await expect(importOfficialDataset('session-token', review)).rejects.toBeInstanceOf(
+      ImportCancelledError,
+    );
+    expect(review).toHaveBeenCalledOnce();
+    expect(calls).toEqual([
+      '/api/v1/dispatch/data/import/prepare',
+      '/api/v1/dispatch/data/import/prepare/official-1/cancel',
+    ]);
   });
 });
 

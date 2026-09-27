@@ -14,7 +14,3 @@ paths = [
   '''(^|/)docs/''',
   '''(^|/)context/''',
 ]
-# Published demo-stand password in the root README. The live .env is still scanned.
-regexes = [
-  '''9658dd575f3abab304123a2c''',
-]

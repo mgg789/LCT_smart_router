@@ -48,6 +48,9 @@ class SituationPredictRequest(Record):
     as_of: int | None = Field(default=None, gt=0)
     completed: dict[str, list[str]] = Field(default_factory=dict, max_length=1000)
     cancel_rate: float | None = Field(default=None, ge=0.0, le=1.0)
+    calibration_override: PredictCalibration | None = None
+    scenario_seed: str | None = Field(default=None, min_length=1, max_length=128)
+    working_set_generation: int | None = Field(default=None, ge=1)
 
 
 class TechnicalSettingsRequest(RouterTechnicalSettings):
@@ -213,6 +216,9 @@ def create_app(runtime: RouterRuntime, road_store: RoadGraphStore | None = None)
                 as_of=request.as_of,
                 completed=request.completed,
                 cancel_rate=request.cancel_rate,
+                calibration_override=request.calibration_override,
+                scenario_seed=request.scenario_seed,
+                working_set_generation=request.working_set_generation,
             )
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -294,6 +300,9 @@ def create_app(runtime: RouterRuntime, road_store: RoadGraphStore | None = None)
         """Replace the calibration after an optimistic version check; idempotent."""
         if body.expected_version and body.expected_version != runtime.predict_calibration_state()["version"]:
             raise HTTPException(status_code=409, detail="CALIBRATION_VERSION_CONFLICT")
-        return runtime.set_predict_calibration(body.calibration, body.operation_id)
+        try:
+            return runtime.set_predict_calibration(body.calibration, body.operation_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     return app
