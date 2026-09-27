@@ -38,7 +38,7 @@ import { EvidenceReader } from './evidence.reader';
 import type { CandidateEvidence, RequestEvidence } from './evidence.schema';
 
 export interface ExplainRequestInput {
-  readonly scope: 'request' | 'engineer' | 'route' | 'alert' | 'policy' | 'degraded';
+  readonly scope: 'request' | 'engineer' | 'route' | 'alert' | 'policy' | 'plan' | 'degraded';
   readonly requestId?: string;
   readonly engineerId?: string;
   readonly alertId?: string;
@@ -114,22 +114,24 @@ export class ExplainService {
       ? `${context}\n\nВопрос диспетчера: ${input.question}`
       : context;
 
-    const conversation = await this.conversations.getOrCreate({
-      accountId,
-      role: 'dispatcher',
-      roleProfile: 'dispatcher_readonly',
-      contextRef: {
-        scope: input.scope,
-        requestId: input.requestId ?? null,
-        engineerId: input.engineerId ?? null,
-        alertId: input.alertId ?? null,
-        policyId: input.policyId ?? null,
+    const now = this.clock.nowSeconds();
+    // Runs need a conversation foreign key for their audited messages, but a short
+    // explanation must never append turns to the dispatcher's open assistant lane.
+    // An immediately closed, per-run conversation remains available to the run SSE
+    // replay while getOrCreate() and the visible chat list ignore it.
+    const conversation = await this.prisma.aiConversation.create({
+      data: {
+        accountId,
+        role: 'dispatcher',
+        roleProfile: 'dispatcher_readonly',
+        createdAt: BigInt(now),
+        updatedAt: BigInt(now),
+        lastMessageAt: BigInt(now),
+        closedAt: BigInt(now),
       },
     });
-
     const reservation = await this.budgets.reserve(accountId);
     const quota = await this.budgets.snapshot(accountId);
-    const now = this.clock.nowSeconds();
     const run = await this.prisma.aiRun.create({
       data: {
         conversationId: conversation.id,
@@ -298,6 +300,8 @@ export class ExplainService {
         return this.contextForAlert(requireId(input.alertId, 'alertId'));
       case 'policy':
         return this.contextForPolicy(input.policyId ?? null);
+      case 'plan':
+        return this.contextForPlan();
       case 'degraded':
         return this.contextForDegradedPlan();
       default: {
@@ -472,6 +476,11 @@ export class ExplainService {
     }
   }
 
+  private async contextForPlan(): Promise<string> {
+    const { snapshot } = await this.loadSnapshot();
+    return renderPlanContext(snapshot);
+  }
+
   private async contextForDegradedPlan(): Promise<string> {
     const row = await this.prisma.appState.findUnique({
       where: { key: 'alerts.manual-evaluation' },
@@ -481,6 +490,34 @@ export class ExplainService {
     }
     return `Оценка ручного плана (сырые данные): ${JSON.stringify(row.value)}`;
   }
+}
+
+/** Renders only persisted plan facts; dry reliability probabilities are not stored here. */
+export function renderPlanContext(snapshot: ExplainSnapshot): string {
+  const plan = snapshot.plan.plan;
+  if (!plan) return 'Применённого плана нет. Показатели плана не рассчитаны.';
+
+  const unassigned = plan.assignments.filter(
+    (assignment) => assignment.status === 'unassigned' || assignment.status === 'pending',
+  );
+  const assigned = plan.assignments.length - unassigned.length;
+  const distanceKm = plan.routes.reduce((total, route) => total + route.distanceKm, 0);
+  const travelTimeSec = plan.routes.reduce((total, route) => total + route.travelTimeSec, 0);
+  const engineersUsed = plan.routes.filter((route) => route.assignedCount > 0).length;
+
+  return [
+    'Текущий применённый план. Только проверенные данные из System Layer:',
+    `Активная политика: ${snapshot.policyId}.`,
+    `Заявок в плане: ${plan.assignments.length}; назначено, выполняется или выполнено: ${assigned}; без назначения: ${unassigned.length}.`,
+    `Инженеров с заявками: ${engineersUsed}; длина маршрутов: ${distanceKm} км; время в пути: ${travelTimeSec} секунд.`,
+    unassigned.length > 0
+      ? `Первые заявки без назначения: ${unassigned
+          .slice(0, 10)
+          .map((item) => item.requestId)
+          .join(', ')}.`
+      : 'Заявок без назначения нет.',
+    'Вероятности опозданий и оценка надёжности в этом контексте не рассчитывались; не называй их и не объясняй причину цветовой оценки.',
+  ].join('\n');
 }
 
 function renderContext(input: {

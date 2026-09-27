@@ -369,6 +369,7 @@
                       "route",
                       "alert",
                       "policy",
+                      "plan",
                       "degraded"
                     ]
                   },

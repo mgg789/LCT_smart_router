@@ -37,7 +37,10 @@ describe('ai run', () => {
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
 
-  const signIn = async (email: string): Promise<string> => {
+  const signIn = async (
+    email: string,
+    role: 'client' | 'dispatcher' = 'client',
+  ): Promise<string> => {
     const codeResponse = await fetch(`${baseUrl}/api/v1/auth/login-code`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -47,7 +50,7 @@ describe('ai run', () => {
     const verify = await fetch(`${baseUrl}/api/v1/auth/login-code/verify`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ email, code: devCode, role: 'client' }),
+      body: JSON.stringify({ email, code: devCode, role }),
     });
     assert.equal(verify.status, 201, await verify.clone().text());
     return ((await verify.json()) as { token: string }).token;
@@ -195,6 +198,37 @@ describe('ai run', () => {
     const run = await prisma.aiRun.findUniqueOrThrow({ where: { id: runId } });
     assert.equal(run.state, 'completed');
     assert.equal(run.providerKind, 'replay');
+  });
+
+  it('keeps a one-shot plan explanation out of the dispatcher chat', async () => {
+    const now = BigInt(Math.floor(Date.now() / 1000));
+    const email = `${unique('ai-explain-dispatcher')}@example.test`;
+    emails.push(email);
+    const account = await prisma.account.create({
+      data: { email, createdAt: now, updatedAt: now },
+    });
+    await prisma.accountRole.create({
+      data: { accountId: account.id, role: 'dispatcher', grantedAt: now },
+    });
+    const token = await signIn(email, 'dispatcher');
+    const open = await call('POST', '/api/v1/ai/conversations', token, {});
+    assert.equal(open.status, 201, await open.clone().text());
+    const chatId = ((await open.json()) as { conversation: { id: string } }).conversation.id;
+
+    const explained = await call('POST', '/api/v1/ai/explain', token, { scope: 'plan' });
+    assert.equal(explained.status, 201, await explained.clone().text());
+    const { runId } = (await explained.json()) as { runId: string };
+    const run = await prisma.aiRun.findUniqueOrThrow({ where: { id: runId } });
+    const serviceConversation = await prisma.aiConversation.findUniqueOrThrow({
+      where: { id: run.conversationId },
+    });
+    assert.notEqual(serviceConversation.id, chatId);
+    assert.notEqual(serviceConversation.closedAt, null);
+    assert.equal(await prisma.aiMessage.count({ where: { conversationId: chatId } }), 0);
+
+    const stream = await call('GET', `/api/v1/ai/runs/${runId}/events?afterSeq=0`, token);
+    assert.equal(stream.status, 200, await stream.clone().text());
+    assert.match(await stream.text(), /run_finished/);
   });
 
   it('ends a run that cannot finish within its tool-step budget with a terminal error event, not a thrown request', async () => {

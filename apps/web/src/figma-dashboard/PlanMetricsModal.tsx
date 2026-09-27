@@ -165,23 +165,6 @@ export function PlanMetricsModal({
           failed={failed}
           hasPlan={plan !== null}
           token={isNavixOffline() ? null : token}
-          context={{
-            advice,
-            metrics,
-            prediction,
-            policyId: snapshot?.policyId ?? null,
-            engineers: (snapshot?.engineers ?? []).slice(0, 8).map((engineer) => ({
-              name: engineer.displayName,
-              availability: engineer.day?.availability ?? null,
-              transport: engineer.transportType,
-              skills: engineer.skills,
-            })),
-            routes: (plan?.routes ?? []).map((route) => ({
-              assigned: route.assignedCount,
-              distanceKm: route.distanceKm,
-              travelMin: Math.round(route.travelTimeSec / 60),
-            })),
-          }}
           onOpenRequest={onOpenRequest}
         />
         {metrics ? (
@@ -231,7 +214,6 @@ function QualityCard({
   failed,
   hasPlan,
   token,
-  context,
   onOpenRequest,
 }: {
   advice: PlanQualityAdvice | null;
@@ -239,7 +221,6 @@ function QualityCard({
   failed: boolean;
   hasPlan: boolean;
   token: string | null;
-  context: unknown;
   onOpenRequest: (requestId: string) => void;
 }) {
   if (!hasPlan) return null;
@@ -257,20 +238,16 @@ function QualityCard({
       </div>
     );
   }
-  return (
-    <QualityBody advice={advice} token={token} context={context} onOpenRequest={onOpenRequest} />
-  );
+  return <QualityBody advice={advice} token={token} onOpenRequest={onOpenRequest} />;
 }
 
 function QualityBody({
   advice,
   token,
-  context,
   onOpenRequest,
 }: {
   advice: PlanQualityAdvice;
   token: string | null;
-  context: unknown;
   onOpenRequest: (requestId: string) => void;
 }) {
   const reduce = useReducedMotion();
@@ -280,8 +257,7 @@ function QualityBody({
   const { text: aiText, ready: aiReady } = useAiExplanation({
     enabled: aiOn,
     token,
-    kind: 'plan',
-    context,
+    target: { scope: 'plan' },
   });
   return (
     <section

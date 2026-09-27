@@ -398,6 +398,7 @@ export const explainScopeSchema = z.enum([
   'route',
   'alert',
   'policy',
+  'plan',
   'degraded',
 ]);
 export type ExplainScope = z.infer<typeof explainScopeSchema>;

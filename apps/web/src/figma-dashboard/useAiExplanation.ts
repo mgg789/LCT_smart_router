@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
-import { explainWithAi } from '../api/client';
-
-type AiExplanationKind = 'reasons' | 'plan';
+import { useEffect, useMemo } from 'react';
+import type { ExplainTarget } from '../api/ai';
+import { useExplainRun } from '../hooks/useExplainRun';
 
 /**
  * Loads the optional AI wording for facts already rendered by a dashboard panel.
@@ -12,40 +11,25 @@ type AiExplanationKind = 'reasons' | 'plan';
 export function useAiExplanation({
   enabled,
   token,
-  kind,
-  context,
+  target,
 }: {
   enabled: boolean;
   token: string | null;
-  kind: AiExplanationKind;
-  context: unknown;
+  target: ExplainTarget;
 }): { text: string | null; ready: boolean } {
-  const [text, setText] = useState<string | null>(null);
-  const [ready, setReady] = useState(false);
-  const packed = useMemo(() => JSON.stringify(context) ?? 'null', [context]);
+  const { state, run, reset } = useExplainRun(token);
+  const packed = useMemo(() => JSON.stringify(target), [target]);
 
   useEffect(() => {
     if (!enabled || !token) {
-      setText(null);
-      setReady(false);
       return;
     }
-    let cancelled = false;
-    setReady(false);
-    void explainWithAi(token, kind, JSON.parse(packed) as unknown)
-      .then((result) => {
-        if (!cancelled) setText(result.text);
-      })
-      .catch(() => {
-        if (!cancelled) setText(null);
-      })
-      .finally(() => {
-        if (!cancelled) setReady(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [enabled, kind, packed, token]);
+    run(JSON.parse(packed) as ExplainTarget);
+    return reset;
+  }, [enabled, packed, token, run, reset]);
 
-  return { text, ready };
+  return {
+    text: state.error || state.unavailable ? null : state.text.trim() || null,
+    ready: state.done || state.error !== null || state.unavailable !== null,
+  };
 }
