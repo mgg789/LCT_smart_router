@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { SysError } from '../../common/errors';
+import { routerFetch } from '../../common/observability/router-fetch';
 import type { RouterResult } from './result.types';
 import { routerResultSchema } from './result.types';
 import {
@@ -640,7 +641,7 @@ export class HttpRouterClient extends RouterClient {
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
     timeout.unref();
     try {
-      const response = await fetch(`${this.baseUrl}${path}`, {
+      const response = await routerFetch(`${this.baseUrl}${path}`, {
         ...init,
         headers: { accept: 'application/json' },
         ...(init.headers

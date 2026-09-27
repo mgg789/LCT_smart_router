@@ -17,6 +17,7 @@ from core.contracts import (
     RouterTaskSnapshot,
     RouterTechnicalSettings,
 )
+from core.observability import RouterObservability
 from core.predict_calibration import PredictCalibration
 from core.roadimport import RoadGraphStore, RoadImportError, import_into_runtime
 from core.runtime import RouterRuntime
@@ -94,11 +95,19 @@ def create_app(runtime: RouterRuntime, road_store: RoadGraphStore | None = None)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        runtime.start()
-        yield
-        runtime.close()
+        telemetry.start()
+        try:
+            runtime.start()
+            yield
+        finally:
+            try:
+                runtime.close()
+            finally:
+                telemetry.close()
 
     app = FastAPI(title="LCT Router Core", version="2.0", lifespan=lifespan)
+
+    telemetry = RouterObservability(app)
 
     configured_path = (
         os.environ.get("ROUTER_ROAD_GRAPH_PATH", "").strip() or ".router/road-import.json"

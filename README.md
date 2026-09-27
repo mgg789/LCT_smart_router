@@ -182,6 +182,8 @@ pnpm compose:up             # postgres + миграции + router core + api + 
 
 `pnpm smoke` — сквозная проверка контура с нуля. Деструктивна, только на своей машине.
 Запуск без Docker и диагностика — [docs/runbook.md](docs/runbook.md).
+Метрики Prometheus, трассировка OpenTelemetry и Sentry, включая независимые env-флаги,
+описаны в [docs/observability.md](docs/observability.md).
 
 ---
 

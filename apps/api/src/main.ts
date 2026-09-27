@@ -1,3 +1,4 @@
+import { Observability } from './common/observability/observability';
 import 'reflect-metadata';
 import { type INestApplication, Logger } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
@@ -34,6 +35,8 @@ async function bootstrap(): Promise<void> {
     // boundary bounded while allowing the documented 8 MiB decoded upload.
     bodyParser: false,
   });
+  const telemetry = app.get(Observability);
+  app.use(telemetry.middleware);
   app.useBodyParser('json', { limit: '12mb' });
 
   const config = app.get(AppConfigService);
@@ -41,7 +44,7 @@ async function bootstrap(): Promise<void> {
   applySecurityHeaders(app, isProduction);
 
   app.setGlobalPrefix('api/v1', { exclude: ['health/live', 'health/ready', 'health/services'] });
-  app.useGlobalFilters(new AllExceptionsFilter());
+  app.useGlobalFilters(new AllExceptionsFilter(telemetry.captureError));
   app.useGlobalInterceptors(new BigIntGuardInterceptor(!isProduction));
   app.enableShutdownHooks();
 

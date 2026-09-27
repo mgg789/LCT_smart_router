@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { observabilityEnv } from '../observability/observability';
 
 /**
  * Environment contract of the System Layer.
@@ -9,6 +10,7 @@ import { z } from 'zod';
  * always describes exactly what the current code needs.
  */
 export const envSchema = z.object({
+  ...observabilityEnv,
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
 
   /** TCP port of the HTTP server. */

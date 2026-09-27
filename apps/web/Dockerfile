@@ -14,6 +14,10 @@ RUN pnpm install --frozen-lockfile --filter web...
 
 COPY packages/shared packages/shared
 COPY apps/web apps/web
+ARG VITE_SENTRY_ENABLED=false
+ARG VITE_SENTRY_DSN=
+ARG VITE_SENTRY_ENVIRONMENT=development
+ARG VITE_SENTRY_RELEASE=
 RUN pnpm --filter web build
 
 FROM nginx:1.29-alpine AS runtime
