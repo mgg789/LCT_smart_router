@@ -7,6 +7,7 @@ import { eu } from '../figma-engineer/engineerScale';
 import { PhoneErrorNotice } from '../figma-engineer/PhoneErrorNotice';
 import { isPhoneFailureNotice } from '../figma-engineer/phoneNotice';
 import { CLIENT_ASSETS } from './assets';
+import { ClientAiPane } from './ClientAiPane';
 import { ClientEmailGate } from './ClientEmailGate';
 import { ClientMenu } from './ClientMenu';
 import { ClientNewRequest } from './ClientNewRequest';
@@ -41,7 +42,7 @@ import {
 const slideEase = [0.22, 1, 0.36, 1] as const;
 const slide = { duration: 0.34, ease: slideEase };
 
-type GatePurpose = 'submit' | 'list' | 'detail';
+type GatePurpose = 'submit' | 'list' | 'detail' | 'support';
 
 interface EmailGateState {
   purpose: GatePurpose;
@@ -247,6 +248,10 @@ export function ClientApp() {
         await sendNow(next);
         return;
       }
+      if (gate.purpose === 'support') {
+        setScreen('support');
+        return;
+      }
       const cards = await refreshHistory(next.token);
       setScreen('list');
       setNowMs(Date.now());
@@ -304,7 +309,7 @@ export function ClientApp() {
           <PhoneErrorNotice title="Ошибка" body={failure} onClose={() => setNotice(null)} />
         ) : null}
         <div
-          className="flex h-full min-h-0 flex-col overflow-y-auto"
+          className={`flex h-full min-h-0 flex-col ${screen === 'support' ? 'overflow-hidden' : 'overflow-y-auto'}`}
           style={{ padding: `${eu(36)} ${eu(40)} ${eu(40)}` }}
         >
           <header className="flex items-center" style={{ gap: eu(20) }}>
@@ -377,12 +382,33 @@ export function ClientApp() {
             />
           ) : null}
           {screen === 'support' ? (
-            <p
-              className="font-medium text-figma-muted"
-              style={{ marginTop: eu(48), fontSize: eu(20) }}
-            >
-              Поддержка пока недоступна.
-            </p>
+            <div className="relative min-h-0 flex-1" style={{ marginTop: eu(24) }}>
+              {session ? (
+                <ClientAiPane
+                  token={session.token}
+                  sessionScope={session.email}
+                  onSessionExpired={forgetSession}
+                  displayName={draft.contactName || null}
+                  onOperationApplied={() => {
+                    void refreshHistory(session.token).catch((error: unknown) => {
+                      if (isDeadSession(error)) forgetSession();
+                      else setNotice(errorText(error));
+                    });
+                  }}
+                  onOpenRequest={(id) => void openOwned(session, id)}
+                />
+              ) : (
+                <button
+                  type="button"
+                  className="rounded-full bg-figma-bee px-6 py-4 font-semibold"
+                  onClick={() =>
+                    setGate({ purpose: 'support', email: draft.email, codeStep: false })
+                  }
+                >
+                  Войти и открыть ассистента
+                </button>
+              )}
+            </div>
           ) : null}
         </div>
 

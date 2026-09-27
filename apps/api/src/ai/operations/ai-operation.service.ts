@@ -215,7 +215,11 @@ export class AiOperationService {
     // Dispatcher fix mode and the engineer assistant perform the write inside this
     // call. The model does not get a result until System one has checked it, and,
     // when that check refuses, until the person has answered the modal.
-    if (profile !== 'dispatcher_fix' && profile !== 'engineer') {
+    if (
+      profile !== 'dispatcher_fix' &&
+      profile !== 'engineer' &&
+      !(profile === 'dispatcher_readonly' && input.action === 'policy.personal.save')
+    ) {
       await this.emitPrepared(input, id, 'awaiting_confirmation', preview, expiresAt);
       return { operationId: id, state: 'awaiting_confirmation', preview, expiresAt };
     }

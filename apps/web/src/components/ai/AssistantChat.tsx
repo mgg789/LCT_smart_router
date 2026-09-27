@@ -3,6 +3,7 @@ import { type KeyboardEvent, useEffect, useRef, useState } from 'react';
 import type { AiAssistMode } from '../../api/ai';
 import { type AssistantSurface, useAssistantChat } from '../../hooks/useAssistantChat';
 import { AiUnavailablePanel } from './AiUnavailablePanel';
+import { ChatBottomSpacer } from './ChatBottomSpacer';
 import { ChatMessage } from './ChatMessage';
 import { HandoffBanner } from './HandoffBanner';
 
@@ -101,6 +102,7 @@ export function AssistantChat({
             {chat.activity}
           </p>
         )}
+        <ChatBottomSpacer />
       </div>
 
       <div className="shrink-0 space-y-2 border-t border-line p-3">

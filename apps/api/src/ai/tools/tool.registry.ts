@@ -8,7 +8,7 @@ import { LiveService } from '../../orchestrator/live/live.service';
 import { PassportsService } from '../../orchestrator/passports/passports.service';
 import { PolicyService } from '../../orchestrator/policy';
 import { RequestsService } from '../../orchestrator/requests/requests.service';
-import { PrismaService } from '../../persistence';
+import { PrismaService, UnitOfWork } from '../../persistence';
 import { SnapshotBuilder } from '../../routing/mount-data-eng';
 import {
   AppliedPlanService,
@@ -18,14 +18,20 @@ import {
 } from '../../routing/router-gateway';
 import { AiOperationService } from '../operations';
 import type { LlmToolSpec } from '../provider';
+import { ChatEventBus } from '../runtime/chat-event.bus';
+import { RunEventBus } from '../runtime/run-event.bus';
+import { RunRegistry } from '../runtime/run-registry';
+import { StopService } from '../runtime/stop.service';
 import { buildClientTools } from './client.tools';
 import { buildDispatcherReadTools } from './dispatcher-read.tools';
 import { buildDispatcherWriteTools } from './dispatcher-write.tools';
 import { buildEngineerTools } from './engineer.tools';
+import { buildCallDispatchHelperTool } from './handoff.tool';
 import { buildSearchDocumentationTool } from './knowledge.tool';
 import { KnowledgeSearchPort } from './knowledge-search.port';
 import { buildManualTools, MANUAL_TOOL_NAMES } from './manual.tools';
 import { buildOperationVerificationTool } from './operation-verification.tool';
+import { buildPersonalPolicyTools } from './personal-policy.tools';
 import type { AnyToolSpec } from './tool.types';
 
 /**
@@ -60,6 +66,11 @@ export class ToolRegistry {
     router: RouterClient,
     builder: SnapshotBuilder,
     passports: PassportsService,
+    uow: UnitOfWork,
+    stop: StopService,
+    bus: RunEventBus,
+    registry: RunRegistry,
+    chatBus: ChatEventBus,
   ) {
     const searchDocumentation = buildSearchDocumentationTool(knowledge);
     const clientTools = buildClientTools({ aiOperations, requests, config, prisma });
@@ -82,6 +93,7 @@ export class ToolRegistry {
 
     const dispatcherReadonlyTools = [
       ...dispatcherReadTools,
+      ...buildPersonalPolicyTools({ policy, prisma, aiOperations }),
       buildOperationVerificationTool(prisma),
       searchDocumentation,
     ];
@@ -92,10 +104,11 @@ export class ToolRegistry {
     ];
 
     this.catalogues = {
-      // Handoff to a human dispatcher is switched off for this release: the client
-      // support screen and the dispatcher chats tab are locked, so the model must not
-      // be able to open that queue.
-      client: [...clientTools, searchDocumentation],
+      client: [
+        ...clientTools,
+        searchDocumentation,
+        buildCallDispatchHelperTool({ uow, stop, bus, registry, chatBus }),
+      ],
       engineer: [...engineerTools, searchDocumentation],
       dispatcher_readonly: dispatcherReadonlyTools,
       dispatcher_fix: dispatcherFixTools,

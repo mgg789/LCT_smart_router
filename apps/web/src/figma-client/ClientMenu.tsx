@@ -98,9 +98,8 @@ export function ClientMenu({
                   icon={CLIENT_ASSETS.support}
                   iconWidth={30}
                   iconHeight={33}
-                  active={false}
-                  disabled
-                  onClick={() => undefined}
+                  active={active === 'support'}
+                  onClick={() => onNavigate('support')}
                 />
               </nav>
               <div

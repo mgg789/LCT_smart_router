@@ -1,6 +1,7 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { getMcpSettings, updateDispatcherSettings } from '../api/client';
+import { loadPersonalPolicy, type PersonalPolicyProfile } from '../api/personal-policy';
 import type { PlanDelta, PolicyId } from '../api/types';
 import { ALL_REGIONS, type RegionSelection } from '../domain/regions';
 import { clearAssistantSessions } from '../hooks/useAssistantChat';
@@ -37,6 +38,7 @@ import { nextRouterSettings, policyLabel } from './fromSnapshot';
 import { ManualPlanningProvider, openManualPlanning } from './ManualPlanning';
 import { MapCard, RouteCard } from './MapRoute';
 import { McpAgentIndicator } from './McpAgentIndicator';
+import { PersonalPolicyDialog } from './PersonalPolicyDialog';
 import {
   type PlanHistoryAnchor,
   type PlanHistorySelection,
@@ -105,6 +107,27 @@ export function MainDashboardPage() {
   const reduceMotion = useReducedMotion();
   const dash = useDashboard();
   const [policyOpen, setPolicyOpen] = useState(false);
+  const [personalPolicy, setPersonalPolicy] = useState<PersonalPolicyProfile>(null);
+  const [personalPolicyOpen, setPersonalPolicyOpen] = useState(false);
+  const [policyAiMessage, setPolicyAiMessage] = useState<{ id: string; text: string } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!dash.token) {
+      setPersonalPolicy(null);
+      return;
+    }
+    if (!policyOpen) return;
+    void loadPersonalPolicy(dash.token)
+      .then(({ profile }) => {
+        if (!cancelled) setPersonalPolicy(profile);
+      })
+      .catch(() => {
+        if (!cancelled) setPersonalPolicy(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [dash.token, policyOpen]);
   const [activeNav, setActiveNav] = useState<NavItemId>('day');
   const [stackNav, setStackNav] = useState<NavItemId>('day');
   const [settledPane, setSettledPane] = useState('main');
@@ -708,7 +731,18 @@ export function MainDashboardPage() {
               setAddOpen(false);
               setPolicyOpen((value) => !value);
             }}
-            onSelect={applyPolicy}
+            personalConfigured={personalPolicy !== null}
+            personalTitle={personalPolicy?.title}
+            onEditPersonal={() => {
+              setPolicyOpen(false);
+              setPersonalPolicyOpen(true);
+            }}
+            onSelect={(id) => {
+              if (id === 'personal' && !personalPolicy) {
+                setPolicyOpen(false);
+                setPersonalPolicyOpen(true);
+              } else applyPolicy(id);
+            }}
             onLunchToggle={applyLunch}
             onTrafficToggle={applyTraffic}
             onMetroToggle={applyMetro}
@@ -719,6 +753,18 @@ export function MainDashboardPage() {
               if (!dash.snapshot) return;
               setPolicyOpen(false);
               openManualPlanning('mode');
+            }}
+          />
+          <PersonalPolicyDialog
+            open={personalPolicyOpen}
+            motionOn={motionOn}
+            onClose={() => setPersonalPolicyOpen(false)}
+            onContinue={() => {
+              setPersonalPolicyOpen(false);
+              setStackDir(stackSlideDir(stackNav, 'ai'));
+              setStackNav('ai');
+              setActiveNav('ai');
+              setPolicyAiMessage({ id: crypto.randomUUID(), text: 'Поменяй мою личную политику' });
             }}
           />
           <NotificationControl
@@ -1013,6 +1059,8 @@ export function MainDashboardPage() {
                 {stackViewKey(stackNav) === 'chats' ? <DashboardChats token={dash.token} /> : null}
                 {stackViewKey(stackNav) === 'ai' ? (
                   <DashboardAi
+                    initialMessage={policyAiMessage ?? undefined}
+                    onInitialMessageSent={() => setPolicyAiMessage(null)}
                     token={dash.token}
                     onOpenObject={(target) => {
                       if (target.type === 'request') {

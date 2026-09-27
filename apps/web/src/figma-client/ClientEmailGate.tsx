@@ -32,7 +32,7 @@ export function ClientEmailGate({
   onConfirm,
   onClose,
 }: {
-  purpose: 'submit' | 'list' | 'detail';
+  purpose: 'submit' | 'list' | 'detail' | 'support';
   email: string;
   codeStep: boolean;
   devCode?: string;
@@ -46,11 +46,17 @@ export function ClientEmailGate({
   const [cells, setCells] = useState(emptyOtpCells);
   const code = otpValue(cells);
   const title =
-    purpose === 'submit' ? 'Подтвердите почту' : purpose === 'list' ? 'Вход' : 'Откройте заявку';
+    purpose === 'submit'
+      ? 'Подтвердите почту'
+      : purpose === 'list' || purpose === 'support'
+        ? 'Вход'
+        : 'Откройте заявку';
   const lead =
     purpose === 'submit'
       ? 'Заявка создастся после кода из письма. До этого она не отправлена.'
-      : 'Чтобы увидеть заявки этого адреса, войдите кодом из письма.';
+      : purpose === 'support'
+        ? 'Войдите кодом из письма, чтобы ассистент мог помочь с вашими заявками.'
+        : 'Чтобы увидеть заявки этого адреса, войдите кодом из письма.';
   const hint = engineerCodeHint({
     devCode,
     remainingSec: 0,

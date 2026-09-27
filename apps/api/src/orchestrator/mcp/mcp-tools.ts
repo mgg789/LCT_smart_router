@@ -29,6 +29,7 @@ import {
 import { AlertsService, type ResolveAlertInput } from '../alerts';
 import { LiveService } from '../live';
 import { PolicyService } from '../policy';
+import { personalPolicyUpdateSchema } from '../policy/personal-policy';
 import { resolveRequestReference } from '../requests/request-reference';
 import { DispatcherSettingsService } from '../settings';
 import {
@@ -651,6 +652,48 @@ export class McpToolsService {
       ),
       defineTool(
         {
+          name: 'get_personal_policy',
+          title: 'Личная политика',
+          description:
+            'Read authenticated dispatcher personal preferences, defaults and all nine supported objectives. No selection or mutation.',
+          inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+        },
+        z.object({}),
+        async (_args, actor) => this.policyService.personal(this.prisma, actor.accountId),
+      ),
+      defineTool(
+        {
+          name: 'save_personal_policy',
+          title: 'Сохранить личную политику',
+          description:
+            'Ask about ALL nine objective dimensions, agree priority order, then save personal preferences. Saving never selects the policy; changing an already-active owned profile triggers replanning. Safety and emergency/coverage priorities remain mandatory. Requires dispatcher account.',
+          inputSchema: {
+            type: 'object',
+            properties: z.toJSONSchema(personalPolicyUpdateSchema).properties ?? {},
+            required: ['expectedVersion', 'title', 'objectiveOrder'],
+            additionalProperties: false,
+          },
+        },
+        personalPolicyUpdateSchema,
+        async (args, actor) => {
+          const outcome = await this.operations.execute(
+            { operationId: randomUUID(), actor, action: 'policy.personal.save', payload: args },
+            async (context) => {
+              const result = await this.policyService.savePersonal(context, args);
+              if (result.activeUpdated)
+                await this.publisher.publishIfChanged(
+                  context.tx,
+                  context.now,
+                  PUBLICATION_TRIGGERS.POLICY_CHANGED,
+                );
+              return result;
+            },
+          );
+          return outcome.result;
+        },
+      ),
+      defineTool(
+        {
           name: 'get_request',
           title: 'Детали заявки',
           description:
@@ -890,8 +933,8 @@ export class McpToolsService {
           inputSchema: { type: 'object', properties: {}, additionalProperties: false },
         },
         z.object({}),
-        async () => ({
-          policies: this.policyService.list(),
+        async (_args, actor) => ({
+          policies: await this.policyService.listFor(this.prisma, actor.accountId),
           active: await this.policyService.active(this.prisma),
         }),
       ),

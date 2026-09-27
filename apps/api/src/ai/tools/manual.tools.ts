@@ -58,15 +58,31 @@ export function buildManualTools(deps: {
       targetRef: typeof payload.targetId === 'string' ? payload.targetId : null,
       payload,
     });
+    const manual = manualStateView(await readManualState(deps.prisma));
+    const decision = manual.decisions.find(
+      (item) => item.kind === payload.kind && item.targetId === payload.targetId,
+    );
+    const intentOutcome =
+      op.state !== 'applied'
+        ? op.state
+        : decision && manual.resolution?.rejectedIds.includes(decision.id)
+          ? 'rejected'
+          : decision && manual.resolution?.acceptedIds.includes(decision.id)
+            ? 'accepted'
+            : 'pending';
     return {
       ok: op.state === 'applied' || op.state === 'awaiting_confirmation',
       summary:
         op.state === 'applied'
-          ? 'Ручное решение сохранено; результат проверяется планировщиком.'
+          ? intentOutcome === 'rejected'
+            ? 'Ручное пожелание сохранено, но планировщик его отклонил. Назначение не выполнено.'
+            : intentOutcome === 'accepted'
+              ? 'Планировщик принял ручное пожелание. Проверьте фактического исполнителя через get_request перед сообщением о назначении.'
+              : 'Ручное пожелание сохранено; назначение ещё НЕ подтверждено, ожидается пересчёт. Проверьте get_manual_state и get_request.'
           : op.state === 'awaiting_confirmation'
             ? 'Ручное решение ожидает подтверждения; пока не применено.'
             : 'Ручное решение не применено.',
-      resultContent: JSON.stringify(op),
+      resultContent: JSON.stringify({ ...op, manual, intentOutcome, assignmentConfirmed: false }),
     };
   }
   return [
@@ -105,7 +121,7 @@ export function buildManualTools(deps: {
     {
       name: 'prepare_manual_assignment',
       description:
-        'Assign/reassign a request to an engineer in enabled Manual. Use full IDs from get_request/list_engineers and latest expectedVersion from get_manual_state. engineerId=null unassigns. Requires no date or window. Performs the existing guarded manual assignment operation.',
+        'Assign/reassign a request to an engineer in enabled Manual. Use full IDs from get_request/list_engineers and latest expectedVersion from get_manual_state. engineerId=null unassigns. Requires no date or window. Saves an intention through the guarded operation; NOT proof of actual assignment. Poll get_manual_state then verify actual engineer in get_request before claiming success.',
       schema: z.object({
         expectedVersion: z.number().int().nonnegative(),
         requestId: z.string().min(1),

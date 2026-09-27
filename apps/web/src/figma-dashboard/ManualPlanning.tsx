@@ -267,6 +267,12 @@ export function ManualPlanningProvider({
                                   : 'Без назначения'
                                 : `${formatClock(item.startAt ?? 0)}–${formatClock(item.endAt ?? 0)}`}
                             </p>
+                            {state?.resolution?.rejectedIds.includes(id) && (
+                              <p className="text-figma-danger">
+                                Решение не выполнено: его не удалось совместить с условиями плана.
+                                Подтверждение приоритетов не означает выполнения этого решения.
+                              </p>
+                            )}
                           </div>
                           <button
                             type="button"

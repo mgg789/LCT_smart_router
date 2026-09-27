@@ -624,10 +624,13 @@ export function useDashboard() {
           expectedContextVersion = updated.routerContextVersion;
         }
         if (generation !== readGeneration.current) return false;
-        if (nextPolicy !== previous.policyId) {
+        if (nextPolicy !== previous.policyId || nextPolicy === 'personal') {
           try {
-            const preview = await simulateChange(token, { policyId: nextPolicy });
-            if (simulationWorsens(preview.delta)) {
+            const preview =
+              nextPolicy === 'personal'
+                ? null
+                : await simulateChange(token, { policyId: nextPolicy });
+            if (preview && simulationWorsens(preview.delta)) {
               const accepted = await new Promise<boolean>((resolve) => {
                 worseningResolve.current = resolve;
                 setWorseningText(preview.text);

@@ -340,7 +340,14 @@ export class SnapshotBuilder {
       engineers,
       policy: {
         policy_id: policyId,
-        parameters: {},
+        parameters:
+          policyId === 'personal' &&
+          active?.parameters &&
+          typeof active.parameters === 'object' &&
+          !Array.isArray(active.parameters) &&
+          typeof active.parameters.objective_order === 'string'
+            ? { objective_order: active.parameters.objective_order }
+            : {},
       },
     };
 

@@ -3,7 +3,7 @@
 import json
 from dataclasses import asdict, dataclass
 from hashlib import sha256
-from typing import Literal
+from typing import Literal, cast
 
 from core.contracts import Plan, Policy, RouterTaskSnapshot
 
@@ -50,7 +50,7 @@ SearchStage = Literal[
 class PolicySpec:
     """Compiled immutable objective order for one supported dispatcher preset."""
 
-    policy_id: Literal["fast", "compact", "sla", "balanced", "eco", "covering"]
+    policy_id: Literal["fast", "compact", "sla", "balanced", "eco", "covering", "personal"]
     definition_version: str
     ordered_criteria: tuple[Criterion, ...]
     search_stages: tuple[SearchStage, ...]
@@ -141,6 +141,12 @@ POLICY_CATALOG_VERSION = sha256(
 
 def compile_policy(policy: Policy) -> PolicySpec:
     """Return the exact catalog definition or fail instead of silently falling back."""
+    if policy.policy_id == "personal":
+        # Contract validation guarantees a permutation of supported safe objectives.
+        order = cast(str, policy.parameters["objective_order"])
+        criteria = tuple(cast(Criterion, item) for item in order.split(","))
+        stages = ("coverage", *(cast(SearchStage, item) for item in order.split(",")))
+        return PolicySpec("personal", "personal-1-" + sha256(order.encode()).hexdigest()[:16], _COVERAGE + criteria, stages)
     try:
         return _CATALOG[policy.policy_id]
     except KeyError:

@@ -438,9 +438,9 @@ export function buildDispatcherReadTools(deps: DispatcherReadToolDeps): readonly
     name: 'get_policies',
     description: 'The prepared policy catalogue and which one is active.',
     schema: getPoliciesSchema,
-    async run(): Promise<ToolResult> {
+    async run(ctx): Promise<ToolResult> {
       const [policies, active] = await Promise.all([
-        deps.policy.list(),
+        deps.policy.listFor(deps.prisma, ctx.accountId),
         deps.policy.active(deps.prisma),
       ]);
       return ok(`Active policy: ${active.policyId}`, { policies, active });

@@ -77,6 +77,12 @@ export function buildClientSystemPrompt(input: ClientSystemPromptInput): string 
     'Never promise that an engineer will come, name or guess an arrival time, or state any ' +
       'outcome for the request -- scheduling, assignment and routing happen after this ' +
       'conversation and are not something you observe or control.',
+    'Use get_my_request to reread a specific owned request. For cancellation or a new date/window use cancel_my_request or reschedule_my_request only if offered. These only prepare confirmation cards, never claim the change applied before confirmation. Started or terminal requests cannot be changed by the customer. Never access another customer’s requests or ask for their account identifier.',
+    ...(input.toolNames.includes('call_dispatch_helper')
+      ? [
+          'If the customer asks for a human or the available tools cannot solve their problem, use call_dispatch_helper to pass this same conversation to the dispatcher. Never invent a dispatcher reply or promise response times.',
+        ]
+      : []),
     'Every number, date, code, name or status in your answer must come from a tool result ' +
       'returned this run or from the fields above -- never estimated, remembered from a ' +
       'similar-sounding case, or reused from an earlier turn without rereading it.',

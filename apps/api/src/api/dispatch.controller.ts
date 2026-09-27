@@ -16,6 +16,7 @@ import { type UpdateMcpSettingsDto, updateMcpSettingsSchema } from '../orchestra
 import { McpService } from '../orchestrator/mcp/mcp.service';
 import { type McpSettingsView } from '../orchestrator/mcp/mcp-settings';
 import { PolicyService } from '../orchestrator/policy';
+import { personalPolicyUpdateSchema } from '../orchestrator/policy/personal-policy';
 import {
   DispatcherSettingsService,
   GeocodingService,
@@ -424,11 +425,43 @@ export class DispatchController {
 
   @Get('policies')
   @ApiOperation({ summary: 'Prepared policies and the one in force' })
-  async policies() {
+  async policies(@CurrentActor() actor: Actor) {
     return {
-      policies: this.policyService.list(),
+      policies: await this.policyService.listFor(this.prisma, actor.accountId),
       active: await this.policyService.active(this.prisma),
     };
+  }
+
+  @Get('policy/personal')
+  @ApiOperation({ summary: 'Own saved personal policy, defaults and supported dimensions' })
+  async personalPolicy(@CurrentActor() actor: Actor) {
+    return this.policyService.personal(this.prisma, actor.accountId);
+  }
+
+  @Put('policy/personal')
+  @ApiOperation({
+    summary: 'Save own policy without selecting it; replan only when already active',
+  })
+  async savePersonalPolicy(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(personalPolicyUpdateSchema.extend({ operationId: z.uuid() }))) dto: z.infer<
+      typeof personalPolicyUpdateSchema
+    > & { operationId: string },
+  ) {
+    const outcome = await this.operations.execute(
+      { operationId: dto.operationId, actor, action: 'policy.personal.save', payload: dto },
+      async (context) => {
+        const result = await this.policyService.savePersonal(context, dto);
+        if (result.activeUpdated)
+          await this.publisher.publishIfChanged(
+            context.tx,
+            context.now,
+            PUBLICATION_TRIGGERS.POLICY_CHANGED,
+          );
+        return result;
+      },
+    );
+    return outcome.result;
   }
 
   @Get('policy-comparison')

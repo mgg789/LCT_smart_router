@@ -122,3 +122,21 @@ def test_offline_and_expired_intents(snapshot, graph):
     )
     assert "offline" in output.main.manual_resolution.rejected_ids
     assert "done" in output.main.manual_resolution.accepted_ids
+
+
+def test_forced_reassignment_moves_existing_baseline_job_to_other_engineer(snapshot, graph):
+    """Manual assignment must replace the chosen executor, including a warm existing plan."""
+    first = snapshot.engineers[0]
+    other = first.model_copy(update={"engineer_id": "eng-other", "input_order": 1})
+    task = snapshot.model_copy(update={"engineers": [first, other]})
+    travel = GraphTravel(graph)
+    baseline = solve(task, travel, SETTINGS)
+    previous = next(a for a in baseline.main.assignments if a.status == "assigned")
+    target = other.engineer_id if previous.engineer_id == first.engineer_id else first.engineer_id
+    item = decision("reassign", "assignment", previous.request_id, engineer_id=target)
+    changed = solve(task.model_copy(update={"manual_decisions": [item]}), travel, SETTINGS, baseline.memory)
+    actual = next(a for a in changed.main.assignments if a.request_id == previous.request_id)
+    assert changed.main.manual_resolution.accepted_ids == ["reassign"]
+    assert changed.main.manual_resolution.rejected_ids == []
+    assert actual.engineer_id == target
+    assert actual.engineer_id != previous.engineer_id

@@ -18,8 +18,8 @@ export type StackNavId = (typeof STACK_NAV)[number];
 
 export type StackViewKey = 'main' | 'requests' | 'engineers' | 'alerts' | 'policy' | 'chats' | 'ai';
 
-/** Sidebar tabs that stay out of the wheel. Chats are locked for this release. */
-export const LOCKED_NAV = new Set<NavItemId>(['chats']);
+/** Sidebar tabs excluded from keyboard and wheel navigation. */
+export const LOCKED_NAV = new Set<NavItemId>();
 
 /**
  * True for a sidebar tab the wheel and the click both skip.

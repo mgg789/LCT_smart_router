@@ -430,6 +430,9 @@ export function PolicyControl({
   onStrictTimeWindowsToggle,
   onManualMode,
   manualMode = false,
+  personalConfigured = false,
+  personalTitle,
+  onEditPersonal,
 }: {
   open: boolean;
   policyLabel: string;
@@ -453,14 +456,25 @@ export function PolicyControl({
   onStrictTimeWindowsToggle: () => void;
   onManualMode: () => void;
   manualMode?: boolean;
+  personalConfigured?: boolean;
+  personalTitle?: string;
+  onEditPersonal?: () => void;
 }) {
-  const options =
+  const baseOptions =
     policies.length > 0
       ? policies
       : (['fast', 'compact', 'sla', 'balanced', 'eco', 'covering'] as const).map((id) => ({
           id,
           label: policyLabel(id),
         }));
+  const options: { id: PolicyId; label: string }[] = [
+    ...baseOptions.filter((option) => option.id !== 'personal'),
+    {
+      id: 'personal',
+      label: personalConfigured ? (personalTitle ?? 'Моя политика') : 'Задать свою',
+    },
+  ];
+  const personalIndex = options.length - 1;
   const extra = Math.max(0, options.length - 6) * 44;
   return (
     <motion.div
@@ -527,7 +541,7 @@ export function PolicyControl({
             key={option.id}
             type="button"
             onClick={() => onSelect(option.id)}
-            className="absolute left-0 h-[32px] w-full"
+            className={`absolute left-0 h-[32px] ${option.id === 'personal' && personalConfigured ? 'w-[310px]' : 'w-full'}`}
             style={{ top: 14 + index * 44 }}
             whileHover={motionOn ? { x: 4 } : undefined}
             transition={{ duration: 0.16 }}
@@ -539,11 +553,33 @@ export function PolicyControl({
               height={24}
               className="absolute left-[16px] top-0"
             />
-            <FigmaText className="figma-nowrap absolute left-[50px] top-[4px] font-medium text-[20px] text-figma-ink">
+            <FigmaText
+              className={`figma-nowrap absolute left-[50px] right-[8px] top-[4px] overflow-hidden text-ellipsis text-left font-medium text-[20px] ${option.id === 'personal' ? 'client-ai-fill client-ai-text' : 'text-figma-ink'}`}
+            >
               {option.label}
             </FigmaText>
           </motion.button>
         ))}
+        {personalConfigured && onEditPersonal ? (
+          <button
+            type="button"
+            onClick={onEditPersonal}
+            aria-label="Изменить личную политику"
+            className="absolute right-[18px] flex size-[32px] items-center justify-center"
+            style={{ top: 14 + personalIndex * 44 }}
+          >
+            <span
+              aria-hidden
+              className="client-ai-fill block size-[24px]"
+              style={{
+                maskImage: `url(${FIGMA_ASSETS.engEdit})`,
+                maskSize: 'contain',
+                maskRepeat: 'no-repeat',
+                maskPosition: 'center',
+              }}
+            />
+          </button>
+        ) : null}
         <PolicySwitch
           on={lunchOn}
           label="Рассчитать обеды"

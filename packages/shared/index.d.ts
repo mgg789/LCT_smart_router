@@ -5,7 +5,7 @@
  * This package is types only: both apps import it with `import type`.
  */
 
-export type PolicyId = 'compact' | 'fast' | 'sla' | 'balanced' | 'eco' | 'covering';
+export type PolicyId = 'compact' | 'fast' | 'sla' | 'balanced' | 'eco' | 'covering' | 'personal';
 export type StrategyId = PolicyId | 'baseline';
 export type EquipmentType = 'router' | 'set_top_box' | 'smart_speaker';
 

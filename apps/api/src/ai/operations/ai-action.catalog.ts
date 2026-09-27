@@ -19,6 +19,7 @@ import {
 import { assertLunchConditions } from '../../orchestrator/engineers/workday';
 import { LiveService } from '../../orchestrator/live/live.service';
 import { findPolicy, PolicyService } from '../../orchestrator/policy';
+import { personalPolicyUpdateSchema } from '../../orchestrator/policy/personal-policy';
 import { RequestsService } from '../../orchestrator/requests/requests.service';
 // Catalog file only, not the `requests` barrel: the barrel also loads Nest modules and
 // can leave `findWorkType` undefined under CJS circular imports in unit tests
@@ -31,6 +32,7 @@ import { ManualDecisionsService } from '../../routing/router-gateway/manual-deci
 import { manualDecisionSchema } from '../../routing/router-gateway/manual-state';
 import type { AiPreviewRow } from '../runtime/ai-event.types';
 import { requireManualMode } from '../tools/manual.tools';
+import { buildClientActions } from './client-actions';
 
 /**
  * The AI-gateway's own catalogue of writable actions.
@@ -535,12 +537,48 @@ export function buildAiActionCatalog(deps: AiActionCatalogDeps): ReadonlyMap<str
     },
   });
 
+  catalog.set('policy.personal.save', {
+    zodSchema: personalPolicyUpdateSchema,
+    allowedProfiles: ['dispatcher_fix', 'dispatcher_readonly'],
+    async precheck(args) {
+      if (!args.actor.accountId) throw SysError.forbidden('Личная политика требует учётную запись');
+    },
+    async preview(args) {
+      const input = personalPolicyUpdateSchema.parse(args.payload);
+      return [
+        { label: 'Личная политика', value: input.title },
+        { label: 'Цели от главной к последней', value: input.objectiveOrder.join(', ') },
+        {
+          label: 'Применение',
+          value: 'Сохранение без выбора. Если уже активна — пересчёт с новыми предпочтениями.',
+        },
+      ];
+    },
+    async apply({ context, payload }) {
+      const result = await deps.policy.savePersonal(
+        context,
+        personalPolicyUpdateSchema.parse(payload),
+      );
+      if (result.activeUpdated)
+        await deps.publisher.publishIfChanged(
+          context.tx,
+          context.now,
+          PUBLICATION_TRIGGERS.POLICY_CHANGED,
+        );
+      return result;
+    },
+  });
+
   catalog.set('policy.select', {
     zodSchema: selectPolicyPayloadSchema,
     allowedProfiles: ['dispatcher_fix'],
     async precheck(args) {
       const payload = args.payload as SelectPolicyPayload;
-      if (!findPolicy(payload.policyId)) {
+      const personal =
+        payload.policyId === 'personal'
+          ? (await deps.policy.personal(deps.prisma, args.actor.accountId)).profile
+          : null;
+      if (!findPolicy(payload.policyId) && !personal) {
         throw new SysError('VALIDATION_FAILED', 'Unknown policy', {
           details: { policyId: payload.policyId },
         });
@@ -1018,6 +1056,7 @@ export function buildAiActionCatalog(deps: AiActionCatalogDeps): ReadonlyMap<str
     },
   });
 
+  for (const [name, action] of buildClientActions(deps)) catalog.set(name, action);
   return catalog;
 }
 

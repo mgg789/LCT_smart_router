@@ -34,7 +34,15 @@ import {
 } from './windowConfirmation';
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
-const policyIdSchema = z.enum(['compact', 'fast', 'sla', 'balanced', 'eco', 'covering']);
+const policyIdSchema = z.enum([
+  'compact',
+  'fast',
+  'sla',
+  'balanced',
+  'eco',
+  'covering',
+  'personal',
+]);
 
 const roadImportSummarySchema = z.object({
   operationId: z.string().min(1),

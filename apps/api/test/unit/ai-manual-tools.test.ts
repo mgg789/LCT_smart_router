@@ -14,6 +14,7 @@ describe('builtin manual tools', () => {
   let prepared = 0;
   const prisma = {
     controlState: { findUnique: async () => ({ mode }) },
+    appState: { findUnique: async () => null },
   } as unknown as PrismaService;
   const aiOperations = {
     prepare: async () => {
@@ -48,12 +49,19 @@ describe('builtin manual tools', () => {
     mode = 'manual';
     assert.equal((await tool.run(ctx, { expectedVersion: 1, decisionId: 'intent' })).ok, true);
     assert.equal(prepared, 1);
+    const saved = await tools
+      .find((t) => t.name === 'prepare_manual_assignment')
+      ?.run(ctx, { expectedVersion: 1, requestId: 'request', engineerId: 'engineer' });
+    assert.ok(saved);
+    assert.equal(JSON.parse(saved.resultContent).assignmentConfirmed, false);
+    assert.equal(JSON.parse(saved.resultContent).intentOutcome, 'pending');
+    assert.ok(saved.summary.includes('НЕ подтверждено'));
     mode = 'auto';
     await assert.rejects(
       () => tool.run(ctx, { expectedVersion: 1, decisionId: 'intent' }),
       /manual_not_enabled/,
     );
-    assert.equal(prepared, 1);
+    assert.equal(prepared, 2);
   });
   it('refreshes the exposed catalogue after external mode changes', async () => {
     const fake = {

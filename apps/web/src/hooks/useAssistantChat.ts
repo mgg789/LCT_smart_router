@@ -68,6 +68,8 @@ export type HandoffStatus = 'waiting' | 'answered' | null;
 export interface UseAssistantChatOptions {
   readonly token: string | null;
   readonly surface: AssistantSurface;
+  /** Non-secret account identifier for device-local conversation isolation; never sent as tool context. */
+  readonly sessionScope?: string;
   readonly contextRef?: unknown;
   readonly assistMode?: AiAssistMode;
   /** Fires for every SSE frame exactly as it arrived off the wire, including
@@ -197,6 +199,7 @@ export function useAssistantChat({
   contextRef,
   assistMode,
   onRawEvent,
+  sessionScope,
 }: UseAssistantChatOptions): UseAssistantChatResult {
   const [conversation, setConversation] = useState<AiConversation | null>(null);
   const [messages, setMessages] = useState<AssistantChatMessage[]>([]);
@@ -225,7 +228,8 @@ export function useAssistantChat({
   const onRawEventRef = useRef(onRawEvent);
   onRawEventRef.current = onRawEvent;
 
-  const key = storageKey(surface, contextRef);
+  const key =
+    storageKey(surface, contextRef) + (sessionScope ? `:${encodeURIComponent(sessionScope)}` : '');
 
   const persist = useCallback(
     (patch: Partial<StoredAssistantSession>) => {

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { SysError } from '../../common/errors';
+import type { Engineer, Request } from '../../generated/prisma/client';
 import type { OperationContext } from '../../operations';
 import { workDateOf } from '../../orchestrator/engineers/workday';
 import { businessNow } from '../../orchestrator/live/business-clock';
@@ -91,6 +92,7 @@ export class ManualDecisionsService {
         });
         if (day?.availability !== 'online' || day.engineer.archivedAt !== null)
           throw SysError.validationFailed('Выберите инженера на линии');
+        assertManualAssignmentEligibility(request, day.engineer);
       } else if (input.engineerId !== null)
         throw SysError.validationFailed('Выберите инженера или «Никто»');
       if (
@@ -180,4 +182,33 @@ function requiredDecision(state: ManualState, id: string): ManualDecision {
   const decision = state.decisions.find((item) => item.id === id);
   if (!decision) throw SysError.validationFailed('Неизвестное ручное решение');
   return decision;
+}
+
+/** Reject only immutable hard eligibility mismatches; equipment may still be supplied en route. */
+export function assertManualAssignmentEligibility(
+  request: Pick<Request, 'id' | 'requiredSkill' | 'requiredTransport'>,
+  engineer: Pick<Engineer, 'id' | 'skills' | 'transportType'>,
+): void {
+  const reason = !engineer.skills.includes(request.requiredSkill)
+    ? 'skill'
+    : request.requiredTransport !== null && engineer.transportType !== request.requiredTransport
+      ? 'transport'
+      : null;
+  if (reason)
+    throw new SysError(
+      'VALIDATION_FAILED',
+      reason === 'skill'
+        ? 'У выбранного инженера нет навыка, необходимого для этой заявки.'
+        : 'Транспорт выбранного инженера не подходит для этой заявки.',
+      {
+        details: {
+          kind: 'manual_assignment_ineligible',
+          reason,
+          requestId: request.id,
+          engineerId: engineer.id,
+          requiredSkill: request.requiredSkill,
+          requiredTransport: request.requiredTransport,
+        },
+      },
+    );
 }

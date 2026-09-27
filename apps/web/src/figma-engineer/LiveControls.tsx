@@ -76,7 +76,7 @@ export function LiveControls({
             <button
               type="button"
               aria-label="Проблема или дополнительное время"
-              className={`${button} flex-1 ${current.overrunAt !== null ? 'bg-figma-cancel' : 'bg-figma-ink'} text-white disabled:opacity-100`}
+              className={`${button} !rounded-full flex-1 ${current.overrunAt !== null ? 'bg-figma-cancel' : 'bg-figma-ink'} text-white disabled:opacity-100`}
               disabled={busy}
               onClick={() => setForm('problem')}
             >
@@ -85,7 +85,7 @@ export function LiveControls({
           ) : (
             <button
               type="button"
-              className={`${button} flex-1 ${current.phase !== 'awaiting_window' && now >= (current.stop?.startAt ?? Infinity) ? 'bg-figma-cancel text-white' : ''}`}
+              className={`${button} !rounded-full flex-1 ${current.phase !== 'awaiting_window' && now >= (current.stop?.startAt ?? Infinity) ? 'bg-figma-cancel text-white' : ''}`}
               disabled={busy}
               onClick={() =>
                 setForm(
@@ -115,7 +115,7 @@ export function LiveControls({
       {detail ? (
         <button
           type="button"
-          className={`${button} bg-figma-ink text-white`}
+          className={`${button} !rounded-full bg-figma-ink text-white`}
           disabled={busy}
           onClick={() => setForm('problem')}
         >

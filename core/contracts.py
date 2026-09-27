@@ -164,13 +164,21 @@ class Engineer(Record):
 class Policy(Record):
     """Supported catalog choice; preferences cannot disable hard constraints."""
 
-    policy_id: Literal["fast", "compact", "sla", "balanced", "eco", "covering"]
+    policy_id: Literal["fast", "compact", "sla", "balanced", "eco", "covering", "personal"]
     parameters: dict[str, str | int | float | bool | None]
 
     @model_validator(mode="after")
     def check_parameters(self) -> Self:
         """Reject unsupported preferences instead of pretending they were applied."""
-        if self.parameters:
+        if self.policy_id == "personal":
+            allowed = {"travel_time", "distance", "engineers_used", "window_start_delay", "total_lateness", "window_end_risk", "max_workload_ratio", "workload_spread", "max_jobs_per_engineer"}
+            order = self.parameters.get("objective_order")
+            if set(self.parameters) != {"objective_order"} or not isinstance(order, str):
+                raise ValueError("personal requires objective_order")
+            parts = order.split(",")
+            if len(parts) != len(allowed) or set(parts) != allowed:
+                raise ValueError("personal objective_order must include each supported criterion exactly once")
+        elif self.parameters:
             raise ValueError(f"{self.policy_id} accepts only empty parameters")
         return self
 

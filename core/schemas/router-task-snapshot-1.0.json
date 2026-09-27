@@ -541,7 +541,8 @@
             "sla",
             "balanced",
             "eco",
-            "covering"
+            "covering",
+            "personal"
           ],
           "title": "Policy Id",
           "type": "string"
