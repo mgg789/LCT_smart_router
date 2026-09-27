@@ -222,6 +222,8 @@ export class ResultAcceptanceService {
               request_id: z.string(),
               window_start_at: z.number(),
               window_end_at: z.number(),
+              source_window_start_at: z.number().optional(),
+              source_window_end_at: z.number().optional(),
             }),
           ),
         })
@@ -236,8 +238,9 @@ export class ResultAcceptanceService {
           const actual = windows.get(input.request_id);
           return (
             !actual ||
-            Number(actual.windowStartAt) !== input.window_start_at ||
-            Number(actual.windowEndAt) !== input.window_end_at
+            Number(actual.windowStartAt) !==
+              (input.source_window_start_at ?? input.window_start_at) ||
+            Number(actual.windowEndAt) !== (input.source_window_end_at ?? input.window_end_at)
           );
         })
       )

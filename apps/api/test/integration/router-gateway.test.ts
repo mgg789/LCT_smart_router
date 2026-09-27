@@ -441,6 +441,36 @@ describe('router gateway', () => {
     assert.ok(intent, 'accepting an assignment is a business transition with its own letter');
   });
 
+  it('accepts the immediate emergency projection while retaining source-window stale checks', async () => {
+    const request = await submitRequest('outage');
+    const { snapshot } = await publishedSnapshot();
+    const input = snapshot.requests.find((item) => item.request_id === request.id);
+    assert.ok(input);
+    assert.equal(input.work_category, 'emergency');
+    assert.equal(input.service_duration_sec, 6000);
+    assert.ok(input.window_end_at >= snapshot.horizon_end_at);
+    const stored = await prisma.request.findUniqueOrThrow({ where: { id: request.id } });
+    assert.equal(input.source_window_end_at, Number(stored.windowEndAt));
+    const result = buildRouterResult({
+      resultId: unique('emergency-effective-window'),
+      inputHash: await publishedHash(),
+      contextVersion: 'ctx-1',
+      planningAsOf: now(),
+      assigned: [
+        {
+          requestId: request.id,
+          engineerId,
+          lat: request.lat,
+          lon: request.lon,
+          startAt: Math.max(now(), input.window_start_at),
+          durationSec: 6000,
+        },
+      ],
+    });
+    const { body } = await feed(result, 'ctx-1');
+    assert.equal(body.accepted, true, body.detail);
+  });
+
   it('does not apply the same result twice', async () => {
     const request = await submitRequest();
     const resultId = unique('result');

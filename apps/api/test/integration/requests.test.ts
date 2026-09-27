@@ -24,6 +24,7 @@ interface RequestBody {
     windowStartAt: number;
     windowEndAt: number;
     priority: string;
+    workCategory: string;
     requiredSkill: string;
     normProfileCode: string;
     normativeTravelDurationSec: number;
@@ -224,11 +225,11 @@ describe('request lifecycle', () => {
     const outage = await prepare({ workType: 'outage' });
     assert.equal(outage.requiredSkill, 'emergency');
     assert.equal(outage.priority, 'urgent');
-    assert.equal(outage.normProfileCode, 'outage_tkd');
+    assert.equal(outage.normProfileCode, 'network_emergency');
     assert.equal(outage.normativeTravelDurationSec, 1200);
-    assert.equal(outage.technicalDurationSec, 4800);
+    assert.equal(outage.technicalDurationSec, 6000);
     assert.equal(outage.documentationDurationSec, 0);
-    assert.equal(outage.serviceDurationSec, 4800);
+    assert.equal(outage.serviceDurationSec, 6000);
     assert.equal(outage.actualDurationSec, null);
     assert.equal(outage.durationVarianceSec, null);
     assert.equal(outage.expectedCompletionAt, null);
@@ -240,7 +241,9 @@ describe('request lifecycle', () => {
       windowStartAt: DAY + 17 * HOUR + 45 * 60,
       windowEndAt: DAY + 18 * HOUR + 45 * 60,
     });
-    assert.equal(tightOutage.windowEndAt - tightOutage.windowStartAt, 4800);
+    assert.ok(tightOutage.windowEndAt - tightOutage.windowStartAt >= 6000);
+    assert.equal(tightOutage.workCategory, 'emergency');
+    assert.ok(Math.abs(tightOutage.windowStartAt - Math.floor(Date.now() / 1000)) < 5);
 
     const replacement = await prepare({ workType: 'router_replacement' });
     assert.equal(replacement.requiredSkill, 'connection');
@@ -257,6 +260,41 @@ describe('request lifecycle', () => {
       requiredEquipment: null,
     });
     assert.equal(withoutEquipment.requiredEquipment, null);
+  });
+
+  it('serves the same public catalogue and refuses postponing a network emergency', async () => {
+    const publicResponse = await fetch(`${baseUrl}/api/v1/client/work-types`);
+    assert.equal(publicResponse.status, 200);
+    const catalogue = (await publicResponse.json()) as {
+      workTypes: { code: string; category: string; serviceDurationSec: number }[];
+    };
+    assert.equal(
+      catalogue.workTypes.find((type) => type.code === 'outage')?.serviceDurationSec,
+      6000,
+    );
+    assert.equal(catalogue.workTypes.find((type) => type.code === 'no_link')?.category, 'service');
+    const request = await prepare({ workType: 'outage' });
+    const submitted = await call(
+      'POST',
+      `/api/v1/client/requests/${request.id}/submit`,
+      clientToken,
+      { operationId: randomUUID(), expectedVersion: request.version },
+    );
+    assert.equal(submitted.status, 201);
+    const next = ((await submitted.json()) as RequestBody).request;
+    const moved = await rawCall(
+      'POST',
+      `/api/v1/client/requests/${request.id}/reschedule`,
+      clientToken,
+      {
+        operationId: randomUUID(),
+        expectedVersion: next.version,
+        windowStartAt: next.windowStartAt + 86400,
+        windowEndAt: next.windowEndAt + 86400,
+      },
+    );
+    assert.equal(moved.status, 422, await moved.clone().text());
+    assert.match(await moved.text(), /Аварийную заявку нельзя откладывать/u);
   });
 
   it("raises the priority on the customer's urgency but never lowers it", async () => {

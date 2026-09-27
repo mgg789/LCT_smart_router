@@ -184,11 +184,11 @@ describe('official dataset import', () => {
     if (outage) {
       assert.equal(outage.requiredSkill, 'emergency');
       assert.equal(outage.priority, 'urgent');
-      assert.equal(outage.normProfileCode, 'outage_tkd');
+      assert.equal(outage.normProfileCode, 'network_emergency');
       assert.equal(outage.normativeTravelDurationSec, 1200);
-      assert.equal(outage.technicalDurationSec, 4800);
+      assert.equal(outage.technicalDurationSec, 6000);
       assert.equal(outage.documentationDurationSec, 0);
-      assert.equal(outage.serviceDurationSec, 4800);
+      assert.equal(outage.serviceDurationSec, 6000);
     }
 
     const engineer = await prisma.engineer.findFirstOrThrow({ where: { region: 'east' } });

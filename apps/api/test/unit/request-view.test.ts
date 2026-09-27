@@ -24,6 +24,8 @@ describe('request view duration evidence', () => {
       windowEndAt: 2_000n,
       windowOrigin: 'explicit',
       priority: 'normal',
+      workCategory: 'service',
+      receivedAt: null,
       requiredSkill: 'local',
       requiredTransport: null,
       requiredEquipment: null,

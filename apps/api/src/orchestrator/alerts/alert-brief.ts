@@ -36,7 +36,15 @@ export async function buildAlertBrief(
   requestVersion: number | null;
   minutes: number[];
 }> {
-  const catalogue = alertActionsFor(alert.code);
+  const request = alert.requestIds[0]
+    ? await prisma.request.findUnique({ where: { id: alert.requestIds[0] } })
+    : null;
+  const catalogue = alertActionsFor(alert.code).filter(
+    (action) =>
+      request?.workCategory !== 'emergency' ||
+      (action !== 'reschedule' && action !== 'move_window'),
+  );
+
   let requestVersion: number | null = null;
   let slots: Array<{
     engineerId: string;
@@ -67,9 +75,6 @@ export async function buildAlertBrief(
     }
   }
   const actions = catalogue.filter((item) => item !== 'move_window' || slots.length > 0);
-  const request = alert.requestIds[0]
-    ? await prisma.request.findUnique({ where: { id: alert.requestIds[0] } })
-    : null;
   const roster = await prisma.engineer.findMany({
     where: { archivedAt: null },
     include: { days: { where: { workDate: alert.workDate ?? '' }, take: 1 } },

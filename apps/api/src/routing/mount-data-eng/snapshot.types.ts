@@ -44,6 +44,10 @@ export interface SnapshotRequest {
   readonly window_start_at: UnixSeconds;
   readonly window_end_at: UnixSeconds;
   readonly priority: PriorityCode;
+  readonly source_window_start_at?: number;
+  readonly source_window_end_at?: number;
+  readonly work_category?: 'emergency' | 'connection' | 'service';
+  readonly received_at?: UnixSeconds;
   readonly required_skill: SkillCode;
   /** `null` means the request places no transport restriction. */
   readonly required_transport: TransportCode | null;

@@ -5,6 +5,7 @@ import { NotificationsService } from '../../notifications';
 import { assertWriteApplied, type OperationContext } from '../../operations';
 import type { Tx } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
+import { businessNow } from '../live/business-clock';
 import { nearestRegion, type RegionPoint, regionCenters } from './region-geocenter';
 import { requireWindowConfirmation } from './window-confirmation';
 import { findWorkType, fitWindowToService } from './work-type.catalog';
@@ -76,9 +77,13 @@ export class RequestsService {
       });
     }
     assertWindow(input.windowStartAt, input.windowEndAt);
+    const receivedAt =
+      spec.category === 'emergency' ? await businessNow(context.tx, context.now) : context.now;
     const window = fitWindowToService(
-      input.windowStartAt,
-      input.windowEndAt,
+      spec.category === 'emergency' ? receivedAt : input.windowStartAt,
+      spec.category === 'emergency'
+        ? Math.max(input.windowEndAt, receivedAt + spec.serviceDurationSec)
+        : input.windowEndAt,
       spec.serviceDurationSec,
     );
 
@@ -102,6 +107,7 @@ export class RequestsService {
         needsGeocoding: !hasPoint,
         problemText: input.problemText ?? null,
         workTypeHd: spec.code,
+        workCategory: spec.category,
         // Derived by rule from the type of work; the customer never types these
         // (context/32 section 4.1).
         requiredSkill: spec.skill,
@@ -150,6 +156,7 @@ export class RequestsService {
       });
     }
 
+    const receivedAt = await businessNow(context.tx, context.now);
     const arrivalOrder = await nextArrivalOrder(context.tx);
     const updated = await context.tx.request.updateMany({
       where: { id: requestId, version: expectedVersion ?? current.version },
@@ -158,6 +165,15 @@ export class RequestsService {
         assignmentState: 'pending',
         arrivalOrder,
         submittedAt: BigInt(context.now),
+        receivedAt: BigInt(receivedAt),
+        ...(current.workCategory === 'emergency'
+          ? {
+              windowStartAt: BigInt(receivedAt),
+              windowEndAt: BigInt(
+                Math.max(Number(current.windowEndAt), receivedAt + current.serviceDurationSec),
+              ),
+            }
+          : {}),
         updatedAt: BigInt(context.now),
         version: { increment: 1 },
       },
@@ -206,6 +222,7 @@ export class RequestsService {
       current.serviceDurationSec,
     );
     assertWindow(window.windowStartAt, window.windowEndAt);
+    assertEmergencyWindowUnchanged(current, window.windowStartAt, window.windowEndAt);
 
     requireWindowConfirmation(context.actor, {
       requestId,
@@ -273,6 +290,7 @@ export class RequestsService {
     const windowStartAt = requestedWindow.windowStartAt;
     const windowEndAt = requestedWindow.windowEndAt;
     assertWindow(windowStartAt, windowEndAt);
+    assertEmergencyWindowUnchanged(current, windowStartAt, windowEndAt);
 
     requireWindowConfirmation(context.actor, {
       requestId,
@@ -304,7 +322,14 @@ export class RequestsService {
         lon,
         needsGeocoding: movingPoint ? lat === null || lon === null : current.needsGeocoding,
         priority:
-          input.urgent === undefined ? current.priority : input.urgent ? 'urgent' : 'normal',
+          current.workCategory === 'emergency' ||
+          findWorkType(current.workTypeHd ?? '')?.category === 'emergency'
+            ? 'urgent'
+            : input.urgent === undefined
+              ? current.priority
+              : input.urgent
+                ? 'urgent'
+                : 'normal',
         requiredEquipment:
           input.requiredEquipment === undefined
             ? current.requiredEquipment
@@ -578,4 +603,21 @@ async function nextArrivalOrder(tx: Tx): Promise<number> {
     throw new SysError('INTERNAL_ERROR', 'Could not allocate an arrival order');
   }
   return Number(value);
+}
+
+/** Emergencies stay in the remaining-day queue; changing a slot cannot defer them. */
+export function assertEmergencyWindowUnchanged(
+  request: Pick<Request, 'workCategory' | 'workTypeHd' | 'windowStartAt' | 'windowEndAt'>,
+  start: number,
+  end: number,
+): void {
+  if (
+    (request.workCategory === 'emergency' ||
+      findWorkType(request.workTypeHd ?? '')?.category === 'emergency') &&
+    (start !== Number(request.windowStartAt) || end !== Number(request.windowEndAt))
+  ) {
+    throw SysError.validationFailed(
+      'Аварийную заявку нельзя откладывать: она направляется первой подходящей свободной бригаде после завершения начатых работ.',
+    );
+  }
 }

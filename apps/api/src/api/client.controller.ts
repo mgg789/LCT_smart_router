@@ -7,7 +7,8 @@ import { Clock } from '../common/time';
 import { zodBody } from '../common/validation';
 import { assertWriteApplied, OperationsService } from '../operations';
 import { MiniAiService } from '../orchestrator/ai';
-import { RequestsService, WORK_TYPES } from '../orchestrator/requests';
+import { RequestsService } from '../orchestrator/requests';
+import { workTypeCatalogue } from '../orchestrator/requests/work-type.catalog';
 import { GeocodingService } from '../orchestrator/settings/geocoding.service';
 import { PrismaService, type Tx } from '../persistence';
 import {
@@ -50,10 +51,11 @@ export class ClientController {
   ) {}
 
   @Get('work-types')
+  @Public()
   @ApiOperation({ summary: 'Types of work the customer can choose from' })
   workTypes() {
     return {
-      workTypes: WORK_TYPES.map((type) => ({ code: type.code, title: type.title })),
+      workTypes: workTypeCatalogue(),
     };
   }
 

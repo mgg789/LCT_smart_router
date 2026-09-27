@@ -66,6 +66,13 @@ enum Priority {
   urgent
 }
 
+/// Business routing tier; independent of the qualification needed to perform the job.
+enum WorkCategory {
+  emergency
+  connection
+  service
+}
+
 /// Business stage of a request. Deliberately separate from its assignment outcome and
 /// from the visit's progress: collapsing them into one status was rejected in
 /// context/36 section 3.
@@ -460,6 +467,9 @@ model Depot {
 
 model Request {
   id String @id @default(uuid())
+  workCategory WorkCategory @default(service) @map("work_category")
+  /// Receipt in business time; explicit source time for imports, never their upload time.
+  receivedAt BigInt? @map("received_at")
 
   clientAccountId    String? @map("client_account_id")
   /// Arrival order: the baseline's iteration order (context/33 section 5).

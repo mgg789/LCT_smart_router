@@ -360,6 +360,19 @@
           "title": "Priority",
           "type": "string"
         },
+        "received_at": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Received At"
+        },
         "region": {
           "anyOf": [
             {
@@ -426,6 +439,32 @@
           "title": "Service Duration Sec",
           "type": "integer"
         },
+        "source_window_end_at": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Window End At"
+        },
+        "source_window_start_at": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Window Start At"
+        },
         "window_end_at": {
           "minimum": 0,
           "title": "Window End At",
@@ -435,6 +474,23 @@
           "minimum": 0,
           "title": "Window Start At",
           "type": "integer"
+        },
+        "work_category": {
+          "anyOf": [
+            {
+              "enum": [
+                "emergency",
+                "connection",
+                "service"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Work Category"
         }
       },
       "required": [

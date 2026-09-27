@@ -6,18 +6,53 @@ import {
   findWorkType,
   findWorkTypeByTitle,
   fitWindowToService,
+  importedWorkCategory,
   WORK_NORM_PROFILES,
   WORK_TYPES,
 } from '../../src/orchestrator/requests/work-type.catalog';
 
 const EXPECTED_MAPPING = {
   connection_base: ['connection_request', 'convergence', 'gigabit_switch'],
-  outage_tkd: ['outage', 'no_link', 'disconnects', 'low_speed', 'port_errors', 'ip_169'],
+  network_emergency: ['outage'],
+  outage_tkd: ['no_link', 'disconnects', 'low_speed', 'port_errors', 'ip_169'],
   equipment_order: ['equipment_order', 'router_replacement', 'stb_replacement'],
   local_repair: ['cable_work', 'monitoring', 'other_errors', 'information'],
 } as const;
 
 describe('work type normative catalogue', () => {
+  it('keeps business priority separate from qualification and preserves unknown type classification', () => {
+    assert.equal(findWorkType('outage')?.category, 'emergency');
+    assert.equal(findWorkType('no_link')?.category, 'service');
+    assert.equal(findWorkType('no_link')?.skill, 'emergency');
+    assert.equal(findWorkType('equipment_order')?.category, 'service');
+    for (const code of ['connection_request', 'convergence', 'gigabit_switch']) {
+      assert.equal(findWorkType(code)?.category, 'connection');
+    }
+    assert.equal(
+      importedWorkCategory({ workType: 'New vendor type', priority: 'urgent' }),
+      undefined,
+    );
+    assert.equal(
+      importedWorkCategory({
+        workType: 'New vendor type',
+        workCategory: 'connection',
+        priority: 'normal',
+      }),
+      'connection',
+    );
+    assert.equal(
+      importedWorkCategory({ workType: 'Авария', workCategory: 'service', priority: 'normal' }),
+      'emergency',
+    );
+  });
+
+  it('exports exactly the same catalogue to the offline Router importer', () => {
+    const exported = JSON.parse(
+      readFileSync(resolve(__dirname, '../../../../../core/work-types.json'), 'utf8'),
+    );
+    assert.deepEqual(exported, WORK_TYPES);
+  });
+
   it('maps every supported work type to exactly one canonical norm', () => {
     const expectedCodes = Object.values(EXPECTED_MAPPING).flat().sort();
     const actualCodes = WORK_TYPES.map((item) => item.code).sort();
@@ -40,6 +75,13 @@ describe('work type normative catalogue', () => {
         technicalDurationSec: 3600,
         documentationDurationSec: 600,
         serviceDurationSec: 4200,
+      },
+      network_emergency: {
+        normProfileCode: 'network_emergency',
+        normativeTravelDurationSec: 1200,
+        technicalDurationSec: 6000,
+        documentationDurationSec: 0,
+        serviceDurationSec: 6000,
       },
       outage_tkd: {
         normProfileCode: 'outage_tkd',

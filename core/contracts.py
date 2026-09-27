@@ -68,10 +68,25 @@ class Request(Record):
     window_start_at: Seconds
     window_end_at: Seconds
     priority: Literal["normal", "urgent"]
+    source_window_start_at: Seconds | None = None
+    source_window_end_at: Seconds | None = None
+    work_category: Literal["emergency", "connection", "service"] | None = None
+    received_at: Seconds | None = None
     required_skill: Skill
     required_transport: Transport | None
     required_equipment: EquipmentType | None = None
     region: Annotated[str, Field(min_length=1)] | None = None
+
+    @property
+    def category(self) -> str:
+        """Explicit business tier; binary legacy tasks retain their urgent semantics."""
+        return self.work_category or ("emergency" if self.priority == "urgent" else "service")
+
+    @property
+    def ready_at(self) -> int:
+        """An emergency starts from receipt, other visits also respect the booked window."""
+        receipt = self.window_start_at if self.received_at is None else self.received_at
+        return receipt if self.category == "emergency" else max(receipt, self.window_start_at)
 
     @model_validator(mode="after")
     def check_window(self) -> Self:

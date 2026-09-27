@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Injectable, Optional } from '@nestjs/common';
 import { z } from 'zod';
+import { assertEmergencyWindowUnchanged } from '../requests/requests.service';
 import { lunchCoverageWitness, policyCoverageRegressed } from './coverage-policy';
 
 export { lunchCoverageWitness, policyCoverageRegressed } from './coverage-policy';
@@ -223,7 +224,23 @@ export class AlertsService {
       }),
     ]);
     const alerts = [...open, ...history];
-    return alerts.map((alert) => toAlertView(alert));
+    const emergencies = new Set(
+      (
+        await this.prisma.request.findMany({
+          where: {
+            id: { in: alerts.flatMap((alert) => alert.requestIds) },
+            workCategory: 'emergency',
+          },
+          select: { id: true },
+        })
+      ).map((request) => request.id),
+    );
+    return alerts.map((alert) =>
+      toAlertView(
+        alert,
+        alert.requestIds.some((id) => emergencies.has(id)),
+      ),
+    );
   }
 
   /** Used by the coordinator; no dashboard request is required for alert creation. */
@@ -682,6 +699,7 @@ export class AlertsService {
       if (start === undefined || end === undefined || end <= start) {
         throw new SysError('VALIDATION_FAILED', 'Moving a window needs both ordered bounds');
       }
+      assertEmergencyWindowUnchanged(request, start, end);
       requireWindowConfirmation(context.actor, {
         requestId,
         version: request.version,

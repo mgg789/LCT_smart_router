@@ -14,7 +14,9 @@ export interface ClientSystemPromptInput {
 /** `code — title`, one per line, generated from the catalogue itself so this prompt can
  *  never list a code the catalogue dropped or omit one it just gained -- the exact defect
  *  a hand-typed copy of this table would silently reintroduce. */
-const WORK_TYPE_TABLE = WORK_TYPES.map((type) => `${type.code} — ${type.title}`).join('\n');
+const WORK_TYPE_TABLE = WORK_TYPES.map(
+  (type) => `${type.code} — ${type.title} [${type.category}, ${type.serviceDurationSec / 60} min]`,
+).join('\n');
 
 /**
  * The client assistant's system prompt.
@@ -71,6 +73,7 @@ export function buildClientSystemPrompt(input: ClientSystemPromptInput): string 
       'connection/equipment, local work/consultation) -- never invent a code that is not ' +
       'in this list, and never pick one you are not reasonably sure fits; ask a short ' +
       'clarifying question instead of guessing.',
+    'Only outage is a network emergency. Individual no_link, disconnects or low_speed are service requests, not automatically network emergencies. Ask if the scope is unclear. Emergencies take 100 minutes on site, are planned from actual receipt and go to the first suitable available crew without interrupting started work. The response reference is 1–2 hours, never a promised arrival.',
     'Never promise that an engineer will come, name or guess an arrival time, or state any ' +
       'outcome for the request -- scheduling, assignment and routing happen after this ' +
       'conversation and are not something you observe or control.',

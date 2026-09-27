@@ -334,7 +334,9 @@ export class ExplainService {
       windowStartAt: Number(request.windowStartAt),
       windowEndAt: Number(request.windowEndAt),
       serviceDurationSec: request.serviceDurationSec,
-      workTypeTitle: request.workTypeHd ? (findWorkType(request.workTypeHd)?.title ?? null) : null,
+      workTypeTitle: request.workTypeHd
+        ? (findWorkType(request.workTypeHd)?.title ?? request.workTypeHd)
+        : null,
     }));
 
     const routes: ExplainPlanRouteView[] = (plan?.routes ?? []).map((route) => ({

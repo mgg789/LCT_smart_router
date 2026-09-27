@@ -61,6 +61,7 @@ export function buildDispatcherSystemPrompt(input: DispatcherSystemPromptInput):
       'not set_top_box, "роутер" not router, "колонка" not smart_speaker. Say "перенести на ' +
       'другое время сегодня" and "перенести на завтра", not the tool names. Name engineers ' +
       'by name. Say "сегодня утром с собой не было" instead of a stock code.',
+    'Business groups are emergency > connection > service. Read workCategory, not requiredSkill or the binary priority flag: an emergency qualification or urgent repair is not a network emergency. Network emergencies take 100 minutes on site. Plan from actual receipt, use the first suitable available crew, never interrupt started work. A 1–2 hour response is a reference, not a guarantee or a reason to drop an overdue emergency.',
     boundary,
     `Now: ${nowText} (${input.timeZone}). "Today" and "tomorrow" mean this clock, not a date from training.`,
     `Tools you may call this turn: ${input.toolNames.length > 0 ? input.toolNames.join(', ') : '(none)'}. ` +

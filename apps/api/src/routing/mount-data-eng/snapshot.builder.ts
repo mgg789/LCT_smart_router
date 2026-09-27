@@ -9,6 +9,7 @@ import {
 } from '../../orchestrator/equipment/equipment-policy';
 import { handoffView } from '../../orchestrator/equipment/handoffs';
 import { DEFAULT_POLICY_ID } from '../../orchestrator/policy/policy.catalog';
+import { findWorkType, findWorkTypeByTitle } from '../../orchestrator/requests/work-type.catalog';
 import type { Tx } from '../../persistence';
 import {
   type RouterTaskSnapshot,
@@ -201,7 +202,26 @@ export class SnapshotBuilder {
       }
       const windowStart = Number(request.windowStartAt);
       const windowEnd = Number(request.windowEndAt);
-      if (windowEnd < horizon.start || windowStart > horizon.end) {
+      const category =
+        (findWorkType(request.workTypeHd ?? '') ?? findWorkTypeByTitle(request.workTypeHd ?? ''))
+          ?.category ??
+        request.workCategory ??
+        (request.priority === 'urgent' ? 'emergency' : 'service');
+      // Imported day plans are known at the start of that day. An explicit source
+      // receipt timestamp takes precedence; online submissions use the actual receipt.
+      const receivedAt =
+        request.receivedAt != null
+          ? Number(request.receivedAt)
+          : request.origin === 'import'
+            ? workDateOf(windowStart, this.config.get('APP_TIME_ZONE')) > workDate
+              ? windowStart
+              : horizon.start
+            : Number(request.submittedAt ?? request.createdAt);
+      if (
+        category === 'emergency'
+          ? receivedAt > horizon.end
+          : windowEnd < horizon.start || windowStart > horizon.end
+      ) {
         // Work for another day. A window that merely lies in the past *within* this
         // horizon stays in: that is a reasoned non-assignment, not an exclusion
         // (context/33 section 10.2).
@@ -214,9 +234,14 @@ export class SnapshotBuilder {
         arrival_order: request.arrivalOrder,
         location: { lat: request.lat, lon: request.lon },
         service_duration_sec: request.serviceDurationSec,
-        window_start_at: windowStart,
-        window_end_at: windowEnd,
+        window_start_at:
+          category === 'emergency' ? Math.max(horizon.start, receivedAt) : windowStart,
+        window_end_at: category === 'emergency' ? Math.max(windowEnd, horizon.end) : windowEnd,
         priority: request.priority,
+        source_window_start_at: windowStart,
+        source_window_end_at: windowEnd,
+        work_category: category,
+        received_at: receivedAt,
         required_skill: request.requiredSkill,
         required_transport: request.requiredTransport,
         required_equipment: request.requiredEquipment,

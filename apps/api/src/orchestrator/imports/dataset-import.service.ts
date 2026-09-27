@@ -620,6 +620,7 @@ export class DatasetImportService {
           requiredTransport: null,
           requiredEquipment: importedEquipment(request),
           workTypeHd: request.workTypeCode,
+          workCategory: request.workCategory,
           lifecycle: 'submitted',
           assignmentState: 'pending',
           origin: 'import',
