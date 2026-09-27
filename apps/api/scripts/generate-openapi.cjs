@@ -46,38 +46,31 @@ function hasDecorator(node, name) {
   return decorators(node).some((item) => decoratorName(item) === name);
 }
 
-function loadSchemas() {
+function loadSchemas(checker) {
   const dist = path.join(root, 'dist', 'src');
   if (!fs.existsSync(dist))
     throw new Error('Compiled API modules are missing; run pnpm --filter api build first.');
-  return new Map();
+  return { checker };
 }
 
 function schemaForZodExpression(expression, schemas) {
   if (ts.isIdentifier(expression)) {
     const source = expression.getSourceFile();
-    for (const statement of source.statements)
-      if (
-        ts.isImportDeclaration(statement) &&
-        statement.importClause?.namedBindings &&
-        ts.isNamedImports(statement.importClause.namedBindings) &&
-        statement.importClause.namedBindings.elements.some(
-          (item) => item.name.text === expression.text,
-        )
-      ) {
-        const specifier = statement.moduleSpecifier;
-        if (!ts.isStringLiteralLike(specifier) || !specifier.text.startsWith('.')) continue;
-        const imported = require(
-          path.join(
-            root,
-            'dist',
-            'src',
-            path.relative(sourceRoot, path.resolve(path.dirname(source.fileName), specifier.text)),
-          ),
-        );
-        if (imported[expression.text] && '_zod' in imported[expression.text])
-          return imported[expression.text];
-      }
+    const symbol = schemas.checker.getSymbolAtLocation(expression);
+    if (symbol?.flags & ts.SymbolFlags.Alias) {
+      // Resolve through barrel re-exports without executing their Nest modules.
+      // Importing a barrel may eagerly validate deployment env during a clean build.
+      const actual = schemas.checker.getAliasedSymbol(symbol);
+      const declaration = actual.valueDeclaration;
+      if (!declaration) throw new Error(`Missing runtime schema declaration: ${expression.text}`);
+      const relative = path.relative(sourceRoot, declaration.getSourceFile().fileName);
+      if (relative.startsWith('..'))
+        throw new Error(`Schema outside API source: ${expression.text}`);
+      const imported = require(path.join(root, 'dist', 'src', relative.replace(/\.ts$/, '.js')));
+      const value = imported[actual.getName()];
+      if (value && '_zod' in value) return value;
+      throw new Error(`Missing compiled Zod export: ${actual.getName()}`);
+    }
     const declaration = source.statements.find(
       (statement) =>
         ts.isVariableStatement(statement) &&
@@ -463,7 +456,7 @@ function main() {
   parsed.fileNames.push(...controllers);
   const program = ts.createProgram(parsed.fileNames, parsed.options);
   const checker = program.getTypeChecker();
-  const schemas = loadSchemas();
+  const schemas = loadSchemas(checker);
   const { HTTP_CONTRACT: httpContract } = require(
     path.join(root, 'dist', 'src', 'common', 'http-contract'),
   );
