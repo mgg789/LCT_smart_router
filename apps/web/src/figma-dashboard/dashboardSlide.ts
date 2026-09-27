@@ -18,8 +18,15 @@ export type StackNavId = (typeof STACK_NAV)[number];
 
 export type StackViewKey = 'main' | 'requests' | 'engineers' | 'alerts' | 'policy' | 'chats' | 'ai';
 
-/** Sidebar tabs that stay out of the wheel. Chats are locked for this release. */
-export const LOCKED_NAV = new Set<NavItemId>(['chats']);
+/**
+ * Sidebar tabs that stay out of the wheel and refuse a click.
+ *
+ * Empty, and kept rather than deleted: it is the one place a tab is withheld, so
+ * a tab that is not ready goes here instead of being commented out of `NAV_ITEMS`
+ * and losing its slot. «Чаты» sat here while the counterpart had nowhere to
+ * write from; both phone apps have that screen now.
+ */
+export const LOCKED_NAV = new Set<NavItemId>();
 
 /**
  * True for a sidebar tab the wheel and the click both skip.

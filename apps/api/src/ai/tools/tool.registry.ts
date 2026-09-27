@@ -8,7 +8,7 @@ import { LiveService } from '../../orchestrator/live/live.service';
 import { PassportsService } from '../../orchestrator/passports/passports.service';
 import { PolicyService } from '../../orchestrator/policy';
 import { RequestsService } from '../../orchestrator/requests/requests.service';
-import { PrismaService } from '../../persistence';
+import { PrismaService, UnitOfWork } from '../../persistence';
 import { SnapshotBuilder } from '../../routing/mount-data-eng';
 import {
   AppliedPlanService,
@@ -18,10 +18,15 @@ import {
 } from '../../routing/router-gateway';
 import { AiOperationService } from '../operations';
 import type { LlmToolSpec } from '../provider';
+import { ChatEventBus } from '../runtime/chat-event.bus';
+import { RunEventBus } from '../runtime/run-event.bus';
+import { RunRegistry } from '../runtime/run-registry';
+import { StopService } from '../runtime/stop.service';
 import { buildClientTools } from './client.tools';
 import { buildDispatcherReadTools } from './dispatcher-read.tools';
 import { buildDispatcherWriteTools } from './dispatcher-write.tools';
 import { buildEngineerTools } from './engineer.tools';
+import { buildCallDispatchHelperTool } from './handoff.tool';
 import { buildSearchDocumentationTool } from './knowledge.tool';
 import { KnowledgeSearchPort } from './knowledge-search.port';
 import { buildOperationVerificationTool } from './operation-verification.tool';
@@ -59,8 +64,20 @@ export class ToolRegistry {
     router: RouterClient,
     builder: SnapshotBuilder,
     passports: PassportsService,
+    uow: UnitOfWork,
+    stop: StopService,
+    runEvents: RunEventBus,
+    runs: RunRegistry,
+    chatBus: ChatEventBus,
   ) {
     const searchDocumentation = buildSearchDocumentationTool(knowledge);
+    const callDispatchHelper = buildCallDispatchHelperTool({
+      uow,
+      stop,
+      bus: runEvents,
+      registry: runs,
+      chatBus,
+    });
     const clientTools = buildClientTools({ aiOperations, requests, config, prisma });
     const engineerTools = buildEngineerTools({ aiOperations, live, config, passports });
     const dispatcherReadTools = buildDispatcherReadTools({
@@ -87,11 +104,18 @@ export class ToolRegistry {
     const dispatcherFixTools = [...dispatcherReadonlyTools, ...dispatcherWriteTools];
 
     this.catalogues = {
-      // Handoff to a human dispatcher is switched off for this release: the client
-      // support screen and the dispatcher chats tab are locked, so the model must not
-      // be able to open that queue.
-      client: [...clientTools, searchDocumentation],
-      engineer: [...engineerTools, searchDocumentation],
+      /*
+       * Both counterparts can put the conversation in front of a human. The tool
+       * is theirs alone: a dispatcher asking for a dispatcher is nothing, and the
+       * queue it fills is the dispatcher's own «Чаты» tab.
+       *
+       * It was withheld while that tab was locked and the customer's support
+       * screen was a placeholder — the model could have opened a queue nobody was
+       * reading. Both now exist, so the escalation the tool was written for is
+       * reachable end to end.
+       */
+      client: [...clientTools, searchDocumentation, callDispatchHelper],
+      engineer: [...engineerTools, searchDocumentation, callDispatchHelper],
       dispatcher_readonly: dispatcherReadonlyTools,
       dispatcher_fix: dispatcherFixTools,
     };

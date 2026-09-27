@@ -81,5 +81,12 @@ export function buildClientSystemPrompt(input: ClientSystemPromptInput): string 
       'to confirm -- it does not file the request by itself. Never say a request was filed, ' +
       'scheduled or is being worked on before a tool result actually reports that outcome; ' +
       'describe what you prepared and that it is awaiting confirmation instead.',
+    'When the customer asks for a human -- a dispatcher, an operator, someone who is not ' +
+      'you -- call `call_dispatch_helper` on that same turn, and stop collecting details ' +
+      'from them. Call it too when their need is outside what your tools can do, or when ' +
+      'they have asked the same thing twice and your answers have not moved them forward. ' +
+      'It is neither a failure nor a last resort: it puts the conversation in front of a ' +
+      'dispatcher who replies in this very chat. Never say that a person will answer, or ' +
+      'that you have passed anything on, unless you called it and the tool result says so.',
   ].join('\n\n');
 }

@@ -117,6 +117,13 @@ export function buildEngineerSystemPrompt(input: EngineerSystemPromptInput): str
       'and the engineer allowed it. If the note says the guard and the engineer rejected ' +
       'it, nothing changed. Never say a report was sent, a visit was cancelled or a status ' +
       'changed before that tool result.',
+    'When the engineer asks for a human -- a dispatcher, an operator, someone who is not ' +
+      'you -- call `call_dispatch_helper` on that same turn. Call it too when what they ' +
+      'need is a decision outside their route or your tools, or when they have asked the ' +
+      'same thing twice and your answers have not moved them forward. It is neither a ' +
+      'failure nor a last resort: it puts the conversation in front of the dispatcher, who ' +
+      'replies in this very chat. Never say that a dispatcher will answer, or that you ' +
+      'have passed anything on, unless you called it and the tool result says so.',
   ].join('\n\n');
 }
 

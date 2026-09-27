@@ -42,11 +42,12 @@ describe('dashboardSlide', () => {
     expect(stackSlideEnter(0)).toEqual({ y: '0%' });
   });
 
-  it('skips locked chats and steps from policy straight into AI', () => {
-    expect(isNavLocked('chats')).toBe(true);
+  it('walks every tab, chats included, and stops on a still wheel', () => {
+    expect(isNavLocked('chats')).toBe(false);
     expect(isNavLocked('ai')).toBe(false);
     expect(isNavLocked('engineers')).toBe(false);
-    expect(sidebarWheelNav('policy', 80)).toBe('ai');
+    expect(sidebarWheelNav('policy', 80)).toBe('chats');
+    expect(sidebarWheelNav('chats', 80)).toBe('ai');
     expect(sidebarWheelNav('ai', 80)).toBe('day');
     expect(sidebarWheelNav('day', -40)).toBe('ai');
     expect(sidebarWheelNav('alerts', 10)).toBe('policy');
