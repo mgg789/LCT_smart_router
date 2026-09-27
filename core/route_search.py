@@ -38,6 +38,7 @@ class RouteState:
     slack: int | None = None
     delay: int = 0
     lunch_missed: int = 0
+    emergency_delay: int = 0
 
 
 class RouteEvaluator:
@@ -128,7 +129,7 @@ class RouteEvaluator:
             route = fixed_order(self.snapshot, engineer, list(jobs), self.travel)
             return self.from_route(route) if route is not None else None
         clock, point = release, engineer.start_location
-        travel = distance = urgent = late = lateness = delay = 0
+        travel = distance = urgent = late = lateness = delay = emergency_delay = 0
         slack = None
         stock = engineer.equipment_stock.model_dump()
         for position, job in enumerate(jobs):
@@ -140,7 +141,7 @@ class RouteEvaluator:
             road = self.road_quote(point, request.location, engineer.travel_profile(), clock)
             if road is None:
                 return None
-            start = max(clock + road.duration_sec, request.window_start_at)
+            start = max(clock + road.duration_sec, request.ready_at)
             clock = start + request.service_duration_sec
             margin = request.window_end_at - clock
             window_tolerance = 0 if self.strict else max(
@@ -158,9 +159,12 @@ class RouteEvaluator:
             lateness += max(0, -margin)
             slack = margin if slack is None else min(slack, margin)
             delay += start - request.window_start_at
+            if request.category == "emergency":
+                emergency_delay += max(0, start - max(self.snapshot.horizon_start_at, request.ready_at))
             point = request.location
         return RouteState(
-            jobs, travel, distance, clock - release, urgent, late, lateness, slack, delay
+            jobs, travel, distance, clock - release, urgent, late, lateness, slack, delay,
+            emergency_delay=emergency_delay,
         )
 
     def from_route(self, route: EngineerRoute) -> RouteState:
@@ -187,6 +191,8 @@ class RouteEvaluator:
             min(slacks, default=None),
             sum(stop.start_at - self.requests[job_id].window_start_at for job_id, stop in zip(job_ids, stops)),
             missed,
+            sum(max(0, stop.start_at - max(self.snapshot.horizon_start_at, self.requests[job_id].ready_at))
+                for job_id, stop in zip(job_ids, stops) if self.requests[job_id].category == "emergency"),
         )
 
     def score(self, states: list[RouteState], policy_id: str) -> tuple[int, ...]:
@@ -205,6 +211,9 @@ class RouteEvaluator:
             if release is not None
         ]
         values = {
+            "emergency_unassigned": -sum(self.requests[job].category == "emergency" for state in states for job in state.jobs),
+            "connection_unassigned": -sum(self.requests[job].category == "connection" for state in states for job in state.jobs),
+            "emergency_response_delay": sum(state.emergency_delay for state in states),
             "urgent_unassigned": -sum(s.urgent for s in states),
             "unassigned": -sum(len(s.jobs) for s in states),
             "missed_optional_lunches": sum(s.lunch_missed for s in states),
@@ -288,11 +297,11 @@ def improve_routes(
     # All policies see the same constructive candidates, including both travel
     # units. Scarce qualifications are allocated before broadly compatible jobs.
     variants = (
-        ("fast", lambda r: (r.priority != "urgent", r.window_end_at, r.service_duration_sec)),
+        ("fast", lambda r: ({"emergency": 0, "connection": 1, "service": 2}[r.category], r.priority != "urgent", r.window_end_at, r.service_duration_sec)),
         (
             "compact",
             lambda r: (
-                r.priority != "urgent",
+                {"emergency": 0, "connection": 1, "service": 2}[r.category], r.priority != "urgent",
                 len(evaluator.allowed[r.request_id]),
                 r.window_end_at,
                 r.service_duration_sec,
@@ -301,13 +310,13 @@ def improve_routes(
         (
             "eco",
             lambda r: (
-                r.priority != "urgent",
+                {"emergency": 0, "connection": 1, "service": 2}[r.category], r.priority != "urgent",
                 r.window_end_at - r.window_start_at,
                 r.window_start_at,
             ),
         ),
-        ("balanced", lambda r: (r.priority != "urgent", r.window_start_at, r.window_end_at)),
-        ("sla", lambda r: (r.priority != "urgent", r.window_end_at - r.service_duration_sec, r.window_start_at)),
+        ("balanced", lambda r: ({"emergency": 0, "connection": 1, "service": 2}[r.category], r.priority != "urgent", r.window_start_at, r.window_end_at)),
+        ("sla", lambda r: ({"emergency": 0, "connection": 1, "service": 2}[r.category], r.priority != "urgent", r.window_end_at - r.service_duration_sec, r.window_start_at)),
     )
 
     def insert(states, request, objective, excluded=-1, *, regular_only=False, prioritize_lateness=False):
@@ -332,7 +341,7 @@ def improve_routes(
                     if prioritize_lateness:
                         # Retain safety-first seeds while each preset explores its
                         # own primary resource goal inside the same feasibility bounds.
-                        key = (*key[:3], sum(state.lateness for state in states), *key[3:])
+                        key = (*key[:6], sum(state.lateness for state in states), *key[6:])
                     if best is None or key < best[0]:
                         best = (key, i, candidate)
             states[i] = old

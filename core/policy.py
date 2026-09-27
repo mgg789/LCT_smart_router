@@ -8,6 +8,9 @@ from typing import Literal
 from core.contracts import Plan, Policy, RouterTaskSnapshot
 
 Criterion = Literal[
+    "emergency_unassigned",
+    "emergency_response_delay",
+    "connection_unassigned",
     "urgent_unassigned",
     "unassigned",
     "missed_optional_lunches",
@@ -24,6 +27,7 @@ Criterion = Literal[
     "workload_spread",
 ]
 SearchStage = Literal[
+    "emergency_response_delay",
     "coverage",
     "additional_engineers",
     "extra_assignments",
@@ -50,6 +54,9 @@ class PolicySpec:
 
 
 _COVERAGE: tuple[Criterion, ...] = (
+    "emergency_unassigned",
+    "emergency_response_delay",
+    "connection_unassigned",
     "urgent_unassigned",
     "unassigned",
     "missed_optional_lunches",
@@ -57,19 +64,19 @@ _COVERAGE: tuple[Criterion, ...] = (
 _CATALOG: dict[str, PolicySpec] = {
     "fast": PolicySpec(
         policy_id="fast",
-        definition_version="fast-2",
+        definition_version="fast-3",
         ordered_criteria=_COVERAGE + ("travel_time", "total_lateness", "distance", "engineers_used"),
         search_stages=("coverage", "travel_time", "distance", "engineers_used"),
     ),
     "compact": PolicySpec(
         policy_id="compact",
-        definition_version="compact-2",
+        definition_version="compact-3",
         ordered_criteria=_COVERAGE + ("engineers_used", "total_lateness", "distance", "travel_time"),
         search_stages=("coverage", "engineers_used", "distance", "travel_time"),
     ),
     "sla": PolicySpec(
         policy_id="sla",
-        definition_version="sla-2",
+        definition_version="sla-3",
         ordered_criteria=_COVERAGE
         + ("total_lateness", "window_end_risk", "travel_time", "distance", "engineers_used"),
         search_stages=(
@@ -82,7 +89,7 @@ _CATALOG: dict[str, PolicySpec] = {
     ),
     "balanced": PolicySpec(
         policy_id="balanced",
-        definition_version="balanced-3",
+        definition_version="balanced-4",
         ordered_criteria=_COVERAGE
         + ("max_workload_ratio", "total_lateness", "workload_spread", "travel_time", "distance", "engineers_used"),
         search_stages=(
@@ -96,13 +103,13 @@ _CATALOG: dict[str, PolicySpec] = {
     ),
     "eco": PolicySpec(
         policy_id="eco",
-        definition_version="eco-2",
+        definition_version="eco-3",
         ordered_criteria=_COVERAGE + ("distance", "total_lateness", "engineers_used", "travel_time"),
         search_stages=("coverage", "distance", "engineers_used", "travel_time"),
     ),
     "covering": PolicySpec(
         policy_id="covering",
-        definition_version="covering-3",
+        definition_version="covering-4",
         # After the reserve count, shed jobs off those reserves before shortening
         # travel. Counting every busy engineer here let a reserve replace a roster
         # engineer who could have taken the same ordinary jobs.
@@ -119,7 +126,7 @@ _CATALOG: dict[str, PolicySpec] = {
 }
 POLICY_CATALOG_VERSION = sha256(
     json.dumps(
-        {"search_revision": "shared-portfolio-v4",
+        {"search_revision": "business-priority-v5",
          "policies": [asdict(_CATALOG[policy_id]) for policy_id in sorted(_CATALOG)]},
         sort_keys=True,
         separators=(",", ":"),
@@ -166,6 +173,10 @@ def criterion_values(snapshot: RouterTaskSnapshot, plan: Plan) -> dict[Criterion
             )
             workloads.append((busy * 10000 + available - 1) // available)
     return {
+        "emergency_unassigned": sum(requests[a.request_id].category == "emergency" for a in plan.assignments if a.status == "unassigned"),
+        "connection_unassigned": sum(requests[a.request_id].category == "connection" for a in plan.assignments if a.status == "unassigned"),
+        "emergency_response_delay": sum(max(0, stop.start_at - max(snapshot.horizon_start_at, requests[stop.request_id].ready_at))
+            for stop in job_stops if requests[stop.request_id].category == "emergency"),
         "total_lateness": summary.total_lateness_sec,
         "window_end_risk": -(summary.min_window_slack_sec or 0),
         "max_workload_ratio": max(workloads, default=0),

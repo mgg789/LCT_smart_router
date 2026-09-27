@@ -380,7 +380,7 @@ def schedule_steps(
         if quote is None:
             return None
         arrival = clock + quote.duration_sec
-        start = max(arrival, request.window_start_at)
+        start = max(arrival, request.ready_at)
         end = start + request.service_duration_sec
         tolerance = getattr(getattr(travel, "settings", None), "window_lateness_tolerance_sec", 0)
         # The customer window covers the end of the normative work, not only arrival.
@@ -649,6 +649,11 @@ def assigned_reason(
         "CONSTRAINTS_SATISFIED",
         "Skill, transport and schedule constraints verified.",
         policy_id=snapshot.policy.policy_id,
+        work_category=request.category,
+        received_at=request.ready_at,
+        emergency_response_target_sec=7200 if request.category == "emergency" else None,
+        emergency_response_sec=(None if stop is None or request.category != "emergency"
+                                else max(0, stop.start_at - request.ready_at)),
         required_skill=request.required_skill,
         required_transport=request.required_transport,
         required_equipment=request.required_equipment,
@@ -784,17 +789,24 @@ def assemble_plan(
     )
 
 
-def baseline(snapshot: RouterTaskSnapshot, travel: TravelProvider) -> Plan:
+def baseline(snapshot: RouterTaskSnapshot, travel: TravelProvider, *, prioritized: bool = False) -> Plan:
     """Build a FIFO baseline, reserving terminal overtime for its final extension.
 
     The ordinary append pass preserves the historical on-shift FIFO comparison.
+    ``prioritized`` builds a separate optimizer seed; the reported FIFO stays unchanged.
+    Emergencies choose the earliest feasible start across compatible free crews.
     Only after every regular request was considered can one overrun-only job be
     appended as the engineer's actual terminal visit.
     """
     engineers = sorted(snapshot.engineers, key=lambda e: e.input_order)
     orders: dict[str, list[str]] = {e.engineer_id: [] for e in engineers}
     deferred: list[Request] = []
-    for request in sorted(snapshot.requests, key=lambda r: r.arrival_order):
+    requests = sorted(snapshot.requests, key=lambda r: (
+        ({"emergency": 0, "connection": 1, "service": 2}[r.category], r.ready_at, r.arrival_order)
+        if prioritized else (r.arrival_order,)
+    ))
+    for request in requests:
+        candidates = []
         for engineer in engineers:
             order = orders[engineer.engineer_id] + [request.request_id]
             route = (
@@ -808,8 +820,14 @@ def baseline(snapshot: RouterTaskSnapshot, travel: TravelProvider) -> Plan:
                 and route.finish_at > job_completion_limit(snapshot, engineer, terminal=False)
             )
             if route is not None and not uses_terminal_overtime:
-                orders[engineer.engineer_id] = order
-                break
+                candidates.append((route, engineer, order))
+                if not prioritized or request.category != "emergency":
+                    break
+        if candidates:
+            route, engineer, order = min(candidates, key=lambda item: next(
+                stop.start_at for stop in item[0].stops if stop.request_id == request.request_id
+            ))
+            orders[engineer.engineer_id] = order
         else:
             deferred.append(request)
     for request in deferred:

@@ -451,6 +451,8 @@ def _search(
     lunch_weight = 1
     coverage_weight = len(engineers) + 1
     urgent_weight = (len(snapshot.requests) + 1) * coverage_weight
+    connection_weight = (len(snapshot.requests) + 1) * (urgent_weight + coverage_weight)
+    emergency_weight = (len(snapshot.requests) + 1) * (connection_weight + urgent_weight + coverage_weight)
     for request in snapshot.requests:
         index = manager.NodeToIndex(jobs[request.request_id])
         allowed = [
@@ -460,7 +462,7 @@ def _search(
             or terminal_eligible(snapshot, engineer, request)
         ]
         routing.VehicleVar(index).SetValues([-1] + allowed)
-        lower = max(0, request.window_start_at - origin)
+        lower = max(0, request.ready_at - origin)
         # Time is the service start cumul.  Bound it by completion rather than arrival:
         # scheduling a 30-minute job at 10:18 for a window ending 10:20 must not pass
         # merely because its start fits.
@@ -507,9 +509,13 @@ def _search(
                     + (terminal_window_limit - normal_window_limit) * next_is_end
                     + inactive_time_slack * (1 - on_vehicle)
                 )
-            if stage == "window_start_delay":
+            if stage == "window_start_delay" or (
+                stage == "emergency_response_delay" and request.category == "emergency"
+            ):
                 time_dimension.SetCumulVarSoftUpperBound(index, lower, 1)
-        penalty = coverage_weight + (urgent_weight if request.priority == "urgent" else 0)
+        penalty = (coverage_weight + (urgent_weight if request.priority == "urgent" else 0)
+                   + (connection_weight if request.category == "connection" else 0)
+                   + (emergency_weight if request.category == "emergency" else 0))
         routing.AddDisjunction([index], penalty if stage == "coverage" else 0)
 
     for e, alternatives in lunches.items():
@@ -554,6 +560,13 @@ def _search(
     urgent_drops = solver.Sum(
         [1 - active_jobs[r.request_id] for r in snapshot.requests if r.priority == "urgent"]
     )
+    emergency_drops = solver.Sum([1 - active_jobs[r.request_id] for r in snapshot.requests if r.category == "emergency"])
+    connection_drops = solver.Sum([1 - active_jobs[r.request_id] for r in snapshot.requests if r.category == "connection"])
+    emergency_delay = solver.Sum([
+        solver.Max(time_dimension.CumulVar(manager.NodeToIndex(jobs[r.request_id]))
+                   - max(0, r.ready_at - origin), 0) * active_jobs[r.request_id]
+        for r in snapshot.requests if r.category == "emergency"
+    ])
     all_drops = solver.Sum([1 - active for active in active_jobs.values()])
     missed_lunch = solver.Sum(
         [
@@ -620,6 +633,9 @@ def _search(
     if incumbent is not None and stage != "coverage":
         values = criterion_values(snapshot, incumbent)
         expressions = {
+            "emergency_unassigned": emergency_drops,
+            "emergency_response_delay": emergency_delay,
+            "connection_unassigned": connection_drops,
             "urgent_unassigned": urgent_drops,
             "unassigned": all_drops,
             "missed_optional_lunches": missed_lunch,
@@ -632,6 +648,9 @@ def _search(
             "max_jobs_per_engineer": max_jobs_per_engineer,
         }
         for criterion in (
+            "emergency_unassigned",
+            "emergency_response_delay",
+            "connection_unassigned",
             "urgent_unassigned",
             "unassigned",
             "missed_optional_lunches",
@@ -770,7 +789,7 @@ def _covering_template_can_serve(
     if release is None:
         return False
     finish = min(engineer.shift_end_at, snapshot.horizon_end_at)
-    return max(release, request.window_start_at) + request.service_duration_sec <= finish
+    return max(release, request.ready_at) + request.service_duration_sec <= finish
 
 
 def _covering_extra_engineers(
@@ -896,7 +915,9 @@ def _improve_covering(
         projected = baseline(search_snapshot, travel)
     if not projected.is_usable:
         return projected
-    candidates = improve_routes(search_snapshot, travel, [projected], effort, construct=construct)
+    priority_seed = baseline(search_snapshot, travel, prioritized=True)
+    seeds = [plan for plan in (projected, priority_seed) if plan.is_usable]
+    candidates = improve_routes(search_snapshot, travel, seeds, effort, construct=construct)
     usable = [candidate for candidate in candidates if candidate.is_usable]
     chosen = (
         min(usable, key=lambda candidate: score(search_snapshot, candidate))
@@ -1222,7 +1243,8 @@ def _rescue_equipment_handoffs(
                                         validate_plan(snapshot, candidate, travel)
                                     except ValueError:
                                         continue
-                                    if candidate.summary.assigned_count > current.summary.assigned_count:
+                                    if (candidate.summary.assigned_count > current.summary.assigned_count
+                                            and score(snapshot, candidate) < score(snapshot, current)):
                                         return candidate
     return current
 
@@ -1249,6 +1271,7 @@ def _solve_prepared(
     context_version = context_version or default_context_version
     base = _rescue_equipment_handoffs(snapshot, baseline(snapshot, travel), travel, settings)
     validate_plan(snapshot, base, travel)
+    priority_seed = baseline(snapshot, travel, prioritized=True)
     compatible = (
         memory is not None
         and memory.context_version == context_version
@@ -1264,6 +1287,7 @@ def _solve_prepared(
             } == {a.request_id: a.engineer_id for a in memory.plan.assignments}
             if (
                 same_assignments
+                and (not priority_seed.is_usable or score(snapshot, candidate) <= score(snapshot, priority_seed))
                 and _small_change(memory.snapshot, snapshot, settings.departure_lateness_tolerance_sec)
                 and _task_starts_within_tolerance(
                     memory.plan, candidate, settings.task_start_lateness_tolerance_sec
@@ -1284,8 +1308,9 @@ def _solve_prepared(
         if compatible and memory is not None and memory.plan.is_usable
         else None
     )
+    search_priority = priority_seed if search_snapshot is snapshot else baseline(search_snapshot, travel, prioritized=True)
     candidates = [
-        plan for plan in (search_base, search_projected) if plan is not None and plan.is_usable
+        plan for plan in (search_base, search_projected, search_priority) if plan is not None and plan.is_usable
     ]
     incumbent = (
         min(candidates, key=lambda plan: score(search_snapshot, plan)) if candidates else None
@@ -1302,6 +1327,8 @@ def _solve_prepared(
         if stage
         not in ("total_lateness", "window_end_risk", "max_workload_ratio", "workload_spread")
     )
+    if stages and any(r.category == "emergency" for r in search_snapshot.requests):
+        stages = (stages[0], "emergency_response_delay", *stages[1:])
     for i, stage in enumerate(stages):
         remaining = int((deadline - time.monotonic()) * 1000)
         if remaining <= 0:
@@ -1311,6 +1338,7 @@ def _solve_prepared(
             for stage in stages[1:i]
             if stage
             in (
+                "emergency_response_delay",
                 "additional_engineers",
                 "extra_assignments",
                 "travel_time",

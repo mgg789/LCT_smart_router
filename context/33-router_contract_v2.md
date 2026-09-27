@@ -564,3 +564,8 @@ JSON Schema регенерируется из `core/contracts.py`. Контра�
 сохраняются как unassigned. Замеры и ограничения: `docs/policy-efficiency.md`.
 
 Поправка 22.09.2026: `metro_enabled` и составные `RouteLeg.segments` описаны в [docs/api.md](../docs/api.md) и [docs/solver.md](../docs/solver.md); метро — источник геометрии и стоимости пешего участка, а не отдельный транспорт инженера.
+
+
+## Уточнение заказчика от 27.09.2026: три группы работ
+
+Текущая реализация расширяет двоичный флаг приоритета полем `work_category`: `emergency > connection > service`. Для аварий минимизируется задержка реакции, норматив выполнения 100 минут, начало не раньше фактического поступления; начатую работу не прерывают. Добавлены необязательные `received_at`, `source_window_start_at`, `source_window_end_at`. Прежний `priority` сохранён для совместимости. Детали и исходная классификация: [docs/request-priorities.md](../docs/request-priorities.md).

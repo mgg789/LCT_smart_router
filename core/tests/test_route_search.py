@@ -6,7 +6,7 @@ import pytest
 from core.contracts import Policy, RouterTechnicalSettings
 from core.engine import SearchSettings, solve
 from core.geo import GraphTravel, TravelQuote, configure_travel
-from core.policy import policy_score
+from core.policy import compile_policy, policy_score
 from core.route_search import RouteEvaluator, improve_routes
 from core.runtime import calculate_policy_comparison
 from core.schedule import assemble_plan, baseline, fixed_order, validate_plan
@@ -230,9 +230,14 @@ def test_search_score_matches_independent_public_metrics(snapshot, graph, policy
     plan = assemble_plan(task, routes)
     internal = evaluator.score([evaluator.from_route(routes[0])], policy)
     public = policy_score(task, plan)
-    assert internal[2:] == public[2:]
-    assert internal[0] + plan.summary.urgent_total == public[0]
-    assert internal[1] + plan.summary.requests_total == public[1]
+    offsets = {
+        "emergency_unassigned": sum(r.category == "emergency" for r in task.requests),
+        "connection_unassigned": sum(r.category == "connection" for r in task.requests),
+        "urgent_unassigned": plan.summary.urgent_total,
+        "unassigned": plan.summary.requests_total,
+    }
+    assert tuple(value + offsets.get(criterion, 0) for value, criterion in
+                 zip(internal, compile_policy(task.policy).ordered_criteria)) == public
     state = evaluator.evaluate(0, tuple(r.request_id for r in task.requests))
     assert state == evaluator.from_route(routes[0])
 

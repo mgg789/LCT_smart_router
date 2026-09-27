@@ -25,9 +25,15 @@ def test_new_normal_and_urgent_requests_are_inserted(official_east_events):
         assert event.output.path == "REPAIR_AND_IMPROVE"
         assert event.changed_assignments >= 1
     assert urgent.output.main.summary.urgent_total == normal.output.main.summary.urgent_total + 1
-    assert urgent.output.main.summary.urgent_assigned_count == (
-        normal.output.main.summary.urgent_assigned_count + 1
-    )
+    # The new network emergency may displace an urgent individual repair: category
+    # outranks the legacy binary flag. Existing network emergencies remain covered.
+    emergency_ids = {r.request_id for r in normal.snapshot.requests if r.category == "emergency"}
+    before = {a.request_id for a in normal.output.main.assignments if a.status == "assigned"} & emergency_ids
+    after = {a.request_id for a in urgent.output.main.assignments if a.status == "assigned"}
+    assert before <= after
+    emergency_stop = next(s for r in urgent.output.main.routes for s in r.stops if s.request_id == "event-urgent-1")
+    assert emergency_stop.start_at >= urgent.trigger["occurred_at"]
+    assert emergency_stop.end_at - emergency_stop.start_at == 6000
 
 
 def test_offline_engineer_receives_no_remaining_work(official_east_events):

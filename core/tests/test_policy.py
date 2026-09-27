@@ -91,7 +91,7 @@ def test_catalog_is_strict_and_versioned(snapshot):
             {**snapshot.model_dump(), "policy": {"policy_id": "covering", "parameters": {}}}
         ).policy
     )
-    assert covering.definition_version == "covering-3"
+    assert covering.definition_version == "covering-4"
     assert covering.search_stages[2] == "extra_assignments"
 
 
