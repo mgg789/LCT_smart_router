@@ -14,7 +14,7 @@ import {
 import type { HandoffView } from '../api/live';
 import type { DashboardSnapshot } from '../api/types';
 import { MonthlyPoints } from '../components/passports/MonthlyPoints';
-import { useArtboardScale, useLetterboxInsets } from './artboardScale';
+import { ARTBOARD_BLEED } from './artboardScale';
 import { ENGINEER_PORTRAITS, FIGMA_ASSETS } from './assets';
 import {
   arrowSpinDelta,
@@ -85,8 +85,6 @@ export function EngineersView({
   onSetAvailability: (engineerId: string, availability: 'online' | 'offline') => void;
 }) {
   const reduceMotion = useReducedMotion();
-  const scale = useArtboardScale();
-  const letterbox = useLetterboxInsets(scale);
   const roster = useMemo(
     () => engineerProfilesFromSnapshot(snapshot, handoffs),
     [handoffs, snapshot],
@@ -575,14 +573,14 @@ export function EngineersView({
       </div>
       <div
         className="engineer-ring-blur-layer"
-        style={{ top: 0, right: -80, bottom: -letterbox.y, left: -80 }}
+        style={{ top: 0, right: -80, bottom: -ARTBOARD_BLEED, left: -80 }}
       >
         <div className="engineer-ring-blur-veil engineer-ring-blur-veil-left" />
         <div className="engineer-ring-blur-veil engineer-ring-blur-veil-right" />
       </div>
       <div
         className="engineer-ring-fog"
-        style={{ top: 0, right: -40, bottom: -letterbox.y, left: -40 }}
+        style={{ top: 0, right: -40, bottom: -ARTBOARD_BLEED, left: -40 }}
       />
 
       {focused ? (

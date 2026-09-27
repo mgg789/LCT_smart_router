@@ -16,12 +16,15 @@ export function ClientRequests({
   motionOn,
   onOpen,
   onNewRequest,
+  selectedId,
 }: {
   requests: readonly ClientRequestView[];
   notice: string | null;
   motionOn: boolean;
   onOpen: (id: string) => void;
   onNewRequest: () => void;
+  /** Outlined because it is the one being read, not because it is the live one. */
+  selectedId?: string | null;
 }) {
   const { featured, rest, archive } = splitClientRequests(requests);
 
@@ -49,6 +52,7 @@ export function ClientRequests({
             motionOn={motionOn}
             delay={0}
             onOpen={() => onOpen(featured.id)}
+            selected={featured.id === selectedId}
           />
         ) : null}
         {rest.map((item, index) => (
@@ -59,6 +63,7 @@ export function ClientRequests({
             motionOn={motionOn}
             delay={(index + 1) * 0.04}
             onOpen={() => onOpen(item.id)}
+            selected={item.id === selectedId}
           />
         ))}
       </div>
@@ -93,6 +98,7 @@ export function ClientRequests({
             motionOn={motionOn}
             delay={index * 0.04}
             onOpen={() => onOpen(item.id)}
+            selected={item.id === selectedId}
           />
         ))}
       </div>
@@ -105,11 +111,13 @@ function FeaturedCard({
   motionOn,
   delay,
   onOpen,
+  selected,
 }: {
   item: ClientRequestView;
   motionOn: boolean;
   delay: number;
   onOpen: () => void;
+  selected: boolean;
 }) {
   return (
     <motion.article
@@ -128,7 +136,9 @@ function FeaturedCard({
             onOpen();
           }
         }}
-        className="overflow-hidden border-solid border-figma-bee bg-white text-left"
+        className={`overflow-hidden border-solid bg-white text-left ${
+          selected ? 'border-figma-bee' : 'border-transparent'
+        }`}
         style={{
           borderRadius: eu(20),
           borderWidth: eu(3),
@@ -216,12 +226,14 @@ function ArchiveCard({
   motionOn,
   delay,
   onOpen,
+  selected,
 }: {
   item: ClientRequestView;
   archived: boolean;
   motionOn: boolean;
   delay: number;
   onOpen: () => void;
+  selected: boolean;
 }) {
   return (
     <motion.article
@@ -240,8 +252,11 @@ function ArchiveCard({
             onOpen();
           }
         }}
-        className="flex w-full items-start justify-between overflow-hidden bg-white text-left"
+        className={`flex w-full items-start justify-between overflow-hidden border-solid bg-white text-left ${
+          selected ? 'border-figma-bee' : 'border-transparent'
+        }`}
         style={{
+          borderWidth: eu(3),
           gap: eu(16),
           borderRadius: eu(20),
           padding: `${eu(25)} ${eu(30)}`,

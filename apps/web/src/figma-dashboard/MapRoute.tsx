@@ -4,6 +4,7 @@ import type { HandoffView, LiveRouteProgress } from '../api/live';
 import { DayMap } from '../components/DayMap';
 import type { RegionSelection } from '../domain/regions';
 import { useDashboard } from '../hooks/useDashboard';
+import { useArtboardStretch } from './artboardStretch';
 import { FIGMA_ASSETS } from './assets';
 import {
   type EngineerCard,
@@ -19,6 +20,9 @@ import { RegionSwitch } from './RegionSwitch';
 import { routeProgressMarker } from './routeProgress';
 import { WeatherBadge } from './WeatherBadge';
 
+const ROUTE_CARD_LEFT = 623;
+const ROUTE_CARD_TOP = 768;
+const ROUTE_CARD_WIDTH = 751;
 const ROUTE_STOP_WIDTH = 260;
 const ROUTE_TOPIC_WIDTH = 240;
 const ROUTE_DOT_SIZE = 20;
@@ -130,6 +134,8 @@ export function RouteCard({
   handoffs: readonly HandoffView[];
   engineerNames: ReadonlyMap<string, string>;
 }) {
+  // Named apart from the drag delta below, which is also called `dx`.
+  const { dx: spareX, dy: spareY } = useArtboardStretch();
   const scrollerRef = useRef<HTMLDivElement>(null);
   const skipClick = useRef(false);
   const liveMarker = routeProgressMarker(engineer.stops, progress);
@@ -232,9 +238,14 @@ export function RouteCard({
 
   return (
     <motion.section
-      className={`absolute left-[623px] top-[768px] h-[279px] w-[751px] overflow-hidden rounded-[20px] bg-white ${
+      className={`absolute h-[279px] overflow-hidden rounded-[20px] bg-white ${
         grabbing ? 'cursor-grabbing select-none' : thumb.visible ? 'cursor-grab' : ''
       }`}
+      style={{
+        left: ROUTE_CARD_LEFT,
+        top: ROUTE_CARD_TOP + spareY,
+        width: ROUTE_CARD_WIDTH + spareX,
+      }}
       initial={motionOn ? { opacity: 0, y: 20 } : false}
       animate={{ opacity: 1, y: 0 }}
       exit={motionOn ? { opacity: 0, y: 28 } : undefined}

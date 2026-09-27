@@ -2,6 +2,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useMemo, useState } from 'react';
 import type { DashboardSnapshot } from '../api/types';
 import { unassignedRequests } from '../domain/dashboard';
+import { useArtboardStretch } from './artboardStretch';
 import { FIGMA_ASSETS } from './assets';
 import { FigmaIcon, FigmaText } from './primitives';
 import {
@@ -46,6 +47,7 @@ export function RequestsView({
   selectedRequestId: string | null;
   onSelect: (requestId: string) => void;
 }) {
+  const { dx, dy } = useArtboardStretch();
   const reduceMotion = useReducedMotion();
   const [query, setQuery] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
@@ -75,7 +77,7 @@ export function RequestsView({
   return (
     <section
       className="absolute overflow-hidden rounded-[30px]"
-      style={{ left: 180, top: 154, width: 1710, height: 884 }}
+      style={{ left: 180, top: 154, width: 1710 + dx, height: 884 + dy }}
     >
       <FigmaText className="figma-nowrap absolute left-0 top-[30px] font-extrabold text-[48px] tracking-[-0.816px] text-figma-ink">
         Заявки
@@ -128,7 +130,7 @@ export function RequestsView({
         </motion.span>
       </motion.label>
 
-      <div className="absolute left-[1351px] top-[31.5px]" data-request-sort>
+      <div className="absolute top-[31.5px]" data-request-sort style={{ left: 1351 + dx }}>
         <motion.button
           type="button"
           onClick={() => setSortOpen((value) => !value)}
@@ -180,10 +182,16 @@ export function RequestsView({
         </AnimatePresence>
       </div>
 
-      <div className="absolute left-0 top-[97px] h-[767px] w-[1710px] overflow-hidden rounded-[20px] bg-white">
+      <div
+        className="absolute left-0 top-[97px] overflow-hidden rounded-[20px] bg-white"
+        style={{ width: 1710 + dx, height: 767 + dy }}
+      >
         <div
-          className="absolute left-[31px] top-[23px] grid w-[1648px] items-center"
-          style={{ gridTemplateColumns: '140px 1.15fr 1.2fr 170px 250px 220px' }}
+          className="absolute left-[31px] top-[23px] grid items-center"
+          style={{
+            width: 1648 + dx,
+            gridTemplateColumns: '140px 1.15fr 1.2fr 170px 250px 220px',
+          }}
         >
           {COLUMNS.map((column) => (
             <FigmaText

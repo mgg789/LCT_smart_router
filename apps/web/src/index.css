@@ -238,10 +238,213 @@ body {
 
 .engineer-phone,
 .client-phone {
-  width: min(100%, 430px);
+  --phone-width: min(100vw, 430px);
+  width: var(--phone-width);
   min-height: 100%;
   margin-inline: auto;
-  --eu: calc(min(100vw, 430px) / 670);
+  /*
+   * One source for both: the column's width and the unit its contents are
+   * written in cannot disagree, so overriding `--phone-width` in a wider shell
+   * rescales the whole screen with it.
+   */
+  --eu: calc(var(--phone-width) / 670);
+}
+
+/**
+ * Client / engineer app on a desktop window.
+ *
+ * Both apps are drawn as a 670-wide phone screen and every size inside them is
+ * a fraction of that width, so a desktop cannot be served by stretching one
+ * column — it only makes the same screen taller. The desk is a layout of its
+ * own: the app's own menu drawer down the left, a header strip, and the screen
+ * filling the width until a request is opened, at which point the request takes
+ * the other half.
+ *
+ * Each pane is its own `--eu` context, so the same screens render at the pane's
+ * width without knowing they are on a desk.
+ */
+.phone-desk {
+  display: flex;
+  width: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--color-figma-canvas);
+  /* A base for the drawer and the error notice, which sit over the whole desk. */
+  --phone-width: 660px;
+  --eu: calc(var(--phone-width) / 670);
+}
+
+/*
+ * The app's own menu, simply there instead of behind a button. The drawer is
+ * drawn 501 units wide, so the rail is exactly that at the rail's own scale —
+ * the panel fills it without a number being repeated in two places.
+ */
+.phone-desk-rail {
+  /*
+   * Positioned so the clip actually bites: the menu's decorative layer is
+   * absolute, and `overflow: hidden` only clips such a child when the element
+   * doing the clipping is also its containing block.
+   */
+  position: relative;
+  display: flex;
+  flex: none;
+  overflow: hidden;
+  --phone-width: 400px;
+  --eu: calc(var(--phone-width) / 670);
+  width: calc(501 * var(--eu));
+}
+
+.phone-desk-body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.phone-desk-header {
+  display: flex;
+  height: 92px;
+  flex: none;
+  align-items: center;
+  gap: 24px;
+  padding: 0 32px;
+}
+
+.phone-desk-panes {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  gap: 24px;
+  padding: 0 32px 32px;
+}
+
+/*
+ * `cqw`, not a percentage: a percentage inside a custom property is resolved
+ * where it is used, and `--eu` is used for font sizes, where a percentage means
+ * something else entirely. Container units are lengths everywhere.
+ *
+ * Both panes read `--eu` off the same cap, which is the size the screens were
+ * drawn at. A pane is free to be much wider — blocks inside stretch to fill it —
+ * but type, padding and controls stop growing there. Letting them follow the
+ * pane made a monitor render the app half again its drawn size.
+ */
+.phone-desk-col {
+  position: relative;
+  min-width: 0;
+  overflow: hidden auto;
+  border-radius: 28px;
+  background: var(--color-figma-canvas);
+  container-type: inline-size;
+  --phone-width: min(100cqw, 660px);
+  --eu: calc(var(--phone-width) / 670);
+}
+
+/*
+ * The list is drawn for a thumb; on a desk it is read with a mouse and the
+ * whole day should be in view rather than two stops at a time. A lower cap
+ * here, not a smaller pane: the cards still span the width, they are simply
+ * not finger-sized.
+ */
+.phone-desk-col-list {
+  flex: 1 1 0;
+  --phone-width: min(100cqw, 470px);
+}
+
+.phone-desk-col-detail {
+  flex: 1 1 0;
+  overflow: hidden;
+  background: #fff;
+}
+
+/*
+ * The pane's own scroll is the one that moves, and the screen inside fills it.
+ * A definite height, not a minimum: the screens size themselves with `h-full`,
+ * and a percentage height resolves against the parent's height, which a
+ * `min-height` leaves as auto.
+ */
+.phone-desk .phone-desk-col > * {
+  height: 100%;
+}
+
+/*
+ * A screen that is a form rather than a list — the new request, the assistant —
+ * keeps a readable column in the middle of a wide pane instead of spreading a
+ * single field across a monitor.
+ */
+.phone-desk-center,
+.phone-desk-column {
+  width: 100%;
+  max-width: 660px;
+  margin-inline: auto;
+}
+
+/*
+ * A readable column that still gets the pane's whole height, for a screen that
+ * arranges itself — the new request puts its question in the middle of the
+ * space and its controls along the bottom, and needs the space to do it.
+ */
+.phone-desk-column {
+  height: 100%;
+}
+
+/*
+ * Centred down the pane as well as across it.
+ *
+ * `safe center` rather than auto margins: the screens set their own top margins
+ * inline, which beat a stylesheet's `auto`. `safe` is what keeps a screen taller
+ * than the pane from having its top cut off — it falls back to the start and
+ * scrolls, which is what a phone does anyway.
+ */
+.phone-desk-center {
+  justify-content: safe center;
+}
+
+/* On a phone these fill their column; here they take their own height so there
+ * is something left over to centre them in. Two class names to keep the
+ * specificity in step with the pane rule above, which touches the same tree. */
+.phone-desk .phone-desk-center > * {
+  flex: 0 1 auto;
+}
+
+/*
+ * A sheet that is a screen of its own over a pane — the login. A pane caps
+ * `--eu` for what it usually holds (a list of cards), so a form inheriting it
+ * came out as full-width fields under type two sizes too small. Here the width
+ * and the unit come from one number, the way the phone column does it, so the
+ * form keeps the proportions it was drawn with.
+ */
+.phone-desk-sheet {
+  --phone-width: min(100cqw, 560px);
+  --eu: calc(var(--phone-width) / 670);
+  width: var(--phone-width);
+  margin-inline: auto;
+}
+
+/*
+ * The open request is shown whole, without a scrollbar: it is one screen about
+ * one visit, and hiding half of it below the fold is the thing a desk is
+ * supposed to fix. `zoom` rather than a transform, so the content still lays
+ * out to the pane's width — it only ever shrinks, never enlarges.
+ */
+.phone-desk-fit {
+  width: 100%;
+  /*
+   * The fit stops shrinking before the text stops reading, so on a short window
+   * the last of the card can still be past the fold. It scrolls there rather
+   * than being cut off — «Изменить время» is not optional.
+   */
+  overflow-y: auto;
+}
+
+/*
+ * The request screens ask for a whole viewport (`min-h-dvh`) because on a phone
+ * they are the whole viewport. Inside a pane that is a demand for height the
+ * pane does not have, and it would force the fit to shrink the content far
+ * below what it actually needs.
+ */
+.phone-desk-fit .min-h-dvh,
+.phone-desk-fit .min-h-screen {
+  min-height: 0;
 }
 
 @keyframes ai-reason-shimmer {
