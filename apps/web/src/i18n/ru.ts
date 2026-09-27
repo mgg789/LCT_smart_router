@@ -1151,7 +1151,7 @@ export const ru = {
   'figma-dashboard.PlanMetricsModal.f50242f50b': 'Объяснить с AI',
   'figma-dashboard.PlanMetricsModal.979b44ea5c': 'Оценка AI',
   'figma-dashboard.PlanMetricsModal.7cb144b02c':
-    'Текстовый разбор пока не подключён. Оценка дня остаётся прежней, без выдуманного текста.',
+    'Не удалось получить AI-разбор. Обычная оценка дня остаётся доступной.',
   'figma-dashboard.PlanMetricsModal.6ff3cf63b8': 'Как улучшить',
   'figma-dashboard.PlanMetricsModal.202a8a5212': 'System one выбирает политику и публикует её',
   'figma-dashboard.PlanMetricsModal.83de91dcc0': 'План уже оптимален',
@@ -1327,7 +1327,7 @@ export const ru = {
   'figma-dashboard.RequestDetails.3a42d2327c': 'Коротко',
   'figma-dashboard.RequestDetails.59589fe2a5': 'Подробнее',
   'figma-dashboard.RequestDetails.3025714c55':
-    'Текстовый разбор пока не подключён. Причины решения остаются обычными, без выдуманного текста.',
+    'Не удалось получить AI-разбор. Обычные причины решения остаются доступными.',
   'figma-dashboard.RequestDetails.8e70b73225': 'Как влияет',
   'figma-dashboard.RequestDetails.e2cf5d6461': 'Нет объяснения влияния.',
   'figma-dashboard.RequestDetails.62804d2068': 'Нет причин по этому выбору.',

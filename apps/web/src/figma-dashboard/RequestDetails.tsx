@@ -39,7 +39,6 @@ export function RequestDetails({
   engineer,
   explanation,
   token,
-  roster,
   motionOn,
   onClose,
   onOpenEngineer,
@@ -162,27 +161,7 @@ export function RequestDetails({
             largeOn={largeOn}
             motionOn={motionOn}
             token={token}
-            context={{
-              explanation,
-              roster: (roster ?? []).slice(0, 8),
-              request: request
-                ? {
-                    id: request.id,
-                    address: request.addressText,
-                    windowStartAt: request.windowStartAt,
-                    windowEndAt: request.windowEndAt,
-                    skill: request.requiredSkill,
-                    status: request.assignmentState,
-                  }
-                : null,
-              engineer: engineer
-                ? {
-                    name: engineer.displayName,
-                    skills: engineer.skills,
-                    transport: engineer.transportType,
-                  }
-                : null,
-            }}
+            requestId={request?.id ?? null}
             explanation={explanation}
             durationLabel={request ? formatDurationMin(request.serviceDurationSec) : '—'}
             onToggleAi={() => setAiOn((value) => !value)}
@@ -224,7 +203,7 @@ function RequestReasons({
   largeOn,
   motionOn,
   token,
-  context,
+  requestId,
   explanation,
   durationLabel,
   onToggleAi,
@@ -235,7 +214,7 @@ function RequestReasons({
   largeOn: boolean;
   motionOn: boolean;
   token: string | null;
-  context: unknown;
+  requestId: string | null;
   explanation: CaseExplanation | null;
   durationLabel: string;
   onToggleAi: () => void;
@@ -243,10 +222,9 @@ function RequestReasons({
   disabled?: boolean;
 }) {
   const { text: aiText, ready: aiReady } = useAiExplanation({
-    enabled: aiOn,
+    enabled: aiOn && requestId !== null,
     token,
-    kind: 'reasons',
-    context,
+    target: { scope: 'request', requestId: requestId ?? '' },
   });
   return (
     <div className="mt-[16px]">
