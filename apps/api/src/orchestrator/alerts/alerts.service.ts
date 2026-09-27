@@ -22,6 +22,7 @@ import {
   UnitOfWork,
 } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
+import { readManualState, writeManualState } from '../../routing/router-gateway/manual-state';
 import { RouterClient } from '../../routing/router-gateway/router-client.port';
 import { MiniAiService } from '../ai/mini-ai.service';
 import {
@@ -709,16 +710,6 @@ export class AlertsService {
           'VERSION_CONFLICT',
           'Этот план уже построен с приоритетом другой заявки. Подтвердите замену приоритета.',
         );
-      await context.tx.controlState.updateMany({
-        where: { id: 'singleton', mode: 'manual' },
-        data: {
-          mode: 'auto',
-          frozenPlanId: null,
-          changedAt: BigInt(context.now),
-          changedBy: context.actor.id,
-          modeVersion: { increment: 1 },
-        },
-      });
       const value = { requestId, version: context.operationId };
       await context.tx.appState.upsert({
         where: { key: requestPriorityKey(alert.workDate) },
@@ -922,21 +913,6 @@ export class AlertsService {
     if (input.action === 'restore_auto') {
       if (!this.router.isConfigured())
         throw SysError.notConfigured('Router automatic plan restoration');
-      const publication = await context.tx.routingCurrent.findUnique({
-        where: { id: 'singleton' },
-        include: { snapshot: true },
-      });
-      const candidate =
-        publication &&
-        (await context.tx.routerResult.findFirst({
-          where: { inputHash: publication.snapshot.inputHash, status: 'ready' },
-          orderBy: { receivedAt: 'desc' },
-        }));
-      if (!candidate)
-        throw new SysError(
-          'VALIDATION_FAILED',
-          'No current automatic result is available; retry when Router is ready',
-        );
       await context.tx.controlState.update({
         where: { id: 'singleton' },
         data: {
@@ -947,6 +923,25 @@ export class AlertsService {
           modeVersion: { increment: 1 },
         },
       });
+      const manual = await readManualState(context.tx);
+      await writeManualState(
+        context.tx,
+        {
+          ...manual,
+          version: manual.version + 1,
+          reason: null,
+          decisions: [],
+          acknowledgedConflicts: [],
+          resolution: null,
+        },
+        context.now,
+      );
+      await this.publisher.publishIfChanged(
+        context.tx,
+        context.now,
+        PUBLICATION_TRIGGERS.MANUAL_DECISIONS_CHANGED,
+        { force: true, businessTime: true },
+      );
       return;
     }
     if (input.action === 'skip_lunch' || input.action === 'keep_lunch') {

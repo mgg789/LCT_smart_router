@@ -1142,10 +1142,14 @@ export async function setLunchesEnabled(token: string, enabled: boolean): Promis
 }
 
 /** Switches the dispatch control mode through an idempotent backend operation. */
-export async function setDispatchMode(token: string, mode: 'auto' | 'manual'): Promise<void> {
+export async function setDispatchMode(
+  token: string,
+  mode: 'auto' | 'manual',
+  reason?: string,
+): Promise<void> {
   await requestJson('/api/v1/dispatch/mode', z.unknown(), token, {
     method: 'POST',
-    body: JSON.stringify({ operationId: crypto.randomUUID(), mode }),
+    body: JSON.stringify({ operationId: crypto.randomUUID(), mode, reason }),
   });
 }
 

@@ -1001,16 +1001,22 @@ export class McpToolsService {
           name: 'set_control_mode',
           title: 'Ручной или автоматический план',
           description:
-            'manual freezes automatic replanning (emergency). auto returns the plan to the solver. ' +
+            'manual enables dispatcher constraints while live routing continues; reason is mandatory. auto clears all manual decisions and replans. ' +
             'Call review_action first. If the verdict is risk, wait for the dispatcher.',
           inputSchema: {
             type: 'object',
-            properties: { mode: { type: 'string', enum: ['auto', 'manual'] } },
+            properties: {
+              mode: { type: 'string', enum: ['auto', 'manual'] },
+              reason: { type: 'string', description: 'Dispatcher reason, required for manual' },
+            },
             required: ['mode'],
             additionalProperties: false,
           },
         },
-        z.object({ mode: z.enum(['auto', 'manual']) }),
+        z.object({
+          mode: z.enum(['auto', 'manual']),
+          reason: z.string().trim().min(1).max(2000).optional(),
+        }),
         async (args, actor) => {
           const operationId = randomUUID();
           const outcome = await this.operations.execute(
@@ -1018,11 +1024,11 @@ export class McpToolsService {
               operationId,
               actor,
               action: `control.${args.mode}`,
-              payload: { operationId, mode: args.mode },
+              payload: { operationId, mode: args.mode, reason: args.reason },
             },
             async (context) =>
               args.mode === 'manual'
-                ? this.control.enterManual(context)
+                ? this.control.enterManual(context, args.reason)
                 : this.control.returnToAuto(context),
           );
           return { control: outcome.result };

@@ -73,6 +73,9 @@ class Request(Record):
     work_category: Literal["emergency", "connection", "service"] | None = None
     received_at: Seconds | None = None
     dispatcher_priority: bool = False
+    manual_engineer_id: str | None = Field(default=None, exclude_if=lambda value: value is None)
+    manual_unassigned: bool = Field(default=False, exclude_if=lambda value: not value)
+    manual_window: bool = Field(default=False, exclude_if=lambda value: not value)
     required_skill: Skill
     required_transport: Transport | None
     required_equipment: EquipmentType | None = None
@@ -112,6 +115,8 @@ class Engineer(Record):
     # Legacy walking profiles historically used the metro composite. New source data
     # can explicitly prohibit that without changing the physical transport identity.
     transit_eligible: bool = True
+    manual_shift: bool = Field(default=False, exclude_if=lambda value: not value)
+    manual_lunch: bool = Field(default=False, exclude_if=lambda value: not value)
     shift_start_at: Seconds
     shift_end_at: Seconds
     start_location: GeoPoint
@@ -212,6 +217,7 @@ class RouterTaskSnapshot(Record):
     pending_equipment_handoffs: list["PendingEquipmentHandoff"] = Field(default_factory=list)
     depots: list["Depot"] = Field(default_factory=list, exclude_if=lambda value: not value)
     pending_equipment_logistics: list["PendingEquipmentLogistics"] = Field(default_factory=list, exclude_if=lambda value: not value)
+    manual_decisions: list["ManualDecision"] = Field(default_factory=list, exclude_if=lambda value: not value)
 
     @model_validator(mode="after")
     def check_identity(self) -> Self:
@@ -242,6 +248,26 @@ class RouterTaskSnapshot(Record):
         ):
             raise ValueError("invalid pending handoff")
         return self
+
+
+class ManualDecision(Record):
+    """Dispatcher constraint, resolved jointly by Router without mutating source input."""
+
+    id: str = Field(min_length=1)
+    kind: Literal["assignment", "window", "lunch", "shift"]
+    target_id: str = Field(min_length=1)
+    priority: int = Field(ge=0)
+    engineer_id: str | None = None
+    start_at: Seconds | None = None
+    end_at: Seconds | None = None
+
+
+class ManualResolution(Record):
+    """Audit outcome for the current main plan; absent when no active directives exist."""
+
+    accepted_ids: list[str]
+    rejected_ids: list[str]
+    conflict_ids: list[str]
 
 
 class Depot(Record):
@@ -492,6 +518,7 @@ class Plan(Record):
     assignments: list[Assignment]
     summary: PlanMetrics
     alerts: list[PlanningAlert]
+    manual_resolution: ManualResolution | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class CandidateEvidence(Record):

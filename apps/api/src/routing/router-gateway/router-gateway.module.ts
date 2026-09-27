@@ -6,6 +6,7 @@ import { PrismaService } from '../../persistence';
 import { AppliedPlanService } from './applied-plan.service';
 import { ControlStateService } from './control-state.service';
 import { HttpRouterClient } from './http-router-client';
+import { ManualDecisionsService } from './manual-decisions.service';
 import { ManualPlanService } from './manual-plan.service';
 import { PlanRestoreService } from './plan-restore.service';
 import { ResultAcceptanceService } from './result-acceptance.service';
@@ -40,6 +41,7 @@ import { RouterResultCoordinator } from './router-result-coordinator';
     AppliedPlanService,
     ControlStateService,
     ManualPlanService,
+    ManualDecisionsService,
     PlanRestoreService,
     ResultAcceptanceService,
     {
@@ -65,6 +67,7 @@ import { RouterResultCoordinator } from './router-result-coordinator';
     AppliedPlanService,
     ControlStateService,
     ManualPlanService,
+    ManualDecisionsService,
     PlanRestoreService,
     ResultAcceptanceService,
     RouterResultCoordinator,

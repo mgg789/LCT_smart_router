@@ -145,7 +145,7 @@ class RouteEvaluator:
             start = max(clock + road.duration_sec, request.ready_at)
             clock = start + request.service_duration_sec
             margin = request.window_end_at - clock
-            window_tolerance = 0 if self.strict else max(
+            window_tolerance = 0 if self.strict or request.manual_window else max(
                 self.tolerance,
                 TERMINAL_WINDOW_LATENESS_TOLERANCE_SEC if position == len(jobs) - 1 else 0,
             )
@@ -245,7 +245,12 @@ class RouteEvaluator:
             "workload_spread": max(loads, default=0) - min(loads, default=0),
         }
         policy = self.snapshot.policy.model_copy(update={"policy_id": policy_id})
-        return tuple(values[c] for c in compile_policy(policy).ordered_criteria)
+        result = tuple(values[c] for c in compile_policy(policy).ordered_criteria)
+        forced = [r for r in self.requests.values() if r.manual_engineer_id is not None]
+        if forced:
+            assigned = {job: engineer.engineer_id for engineer, state in zip(self.engineers, states) for job in state.jobs}
+            return (sum(assigned.get(r.request_id) != r.manual_engineer_id for r in forced), *result)
+        return result
 
     def materialize(self, states: list[RouteState]) -> Plan | None:
         """Build and independently validate routes using the canonical scheduler."""
@@ -349,7 +354,7 @@ def improve_routes(
                     if prioritize_lateness:
                         # Retain safety-first seeds while each preset explores its
                         # own primary resource goal inside the same feasibility bounds.
-                        coverage_end = compile_policy(snapshot.policy.model_copy(update={"policy_id": objective})).ordered_criteria.index("missed_optional_lunches") + 1
+                        coverage_end = compile_policy(snapshot.policy.model_copy(update={"policy_id": objective})).ordered_criteria.index("missed_optional_lunches") + 1 + int(any(r.manual_engineer_id is not None for r in snapshot.requests))
                         key = (*key[:coverage_end], sum(state.lateness for state in states), *key[coverage_end:])
                     if best is None or key < best[0]:
                         best = (key, i, candidate)
@@ -522,7 +527,7 @@ def improve_routes(
                 plans.append(plan)
     # A large combined task must retain good independent regional candidates.
     # Keep the global portfolio too: non-additive workload goals can prefer it.
-    if construct and len(regions) > 1 and None not in regions and all(r.region in regions for r in requests) and not snapshot.pending_equipment_handoffs and not snapshot.pending_equipment_logistics:
+    if construct and not any(r.manual_engineer_id for r in requests) and len(regions) > 1 and None not in regions and all(r.region in regions for r in requests) and not snapshot.pending_equipment_handoffs and not snapshot.pending_equipment_logistics:
         routes = []
         for region in sorted(region for region in regions if region is not None):
             engineers = [e for e in snapshot.engineers if e.region == region]

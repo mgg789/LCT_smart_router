@@ -10,6 +10,7 @@ import {
   type NotificationTone,
 } from './fixtures';
 import { policyLabel } from './fromSnapshot';
+import { openManualPlanning } from './ManualPlanning';
 import { FigmaIcon, FigmaText } from './primitives';
 import { TintIcon } from './TintIcon';
 
@@ -257,6 +258,13 @@ export function UserMenu({
             style={{ boxShadow: '0 16px 36px rgba(39, 41, 48, 0.16)' }}
           >
             <div className="flex flex-col gap-[8px]">
+              <MenuAction
+                motionOn={motionOn}
+                tone="bee"
+                onClick={() => openManualPlanning('priorities')}
+              >
+                Приоритеты
+              </MenuAction>
               <MenuAction motionOn={motionOn} tone="ink" onClick={onSettings}>
                 Настройки
               </MenuAction>
@@ -415,6 +423,7 @@ export function PolicyControl({
   onEquipmentTransfersToggle,
   onStrictTimeWindowsToggle,
   onManualMode,
+  manualMode = false,
 }: {
   open: boolean;
   policyLabel: string;
@@ -437,6 +446,7 @@ export function PolicyControl({
   onEquipmentTransfersToggle: () => void;
   onStrictTimeWindowsToggle: () => void;
   onManualMode: () => void;
+  manualMode?: boolean;
 }) {
   const options =
     policies.length > 0
@@ -588,7 +598,7 @@ export function PolicyControl({
           style={{ top: 561 + extra }}
         >
           <span className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
-            Ручное управление
+            {manualMode ? 'Автоматическое управление' : 'Ручное управление'}
           </span>
         </button>
       </div>

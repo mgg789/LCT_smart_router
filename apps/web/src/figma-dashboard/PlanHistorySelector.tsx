@@ -12,6 +12,8 @@ const restoreReasons: Readonly<Record<string, string>> = {
   ROUTER_CONTEXT_UNAVAILABLE:
     'Не удалось проверить актуальные условия маршрутов. Попробуйте позже.',
   ROUTER_CONTEXT_MUTATION_PENDING: 'Условия маршрутов сейчас обновляются. Дождитесь завершения.',
+  MANUAL_DECISIONS_ACTIVE:
+    'Сначала сбросьте ручные решения: прошлый план не учитывает текущие приоритеты.',
   EXECUTION_FACTS_CHANGED:
     'После построения предыдущего плана изменились фактические статусы выполнения заявок.',
   SNAPSHOT_UNAVAILABLE: 'Исходные данные предыдущего плана недоступны для проверки.',

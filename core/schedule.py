@@ -163,6 +163,7 @@ def job_completion_limit(
     shift recovery allowance.  Its customer-window allowance is checked
     separately and is likewise terminal-only.
     """
+    strict = strict or engineer.manual_shift
     limit = engineer.shift_end_at + (TERMINAL_SHIFT_OVERTIME_SEC if terminal and not strict else 0)
     horizon = snapshot.horizon_end_at + (TERMINAL_SHIFT_OVERTIME_SEC if terminal and not strict else 0)
     return min(limit, horizon)
@@ -178,7 +179,9 @@ def terminal_release_at(snapshot: RouterTaskSnapshot, engineer: Engineer) -> int
 def _matches_static_constraints(engineer: Engineer, request: Request) -> bool:
     """Check assignment compatibility independently from the time release rule."""
     return (
-        (request.region is None or engineer.region is None or request.region == engineer.region)
+        not request.manual_unassigned
+        and (request.manual_engineer_id is None or request.manual_engineer_id == engineer.engineer_id)
+        and (request.manual_engineer_id == engineer.engineer_id or request.region is None or engineer.region is None or request.region == engineer.region)
         and request.required_skill in engineer.skills
         and transport_matches(request.required_transport, engineer)
         and (
@@ -191,7 +194,9 @@ def _matches_static_constraints(engineer: Engineer, request: Request) -> bool:
 def _matches_non_equipment_constraints(engineer: Engineer, request: Request) -> bool:
     """Keep job compatibility distinct from inventory, which is time-dependent."""
     return (
-        (request.region is None or engineer.region is None or request.region == engineer.region)
+        not request.manual_unassigned
+        and (request.manual_engineer_id is None or request.manual_engineer_id == engineer.engineer_id)
+        and (request.manual_engineer_id == engineer.engineer_id or request.region is None or engineer.region is None or request.region == engineer.region)
         and request.required_skill in engineer.skills
         and transport_matches(request.required_transport, engineer)
     )
@@ -445,7 +450,7 @@ def schedule_steps(
         # The customer window covers the end of the normative work, not only arrival.
         # This is intentionally the same predicate used by the OR-Tools seed and the
         # fast neighbourhood evaluator.
-        window_tolerance = 0 if strict else max(
+        window_tolerance = 0 if strict or request.manual_window else max(
             tolerance,
             TERMINAL_WINDOW_LATENESS_TOLERANCE_SEC if step_index == len(steps) - 1 else 0,
         )
@@ -861,8 +866,8 @@ def baseline(snapshot: RouterTaskSnapshot, travel: TravelProvider, *, prioritize
     orders: dict[str, list[str]] = {e.engineer_id: [] for e in engineers}
     deferred: list[Request] = []
     requests = sorted(snapshot.requests, key=lambda r: (
-        (r.priority_tier, r.ready_at, r.arrival_order)
-        if prioritized else (r.arrival_order,)
+        (int(r.manual_engineer_id is None), r.priority_tier, r.ready_at, r.arrival_order)
+        if prioritized else (int(r.manual_engineer_id is None), r.arrival_order)
     ))
     for request in requests:
         candidates = []

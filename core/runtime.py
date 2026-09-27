@@ -56,6 +56,8 @@ GraphInput = RoadGraph | OSRMTravel | ImportedRoadOverlay | TravelSource
 
 def _regional_snapshots(snapshot: RouterTaskSnapshot) -> dict[str, RouterTaskSnapshot]:
     """Partition disconnected regional work; legacy rows remain in one default pool."""
+    if snapshot.manual_decisions:
+        return {"__manual__": snapshot}
     labels = sorted({item.region or "__default__" for item in [*snapshot.requests, *snapshot.engineers]})
     return {
         label: snapshot.model_copy(update={
@@ -270,7 +272,7 @@ def calculate(
         output = solve(snapshot, provider, settings, memory, context_version)
         effective_snapshot = output.memory.snapshot
         main_evidence = build_plan_evidence(effective_snapshot, output.main, provider)
-        baseline_evidence = build_plan_evidence(effective_snapshot, output.baseline, provider)
+        baseline_evidence = build_plan_evidence(apply_system_policy(snapshot, settings) if snapshot.manual_decisions else effective_snapshot, output.baseline, provider)
     except Exception as exc:
         return RouterResult(
             status="error",

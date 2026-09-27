@@ -94,6 +94,16 @@
           "title": "Lunch Taken",
           "type": "boolean"
         },
+        "manual_lunch": {
+          "default": false,
+          "title": "Manual Lunch",
+          "type": "boolean"
+        },
+        "manual_shift": {
+          "default": false,
+          "title": "Manual Shift",
+          "type": "boolean"
+        },
         "region": {
           "anyOf": [
             {
@@ -348,6 +358,83 @@
       "title": "LunchInput",
       "type": "object"
     },
+    "ManualDecision": {
+      "additionalProperties": false,
+      "description": "Dispatcher constraint, resolved jointly by Router without mutating source input.",
+      "properties": {
+        "end_at": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End At"
+        },
+        "engineer_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Engineer Id"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "assignment",
+            "window",
+            "lunch",
+            "shift"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "priority": {
+          "minimum": 0,
+          "title": "Priority",
+          "type": "integer"
+        },
+        "start_at": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start At"
+        },
+        "target_id": {
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "target_id",
+        "priority"
+      ],
+      "title": "ManualDecision",
+      "type": "object"
+    },
     "PendingEquipmentHandoff": {
       "additionalProperties": false,
       "description": "Sys-confirmed meeting retained as a frozen future execution fact.",
@@ -483,6 +570,28 @@
         },
         "location": {
           "$ref": "#/$defs/GeoPoint"
+        },
+        "manual_engineer_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Manual Engineer Id"
+        },
+        "manual_unassigned": {
+          "default": false,
+          "title": "Manual Unassigned",
+          "type": "boolean"
+        },
+        "manual_window": {
+          "default": false,
+          "title": "Manual Window",
+          "type": "boolean"
         },
         "priority": {
           "enum": [
@@ -666,6 +775,13 @@
       "minimum": 0,
       "title": "Horizon Start At",
       "type": "integer"
+    },
+    "manual_decisions": {
+      "items": {
+        "$ref": "#/$defs/ManualDecision"
+      },
+      "title": "Manual Decisions",
+      "type": "array"
     },
     "pending_equipment_handoffs": {
       "items": {

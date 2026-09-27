@@ -5,6 +5,7 @@ import { AlertsService } from '../../orchestrator/alerts';
 import { businessNow } from '../../orchestrator/live/business-clock';
 import type { RouterTaskSnapshot } from '../mount-data-eng';
 import { AppliedPlanService } from './applied-plan.service';
+import { readManualState } from './manual-state';
 import { ResultAcceptanceService } from './result-acceptance.service';
 
 const CONTEXT_MUTATION_ACTIONS = [
@@ -153,6 +154,9 @@ export class PlanRestoreService {
     previous: NonNullable<Awaited<ReturnType<AppliedPlanService['previous']>>>,
     activeContextVersion: string | null,
   ): Promise<{ eligible: boolean; reason: string | null }> {
+    const control = await tx.controlState.findUnique({ where: { id: 'singleton' } });
+    if (control?.mode === 'manual' && (await readManualState(tx)).decisions.length)
+      return { eligible: false, reason: 'MANUAL_DECISIONS_ACTIVE' };
     if (
       [current, previous].some((plan) =>
         plan.routes.some((route) => route.stops.some((stop) => stop.logistics !== null)),

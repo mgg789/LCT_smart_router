@@ -7,6 +7,7 @@ import type { CaseExplanation } from '../lib/explanations';
 import { formatDurationMin } from '../lib/time';
 import { Copyable } from './Copyable';
 import { requestUrgency } from './fromSnapshot';
+import { ManualRequestControls } from './ManualPlanning';
 import { FigmaText } from './primitives';
 import { requestEquipmentLabel } from './requestDetail';
 import { shortRequestId } from './requestsTable';
@@ -146,6 +147,7 @@ export function RequestDetails({
         ) : (
           <div className="h-[36px]" />
         )}
+        {mode === 'request' && request ? <ManualRequestControls requestId={request.id} /> : null}
         {mode === 'request' ? (
           <RequestReasons
             aiOn={aiOn}

@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { Body, Controller, Get, Logger, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Logger, Param, Post, Put, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { z } from 'zod';
 import { type Actor, CurrentActor, Roles } from '../auth';
 import { SysError } from '../common/errors';
 import { Clock } from '../common/time';
@@ -42,9 +43,14 @@ import {
   ResultAcceptanceService,
   RouterClient,
 } from '../routing/router-gateway';
+import { ManualDecisionsService } from '../routing/router-gateway/manual-decisions.service';
+import { manualStateView, readManualState } from '../routing/router-gateway/manual-state';
 import { visibleRouterPhase } from '../routing/router-gateway/router-phase';
 import { type AiSettingsDto, aiSettingsSchema } from './dto/ai.dto';
 import {
+  manualDeleteSchema,
+  manualEditSchema,
+  manualOrderSchema,
   type ReassignDto,
   type ReorderDto,
   reassignSchema,
@@ -93,6 +99,7 @@ export class DispatchController {
     private readonly plans: AppliedPlanService,
     private readonly control: ControlStateService,
     private readonly manual: ManualPlanService,
+    private readonly manualDecisions: ManualDecisionsService,
     private readonly acceptance: ResultAcceptanceService,
     private readonly router: RouterClient,
     private readonly operations: OperationsService,
@@ -649,10 +656,54 @@ export class DispatchController {
       { operationId: dto.operationId, actor, action: `control.${dto.mode}`, payload: dto },
       async (context) =>
         dto.mode === 'manual'
-          ? this.control.enterManual(context)
+          ? this.control.enterManual(context, dto.reason)
           : this.control.returnToAuto(context),
     );
     return { control: outcome.result };
+  }
+
+  /** Current durable constraints and latest solver conflict witnesses. */
+  @Get('manual')
+  async manualState() {
+    return this.uow.run(async (tx) => manualStateView(await readManualState(tx)));
+  }
+
+  @Post('manual/decisions')
+  async editManual(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(manualEditSchema)) dto: z.infer<typeof manualEditSchema>,
+  ) {
+    const { operationId, expectedVersion, ...input } = dto;
+    const outcome = await this.operations.execute(
+      { operationId, actor, action: 'manual.edit', payload: dto },
+      (context) => this.manualDecisions.put(context, expectedVersion, input),
+    );
+    return outcome.result;
+  }
+
+  @Post('manual/priorities')
+  async orderManual(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(manualOrderSchema)) dto: z.infer<typeof manualOrderSchema>,
+  ) {
+    const outcome = await this.operations.execute(
+      { operationId: dto.operationId, actor, action: 'manual.priorities', payload: dto },
+      (context) => this.manualDecisions.reorder(context, dto.expectedVersion, dto.decisionIds),
+    );
+    return outcome.result;
+  }
+
+  @Delete('manual/decisions/:id')
+  async deleteManual(
+    @CurrentActor() actor: Actor,
+    @Param('id') id: string,
+    @Body(zodBody(manualDeleteSchema)) dto: z.infer<typeof manualDeleteSchema>,
+  ) {
+    const outcome = await this.operations.execute(
+      { operationId: dto.operationId, actor, action: 'manual.delete', payload: { ...dto, id } },
+      (context) => this.manualDecisions.remove(context, dto.expectedVersion, id),
+    );
+    return outcome.result;
   }
 
   @Post('plan/reassign')

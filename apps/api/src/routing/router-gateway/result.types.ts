@@ -212,6 +212,13 @@ const planningAlert = z.object({
 
 export const planSchema = z.object({
   is_usable: z.boolean(),
+  manual_resolution: z
+    .object({
+      accepted_ids: z.array(z.string()),
+      rejected_ids: z.array(z.string()),
+      conflict_ids: z.array(z.string()),
+    })
+    .optional(),
   metric_scope: z.literal('snapshot_remaining'),
   routes: z.array(engineerRoute).default([]),
   /** Exactly one outcome per request of the snapshot. */

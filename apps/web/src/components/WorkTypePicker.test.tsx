@@ -35,9 +35,9 @@ it('marks the network emergency red without confusing an emergency skill with it
       />,
     );
   expect(render('outage')).toContain('aria-pressed="true"');
-  expect(render('outage')).toContain('100 минут работы');
+  expect(render('outage')).toContain('Направим первую свободную бригаду');
   expect(render('no_link')).toContain('aria-pressed="false"');
-  expect(render('no_link')).not.toContain('100 минут работы');
+  expect(render('no_link')).not.toContain('Направим первую свободную бригаду');
   expect(render('no_link')).toContain('Ремонт / Дозаказ');
   expect(
     renderToStaticMarkup(<WorkTypeLabel category="emergency">Авария</WorkTypeLabel>),

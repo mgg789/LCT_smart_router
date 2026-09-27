@@ -7,6 +7,7 @@ import { NotificationsService } from '../../notifications';
 import type { Tx } from '../../persistence';
 import { lockControlState, lockRoutingCurrent, PrismaService, UnitOfWork } from '../../persistence';
 import { AppliedPlanService } from './applied-plan.service';
+import { manualNeedsReview, readManualState, writeManualState } from './manual-state';
 import { planSchema, type RouterPlan, type RouterResult, routerResultSchema } from './result.types';
 
 export interface AcceptanceOutcome {
@@ -156,9 +157,6 @@ export class ResultAcceptanceService {
       await lockRoutingCurrent(tx);
 
       const control = await tx.controlState.findUniqueOrThrow({ where: { id: 'singleton' } });
-      if (control.mode === 'manual') {
-        return this.reject(tx, result, 'MODE_MANUAL', 'Emergency manual mode is on');
-      }
 
       const current = await tx.routingCurrent.findUnique({
         where: { id: 'singleton' },
@@ -202,6 +200,52 @@ export class ResultAcceptanceService {
           'RESULT_NOT_APPLICABLE',
           'The main plan is not usable and cannot become the working plan',
         );
+      }
+
+      if (control.mode === 'manual') {
+        const state = await readManualState(tx);
+        const input = z
+          .object({ manual_decisions: z.array(z.object({ id: z.string() })).default([]) })
+          .parse(JSON.parse(current.snapshot.payload));
+        const ids = input.manual_decisions.map((item) => item.id);
+        const resolution = result.main.manual_resolution;
+        if (
+          ids.length &&
+          (!resolution ||
+            new Set([...resolution.accepted_ids, ...resolution.rejected_ids]).size !== ids.length ||
+            resolution.accepted_ids.length + resolution.rejected_ids.length !== ids.length ||
+            resolution.rejected_ids.some((id) => !resolution.conflict_ids.includes(id)) ||
+            [...resolution.accepted_ids, ...resolution.rejected_ids].some(
+              (id) => !ids.includes(id),
+            ) ||
+            resolution.conflict_ids.some((id) => !ids.includes(id)))
+        ) {
+          return this.reject(
+            tx,
+            result,
+            'RESULT_NOT_APPLICABLE',
+            'Manual resolution does not cover current decisions',
+          );
+        }
+        if (resolution) {
+          const next = {
+            ...state,
+            resolution: {
+              acceptedIds: resolution.accepted_ids,
+              rejectedIds: resolution.rejected_ids,
+              conflictIds: resolution.conflict_ids,
+              inputHash: current.snapshot.inputHash,
+            },
+          };
+          await writeManualState(tx, next, this.clock.nowSeconds());
+          if (manualNeedsReview(next))
+            return this.reject(
+              tx,
+              result,
+              'MODE_MANUAL',
+              'Ручные решения конфликтуют. Расставьте приоритеты.',
+            );
+        }
       }
 
       const alreadyApplied = await tx.routerResult.findUnique({

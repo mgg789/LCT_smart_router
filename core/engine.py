@@ -214,6 +214,9 @@ def apply_system_policy(
         return snapshot
     engineers = []
     for engineer in snapshot.engineers:
+        if engineer.manual_lunch:
+            engineers.append(engineer)
+            continue
         lunch = engineer.lunch.model_copy(
             update={
                 "enabled": False,
@@ -465,6 +468,8 @@ def _search(
             or terminal_eligible(snapshot, engineer, request)
         ]
         routing.VehicleVar(index).SetValues([-1] + allowed)
+        if request.manual_engineer_id is not None:
+            routing.ActiveVar(index).SetValue(1)
         lower = max(0, request.ready_at - origin)
         # Time is the service start cumul.  Bound it by completion rather than arrival:
         # scheduling a 30-minute job at 10:18 for a window ending 10:20 must not pass
@@ -472,17 +477,17 @@ def _search(
         normal_upper = min(
             horizon,
             request.window_end_at
-            + settings.window_lateness_tolerance_sec
+            + (0 if request.manual_window else settings.window_lateness_tolerance_sec)
             - request.service_duration_sec
             - origin,
         )
         terminal_upper = min(
             time_horizon,
             request.window_end_at
-            + max(
+            + (0 if request.manual_window else max(
                 settings.window_lateness_tolerance_sec,
                 0 if settings.strict_time_windows else TERMINAL_WINDOW_LATENESS_TOLERANCE_SEC,
-            )
+            ))
             - request.service_duration_sec
             - origin,
         )
@@ -503,7 +508,7 @@ def _search(
                 solver.Add(
                     time_dimension.CumulVar(index) + request.service_duration_sec
                     <= normal_limit
-                    + (0 if settings.strict_time_windows else TERMINAL_SHIFT_OVERTIME_SEC) * next_is_end
+                    + (0 if settings.strict_time_windows or engineer.manual_shift else TERMINAL_SHIFT_OVERTIME_SEC) * next_is_end
                     + inactive_time_slack * (1 - on_vehicle)
                 )
                 solver.Add(
@@ -1140,6 +1145,9 @@ def solve(
     Covering first adds the fewest extra engineers that assign every remaining request.
     """
     settings = settings or SearchSettings()
+    if snapshot.manual_decisions:
+        from core.manual_planning import solve_manual
+        return solve_manual(snapshot, travel, settings, context_version)
     if snapshot.policy.policy_id == "covering":
         default_context_version = routing_context_version(travel, settings.technical())
         travel = configure_travel(travel, settings.technical(), snapshot.planning_as_of)

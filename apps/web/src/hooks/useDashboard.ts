@@ -15,7 +15,6 @@ import {
   loadPolicyComparison,
   loginDispatcher,
   markDispatchNoticeSeen,
-  reassignDispatchRequest,
   requestDispatcherLoginCode,
   resolveDispatchAlert,
   restartDemoStand,
@@ -35,6 +34,7 @@ import {
   verifyDispatcherLoginCode,
 } from '../api/client';
 import { type DispatchLiveView, loadDispatchLive, startLiveWorkday } from '../api/live';
+import { loadManualState, saveManualDecision } from '../api/manual';
 import type {
   AlertResolutionInput,
   CreateDispatchEngineerInput,
@@ -616,10 +616,6 @@ export function useDashboard() {
       setError(null);
       pushEvent(`${reason}. Router пересчитывает план…`);
       try {
-        if (previous.plan.mode === 'manual') {
-          await setDispatchMode(token, 'auto');
-          pushEvent('Для перестроения включён авторежим — иначе Router не применит новый план.');
-        }
         if (previous.routerSettings && !sameRouterSettings(previous.routerSettings, nextSettings)) {
           const updated = await updateRouterTechnicalSettings(token, {
             ...nextSettings,
@@ -831,7 +827,7 @@ export function useDashboard() {
   }, [token, planHistory, refresh, pushEvent, reportFailure]);
 
   const setMode = useCallback(
-    async (mode: 'auto' | 'manual') => {
+    async (mode: 'auto' | 'manual', reason?: string) => {
       if (!token || sourceRef.current !== 'live') {
         return;
       }
@@ -839,7 +835,7 @@ export function useDashboard() {
       const generation = readGeneration.current;
       setError(null);
       try {
-        await setDispatchMode(token, mode);
+        await setDispatchMode(token, mode, reason);
         if (generation !== readGeneration.current) return;
         await refresh();
         pushEvent(
@@ -1118,8 +1114,12 @@ export function useDashboard() {
       const engineer = snapshotRef.current?.engineers.find((item) => item.id === engineerId);
       return performEntityMutation(
         async (session) => {
-          await setDispatchMode(session, 'manual');
-          await reassignDispatchRequest(session, requestId, engineerId);
+          const manual = await loadManualState(session);
+          await saveManualDecision(session, manual.version, {
+            kind: 'assignment',
+            targetId: requestId,
+            engineerId,
+          });
         },
         `Заявка назначена инженеру ${engineer?.displayName ?? engineerId}.`,
       );

@@ -43,6 +43,7 @@ import {
   engineerProfilesFromSnapshot,
   isPlausibleEmail,
 } from './engineerRoster';
+import { ManualEngineerControls } from './ManualPlanning';
 import { FigmaIcon, FigmaText } from './primitives';
 import { TintIcon } from './TintIcon';
 import { TRANSPORT_ICONS } from './transport';
@@ -769,6 +770,9 @@ function EngineerDossier({
         ) : null}
       </div>
 
+      <div className="absolute right-[48px] top-[16px] z-20">
+        <ManualEngineerControls engineerId={engineer.id} />
+      </div>
       <div className="absolute bottom-[32px] left-[306px] right-[48px] top-[35px] flex flex-col">
         <FigmaText className="figma-nowrap font-murs text-[32px] tracking-[0.64px] text-figma-ink">
           {engineer.displayName}

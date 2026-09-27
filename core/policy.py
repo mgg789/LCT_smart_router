@@ -219,4 +219,9 @@ def policy_score(snapshot: RouterTaskSnapshot, plan: Plan) -> tuple[int, ...]:
     """Return the lexicographic score selected by the snapshot's compiled policy."""
     spec = compile_policy(snapshot.policy)
     values = criterion_values(snapshot, plan)
-    return tuple(values[criterion] for criterion in spec.ordered_criteria)
+    result = tuple(values[criterion] for criterion in spec.ordered_criteria)
+    forced = [r for r in snapshot.requests if r.manual_engineer_id is not None]
+    if forced:
+        assigned = {a.request_id: a.engineer_id for a in plan.assignments if a.status == "assigned"}
+        return (sum(assigned.get(r.request_id) != r.manual_engineer_id for r in forced), *result)
+    return result

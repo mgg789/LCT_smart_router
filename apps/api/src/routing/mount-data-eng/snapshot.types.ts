@@ -123,6 +123,15 @@ export interface RouterTaskSnapshot {
   readonly pending_equipment_handoffs?: Array<
     HandoffMetadata & { location: GeoPoint; meeting_at: number }
   >;
+  readonly manual_decisions?: {
+    id: string;
+    kind: 'assignment' | 'window' | 'lunch' | 'shift';
+    target_id: string;
+    priority: number;
+    engineer_id?: string | null;
+    start_at?: number;
+    end_at?: number;
+  }[];
   readonly schema_version: string;
   /** Moment of this publication of changed data. It does not tick on its own. */
   readonly planning_as_of: UnixSeconds;
