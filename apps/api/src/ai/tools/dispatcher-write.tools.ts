@@ -25,6 +25,8 @@ const genericAlertActionSchema = z.enum([
   'message',
   'remove_shift',
   'message_remove',
+  'make_passive',
+  'prioritize',
   'extend',
 ]);
 
@@ -500,7 +502,7 @@ export function buildDispatcherWriteTools(deps: DispatcherWriteToolDeps): readon
     description:
       'Resolve an alert with one of its allowed actions (add_engineer, keep_manual, ' +
       'restore_auto, skip_lunch, keep_lunch, message, remove_shift, message_remove, ' +
-      "extend). The server rejects any action not in that specific alert's own catalogue " +
+      "extend, make_passive, prioritize). Use prioritize only when the user explicitly says this request is definitely more important than other ordinary requests; emergencies always remain first. Replacing an existing request priority requires the dispatcher UI confirmation. The server rejects any action not in that specific alert's own catalogue " +
       '-- always read actions[] from list_alerts or get_situation first rather than ' +
       "assuming a code's usual set. For move_window or reschedule use their own tools.",
     schema: prepareResolveAlertSchema,

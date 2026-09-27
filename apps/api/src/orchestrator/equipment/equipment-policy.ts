@@ -39,18 +39,27 @@ export function morningIssueBasket(
   demand: EquipmentColumns,
   assignedCount: number,
   capacity: number,
+  transport?: string,
 ): EquipmentColumns | null {
   if (assignedCount === 0) return null;
-  return equipmentWithSpares(demand, capacity);
+  return equipmentWithSpares(demand, capacity, transport);
 }
 
 /** Demand has priority; spare units are added in stable type order only when they fit. */
-export function equipmentWithSpares(demand: EquipmentColumns, capacity: number): EquipmentColumns {
+export function equipmentWithSpares(
+  demand: EquipmentColumns,
+  capacity: number,
+  transport?: string,
+): EquipmentColumns {
   if (equipmentTotal(demand) > capacity)
     throw new Error('Assigned equipment exceeds carrying capacity');
   const result = { ...demand };
-  for (const key of columns) {
-    if (demand[key] > 0 && equipmentTotal(result) < capacity) result[key] += 1;
+  const rounds = transport === 'car' ? 2 : 1;
+  for (let round = 0; round < rounds; round += 1) {
+    for (const key of columns) {
+      if ((transport === 'car' || demand[key] > 0) && equipmentTotal(result) < capacity)
+        result[key] += 1;
+    }
   }
   return result;
 }

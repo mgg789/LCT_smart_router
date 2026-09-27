@@ -340,6 +340,15 @@ const shiftSchema = z.object({
   unresolvedCount: z.number().int().nonnegative(),
 });
 
+/** Reads the revision bound to confirmation when replacing another request's priority. */
+export function loadRequestPriority(token: string, workDate: string) {
+  return requestJson(
+    `/api/v1/dispatch/request-priority?workDate=${encodeURIComponent(workDate)}`,
+    z.object({ priority: z.object({ requestId: z.string(), version: z.string() }).nullable() }),
+    token,
+  );
+}
+
 /** Executes one allowed decision; the caller keeps operationId stable for retries. */
 export async function resolveDispatchAlert(
   token: string,

@@ -177,6 +177,8 @@ const alertActionSchema = z.enum([
   'message',
   'remove_shift',
   'message_remove',
+  'make_passive',
+  'prioritize',
   'extend',
 ]);
 

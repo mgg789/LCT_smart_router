@@ -1161,7 +1161,9 @@ export function useDashboard() {
     (id: string, input: AlertResolutionInput) =>
       performAlertOperation(
         (session) => resolveDispatchAlert(session, id, input),
-        input.action === 'move_window' || input.action === 'restore_auto'
+        input.action === 'move_window' ||
+          input.action === 'restore_auto' ||
+          input.action === 'prioritize'
           ? undefined
           : () => {
               const current = snapshotRef.current;

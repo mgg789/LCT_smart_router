@@ -349,6 +349,11 @@
           "title": "Arrival Order",
           "type": "integer"
         },
+        "dispatcher_priority": {
+          "default": false,
+          "title": "Dispatcher Priority",
+          "type": "boolean"
+        },
         "location": {
           "$ref": "#/$defs/GeoPoint"
         },

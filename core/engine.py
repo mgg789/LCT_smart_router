@@ -452,7 +452,8 @@ def _search(
     coverage_weight = len(engineers) + 1
     urgent_weight = (len(snapshot.requests) + 1) * coverage_weight
     connection_weight = (len(snapshot.requests) + 1) * (urgent_weight + coverage_weight)
-    emergency_weight = (len(snapshot.requests) + 1) * (connection_weight + urgent_weight + coverage_weight)
+    dispatcher_weight = (len(snapshot.requests) + 1) * (connection_weight + urgent_weight + coverage_weight)
+    emergency_weight = (len(snapshot.requests) + 1) * (dispatcher_weight + connection_weight + urgent_weight + coverage_weight)
     for request in snapshot.requests:
         index = manager.NodeToIndex(jobs[request.request_id])
         allowed = [
@@ -511,9 +512,11 @@ def _search(
                 )
             if stage == "window_start_delay" or (
                 stage == "emergency_response_delay" and request.category == "emergency"
+            ) or (stage == "dispatcher_response_delay" and request.dispatcher_priority
             ):
                 time_dimension.SetCumulVarSoftUpperBound(index, lower, 1)
         penalty = (coverage_weight + (urgent_weight if request.priority == "urgent" else 0)
+                   + (dispatcher_weight if request.dispatcher_priority else 0)
                    + (connection_weight if request.category == "connection" else 0)
                    + (emergency_weight if request.category == "emergency" else 0))
         routing.AddDisjunction([index], penalty if stage == "coverage" else 0)
@@ -566,6 +569,12 @@ def _search(
         solver.Max(time_dimension.CumulVar(manager.NodeToIndex(jobs[r.request_id]))
                    - max(0, r.ready_at - origin), 0) * active_jobs[r.request_id]
         for r in snapshot.requests if r.category == "emergency"
+    ])
+    dispatcher_drops = solver.Sum([1 - active_jobs[r.request_id] for r in snapshot.requests if r.dispatcher_priority])
+    dispatcher_delay = solver.Sum([
+        solver.Max(time_dimension.CumulVar(manager.NodeToIndex(jobs[r.request_id]))
+                   - max(0, r.ready_at - origin), 0) * active_jobs[r.request_id]
+        for r in snapshot.requests if r.dispatcher_priority
     ])
     all_drops = solver.Sum([1 - active for active in active_jobs.values()])
     missed_lunch = solver.Sum(
@@ -635,6 +644,8 @@ def _search(
         expressions = {
             "emergency_unassigned": emergency_drops,
             "emergency_response_delay": emergency_delay,
+            "dispatcher_unassigned": dispatcher_drops,
+            "dispatcher_response_delay": dispatcher_delay,
             "connection_unassigned": connection_drops,
             "urgent_unassigned": urgent_drops,
             "unassigned": all_drops,
@@ -650,6 +661,8 @@ def _search(
         for criterion in (
             "emergency_unassigned",
             "emergency_response_delay",
+            "dispatcher_unassigned",
+            "dispatcher_response_delay",
             "connection_unassigned",
             "urgent_unassigned",
             "unassigned",
@@ -1009,13 +1022,14 @@ def _cover_leftovers(
             else None
         )
         trial_score = score(_covering_search_snapshot(trial_snapshot), trial)
+        extra_index = compile_policy(_covering_search_snapshot(current_snapshot).policy).ordered_criteria.index("additional_engineers")
         # Preserve the senior coverage/lateness criteria exactly while reducing
         # the number of used extras.  Remaining impossible jobs therefore do
         # not block a safe reduction attempt.
         if (
             current_score is not None
-            and trial_score[:4] == current_score[:4]
-            and trial_score[4] <= current_score[4]
+            and trial_score[:extra_index] == current_score[:extra_index]
+            and trial_score[extra_index] <= current_score[extra_index]
         ):
             current_snapshot, current = trial_snapshot, trial
     final_used = {r.engineer_id for r in current.routes if r.metrics.assigned_count > 0}
@@ -1327,6 +1341,8 @@ def _solve_prepared(
         if stage
         not in ("total_lateness", "window_end_risk", "max_workload_ratio", "workload_spread")
     )
+    if stages and any(r.dispatcher_priority for r in search_snapshot.requests):
+        stages = (stages[0], "dispatcher_response_delay", *stages[1:])
     if stages and any(r.category == "emergency" for r in search_snapshot.requests):
         stages = (stages[0], "emergency_response_delay", *stages[1:])
     for i, stage in enumerate(stages):
@@ -1339,6 +1355,7 @@ def _solve_prepared(
             if stage
             in (
                 "emergency_response_delay",
+                "dispatcher_response_delay",
                 "additional_engineers",
                 "extra_assignments",
                 "travel_time",

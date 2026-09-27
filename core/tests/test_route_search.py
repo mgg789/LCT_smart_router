@@ -224,6 +224,7 @@ def test_regular_window_lateness_is_explicit_and_does_not_extend_shifts(
 @pytest.mark.parametrize("policy", ["fast", "compact", "sla", "balanced", "eco", "covering"])
 def test_search_score_matches_independent_public_metrics(snapshot, graph, policy):
     task = snapshot.model_copy(update={"policy": Policy(policy_id=policy, parameters={})})
+    task = task.model_copy(update={"requests": [r.model_copy(update={"dispatcher_priority": i == 0}) for i, r in enumerate(task.requests)]})
     travel = configure_travel(GraphTravel(graph), RouterTechnicalSettings(), task.planning_as_of)
     evaluator = RouteEvaluator(task, travel)
     routes = [fixed_order(task, task.engineers[0], [r.request_id for r in task.requests], travel)]
@@ -232,6 +233,7 @@ def test_search_score_matches_independent_public_metrics(snapshot, graph, policy
     public = policy_score(task, plan)
     offsets = {
         "emergency_unassigned": sum(r.category == "emergency" for r in task.requests),
+        "dispatcher_unassigned": sum(r.dispatcher_priority for r in task.requests),
         "connection_unassigned": sum(r.category == "connection" for r in task.requests),
         "urgent_unassigned": plan.summary.urgent_total,
         "unassigned": plan.summary.requests_total,

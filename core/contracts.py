@@ -72,6 +72,7 @@ class Request(Record):
     source_window_end_at: Seconds | None = None
     work_category: Literal["emergency", "connection", "service"] | None = None
     received_at: Seconds | None = None
+    dispatcher_priority: bool = False
     required_skill: Skill
     required_transport: Transport | None
     required_equipment: EquipmentType | None = None
@@ -81,6 +82,11 @@ class Request(Record):
     def category(self) -> str:
         """Explicit business tier; binary legacy tasks retain their urgent semantics."""
         return self.work_category or ("emergency" if self.priority == "urgent" else "service")
+
+    @property
+    def priority_tier(self) -> int:
+        """A dispatcher override sits below emergencies and above ordinary categories."""
+        return 0 if self.category == "emergency" else 1 if self.dispatcher_priority else 2 if self.category == "connection" else 3
 
     @property
     def ready_at(self) -> int:

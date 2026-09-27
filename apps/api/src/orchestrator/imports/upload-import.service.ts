@@ -503,7 +503,11 @@ function allocateUploadedEquipment(
     if (stock)
       result.set(
         engineer.externalId,
-        equipmentWithSpares(stock, equipmentCapacity(engineer.transportType, settings)),
+        equipmentWithSpares(
+          stock,
+          equipmentCapacity(engineer.transportType, settings),
+          engineer.transportType,
+        ),
       );
   }
   return result;

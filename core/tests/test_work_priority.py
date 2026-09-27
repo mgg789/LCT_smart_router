@@ -119,3 +119,23 @@ def test_connection_beats_urgent_repair_when_only_one_job_fits(snapshot, graph):
     assert [a.request_id for a in result.main.assignments if a.status == "assigned"] == [
         "connection-1"
     ]
+
+
+@pytest.mark.parametrize("policy", POLICIES)
+def test_dispatcher_override_follows_emergency_and_precedes_connection(snapshot, graph, policy):
+    task = task_with(snapshot, ["connection", "service", "emergency"])
+    task = task.model_copy(update={
+        "policy": task.policy.model_copy(update={"policy_id": policy}),
+        "requests": [task.requests[0], task.requests[1].model_copy(update={"dispatcher_priority": True}), task.requests[2]],
+    })
+    result = solve(task, GraphTravel(graph), SETTINGS)
+    jobs = sorted((s for r in result.main.routes for s in r.stops if s.kind == "job"), key=lambda s: s.start_at)
+    assert [s.request_id for s in jobs] == ["emergency-2", "service-1", "connection-0"]
+    validate_plan(task, result.main, GraphTravel(graph))
+
+
+def test_dispatcher_override_wins_limited_capacity_over_connection(snapshot, graph):
+    task = task_with(snapshot, ["connection", "service"], capacity=1800)
+    task = task.model_copy(update={"requests": [task.requests[0], task.requests[1].model_copy(update={"dispatcher_priority": True})]})
+    result = solve(task, GraphTravel(graph), SETTINGS)
+    assert [a.request_id for a in result.main.assignments if a.status == "assigned"] == ["service-1"]

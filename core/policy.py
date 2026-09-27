@@ -10,6 +10,8 @@ from core.contracts import Plan, Policy, RouterTaskSnapshot
 Criterion = Literal[
     "emergency_unassigned",
     "emergency_response_delay",
+    "dispatcher_unassigned",
+    "dispatcher_response_delay",
     "connection_unassigned",
     "urgent_unassigned",
     "unassigned",
@@ -27,6 +29,7 @@ Criterion = Literal[
     "workload_spread",
 ]
 SearchStage = Literal[
+    "dispatcher_response_delay",
     "emergency_response_delay",
     "coverage",
     "additional_engineers",
@@ -56,6 +59,8 @@ class PolicySpec:
 _COVERAGE: tuple[Criterion, ...] = (
     "emergency_unassigned",
     "emergency_response_delay",
+    "dispatcher_unassigned",
+    "dispatcher_response_delay",
     "connection_unassigned",
     "urgent_unassigned",
     "unassigned",
@@ -174,6 +179,9 @@ def criterion_values(snapshot: RouterTaskSnapshot, plan: Plan) -> dict[Criterion
             workloads.append((busy * 10000 + available - 1) // available)
     return {
         "emergency_unassigned": sum(requests[a.request_id].category == "emergency" for a in plan.assignments if a.status == "unassigned"),
+        "dispatcher_unassigned": sum(requests[a.request_id].dispatcher_priority for a in plan.assignments if a.status == "unassigned"),
+        "dispatcher_response_delay": sum(max(0, stop.start_at - max(snapshot.horizon_start_at, requests[stop.request_id].ready_at))
+            for stop in job_stops if requests[stop.request_id].dispatcher_priority),
         "connection_unassigned": sum(requests[a.request_id].category == "connection" for a in plan.assignments if a.status == "unassigned"),
         "emergency_response_delay": sum(max(0, stop.start_at - max(snapshot.horizon_start_at, requests[stop.request_id].ready_at))
             for stop in job_stops if requests[stop.request_id].category == "emergency"),

@@ -802,7 +802,7 @@ def baseline(snapshot: RouterTaskSnapshot, travel: TravelProvider, *, prioritize
     orders: dict[str, list[str]] = {e.engineer_id: [] for e in engineers}
     deferred: list[Request] = []
     requests = sorted(snapshot.requests, key=lambda r: (
-        ({"emergency": 0, "connection": 1, "service": 2}[r.category], r.ready_at, r.arrival_order)
+        (r.priority_tier, r.ready_at, r.arrival_order)
         if prioritized else (r.arrival_order,)
     ))
     for request in requests:
@@ -821,7 +821,7 @@ def baseline(snapshot: RouterTaskSnapshot, travel: TravelProvider, *, prioritize
             )
             if route is not None and not uses_terminal_overtime:
                 candidates.append((route, engineer, order))
-                if not prioritized or request.category != "emergency":
+                if not prioritized or (request.category != "emergency" and not request.dispatcher_priority):
                     break
         if candidates:
             route, engineer, order = min(candidates, key=lambda item: next(

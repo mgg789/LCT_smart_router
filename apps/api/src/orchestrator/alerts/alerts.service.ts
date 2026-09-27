@@ -30,6 +30,7 @@ import {
 } from '../facts/execution-timing-policy';
 import { businessNow } from '../live/business-clock';
 import { PERFORMANCE_ALERT_PREFIX, PerformanceService } from '../performance';
+import { readRequestPriority, requestPriorityKey } from '../policy/request-priority';
 import { requireWindowConfirmation } from '../requests/window-confirmation';
 import { DispatcherSettingsService } from '../settings/dispatcher-settings.service';
 import { buildAlertBrief } from './alert-brief';
@@ -59,6 +60,7 @@ const manualEvidenceSchema = z.object({
 
 export interface ResolveAlertInput {
   readonly action: AlertAction;
+  readonly expectedPriorityVersion?: string;
   readonly reason?: string;
   readonly minutes?: number;
   readonly windowStartAt?: number;
@@ -91,6 +93,11 @@ export class AlertsService {
     @Optional() private readonly dispatcherSettings?: DispatcherSettingsService,
     @Optional() private readonly performance?: PerformanceService,
   ) {}
+
+  /** Read the exact priority revision that the dispatcher must confirm before replacement. */
+  priority(workDate: string) {
+    return readRequestPriority(this.prisma, workDate);
+  }
 
   private readonly windowCache = new Map<
     string,
@@ -578,7 +585,11 @@ export class AlertsService {
       });
     }
     await this.applyAction(context, alert, input);
-    if (input.action === 'restore_auto' || input.action === 'move_window') {
+    if (
+      input.action === 'restore_auto' ||
+      input.action === 'move_window' ||
+      input.action === 'prioritize'
+    ) {
       // Saving a window or requesting AUTO is not proof of a feasible assignment.
       // Keep the blocker until a subsequent accepted plan confirms the outcome.
       const pending = await context.tx.alert.update({
@@ -679,6 +690,58 @@ export class AlertsService {
   ): Promise<void> {
     const requestId = alert.requestIds[0];
     const engineerId = input.engineerId ?? alert.engineerIds[0];
+    if (input.action === 'prioritize') {
+      if (!requestId || !alert.workDate)
+        throw SysError.validationFailed('This alert names no request day');
+      const request = await context.tx.request.findUnique({ where: { id: requestId } });
+      if (request?.lifecycle !== 'submitted' || request.startedAt !== null)
+        throw new SysError(
+          'WORK_ALREADY_STARTED',
+          'Only an unstarted request can receive priority',
+        );
+      const previous = await readRequestPriority(context.tx, alert.workDate);
+      if (
+        previous &&
+        previous.requestId !== requestId &&
+        input.expectedPriorityVersion !== previous.version
+      )
+        throw new SysError(
+          'VERSION_CONFLICT',
+          'Этот план уже построен с приоритетом другой заявки. Подтвердите замену приоритета.',
+        );
+      await context.tx.controlState.updateMany({
+        where: { id: 'singleton', mode: 'manual' },
+        data: {
+          mode: 'auto',
+          frozenPlanId: null,
+          changedAt: BigInt(context.now),
+          changedBy: context.actor.id,
+          modeVersion: { increment: 1 },
+        },
+      });
+      const value = { requestId, version: context.operationId };
+      await context.tx.appState.upsert({
+        where: { key: requestPriorityKey(alert.workDate) },
+        create: { key: requestPriorityKey(alert.workDate), value, updatedAt: BigInt(context.now) },
+        update: { value, updatedAt: BigInt(context.now) },
+      });
+      await context.tx.request.update({
+        where: { id: requestId },
+        data: {
+          routingDeferredUntil: null,
+          assignmentState: 'pending',
+          version: { increment: 1 },
+          updatedAt: BigInt(context.now),
+        },
+      });
+      await this.publisher.publishIfChanged(
+        context.tx,
+        context.now,
+        PUBLICATION_TRIGGERS.POLICY_CHANGED,
+        { businessTime: true },
+      );
+      return;
+    }
     if (input.action === 'reschedule' || input.action === 'move_window') {
       if (!requestId) throw new SysError('VALIDATION_FAILED', 'This alert names no request');
       await lockRoutingCurrent(context.tx);
@@ -920,6 +983,13 @@ export class AlertsService {
       include: { engineer: { include: { account: true } } },
     });
     if (!day) throw SysError.notFound('Engineer day', { engineerId, workDate: alert.workDate });
+    if (input.action === 'make_passive') {
+      await context.tx.engineerDay.update({
+        where: { id: day.id },
+        data: { attendanceOptOut: true, updatedAt: BigInt(context.now), version: { increment: 1 } },
+      });
+      return;
+    }
     if (input.action === 'message' || input.action === 'message_remove') {
       await this.notifications.record(context.tx, context.now, {
         category: 'engineer_attention_required',
@@ -981,7 +1051,11 @@ export class AlertsService {
     const thresholds = await this.thresholds(tx);
     const active = new Set<string>();
     const windowChanges = await tx.alert.findMany({
-      where: { resolutionAction: 'move_window', resolvedAt: null, invalidatedAt: null },
+      where: {
+        resolutionAction: { in: ['move_window', 'prioritize'] },
+        resolvedAt: null,
+        invalidatedAt: null,
+      },
       select: { id: true, requestIds: true, createdAt: true },
     });
     const awaitingWindow = new Set<string>();
@@ -1491,7 +1565,7 @@ export class AlertsService {
       return;
     }
     if (latest?.resolvedAt != null && latest.invalidatedAt === null) {
-      if (latest.resolutionAction === 'move_window') {
+      if (latest.resolutionAction === 'move_window' || latest.resolutionAction === 'prioritize') {
         await tx.alert.update({
           where: { id: latest.id },
           data: {

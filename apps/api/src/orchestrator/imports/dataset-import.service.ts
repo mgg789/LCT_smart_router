@@ -940,6 +940,7 @@ function allocateMorningEquipment(
             .transportType,
           settings,
         ),
+        synthesizeCrew(brigades.find((item) => item.name === name)?.inputOrder ?? 0).transportType,
       ),
     ]),
   );

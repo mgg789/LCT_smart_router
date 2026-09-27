@@ -204,6 +204,7 @@ export function ClientNewRequest({
           windowStart: picked.windowStart,
           windowEnd: picked.windowEnd,
           address: picked.address,
+          point: picked.address === local.address ? local.point : null,
         });
       })
       .catch(() => undefined);

@@ -74,7 +74,10 @@ export async function buildAlertBrief(
       slots = [];
     }
   }
-  const actions = catalogue.filter((item) => item !== 'move_window' || slots.length > 0);
+  // Automatic bulk resolution has no explicit human priority instruction.
+  const actions = catalogue.filter(
+    (item) => item !== 'prioritize' && (item !== 'move_window' || slots.length > 0),
+  );
   const roster = await prisma.engineer.findMany({
     where: { archivedAt: null },
     include: { days: { where: { workDate: alert.workDate ?? '' }, take: 1 } },

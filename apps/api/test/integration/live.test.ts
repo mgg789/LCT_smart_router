@@ -1412,6 +1412,57 @@ describe('LIVE workday', () => {
     assert.equal(await prisma.requestFact.count({ where: { requestId: request.id } }), 0);
   });
 
+  it('keeps a passive engineer on schedule without manufacturing completion facts', async () => {
+    const engineer = await liveCreateEngineer();
+    const request = await liveCreateRequest();
+    await liveApplyPlan(engineer.id, [request]);
+    await liveStart();
+    assert.equal((await liveAction(engineer.token, { kind: 'online' })).status, 201);
+    const before = await liveView(engineer.token);
+    const job = before.route?.stops.find((stop) => stop.requestId === request.id);
+    assert.ok(job);
+    const alert = await prisma.alert.create({
+      data: {
+        code: 'engineer_overdue',
+        severity: 'warning',
+        workDate: workDate(),
+        engineerIds: [engineer.id],
+        requestIds: [],
+        reasons: {},
+        isBlocking: true,
+        createdAt: BigInt(before.workday.liveNow),
+      },
+    });
+    const response = await call(
+      'POST',
+      `/api/v1/dispatch/alerts/${alert.id}/resolve`,
+      dispatcherToken,
+      {
+        operationId: randomUUID(),
+        action: 'make_passive',
+      },
+    );
+    assert.equal(response.status, 201, await response.clone().text());
+    const day = await prisma.engineerDay.findUniqueOrThrow({
+      where: { engineerId_workDate: { engineerId: engineer.id, workDate: workDate() } },
+    });
+    assert.equal(day.attendanceOptOut, true);
+    assert.equal(day.availability, 'online');
+    await liveSetLogicalNow(
+      before.workday.id,
+      before.workday.logicalStartAt,
+      before.workday.logicalEndAt,
+      job.endAt + 1,
+      before.workday.speedDurationSec,
+    );
+    await liveView(engineer.token);
+    assert.ok(
+      (await prisma.liveRequestState.findFirstOrThrow({ where: { requestId: request.id } }))
+        .assumedCompletedAt,
+    );
+    assert.equal(await prisma.requestFact.count({ where: { requestId: request.id } }), 0);
+  });
+
   it('keeps explicit overdue work active, accepts more time, and cancels with equipment detail', async () => {
     const engineer = await liveCreateEngineer();
     const request = await liveCreateRequest();

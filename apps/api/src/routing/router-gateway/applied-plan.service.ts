@@ -606,6 +606,7 @@ export class AppliedPlanService {
             row,
             assignedToEngineer,
             equipmentCapacity(day.engineer.transportType, equipmentSettings),
+            day.engineer.transportType,
           );
       // No assignments yet: leave the imported basket unissued so the workday plan can use it.
       if (basket === null) continue;

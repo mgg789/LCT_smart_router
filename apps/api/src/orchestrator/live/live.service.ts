@@ -1451,11 +1451,11 @@ export class LiveService {
         where: { workdayId_engineerId: { workdayId: day.id, engineerId: route.engineerId } },
       });
       if (liveState?.lineStatus !== 'online') continue;
-      if (appActiveEngineers.has(route.engineerId)) continue;
       const dayState = await tx.engineerDay.findUnique({
         where: { engineerId_workDate: { engineerId: route.engineerId, workDate: day.workDate } },
-        select: { lunchDurationSec: true },
+        select: { lunchDurationSec: true, attendanceOptOut: true },
       });
+      if (appActiveEngineers.has(route.engineerId) && !dayState?.attendanceOptOut) continue;
       const lunchDurationSec = dayState?.lunchDurationSec ?? null;
       const lunchEndsAt =
         liveState.activeLunchStartedAt !== null && lunchDurationSec !== null

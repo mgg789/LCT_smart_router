@@ -67,6 +67,8 @@ def test_official_east_golden(official_east_scenario, official_east_run):
     assert compile_policy(official_east_scenario.snapshot.policy).ordered_criteria == (
         "emergency_unassigned",
         "emergency_response_delay",
+        "dispatcher_unassigned",
+        "dispatcher_response_delay",
         "connection_unassigned",
         "urgent_unassigned",
         "unassigned",

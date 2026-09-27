@@ -9,6 +9,7 @@ import {
 } from '../../orchestrator/equipment/equipment-policy';
 import { handoffView } from '../../orchestrator/equipment/handoffs';
 import { DEFAULT_POLICY_ID } from '../../orchestrator/policy/policy.catalog';
+import { readRequestPriority } from '../../orchestrator/policy/request-priority';
 import { findWorkType, findWorkTypeByTitle } from '../../orchestrator/requests/work-type.catalog';
 import type { Tx } from '../../persistence';
 import {
@@ -193,6 +194,7 @@ export class SnapshotBuilder {
       orderBy: { arrivalOrder: 'asc' },
     });
 
+    const requestPriority = await readRequestPriority(tx, workDate);
     const requests: SnapshotRequest[] = [];
     let requestsWithoutLocation = 0;
     let requestsOutsideHorizon = 0;
@@ -245,6 +247,7 @@ export class SnapshotBuilder {
         source_window_start_at: windowStart,
         source_window_end_at: windowEnd,
         work_category: category,
+        dispatcher_priority: requestPriority?.requestId === request.id,
         received_at: receivedAt,
         required_skill: request.requiredSkill,
         required_transport: request.requiredTransport,

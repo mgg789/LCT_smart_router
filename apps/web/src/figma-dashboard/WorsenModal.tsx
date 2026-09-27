@@ -4,10 +4,16 @@ import { ModalLayer, ModalScrim } from './modalLayer';
 /** Asks before a policy change or window shift that adds lateness or unassigned work. */
 export function WorsenModal({
   text,
+  title = 'Станет хуже',
+  cancelLabel = 'Отмена',
+  confirmLabel = 'Всё равно применить',
   onCancel,
   onConfirm,
 }: {
   text: string | null;
+  title?: string;
+  cancelLabel?: string;
+  confirmLabel?: string;
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -27,7 +33,7 @@ export function WorsenModal({
               id={titleId}
               className="font-extrabold text-[28px] tracking-[-0.476px] text-figma-ink"
             >
-              Станет хуже
+              {title}
             </h2>
             <p className="mt-[12px] font-medium text-[18px] text-figma-muted">{text}</p>
             <div className="mt-[24px] flex justify-end gap-[12px]">
@@ -36,14 +42,14 @@ export function WorsenModal({
                 onClick={onCancel}
                 className="h-[52px] rounded-[16px] bg-figma-soft px-[20px] font-semibold text-[16px] text-figma-ink"
               >
-                Отмена
+                {cancelLabel}
               </button>
               <button
                 type="button"
                 onClick={onConfirm}
                 className="h-[52px] rounded-[16px] bg-figma-bee px-[20px] font-semibold text-[16px] text-figma-ink"
               >
-                Всё равно применить
+                {confirmLabel}
               </button>
             </div>
           </div>

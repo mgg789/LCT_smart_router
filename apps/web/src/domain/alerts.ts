@@ -12,7 +12,9 @@ export type AlertActionId =
   | 'message'
   | 'remove_shift'
   | 'message_remove'
-  | 'extend';
+  | 'extend'
+  | 'make_passive'
+  | 'prioritize';
 
 export type AlertActionTone = 'bee' | 'outline' | 'ink';
 
@@ -156,6 +158,26 @@ export const ALERT_ACTION_SPECS: Readonly<Record<AlertActionId, AlertActionSpec>
     drawback: 'При дальнейшей неявке перепланирование начнётся позже.',
     tone: 'outline',
     input: 'minutes',
+  },
+  make_passive: {
+    id: 'make_passive',
+    label: 'Сделать пассивным',
+    summary: 'Продолжать вести инженера по расписанию без обязательных отметок.',
+    effect: 'Контроль отметок отключается; дальнейшее выполнение считается по графику.',
+    benefit: 'Сохраняет назначения и не требует постоянной работы с приложением.',
+    drawback: 'Выполнение по графику является прогнозом, а не подтверждённым фактом.',
+    tone: 'outline',
+    input: 'none',
+  },
+  prioritize: {
+    id: 'prioritize',
+    label: 'Приоритет',
+    summary: 'Перестроить план с приоритетом этой заявки сразу после аварий.',
+    effect: 'Другие обычные заявки могут потерять назначение. Действует один выбранный приоритет.',
+    benefit: 'Повышает шанс включить эту заявку в маршрут первой после аварий.',
+    drawback: 'Используйте только если заявка на 100% приоритетнее остальных.',
+    tone: 'bee',
+    input: 'none',
   },
 };
 
