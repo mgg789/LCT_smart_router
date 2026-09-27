@@ -7,6 +7,7 @@ import type {
   TabularCompletionOptions,
   TabularConversion,
   TabularField,
+  WorkCategory,
 } from '@lct/shared';
 import { Injectable } from '@nestjs/common';
 import { uploadDataPackageSchema } from '../../api/dto/data.dto';
@@ -85,8 +86,14 @@ export class TabularImportService {
         ? (findWorkTypeByTitle(workTypeText) ?? findWorkType(workTypeText))
         : undefined;
       if (!address) addIssue(issues, row.rowNumber, 'addressText', 'Адрес обязателен.');
-      if (workTypeText && !spec)
-        addIssue(issues, row.rowNumber, 'workType', `Неизвестный тип работы: ${workTypeText}.`);
+      const workCategory = spec?.category ?? readWorkCategory(value('workCategory'));
+      if (workTypeText && !spec && !workCategory)
+        addIssue(
+          issues,
+          row.rowNumber,
+          'workCategory',
+          `Для типа «${workTypeText}» явно выберите группу: Авария, Подключение или Ремонт / Дозаказ. Исходное название сохранится.`,
+        );
 
       const coordinates = readCoordinates(
         value('lat'),
@@ -148,13 +155,14 @@ export class TabularImportService {
           addressText: normalizeAddress(address),
           lat: coordinates.lat,
           lon: coordinates.lon,
-          serviceDurationSec: duration,
+          serviceDurationSec: workCategory === 'emergency' ? 6000 : duration,
           windowStartAt: windowStart,
           windowEndAt: windowEnd,
-          priority,
+          priority: workCategory === 'emergency' ? 'urgent' : priority,
           requiredSkill: skill,
           ...(requiredTransport ? { requiredTransport } : {}),
           ...(spec ? { workType: spec.code } : workTypeText ? { workType: workTypeText } : {}),
+          ...(workCategory ? { workCategory } : {}),
         });
       }
     }
@@ -349,6 +357,25 @@ function readPriority(
     return null;
   }
   return priority;
+}
+
+/** Accept explicit source/UI group labels without interpreting the unknown work name. */
+function readWorkCategory(text: string): WorkCategory | undefined {
+  switch (text.trim().toLocaleLowerCase('ru-RU')) {
+    case 'emergency':
+    case 'авария':
+      return 'emergency';
+    case 'connection':
+    case 'подключение':
+      return 'connection';
+    case 'service':
+    case 'ремонт / дозаказ':
+    case 'ремонт':
+    case 'дозаказ':
+      return 'service';
+    default:
+      return undefined;
+  }
 }
 
 function readSkill(

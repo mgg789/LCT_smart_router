@@ -332,3 +332,46 @@ function crc32(value: Buffer): number {
   }
   return (crc ^ 0xffffffff) >>> 0;
 }
+
+test('requires an explicit group for a new source type and keeps its original name', async () => {
+  const service = new TabularImportService(config as never);
+  const source = input(
+    'new-type.csv',
+    'id,address,workType,start,end,lat,lon\n1,Test,Новый тип,09:00,18:00,55.7,37.7\n',
+  );
+  const options = {
+    mode: 'append_requests' as const,
+    region: 'east',
+    workDate: '2026-09-27',
+    columns: {
+      externalId: 0,
+      addressText: 1,
+      workType: 2,
+      windowStart: 3,
+      windowEnd: 4,
+      lat: 5,
+      lon: 6,
+    },
+    defaults: { duration: '30', priority: 'normal', requiredSkill: 'local' },
+    durationUnit: 'minutes' as const,
+    depot: { addressText: '' },
+    engineers: {
+      count: 1,
+      transportType: 'car' as const,
+      skills: ['local' as const],
+      shiftStart: '09:00',
+      shiftEnd: '18:00',
+    },
+    edits: [],
+  };
+  const missing = await service.convert({ source, options });
+  assert.ok(missing.issues.some((issue) => issue.field === 'workCategory'));
+  const explicit = await service.convert({
+    source,
+    options: { ...options, defaults: { ...options.defaults, workCategory: 'emergency' } },
+  });
+  assert.equal(explicit.issues.length, 0);
+  assert.equal(explicit.file?.requests[0]?.workType, 'Новый тип');
+  assert.equal(explicit.file?.requests[0]?.workCategory, 'emergency');
+  assert.equal(explicit.file?.requests[0]?.serviceDurationSec, 6000);
+});

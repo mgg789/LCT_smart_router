@@ -132,6 +132,98 @@ describe('dispatcher alert lifecycle', () => {
     }
   });
 
+  it('requires a revision-bound confirmation to replace request priority and releases only the selected hold', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const key = `policy.request-priority:${date}`;
+    await prisma.appState.deleteMany({ where: { key } });
+    const rows: Array<{ request: { id: string }; issue: { id: string } }> = [];
+    for (let index = 0; index < 2; index += 1) {
+      const request = await prisma.request.create({
+        data: {
+          arrivalOrder: 30000 + index,
+          addressText: 'Priority regression',
+          lat: 55.75,
+          lon: 37.6,
+          needsGeocoding: false,
+          normProfileCode: 'local',
+          normativeTravelDurationSec: 600,
+          technicalDurationSec: 600,
+          documentationDurationSec: 300,
+          serviceDurationSec: 900,
+          windowStartAt: BigInt(now),
+          windowEndAt: BigInt(now + 7200),
+          requiredSkill: 'local',
+          lifecycle: 'submitted',
+          assignmentState: 'unassigned',
+          routingDeferredUntil: BigInt(now + 86400),
+          origin: 'manual',
+          createdAt: BigInt(now),
+          updatedAt: BigInt(now),
+        },
+      });
+      requestIds.push(request.id);
+      const issue = await prisma.alert.create({
+        data: {
+          code: 'unassigned',
+          severity: 'error',
+          engineerIds: [],
+          requestIds: [request.id],
+          reasons: [],
+          createdAt: BigInt(now),
+          workDate: date,
+        },
+      });
+      ids.push(issue.id);
+      rows.push({ request, issue });
+    }
+    const resolve = async (index: number, version?: string) => {
+      const operationId = randomUUID();
+      opIds.push(operationId);
+      const row = rows[index];
+      assert.ok(row);
+      const input = {
+        action: 'prioritize' as const,
+        ...(version ? { expectedPriorityVersion: version } : {}),
+      };
+      return operations.execute(
+        { operationId, actor, action: 'alert.resolve', targetRef: row.issue.id, payload: input },
+        (context) => alerts.resolve(context, row.issue.id, input),
+      );
+    };
+    try {
+      await resolve(0);
+      const first = await alerts.priority(date);
+      assert.ok(first);
+      assert.equal(first.requestId, rows[0]?.request.id);
+      assert.equal(
+        (await prisma.request.findUniqueOrThrow({ where: { id: rows[0]?.request.id } }))
+          .routingDeferredUntil,
+        null,
+      );
+      assert.notEqual(
+        (await prisma.request.findUniqueOrThrow({ where: { id: rows[1]?.request.id } }))
+          .routingDeferredUntil,
+        null,
+      );
+      await assert.rejects(
+        resolve(1),
+        (error: unknown) => error instanceof SysError && error.code === 'VERSION_CONFLICT',
+      );
+      await resolve(1, first.version);
+      assert.equal((await alerts.priority(date))?.requestId, rows[1]?.request.id);
+      await assert.rejects(
+        resolve(0, first.version),
+        (error: unknown) => error instanceof SysError && error.code === 'VERSION_CONFLICT',
+      );
+      assert.equal(
+        (await prisma.alert.findUniqueOrThrow({ where: { id: rows[1]?.issue.id } })).resolvedAt,
+        null,
+      );
+    } finally {
+      await prisma.appState.deleteMany({ where: { key } });
+    }
+  });
+
   it('counts all tomorrow overlaps beyond the preview limit without claiming crew demand', async () => {
     const start = BigInt(Date.parse('2098-06-15T07:00:00Z') / 1000);
     const tomorrow = start + 86_400n;

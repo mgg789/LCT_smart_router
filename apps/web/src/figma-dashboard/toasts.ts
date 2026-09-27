@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { AlertView } from '../api/types';
 import { alertTitle } from '../domain/alerts';
+import { t } from '../i18n';
 import { factorLabel } from '../lib/reasons';
 
 export type ToastKind = 'system' | 'progress' | 'ai' | 'chat' | 'route' | 'alert' | 'error';
@@ -156,118 +157,118 @@ export const DEMO_TOASTS: readonly ToastDraft[] = [
   {
     id: 'demo-system',
     kind: 'system',
-    title: 'Системное сообщение',
-    body: 'Очень полезное системное сообщение для диспетчера',
+    title: t('figma-dashboard.toasts.31e2fed780'),
+    body: t('figma-dashboard.toasts.bd13e2fda8'),
     createdAt: 1,
   },
   {
     id: 'demo-progress',
     kind: 'progress',
-    title: 'Пересчет маршрутов',
+    title: t('figma-dashboard.toasts.3a4398f316'),
     progress: 34,
-    etaLabel: 'Осталось 2 минуты',
+    etaLabel: t('figma-dashboard.toasts.317b7b2f87'),
     createdAt: 2,
   },
   {
     id: 'demo-ai',
     kind: 'ai',
-    title: 'Сообщение от AI',
-    body: 'Заявка №1077 «IP-телефония», окно 13:00–15:00, срочная. По результату 11:42 она...',
+    title: t('figma-dashboard.toasts.864d7998db'),
+    body: t('figma-dashboard.toasts.f2e7570442'),
     createdAt: 3,
   },
   {
     id: 'demo-chat',
     kind: 'chat',
-    title: 'Сообщение от Игорь...',
-    body: 'Заявка №1077 «IP-телефония», окно 13:00–15:00, срочная. По результату 11:42 она...',
+    title: t('figma-dashboard.toasts.92c6eefacd'),
+    body: t('figma-dashboard.toasts.f2e7570442'),
     createdAt: 4,
   },
   {
     id: 'demo-route',
     kind: 'route',
-    title: 'Перерасчет завершен',
-    body: 'Перерасчет выполнен за 1876мс',
+    title: t('figma-dashboard.toasts.3ba80b36c2'),
+    body: t('figma-dashboard.toasts.ba10b7210f'),
     createdAt: 5,
   },
   {
     id: 'demo-alert',
     kind: 'alert',
-    title: 'Алёрт: непокрытие заявок',
-    body: 'Выбранная политика покрывает на 4 заявки меньше, чем прошлая',
+    title: t('figma-dashboard.toasts.38fd090346'),
+    body: t('figma-dashboard.toasts.7cd33064da'),
     createdAt: 6,
     requestId: '18754',
   },
   {
     id: 'demo-system-2',
     kind: 'system',
-    title: 'Системное сообщение',
-    body: 'План опубликован. Сравнение политик можно пересчитать без смены активного.',
+    title: t('figma-dashboard.toasts.31e2fed780'),
+    body: t('figma-dashboard.toasts.23b8864f49'),
     createdAt: 7,
   },
   {
     id: 'demo-route-2',
     kind: 'route',
-    title: 'Маршрут обновлён',
-    body: 'Бригада 2 получила новый порядок остановок после пересчёта.',
+    title: t('figma-dashboard.toasts.c19b16eaf4'),
+    body: t('figma-dashboard.toasts.907e49c0b0'),
     createdAt: 8,
   },
   {
     id: 'demo-alert-window',
     kind: 'alert',
-    title: 'Алёрт: окно заявки',
-    body: 'Заявка №86160 не укладывается в окно 11:27–13:27 при текущем порядке смены.',
+    title: t('figma-dashboard.toasts.23714eaf9a'),
+    body: t('figma-dashboard.toasts.8d90d0d7b9'),
     createdAt: 9,
     requestId: '86160',
   },
   {
     id: 'demo-alert-skill',
     kind: 'alert',
-    title: 'Алёрт: нет навыка',
-    body: 'На «подключение» в восточном секторе свободно только 2 бригады, 5 заявок без назначения.',
+    title: t('figma-dashboard.toasts.72bd38a8b2'),
+    body: t('figma-dashboard.toasts.7d55956a42'),
     createdAt: 10,
     requestId: '50104',
   },
   {
     id: 'demo-alert-lunch',
     kind: 'system',
-    title: 'Обед сдвинут',
-    body: 'Бригаде Соколова обед перенесён на 13:00, заявка №1077 стартует после него.',
+    title: t('figma-dashboard.toasts.34d8132a67'),
+    body: t('figma-dashboard.toasts.0e4bb59b00'),
     createdAt: 11,
   },
   {
     id: 'demo-alert-sla',
     kind: 'alert',
-    title: 'Алёрт: риск SLA',
-    body: '3 срочные заявки выходят за расчётное окно при политике «Полное покрытие».',
+    title: t('figma-dashboard.toasts.b256c3ff97'),
+    body: t('figma-dashboard.toasts.6109f55914'),
     createdAt: 12,
     requestId: '74198',
   },
   {
     id: 'demo-chat-2',
     kind: 'chat',
-    title: 'Сообщение от Петрова',
-    body: 'На адресе Самаркандский бульвар нет доступа в подъезд, клиент спускается.',
+    title: t('figma-dashboard.toasts.993c6a7ca2'),
+    body: t('figma-dashboard.toasts.621708c219'),
     createdAt: 13,
   },
   {
     id: 'demo-ai-2',
     kind: 'ai',
-    title: 'Сообщение от AI',
-    body: 'Бригада Мельников ближе на 8 минут к заявке №1024, чем текущее назначение.',
+    title: t('figma-dashboard.toasts.864d7998db'),
+    body: t('figma-dashboard.toasts.51da6b4307'),
     createdAt: 14,
   },
   {
     id: 'demo-system-3',
     kind: 'system',
-    title: 'Системное сообщение',
-    body: 'Загружен пакет восточного округа: 48 заявок, 7 бригад.',
+    title: t('figma-dashboard.toasts.31e2fed780'),
+    body: t('figma-dashboard.toasts.cf0a1624c6'),
     createdAt: 15,
   },
   {
     id: 'demo-route-3',
     kind: 'route',
-    title: 'Перерасчет завершен',
-    body: 'Политика «Быстрее» сократила пробег на 14 км, 1 заявка осталась без назначения.',
+    title: t('figma-dashboard.toasts.3ba80b36c2'),
+    body: t('figma-dashboard.toasts.9855b9764d'),
     createdAt: 16,
   },
 ];
@@ -454,15 +455,15 @@ export function toastFromAlert(alert: AlertView): ToastDraft {
   return {
     id: `alert:${alert.id}`,
     kind: notice ? (alert.code === 'plan_rebuilt' ? 'route' : 'system') : 'alert',
-    title: notice ? title : `Алёрт: ${title}`,
+    title: notice ? title : t('figma-dashboard.toasts.5c26e49bfe', { value0: title }),
     body:
       alert.code === 'plan_rebuilt'
-        ? 'Маршруты обновлены. Новый план доступен на карте.'
+        ? t('figma-dashboard.toasts.abbe406797')
         : (alert.reasons[0] ?? title),
     createdAt: alert.createdAt,
     requestId: alert.requestIds[0] ?? null,
     ...(alert.code === 'plan_rebuilt'
-      ? { peekMs: TOAST_PLAN_PEEK_MS, actionLabel: 'Подробнее' }
+      ? { peekMs: TOAST_PLAN_PEEK_MS, actionLabel: t('figma-dashboard.toasts.59589fe2a5') }
       : {}),
   };
 }
@@ -475,7 +476,7 @@ export function pushAuthErrorToast(body: string): void {
   pushToast({
     id: 'auth-error',
     kind: 'error',
-    title: 'Ошибка входа',
+    title: t('figma-dashboard.toasts.4ebf918cfa'),
     body,
   });
 }
@@ -485,7 +486,7 @@ export function toastFromEvent(event: { id: string; at: number; text: string }):
   return {
     id: `event:${event.id}`,
     kind: 'system',
-    title: 'Системное сообщение',
+    title: t('figma-dashboard.toasts.31e2fed780'),
     body: event.text,
     createdAt: event.at,
   };

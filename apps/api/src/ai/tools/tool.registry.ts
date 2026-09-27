@@ -29,7 +29,9 @@ import { buildEngineerTools } from './engineer.tools';
 import { buildCallDispatchHelperTool } from './handoff.tool';
 import { buildSearchDocumentationTool } from './knowledge.tool';
 import { KnowledgeSearchPort } from './knowledge-search.port';
+import { buildManualTools, MANUAL_TOOL_NAMES } from './manual.tools';
 import { buildOperationVerificationTool } from './operation-verification.tool';
+import { buildPersonalPolicyTools } from './personal-policy.tools';
 import type { AnyToolSpec } from './tool.types';
 
 /**
@@ -55,7 +57,7 @@ export class ToolRegistry {
     requests: RequestsService,
     live: LiveService,
     config: AppConfigService,
-    prisma: PrismaService,
+    private readonly prisma: PrismaService,
     plans: AppliedPlanService,
     restore: PlanRestoreService,
     control: ControlStateService,
@@ -98,21 +100,25 @@ export class ToolRegistry {
 
     const dispatcherReadonlyTools = [
       ...dispatcherReadTools,
+      ...buildPersonalPolicyTools({ policy, prisma, aiOperations }),
       buildOperationVerificationTool(prisma),
       searchDocumentation,
     ];
-    const dispatcherFixTools = [...dispatcherReadonlyTools, ...dispatcherWriteTools];
+    const dispatcherFixTools = [
+      ...dispatcherReadonlyTools,
+      ...dispatcherWriteTools,
+      ...buildManualTools({ prisma, aiOperations, config }),
+    ];
 
     this.catalogues = {
       /*
-       * Both counterparts can put the conversation in front of a human. The tool
-       * is theirs alone: a dispatcher asking for a dispatcher is nothing, and the
-       * queue it fills is the dispatcher's own «Чаты» tab.
+       * Both counterparts can put the conversation in front of a human. The tool is
+       * theirs alone: a dispatcher asking for a dispatcher is nothing, and the queue it
+       * fills is the dispatcher's own «Чаты» tab.
        *
-       * It was withheld while that tab was locked and the customer's support
-       * screen was a placeholder — the model could have opened a queue nobody was
-       * reading. Both now exist, so the escalation the tool was written for is
-       * reachable end to end.
+       * It was withheld while that tab was locked and the customer's support screen was a
+       * placeholder — the model would have been filling a queue nobody could read. Both
+       * exist now, so the escalation the tool was written for is reachable end to end.
        */
       client: [...clientTools, searchDocumentation, callDispatchHelper],
       engineer: [...engineerTools, searchDocumentation, callDispatchHelper],
@@ -141,6 +147,14 @@ export class ToolRegistry {
       description: tool.description,
       parametersJsonSchema: z.toJSONSchema(tool.schema) as Record<string, unknown>,
     }));
+  }
+
+  /** Refresh mode-sensitive tools at every model step, including external mode switches. */
+  async liveSpecsFor(profile: AiRoleProfile): Promise<LlmToolSpec[]> {
+    const specs = this.llmSpecsFor(profile);
+    if (profile !== 'dispatcher_fix') return specs;
+    const control = await this.prisma.controlState.findUnique({ where: { id: 'singleton' } });
+    return specs.filter((tool) => control?.mode === 'manual' || !MANUAL_TOOL_NAMES.has(tool.name));
   }
 
   /** Every tool this registry can ever hand to a model, for the schema-invariant walk

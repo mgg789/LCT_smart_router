@@ -1,10 +1,11 @@
 import { z } from 'zod';
 import type { DataUploadFile } from '../api/types';
+import { t } from '../i18n';
 
 const regionSchema = z
   .string()
   .max(64)
-  .regex(/^[a-z0-9_]{2,64}$/, 'region: 2–64 lowercase Latin letters, digits or underscores');
+  .regex(/^[a-z0-9_]{2,64}$/, t('validation.region'));
 const coordinateSchema = z.object({
   lat: z.number().min(-90).max(90),
   lon: z.number().min(-180).max(180),
@@ -22,10 +23,12 @@ const uploadRequestSchema = coordinateSchema
     requiredTransport: z.enum(['car', 'walk', 'bike', 'transit']).optional(),
     requiredEquipment: z.enum(['router', 'set_top_box', 'smart_speaker']).optional(),
     workType: z.string().min(1).max(200).optional(),
+    workCategory: z.enum(['emergency', 'connection', 'service']).optional(),
+    receivedAt: z.number().int().nonnegative().optional(),
   })
   .strict()
   .refine((value) => value.windowEndAt >= value.windowStartAt, {
-    message: 'windowEndAt must not be earlier than windowStartAt',
+    message: t('domain.dataUpload.3bb1728884'),
     path: ['windowEndAt'],
   });
 
@@ -49,7 +52,7 @@ const uploadEngineerSchema = z
   })
   .strict()
   .refine((value) => value.shiftEndAt > value.shiftStartAt, {
-    message: 'shiftEndAt must be later than shiftStartAt',
+    message: t('domain.dataUpload.232d772225'),
     path: ['shiftEndAt'],
   });
 
@@ -72,13 +75,13 @@ export const uploadFileSchema = z
     if (value.mode === 'new_region' && (!value.engineers || !value.depot)) {
       context.addIssue({
         code: 'custom',
-        message: 'new_region requires depot and at least one engineer',
+        message: t('domain.dataUpload.6c19a6cfd0'),
       });
     }
     if (value.mode === 'append_requests' && (value.engineers || value.depot)) {
       context.addIssue({
         code: 'custom',
-        message: 'append_requests must not contain engineers or depot',
+        message: t('domain.dataUpload.b9b32bb173'),
       });
     }
     addDuplicateIssues(value.requests, 'requests', context);
@@ -87,7 +90,7 @@ export const uploadFileSchema = z
       if (new Set(engineer.skills).size !== engineer.skills.length) {
         context.addIssue({
           code: 'custom',
-          message: 'engineer skills must be unique',
+          message: t('domain.dataUpload.277b54e54b'),
           path: ['engineers', index, 'skills'],
         });
       }
@@ -104,9 +107,9 @@ export function parseDataUpload(text: string): DataUploadValidation {
   try {
     raw = JSON.parse(text);
   } catch {
-    return { ok: false, issues: ['Файл не является корректным JSON.'] };
+    return { ok: false, issues: [t('domain.dataUpload.8385b327b7')] };
   }
-  const parsed = uploadFileSchema.safeParse(raw);
+  const parsed = uploadFileSchema.safeParse(raw, { error: z.locales.ru().localeError });
   if (!parsed.success) {
     return {
       ok: false,
@@ -129,7 +132,7 @@ function addDuplicateIssues(
     if (seen.has(item.externalId)) {
       context.addIssue({
         code: 'custom',
-        message: `duplicate externalId "${item.externalId}"`,
+        message: t('validation.duplicateId', { id: item.externalId }),
         path: [path, index, 'externalId'],
       });
     }

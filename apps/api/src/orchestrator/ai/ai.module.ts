@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 import { AiService } from './ai.service';
+import { AiConnectionsService } from './ai-connections.service';
 import { MiniAiService } from './mini-ai.service';
 import { WeatherDayCacheService } from './weather-day-cache.service';
 
@@ -14,7 +15,7 @@ import { WeatherDayCacheService } from './weather-day-cache.service';
  */
 @Global()
 @Module({
-  providers: [AiService, MiniAiService, WeatherDayCacheService],
-  exports: [AiService, MiniAiService],
+  providers: [AiConnectionsService, AiService, MiniAiService, WeatherDayCacheService],
+  exports: [AiConnectionsService, AiService, MiniAiService],
 })
 export class AiModule {}

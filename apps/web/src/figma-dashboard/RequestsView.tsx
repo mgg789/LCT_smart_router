@@ -1,7 +1,9 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useMemo, useState } from 'react';
 import type { DashboardSnapshot } from '../api/types';
+import { WorkTypeLabel } from '../components/WorkTypeLabel';
 import { unassignedRequests } from '../domain/dashboard';
+import { t } from '../i18n';
 import { useArtboardStretch } from './artboardStretch';
 import { FIGMA_ASSETS } from './assets';
 import { FigmaIcon, FigmaText } from './primitives';
@@ -19,12 +21,12 @@ import {
 } from './requestsTable';
 
 const COLUMNS = [
-  { key: 'number', label: 'Номер' },
-  { key: 'address', label: 'Адрес' },
-  { key: 'service', label: 'Услуга' },
-  { key: 'window', label: 'Окно' },
-  { key: 'engineer', label: 'Инженер' },
-  { key: 'status', label: 'Статус' },
+  { key: 'number', label: t('figma-dashboard.RequestsView.8624c88200') },
+  { key: 'address', label: t('figma-dashboard.RequestsView.da82e80563') },
+  { key: 'service', label: t('figma-dashboard.RequestsView.629f17f3b6') },
+  { key: 'window', label: t('figma-dashboard.RequestsView.9521194df6') },
+  { key: 'engineer', label: t('figma-dashboard.RequestsView.88d71676fa') },
+  { key: 'status', label: t('figma-dashboard.RequestsView.225077c6d4') },
 ] as const;
 
 const STATUS_DOT: Record<RequestRowStatus, string> = {
@@ -62,7 +64,8 @@ export function RequestsView({
     [query, sort, source],
   );
   const sortLabel =
-    REQUEST_SORT_OPTIONS.find((item) => item.id === sort)?.label ?? 'По использованию';
+    REQUEST_SORT_OPTIONS.find((item) => item.id === sort)?.label ??
+    t('figma-dashboard.RequestsView.571482ce58');
 
   useEffect(() => {
     if (!sortOpen) return;
@@ -80,10 +83,11 @@ export function RequestsView({
       style={{ left: 180, top: 154, width: 1710 + dx, height: 884 + dy }}
     >
       <FigmaText className="figma-nowrap absolute left-0 top-[30px] font-extrabold text-[48px] tracking-[-0.816px] text-figma-ink">
-        Заявки
+        {t('figma-dashboard.RequestsView.e0e664b5a8')}
       </FigmaText>
       <FigmaText className="figma-nowrap absolute left-[189px] top-[47px] font-semibold text-[18px] tracking-[-0.306px] text-figma-muted">
-        Всего {source.length}
+        {t('figma-dashboard.RequestsView.487303d162')}
+        {source.length}
       </FigmaText>
       <FigmaIcon
         src={FIGMA_ASSETS.dotEngineers}
@@ -93,7 +97,8 @@ export function RequestsView({
         className="absolute left-[276px] top-[52px]"
       />
       <FigmaText className="figma-nowrap absolute left-[291px] top-[47px] font-semibold text-[18px] tracking-[-0.306px] text-figma-muted">
-        {unassignedCount} без назначения
+        {unassignedCount}
+        {t('figma-dashboard.RequestsView.555f23ae17')}
       </FigmaText>
 
       <motion.label
@@ -107,13 +112,13 @@ export function RequestsView({
         }
         transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
       >
-        <span className="sr-only">Поиск по номеру, адресу</span>
+        <span className="sr-only">{t('figma-dashboard.RequestsView.0d0515a1ae')}</span>
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           onFocus={() => setSearchFocused(true)}
           onBlur={() => setSearchFocused(false)}
-          placeholder="Поиск по номеру, адресу"
+          placeholder={t('figma-dashboard.RequestsView.0d0515a1ae')}
           className="w-full border-0 bg-transparent font-medium text-[16px] text-figma-ink outline-none placeholder:text-figma-ink"
         />
         <motion.span
@@ -140,7 +145,8 @@ export function RequestsView({
           transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
         >
           <span className="figma-nowrap font-medium text-[18px] text-black">
-            Сортировка: {sortLabel}
+            {t('figma-dashboard.RequestsView.30d05d71a1')}
+            {sortLabel}
           </span>
           <motion.span
             className="flex size-[32px] items-center justify-center overflow-hidden"
@@ -205,7 +211,7 @@ export function RequestsView({
         <div className="absolute inset-x-0 top-[60px] bottom-0 overflow-y-auto [scrollbar-width:thin]">
           {rows.length === 0 ? (
             <p className="px-[31px] pt-[28px] text-center font-medium text-[18px] text-figma-muted">
-              Заявок по запросу нет
+              {t('figma-dashboard.RequestsView.daf012d65c')}
             </p>
           ) : (
             rows.map((row) => (
@@ -254,7 +260,7 @@ function RequestRow({
         {row.address}
       </p>
       <p className="figma-nowrap overflow-hidden text-center font-medium text-[20px] text-ellipsis text-figma-ink">
-        {row.service}
+        <WorkTypeLabel category={row.workCategory}>{row.service}</WorkTypeLabel>
       </p>
       <FigmaText className="figma-nowrap text-center font-medium text-[20px] leading-none text-figma-ink">
         {row.window}

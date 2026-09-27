@@ -9,6 +9,7 @@ import type {
   PolicyId,
   RequestView,
 } from '../api/types';
+import { t } from '../i18n';
 
 export interface DashboardFocus {
   readonly engineerId: string | null;
@@ -207,7 +208,7 @@ export type ActivityKind =
   | 'finished';
 
 export interface RouteVertex {
-  readonly kind: 'start' | 'job' | 'lunch' | 'wait' | 'handoff';
+  readonly kind: 'start' | 'job' | 'lunch' | 'wait' | 'handoff' | 'delivery' | 'office_pickup';
   readonly lat: number;
   readonly lon: number;
   readonly startAt: number;
@@ -309,7 +310,7 @@ export function plannedActivity(
           legIndex: null,
           lat: vertex.lat,
           lon: vertex.lon,
-          label: 'Обед по плану',
+          label: t('domain.dashboard.540fbf5cdb'),
         };
       }
       if (vertex.kind === 'wait') {
@@ -320,7 +321,7 @@ export function plannedActivity(
           legIndex: null,
           lat: vertex.lat,
           lon: vertex.lon,
-          label: 'Ожидает начала временного окна',
+          label: t('domain.dashboard.777412e89b'),
         };
       }
       return {
@@ -330,7 +331,7 @@ export function plannedActivity(
         legIndex: null,
         lat: vertex.lat,
         lon: vertex.lon,
-        label: 'На объекте по плану',
+        label: t('domain.dashboard.fe05f1d13a'),
       };
     }
   }
@@ -344,7 +345,7 @@ export function plannedActivity(
         legIndex: leg.index,
         lat: null,
         lon: null,
-        label: 'В пути по плану — на участке, без точки',
+        label: t('domain.dashboard.7c9cecb806'),
       };
     }
   }
@@ -357,7 +358,7 @@ export function plannedActivity(
       legIndex: null,
       lat: start.lat,
       lon: start.lon,
-      label: 'Ещё не выехал',
+      label: t('domain.dashboard.ad77e66b6d'),
     };
   }
 
@@ -368,27 +369,27 @@ export function plannedActivity(
     legIndex: null,
     lat: last.lat,
     lon: last.lon,
-    label: 'Смена по плану закрыта',
+    label: t('domain.dashboard.3ee8a6a84e'),
   };
 }
 
 export function activityLabel(kind: ActivityKind): string {
   if (kind === 'traveling') {
-    return 'в пути';
+    return t('domain.dashboard.7376f1d753');
   }
   if (kind === 'on_site') {
-    return 'на объекте';
+    return t('domain.dashboard.2bc104c54f');
   }
   if (kind === 'lunch') {
-    return 'обед';
+    return t('domain.dashboard.c0f7d29eab');
   }
   if (kind === 'waiting') {
-    return 'ожидание';
+    return t('domain.dashboard.865fcaf5f9');
   }
   if (kind === 'finished') {
-    return 'смена закрыта';
+    return t('domain.dashboard.5e2d2bfb4d');
   }
-  return 'не выехал';
+  return t('domain.dashboard.c720a2dc46');
 }
 
 const WINDOW_SHIFT_SEC = 5 * 60;
@@ -413,7 +414,11 @@ export function computePlanDelta(
   for (const next of after.assignments) {
     const prev = beforeByRequest.get(next.requestId);
     if (!prev) {
-      lines.push({ requestId: next.requestId, engineerName: null, text: 'Новая заявка' });
+      lines.push({
+        requestId: next.requestId,
+        engineerName: null,
+        text: t('domain.dashboard.ee5790e7f4'),
+      });
       continue;
     }
     if (prev.engineerId !== next.engineerId) {
@@ -423,7 +428,7 @@ export function computePlanDelta(
         engineerName: null,
         text:
           next.engineerId === null
-            ? 'Не назначена'
+            ? t('domain.dashboard.ae6bef78e3')
             : `${crewName(prev.engineerId, engineerNames)} → ${crewName(next.engineerId, engineerNames)}`,
       });
     }
@@ -450,7 +455,10 @@ export function computePlanDelta(
         lines.push({
           requestId: stop.requestId,
           engineerName: null,
-          text: `Окно ${moscowClock(previousStart)} → ${moscowClock(stop.startAt)}`,
+          text: t('domain.dashboard.2001b87dfe', {
+            value0: moscowClock(previousStart),
+            value1: moscowClock(stop.startAt),
+          }),
         });
       }
     }
@@ -470,7 +478,7 @@ export function computePlanDelta(
     lines.push({
       requestId: null,
       engineerName: crewName(engineerId, engineerNames),
-      text: 'Обед сдвинут',
+      text: t('domain.dashboard.34d8132a67'),
     });
   }
 
@@ -517,7 +525,7 @@ function moscowClock(unixSeconds: number): string {
 }
 
 function crewName(id: string | null, names: ReadonlyMap<string, string>): string {
-  if (!id) return 'Не назначена';
+  if (!id) return t('domain.dashboard.ae6bef78e3');
   return names.get(id) ?? id.slice(0, 8);
 }
 

@@ -52,3 +52,20 @@ it('uses the scoped finished day as its final logical time', async () => {
   );
   assert.equal(now, 8_000);
 });
+
+it('keeps a running clock moving past the initial horizon after a shift extension', async () => {
+  const now = await businessNow(
+    txWithDays([
+      {
+        status: 'running',
+        workDate: '2099-12-31',
+        logicalStartAt: 1_000n,
+        logicalEndAt: 10_000n,
+        startedAtWallSec: 2_000n,
+        speedDurationSec: 90,
+      },
+    ]),
+    2_100,
+  );
+  assert.equal(now, 11_000);
+});

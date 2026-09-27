@@ -1,9 +1,10 @@
 import type { EquipmentType } from '../api/types';
+import { t } from '../i18n';
 
 const EQUIPMENT_RU: Record<EquipmentType, string> = {
-  router: 'Роутер',
-  set_top_box: 'Приставка',
-  smart_speaker: 'Умная колонка',
+  router: t('figma-engineer.engineerRoute.4a65bf9c4b'),
+  set_top_box: t('figma-engineer.engineerRoute.e994ddc82c'),
+  smart_speaker: t('figma-engineer.engineerRoute.cd9e2a8ef6'),
 };
 
 /** Equipment chip on Figma REQUEST 78:9734. */

@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { Headset, UserCheck } from 'lucide-react';
 import type { HandoffStatus } from '../../hooks/useAssistantChat';
+import { t } from '../../i18n';
 
 interface Props {
   readonly status: HandoffStatus;
@@ -28,12 +29,12 @@ export function HandoffBanner({ status }: Props) {
       {waiting ? (
         <>
           <Headset className="h-4 w-4 shrink-0 animate-pulse" />
-          <span>Диспетчер приглашён, ожидаем ответа</span>
+          <span>{t('components.ai.HandoffBanner.1c34c8155e')}</span>
         </>
       ) : (
         <>
           <UserCheck className="h-4 w-4 shrink-0" />
-          <span>Диалог ведёт диспетчер</span>
+          <span>{t('components.ai.HandoffBanner.57b040aecc')}</span>
         </>
       )}
     </motion.div>

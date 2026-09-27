@@ -2,6 +2,27 @@ import type { HandoffView } from '../orchestrator/equipment/handoffs';
 import type { PlanRouteView, PlanStopView } from './plan-view';
 import type { RequestView } from './request-view';
 
+export interface EquipmentLogisticsView {
+  readonly id: string;
+  readonly kind: 'donor_delivery' | 'office_pickup';
+  readonly state: 'searching' | 'assigned' | 'none' | 'completed' | 'cancelled' | 'error';
+  readonly requestId: string;
+  readonly equipmentType: 'router' | 'set_top_box' | 'smart_speaker';
+  readonly donorEngineerId: string | null;
+  readonly donorName: string | null;
+  readonly receiverEngineerId: string;
+  readonly depotId: string | null;
+  readonly expectedAt: number | null;
+  readonly actualAt: number | null;
+  readonly location: { readonly lat: number; readonly lon: number };
+  readonly action: {
+    readonly kind: 'equipment_delivery_confirm' | 'office_pickup_confirm';
+    readonly enabled: boolean;
+  } | null;
+  readonly retryAt: number | null;
+  readonly failureCode: 'ROUTER_UNAVAILABLE' | 'NO_FEASIBLE_LOGISTICS' | null;
+}
+
 export interface LiveWorkdayView {
   readonly id: string | null;
   readonly status: 'pending' | 'running' | 'finished';
@@ -85,6 +106,7 @@ export interface LiveEngineerStateView {
 
 export interface DispatchLiveView {
   readonly handoffs: HandoffView[];
+  readonly logistics: EquipmentLogisticsView[];
   readonly workday: LiveWorkdayView;
   readonly engineers: LiveEngineerStateView[];
   /** Technical-stop markers reconstructed from the durable operation journal. */
@@ -109,6 +131,7 @@ export interface DispatchLiveView {
 
 export interface EngineerLiveView {
   readonly handoffs: HandoffView[];
+  readonly logistics: EquipmentLogisticsView[];
   readonly workday: LiveWorkdayView;
   readonly engineer: LiveEngineerStateView;
   readonly route: PlanRouteView | null;

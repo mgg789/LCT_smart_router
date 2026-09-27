@@ -1,7 +1,13 @@
 """Equipment is a per-engineer hard capacity with no in-day exchange."""
 
 import pytest
-from core.contracts import Engineer, EquipmentStock, PendingEquipmentHandoff
+from core.contracts import (
+    Depot,
+    Engineer,
+    EquipmentStock,
+    PendingEquipmentHandoff,
+    PendingEquipmentLogistics,
+)
 from core.engine import SearchSettings, solve
 from core.evidence import build_plan_evidence
 from core.geo import GraphTravel
@@ -179,3 +185,47 @@ def test_pending_handoff_is_replayed_at_its_frozen_place_and_time(snapshot, grap
     assert len(frozen) == 2
     assert {stop.handoff.handoff_id for stop in frozen} == {"confirmed-1"}
     assert {stop.start_at for stop in frozen} == {task.planning_as_of}
+
+
+def test_enabled_office_pickup_assigns_stockless_job_without_moving_existing_job(snapshot, graph):
+    """The office action and new job occupy slack while the published job stays fixed."""
+    existing = snapshot.requests[0].model_copy(update={"required_equipment": None})
+    blocked = snapshot.requests[1].model_copy(update={"required_equipment": "router"})
+    engineer = snapshot.engineers[0].model_copy(update={"equipment_stock": EquipmentStock()})
+    task = snapshot.model_copy(update={
+        "requests": [existing, blocked], "engineers": [engineer],
+        "depots": [Depot(depot_id="east-office", region=engineer.region, location=engineer.start_location)],
+    })
+    plain = solve(task, GraphTravel(graph), SearchSettings(time_limit_ms=100, solution_limit=4, access_buffer_sec=0)).main
+    rescued = solve(task, GraphTravel(graph), SearchSettings(time_limit_ms=100, solution_limit=4, access_buffer_sec=0, equipment_transfers_enabled=True)).main
+    before = next(stop for stop in plain.routes[0].stops if stop.request_id == existing.request_id)
+    after = next(stop for stop in rescued.routes[0].stops if stop.request_id == existing.request_id)
+    assert plain.summary.assigned_count == 1
+    assert rescued.summary.assigned_count == 2
+    assert (before.start_at, before.end_at) == (after.start_at, after.end_at)
+    assert any(stop.kind == "office_pickup" for stop in rescued.routes[0].stops)
+    pickup = next(stop for stop in rescued.routes[0].stops if stop.kind == "office_pickup")
+    pending = task.model_copy(update={"pending_equipment_logistics": [PendingEquipmentLogistics(
+        logistics=pickup.logistics, location=pickup.location, at=pickup.start_at,
+    )]})
+    replayed = solve(pending, GraphTravel(graph), SearchSettings(time_limit_ms=100, solution_limit=4, access_buffer_sec=0,
+                                                                equipment_transfers_enabled=True)).main
+    replayed_pickups = [stop for route in replayed.routes for stop in route.stops if stop.kind == "office_pickup"]
+    assert len(replayed_pickups) == 1
+    assert replayed_pickups[0].logistics == pickup.logistics
+    assert replayed_pickups[0].start_at == pickup.start_at
+    assert replayed.summary.assigned_count == 2
+
+
+def test_office_pickup_does_not_depend_on_unavailable_donor_stock(snapshot, graph):
+    """A stocked but unavailable colleague must not prevent a feasible office visit."""
+    request = snapshot.requests[0].model_copy(update={"required_equipment": "router"})
+    receiver = snapshot.engineers[0]
+    donor = receiver.model_copy(update={"engineer_id": "offline-donor", "input_order": 2,
+                                         "availability": "offline", "equipment_stock": EquipmentStock(router=2)})
+    task = snapshot.model_copy(update={"requests": [request], "engineers": [receiver, donor],
+                                      "depots": [Depot(depot_id="office", location=receiver.start_location)]})
+    plan = solve(task, GraphTravel(graph), SearchSettings(time_limit_ms=100, solution_limit=4,
+                 access_buffer_sec=0, equipment_transfers_enabled=True)).main
+    assert plan.assignments[0].engineer_id == receiver.engineer_id
+    assert any(stop.kind == "office_pickup" for route in plan.routes for stop in route.stops)

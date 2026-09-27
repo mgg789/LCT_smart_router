@@ -4,6 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { proposeAlertWithAi } from '../api/client';
 import type { AlertResolutionInput, DashboardSnapshot } from '../api/types';
 import { isAlertActionId } from '../domain/alerts';
+import { t } from '../i18n';
 import { AlertActions } from './AlertActions';
 import { runAlertSweep } from './alertSweep';
 import { dispatchAlertId, type InboxNoticeCard, inboxFromSources } from './alertsInbox';
@@ -129,9 +130,7 @@ export function AlertsView({
           setDecisionErrors((current) => ({
             ...current,
             [card.id]:
-              error instanceof Error
-                ? error.message
-                : 'AI не смог предложить решение. Повторите попытку.',
+              error instanceof Error ? error.message : t('figma-dashboard.AlertsView.451bf69b22'),
           }));
         }
         return false;
@@ -149,7 +148,7 @@ export function AlertsView({
       await onResolve(alertId, {
         operationId: crypto.randomUUID(),
         action,
-        reason: 'Решено с AI автоматически',
+        reason: t('figma-dashboard.AlertsView.8631147d78'),
         ...(proposal?.engineerId ? { engineerId: proposal.engineerId } : {}),
         ...(proposal?.minutes != null ? { minutes: proposal.minutes } : {}),
         ...(proposal?.windowStartAt != null && proposal.windowEndAt != null
@@ -168,7 +167,7 @@ export function AlertsView({
         setDecisionErrors((current) => ({
           ...current,
           [card.id]:
-            error instanceof Error ? error.message : 'Решение не применено. Повторите попытку.',
+            error instanceof Error ? error.message : t('figma-dashboard.AlertsView.e7df63e67a'),
         }));
       }
       return false;
@@ -227,12 +226,12 @@ export function AlertsView({
   });
 
   return (
-    <section className="absolute inset-0" aria-label="Алерты и уведомления">
+    <section className="absolute inset-0" aria-label={t('figma-dashboard.AlertsView.4387ec2c4d')}>
       <FigmaText
         className="figma-nowrap absolute left-[180px] z-20 font-extrabold text-[48px] tracking-[-0.816px] text-figma-ink"
         style={{ top: TITLE_TOP }}
       >
-        Алерты
+        {t('figma-dashboard.AlertsView.6e67d08041')}
       </FigmaText>
       <AiSweepSlider
         top={TITLE_TOP - 16}
@@ -253,7 +252,7 @@ export function AlertsView({
         <div className="pt-[64px]">
           {inbox.alerts.length === 0 && visibleNotices.length === 0 && parked.length === 0 ? (
             <p className="pt-[40px] text-center font-medium text-[18px] text-figma-muted">
-              Открытых алертов и уведомлений нет
+              {t('figma-dashboard.AlertsView.26b28cd775')}
             </p>
           ) : null}
 
@@ -307,7 +306,7 @@ export function AlertsView({
                               aria-hidden="true"
                               className="mr-[10px] shrink-0"
                             />
-                            К заявке
+                            {t('figma-dashboard.AlertsView.6ca0d18fdc')}
                           </InboxButton>
                         ) : null
                       }
@@ -328,10 +327,12 @@ export function AlertsView({
 
           {visibleNotices.length > 0 || parked.length > 0 ? (
             <div className="mb-[16px] mt-[36px] flex items-center gap-[12px]">
-              <FigmaText className="font-bold text-[24px] text-figma-ink">Уведомления</FigmaText>
+              <FigmaText className="font-bold text-[24px] text-figma-ink">
+                {t('figma-dashboard.AlertsView.d4baf8f6b1')}
+              </FigmaText>
               <motion.button
                 type="button"
-                aria-label="Очистить уведомления"
+                aria-label={t('figma-dashboard.AlertsView.08be3793f1')}
                 disabled={clearing}
                 onClick={() => {
                   const cards = visibleNotices;
@@ -512,7 +513,7 @@ function AiSweepSlider({
   return (
     // Pointer-only affordance on a decorative panel; the same action stays on the
     // keyboard-reachable alert cards themselves.
-    // biome-ignore lint/a11y/noStaticElementInteractions: decorative double-click surface, keyboard path is the alert cards
+    // biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/noNoninteractiveElementInteractions: decorative double-click surface, keyboard path is the alert cards
     <div
       className="absolute left-[430px] z-20 flex h-[79px] w-[426px] items-center overflow-hidden rounded-full bg-figma-ink pl-[10px] pr-[10px]"
       style={{ top }}
@@ -556,7 +557,7 @@ function AiSweepSlider({
     >
       <motion.button
         type="button"
-        aria-label="Решить все с AI"
+        aria-label={t('figma-dashboard.AlertsView.707257459f')}
         disabled={!armed || engaged}
         onKeyDown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') {
@@ -630,7 +631,9 @@ function AiSweepSlider({
         }`}
         style={{ opacity: engaged ? 1 : 1 - progress }}
       >
-        {engaged ? 'AI решает' : 'Решить все с AI'}
+        {engaged
+          ? t('figma-dashboard.AlertsView.28c43df7c6')
+          : t('figma-dashboard.AlertsView.707257459f')}
       </span>
       <span className="sweep-spark pointer-events-none absolute right-[10px] top-[9px] flex size-[60px] items-center justify-center rounded-full">
         <span

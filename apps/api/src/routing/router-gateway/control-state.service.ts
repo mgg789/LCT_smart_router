@@ -2,9 +2,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import { SysError } from '../../common/errors';
 import type { ControlMode } from '../../generated/prisma/client';
 import type { OperationContext } from '../../operations';
+import { workDateOf } from '../../orchestrator/engineers/workday';
+import { businessNow } from '../../orchestrator/live/business-clock';
 import type { Tx } from '../../persistence';
 import { lockControlState } from '../../persistence';
-import { AppliedPlanService } from './applied-plan.service';
+import { SnapshotPublisher } from '../mount-data-eng/snapshot.publisher';
+import { readManualState, writeManualState } from './manual-state';
 
 export interface ControlStateView {
   readonly mode: ControlMode;
@@ -13,23 +16,12 @@ export interface ControlStateView {
   readonly frozenPlanId: string | null;
 }
 
-/**
- * AUTO and MANUAL.
- *
- * Emergency manual control disconnects exactly one thing: the delivery of Router's result
- * into sys. It does not stop Router, the reading of the sector, the intake of requests,
- * GPS, sign-in or actual events. Router keeps computing; its answers simply stay inside
- * Router (context/32 section 7.1).
- *
- * Returning to AUTO is an explicit transition, not an ordinary re-read. The current
- * result replaces the *future* manual distribution; it does not merge with it and does not
- * undo anything that already happened (context/32 section 7.3).
- */
+/** Manual intents constrain continuous LIVE routing without rewriting execution facts. */
 @Injectable()
 export class ControlStateService {
   private readonly logger = new Logger(ControlStateService.name);
 
-  constructor(private readonly plans: AppliedPlanService) {}
+  constructor(private readonly publisher: SnapshotPublisher) {}
 
   async current(tx: Tx): Promise<ControlStateView> {
     const state = await tx.controlState.findUniqueOrThrow({ where: { id: 'singleton' } });
@@ -41,21 +33,31 @@ export class ControlStateService {
     };
   }
 
-  /**
-   * Switches to manual control.
-   *
-   * The plan in force is frozen as the starting point, and from then on the dispatcher is
-   * its author. The lock matters: a result already being validated must not be written
-   * after this point (context/36 section 6).
-   */
-  async enterManual(context: OperationContext): Promise<ControlStateView> {
+  /** Starts an empty, reasoned session; current and future Router results keep applying. */
+  async enterManual(context: OperationContext, reason?: string): Promise<ControlStateView> {
     await lockControlState(context.tx);
     const state = await context.tx.controlState.findUniqueOrThrow({ where: { id: 'singleton' } });
     if (state.mode === 'manual') {
       return this.current(context.tx);
     }
 
-    const frozen = await this.plans.freezeForManual(context.tx, context.now, context.actor.id);
+    if (!reason?.trim()) throw SysError.validationFailed('Укажите причину перехода в ручной режим');
+    const previous = await readManualState(context.tx);
+    await writeManualState(
+      context.tx,
+      {
+        version: previous.version + 1,
+        reason: reason.trim(),
+        workDate: workDateOf(await businessNow(context.tx, context.now), 'Europe/Moscow'),
+        decisions: [],
+        acknowledgedConflicts: [],
+        resolution: null,
+      },
+      context.now,
+    );
+    const frozen =
+      (await context.tx.appliedPlanCurrent.findUnique({ where: { id: 'singleton' } }))?.planId ??
+      null;
     await context.tx.controlState.update({
       where: { id: 'singleton' },
       data: {
@@ -66,17 +68,11 @@ export class ControlStateService {
         frozenPlanId: frozen,
       },
     });
-    this.logger.warn(`Emergency manual mode on; Router results are no longer applied`);
+    this.logger.log(`Manual preferences enabled; live routing continues`);
     return this.current(context.tx);
   }
 
-  /**
-   * Returns to automatic control.
-   *
-   * Only the mode changes here. The current result is applied by the caller afterwards,
-   * through the ordinary acceptance checks -- there is no merge of the manual plan with
-   * the automatic one, and the manual plan stays visible until a suitable result arrives.
-   */
+  /** Clears all intents and publishes original conditions with current execution facts. */
   async returnToAuto(context: OperationContext): Promise<ControlStateView> {
     await lockControlState(context.tx);
     const state = await context.tx.controlState.findUniqueOrThrow({ where: { id: 'singleton' } });
@@ -93,7 +89,23 @@ export class ControlStateService {
         frozenPlanId: null,
       },
     });
-    this.logger.log('Automatic mode restored; Router results are applied again');
+    const manual = await readManualState(context.tx);
+    await writeManualState(
+      context.tx,
+      {
+        ...manual,
+        version: manual.version + 1,
+        reason: null,
+        decisions: [],
+        acknowledgedConflicts: [],
+        resolution: null,
+      },
+      context.now,
+    );
+    await this.publisher.publishIfChanged(context.tx, context.now, 'manual.decisions_changed', {
+      force: true,
+    });
+    this.logger.log('Automatic mode restored; manual preferences cleared');
     return this.current(context.tx);
   }
 

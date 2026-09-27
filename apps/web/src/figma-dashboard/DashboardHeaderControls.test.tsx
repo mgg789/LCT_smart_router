@@ -49,3 +49,28 @@ describe('dashboard user menu layering', () => {
     expect(html).toContain('Прошлый план');
   });
 });
+
+it('shows priorities only in manual mode immediately after settings', () => {
+  const render = (manualMode: boolean) =>
+    renderToStaticMarkup(
+      <UserMenu
+        open
+        covered={false}
+        manualMode={manualMode}
+        hasPreviousPlan
+        motionOn={false}
+        demoStand={false}
+        onToggle={noop}
+        onSettings={noop}
+        onOpenPreviousPlan={noop}
+        onEndDay={noop}
+        onRestartDay={noop}
+        onReset={noop}
+        onSignOut={noop}
+      />,
+    );
+  const manual = render(true);
+  expect(manual.indexOf('Настройки')).toBeLessThan(manual.indexOf('Приоритеты'));
+  expect(manual.indexOf('Приоритеты')).toBeLessThan(manual.indexOf('Прошлый план'));
+  expect(render(false)).not.toContain('Приоритеты');
+});

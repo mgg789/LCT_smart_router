@@ -7,6 +7,7 @@ import {
   regionStyle,
 } from '../domain/regions';
 import type { useDashboard } from '../hooks/useDashboard';
+import { t } from '../i18n';
 import { explainSelection } from '../lib/explanations';
 import { filterEngineers } from './fixtures';
 import { dashboardViewFromSnapshot, rightPanelMode, withLiveRouteStops } from './fromSnapshot';
@@ -116,7 +117,10 @@ export function useDashboardPresentation(
     panelMode,
     showRightPanel: panelMode !== null,
     showRouteCard: selectedEngineer !== null,
-    regionLabel: selectedRegion === ALL_REGIONS ? 'Все регионы' : regionStyle(selectedRegion).label,
+    regionLabel:
+      selectedRegion === ALL_REGIONS
+        ? t('figma-dashboard.useDashboardPresentation.504ddd410c')
+        : regionStyle(selectedRegion).label,
     panelExplanation,
   };
 }

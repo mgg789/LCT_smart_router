@@ -10,6 +10,7 @@ import {
 } from 'react';
 import type { AiActionButton } from '../api/ai';
 import { AiOperationCard } from '../components/ai/AiOperationCard';
+import { ChatBottomSpacer } from '../components/ai/ChatBottomSpacer';
 import { fitComposerField, focusComposer } from '../components/ai/composerField';
 import {
   type AiOperationView,
@@ -17,6 +18,7 @@ import {
   type AssistantChatMessage,
   useAssistantChat,
 } from '../hooks/useAssistantChat';
+import { t } from '../i18n';
 import { AiMarkdown } from './AiMarkdown';
 import { FIGMA_ASSETS } from './assets';
 import { FigmaIcon } from './primitives';
@@ -27,8 +29,8 @@ const RATINGS_KEY = 'lct.ai.ratings';
 
 /** First-turn questions about assignment reasons and already calculated plan alternatives. */
 export const DISPATCHER_QUICK_QUESTIONS = [
-  'Что влияет на назначение заявок?',
-  'Сравни рассчитанные варианты плана',
+  t('figma-dashboard.DispatcherAiPane.8a7c85c656'),
+  t('figma-dashboard.DispatcherAiPane.52568f75dd'),
 ] as const;
 
 /** Where an assistant button may send the dispatcher. The id is one the server already vetted. */
@@ -38,6 +40,8 @@ export interface AiOpenTarget {
 }
 
 interface PaneProps {
+  readonly initialMessage?: { readonly id: string; readonly text: string };
+  readonly onInitialMessageSent?: () => void;
   readonly token: string | null;
   readonly onOpenObject?: (target: AiOpenTarget) => void;
 }
@@ -46,8 +50,38 @@ interface PaneProps {
  * Dispatcher AI tab drawn to the NAVIX frame: an empty greeting, then a transcript
  * with the same assistant stream the chat hook already speaks to the gateway.
  */
-export function DashboardAi({ token, onOpenObject }: PaneProps) {
+export function DashboardAi({
+  token,
+  onOpenObject,
+  initialMessage,
+  onInitialMessageSent,
+}: PaneProps) {
   const chat = useAssistantChat({ token, surface: 'dispatcher' });
+  const initialSent = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      !initialMessage ||
+      initialSent.current === initialMessage.id ||
+      !token ||
+      !chat.conversation ||
+      chat.loading ||
+      chat.sending ||
+      chat.runState === 'running'
+    )
+      return;
+    initialSent.current = initialMessage.id;
+    void chat.sendMessage(initialMessage.text).then(() => onInitialMessageSent?.());
+  }, [
+    initialMessage,
+    token,
+    chat.conversation,
+    chat.loading,
+    chat.sending,
+    chat.runState,
+    chat.sendMessage,
+    onInitialMessageSent,
+  ]);
+
   const [draft, setDraft] = useState('');
   const [thoughtFor, setThoughtFor] = useState<Readonly<Record<string, number>>>({});
   const [rating, setRating] = useState<Readonly<Record<string, 'up' | 'down'>>>(readRatings);
@@ -184,7 +218,7 @@ export function DashboardAi({ token, onOpenObject }: PaneProps) {
               className="size-[120px] rounded-full bg-[#f8f8f8] object-cover"
             />
             <h1 className="font-murs text-center text-[32px] leading-none tracking-[-0.544px] text-figma-ink">
-              С чего начнем сегодня?
+              {t('figma-dashboard.DispatcherAiPane.8e356a4b41')}
             </h1>
             <motion.div layoutId="dispatcher-ai-composer" className="w-full max-w-[813px]">
               {composer}
@@ -205,7 +239,9 @@ export function DashboardAi({ token, onOpenObject }: PaneProps) {
             <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-[48px] pb-[160px]">
               <div className="mx-auto flex w-full max-w-[1036px] flex-col gap-[28px]">
                 {chat.loading && spoken.length === 0 ? (
-                  <p className="text-center text-[16px] text-figma-muted">Загружаем диалог…</p>
+                  <p className="text-center text-[16px] text-figma-muted">
+                    {t('figma-dashboard.DispatcherAiPane.6e1c9169aa')}
+                  </p>
                 ) : null}
                 {spoken.map((message) =>
                   message.author === 'user' ? (
@@ -233,6 +269,7 @@ export function DashboardAi({ token, onOpenObject }: PaneProps) {
                   ),
                 )}
                 {thinking ? <ThinkingRow /> : null}
+                <ChatBottomSpacer />
               </div>
             </div>
             <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-figma-canvas from-55% to-transparent px-[48px] pb-[36px] pt-[72px]">
@@ -274,13 +311,13 @@ function LaneBar({
     <div className="absolute left-1/2 top-[84px] z-30 flex -translate-x-1/2 items-center gap-[12px]">
       <div className="flex h-[40px] items-center rounded-full bg-white p-[3px] shadow-[0_4px_14px_rgba(15,16,20,0.08)]">
         <LaneButton
-          label="Консультант"
+          label={t('figma-dashboard.DispatcherAiPane.2bfcee9972')}
           pressed={mode === 'help'}
           disabled={disabled}
           onClick={() => onMode('help')}
         />
         <LaneButton
-          label="Агент"
+          label={t('figma-dashboard.DispatcherAiPane.d5fd08be28')}
           pressed={mode === 'fix'}
           disabled={disabled}
           onClick={() => onMode('fix')}
@@ -288,7 +325,7 @@ function LaneBar({
       </div>
       <button
         type="button"
-        aria-label="Очистить чат"
+        aria-label={t('figma-dashboard.DispatcherAiPane.1c81fd9445')}
         disabled={disabled}
         onClick={onClear}
         className="flex size-[40px] items-center justify-center rounded-full bg-white text-figma-ink shadow-[0_4px_14px_rgba(15,16,20,0.08)] disabled:opacity-40"
@@ -358,7 +395,7 @@ function GuardModal({
           </dl>
         ) : null}
         <p className="mt-[18px] text-[16px] font-medium text-[#d92d20]">
-          Гуард пометил это действие как рисковое!
+          {t('figma-dashboard.DispatcherAiPane.a363333a47')}
         </p>
         <div className="mt-[22px] flex gap-[12px]">
           <button
@@ -366,14 +403,14 @@ function GuardModal({
             onClick={onReject}
             className="h-[52px] flex-1 rounded-full bg-figma-ink text-[16px] font-semibold text-white"
           >
-            Отклонить
+            {t('figma-dashboard.DispatcherAiPane.899c5d6de8')}
           </button>
           <button
             type="button"
             onClick={onAllow}
             className="h-[52px] flex-1 rounded-full bg-[#d92d20] text-[16px] font-semibold text-white"
           >
-            Разрешить
+            {t('figma-dashboard.DispatcherAiPane.241ed4211a')}
           </button>
         </div>
       </div>
@@ -419,12 +456,12 @@ function Composer({
         </p>
       ) : null}
       {/* Click on the black bar focuses the field. The textarea remains the keyboard target. */}
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: The bar is not a second control; it only moves focus into the textarea. */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/noNoninteractiveElementInteractions: The bar is not a second control; it only moves focus into the textarea. */}
       <div
         className="flex min-h-[79px] items-end gap-[12px] rounded-[40px] bg-figma-ink px-[10px] py-[8px]"
         onMouseDown={(event) => focusComposer(event, fieldRef.current)}
       >
-        <span className="flex size-[60px] shrink-0 items-center justify-center rounded-full bg-figma-bee">
+        <span className="flex size-[63px] shrink-0 items-center justify-center rounded-full bg-figma-bee">
           <FigmaIcon src={FIGMA_ASSETS.iconSparkles} alt="" width={26} height={26} />
         </span>
         <div className="flex min-w-0 flex-1 self-stretch items-center">
@@ -435,8 +472,8 @@ function Composer({
             onChange={(event) => onDraft(event.target.value)}
             onKeyDown={onKeyDown}
             disabled={!canSend && !running}
-            placeholder="Спроси меня о чем нибудь..."
-            aria-label="Сообщение ассистенту"
+            placeholder={t('figma-dashboard.DispatcherAiPane.a1d1bf51d7')}
+            aria-label={t('figma-dashboard.DispatcherAiPane.c520ad9958')}
             className="min-w-0 flex-1 resize-none bg-transparent font-semibold text-[18px] leading-[1.35] text-white outline-none placeholder:text-[#ededed] disabled:opacity-60"
           />
         </div>
@@ -444,7 +481,7 @@ function Composer({
           <button
             type="button"
             onClick={onStop}
-            aria-label="Остановить"
+            aria-label={t('figma-dashboard.DispatcherAiPane.3396400da0')}
             className="flex size-[63px] shrink-0 items-center justify-center rounded-full bg-white/10"
           >
             <span className="size-[14px] rounded-[3px] bg-white" />
@@ -453,7 +490,7 @@ function Composer({
           <button
             type="submit"
             disabled={!canSend || draft.trim().length === 0}
-            aria-label="Отправить"
+            aria-label={t('figma-dashboard.DispatcherAiPane.ceb68a9287')}
             className="flex size-[63px] shrink-0 items-center justify-center rounded-full bg-white/10 disabled:opacity-40"
           >
             <FigmaIcon src={FIGMA_ASSETS.arrowRightWhite} alt="" width={24} height={24} />
@@ -569,13 +606,13 @@ function AssistantBubble({
           <CopyButton text={message.text} />
           <RateButton
             src={FIGMA_ASSETS.aiThumbUp}
-            label="Полезно"
+            label={t('figma-dashboard.DispatcherAiPane.4679c63c99')}
             pressed={rating === 'up'}
             onClick={() => onRate('up')}
           />
           <RateButton
             src={FIGMA_ASSETS.aiThumbDown}
-            label="Не полезно"
+            label={t('figma-dashboard.DispatcherAiPane.bdc61d6203')}
             pressed={rating === 'down'}
             onClick={() => onRate('down')}
           />
@@ -603,7 +640,7 @@ function ThinkingRow() {
         <span className="ai-think-dot" />
         <span className="ai-think-dot" />
         <span className="ai-think-dot" />
-        <span className="sr-only">Ассистент думает</span>
+        <span className="sr-only">{t('figma-dashboard.DispatcherAiPane.6bb1ef689f')}</span>
       </div>
     </div>
   );
@@ -651,7 +688,11 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       type="button"
-      aria-label={copied ? 'Скопировано' : 'Копировать'}
+      aria-label={
+        copied
+          ? t('figma-dashboard.DispatcherAiPane.d2d08c715e')
+          : t('figma-dashboard.DispatcherAiPane.1ecddf40bf')
+      }
       data-pop={copied ? 'true' : 'false'}
       onClick={() => {
         void navigator.clipboard.writeText(text).then(() => {
@@ -691,47 +732,47 @@ function RateButton({
 }
 
 const TOOL_LINES: Readonly<Record<string, string>> = {
-  get_situation: 'AI смотрит смену',
-  get_day_plan: 'AI смотрит план',
-  list_engineers: 'AI смотрит инженеров',
-  list_requests: 'AI смотрит заявки',
-  get_request: 'AI смотрит заявку',
-  get_request_history: 'AI читает историю заявки',
-  list_alerts: 'AI читает алерты',
-  get_shift_status: 'AI смотрит смену',
-  get_policies: 'AI смотрит политики',
-  compare_policies: 'AI сравнивает политики',
-  get_router_settings: 'AI смотрит настройки',
-  get_snapshot_diagnostics: 'AI проверяет снимок',
-  evaluate_manual_order: 'AI выбирает стратегию',
-  search_documentation: 'AI читает документацию',
-  prepare_move_window: 'AI переносит окно',
-  prepare_reschedule_request: 'AI переносит заявку',
-  prepare_update_request: 'AI меняет заявку',
-  prepare_cancel_request: 'AI отменяет заявку',
-  prepare_create_request: 'AI создаёт заявку',
-  prepare_select_policy: 'AI выбирает стратегию',
-  prepare_set_engineer_availability: 'AI меняет доступность',
-  prepare_set_engineer_workday: 'AI меняет смену',
-  prepare_engineer_technical_break: 'AI ставит перерыв',
-  prepare_resolve_alert: 'AI закрывает алерт',
-  prepare_mark_alert_seen: 'AI отмечает алерт',
-  prepare_close_shift: 'AI закрывает смену',
+  get_situation: t('figma-dashboard.DispatcherAiPane.40cf792807'),
+  get_day_plan: t('figma-dashboard.DispatcherAiPane.1ff4f3fc96'),
+  list_engineers: t('figma-dashboard.DispatcherAiPane.d919748783'),
+  list_requests: t('figma-dashboard.DispatcherAiPane.bc5f81e424'),
+  get_request: t('figma-dashboard.DispatcherAiPane.adc9bd9e68'),
+  get_request_history: t('figma-dashboard.DispatcherAiPane.38242f3946'),
+  list_alerts: t('figma-dashboard.DispatcherAiPane.e12488781f'),
+  get_shift_status: t('figma-dashboard.DispatcherAiPane.40cf792807'),
+  get_policies: t('figma-dashboard.DispatcherAiPane.7ba2c38c5f'),
+  compare_policies: t('figma-dashboard.DispatcherAiPane.1b7d319764'),
+  get_router_settings: t('figma-dashboard.DispatcherAiPane.a3bcc81cc2'),
+  get_snapshot_diagnostics: t('figma-dashboard.DispatcherAiPane.93d2370b70'),
+  evaluate_manual_order: t('figma-dashboard.DispatcherAiPane.19634fed9e'),
+  search_documentation: t('figma-dashboard.DispatcherAiPane.a410be8ef9'),
+  prepare_move_window: t('figma-dashboard.DispatcherAiPane.8a85063aba'),
+  prepare_reschedule_request: t('figma-dashboard.DispatcherAiPane.763124e6f8'),
+  prepare_update_request: t('figma-dashboard.DispatcherAiPane.5c8fa64684'),
+  prepare_cancel_request: t('figma-dashboard.DispatcherAiPane.6df715c895'),
+  prepare_create_request: t('figma-dashboard.DispatcherAiPane.2d4189876b'),
+  prepare_select_policy: t('figma-dashboard.DispatcherAiPane.19634fed9e'),
+  prepare_set_engineer_availability: t('figma-dashboard.DispatcherAiPane.f41a6ae78b'),
+  prepare_set_engineer_workday: t('figma-dashboard.DispatcherAiPane.398d564deb'),
+  prepare_engineer_technical_break: t('figma-dashboard.DispatcherAiPane.b0d2b035fd'),
+  prepare_resolve_alert: t('figma-dashboard.DispatcherAiPane.d87c5697e3'),
+  prepare_mark_alert_seen: t('figma-dashboard.DispatcherAiPane.a969d554bc'),
+  prepare_close_shift: t('figma-dashboard.DispatcherAiPane.41c62b7b5a'),
 };
 
 /** What to print above the composer while a turn is in flight. */
 function activityLine(activity: string | null, running: boolean): string | null {
   if (!running) return null;
-  if (activity === 'Проверка безопасности') return activity;
+  if (activity === t('figma-dashboard.DispatcherAiPane.3770e6ef04')) return activity;
   if (activity && TOOL_LINES[activity]) return TOOL_LINES[activity];
-  return 'AI думает';
+  return t('figma-dashboard.DispatcherAiPane.707a7d4a4c');
 }
 
 function noticeOf(error: string | null, unavailable: AiUnavailableReason | null): string | null {
-  if (unavailable === 'quota') return 'Лимит сообщений на сегодня исчерпан.';
-  if (unavailable === 'auth') return 'Нужна сессия диспетчера.';
-  if (unavailable === 'provider') return error ?? 'Ассистент сейчас недоступен.';
-  if (unavailable === 'stopped') return 'Ответ остановлен.';
+  if (unavailable === 'quota') return t('figma-dashboard.DispatcherAiPane.48b2a48d2f');
+  if (unavailable === 'auth') return t('figma-dashboard.DispatcherAiPane.df8d670234');
+  if (unavailable === 'provider') return error ?? t('figma-dashboard.DispatcherAiPane.771f630d03');
+  if (unavailable === 'stopped') return t('figma-dashboard.DispatcherAiPane.8ae7a27a4c');
   return error;
 }
 
@@ -765,9 +806,9 @@ export function thoughtLabel(seconds: number): string {
   const mod100 = n % 100;
   const word =
     mod10 === 1 && mod100 !== 11
-      ? 'секунду'
+      ? t('figma-dashboard.DispatcherAiPane.ae517cde74')
       : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)
-        ? 'секунды'
-        : 'секунд';
-  return `Думал ${n} ${word}`;
+        ? t('figma-dashboard.DispatcherAiPane.2e4a8a72da')
+        : t('figma-dashboard.DispatcherAiPane.40b9a8fa1f');
+  return t('figma-dashboard.DispatcherAiPane.8dd7ffdb85', { value0: n, value1: word });
 }

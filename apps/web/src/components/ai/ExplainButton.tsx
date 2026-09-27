@@ -2,6 +2,7 @@ import { Sparkles } from 'lucide-react';
 import { useState } from 'react';
 import type { ExplainTarget } from '../../api/ai';
 import { useExplainRun } from '../../hooks/useExplainRun';
+import { t } from '../../i18n';
 import { AiUnavailablePanel } from './AiUnavailablePanel';
 
 export interface ExplainButtonProps {
@@ -30,7 +31,7 @@ export interface ExplainButtonProps {
 export function ExplainButton({
   token,
   target,
-  label = 'Объяснить',
+  label = t('components.ai.ExplainButton.26696296dd'),
   compact = false,
   tone = 'light',
   fullWidth = false,
@@ -60,7 +61,7 @@ export function ExplainButton({
         onClick={toggle}
         aria-expanded={open}
         disabled={token === null}
-        title={token === null ? 'Ассистент недоступен без подключения к рабочему серверу' : label}
+        title={token === null ? t('components.ai.ExplainButton.23020bb8af') : label}
         className={`${
           compact
             ? 'inline-flex h-7 w-7 items-center justify-center rounded-full border disabled:opacity-40'
@@ -79,7 +80,7 @@ export function ExplainButton({
           ) : (
             <>
               {state.text.length === 0 && state.loading ? (
-                <p className="text-muted">Ассистент думает…</p>
+                <p className="text-muted">{t('components.ai.ExplainButton.c68c924b18')}</p>
               ) : (
                 <p className="whitespace-pre-line text-ink">{state.text}</p>
               )}
@@ -102,7 +103,7 @@ export function ExplainButton({
               }}
               className="mt-2 text-[11px] font-semibold underline"
             >
-              Продолжить в чате
+              {t('components.ai.ExplainButton.3ed93ed51b')}
             </button>
           ) : null}
         </div>

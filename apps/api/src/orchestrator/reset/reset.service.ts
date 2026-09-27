@@ -141,6 +141,7 @@ export class ResetService {
       select: { pointerVersion: true },
     });
     await tx.equipmentHandoff.deleteMany({});
+    await tx.equipmentLogistics.deleteMany({});
     await tx.appliedPlanCurrent.deleteMany({});
     await tx.appliedPlanStop.deleteMany({});
     await tx.appliedPlanRoute.deleteMany({});

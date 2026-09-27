@@ -16,6 +16,7 @@ import {
   otpValue,
 } from '../figma-dashboard/otp';
 import { FigmaIcon } from '../figma-dashboard/primitives';
+import { t } from '../i18n';
 import { eu } from './engineerScale';
 import { engineerCodeHint } from './loginHint';
 import { PhoneErrorNotice } from './PhoneErrorNotice';
@@ -62,7 +63,7 @@ export function EngineerLogin({
   const requestCode = async () => {
     const nextEmail = email.trim();
     if (!isLoginEmail(nextEmail)) {
-      setFailure('Проверьте адрес почты.');
+      setFailure(t('figma-engineer.EngineerLogin.78bbe6d207'));
       return;
     }
     setBusy(true);
@@ -101,7 +102,11 @@ export function EngineerLogin({
   return (
     <div className="engineer-phone relative flex h-dvh flex-col overflow-y-auto bg-figma-canvas">
       {failure ? (
-        <PhoneErrorNotice title="Ошибка входа" body={failure} onClose={() => setFailure(null)} />
+        <PhoneErrorNotice
+          title={t('figma-engineer.EngineerLogin.4ebf918cfa')}
+          body={failure}
+          onClose={() => setFailure(null)}
+        />
       ) : null}
       <div
         className="flex flex-1 flex-col justify-center"
@@ -117,7 +122,7 @@ export function EngineerLogin({
               style={{ width: eu(170), height: eu(170) }}
             />
             <p className="font-murs tracking-[0.02em] text-figma-ink" style={{ fontSize: eu(64) }}>
-              NAVIX
+              {t('figma-engineer.EngineerLogin.d675af9943')}
             </p>
           </div>
 
@@ -138,13 +143,13 @@ export function EngineerLogin({
               htmlFor="eng-login-email"
               style={{ fontSize: eu(32) }}
             >
-              Email
+              {t('figma-engineer.EngineerLogin.969ccbd3cf')}
             </label>
             <input
               id="eng-login-email"
               type="email"
               autoComplete="username"
-              placeholder="example@gmail.com"
+              placeholder={t('figma-engineer.EngineerLogin.264e53d937')}
               value={email}
               disabled={busy}
               onChange={(event) => setEmail(event.target.value)}
@@ -172,7 +177,7 @@ export function EngineerLogin({
                     className="font-murs text-figma-ink"
                     style={{ marginTop: eu(40), fontSize: eu(32) }}
                   >
-                    Код из письма
+                    {t('figma-engineer.EngineerLogin.d137bee310')}
                   </p>
                   <OtpRow
                     cells={cells}
@@ -205,7 +210,7 @@ export function EngineerLogin({
                           fontSize: eu(28),
                         }}
                       >
-                        Новый код
+                        {t('figma-engineer.EngineerLogin.1a0517bfd5')}
                       </motion.button>
                     )}
                   </div>
@@ -230,7 +235,11 @@ export function EngineerLogin({
                 fontSize: eu(28),
               }}
             >
-              {busy ? (codeStep ? 'Входим…' : 'Отправляем…') : 'Войти'}
+              {busy
+                ? codeStep
+                  ? t('figma-engineer.EngineerLogin.0d71e00507')
+                  : t('figma-engineer.EngineerLogin.899dce11fb')
+                : t('figma-engineer.EngineerLogin.8fc9ab2eeb')}
             </motion.button>
           </form>
         </div>
@@ -270,7 +279,10 @@ function OtpRow({
           }}
           inputMode="numeric"
           autoComplete={index === 0 ? 'one-time-code' : 'off'}
-          aria-label={`Цифра ${index + 1} из ${OTP_LENGTH}`}
+          aria-label={t('figma-engineer.EngineerLogin.1e69b3fe8f', {
+            value0: index + 1,
+            value1: OTP_LENGTH,
+          })}
           maxLength={OTP_LENGTH}
           disabled={disabled}
           value={cells[index]}

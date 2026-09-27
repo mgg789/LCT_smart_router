@@ -17,6 +17,7 @@ import type { AiConversation } from '../../src/generated/prisma/client';
 
 interface HarnessOptions {
   readonly events: readonly LlmStreamEvent[];
+  readonly continuationEvents?: readonly LlmStreamEvent[];
   readonly providerKind?: 'replay' | 'openai_chat';
   readonly reasoningEffort?: 'none' | 'low';
   readonly failAfterEvents?: number;
@@ -44,10 +45,15 @@ function harness(options: HarnessOptions) {
     }),
     async *turn(_input: LlmTurnInput) {
       primaryCalls += 1;
-      for (let index = 0; index < options.events.length; index += 1) {
+      const events =
+        primaryCalls > 1 && options.continuationEvents
+          ? options.continuationEvents
+          : options.events;
+      if (primaryCalls > 1 && options.continuationEvents) assert.equal(_input.tools.length, 0);
+      for (let index = 0; index < events.length; index += 1) {
         if (options.failAfterEvents === index)
           throw new LlmCallError('stream ended early', 'server');
-        yield options.events[index] as LlmStreamEvent;
+        yield events[index] as LlmStreamEvent;
       }
       if (options.failAfterEvents === options.events.length) {
         throw new LlmCallError('stream ended early', 'server');
@@ -89,7 +95,7 @@ function harness(options: HarnessOptions) {
         },
       },
     } as never,
-    {} as never,
+    { run: async (callback: (tx: unknown) => Promise<unknown>) => callback({}) } as never,
     new FixedClock(100),
     config as never,
     {
@@ -125,7 +131,9 @@ function harness(options: HarnessOptions) {
       },
     } as never,
     {
-      llmSpecsFor: () => [{ name: 'write_plan', description: 'write', parametersJsonSchema: {} }],
+      liveSpecsFor: async () => [
+        { name: 'write_plan', description: 'write', parametersJsonSchema: {} },
+      ],
     } as never,
     { publishMessage: () => undefined } as never,
   );
@@ -186,6 +194,41 @@ describe('agent runtime provider protocol guards', () => {
     await test.run();
     assert.equal(test.dispatchCount(), 0);
     assert.equal(test.runState(), 'failed');
+  });
+
+  it('continues length-truncated text once without offering mutation tools', async () => {
+    const test = harness({
+      events: [
+        { type: 'text_delta', text: 'Назначение выполнен' },
+        { type: 'done', finishReason: 'length', usage: { promptTokens: 1, completionTokens: 1 } },
+      ],
+      continuationEvents: [
+        { type: 'text_delta', text: 'о.' },
+        { type: 'done', finishReason: 'stop', usage: { promptTokens: 1, completionTokens: 1 } },
+      ],
+    });
+    await test.run();
+    assert.equal(test.providerCallCount(), 2);
+    assert.equal(test.messageWriteCount(), 1);
+    assert.equal(test.runState(), 'completed');
+    assert.ok(
+      test.outputEvents.some(
+        (event) => event.type === 'message' && event.text === 'Назначение выполнено.',
+      ),
+    );
+  });
+
+  it('does not publish a truncated text response as a successful final answer', async () => {
+    const test = harness({
+      events: [
+        { type: 'text_delta', text: 'Назначение выполнен' },
+        { type: 'done', finishReason: 'length', usage: { promptTokens: 1, completionTokens: 1 } },
+      ],
+    });
+    await test.run();
+    assert.equal(test.messageWriteCount(), 0);
+    assert.equal(test.runState(), 'failed');
+    assert.ok(test.outputEvents.some((event) => event.type === 'error'));
   });
 
   it('keeps reasoning-only length output private and fails without inventing a final answer', async () => {

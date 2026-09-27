@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { t } from '../i18n';
 import { FigmaIcon } from './primitives';
 
 /**
@@ -123,7 +124,7 @@ export function InboxNoticeCardView({
       </p>
       <div className="mt-auto flex items-center gap-[20px]">
         <InboxButton variant="ink" onClick={onHide}>
-          Скрыть
+          {t('figma-dashboard.inboxCard.0a2a4b8377')}
         </InboxButton>
       </div>
     </article>

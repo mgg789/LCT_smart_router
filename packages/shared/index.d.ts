@@ -5,7 +5,7 @@
  * This package is types only: both apps import it with `import type`.
  */
 
-export type PolicyId = 'compact' | 'fast' | 'sla' | 'balanced' | 'eco' | 'covering';
+export type PolicyId = 'compact' | 'fast' | 'sla' | 'balanced' | 'eco' | 'covering' | 'personal';
 export type StrategyId = PolicyId | 'baseline';
 export type EquipmentType = 'router' | 'set_top_box' | 'smart_speaker';
 
@@ -50,6 +50,19 @@ export interface PolicySpec {
   readonly isDefault: boolean;
 }
 
+/** Business routing tiers; qualification and a customer's urgency flag are independent. */
+export type WorkCategory = 'emergency' | 'connection' | 'service';
+
+/** Canonical public work catalogue used by request forms and import review. */
+export interface WorkTypeView {
+  readonly code: string;
+  readonly title: string;
+  readonly category: WorkCategory;
+  readonly categoryTitle: string;
+  readonly serviceDurationSec: number;
+  readonly requiredSkill: 'local' | 'connection' | 'emergency';
+}
+
 export interface RequestView {
   readonly id: string;
   readonly version: number;
@@ -64,6 +77,8 @@ export interface RequestView {
   readonly requiredEquipment: EquipmentType | null;
   readonly workType: string | null;
   readonly workTypeTitle: string | null;
+  readonly workCategory?: WorkCategory;
+  readonly receivedAt?: number | null;
   readonly requiredSkill: string;
   readonly normProfileCode?: string;
   readonly normativeTravelDurationSec?: number;
@@ -209,7 +224,13 @@ export interface EngineerDayView {
 
 export interface PlanStopView {
   readonly sequence: number;
-  readonly kind: 'job' | 'lunch' | 'wait' | 'start' | 'handoff';
+  readonly kind: 'job' | 'lunch' | 'wait' | 'start' | 'handoff' | 'delivery' | 'office_pickup';
+  readonly logistics?: {
+    readonly logistics_id: string;
+    readonly kind: 'donor_delivery' | 'office_pickup';
+    readonly request_id: string;
+    readonly equipment_type: 'router' | 'set_top_box' | 'smart_speaker';
+  } | null;
   /** Router handoff metadata is snake_case to match the core result contract. */
   readonly handoff?: {
     readonly handoff_id: string;
@@ -355,6 +376,7 @@ export interface AlertView {
 
 /** A dispatcher decision; absolute window bounds use Unix seconds. */
 export interface AlertResolutionInput {
+  readonly expectedPriorityVersion?: string;
   readonly expectedRequestVersion?: number;
   readonly operationId: string;
   readonly action: string;
@@ -405,6 +427,8 @@ export interface DispatchPlanResponse {
 }
 
 export interface DashboardSnapshot {
+  /** New ordinary arrivals stay unassigned without automatic replanning; default false. */
+  readonly ordinaryReplanningDisabled?: boolean;
   readonly workDate: string;
   readonly timeZone: 'Europe/Moscow';
   readonly nowAt: number;
@@ -571,6 +595,7 @@ export type TabularField =
   | 'lat'
   | 'lon'
   | 'workType'
+  | 'workCategory'
   | 'duration'
   | 'windowStart'
   | 'windowEnd'
@@ -655,6 +680,10 @@ export interface DataUploadRequest {
   readonly requiredTransport?: 'car' | 'walk' | 'bike' | 'transit';
   readonly requiredEquipment?: EquipmentType;
   readonly workType?: string;
+  /** Required for an unknown named work type; known types use the canonical catalogue. */
+  readonly workCategory?: WorkCategory;
+  /** Actual occurrence/receipt in source time; absent means known from the day's start. */
+  readonly receivedAt?: number;
 }
 
 export interface DataUploadEngineer {

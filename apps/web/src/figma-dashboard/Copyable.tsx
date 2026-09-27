@@ -1,5 +1,6 @@
 import { Copy } from 'lucide-react';
 import { type ReactNode, useRef, useState } from 'react';
+import { t } from '../i18n';
 import { copyableValue, copyText } from './copyText';
 
 const COPIED_MS = 700;
@@ -27,8 +28,16 @@ export function Copyable({
     <button
       type="button"
       disabled={!text}
-      aria-label={label ?? (text ? `Скопировать ${text}` : undefined)}
-      title={copied ? 'Скопировано' : text ? 'Скопировать' : undefined}
+      aria-label={
+        label ?? (text ? t('figma-dashboard.Copyable.ca74b6e952', { value0: text }) : undefined)
+      }
+      title={
+        copied
+          ? t('figma-dashboard.Copyable.d2d08c715e')
+          : text
+            ? t('figma-dashboard.Copyable.f02956c165')
+            : undefined
+      }
       className={`group inline-flex items-center gap-[10px] transition-transform duration-150 active:scale-[0.99] ${
         copied ? 'copy-row-flash' : ''
       } ${className ?? ''}`}
@@ -52,7 +61,7 @@ export function Copyable({
         />
       ) : null}
       <span aria-live="polite" className="sr-only">
-        {copied ? 'Скопировано' : ''}
+        {copied ? t('figma-dashboard.Copyable.d2d08c715e') : ''}
       </span>
     </button>
   );

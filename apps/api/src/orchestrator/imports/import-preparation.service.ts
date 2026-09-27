@@ -14,14 +14,18 @@ import { normalizeAddress } from './dataset.parser';
 import { DatasetImportService, type DatasetRegion } from './dataset-import.service';
 import { analyzeImportQuality, type ImportQualityRequest } from './import-quality';
 import { importStudentVersion, screenImportStudent } from './quality-student/student';
-import { type UploadDataPackageInput, UploadImportService } from './upload-import.service';
+import {
+  normalizeUploadPackage,
+  type UploadDataPackageInput,
+  UploadImportService,
+} from './upload-import.service';
 
 const PREPARATION_TTL_SEC = 24 * 60 * 60;
 const QUALITY_VERSIONS = {
   rules: 'rules-v1',
   statistics: 'mad-log-v1',
   student: importStudentVersion,
-  transform: 'import-normalization-v1',
+  transform: 'import-business-priority-v2',
 } as const;
 
 const qualityVersionsSchema = z.object({
@@ -34,8 +38,15 @@ const qualityVersionsSchema = z.object({
 const officialRequestSchema = z.object({
   externalId: z.string(),
   workTypeCode: z.string(),
+  workCategory: z.enum(['emergency', 'connection', 'service']),
   skill: z.enum(['local', 'connection', 'emergency']),
-  normProfileCode: z.enum(['connection_base', 'outage_tkd', 'equipment_order', 'local_repair']),
+  normProfileCode: z.enum([
+    'connection_base',
+    'outage_tkd',
+    'network_emergency',
+    'equipment_order',
+    'local_repair',
+  ]),
   normativeTravelDurationSec: z.number(),
   technicalDurationSec: z.number(),
   documentationDurationSec: z.number(),
@@ -95,6 +106,8 @@ export class ImportPreparationService {
     input: UploadDataPackageInput,
     timeZoneOffsetSec: number,
   ): Promise<ImportPreparationView> {
+    const sourceInput = input;
+    input = normalizeUploadPackage(input);
     await lockWorkingSetGeneration(context.tx);
     const existingDepot =
       input.mode === 'append_requests'
@@ -114,6 +127,16 @@ export class ImportPreparationService {
       input.requests.map((request) => ({ ...request })),
       depot,
     );
+    const emergencies = input.requests.filter((request) => request.workCategory === 'emergency');
+    if (emergencies.length > 0)
+      findings.push({
+        code: 'emergency_service_norm',
+        layer: 'rules',
+        count: emergencies.length,
+        examples: emergencies.slice(0, 3).map((request) => request.externalId),
+        message:
+          'Аварии: норматив выполнения 100 минут, дорога считается отдельно. Приоритет перед подключениями и ремонтом.',
+      });
     const studentRows = input.requests.flatMap((request) => {
       const score = screenImportStudent({
         address: request.addressText,
@@ -125,12 +148,12 @@ export class ImportPreparationService {
     appendStudentFinding(findings, studentRows);
     const batch = {
       kind: 'upload' as const,
-      package: input,
+      package: sourceInput,
       timeZoneOffsetSec,
       interpretationFingerprint: canonicalHash(await readEquipmentSettings(context.tx)),
     };
     const identityPackage = Object.fromEntries(
-      Object.entries(input).filter(([key]) => key !== 'operationId'),
+      Object.entries(sourceInput).filter(([key]) => key !== 'operationId'),
     );
     const identity = { ...batch, package: identityPackage };
     const source = `upload:${input.region}:${input.sourceVersion}`;

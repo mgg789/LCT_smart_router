@@ -5,6 +5,7 @@ import type { EngineerLiveAction, EngineerLiveView } from '../api/live';
 import { formatLiveCountdown, moscowTimeInputAt } from '../engineer/live';
 import { FIGMA_ASSETS } from '../figma-dashboard/assets';
 import { TintIcon } from '../figma-dashboard/TintIcon';
+import { t } from '../i18n';
 import { formatPlanWindow } from './engineerClock';
 import { eu } from './engineerScale';
 import { shouldEnterLiveLine } from './liveSession';
@@ -46,10 +47,17 @@ export function LiveControls({
     return null;
   const requestId = current.request.id;
   const working = current.phase === 'in_progress';
+  const awaitingEquipment = (live.logistics ?? []).some(
+    (entry) =>
+      entry.requestId === requestId &&
+      entry.kind === 'donor_delivery' &&
+      entry.receiverEngineerId === live.engineer.id &&
+      ['searching', 'assigned', 'error'].includes(entry.state),
+  );
   const submit = async (action: EngineerLiveAction) => {
     setError(null);
     if (await send(action)) setForm(null);
-    else setError('Не удалось сохранить. Проверьте связь и повторите.');
+    else setError(t('figma-engineer.LiveControls.7a18948af1'));
   };
   return (
     <div className="flex flex-col gap-3" style={{ marginTop: eu(20), fontSize: eu(24) }}>
@@ -59,7 +67,7 @@ export function LiveControls({
           style={{ padding: `${eu(7)} ${eu(30)}`, fontSize: eu(22) }}
         >
           {form === 'eta'
-            ? 'Время прибытия'
+            ? t('figma-engineer.LiveControls.f723ae233c')
             : formatPlanWindow(current.request.windowStartAt, current.request.windowEndAt)}
         </span>
       ) : null}
@@ -68,8 +76,8 @@ export function LiveControls({
           {working ? (
             <button
               type="button"
-              aria-label="Проблема или дополнительное время"
-              className={`${button} flex-1 ${current.overrunAt !== null ? 'bg-figma-cancel' : 'bg-figma-ink'} text-white disabled:opacity-100`}
+              aria-label={t('figma-engineer.LiveControls.40e33f9af4')}
+              className={`${button} !rounded-full flex-1 ${current.overrunAt !== null ? 'bg-figma-cancel' : 'bg-figma-ink'} text-white disabled:opacity-100`}
               disabled={busy}
               onClick={() => setForm('problem')}
             >
@@ -78,7 +86,7 @@ export function LiveControls({
           ) : (
             <button
               type="button"
-              className={`${button} flex-1 ${current.phase !== 'awaiting_window' && now >= (current.stop?.startAt ?? Infinity) ? 'bg-figma-cancel text-white' : ''}`}
+              className={`${button} !rounded-full flex-1 ${current.phase !== 'awaiting_window' && now >= (current.stop?.startAt ?? Infinity) ? 'bg-figma-cancel text-white' : ''}`}
               disabled={busy}
               onClick={() =>
                 setForm(
@@ -89,18 +97,22 @@ export function LiveControls({
               }
             >
               {current.phase !== 'awaiting_window' && now >= (current.stop?.startAt ?? Infinity)
-                ? 'Проблема'
-                : 'Опаздываю'}
+                ? t('figma-engineer.LiveControls.54a37f55dc')
+                : t('figma-engineer.LiveControls.fb13f1838c')}
             </button>
           )}
           {working || current.phase === 'ready_to_start' ? (
             <button
               type="button"
               className={`${button} flex-1 bg-figma-ink text-white`}
-              disabled={busy}
+              disabled={busy || awaitingEquipment}
               onClick={() => void submit({ kind: working ? 'finish' : 'start', requestId })}
             >
-              {working ? 'Завершить' : 'Приступить'}
+              {awaitingEquipment
+                ? t('figma-engineer.LiveControls.c6531f7f17')
+                : working
+                  ? t('figma-engineer.LiveControls.8be2bbf39a')
+                  : t('figma-engineer.LiveControls.90ef4cfbd4')}
             </button>
           ) : null}
         </div>
@@ -108,11 +120,11 @@ export function LiveControls({
       {detail ? (
         <button
           type="button"
-          className={`${button} bg-figma-ink text-white`}
+          className={`${button} !rounded-full bg-figma-ink text-white`}
           disabled={busy}
           onClick={() => setForm('problem')}
         >
-          Проблема
+          {t('figma-engineer.LiveControls.54a37f55dc')}
         </button>
       ) : null}
       {form === 'eta' ? (
@@ -123,7 +135,7 @@ export function LiveControls({
             event.preventDefault();
             const etaAt = moscowTimeInputAt(live.workday.workDate, time);
             if (etaAt === null || etaAt <= now) {
-              setError('Укажите будущее время прибытия');
+              setError(t('figma-engineer.LiveControls.9772de74fd'));
               return;
             }
             void submit({ kind: 'eta', requestId, etaAt });
@@ -139,7 +151,7 @@ export function LiveControls({
                 paddingInline: eu(16),
               }}
               type="time"
-              aria-label="Время прибытия (Москва)"
+              aria-label={t('figma-engineer.LiveControls.4fad75bb1b')}
               required
               value={time}
               onChange={(event) => setTime(event.target.value)}
@@ -150,7 +162,7 @@ export function LiveControls({
             className={`${button} flex-1 bg-figma-ink text-white`}
             disabled={busy}
           >
-            Установить
+            {t('figma-engineer.LiveControls.b7cd6fae08')}
           </button>
         </form>
       ) : null}
@@ -163,14 +175,14 @@ export function LiveControls({
               <form
                 role="dialog"
                 aria-modal="true"
-                aria-label="Проблема с заявкой"
+                aria-label={t('figma-engineer.LiveControls.7de976c239')}
                 className="flex max-h-[90dvh] w-full max-w-md flex-col gap-3 overflow-auto rounded-[20px] bg-figma-canvas p-6 text-figma-ink"
                 onSubmit={(event) => {
                   event.preventDefault();
                   if (problem === 'eta') {
                     const etaAt = moscowTimeInputAt(live.workday.workDate, time);
                     if (etaAt === null || etaAt <= now) {
-                      setError('Укажите будущее время прибытия');
+                      setError(t('figma-engineer.LiveControls.9772de74fd'));
                       return;
                     }
                     void submit({ kind: 'eta', requestId, etaAt });
@@ -187,10 +199,10 @@ export function LiveControls({
                 }}
               >
                 <button type="button" className="self-end" onClick={() => setForm(null)}>
-                  Закрыть
+                  {t('figma-engineer.LiveControls.a7a4033657')}
                 </button>
                 <label>
-                  Что случилось
+                  {t('figma-engineer.LiveControls.725ffd8d26')}
                   <select
                     className={field}
                     value={problem}
@@ -206,16 +218,22 @@ export function LiveControls({
                         setProblem(value);
                     }}
                   >
-                    <option value="delay">Нужно больше времени</option>
-                    {!working ? <option value="eta">Опаздываю к заявке</option> : null}
-                    <option value="missing_equipment">Нет оборудования</option>
-                    <option value="other">Другая проблема</option>
-                    <option value="impossible">Невозможно выполнить</option>
+                    <option value="delay">{t('figma-engineer.LiveControls.6e8b02fe93')}</option>
+                    {!working ? (
+                      <option value="eta">{t('figma-engineer.LiveControls.dd8368fbc2')}</option>
+                    ) : null}
+                    <option value="missing_equipment">
+                      {t('figma-engineer.LiveControls.a66b9a19d5')}
+                    </option>
+                    <option value="other">{t('figma-engineer.LiveControls.8680ceb2c3')}</option>
+                    <option value="impossible">
+                      {t('figma-engineer.LiveControls.7832835abd')}
+                    </option>
                   </select>
                 </label>
                 {problem === 'eta' ? (
                   <label>
-                    Время прибытия
+                    {t('figma-engineer.LiveControls.f723ae233c')}
                     <input
                       type="time"
                       className={field}
@@ -227,7 +245,7 @@ export function LiveControls({
                 ) : null}
                 {problem === 'delay' ? (
                   <label>
-                    Дополнительно к текущему сроку, мин.
+                    {t('figma-engineer.LiveControls.2b91cf8ab8')}
                     <input
                       className={field}
                       type="number"
@@ -241,7 +259,7 @@ export function LiveControls({
                 ) : null}
                 {problem === 'missing_equipment' ? (
                   <label>
-                    Какого оборудования нет
+                    {t('figma-engineer.LiveControls.1d659fd28c')}
                     <select
                       className={field}
                       value={equipment}
@@ -255,20 +273,23 @@ export function LiveControls({
                           setEquipment(value);
                       }}
                     >
-                      <option value="router">Роутер</option>
-                      <option value="set_top_box">ТВ-приставка</option>
-                      <option value="smart_speaker">Умная колонка</option>
+                      <option value="router">{t('figma-engineer.LiveControls.4a65bf9c4b')}</option>
+                      <option value="set_top_box">
+                        {t('figma-engineer.LiveControls.140d6d4877')}
+                      </option>
+                      <option value="smart_speaker">
+                        {t('figma-engineer.LiveControls.cd9e2a8ef6')}
+                      </option>
                     </select>
                   </label>
                 ) : null}
                 {problem === 'eta' || problem === 'delay' ? (
                   <p className="text-sm text-figma-dim">
-                    За точный прогноз — 30 баллов. Отметьтесь не позже обещанного времени и не более
-                    чем на 10 минут раньше. Указывайте время без запаса.
+                    {t('figma-engineer.LiveControls.daea832b9c')}
                   </p>
                 ) : null}
                 <label>
-                  Описание
+                  {t('figma-engineer.LiveControls.b3680f2cba')}
                   <textarea
                     className={field}
                     required={problem !== 'eta'}
@@ -279,10 +300,10 @@ export function LiveControls({
                 </label>
                 <button type="submit" className={button} disabled={busy}>
                   {problem === 'eta'
-                    ? 'Установить время прибытия'
+                    ? t('figma-engineer.LiveControls.b5bf3f1e67')
                     : problem === 'delay'
-                      ? 'Сохранить новую длительность'
-                      : 'Отменить заявку с причиной'}
+                      ? t('figma-engineer.LiveControls.d22913c374')
+                      : t('figma-engineer.LiveControls.49ae518ec6')}
                 </button>
                 {error ? <p role="alert">{error}</p> : null}
               </form>
@@ -344,18 +365,22 @@ export function LiveDayOverlay({
       aria-live="polite"
     >
       {stop ? (
-        <img src={FIGMA_ASSETS.logo} alt="NAVIX" style={{ width: eu(300), marginBottom: eu(60) }} />
+        <img
+          src={FIGMA_ASSETS.logo}
+          alt={t('figma-engineer.LiveControls.d675af9943')}
+          style={{ width: eu(300), marginBottom: eu(60) }}
+        />
       ) : null}
       <h2 className="font-murs text-2xl text-figma-ink">
         {entry
-          ? 'Выйти на смену'
+          ? t('figma-engineer.LiveControls.b38ff0c67c')
           : pending
-            ? 'Ожидаем начала дня'
+            ? t('figma-engineer.LiveControls.a5a8a13dee')
             : finished
-              ? 'Рабочий день завершён'
+              ? t('figma-engineer.LiveControls.64556869b6')
               : stop
-                ? 'Технический перерыв'
-                : 'Обед'}
+                ? t('figma-engineer.LiveControls.d358dd229b')
+                : t('figma-engineer.LiveControls.69a29fbff8')}
       </h2>
       {entry ? (
         <>
@@ -367,16 +392,17 @@ export function LiveDayOverlay({
             disabled={busy}
             onClick={() => void send({ kind: 'online' }).then((ok) => setError(!ok))}
           >
-            Выйти на линию
+            {t('figma-engineer.LiveControls.24f07d8dea')}
           </button>
         </>
       ) : pending ? (
-        <p>Диспетчер запустит смену — ваш маршрут появится здесь.</p>
+        <p>{t('figma-engineer.LiveControls.f2f5a8e88b')}</p>
       ) : finished ? (
         <p>
-          Выполнено: {live.engineer.stats.completedCount} · по расписанию:{' '}
-          {live.engineer.stats.assumedCompletedCount} · отменено:{' '}
-          {live.engineer.stats.cancelledCount}
+          {t('figma-engineer.LiveControls.e5d9795f56')}
+          {live.engineer.stats.completedCount}
+          {t('figma-engineer.LiveControls.7d7e13f555')} {live.engineer.stats.assumedCompletedCount}
+          {t('figma-engineer.LiveControls.f1decb68dd')} {live.engineer.stats.cancelledCount}
         </p>
       ) : (
         <p className="font-murs" style={{ fontSize: stop ? eu(125) : eu(64) }}>
@@ -393,14 +419,14 @@ export function LiveDayOverlay({
               void send({ kind: 'break_finish' }).then((ok) => setError(!ok));
             }}
           >
-            Вернуться
+            {t('figma-engineer.LiveControls.6c99e7d8fb')}
           </button>
           {now >= stop.overdueAt ? (
-            <p className="text-figma-danger">Перерыв затянулся. Диспетчер уведомлён.</p>
+            <p className="text-figma-danger">{t('figma-engineer.LiveControls.8effce7ec4')}</p>
           ) : null}
           {error ? (
             <p role="alert" className="text-figma-danger">
-              Не удалось завершить перерыв. Повторите.
+              {t('figma-engineer.LiveControls.2a8c6b677f')}
             </p>
           ) : null}
         </>
@@ -413,23 +439,23 @@ const OFFICE_ROWS = [
   {
     key: 'router' as const,
     icon: '/figma/equipment.svg',
-    one: 'роутер',
-    few: 'роутера',
-    many: 'роутеров',
+    one: t('figma-engineer.LiveControls.4037da5b81'),
+    few: t('figma-engineer.LiveControls.6d24787a26'),
+    many: t('figma-engineer.LiveControls.76722bf300'),
   },
   {
     key: 'setTopBox' as const,
     icon: '/figma/set-top-box.svg',
-    one: 'приставка',
-    few: 'приставки',
-    many: 'приставок',
+    one: t('figma-engineer.LiveControls.75b7976a3b'),
+    few: t('figma-engineer.LiveControls.13b2bb209c'),
+    many: t('figma-engineer.LiveControls.142ef45d54'),
   },
   {
     key: 'smartSpeaker' as const,
     icon: '/figma/smart-speaker.svg',
-    one: 'умная колонка',
-    few: 'умные колонки',
-    many: 'умных колонок',
+    one: t('figma-engineer.LiveControls.24e5c4c34e'),
+    few: t('figma-engineer.LiveControls.b320328987'),
+    many: t('figma-engineer.LiveControls.f0e5444fd7'),
   },
 ];
 
@@ -445,11 +471,11 @@ function OfficeGear({
   return (
     <div className="w-full max-w-[360px] rounded-[20px] bg-white px-4 py-4 text-left shadow-[0_10px_28px_rgba(39,41,48,0.06)]">
       <p className="font-semibold text-figma-ink" style={{ fontSize: eu(36) }}>
-        Взять из офиса
+        {t('figma-engineer.LiveControls.f757e34db7')}
       </p>
       {rows.length === 0 ? (
         <p className="mt-2 font-medium text-figma-muted" style={{ fontSize: eu(28) }}>
-          Из офиса ничего брать не нужно.
+          {t('figma-engineer.LiveControls.7d5e24ef0b')}
         </p>
       ) : (
         <ul className="mt-3 flex flex-col gap-3">
@@ -472,11 +498,11 @@ function OfficeGear({
 function WeatherHint({ kind }: { kind: DispatchWeather['kind'] | null }) {
   const hint =
     kind === 'rain'
-      ? { icon: '/figma/cloud-rain.svg', text: 'Возьмите зонт: обещают дождь или он уже идёт.' }
+      ? { icon: '/figma/cloud-rain.svg', text: t('figma-engineer.LiveControls.00d8a62971') }
       : kind === 'snow'
-        ? { icon: '/figma/snowflake.svg', text: 'Наденьте куртку: на улице снег.' }
+        ? { icon: '/figma/snowflake.svg', text: t('figma-engineer.LiveControls.167da009f4') }
         : kind === 'storm'
-          ? { icon: '/figma/cloud-storm.svg', text: 'Возьмите зонт: гроза.' }
+          ? { icon: '/figma/cloud-storm.svg', text: t('figma-engineer.LiveControls.dd81be3e3a') }
           : null;
   if (!hint) return null;
   return (

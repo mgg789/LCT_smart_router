@@ -1,19 +1,20 @@
+import { t } from '../i18n';
 /** Europe/Moscow offset used only at the UI edge (context/33 §4). */
 export const MOSCOW_OFFSET_SEC = 3 * 3600;
 
 const MONTHS_RU = [
-  'января',
-  'февраля',
-  'марта',
-  'апреля',
-  'мая',
-  'июня',
-  'июля',
-  'августа',
-  'сентября',
-  'октября',
-  'ноября',
-  'декабря',
+  t('lib.time.05ae68ac92'),
+  t('lib.time.3ae2c0e9eb'),
+  t('lib.time.6cfa0bb4f6'),
+  t('lib.time.3144ee44fc'),
+  t('lib.time.2869fa115c'),
+  t('lib.time.b4c08e7bda'),
+  t('lib.time.a18a66ad65'),
+  t('lib.time.4ae69d9dc7'),
+  t('lib.time.67cb393e75'),
+  t('lib.time.fd08856334'),
+  t('lib.time.01bd452597'),
+  t('lib.time.866b5e92d8'),
 ] as const;
 
 /** Unix seconds for a civil clock time on a Moscow calendar day `YYYY-MM-DD`. */
@@ -56,9 +57,9 @@ export function formatMoscowDate(unixSec: number): string {
 }
 
 export function formatDurationMin(sec: number): string {
-  return `${Math.round(sec / 60)} мин`;
+  return t('lib.time.d662a84f53', { value0: Math.round(sec / 60) });
 }
 
 export function formatKm(km: number): string {
-  return `${km.toFixed(km >= 10 ? 0 : 1).replace('.', ',')} км`;
+  return t('lib.time.06f7f314d2', { value0: km.toFixed(km >= 10 ? 0 : 1).replace('.', ',') });
 }

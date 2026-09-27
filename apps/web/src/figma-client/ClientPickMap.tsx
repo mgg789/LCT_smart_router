@@ -2,6 +2,7 @@ import maplibregl from 'maplibre-gl';
 import { useEffect, useRef, useState } from 'react';
 import { LOCAL_MAP_BOUNDS, localMapStyle } from '../domain/localBasemap';
 import { ONLINE_MAP_STYLE, watchMapStartup } from '../domain/mapAvailability';
+import { t } from '../i18n';
 import { CLIENT_MAP_CENTER, type ClientMapPoint } from './clientPreview';
 
 /**
@@ -108,11 +109,11 @@ export function ClientPickMap({
         ref={container}
         className="absolute inset-0"
         style={{ position: 'absolute' }}
-        aria-label="Карта адреса заявки"
+        aria-label={t('figma-client.ClientPickMap.ee7649d212')}
       />
       {unavailable ? (
         <p role="status" className="absolute left-2 top-2 rounded bg-white p-2 text-figma-ink">
-          Карта недоступна. Адрес можно ввести текстом.
+          {t('figma-client.ClientPickMap.6f8be97cbb')}
         </p>
       ) : null}
     </>

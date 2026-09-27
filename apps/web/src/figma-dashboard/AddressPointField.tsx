@@ -1,9 +1,11 @@
 import maplibregl from 'maplibre-gl';
 import { useEffect, useRef, useState } from 'react';
 import { geocodeAddress } from '../api/client';
+import type { DispatchRegion } from '../api/regions';
 import type { GeocodeHit } from '../api/types';
 import { localMapStyle } from '../domain/localBasemap';
 import { ONLINE_MAP_STYLE, watchMapStartup } from '../domain/mapAvailability';
+import { t } from '../i18n';
 
 const FIELD =
   'mt-[8px] h-[56px] w-full rounded-[20px] border border-figma-ink/15 bg-white px-[18px] font-medium text-[18px] tracking-[-0.3px] text-figma-ink outline-none placeholder:text-figma-hint focus:border-figma-ink';
@@ -22,6 +24,7 @@ export function AddressPointField({
   onAddressChange,
   onResolved,
   onMapPick,
+  offices,
 }: {
   id: string;
   label: string;
@@ -32,6 +35,7 @@ export function AddressPointField({
   onAddressChange: (value: string) => void;
   onResolved: (hit: GeocodeHit) => void;
   onMapPick: (lat: number, lon: number) => void;
+  offices?: DispatchRegion[];
 }) {
   const [hits, setHits] = useState<GeocodeHit[]>([]);
   const [searching, setSearching] = useState(false);
@@ -49,7 +53,11 @@ export function AddressPointField({
         .then((next) => setHits(next))
         .catch((cause: unknown) => {
           setHits([]);
-          setSearchError(cause instanceof Error ? cause.message : 'Геокодер недоступен');
+          setSearchError(
+            cause instanceof Error
+              ? cause.message
+              : t('figma-dashboard.AddressPointField.d2b6fd7fec'),
+          );
         })
         .finally(() => setSearching(false));
     }, 400);
@@ -64,11 +72,15 @@ export function AddressPointField({
           id={id}
           value={addressText}
           onChange={(event) => onAddressChange(event.target.value)}
-          placeholder="Москва, улица, дом"
+          placeholder={t('figma-dashboard.AddressPointField.b9c33d62d8')}
           className={FIELD}
         />
       </label>
-      {searching ? <p className="mt-[8px] text-[13px] text-figma-muted">Ищем адрес…</p> : null}
+      {searching ? (
+        <p className="mt-[8px] text-[13px] text-figma-muted">
+          {t('figma-dashboard.AddressPointField.56fc5471cc')}
+        </p>
+      ) : null}
       {searchError ? <p className="mt-[8px] text-[13px] text-figma-danger">{searchError}</p> : null}
       {hits.length > 0 ? (
         <ul className="mt-[8px] overflow-hidden rounded-[16px] border border-figma-ink/10">
@@ -89,10 +101,15 @@ export function AddressPointField({
         </ul>
       ) : null}
       <p className="mt-[10px] font-medium text-[13px] text-figma-muted">
-        Или кликните точку на карте — координаты возьмутся без геокодинга.
-        {lat !== null && lon !== null ? ` Сейчас ${lat.toFixed(5)}, ${lon.toFixed(5)}.` : ''}
+        {t('figma-dashboard.AddressPointField.16a42e402a')}
+        {lat !== null && lon !== null
+          ? t('figma-dashboard.AddressPointField.0ad59713fc', {
+              value0: lat.toFixed(5),
+              value1: lon.toFixed(5),
+            })
+          : ''}
       </p>
-      <OsmPointMap lat={lat} lon={lon} onPick={onMapPick} />
+      <OsmPointMap lat={lat} lon={lon} onPick={onMapPick} offices={offices} />
     </div>
   );
 }
@@ -101,10 +118,12 @@ function OsmPointMap({
   lat,
   lon,
   onPick,
+  offices,
 }: {
   lat: number | null;
   lon: number | null;
   onPick: (lat: number, lon: number) => void;
+  offices?: DispatchRegion[];
 }) {
   const host = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -137,6 +156,29 @@ function OsmPointMap({
     };
     // The map is created once for the field lifetime; marker updates follow lat/lon.
   }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const markers = (offices ?? []).flatMap((office) => {
+      if (office.lat === null || office.lon === null) return [];
+      const marker = new maplibregl.Marker({ color: '#262830' })
+        .setLngLat([office.lon, office.lat])
+        .setPopup(new maplibregl.Popup({ offset: 20 }).setText(office.region))
+        .addTo(map);
+      marker.getElement().title = office.region;
+      marker.getElement().addEventListener('click', (event) => event.stopPropagation());
+      return [marker];
+    });
+    if (markers.length > 0) {
+      const bounds = new maplibregl.LngLatBounds();
+      for (const marker of markers) bounds.extend(marker.getLngLat());
+      map.fitBounds(bounds, { padding: 40, maxZoom: 11, duration: 0 });
+    }
+    return () => {
+      for (const marker of markers) marker.remove();
+    };
+  }, [offices]);
 
   useEffect(() => {
     const map = mapRef.current;

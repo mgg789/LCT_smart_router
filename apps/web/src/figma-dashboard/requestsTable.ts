@@ -1,5 +1,6 @@
 import type { DashboardSnapshot, RequestView } from '../api/types';
 import { assignmentFor } from '../domain/dashboard';
+import { t } from '../i18n';
 import { skillLabel } from '../lib/reasons';
 import { formatClock } from '../lib/time';
 
@@ -24,6 +25,7 @@ export type RequestTableRow = {
   number: string;
   address: string;
   service: string;
+  workCategory?: RequestView['workCategory'];
   window: string;
   windowStartAt: number;
   engineer: string;
@@ -31,9 +33,9 @@ export type RequestTableRow = {
 };
 
 export const REQUEST_SORT_OPTIONS = [
-  { id: 'usage', label: 'По использованию' },
-  { id: 'number', label: 'По номеру' },
-  { id: 'window', label: 'По окну' },
+  { id: 'usage', label: t('figma-dashboard.requestsTable.571482ce58') },
+  { id: 'number', label: t('figma-dashboard.requestsTable.f20abfe049') },
+  { id: 'window', label: t('figma-dashboard.requestsTable.2b3506ca42') },
 ] as const satisfies readonly { id: RequestSortId; label: string }[];
 
 const USAGE_RANK: Record<RequestRowStatus, number> = {
@@ -48,11 +50,11 @@ const USAGE_RANK: Record<RequestRowStatus, number> = {
  * Figma REQUESTS chips. Unassigned is the leftover state the mock does not paint.
  */
 export function requestStatusLabel(status: RequestRowStatus): string {
-  if (status === 'in_progress') return 'В работе';
-  if (status === 'assigned') return 'Назначена';
-  if (status === 'done') return 'Выполнена';
-  if (status === 'cancelled') return 'Отменена';
-  return 'Без назначения';
+  if (status === 'in_progress') return t('figma-dashboard.requestsTable.59a28f1b11');
+  if (status === 'assigned') return t('figma-dashboard.requestsTable.c5497186c4');
+  if (status === 'done') return t('figma-dashboard.requestsTable.6b5c7b568c');
+  if (status === 'cancelled') return t('figma-dashboard.requestsTable.86b78af7c2');
+  return t('figma-dashboard.requestsTable.6de28b421e');
 }
 
 /**
@@ -93,6 +95,7 @@ export function rowsFromSnapshot(snapshot: DashboardSnapshot): RequestTableRow[]
       id: request.id,
       number: request.id,
       address: shortRequestAddress(request.addressText),
+      workCategory: request.workCategory,
       service: request.workTypeTitle ?? skillLabel(request.requiredSkill),
       window: `${formatClock(request.windowStartAt)}-${formatClock(request.windowEndAt)}`,
       windowStartAt: request.windowStartAt,
@@ -144,91 +147,91 @@ export const DEMO_REQUEST_ROWS: readonly RequestTableRow[] = [
   {
     id: '1024',
     number: '1024',
-    address: 'ул. Таганская, 24',
-    service: 'Подключение интернета',
+    address: t('figma-dashboard.requestsTable.68669d377e'),
+    service: t('figma-dashboard.requestsTable.9fa84e238b'),
     window: '12:00-14:00',
     windowStartAt: 12,
-    engineer: 'Алексей Соколов',
+    engineer: t('figma-dashboard.requestsTable.05f56c34dd'),
     status: 'in_progress',
   },
   {
     id: '1039',
     number: '1039',
-    address: 'ул. Таганская, 24',
-    service: 'Подключение интернета',
+    address: t('figma-dashboard.requestsTable.68669d377e'),
+    service: t('figma-dashboard.requestsTable.9fa84e238b'),
     window: '12:00-14:00',
     windowStartAt: 12,
-    engineer: 'Алексей Соколов',
+    engineer: t('figma-dashboard.requestsTable.05f56c34dd'),
     status: 'assigned',
   },
   {
     id: '1038',
     number: '1038',
-    address: 'ул. Верхняя Радищевская, 5',
-    service: 'IP-телефония',
+    address: t('figma-dashboard.requestsTable.93352a0edc'),
+    service: t('figma-dashboard.requestsTable.f8599c507b'),
     window: '13:30-14:40',
     windowStartAt: 13,
-    engineer: 'Мария Александровна',
+    engineer: t('figma-dashboard.requestsTable.d37ec74a14'),
     status: 'done',
   },
   {
     id: '1065',
     number: '1065',
-    address: 'ул. Пятницкая, 17',
-    service: 'Диагностика сети',
+    address: t('figma-dashboard.requestsTable.c4e6752cf9'),
+    service: t('figma-dashboard.requestsTable.3ba1534329'),
     window: '11:00-13:00',
     windowStartAt: 11,
-    engineer: 'Иван Столяров',
+    engineer: t('figma-dashboard.requestsTable.96a15d5e23'),
     status: 'in_progress',
   },
   {
     id: '1170',
     number: '1170',
-    address: 'ул. Таганская, 24',
-    service: 'Подключение интернета',
+    address: t('figma-dashboard.requestsTable.68669d377e'),
+    service: t('figma-dashboard.requestsTable.9fa84e238b'),
     window: '12:00-14:00',
     windowStartAt: 12,
-    engineer: 'Алексей Соколов',
+    engineer: t('figma-dashboard.requestsTable.05f56c34dd'),
     status: 'assigned',
   },
   {
     id: '1098',
     number: '1098',
-    address: 'ул. Верхняя Радищевская, 5',
-    service: 'IP-телефония',
+    address: t('figma-dashboard.requestsTable.93352a0edc'),
+    service: t('figma-dashboard.requestsTable.f8599c507b'),
     window: '13:30-14:40',
     windowStartAt: 13,
-    engineer: 'Мария Александровна',
+    engineer: t('figma-dashboard.requestsTable.d37ec74a14'),
     status: 'done',
   },
   {
     id: '1097',
     number: '1097',
-    address: 'ул. Пятницкая, 17',
-    service: 'Диагностика сети',
+    address: t('figma-dashboard.requestsTable.c4e6752cf9'),
+    service: t('figma-dashboard.requestsTable.3ba1534329'),
     window: '11:00-13:00',
     windowStartAt: 11,
-    engineer: 'Иван Столяров',
+    engineer: t('figma-dashboard.requestsTable.96a15d5e23'),
     status: 'in_progress',
   },
   {
     id: '1254',
     number: '1254',
-    address: 'ул. Пятницкая, 17',
-    service: 'Диагностика сети',
+    address: t('figma-dashboard.requestsTable.c4e6752cf9'),
+    service: t('figma-dashboard.requestsTable.3ba1534329'),
     window: '11:00-13:00',
     windowStartAt: 11,
-    engineer: 'Иван Столяров',
+    engineer: t('figma-dashboard.requestsTable.96a15d5e23'),
     status: 'in_progress',
   },
   {
     id: '1133',
     number: '1133',
-    address: 'ул. Верхняя Радищевская, 5',
-    service: 'IP-телефония',
+    address: t('figma-dashboard.requestsTable.93352a0edc'),
+    service: t('figma-dashboard.requestsTable.f8599c507b'),
     window: '13:30-14:40',
     windowStartAt: 13,
-    engineer: 'Мария Александровна',
+    engineer: t('figma-dashboard.requestsTable.d37ec74a14'),
     status: 'done',
   },
 ];

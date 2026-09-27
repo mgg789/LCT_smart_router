@@ -25,10 +25,9 @@ export async function businessNow(tx: Tx, wallNow: number, workDate?: string): P
   const start = Number(day.logicalStartAt);
   const duration = Math.max(1, Number(day.logicalEndAt) - start);
   const factor = day.speedDurationSec === null ? 1 : duration / day.speedDurationSec;
-  return Math.min(
-    Number(day.logicalEndAt),
-    start + Math.floor(Math.max(0, wallNow - Number(day.startedAtWallSec)) * factor),
-  );
+  // Match LiveDayState.logicalNow: a running day may exceed its initial horizon
+  // after a manual shift extension. Only a finished day freezes the business clock.
+  return start + Math.floor(Math.max(0, wallNow - Number(day.startedAtWallSec)) * factor);
 }
 
 function localWorkDate(epochSeconds: number): string {

@@ -26,6 +26,14 @@ export class DispatchAlertsController {
     private readonly operations: OperationsService,
   ) {}
 
+  @Get('request-priority')
+  @ApiOperation({ summary: 'Current workday request priority and replacement revision' })
+  async requestPriority(@Query('workDate') workDate: string) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(workDate ?? ''))
+      throw SysError.validationFailed('workDate is required');
+    return { priority: await this.alertsService.priority(workDate) };
+  }
+
   @Get('alerts')
   @ApiOperation({ summary: 'Explainable problems reported by the plan' })
   async alerts(@Query('workDate') workDate?: string) {

@@ -1,6 +1,9 @@
 import { AnimatePresence, motion } from 'framer-motion';
+import { useRef } from 'react';
 import { MonthlyPoints } from '../components/passports/MonthlyPoints';
+import { useModalFocus } from '../components/useModalFocus';
 import { FigmaIcon } from '../figma-dashboard/primitives';
+import { t } from '../i18n';
 import { ENGINEER_ASSETS } from './assets';
 import { formatPlanWindow } from './engineerClock';
 import type { EngineerLunchItem } from './engineerDay';
@@ -48,10 +51,12 @@ export function EngineerMenu({
   onSupport: () => void;
   onSignOut: () => void;
 }) {
+  const dialog = useRef<HTMLElement>(null);
+  useModalFocus(dialog, open && !docked, onClose);
   if (docked) {
     return (
       <aside
-        aria-label="Меню инженера"
+        aria-label={t('figma-engineer.EngineerMenu.e88b3ec189')}
         className="phone-desk-menu flex h-full w-full flex-col overflow-y-auto bg-white"
       >
         <img
@@ -83,7 +88,7 @@ export function EngineerMenu({
           ) : null}
           <nav className="relative flex flex-col" style={{ marginTop: eu(28), gap: eu(20) }}>
             <MenuItem
-              label="Мой день"
+              label={t('figma-engineer.EngineerMenu.be15b21d03')}
               icon={ENGINEER_ASSETS.house}
               iconWidth={32}
               iconHeight={32}
@@ -91,7 +96,7 @@ export function EngineerMenu({
               onClick={() => onNavigate('day')}
             />
             <MenuItem
-              label="Помощник"
+              label={t('figma-engineer.EngineerMenu.b798a37544')}
               icon={ENGINEER_ASSETS.assistant}
               iconWidth={30}
               iconHeight={33}
@@ -99,7 +104,7 @@ export function EngineerMenu({
               onClick={() => onNavigate('assistant')}
             />
             <MenuItem
-              label="Настройки"
+              label={t('figma-engineer.EngineerMenu.985b5e0f2c')}
               icon={ENGINEER_ASSETS.gear}
               iconWidth={32}
               iconHeight={32}
@@ -132,7 +137,7 @@ export function EngineerMenu({
                 className="font-murs tracking-[-0.03em] text-figma-ink"
                 style={{ fontSize: eu(28) }}
               >
-                Обед
+                {t('figma-engineer.EngineerMenu.69a29fbff8')}
               </p>
               <p
                 className="font-semibold tracking-[-0.03em] text-figma-dim"
@@ -170,7 +175,9 @@ export function EngineerMenu({
                 className="font-murs tracking-[-0.03em] text-figma-ink"
                 style={{ fontSize: eu(28) }}
               >
-                {breakActive ? 'Завершить перерыв' : 'Тех. перерыв'}
+                {breakActive
+                  ? t('figma-engineer.EngineerMenu.df34119b0e')
+                  : t('figma-engineer.EngineerMenu.c982686d5c')}
               </span>
             </motion.button>
             <motion.button
@@ -186,7 +193,7 @@ export function EngineerMenu({
                 fontSize: eu(28),
               }}
             >
-              Написать в поддержку
+              {t('figma-engineer.EngineerMenu.dbe91db5dc')}
             </motion.button>
             <button
               type="button"
@@ -198,7 +205,7 @@ export function EngineerMenu({
                 padding: `${eu(10)} ${eu(22)}`,
               }}
             >
-              Выйти
+              {t('figma-engineer.EngineerMenu.5690c2e63b')}
             </button>
           </div>
         </div>
@@ -218,13 +225,17 @@ export function EngineerMenu({
         >
           <button
             type="button"
-            aria-label="Закрыть меню"
+            aria-label={t('figma-engineer.EngineerMenu.980d22e392')}
+            tabIndex={-1}
             onClick={onClose}
             className="absolute inset-0 z-0 bg-black/60 backdrop-blur-[10px]"
           />
           <motion.aside
+            ref={dialog}
             role="dialog"
-            aria-label="Меню инженера"
+            aria-modal="true"
+            tabIndex={-1}
+            aria-label={t('figma-engineer.EngineerMenu.e88b3ec189')}
             initial={motionOn ? { x: '-100%' } : false}
             animate={{ x: 0 }}
             exit={{ x: '-100%' }}
@@ -267,7 +278,7 @@ export function EngineerMenu({
               ) : null}
               <nav className="relative flex flex-col" style={{ marginTop: eu(28), gap: eu(20) }}>
                 <MenuItem
-                  label="Мой день"
+                  label={t('figma-engineer.EngineerMenu.be15b21d03')}
                   icon={ENGINEER_ASSETS.house}
                   iconWidth={32}
                   iconHeight={32}
@@ -275,7 +286,7 @@ export function EngineerMenu({
                   onClick={() => onNavigate('day')}
                 />
                 <MenuItem
-                  label="Помощник"
+                  label={t('figma-engineer.EngineerMenu.b798a37544')}
                   icon={ENGINEER_ASSETS.assistant}
                   iconWidth={30}
                   iconHeight={33}
@@ -283,7 +294,7 @@ export function EngineerMenu({
                   onClick={() => onNavigate('assistant')}
                 />
                 <MenuItem
-                  label="Настройки"
+                  label={t('figma-engineer.EngineerMenu.985b5e0f2c')}
                   icon={ENGINEER_ASSETS.gear}
                   iconWidth={32}
                   iconHeight={32}
@@ -316,7 +327,7 @@ export function EngineerMenu({
                     className="font-murs tracking-[-0.03em] text-figma-ink"
                     style={{ fontSize: eu(28) }}
                   >
-                    Обед
+                    {t('figma-engineer.EngineerMenu.69a29fbff8')}
                   </p>
                   <p
                     className="font-semibold tracking-[-0.03em] text-figma-dim"
@@ -354,7 +365,9 @@ export function EngineerMenu({
                     className="font-murs tracking-[-0.03em] text-figma-ink"
                     style={{ fontSize: eu(28) }}
                   >
-                    {breakActive ? 'Завершить перерыв' : 'Тех. перерыв'}
+                    {breakActive
+                      ? t('figma-engineer.EngineerMenu.df34119b0e')
+                      : t('figma-engineer.EngineerMenu.c982686d5c')}
                   </span>
                 </motion.button>
                 <motion.button
@@ -370,7 +383,7 @@ export function EngineerMenu({
                     fontSize: eu(28),
                   }}
                 >
-                  Написать в поддержку
+                  {t('figma-engineer.EngineerMenu.dbe91db5dc')}
                 </motion.button>
                 <button
                   type="button"
@@ -382,7 +395,7 @@ export function EngineerMenu({
                     padding: `${eu(10)} ${eu(22)}`,
                   }}
                 >
-                  Выйти
+                  {t('figma-engineer.EngineerMenu.5690c2e63b')}
                 </button>
               </div>
             </div>

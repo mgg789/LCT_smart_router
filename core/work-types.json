@@ -1,0 +1,246 @@
+[
+  {
+    "code": "outage",
+    "title": "Авария",
+    "aliases": [
+      "Авария"
+    ],
+    "skill": "emergency",
+    "normProfileCode": "network_emergency",
+    "normativeTravelDurationSec": 1200,
+    "technicalDurationSec": 6000,
+    "documentationDurationSec": 0,
+    "serviceDurationSec": 6000,
+    "priority": "urgent",
+    "category": "emergency"
+  },
+  {
+    "code": "no_link",
+    "title": "Нет линка",
+    "aliases": [
+      "Нет линка"
+    ],
+    "skill": "emergency",
+    "normProfileCode": "outage_tkd",
+    "normativeTravelDurationSec": 1200,
+    "technicalDurationSec": 4800,
+    "documentationDurationSec": 0,
+    "serviceDurationSec": 4800,
+    "priority": "urgent",
+    "category": "service"
+  },
+  {
+    "code": "disconnects",
+    "title": "Разрывы",
+    "aliases": [
+      "Разрывы"
+    ],
+    "skill": "emergency",
+    "normProfileCode": "outage_tkd",
+    "normativeTravelDurationSec": 1200,
+    "technicalDurationSec": 4800,
+    "documentationDurationSec": 0,
+    "serviceDurationSec": 4800,
+    "priority": "normal",
+    "category": "service"
+  },
+  {
+    "code": "low_speed",
+    "title": "Низкая скорость",
+    "aliases": [
+      "Низкая скорость"
+    ],
+    "skill": "emergency",
+    "normProfileCode": "outage_tkd",
+    "normativeTravelDurationSec": 1200,
+    "technicalDurationSec": 4800,
+    "documentationDurationSec": 0,
+    "serviceDurationSec": 4800,
+    "priority": "normal",
+    "category": "service"
+  },
+  {
+    "code": "port_errors",
+    "title": "Рост ошибок на порту",
+    "aliases": [
+      "Рост ошибок на порту"
+    ],
+    "skill": "emergency",
+    "normProfileCode": "outage_tkd",
+    "normativeTravelDurationSec": 1200,
+    "technicalDurationSec": 4800,
+    "documentationDurationSec": 0,
+    "serviceDurationSec": 4800,
+    "priority": "normal",
+    "category": "service"
+  },
+  {
+    "code": "ip_169",
+    "title": "IP-адрес 169...",
+    "aliases": [
+      "IP-адрес 169..."
+    ],
+    "skill": "emergency",
+    "normProfileCode": "outage_tkd",
+    "normativeTravelDurationSec": 1200,
+    "technicalDurationSec": 4800,
+    "documentationDurationSec": 0,
+    "serviceDurationSec": 4800,
+    "priority": "normal",
+    "category": "service"
+  },
+  {
+    "code": "connection_request",
+    "title": "Заявка на подключение",
+    "aliases": [
+      "Заявка на подключение"
+    ],
+    "skill": "connection",
+    "normProfileCode": "connection_base",
+    "normativeTravelDurationSec": 1200,
+    "technicalDurationSec": 3600,
+    "documentationDurationSec": 600,
+    "serviceDurationSec": 4200,
+    "priority": "normal",
+    "category": "connection"
+  },
+  {
+    "code": "convergence",
+    "title": "Конвергенция абонента",
+    "aliases": [
+      "Конвергенция абонента"
+    ],
+    "skill": "connection",
+    "normProfileCode": "connection_base",
+    "normativeTravelDurationSec": 1200,
+    "technicalDurationSec": 3600,
+    "documentationDurationSec": 600,
+    "serviceDurationSec": 4200,
+    "priority": "normal",
+    "category": "connection"
+  },
+  {
+    "code": "equipment_order",
+    "title": "Дозаказ оборудования",
+    "aliases": [
+      "Дозаказ оборудования",
+      "Заказ подключения/Дозаказ оборудования"
+    ],
+    "skill": "connection",
+    "normProfileCode": "equipment_order",
+    "normativeTravelDurationSec": 1200,
+    "technicalDurationSec": 600,
+    "documentationDurationSec": 600,
+    "serviceDurationSec": 1200,
+    "priority": "normal",
+    "category": "service"
+  },
+  {
+    "code": "router_replacement",
+    "title": "Роутер. Замена",
+    "aliases": [
+      "Роутер. Замена",
+      "Роутер. Замена техническим специалистом"
+    ],
+    "skill": "connection",
+    "normProfileCode": "equipment_order",
+    "normativeTravelDurationSec": 1200,
+    "technicalDurationSec": 600,
+    "documentationDurationSec": 600,
+    "serviceDurationSec": 1200,
+    "priority": "normal",
+    "category": "service"
+  },
+  {
+    "code": "stb_replacement",
+    "title": "ТВ/TVE/ENT. Замена приставки",
+    "aliases": [
+      "ТВ/TVE/ENT. Замена приставки",
+      "TVE/ENT. Замена приставки техником",
+      "ТВ. Замена приставки техником"
+    ],
+    "skill": "connection",
+    "normProfileCode": "equipment_order",
+    "normativeTravelDurationSec": 1200,
+    "technicalDurationSec": 600,
+    "documentationDurationSec": 600,
+    "serviceDurationSec": 1200,
+    "priority": "normal",
+    "category": "service"
+  },
+  {
+    "code": "gigabit_switch",
+    "title": "Переключение на Гбит/с",
+    "aliases": [
+      "Переключение на Гбит/с"
+    ],
+    "skill": "connection",
+    "normProfileCode": "connection_base",
+    "normativeTravelDurationSec": 1200,
+    "technicalDurationSec": 3600,
+    "documentationDurationSec": 600,
+    "serviceDurationSec": 4200,
+    "priority": "normal",
+    "category": "connection"
+  },
+  {
+    "code": "cable_work",
+    "title": "Работа с кабелем",
+    "aliases": [
+      "Работа с кабелем"
+    ],
+    "skill": "local",
+    "normProfileCode": "local_repair",
+    "normativeTravelDurationSec": 1200,
+    "technicalDurationSec": 1800,
+    "documentationDurationSec": 0,
+    "serviceDurationSec": 1800,
+    "priority": "normal",
+    "category": "service"
+  },
+  {
+    "code": "monitoring",
+    "title": "Мониторинг",
+    "aliases": [
+      "Мониторинг"
+    ],
+    "skill": "local",
+    "normProfileCode": "local_repair",
+    "normativeTravelDurationSec": 1200,
+    "technicalDurationSec": 1800,
+    "documentationDurationSec": 0,
+    "serviceDurationSec": 1800,
+    "priority": "normal",
+    "category": "service"
+  },
+  {
+    "code": "other_errors",
+    "title": "TVE/ENT. Другие ошибки",
+    "aliases": [
+      "TVE/ENT. Другие ошибки"
+    ],
+    "skill": "local",
+    "normProfileCode": "local_repair",
+    "normativeTravelDurationSec": 1200,
+    "technicalDurationSec": 1800,
+    "documentationDurationSec": 0,
+    "serviceDurationSec": 1800,
+    "priority": "normal",
+    "category": "service"
+  },
+  {
+    "code": "information",
+    "title": "Информация",
+    "aliases": [
+      "Информация"
+    ],
+    "skill": "local",
+    "normProfileCode": "local_repair",
+    "normativeTravelDurationSec": 1200,
+    "technicalDurationSec": 1800,
+    "documentationDurationSec": 0,
+    "serviceDurationSec": 1800,
+    "priority": "normal",
+    "category": "service"
+  }
+]

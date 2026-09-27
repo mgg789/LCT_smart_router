@@ -1,17 +1,39 @@
 import { z } from 'zod';
 import { operationEnvelopeSchema } from './request.dto';
 
-/** Plan-assessment and reserved model connection fields. Secrets are write-only. */
+const modelEndpoint = z
+  .string()
+  .trim()
+  .max(300)
+  .refine((value) => {
+    if (!value) return true;
+    try {
+      const url = new URL(value);
+      return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password;
+    } catch {
+      return false;
+    }
+  }, 'Укажите HTTP(S) URL без логина и пароля')
+  .nullable()
+  .optional();
+const modelKey = z
+  .string()
+  .trim()
+  .max(200)
+  .refine((value) => !value || value.length >= 8)
+  .optional();
+
+/** Plan-assessment and live model connection fields. Secrets are write-only. */
 export const aiSettingsSchema = z.object({
   operationId: z.string().min(8).max(128),
   planCalibrationEnabled: z.boolean().optional(),
-  llmApiUrl: z.string().max(300).nullable().optional(),
-  llmModel: z.string().max(120).nullable().optional(),
-  llmApiKey: z.string().min(8).max(200).optional(),
+  llmApiUrl: modelEndpoint,
+  llmModel: z.string().trim().max(120).nullable().optional(),
+  llmApiKey: modelKey,
   clearLlmApiKey: z.boolean().optional(),
-  jevApiUrl: z.string().max(300).nullable().optional(),
-  jevModel: z.string().max(120).nullable().optional(),
-  jevApiKey: z.string().min(8).max(200).optional(),
+  jevApiUrl: modelEndpoint,
+  jevModel: z.string().trim().max(120).nullable().optional(),
+  jevApiKey: modelKey,
   clearJevApiKey: z.boolean().optional(),
 });
 

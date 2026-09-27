@@ -17,6 +17,7 @@ import type { EngineerDayView, EngineerPlanResponse, EngineerView } from '../api
 import { PassportOffer } from '../components/passports/PassportOffer';
 import { TRANSPORT_OPTIONS } from '../figma-dashboard/addEntity';
 import { FigmaIcon } from '../figma-dashboard/primitives';
+import { t } from '../i18n';
 import { ENGINEER_ASSETS } from './assets';
 import { DeskShell } from './DeskShell';
 import {
@@ -29,6 +30,7 @@ import { EngineerAiPane } from './EngineerAiPane';
 import { EngineerDayResults } from './EngineerDayResults';
 import { EngineerMenu, type EngineerMenuId } from './EngineerMenu';
 import { EngineerSettings } from './EngineerSettings';
+import { EquipmentLogisticsStatus } from './EquipmentLogisticsStatus';
 import { engineerHeaderStamp } from './engineerClock';
 import type { EngineerJobItem } from './engineerDay';
 import { engineerListItems, engineerLunchWindow, missingRequestIds } from './engineerDay';
@@ -92,6 +94,8 @@ export function EngineerApp({
   const requestGeneration = useRef(0);
   const liveReceivedAt = useRef(Date.now());
   const [actionBusy, setActionBusy] = useState(false);
+  const [equipmentSearching, setEquipmentSearching] = useState(false);
+  const [equipmentRequestId, setEquipmentRequestId] = useState<string | null>(null);
   const acceptLive = useCallback((value: EngineerLiveView, receivedAt = Date.now()) => {
     liveReceivedAt.current = receivedAt;
     setLive(value);
@@ -162,7 +166,9 @@ export function EngineerApp({
         acceptLive(nextLive);
       } catch (cause) {
         if (failSession(cause)) return;
-        setError(cause instanceof Error ? cause.message : 'Не удалось загрузить смену');
+        setError(
+          cause instanceof Error ? cause.message : t('figma-engineer.EngineerApp.5077c0a25c'),
+        );
       } finally {
         readPending.current = false;
         if (initial) setLoading(false);
@@ -198,7 +204,9 @@ export function EngineerApp({
       } catch (cause) {
         if (disposed || generation !== requestGeneration.current) return;
         if (!failSession(cause)) {
-          setError(cause instanceof Error ? cause.message : 'Не удалось обновить статус смены');
+          setError(
+            cause instanceof Error ? cause.message : t('figma-engineer.EngineerApp.9a5d55a48d'),
+          );
         }
       } finally {
         readPending.current = false;
@@ -233,11 +241,18 @@ export function EngineerApp({
 
   const items = useMemo(
     () =>
-      engineerListItems(plan, live ? null : day, lunch, live?.handoffs ?? [], live?.engineer.id)
+      engineerListItems(
+        plan,
+        live ? null : day,
+        lunch,
+        live?.handoffs ?? [],
+        live?.engineer.id,
+        live?.logistics ?? [],
+      )
         .filter((item) =>
           item.kind === 'lunch'
             ? !live || item.endAt > logicalNow
-            : item.kind === 'handoff'
+            : item.kind === 'handoff' || item.kind === 'logistics'
               ? true
               : item.request.lifecycle !== 'completed' &&
                 item.request.lifecycle !== 'cancelled' &&
@@ -262,13 +277,26 @@ export function EngineerApp({
     liveActionPending.current = true;
     requestGeneration.current += 1;
     setActionBusy(true);
+    if (action.kind === 'problem' && action.problemKind === 'missing_equipment') {
+      setEquipmentRequestId(action.requestId);
+      setEquipmentSearching(true);
+    }
     try {
       const next = await sendEngineerLiveAction(token, action);
       window.dispatchEvent(new Event('engineer-rewards-changed'));
       const receivedAt = Date.now();
       setError(null);
       const terminalId =
-        action.kind === 'finish' || (action.kind === 'problem' && action.problemKind !== 'delay')
+        action.kind === 'finish' ||
+        (action.kind === 'problem' &&
+          action.problemKind !== 'delay' &&
+          (action.problemKind !== 'missing_equipment' ||
+            (next.current?.request.id !== action.requestId &&
+              !(next.logistics ?? []).some(
+                (entry) =>
+                  entry.requestId === action.requestId &&
+                  ['searching', 'assigned', 'error'].includes(entry.state),
+              ))))
           ? action.requestId
           : null;
       try {
@@ -302,8 +330,7 @@ export function EngineerApp({
                 }
               : previous,
           );
-        if (!failSession(cause))
-          setError('Отметка сохранена. Не удалось обновить маршрут — повторим автоматически.');
+        if (!failSession(cause)) setError(t('figma-engineer.EngineerApp.0c52041c00'));
       }
       if (terminalId)
         setOpenedJob((previous) => (previous?.request.id === terminalId ? null : previous));
@@ -311,17 +338,18 @@ export function EngineerApp({
       return true;
     } catch (cause) {
       if (failSession(cause)) return false;
-      setError(cause instanceof Error ? cause.message : 'Не удалось сохранить отметку');
+      setError(cause instanceof Error ? cause.message : t('figma-engineer.EngineerApp.7ec6dc5553'));
       return false;
     } finally {
       liveActionPending.current = false;
       setActionBusy(false);
+      setEquipmentSearching(false);
     }
   };
 
   const startJob = async (requestId: string) => {
     if (designPreview) {
-      setNotice('В макете факт «приступить» не отправляется.');
+      setNotice(t('figma-engineer.EngineerApp.ab18472057'));
       return;
     }
     setStartPendingId(requestId);
@@ -344,7 +372,7 @@ export function EngineerApp({
 
   const startBreak = async () => {
     if (designPreview) {
-      setNotice('В макете технический перерыв не отправляется.');
+      setNotice(t('figma-engineer.EngineerApp.86bbfbe169'));
       setMenuOpen(false);
       return;
     }
@@ -368,8 +396,8 @@ export function EngineerApp({
       setProfile(profileFromSettings(profile, draft));
       setNotice(
         emailChangePending(profile.email ?? fallbackEmail, draft.email)
-          ? 'Имя и транспорт сохранены в макете. Смена почты здесь только локально — PATCH /engineer/profile почту не принимает.'
-          : 'Профиль обновлён в макете.',
+          ? t('figma-engineer.EngineerApp.368ccd1f9d')
+          : t('figma-engineer.EngineerApp.7c20339930'),
       );
       setScreen('day');
       return;
@@ -386,19 +414,21 @@ export function EngineerApp({
       setProfile(next);
       setNotice(
         emailChangePending(profile.email ?? fallbackEmail, draft.email)
-          ? 'Имя и транспорт сохранены. Смена почты через PATCH /engineer/profile ещё не доступна.'
-          : 'Профиль сохранён.',
+          ? t('figma-engineer.EngineerApp.5b25099147')
+          : t('figma-engineer.EngineerApp.131e1e3469'),
       );
       setScreen('day');
     } catch (cause) {
       if (failSession(cause)) return;
-      setSettingsError(cause instanceof Error ? cause.message : 'Не удалось сохранить профиль');
+      setSettingsError(
+        cause instanceof Error ? cause.message : t('figma-engineer.EngineerApp.6093b8a820'),
+      );
     } finally {
       setSettingsSubmitting(false);
     }
   };
 
-  const name = profile?.displayName ?? 'Инженер';
+  const name = profile?.displayName ?? t('figma-engineer.EngineerApp.88d71676fa');
   const detailJob = openedJob
     ? (items.find(
         (item): item is EngineerJobItem =>
@@ -505,7 +535,7 @@ export function EngineerApp({
         <header className={`flex items-center ${desk ? 'hidden' : ''}`} style={{ gap: eu(20) }}>
           <motion.button
             type="button"
-            aria-label="Меню"
+            aria-label={t('figma-engineer.EngineerApp.122f717650')}
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen(true)}
             whileTap={{ scale: 0.96 }}
@@ -544,7 +574,7 @@ export function EngineerApp({
               className="font-extrabold tracking-[0.02em] text-figma-ink"
               style={{ marginTop: eu(48), fontSize: eu(36) }}
             >
-              Список заявок
+              {t('figma-engineer.EngineerApp.db511eb63e')}
             </h1>
             {notice ? (
               <p
@@ -578,7 +608,7 @@ export function EngineerApp({
                     fontSize: eu(20),
                   }}
                 >
-                  Повторить
+                  {t('figma-engineer.EngineerApp.5189135a61')}
                 </motion.button>
               </div>
             ) : null}
@@ -587,7 +617,7 @@ export function EngineerApp({
                 className="font-medium text-figma-muted"
                 style={{ marginTop: eu(24), fontSize: eu(20) }}
               >
-                Загружаем смену…
+                {t('figma-engineer.EngineerApp.0c92bb28fa')}
               </p>
             ) : null}
             {!loading && items.length === 0 && error === null ? (
@@ -601,16 +631,16 @@ export function EngineerApp({
               >
                 <p className="font-semibold text-figma-ink" style={{ fontSize: eu(24) }}>
                   {live?.engineer.canFinishDay
-                    ? 'Работа на сегодня завершена'
-                    : 'Ожидаем новые заявки'}
+                    ? t('figma-engineer.EngineerApp.9dc11e5b04')
+                    : t('figma-engineer.EngineerApp.abf4555deb')}
                 </p>
                 <p
                   className="font-medium text-figma-muted"
                   style={{ marginTop: eu(8), fontSize: eu(18) }}
                 >
                   {live?.engineer.canFinishDay
-                    ? 'Ваши заявки завершены, можно ехать домой. Диспетчер продолжит работу с алертами.'
-                    : 'До 17:00 остаёмся на связи. После 17:00 можно закончить день, когда ваша работа завершена и нет новых назначений.'}
+                    ? t('figma-engineer.EngineerApp.86065ade26')
+                    : t('figma-engineer.EngineerApp.ca428dc364')}
                 </p>
               </div>
             ) : null}
@@ -622,7 +652,9 @@ export function EngineerApp({
                       ? `lunch-${item.startAt}`
                       : item.kind === 'handoff'
                         ? `handoff-${item.handoff.id}`
-                        : item.request.id
+                        : item.kind === 'logistics'
+                          ? `logistics-${item.logistics.id}`
+                          : item.request.id
                   }
                 >
                   <EngineerListCard
@@ -630,6 +662,21 @@ export function EngineerApp({
                     motionOn={motionOn}
                     delay={index * 0.04}
                     actions={live && item.kind === 'job' ? controls(item.request.id) : undefined}
+                    logisticsAction={
+                      live &&
+                      !actionBusy &&
+                      item.kind === 'logistics' &&
+                      item.logistics.action?.enabled
+                        ? () => {
+                            const action = item.logistics.action;
+                            if (action)
+                              void applyLiveAction({
+                                kind: action.kind,
+                                logisticsId: item.logistics.id,
+                              });
+                          }
+                        : undefined
+                    }
                     handoffAction={
                       live && item.kind === 'handoff'
                         ? () =>
@@ -711,6 +758,14 @@ export function EngineerApp({
           equipment={day?.equipmentStock ?? null}
         />
       ) : null}
+      {live ? (
+        <EquipmentLogisticsStatus
+          live={live}
+          now={logicalNow}
+          searching={equipmentSearching}
+          requestId={equipmentRequestId ?? live.current?.request.id ?? null}
+        />
+      ) : null}
       {live && !designPreview ? <EngineerDayResults token={token} live={live} /> : null}
       <AnimatePresence>
         {screen === 'settings' ? (
@@ -742,7 +797,7 @@ export function EngineerApp({
                   className="font-medium text-figma-muted"
                   style={{ padding: eu(40), fontSize: eu(20) }}
                 >
-                  Загружаем профиль…
+                  {t('figma-engineer.EngineerApp.48883e0674')}
                 </p>
               )}
             </div>

@@ -5,6 +5,7 @@ import type { StrategyId } from '../api/types';
 import { localMapStyle } from '../domain/localBasemap';
 import { ONLINE_MAP_STYLE, watchMapStartup } from '../domain/mapAvailability';
 import { ALL_REGIONS, type RegionSelection } from '../domain/regions';
+import { t } from '../i18n';
 import { strategyLabel } from '../lib/policyComparison';
 import { RegionSwitch } from './RegionSwitch';
 
@@ -202,7 +203,9 @@ export function PolicyStrategyMap({
     }
   }, [hidden, strategies]);
 
-  const label = regions.find((item) => item.id === region)?.label ?? 'Регион';
+  const label =
+    regions.find((item) => item.id === region)?.label ??
+    t('figma-dashboard.PolicyStrategyMap.d7506709ce');
 
   return (
     <div className="flex h-full min-h-[640px] gap-[16px]">
@@ -223,8 +226,7 @@ export function PolicyStrategyMap({
       </div>
       <div className="flex w-[240px] shrink-0 flex-col gap-[16px] overflow-auto">
         <p className="text-[13px] leading-[18px] text-figma-muted">
-          Пунктир — схема плеча. Дорожные линии подгружаются отдельно; показатели плана при этом не
-          меняются.
+          {t('figma-dashboard.PolicyStrategyMap.9b8fd41dcb')}
         </p>
         <ul className="flex flex-col gap-[10px]">
           {strategies.map((strategy) => {

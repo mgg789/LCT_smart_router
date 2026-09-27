@@ -1,3 +1,4 @@
+import { t } from '../i18n';
 import { FIGMA_ASSETS } from './assets';
 import { FigmaIcon } from './primitives';
 import { dismissToast, useToasts } from './toasts';
@@ -39,7 +40,7 @@ export function AuthToastLayer() {
           <button
             type="button"
             data-toast-close
-            aria-label="Закрыть уведомление"
+            aria-label={t('figma-dashboard.AuthToastLayer.1907d5c300')}
             className="absolute right-[8px] top-[8px] z-20 flex size-[40px] items-center justify-center transition-transform duration-150 hover:scale-110"
             onPointerDown={(event) => closeAuthToast(toast.id, event)}
             onClick={(event) => closeAuthToast(toast.id, event)}

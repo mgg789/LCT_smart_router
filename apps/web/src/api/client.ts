@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { t } from '../i18n';
 import { formatClock } from '../lib/time';
 import type {
   AlertResolutionInput,
@@ -34,7 +35,15 @@ import {
 } from './windowConfirmation';
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
-const policyIdSchema = z.enum(['compact', 'fast', 'sla', 'balanced', 'eco', 'covering']);
+const policyIdSchema = z.enum([
+  'compact',
+  'fast',
+  'sla',
+  'balanced',
+  'eco',
+  'covering',
+  'personal',
+]);
 
 const roadImportSummarySchema = z.object({
   operationId: z.string().min(1),
@@ -65,6 +74,8 @@ const requestSchema = z.object({
   requiredEquipment: z.enum(['router', 'set_top_box', 'smart_speaker']).nullable(),
   workType: z.string().nullable(),
   workTypeTitle: z.string().nullable(),
+  workCategory: z.enum(['emergency', 'connection', 'service']).optional(),
+  receivedAt: z.number().nullable().optional(),
   requiredSkill: z.string(),
   normProfileCode: z.string(),
   normativeTravelDurationSec: z.number().int().nonnegative(),
@@ -135,7 +146,17 @@ const engineerSchema = z.object({
 
 const planStopSchema = z.object({
   sequence: z.number().int(),
-  kind: z.enum(['job', 'lunch', 'wait', 'start', 'handoff']),
+  kind: z.enum(['job', 'lunch', 'wait', 'start', 'handoff', 'delivery', 'office_pickup']),
+  logistics: z
+    .object({
+      logistics_id: z.string(),
+      kind: z.enum(['donor_delivery', 'office_pickup']),
+      request_id: z.string(),
+      equipment_type: z.enum(['router', 'set_top_box', 'smart_speaker']),
+    })
+    .nullable()
+    .optional(),
+
   handoff: z
     .object({
       handoff_id: z.string(),
@@ -338,6 +359,15 @@ const shiftSchema = z.object({
   unresolvedCount: z.number().int().nonnegative(),
 });
 
+/** Reads the revision bound to confirmation when replacing another request's priority. */
+export function loadRequestPriority(token: string, workDate: string) {
+  return requestJson(
+    `/api/v1/dispatch/request-priority?workDate=${encodeURIComponent(workDate)}`,
+    z.object({ priority: z.object({ requestId: z.string(), version: z.string() }).nullable() }),
+    token,
+  );
+}
+
 /** Executes one allowed decision; the caller keeps operationId stable for retries. */
 export async function resolveDispatchAlert(
   token: string,
@@ -435,7 +465,12 @@ const policiesSchema = z.object({
       isDefault: z.boolean(),
     }),
   ),
-  active: z.object({ policyId: policyIdSchema, version: z.number().int(), changedAt: z.number() }),
+  active: z.object({
+    policyId: policyIdSchema,
+    version: z.number().int(),
+    changedAt: z.number(),
+    ordinaryReplanningDisabled: z.boolean().default(false),
+  }),
 });
 
 const technicalSettingsSchema = z.object({
@@ -516,17 +551,17 @@ const policyComparisonSchema = z.object({
     .superRefine((rows, context) => {
       const strategyIds = new Set(rows.map((row) => row.strategyId));
       if (strategyIds.size !== rows.length) {
-        context.addIssue({ code: 'custom', message: 'comparison strategies must be unique' });
+        context.addIssue({ code: 'custom', message: t('api.client.01ad9de2da') });
       }
       if (
         !['fast', 'compact', 'sla', 'balanced', 'eco', 'baseline'].every((id) =>
           rows.some((row) => row.strategyId === id),
         )
       ) {
-        context.addIssue({ code: 'custom', message: 'comparison strategies are incomplete' });
+        context.addIssue({ code: 'custom', message: t('api.client.41da24a8b7') });
       }
       if (rows.some((row) => (row.strategyId === 'baseline') !== (row.kind === 'baseline'))) {
-        context.addIssue({ code: 'custom', message: 'comparison strategy kind is inconsistent' });
+        context.addIssue({ code: 'custom', message: t('api.client.0e88f7b84e') });
       }
     }),
 });
@@ -638,7 +673,7 @@ export function parseDashboardSnapshot(value: unknown): DashboardSnapshot {
         route.stops.some((stop) => stop.requestId !== null && !requests.has(stop.requestId)),
     )
   ) {
-    throw new DashboardApiError('Несогласованный снимок рабочего дня', 0, 'snapshot');
+    throw new DashboardApiError(t('api.client.fcd54ecfd2'), 0, 'snapshot');
   }
   return snapshot;
 }
@@ -907,6 +942,24 @@ export function createDispatchEngineer(
   );
 }
 
+/** Updates roster transport or region with optimistic version checking. */
+export function updateDispatchEngineerProfile(
+  token: string,
+  engineerId: string,
+  expectedVersion: number,
+  patch: { region?: string; transportType?: 'car' | 'walk' | 'bike' | 'transit' },
+): Promise<unknown> {
+  return requestJson(
+    `/api/v1/dispatch/engineers/${encodeURIComponent(engineerId)}`,
+    z.object({ engineer: engineerProfileSchema }),
+    token,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ operationId: crypto.randomUUID(), expectedVersion, ...patch }),
+    },
+  );
+}
+
 /** Archives a routing profile while preserving its historical plans and facts. */
 export function deleteDispatchEngineer(
   token: string,
@@ -1024,6 +1077,7 @@ export async function loadDashboardSnapshot(token: string): Promise<DashboardSna
     timeZone: 'Europe/Moscow',
     nowAt: Math.floor(Date.now() / 1000),
     policyId: policies.active.policyId,
+    ordinaryReplanningDisabled: policies.active.ordinaryReplanningDisabled,
     lunchesEnabled: settings.lunchesEnabled,
     routerSettings: settings,
     routerContextVersion: settings.routerContextVersion,
@@ -1097,10 +1151,14 @@ export async function setLunchesEnabled(token: string, enabled: boolean): Promis
 }
 
 /** Switches the dispatch control mode through an idempotent backend operation. */
-export async function setDispatchMode(token: string, mode: 'auto' | 'manual'): Promise<void> {
+export async function setDispatchMode(
+  token: string,
+  mode: 'auto' | 'manual',
+  reason?: string,
+): Promise<void> {
   await requestJson('/api/v1/dispatch/mode', z.unknown(), token, {
     method: 'POST',
-    body: JSON.stringify({ operationId: crypto.randomUUID(), mode }),
+    body: JSON.stringify({ operationId: crypto.randomUUID(), mode, reason }),
   });
 }
 
@@ -1226,7 +1284,7 @@ export async function setEngineerAvailability(
     },
   );
   if (!updated.publication) {
-    throw new Error('Backend did not publish the engineer availability change');
+    throw new Error(t('api.client.94d9cb4a8d'));
   }
   return updated.publication.inputHash;
 }
@@ -1275,7 +1333,7 @@ const importPreparationSchema = z.object({
 /** Distinguishes an explicit pre-write cancellation from an uncertain commit failure. */
 export class ImportCancelledError extends Error {
   constructor() {
-    super('Загрузка отменена. Рабочие данные не изменены.');
+    super(t('api.client.71fd0f5097'));
   }
 }
 
@@ -1438,6 +1496,7 @@ function formatUnknownReason(reason: unknown): string {
       plannedStartAt: z.number().optional(),
       windowEndAt: z.number().optional(),
       assignment: z.string().optional(),
+      ordinaryReplanningDisabled: z.boolean().optional(),
       lunchStatus: z.string().optional(),
       assignedBefore: z.number().optional(),
       assignedAfter: z.number().optional(),
@@ -1448,22 +1507,39 @@ function formatUnknownReason(reason: unknown): string {
   if (facts.success) {
     const value = facts.data;
     if (value.lostSubmittedRequestIds && value.baselineAssignedRequestIds)
-      return `После смены политики ${value.lostSubmittedRequestIds.length} из ${value.baselineAssignedRequestIds.length} ранее назначенных заявок потеряли исполнителя. Проверьте новую политику или прошлый план. Неназначенные заявки требуют отдельного решения.`;
+      return t('api.client.601f883bca', {
+        value0: value.lostSubmittedRequestIds.length,
+        value1: value.baselineAssignedRequestIds.length,
+      });
     if (value.shiftStartAt !== undefined && value.thresholdAt !== undefined)
-      return `Смена началась в ${formatClock(value.shiftStartAt)}. К ${formatClock(value.thresholdAt)} отметка о выходе не поступила.`;
+      return t('api.client.2b5f70e2d9', {
+        value0: formatClock(value.shiftStartAt),
+        value1: formatClock(value.thresholdAt),
+      });
     if (value.plannedStartAt !== undefined && value.windowEndAt !== undefined) {
-      return `Начало по плану — ${formatClock(value.plannedStartAt)}, конец окна — ${formatClock(value.windowEndAt)}. Опоздание: ${Math.ceil((value.plannedStartAt - value.windowEndAt) / 60)} мин.`;
+      return t('api.client.c605cb42f0', {
+        value0: formatClock(value.plannedStartAt),
+        value1: formatClock(value.windowEndAt),
+        value2: Math.ceil((value.plannedStartAt - value.windowEndAt) / 60),
+      });
     }
     if (value.expectedAt !== undefined)
-      return `Ожидалась отметка к ${formatClock(value.expectedAt)}. ${value.lastAttendanceAt ? `Последняя отметка: ${formatClock(value.lastAttendanceAt)}.` : 'Отметок пока нет.'}`;
-    if (value.assignment === 'unassigned')
-      return 'Для заявки не найдено допустимое назначение. Нужно изменить условия или добавить инженера.';
-    if (value.lunchStatus)
-      return 'Обед не помещается в текущий маршрут. Требуется выбор диспетчера.';
+      return t('api.client.ad90dd7a0e', {
+        value0: formatClock(value.expectedAt),
+        value1: value.lastAttendanceAt
+          ? t('api.client.b3a79cd20b', { value0: formatClock(value.lastAttendanceAt) })
+          : t('api.client.bb65c1e96e'),
+      });
+    if (value.ordinaryReplanningDisabled) return t('api.client.e8a273fcd9');
+    if (value.assignment === 'unassigned') return t('api.client.ae96b9cfba');
+    if (value.lunchStatus) return t('api.client.890dabf416');
     if (value.assignedBefore !== undefined && value.assignedAfter !== undefined)
-      return `Назначено заявок: ${value.assignedBefore} → ${value.assignedAfter}.`;
+      return t('api.client.60c40a2374', {
+        value0: value.assignedBefore,
+        value1: value.assignedAfter,
+      });
   }
-  return 'Подробности доступны в структурированных данных';
+  return t('api.client.ce4471e17d');
 }
 
 /** Read-only same-day insertion preview; none is distinct from unavailable Router. */
@@ -1791,14 +1867,16 @@ export async function requestJson<T>(
     });
     const body: unknown = await response.json().catch(() => null);
     if (!response.ok) {
+      const conflict = z
+        .object({ error: z.object({ details: z.object({ kind: z.literal('manual_conflict') }) }) })
+        .safeParse(body);
+      if (conflict.success && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('manual-planning-open', { detail: 'priorities' }));
+      }
       const challenge = windowConfirmationFrom(body);
       if (challenge) {
         if (new Headers(init.headers).has('x-window-change-confirmation')) {
-          throw new DashboardApiError(
-            'Заявка изменилась или подтверждение устарело. Откройте действие заново.',
-            409,
-            path,
-          );
+          throw new DashboardApiError(t('api.client.de2eeb60e1'), 409, path);
         }
         globalThis.clearTimeout(timeout);
         if (!(await confirmWindowChange(challenge))) throw new WindowChangeDeclined();
@@ -1826,7 +1904,7 @@ export async function requestJson<T>(
     const parsed = schema.safeParse(body);
     if (!parsed.success)
       throw new DashboardApiError(
-        'Ответ сервера не соответствует контракту',
+        t('api.client.5a8cee96af'),
         0,
         path,
         response.headers.get('x-request-id'),
@@ -1837,8 +1915,8 @@ export async function requestJson<T>(
     if (cause instanceof DashboardApiError) throw cause;
     throw new DashboardApiError(
       controller.signal.aborted
-        ? `Сервер не ответил за ${Math.ceil(timeoutMs / 1000)} секунд`
-        : 'Нет связи с сервером',
+        ? t('api.client.cd789f99b2', { value0: Math.ceil(timeoutMs / 1000) })
+        : t('api.client.80df7b5c58'),
       0,
       path,
     );
@@ -1877,4 +1955,17 @@ function moscowDate(date: Date): string {
     month: '2-digit',
     day: '2-digit',
   }).format(date);
+}
+
+/** Save only the System Layer arrival rule, without modifying Router optimization settings. */
+export function setOrdinaryReplanning(token: string, disabled: boolean) {
+  return requestJson(
+    '/api/v1/dispatch/policy/ordinary-replanning',
+    z.object({ ordinaryReplanningDisabled: z.boolean(), released: z.number().int() }),
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({ operationId: crypto.randomUUID(), disabled }),
+    },
+  );
 }

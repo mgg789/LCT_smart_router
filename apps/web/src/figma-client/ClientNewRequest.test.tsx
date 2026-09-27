@@ -3,9 +3,10 @@ import { expect, it } from 'vitest';
 import { ClientNewRequest } from './ClientNewRequest';
 import { draftFromStory, EMPTY_CLIENT_DRAFT } from './clientPreview';
 
-it('opens on a story field with a mic and a send control', () => {
+it('supports the optional story mode with a mic and a send control', () => {
   const html = renderToStaticMarkup(
     <ClientNewRequest
+      initialMode="story"
       draft={EMPTY_CLIENT_DRAFT}
       notice={null}
       onChange={() => undefined}
@@ -26,13 +27,14 @@ it('renders the structured form without the old heading or the AI button', () =>
     <ClientNewRequest
       draft={EMPTY_CLIENT_DRAFT}
       notice={null}
-      initialMode="form"
       onChange={() => undefined}
       onSubmit={() => undefined}
     />,
   );
   expect(html).toContain('ФИО');
-  expect(html).toContain('Интернет не работает');
+  expect(html).toContain('Тип заявки');
+  expect(html).not.toContain('Починить роутер');
+  expect(html).not.toContain('Отправить рассказ');
   expect(html).toContain('Открыть карту');
   expect(html).not.toContain('Новая заявка');
   expect(html).not.toContain('Заявка с AI');

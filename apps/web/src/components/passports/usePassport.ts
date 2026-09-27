@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { loadPassport, type PassportAudience, type PassportState } from '../../api/passports';
+import { t } from '../../i18n';
 
 /** Refreshes independent passport views after a save without mutating route state. */
 export function announcePassportSaved(): void {
@@ -28,7 +29,12 @@ export function usePassport(token: string, audience: PassportAudience, requestId
         if (!disposed) setResult({ key, revision, data, error: null });
       } catch {
         if (!disposed)
-          setResult({ key, revision, data: null, error: 'Не удалось загрузить паспорт объекта' });
+          setResult({
+            key,
+            revision,
+            data: null,
+            error: t('components.passports.usePassport.c55f0cb6b8'),
+          });
       } finally {
         pending = false;
       }

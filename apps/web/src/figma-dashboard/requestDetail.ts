@@ -1,14 +1,15 @@
 import type { DashboardSnapshot, EngineerView, EquipmentType, RequestView } from '../api/types';
 import { assignmentFor, routeForEngineer } from '../domain/dashboard';
+import { t } from '../i18n';
 import { skillLabel } from '../lib/reasons';
 import { formatClock } from '../lib/time';
 import { requestUrgency } from './fromSnapshot';
 import { type RequestTableRow, shortRequestId } from './requestsTable';
 
 export const EQUIPMENT_LABELS: Record<EquipmentType, string> = {
-  router: 'Роутер',
-  set_top_box: 'ТВ-приставка',
-  smart_speaker: 'Умная колонка',
+  router: t('figma-dashboard.requestDetail.4a65bf9c4b'),
+  set_top_box: t('figma-dashboard.requestDetail.140d6d4877'),
+  smart_speaker: t('figma-dashboard.requestDetail.cd9e2a8ef6'),
 };
 
 export type RequestDetailModel = {
@@ -43,7 +44,10 @@ export function requestWindowLabel(
 ): string {
   const window = `${formatClock(windowStartAt)}-${formatClock(windowEndAt)}`;
   if (etaAt == null) return window;
-  return `${window} (расчетное ${formatClock(etaAt)})`;
+  return t('figma-dashboard.requestDetail.4dc28dde4a', {
+    value0: window,
+    value1: formatClock(etaAt),
+  });
 }
 
 /** Gray chips on REQUET: skill / urgency, then required equipment. */
@@ -82,15 +86,19 @@ export function requestDetailFromSnapshot(
   const tags = requestDetailTags(request);
   return {
     id: request.id,
-    title: request.workTypeTitle || 'Заявка',
-    numberLabel: `Заявка № ${shortRequestId(request.id)}`,
+    title: request.workTypeTitle || t('figma-dashboard.requestDetail.77b3e0166b'),
+    numberLabel: t('figma-dashboard.requestDetail.80b3e93473', {
+      value0: shortRequestId(request.id),
+    }),
     primaryTags: tags.primary,
     equipmentTags: tags.equipment,
     address: request.addressText,
     email: null,
     contactName: request.contactName,
     windowLabel: requestWindowLabel(request.windowStartAt, request.windowEndAt, etaAt),
-    engineerLabel: engineer ? `Инженер: ${engineer.displayName}` : 'Инженер: —',
+    engineerLabel: engineer
+      ? t('figma-dashboard.requestDetail.02b9dcae50', { value0: engineer.displayName })
+      : t('figma-dashboard.requestDetail.bd7717d1a4'),
     assigned: requestIsAssigned(request, assignment?.engineerId ?? null),
     assignable: requestIsAssignable(request),
     cancellable: requestIsCancellable(request),
@@ -102,14 +110,17 @@ export function requestDetailFromRow(row: RequestTableRow): RequestDetailModel {
   return {
     id: row.id,
     title: row.service,
-    numberLabel: `Заявка № ${shortRequestId(row.id)}`,
+    numberLabel: t('figma-dashboard.requestDetail.80b3e93473', { value0: shortRequestId(row.id) }),
     primaryTags: [row.service],
     equipmentTags: [],
     address: row.address,
     email: null,
     contactName: null,
     windowLabel: row.window,
-    engineerLabel: row.engineer !== '—' ? `Инженер: ${row.engineer}` : 'Инженер: —',
+    engineerLabel:
+      row.engineer !== '—'
+        ? t('figma-dashboard.requestDetail.02b9dcae50', { value0: row.engineer })
+        : t('figma-dashboard.requestDetail.bd7717d1a4'),
     assigned: row.engineer !== '—',
     assignable: row.status !== 'done' && row.status !== 'cancelled',
     cancellable: row.status !== 'done' && row.status !== 'cancelled',
@@ -118,7 +129,9 @@ export function requestDetailFromRow(row: RequestTableRow): RequestDetailModel {
 
 /** Yellow action copy: assign only when nobody owns the visit yet. */
 export function requestAssignLabel(assigned: boolean): string {
-  return assigned ? 'Переназначить инженера' : 'Назначить инженера';
+  return assigned
+    ? t('figma-dashboard.requestDetail.e7993a71c7')
+    : t('figma-dashboard.requestDetail.4d4bbaff8a');
 }
 
 export function requestIsAssigned(

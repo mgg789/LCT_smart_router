@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import type { ReactNode } from 'react';
+import { type ReactNode, useRef } from 'react';
+import { useModalFocus } from '../components/useModalFocus';
 import { ARTBOARD_BLEED } from './artboardScale';
 
 /**
@@ -18,10 +19,15 @@ export function ModalLayer({
   zClass?: string;
   children: ReactNode;
 }) {
+  const root = useRef<HTMLDivElement>(null);
+  useModalFocus(root, open, () => {
+    root.current?.querySelector<HTMLButtonElement>('[data-modal-dismiss]')?.click();
+  });
   return (
     <AnimatePresence>
       {open ? (
         <motion.div
+          ref={root}
           className={`absolute flex items-center justify-center ${zClass}`}
           style={{
             top: -ARTBOARD_BLEED,
@@ -56,6 +62,8 @@ export function ModalScrim({
   return (
     <button
       type="button"
+      data-modal-dismiss
+      tabIndex={-1}
       className="absolute inset-0 bg-figma-ink/40"
       aria-label={label}
       disabled={disabled}

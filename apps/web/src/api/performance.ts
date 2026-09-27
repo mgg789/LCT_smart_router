@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { t } from '../i18n';
 import { requestJson } from './client';
 
 const component = z.object({
@@ -185,7 +186,7 @@ export async function downloadMonthlyReport(token: string, month: string): Promi
       signal: AbortSignal.timeout(30_000),
     },
   );
-  if (!response.ok) throw new Error('Не удалось сформировать отчёт. Повторите загрузку.');
+  if (!response.ok) throw new Error(t('api.performance.874ba15bf7'));
   const url = URL.createObjectURL(await response.blob());
   const link = document.createElement('a');
   link.href = url;

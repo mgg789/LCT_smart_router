@@ -1,3 +1,4 @@
+import type { WorkCategory } from '@lct/shared';
 import { Injectable } from '@nestjs/common';
 import { SysError } from '../../common/errors';
 import { canonicalHash } from '../../common/json';
@@ -10,6 +11,7 @@ import {
   equipmentWithSpares,
   readEquipmentSettings,
 } from '../equipment/equipment-policy';
+import { importedWorkCategory } from '../requests/work-type.catalog';
 import {
   DEFAULT_DISPATCHER_SETTINGS,
   type DispatcherSettings,
@@ -28,6 +30,8 @@ export interface UploadRequestInput {
   readonly requiredTransport?: TransportType;
   readonly requiredEquipment?: EquipmentType;
   readonly workType?: string;
+  readonly workCategory?: WorkCategory;
+  readonly receivedAt?: number;
 }
 
 export interface UploadEngineerInput {
@@ -72,6 +76,29 @@ export interface UploadDataPackageSummary {
   readonly inputHash: string | null;
 }
 
+/** Canonical business tiers and emergency norms shared by preview and apply. */
+export function normalizeUploadPackage(input: UploadDataPackageInput): UploadDataPackageInput {
+  return {
+    ...input,
+    requests: input.requests.map((request) => {
+      const workCategory = importedWorkCategory(request);
+      if (!workCategory)
+        throw new SysError(
+          'VALIDATION_FAILED',
+          'Unknown work type requires an explicit workCategory',
+          { details: { workType: request.workType } },
+        );
+      return {
+        ...request,
+        workCategory,
+        ...(workCategory === 'emergency'
+          ? { serviceDurationSec: 6000, priority: 'urgent' as const }
+          : {}),
+      };
+    }),
+  };
+}
+
 /** Applies a fully validated user package atomically and publishes one complete snapshot. */
 @Injectable()
 export class UploadImportService {
@@ -83,9 +110,10 @@ export class UploadImportService {
     timeZoneOffsetSec: number,
     equipmentSettings?: DispatcherSettings,
   ): Promise<UploadDataPackageSummary> {
+    const checksum = canonicalHash(packageContent(input));
+    input = normalizeUploadPackage(input);
     const identitySource = `region:${input.region}`;
     const packageSource = `upload:${input.region}:${input.sourceVersion}`;
-    const checksum = canonicalHash(packageContent(input));
     const exact = await context.tx.importPackage.findUnique({
       where: { source_checksum: { source: packageSource, checksum } },
     });
@@ -258,6 +286,9 @@ export class UploadImportService {
           requiredTransport: request.input.requiredTransport ?? null,
           requiredEquipment: request.input.requiredEquipment ?? null,
           workTypeHd: request.input.workType ?? null,
+          workCategory: request.input.workCategory,
+          receivedAt:
+            request.input.receivedAt === undefined ? null : BigInt(request.input.receivedAt),
           lifecycle: 'submitted',
           assignmentState: 'pending',
           origin: 'import',
@@ -392,6 +423,8 @@ function sameRequest(
     requiredTransport: string | null;
     requiredEquipment: string | null;
     workTypeHd: string | null;
+    workCategory: WorkCategory;
+    receivedAt: bigint | null;
   },
   input: UploadRequestInput,
   region: string,
@@ -405,6 +438,8 @@ function sameRequest(
     Number(stored.windowStartAt) === input.windowStartAt &&
     Number(stored.windowEndAt) === input.windowEndAt &&
     stored.priority === input.priority &&
+    stored.workCategory === input.workCategory &&
+    (stored.receivedAt === null ? undefined : Number(stored.receivedAt)) === input.receivedAt &&
     stored.requiredSkill === input.requiredSkill &&
     stored.requiredTransport === (input.requiredTransport ?? null) &&
     stored.requiredEquipment === (input.requiredEquipment ?? null) &&
@@ -468,7 +503,11 @@ function allocateUploadedEquipment(
     if (stock)
       result.set(
         engineer.externalId,
-        equipmentWithSpares(stock, equipmentCapacity(engineer.transportType, settings)),
+        equipmentWithSpares(
+          stock,
+          equipmentCapacity(engineer.transportType, settings),
+          engineer.transportType,
+        ),
       );
   }
   return result;

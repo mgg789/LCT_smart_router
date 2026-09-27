@@ -1,6 +1,10 @@
 import { motion } from 'framer-motion';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { type DispatchRegion, loadDispatchRegions } from '../api/regions';
 import type { DashboardSnapshot } from '../api/types';
+import { useWorkTypes } from '../api/workTypes';
+import { WorkTypePicker } from '../components/WorkTypePicker';
+import { t } from '../i18n';
 import { AddressPointField } from './AddressPointField';
 import {
   ADD_TAB_LABEL,
@@ -14,12 +18,12 @@ import {
   type TransportId,
   validateEngineerDraft,
   validateRequestDraft,
-  WORK_TYPE_OPTIONS,
   windowFromClocks,
 } from './addEntity';
 import { FIGMA_ASSETS } from './assets';
 import { ModalLayer, ModalScrim } from './modalLayer';
 import { FigmaIcon } from './primitives';
+import { RegionForm } from './RegionForm';
 
 const fade = { duration: 0.22, ease: [0.22, 1, 0.36, 1] as const };
 /** Tall enough for the engineer tab; shorter tabs keep the empty canvas. */
@@ -31,8 +35,7 @@ const FIELD =
 
 /**
  * Header «plus» dialog: request / engineer / region.
- * Request and engineer call live dispatch APIs. Region/office create is
- * temporarily disabled; alert create is removed.
+ * All three tabs use durable dispatch APIs.
  */
 export function AddEntityModal({
   open,
@@ -44,7 +47,9 @@ export function AddEntityModal({
   onClose,
   onCreateRequest,
   onCreateEngineer,
+  onRegionCreated,
 }: {
+  onRegionCreated?: () => Promise<unknown>;
   open: boolean;
   snapshot: DashboardSnapshot | null;
   motionOn: boolean;
@@ -70,6 +75,8 @@ export function AddEntityModal({
     homeLon?: number | null;
   }) => Promise<void>;
 }) {
+  const [regionBusy, setRegionBusy] = useState(false);
+  const busy = submitting || regionBusy;
   const [tab, setTab] = useState<AddTab>('request');
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -89,7 +96,11 @@ export function AddEntityModal({
 
   return (
     <ModalLayer open={open} motionOn={motionOn}>
-      <ModalScrim label="Закрыть добавление" disabled={submitting} onClose={onClose} />
+      <ModalScrim
+        label={t('figma-dashboard.AddEntityModal.6f2aa14d8a')}
+        disabled={busy}
+        onClose={onClose}
+      />
       <motion.div
         role="dialog"
         aria-modal="true"
@@ -106,12 +117,12 @@ export function AddEntityModal({
             id="figma-add-entity-title"
             className="figma-text figma-nowrap font-extrabold text-[28px] tracking-[-0.476px] text-figma-ink"
           >
-            Добавить
+            {t('figma-dashboard.AddEntityModal.71038c53bb')}
           </h2>
           <button
             type="button"
-            aria-label="Закрыть"
-            disabled={submitting}
+            aria-label={t('figma-dashboard.AddEntityModal.a7a4033657')}
+            disabled={busy}
             onClick={onClose}
             className="flex size-[36px] items-center justify-center transition-transform duration-150 hover:scale-110 disabled:opacity-50"
           >
@@ -153,33 +164,39 @@ export function AddEntityModal({
             />
           ) : null}
           {tab === 'region' ? (
-            <p className="mt-[24px] font-medium text-[16px] leading-[24px] text-figma-muted">
-              Создание офиса и региона временно отключено.
-            </p>
+            <RegionForm
+              token={token}
+              onError={setError}
+              onStatus={setStatus}
+              onCreated={onRegionCreated}
+              onBusy={setRegionBusy}
+            />
           ) : null}
         </div>
 
-        {tab !== 'region' || error || status ? (
-          <div className="shrink-0 pt-[16px]">
-            {error ? (
-              <p role="alert" className="mb-[12px] font-medium text-[15px] text-figma-danger">
-                {error}
-              </p>
-            ) : null}
-            {status ? (
-              <p role="status" className="mb-[12px] font-medium text-[15px] text-figma-muted">
-                {status}
-              </p>
-            ) : null}
-            {tab !== 'region' ? (
-              <SubmitRow
-                submitting={submitting}
-                label={tab === 'request' ? 'Создать заявку' : 'Добавить инженера'}
-                formId={`add-form-${tab}`}
-              />
-            ) : null}
-          </div>
-        ) : null}
+        <div className="shrink-0 pt-[16px]">
+          {error ? (
+            <p role="alert" className="mb-[12px] font-medium text-[15px] text-figma-danger">
+              {error}
+            </p>
+          ) : null}
+          {status ? (
+            <p role="status" className="mb-[12px] font-medium text-[15px] text-figma-muted">
+              {status}
+            </p>
+          ) : null}
+          <SubmitRow
+            submitting={busy}
+            label={
+              tab === 'request'
+                ? t('figma-dashboard.AddEntityModal.3cfce15990')
+                : tab === 'region'
+                  ? t('figma-dashboard.AddEntityModal.bc8d66b58d')
+                  : t('figma-dashboard.AddEntityModal.17ea4891c4')
+            }
+            formId={`add-form-${tab}`}
+          />
+        </div>
       </motion.div>
     </ModalLayer>
   );
@@ -207,13 +224,13 @@ function TabSwitch({
         />
         {ADD_TABS.map((item) => {
           const active = item === tab;
-          const disabled = item === 'region';
+          const disabled = false;
           return (
             <button
               key={item}
               type="button"
               disabled={disabled}
-              title={disabled ? 'Временно недоступно' : undefined}
+              title={disabled ? t('figma-dashboard.AddEntityModal.09ebf55cf0') : undefined}
               onClick={() => {
                 if (!disabled) onChange(item);
               }}
@@ -256,7 +273,10 @@ function RequestForm({
     lon?: number | null;
   }) => Promise<void>;
 }) {
-  const [workType, setWorkType] = useState<string>(WORK_TYPE_OPTIONS[0].code);
+  const catalogue = useWorkTypes();
+  const [workType, setWorkType] = useState<string>('connection_request');
+  const selectedType = catalogue.rows.find((row) => row.code === workType);
+  const emergency = selectedType?.category === 'emergency';
   const [addressText, setAddressText] = useState('');
   const [lat, setLat] = useState<number | null>(null);
   const [lon, setLon] = useState<number | null>(null);
@@ -270,19 +290,27 @@ function RequestForm({
         event.preventDefault();
         onError(null);
         onStatus(null);
-        const issue = validateRequestDraft({
-          workType,
-          addressText,
-          startClock,
-          endClock,
-          lat,
-          lon,
-        });
+        const issue = validateRequestDraft(
+          {
+            workType,
+            addressText,
+            startClock: emergency ? '00:00' : startClock,
+            endClock: emergency ? '23:59' : endClock,
+            lat,
+            lon,
+          },
+          catalogue.rows,
+        );
         if (issue) {
           onError(issue);
           return;
         }
-        const window = windowFromClocks(workDate, startClock, endClock);
+        const window = emergency
+          ? {
+              windowStartAt: Math.floor(Date.now() / 1000),
+              windowEndAt: Math.floor(Date.now() / 1000) + 6000,
+            }
+          : windowFromClocks(workDate, startClock, endClock);
         if (typeof window === 'string') {
           onError(window);
           return;
@@ -292,7 +320,7 @@ function RequestForm({
           addressText: addressText.trim(),
           lat,
           lon,
-          ...fitWindowToService(window, workType),
+          ...fitWindowToService(window, selectedType?.serviceDurationSec ?? 0),
         })
           .then(() => {
             setAddressText('');
@@ -300,42 +328,44 @@ function RequestForm({
             setLon(null);
             onStatus(
               live
-                ? 'Заявка создана и попала в план дня.'
-                : 'Заявка сохранена только в этом сеансе.',
+                ? t('figma-dashboard.AddEntityModal.5d955dd97a')
+                : t('figma-dashboard.AddEntityModal.1587fb3217'),
             );
           })
           .catch((cause: unknown) => {
-            onError(cause instanceof Error ? cause.message : 'Не удалось создать заявку');
+            onError(
+              cause instanceof Error
+                ? cause.message
+                : t('figma-dashboard.AddEntityModal.24b790796c'),
+            );
           });
       }}
     >
-      <Field label="Тип" htmlFor="add-request-type">
-        <select
-          id="add-request-type"
-          value={workType}
-          onChange={(event) => setWorkType(event.target.value)}
-          className={FIELD}
-        >
-          {WORK_TYPE_OPTIONS.map((item) => (
-            <option key={item.code} value={item.code}>
-              {item.title}
-            </option>
-          ))}
-        </select>
-      </Field>
-      <div className="mt-[20px] grid grid-cols-2 gap-[16px]">
-        <Field label="Начало окна" htmlFor="add-request-start">
+      <WorkTypePicker
+        rows={catalogue.rows}
+        value={workType}
+        onChange={setWorkType}
+        error={catalogue.error}
+        onRetry={catalogue.retry}
+      />
+      <div
+        hidden={emergency}
+        className={emergency ? 'hidden' : 'mt-[20px] grid grid-cols-2 gap-[16px]'}
+      >
+        <Field label={t('figma-dashboard.AddEntityModal.4b7e1647cd')} htmlFor="add-request-start">
           <input
             id="add-request-start"
+            disabled={emergency}
             type="time"
             value={startClock}
             onChange={(event) => setStartClock(event.target.value)}
             className={FIELD}
           />
         </Field>
-        <Field label="Конец окна" htmlFor="add-request-end">
+        <Field label={t('figma-dashboard.AddEntityModal.6860e2a4f7')} htmlFor="add-request-end">
           <input
             id="add-request-end"
+            disabled={emergency}
             type="time"
             value={endClock}
             onChange={(event) => setEndClock(event.target.value)}
@@ -345,7 +375,7 @@ function RequestForm({
       </div>
       <AddressPointField
         id="add-request-address"
-        label="Адрес"
+        label={t('figma-dashboard.AddEntityModal.da82e80563')}
         token={token}
         addressText={addressText}
         lat={lat}
@@ -398,7 +428,22 @@ function EngineerForm({
   const [homeLat, setHomeLat] = useState<number | null>(null);
   const [homeLon, setHomeLon] = useState<number | null>(null);
   const [homeAddress, setHomeAddress] = useState('');
-  const regions = selectableRegions(snapshot);
+  const [officeRegions, setOfficeRegions] = useState<DispatchRegion[]>([]);
+  useEffect(() => {
+    if (token)
+      void loadDispatchRegions(token)
+        .then(setOfficeRegions)
+        .catch(() => undefined);
+  }, [token]);
+  const regions = useMemo(() => {
+    const existing = selectableRegions(snapshot);
+    return [
+      ...existing,
+      ...officeRegions
+        .filter((office) => !existing.some((region) => region.id === office.region))
+        .map((office) => ({ id: office.region, label: office.region })),
+    ];
+  }, [snapshot, officeRegions]);
   const [displayName, setDisplayName] = useState('');
   const [transportType, setTransportType] = useState<TransportId>('car');
   const [skills, setSkills] = useState<SkillId[]>(['connection']);
@@ -406,7 +451,7 @@ function EngineerForm({
   const [email, setEmail] = useState('');
 
   useEffect(() => {
-    if (region && !regions.some((item) => item.id === region)) {
+    if (!regions.some((item) => item.id === region)) {
       setRegion(regions[0]?.id ?? '');
     }
   }, [region, regions]);
@@ -448,26 +493,32 @@ function EngineerForm({
             setHomeLon(null);
             onStatus(
               live
-                ? 'Профиль инженера создан и поставлен в смену.'
-                : 'Инженер сохранён только в этом сеансе.',
+                ? t('figma-dashboard.AddEntityModal.e2b8d2ef47')
+                : t('figma-dashboard.AddEntityModal.9a0cfa86f2'),
             );
           })
           .catch((cause: unknown) => {
-            onError(cause instanceof Error ? cause.message : 'Не удалось добавить инженера');
+            onError(
+              cause instanceof Error
+                ? cause.message
+                : t('figma-dashboard.AddEntityModal.f4993db102'),
+            );
           });
       }}
     >
-      <Field label="Имя" htmlFor="add-engineer-name">
+      <Field label={t('figma-dashboard.AddEntityModal.1da7e9372e')} htmlFor="add-engineer-name">
         <input
           id="add-engineer-name"
           value={displayName}
           onChange={(event) => setDisplayName(event.target.value)}
-          placeholder="Иван Петров"
+          placeholder={t('figma-dashboard.AddEntityModal.2b8929bad3')}
           className={FIELD}
         />
       </Field>
       <fieldset className="mt-[20px]">
-        <legend className="font-semibold text-[16px] text-figma-ink">Транспорт</legend>
+        <legend className="font-semibold text-[16px] text-figma-ink">
+          {t('figma-dashboard.AddEntityModal.20f9adf729')}
+        </legend>
         <div className="mt-[10px] flex flex-wrap gap-[10px]">
           {TRANSPORT_OPTIONS.map((item) => (
             <Chip
@@ -481,7 +532,9 @@ function EngineerForm({
         </div>
       </fieldset>
       <fieldset className="mt-[20px]">
-        <legend className="font-semibold text-[16px] text-figma-ink">Навыки</legend>
+        <legend className="font-semibold text-[16px] text-figma-ink">
+          {t('figma-dashboard.AddEntityModal.29db437a92')}
+        </legend>
         <div className="mt-[10px] flex flex-wrap gap-[10px]">
           {SKILL_OPTIONS.map((item) => {
             const active = skills.includes(item.id);
@@ -503,14 +556,16 @@ function EngineerForm({
           })}
         </div>
       </fieldset>
-      <Field label="Регион" htmlFor="add-engineer-region">
+      <Field label={t('figma-dashboard.AddEntityModal.d7506709ce')} htmlFor="add-engineer-region">
         <select
           id="add-engineer-region"
           value={region}
           onChange={(event) => setRegion(event.target.value)}
           className={FIELD}
         >
-          {regions.length === 0 ? <option value="">Сначала добавьте регион</option> : null}
+          {regions.length === 0 ? (
+            <option value="">{t('figma-dashboard.AddEntityModal.2cfca93b6f')}</option>
+          ) : null}
           {regions.map((item) => (
             <option key={item.id} value={item.id}>
               {item.label}
@@ -520,7 +575,7 @@ function EngineerForm({
       </Field>
       <AddressPointField
         id="add-engineer-home"
-        label="Адрес офиса"
+        label={t('figma-dashboard.AddEntityModal.32e658c99f')}
         token={token}
         addressText={homeAddress}
         lat={homeLat}
@@ -544,15 +599,15 @@ function EngineerForm({
         }}
       />
       <p className="mt-[10px] font-medium text-[14px] text-figma-muted">
-        Точка старта маршрута — это адрес офиса.
+        {t('figma-dashboard.AddEntityModal.195295d79b')}
       </p>
-      <Field label="Email (необязательно)" htmlFor="add-engineer-email">
+      <Field label={t('figma-dashboard.AddEntityModal.8b8f30d116')} htmlFor="add-engineer-email">
         <input
           id="add-engineer-email"
           type="email"
           value={email}
           onChange={(event) => setEmail(event.target.value)}
-          placeholder="можно добавить позже"
+          placeholder={t('figma-dashboard.AddEntityModal.6090ab86be')}
           className={FIELD}
         />
       </Field>
@@ -621,7 +676,7 @@ function SubmitRow({
           : 'bg-figma-bee text-figma-ink hover:scale-[1.01]'
       }`}
     >
-      {submitting ? 'Сохраняем…' : label}
+      {submitting ? t('figma-dashboard.AddEntityModal.9c27c381dd') : label}
     </button>
   );
 }

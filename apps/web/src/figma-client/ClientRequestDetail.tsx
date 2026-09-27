@@ -1,9 +1,11 @@
 import { motion } from 'framer-motion';
+import { WorkTypeLabel } from '../components/WorkTypeLabel';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { arrivalHeadline, formatPlanTime, formatPlanWindow } from '../figma-engineer/engineerClock';
 import { engineerMapsUrl } from '../figma-engineer/engineerRoute';
 import { eu } from '../figma-engineer/engineerScale';
 import { RequestMap } from '../figma-engineer/RequestMap';
+import { t } from '../i18n';
 import { CLIENT_ASSETS } from './assets';
 import type { ClientRequestView } from './clientPreview';
 import { clientRequestSeo } from './clientRequestSeo';
@@ -36,7 +38,7 @@ export function ClientRequestDetail({
       <header className="flex items-center" style={{ gap: eu(20) }}>
         <motion.button
           type="button"
-          aria-label="Назад к списку"
+          aria-label={t('figma-client.ClientRequestDetail.86657fb2a8')}
           onClick={onBack}
           whileTap={{ scale: 0.96 }}
           transition={{ duration: 0.16 }}
@@ -87,7 +89,7 @@ export function ClientRequestDetail({
           }}
         >
           <span className="whitespace-nowrap font-semibold text-white" style={{ fontSize: eu(20) }}>
-            Адрес на карте
+            {t('figma-client.ClientRequestDetail.05803d65a3')}
           </span>
           <FigmaIcon
             src={CLIENT_ASSETS.route}
@@ -114,13 +116,14 @@ export function ClientRequestDetail({
           {formatPlanTime(item.startAt)}
         </p>
         <p className="font-medium text-figma-muted" style={{ marginTop: eu(16), fontSize: eu(22) }}>
-          плановое начало визита
+          {t('figma-client.ClientRequestDetail.4a5da5a88e')}
         </p>
         <span
           className="inline-flex items-center rounded-full bg-figma-track font-semibold text-figma-ink"
           style={{ marginTop: eu(20), padding: `${eu(12)} ${eu(24)}`, fontSize: eu(20) }}
         >
-          Согласованное окно {formatPlanWindow(item.windowStartAt, item.windowEndAt)}
+          {t('figma-client.ClientRequestDetail.17fab954c1')}
+          {formatPlanWindow(item.windowStartAt, item.windowEndAt)}
         </span>
       </div>
 
@@ -134,7 +137,8 @@ export function ClientRequestDetail({
       >
         <div className="flex items-center" style={{ gap: eu(12) }}>
           <h2 className="font-murs tracking-[-0.02em] text-white" style={{ fontSize: eu(36) }}>
-            Заявка № {item.number}
+            {t('figma-client.ClientRequestDetail.aa0ad3a10e')}
+            {item.number}
           </h2>
           <span
             className="rounded-full bg-figma-work"
@@ -143,7 +147,7 @@ export function ClientRequestDetail({
           />
         </div>
         <p className="font-medium text-white/70" style={{ marginTop: eu(10), fontSize: eu(22) }}>
-          {item.workTypeTitle}
+          <WorkTypeLabel category={item.workCategory}>{item.workTypeTitle}</WorkTypeLabel>
         </p>
         <Chip>{item.problemTitle}</Chip>
         <Chip>{item.company}</Chip>
@@ -176,7 +180,7 @@ export function ClientRequestDetail({
             fontSize: eu(28),
           }}
         >
-          Изменить время
+          {t('figma-client.ClientRequestDetail.8549e7ed52')}
         </motion.button>
       )}
     </section>

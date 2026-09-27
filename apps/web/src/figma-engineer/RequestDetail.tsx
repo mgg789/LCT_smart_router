@@ -1,7 +1,9 @@
 import { motion } from 'framer-motion';
 import type { ReactNode } from 'react';
 import { RequestPassport } from '../components/passports/PassportDetails';
+import { WorkTypeLabel } from '../components/WorkTypeLabel';
 import { FigmaIcon } from '../figma-dashboard/primitives';
+import { t } from '../i18n';
 import { skillLabel } from '../lib/reasons';
 import { ENGINEER_ASSETS } from './assets';
 import { arrivalHeadline, formatPlanWindow } from './engineerClock';
@@ -31,7 +33,7 @@ export function RequestDetail({
 }) {
   const service = item.request.workTypeTitle ?? skillLabel(item.request.requiredSkill);
   const equipment = equipmentLabel(item.request.requiredEquipment);
-  const contact = item.request.contactName ?? 'Клиент';
+  const contact = item.request.contactName ?? t('figma-engineer.RequestDetail.3e622aecbf');
 
   return (
     <section
@@ -41,7 +43,7 @@ export function RequestDetail({
       <header className="flex items-center" style={{ gap: eu(20) }}>
         <motion.button
           type="button"
-          aria-label="Назад к списку"
+          aria-label={t('figma-engineer.RequestDetail.86657fb2a8')}
           onClick={onBack}
           whileTap={{ scale: 0.96 }}
           transition={{ duration: 0.16 }}
@@ -85,7 +87,7 @@ export function RequestDetail({
           }}
         >
           <span className="whitespace-nowrap font-semibold text-white" style={{ fontSize: eu(20) }}>
-            Построить маршрут
+            {t('figma-engineer.RequestDetail.7007fd4ac5')}
           </span>
           <FigmaIcon
             src={ENGINEER_ASSETS.route}
@@ -105,7 +107,9 @@ export function RequestDetail({
           </Chip>
         </div>
         <Chip>{item.request.addressText}</Chip>
-        <Chip>{service}</Chip>
+        <Chip>
+          <WorkTypeLabel category={item.request.workCategory}>{service}</WorkTypeLabel>
+        </Chip>
         {equipment ? <Chip>{equipment}</Chip> : null}
       </div>
 
@@ -124,17 +128,17 @@ export function RequestDetail({
         <button
           type="button"
           disabled
-          title="Канал поддержки пока не подключён"
+          title={t('figma-engineer.RequestDetail.67f14fd3b4')}
           className="mt-auto rounded-[20px] bg-figma-bee p-4 font-semibold text-figma-ink disabled:opacity-50"
         >
-          Написать в поддержку
+          {t('figma-engineer.RequestDetail.dbe91db5dc')}
         </button>
       )}
     </section>
   );
 }
 
-function Chip({ children, align = 'start' }: { children: string; align?: 'start' | 'center' }) {
+function Chip({ children, align = 'start' }: { children: ReactNode; align?: 'start' | 'center' }) {
   return (
     <div
       className={`flex min-w-0 flex-1 items-center overflow-hidden border border-figma-ink/10 bg-white shadow-[0_8px_20px_rgba(39,41,48,0.05)] ${

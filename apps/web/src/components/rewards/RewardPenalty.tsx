@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { loadRewardFacts, penalizeReward, type RewardFact } from '../../api/rewards';
+import { locale, t } from '../../i18n';
 
 const FACT_LABELS: Record<string, string> = {
-  started: 'Начало работы',
-  finished: 'Завершение работы',
-  eta_reported: 'Время прибытия',
-  delayed: 'Дополнительное время',
-  arrived: 'Прибытие',
-  problem: 'Проблема',
+  started: t('components.rewards.RewardPenalty.b5b75c376d'),
+  finished: t('components.rewards.RewardPenalty.324988af1d'),
+  eta_reported: t('components.rewards.RewardPenalty.f723ae233c'),
+  delayed: t('components.rewards.RewardPenalty.52ab90b2a3'),
+  arrived: t('components.rewards.RewardPenalty.38368957d4'),
+  problem: t('components.rewards.RewardPenalty.54a37f55dc'),
 };
 
 /** Requires an explicit recorded fact and a detailed, visible explanation for every deduction. */
@@ -38,7 +39,7 @@ export function RewardPenalty({
         if (!disposed) setFacts(result.facts);
       })
       .catch(() => {
-        if (!disposed) setError('Не удалось загрузить отметки.');
+        if (!disposed) setError(t('components.rewards.RewardPenalty.338771d248'));
       });
     return () => {
       disposed = true;
@@ -61,7 +62,9 @@ export function RewardPenalty({
       window.dispatchEvent(new Event('engineer-rewards-changed'));
       onSaved();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Не удалось сохранить нарушение.');
+      setError(
+        cause instanceof Error ? cause.message : t('components.rewards.RewardPenalty.cbb5952a4e'),
+      );
     } finally {
       setBusy(false);
     }
@@ -69,11 +72,10 @@ export function RewardPenalty({
   return (
     <details className="mt-5 rounded-2xl border border-figma-danger/30 bg-white p-4">
       <summary className="cursor-pointer font-semibold">
-        Зафиксировать недостоверную отметку · −50
+        {t('components.rewards.RewardPenalty.95da3089b5')}
       </summary>
       <p className="mt-3 text-sm text-figma-dim">
-        Укажите, какая отметка не соответствует действительности и чем это подтверждено. Объяснение
-        будет видно инженеру в журнале.
+        {t('components.rewards.RewardPenalty.e2c7dfe4c3')}
       </p>
       {facts === null ? (
         <p role="status" className="mt-3 text-sm">
@@ -83,14 +85,14 @@ export function RewardPenalty({
               className="underline"
               onClick={() => setRetry((value) => value + 1)}
             >
-              Повторить загрузку отметок
+              {t('components.rewards.RewardPenalty.d2586cda8a')}
             </button>
           ) : (
-            'Загружаем отметки…'
+            t('components.rewards.RewardPenalty.05b63dd517')
           )}
         </p>
       ) : facts.length === 0 ? (
-        <p className="mt-3 text-sm">Нет отметок, доступных для фиксации нарушения.</p>
+        <p className="mt-3 text-sm">{t('components.rewards.RewardPenalty.f1387a9004')}</p>
       ) : (
         <form
           onSubmit={(event) => {
@@ -100,7 +102,7 @@ export function RewardPenalty({
           className="mt-4 grid gap-3"
         >
           <label className="grid gap-2 text-sm font-semibold">
-            Отметка инженера
+            {t('components.rewards.RewardPenalty.ae61d6e63b')}
             <select
               disabled={busy}
               required
@@ -111,11 +113,11 @@ export function RewardPenalty({
               }}
               className="w-full rounded-xl border border-figma-hint px-3 py-3 font-normal"
             >
-              <option value="">Выберите отметку</option>
+              <option value="">{t('components.rewards.RewardPenalty.bcfbe3da2f')}</option>
               {facts.map((fact) => (
                 <option key={fact.id} value={fact.id}>
                   {FACT_LABELS[fact.kind] ?? fact.kind} ·{' '}
-                  {new Date(fact.occurredAt * 1000).toLocaleString('ru-RU', {
+                  {new Date(fact.occurredAt * 1000).toLocaleString(locale, {
                     timeZone: 'Europe/Moscow',
                   })}{' '}
                   · {fact.request.addressText}
@@ -129,7 +131,7 @@ export function RewardPenalty({
             </p>
           ) : null}
           <label className="grid gap-2 text-sm font-semibold">
-            Подробное обоснование
+            {t('components.rewards.RewardPenalty.afe7bed5e6')}
             <textarea
               required
               minLength={30}
@@ -141,7 +143,7 @@ export function RewardPenalty({
                 setReason(event.target.value);
                 setConfirmed(false);
               }}
-              placeholder="Что было отмечено, что произошло на самом деле и как это проверено (не менее 30 символов)"
+              placeholder={t('components.rewards.RewardPenalty.431ea03399')}
               className="rounded-xl border border-figma-hint p-3 font-normal"
             />
           </label>
@@ -154,14 +156,16 @@ export function RewardPenalty({
               onChange={(event) => setConfirmed(event.target.checked)}
               className="mt-1"
             />
-            Подтверждаю факт нарушения и списание 50 баллов
+            {t('components.rewards.RewardPenalty.6c96287fdd')}
           </label>
           <button
             type="submit"
             disabled={busy || !selected || reason.trim().length < 30 || !confirmed}
             className="rounded-xl bg-figma-ink py-3 font-semibold text-white disabled:opacity-40"
           >
-            {busy ? 'Сохраняем…' : 'Зафиксировать нарушение · −50'}
+            {busy
+              ? t('components.rewards.RewardPenalty.9c27c381dd')
+              : t('components.rewards.RewardPenalty.6927006124')}
           </button>
         </form>
       )}

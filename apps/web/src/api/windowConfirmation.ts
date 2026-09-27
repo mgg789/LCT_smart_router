@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { t } from '../i18n';
 
 const challengeSchema = z.object({
   kind: z.literal('window_change_confirmation'),
@@ -21,7 +22,7 @@ export function windowConfirmationFrom(body: unknown): WindowConfirmation | null
 /** Explicit refusal is a skipped step, never a successful resolution of the alert. */
 export class WindowChangeDeclined extends Error {
   constructor() {
-    super('Шаг отклонён: временное окно заявки не изменено.');
+    super(t('api.windowConfirmation.66fe2ac6e6'));
   }
 }
 

@@ -20,6 +20,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { analyzeTabular, convertTabular } from '../api/tabular';
+import { t } from '../i18n';
 
 const TABULAR_FIELDS: readonly TabularField[] = [
   'externalId',
@@ -27,6 +28,7 @@ const TABULAR_FIELDS: readonly TabularField[] = [
   'lat',
   'lon',
   'workType',
+  'workCategory',
   'duration',
   'windowStart',
   'windowEnd',
@@ -38,19 +40,20 @@ const TABULAR_FIELDS: readonly TabularField[] = [
 ];
 
 const FIELD_LABELS: Record<TabularField, string> = {
-  externalId: 'ID заявки',
-  addressText: 'Адрес',
-  lat: 'Широта',
-  lon: 'Долгота',
-  workType: 'Тип работ',
-  duration: 'Длительность',
-  windowStart: 'Начало окна',
-  windowEnd: 'Конец окна',
-  priority: 'Приоритет',
-  requiredSkill: 'Навык',
-  brigade: 'Бригада',
-  transportType: 'Транспорт инженера',
-  requiredTransport: 'Транспорт заявки',
+  externalId: t('figma-dashboard.TabularImportDialog.9a6c758ade'),
+  addressText: t('figma-dashboard.TabularImportDialog.da82e80563'),
+  lat: t('figma-dashboard.TabularImportDialog.3dd6edf68b'),
+  lon: t('figma-dashboard.TabularImportDialog.fa282f8efb'),
+  workType: t('figma-dashboard.TabularImportDialog.c29a793cc0'),
+  workCategory: t('figma-dashboard.TabularImportDialog.9c76429c56'),
+  duration: t('figma-dashboard.TabularImportDialog.2a32607189'),
+  windowStart: t('figma-dashboard.TabularImportDialog.4b7e1647cd'),
+  windowEnd: t('figma-dashboard.TabularImportDialog.6860e2a4f7'),
+  priority: t('figma-dashboard.TabularImportDialog.0e5ac36d3f'),
+  requiredSkill: t('figma-dashboard.TabularImportDialog.17acebf596'),
+  brigade: t('figma-dashboard.TabularImportDialog.e4b5334865'),
+  transportType: t('figma-dashboard.TabularImportDialog.e226252c5c'),
+  requiredTransport: t('figma-dashboard.TabularImportDialog.ab8a89a252'),
 };
 
 const DEFAULT_VALUES: Record<TabularField, string> = {
@@ -59,6 +62,7 @@ const DEFAULT_VALUES: Record<TabularField, string> = {
   lat: '',
   lon: '',
   workType: '',
+  workCategory: '',
   duration: '60',
   windowStart: '09:00',
   windowEnd: '18:00',
@@ -161,7 +165,11 @@ export function TabularImportDialog({
       } catch (cause) {
         if (runId !== analysisRun.current) return;
         setAnalysis(null);
-        setAnalysisError(cause instanceof Error ? cause.message : 'Не удалось прочитать файл');
+        setAnalysisError(
+          cause instanceof Error
+            ? cause.message
+            : t('figma-dashboard.TabularImportDialog.9985b0ad96'),
+        );
       } finally {
         if (runId === analysisRun.current) setBusy(false);
       }
@@ -208,7 +216,11 @@ export function TabularImportDialog({
       setConversion({
         file: null,
         issues: [
-          { rowNumber: null, field: 'workDate', message: 'Регион: 2–64 символа a-z, 0-9 или _.' },
+          {
+            rowNumber: null,
+            field: 'workDate',
+            message: t('figma-dashboard.TabularImportDialog.2ebb99fc3e'),
+          },
         ],
         notices: [],
       });
@@ -222,7 +234,9 @@ export function TabularImportDialog({
             rowNumber: null,
             field: !workDate.trim() ? 'workDate' : 'depot',
             message:
-              mode === 'new_region' ? 'Заполните дату и адрес базы.' : 'Заполните рабочую дату.',
+              mode === 'new_region'
+                ? t('figma-dashboard.TabularImportDialog.e447ad1779')
+                : t('figma-dashboard.TabularImportDialog.47b821a87a'),
           },
         ],
         notices: [],
@@ -239,7 +253,7 @@ export function TabularImportDialog({
           {
             rowNumber: null,
             field: 'engineers',
-            message: 'Укажите число инженеров и хотя бы один навык.',
+            message: t('figma-dashboard.TabularImportDialog.33003f6bf5'),
           },
         ],
         notices: [],
@@ -256,7 +270,7 @@ export function TabularImportDialog({
           {
             rowNumber: null,
             field: 'depot',
-            message: 'Координаты базы должны быть числами или пустыми.',
+            message: t('figma-dashboard.TabularImportDialog.11d0561d1b'),
           },
         ],
         notices: [],
@@ -318,7 +332,10 @@ export function TabularImportDialog({
           {
             rowNumber: null,
             field: 'workDate',
-            message: cause instanceof Error ? cause.message : 'Не удалось преобразовать файл',
+            message:
+              cause instanceof Error
+                ? cause.message
+                : t('figma-dashboard.TabularImportDialog.239e018a01'),
           },
         ],
         notices: [],
@@ -355,18 +372,20 @@ export function TabularImportDialog({
       >
         <div className="shrink-0 px-[24px] pt-[24px]">
           <h2 ref={heading} tabIndex={-1} id={titleId} className="font-extrabold text-[24px]">
-            Проверка таблицы: {source.fileName}
+            {t('figma-dashboard.TabularImportDialog.3ebfa8045c')}
+            {source.fileName}
           </h2>
           <p className="mt-[8px] text-[15px] text-figma-muted">
-            Проверьте сопоставление столбцов и значения для пропусков. Неизвестные адреса потребуют
-            уточнения координат.
+            {t('figma-dashboard.TabularImportDialog.818b50f7d4')}
           </p>
         </div>
         <div className="min-h-0 overflow-y-auto px-[24px] py-[16px]">
           <section className="rounded-[16px] bg-figma-soft p-[16px]">
-            <h3 className="font-semibold text-[17px]">Источник</h3>
+            <h3 className="font-semibold text-[17px]">
+              {t('figma-dashboard.TabularImportDialog.56e46960c1')}
+            </h3>
             <div className="mt-[10px] grid grid-cols-2 gap-[10px] md:grid-cols-4">
-              <TabularFieldControl label="Кодировка">
+              <TabularFieldControl label={t('figma-dashboard.TabularImportDialog.e524088a49')}>
                 <select
                   value={encoding}
                   onChange={(event) =>
@@ -374,13 +393,21 @@ export function TabularImportDialog({
                   }
                   className="tabular-control-input"
                 >
-                  <option value="auto">Авто</option>
-                  <option value="utf8">UTF-8</option>
-                  <option value="windows1251">Windows-1251</option>
-                  <option value="utf16le">UTF-16 LE</option>
+                  <option value="auto">
+                    {t('figma-dashboard.TabularImportDialog.8dca2f7831')}
+                  </option>
+                  <option value="utf8">
+                    {t('figma-dashboard.TabularImportDialog.3ad3031f55')}
+                  </option>
+                  <option value="windows1251">
+                    {t('figma-dashboard.TabularImportDialog.3a2d7f8a34')}
+                  </option>
+                  <option value="utf16le">
+                    {t('figma-dashboard.TabularImportDialog.87560d85e9')}
+                  </option>
                 </select>
               </TabularFieldControl>
-              <TabularFieldControl label="Разделитель">
+              <TabularFieldControl label={t('figma-dashboard.TabularImportDialog.0b25285709')}>
                 <select
                   value={delimiter}
                   onChange={(event) =>
@@ -388,14 +415,16 @@ export function TabularImportDialog({
                   }
                   className="tabular-control-input"
                 >
-                  <option value="auto">Авто</option>
-                  <option value=",">Запятая</option>
-                  <option value=";">Точка с запятой</option>
-                  <option value="\t">Табуляция</option>
-                  <option value="|">Вертикальная черта</option>
+                  <option value="auto">
+                    {t('figma-dashboard.TabularImportDialog.8dca2f7831')}
+                  </option>
+                  <option value=",">{t('figma-dashboard.TabularImportDialog.4dfc1ec55b')}</option>
+                  <option value=";">{t('figma-dashboard.TabularImportDialog.63760d1827')}</option>
+                  <option value="\t">{t('figma-dashboard.TabularImportDialog.071bbfb145')}</option>
+                  <option value="|">{t('figma-dashboard.TabularImportDialog.e2614f2635')}</option>
                 </select>
               </TabularFieldControl>
-              <TabularFieldControl label="Строка заголовка">
+              <TabularFieldControl label={t('figma-dashboard.TabularImportDialog.5174cd0b9a')}>
                 <input
                   type="number"
                   min={1}
@@ -405,7 +434,7 @@ export function TabularImportDialog({
                 />
               </TabularFieldControl>
               {analysis?.format === 'xlsx' ? (
-                <TabularFieldControl label="Лист">
+                <TabularFieldControl label={t('figma-dashboard.TabularImportDialog.72a0a34e2e')}>
                   <select
                     value={sheet ?? analysis.selectedSheet}
                     onChange={(event) => {
@@ -430,7 +459,9 @@ export function TabularImportDialog({
               onClick={() => void runAnalysis(input)}
               className="mt-[12px] rounded-[12px] bg-figma-ink px-[16px] py-[10px] font-semibold text-white disabled:opacity-50"
             >
-              {busy ? 'Читаем файл…' : 'Перечитать файл'}
+              {busy
+                ? t('figma-dashboard.TabularImportDialog.f9b613a390')
+                : t('figma-dashboard.TabularImportDialog.3b479f6777')}
             </button>
           </section>
 
@@ -446,12 +477,19 @@ export function TabularImportDialog({
             <>
               <section className="mt-[16px] rounded-[16px] bg-figma-canvas p-[16px]">
                 <div className="flex flex-wrap items-center justify-between gap-[8px]">
-                  <h3 className="font-semibold text-[17px]">Сопоставление колонок</h3>
+                  <h3 className="font-semibold text-[17px]">
+                    {t('figma-dashboard.TabularImportDialog.5f4aa7aa76')}
+                  </h3>
                   <span className="text-[13px] text-figma-muted">
                     {analysis.rows.length > 25
-                      ? `Показаны первые 25 из ${analysis.rows.length}`
-                      : `${analysis.rows.length} строк`}{' '}
-                    · заголовок {analysis.headerRow}
+                      ? t('figma-dashboard.TabularImportDialog.2696bd350b', {
+                          value0: analysis.rows.length,
+                        })
+                      : t('figma-dashboard.TabularImportDialog.a1827ebb98', {
+                          value0: analysis.rows.length,
+                        })}{' '}
+                    {t('figma-dashboard.TabularImportDialog.e6eae42bf1')}
+                    {analysis.headerRow}
                   </span>
                 </div>
                 <div className="mt-[10px] grid grid-cols-2 gap-[8px] md:grid-cols-3 lg:grid-cols-4">
@@ -462,10 +500,13 @@ export function TabularImportDialog({
                         onChange={(event) => updateColumn(field, event.target.value)}
                         className="tabular-control-input"
                       >
-                        <option value="">Нет колонки</option>
+                        <option value="">
+                          {t('figma-dashboard.TabularImportDialog.ee81ab4fd1')}
+                        </option>
                         {analysis.headers.map((header, index) => (
                           <option key={header || 'empty-column'} value={index}>
-                            {index + 1}. {header || '(пусто)'}
+                            {index + 1}.{' '}
+                            {header || t('figma-dashboard.TabularImportDialog.0b5781e580')}
                           </option>
                         ))}
                       </select>
@@ -475,24 +516,52 @@ export function TabularImportDialog({
               </section>
 
               <section className="mt-[16px] rounded-[16px] bg-figma-canvas p-[16px]">
-                <h3 className="font-semibold text-[17px]">Явные значения для пропусков</h3>
+                <h3 className="font-semibold text-[17px]">
+                  {t('figma-dashboard.TabularImportDialog.0f8a5ef390')}
+                </h3>
                 <div className="mt-[10px] grid grid-cols-2 gap-[8px] md:grid-cols-3 lg:grid-cols-4">
                   {TABULAR_FIELDS.map((field) => (
                     <TabularFieldControl key={field} label={FIELD_LABELS[field]}>
-                      <input
-                        value={defaults[field]}
-                        onChange={(event) =>
-                          setDefaults((current) => ({ ...current, [field]: event.target.value }))
-                        }
-                        placeholder="Оставить пустым"
-                        className="tabular-control-input"
-                      />
+                      {field === 'workCategory' ? (
+                        <select
+                          value={defaults[field]}
+                          onChange={(event) =>
+                            setDefaults((current) => ({
+                              ...current,
+                              workCategory: event.target.value,
+                            }))
+                          }
+                          className="tabular-control-input"
+                        >
+                          <option value="">
+                            {t('figma-dashboard.TabularImportDialog.451e146d6a')}
+                          </option>
+                          <option value="emergency">
+                            {t('figma-dashboard.TabularImportDialog.b8cbf459a0')}
+                          </option>
+                          <option value="connection">
+                            {t('figma-dashboard.TabularImportDialog.ab71afb97f')}
+                          </option>
+                          <option value="service">
+                            {t('figma-dashboard.TabularImportDialog.48fd2c0ef8')}
+                          </option>
+                        </select>
+                      ) : (
+                        <input
+                          value={defaults[field]}
+                          onChange={(event) =>
+                            setDefaults((current) => ({ ...current, [field]: event.target.value }))
+                          }
+                          placeholder={t('figma-dashboard.TabularImportDialog.906fede235')}
+                          className="tabular-control-input"
+                        />
+                      )}
                     </TabularFieldControl>
                   ))}
                 </div>
                 <div className="mt-[10px] flex flex-wrap gap-[8px]">
                   <label className="flex items-center gap-[6px] text-[14px]">
-                    <span>Единица длительности</span>
+                    <span>{t('figma-dashboard.TabularImportDialog.c197ab4d27')}</span>
                     <select
                       value={durationUnit}
                       onChange={(event) =>
@@ -502,17 +571,23 @@ export function TabularImportDialog({
                       }
                       className="tabular-control-input"
                     >
-                      <option value="minutes">Минуты</option>
-                      <option value="seconds">Секунды</option>
+                      <option value="minutes">
+                        {t('figma-dashboard.TabularImportDialog.935ec56194')}
+                      </option>
+                      <option value="seconds">
+                        {t('figma-dashboard.TabularImportDialog.cea9050116')}
+                      </option>
                     </select>
                   </label>
                 </div>
               </section>
 
               <section className="mt-[16px] rounded-[16px] bg-figma-soft p-[16px]">
-                <h3 className="font-semibold text-[17px]">Параметры импорта</h3>
+                <h3 className="font-semibold text-[17px]">
+                  {t('figma-dashboard.TabularImportDialog.ada04996bb')}
+                </h3>
                 <div className="mt-[10px] grid grid-cols-2 gap-[8px] md:grid-cols-4">
-                  <TabularFieldControl label="Режим">
+                  <TabularFieldControl label={t('figma-dashboard.TabularImportDialog.3f53fb8734')}>
                     <select
                       value={mode}
                       onChange={(event) =>
@@ -520,16 +595,20 @@ export function TabularImportDialog({
                       }
                       className="tabular-control-input"
                     >
-                      <option value="new_region">Новый регион</option>
-                      <option value="append_requests">Дополнить заявки</option>
+                      <option value="new_region">
+                        {t('figma-dashboard.TabularImportDialog.6ee32b0951')}
+                      </option>
+                      <option value="append_requests">
+                        {t('figma-dashboard.TabularImportDialog.bd99e19309')}
+                      </option>
                     </select>
                   </TabularFieldControl>
-                  <TabularFieldControl label="Регион">
+                  <TabularFieldControl label={t('figma-dashboard.TabularImportDialog.d7506709ce')}>
                     <input
                       list="tabular-region-options"
                       value={region}
                       onChange={(event) => setRegion(event.target.value.toLowerCase())}
-                      placeholder="east"
+                      placeholder={t('figma-dashboard.TabularImportDialog.6bdb262b02')}
                       className="tabular-control-input"
                     />
                     <datalist id="tabular-region-options">
@@ -538,7 +617,7 @@ export function TabularImportDialog({
                       ))}
                     </datalist>
                   </TabularFieldControl>
-                  <TabularFieldControl label="Рабочая дата">
+                  <TabularFieldControl label={t('figma-dashboard.TabularImportDialog.ad03f72fd0')}>
                     <input
                       type="date"
                       value={workDate}
@@ -548,31 +627,39 @@ export function TabularImportDialog({
                   </TabularFieldControl>
                   {mode === 'new_region' ? (
                     <>
-                      <TabularFieldControl label="Адрес базы">
+                      <TabularFieldControl
+                        label={t('figma-dashboard.TabularImportDialog.ca9be45aa0')}
+                      >
                         <input
                           value={depotAddress}
                           onChange={(event) => setDepotAddress(event.target.value)}
-                          placeholder="Не подставляется автоматически"
+                          placeholder={t('figma-dashboard.TabularImportDialog.30db2a97aa')}
                           className="tabular-control-input"
                         />
                       </TabularFieldControl>
-                      <TabularFieldControl label="Широта базы">
+                      <TabularFieldControl
+                        label={t('figma-dashboard.TabularImportDialog.024cb536f7')}
+                      >
                         <input
                           value={depotLat}
                           onChange={(event) => setDepotLat(event.target.value)}
-                          placeholder="не обязательно"
+                          placeholder={t('figma-dashboard.TabularImportDialog.e423ab23ad')}
                           className="tabular-control-input"
                         />
                       </TabularFieldControl>
-                      <TabularFieldControl label="Долгота базы">
+                      <TabularFieldControl
+                        label={t('figma-dashboard.TabularImportDialog.3447980fcd')}
+                      >
                         <input
                           value={depotLon}
                           onChange={(event) => setDepotLon(event.target.value)}
-                          placeholder="не обязательно"
+                          placeholder={t('figma-dashboard.TabularImportDialog.e423ab23ad')}
                           className="tabular-control-input"
                         />
                       </TabularFieldControl>
-                      <TabularFieldControl label="Инженеры (если в файле нет бригад)">
+                      <TabularFieldControl
+                        label={t('figma-dashboard.TabularImportDialog.f2f5f784f7')}
+                      >
                         <input
                           type="number"
                           min={1}
@@ -581,7 +668,9 @@ export function TabularImportDialog({
                           className="tabular-control-input"
                         />
                       </TabularFieldControl>
-                      <TabularFieldControl label="Транспорт">
+                      <TabularFieldControl
+                        label={t('figma-dashboard.TabularImportDialog.20f9adf729')}
+                      >
                         <select
                           value={engineerTransport}
                           onChange={(event) =>
@@ -589,13 +678,23 @@ export function TabularImportDialog({
                           }
                           className="tabular-control-input"
                         >
-                          <option value="car">Авто</option>
-                          <option value="walk">Пешком</option>
-                          <option value="bike">Велосипед</option>
-                          <option value="transit">Общественный</option>
+                          <option value="car">
+                            {t('figma-dashboard.TabularImportDialog.8dca2f7831')}
+                          </option>
+                          <option value="walk">
+                            {t('figma-dashboard.TabularImportDialog.7e072732b4')}
+                          </option>
+                          <option value="bike">
+                            {t('figma-dashboard.TabularImportDialog.06458c4e6b')}
+                          </option>
+                          <option value="transit">
+                            {t('figma-dashboard.TabularImportDialog.9b4bd8b0fa')}
+                          </option>
                         </select>
                       </TabularFieldControl>
-                      <TabularFieldControl label="Начало смены">
+                      <TabularFieldControl
+                        label={t('figma-dashboard.TabularImportDialog.021fb7ba17')}
+                      >
                         <input
                           type="time"
                           value={shiftStart}
@@ -603,7 +702,9 @@ export function TabularImportDialog({
                           className="tabular-control-input"
                         />
                       </TabularFieldControl>
-                      <TabularFieldControl label="Конец смены">
+                      <TabularFieldControl
+                        label={t('figma-dashboard.TabularImportDialog.33557d618f')}
+                      >
                         <input
                           type="time"
                           value={shiftEnd}
@@ -625,21 +726,20 @@ export function TabularImportDialog({
                             onChange={() => toggleSkill(skill)}
                           />
                           {skill === 'local'
-                            ? 'Локальный'
+                            ? t('figma-dashboard.TabularImportDialog.6bb303b8e5')
                             : skill === 'connection'
-                              ? 'Подключение'
-                              : 'Аварийный'}
+                              ? t('figma-dashboard.TabularImportDialog.ab71afb97f')
+                              : t('figma-dashboard.TabularImportDialog.802cfeff55')}
                         </label>
                       ))}
                     </div>
                     <p className="mt-[8px] text-[13px] text-figma-muted">
-                      Известные официальные адреса разрешаются сервером. Для остальных оставьте
-                      координаты пустыми и укажите их вручную при необходимости.
+                      {t('figma-dashboard.TabularImportDialog.aabb7e1ee8')}
                     </p>
                   </>
                 ) : (
                   <p className="mt-[8px] text-[13px] text-figma-muted">
-                    Для дополнения заявок база и параметры инженеров не требуются.
+                    {t('figma-dashboard.TabularImportDialog.9402285261')}
                   </p>
                 )}
               </section>
@@ -654,7 +754,10 @@ export function TabularImportDialog({
                             key={header || 'empty-column'}
                             className="whitespace-nowrap px-[8px] py-[7px] font-semibold"
                           >
-                            {header || `Колонка ${index + 1}`}
+                            {header ||
+                              t('figma-dashboard.TabularImportDialog.b9db0261ac', {
+                                value0: index + 1,
+                              })}
                           </th>
                         ))}
                       </tr>
@@ -696,19 +799,25 @@ export function TabularImportDialog({
 
           {conversion?.issues.length ? (
             <div role="alert" className="mt-[12px] rounded-[14px] bg-[#fdecec] p-[12px]">
-              <p className="font-semibold text-figma-danger">Исправьте значения перед импортом</p>
+              <p className="font-semibold text-figma-danger">
+                {t('figma-dashboard.TabularImportDialog.9f95a0710a')}
+              </p>
               <ul className="mt-[6px] space-y-[6px] pl-[18px] text-[14px]">
                 {conversion.issues.map((issue) => {
                   const editable = issue.rowNumber !== null && isTabularField(issue.field);
                   const key = editable ? `${issue.rowNumber}:${issue.field}` : null;
                   return (
                     <li key={`${issue.rowNumber ?? 'global'}-${issue.field}-${issue.message}`}>
-                      {issue.rowNumber ? `Строка ${issue.rowNumber}: ` : ''}
+                      {issue.rowNumber
+                        ? t('figma-dashboard.TabularImportDialog.5cc6a42645', {
+                            value0: issue.rowNumber,
+                          })
+                        : ''}
                       {FIELD_LABELS[issue.field as TabularField] ?? issue.field}: {issue.message}
                       {editable && key ? (
                         <input
                           value={edits[key] ?? ''}
-                          placeholder="Введите исправленное значение"
+                          placeholder={t('figma-dashboard.TabularImportDialog.d84d7751d0')}
                           onChange={(event) =>
                             updateEdit(
                               issue.rowNumber ?? 0,
@@ -743,7 +852,7 @@ export function TabularImportDialog({
             onClick={onBack}
             className="rounded-[18px] bg-figma-track px-[22px] py-[13px] font-semibold disabled:opacity-50"
           >
-            Вернуться
+            {t('figma-dashboard.TabularImportDialog.6c99e7d8fb')}
           </button>
           <button
             type="button"
@@ -751,7 +860,9 @@ export function TabularImportDialog({
             onClick={() => void submitConversion()}
             className="rounded-[18px] bg-figma-bee px-[22px] py-[13px] font-semibold disabled:opacity-50"
           >
-            {converting ? 'Проверяем…' : 'Проверить заполнение'}
+            {converting
+              ? t('figma-dashboard.TabularImportDialog.62ed32eb22')
+              : t('figma-dashboard.TabularImportDialog.1925acdd0d')}
           </button>
         </div>
       </motion.div>

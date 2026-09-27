@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import type { PlanDelta, PlanDeltaLine } from '../api/types';
+import { locale, t } from '../i18n';
 import { shortRequestId } from './requestsTable';
 
 /** Visible comparison between the previous and newly applied route plan. */
@@ -22,7 +23,7 @@ export function ReplanDeltaCard({
 }) {
   return (
     <motion.aside
-      aria-label="Изменения после перепланирования"
+      aria-label={t('figma-dashboard.ReplanDeltaCard.4a60a949a7')}
       className="absolute left-1/2 top-1/2 z-[85] w-[640px] rounded-[24px] bg-figma-ink p-[22px] text-white shadow-[0_16px_40px_rgba(15,16,20,0.28)]"
       initial={
         motionOn ? { opacity: 0, x: '-50%', y: '-46%', scale: 0.98 } : { x: '-50%', y: '-50%' }
@@ -33,11 +34,16 @@ export function ReplanDeltaCard({
     >
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-[16px] font-semibold text-white/60">Перепланирование завершено</p>
-          <h2 className="mt-1 font-murs text-[25px] tracking-[0.01em]">Что изменилось</h2>
+          <p className="text-[16px] font-semibold text-white/60">
+            {t('figma-dashboard.ReplanDeltaCard.8e671767fa')}
+          </p>
+          <h2 className="mt-1 font-murs text-[25px] tracking-[0.01em]">
+            {t('figma-dashboard.ReplanDeltaCard.bc016a1cbc')}
+          </h2>
         </div>
         <span className="rounded-full bg-white/10 px-3 py-2 text-[14px] font-semibold">
-          {(delta.solveMs / 1000).toLocaleString('ru-RU', { maximumFractionDigits: 1 })} с
+          {(delta.solveMs / 1000).toLocaleString(locale, { maximumFractionDigits: 1 })}
+          {t('figma-dashboard.ReplanDeltaCard.ddae8eb8bf')}
         </span>
       </div>
       <div className="mt-4 grid grid-cols-3 gap-2">
@@ -65,7 +71,7 @@ export function ReplanDeltaCard({
             onClick={onReject}
             className="min-h-11 flex-1 rounded-full border border-white/25 px-4 font-semibold disabled:opacity-50"
           >
-            Вернуть прежний план
+            {t('figma-dashboard.ReplanDeltaCard.6a631099f5')}
           </button>
         ) : null}
         <button
@@ -73,7 +79,7 @@ export function ReplanDeltaCard({
           onClick={onAccept}
           className="min-h-11 flex-1 rounded-full bg-figma-bee px-4 font-semibold text-figma-ink"
         >
-          Понятно
+          {t('figma-dashboard.ReplanDeltaCard.e2ce86b38f')}
         </button>
       </div>
     </motion.aside>
@@ -111,25 +117,31 @@ function deltaFacts(delta: PlanDelta): { label: string; value: string }[] {
   const facts: { label: string; value: string }[] = [];
   if (delta.assignedBefore !== undefined && delta.assignedAfter !== undefined) {
     facts.push({
-      label: 'Назначено',
+      label: t('figma-dashboard.ReplanDeltaCard.a0769f1663'),
       value: `${delta.assignedBefore} → ${delta.assignedAfter}`,
     });
   }
   facts.push({
-    label: 'Без назначения',
+    label: t('figma-dashboard.ReplanDeltaCard.6de28b421e'),
     value: `${delta.slaBefore} → ${delta.slaAfter}`,
   });
-  facts.push({ label: 'Передано', value: String(delta.transferred) });
-  facts.push({ label: 'Сдвинуто', value: String(delta.shifted) });
+  facts.push({
+    label: t('figma-dashboard.ReplanDeltaCard.94b995c724'),
+    value: String(delta.transferred),
+  });
+  facts.push({
+    label: t('figma-dashboard.ReplanDeltaCard.2ccec3ce66'),
+    value: String(delta.shifted),
+  });
   if (delta.distanceBeforeKm !== undefined && delta.distanceAfterKm !== undefined) {
     facts.push({
-      label: 'Пробег, км',
+      label: t('figma-dashboard.ReplanDeltaCard.aba302b979'),
       value: `${formatKm(delta.distanceBeforeKm)} → ${formatKm(delta.distanceAfterKm)}`,
     });
   }
   if (delta.engineersBefore !== undefined && delta.engineersAfter !== undefined) {
     facts.push({
-      label: 'Инженеры',
+      label: t('figma-dashboard.ReplanDeltaCard.960ef88466'),
       value: `${delta.engineersBefore} → ${delta.engineersAfter}`,
     });
   }
@@ -137,7 +149,7 @@ function deltaFacts(delta: PlanDelta): { label: string; value: string }[] {
 }
 
 function formatKm(value: number): string {
-  return value.toLocaleString('ru-RU', { maximumFractionDigits: 1 });
+  return value.toLocaleString(locale, { maximumFractionDigits: 1 });
 }
 
 function DeltaMetric({ label, value }: { label: string; value: string | number }) {

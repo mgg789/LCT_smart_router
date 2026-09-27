@@ -83,7 +83,7 @@ function fixture(
   const service = new AiService(
     database as unknown as PrismaService,
     router as unknown as RouterClient,
-    { isProduction: true } as AppConfigService,
+    { isProduction: true, get: () => undefined } as unknown as AppConfigService,
     {} as WeatherDayCacheService,
   );
   return {

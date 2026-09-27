@@ -1,8 +1,11 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowRight, Mic } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { useWorkTypes } from '../api/workTypes';
+import { WorkTypePicker } from '../components/WorkTypePicker';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { eu } from '../figma-engineer/engineerScale';
+import { locale, t } from '../i18n';
 import { CLIENT_ASSETS } from './assets';
 import { ClientPickMap } from './ClientPickMap';
 import {
@@ -12,30 +15,29 @@ import {
   searchClientAddress,
 } from './clientApi';
 import {
+  CLIENT_PROBLEM_WORK,
   CLIENT_PROBLEMS,
   type ClientMapPoint,
   type ClientProblem,
   type ClientRequestDraft,
-  draftFromStory,
 } from './clientPreview';
 
 const STORY_KEY = 'lct.client.story';
-const STORY_PLACEHOLDER = 'Расскажите, что у вас случилось, когда к вам приехать, ваше ФИО и email';
+const STORY_PLACEHOLDER = t('figma-client.ClientNewRequest.3d591379b0');
 
-const tap = { duration: 0.16 };
 const slideEase = [0.22, 1, 0.36, 1] as const;
 /** One length for both halves of the swap, so the handover reads as one move. */
 const swap = { duration: 0.26, ease: slideEase } as const;
 
 /**
- * Figma FIRST 115:405 — dark new-request form with oval reason chips,
+ * Figma FIRST 115:405 — dark new-request form with a work-type selector,
  * pickable map and an expanding map overlay (122:2471).
  */
 export function ClientNewRequest({
   draft,
   busy = false,
   notice,
-  initialMode = 'story',
+  initialMode = 'form',
   onModeChange,
   onChange,
   onSubmit,
@@ -43,7 +45,7 @@ export function ClientNewRequest({
   draft: ClientRequestDraft;
   busy?: boolean;
   notice: string | null;
-  /** Tests open the structured form without a click. The screen itself starts on the story. */
+  /** Allows an explicit entry mode; the structured form is the default. */
   initialMode?: 'story' | 'form';
   /**
    * The story and the form want opposite things from the desk: the story wants
@@ -56,6 +58,11 @@ export function ClientNewRequest({
   onSubmit: () => void;
 }) {
   const motionOn = !useReducedMotion();
+  const catalogue = useWorkTypes();
+  const selectedCode =
+    draft.workType ?? (draft.problem ? (CLIENT_PROBLEM_WORK[draft.problem]?.workType ?? '') : '');
+  const emergency =
+    catalogue.rows.find((row) => row.code === selectedCode)?.category === 'emergency';
   const [mode, setMode] = useState<'story' | 'form'>(initialMode);
   /**
    * What is on screen, which trails what was asked for: the leaving half keeps
@@ -184,7 +191,7 @@ export function ClientNewRequest({
     const Ctor = speechCtor();
     if (!Ctor) return;
     const rec = new Ctor();
-    rec.lang = 'ru-RU';
+    rec.lang = locale;
     rec.interimResults = true;
     rec.continuous = false;
     rec.onresult = (event) => {
@@ -202,23 +209,27 @@ export function ClientNewRequest({
   };
 
   const revealForm = () => {
-    const local = draftFromStory(story, draftRef.current);
+    const local = { ...draftRef.current };
     setTracing(false);
     setMode('form');
     onChange(local);
     void interpretClientStory(story)
       .then((picked) => {
+        if (draftRef.current !== local) return;
         const problem = CLIENT_PROBLEMS.includes(picked.problem as ClientProblem)
           ? (picked.problem as ClientProblem)
           : local.problem;
         onChange({
           ...local,
           problem,
-          contactName: picked.contactName || local.contactName,
-          email: picked.email || local.email,
-          windowStart: picked.windowStart || local.windowStart,
-          windowEnd: picked.windowEnd || local.windowEnd,
-          address: picked.address || local.address,
+          workType: picked.workType,
+          workTypeTitle: catalogue.rows.find((row) => row.code === picked.workType)?.title,
+          contactName: picked.contactName,
+          email: picked.email,
+          windowStart: picked.windowStart,
+          windowEnd: picked.windowEnd,
+          address: picked.address,
+          point: picked.address === local.address ? local.point : null,
         });
       })
       .catch(() => undefined);
@@ -259,7 +270,7 @@ export function ClientNewRequest({
                 exit={motionOn ? { opacity: 0, y: -10 } : undefined}
                 transition={motionOn ? swap : { duration: 0 }}
               >
-                Расскажите о проблеме
+                {t('figma-client.ClientNewRequest.5a51899381')}
               </motion.p>
             ) : null}
           </AnimatePresence>
@@ -309,7 +320,11 @@ export function ClientNewRequest({
                 />
                 <button
                   type="button"
-                  aria-label={listening ? 'Остановить диктовку' : 'Диктовка'}
+                  aria-label={
+                    listening
+                      ? t('figma-client.ClientNewRequest.d50369729e')
+                      : t('figma-client.ClientNewRequest.7a38a67834')
+                  }
                   aria-pressed={listening}
                   onClick={toggleDictation}
                   className="absolute flex items-center justify-center"
@@ -325,7 +340,7 @@ export function ClientNewRequest({
                 </button>
                 <button
                   type="button"
-                  aria-label="Отправить рассказ"
+                  aria-label={t('figma-client.ClientNewRequest.14638988e7')}
                   disabled={tracing || !canSend}
                   onClick={sendStory}
                   className="absolute flex items-center justify-center rounded-full text-white"
@@ -361,35 +376,29 @@ export function ClientNewRequest({
                 }}
                 onSubmit={(event) => {
                   event.preventDefault();
-                  onSubmit();
+                  if (catalogue.rows.some((row) => row.code === selectedCode)) onSubmit();
                 }}
               >
-                <div className="flex flex-wrap" style={{ gap: eu(12) }}>
-                  {CLIENT_PROBLEMS.map((problem) => {
-                    const selected = draft.problem === problem;
-                    return (
-                      <motion.button
-                        key={problem}
-                        type="button"
-                        onClick={() => onChange({ ...draft, problem })}
-                        whileTap={{ scale: 0.98 }}
-                        transition={tap}
-                        aria-pressed={selected}
-                        className="font-medium tracking-[-0.02em] text-figma-ink"
-                        style={{
-                          minHeight: eu(48),
-                          borderRadius: eu(100),
-                          padding: `${eu(14)} ${eu(24)}`,
-                          fontSize: eu(20),
-                          background: selected
-                            ? 'var(--color-figma-bee)'
-                            : 'var(--color-figma-track)',
-                        }}
-                      >
-                        {problem}
-                      </motion.button>
-                    );
-                  })}
+                <div>
+                  <WorkTypePicker
+                    showEmergencyAction={false}
+                    rows={catalogue.rows}
+                    value={selectedCode}
+                    error={catalogue.error}
+                    onRetry={catalogue.retry}
+                    onChange={(workType) => {
+                      const selected = catalogue.rows.find((row) => row.code === workType);
+                      onChange({
+                        ...draft,
+                        workType,
+                        workTypeTitle: selected?.title,
+                        problem:
+                          selected?.category === 'emergency'
+                            ? t('figma-client.ClientNewRequest.b8cbf459a0')
+                            : t('figma-client.ClientNewRequest.758359c6d8'),
+                      });
+                    }}
+                  />
                 </div>
 
                 <label
@@ -397,13 +406,13 @@ export function ClientNewRequest({
                   className="font-semibold text-[#f1f1f1]"
                   style={{ marginTop: eu(24), fontSize: eu(24) }}
                 >
-                  ФИО
+                  {t('figma-client.ClientNewRequest.bd391c57b0')}
                 </label>
                 <input
                   id="client-name"
                   type="text"
                   autoComplete="name"
-                  placeholder="Иван Иванов"
+                  placeholder={t('figma-client.ClientNewRequest.99ba3288ca')}
                   value={draft.contactName}
                   onChange={(event) => onChange({ ...draft, contactName: event.target.value })}
                   className="w-full bg-[#555] font-medium text-white outline-none placeholder:text-white/60"
@@ -417,13 +426,13 @@ export function ClientNewRequest({
                 />
 
                 <label className="sr-only" htmlFor="client-address">
-                  Адрес
+                  {t('figma-client.ClientNewRequest.da82e80563')}
                 </label>
                 <input
                   id="client-address"
                   type="text"
                   autoComplete="street-address"
-                  placeholder="Адрес"
+                  placeholder={t('figma-client.ClientNewRequest.da82e80563')}
                   value={draft.address}
                   onChange={(event) => {
                     typing.current = true;
@@ -443,7 +452,7 @@ export function ClientNewRequest({
                     className="font-medium text-white/60"
                     style={{ marginTop: eu(8), fontSize: eu(16) }}
                   >
-                    Ищем адрес…
+                    {t('figma-client.ClientNewRequest.56fc5471cc')}
                   </p>
                 ) : null}
                 {hits.length > 0 ? (
@@ -475,7 +484,7 @@ export function ClientNewRequest({
                   <ClientPickMap point={draft.point} onPick={pick} />
                   <motion.button
                     type="button"
-                    aria-label="Открыть карту"
+                    aria-label={t('figma-client.ClientNewRequest.5978ea1714')}
                     onClick={() => setMapOpen(true)}
                     whileTap={{ scale: 0.96 }}
                     className="absolute"
@@ -491,33 +500,35 @@ export function ClientNewRequest({
                   </motion.button>
                 </div>
 
-                <div className="flex" style={{ marginTop: eu(24), gap: eu(16) }}>
-                  <ClockField
-                    id="client-window-start"
-                    label="с"
-                    value={draft.windowStart}
-                    onChange={(windowStart) => onChange({ ...draft, windowStart })}
-                  />
-                  <ClockField
-                    id="client-window-end"
-                    label="до"
-                    value={draft.windowEnd}
-                    onChange={(windowEnd) => onChange({ ...draft, windowEnd })}
-                  />
-                </div>
+                {!emergency ? (
+                  <div className="flex" style={{ marginTop: eu(24), gap: eu(16) }}>
+                    <ClockField
+                      id="client-window-start"
+                      label={t('figma-client.ClientNewRequest.a1f5d39a12')}
+                      value={draft.windowStart}
+                      onChange={(windowStart) => onChange({ ...draft, windowStart })}
+                    />
+                    <ClockField
+                      id="client-window-end"
+                      label={t('figma-client.ClientNewRequest.102dcd5d86')}
+                      value={draft.windowEnd}
+                      onChange={(windowEnd) => onChange({ ...draft, windowEnd })}
+                    />
+                  </div>
+                ) : null}
 
                 <label
                   htmlFor="client-email"
                   className="font-semibold text-[#f1f1f1]"
                   style={{ marginTop: eu(24), fontSize: eu(32) }}
                 >
-                  Email
+                  {t('figma-client.ClientNewRequest.969ccbd3cf')}
                 </label>
                 <input
                   id="client-email"
                   type="email"
                   autoComplete="email"
-                  placeholder="example@gmail.com"
+                  placeholder={t('figma-client.ClientNewRequest.264e53d937')}
                   value={draft.email}
                   onChange={(event) => onChange({ ...draft, email: event.target.value })}
                   className="w-full bg-[#555] font-medium text-white outline-none placeholder:text-white/60"
@@ -541,7 +552,7 @@ export function ClientNewRequest({
                 ) : null}
                 <motion.button
                   type="submit"
-                  disabled={busy}
+                  disabled={busy || !catalogue.rows.some((row) => row.code === selectedCode)}
                   whileTap={{ scale: 0.98 }}
                   className="w-full bg-figma-bee font-semibold tracking-[-0.03em] text-figma-ink disabled:opacity-50"
                   style={{
@@ -551,7 +562,9 @@ export function ClientNewRequest({
                     fontSize: eu(28),
                   }}
                 >
-                  {busy ? 'Отправляем…' : 'Отправить'}
+                  {busy
+                    ? t('figma-client.ClientNewRequest.899dce11fb')
+                    : t('figma-client.ClientNewRequest.ceb68a9287')}
                 </motion.button>
               </form>
             </motion.div>
@@ -573,7 +586,7 @@ export function ClientNewRequest({
             <ClientPickMap point={draft.point} onPick={pick} />
             <motion.button
               type="button"
-              aria-label="Свернуть карту"
+              aria-label={t('figma-client.ClientNewRequest.929d97ce2e')}
               onClick={() => setMapOpen(false)}
               whileTap={{ scale: 0.96 }}
               className="absolute flex items-center justify-center rounded-full bg-figma-ink"
@@ -644,7 +657,7 @@ function ModeSwitch({
   return (
     <div
       role="tablist"
-      aria-label="Способ заявки"
+      aria-label={t('figma-client.ClientNewRequest.c053234b93')}
       className="relative flex bg-white"
       style={{
         marginBottom: eu(14),
@@ -663,8 +676,8 @@ function ModeSwitch({
       />
       {(
         [
-          ['story', 'Авто'],
-          ['form', 'Форма'],
+          ['story', t('figma-client.ClientNewRequest.8dca2f7831')],
+          ['form', t('figma-client.ClientNewRequest.b26b88d6d2')],
         ] as const
       ).map(([id, label]) => (
         <button

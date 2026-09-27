@@ -5,6 +5,7 @@ import {
   type RewardSummary,
   rewardRatioLabel,
 } from '../../api/rewards';
+import { locale, t } from '../../i18n';
 import { RewardBreakdown } from './RewardBreakdown';
 import { RewardDialog } from './RewardDialog';
 import { RewardPenalty } from './RewardPenalty';
@@ -42,7 +43,11 @@ export function RewardDetails({
     };
   }, [open, token, engineerId, retry]);
   return (
-    <RewardDialog open={open} title="Вклад в работу команды" onClose={onClose}>
+    <RewardDialog
+      open={open}
+      title={t('components.rewards.RewardDetails.4ef9f4b360')}
+      onClose={onClose}
+    >
       {data ? (
         <>
           <div className="mb-5 rounded-3xl bg-figma-ink p-6 text-white">
@@ -51,26 +56,22 @@ export function RewardDetails({
             <p className="mt-4 font-semibold">{rewardRatioLabel(data.teamRatio)}</p>
             {data.teamAverage !== null ? (
               <p className="mt-1 text-sm text-white/60">
-                Среднее команды:{' '}
-                {data.teamAverage.toLocaleString('ru-RU', { maximumFractionDigits: 1 })}
+                {t('components.rewards.RewardDetails.9670ecf396')}{' '}
+                {data.teamAverage.toLocaleString(locale, { maximumFractionDigits: 1 })}
               </p>
             ) : null}
           </div>
           <RewardBreakdown categories={data.categories} />
           <details className="mt-5 rounded-2xl bg-white p-4">
-            <summary className="cursor-pointer font-semibold">Как получить баллы</summary>
+            <summary className="cursor-pointer font-semibold">
+              {t('components.rewards.RewardDetails.572a598fee')}
+            </summary>
             <ul className="mt-3 grid gap-2 text-sm text-figma-dim">
-              <li>Прибытие по плану — 40, по заранее обновлённому ETA — 30.</li>
-              <li>Работа в норматив — 40, в продлённое время — 30.</li>
-              <li>Актуализация паспорта — 35.</li>
-              <li>
-                Для нового времени точность — от 10 минут до срока до самого срока. Бонусы 40 и 30
-                за одно действие не складываются.
-              </li>
-              <li>
-                Автоматических списаний нет. Подтверждённое диспетчером нарушение статуса — −50 с
-                объяснением в журнале.
-              </li>
+              <li>{t('components.rewards.RewardDetails.5479bad444')}</li>
+              <li>{t('components.rewards.RewardDetails.4a72136b2c')}</li>
+              <li>{t('components.rewards.RewardDetails.da856efd40')}</li>
+              <li>{t('components.rewards.RewardDetails.30e7948db3')}</li>
+              <li>{t('components.rewards.RewardDetails.c9f88862ac')}</li>
             </ul>
           </details>
           {engineerId ? (
@@ -80,9 +81,13 @@ export function RewardDetails({
               onSaved={() => setRetry((value) => value + 1)}
             />
           ) : null}
-          <h3 className="mb-3 mt-6 font-semibold">Последние записи</h3>
+          <h3 className="mb-3 mt-6 font-semibold">
+            {t('components.rewards.RewardDetails.ce978e7d40')}
+          </h3>
           {data.recentEntries.length === 0 ? (
-            <p className="text-sm text-figma-dim">В этом месяце пока нет начислений.</p>
+            <p className="text-sm text-figma-dim">
+              {t('components.rewards.RewardDetails.065704e1f8')}
+            </p>
           ) : (
             <ol className="grid gap-3">
               {data.recentEntries.map((entry) => (
@@ -95,7 +100,7 @@ export function RewardDetails({
                     </strong>
                   </div>
                   <time className="mt-1 block text-xs text-figma-dim">
-                    {new Date(entry.awardedAt * 1000).toLocaleString('ru-RU', {
+                    {new Date(entry.awardedAt * 1000).toLocaleString(locale, {
                       timeZone: 'Europe/Moscow',
                     })}
                   </time>
@@ -113,10 +118,10 @@ export function RewardDetails({
           onClick={() => setRetry((value) => value + 1)}
           className="rounded-2xl bg-white p-4"
         >
-          Не удалось загрузить баллы. Повторить
+          {t('components.rewards.RewardDetails.7482aae13b')}
         </button>
       ) : (
-        <p role="status">Загружаем журнал…</p>
+        <p role="status">{t('components.rewards.RewardDetails.34eda68238')}</p>
       )}
     </RewardDialog>
   );

@@ -161,7 +161,7 @@ export function PhoneAiPane({
       className="w-full"
       style={{ maxWidth: '100%' }}
     >
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: The bar is not a second control; it only moves focus into the textarea. */}
+      {/* biome-ignore lint/a11y/noStaticElementInteractions lint/a11y/noNoninteractiveElementInteractions: The bar is not a second control; it only moves focus into the textarea. */}
       <div
         className="flex items-end bg-figma-ink"
         onMouseDown={(event) => focusComposer(event, fieldRef.current)}

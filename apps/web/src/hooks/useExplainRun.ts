@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { type ExplainTarget, requestAiExplain, streamAssistantRun } from '../api/ai';
 import { DashboardApiError } from '../api/client';
+import { t } from '../i18n';
 import type { AiUnavailableReason } from './useAssistantChat';
 
 export interface ExplainRunState {
@@ -22,7 +23,7 @@ const IDLE_STATE: ExplainRunState = {
 };
 
 function errorMessage(cause: unknown): string {
-  return cause instanceof Error ? cause.message : 'Не удалось получить объяснение';
+  return cause instanceof Error ? cause.message : t('hooks.useExplainRun.81858a4086');
 }
 
 /**

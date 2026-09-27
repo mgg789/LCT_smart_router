@@ -7,6 +7,7 @@ import { NotificationsService } from '../../notifications';
 import type { Tx } from '../../persistence';
 import { lockControlState, lockRoutingCurrent, PrismaService, UnitOfWork } from '../../persistence';
 import { AppliedPlanService } from './applied-plan.service';
+import { manualNeedsReview, readManualState, writeManualState } from './manual-state';
 import { planSchema, type RouterPlan, type RouterResult, routerResultSchema } from './result.types';
 
 export interface AcceptanceOutcome {
@@ -156,9 +157,6 @@ export class ResultAcceptanceService {
       await lockRoutingCurrent(tx);
 
       const control = await tx.controlState.findUniqueOrThrow({ where: { id: 'singleton' } });
-      if (control.mode === 'manual') {
-        return this.reject(tx, result, 'MODE_MANUAL', 'Emergency manual mode is on');
-      }
 
       const current = await tx.routingCurrent.findUnique({
         where: { id: 'singleton' },
@@ -204,6 +202,52 @@ export class ResultAcceptanceService {
         );
       }
 
+      if (control.mode === 'manual') {
+        const state = await readManualState(tx);
+        const input = z
+          .object({ manual_decisions: z.array(z.object({ id: z.string() })).default([]) })
+          .parse(JSON.parse(current.snapshot.payload));
+        const ids = input.manual_decisions.map((item) => item.id);
+        const resolution = result.main.manual_resolution;
+        if (
+          ids.length &&
+          (!resolution ||
+            new Set([...resolution.accepted_ids, ...resolution.rejected_ids]).size !== ids.length ||
+            resolution.accepted_ids.length + resolution.rejected_ids.length !== ids.length ||
+            resolution.rejected_ids.some((id) => !resolution.conflict_ids.includes(id)) ||
+            [...resolution.accepted_ids, ...resolution.rejected_ids].some(
+              (id) => !ids.includes(id),
+            ) ||
+            resolution.conflict_ids.some((id) => !ids.includes(id)))
+        ) {
+          return this.reject(
+            tx,
+            result,
+            'RESULT_NOT_APPLICABLE',
+            'Manual resolution does not cover current decisions',
+          );
+        }
+        if (resolution) {
+          const next = {
+            ...state,
+            resolution: {
+              acceptedIds: resolution.accepted_ids,
+              rejectedIds: resolution.rejected_ids,
+              conflictIds: resolution.conflict_ids,
+              inputHash: current.snapshot.inputHash,
+            },
+          };
+          await writeManualState(tx, next, this.clock.nowSeconds());
+          if (manualNeedsReview(next))
+            return this.reject(
+              tx,
+              result,
+              'MODE_MANUAL',
+              'Ручные решения конфликтуют. Расставьте приоритеты.',
+            );
+        }
+      }
+
       const alreadyApplied = await tx.routerResult.findUnique({
         where: { resultId: result.result_id ?? '' },
       });
@@ -222,6 +266,8 @@ export class ResultAcceptanceService {
               request_id: z.string(),
               window_start_at: z.number(),
               window_end_at: z.number(),
+              source_window_start_at: z.number().optional(),
+              source_window_end_at: z.number().optional(),
             }),
           ),
         })
@@ -236,8 +282,9 @@ export class ResultAcceptanceService {
           const actual = windows.get(input.request_id);
           return (
             !actual ||
-            Number(actual.windowStartAt) !== input.window_start_at ||
-            Number(actual.windowEndAt) !== input.window_end_at
+            Number(actual.windowStartAt) !==
+              (input.source_window_start_at ?? input.window_start_at) ||
+            Number(actual.windowEndAt) !== (input.source_window_end_at ?? input.window_end_at)
           );
         })
       )
@@ -385,6 +432,7 @@ export class ResultAcceptanceService {
           kind: stop.kind,
           request_id: stop.requestId,
           handoff: stop.handoff ?? null,
+          logistics: stop.logistics ?? null,
           location: { lat: stop.lat, lon: stop.lon },
           arrival_at: Number(stop.arrivalAt),
           start_at: Number(stop.startAt),

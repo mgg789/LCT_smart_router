@@ -7,6 +7,7 @@ import { SysError } from '../../common/errors';
 import { AlertsService } from '../../orchestrator/alerts';
 import { LiveService } from '../../orchestrator/live/live.service';
 import { PolicyService } from '../../orchestrator/policy';
+import { resolveRequestReference } from '../../orchestrator/requests/request-reference';
 import { RequestsService } from '../../orchestrator/requests/requests.service';
 import {
   readSimulation,
@@ -359,13 +360,13 @@ export function buildDispatcherReadTools(deps: DispatcherReadToolDeps): readonly
     name: 'get_request',
     description:
       "One request's full conditions, including its plan assignment status and reasons[] " +
-      '(basis, facts) when it has one.',
+      '(basis, facts) when it has one. Accepts full ID or unique visible 8-character prefix; use returned full ID for mutations.',
     schema: getRequestSchema,
     async run(_ctx: ToolContext, args: GetRequestArgs): Promise<ToolResult> {
-      const request = await deps.prisma.request.findUnique({ where: { id: args.requestId } });
+      const request = await resolveRequestReference(deps.prisma, args.requestId);
       if (!request) throw new SysError('NOT_FOUND', 'Request was not found');
       const planRow = await deps.plans.current(deps.prisma);
-      const assignment = planRow?.assignments.find((item) => item.requestId === args.requestId);
+      const assignment = planRow?.assignments.find((item) => item.requestId === request.id);
       return ok(`Request ${args.requestId}: ${request.lifecycle}/${request.assignmentState}`, {
         request: toRequestView(request),
         assignment: assignment
@@ -386,10 +387,10 @@ export function buildDispatcherReadTools(deps: DispatcherReadToolDeps): readonly
       'second active promise. The current conditions are always in get_request, not here.',
     schema: getRequestHistorySchema,
     async run(_ctx: ToolContext, args: GetRequestHistoryArgs): Promise<ToolResult> {
-      const existing = await deps.prisma.request.findUnique({ where: { id: args.requestId } });
+      const existing = await resolveRequestReference(deps.prisma, args.requestId);
       if (!existing) throw new SysError('NOT_FOUND', 'Request was not found');
       const entries = await deps.prisma.requestConditionHistory.findMany({
-        where: { requestId: args.requestId },
+        where: { requestId: existing.id },
         orderBy: { changedAt: 'desc' },
       });
       const history = entries.map((entry) => ({
@@ -437,9 +438,9 @@ export function buildDispatcherReadTools(deps: DispatcherReadToolDeps): readonly
     name: 'get_policies',
     description: 'The prepared policy catalogue and which one is active.',
     schema: getPoliciesSchema,
-    async run(): Promise<ToolResult> {
+    async run(ctx): Promise<ToolResult> {
       const [policies, active] = await Promise.all([
-        deps.policy.list(),
+        deps.policy.listFor(deps.prisma, ctx.accountId),
         deps.policy.active(deps.prisma),
       ]);
       return ok(`Active policy: ${active.policyId}`, { policies, active });

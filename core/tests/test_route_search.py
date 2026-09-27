@@ -6,7 +6,7 @@ import pytest
 from core.contracts import Policy, RouterTechnicalSettings
 from core.engine import SearchSettings, solve
 from core.geo import GraphTravel, TravelQuote, configure_travel
-from core.policy import policy_score
+from core.policy import compile_policy, policy_score
 from core.route_search import RouteEvaluator, improve_routes
 from core.runtime import calculate_policy_comparison
 from core.schedule import assemble_plan, baseline, fixed_order, validate_plan
@@ -224,15 +224,22 @@ def test_regular_window_lateness_is_explicit_and_does_not_extend_shifts(
 @pytest.mark.parametrize("policy", ["fast", "compact", "sla", "balanced", "eco", "covering"])
 def test_search_score_matches_independent_public_metrics(snapshot, graph, policy):
     task = snapshot.model_copy(update={"policy": Policy(policy_id=policy, parameters={})})
+    task = task.model_copy(update={"requests": [r.model_copy(update={"dispatcher_priority": i == 0}) for i, r in enumerate(task.requests)]})
     travel = configure_travel(GraphTravel(graph), RouterTechnicalSettings(), task.planning_as_of)
     evaluator = RouteEvaluator(task, travel)
     routes = [fixed_order(task, task.engineers[0], [r.request_id for r in task.requests], travel)]
     plan = assemble_plan(task, routes)
     internal = evaluator.score([evaluator.from_route(routes[0])], policy)
     public = policy_score(task, plan)
-    assert internal[2:] == public[2:]
-    assert internal[0] + plan.summary.urgent_total == public[0]
-    assert internal[1] + plan.summary.requests_total == public[1]
+    offsets = {
+        "emergency_unassigned": sum(r.category == "emergency" for r in task.requests),
+        "dispatcher_unassigned": sum(r.dispatcher_priority for r in task.requests),
+        "connection_unassigned": sum(r.category == "connection" for r in task.requests),
+        "urgent_unassigned": plan.summary.urgent_total,
+        "unassigned": plan.summary.requests_total,
+    }
+    assert tuple(value + offsets.get(criterion, 0) for value, criterion in
+                 zip(internal, compile_policy(task.policy).ordered_criteria)) == public
     state = evaluator.evaluate(0, tuple(r.request_id for r in task.requests))
     assert state == evaluator.from_route(routes[0])
 

@@ -40,6 +40,11 @@ class TransportCostSpec(Record):
 
 Region = Literal["east", "southeast", "south_central"]
 
+# Generated from the same catalogue served to client, dispatcher, AI and MCP.
+_WORK_TYPES = json.loads(Path(__file__).with_name("work-types.json").read_text(encoding="utf-8"))
+_WORK_BY_TITLE = {name: spec for spec in _WORK_TYPES for name in [spec["title"], *spec["aliases"]]}
+
+
 
 class OfficialScenarioConfig(Record):
     """Versioned assumptions needed to turn organizer rows into a strict snapshot."""
@@ -401,7 +406,15 @@ def load_official_region(
         )
         priority = "urgent" if work_type in config.priority_urgent_hd_types else "normal"
         skill = config.skill_by_hd_type[work_type]
-        duration = config.duration_sec_by_hd_type[work_type]
+        spec = _WORK_BY_TITLE.get(work_type)
+        if spec is None:
+            raise ValueError(f"official HD type has no business category: {work_type}")
+        duration = spec["serviceDurationSec"]
+        category = spec["category"]
+        received_at = _epoch(local_day, config.horizon_start, zone)
+        if category == "emergency":
+            window_start = received_at
+            window_end = _epoch(local_day, config.horizon_end, zone)
         request_payloads.append(
             {
                 "request_id": request_id,
@@ -412,6 +425,8 @@ def load_official_region(
                 "window_start_at": window_start,
                 "window_end_at": window_end,
                 "priority": priority,
+                "work_category": category,
+                "received_at": received_at,
                 "required_skill": skill,
                 "required_transport": None,
             }
@@ -422,6 +437,7 @@ def load_official_region(
             "address": row["Адрес"],
             "geocode_match_level": match_level,
             "priority": priority,
+            "work_category": category,
             "required_skill": skill,
             "service_duration_sec": duration,
         }

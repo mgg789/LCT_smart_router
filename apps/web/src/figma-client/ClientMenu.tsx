@@ -1,6 +1,9 @@
 import { AnimatePresence, motion } from 'framer-motion';
+import { useRef } from 'react';
+import { useModalFocus } from '../components/useModalFocus';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { eu } from '../figma-engineer/engineerScale';
+import { t } from '../i18n';
 import { CLIENT_ASSETS } from './assets';
 import type { ClientScreenId } from './clientPreview';
 
@@ -30,10 +33,12 @@ export function ClientMenu({
   onNavigate: (id: ClientScreenId) => void;
   onNewRequest: () => void;
 }) {
+  const dialog = useRef<HTMLElement>(null);
+  useModalFocus(dialog, open && !docked, onClose);
   if (docked) {
     return (
       <aside
-        aria-label="Меню клиента"
+        aria-label={t('figma-client.ClientMenu.269f519580')}
         className="phone-desk-menu flex h-full w-full flex-col overflow-y-auto bg-white"
       >
         <div
@@ -63,7 +68,7 @@ export function ClientMenu({
           ) : null}
           <nav className="relative flex flex-col" style={{ marginTop: eu(28), gap: eu(20) }}>
             <MenuItem
-              label="Мои заявки"
+              label={t('figma-client.ClientMenu.39f6d85e6e')}
               icon={CLIENT_ASSETS.list}
               iconWidth={28}
               iconHeight={21}
@@ -71,7 +76,7 @@ export function ClientMenu({
               onClick={() => onNavigate('list')}
             />
             <MenuItem
-              label="Поддержка"
+              label={t('figma-client.ClientMenu.f0012086d5')}
               icon={CLIENT_ASSETS.support}
               iconWidth={30}
               iconHeight={33}
@@ -96,7 +101,7 @@ export function ClientMenu({
                 fontSize: eu(28),
               }}
             >
-              Новая заявка
+              {t('figma-client.ClientMenu.ee5790e7f4')}
             </motion.button>
           </div>
         </div>
@@ -116,13 +121,17 @@ export function ClientMenu({
         >
           <button
             type="button"
-            aria-label="Закрыть меню"
+            aria-label={t('figma-client.ClientMenu.980d22e392')}
+            tabIndex={-1}
             onClick={onClose}
             className="absolute inset-0 z-0 bg-black/60 backdrop-blur-[10px]"
           />
           <motion.aside
+            ref={dialog}
             role="dialog"
-            aria-label="Меню клиента"
+            aria-modal="true"
+            tabIndex={-1}
+            aria-label={t('figma-client.ClientMenu.269f519580')}
             initial={motionOn ? { x: '-100%' } : false}
             animate={{ x: 0 }}
             exit={{ x: '-100%' }}
@@ -163,7 +172,7 @@ export function ClientMenu({
               ) : null}
               <nav className="relative flex flex-col" style={{ marginTop: eu(28), gap: eu(20) }}>
                 <MenuItem
-                  label="Мои заявки"
+                  label={t('figma-client.ClientMenu.39f6d85e6e')}
                   icon={CLIENT_ASSETS.list}
                   iconWidth={28}
                   iconHeight={21}
@@ -171,7 +180,7 @@ export function ClientMenu({
                   onClick={() => onNavigate('list')}
                 />
                 <MenuItem
-                  label="Поддержка"
+                  label={t('figma-client.ClientMenu.f0012086d5')}
                   icon={CLIENT_ASSETS.support}
                   iconWidth={30}
                   iconHeight={33}
@@ -196,7 +205,7 @@ export function ClientMenu({
                     fontSize: eu(28),
                   }}
                 >
-                  Новая заявка
+                  {t('figma-client.ClientMenu.ee5790e7f4')}
                 </motion.button>
               </div>
             </div>
@@ -230,7 +239,7 @@ function MenuItem({
       aria-current={active ? 'page' : undefined}
       aria-disabled={disabled}
       disabled={disabled}
-      title={disabled ? 'Скоро' : undefined}
+      title={disabled ? t('figma-client.ClientMenu.72c299e0d6') : undefined}
       onClick={onClick}
       className={`flex w-full items-center ${active ? 'bg-figma-track' : ''} ${disabled ? 'cursor-not-allowed opacity-40' : ''}`}
       style={{

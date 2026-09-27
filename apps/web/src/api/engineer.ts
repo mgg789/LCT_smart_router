@@ -54,6 +54,8 @@ const requestSchema = z.object({
   requiredEquipment: z.enum(['router', 'set_top_box', 'smart_speaker']).nullable(),
   workType: z.string().nullable(),
   workTypeTitle: z.string().nullable(),
+  workCategory: z.enum(['emergency', 'connection', 'service']).optional(),
+  receivedAt: z.number().int().nullable().optional(),
   requiredSkill: z.string(),
   normProfileCode: z.string().optional(),
   normativeTravelDurationSec: z.number().int().optional(),
@@ -79,7 +81,16 @@ const requestSchema = z.object({
 
 const planStopSchema = z.object({
   sequence: z.number().int(),
-  kind: z.enum(['job', 'lunch', 'wait', 'start', 'handoff']),
+  kind: z.enum(['job', 'lunch', 'wait', 'start', 'handoff', 'delivery', 'office_pickup']),
+  logistics: z
+    .object({
+      logistics_id: z.string(),
+      kind: z.enum(['donor_delivery', 'office_pickup']),
+      request_id: z.string(),
+      equipment_type: z.enum(['router', 'set_top_box', 'smart_speaker']),
+    })
+    .nullable()
+    .optional(),
   handoff: z
     .object({
       handoff_id: z.string(),

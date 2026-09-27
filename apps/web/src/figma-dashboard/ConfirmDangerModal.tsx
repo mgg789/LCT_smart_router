@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { useEffect, useId, useRef, useState } from 'react';
+import { t } from '../i18n';
 import { FIGMA_ASSETS } from './assets';
 import {
   DANGER_ACTIONS,
@@ -49,7 +50,10 @@ export function ConfirmDangerModal({
     <ModalLayer open={actionId !== null} motionOn={motionOn} zClass="z-[110]">
       {action ? (
         <>
-          <ModalScrim label="Закрыть подтверждение" onClose={onCancel} />
+          <ModalScrim
+            label={t('figma-dashboard.ConfirmDangerModal.1642fd589f')}
+            onClose={onCancel}
+          />
           <motion.div
             role="dialog"
             aria-modal="true"
@@ -69,7 +73,7 @@ export function ConfirmDangerModal({
               </h2>
               <button
                 type="button"
-                aria-label="Закрыть"
+                aria-label={t('figma-dashboard.ConfirmDangerModal.a7a4033657')}
                 onClick={onCancel}
                 className="flex size-[36px] shrink-0 items-center justify-center transition-transform duration-150 hover:scale-110"
               >
@@ -82,14 +86,14 @@ export function ConfirmDangerModal({
               {action.warning}
             </p>
             <p className="mt-[22px] font-medium text-[16px] text-figma-ink">
-              Введите слово{' '}
+              {t('figma-dashboard.ConfirmDangerModal.45ed96f67e')}{' '}
               <span className="rounded-[8px] bg-figma-soft px-[8px] py-[2px] font-semibold tracking-[0.6px]">
                 {action.word}
               </span>{' '}
-              в поле ниже.
+              {t('figma-dashboard.ConfirmDangerModal.a1a17ce5a7')}
             </p>
             <label htmlFor={inputId} className="sr-only">
-              Слово подтверждения
+              {t('figma-dashboard.ConfirmDangerModal.7993628ff1')}
             </label>
             <input
               id={inputId}
@@ -100,7 +104,7 @@ export function ConfirmDangerModal({
               autoCapitalize="off"
               spellCheck={false}
               name="confirm-phrase"
-              placeholder="Введите слово вручную"
+              placeholder={t('figma-dashboard.ConfirmDangerModal.5d0fc213c7')}
               className="mt-[12px] h-[56px] w-full rounded-[20px] border border-figma-ink/15 bg-white px-[18px] font-medium text-[18px] tracking-[-0.3px] text-figma-ink outline-none placeholder:text-figma-hint focus:border-figma-ink"
               onPaste={(event) => event.preventDefault()}
               onDrop={(event) => event.preventDefault()}
@@ -119,7 +123,7 @@ export function ConfirmDangerModal({
                 onClick={onCancel}
                 className="flex h-[56px] flex-1 items-center justify-center rounded-[20px] bg-figma-track font-medium text-[18px] text-figma-ink transition-transform duration-150 hover:scale-[1.01]"
               >
-                Отмена
+                {t('figma-dashboard.ConfirmDangerModal.8fbe9b75cb')}
               </button>
               <button
                 type="button"

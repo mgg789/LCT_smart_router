@@ -77,6 +77,18 @@ class WindowProposalRequest(Record):
     day_end_at: int = Field(gt=0)
 
 
+class LogisticsProposalRequest(Record):
+    """Immutable applied-route intervals used solely for a logistics preview."""
+
+    snapshot: RouterTaskSnapshot
+    request_id: str = Field(min_length=1, max_length=128)
+    receiver_engineer_id: str = Field(min_length=1, max_length=128)
+    routes: dict[str, list[dict]] = Field(max_length=100)
+    depots: list[dict] = Field(max_length=100)
+    allow_office_pickup: bool = False
+    expected_context_version: str = Field(min_length=1)
+
+
 def create_app(runtime: RouterRuntime, road_store: RoadGraphStore | None = None) -> FastAPI:
     """Create the single-worker internal API; bind to loopback/private service network."""
 
@@ -264,6 +276,19 @@ def create_app(runtime: RouterRuntime, road_store: RoadGraphStore | None = None)
             )
         except TimeoutError as exc:
             raise HTTPException(status_code=503, detail="WINDOW_SEARCH_TIMEOUT") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    @app.post("/v1/logistics-proposal")
+    def logistics_proposal(request: LogisticsProposalRequest) -> dict:
+        """Find a delivery/pickup witness without changing Router state or a plan."""
+        try:
+            return runtime.propose_logistics(request.snapshot, request.request_id,
+                request.receiver_engineer_id, request.routes, request.depots,
+                allow_office_pickup=request.allow_office_pickup,
+                expected_context_version=request.expected_context_version)
+        except TimeoutError as exc:
+            raise HTTPException(status_code=503, detail="LOGISTICS_SEARCH_TIMEOUT") from exc
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 

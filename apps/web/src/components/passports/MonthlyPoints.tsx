@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { loadMonthlyPoints } from '../../api/passports';
+import { t } from '../../i18n';
 import { RewardDetails } from '../rewards/RewardDetails';
 
 /** Shows the compact monthly score and refreshes on saves, focus and month rollover. */
@@ -47,10 +48,16 @@ export function MonthlyPoints({ token, engineerId }: { token: string; engineerId
         onClick={() => setOpen(true)}
         className="inline-flex min-h-9 items-center gap-2 rounded-full bg-figma-bee px-3 py-2 font-semibold text-figma-ink"
         aria-label={
-          current?.failed ? 'Не удалось загрузить баллы' : `${current?.points ?? '—'} баллов`
+          current?.failed
+            ? t('components.passports.MonthlyPoints.8ba3a6918c')
+            : t('components.passports.MonthlyPoints.6c6f04aa01', { value0: current?.points ?? '—' })
         }
         aria-live="polite"
-        title={current?.failed ? 'Не удалось загрузить баллы' : 'Баллы за текущий месяц'}
+        title={
+          current?.failed
+            ? t('components.passports.MonthlyPoints.8ba3a6918c')
+            : t('components.passports.MonthlyPoints.d2c8ae78bd')
+        }
       >
         <span>{current?.points ?? '—'}</span>
         <img src="/figma/carambola.svg" alt="" className="size-5" />

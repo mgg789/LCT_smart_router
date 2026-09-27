@@ -7,6 +7,7 @@ import {
   sendDispatchChatMessage,
 } from '../api/ai';
 import { DashboardApiError } from '../api/client';
+import { t } from '../i18n';
 import { ChatsView } from './ChatsView';
 import { DashboardAi } from './DispatcherAiPane';
 
@@ -18,32 +19,34 @@ export function DashboardChats({ token }: { token: string | null }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(() => {
-    if (!token) {
-      setChats(null);
-      setError('Нужна сессия диспетчера.');
-      return;
-    }
-    setLoading(true);
-    void loadDispatchChats(token)
-      .then((result) => {
-        setChats(result.chats);
-        setError(null);
-      })
-      .catch((cause: unknown) => {
-        setError(cause instanceof DashboardApiError ? cause.message : 'Не удалось загрузить чаты.');
-      })
-      .finally(() => setLoading(false));
-  }, [token]);
+  const refresh = useCallback(
+    (quiet = false) => {
+      if (!token) {
+        setChats(null);
+        setError(t('figma-dashboard.DashboardAssist.df8d670234'));
+        return;
+      }
+      if (!quiet) setLoading(true);
+      void loadDispatchChats(token)
+        .then((result) => {
+          setChats(result.chats);
+          setError(null);
+        })
+        .catch((cause: unknown) => {
+          setError(
+            cause instanceof DashboardApiError
+              ? cause.message
+              : t('figma-dashboard.DashboardAssist.bb8e076789'),
+          );
+        })
+        .finally(() => setLoading(false));
+    },
+    [token],
+  );
 
-  /*
-   * The frame draws no «Обновить», so the list keeps itself current: nothing here pushes,
-   * and a dispatcher reading one thread would otherwise never see a second person write.
-   * Ten seconds is the granularity the chat list is read at, not the one a message needs.
-   */
   useEffect(() => {
     refresh();
-    const timer = window.setInterval(refresh, 10_000);
+    const timer = window.setInterval(() => refresh(true), 5_000);
     return () => window.clearInterval(timer);
   }, [refresh]);
 

@@ -71,3 +71,26 @@ describe('uploaded planning package schema', () => {
     assert.equal(parsed.success, false);
   });
 });
+
+it('requires an explicit group for unfamiliar named imports without losing their title', () => {
+  const base = {
+    operationId: randomUUID(),
+    schemaVersion: '1.0',
+    mode: 'append_requests',
+    region: 'east',
+    sourceVersion: 'unknown-type',
+  };
+  assert.equal(
+    uploadDataPackageSchema.safeParse({
+      ...base,
+      requests: [{ ...request, workType: 'Новый тип поставщика' }],
+    }).success,
+    false,
+  );
+  const parsed = uploadDataPackageSchema.parse({
+    ...base,
+    requests: [{ ...request, workType: 'Новый тип поставщика', workCategory: 'connection' }],
+  });
+  assert.equal(parsed.requests[0]?.workType, 'Новый тип поставщика');
+  assert.equal(parsed.requests[0]?.workCategory, 'connection');
+});

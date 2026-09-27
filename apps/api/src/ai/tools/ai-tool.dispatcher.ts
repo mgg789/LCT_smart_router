@@ -10,6 +10,7 @@ import {
   ToolDispatcher,
   type ToolDispatchResult,
 } from '../runtime/tool-dispatcher';
+import { MANUAL_TOOL_NAMES, requireManualMode } from './manual.tools';
 import { segmentsFor } from './role-profile';
 import { ToolRegistry } from './tool.registry';
 import type { ToolContext } from './tool.types';
@@ -84,6 +85,7 @@ export class AiToolDispatcher extends ToolDispatcher {
     };
 
     try {
+      if (MANUAL_TOOL_NAMES.has(call.name)) await requireManualMode(this.prisma);
       return await tool.run(toolContext, parsed.data);
     } catch (error) {
       if (error instanceof RunStoppedSignal) throw error;

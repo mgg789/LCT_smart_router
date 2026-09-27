@@ -1,11 +1,12 @@
+import { t } from './i18n';
 /** Which SPA shell the current path should mount. */
 export type AppSurface = 'client' | 'engineer' | 'dispatcher';
 
 /** Browser-tab title for each independently exposed application surface. */
 export function appSurfaceTitle(surface: AppSurface): string {
-  if (surface === 'client') return 'ЛК | Navix';
-  if (surface === 'engineer') return 'Navix | Инженер';
-  return 'Navix | Дашборд';
+  if (surface === 'client') return t('appSurface.661a8e3178');
+  if (surface === 'engineer') return t('appSurface.487584c44e');
+  return t('appSurface.1000963ec9');
 }
 
 /**

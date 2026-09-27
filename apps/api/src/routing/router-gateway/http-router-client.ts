@@ -4,6 +4,8 @@ import type { RouterResult } from './result.types';
 import { routerResultSchema } from './result.types';
 import {
   COMPARISON_STRATEGIES,
+  type LogisticsProposal,
+  type LogisticsProposalInput,
   type ManualEvaluation,
   type ManualEvaluationInput,
   type PolicyComparison,
@@ -264,6 +266,38 @@ export class HttpRouterClient extends RouterClient {
       edges: parsed.edges,
     };
   }
+  /** Validate a frozen-route equipment witness without publishing a new task. */
+  override async proposeLogistics(input: LogisticsProposalInput): Promise<LogisticsProposal> {
+    const raw = await this.fetchJson(
+      '/v1/logistics-proposal',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      },
+      8000,
+    );
+    return z
+      .object({
+        status: z.enum(['available', 'none']),
+        router_context_version: z.string(),
+        proposal: z
+          .object({
+            kind: z.literal('donor_delivery'),
+            donor_engineer_id: z.string(),
+            at: z.number().int(),
+            location: z.object({ lat: z.number(), lon: z.number() }),
+            travel_delta_sec: z.number().int(),
+            distance_delta_m: z.number().int(),
+            wait_delta_sec: z.number().int(),
+            occupied_from_at: z.number().int(),
+            occupied_until_at: z.number().int(),
+          })
+          .nullable(),
+      })
+      .parse(raw);
+  }
+
   /** Uses canonical Router travel and scheduling, without publication side effects. */
   override async proposeWindow(input: WindowProposalInput): Promise<WindowProposal> {
     const raw = await this.fetchJson(

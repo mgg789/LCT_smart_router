@@ -174,3 +174,43 @@ test('previous routes survive reload and restore through a new server revision',
     history.previous.routes,
   );
 });
+
+test('ordinary-replanning switch persists without changing the working plan', async ({
+  page,
+  live,
+}) => {
+  await signIn(page);
+  await waitForAppliedTask(live.api);
+  const before = await readPlan(live.api);
+  const open = () => page.getByRole('button', { name: /^Политика:/ }).click();
+  await open();
+  const toggle = page.getByRole('button', { name: /^Перестройка по обычным/ });
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  for (const label of [
+    'Рассчитать обеды',
+    'Прогнозировать пробки',
+    'Маршруты с метро',
+    'Передача оборудования',
+    'Строгое время',
+    'Перестройка по обычным',
+  ]) {
+    const control = page.getByRole('button', { name: new RegExp(`^${label}`) });
+    await control.hover();
+    await expect(control.getByRole('tooltip')).toBeVisible();
+    await page.mouse.move(0, 0);
+    await expect(control.getByRole('tooltip')).not.toBeVisible();
+  }
+  await toggle.focus();
+  await expect(toggle.getByRole('tooltip')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(toggle.getByRole('tooltip')).not.toBeVisible();
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  expect((await readPlan(live.api)).revision).toBe(before.revision);
+  await page.reload();
+  await open();
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  expect((await readPlan(live.api)).revision).toBe(before.revision);
+});

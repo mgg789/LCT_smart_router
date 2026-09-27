@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
+import { t } from '../i18n';
 
 /**
  * Header indicator of the dashboard MCP server: a softly blue-pulsing robot shown only
@@ -47,8 +48,8 @@ export function McpAgentIndicator({
         {active ? (
           <motion.button
             type="button"
-            aria-label="Сейчас с дашбордом работает агент по MCP — открыть настройки"
-            title="Сейчас с дашбордом работает агент (MCP)"
+            aria-label={t('figma-dashboard.McpAgentIndicator.84eb19ff6c')}
+            title={t('figma-dashboard.McpAgentIndicator.df8d8b6351')}
             onClick={onClick}
             className="absolute inset-0 flex items-center justify-center rounded-full bg-white shadow-[0_4px_14px_rgba(15,16,20,0.10)]"
             initial={motionOn ? { opacity: 0, scale: 0.6 } : false}

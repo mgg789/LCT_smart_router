@@ -6,6 +6,7 @@ import { SysError } from '../../common/errors';
 import { formatUnixSeconds } from '../../common/time';
 import type { AiRoleProfile, Request } from '../../generated/prisma/client';
 import type { OperationContext } from '../../operations';
+import { assertManualConflictResolved } from '../../operations/manual-conflict-guard';
 import {
   type AlertAction,
   AlertsService,
@@ -19,6 +20,8 @@ import {
 import { assertLunchConditions } from '../../orchestrator/engineers/workday';
 import { LiveService } from '../../orchestrator/live/live.service';
 import { findPolicy, PolicyService } from '../../orchestrator/policy';
+import { personalPolicyUpdateSchema } from '../../orchestrator/policy/personal-policy';
+import { applyPersonalPolicyRouterPreset } from '../../orchestrator/policy/personal-policy-preset';
 import { RequestsService } from '../../orchestrator/requests/requests.service';
 // Catalog file only, not the `requests` barrel: the barrel also loads Nest modules and
 // can leave `findWorkType` undefined under CJS circular imports in unit tests
@@ -27,7 +30,11 @@ import { findWorkType, WORK_TYPE_CODES } from '../../orchestrator/requests/work-
 import { PrismaService } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
 import { PlanRestoreService, RouterClient } from '../../routing/router-gateway';
+import { ManualDecisionsService } from '../../routing/router-gateway/manual-decisions.service';
+import { manualDecisionSchema } from '../../routing/router-gateway/manual-state';
 import type { AiPreviewRow } from '../runtime/ai-event.types';
+import { requireManualMode } from '../tools/manual.tools';
+import { buildClientActions } from './client-actions';
 
 /**
  * The AI-gateway's own catalogue of writable actions.
@@ -106,6 +113,7 @@ export interface AiActionCatalogDeps {
    *  and request rows themselves have none. */
   readonly prisma: PrismaService;
   readonly timeZone: string;
+  readonly manualDecisions?: ManualDecisionsService;
 }
 
 const requestIdSchema = z.string().min(1);
@@ -177,6 +185,8 @@ const alertActionSchema = z.enum([
   'message',
   'remove_shift',
   'message_remove',
+  'make_passive',
+  'prioritize',
   'extend',
 ]);
 
@@ -306,6 +316,73 @@ async function ensureClientAccount(
 
 export function buildAiActionCatalog(deps: AiActionCatalogDeps): ReadonlyMap<string, AiActionSpec> {
   const catalog = new Map<string, AiActionSpec>();
+  const manualEditSchema = manualDecisionSchema
+    .omit({ id: true, priority: true })
+    .extend({ expectedVersion: z.number().int().nonnegative() });
+  const manualRemoveSchema = z.object({
+    expectedVersion: z.number().int().nonnegative(),
+    decisionId: z.string().min(1),
+  });
+  const manualOrderSchema = z.object({
+    expectedVersion: z.number().int().nonnegative(),
+    decisionIds: z.array(z.string().min(1)),
+  });
+  const manualService = () => {
+    if (!deps.manualDecisions)
+      throw SysError.validationFailed('Manual decisions service unavailable');
+    return deps.manualDecisions;
+  };
+  catalog.set('manual.decision.put', {
+    zodSchema: manualEditSchema,
+    allowedProfiles: ['dispatcher_fix'],
+    precheck: () => requireManualMode(deps.prisma),
+    async preview(args) {
+      const payload = manualEditSchema.parse(args.payload);
+      return [
+        { label: 'Ручное решение', value: payload.kind },
+        { label: 'Объект', value: payload.targetId },
+        { label: 'Параметры', value: JSON.stringify(payload) },
+      ];
+    },
+    async apply(args) {
+      const { expectedVersion, ...input } = manualEditSchema.parse(args.payload);
+      return manualService().put(args.context, expectedVersion, input);
+    },
+  });
+  catalog.set('manual.decision.remove', {
+    zodSchema: manualRemoveSchema,
+    allowedProfiles: ['dispatcher_fix'],
+    precheck: () => requireManualMode(deps.prisma),
+    async preview(args) {
+      return [
+        {
+          label: 'Удалить ручное решение',
+          value: manualRemoveSchema.parse(args.payload).decisionId,
+        },
+      ];
+    },
+    async apply(args) {
+      const input = manualRemoveSchema.parse(args.payload);
+      return manualService().remove(args.context, input.expectedVersion, input.decisionId);
+    },
+  });
+  catalog.set('manual.priorities', {
+    zodSchema: manualOrderSchema,
+    allowedProfiles: ['dispatcher_fix'],
+    precheck: () => requireManualMode(deps.prisma),
+    async preview(args) {
+      return [
+        {
+          label: 'Приоритеты от высшего к низшему',
+          value: manualOrderSchema.parse(args.payload).decisionIds.join(', '),
+        },
+      ];
+    },
+    async apply(args) {
+      const input = manualOrderSchema.parse(args.payload);
+      return manualService().reorder(args.context, input.expectedVersion, input.decisionIds);
+    },
+  });
 
   catalog.set('request.create', {
     zodSchema: createRequestPayloadSchema,
@@ -462,12 +539,48 @@ export function buildAiActionCatalog(deps: AiActionCatalogDeps): ReadonlyMap<str
     },
   });
 
+  catalog.set('policy.personal.save', {
+    zodSchema: personalPolicyUpdateSchema,
+    allowedProfiles: ['dispatcher_fix', 'dispatcher_readonly'],
+    async precheck(args) {
+      if (!args.actor.accountId) throw SysError.forbidden('Личная политика требует учётную запись');
+    },
+    async preview(args) {
+      const input = personalPolicyUpdateSchema.parse(args.payload);
+      return [
+        { label: 'Личная политика', value: input.title },
+        { label: 'Цели от главной к последней', value: input.objectiveOrder.join(', ') },
+        {
+          label: 'Применение',
+          value: 'Сохранение без выбора. Если уже активна — пересчёт с новыми предпочтениями.',
+        },
+      ];
+    },
+    async apply({ context, payload }) {
+      const result = await deps.policy.savePersonal(
+        context,
+        personalPolicyUpdateSchema.parse(payload),
+      );
+      if (result.activeUpdated)
+        await deps.publisher.publishIfChanged(
+          context.tx,
+          context.now,
+          PUBLICATION_TRIGGERS.POLICY_CHANGED,
+        );
+      return result;
+    },
+  });
+
   catalog.set('policy.select', {
     zodSchema: selectPolicyPayloadSchema,
     allowedProfiles: ['dispatcher_fix'],
     async precheck(args) {
       const payload = args.payload as SelectPolicyPayload;
-      if (!findPolicy(payload.policyId)) {
+      const personal =
+        payload.policyId === 'personal'
+          ? (await deps.policy.personal(deps.prisma, args.actor.accountId)).profile
+          : null;
+      if (!findPolicy(payload.policyId) && !personal) {
         throw new SysError('VALIDATION_FAILED', 'Unknown policy', {
           details: { policyId: payload.policyId },
         });
@@ -478,17 +591,30 @@ export function buildAiActionCatalog(deps: AiActionCatalogDeps): ReadonlyMap<str
       const spec = findPolicy(payload.policyId);
       return [{ label: 'Политика', value: spec?.title ?? payload.policyId }];
     },
-    async apply({ context, payload }) {
-      const input = payload as SelectPolicyPayload;
-      const selected = await deps.policy.select(context, input.policyId);
-      // The choice is data of the task, so it is republished, exactly like
-      // `DispatchController.selectPolicy`'s own call.
-      const publication = await deps.publisher.publishIfChanged(
-        context.tx,
-        context.now,
-        PUBLICATION_TRIGGERS.POLICY_CHANGED,
-      );
-      return { ...selected, publication };
+    async prepareApply(args) {
+      const input = args.payload as SelectPolicyPayload;
+      if (input.policyId === 'personal') {
+        await assertManualConflictResolved(deps.prisma, {
+          actor: args.actor,
+          operationId: 'personal-selection-precheck',
+          action: 'policy.select',
+          payload: input,
+        });
+        const { profile } = await deps.policy.personal(deps.prisma, args.actor.accountId);
+        if (!profile) throw SysError.validationFailed('Личная политика не создана');
+        await applyPersonalPolicyRouterPreset(deps.router, deps.live, profile.preset);
+      }
+      return async ({ context }) => {
+        const selected = await deps.policy.select(context, input.policyId);
+        // The choice is data of the task, so it is republished, exactly like
+        // `DispatchController.selectPolicy`'s own call.
+        const publication = await deps.publisher.publishIfChanged(
+          context.tx,
+          context.now,
+          PUBLICATION_TRIGGERS.POLICY_CHANGED,
+        );
+        return { ...selected, publication };
+      };
     },
   });
 
@@ -881,21 +1007,31 @@ export function buildAiActionCatalog(deps: AiActionCatalogDeps): ReadonlyMap<str
       rows.push({ label: 'Комментарий', value: payload.note });
       return rows;
     },
-    async apply({ context, targetRef, payload }) {
-      const input = payload as LiveProblemPayload;
-      return deps.live.act(context, requireEngineerId(targetRef), {
-        operationId: context.operationId,
-        kind: 'problem',
-        requestId: input.requestId,
-        problemKind: input.problemKind,
-        note: input.note,
-        ...(input.additionalDurationSec === undefined
-          ? {}
-          : { additionalDurationSec: input.additionalDurationSec }),
-        ...(input.missingEquipment === undefined
-          ? {}
-          : { missingEquipment: input.missingEquipment }),
-      });
+    async prepareApply(args) {
+      const input = args.payload as LiveProblemPayload;
+      const enabled =
+        deps.router.isConfigured() && input.problemKind === 'missing_equipment'
+          ? (await deps.router.getTechnicalSettings()).equipmentTransfersEnabled === true
+          : false;
+      return async ({ context, targetRef }) =>
+        deps.live.act(
+          context,
+          requireEngineerId(targetRef),
+          {
+            operationId: context.operationId,
+            kind: 'problem',
+            requestId: input.requestId,
+            problemKind: input.problemKind,
+            note: input.note,
+            ...(input.additionalDurationSec === undefined
+              ? {}
+              : { additionalDurationSec: input.additionalDurationSec }),
+            ...(input.missingEquipment === undefined
+              ? {}
+              : { missingEquipment: input.missingEquipment }),
+          },
+          enabled,
+        );
     },
   });
 
@@ -935,6 +1071,7 @@ export function buildAiActionCatalog(deps: AiActionCatalogDeps): ReadonlyMap<str
     },
   });
 
+  for (const [name, action] of buildClientActions(deps)) catalog.set(name, action);
   return catalog;
 }
 
