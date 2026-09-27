@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { expect, readPlan, signIn, test } from './fixtures';
+import { expect, readRequestIds, signIn, test } from './fixtures';
 
 test('import warnings allow cancellation before a confirmed immutable upload', async ({
   page,
@@ -8,10 +8,14 @@ test('import warnings allow cancellation before a confirmed immutable upload', a
   await signIn(page);
   // Isolate import/settings effects from autonomous AUTO plan publication.
   const manual = await live.api.post('/api/v1/dispatch/mode', {
-    data: { operationId: randomUUID(), mode: 'manual' },
+    data: {
+      operationId: randomUUID(),
+      mode: 'manual',
+      reason: 'E2E import and settings verification',
+    },
   });
   expect(manual.ok()).toBe(true);
-  const before = await readPlan(live.api);
+  const before = await readRequestIds(live.api);
   const now = Math.floor(Date.now() / 1000);
   const file = {
     schemaVersion: '1.0',
@@ -63,10 +67,10 @@ test('import warnings allow cancellation before a confirmed immutable upload', a
   await page.mouse.click(5, 5);
   await expect(review).toBeVisible();
   await expect(review.getByRole('button', { name: 'Загрузить так' })).toBeInViewport();
-  expect((await readPlan(live.api)).revision).toBe(before.revision);
+  expect(await readRequestIds(live.api)).toEqual(before);
   await review.getByRole('button', { name: 'Вернуться', exact: true }).click();
   await expect(review).toBeHidden();
-  expect((await readPlan(live.api)).revision).toBe(before.revision);
+  expect(await readRequestIds(live.api)).toEqual(before);
   await modal.getByRole('button', { name: 'Применить', exact: true }).click();
   await review.getByRole('button', { name: 'Загрузить так', exact: true }).click();
   await expect(modal.getByText('Данные загружены', { exact: true })).toBeVisible();
@@ -80,10 +84,14 @@ test('calibration shows honest missing-history status without changing the plan'
   await signIn(page);
   // Isolate import/settings effects from autonomous AUTO plan publication.
   const manual = await live.api.post('/api/v1/dispatch/mode', {
-    data: { operationId: randomUUID(), mode: 'manual' },
+    data: {
+      operationId: randomUUID(),
+      mode: 'manual',
+      reason: 'E2E import and settings verification',
+    },
   });
   expect(manual.ok()).toBe(true);
-  const before = await readPlan(live.api);
+  const before = await readRequestIds(live.api);
   await page.getByRole('button', { name: 'Меню пользователя', exact: true }).click();
   await page.getByRole('button', { name: 'Настройки', exact: true }).click();
   const modal = page.getByRole('dialog');
@@ -103,7 +111,7 @@ test('calibration shows honest missing-history status without changing the plan'
     await response;
     await expect(modal.getByText('0%', { exact: true })).toBeVisible();
   }
-  expect((await readPlan(live.api)).revision).toBe(before.revision);
+  expect(await readRequestIds(live.api)).toEqual(before);
   await testInfo.attach('calibration-status', {
     body: await modal.screenshot(),
     contentType: 'image/png',

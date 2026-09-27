@@ -36,6 +36,16 @@ export async function readPlan(api: APIRequestContext) {
   return z.object({ plan: planSchema }).parse(await response.json()).plan;
 }
 
+/** Compare durable request identity independently of legitimate live replanning revisions. */
+export async function readRequestIds(api: APIRequestContext) {
+  const response = await api.get('/api/v1/dispatch/requests');
+  expect(response.ok()).toBe(true);
+  const { requests } = z
+    .object({ requests: z.array(z.object({ id: z.string().min(1) })) })
+    .parse(await response.json());
+  return requests.map((request) => request.id).sort();
+}
+
 /** Authenticate through the real API using only disposable contour credentials. */
 export async function dispatcherApi(request: APIRequestContext) {
   const response = await request.post('http://api:8000/api/v1/auth/dispatcher/password', {

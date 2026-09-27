@@ -458,6 +458,9 @@ export function MainDashboardPage() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
+      // Native import review dialogs own Escape. Closing the parent here would
+      // discard the uploaded file while the review itself stays visible.
+      if (document.querySelector('dialog:modal')) return;
       if (dangerAction) {
         setDangerAction(null);
         return;
