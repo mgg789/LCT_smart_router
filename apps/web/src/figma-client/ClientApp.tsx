@@ -15,6 +15,7 @@ import { ClientNewRequest } from './ClientNewRequest';
 import { ClientRequestDetail } from './ClientRequestDetail';
 import { ClientRequests } from './ClientRequests';
 import { ClientSent } from './ClientSent';
+import { ClientSupport } from './ClientSupport';
 import {
   clientCardFromApi,
   createSubmittedClientRequest,
@@ -484,12 +485,9 @@ export function ClientApp() {
           />
         ) : null}
         {screen === 'support' ? (
-          <p
-            className="font-medium text-figma-muted"
-            style={{ marginTop: eu(48), fontSize: eu(20) }}
-          >
-            Поддержка пока недоступна.
-          </p>
+          <div className="relative min-h-0 flex-1" style={{ marginTop: eu(24) }}>
+            <ClientSupport token={session?.token ?? null} contactName={draft.contactName} />
+          </div>
         ) : null}
       </div>
 
