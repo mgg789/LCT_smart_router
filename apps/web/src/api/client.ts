@@ -437,7 +437,12 @@ const policiesSchema = z.object({
       isDefault: z.boolean(),
     }),
   ),
-  active: z.object({ policyId: policyIdSchema, version: z.number().int(), changedAt: z.number() }),
+  active: z.object({
+    policyId: policyIdSchema,
+    version: z.number().int(),
+    changedAt: z.number(),
+    ordinaryReplanningDisabled: z.boolean().default(false),
+  }),
 });
 
 const technicalSettingsSchema = z.object({
@@ -1026,6 +1031,7 @@ export async function loadDashboardSnapshot(token: string): Promise<DashboardSna
     timeZone: 'Europe/Moscow',
     nowAt: Math.floor(Date.now() / 1000),
     policyId: policies.active.policyId,
+    ordinaryReplanningDisabled: policies.active.ordinaryReplanningDisabled,
     lunchesEnabled: settings.lunchesEnabled,
     routerSettings: settings,
     routerContextVersion: settings.routerContextVersion,
@@ -1440,6 +1446,7 @@ function formatUnknownReason(reason: unknown): string {
       plannedStartAt: z.number().optional(),
       windowEndAt: z.number().optional(),
       assignment: z.string().optional(),
+      ordinaryReplanningDisabled: z.boolean().optional(),
       lunchStatus: z.string().optional(),
       assignedBefore: z.number().optional(),
       assignedAfter: z.number().optional(),
@@ -1458,6 +1465,8 @@ function formatUnknownReason(reason: unknown): string {
     }
     if (value.expectedAt !== undefined)
       return `Ожидалась отметка к ${formatClock(value.expectedAt)}. ${value.lastAttendanceAt ? `Последняя отметка: ${formatClock(value.lastAttendanceAt)}.` : 'Отметок пока нет.'}`;
+    if (value.ordinaryReplanningDisabled)
+      return 'Перестройка по обычным заявкам отключена. Заявка ожидает решения диспетчера; текущие назначения сохранены.';
     if (value.assignment === 'unassigned')
       return 'Для заявки не найдено допустимое назначение. Нужно изменить условия или добавить инженера.';
     if (value.lunchStatus)
@@ -1879,4 +1888,17 @@ function moscowDate(date: Date): string {
     month: '2-digit',
     day: '2-digit',
   }).format(date);
+}
+
+/** Save only the System Layer arrival rule, without modifying Router optimization settings. */
+export function setOrdinaryReplanning(token: string, disabled: boolean) {
+  return requestJson(
+    '/api/v1/dispatch/policy/ordinary-replanning',
+    z.object({ ordinaryReplanningDisabled: z.boolean(), released: z.number().int() }),
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({ operationId: crypto.randomUUID(), disabled }),
+    },
+  );
 }

@@ -692,6 +692,9 @@ export function MainDashboardPage() {
           metroOn={metroOn}
           equipmentTransfersOn={equipmentTransfersOn}
           strictTimeWindowsOn={strictTimeWindowsOn}
+          ordinaryReplanningDisabled={dash.snapshot?.ordinaryReplanningDisabled ?? false}
+          replanningSaving={dash.savingReplanning || dash.source !== 'live'}
+          onOrdinaryReplanningToggle={() => void dash.toggleOrdinaryReplanning()}
           motionOn={motionOn}
           onToggle={() => {
             setUserMenuOpen(false);

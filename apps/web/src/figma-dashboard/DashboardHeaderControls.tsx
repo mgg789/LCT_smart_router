@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { useEffect, useRef } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { PolicyId } from '../api/types';
 import { FIGMA_ASSETS } from './assets';
 import { isNavLocked, sidebarWheelNav } from './dashboardSlide';
@@ -45,7 +45,7 @@ const NAV_ITEM_HEIGHT = 74;
 const NAV_ITEM_GAP = 10;
 const POLICY_LEFT = 1329;
 const POLICY_TOP = 10;
-const POLICY_OPEN_HEIGHT = 629;
+const POLICY_OPEN_HEIGHT = 695;
 const springQuick = { type: 'spring' as const, stiffness: 420, damping: 36, mass: 0.8 };
 /** Navigates dashboard sections while retaining the existing disabled-section policy. */
 export function SidebarNav({
@@ -402,6 +402,9 @@ export function PolicyControl({
   metroOn,
   equipmentTransfersOn,
   strictTimeWindowsOn,
+  ordinaryReplanningDisabled,
+  replanningSaving,
+  onOrdinaryReplanningToggle,
   motionOn,
   onToggle,
   onSelect,
@@ -421,6 +424,9 @@ export function PolicyControl({
   metroOn: boolean;
   equipmentTransfersOn: boolean;
   strictTimeWindowsOn: boolean;
+  ordinaryReplanningDisabled: boolean;
+  replanningSaving: boolean;
+  onOrdinaryReplanningToggle: () => void;
   motionOn: boolean;
   onToggle: () => void;
   onSelect: (policy: PolicyId) => void;
@@ -524,6 +530,7 @@ export function PolicyControl({
         <PolicySwitch
           on={lunchOn}
           label="Рассчитать обеды"
+          description="Включено: маршрут учитывает обеденные перерывы инженеров. Выключено: автоматический обед в план не добавляется."
           top={274 + extra}
           motionOn={motionOn}
           onToggle={onLunchToggle}
@@ -531,6 +538,7 @@ export function PolicyControl({
         <PolicySwitch
           on={trafficOn}
           label="Прогнозировать пробки"
+          description="Включено: время дороги учитывает прогноз пробок на момент поездки. Выключено: план рассчитывается без прогнозного изменения трафика."
           top={318 + extra}
           motionOn={motionOn}
           onToggle={onTrafficToggle}
@@ -538,6 +546,7 @@ export function PolicyControl({
         <PolicySwitch
           on={metroOn}
           label="Маршруты с метро"
+          description="Разрешает учитывать метро при расчёте подходящих пеших маршрутов. Без этого используются наземные варианты."
           top={362 + extra}
           motionOn={motionOn}
           onToggle={onMetroToggle}
@@ -545,6 +554,7 @@ export function PolicyControl({
         <PolicySwitch
           on={equipmentTransfersOn}
           label="Передача оборудования"
+          description="Разрешает планировать встречи инженеров для передачи оборудования, если это помогает выполнить заявки."
           top={406 + extra}
           motionOn={motionOn}
           onToggle={onEquipmentTransfersToggle}
@@ -552,16 +562,35 @@ export function PolicyControl({
         <PolicySwitch
           on={strictTimeWindowsOn}
           label="Строгие окна ТЗ"
-          description="Без допуска к окну, последней заявке и концу смены"
+          description="Включено: без допуска к окну заявки и концу смены. Выключено: применяются настроенные допуски опоздания и последней заявки."
           top={450 + extra}
           motionOn={motionOn}
           onToggle={onStrictTimeWindowsToggle}
         />
+        <PolicySwitch
+          on={ordinaryReplanningDisabled}
+          disabled={replanningSaving}
+          label="Перестройка по обычным"
+          description={
+            ordinaryReplanningDisabled
+              ? 'Включено — без перестройки: новые обычные заявки остаются в алертах даже при аварийном пересчёте. Аварии перестраивают план. Выключение вернёт накопленные заявки в распределение.'
+              : 'Выключено — обычный режим: любая новая заявка запускает перестройку. Включите, чтобы обычные заявки ожидали решения в алертах; аварии всегда перестраивают план.'
+          }
+          top={494 + extra}
+          motionOn={motionOn}
+          onToggle={onOrdinaryReplanningToggle}
+        />
+        <span
+          className="absolute left-[85px] text-[12px] text-figma-muted"
+          style={{ top: 528 + extra }}
+        >
+          {ordinaryReplanningDisabled ? 'Без перестройки' : 'Обычный режим'}
+        </span>
         <button
           type="button"
           onClick={onManualMode}
           className="absolute left-[16px] flex h-[67px] w-[331px] items-center justify-center rounded-[20px] bg-figma-bee p-[20px] transition-transform duration-150 hover:scale-[1.01]"
-          style={{ top: 495 + extra }}
+          style={{ top: 561 + extra }}
         >
           <span className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
             Ручное управление
@@ -582,6 +611,7 @@ function PolicySwitch({
   top,
   motionOn,
   onToggle,
+  disabled = false,
 }: {
   on: boolean;
   label: string;
@@ -589,14 +619,44 @@ function PolicySwitch({
   top: number;
   motionOn: boolean;
   onToggle: () => void;
+  disabled?: boolean;
 }) {
+  const tooltipId = useId();
+  const [hovering, setHovering] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    if (!hovering && !focused) {
+      setShown(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setShown(true), 700);
+    return () => window.clearTimeout(timer);
+  }, [hovering, focused]);
   return (
     <button
       type="button"
-      onClick={onToggle}
+      onClick={() => {
+        setShown(false);
+        onToggle();
+      }}
+      onMouseEnter={() => setHovering(true)}
+      onMouseLeave={() => setHovering(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && shown) {
+          event.stopPropagation();
+          setShown(false);
+          setHovering(false);
+          setFocused(false);
+        }
+      }}
+      aria-describedby={shown ? tooltipId : undefined}
+      disabled={disabled}
+      aria-pressed={on}
       className="absolute left-[16px] flex items-center"
-      style={{ top }}
-      title={description}
+      style={{ top, zIndex: shown ? 30 : undefined }}
       aria-label={description ? `${label}. ${description}` : label}
     >
       <span className="relative block h-[29px] w-[59px] overflow-hidden rounded-[14.5px]">
@@ -615,6 +675,21 @@ function PolicySwitch({
       <FigmaText className="figma-nowrap ml-[10px] font-medium leading-none text-[20px] text-black">
         {label}
       </FigmaText>
+      <AnimatePresence>
+        {shown && description ? (
+          <motion.span
+            id={tooltipId}
+            role="tooltip"
+            className="pointer-events-none absolute bottom-full left-0 mb-[10px] w-[315px] rounded-[16px] bg-figma-ink px-[14px] py-[12px] text-left text-[14px] font-normal leading-[1.4] text-white shadow-lg"
+            initial={motionOn ? { opacity: 0, y: 4 } : false}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: motionOn ? 0.16 : 0 }}
+          >
+            {description}
+          </motion.span>
+        ) : null}
+      </AnimatePresence>
     </button>
   );
 }

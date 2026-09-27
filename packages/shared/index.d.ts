@@ -420,6 +420,8 @@ export interface DispatchPlanResponse {
 }
 
 export interface DashboardSnapshot {
+  /** New ordinary arrivals stay unassigned without automatic replanning; default false. */
+  readonly ordinaryReplanningDisabled?: boolean;
   readonly workDate: string;
   readonly timeZone: 'Europe/Moscow';
   readonly nowAt: number;

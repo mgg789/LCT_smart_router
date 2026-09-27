@@ -24,6 +24,7 @@ import {
   setDispatchMode,
   setEngineerAttendanceOptOut,
   setEngineerAvailability,
+  setOrdinaryReplanning,
   signOutDispatcher,
   simulateChange,
   simulationWorsens,
@@ -134,6 +135,7 @@ export function useDashboard() {
   const [loading, setLoading] = useState(token !== null);
   const [error, setError] = useState<string | null>(null);
   const [focus, setFocus] = useState<DashboardFocus>({ engineerId: null, requestId: null });
+  const [savingReplanning, setSavingReplanning] = useState(false);
   const [rebuilding, setRebuilding] = useState(false);
   const [availabilityPendingId, setAvailabilityPendingId] = useState<string | null>(null);
   const [uploadingData, setUploadingData] = useState(false);
@@ -740,6 +742,24 @@ export function useDashboard() {
     },
     [rebuild, snapshot],
   );
+
+  const toggleOrdinaryReplanning = useCallback(async () => {
+    if (!token || source !== 'live' || !snapshot || savingReplanning) return;
+    setSavingReplanning(true);
+    try {
+      const result = await setOrdinaryReplanning(token, !snapshot.ordinaryReplanningDisabled);
+      pushEvent(
+        result.ordinaryReplanningDisabled
+          ? 'Обычные новые заявки остаются в алертах без перестройки.'
+          : 'Автоперестройка по обычным заявкам включена.',
+      );
+      await refresh();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setSavingReplanning(false);
+    }
+  }, [token, source, snapshot, savingReplanning, pushEvent, refresh]);
 
   const acceptDelta = useCallback(() => {
     setPendingDelta(null);
@@ -1403,6 +1423,8 @@ export function useDashboard() {
     selectRequest,
     selectUnassignedOffset,
     applyRoutingSettings,
+    toggleOrdinaryReplanning,
+    savingReplanning,
     acceptDelta,
     rejectDelta,
     setMode,
