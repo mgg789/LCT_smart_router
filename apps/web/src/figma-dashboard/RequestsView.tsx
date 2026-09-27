@@ -1,6 +1,7 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useEffect, useMemo, useState } from 'react';
 import type { DashboardSnapshot } from '../api/types';
+import { WorkTypeLabel } from '../components/WorkTypeLabel';
 import { unassignedRequests } from '../domain/dashboard';
 import { useArtboardStretch } from './artboardStretch';
 import { FIGMA_ASSETS } from './assets';
@@ -254,7 +255,7 @@ function RequestRow({
         {row.address}
       </p>
       <p className="figma-nowrap overflow-hidden text-center font-medium text-[20px] text-ellipsis text-figma-ink">
-        {row.service}
+        <WorkTypeLabel category={row.workCategory}>{row.service}</WorkTypeLabel>
       </p>
       <FigmaText className="figma-nowrap text-center font-medium text-[20px] leading-none text-figma-ink">
         {row.window}

@@ -13,6 +13,7 @@ import {
   routeStopStatusLabel,
   truncateEnd,
 } from './fixtures';
+import { useManualLunchEdit } from './ManualPlanning';
 import { PlanHistoryMap } from './PlanHistoryMap';
 import type { PlanHistorySelection } from './PlanHistorySelector';
 import { FigmaText } from './primitives';
@@ -303,6 +304,7 @@ export function RouteCard({
                   <RouteStopTopic
                     key={`${engineer.id}-${stop.requestId ?? stop.place}-${stop.time}`}
                     stop={stop}
+                    engineerId={engineer.id}
                     index={index}
                     motionOn={motionOn}
                     onSelectRequest={(requestId) => {
@@ -347,25 +349,31 @@ export function RouteCard({
 
 function RouteStopTopic({
   stop,
+  engineerId,
   index,
   motionOn,
   onSelectRequest,
   onSelectHandoff,
 }: {
   stop: RouteStop;
+  engineerId: string;
   index: number;
   motionOn: boolean;
   onSelectRequest: (requestId: string) => void;
   onSelectHandoff: (handoffId: string) => void;
 }) {
-  const clickable = Boolean(stop.requestId || stop.handoffId);
+  const editLunch = useManualLunchEdit(engineerId);
+  const clickable = Boolean(
+    stop.requestId || stop.handoffId || (stop.kind === 'lunch' && editLunch),
+  );
   const handoff = stop.kind === 'handoff';
   return (
     <motion.button
       type="button"
       disabled={!clickable}
       onClick={() => {
-        if (stop.handoffId) onSelectHandoff(stop.handoffId);
+        if (stop.kind === 'lunch' && editLunch) editLunch();
+        else if (stop.handoffId) onSelectHandoff(stop.handoffId);
         else if (stop.requestId) onSelectRequest(stop.requestId);
       }}
       className={`relative shrink-0 text-left ${clickable ? 'cursor-pointer' : 'cursor-default'}`}

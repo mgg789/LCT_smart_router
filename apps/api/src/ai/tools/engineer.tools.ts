@@ -263,7 +263,8 @@ export function buildEngineerTools(deps: EngineerToolDeps): readonly ToolSpec[] 
     name: 'report_missing_equipment',
     description:
       'Report missing equipment only when the engineer explicitly asks to register a ' +
-      'blocker. This cancels the current visit and removes it from today’s route; a ' +
+      'blocker. With equipment transfers enabled, an active visit waits for a delivery search; ' +
+      'it is cancelled only if no delivery is feasible. Otherwise this reports a terminal problem. A ' +
       'question about alternatives is not a report command.',
     schema: reportMissingEquipmentSchema,
     async run(ctx, args) {

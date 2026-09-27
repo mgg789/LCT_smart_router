@@ -46,6 +46,13 @@ export function LiveControls({
     return null;
   const requestId = current.request.id;
   const working = current.phase === 'in_progress';
+  const awaitingEquipment = (live.logistics ?? []).some(
+    (entry) =>
+      entry.requestId === requestId &&
+      entry.kind === 'donor_delivery' &&
+      entry.receiverEngineerId === live.engineer.id &&
+      ['searching', 'assigned', 'error'].includes(entry.state),
+  );
   const submit = async (action: EngineerLiveAction) => {
     setError(null);
     if (await send(action)) setForm(null);
@@ -69,7 +76,7 @@ export function LiveControls({
             <button
               type="button"
               aria-label="Проблема или дополнительное время"
-              className={`${button} flex-1 ${current.overrunAt !== null ? 'bg-figma-cancel' : 'bg-figma-ink'} text-white disabled:opacity-100`}
+              className={`${button} !rounded-full flex-1 ${current.overrunAt !== null ? 'bg-figma-cancel' : 'bg-figma-ink'} text-white disabled:opacity-100`}
               disabled={busy}
               onClick={() => setForm('problem')}
             >
@@ -78,7 +85,7 @@ export function LiveControls({
           ) : (
             <button
               type="button"
-              className={`${button} flex-1 ${current.phase !== 'awaiting_window' && now >= (current.stop?.startAt ?? Infinity) ? 'bg-figma-cancel text-white' : ''}`}
+              className={`${button} !rounded-full flex-1 ${current.phase !== 'awaiting_window' && now >= (current.stop?.startAt ?? Infinity) ? 'bg-figma-cancel text-white' : ''}`}
               disabled={busy}
               onClick={() =>
                 setForm(
@@ -97,10 +104,10 @@ export function LiveControls({
             <button
               type="button"
               className={`${button} flex-1 bg-figma-ink text-white`}
-              disabled={busy}
+              disabled={busy || awaitingEquipment}
               onClick={() => void submit({ kind: working ? 'finish' : 'start', requestId })}
             >
-              {working ? 'Завершить' : 'Приступить'}
+              {awaitingEquipment ? 'Ждём оборудование' : working ? 'Завершить' : 'Приступить'}
             </button>
           ) : null}
         </div>
@@ -108,7 +115,7 @@ export function LiveControls({
       {detail ? (
         <button
           type="button"
-          className={`${button} bg-figma-ink text-white`}
+          className={`${button} !rounded-full bg-figma-ink text-white`}
           disabled={busy}
           onClick={() => setForm('problem')}
         >

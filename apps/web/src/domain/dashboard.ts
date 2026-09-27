@@ -207,7 +207,7 @@ export type ActivityKind =
   | 'finished';
 
 export interface RouteVertex {
-  readonly kind: 'start' | 'job' | 'lunch' | 'wait' | 'handoff';
+  readonly kind: 'start' | 'job' | 'lunch' | 'wait' | 'handoff' | 'delivery' | 'office_pickup';
   readonly lat: number;
   readonly lon: number;
   readonly startAt: number;

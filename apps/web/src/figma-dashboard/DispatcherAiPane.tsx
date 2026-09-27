@@ -10,6 +10,7 @@ import {
 } from 'react';
 import type { AiActionButton } from '../api/ai';
 import { AiOperationCard } from '../components/ai/AiOperationCard';
+import { ChatBottomSpacer } from '../components/ai/ChatBottomSpacer';
 import { fitComposerField, focusComposer } from '../components/ai/composerField';
 import {
   type AiOperationView,
@@ -38,6 +39,8 @@ export interface AiOpenTarget {
 }
 
 interface PaneProps {
+  readonly initialMessage?: { readonly id: string; readonly text: string };
+  readonly onInitialMessageSent?: () => void;
   readonly token: string | null;
   readonly onOpenObject?: (target: AiOpenTarget) => void;
 }
@@ -46,8 +49,38 @@ interface PaneProps {
  * Dispatcher AI tab drawn to the NAVIX frame: an empty greeting, then a transcript
  * with the same assistant stream the chat hook already speaks to the gateway.
  */
-export function DashboardAi({ token, onOpenObject }: PaneProps) {
+export function DashboardAi({
+  token,
+  onOpenObject,
+  initialMessage,
+  onInitialMessageSent,
+}: PaneProps) {
   const chat = useAssistantChat({ token, surface: 'dispatcher' });
+  const initialSent = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      !initialMessage ||
+      initialSent.current === initialMessage.id ||
+      !token ||
+      !chat.conversation ||
+      chat.loading ||
+      chat.sending ||
+      chat.runState === 'running'
+    )
+      return;
+    initialSent.current = initialMessage.id;
+    void chat.sendMessage(initialMessage.text).then(() => onInitialMessageSent?.());
+  }, [
+    initialMessage,
+    token,
+    chat.conversation,
+    chat.loading,
+    chat.sending,
+    chat.runState,
+    chat.sendMessage,
+    onInitialMessageSent,
+  ]);
+
   const [draft, setDraft] = useState('');
   const [thoughtFor, setThoughtFor] = useState<Readonly<Record<string, number>>>({});
   const [rating, setRating] = useState<Readonly<Record<string, 'up' | 'down'>>>(readRatings);
@@ -233,6 +266,7 @@ export function DashboardAi({ token, onOpenObject }: PaneProps) {
                   ),
                 )}
                 {thinking ? <ThinkingRow /> : null}
+                <ChatBottomSpacer />
               </div>
             </div>
             <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-figma-canvas from-55% to-transparent px-[48px] pb-[36px] pt-[72px]">
@@ -424,7 +458,7 @@ function Composer({
         className="flex min-h-[79px] items-end gap-[12px] rounded-[40px] bg-figma-ink px-[10px] py-[8px]"
         onMouseDown={(event) => focusComposer(event, fieldRef.current)}
       >
-        <span className="flex size-[60px] shrink-0 items-center justify-center rounded-full bg-figma-bee">
+        <span className="flex size-[63px] shrink-0 items-center justify-center rounded-full bg-figma-bee">
           <FigmaIcon src={FIGMA_ASSETS.iconSparkles} alt="" width={26} height={26} />
         </span>
         <div className="flex min-w-0 flex-1 self-stretch items-center">

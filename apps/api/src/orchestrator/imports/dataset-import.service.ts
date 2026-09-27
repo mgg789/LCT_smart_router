@@ -620,6 +620,7 @@ export class DatasetImportService {
           requiredTransport: null,
           requiredEquipment: importedEquipment(request),
           workTypeHd: request.workTypeCode,
+          workCategory: request.workCategory,
           lifecycle: 'submitted',
           assignmentState: 'pending',
           origin: 'import',
@@ -939,6 +940,7 @@ function allocateMorningEquipment(
             .transportType,
           settings,
         ),
+        synthesizeCrew(brigades.find((item) => item.name === name)?.inputOrder ?? 0).transportType,
       ),
     ]),
   );

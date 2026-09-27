@@ -11,7 +11,17 @@ import {
   PERFORMANCE_POLICY_COMPARISON_PREFIX,
   PERFORMANCE_POLICY_SELECTION_PREFIX,
 } from '../performance';
+import {
+  PERSONAL_POLICY_ACTIVE_OWNER_KEY,
+  PERSONAL_POLICY_DEFAULTS,
+  PERSONAL_POLICY_FIELDS,
+  PERSONAL_POLICY_SWITCH_FIELDS,
+  personalPolicyKey,
+  personalPolicyStoredSchema,
+  personalPolicyUpdateSchema,
+} from './personal-policy';
 import { DEFAULT_POLICY_ID, findPolicy, POLICIES, type PolicySpec } from './policy.catalog';
+import { ORDINARY_REPLANNING_KEY, ordinaryReplanningDisabled } from './replanning-policy';
 
 const evidenceSchema = z.object({
   version: z.literal(1),
@@ -44,6 +54,79 @@ const evidenceSchema = z.object({
  */
 @Injectable()
 export class PolicyService {
+  /** Read the authenticated dispatcher's profile; defaults are guidance, not a saved policy. */
+  async personal(tx: Tx, accountId: string | null) {
+    const row = accountId
+      ? await tx.appState.findUnique({ where: { key: personalPolicyKey(accountId) } })
+      : null;
+    const profile = row ? personalPolicyStoredSchema.parse(row.value) : null;
+    return {
+      policyId: 'personal' as const,
+      profile,
+      defaults: PERSONAL_POLICY_DEFAULTS,
+      fields: PERSONAL_POLICY_FIELDS.map((field, index) => ({ ...field, number: index + 1 })),
+      switchFields: PERSONAL_POLICY_SWITCH_FIELDS,
+    };
+  }
+
+  /** Includes a personal choice only after this account has explicitly saved its profile. */
+  async listFor(tx: Tx, accountId: string | null) {
+    const { profile } = await this.personal(tx, accountId);
+    return [
+      ...POLICIES,
+      ...(profile
+        ? [
+            {
+              policyId: 'personal',
+              title: profile.title,
+              description:
+                'Личная последовательность целей; ограничения и приоритет аварий сохраняются.',
+              isDefault: false,
+              parameters: { objective_order: profile.objectiveOrder.join(',') },
+            },
+          ]
+        : []),
+    ];
+  }
+
+  /** Durable CAS update. Never activates a profile; refreshes an already-active owned copy. */
+  async savePersonal(context: OperationContext, input: z.infer<typeof personalPolicyUpdateSchema>) {
+    const accountId = context.actor.accountId;
+    if (!accountId) throw SysError.forbidden('Личная политика требует учётную запись диспетчера');
+    const parsed = personalPolicyUpdateSchema.parse(input);
+    const { profile } = await this.personal(context.tx, accountId);
+    if ((profile?.version ?? 0) !== parsed.expectedVersion)
+      throw new SysError('VERSION_CONFLICT', 'Личная политика изменилась. Прочитайте её заново.');
+    const next = {
+      title: parsed.title,
+      objectiveOrder: parsed.objectiveOrder,
+      preset: parsed.preset ?? profile?.preset ?? PERSONAL_POLICY_DEFAULTS.preset,
+      version: parsed.expectedVersion + 1,
+      updatedAt: context.now,
+    };
+    await context.tx.appState.upsert({
+      where: { key: personalPolicyKey(accountId) },
+      create: { key: personalPolicyKey(accountId), value: next, updatedAt: BigInt(context.now) },
+      update: { value: next, updatedAt: BigInt(context.now) },
+    });
+    const active = await context.tx.activePolicy.findUnique({ where: { id: 'singleton' } });
+    const owner = await context.tx.appState.findUnique({
+      where: { key: PERSONAL_POLICY_ACTIVE_OWNER_KEY },
+    });
+    const activeUpdated = active?.policyId === 'personal' && owner?.value === accountId;
+    if (activeUpdated)
+      await context.tx.activePolicy.update({
+        where: { id: 'singleton' },
+        data: {
+          parameters: { objective_order: next.objectiveOrder.join(',') },
+          changedAt: BigInt(context.now),
+          changedBy: context.actor.id,
+          version: { increment: 1 },
+        },
+      });
+    return { policyId: 'personal' as const, profile: next, activeUpdated };
+  }
+
   /** Saves a comparison only under an immutable identity of input, Router context and roster. */
   async recordComparison(
     tx: Tx,
@@ -118,22 +201,77 @@ export class PolicyService {
     return POLICIES;
   }
 
-  async active(tx: Tx): Promise<{ policyId: string; version: number; changedAt: number }> {
+  async active(tx: Tx): Promise<{
+    policyId: string;
+    version: number;
+    changedAt: number;
+    ordinaryReplanningDisabled: boolean;
+  }> {
     const active = await tx.activePolicy.findUnique({ where: { id: 'singleton' } });
     return {
       policyId: active?.policyId ?? DEFAULT_POLICY_ID,
+      ordinaryReplanningDisabled: await ordinaryReplanningDisabled(tx),
       version: active?.version ?? 1,
       changedAt: active ? Number(active.changedAt) : 0,
     };
   }
 
+  /** Switching on preserves the current plan; switching off releases deferred arrivals. */
+  async setOrdinaryReplanning(context: OperationContext, disabled: boolean): Promise<number> {
+    await context.tx.appState.upsert({
+      where: { key: ORDINARY_REPLANNING_KEY },
+      create: { key: ORDINARY_REPLANNING_KEY, value: disabled, updatedAt: BigInt(context.now) },
+      update: { value: disabled, updatedAt: BigInt(context.now) },
+    });
+    if (disabled) return 0;
+    const released = await context.tx.request.updateMany({
+      where: { lifecycle: 'submitted', routingDeferredUntil: { not: null } },
+      data: {
+        routingDeferredUntil: null,
+        assignmentState: 'pending',
+        updatedAt: BigInt(context.now),
+        version: { increment: 1 },
+      },
+    });
+    return released.count;
+  }
+
   /** Selects a prepared policy. Only catalogue entries are accepted. */
   async select(context: OperationContext, policyId: string): Promise<{ policyId: string }> {
-    if (!findPolicy(policyId)) {
+    const personal =
+      policyId === 'personal'
+        ? (await this.personal(context.tx, context.actor.accountId)).profile
+        : null;
+    if (!findPolicy(policyId) && !personal) {
       throw new SysError('VALIDATION_FAILED', 'Unknown policy', {
         details: { policyId, supported: POLICIES.map((policy) => policy.policyId) },
       });
     }
+    if (personal)
+      await context.tx.policy.upsert({
+        where: { policyId: 'personal' },
+        create: {
+          policyId: 'personal',
+          title: 'Personal',
+          description: 'Account-owned objective preferences',
+          isDefault: false,
+          parameters: {},
+        },
+        update: {},
+      });
+    if (personal)
+      await this.setOrdinaryReplanning(context, personal.preset.ordinaryReplanningDisabled);
+    const parameters = personal ? { objective_order: personal.objectiveOrder.join(',') } : {};
+    if (personal)
+      await context.tx.appState.upsert({
+        where: { key: PERSONAL_POLICY_ACTIVE_OWNER_KEY },
+        create: {
+          key: PERSONAL_POLICY_ACTIVE_OWNER_KEY,
+          value: context.actor.accountId ?? '',
+          updatedAt: BigInt(context.now),
+        },
+        update: { value: context.actor.accountId ?? '', updatedAt: BigInt(context.now) },
+      });
     const previous = await context.tx.activePolicy.findUnique({ where: { id: 'singleton' } });
     const currentPolicyId = previous?.policyId ?? DEFAULT_POLICY_ID;
     if (currentPolicyId !== policyId) {
@@ -186,6 +324,7 @@ export class PolicyService {
       where: { id: 'singleton' },
       update: {
         policyId,
+        parameters,
         changedAt: BigInt(context.now),
         changedBy: context.actor.id,
         version: { increment: 1 },
@@ -193,7 +332,7 @@ export class PolicyService {
       create: {
         id: 'singleton',
         policyId,
-        parameters: {},
+        parameters,
         version: 1,
         changedAt: BigInt(context.now),
         changedBy: context.actor.id,

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { AppConfigService } from '../../common/config';
 import { Prisma } from '../../generated/prisma/client';
 import {
@@ -9,6 +9,11 @@ import {
   type Tx,
 } from '../../persistence';
 import { type PredictCalibrationDocument, RouterClient } from '../../routing/router-gateway';
+import {
+  AiConnectionsService,
+  resolveAiConnections,
+  type StoredAiConnections,
+} from './ai-connections.service';
 import { WeatherDayCacheService, weatherLocationHash } from './weather-day-cache.service';
 import {
   calibrateWeatherRegimes,
@@ -20,8 +25,8 @@ import {
 } from './weather-regime-calibration';
 
 /**
- * AI contour controls: plan-assessment self-calibration plus reserved connection
- * fields for the future LLM and Jev endpoints.
+ * AI contour controls: plan-assessment self-calibration plus live connection
+ * settings for the LLM and Jev endpoints.
  *
  * The calibration itself is statistics, not a fitted model: execution facts
  * (started/finished/arrived) directly estimate how wrong the plan's own point
@@ -69,7 +74,7 @@ export interface AiCalibrationStatus {
   readonly weatherCalibration: WeatherCalibrationCoverage;
 }
 
-type StoredAiSettings = {
+type StoredAiSettings = StoredAiConnections & {
   planCalibrationEnabled?: boolean | null;
   llmApiUrl?: string | null;
   llmModel?: string | null;
@@ -134,6 +139,7 @@ export class AiService {
     private readonly router: RouterClient,
     private readonly config: AppConfigService,
     private readonly weatherCache: WeatherDayCacheService,
+    @Optional() private readonly connections?: AiConnectionsService,
   ) {}
 
   /**
@@ -144,6 +150,7 @@ export class AiService {
    */
   async view(): Promise<{ settings: AiSettingsView; status: AiCalibrationStatus }> {
     const stored = await this.readSettings(this.prisma);
+    await this.connections?.read();
     this.scheduleRefresh();
     return this.present(stored);
   }
@@ -216,18 +223,35 @@ export class AiService {
     }
     if (patch.llmApiUrl !== undefined) next.llmApiUrl = blankToNull(patch.llmApiUrl);
     if (patch.llmModel !== undefined) next.llmModel = blankToNull(patch.llmModel);
-    if (patch.clearLlmApiKey) next.llmApiKeyLast4 = null;
-    if (patch.llmApiKey) next.llmApiKeyLast4 = patch.llmApiKey.slice(-4);
+    if (patch.clearLlmApiKey) {
+      next.llmApiKey = null;
+      next.llmApiKeyLast4 = null;
+    }
+    if (patch.llmApiKey?.trim()) {
+      next.llmApiKey = patch.llmApiKey.trim();
+      next.llmApiKeyLast4 = next.llmApiKey.slice(-4);
+    }
     if (patch.jevApiUrl !== undefined) next.jevApiUrl = blankToNull(patch.jevApiUrl);
     if (patch.jevModel !== undefined) next.jevModel = blankToNull(patch.jevModel);
-    if (patch.clearJevApiKey) next.jevApiKeyLast4 = null;
-    if (patch.jevApiKey) next.jevApiKeyLast4 = patch.jevApiKey.slice(-4);
+    if (patch.clearJevApiKey) {
+      next.jevApiKey = null;
+      next.jevApiKeyLast4 = null;
+    }
+    if (patch.jevApiKey?.trim()) {
+      next.jevApiKey = patch.jevApiKey.trim();
+      next.jevApiKeyLast4 = next.jevApiKey.slice(-4);
+    }
     await tx.appState.upsert({
       where: { key: APP_STATE_KEYS.AI_SETTINGS },
-      create: { key: APP_STATE_KEYS.AI_SETTINGS, value: next, updatedAt: BigInt(now) },
-      update: { value: next, updatedAt: BigInt(now) },
+      create: { key: APP_STATE_KEYS.AI_SETTINGS, value: { ...next }, updatedAt: BigInt(now) },
+      update: { value: { ...next }, updatedAt: BigInt(now) },
     });
     return next;
+  }
+
+  /** Called only after a settings transaction commits, never exposing private credentials. */
+  async refreshConnections(): Promise<void> {
+    await this.connections?.read();
   }
 
   /** Factory calibration without deleting anything; used by the data reset. */
@@ -971,17 +995,18 @@ export class AiService {
   }
 
   private toView(stored: StoredAiSettings | null): AiSettingsView {
+    const effective = resolveAiConnections(stored, this.config);
     return {
       planCalibrationEnabled: stored?.planCalibrationEnabled ?? this.config.isProduction,
       planCalibrationEnabledRaw: stored?.planCalibrationEnabled ?? null,
-      llmApiUrl: stored?.llmApiUrl ?? null,
-      llmModel: stored?.llmModel ?? null,
-      llmApiKeySet: !!stored?.llmApiKeyLast4,
-      llmApiKeyLast4: stored?.llmApiKeyLast4 ?? null,
-      jevApiUrl: stored?.jevApiUrl ?? null,
-      jevModel: stored?.jevModel ?? null,
-      jevApiKeySet: !!stored?.jevApiKeyLast4,
-      jevApiKeyLast4: stored?.jevApiKeyLast4 ?? null,
+      llmApiUrl: effective.llm.url,
+      llmModel: effective.llm.model,
+      llmApiKeySet: !!effective.llm.key,
+      llmApiKeyLast4: effective.llm.key?.slice(-4) ?? null,
+      jevApiUrl: effective.jev.url,
+      jevModel: effective.jev.model,
+      jevApiKeySet: !!effective.jev.key,
+      jevApiKeyLast4: effective.jev.key?.slice(-4) ?? null,
     };
   }
 }

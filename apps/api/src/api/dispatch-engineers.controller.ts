@@ -1,7 +1,9 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, Put } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { z } from 'zod';
 import { type Actor, CurrentActor, Roles } from '../auth';
 import { AppConfigService } from '../common/config';
+import { SysError } from '../common/errors';
 import { zodBody } from '../common/validation';
 import { OperationsService } from '../operations';
 import { EngineersService, workDateOf } from '../orchestrator/engineers';
@@ -34,6 +36,14 @@ import {
   toEngineerView,
 } from './engineer-view';
 
+const createRegionSchema = z.object({
+  operationId: z.uuid(),
+  name: z.string().trim().min(1).max(120),
+  addressText: z.string().trim().min(1).max(500),
+  lat: z.number().min(-90).max(90),
+  lon: z.number().min(-180).max(180),
+});
+
 /** Dispatcher engineer profile, workday and LIVE availability endpoints. */
 @Roles('dispatcher')
 @ApiTags('dispatch')
@@ -47,6 +57,45 @@ export class DispatchEngineersController {
     private readonly live: LiveService,
     private readonly prisma: PrismaService,
   ) {}
+
+  /** Offices also represent empty regions before engineers or requests are added. */
+  @Get('regions')
+  async listRegions() {
+    return {
+      regions: await this.prisma.depot.findMany({
+        orderBy: { region: 'asc' },
+        select: { id: true, region: true, addressText: true, lat: true, lon: true },
+      }),
+    };
+  }
+
+  /** Create a region and its office atomically without changing existing assignments. */
+  @Post('regions')
+  async createRegion(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(createRegionSchema)) dto: z.infer<typeof createRegionSchema>,
+  ) {
+    const outcome = await this.operations.execute(
+      { operationId: dto.operationId, actor, action: 'region.create', payload: dto },
+      async ({ tx, now }) => {
+        if (await tx.depot.findUnique({ where: { region: dto.name } })) {
+          throw SysError.validationFailed('Регион с таким названием уже существует');
+        }
+        return tx.depot.create({
+          data: {
+            region: dto.name,
+            addressText: dto.addressText,
+            lat: dto.lat,
+            lon: dto.lon,
+            origin: 'manual',
+            createdAt: BigInt(now),
+          },
+          select: { id: true, region: true, addressText: true, lat: true, lon: true },
+        });
+      },
+    );
+    return { region: outcome.result };
+  }
 
   @Get('engineers')
   @ApiOperation({ summary: 'Engineers with their skills, transport and current day' })

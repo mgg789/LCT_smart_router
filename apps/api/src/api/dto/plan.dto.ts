@@ -24,6 +24,7 @@ export type ReportFactDto = z.infer<typeof reportFactSchema>;
 export const setModeSchema = z.object({
   operationId: z.uuid(),
   mode: z.enum(['auto', 'manual']),
+  reason: z.string().trim().min(1).max(2000).optional(),
 });
 export type SetModeDto = z.infer<typeof setModeSchema>;
 
@@ -55,3 +56,20 @@ export const submitResultSchema = z.object({
   activeContextVersion: z.string().min(1).nullish(),
 });
 export type SubmitResultDto = z.infer<typeof submitResultSchema>;
+
+/** Durable manual intent edits use a session version, not mutable plan row positions. */
+export const manualEditSchema = z.object({
+  operationId: z.uuid(),
+  expectedVersion: z.number().int().nonnegative(),
+  kind: z.enum(['assignment', 'window', 'lunch', 'shift']),
+  targetId: z.string().min(1),
+  engineerId: z.string().min(1).nullable().optional(),
+  startAt: unixSeconds.optional(),
+  endAt: unixSeconds.optional(),
+});
+export const manualOrderSchema = z.object({
+  operationId: z.uuid(),
+  expectedVersion: z.number().int().nonnegative(),
+  decisionIds: z.array(z.string().min(1)).max(100),
+});
+export const manualDeleteSchema = manualOrderSchema.omit({ decisionIds: true });

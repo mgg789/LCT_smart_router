@@ -5,6 +5,8 @@ import { NotificationsService } from '../../notifications';
 import { assertWriteApplied, type OperationContext } from '../../operations';
 import type { Tx } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../../routing/mount-data-eng';
+import { businessNow } from '../live/business-clock';
+import { ordinaryArrivalHoldUntil } from '../policy/replanning-policy';
 import { nearestRegion, type RegionPoint, regionCenters } from './region-geocenter';
 import { requireWindowConfirmation } from './window-confirmation';
 import { findWorkType, fitWindowToService } from './work-type.catalog';
@@ -76,9 +78,13 @@ export class RequestsService {
       });
     }
     assertWindow(input.windowStartAt, input.windowEndAt);
+    const receivedAt =
+      spec.category === 'emergency' ? await businessNow(context.tx, context.now) : context.now;
     const window = fitWindowToService(
-      input.windowStartAt,
-      input.windowEndAt,
+      spec.category === 'emergency' ? receivedAt : input.windowStartAt,
+      spec.category === 'emergency'
+        ? Math.max(input.windowEndAt, receivedAt + spec.serviceDurationSec)
+        : input.windowEndAt,
       spec.serviceDurationSec,
     );
 
@@ -102,6 +108,7 @@ export class RequestsService {
         needsGeocoding: !hasPoint,
         problemText: input.problemText ?? null,
         workTypeHd: spec.code,
+        workCategory: spec.category,
         // Derived by rule from the type of work; the customer never types these
         // (context/32 section 4.1).
         requiredSkill: spec.skill,
@@ -120,6 +127,7 @@ export class RequestsService {
         windowEndAt: BigInt(window.windowEndAt),
         lifecycle: 'draft',
         assignmentState: 'pending',
+        routingDeferredUntil: null,
         origin: 'system_rule',
         createdAt: BigInt(context.now),
         updatedAt: BigInt(context.now),
@@ -150,14 +158,30 @@ export class RequestsService {
       });
     }
 
+    const receivedAt = await businessNow(context.tx, context.now);
+    const routingDeferredUntil = await ordinaryArrivalHoldUntil(
+      context.tx,
+      receivedAt,
+      current.workCategory,
+    );
     const arrivalOrder = await nextArrivalOrder(context.tx);
     const updated = await context.tx.request.updateMany({
       where: { id: requestId, version: expectedVersion ?? current.version },
       data: {
         lifecycle: 'submitted',
-        assignmentState: 'pending',
+        assignmentState: routingDeferredUntil === null ? 'pending' : 'unassigned',
+        routingDeferredUntil,
         arrivalOrder,
         submittedAt: BigInt(context.now),
+        receivedAt: BigInt(receivedAt),
+        ...(current.workCategory === 'emergency'
+          ? {
+              windowStartAt: BigInt(receivedAt),
+              windowEndAt: BigInt(
+                Math.max(Number(current.windowEndAt), receivedAt + current.serviceDurationSec),
+              ),
+            }
+          : {}),
         updatedAt: BigInt(context.now),
         version: { increment: 1 },
       },
@@ -173,13 +197,15 @@ export class RequestsService {
       payload: { requestId },
     });
 
-    // A confirmed request is new work to distribute, so the task changed and is
-    // republished in the same transaction (context/42 DF-10).
-    await this.publisher.publishIfChanged(
-      context.tx,
-      context.now,
-      PUBLICATION_TRIGGERS.REQUEST_SUBMITTED,
-    );
+    // A held ordinary arrival is deliberately outside the current task. All other
+    // submissions publish atomically with the lifecycle change (context/42 DF-10).
+    if (routingDeferredUntil === null) {
+      await this.publisher.publishIfChanged(
+        context.tx,
+        context.now,
+        PUBLICATION_TRIGGERS.REQUEST_SUBMITTED,
+      );
+    }
 
     return this.reload(context.tx, requestId);
   }
@@ -206,6 +232,7 @@ export class RequestsService {
       current.serviceDurationSec,
     );
     assertWindow(window.windowStartAt, window.windowEndAt);
+    assertEmergencyWindowUnchanged(current, window.windowStartAt, window.windowEndAt);
 
     requireWindowConfirmation(context.actor, {
       requestId,
@@ -226,6 +253,7 @@ export class RequestsService {
         // The previous assignment does not confirm the new conditions, so the outcome
         // returns to pending and waits for a current result (context/36 section 3).
         assignmentState: 'pending',
+        routingDeferredUntil: null,
         updatedAt: BigInt(context.now),
         version: { increment: 1 },
       },
@@ -273,6 +301,7 @@ export class RequestsService {
     const windowStartAt = requestedWindow.windowStartAt;
     const windowEndAt = requestedWindow.windowEndAt;
     assertWindow(windowStartAt, windowEndAt);
+    assertEmergencyWindowUnchanged(current, windowStartAt, windowEndAt);
 
     requireWindowConfirmation(context.actor, {
       requestId,
@@ -304,12 +333,20 @@ export class RequestsService {
         lon,
         needsGeocoding: movingPoint ? lat === null || lon === null : current.needsGeocoding,
         priority:
-          input.urgent === undefined ? current.priority : input.urgent ? 'urgent' : 'normal',
+          current.workCategory === 'emergency' ||
+          findWorkType(current.workTypeHd ?? '')?.category === 'emergency'
+            ? 'urgent'
+            : input.urgent === undefined
+              ? current.priority
+              : input.urgent
+                ? 'urgent'
+                : 'normal',
         requiredEquipment:
           input.requiredEquipment === undefined
             ? current.requiredEquipment
             : input.requiredEquipment,
         assignmentState: 'pending',
+        routingDeferredUntil: null,
         updatedAt: BigInt(context.now),
         version: { increment: 1 },
       },
@@ -509,8 +546,8 @@ function numberOrNull(value: bigint | null): number | null {
 }
 
 /**
- * Picks the planning region whose existing-request geocenter is closest to the
- * new point. Regions without request points fall back to engineer homes, then depots.
+ * Picks the nearest office, with request geocenters / engineer homes for regions
+ * that have no office coordinate. Includes new, empty regions.
  */
 async function resolveRegion(
   tx: Tx,
@@ -546,14 +583,16 @@ async function resolveRegion(
       ),
     );
   }
-  if (centers.size === 0) {
-    const depotRows = await tx.depot.findMany({
-      where: { lat: { not: null }, lon: { not: null } },
-      select: { region: true, lat: true, lon: true },
-    });
-    centers = regionCenters(toRegionPoints(depotRows));
+  // Office coordinates take precedence and include empty, newly created regions.
+  const depotRows = await tx.depot.findMany({
+    where: { lat: { not: null }, lon: { not: null } },
+    select: { region: true, lat: true, lon: true },
+  });
+  const withOffices = new Map(centers);
+  for (const [region, center] of regionCenters(toRegionPoints(depotRows))) {
+    withOffices.set(region, center);
   }
-  return nearestRegion(point, centers);
+  return nearestRegion(point, withOffices);
 }
 
 function toRegionPoints(
@@ -578,4 +617,21 @@ async function nextArrivalOrder(tx: Tx): Promise<number> {
     throw new SysError('INTERNAL_ERROR', 'Could not allocate an arrival order');
   }
   return Number(value);
+}
+
+/** Emergencies stay in the remaining-day queue; changing a slot cannot defer them. */
+export function assertEmergencyWindowUnchanged(
+  request: Pick<Request, 'workCategory' | 'workTypeHd' | 'windowStartAt' | 'windowEndAt'>,
+  start: number,
+  end: number,
+): void {
+  if (
+    (request.workCategory === 'emergency' ||
+      findWorkType(request.workTypeHd ?? '')?.category === 'emergency') &&
+    (start !== Number(request.windowStartAt) || end !== Number(request.windowEndAt))
+  ) {
+    throw SysError.validationFailed(
+      'Аварийную заявку нельзя откладывать: она направляется первой подходящей свободной бригаде после завершения начатых работ.',
+    );
+  }
 }

@@ -13,6 +13,7 @@ from core.contracts import (
     Engineer,
     EngineerRoute,
     EquipmentHandoff,
+    EquipmentLogistics,
     EquipmentStock,
     EquipmentType,
     GeoPoint,
@@ -23,13 +24,14 @@ from core.contracts import (
     RouterTechnicalSettings,
     TravelTimeMode,
 )
-from core.geo import configure_travel, routing_context_version
+from core.geo import configure_travel, quote_at, routing_context_version
 from core.policy import Criterion, PolicySpec, compile_policy, criterion_values
 from core.route_search import improve_routes
 from core.schedule import (
     TERMINAL_SHIFT_OVERTIME_SEC,
     TERMINAL_WINDOW_LATENESS_TOLERANCE_SEC,
     HandoffStep,
+    LogisticsStep,
     TravelProvider,
     assemble_plan,
     baseline,
@@ -212,6 +214,9 @@ def apply_system_policy(
         return snapshot
     engineers = []
     for engineer in snapshot.engineers:
+        if engineer.manual_lunch:
+            engineers.append(engineer)
+            continue
         lunch = engineer.lunch.model_copy(
             update={
                 "enabled": False,
@@ -451,6 +456,9 @@ def _search(
     lunch_weight = 1
     coverage_weight = len(engineers) + 1
     urgent_weight = (len(snapshot.requests) + 1) * coverage_weight
+    connection_weight = (len(snapshot.requests) + 1) * (urgent_weight + coverage_weight)
+    dispatcher_weight = (len(snapshot.requests) + 1) * (connection_weight + urgent_weight + coverage_weight)
+    emergency_weight = (len(snapshot.requests) + 1) * (dispatcher_weight + connection_weight + urgent_weight + coverage_weight)
     for request in snapshot.requests:
         index = manager.NodeToIndex(jobs[request.request_id])
         allowed = [
@@ -460,24 +468,26 @@ def _search(
             or terminal_eligible(snapshot, engineer, request)
         ]
         routing.VehicleVar(index).SetValues([-1] + allowed)
-        lower = max(0, request.window_start_at - origin)
+        if request.manual_engineer_id is not None:
+            routing.ActiveVar(index).SetValue(1)
+        lower = max(0, request.ready_at - origin)
         # Time is the service start cumul.  Bound it by completion rather than arrival:
         # scheduling a 30-minute job at 10:18 for a window ending 10:20 must not pass
         # merely because its start fits.
         normal_upper = min(
             horizon,
             request.window_end_at
-            + settings.window_lateness_tolerance_sec
+            + (0 if request.manual_window else settings.window_lateness_tolerance_sec)
             - request.service_duration_sec
             - origin,
         )
         terminal_upper = min(
             time_horizon,
             request.window_end_at
-            + max(
+            + (0 if request.manual_window else max(
                 settings.window_lateness_tolerance_sec,
                 0 if settings.strict_time_windows else TERMINAL_WINDOW_LATENESS_TOLERANCE_SEC,
-            )
+            ))
             - request.service_duration_sec
             - origin,
         )
@@ -498,7 +508,7 @@ def _search(
                 solver.Add(
                     time_dimension.CumulVar(index) + request.service_duration_sec
                     <= normal_limit
-                    + (0 if settings.strict_time_windows else TERMINAL_SHIFT_OVERTIME_SEC) * next_is_end
+                    + (0 if settings.strict_time_windows or engineer.manual_shift else TERMINAL_SHIFT_OVERTIME_SEC) * next_is_end
                     + inactive_time_slack * (1 - on_vehicle)
                 )
                 solver.Add(
@@ -507,9 +517,15 @@ def _search(
                     + (terminal_window_limit - normal_window_limit) * next_is_end
                     + inactive_time_slack * (1 - on_vehicle)
                 )
-            if stage == "window_start_delay":
+            if stage == "window_start_delay" or (
+                stage == "emergency_response_delay" and request.category == "emergency"
+            ) or (stage == "dispatcher_response_delay" and request.dispatcher_priority
+            ):
                 time_dimension.SetCumulVarSoftUpperBound(index, lower, 1)
-        penalty = coverage_weight + (urgent_weight if request.priority == "urgent" else 0)
+        penalty = (coverage_weight + (urgent_weight if request.priority == "urgent" else 0)
+                   + (dispatcher_weight if request.dispatcher_priority else 0)
+                   + (connection_weight if request.category == "connection" else 0)
+                   + (emergency_weight if request.category == "emergency" else 0))
         routing.AddDisjunction([index], penalty if stage == "coverage" else 0)
 
     for e, alternatives in lunches.items():
@@ -554,6 +570,19 @@ def _search(
     urgent_drops = solver.Sum(
         [1 - active_jobs[r.request_id] for r in snapshot.requests if r.priority == "urgent"]
     )
+    emergency_drops = solver.Sum([1 - active_jobs[r.request_id] for r in snapshot.requests if r.category == "emergency"])
+    connection_drops = solver.Sum([1 - active_jobs[r.request_id] for r in snapshot.requests if r.category == "connection"])
+    emergency_delay = solver.Sum([
+        solver.Max(time_dimension.CumulVar(manager.NodeToIndex(jobs[r.request_id]))
+                   - max(0, r.ready_at - origin), 0) * active_jobs[r.request_id]
+        for r in snapshot.requests if r.category == "emergency"
+    ])
+    dispatcher_drops = solver.Sum([1 - active_jobs[r.request_id] for r in snapshot.requests if r.dispatcher_priority])
+    dispatcher_delay = solver.Sum([
+        solver.Max(time_dimension.CumulVar(manager.NodeToIndex(jobs[r.request_id]))
+                   - max(0, r.ready_at - origin), 0) * active_jobs[r.request_id]
+        for r in snapshot.requests if r.dispatcher_priority
+    ])
     all_drops = solver.Sum([1 - active for active in active_jobs.values()])
     missed_lunch = solver.Sum(
         [
@@ -620,6 +649,11 @@ def _search(
     if incumbent is not None and stage != "coverage":
         values = criterion_values(snapshot, incumbent)
         expressions = {
+            "emergency_unassigned": emergency_drops,
+            "emergency_response_delay": emergency_delay,
+            "dispatcher_unassigned": dispatcher_drops,
+            "dispatcher_response_delay": dispatcher_delay,
+            "connection_unassigned": connection_drops,
             "urgent_unassigned": urgent_drops,
             "unassigned": all_drops,
             "missed_optional_lunches": missed_lunch,
@@ -632,6 +666,11 @@ def _search(
             "max_jobs_per_engineer": max_jobs_per_engineer,
         }
         for criterion in (
+            "emergency_unassigned",
+            "emergency_response_delay",
+            "dispatcher_unassigned",
+            "dispatcher_response_delay",
+            "connection_unassigned",
             "urgent_unassigned",
             "unassigned",
             "missed_optional_lunches",
@@ -770,7 +809,7 @@ def _covering_template_can_serve(
     if release is None:
         return False
     finish = min(engineer.shift_end_at, snapshot.horizon_end_at)
-    return max(release, request.window_start_at) + request.service_duration_sec <= finish
+    return max(release, request.ready_at) + request.service_duration_sec <= finish
 
 
 def _covering_extra_engineers(
@@ -896,7 +935,9 @@ def _improve_covering(
         projected = baseline(search_snapshot, travel)
     if not projected.is_usable:
         return projected
-    candidates = improve_routes(search_snapshot, travel, [projected], effort, construct=construct)
+    priority_seed = baseline(search_snapshot, travel, prioritized=True)
+    seeds = [plan for plan in (projected, priority_seed) if plan.is_usable]
+    candidates = improve_routes(search_snapshot, travel, seeds, effort, construct=construct)
     usable = [candidate for candidate in candidates if candidate.is_usable]
     chosen = (
         min(usable, key=lambda candidate: score(search_snapshot, candidate))
@@ -988,13 +1029,14 @@ def _cover_leftovers(
             else None
         )
         trial_score = score(_covering_search_snapshot(trial_snapshot), trial)
+        extra_index = compile_policy(_covering_search_snapshot(current_snapshot).policy).ordered_criteria.index("additional_engineers")
         # Preserve the senior coverage/lateness criteria exactly while reducing
         # the number of used extras.  Remaining impossible jobs therefore do
         # not block a safe reduction attempt.
         if (
             current_score is not None
-            and trial_score[:4] == current_score[:4]
-            and trial_score[4] <= current_score[4]
+            and trial_score[:extra_index] == current_score[:extra_index]
+            and trial_score[extra_index] <= current_score[extra_index]
         ):
             current_snapshot, current = trial_snapshot, trial
     final_used = {r.engineer_id for r in current.routes if r.metrics.assigned_count > 0}
@@ -1103,6 +1145,9 @@ def solve(
     Covering first adds the fewest extra engineers that assign every remaining request.
     """
     settings = settings or SearchSettings()
+    if snapshot.manual_decisions:
+        from core.manual_planning import solve_manual
+        return solve_manual(snapshot, travel, settings, context_version)
     if snapshot.policy.policy_id == "covering":
         default_context_version = routing_context_version(travel, settings.technical())
         travel = configure_travel(travel, settings.technical(), snapshot.planning_as_of)
@@ -1113,14 +1158,18 @@ def solve(
     return _solve_prepared(official_roster(snapshot), travel, settings, memory, context_version)
 
 
-def _route_steps(route: EngineerRoute) -> list[str | None | HandoffStep]:
+def _route_steps(route: EngineerRoute) -> list[str | None | HandoffStep | LogisticsStep]:
     """Recover the canonical replay steps from a validated route."""
-    steps: list[str | None | HandoffStep] = []
+    steps: list[str | None | HandoffStep | LogisticsStep] = []
     for stop in route.stops:
         if stop.kind == "job":
             steps.append(stop.request_id)
         elif stop.kind == "handoff" and stop.handoff is not None:
             steps.append(HandoffStep(stop.handoff, stop.location, stop.start_at))
+        elif stop.kind in ("delivery", "office_pickup") and stop.logistics is not None:
+            steps.append(LogisticsStep(stop.logistics, stop.location, stop.start_at))
+        elif stop.kind == "lunch":
+            steps.append(None)
     return steps
 
 
@@ -1222,8 +1271,70 @@ def _rescue_equipment_handoffs(
                                         validate_plan(snapshot, candidate, travel)
                                     except ValueError:
                                         continue
-                                    if candidate.summary.assigned_count > current.summary.assigned_count:
+                                    if (candidate.summary.assigned_count > current.summary.assigned_count
+                                            and score(snapshot, candidate) < score(snapshot, current)):
                                         return candidate
+    return current
+
+
+def _rescue_office_pickups(snapshot: RouterTaskSnapshot, plan: Plan, travel: TravelProvider, settings: SearchSettings) -> Plan:
+    """Fill equipment-blocked gaps without moving any existing occupied interval."""
+    if not settings.equipment_transfers_enabled or not plan.is_usable or not snapshot.depots:
+        return plan
+    requests = {item.request_id: item for item in snapshot.requests}
+    current = plan
+    evaluations = 0
+    for assignment in sorted(plan.assignments, key=lambda item: requests[item.request_id].priority_tier):
+        request = requests[assignment.request_id]
+        if assignment.status != "unassigned" or request.required_equipment is None:
+            continue
+        # The preceding handoff pass already tried available donors. Stock on an
+        # unavailable donor cannot block a feasible office trip by the recipient.
+        found = False
+        for engineer in snapshot.engineers:
+            release = release_at(snapshot, engineer)
+            if (request.region is not None and engineer.region is not None and request.region != engineer.region) or request.required_skill not in engineer.skills or not transport_matches(request.required_transport, engineer) or release is None:
+                continue
+            route = next(item for item in current.routes if item.engineer_id == engineer.engineer_id)
+            old = _route_steps(route)
+            occupied = [stop for stop in route.stops if stop.kind in ("job", "lunch", "handoff", "delivery", "office_pickup")]
+            original = [(stop.kind, stop.request_id, stop.start_at, stop.end_at, stop.logistics, stop.handoff) for stop in occupied]
+            for depot in snapshot.depots:
+                if depot.region is not None and engineer.region is not None and depot.region != engineer.region:
+                    continue
+                logistics = EquipmentLogistics(
+                    logistics_id=f"office-pickup:{request.request_id}:{engineer.engineer_id}:{depot.depot_id}",
+                    kind="office_pickup", request_id=request.request_id,
+                    equipment_type=request.required_equipment, receiver_engineer_id=engineer.engineer_id,
+                    depot_id=depot.depot_id,
+                )
+                for index in range(len(old) + 1):
+                    evaluations += 1
+                    if evaluations > EQUIPMENT_HANDOFF_EVALUATION_LIMIT:
+                        return current
+                    previous = occupied[index - 1] if index else None
+                    departure = previous.end_at if previous else release
+                    location = previous.location if previous else engineer.start_location
+                    quote = quote_at(travel, location, depot.location, engineer.travel_profile(), departure)
+                    if quote is None:
+                        continue
+                    pickup = LogisticsStep(logistics, depot.location, departure + quote.duration_sec)
+                    candidate = schedule_steps(snapshot, engineer, old[:index] + [pickup, request.request_id] + old[index:], travel)
+                    if candidate is None:
+                        continue
+                    observed = [(stop.kind, stop.request_id, stop.start_at, stop.end_at, stop.logistics, stop.handoff)
+                                for stop in candidate.stops
+                                if stop.kind != "wait" and stop.request_id != request.request_id and stop.logistics != logistics]
+                    if observed != original:
+                        continue
+                    next_plan = assemble_plan(snapshot, [candidate if item.engineer_id == engineer.engineer_id else item for item in current.routes])
+                    validate_plan(snapshot, next_plan, travel)
+                    current, found = next_plan, True
+                    break
+                if found:
+                    break
+            if found:
+                break
     return current
 
 
@@ -1247,8 +1358,9 @@ def _solve_prepared(
     search_snapshot = _without_optional_lunches(snapshot)
     policy: PolicySpec = compile_policy(search_snapshot.policy)
     context_version = context_version or default_context_version
-    base = _rescue_equipment_handoffs(snapshot, baseline(snapshot, travel), travel, settings)
+    base = _rescue_office_pickups(snapshot, _rescue_equipment_handoffs(snapshot, baseline(snapshot, travel), travel, settings), travel, settings)
     validate_plan(snapshot, base, travel)
+    priority_seed = baseline(snapshot, travel, prioritized=True)
     compatible = (
         memory is not None
         and memory.context_version == context_version
@@ -1264,6 +1376,7 @@ def _solve_prepared(
             } == {a.request_id: a.engineer_id for a in memory.plan.assignments}
             if (
                 same_assignments
+                and (not priority_seed.is_usable or score(snapshot, candidate) <= score(snapshot, priority_seed))
                 and _small_change(memory.snapshot, snapshot, settings.departure_lateness_tolerance_sec)
                 and _task_starts_within_tolerance(
                     memory.plan, candidate, settings.task_start_lateness_tolerance_sec
@@ -1284,8 +1397,9 @@ def _solve_prepared(
         if compatible and memory is not None and memory.plan.is_usable
         else None
     )
+    search_priority = priority_seed if search_snapshot is snapshot else baseline(search_snapshot, travel, prioritized=True)
     candidates = [
-        plan for plan in (search_base, search_projected) if plan is not None and plan.is_usable
+        plan for plan in (search_base, search_projected, search_priority) if plan is not None and plan.is_usable
     ]
     incumbent = (
         min(candidates, key=lambda plan: score(search_snapshot, plan)) if candidates else None
@@ -1302,6 +1416,10 @@ def _solve_prepared(
         if stage
         not in ("total_lateness", "window_end_risk", "max_workload_ratio", "workload_spread")
     )
+    if stages and any(r.dispatcher_priority for r in search_snapshot.requests):
+        stages = (stages[0], "dispatcher_response_delay", *stages[1:])
+    if stages and any(r.category == "emergency" for r in search_snapshot.requests):
+        stages = (stages[0], "emergency_response_delay", *stages[1:])
     for i, stage in enumerate(stages):
         remaining = int((deadline - time.monotonic()) * 1000)
         if remaining <= 0:
@@ -1311,6 +1429,8 @@ def _solve_prepared(
             for stage in stages[1:i]
             if stage
             in (
+                "emergency_response_delay",
+                "dispatcher_response_delay",
                 "additional_engineers",
                 "extra_assignments",
                 "travel_time",
@@ -1351,7 +1471,7 @@ def _solve_prepared(
         main = _project(snapshot, search_main, travel)
         if main is None:
             raise ValueError("OPTIONAL_LUNCH_ENRICHMENT_FAILED")
-    main = _rescue_equipment_handoffs(snapshot, main, travel, settings)
+    main = _rescue_office_pickups(snapshot, _rescue_equipment_handoffs(snapshot, main, travel, settings), travel, settings)
     validate_plan(snapshot, main, travel)
     main = main.model_copy(
         update={"alerts": main.alerts + lunch_coverage_alerts(snapshot, main, travel)}

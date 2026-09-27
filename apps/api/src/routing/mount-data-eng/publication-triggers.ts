@@ -36,6 +36,7 @@ export const PUBLICATION_TRIGGERS = {
   /** A forecast the engineer explicitly reported, already interpreted by sys. */
   ENGINEER_FORECAST_CHANGED: 'engineer.forecast_changed',
   POLICY_CHANGED: 'policy.changed',
+  MANUAL_DECISIONS_CHANGED: 'manual.decisions_changed',
   /** The dispatcher's explicit restore-lunch decision. */
   LUNCH_RESTORED: 'lunch.restored',
   DATA_IMPORTED: 'data.imported',

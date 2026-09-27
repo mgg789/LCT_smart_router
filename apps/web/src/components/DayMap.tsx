@@ -13,9 +13,11 @@ import { localMapStyle } from '../domain/localBasemap';
 import { ONLINE_MAP_STYLE, watchMapStartup } from '../domain/mapAvailability';
 import {
   MAP_CANVAS,
+  MAP_EMERGENCY,
   MAP_INK,
   MAP_LUNCH_FILL,
   MAP_LUNCH_STROKE,
+  MAP_MUTED,
   MAP_ROUTE_DASH_PX,
   MAP_ROUTE_GAP_PX,
   mapPaintColor,
@@ -354,6 +356,9 @@ export function DayMap({
   const soloMarkerRef = useRef<maplibregl.Marker | null>(null);
   const onSelectRef = useRef(onSelectRequest);
   const fittedKeyRef = useRef<string | null>(null);
+  const focusPointRef = useRef<ReturnType<typeof requestMapPoint>>(null);
+  const focusId = soloRequestId ?? selectedRequestId;
+  focusPointRef.current = focusId ? requestMapPoint(snapshot, focusId) : null;
   const [localMap, setLocalMap] = useState(forceLocal);
   const [mapFailed, setMapFailed] = useState(false);
   const [mapReady, setMapReady] = useState(false);
@@ -396,7 +401,16 @@ export function DayMap({
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'bottom-right');
     map.on('click', 'stops-circle', (event) => pickRequest(event, onSelectRef));
     map.on('click', 'unassigned-circle', (event) => pickRequest(event, onSelectRef));
-    const observer = new ResizeObserver(() => map.resize());
+    const observer = new ResizeObserver(() => {
+      map.resize();
+      // The request panel animates the map width; keep its point centred in the new viewport.
+      const point = focusPointRef.current;
+      if (point)
+        map.jumpTo({
+          center: [point.lon, point.lat],
+          padding: { top: 0, bottom: 0, left: 0, right: 0 },
+        });
+    });
     observer.observe(container);
     mapRef.current = map;
     return () => {
@@ -617,9 +631,14 @@ export function DayMap({
                 skillMark: request ? skillMark(request.requiredSkill) : '',
                 engineerId,
                 selected: node.requestId === selectedRequestId ? 1 : 0,
-                color: mapPaintColor(engineerColor(engineerId)),
+                color:
+                  request?.workCategory === 'emergency'
+                    ? MAP_MUTED
+                    : mapPaintColor(engineerColor(engineerId)),
                 regionColor: mapPaintColor(
-                  regionStyle(request ? requestRegion(snapshot, request) : null).color,
+                  request?.workCategory === 'emergency'
+                    ? MAP_EMERGENCY
+                    : regionStyle(request ? requestRegion(snapshot, request) : null).color,
                 ),
                 current: graph.activeNodeKeys.has(node.key) ? 1 : 0,
               },
@@ -647,7 +666,10 @@ export function DayMap({
                 requestId: request.id,
                 skillMark: skillMark(request.requiredSkill),
                 selected: request.id === selectedRequestId ? 1 : 0,
-                regionColor: mapPaintColor(regionStyle(requestRegion(snapshot, request)).color),
+                regionColor:
+                  request.workCategory === 'emergency'
+                    ? MAP_EMERGENCY
+                    : mapPaintColor(regionStyle(requestRegion(snapshot, request)).color),
               },
               geometry: {
                 type: 'Point' as const,
@@ -839,9 +861,16 @@ export function DayMap({
       const fitKey = `${retry}:${forceLocal}:${selectedEngineerId ?? 'all'}:${selectedRequestId ?? ''}:${soloRequestId ?? ''}`;
       if (fittedKeyRef.current !== fitKey) {
         fittedKeyRef.current = fitKey;
-        if (soloPoint) {
+        const focusPoint =
+          soloPoint ?? (selectedRequestId ? requestMapPoint(snapshot, selectedRequestId) : null);
+        if (focusPoint) {
           map.resize();
-          map.easeTo({ center: [soloPoint.lon, soloPoint.lat], zoom: 14.2, duration: 400 });
+          map.easeTo({
+            center: [focusPoint.lon, focusPoint.lat],
+            ...(soloPoint ? { zoom: 14.2 } : {}),
+            padding: { top: 0, bottom: 0, left: 0, right: 0 },
+            duration: 400,
+          });
           return true;
         }
         const bounds = new maplibregl.LngLatBounds();
@@ -896,7 +925,20 @@ export function DayMap({
     if (!point) return;
     const pin = document.createElement('div');
     pin.setAttribute('aria-hidden', 'true');
-    pin.className = 'size-[22px] rounded-full border-[3px] border-figma-ink bg-figma-bee shadow-lg';
+    const request = snapshot.requests.find((item) => item.id === soloRequestId);
+    const jobs = snapshot.plan.plan?.routes
+      .find((route) => route.stops.some((stop) => stop.requestId === soloRequestId))
+      ?.stops.filter((stop) => stop.kind === 'job');
+    const sequence = jobs ? jobs.findIndex((stop) => stop.requestId === soloRequestId) + 1 : 0;
+    const emergency = request?.workCategory === 'emergency';
+    pin.className = `flex size-[22px] items-center justify-center rounded-full border-[3px] text-[11px] font-semibold text-white shadow-lg ${
+      emergency
+        ? sequence > 0
+          ? 'border-figma-danger bg-figma-muted'
+          : 'border-figma-ink bg-figma-danger'
+        : 'border-figma-ink bg-figma-bee'
+    }`;
+    if (emergency && sequence > 0) pin.textContent = String(sequence);
     const marker = new maplibregl.Marker({ element: pin, anchor: 'center' })
       .setLngLat([point.lon, point.lat])
       .addTo(map);

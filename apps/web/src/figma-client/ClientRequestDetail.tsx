@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { WorkTypeLabel } from '../components/WorkTypeLabel';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { arrivalHeadline, formatPlanTime, formatPlanWindow } from '../figma-engineer/engineerClock';
 import { engineerMapsUrl } from '../figma-engineer/engineerRoute';
@@ -143,7 +144,7 @@ export function ClientRequestDetail({
           />
         </div>
         <p className="font-medium text-white/70" style={{ marginTop: eu(10), fontSize: eu(22) }}>
-          {item.workTypeTitle}
+          <WorkTypeLabel category={item.workCategory}>{item.workTypeTitle}</WorkTypeLabel>
         </p>
         <Chip>{item.problemTitle}</Chip>
         <Chip>{item.company}</Chip>

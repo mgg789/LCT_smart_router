@@ -1,6 +1,7 @@
 import maplibregl from 'maplibre-gl';
 import { useEffect, useRef, useState } from 'react';
 import { geocodeAddress } from '../api/client';
+import type { DispatchRegion } from '../api/regions';
 import type { GeocodeHit } from '../api/types';
 import { localMapStyle } from '../domain/localBasemap';
 import { ONLINE_MAP_STYLE, watchMapStartup } from '../domain/mapAvailability';
@@ -22,6 +23,7 @@ export function AddressPointField({
   onAddressChange,
   onResolved,
   onMapPick,
+  offices,
 }: {
   id: string;
   label: string;
@@ -32,6 +34,7 @@ export function AddressPointField({
   onAddressChange: (value: string) => void;
   onResolved: (hit: GeocodeHit) => void;
   onMapPick: (lat: number, lon: number) => void;
+  offices?: DispatchRegion[];
 }) {
   const [hits, setHits] = useState<GeocodeHit[]>([]);
   const [searching, setSearching] = useState(false);
@@ -92,7 +95,7 @@ export function AddressPointField({
         Или кликните точку на карте — координаты возьмутся без геокодинга.
         {lat !== null && lon !== null ? ` Сейчас ${lat.toFixed(5)}, ${lon.toFixed(5)}.` : ''}
       </p>
-      <OsmPointMap lat={lat} lon={lon} onPick={onMapPick} />
+      <OsmPointMap lat={lat} lon={lon} onPick={onMapPick} offices={offices} />
     </div>
   );
 }
@@ -101,10 +104,12 @@ function OsmPointMap({
   lat,
   lon,
   onPick,
+  offices,
 }: {
   lat: number | null;
   lon: number | null;
   onPick: (lat: number, lon: number) => void;
+  offices?: DispatchRegion[];
 }) {
   const host = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
@@ -137,6 +142,29 @@ function OsmPointMap({
     };
     // The map is created once for the field lifetime; marker updates follow lat/lon.
   }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const markers = (offices ?? []).flatMap((office) => {
+      if (office.lat === null || office.lon === null) return [];
+      const marker = new maplibregl.Marker({ color: '#262830' })
+        .setLngLat([office.lon, office.lat])
+        .setPopup(new maplibregl.Popup({ offset: 20 }).setText(office.region))
+        .addTo(map);
+      marker.getElement().title = office.region;
+      marker.getElement().addEventListener('click', (event) => event.stopPropagation());
+      return [marker];
+    });
+    if (markers.length > 0) {
+      const bounds = new maplibregl.LngLatBounds();
+      for (const marker of markers) bounds.extend(marker.getLngLat());
+      map.fitBounds(bounds, { padding: 40, maxZoom: 11, duration: 0 });
+    }
+    return () => {
+      for (const marker of markers) marker.remove();
+    };
+  }, [offices]);
 
   useEffect(() => {
     const map = mapRef.current;

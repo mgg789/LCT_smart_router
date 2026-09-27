@@ -46,14 +46,14 @@ test('a model window is dropped when the text has no time', () => {
   );
   assert.equal(merged.problem, '');
   assert.equal(merged.windowStart, '');
-  assert.equal(merged.address, 'Ленина 4');
+  assert.equal(merged.address, '');
 });
 
 test('a missing model still leaves a draft without an invented window', () => {
   const finished = finishStoryDraft(empty, 'просто текст без часов');
   assert.equal(finished.problem, 'Другое...');
-  assert.equal(finished.contactName, 'Клиент');
-  assert.equal(finished.address, 'просто текст без часов');
+  assert.equal(finished.contactName, '');
+  assert.equal(finished.address, '');
   assert.equal(finished.windowStart, '');
   assert.equal(finished.windowEnd, '');
 });
@@ -62,4 +62,32 @@ test('fenced model json is readable', () => {
   assert.deepEqual(parseModelJson('```json\n{"problem":"Другое..."}\n```'), {
     problem: 'Другое...',
   });
+});
+
+test('a house number cannot justify a time window or an invented identity', () => {
+  const source =
+    'У меня авария интернет вообще не работает проспект вернадского 11, я виктор михайленко, надо срочно';
+  const result = mergeStoryGaps(
+    empty,
+    {
+      workType: 'outage',
+      problem: 'Авария',
+      contactName: 'Виктор Михайленко',
+      address: 'проспект вернадского 11',
+      windowStart: '11:00',
+      windowEnd: '13:00',
+    },
+    source,
+    ['Авария'],
+  );
+  assert.equal(result.workType, 'outage');
+  assert.equal(result.contactName, 'Виктор Михайленко');
+  assert.equal(result.address, 'проспект вернадского 11');
+  assert.equal(result.windowStart, '');
+  assert.equal(
+    mergeStoryGaps(empty, { contactName: 'Виктор Петров', workType: 'invented' }, source, [])
+      .contactName,
+    '',
+  );
+  assert.equal(mergeStoryGaps(empty, { workType: 'invented' }, source, []).workType, undefined);
 });

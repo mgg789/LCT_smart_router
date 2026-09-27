@@ -1,7 +1,9 @@
 import { z } from 'zod';
+import { findWorkType } from '../requests/work-type.catalog';
 
 /** Fields the new-request form can show before the client confirms them. */
 export interface StoryFields {
+  readonly workType?: string;
   readonly problem: string;
   readonly contactName: string;
   readonly email: string;
@@ -13,6 +15,7 @@ export interface StoryFields {
 const CLOCK = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 const storyGapSchema = z.object({
+  workType: z.string().optional(),
   problem: z.string().optional(),
   contactName: z.string().max(80).optional(),
   email: z.string().max(120).optional(),
@@ -50,6 +53,7 @@ export function mergeStoryGaps(
   if (!parsed.success) return current;
   const next = { ...current };
   const data = parsed.data;
+  if (data.workType && findWorkType(data.workType)) next.workType = data.workType;
   if (!next.problem && data.problem && problems.includes(data.problem)) {
     next.problem = data.problem;
   }
@@ -62,7 +66,9 @@ export function mergeStoryGaps(
   if (!next.address && data.address && wordsInSource(data.address, source)) {
     next.address = data.address.trim().slice(0, 240);
   }
-  const timeSignal = /\d|утр|вечер|обед|час|до|после/i.test(source);
+  const timeSignal = /\b\d{1,2}[:.]\d{2}\b|(?:с|после|до)\s*\d{1,2}\b|утр|вечер|обед|час/iu.test(
+    source,
+  );
   if (
     timeSignal &&
     !next.windowStart &&
@@ -81,22 +87,23 @@ export function mergeStoryGaps(
 
 /**
  * Always-returned draft. A missing topic becomes «Другое...», a missing
- * address keeps the raw text, and a missing window stays empty.
+ * address, identity and window stay empty for explicit user input.
  */
-export function finishStoryDraft(fields: StoryFields, source: string): StoryFields {
+export function finishStoryDraft(fields: StoryFields, _source: string): StoryFields {
   return {
     problem: fields.problem || 'Другое...',
-    contactName: fields.contactName || 'Клиент',
+    contactName: fields.contactName,
     email: fields.email,
     windowStart: fields.windowStart,
     windowEnd: fields.windowEnd,
-    address: fields.address || source.trim().slice(0, 240),
+    address: fields.address,
   };
 }
 
 function wordsInSource(value: string, source: string): boolean {
-  const words = value.toLowerCase().match(/[a-zа-яё0-9]{3,}/gi) ?? [];
+  const words = value.toLowerCase().match(/[a-zа-яё0-9]+/gi) ?? [];
   if (words.length === 0) return false;
   const hay = source.toLowerCase();
-  return words.some((word) => hay.includes(word));
+  const sourceWords = new Set(hay.match(/[a-zа-яё0-9]+/gi) ?? []);
+  return words.every((word) => sourceWords.has(word));
 }

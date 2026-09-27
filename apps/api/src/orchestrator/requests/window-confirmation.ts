@@ -77,6 +77,7 @@ export function mayChangeRequestWindow(action: string, payload: unknown): boolea
   if (!payload || typeof payload !== 'object') return false;
   const data = payload as Record<string, unknown>;
   return (
+    (action === 'manual.decision.put' && data.kind === 'window') ||
     (action === 'request.update' &&
       (data.windowStartAt !== undefined || data.windowEndAt !== undefined)) ||
     (action === 'alert.resolve' &&

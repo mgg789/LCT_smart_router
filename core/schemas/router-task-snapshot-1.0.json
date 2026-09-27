@@ -1,5 +1,37 @@
 {
   "$defs": {
+    "Depot": {
+      "additionalProperties": false,
+      "description": "Verified regional office location used only for physical replenishment.",
+      "properties": {
+        "depot_id": {
+          "minLength": 1,
+          "title": "Depot Id",
+          "type": "string"
+        },
+        "location": {
+          "$ref": "#/$defs/GeoPoint"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Region"
+        }
+      },
+      "required": [
+        "depot_id",
+        "location"
+      ],
+      "title": "Depot",
+      "type": "object"
+    },
     "Engineer": {
       "additionalProperties": false,
       "description": "Prepared continuation point and availability; execution facts belong to sys.",
@@ -60,6 +92,16 @@
         },
         "lunch_taken": {
           "title": "Lunch Taken",
+          "type": "boolean"
+        },
+        "manual_lunch": {
+          "default": false,
+          "title": "Manual Lunch",
+          "type": "boolean"
+        },
+        "manual_shift": {
+          "default": false,
+          "title": "Manual Shift",
           "type": "boolean"
         },
         "region": {
@@ -134,6 +176,77 @@
         "equipment_stock"
       ],
       "title": "Engineer",
+      "type": "object"
+    },
+    "EquipmentLogistics": {
+      "additionalProperties": false,
+      "description": "One-sided equipment movement attached to the job it unblocks.\n\nUnlike ``EquipmentHandoff``, a delivery is a stop only for its donor and an\noffice pickup is a stop only for its recipient.  The System Layer owns the\nauthenticated stock fact; Router only schedules this immutable intention.",
+      "properties": {
+        "depot_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Depot Id"
+        },
+        "donor_engineer_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Donor Engineer Id"
+        },
+        "equipment_type": {
+          "enum": [
+            "router",
+            "set_top_box",
+            "smart_speaker"
+          ],
+          "title": "Equipment Type",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "donor_delivery",
+            "office_pickup"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "logistics_id": {
+          "minLength": 1,
+          "title": "Logistics Id",
+          "type": "string"
+        },
+        "receiver_engineer_id": {
+          "minLength": 1,
+          "title": "Receiver Engineer Id",
+          "type": "string"
+        },
+        "request_id": {
+          "minLength": 1,
+          "title": "Request Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "logistics_id",
+        "kind",
+        "request_id",
+        "equipment_type",
+        "receiver_engineer_id"
+      ],
+      "title": "EquipmentLogistics",
       "type": "object"
     },
     "EquipmentStock": {
@@ -245,6 +358,83 @@
       "title": "LunchInput",
       "type": "object"
     },
+    "ManualDecision": {
+      "additionalProperties": false,
+      "description": "Dispatcher constraint, resolved jointly by Router without mutating source input.",
+      "properties": {
+        "end_at": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End At"
+        },
+        "engineer_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Engineer Id"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "assignment",
+            "window",
+            "lunch",
+            "shift"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "priority": {
+          "minimum": 0,
+          "title": "Priority",
+          "type": "integer"
+        },
+        "start_at": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start At"
+        },
+        "target_id": {
+          "minLength": 1,
+          "title": "Target Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "target_id",
+        "priority"
+      ],
+      "title": "ManualDecision",
+      "type": "object"
+    },
     "PendingEquipmentHandoff": {
       "additionalProperties": false,
       "description": "Sys-confirmed meeting retained as a frozen future execution fact.",
@@ -293,6 +483,30 @@
       "title": "PendingEquipmentHandoff",
       "type": "object"
     },
+    "PendingEquipmentLogistics": {
+      "additionalProperties": false,
+      "description": "Accepted one-sided movement replayed at its frozen time on later replans.",
+      "properties": {
+        "at": {
+          "minimum": 0,
+          "title": "At",
+          "type": "integer"
+        },
+        "location": {
+          "$ref": "#/$defs/GeoPoint"
+        },
+        "logistics": {
+          "$ref": "#/$defs/EquipmentLogistics"
+        }
+      },
+      "required": [
+        "logistics",
+        "location",
+        "at"
+      ],
+      "title": "PendingEquipmentLogistics",
+      "type": "object"
+    },
     "Policy": {
       "additionalProperties": false,
       "description": "Supported catalog choice; preferences cannot disable hard constraints.",
@@ -327,7 +541,8 @@
             "sla",
             "balanced",
             "eco",
-            "covering"
+            "covering",
+            "personal"
           ],
           "title": "Policy Id",
           "type": "string"
@@ -349,8 +564,35 @@
           "title": "Arrival Order",
           "type": "integer"
         },
+        "dispatcher_priority": {
+          "default": false,
+          "title": "Dispatcher Priority",
+          "type": "boolean"
+        },
         "location": {
           "$ref": "#/$defs/GeoPoint"
+        },
+        "manual_engineer_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Manual Engineer Id"
+        },
+        "manual_unassigned": {
+          "default": false,
+          "title": "Manual Unassigned",
+          "type": "boolean"
+        },
+        "manual_window": {
+          "default": false,
+          "title": "Manual Window",
+          "type": "boolean"
         },
         "priority": {
           "enum": [
@@ -359,6 +601,19 @@
           ],
           "title": "Priority",
           "type": "string"
+        },
+        "received_at": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Received At"
         },
         "region": {
           "anyOf": [
@@ -426,6 +681,32 @@
           "title": "Service Duration Sec",
           "type": "integer"
         },
+        "source_window_end_at": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Window End At"
+        },
+        "source_window_start_at": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Window Start At"
+        },
         "window_end_at": {
           "minimum": 0,
           "title": "Window End At",
@@ -435,6 +716,23 @@
           "minimum": 0,
           "title": "Window Start At",
           "type": "integer"
+        },
+        "work_category": {
+          "anyOf": [
+            {
+              "enum": [
+                "emergency",
+                "connection",
+                "service"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Work Category"
         }
       },
       "required": [
@@ -455,6 +753,13 @@
   "additionalProperties": false,
   "description": "Complete remaining-work projection, published atomically by sys.",
   "properties": {
+    "depots": {
+      "items": {
+        "$ref": "#/$defs/Depot"
+      },
+      "title": "Depots",
+      "type": "array"
+    },
     "engineers": {
       "items": {
         "$ref": "#/$defs/Engineer"
@@ -472,11 +777,25 @@
       "title": "Horizon Start At",
       "type": "integer"
     },
+    "manual_decisions": {
+      "items": {
+        "$ref": "#/$defs/ManualDecision"
+      },
+      "title": "Manual Decisions",
+      "type": "array"
+    },
     "pending_equipment_handoffs": {
       "items": {
         "$ref": "#/$defs/PendingEquipmentHandoff"
       },
       "title": "Pending Equipment Handoffs",
+      "type": "array"
+    },
+    "pending_equipment_logistics": {
+      "items": {
+        "$ref": "#/$defs/PendingEquipmentLogistics"
+      },
+      "title": "Pending Equipment Logistics",
       "type": "array"
     },
     "planning_as_of": {

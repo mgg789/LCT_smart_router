@@ -61,7 +61,7 @@ export interface ExplainEngineerView {
 
 export interface ExplainPlanStopView {
   readonly sequence: number;
-  readonly kind: 'job' | 'lunch' | 'wait' | 'start' | 'handoff';
+  readonly kind: 'job' | 'lunch' | 'wait' | 'start' | 'handoff' | 'delivery' | 'office_pickup';
   readonly requestId: string | null;
   readonly arrivalAt: number;
   readonly startAt: number;
@@ -248,6 +248,23 @@ export function explainSelection(
   route: ExplainPlanRouteView | null,
 ): CaseExplanation | null {
   if (request) {
+    if (!assignment || assignment.status === 'unassigned') {
+      const suitable = engineersInRegion(snapshot, request.region).filter((item) =>
+        item.skills.includes(request.requiredSkill),
+      );
+      if (suitable.length > 0 && suitable.every((item) => item.day?.availability === 'offline')) {
+        return {
+          title: 'Почему без назначения',
+          facts: [
+            `Заявка №${request.id} требует навык «${skillLabel(request.requiredSkill)}».`,
+            `Все инженеры этого региона с нужным навыком сейчас не на смене: ${suitable.map((item) => item.displayName).join(', ')}.`,
+          ],
+          influence:
+            'Инженеры не на смене недоступны для назначения. Это подтверждённое текущее ограничение, даже если отдельный код причины в результате расчёта отсутствует.',
+          result: `Заявка №${request.id} без назначения; сейчас нет доступной бригады с нужным навыком.`,
+        };
+      }
+    }
     if (assignment?.status === 'unassigned') {
       return explainUnassigned(snapshot, request, assignment);
     }

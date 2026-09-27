@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { Inject, Injectable, Logger, type OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, type OnModuleInit, Optional } from '@nestjs/common';
 import type { Actor } from '../../auth';
 import { AppConfigService } from '../../common/config';
 import { SysError } from '../../common/errors';
 import { Clock } from '../../common/time';
 import type { AiConversation, AiRoleProfile } from '../../generated/prisma/client';
+import { AiConnectionsService } from '../../orchestrator/ai/ai-connections.service';
 import { PrismaService, UnitOfWork } from '../../persistence';
 import { buildClientSystemPrompt } from '../profiles/client.profile';
 import {
@@ -16,7 +17,6 @@ import {
   type LlmMessage,
   LlmProvider,
   type LlmToolCall,
-  type LlmToolSpec,
   type LlmTurnInput,
   type RetryRunResult,
   runProviderTurn,
@@ -86,6 +86,7 @@ export class AgentRuntimeService implements OnModuleInit {
     private readonly toolDispatcher: ToolDispatcher,
     private readonly toolRegistry: ToolRegistry,
     private readonly chatBus: ChatEventBus,
+    @Optional() private readonly connections?: AiConnectionsService,
   ) {}
 
   /**
@@ -162,7 +163,7 @@ export class AgentRuntimeService implements OnModuleInit {
         roleProfile: input.conversation.roleProfile,
         state: 'running',
         providerKind: this.provider.kind,
-        model: this.config.get('LLM_MODEL'),
+        model: this.connections?.current.llm.model ?? this.config.get('LLM_MODEL'),
         reservedMicros: reservation.reservedMicros,
         startedAt: BigInt(now),
       },
@@ -207,7 +208,7 @@ export class AgentRuntimeService implements OnModuleInit {
     reservation: BudgetReservation,
     handle: RunHandle,
   ): Promise<void> {
-    const model = this.config.get('LLM_MODEL');
+    const model = this.connections?.current.llm.model ?? this.config.get('LLM_MODEL');
     // The env default (1024) cuts a Russian answer mid-word and, in fix mode, spends
     // the whole budget on the preamble so the write tool is never emitted.
     const maxOutputTokens = Math.max(this.config.get('LLM_MAX_OUTPUT_TOKENS'), 4_096);
@@ -216,7 +217,6 @@ export class AgentRuntimeService implements OnModuleInit {
     // This conversation's lane decides which tools the model is even offered --
     // `ToolRegistry.catalogueFor` is the single source of truth `AiToolDispatcher` also
     // consults when a call actually comes back.
-    const tools: LlmToolSpec[] = this.toolRegistry.llmSpecsFor(conversation.roleProfile);
 
     const requiresReasoningReplay =
       this.provider.kind === 'openai_chat' &&
@@ -236,14 +236,20 @@ export class AgentRuntimeService implements OnModuleInit {
     let usedFallback = false;
     let finalState: AiRunState = 'completed';
     let terminalEvent: AiRunEvent | null = null;
+    let continuationUsed = false;
+    let answerPrefix = '';
+    let continuationMessageId: string | null = null;
 
     try {
       // Keep one provider turn in reserve to turn the last tool outcomes into a user-facing
       // answer. The reserved turn has no tools, so reaching the tool budget cannot trigger
       // another write after an incomplete explanation.
-      for (let step = 0; step <= maxToolSteps; step += 1) {
+      for (let step = 0; step <= maxToolSteps + 1; step += 1) {
         this.stop.checkpoint(runId);
-        const turnTools = step < maxToolSteps ? tools : [];
+        const turnTools =
+          !continuationUsed && step < maxToolSteps
+            ? await this.toolRegistry.liveSpecsFor(conversation.roleProfile)
+            : [];
 
         const turnInput: LlmTurnInput = {
           model,
@@ -265,7 +271,7 @@ export class AgentRuntimeService implements OnModuleInit {
           signal: handle.abort.signal,
         };
 
-        const messageId = randomUUID();
+        const messageId: string = continuationMessageId ?? randomUUID();
         let text = '';
         let reasoningContent = '';
         let reasoningObserved = false;
@@ -314,7 +320,7 @@ export class AgentRuntimeService implements OnModuleInit {
           throw new RunStoppedSignal(handle.stopReason ?? 'user');
         }
 
-        if (toolCalls.length > 0 && step >= maxToolSteps) {
+        if (toolCalls.length > 0 && (step >= maxToolSteps || continuationUsed)) {
           finalState = 'failed';
           terminalEvent = await this.bus.emit(handle, {
             type: 'error',
@@ -359,14 +365,33 @@ export class AgentRuntimeService implements OnModuleInit {
           // `reasoning_content` is the scratchpad. Publishing it is what painted the
           // English monologue as the dispatcher's answer when `content` stayed empty
           // because thinking had already spent `max_tokens`.
-          const answer = text.trim();
-          if (answer.length === 0) {
+          if (truncated && text.trim() && !continuationUsed) {
+            continuationUsed = true;
+            answerPrefix = text;
+            continuationMessageId = messageId;
+            messages = [
+              ...messages,
+              {
+                role: 'assistant',
+                content: text,
+                ...(reasoningObserved ? { reasoningContent } : {}),
+              },
+              {
+                role: 'user',
+                content:
+                  'Continue the interrupted answer exactly from its last character. Do not repeat text, perform actions, or call tools. Finish concisely.',
+              },
+            ];
+            continue;
+          }
+          const answer = (answerPrefix + text).trim();
+          if (truncated || answer.length === 0) {
             finalState = 'failed';
             terminalEvent = await this.bus.emit(handle, {
               type: 'error',
               code: 'AI_UNAVAILABLE',
               message: truncated
-                ? 'Ответ оборвался на лимите вывода, текста для диспетчера не осталось'
+                ? 'Ответ оборвался на лимите вывода и не был сохранён как завершённый. Попросите продолжить ответ.'
                 : 'Ассистент не прислал текст ответа',
             });
             break;

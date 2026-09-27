@@ -1,6 +1,8 @@
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { ArrowRight, Mic } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { useWorkTypes } from '../api/workTypes';
+import { WorkTypePicker } from '../components/WorkTypePicker';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { eu } from '../figma-engineer/engineerScale';
 import { CLIENT_ASSETS } from './assets';
@@ -12,30 +14,29 @@ import {
   searchClientAddress,
 } from './clientApi';
 import {
+  CLIENT_PROBLEM_WORK,
   CLIENT_PROBLEMS,
   type ClientMapPoint,
   type ClientProblem,
   type ClientRequestDraft,
-  draftFromStory,
 } from './clientPreview';
 
 const STORY_KEY = 'lct.client.story';
 const STORY_PLACEHOLDER = 'Расскажите, что у вас случилось, когда к вам приехать, ваше ФИО и email';
 
-const tap = { duration: 0.16 };
 const slideEase = [0.22, 1, 0.36, 1] as const;
 /** One length for both halves of the swap, so the handover reads as one move. */
 const swap = { duration: 0.26, ease: slideEase } as const;
 
 /**
- * Figma FIRST 115:405 — dark new-request form with oval reason chips,
+ * Figma FIRST 115:405 — dark new-request form with a work-type selector,
  * pickable map and an expanding map overlay (122:2471).
  */
 export function ClientNewRequest({
   draft,
   busy = false,
   notice,
-  initialMode = 'story',
+  initialMode = 'form',
   onModeChange,
   onChange,
   onSubmit,
@@ -43,7 +44,7 @@ export function ClientNewRequest({
   draft: ClientRequestDraft;
   busy?: boolean;
   notice: string | null;
-  /** Tests open the structured form without a click. The screen itself starts on the story. */
+  /** Allows an explicit entry mode; the structured form is the default. */
   initialMode?: 'story' | 'form';
   /**
    * The story and the form want opposite things from the desk: the story wants
@@ -56,6 +57,11 @@ export function ClientNewRequest({
   onSubmit: () => void;
 }) {
   const motionOn = !useReducedMotion();
+  const catalogue = useWorkTypes();
+  const selectedCode =
+    draft.workType ?? (draft.problem ? CLIENT_PROBLEM_WORK[draft.problem].workType : '');
+  const emergency =
+    catalogue.rows.find((row) => row.code === selectedCode)?.category === 'emergency';
   const [mode, setMode] = useState<'story' | 'form'>(initialMode);
   /**
    * What is on screen, which trails what was asked for: the leaving half keeps
@@ -202,23 +208,27 @@ export function ClientNewRequest({
   };
 
   const revealForm = () => {
-    const local = draftFromStory(story, draftRef.current);
+    const local = { ...draftRef.current };
     setTracing(false);
     setMode('form');
     onChange(local);
     void interpretClientStory(story)
       .then((picked) => {
+        if (draftRef.current !== local) return;
         const problem = CLIENT_PROBLEMS.includes(picked.problem as ClientProblem)
           ? (picked.problem as ClientProblem)
           : local.problem;
         onChange({
           ...local,
           problem,
-          contactName: picked.contactName || local.contactName,
-          email: picked.email || local.email,
-          windowStart: picked.windowStart || local.windowStart,
-          windowEnd: picked.windowEnd || local.windowEnd,
-          address: picked.address || local.address,
+          workType: picked.workType,
+          workTypeTitle: catalogue.rows.find((row) => row.code === picked.workType)?.title,
+          contactName: picked.contactName,
+          email: picked.email,
+          windowStart: picked.windowStart,
+          windowEnd: picked.windowEnd,
+          address: picked.address,
+          point: picked.address === local.address ? local.point : null,
         });
       })
       .catch(() => undefined);
@@ -361,35 +371,26 @@ export function ClientNewRequest({
                 }}
                 onSubmit={(event) => {
                   event.preventDefault();
-                  onSubmit();
+                  if (catalogue.rows.some((row) => row.code === selectedCode)) onSubmit();
                 }}
               >
-                <div className="flex flex-wrap" style={{ gap: eu(12) }}>
-                  {CLIENT_PROBLEMS.map((problem) => {
-                    const selected = draft.problem === problem;
-                    return (
-                      <motion.button
-                        key={problem}
-                        type="button"
-                        onClick={() => onChange({ ...draft, problem })}
-                        whileTap={{ scale: 0.98 }}
-                        transition={tap}
-                        aria-pressed={selected}
-                        className="font-medium tracking-[-0.02em] text-figma-ink"
-                        style={{
-                          minHeight: eu(48),
-                          borderRadius: eu(100),
-                          padding: `${eu(14)} ${eu(24)}`,
-                          fontSize: eu(20),
-                          background: selected
-                            ? 'var(--color-figma-bee)'
-                            : 'var(--color-figma-track)',
-                        }}
-                      >
-                        {problem}
-                      </motion.button>
-                    );
-                  })}
+                <div>
+                  <WorkTypePicker
+                    showEmergencyAction={false}
+                    rows={catalogue.rows}
+                    value={selectedCode}
+                    error={catalogue.error}
+                    onRetry={catalogue.retry}
+                    onChange={(workType) => {
+                      const selected = catalogue.rows.find((row) => row.code === workType);
+                      onChange({
+                        ...draft,
+                        workType,
+                        workTypeTitle: selected?.title,
+                        problem: selected?.category === 'emergency' ? 'Авария' : 'Другое...',
+                      });
+                    }}
+                  />
                 </div>
 
                 <label
@@ -491,20 +492,22 @@ export function ClientNewRequest({
                   </motion.button>
                 </div>
 
-                <div className="flex" style={{ marginTop: eu(24), gap: eu(16) }}>
-                  <ClockField
-                    id="client-window-start"
-                    label="с"
-                    value={draft.windowStart}
-                    onChange={(windowStart) => onChange({ ...draft, windowStart })}
-                  />
-                  <ClockField
-                    id="client-window-end"
-                    label="до"
-                    value={draft.windowEnd}
-                    onChange={(windowEnd) => onChange({ ...draft, windowEnd })}
-                  />
-                </div>
+                {!emergency ? (
+                  <div className="flex" style={{ marginTop: eu(24), gap: eu(16) }}>
+                    <ClockField
+                      id="client-window-start"
+                      label="с"
+                      value={draft.windowStart}
+                      onChange={(windowStart) => onChange({ ...draft, windowStart })}
+                    />
+                    <ClockField
+                      id="client-window-end"
+                      label="до"
+                      value={draft.windowEnd}
+                      onChange={(windowEnd) => onChange({ ...draft, windowEnd })}
+                    />
+                  </div>
+                ) : null}
 
                 <label
                   htmlFor="client-email"
@@ -541,7 +544,7 @@ export function ClientNewRequest({
                 ) : null}
                 <motion.button
                   type="submit"
-                  disabled={busy}
+                  disabled={busy || !catalogue.rows.some((row) => row.code === selectedCode)}
                   whileTap={{ scale: 0.98 }}
                   className="w-full bg-figma-bee font-semibold tracking-[-0.03em] text-figma-ink disabled:opacity-50"
                   style={{

@@ -2,6 +2,7 @@ import { CheckCircle2, Headset, RefreshCw } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import type { AiMessage, AiMessageAuthor, AiRoleProfile, DispatchChatView } from '../api/ai';
 import { formatClock } from '../lib/time';
+import { ChatBottomSpacer } from './ai/ChatBottomSpacer';
 
 interface Props {
   readonly token: string | null;
@@ -367,6 +368,7 @@ function ChatThread({
             ))}
           </>
         )}
+        <ChatBottomSpacer />
       </div>
       {finished ? (
         <div className="shrink-0 border-t border-line p-3 text-xs text-muted">

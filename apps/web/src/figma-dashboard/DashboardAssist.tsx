@@ -18,26 +18,33 @@ export function DashboardChats({ token }: { token: string | null }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = useCallback(() => {
-    if (!token) {
-      setChats(null);
-      setError('Нужна сессия диспетчера.');
-      return;
-    }
-    setLoading(true);
-    void loadDispatchChats(token)
-      .then((result) => {
-        setChats(result.chats);
-        setError(null);
-      })
-      .catch((cause: unknown) => {
-        setError(cause instanceof DashboardApiError ? cause.message : 'Не удалось загрузить чаты.');
-      })
-      .finally(() => setLoading(false));
-  }, [token]);
+  const refresh = useCallback(
+    (quiet = false) => {
+      if (!token) {
+        setChats(null);
+        setError('Нужна сессия диспетчера.');
+        return;
+      }
+      if (!quiet) setLoading(true);
+      void loadDispatchChats(token)
+        .then((result) => {
+          setChats(result.chats);
+          setError(null);
+        })
+        .catch((cause: unknown) => {
+          setError(
+            cause instanceof DashboardApiError ? cause.message : 'Не удалось загрузить чаты.',
+          );
+        })
+        .finally(() => setLoading(false));
+    },
+    [token],
+  );
 
   useEffect(() => {
     refresh();
+    const timer = window.setInterval(() => refresh(true), 5_000);
+    return () => window.clearInterval(timer);
   }, [refresh]);
 
   return (

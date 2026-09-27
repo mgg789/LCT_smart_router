@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { importedWorkCategory } from '../../orchestrator/requests/work-type.catalog';
 
 const datasetRegion = z.enum(['east', 'southeast', 'south_central']);
 const engineerCount = z.number().int().positive().max(1000);
@@ -23,11 +24,17 @@ const uploadRequest = z
     requiredTransport: z.enum(['car', 'walk', 'bike', 'transit']).optional(),
     requiredEquipment: z.enum(['router', 'set_top_box', 'smart_speaker']).optional(),
     workType: z.string().trim().min(1).max(200).optional(),
+    workCategory: z.enum(['emergency', 'connection', 'service']).optional(),
+    receivedAt: z.number().int().nonnegative().optional(),
   })
   .strict()
   .refine((value) => value.windowEndAt >= value.windowStartAt, {
     message: 'windowEndAt must not be earlier than windowStartAt',
     path: ['windowEndAt'],
+  })
+  .refine((value) => importedWorkCategory(value) !== undefined, {
+    message: 'Для неизвестного типа заявки укажите workCategory: emergency, connection или service',
+    path: ['workCategory'],
   });
 const uploadEngineer = z
   .object({

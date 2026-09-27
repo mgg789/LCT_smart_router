@@ -56,6 +56,8 @@ GraphInput = RoadGraph | OSRMTravel | ImportedRoadOverlay | TravelSource
 
 def _regional_snapshots(snapshot: RouterTaskSnapshot) -> dict[str, RouterTaskSnapshot]:
     """Partition disconnected regional work; legacy rows remain in one default pool."""
+    if snapshot.manual_decisions:
+        return {"__manual__": snapshot}
     labels = sorted({item.region or "__default__" for item in [*snapshot.requests, *snapshot.engineers]})
     return {
         label: snapshot.model_copy(update={
@@ -270,7 +272,7 @@ def calculate(
         output = solve(snapshot, provider, settings, memory, context_version)
         effective_snapshot = output.memory.snapshot
         main_evidence = build_plan_evidence(effective_snapshot, output.main, provider)
-        baseline_evidence = build_plan_evidence(effective_snapshot, output.baseline, provider)
+        baseline_evidence = build_plan_evidence(apply_system_policy(snapshot, settings) if snapshot.manual_decisions else effective_snapshot, output.baseline, provider)
     except Exception as exc:
         return RouterResult(
             status="error",
@@ -776,6 +778,24 @@ class RouterRuntime:
             if version != self.context_version:
                 raise ValueError("CONTEXT_CHANGED")
         return result
+
+    def propose_logistics(self, snapshot, request_id: str, receiver_engineer_id: str, routes: dict, depots: list[dict], allow_office_pickup: bool = False, expected_context_version: str | None = None) -> dict:
+        """Search frozen route gaps for a one-sided equipment action without publication."""
+        from core.logistics_proposal import propose_logistics
+
+        with self._lock:
+            settings = copy.deepcopy(self.settings)
+            version = self.context_version
+        if not settings.equipment_transfers_enabled:
+            raise ValueError("EQUIPMENT_TRANSFERS_DISABLED")
+        if expected_context_version is not None and expected_context_version != version:
+            raise ValueError("CONTEXT_CHANGED")
+        task = apply_system_policy(snapshot, settings)
+        result = propose_logistics(task, planning_travel(self._graph, settings, task), request_id, receiver_engineer_id, routes, depots, allow_office_pickup=allow_office_pickup)
+        with self._lock:
+            if version != self.context_version:
+                raise ValueError("CONTEXT_CHANGED")
+        return {**result, "router_context_version": version}
 
     def compare_policies(self, search_budget_ms: int | None = None) -> PolicyComparison:
         """Coalesce table/map catalog requests without locking the active worker."""

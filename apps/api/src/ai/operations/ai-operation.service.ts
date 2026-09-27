@@ -19,6 +19,7 @@ import {
 import { PrismaService, UnitOfWork } from '../../persistence';
 import { SnapshotPublisher } from '../../routing/mount-data-eng';
 import { PlanRestoreService, RouterClient } from '../../routing/router-gateway';
+import { ManualDecisionsService } from '../../routing/router-gateway/manual-decisions.service';
 import type { AiPreviewRow } from '../runtime/ai-event.types';
 import { type AiRunEventInput, RunEventBus } from '../runtime/run-event.bus';
 import { RunRegistry } from '../runtime/run-registry';
@@ -105,6 +106,7 @@ export class AiOperationService {
     publisher: SnapshotPublisher,
     restore: PlanRestoreService,
     router: RouterClient,
+    manualDecisions: ManualDecisionsService,
   ) {
     this.catalog = buildAiActionCatalog({
       requests,
@@ -116,6 +118,7 @@ export class AiOperationService {
       prisma,
       restore,
       router,
+      manualDecisions,
       timeZone: config.get('APP_TIME_ZONE'),
     });
   }
@@ -212,7 +215,11 @@ export class AiOperationService {
     // Dispatcher fix mode and the engineer assistant perform the write inside this
     // call. The model does not get a result until System one has checked it, and,
     // when that check refuses, until the person has answered the modal.
-    if (profile !== 'dispatcher_fix' && profile !== 'engineer') {
+    if (
+      profile !== 'dispatcher_fix' &&
+      profile !== 'engineer' &&
+      !(profile === 'dispatcher_readonly' && input.action === 'policy.personal.save')
+    ) {
       await this.emitPrepared(input, id, 'awaiting_confirmation', preview, expiresAt);
       return { operationId: id, state: 'awaiting_confirmation', preview, expiresAt };
     }

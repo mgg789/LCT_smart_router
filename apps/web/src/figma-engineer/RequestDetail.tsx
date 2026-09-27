@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import type { ReactNode } from 'react';
 import { RequestPassport } from '../components/passports/PassportDetails';
+import { WorkTypeLabel } from '../components/WorkTypeLabel';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { skillLabel } from '../lib/reasons';
 import { ENGINEER_ASSETS } from './assets';
@@ -105,7 +106,9 @@ export function RequestDetail({
           </Chip>
         </div>
         <Chip>{item.request.addressText}</Chip>
-        <Chip>{service}</Chip>
+        <Chip>
+          <WorkTypeLabel category={item.request.workCategory}>{service}</WorkTypeLabel>
+        </Chip>
         {equipment ? <Chip>{equipment}</Chip> : null}
       </div>
 
@@ -134,7 +137,7 @@ export function RequestDetail({
   );
 }
 
-function Chip({ children, align = 'start' }: { children: string; align?: 'start' | 'center' }) {
+function Chip({ children, align = 'start' }: { children: ReactNode; align?: 'start' | 'center' }) {
   return (
     <div
       className={`flex min-w-0 flex-1 items-center overflow-hidden border border-figma-ink/10 bg-white shadow-[0_8px_20px_rgba(39,41,48,0.05)] ${

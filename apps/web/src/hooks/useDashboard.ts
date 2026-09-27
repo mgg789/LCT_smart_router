@@ -15,7 +15,6 @@ import {
   loadPolicyComparison,
   loginDispatcher,
   markDispatchNoticeSeen,
-  reassignDispatchRequest,
   requestDispatcherLoginCode,
   resolveDispatchAlert,
   restartDemoStand,
@@ -24,15 +23,18 @@ import {
   setDispatchMode,
   setEngineerAttendanceOptOut,
   setEngineerAvailability,
+  setOrdinaryReplanning,
   signOutDispatcher,
   simulateChange,
   simulationWorsens,
   unlinkEngineerAccount,
+  updateDispatchEngineerProfile,
   updateRouterTechnicalSettings,
   uploadDataPackage,
   verifyDispatcherLoginCode,
 } from '../api/client';
 import { type DispatchLiveView, loadDispatchLive, startLiveWorkday } from '../api/live';
+import { loadManualState, saveManualDecision } from '../api/manual';
 import type {
   AlertResolutionInput,
   CreateDispatchEngineerInput,
@@ -134,6 +136,7 @@ export function useDashboard() {
   const [loading, setLoading] = useState(token !== null);
   const [error, setError] = useState<string | null>(null);
   const [focus, setFocus] = useState<DashboardFocus>({ engineerId: null, requestId: null });
+  const [savingReplanning, setSavingReplanning] = useState(false);
   const [rebuilding, setRebuilding] = useState(false);
   const [availabilityPendingId, setAvailabilityPendingId] = useState<string | null>(null);
   const [uploadingData, setUploadingData] = useState(false);
@@ -590,7 +593,12 @@ export function useDashboard() {
   );
 
   const rebuild = useCallback(
-    async (nextPolicy: PolicyId, nextSettings: RouterTechnicalSettings, reason: string) => {
+    async (
+      nextPolicy: PolicyId,
+      nextSettings: RouterTechnicalSettings,
+      reason: string,
+      selectPolicy = false,
+    ) => {
       if (
         !token ||
         sourceRef.current !== 'live' ||
@@ -613,10 +621,6 @@ export function useDashboard() {
       setError(null);
       pushEvent(`${reason}. Router пересчитывает план…`);
       try {
-        if (previous.plan.mode === 'manual') {
-          await setDispatchMode(token, 'auto');
-          pushEvent('Для перестроения включён авторежим — иначе Router не применит новый план.');
-        }
         if (previous.routerSettings && !sameRouterSettings(previous.routerSettings, nextSettings)) {
           const updated = await updateRouterTechnicalSettings(token, {
             ...nextSettings,
@@ -625,10 +629,13 @@ export function useDashboard() {
           expectedContextVersion = updated.routerContextVersion;
         }
         if (generation !== readGeneration.current) return false;
-        if (nextPolicy !== previous.policyId) {
+        if (nextPolicy !== previous.policyId || selectPolicy) {
           try {
-            const preview = await simulateChange(token, { policyId: nextPolicy });
-            if (simulationWorsens(preview.delta)) {
+            const preview =
+              nextPolicy === 'personal'
+                ? null
+                : await simulateChange(token, { policyId: nextPolicy });
+            if (preview && simulationWorsens(preview.delta)) {
               const accepted = await new Promise<boolean>((resolve) => {
                 worseningResolve.current = resolve;
                 setWorseningText(preview.text);
@@ -699,7 +706,7 @@ export function useDashboard() {
   );
 
   const applyRoutingSettings = useCallback(
-    (policyId: PolicyId, nextSettings: RouterTechnicalSettings) => {
+    (policyId: PolicyId, nextSettings: RouterTechnicalSettings, selectPolicy = false) => {
       if (!snapshot) {
         return;
       }
@@ -730,16 +737,35 @@ export function useDashboard() {
           ? 'режим оборудования обновлён'
           : null,
       ].filter((item): item is string => item !== null);
-      if (changes.length > 0 || !sameRouterSettings(current, nextSettings)) {
+      if (selectPolicy || changes.length > 0 || !sameRouterSettings(current, nextSettings)) {
         void rebuild(
           policyId,
           nextSettings,
           changes.join(', ') || 'технические настройки обновлены',
+          selectPolicy,
         );
       }
     },
     [rebuild, snapshot],
   );
+
+  const toggleOrdinaryReplanning = useCallback(async () => {
+    if (!token || source !== 'live' || !snapshot || savingReplanning) return;
+    setSavingReplanning(true);
+    try {
+      const result = await setOrdinaryReplanning(token, !snapshot.ordinaryReplanningDisabled);
+      pushEvent(
+        result.ordinaryReplanningDisabled
+          ? 'Обычные новые заявки остаются в алертах без перестройки.'
+          : 'Автоперестройка по обычным заявкам включена.',
+      );
+      await refresh();
+    } catch (cause) {
+      setError(errorMessage(cause));
+    } finally {
+      setSavingReplanning(false);
+    }
+  }, [token, source, snapshot, savingReplanning, pushEvent, refresh]);
 
   const acceptDelta = useCallback(() => {
     setPendingDelta(null);
@@ -810,7 +836,7 @@ export function useDashboard() {
   }, [token, planHistory, refresh, pushEvent, reportFailure]);
 
   const setMode = useCallback(
-    async (mode: 'auto' | 'manual') => {
+    async (mode: 'auto' | 'manual', reason?: string) => {
       if (!token || sourceRef.current !== 'live') {
         return;
       }
@@ -818,7 +844,7 @@ export function useDashboard() {
       const generation = readGeneration.current;
       setError(null);
       try {
-        await setDispatchMode(token, mode);
+        await setDispatchMode(token, mode, reason);
         if (generation !== readGeneration.current) return;
         await refresh();
         pushEvent(
@@ -1056,6 +1082,19 @@ export function useDashboard() {
     ],
   );
 
+  const updateEngineerProfile = useCallback(
+    (
+      engineerId: string,
+      patch: { region?: string; transportType?: 'car' | 'walk' | 'bike' | 'transit' },
+    ) =>
+      performEntityMutation(async (session) => {
+        const engineer = snapshotRef.current?.engineers.find((item) => item.id === engineerId);
+        if (!engineer) throw new Error('Инженер не найден. Обновите список.');
+        await updateDispatchEngineerProfile(session, engineerId, engineer.version, patch);
+      }, 'Профиль инженера обновлён.'),
+    [performEntityMutation],
+  );
+
   const createRequest = useCallback(
     (input: CreateDispatchRequestInput) =>
       performEntityMutation(async (session) => {
@@ -1084,8 +1123,12 @@ export function useDashboard() {
       const engineer = snapshotRef.current?.engineers.find((item) => item.id === engineerId);
       return performEntityMutation(
         async (session) => {
-          await setDispatchMode(session, 'manual');
-          await reassignDispatchRequest(session, requestId, engineerId);
+          const manual = await loadManualState(session);
+          await saveManualDecision(session, manual.version, {
+            kind: 'assignment',
+            targetId: requestId,
+            engineerId,
+          });
         },
         `Заявка назначена инженеру ${engineer?.displayName ?? engineerId}.`,
       );
@@ -1141,7 +1184,9 @@ export function useDashboard() {
     (id: string, input: AlertResolutionInput) =>
       performAlertOperation(
         (session) => resolveDispatchAlert(session, id, input),
-        input.action === 'move_window' || input.action === 'restore_auto'
+        input.action === 'move_window' ||
+          input.action === 'restore_auto' ||
+          input.action === 'prioritize'
           ? undefined
           : () => {
               const current = snapshotRef.current;
@@ -1403,12 +1448,15 @@ export function useDashboard() {
     selectRequest,
     selectUnassignedOffset,
     applyRoutingSettings,
+    toggleOrdinaryReplanning,
+    savingReplanning,
     acceptDelta,
     rejectDelta,
     setMode,
     refreshPolicyComparison,
     updateEngineerAvailability,
     saveEngineerLogin,
+    updateEngineerProfile,
     unlinkEngineerLogin,
     createRequest,
     cancelRequest,

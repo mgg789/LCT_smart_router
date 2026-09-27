@@ -70,3 +70,22 @@ describe('case-explanation golden fixture (server side)', () => {
     assert.ok(fixture.cases.some((item) => item.name === 'unassigned'));
   });
 });
+
+it('explains a verified offline blocker even without solver reason codes', () => {
+  const fixture = loadFixture();
+  const request = fixture.snapshot.requests[0];
+  assert.ok(request);
+  const snapshot: ExplainSnapshot = {
+    ...fixture.snapshot,
+    engineers: fixture.snapshot.engineers.map((engineer) => ({
+      ...engineer,
+      region: request.region,
+      skills: [request.requiredSkill],
+      day: { availability: 'offline' },
+    })),
+  };
+  const explanation = explainSelection(snapshot, request, null, null, null);
+  assert.ok(explanation);
+  assert.match(explanation.influence, /недоступны для назначения/);
+  assert.doesNotMatch(explanation.influence, /неизвест|только проверкой/);
+});

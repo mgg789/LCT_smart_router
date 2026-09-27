@@ -7,6 +7,7 @@ import { formatDurationMin } from '../lib/time';
 import { useArtboardStretch } from './artboardStretch';
 import { Copyable } from './Copyable';
 import { requestUrgency } from './fromSnapshot';
+import { ManualRequestControls } from './ManualPlanning';
 import { FigmaText } from './primitives';
 import { requestEquipmentLabel } from './requestDetail';
 import { shortRequestId } from './requestsTable';
@@ -101,7 +102,11 @@ export function RequestDetails({
         {mode === 'request' && request ? (
           <div className="pr-[52px]">
             <FigmaText className="font-murs text-[32px] leading-[36px] tracking-[-0.544px] text-white">
-              {request.workTypeTitle || 'Заявка'}
+              <span
+                className={request.workCategory === 'emergency' ? 'text-figma-danger' : undefined}
+              >
+                {request.workTypeTitle || 'Заявка'}
+              </span>
             </FigmaText>
             <Copyable
               value={shortRequestId(request.id)}
@@ -147,6 +152,7 @@ export function RequestDetails({
         ) : (
           <div className="h-[36px]" />
         )}
+        {mode === 'request' && request ? <ManualRequestControls requestId={request.id} /> : null}
         {mode === 'request' ? (
           <RequestReasons
             aiOn={aiOn}

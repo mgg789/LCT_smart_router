@@ -77,7 +77,7 @@ const TOOL_CATALOGUE: ReadonlyArray<{ name: string; description: string }> = [
   {
     name: 'set_control_mode',
     description:
-      'manual замораживает автоплан, auto возвращает его решателю. Сначала review_action',
+      'Manual сохраняет LIVE с ручными приоритетами; Auto сбрасывает их. Для Manual нужна причина. Сначала review_action',
   },
   {
     name: 'simulate_plan_change',

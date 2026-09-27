@@ -1,3 +1,4 @@
+import type { WorkCategory, WorkTypeView } from '@lct/shared';
 import type { Priority, Skill } from '../../generated/prisma/client';
 
 /**
@@ -35,6 +36,7 @@ export interface WorkTypeSpec {
   /** On-site occupancy only: technical plus documentation time, never road time. */
   readonly serviceDurationSec: number;
   readonly priority: Priority;
+  readonly category: WorkCategory;
 }
 
 const MINUTES = 60;
@@ -42,6 +44,7 @@ const MINUTES = 60;
 export type WorkNormProfileCode =
   | 'connection_base'
   | 'outage_tkd'
+  | 'network_emergency'
   | 'equipment_order'
   | 'local_repair';
 
@@ -62,6 +65,7 @@ export interface WorkNormProfile {
  */
 export const WORK_NORM_PROFILES: Readonly<Record<WorkNormProfileCode, WorkNormProfile>> = {
   connection_base: createNormProfile('connection_base', 20, 60, 10),
+  network_emergency: createNormProfile('network_emergency', 20, 100, 0),
   outage_tkd: createNormProfile('outage_tkd', 20, 80, 0),
   equipment_order: createNormProfile('equipment_order', 20, 10, 10),
   local_repair: createNormProfile('local_repair', 20, 30, 0),
@@ -87,14 +91,14 @@ const OUTAGE_TKD = WORK_NORM_PROFILES.outage_tkd;
 const EQUIPMENT_ORDER = WORK_NORM_PROFILES.equipment_order;
 const LOCAL_REPAIR = WORK_NORM_PROFILES.local_repair;
 
-export const WORK_TYPES: readonly WorkTypeSpec[] = [
-  // Emergency work: a service already in use has failed.
+const CATALOGUE = [
+  // Network emergency has its own 100-minute norm; individual faults retain theirs.
   {
     code: 'outage',
     title: 'Авария',
     aliases: ['Авария'],
     skill: 'emergency',
-    ...OUTAGE_TKD,
+    ...WORK_NORM_PROFILES.network_emergency,
     priority: 'urgent',
   },
   {
@@ -227,6 +231,36 @@ export const WORK_TYPES: readonly WorkTypeSpec[] = [
   },
 ] as const;
 
+/** Classify business purpose rather than the engineer qualification or equipment need. */
+export const WORK_TYPES: readonly WorkTypeSpec[] = CATALOGUE.map((type) => ({
+  ...type,
+  category:
+    type.code === 'outage'
+      ? 'emergency'
+      : ['connection_request', 'convergence', 'gigabit_switch'].includes(type.code)
+        ? 'connection'
+        : 'service',
+}));
+
+/** Stable Russian group labels for every surface consuming the catalogue. */
+export const WORK_CATEGORY_TITLES: Readonly<Record<WorkCategory, string>> = {
+  emergency: 'Авария',
+  connection: 'Подключение',
+  service: 'Ремонт / Дозаказ',
+};
+
+/** Public, non-sensitive metadata; forms never duplicate norms or infer skills. */
+export function workTypeCatalogue(): WorkTypeView[] {
+  return WORK_TYPES.map((type) => ({
+    code: type.code,
+    title: type.title,
+    category: type.category,
+    categoryTitle: WORK_CATEGORY_TITLES[type.category],
+    serviceDurationSec: type.serviceDurationSec,
+    requiredSkill: type.skill,
+  }));
+}
+
 const BY_CODE = new Map(WORK_TYPES.map((type) => [type.code, type]));
 
 const BY_TITLE = new Map<string, WorkTypeSpec>();
@@ -250,6 +284,35 @@ export function findWorkType(code: string): WorkTypeSpec | undefined {
  */
 export function findWorkTypeByTitle(title: string): WorkTypeSpec | undefined {
   return BY_TITLE.get(normalizeTitle(title));
+}
+
+/** Human-facing title, including legacy imported norm codes; routing codes stay unchanged. */
+export function workTypeDisplayTitle(value: string | null): string | null {
+  if (!value) return null;
+  const known = findWorkType(value) ?? findWorkTypeByTitle(value);
+  if (known) return known.title;
+  const legacy: Readonly<Record<string, string>> = {
+    local_repair: 'Локальный ремонт',
+    connection_base: 'Подключение',
+    network_emergency: 'Авария',
+    outage_tkd: 'Устранение неисправности',
+    equipment_order: 'Дозаказ оборудования',
+  };
+  return legacy[value] ?? (/^[a-z][a-z0-9_-]*$/i.test(value) ? 'Другой тип работ' : value);
+}
+
+/** Unknown named imports need an explicit business tier, never a skill-based guess. */
+export function importedWorkCategory(input: {
+  workType?: string;
+  workCategory?: WorkCategory;
+  priority: 'normal' | 'urgent';
+}): WorkCategory | undefined {
+  const known = findWorkType(input.workType ?? '') ?? findWorkTypeByTitle(input.workType ?? '');
+  return (
+    known?.category ??
+    input.workCategory ??
+    (input.workType ? undefined : input.priority === 'urgent' ? 'emergency' : 'service')
+  );
 }
 
 /**

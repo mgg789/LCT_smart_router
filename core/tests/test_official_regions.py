@@ -53,6 +53,8 @@ NORMATIVE_SERVICE_SEC = {
         1800,
     ),
 }
+NORMATIVE_SERVICE_SEC["Авария"] = 6000
+
 
 
 def _plan_hash(plan) -> str:

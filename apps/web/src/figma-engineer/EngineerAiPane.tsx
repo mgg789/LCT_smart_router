@@ -8,7 +8,11 @@ import {
   useRef,
   useState,
 } from 'react';
+import { AiUnavailablePanel } from '../components/ai/AiUnavailablePanel';
+import { ChatBottomSpacer } from '../components/ai/ChatBottomSpacer';
+import { ChatMessage } from '../components/ai/ChatMessage';
 import { fitComposerField, focusComposer } from '../components/ai/composerField';
+import { HandoffBanner } from '../components/ai/HandoffBanner';
 import { AiMarkdown } from '../figma-dashboard/AiMarkdown';
 import { FIGMA_ASSETS } from '../figma-dashboard/assets';
 import { thoughtLabel } from '../figma-dashboard/DispatcherAiPane';
@@ -44,11 +48,25 @@ export function engineerGreeting(displayName: string | null | undefined): string
 export function EngineerAiPane({
   token,
   displayName,
+  surface = 'engineer',
+  avatarSrc = '/figma/mascot-engineer-blue.png',
+  quickQuestions = ENGINEER_QUICK_QUESTIONS,
+  onOperationApplied,
+  onOpenObject,
+  sessionScope,
+  onSessionExpired,
 }: {
   token: string | null;
   displayName: string | null;
+  surface?: 'engineer' | 'client';
+  sessionScope?: string;
+  onSessionExpired?: () => void;
+  avatarSrc?: string;
+  quickQuestions?: readonly string[];
+  onOperationApplied?: () => void;
+  onOpenObject?: (target: { type: 'request' | 'engineer' | 'alert'; id: string }) => void;
 }) {
-  const chat = useAssistantChat({ token, surface: 'engineer' });
+  const chat = useAssistantChat({ token, surface, sessionScope });
   const [draft, setDraft] = useState('');
   const [thoughtFor, setThoughtFor] = useState<Readonly<Record<string, number>>>({});
   const [copied, setCopied] = useState<string | null>(null);
@@ -56,10 +74,23 @@ export function EngineerAiPane({
   const scrollRef = useRef<HTMLDivElement>(null);
   const fieldRef = useRef<HTMLTextAreaElement>(null);
 
+  useEffect(() => {
+    if (chat.unavailable === 'auth') onSessionExpired?.();
+  }, [chat.unavailable, onSessionExpired]);
+  const appliedSeen = useRef(new Set<string>());
+  useEffect(() => {
+    for (const operation of chat.operations.values()) {
+      if (operation.state === 'applied' && !appliedSeen.current.has(operation.operationId)) {
+        appliedSeen.current.add(operation.operationId);
+        onOperationApplied?.();
+      }
+    }
+  }, [chat.operations, onOperationApplied]);
+
   const running = chat.runState === 'running' || chat.sending;
   const spoken = chat.messages.filter((message) => {
     if (message.author === 'user') return true;
-    if (message.author !== 'assistant') return false;
+    if (message.author !== 'assistant') return message.text.trim().length > 0;
     return message.text.trim().length > 0 || message.actions.length > 0;
   });
   const empty = !chat.loading && spoken.length === 0;
@@ -223,11 +254,23 @@ export function EngineerAiPane({
   return (
     <LayoutGroup>
       <div className="relative flex h-full min-h-0 flex-col">
+        <div className="shrink-0 text-sm" role="status">
+          <HandoffBanner status={chat.handoffStatus} />
+          {chat.error ? (
+            <p role="alert" className="text-figma-cancel">
+              {chat.error}
+            </p>
+          ) : null}
+          {chat.unavailable ? (
+            <AiUnavailablePanel reason={chat.unavailable} quotaResetAt={chat.quota?.resetAt} />
+          ) : null}
+        </div>
+
         {empty ? (
           <div className="flex flex-1 flex-col items-center justify-center" style={{ gap: eu(28) }}>
             <img
               alt=""
-              src={FIGMA_ASSETS.aiKolobok}
+              src={avatarSrc}
               width={200}
               height={200}
               className="rounded-full object-cover"
@@ -240,14 +283,14 @@ export function EngineerAiPane({
               {engineerGreeting(displayName)}
             </h1>
             <motion.div
-              layoutId="engineer-ai-composer"
+              layoutId={`${surface}-ai-composer`}
               className="w-full"
               style={{ maxWidth: '100%' }}
             >
               {composer}
             </motion.div>
             <div className="flex max-w-full flex-wrap justify-center" style={{ gap: eu(12) }}>
-              {ENGINEER_QUICK_QUESTIONS.map((question) => (
+              {quickQuestions.map((question) => (
                 <QuickQuestion
                   key={question}
                   question={question}
@@ -273,8 +316,19 @@ export function EngineerAiPane({
                       copied={copied === message.id}
                       onCopy={() => void copy(message.id, message.text)}
                     />
+                  ) : message.kind !== 'text' || message.author !== 'assistant' ? (
+                    <ChatMessage
+                      key={message.id}
+                      message={message}
+                      operations={chat.operations}
+                      disabled={chat.sending}
+                      onApplyOperation={(id) => void chat.applyOperation(id)}
+                      onCancelOperation={(id) => void chat.cancelOperation(id)}
+                      onOpenObject={onOpenObject}
+                    />
                   ) : (
                     <AssistantBubble
+                      avatarSrc={avatarSrc}
                       key={message.id}
                       message={message}
                       thoughtSeconds={thoughtFor[message.id] ?? null}
@@ -290,7 +344,8 @@ export function EngineerAiPane({
                     />
                   ),
                 )}
-                {thinking ? <ThinkingRow /> : null}
+                {thinking ? <ThinkingRow avatarSrc={avatarSrc} /> : null}
+                <ChatBottomSpacer />
               </div>
             </div>
             <div
@@ -298,7 +353,7 @@ export function EngineerAiPane({
               style={{ paddingBottom: eu(24), paddingTop: eu(48) }}
             >
               <motion.div
-                layoutId="engineer-ai-composer"
+                layoutId={`${surface}-ai-composer`}
                 className="pointer-events-auto w-full"
                 style={{ maxWidth: '100%' }}
                 transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
@@ -308,7 +363,7 @@ export function EngineerAiPane({
             </div>
           </>
         )}
-        {risky ? (
+        {risky && surface === 'engineer' ? (
           <GuardModal
             operation={risky}
             onAllow={() => void chat.applyOperation(risky.operationId)}
@@ -437,6 +492,7 @@ function GuardModal({
 }
 
 function AssistantBubble({
+  avatarSrc,
   message,
   thoughtSeconds,
   copied,
@@ -444,6 +500,7 @@ function AssistantBubble({
   onAgain,
   onFollowUp,
 }: {
+  avatarSrc: string;
   message: AssistantChatMessage;
   thoughtSeconds: number | null;
   copied: boolean;
@@ -456,7 +513,7 @@ function AssistantBubble({
       <div className="flex items-center" style={{ gap: eu(16) }}>
         <img
           alt=""
-          src={FIGMA_ASSETS.aiKolobok}
+          src={avatarSrc}
           width={74}
           height={74}
           className="shrink-0 rounded-full object-cover"
@@ -499,13 +556,13 @@ function AssistantBubble({
   );
 }
 
-function ThinkingRow() {
+function ThinkingRow({ avatarSrc }: { avatarSrc: string }) {
   const reduceMotion = useReducedMotion();
   return (
     <div className="flex items-center" style={{ gap: eu(16) }} aria-live="polite">
       <motion.img
         alt=""
-        src={FIGMA_ASSETS.aiKolobok}
+        src={avatarSrc}
         width={74}
         height={74}
         className="shrink-0 rounded-full object-cover"

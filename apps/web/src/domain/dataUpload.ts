@@ -22,6 +22,8 @@ const uploadRequestSchema = coordinateSchema
     requiredTransport: z.enum(['car', 'walk', 'bike', 'transit']).optional(),
     requiredEquipment: z.enum(['router', 'set_top_box', 'smart_speaker']).optional(),
     workType: z.string().min(1).max(200).optional(),
+    workCategory: z.enum(['emergency', 'connection', 'service']).optional(),
+    receivedAt: z.number().int().nonnegative().optional(),
   })
   .strict()
   .refine((value) => value.windowEndAt >= value.windowStartAt, {

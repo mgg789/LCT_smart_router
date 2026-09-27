@@ -82,6 +82,7 @@ describe('Figma MAIN snapshot mapper', () => {
       routerSettings: {
         ...nextRouterSettings(createDevSnapshot(), {}),
         metroEnabled: true,
+        strictTimeWindows: true,
       },
     };
     const next = nextRouterSettings(snapshot, { lunchesEnabled: true, trafficEnabled: true });
@@ -90,6 +91,7 @@ describe('Figma MAIN snapshot mapper', () => {
     expect(next.routerContextVersion).toBe(snapshot.routerContextVersion);
     expect(next.accessBufferSec).toBe(600);
     expect(next.metroEnabled).toBe(true);
+    expect(next.strictTimeWindows).toBe(true);
   });
 
   it('preserves the future equipment transfer flag during unrelated setting edits', () => {

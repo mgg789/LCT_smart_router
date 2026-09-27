@@ -29,6 +29,7 @@ import { EngineerAiPane } from './EngineerAiPane';
 import { EngineerDayResults } from './EngineerDayResults';
 import { EngineerMenu, type EngineerMenuId } from './EngineerMenu';
 import { EngineerSettings } from './EngineerSettings';
+import { EquipmentLogisticsStatus } from './EquipmentLogisticsStatus';
 import { engineerHeaderStamp } from './engineerClock';
 import type { EngineerJobItem } from './engineerDay';
 import { engineerListItems, engineerLunchWindow, missingRequestIds } from './engineerDay';
@@ -92,6 +93,8 @@ export function EngineerApp({
   const requestGeneration = useRef(0);
   const liveReceivedAt = useRef(Date.now());
   const [actionBusy, setActionBusy] = useState(false);
+  const [equipmentSearching, setEquipmentSearching] = useState(false);
+  const [equipmentRequestId, setEquipmentRequestId] = useState<string | null>(null);
   const acceptLive = useCallback((value: EngineerLiveView, receivedAt = Date.now()) => {
     liveReceivedAt.current = receivedAt;
     setLive(value);
@@ -233,11 +236,18 @@ export function EngineerApp({
 
   const items = useMemo(
     () =>
-      engineerListItems(plan, live ? null : day, lunch, live?.handoffs ?? [], live?.engineer.id)
+      engineerListItems(
+        plan,
+        live ? null : day,
+        lunch,
+        live?.handoffs ?? [],
+        live?.engineer.id,
+        live?.logistics ?? [],
+      )
         .filter((item) =>
           item.kind === 'lunch'
             ? !live || item.endAt > logicalNow
-            : item.kind === 'handoff'
+            : item.kind === 'handoff' || item.kind === 'logistics'
               ? true
               : item.request.lifecycle !== 'completed' &&
                 item.request.lifecycle !== 'cancelled' &&
@@ -262,13 +272,26 @@ export function EngineerApp({
     liveActionPending.current = true;
     requestGeneration.current += 1;
     setActionBusy(true);
+    if (action.kind === 'problem' && action.problemKind === 'missing_equipment') {
+      setEquipmentRequestId(action.requestId);
+      setEquipmentSearching(true);
+    }
     try {
       const next = await sendEngineerLiveAction(token, action);
       window.dispatchEvent(new Event('engineer-rewards-changed'));
       const receivedAt = Date.now();
       setError(null);
       const terminalId =
-        action.kind === 'finish' || (action.kind === 'problem' && action.problemKind !== 'delay')
+        action.kind === 'finish' ||
+        (action.kind === 'problem' &&
+          action.problemKind !== 'delay' &&
+          (action.problemKind !== 'missing_equipment' ||
+            (next.current?.request.id !== action.requestId &&
+              !(next.logistics ?? []).some(
+                (entry) =>
+                  entry.requestId === action.requestId &&
+                  ['searching', 'assigned', 'error'].includes(entry.state),
+              ))))
           ? action.requestId
           : null;
       try {
@@ -316,6 +339,7 @@ export function EngineerApp({
     } finally {
       liveActionPending.current = false;
       setActionBusy(false);
+      setEquipmentSearching(false);
     }
   };
 
@@ -622,7 +646,9 @@ export function EngineerApp({
                       ? `lunch-${item.startAt}`
                       : item.kind === 'handoff'
                         ? `handoff-${item.handoff.id}`
-                        : item.request.id
+                        : item.kind === 'logistics'
+                          ? `logistics-${item.logistics.id}`
+                          : item.request.id
                   }
                 >
                   <EngineerListCard
@@ -630,6 +656,21 @@ export function EngineerApp({
                     motionOn={motionOn}
                     delay={index * 0.04}
                     actions={live && item.kind === 'job' ? controls(item.request.id) : undefined}
+                    logisticsAction={
+                      live &&
+                      !actionBusy &&
+                      item.kind === 'logistics' &&
+                      item.logistics.action?.enabled
+                        ? () => {
+                            const action = item.logistics.action;
+                            if (action)
+                              void applyLiveAction({
+                                kind: action.kind,
+                                logisticsId: item.logistics.id,
+                              });
+                          }
+                        : undefined
+                    }
                     handoffAction={
                       live && item.kind === 'handoff'
                         ? () =>
@@ -709,6 +750,14 @@ export function EngineerApp({
           send={applyLiveAction}
           token={designPreview ? null : token}
           equipment={day?.equipmentStock ?? null}
+        />
+      ) : null}
+      {live ? (
+        <EquipmentLogisticsStatus
+          live={live}
+          now={logicalNow}
+          searching={equipmentSearching}
+          requestId={equipmentRequestId ?? live.current?.request.id ?? null}
         />
       ) : null}
       {live && !designPreview ? <EngineerDayResults token={token} live={live} /> : null}

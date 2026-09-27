@@ -91,7 +91,7 @@ def test_catalog_is_strict_and_versioned(snapshot):
             {**snapshot.model_dump(), "policy": {"policy_id": "covering", "parameters": {}}}
         ).policy
     )
-    assert covering.definition_version == "covering-3"
+    assert covering.definition_version == "covering-4"
     assert covering.search_stages[2] == "extra_assignments"
 
 
@@ -492,3 +492,22 @@ def test_covering_rebuild_keeps_unique_ids_and_discards_stale_capacity(snapshot,
     rebuilt = solve(changed, GraphTravel(graph), SETTINGS, memory=warm.memory)
     assert rebuilt.main.summary.assigned_count == 0
     assert not any(e.engineer_id.startswith("covering-") for e in rebuilt.memory.snapshot.engineers)
+
+
+def test_personal_order_has_real_tradeoff_and_keeps_mandatory_priority(snapshot, graph):
+    """Personal objective permutations alter actual plans, never the safety/coverage prefix."""
+    suffix = ["total_lateness", "distance", "window_start_delay", "window_end_risk", "max_workload_ratio", "workload_spread", "max_jobs_per_engineer"]
+    compact = Policy(policy_id="personal", parameters={"objective_order": ",".join(["engineers_used", "travel_time", *suffix])})
+    fast = Policy(policy_id="personal", parameters={"objective_order": ",".join(["travel_time", "engineers_used", *suffix])})
+    assert compile_policy(compact).ordered_criteria[:8] == compile_policy(Policy(policy_id="fast", parameters={})).ordered_criteria[:8]
+    assert compile_policy(compact).definition_version != compile_policy(fast).definition_version
+    task = _policy_scenario(snapshot, graph, "compact")
+    travel = GraphTravel(graph)
+    one = solve(task.model_copy(update={"policy": compact}), travel, SETTINGS).main
+    two = solve(task.model_copy(update={"policy": fast}), travel, SETTINGS).main
+    assert one.summary.assigned_count == two.summary.assigned_count == 2
+    assert one.summary.engineers_used == 1
+    assert two.summary.engineers_used == 2
+    assert two.summary.travel_time_sec < one.summary.travel_time_sec
+    with pytest.raises(ValueError):
+        Policy(policy_id="personal", parameters={"objective_order": "travel_time,travel_time"})

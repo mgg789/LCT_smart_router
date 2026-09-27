@@ -9,3 +9,7 @@ export const selectPolicySchema = z.object({
   policyId: z.string().min(1).max(64),
 });
 export type SelectPolicyDto = z.infer<typeof selectPolicySchema>;
+
+/** Persisted arrival behavior; true disables automatic routing of new ordinary work. */
+export const ordinaryReplanningSchema = z.object({ operationId: z.uuid(), disabled: z.boolean() });
+export type OrdinaryReplanningDto = z.infer<typeof ordinaryReplanningSchema>;

@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { useEffect, useRef } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { PolicyId } from '../api/types';
 import { useArtboardStretch } from './artboardStretch';
 import { FIGMA_ASSETS } from './assets';
@@ -11,6 +11,7 @@ import {
   type NotificationTone,
 } from './fixtures';
 import { policyLabel } from './fromSnapshot';
+import { openManualPlanning } from './ManualPlanning';
 import { FigmaIcon, FigmaText } from './primitives';
 import { TintIcon } from './TintIcon';
 
@@ -50,7 +51,7 @@ const NAV_ITEM_HEIGHT = 74;
 const NAV_ITEM_GAP = 10;
 const POLICY_LEFT = 1329;
 const POLICY_TOP = 10;
-const POLICY_OPEN_HEIGHT = 629;
+const POLICY_OPEN_HEIGHT = 695;
 const springQuick = { type: 'spring' as const, stiffness: 420, damping: 36, mass: 0.8 };
 /** Navigates dashboard sections while retaining the existing disabled-section policy. */
 export function SidebarNav({
@@ -197,6 +198,7 @@ export function NotificationControl({
 export function UserMenu({
   open,
   covered,
+  manualMode = false,
   hasPreviousPlan,
   motionOn,
   demoStand,
@@ -210,6 +212,7 @@ export function UserMenu({
 }: {
   open: boolean;
   covered: boolean;
+  manualMode?: boolean;
   hasPreviousPlan: boolean;
   motionOn: boolean;
   demoStand: boolean;
@@ -222,6 +225,7 @@ export function UserMenu({
   onSignOut: () => void;
 }) {
   const { dx } = useArtboardStretch();
+  const [arrowHovered, setArrowHovered] = useState(false);
   return (
     <div
       data-user-menu
@@ -246,8 +250,9 @@ export function UserMenu({
         </div>
         <motion.span
           className="flex size-[20px] items-center justify-center"
-          animate={{ rotate: open ? 180 : 0 }}
-          whileHover={motionOn && !open ? { rotate: 18 } : undefined}
+          onPointerEnter={() => setArrowHovered(true)}
+          onPointerLeave={() => setArrowHovered(false)}
+          animate={{ rotate: open ? 180 : motionOn && arrowHovered ? 18 : 0 }}
           transition={{ duration: 0.2 }}
         >
           <FigmaIcon src={FIGMA_ASSETS.chevronDown} alt="" width={20} height={20} />
@@ -267,6 +272,15 @@ export function UserMenu({
               <MenuAction motionOn={motionOn} tone="ink" onClick={onSettings}>
                 Настройки
               </MenuAction>
+              {manualMode ? (
+                <MenuAction
+                  motionOn={motionOn}
+                  tone="bee"
+                  onClick={() => openManualPlanning('priorities')}
+                >
+                  Приоритеты
+                </MenuAction>
+              ) : null}
               {hasPreviousPlan ? (
                 <MenuAction motionOn={motionOn} tone="bee" onClick={onOpenPreviousPlan}>
                   Прошлый план
@@ -294,6 +308,7 @@ export function UserMenu({
               <MenuAction motionOn={motionOn} tone="danger" onClick={onSignOut}>
                 Выйти
               </MenuAction>
+              <p className="text-center text-[12px] text-figma-muted">v1.8.7</p>
             </div>
           </motion.div>
         ) : null}
@@ -411,6 +426,9 @@ export function PolicyControl({
   metroOn,
   equipmentTransfersOn,
   strictTimeWindowsOn,
+  ordinaryReplanningDisabled,
+  replanningSaving,
+  onOrdinaryReplanningToggle,
   motionOn,
   onToggle,
   onSelect,
@@ -420,6 +438,10 @@ export function PolicyControl({
   onEquipmentTransfersToggle,
   onStrictTimeWindowsToggle,
   onManualMode,
+  manualMode = false,
+  personalConfigured = false,
+  personalTitle,
+  onEditPersonal,
 }: {
   open: boolean;
   policyLabel: string;
@@ -430,6 +452,9 @@ export function PolicyControl({
   metroOn: boolean;
   equipmentTransfersOn: boolean;
   strictTimeWindowsOn: boolean;
+  ordinaryReplanningDisabled: boolean;
+  replanningSaving: boolean;
+  onOrdinaryReplanningToggle: () => void;
   motionOn: boolean;
   onToggle: () => void;
   onSelect: (policy: PolicyId) => void;
@@ -439,14 +464,26 @@ export function PolicyControl({
   onEquipmentTransfersToggle: () => void;
   onStrictTimeWindowsToggle: () => void;
   onManualMode: () => void;
+  manualMode?: boolean;
+  personalConfigured?: boolean;
+  personalTitle?: string;
+  onEditPersonal?: () => void;
 }) {
-  const options =
+  const baseOptions =
     policies.length > 0
       ? policies
       : (['fast', 'compact', 'sla', 'balanced', 'eco', 'covering'] as const).map((id) => ({
           id,
           label: policyLabel(id),
         }));
+  const options: { id: PolicyId; label: string }[] = [
+    ...baseOptions.filter((option) => option.id !== 'personal'),
+    {
+      id: 'personal',
+      label: personalConfigured ? (personalTitle ?? 'Моя политика') : 'Задать свою',
+    },
+  ];
+  const personalIndex = options.length - 1;
   const extra = Math.max(0, options.length - 6) * 44;
   const { dx } = useArtboardStretch();
   return (
@@ -514,7 +551,7 @@ export function PolicyControl({
             key={option.id}
             type="button"
             onClick={() => onSelect(option.id)}
-            className="absolute left-0 h-[32px] w-full"
+            className={`absolute left-0 h-[32px] ${option.id === 'personal' && personalConfigured ? 'w-[310px]' : 'w-full'}`}
             style={{ top: 14 + index * 44 }}
             whileHover={motionOn ? { x: 4 } : undefined}
             transition={{ duration: 0.16 }}
@@ -526,55 +563,94 @@ export function PolicyControl({
               height={24}
               className="absolute left-[16px] top-0"
             />
-            <FigmaText className="figma-nowrap absolute left-[50px] top-[4px] font-medium text-[20px] text-figma-ink">
+            <FigmaText
+              className={`figma-nowrap figma-text-uncropped absolute left-[50px] right-[8px] -top-[4px] overflow-hidden text-ellipsis text-left font-medium text-[20px] ${option.id === 'personal' ? 'client-ai-fill client-ai-text' : 'text-figma-ink'}`}
+            >
               {option.label}
             </FigmaText>
           </motion.button>
         ))}
+        {personalConfigured && onEditPersonal ? (
+          <button
+            type="button"
+            onClick={onEditPersonal}
+            aria-label="Изменить личную политику"
+            className="absolute right-[18px] flex size-[32px] items-center justify-center"
+            style={{ top: 12 + personalIndex * 44 }}
+          >
+            <span
+              aria-hidden
+              className="client-ai-fill block size-[24px]"
+              style={{
+                maskImage: `url(${FIGMA_ASSETS.engEdit})`,
+                maskSize: 'contain',
+                maskRepeat: 'no-repeat',
+                maskPosition: 'center',
+              }}
+            />
+          </button>
+        ) : null}
         <PolicySwitch
           on={lunchOn}
           label="Рассчитать обеды"
-          top={274 + extra}
+          description="Включено: маршрут учитывает обеденные перерывы инженеров. Выключено: автоматический обед в план не добавляется."
+          top={283 + extra}
           motionOn={motionOn}
           onToggle={onLunchToggle}
         />
         <PolicySwitch
           on={trafficOn}
           label="Прогнозировать пробки"
-          top={318 + extra}
+          description="Включено: время дороги учитывает прогноз пробок на момент поездки. Выключено: план рассчитывается без прогнозного изменения трафика."
+          top={327 + extra}
           motionOn={motionOn}
           onToggle={onTrafficToggle}
         />
         <PolicySwitch
           on={metroOn}
           label="Маршруты с метро"
-          top={362 + extra}
+          description="Разрешает учитывать метро при расчёте подходящих пеших маршрутов. Без этого используются наземные варианты."
+          top={371 + extra}
           motionOn={motionOn}
           onToggle={onMetroToggle}
         />
         <PolicySwitch
           on={equipmentTransfersOn}
           label="Передача оборудования"
-          top={406 + extra}
+          description="Разрешает планировать встречи инженеров для передачи оборудования, если это помогает выполнить заявки."
+          top={415 + extra}
           motionOn={motionOn}
           onToggle={onEquipmentTransfersToggle}
         />
         <PolicySwitch
           on={strictTimeWindowsOn}
-          label="Строгие окна ТЗ"
-          description="Без допуска к окну, последней заявке и концу смены"
-          top={450 + extra}
+          label="Строгое время"
+          description="Включено: без допуска к окну заявки и концу смены. Выключено: применяются настроенные допуски опоздания и последней заявки."
+          top={459 + extra}
           motionOn={motionOn}
           onToggle={onStrictTimeWindowsToggle}
+        />
+        <PolicySwitch
+          on={ordinaryReplanningDisabled}
+          disabled={replanningSaving}
+          label="Перестройка по обычным"
+          description={
+            ordinaryReplanningDisabled
+              ? 'Включено — без перестройки: новые обычные заявки остаются в алертах даже при аварийном пересчёте. Аварии перестраивают план. Выключение вернёт накопленные заявки в распределение.'
+              : 'Выключено — обычный режим: любая новая заявка запускает перестройку. Включите, чтобы обычные заявки ожидали решения в алертах; аварии всегда перестраивают план.'
+          }
+          top={503 + extra}
+          motionOn={motionOn}
+          onToggle={onOrdinaryReplanningToggle}
         />
         <button
           type="button"
           onClick={onManualMode}
           className="absolute left-[16px] flex h-[67px] w-[331px] items-center justify-center rounded-[20px] bg-figma-bee p-[20px] transition-transform duration-150 hover:scale-[1.01]"
-          style={{ top: 495 + extra }}
+          style={{ top: 561 + extra }}
         >
           <span className="figma-nowrap font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
-            Ручное управление
+            {manualMode ? 'Автоматическое управление' : 'Ручное управление'}
           </span>
         </button>
       </div>
@@ -592,6 +668,7 @@ function PolicySwitch({
   top,
   motionOn,
   onToggle,
+  disabled = false,
 }: {
   on: boolean;
   label: string;
@@ -599,14 +676,44 @@ function PolicySwitch({
   top: number;
   motionOn: boolean;
   onToggle: () => void;
+  disabled?: boolean;
 }) {
+  const tooltipId = useId();
+  const [hovering, setHovering] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    if (!hovering && !focused) {
+      setShown(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setShown(true), 700);
+    return () => window.clearTimeout(timer);
+  }, [hovering, focused]);
   return (
     <button
       type="button"
-      onClick={onToggle}
+      onClick={() => {
+        setShown(false);
+        onToggle();
+      }}
+      onMouseEnter={() => setHovering(true)}
+      onMouseLeave={() => setHovering(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape' && shown) {
+          event.stopPropagation();
+          setShown(false);
+          setHovering(false);
+          setFocused(false);
+        }
+      }}
+      aria-describedby={shown ? tooltipId : undefined}
+      disabled={disabled}
+      aria-pressed={on}
       className="absolute left-[16px] flex items-center"
-      style={{ top }}
-      title={description}
+      style={{ top, zIndex: shown ? 30 : undefined }}
       aria-label={description ? `${label}. ${description}` : label}
     >
       <span className="relative block h-[29px] w-[59px] overflow-hidden rounded-[14.5px]">
@@ -625,6 +732,21 @@ function PolicySwitch({
       <FigmaText className="figma-nowrap ml-[10px] font-medium leading-none text-[20px] text-black">
         {label}
       </FigmaText>
+      <AnimatePresence>
+        {shown && description ? (
+          <motion.span
+            id={tooltipId}
+            role="tooltip"
+            className="pointer-events-none absolute bottom-full left-0 mb-[10px] w-[315px] rounded-[16px] bg-figma-ink px-[14px] py-[12px] text-left text-[14px] font-normal leading-[1.4] text-white shadow-lg"
+            initial={motionOn ? { opacity: 0, y: 4 } : false}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: motionOn ? 0.16 : 0 }}
+          >
+            {description}
+          </motion.span>
+        ) : null}
+      </AnimatePresence>
     </button>
   );
 }

@@ -44,6 +44,11 @@ export interface SnapshotRequest {
   readonly window_start_at: UnixSeconds;
   readonly window_end_at: UnixSeconds;
   readonly priority: PriorityCode;
+  readonly source_window_start_at?: number;
+  readonly source_window_end_at?: number;
+  readonly work_category?: 'emergency' | 'connection' | 'service';
+  readonly received_at?: UnixSeconds;
+  readonly dispatcher_priority?: boolean;
   readonly required_skill: SkillCode;
   /** `null` means the request places no transport restriction. */
   readonly required_transport: TransportCode | null;
@@ -101,9 +106,32 @@ export interface SnapshotPolicy {
 }
 
 export interface RouterTaskSnapshot {
+  readonly depots?: Array<{ depot_id: string; region: string | null; location: GeoPoint }>;
+  readonly pending_equipment_logistics?: Array<{
+    logistics: {
+      logistics_id: string;
+      kind: 'donor_delivery' | 'office_pickup';
+      request_id: string;
+      equipment_type: EquipmentCode;
+      donor_engineer_id: string | null;
+      receiver_engineer_id: string;
+      depot_id: string | null;
+    };
+    location: GeoPoint;
+    at: number;
+  }>;
   readonly pending_equipment_handoffs?: Array<
     HandoffMetadata & { location: GeoPoint; meeting_at: number }
   >;
+  readonly manual_decisions?: {
+    id: string;
+    kind: 'assignment' | 'window' | 'lunch' | 'shift';
+    target_id: string;
+    priority: number;
+    engineer_id?: string | null;
+    start_at?: number;
+    end_at?: number;
+  }[];
   readonly schema_version: string;
   /** Moment of this publication of changed data. It does not tick on its own. */
   readonly planning_as_of: UnixSeconds;

@@ -34,7 +34,15 @@ import {
 } from './windowConfirmation';
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? '').replace(/\/$/, '');
-const policyIdSchema = z.enum(['compact', 'fast', 'sla', 'balanced', 'eco', 'covering']);
+const policyIdSchema = z.enum([
+  'compact',
+  'fast',
+  'sla',
+  'balanced',
+  'eco',
+  'covering',
+  'personal',
+]);
 
 const roadImportSummarySchema = z.object({
   operationId: z.string().min(1),
@@ -65,6 +73,8 @@ const requestSchema = z.object({
   requiredEquipment: z.enum(['router', 'set_top_box', 'smart_speaker']).nullable(),
   workType: z.string().nullable(),
   workTypeTitle: z.string().nullable(),
+  workCategory: z.enum(['emergency', 'connection', 'service']).optional(),
+  receivedAt: z.number().nullable().optional(),
   requiredSkill: z.string(),
   normProfileCode: z.string(),
   normativeTravelDurationSec: z.number().int().nonnegative(),
@@ -135,7 +145,17 @@ const engineerSchema = z.object({
 
 const planStopSchema = z.object({
   sequence: z.number().int(),
-  kind: z.enum(['job', 'lunch', 'wait', 'start', 'handoff']),
+  kind: z.enum(['job', 'lunch', 'wait', 'start', 'handoff', 'delivery', 'office_pickup']),
+  logistics: z
+    .object({
+      logistics_id: z.string(),
+      kind: z.enum(['donor_delivery', 'office_pickup']),
+      request_id: z.string(),
+      equipment_type: z.enum(['router', 'set_top_box', 'smart_speaker']),
+    })
+    .nullable()
+    .optional(),
+
   handoff: z
     .object({
       handoff_id: z.string(),
@@ -338,6 +358,15 @@ const shiftSchema = z.object({
   unresolvedCount: z.number().int().nonnegative(),
 });
 
+/** Reads the revision bound to confirmation when replacing another request's priority. */
+export function loadRequestPriority(token: string, workDate: string) {
+  return requestJson(
+    `/api/v1/dispatch/request-priority?workDate=${encodeURIComponent(workDate)}`,
+    z.object({ priority: z.object({ requestId: z.string(), version: z.string() }).nullable() }),
+    token,
+  );
+}
+
 /** Executes one allowed decision; the caller keeps operationId stable for retries. */
 export async function resolveDispatchAlert(
   token: string,
@@ -435,7 +464,12 @@ const policiesSchema = z.object({
       isDefault: z.boolean(),
     }),
   ),
-  active: z.object({ policyId: policyIdSchema, version: z.number().int(), changedAt: z.number() }),
+  active: z.object({
+    policyId: policyIdSchema,
+    version: z.number().int(),
+    changedAt: z.number(),
+    ordinaryReplanningDisabled: z.boolean().default(false),
+  }),
 });
 
 const technicalSettingsSchema = z.object({
@@ -907,6 +941,24 @@ export function createDispatchEngineer(
   );
 }
 
+/** Updates roster transport or region with optimistic version checking. */
+export function updateDispatchEngineerProfile(
+  token: string,
+  engineerId: string,
+  expectedVersion: number,
+  patch: { region?: string; transportType?: 'car' | 'walk' | 'bike' | 'transit' },
+): Promise<unknown> {
+  return requestJson(
+    `/api/v1/dispatch/engineers/${encodeURIComponent(engineerId)}`,
+    z.object({ engineer: engineerProfileSchema }),
+    token,
+    {
+      method: 'PATCH',
+      body: JSON.stringify({ operationId: crypto.randomUUID(), expectedVersion, ...patch }),
+    },
+  );
+}
+
 /** Archives a routing profile while preserving its historical plans and facts. */
 export function deleteDispatchEngineer(
   token: string,
@@ -1024,6 +1076,7 @@ export async function loadDashboardSnapshot(token: string): Promise<DashboardSna
     timeZone: 'Europe/Moscow',
     nowAt: Math.floor(Date.now() / 1000),
     policyId: policies.active.policyId,
+    ordinaryReplanningDisabled: policies.active.ordinaryReplanningDisabled,
     lunchesEnabled: settings.lunchesEnabled,
     routerSettings: settings,
     routerContextVersion: settings.routerContextVersion,
@@ -1097,10 +1150,14 @@ export async function setLunchesEnabled(token: string, enabled: boolean): Promis
 }
 
 /** Switches the dispatch control mode through an idempotent backend operation. */
-export async function setDispatchMode(token: string, mode: 'auto' | 'manual'): Promise<void> {
+export async function setDispatchMode(
+  token: string,
+  mode: 'auto' | 'manual',
+  reason?: string,
+): Promise<void> {
   await requestJson('/api/v1/dispatch/mode', z.unknown(), token, {
     method: 'POST',
-    body: JSON.stringify({ operationId: crypto.randomUUID(), mode }),
+    body: JSON.stringify({ operationId: crypto.randomUUID(), mode, reason }),
   });
 }
 
@@ -1438,6 +1495,7 @@ function formatUnknownReason(reason: unknown): string {
       plannedStartAt: z.number().optional(),
       windowEndAt: z.number().optional(),
       assignment: z.string().optional(),
+      ordinaryReplanningDisabled: z.boolean().optional(),
       lunchStatus: z.string().optional(),
       assignedBefore: z.number().optional(),
       assignedAfter: z.number().optional(),
@@ -1456,6 +1514,8 @@ function formatUnknownReason(reason: unknown): string {
     }
     if (value.expectedAt !== undefined)
       return `Ожидалась отметка к ${formatClock(value.expectedAt)}. ${value.lastAttendanceAt ? `Последняя отметка: ${formatClock(value.lastAttendanceAt)}.` : 'Отметок пока нет.'}`;
+    if (value.ordinaryReplanningDisabled)
+      return 'Перестройка по обычным заявкам отключена. Заявка ожидает решения диспетчера; текущие назначения сохранены.';
     if (value.assignment === 'unassigned')
       return 'Для заявки не найдено допустимое назначение. Нужно изменить условия или добавить инженера.';
     if (value.lunchStatus)
@@ -1791,6 +1851,12 @@ export async function requestJson<T>(
     });
     const body: unknown = await response.json().catch(() => null);
     if (!response.ok) {
+      const conflict = z
+        .object({ error: z.object({ details: z.object({ kind: z.literal('manual_conflict') }) }) })
+        .safeParse(body);
+      if (conflict.success && typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('manual-planning-open', { detail: 'priorities' }));
+      }
       const challenge = windowConfirmationFrom(body);
       if (challenge) {
         if (new Headers(init.headers).has('x-window-change-confirmation')) {
@@ -1877,4 +1943,17 @@ function moscowDate(date: Date): string {
     month: '2-digit',
     day: '2-digit',
   }).format(date);
+}
+
+/** Save only the System Layer arrival rule, without modifying Router optimization settings. */
+export function setOrdinaryReplanning(token: string, disabled: boolean) {
+  return requestJson(
+    '/api/v1/dispatch/policy/ordinary-replanning',
+    z.object({ ordinaryReplanningDisabled: z.boolean(), released: z.number().int() }),
+    token,
+    {
+      method: 'POST',
+      body: JSON.stringify({ operationId: crypto.randomUUID(), disabled }),
+    },
+  );
 }

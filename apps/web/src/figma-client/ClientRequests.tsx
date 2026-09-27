@@ -1,4 +1,5 @@
 import { motion } from 'framer-motion';
+import { WorkTypeLabel } from '../components/WorkTypeLabel';
 import { FigmaIcon } from '../figma-dashboard/primitives';
 import { formatMinutesRu, formatPlanTime, formatPlanWindow } from '../figma-engineer/engineerClock';
 import { eu } from '../figma-engineer/engineerScale';
@@ -163,7 +164,9 @@ function FeaturedCard({
               className="flex flex-wrap items-center font-medium tracking-[-0.02em] text-figma-muted"
               style={{ marginTop: eu(12), columnGap: eu(10), rowGap: eu(4), fontSize: eu(20) }}
             >
-              <span>{item.workTypeTitle}</span>
+              <span>
+                <WorkTypeLabel category={item.workCategory}>{item.workTypeTitle}</WorkTypeLabel>
+              </span>
               <FigmaIcon
                 src={CLIENT_ASSETS.dot}
                 alt=""
@@ -283,7 +286,7 @@ function ArchiveCard({
             className="font-medium tracking-[-0.02em] text-figma-muted"
             style={{ marginTop: eu(12), fontSize: eu(20) }}
           >
-            {item.workTypeTitle}
+            <WorkTypeLabel category={item.workCategory}>{item.workTypeTitle}</WorkTypeLabel>
             {archived ? null : ` · ${item.statusLabel}`}
           </p>
           <span

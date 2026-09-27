@@ -63,3 +63,18 @@ describe('physical equipment capacity', () => {
     assert.equal(next.equipmentCapacityBike, 9);
   });
 });
+
+it('cars receive two spare units of every type without exceeding capacity', () => {
+  const demand = { equipmentRouter: 3, equipmentSetTopBox: 0, equipmentSmartSpeaker: 0 };
+  assert.deepEqual(equipmentWithSpares(demand, 30, 'car'), {
+    equipmentRouter: 5,
+    equipmentSetTopBox: 2,
+    equipmentSmartSpeaker: 2,
+  });
+  assert.equal(equipmentTotal(equipmentWithSpares(demand, 5, 'car')), 5);
+  assert.deepEqual(equipmentWithSpares(demand, 5, 'walk'), {
+    equipmentRouter: 4,
+    equipmentSetTopBox: 0,
+    equipmentSmartSpeaker: 0,
+  });
+});

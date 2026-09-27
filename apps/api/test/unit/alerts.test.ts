@@ -13,7 +13,12 @@ test('alert action catalogue exposes only dispatcher-approved actions', () => {
     'add_engineer',
     'keep_as_is',
   ]);
-  assert.deepEqual(alertActionsFor('engineer_overdue'), ['message', 'remove_shift', 'extend']);
+  assert.deepEqual(alertActionsFor('engineer_overdue'), [
+    'message',
+    'remove_shift',
+    'extend',
+    'make_passive',
+  ]);
   assert.deepEqual(alertActionsFor('LIVE_TECHNICAL_BREAK_OVERRUN'), [
     'message',
     'extend',

@@ -119,3 +119,24 @@ it('keeps a picked map point on the submitted draft', () => {
   expect(created.lat).toBe(55.78);
   expect(created.lon).toBe(37.59);
 });
+
+it('submits a network emergency immediately without a booked time window', () => {
+  const draft = {
+    ...EMPTY_CLIENT_DRAFT,
+    problem: 'Авария' as const,
+    workType: 'outage',
+    contactName: 'Test Client',
+    address: 'Test address',
+    email: 'client@example.test',
+    point: { lat: 55.7, lon: 37.6 },
+    windowStart: '',
+    windowEnd: '',
+  };
+  expect(canSubmitClientForm(draft)).toBe(true);
+  const now = Date.parse('2026-09-27T09:12:00Z');
+  const body = clientPrepareBody(draft, now);
+  expect(body?.workType).toBe('outage');
+  expect(body?.windowStartAt).toBe(now / 1000);
+  expect(body?.windowEndAt).toBe(now / 1000 + 6000);
+  expect(body?.urgent).toBe(true);
+});

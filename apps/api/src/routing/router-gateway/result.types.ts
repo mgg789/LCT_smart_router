@@ -49,10 +49,22 @@ export const handoffMetadataSchema = z.object({
 });
 export type HandoffMetadata = z.infer<typeof handoffMetadataSchema>;
 
+/** One-sided delivery or office pickup metadata, separate from paired handoffs. */
+export const logisticsMetadataSchema = z.object({
+  donor_engineer_id: z.string().nullable().optional(),
+  receiver_engineer_id: z.string().min(1),
+  depot_id: z.string().nullable().optional(),
+  logistics_id: z.string().min(1),
+  kind: z.enum(['donor_delivery', 'office_pickup']),
+  request_id: z.string().min(1),
+  equipment_type: z.enum(['router', 'set_top_box', 'smart_speaker']),
+});
+
 const routeStop = z.object({
   stop_id: z.string().min(1),
   sequence: z.number().int().nonnegative(),
-  kind: z.enum(['job', 'lunch', 'wait', 'handoff']),
+  kind: z.enum(['job', 'lunch', 'wait', 'handoff', 'delivery', 'office_pickup']),
+  logistics: logisticsMetadataSchema.nullable().optional(),
   handoff: handoffMetadataSchema.nullable().optional(),
   /** The request for a `job`; `null` for lunch and waiting. */
   request_id: z.string().min(1).nullable(),
@@ -200,6 +212,13 @@ const planningAlert = z.object({
 
 export const planSchema = z.object({
   is_usable: z.boolean(),
+  manual_resolution: z
+    .object({
+      accepted_ids: z.array(z.string()),
+      rejected_ids: z.array(z.string()),
+      conflict_ids: z.array(z.string()),
+    })
+    .optional(),
   metric_scope: z.literal('snapshot_remaining'),
   routes: z.array(engineerRoute).default([]),
   /** Exactly one outcome per request of the snapshot. */

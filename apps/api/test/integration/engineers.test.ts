@@ -170,6 +170,31 @@ describe('engineers and working days', () => {
     await app?.close();
   });
 
+  it('creates an empty region office, lists it and rejects duplicate names', async () => {
+    const name = unique('region');
+    const body = { operationId: randomUUID(), name, addressText: 'Office', lat: 55.7, lon: 37.6 };
+    try {
+      const response = await call('POST', '/api/v1/dispatch/regions', dispatcherToken, body);
+      assert.equal(response.status, 201);
+      const created = await prisma.depot.findUniqueOrThrow({ where: { region: name } });
+      assert.equal(created.lat, 55.7);
+      assert.equal(await prisma.engineer.count({ where: { region: name } }), 0);
+      const listed = await fetch(`${baseUrl}/api/v1/dispatch/regions`, {
+        headers: { authorization: `Bearer ${dispatcherToken}` },
+      });
+      assert.equal(listed.status, 200);
+      const result = (await listed.json()) as { regions: Array<{ region: string }> };
+      assert.ok(result.regions.some((row) => row.region === name));
+      const duplicate = await call('POST', '/api/v1/dispatch/regions', dispatcherToken, {
+        ...body,
+        operationId: randomUUID(),
+      });
+      assert.equal(duplicate.status, 422);
+    } finally {
+      await prisma.depot.deleteMany({ where: { region: name } });
+    }
+  });
+
   it('creates the engineer role only through the dispatcher', async () => {
     const { email, engineer } = await createEngineer();
     assert.ok(engineer.id);

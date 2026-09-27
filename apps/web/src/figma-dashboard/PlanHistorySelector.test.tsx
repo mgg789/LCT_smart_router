@@ -40,7 +40,7 @@ describe('plan history selector', () => {
     expect(html).toContain('bottom:42px');
   });
 
-  it('does not offer an unavailable predecessor as a selectable plan', () => {
+  it('allows previewing an unavailable predecessor but disables applying it', () => {
     const html = renderToStaticMarkup(
       <PlanHistorySelector
         previous={previous}
@@ -55,7 +55,11 @@ describe('plan history selector', () => {
       />,
     );
 
-    expect(html).toContain('disabled=""');
+    const previousButton = html.match(/<button[^>]*data-plan-history-previous[^>]*>/)?.[0];
+    const confirmButton = html.match(/<button[^>]*data-plan-history-confirm[^>]*>/)?.[0];
+    expect(previousButton).toBeDefined();
+    expect(previousButton).not.toContain('disabled=""');
+    expect(confirmButton).toContain('disabled=""');
     expect(html).toContain('время начала которых уже прошло');
     expect(html).not.toContain('SCHEDULE_IN_THE_PAST');
     expect(html).toContain('role="tooltip"');

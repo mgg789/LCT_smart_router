@@ -30,6 +30,10 @@ export class AlertWindowQuery {
         throw new SysError('VALIDATION_FAILED', 'An open request alert is required');
       }
       const request = await tx.request.findUnique({ where: { id: alert.requestIds[0] } });
+      if (request?.workCategory === 'emergency')
+        throw SysError.validationFailed(
+          'Авария планируется с поступления: вместо переноса окна нужен подходящий свободный инженер.',
+        );
       if (request?.lifecycle !== 'submitted')
         throw new SysError('WORK_ALREADY_STARTED', 'Only submitted work can change windows');
       const now = planningAt ?? (await businessNow(tx, this.clock.nowSeconds()));

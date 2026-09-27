@@ -1,11 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { Body, Controller, Get, Logger, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Logger, Param, Post, Put, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { z } from 'zod';
 import { type Actor, CurrentActor, Roles } from '../auth';
 import { SysError } from '../common/errors';
 import { Clock } from '../common/time';
 import { zodBody } from '../common/validation';
 import { OperationsService } from '../operations';
+import { assertManualConflictResolved } from '../operations/manual-conflict-guard';
 import { AiService, factoryCalibrationDocument, MiniAiService } from '../orchestrator/ai';
 import { collectOptimizeLevers, type OptimizeLever } from '../orchestrator/ai/optimize-levers';
 import { workDateOf } from '../orchestrator/engineers/workday';
@@ -15,6 +17,8 @@ import { type UpdateMcpSettingsDto, updateMcpSettingsSchema } from '../orchestra
 import { McpService } from '../orchestrator/mcp/mcp.service';
 import { type McpSettingsView } from '../orchestrator/mcp/mcp-settings';
 import { PolicyService } from '../orchestrator/policy';
+import { personalPolicyUpdateSchema } from '../orchestrator/policy/personal-policy';
+import { applyPersonalPolicyRouterPreset } from '../orchestrator/policy/personal-policy-preset';
 import {
   DispatcherSettingsService,
   GeocodingService,
@@ -42,9 +46,14 @@ import {
   ResultAcceptanceService,
   RouterClient,
 } from '../routing/router-gateway';
+import { ManualDecisionsService } from '../routing/router-gateway/manual-decisions.service';
+import { manualStateView, readManualState } from '../routing/router-gateway/manual-state';
 import { visibleRouterPhase } from '../routing/router-gateway/router-phase';
 import { type AiSettingsDto, aiSettingsSchema } from './dto/ai.dto';
 import {
+  manualDeleteSchema,
+  manualEditSchema,
+  manualOrderSchema,
   type ReassignDto,
   type ReorderDto,
   reassignSchema,
@@ -54,7 +63,12 @@ import {
   setModeSchema,
   submitResultSchema,
 } from './dto/plan.dto';
-import { type SelectPolicyDto, selectPolicySchema } from './dto/policy.dto';
+import {
+  type OrdinaryReplanningDto,
+  ordinaryReplanningSchema,
+  type SelectPolicyDto,
+  selectPolicySchema,
+} from './dto/policy.dto';
 import { type SituationPredictDto, situationPredictSchema } from './dto/prediction.dto';
 import {
   type UpdateRouterTechnicalSettingsDto,
@@ -88,6 +102,7 @@ export class DispatchController {
     private readonly plans: AppliedPlanService,
     private readonly control: ControlStateService,
     private readonly manual: ManualPlanService,
+    private readonly manualDecisions: ManualDecisionsService,
     private readonly acceptance: ResultAcceptanceService,
     private readonly router: RouterClient,
     private readonly operations: OperationsService,
@@ -412,11 +427,43 @@ export class DispatchController {
 
   @Get('policies')
   @ApiOperation({ summary: 'Prepared policies and the one in force' })
-  async policies() {
+  async policies(@CurrentActor() actor: Actor) {
     return {
-      policies: this.policyService.list(),
+      policies: await this.policyService.listFor(this.prisma, actor.accountId),
       active: await this.policyService.active(this.prisma),
     };
+  }
+
+  @Get('policy/personal')
+  @ApiOperation({ summary: 'Own saved personal policy, defaults and supported dimensions' })
+  async personalPolicy(@CurrentActor() actor: Actor) {
+    return this.policyService.personal(this.prisma, actor.accountId);
+  }
+
+  @Put('policy/personal')
+  @ApiOperation({
+    summary: 'Save own policy without selecting it; replan only when already active',
+  })
+  async savePersonalPolicy(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(personalPolicyUpdateSchema.extend({ operationId: z.uuid() }))) dto: z.infer<
+      typeof personalPolicyUpdateSchema
+    > & { operationId: string },
+  ) {
+    const outcome = await this.operations.execute(
+      { operationId: dto.operationId, actor, action: 'policy.personal.save', payload: dto },
+      async (context) => {
+        const result = await this.policyService.savePersonal(context, dto);
+        if (result.activeUpdated)
+          await this.publisher.publishIfChanged(
+            context.tx,
+            context.now,
+            PUBLICATION_TRIGGERS.POLICY_CHANGED,
+          );
+        return result;
+      },
+    );
+    return outcome.result;
   }
 
   @Get('policy-comparison')
@@ -512,12 +559,55 @@ export class DispatchController {
     };
   }
 
+  @Post('policy/ordinary-replanning')
+  @ApiOperation({ summary: 'Control automatic replanning for new ordinary requests' })
+  async setOrdinaryReplanning(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(ordinaryReplanningSchema)) dto: OrdinaryReplanningDto,
+  ) {
+    const outcome = await this.operations.execute(
+      {
+        operationId: dto.operationId,
+        actor,
+        action: 'policy.ordinary_replanning',
+        targetRef: 'singleton',
+        payload: dto,
+      },
+      async (context) => {
+        const released = await this.policyService.setOrdinaryReplanning(context, dto.disabled);
+        if (released > 0)
+          await this.publisher.publishIfChanged(
+            context.tx,
+            context.now,
+            PUBLICATION_TRIGGERS.POLICY_CHANGED,
+          );
+        return { ordinaryReplanningDisabled: dto.disabled, released };
+      },
+    );
+    return outcome.result;
+  }
+
   @Post('policy')
   @ApiOperation({ summary: 'Choose a prepared policy' })
   async selectPolicy(
     @CurrentActor() actor: Actor,
     @Body(zodBody(selectPolicySchema)) dto: SelectPolicyDto,
   ) {
+    // A retry must replay its operation without resetting switches edited after selection.
+    if (
+      dto.policyId === 'personal' &&
+      !(await this.prisma.operation.findUnique({ where: { operationId: dto.operationId } }))
+    ) {
+      await assertManualConflictResolved(this.prisma, {
+        operationId: dto.operationId,
+        actor,
+        action: 'policy.select',
+        payload: dto,
+      });
+      const { profile } = await this.policyService.personal(this.prisma, actor.accountId);
+      if (!profile) throw SysError.validationFailed('Личная политика не создана');
+      await applyPersonalPolicyRouterPreset(this.router, this.live, profile.preset);
+    }
     const outcome = await this.operations.execute(
       {
         operationId: dto.operationId,
@@ -616,10 +706,54 @@ export class DispatchController {
       { operationId: dto.operationId, actor, action: `control.${dto.mode}`, payload: dto },
       async (context) =>
         dto.mode === 'manual'
-          ? this.control.enterManual(context)
+          ? this.control.enterManual(context, dto.reason)
           : this.control.returnToAuto(context),
     );
     return { control: outcome.result };
+  }
+
+  /** Current durable constraints and latest solver conflict witnesses. */
+  @Get('manual')
+  async manualState() {
+    return this.uow.run(async (tx) => manualStateView(await readManualState(tx)));
+  }
+
+  @Post('manual/decisions')
+  async editManual(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(manualEditSchema)) dto: z.infer<typeof manualEditSchema>,
+  ) {
+    const { operationId, expectedVersion, ...input } = dto;
+    const outcome = await this.operations.execute(
+      { operationId, actor, action: 'manual.edit', payload: dto },
+      (context) => this.manualDecisions.put(context, expectedVersion, input),
+    );
+    return outcome.result;
+  }
+
+  @Post('manual/priorities')
+  async orderManual(
+    @CurrentActor() actor: Actor,
+    @Body(zodBody(manualOrderSchema)) dto: z.infer<typeof manualOrderSchema>,
+  ) {
+    const outcome = await this.operations.execute(
+      { operationId: dto.operationId, actor, action: 'manual.priorities', payload: dto },
+      (context) => this.manualDecisions.reorder(context, dto.expectedVersion, dto.decisionIds),
+    );
+    return outcome.result;
+  }
+
+  @Delete('manual/decisions/:id')
+  async deleteManual(
+    @CurrentActor() actor: Actor,
+    @Param('id') id: string,
+    @Body(zodBody(manualDeleteSchema)) dto: z.infer<typeof manualDeleteSchema>,
+  ) {
+    const outcome = await this.operations.execute(
+      { operationId: dto.operationId, actor, action: 'manual.delete', payload: { ...dto, id } },
+      (context) => this.manualDecisions.remove(context, dto.expectedVersion, id),
+    );
+    return outcome.result;
   }
 
   @Post('plan/reassign')
@@ -777,7 +911,7 @@ export class DispatchController {
   }
 
   @Put('ai')
-  @ApiOperation({ summary: 'Replace AI contour controls (plan calibration, future endpoints)' })
+  @ApiOperation({ summary: 'Replace AI contour controls and live model connections' })
   async updateAi(
     @CurrentActor() actor: Actor,
     @Body(zodBody(aiSettingsSchema)) dto: AiSettingsDto,
@@ -786,6 +920,7 @@ export class DispatchController {
       { operationId: dto.operationId, actor, action: 'dispatch.ai.replace', payload: dto },
       async (context) => this.ai.present(await this.ai.replace(context.tx, context.now, dto)),
     );
+    await this.ai.refreshConnections();
     if (dto.planCalibrationEnabled === false) await this.ai.rollbackToFactory();
     this.ai.scheduleRefresh();
     return outcome.result;

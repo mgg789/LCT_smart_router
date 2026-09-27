@@ -20,6 +20,7 @@ import { createPortal } from 'react-dom';
 import {
   DashboardApiError,
   loadAlertWindowProposal,
+  loadRequestPriority,
   simulateChange,
   simulationWorsens,
 } from '../api/client';
@@ -51,6 +52,8 @@ const ACTION_ICONS: Record<AlertActionId, LucideIcon> = {
   remove_shift: UserRoundMinus,
   message_remove: MailMinus,
   extend: Timer,
+  make_passive: UserRoundMinus,
+  prioritize: Sparkles,
 };
 
 /** Server-authorized choices with accessible explanations and real resolution forms. */
@@ -434,6 +437,9 @@ function ResolutionForm({
       engineer.day.shiftStartAt <= request.windowStartAt &&
       engineer.day.shiftEndAt >= request.windowEndAt,
   );
+  const [priorityWarning, setPriorityWarning] = useState(false);
+  const priorityResolve = useRef<((accepted: boolean) => void) | null>(null);
+  useEffect(() => () => priorityResolve.current?.(false), []);
   async function submit() {
     if (lock.current || disabled) return;
     lock.current = true;
@@ -443,7 +449,23 @@ function ResolutionForm({
     try {
       if (!(alert.actions ?? []).includes(action) || alert.resolvedAt !== null)
         throw new Error('Этот вариант больше недоступен. Обновите список алертов.');
+      let expectedPriorityVersion: string | undefined;
+      if (action === 'prioritize') {
+        if (!token || !alert.workDate) throw new Error('Не удалось определить день заявки.');
+        const { priority } = await loadRequestPriority(token, alert.workDate);
+        if (priority && priority.requestId !== alert.requestIds[0]) {
+          const accepted = await new Promise<boolean>((resolve) => {
+            priorityResolve.current = resolve;
+            setPriorityWarning(true);
+          });
+          setPriorityWarning(false);
+          priorityResolve.current = null;
+          if (!accepted) return;
+          expectedPriorityVersion = priority.version;
+        }
+      }
       const input: Omit<AlertResolutionInput, 'operationId'> = {
+        ...(expectedPriorityVersion ? { expectedPriorityVersion } : {}),
         action,
         ...(reason.trim() ? { reason: reason.trim() } : {}),
         ...(action === 'move_window'
@@ -524,6 +546,18 @@ function ResolutionForm({
         void submit();
       }}
     >
+      <WorsenModal
+        title="Заменить приоритет?"
+        cancelLabel="Назад"
+        confirmLabel="Перестроить"
+        text={
+          priorityWarning
+            ? 'Этот план уже построен с приоритетом другой заявки. Перестройка с приоритетом этой приведет к сбросу приоритета той и возможно она не попадет в новый план.'
+            : null
+        }
+        onCancel={() => priorityResolve.current?.(false)}
+        onConfirm={() => priorityResolve.current?.(true)}
+      />
       <h3 className="font-bold">{spec.label}</h3>
       <p className="mt-[8px]">{spec.summary}</p>
       <p className="mt-[8px] text-figma-muted">{spec.effect}</p>

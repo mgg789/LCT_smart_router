@@ -24,7 +24,9 @@ import { buildDispatcherWriteTools } from './dispatcher-write.tools';
 import { buildEngineerTools } from './engineer.tools';
 import { buildSearchDocumentationTool } from './knowledge.tool';
 import { KnowledgeSearchPort } from './knowledge-search.port';
+import { buildManualTools, MANUAL_TOOL_NAMES } from './manual.tools';
 import { buildOperationVerificationTool } from './operation-verification.tool';
+import { buildPersonalPolicyTools } from './personal-policy.tools';
 import type { AnyToolSpec } from './tool.types';
 
 /**
@@ -50,7 +52,7 @@ export class ToolRegistry {
     requests: RequestsService,
     live: LiveService,
     config: AppConfigService,
-    prisma: PrismaService,
+    private readonly prisma: PrismaService,
     plans: AppliedPlanService,
     restore: PlanRestoreService,
     control: ControlStateService,
@@ -81,15 +83,18 @@ export class ToolRegistry {
 
     const dispatcherReadonlyTools = [
       ...dispatcherReadTools,
+      ...buildPersonalPolicyTools({ policy, prisma, aiOperations }),
       buildOperationVerificationTool(prisma),
       searchDocumentation,
     ];
-    const dispatcherFixTools = [...dispatcherReadonlyTools, ...dispatcherWriteTools];
+    const dispatcherFixTools = [
+      ...dispatcherReadonlyTools,
+      ...dispatcherWriteTools,
+      ...buildManualTools({ prisma, aiOperations, config }),
+    ];
 
     this.catalogues = {
-      // Handoff to a human dispatcher is switched off for this release: the client
-      // support screen and the dispatcher chats tab are locked, so the model must not
-      // be able to open that queue.
+      // The dispatcher queue is locked; never offer a handoff with no reachable recipient.
       client: [...clientTools, searchDocumentation],
       engineer: [...engineerTools, searchDocumentation],
       dispatcher_readonly: dispatcherReadonlyTools,
@@ -117,6 +122,14 @@ export class ToolRegistry {
       description: tool.description,
       parametersJsonSchema: z.toJSONSchema(tool.schema) as Record<string, unknown>,
     }));
+  }
+
+  /** Refresh mode-sensitive tools at every model step, including external mode switches. */
+  async liveSpecsFor(profile: AiRoleProfile): Promise<LlmToolSpec[]> {
+    const specs = this.llmSpecsFor(profile);
+    if (profile !== 'dispatcher_fix') return specs;
+    const control = await this.prisma.controlState.findUnique({ where: { id: 'singleton' } });
+    return specs.filter((tool) => control?.mode === 'manual' || !MANUAL_TOOL_NAMES.has(tool.name));
   }
 
   /** Every tool this registry can ever hand to a model, for the schema-invariant walk

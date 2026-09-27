@@ -12,8 +12,11 @@ import {
   useState,
 } from 'react';
 import type { HandoffView } from '../api/live';
+import { loadDispatchRegions } from '../api/regions';
 import type { DashboardSnapshot } from '../api/types';
 import { MonthlyPoints } from '../components/passports/MonthlyPoints';
+import { regionStyle } from '../domain/regions';
+import { transportLabel } from '../lib/reasons';
 import { ARTBOARD_BLEED } from './artboardScale';
 import { ENGINEER_PORTRAITS, FIGMA_ASSETS } from './assets';
 import {
@@ -40,7 +43,10 @@ import {
   engineerProfilesFromSnapshot,
   isPlausibleEmail,
 } from './engineerRoster';
+import { ManualEngineerControls } from './ManualPlanning';
 import { FigmaIcon, FigmaText } from './primitives';
+import { TintIcon } from './TintIcon';
+import { TRANSPORT_ICONS } from './transport';
 
 const slideEase = [0.22, 1, 0.36, 1] as const;
 const tap = { duration: 0.16 };
@@ -70,6 +76,7 @@ export function EngineersView({
   busy,
   onSelectEngineer,
   onLinkEmail,
+  onUpdateProfile,
   onDeleteEngineer,
   onSetAvailability,
 }: {
@@ -81,6 +88,10 @@ export function EngineersView({
   busy: boolean;
   onSelectEngineer: (engineerId: string) => void;
   onLinkEmail: (engineerId: string, email: string) => Promise<void>;
+  onUpdateProfile: (
+    engineerId: string,
+    patch: { region?: string; transportType?: EngineerProfile['transportType'] },
+  ) => Promise<void>;
   onDeleteEngineer: (engineerId: string) => Promise<void>;
   onSetAvailability: (engineerId: string, availability: 'online' | 'offline') => void;
 }) {
@@ -89,6 +100,28 @@ export function EngineersView({
     () => engineerProfilesFromSnapshot(snapshot, handoffs),
     [handoffs, snapshot],
   );
+  const [officeRegions, setOfficeRegions] = useState<string[]>([]);
+  useEffect(() => {
+    if (!token) return;
+    let active = true;
+    void loadDispatchRegions(token)
+      .then((rows) => {
+        if (active) setOfficeRegions(rows.map((row) => row.region));
+      })
+      .catch(() => {
+        /* Existing snapshot regions remain available when offices cannot load. */
+      });
+    return () => {
+      active = false;
+    };
+  }, [token]);
+  const regions = [
+    ...new Set([
+      ...officeRegions,
+      ...(snapshot?.engineers.flatMap((item) => (item.region ? [item.region] : [])) ?? []),
+      ...(snapshot?.requests.flatMap((item) => (item.region ? [item.region] : [])) ?? []),
+    ]),
+  ];
   const centerMv = useMotionValue(0);
   const [focusedIndex, setFocusedIndex] = useState(0);
   const [query, setQuery] = useState('');
@@ -508,7 +541,10 @@ export function EngineersView({
       {focused ? (
         <EngineerDossier
           token={token}
+          key={focused.id}
           engineer={focused}
+          regions={regions}
+          onUpdateProfile={(patch) => onUpdateProfile(focused.id, patch)}
           motionOn={motionOn}
           busy={busy || emailBusy}
           emailOpen={emailOpen}
@@ -670,6 +706,8 @@ export function EngineersView({
 
 function EngineerDossier({
   token,
+  regions,
+  onUpdateProfile,
   engineer,
   motionOn,
   busy,
@@ -688,6 +726,11 @@ function EngineerDossier({
 }: {
   token?: string;
   engineer: EngineerProfile;
+  regions: string[];
+  onUpdateProfile: (patch: {
+    region?: string;
+    transportType?: EngineerProfile['transportType'];
+  }) => Promise<void>;
   motionOn: boolean;
   busy: boolean;
   emailOpen: boolean;
@@ -725,6 +768,9 @@ function EngineerDossier({
         ) : null}
       </div>
 
+      <div className="absolute right-[48px] top-[16px] z-20">
+        <ManualEngineerControls engineerId={engineer.id} />
+      </div>
       <div className="absolute bottom-[32px] left-[306px] right-[48px] top-[35px] flex flex-col">
         <FigmaText className="figma-nowrap font-murs text-[32px] tracking-[0.64px] text-figma-ink">
           {engineer.displayName}
@@ -790,11 +836,29 @@ function EngineerDossier({
         <div className="mt-auto grid h-[201px] grid-cols-2 gap-[48px]">
           <div className="flex h-full flex-col">
             <FactRow
-              icon={FIGMA_ASSETS.engTransport}
+              icon={TRANSPORT_ICONS[engineer.transportType] ?? FIGMA_ASSETS.engTransport}
               label="Транспорт"
               value={engineer.transportLabel}
+              selected={engineer.transportType}
+              options={(['car', 'walk', 'bike'] as const).map((value) => ({
+                value,
+                label: transportLabel(value),
+              }))}
+              busy={busy}
+              onSave={async (value) => {
+                if (value === 'car' || value === 'walk' || value === 'bike')
+                  await onUpdateProfile({ transportType: value });
+              }}
             />
-            <FactRow icon={FIGMA_ASSETS.engOffice} label="Офис" value={engineer.officeLabel} />
+            <FactRow
+              icon={FIGMA_ASSETS.engOffice}
+              label="Регион"
+              value={engineer.officeLabel}
+              selected={engineer.region ?? ''}
+              options={regions.map((value) => ({ value, label: regionStyle(value).label }))}
+              busy={busy}
+              onSave={(region) => onUpdateProfile({ region })}
+            />
             <div className="mt-auto flex gap-[38px]">
               <motion.button
                 type={emailOpen ? 'submit' : 'button'}
@@ -862,16 +926,98 @@ function EngineerDossier({
   );
 }
 
-function FactRow({ icon, label, value }: { icon: string; label: string; value: string }) {
+function FactRow({
+  icon,
+  label,
+  value,
+  selected,
+  options,
+  busy,
+  onSave,
+}: {
+  icon: string;
+  label: string;
+  value: string;
+  selected: string;
+  options: { value: string; label: string }[];
+  busy: boolean;
+  onSave: (value: string) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   return (
-    <div className="flex h-[36px] items-center border-b border-[#e6e6e6]">
-      <FigmaIcon src={icon} alt="" width={20} height={20} />
-      <FigmaText className="ml-[10px] w-[124px] font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
+    <div className="flex h-[44px] w-full max-w-[520px] shrink-0 items-center gap-[10px] border-b border-[#e6e6e6]">
+      <TintIcon src={icon} color="currentColor" size={20} />
+      <FigmaText className="w-[124px] shrink-0 font-semibold text-[20px] tracking-[-0.6px] text-figma-ink">
         {label}
       </FigmaText>
-      <FigmaText className="font-semibold text-[18px] tracking-[-0.54px] text-figma-muted">
-        {value}
-      </FigmaText>
+      {editing ? (
+        <select
+          aria-label={`Изменить: ${label}`}
+          value={selected}
+          disabled={busy || saving}
+          ref={(node) => node?.focus()}
+          onKeyDown={(event) => {
+            if (event.key === 'Escape') setEditing(false);
+          }}
+          onBlur={() => {
+            if (!saving) setEditing(false);
+          }}
+          onChange={(event) => {
+            const next = event.target.value;
+            if (!next || next === selected) return;
+            setSaving(true);
+            setError(null);
+            void onSave(next)
+              .then(() => setEditing(false))
+              .catch((cause: unknown) => {
+                setError(cause instanceof Error ? cause.message : 'Не удалось сохранить');
+              })
+              .finally(() => setSaving(false));
+          }}
+          className="h-[28px] min-w-0 flex-1 rounded-[6px] bg-figma-track px-[6px] text-[16px] text-figma-ink outline-none"
+        >
+          {!options.some((item) => item.value === selected) ? (
+            <option value={selected}>{value}</option>
+          ) : null}
+          {options.map((item) => (
+            <option key={item.value} value={item.value}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <>
+          <span
+            className="min-w-0 flex-1 truncate font-semibold text-[18px] tracking-[-0.54px] text-figma-muted"
+            title={value}
+          >
+            {value}
+          </span>
+          <button
+            type="button"
+            disabled={busy || saving}
+            aria-label={`Изменить: ${label}`}
+            className="shrink-0 disabled:opacity-40"
+            onClick={() => {
+              setError(null);
+              setEditing(true);
+            }}
+          >
+            <FigmaIcon src={FIGMA_ASSETS.engEdit} alt="" width={24} height={24} />
+          </button>
+        </>
+      )}
+      {error ? (
+        <span
+          role="alert"
+          title={error}
+          className="max-w-[160px] truncate text-[12px] text-figma-danger"
+        >
+          {error}
+        </span>
+      ) : null}
     </div>
   );
 }

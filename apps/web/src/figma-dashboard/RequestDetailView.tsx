@@ -6,6 +6,7 @@ import { DayMap } from '../components/DayMap';
 import { RequestPassport } from '../components/passports/PassportDetails';
 import { FIGMA_ASSETS } from './assets';
 import { Copyable } from './Copyable';
+import { ManualRequestControls } from './ManualPlanning';
 import { FigmaIcon, FigmaText } from './primitives';
 import {
   assignableEngineers,
@@ -176,6 +177,7 @@ function RequestDetailPanel({
           <DetailTag key={tag} label={tag} />
         ))}
       </div>
+      <ManualRequestControls requestId={model.id} />
       {model.equipmentTags.length > 0 ? (
         <div className="mt-[12px] flex flex-wrap gap-[12px]">
           {model.equipmentTags.map((tag) => (

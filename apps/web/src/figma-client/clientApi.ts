@@ -41,6 +41,7 @@ const requestSchema = z
     lat: z.number().nullable(),
     lon: z.number().nullable(),
     workTypeTitle: z.string().nullable(),
+    workCategory: z.enum(['emergency', 'connection', 'service']).optional(),
     serviceDurationSec: z.number().int(),
     windowStartAt: z.number().int(),
     windowEndAt: z.number().int(),
@@ -88,6 +89,7 @@ export async function searchClientAddress(query: string): Promise<ClientGeocodeH
 }
 
 const storyDraftSchema = z.object({
+  workType: z.string().default(''),
   problem: z.string(),
   contactName: z.string(),
   email: z.string(),
@@ -96,7 +98,7 @@ const storyDraftSchema = z.object({
   address: z.string(),
 });
 
-/** System one chooses the form fields. Empty strings stay for the local parser. */
+/** The language model extracts fields; unresolved fields remain empty for manual entry. */
 export function interpretClientStory(text: string): Promise<z.infer<typeof storyDraftSchema>> {
   return requestJson(
     '/api/v1/client/interpret',
@@ -172,6 +174,7 @@ export function clientCardFromApi(request: ClientApiRequest): ClientRequestView 
     office: null,
     company: '',
     workTypeTitle: request.workTypeTitle ?? request.problemText ?? 'Заявка',
+    workCategory: request.workCategory,
     problemTitle: request.problemText ?? request.workTypeTitle ?? 'Заявка',
     description: request.problemText ?? '',
     durationSec: request.serviceDurationSec,

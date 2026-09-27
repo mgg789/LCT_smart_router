@@ -11,9 +11,15 @@ import {
   readEquipmentSettings,
 } from '../../orchestrator/equipment/equipment-policy';
 import { persistHandoffs } from '../../orchestrator/equipment/handoffs';
+import { persistLogistics } from '../../orchestrator/equipment/logistics';
 import type { Tx } from '../../persistence';
 import { PUBLICATION_TRIGGERS, SnapshotPublisher } from '../mount-data-eng';
-import { handoffMetadataSchema, type RouterPlan, type RouterResult } from './result.types';
+import {
+  handoffMetadataSchema,
+  logisticsMetadataSchema,
+  type RouterPlan,
+  type RouterResult,
+} from './result.types';
 
 /**
  * The working plan the interfaces actually run on.
@@ -66,6 +72,12 @@ export class AppliedPlanService {
       await this.archiveCoveringEngineers(tx, now);
     }
     await persistHandoffs(tx, main, workDateOf(result.planning_as_of ?? now, 'Europe/Moscow'), now);
+    await persistLogistics(
+      tx,
+      main,
+      workDateOf(result.planning_as_of ?? now, 'Europe/Moscow'),
+      now,
+    );
     await this.materialise(tx, plan.id, main);
     await this.issueMorningEquipment(tx, now, main, result.status === 'partial');
     await this.syncAssignmentStates(tx, now, main);
@@ -81,6 +93,91 @@ export class AppliedPlanService {
     await this.alerts.recordPlanRebuilt(tx, now, result.result_id);
 
     return plan;
+  }
+
+  /** The revision in force, with everything an interface needs to draw it. */
+  async insertDelivery(
+    tx: Tx,
+    now: number,
+    expectedRevision: number,
+    row: {
+      id: string;
+      requestId: string;
+      donorEngineerId: string;
+      receiverEngineerId: string;
+      equipmentType: 'router' | 'set_top_box' | 'smart_speaker';
+      lat: number;
+      lon: number;
+      expectedAt: bigint;
+      travelDeltaSec: number;
+      distanceDeltaM: number;
+      waitDeltaSec: number;
+      occupiedFrom: number;
+      occupiedUntil: number;
+    },
+  ): Promise<void> {
+    const current = await this.current(tx);
+    if (!current || current.revision !== expectedRevision)
+      throw new SysError('VERSION_CONFLICT', 'The delivery plan changed');
+    const route = current.routes.find((item) => item.engineerId === row.donorEngineerId);
+    if (!route) throw new SysError('VERSION_CONFLICT', 'The donor route is missing');
+    const stop = {
+      id: row.id,
+      routeId: route.id,
+      sequence: 0,
+      kind: 'delivery' as const,
+      requestId: null,
+      handoff: null,
+      logistics: {
+        logistics_id: row.id,
+        kind: 'donor_delivery',
+        request_id: row.requestId,
+        equipment_type: row.equipmentType,
+        donor_engineer_id: row.donorEngineerId,
+        receiver_engineer_id: row.receiverEngineerId,
+        depot_id: null,
+      },
+      lat: row.lat,
+      lon: row.lon,
+      arrivalAt: row.expectedAt,
+      startAt: row.expectedAt,
+      endAt: row.expectedAt + 300n,
+    };
+    const retained = route.stops.flatMap((item) => {
+      if (
+        item.kind !== 'wait' ||
+        Number(item.endAt) <= row.occupiedFrom ||
+        Number(item.startAt) >= row.occupiedUntil
+      )
+        return [item];
+      const fragments = [];
+      if (Number(item.startAt) < row.occupiedFrom)
+        fragments.push({ ...item, endAt: BigInt(row.occupiedFrom) });
+      if (Number(item.endAt) > row.occupiedUntil)
+        fragments.push({
+          ...item,
+          arrivalAt: BigInt(row.occupiedUntil),
+          startAt: BigInt(row.occupiedUntil),
+        });
+      return fragments;
+    });
+    route.stops = [...retained, stop]
+      .sort((a, b) => Number(a.startAt - b.startAt))
+      .map((item, index) => ({ ...item, sequence: index + 1 }));
+    route.travelTimeSec = Math.max(0, route.travelTimeSec + row.travelDeltaSec);
+    route.distanceKm = Math.max(0, route.distanceKm + row.distanceDeltaM / 1000);
+    route.waitingTimeSec = Math.max(0, route.waitingTimeSec + row.waitDeltaSec);
+    // Geometry from an earlier route must not claim the new stop was visited.
+    route.legs = [];
+    route.finishAt =
+      route.finishAt === null || route.finishAt < stop.endAt ? stop.endAt : route.finishAt;
+    const revision = await this.copyRevision(tx, now, current, {
+      origin: 'auto',
+      createdBy: 'equipment-logistics',
+      note: `Equipment delivery ${row.id}`,
+      planAsOf: BigInt(now),
+    });
+    await this.movePointer(tx, now, revision.id);
   }
 
   /** The revision in force, with everything an interface needs to draw it. */
@@ -186,6 +283,7 @@ export class AppliedPlanService {
                     kind: true,
                     requestId: true,
                     handoff: true,
+                    logistics: true,
                     lat: true,
                     lon: true,
                     arrivalAt: true,
@@ -222,6 +320,7 @@ export class AppliedPlanService {
           kind: stop.kind,
           requestId: stop.requestId,
           handoff: handoffMetadataSchema.safeParse(stop.handoff).data ?? null,
+          logistics: logisticsMetadataSchema.safeParse(stop.logistics).data ?? null,
           lat: stop.lat,
           lon: stop.lon,
           arrivalAt: Number(stop.arrivalAt),
@@ -300,6 +399,7 @@ export class AppliedPlanService {
         kind: stop.kind,
         request_id: stop.requestId,
         handoff: handoffMetadataSchema.safeParse(stop.handoff).data ?? null,
+        logistics: logisticsMetadataSchema.safeParse(stop.logistics).data ?? null,
         location: { lat: stop.lat, lon: stop.lon },
         arrival_at: Number(stop.arrivalAt),
         start_at: Number(stop.startAt),
@@ -366,7 +466,7 @@ export class AppliedPlanService {
     now: number,
     current: AppliedPlanCurrentShape,
     metadata: {
-      origin: 'manual' | 'restore';
+      origin: 'manual' | 'restore' | 'auto';
       createdBy: string;
       note: string;
       planAsOf: bigint;
@@ -413,6 +513,7 @@ export class AppliedPlanService {
             kind: stop.kind,
             requestId: stop.requestId,
             handoff: stop.handoff === null ? Prisma.DbNull : stop.handoff,
+            logistics: stop.logistics === null ? Prisma.DbNull : stop.logistics,
             lat: stop.lat,
             lon: stop.lon,
             arrivalAt: stop.arrivalAt,
@@ -495,6 +596,7 @@ export class AppliedPlanService {
             kind: stop.kind,
             requestId: stop.request_id,
             handoff: stop.handoff ?? Prisma.DbNull,
+            logistics: stop.logistics ?? Prisma.DbNull,
             lat: stop.location.lat,
             lon: stop.location.lon,
             arrivalAt: BigInt(stop.arrival_at),
@@ -595,7 +697,10 @@ export class AppliedPlanService {
         regionalIncrement ||
         plan.routes
           .find((route) => route.engineer_id === day.engineerId)
-          ?.stops.some((stop) => stop.kind === 'handoff');
+          ?.stops.some(
+            (stop) =>
+              stop.kind === 'handoff' || stop.kind === 'delivery' || stop.kind === 'office_pickup',
+          );
       const basket = keepsLoadedStock
         ? {
             equipmentRouter: day.equipmentRouter,
@@ -606,6 +711,7 @@ export class AppliedPlanService {
             row,
             assignedToEngineer,
             equipmentCapacity(day.engineer.transportType, equipmentSettings),
+            day.engineer.transportType,
           );
       // No assignments yet: leave the imported basket unissued so the workday plan can use it.
       if (basket === null) continue;
