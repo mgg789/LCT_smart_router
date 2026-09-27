@@ -3,6 +3,14 @@ import { useEffect, useRef } from 'react';
 import { FIGMA_ASSETS } from './assets';
 import { type EngineerCard, requestCountLabel, truncateEnd } from './fixtures';
 import { FigmaIcon, FigmaText } from './primitives';
+import { TintIcon } from './TintIcon';
+
+const TRANSPORT_ICONS: Readonly<Record<string, string>> = {
+  car: FIGMA_ASSETS.transportCar,
+  walk: FIGMA_ASSETS.transportWalk,
+  bike: FIGMA_ASSETS.transportBike,
+  transit: FIGMA_ASSETS.transportWalk,
+};
 
 const SEARCH_CONTROL_SIZE = 40;
 const SEARCH_OPEN_WIDTH = 351;
@@ -207,6 +215,7 @@ function EngineerRow({
   motionOn: boolean;
   onSelect: () => void;
 }) {
+  const transportIcon = TRANSPORT_ICONS[engineer.transportType ?? ''];
   const progress = Math.max(
     8,
     Math.round(
@@ -242,7 +251,10 @@ function EngineerRow({
         </FigmaText>
       </div>
       <div className="absolute left-[69px] top-[49px] flex items-center gap-[8px] font-medium text-[16px] tracking-[-0.272px] text-figma-muted">
-        <span className="figma-nowrap">{engineer.status}</span>
+        <span className="figma-nowrap flex items-center gap-[4px]">
+          {transportIcon ? <TintIcon src={transportIcon} color="currentColor" size={18} /> : null}
+          {engineer.status}
+        </span>
         <span className="size-[3px] rounded-full bg-figma-muted" />
         <span className="figma-nowrap">{engineer.requestCount} заявок</span>
       </div>

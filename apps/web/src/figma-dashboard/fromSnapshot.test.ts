@@ -45,6 +45,7 @@ describe('Figma MAIN snapshot mapper', () => {
     const focused = view.engineers.find((item) => item.id === FOCUS_ENGINEER_ID);
     const focusedLive = snapshot.engineers.find((item) => item.id === FOCUS_ENGINEER_ID);
     expect(focused?.status).toBe(transportLabel(focusedLive?.transportType ?? ''));
+    expect(focused?.transportType).toBe(focusedLive?.transportType);
     expect(rightPanelMode(FOCUS_ENGINEER_ID, null)).toBe('plan');
     expect(rightPanelMode(FOCUS_ENGINEER_ID, 'req-1')).toBe('request');
     expect(rightPanelMode(null, null)).toBeNull();

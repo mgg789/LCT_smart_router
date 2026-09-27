@@ -64,6 +64,8 @@ export type EngineerCard = {
   id: string;
   name: string;
   km: number;
+  /** Raw transport code, independent of the displayed status text. */
+  transportType?: string;
   status: string;
   shift: string;
   requestCount: number;
