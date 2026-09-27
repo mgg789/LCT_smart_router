@@ -25,6 +25,7 @@ export function EngineerMenu({
   breakActive,
   breakPending,
   onClose,
+  docked,
   onNavigate,
   onBreak,
   onSupport,
@@ -40,11 +41,172 @@ export function EngineerMenu({
   breakActive: boolean;
   breakPending: boolean;
   onClose: () => void;
+  /** Docked in the desk's rail: always open, no backdrop, no way to close. */
+  docked?: boolean;
   onNavigate: (id: EngineerMenuId) => void;
   onBreak: () => void;
   onSupport: () => void;
   onSignOut: () => void;
 }) {
+  if (docked) {
+    return (
+      <aside
+        aria-label="Меню инженера"
+        className="phone-desk-menu flex h-full w-full flex-col overflow-y-auto bg-white"
+      >
+        <img
+          alt=""
+          src={ENGINEER_ASSETS.menuBlobs}
+          className="pointer-events-none absolute bottom-0 left-0 z-0 w-full max-w-none"
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute bottom-0 left-0 z-[1] bg-white"
+          style={{ width: eu(220), height: eu(180) }}
+        />
+        <div className="relative z-10 shrink-0 bg-figma-ink" style={{ height: eu(445) }} />
+        <div
+          className="relative z-10 flex min-h-0 flex-1 flex-col overflow-y-auto"
+          style={{ padding: `${eu(24)} ${eu(20)} ${eu(28)}` }}
+        >
+          <p
+            className="relative break-words font-murs tracking-[0.02em] text-figma-ink"
+            style={{ fontSize: eu(32) }}
+          >
+            {name}
+          </p>
+          <p
+            className="relative break-all font-semibold tracking-[-0.02em] text-figma-muted"
+            style={{ marginTop: eu(8), fontSize: eu(24) }}
+          >
+            {email}
+          </p>
+          {token ? (
+            <div className="mt-4">
+              <MonthlyPoints token={token} />
+            </div>
+          ) : null}
+          <nav className="relative flex flex-col" style={{ marginTop: eu(28), gap: eu(20) }}>
+            <MenuItem
+              label="Мой день"
+              icon={ENGINEER_ASSETS.house}
+              iconWidth={32}
+              iconHeight={32}
+              active={active === 'day'}
+              onClick={() => onNavigate('day')}
+            />
+            <MenuItem
+              label="Помощник"
+              icon={ENGINEER_ASSETS.assistant}
+              iconWidth={30}
+              iconHeight={33}
+              active={active === 'assistant'}
+              onClick={() => onNavigate('assistant')}
+            />
+            <MenuItem
+              label="Настройки"
+              icon={ENGINEER_ASSETS.gear}
+              iconWidth={32}
+              iconHeight={32}
+              active={active === 'settings'}
+              onClick={() => onNavigate('settings')}
+            />
+          </nav>
+          <div className="relative w-full" style={{ marginTop: eu(28), height: eu(4) }}>
+            <FigmaIcon
+              src={ENGINEER_ASSETS.menuLine}
+              alt=""
+              width={461}
+              height={4}
+              style={{ width: '100%', height: eu(4) }}
+            />
+          </div>
+          {lunch ? (
+            <div
+              className="relative flex items-center"
+              style={{ marginTop: eu(24), gap: eu(20), paddingLeft: eu(24) }}
+            >
+              <FigmaIcon
+                src={ENGINEER_ASSETS.lunch}
+                alt=""
+                width={32}
+                height={32}
+                style={{ width: eu(32), height: eu(32) }}
+              />
+              <p
+                className="font-murs tracking-[-0.03em] text-figma-ink"
+                style={{ fontSize: eu(28) }}
+              >
+                Обед
+              </p>
+              <p
+                className="font-semibold tracking-[-0.03em] text-figma-dim"
+                style={{ fontSize: eu(20), position: 'relative', top: 2 }}
+              >
+                {formatPlanWindow(lunch.startAt, lunch.endAt)}
+              </p>
+            </div>
+          ) : null}
+          <div
+            className="relative mt-auto flex flex-col"
+            style={{ gap: eu(20), paddingTop: eu(28) }}
+          >
+            <motion.button
+              type="button"
+              disabled={breakPending}
+              onClick={onBreak}
+              whileTap={{ scale: 0.98 }}
+              className="flex w-full items-center justify-center border border-figma-ink bg-white disabled:opacity-60"
+              style={{
+                height: eu(80),
+                maxWidth: eu(372),
+                gap: eu(16),
+                borderRadius: eu(20),
+              }}
+            >
+              <FigmaIcon
+                src={ENGINEER_ASSETS.pause}
+                alt=""
+                width={32}
+                height={32}
+                style={{ width: eu(32), height: eu(32) }}
+              />
+              <span
+                className="font-murs tracking-[-0.03em] text-figma-ink"
+                style={{ fontSize: eu(28) }}
+              >
+                {breakActive ? 'Завершить перерыв' : 'Тех. перерыв'}
+              </span>
+            </motion.button>
+            <motion.button
+              type="button"
+              onClick={onSupport}
+              whileTap={{ scale: 0.98 }}
+              className="flex items-center justify-center self-start bg-figma-bee font-semibold tracking-[-0.03em] text-figma-ink"
+              style={{
+                height: eu(80),
+                paddingLeft: eu(32),
+                paddingRight: eu(32),
+                borderRadius: eu(20),
+                fontSize: eu(28),
+              }}
+            >
+              Написать в поддержку
+            </motion.button>
+            <button
+              type="button"
+              onClick={onSignOut}
+              className="self-start font-semibold text-figma-muted"
+              style={{ fontSize: eu(20) }}
+            >
+              Выйти
+            </button>
+          </div>
+        </div>
+      </aside>
+    );
+  }
+
   return (
     <AnimatePresence>
       {open ? (

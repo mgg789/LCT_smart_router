@@ -421,6 +421,43 @@ export function EngineerApp({
   const overlayOpen = detailJob !== null || screen === 'settings';
   const sheetY = window.innerHeight;
 
+  /**
+   * The same menu twice over: a drawer behind a button on the phone, and the
+   * rail itself on a desk, where there is room for it to simply be there.
+   */
+  const deskMenu = (
+    <EngineerMenu
+      docked
+      token={designPreview ? undefined : token}
+      open
+      motionOn={motionOn}
+      name={name}
+      email={email || '—'}
+      active={screen}
+      lunch={lunch}
+      breakActive={
+        live?.engineer.technicalBreak !== null && live?.engineer.technicalBreak !== undefined
+      }
+      breakPending={breakPending}
+      onClose={() => setMenuOpen(false)}
+      onNavigate={(id) => {
+        setOpenedJob(null);
+        setScreen(id);
+        setMenuOpen(false);
+        setNotice(null);
+        setSettingsError(null);
+      }}
+      onBreak={() => void startBreak()}
+      onSupport={() => {
+        setOpenedJob(null);
+        setScreen('assistant');
+        setMenuOpen(false);
+        setNotice(null);
+      }}
+      onSignOut={onSignOut}
+    />
+  );
+
   const menuDrawer = (
     <EngineerMenu
       token={designPreview ? undefined : token}
@@ -602,6 +639,7 @@ export function EngineerApp({
                             })
                         : undefined
                     }
+                    selected={item.kind === 'job' && item.request.id === openedJob?.request.id}
                     startPending={item.kind === 'job' && startPendingId === item.request.id}
                     onOpen={
                       item.kind === 'job'
@@ -719,6 +757,7 @@ export function EngineerApp({
   if (desk) {
     return (
       <DeskShell
+        menu={deskMenu}
         detailKey={deskJob?.request.id}
         detail={
           deskJob ? (
@@ -745,20 +784,6 @@ export function EngineerApp({
             <p className="font-medium text-[16px] text-figma-muted">{email || '—'}</p>
           </>
         }
-        lead={
-          <motion.button
-            aria-expanded={menuOpen}
-            aria-label="Меню"
-            className="flex size-[38px] shrink-0 items-center justify-center rounded-[11px] bg-figma-ink"
-            onClick={() => setMenuOpen(true)}
-            transition={{ duration: 0.16 }}
-            type="button"
-            whileTap={{ scale: 0.94 }}
-          >
-            <FigmaIcon alt="" height={11} src={ENGINEER_ASSETS.menu} width={16} />
-          </motion.button>
-        }
-        overlays={menuDrawer}
         fitScreen={desk && screen === 'settings'}
         screenKey={screen}
       >

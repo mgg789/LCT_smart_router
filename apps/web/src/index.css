@@ -263,13 +263,24 @@ body {
   --eu: calc(var(--phone-width) / 670);
 }
 
-/* Just wide enough for the menu button, with the page gutter either side. */
+/*
+ * The app's own menu, simply there instead of behind a button. The drawer is
+ * drawn 501 units wide, so the rail is exactly that at the rail's own scale —
+ * the panel fills it without a number being repeated in two places.
+ */
 .phone-desk-rail {
+  /*
+   * Positioned so the clip actually bites: the menu's decorative layer is
+   * absolute, and `overflow: hidden` only clips such a child when the element
+   * doing the clipping is also its containing block.
+   */
+  position: relative;
   display: flex;
-  width: 72px;
   flex: none;
-  justify-content: center;
-  padding-top: 26px;
+  overflow: hidden;
+  --phone-width: 400px;
+  --eu: calc(var(--phone-width) / 670);
+  width: calc(501 * var(--eu));
 }
 
 .phone-desk-body {
@@ -285,7 +296,7 @@ body {
   flex: none;
   align-items: center;
   gap: 24px;
-  padding: 0 32px 0 0;
+  padding: 0 32px;
 }
 
 .phone-desk-panes {
@@ -293,7 +304,7 @@ body {
   min-height: 0;
   flex: 1;
   gap: 24px;
-  padding: 0 32px 32px 0;
+  padding: 0 32px 32px;
 }
 
 /*

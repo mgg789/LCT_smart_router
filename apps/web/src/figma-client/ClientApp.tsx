@@ -353,6 +353,26 @@ export function ClientApp() {
     </AnimatePresence>
   );
 
+  /**
+   * The same menu twice over: a drawer behind a button on the phone, and the
+   * rail itself on a desk, where there is room for it to simply be there.
+   */
+  const deskMenu = (
+    <ClientMenu
+      active={screen === 'sent' ? 'new' : screen}
+      docked
+      email={session?.email ?? null}
+      motionOn={motionOn}
+      onClose={() => undefined}
+      onNavigate={(id) => {
+        if (id === 'list') openList();
+        else go(id);
+      }}
+      onNewRequest={() => go('new')}
+      open
+    />
+  );
+
   const menuDrawer = (
     <ClientMenu
       active={screen === 'sent' ? 'new' : screen}
@@ -450,6 +470,7 @@ export function ClientApp() {
             motionOn={motionOn}
             onOpen={openCard}
             onNewRequest={() => go('new')}
+            selectedId={openedId}
           />
         ) : null}
         {screen === 'support' ? (
@@ -486,6 +507,7 @@ export function ClientApp() {
   if (desk) {
     return (
       <DeskShell
+        menu={deskMenu}
         detail={detail}
         detailKey={opened?.id}
         header={
@@ -497,20 +519,6 @@ export function ClientApp() {
             ) : null}
           </>
         }
-        lead={
-          <motion.button
-            aria-expanded={menuOpen}
-            aria-label="Меню"
-            className="flex size-[38px] shrink-0 items-center justify-center rounded-[11px] bg-figma-ink"
-            onClick={() => setMenuOpen(true)}
-            transition={{ duration: 0.16 }}
-            type="button"
-            whileTap={{ scale: 0.94 }}
-          >
-            <FigmaIcon alt="" height={11} src={CLIENT_ASSETS.menu} width={16} />
-          </motion.button>
-        }
-        overlays={menuDrawer}
         fitScreen={desk && (screen === 'new' || screen === 'sent')}
         screenKey={screen}
       >

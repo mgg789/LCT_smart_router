@@ -30,6 +30,7 @@ export function EngineerListCard({
   onStart,
   actions,
   handoffAction,
+  selected,
 }: {
   item: EngineerJobItem | EngineerLunchItem | EngineerHandoffItem;
   motionOn: boolean;
@@ -42,6 +43,8 @@ export function EngineerListCard({
   onStart?: () => void;
   actions?: ReactNode;
   handoffAction?: () => void;
+  /** Outlined because it is the one being read, not because it is next. */
+  selected?: boolean;
 }) {
   return (
     <motion.article
@@ -56,6 +59,7 @@ export function EngineerListCard({
       ) : item.variant === 'upcoming' ? (
         <UpcomingCard
           item={item}
+          selected={selected === true}
           latePending={latePending === true}
           startPending={startPending === true}
           onOpen={onOpen}
@@ -65,7 +69,7 @@ export function EngineerListCard({
           actions={actions}
         />
       ) : (
-        <RegularCard item={item} onOpen={onOpen} onRoute={onRoute} />
+        <RegularCard item={item} onOpen={onOpen} onRoute={onRoute} selected={selected === true} />
       )}
     </motion.article>
   );
@@ -138,10 +142,12 @@ function UpcomingCard({
   onLate,
   onStart,
   actions,
+  selected,
 }: {
   item: EngineerJobItem;
   latePending: boolean;
   startPending: boolean;
+  selected: boolean;
   onOpen?: () => void;
   onRoute?: () => void;
   onLate?: () => void;
@@ -165,7 +171,9 @@ function UpcomingCard({
           onOpen?.();
         }
       }}
-      className="overflow-hidden border-solid border-figma-bee bg-white text-left"
+      className={`overflow-hidden border-solid bg-white text-left ${
+        selected ? 'border-figma-bee' : 'border-transparent'
+      }`}
       style={{
         borderRadius: eu(20),
         borderWidth: eu(3),
@@ -263,10 +271,12 @@ function RegularCard({
   item,
   onOpen,
   onRoute,
+  selected,
 }: {
   item: EngineerJobItem;
   onOpen?: () => void;
   onRoute?: () => void;
+  selected: boolean;
 }) {
   const service = item.request.workTypeTitle ?? skillLabel(item.request.requiredSkill);
   return (
@@ -281,11 +291,14 @@ function RegularCard({
           onOpen?.();
         }
       }}
-      className="flex w-full items-start justify-between overflow-hidden bg-white text-left"
+      className={`flex w-full items-start justify-between overflow-hidden border-solid bg-white text-left ${
+        selected ? 'border-figma-bee' : 'border-transparent'
+      }`}
       style={{
         gap: eu(16),
         borderRadius: eu(20),
-        padding: `${eu(25)} ${eu(30)}`,
+        borderWidth: eu(3),
+        padding: `${eu(22)} ${eu(27)}`,
       }}
     >
       <div className="min-w-0 flex-1">

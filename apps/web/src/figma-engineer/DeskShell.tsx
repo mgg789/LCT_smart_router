@@ -19,7 +19,7 @@ const settle = { duration: 0.32, ease };
  * screen beside it is pushed rather than covered.
  */
 export function DeskShell({
-  lead,
+  menu,
   header,
   children,
   fitScreen,
@@ -28,8 +28,8 @@ export function DeskShell({
   detailKey,
   overlays,
 }: {
-  /** The app's own menu button. It lives in the rail, clear of the content. */
-  lead?: ReactNode;
+  /** The app's own menu, docked down the left instead of hidden behind a button. */
+  menu?: ReactNode;
   /** The header strip: clock, account, actions. */
   header?: ReactNode;
   /** The app's own screen. */
@@ -54,12 +54,10 @@ export function DeskShell({
   return (
     <main className="phone-desk relative">
       {/*
-       * The menu button sits in a rail of its own rather than in the header
-       * row: it belongs to the whole desk, not to the screen's title line, and
-       * on a desk it is a small control rather than the phone's thumb-sized
-       * tap target.
+       * A desk has the room the phone does not, so the menu is not hidden
+       * behind a button: it is the rail, always on screen.
        */}
-      <aside className="phone-desk-rail">{lead}</aside>
+      <div className="phone-desk-rail">{menu}</div>
 
       <div className="phone-desk-body">
         <header className="phone-desk-header">{header}</header>
